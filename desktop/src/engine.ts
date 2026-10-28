@@ -44,10 +44,13 @@ export class Engine {
   private launch(paths: Paths, env: NodeJS.ProcessEnv, keys: Record<string, string>) {
     const child = spawn(process.execPath, [paths.engine, "--port", String(this.port), "--ui", paths.ui], {
       cwd: dirname(paths.engine),
-      env: { ...env, ELECTRON_RUN_AS_NODE: "1", LINER_TOKEN: this.token, LINER_PATH: env.PATH, LINER_KEYS: JSON.stringify(keys) },
+      // The token and keys go over stdin, not the environment: anything running as you can read a
+      // process's starting environment with `ps eww`, the agents the engine starts included.
+      env: { ...env, ELECTRON_RUN_AS_NODE: "1", LINER_PATH: env.PATH, LINER_SECRETS: "stdin" },
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child = child;
+    child.stdin.write(`${JSON.stringify({ token: this.token, keys })}\n`);
     let buffer = "";
     child.stdout.on("data", (data: Buffer) => {
       this.log?.write(data);

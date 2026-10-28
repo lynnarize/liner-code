@@ -34,12 +34,16 @@ export function which(cmd: string, env: NodeJS.ProcessEnv = process.env): string
 /** "cursor-agent" → "LINER_BIN_CURSOR_AGENT". */
 export const binVar = (cmd: string) => `LINER_BIN_${cmd.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
 
+export type Secrets = { token?: string; keys: Record<string, string> };
+
 /**
   The engine's token and the keys from the keychain, taken out of `env`. Everything the engine
   starts (agents, their commands, the Terminal, git) inherits the environment, and a command
-  that could read the token could answer its own approvals through /rpc.
+  that could read the token could answer its own approvals through /rpc. Only an engine run by
+  hand passes them this way: a process's starting environment stays readable to anything running
+  as you (`ps eww`) however much of it is deleted later, so the shell hands them over stdin.
 */
-export function takeSecrets(env: NodeJS.ProcessEnv): { token?: string; keys: Record<string, string> } {
+export function takeSecrets(env: NodeJS.ProcessEnv): Secrets {
   const token = env.LINER_TOKEN || undefined;
   let keys: Record<string, string> = {};
   try {
@@ -50,6 +54,39 @@ export function takeSecrets(env: NodeJS.ProcessEnv): { token?: string; keys: Rec
   delete env.LINER_TOKEN;
   delete env.LINER_KEYS;
   return { token, keys };
+}
+
+/** The token and keys from the line the shell writes first on the engine's stdin. */
+export function secretsFrom(line: string | null): Secrets {
+  try {
+    const v = JSON.parse(line ?? "") as { token?: unknown; keys?: unknown };
+    const keys = v.keys && typeof v.keys === "object" ? Object.fromEntries(Object.entries(v.keys).filter((e): e is [string, string] => typeof e[1] === "string")) : {};
+    return { token: typeof v.token === "string" && v.token ? v.token : undefined, keys };
+  } catch {
+    return { token: undefined, keys: {} };
+  }
+}
+
+/** A stream's first line, or null if it ends first. The stream stays open (the engine's stdin is its lifeline). */
+export function firstLine(stream: NodeJS.ReadableStream): Promise<string | null> {
+  return new Promise((resolve) => {
+    let got = "";
+    const data = (chunk: Buffer | string) => {
+      got += chunk.toString();
+      const nl = got.indexOf("\n");
+      if (nl < 0) return;
+      stream.off("data", data);
+      stream.off("end", end);
+      stream.pause();
+      resolve(got.slice(0, nl));
+    };
+    const end = () => {
+      stream.off("data", data);
+      resolve(null);
+    };
+    stream.on("data", data);
+    stream.once("end", end);
+  });
 }
 
 export type RunResult = { code: number; stdout: string; stderr: string };

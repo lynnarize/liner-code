@@ -15,7 +15,8 @@ import { compareWays, githubName } from "../src/api.ts";
 import { clean, isPrAsk } from "../src/runtime.ts";
 import { testCommand, testSummary } from "../src/prflow.ts";
 import { Store } from "../src/store.ts";
-import { run, takeSecrets } from "../src/exec.ts";
+import { run, secretsFrom, takeSecrets } from "../src/exec.ts";
+import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -148,6 +149,43 @@ test("secrets: the engine's token and keys don't reach anything it starts", asyn
   assert.match(seen, /PATH=/);
   assert.doesNotMatch(seen, /LINER_TOKEN|LINER_KEYS|t0ken|sk-test/);
   assert.deepEqual(takeSecrets({ LINER_KEYS: "{not json" }), { token: undefined, keys: {} });
+});
+
+test("secrets: the shell's token and keys come over stdin, so nothing on this Mac can read them in the engine's environment", async () => {
+  assert.deepEqual(secretsFrom('{"token":"t","keys":{"openai":"sk-o","bad":1}}'), { token: "t", keys: { openai: "sk-o" } });
+  assert.deepEqual(secretsFrom(null), { token: undefined, keys: {} });
+  const home = mkdtempSync(join(tmpdir(), "liner-secrets-"));
+  const token = "stdin-token-0123456789abcdef";
+  const engine = spawn(process.execPath, [join(import.meta.dirname, "../src/main.ts"), "--port", "0"], {
+    env: { PATH: "/usr/bin:/bin", HOME: home, LINER_HOME: home, LINER_SECRETS: "stdin", LINER_UPDATE_REPO: "" },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  try {
+    engine.stdin.write(`${JSON.stringify({ token, keys: { anthropic: "sk-ant-secret" } })}\n`);
+    const port = await new Promise<number>((resolve, reject) => {
+      let out = "";
+      engine.stdout.on("data", (d: Buffer) => {
+        out += d.toString();
+        const m = /LINER_READY (\{.*\})/.exec(out);
+        if (m) resolve((JSON.parse(m[1]) as { port: number }).port);
+      });
+      engine.once("exit", (code) => reject(new Error(`the engine stopped (${code})`)));
+      setTimeout(() => reject(new Error("the engine didn't start in time")), 20_000);
+    });
+    // What any process running as you sees of the engine's environment.
+    const seen = (await run("ps", ["eww", "-p", String(engine.pid), "-o", "command="])).stdout;
+    assert.match(seen, /LINER_SECRETS=stdin/);
+    assert.doesNotMatch(seen, /stdin-token|sk-ant-secret|LINER_TOKEN|LINER_KEYS/);
+    const rpc = (t: string) => fetch(`http://127.0.0.1:${port}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": t }, body: JSON.stringify({ method: "apps.editors", params: {} }) });
+    assert.equal((await rpc(token)).status, 200, "the token the shell handed over opens /rpc");
+    assert.equal((await rpc("guess")).status, 401);
+    // The shell going away (stdin closing) still takes the engine with it.
+    const gone = new Promise((r) => engine.once("exit", r));
+    engine.stdin.end();
+    await Promise.race([gone, new Promise((_, no) => setTimeout(() => no(new Error("the engine outlived its shell")), 10_000))]);
+  } finally {
+    engine.kill();
+  }
 });
 
 test("github: a remote's owner and name, whichever way it's written", () => {

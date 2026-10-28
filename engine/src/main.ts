@@ -2,8 +2,8 @@
   Starts the engine. The desktop shell runs it as a child process and reads one line from it:
     LINER_READY {"port":53121}
   Flags: --port <n> (0 picks a free one), --ui <dir> (serve the built app), --dev (a fixed
-  token for the Vite dev server). The token comes from LINER_TOKEN, and nothing the engine starts
-  inherits it.
+  token for the Vite dev server). The shell writes the token and keys as the first line on stdin
+  (LINER_SECRETS=stdin; LINER_TOKEN by hand), and nothing the engine starts inherits them.
 */
 import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
@@ -17,7 +17,7 @@ import { Proxies } from "./proxy.ts";
 import { DeviceLogs, Terminals } from "./surfaces.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
-import { takeSecrets } from "./exec.ts";
+import { firstLine, secretsFrom, takeSecrets } from "./exec.ts";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -28,8 +28,21 @@ const dev = process.argv.includes("--dev");
 // The Electron shell runs the engine on its own Node with ELECTRON_RUN_AS_NODE. Nothing the engine
 // starts may inherit that: an agent's `npm run dev` on an Electron project would get a bare Node.
 delete process.env.ELECTRON_RUN_AS_NODE;
-// The token and the keys are the engine's alone: out of the environment before anything starts.
-const secrets = takeSecrets(process.env);
+// The token and the keys are the engine's alone. The shell writes them as the first line on stdin
+// (LINER_SECRETS=stdin), never in the environment, which anything running as you can read with
+// `ps eww`, agents included. An engine run by hand may still take LINER_TOKEN and LINER_KEYS;
+// either way they're out of the environment before anything starts.
+const handed = takeSecrets(process.env);
+let secrets = handed;
+if (process.env.LINER_SECRETS === "stdin") {
+  const line = await firstLine(process.stdin);
+  if (line === null) {
+    console.error("[engine] The shell went away before it handed over the token.");
+    process.exit(1);
+  }
+  secrets = secretsFrom(line);
+}
+delete process.env.LINER_SECRETS;
 
 const store = new Store();
 // The shell passes your login shell's PATH; without it, a Dock-launched app can't find agents.

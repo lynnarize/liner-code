@@ -304,6 +304,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const engineSettings = useEngine((s) => s.settings);
   const setups = useMemo(() => setupsOf(engineSettings, agents), [engineSettings, agents]);
   const setup = settings.setup ? setups.find((x) => x.id === settings.setup) : undefined;
+  // The Demo stays out of the list until it's shown (six taps on your name in the sidebar).
+  const showDemo = engineSettings.showDemo === true;
   const leadAgents = agents.filter((a) => /lead/i.test(a.role) && a.id !== "demo");
   const mainCoder = agents.find((a) => a.specialty === "coder" && a.id !== "demo") ?? agents.find((a) => a.id !== "demo" && !/lead/i.test(a.role));
   // A session started straight with one agent before setups: it keeps a row of its own while it runs that way.
@@ -425,7 +427,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               />
             ))}
             {loner && <WayRow on icon={<I.edit size={13} />} title={`Straight to ${coder.name}`} note="an agent on its own, from before setups" marks={marksOf([coder.id])} onPick={close} />}
-            {agents.some((a) => a.id === "demo") && (
+            {showDemo && agents.some((a) => a.id === "demo") && (
               <WayRow
                 on={!setup && !settings.lead && settings.agent === "demo"}
                 icon={<I.sparkle size={13} />}

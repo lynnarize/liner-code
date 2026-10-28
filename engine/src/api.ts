@@ -6,9 +6,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSyn
 import { basename, join, relative, resolve } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { setupOf, setupsOf, splitModel, TRIAL } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, Effort, FoundRepo, ModelInfo, SkillInfo, ProviderInfo, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, Effort, FileChange, FoundRepo, ModelInfo, SkillInfo, ProviderInfo, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, restore } from "./checkpoints.ts";
+import { saveToDownloads, sessionMarkdown } from "./export.ts";
+import { importable, transcript } from "./imports.ts";
 import { run, which } from "./exec.ts";
 import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
@@ -104,6 +106,20 @@ const LINER_COMMANDS: CommandInfo[] = [
   { name: "reviewer", description: "Have the Reviewer, another model family, read the changes now", source: "liner" },
   { name: "pr", description: "Open a pull request from this branch, right here in the chat", source: "liner" },
 ];
+
+/** A project's CLAUDE.md and AGENTS.md, as they are at its root. */
+function rulesOf(root: string) {
+  const read = (name: string) => {
+    try {
+      return readFileSync(join(root, name), "utf8").slice(0, 200_000);
+    } catch {
+      return undefined;
+    }
+  };
+  const claude = read("CLAUDE.md");
+  const agents = read("AGENTS.md");
+  return { claude, agents, linked: claude?.trim() === "@AGENTS.md" };
+}
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
@@ -356,6 +372,27 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(resolve(path.replace(/^~(?=\/|$)/, homedir())), undefined, agent);
     },
     // An empty agent clears it: new sessions there start with whoever Home would pick.
+    "sessions.importable": ({ projectId }) => importable(store.project(projectId).path, env, new Set(store.threads.flatMap((t) => (t.providerSession ? [t.providerSession] : [])))),
+    "sessions.import": async ({ projectId, tool, id }) => {
+      const project = store.project(projectId);
+      const taken = store.threads.find((t) => t.providerSession === `${tool}:${id}`);
+      if (taken) return taken;
+      const s = transcript(tool, id, project.path, env);
+      // A session of its own on that model, in the project folder where the tool kept it.
+      const t = await handlers["thread.create"]({ projectId, agent: `@${tool}:${s.model || "default"}`, title: s.title || "A session brought in" });
+      const label = tool === "claude" ? "Claude Code" : "Codex";
+      store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: s.started || Date.now(), text: `Brought in from ${label}: ${s.turns} ${s.turns === 1 ? "turn" : "turns"}. The next turn carries on ${label}'s own session.` });
+      for (const it of s.items) store.putItem(t.id, it);
+      return store.patchThread(t.id, { providerSession: `${tool}:${id}`, turns: s.turns, status: "done" });
+    },
+    "project.rules": ({ id }) => rulesOf(store.project(id).path),
+    "project.rules.save": ({ id, text }) => {
+      const root = store.project(id).path;
+      writeFileSync(join(root, "AGENTS.md"), `${text.trim()}\n`);
+      // Claude Code reads CLAUDE.md, and follows an @ import in it: one line keeps the two in step.
+      writeFileSync(join(root, "CLAUDE.md"), "@AGENTS.md\n");
+      return rulesOf(root);
+    },
     "project.update": ({ id, name, agent, setup, scripts }) =>
       store.putProject({
         ...store.project(id),
@@ -537,6 +574,34 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return store.patchThread(id, setup === null ? { ...setupFields(null), ...clean } : { ...clean, ...setupFields(setup) });
     },
     "thread.items": ({ id }) => store.timeline(id),
+    "thread.export": async ({ id }) => {
+      const cwd = cwdOf(id);
+      const md = await sessionMarkdown(store, id, async (from, to) => (await git(cwd, ["diff", "--no-color", "-M", from, to])).stdout);
+      return { path: saveToDownloads(store.thread(id).title, md) };
+    },
+    "thread.info": async ({ id }) => {
+      const t = store.thread(id);
+      const project = store.project(t.projectId);
+      const path = cwdOf(id);
+      const [s, branch] = await Promise.all([runtime.inspect(id), project.git ? branchOf(path) : undefined]);
+      // Before the tool can say (no open session yet), the last turn's total is what there is.
+      const u = t.usage;
+      const last = u?.contextTokens && u.contextWindow ? { used: u.contextTokens, max: u.contextWindow, parts: [], measured: false } : undefined;
+      return {
+        machine: env.LINER_MACHINE || hostname().replace(/\.local$/, ""),
+        project: project.name,
+        path,
+        worktree: Boolean(t.worktree),
+        branch,
+        tool: detected.find((p) => p.id === s.provider)?.label ?? s.provider,
+        provider: s.provider,
+        model: s.model,
+        access: s.access,
+        live: s.live,
+        context: s.context ? { ...s.context, measured: true } : last,
+        compact: s.provider === "claude" || s.provider === "codex",
+      };
+    },
     "thread.send": ({ id, text, files, mode, anchor }) => {
       const t = store.thread(id);
       // Liner Code's own commands, whichever tool the session runs on.
@@ -681,12 +746,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "background.save": async ({ data, name }) => (await backgrounds.save(data, name), null),
     "background.remove": () => (backgrounds.remove(), null),
     "apps.open": async ({ path, app }) => (await openWith(path, app), null),
-    "git.commit": async ({ threadId, message }) => {
+    "git.commit": async ({ threadId, message, paths: only }) => {
       const t = store.thread(threadId);
       if (runtime.isRunning(threadId)) throw new Error("Wait for the turn to finish before committing.");
       const cwd = cwdOf(threadId);
       const open = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? [x] : []));
-      const paths = [...new Set(open.flatMap((x) => x.files.flatMap((f) => [f.path, ...(f.from ? [f.from] : [])])))];
+      // Some of the files, when you picked: a rename takes its old path along.
+      const picked = (f: FileChange) => !only?.length || only.includes(f.path);
+      const paths = [...new Set(open.flatMap((x) => x.files.filter(picked).flatMap((f) => [f.path, ...(f.from ? [f.from] : [])])))];
       if (!paths.length) throw new Error("Nothing to commit.");
       const add = await git(cwd, ["add", "-A", "--", ...paths]);
       if (add.code !== 0) throw new Error(add.stderr.trim() || "git add failed.");
@@ -699,9 +766,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const c = await run("git", ["commit", "-m", subject, "--", ...paths], { cwd, env });
       if (c.code !== 0) throw new Error((c.stderr || c.stdout).trim().split("\n").pop() || "The commit failed.");
       const sha = (await git(cwd, ["rev-parse", "--short", "HEAD"])).stdout.trim();
-      for (const it of open) store.putItem(threadId, { ...it, committed: sha });
+      // A turn is committed once all its files are; until then the committed ones wait in `done`,
+      // so what's left to commit or undo is only the rest.
+      for (const it of open) {
+        const took = it.files.filter(picked);
+        if (!took.length) continue;
+        const left = it.files.filter((f) => !picked(f));
+        const done = [...(it.done ?? []), ...took];
+        store.putItem(threadId, left.length ? { ...it, files: left, done } : { ...it, files: done, done: undefined, committed: sha });
+      }
       store.patchThread(threadId, { toReview: runtime.toReview(threadId) });
-      return { sha, files: paths.length };
+      return { sha, files: new Set(open.flatMap((x) => x.files.filter(picked).map((f) => f.path))).size };
     },
 
     "usage.summary": ({ days = 30, projectId }) => summarize(store, days, projectId),

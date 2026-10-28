@@ -48,6 +48,7 @@ export const I = {
   lock: (p: P) => <S {...p}><rect x="3.25" y="7" width="9.5" height="6.25" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></S>,
   effort: (p: P) => <S {...p}><path d="M2.75 11.5a5.25 5.25 0 1 1 10.5 0" /><path d="m8 11.5 2.5-3" /></S>,
   laptop: (p: P) => <S {...p}><path d="M3.25 10.25v-6a1 1 0 0 1 1-1h7.5a1 1 0 0 1 1 1v6M1.75 12.75h12.5" /></S>,
+  details: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2" /><path d="M5 6h.01M7 6h4M5 8h.01M7 8h4M5 10h.01M7 10h4" /></S>,
   terminal: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2" /><path d="m5.25 6.25 2 1.75-2 1.75M8.75 9.75h2" /></S>,
   push: (p: P) => <S {...p}><path d="M8 10.5V2.75M4.75 6 8 2.75 11.25 6M3 13.25h10" /></S>,
   download: (p: P) => <S {...p}><path d="M8 2.75v7.75M4.75 7.25 8 10.5l3.25-3.25M3 13.25h10" /></S>,

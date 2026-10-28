@@ -74,6 +74,11 @@ export class Routines {
   private polled = new Map<string, number>();
   private aborts = new Map<string, AbortController>();
   private timer: NodeJS.Timeout | null = null;
+
+  /** A run is going. */
+  get busy() {
+    return this.runs.some((r) => r.status === "running");
+  }
   private store: Store;
   private runtime: Runtime;
   private env: NodeJS.ProcessEnv;

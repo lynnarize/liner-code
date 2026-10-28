@@ -17,6 +17,7 @@ import { Proxies } from "./proxy.ts";
 import { DeviceLogs, Terminals } from "./surfaces.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
+import { Awake } from "./awake.ts";
 import { firstLine, secretsFrom, takeSecrets } from "./exec.ts";
 
 const arg = (name: string) => {
@@ -76,15 +77,19 @@ const server = await startServer({
   },
 });
 tools.url = `http://127.0.0.1:${server.port}`;
+// No idle sleep while a session or a routine run works.
+const awake = new Awake(store, () => routines.busy || store.threads.some((t) => t.status === "running"));
 void api.ready.then(() => {
   routines.start();
   watch.start();
   api.updates.start();
+  awake.start();
 });
 
 process.stdout.write(`LINER_READY ${JSON.stringify({ port: server.port, home: store.home })}\n`);
 
 const quit = () => {
+  awake.stop();
   routines.stop();
   watch.stop();
   api.updates.stop();

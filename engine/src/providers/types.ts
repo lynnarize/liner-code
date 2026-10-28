@@ -4,7 +4,7 @@
   Claude Code, Codex, Hermes and OpenCode. A provider that can't do something (approvals in
   Codex exec, say) simply never calls that part of the sink.
 */
-import type { Access, CommandInfo, Effort, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
+import type { Access, CommandInfo, ContextPart, Effort, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
 
 export type ToolUpdate = {
   /** The provider's id for the call, so later updates find it. */
@@ -80,6 +80,8 @@ export interface ProviderSession {
   steer?(text: string): boolean;
   /** Settings changed between turns. Return false to be reopened instead. */
   update?(o: Pick<OpenOptions, "model" | "effort" | "access">): Promise<boolean>;
+  /** What fills the context now, by the tool's own count; null when it can't say. */
+  context?(): Promise<{ used: number; max: number; parts: ContextPart[] } | null>;
   close(): void;
 }
 

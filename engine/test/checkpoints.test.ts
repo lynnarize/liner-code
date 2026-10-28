@@ -98,6 +98,19 @@ test("snapshots leave your staging area, HEAD and branch where they were", async
   assert.equal(await git(dir, "ls-files", "--others", "--exclude-standard"), "scratch.txt\n", "undo doesn't stage what it puts back");
 });
 
+test("a file git is told to pass over still shows in a turn's changes", async () => {
+  // Snapshots start from a copy of your index, which may say not to look at some files.
+  const dir = await repo();
+  await git(dir, "update-index", "--assume-unchanged", "keep.txt");
+  await git(dir, "update-index", "--skip-worktree", "gone.txt");
+  const before = await capture(dir, "t6/1-before");
+  writeFileSync(join(dir, "keep.txt"), "changed under assume-unchanged\n");
+  writeFileSync(join(dir, "gone.txt"), "changed under skip-worktree\n");
+  const after = await capture(dir, "t6/1-after");
+  assert.ok(before && after);
+  assert.deepEqual((await changes(dir, before, after)).map((f) => f.path).sort(), ["gone.txt", "keep.txt"]);
+});
+
 test("a repository with no commits yet still gets snapshots and undo", async () => {
   const dir = await repo(false);
   const before = await capture(dir, "t3/1-before");

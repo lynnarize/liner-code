@@ -6,7 +6,7 @@
   once; the rest lives in the engine. Escape, ⌘, or Back returns to the sessions.
 */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, KeyBinding, Project, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
+import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
 import { ACCOUNT_HOME, updateModes } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
@@ -27,50 +27,9 @@ import { I, ModelMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, agentOf, ago, markOf, modelLabel, plural, providerLabel, setupLine, setupOf, setupsOf, since } from "./model";
 import { Badge, Disc, Kbd, ModelTag, Pop } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
-import { clearTheme, current, fromVSCode, inkOn, readThemes, saveThemes, varsOf, type Theme } from "./themes";
+import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
-
-/**
-  `custom`: one of your themes, by id. `accentColor`: your own accent, when `accent` is "own".
-  `background`: the picture behind the session ("apple:<name>", "own", or none), with how much it's
-  blurred (px) and how much of it shows through the paper (0 to 1).
-*/
-export type Look = { theme: "light" | "dark" | "system"; accent: string; glass: string; material: "glass" | "vibrancy" | "solid"; custom?: string; accentColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
-const LOOK_KEY = "liner-code:look";
-const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", glass: "0.25", material: "solid" };
-export const readLook = (): Look => {
-  let saved: Partial<Look> & { v?: number } = {};
-  try {
-    saved = JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") as typeof saved;
-  } catch {
-    // storage is off: the defaults
-  }
-  // Liquid Glass was the default until 2026-10-27, behind the whole window, and it kept the GPU busy.
-  // A look saved before then starts on Solid; Liquid Glass is one choice away, behind the sidebar only.
-  if (saved.v !== 2 && saved.material === "glass") delete saved.material;
-  return { ...LOOK_DEFAULT, ...saved, v: 2 };
-};
-
-/** Puts a look on the page (and on the window, in the shell). */
-export function applyLook(l: Look) {
-  const h = document.documentElement;
-  const dark = l.theme === "dark" || (l.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-  const own = l.custom ? readThemes().find((t) => t.id === l.custom) : undefined;
-  h.dataset.theme = own ? own.base : dark ? "dark" : "light";
-  h.dataset.accent = l.accent === "own" ? "blue" : l.accent;
-  clearTheme(h);
-  // One of your themes sets every colour it has; your own accent goes on top of Liner's.
-  if (own) for (const [k, v] of Object.entries(varsOf(own))) h.style.setProperty(k, v);
-  if (l.accent === "own" && l.accentColor) {
-    h.style.setProperty("--l-accent", l.accentColor);
-    h.style.setProperty("--l-accent-ink", inkOn(l.accentColor));
-  }
-  h.style.setProperty("--l-glass-opacity", l.glass);
-  bridge.setAppearance(own ? own.base : l.theme);
-  bridge.setMaterial(l.material);
-  // The backdrop behind the session follows along.
-  window.dispatchEvent(new CustomEvent("lc:look", { detail: l }));
-}
+import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type Look } from "./look";
 
 const isMac = /Mac/.test(navigator.platform);
 
@@ -368,6 +327,9 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
             aria-label="What Enter does"
           />
         </Field>
+        <Field title="Keep the Mac awake" note="No idle sleep while a session or a routine run works, so a long run isn't cut off. The display still sleeps.">
+          <Switch checked={s.keepAwake !== false} onCheckedChange={(keepAwake) => save({ keepAwake })} label="" />
+        </Field>
       </Group>
       <Group title="Settle sessions on their own" note="Settling is yours: a session stays in its project until you settle it from its row (D), and settled ones fold away under Settled, still searchable. These rules can do it for you; they're off unless you turn them on.">
         <Field title="When its pull request merges">
@@ -405,6 +367,24 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
               onBlur={(e) => {
                 const n = Math.max(0, Math.round(Number(e.target.value.replace(/[^\d.]/g, "")) || 0));
                 if (n !== (s.budgetUsd ?? 0)) save({ budgetUsd: n });
+              }}
+              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+            />
+          </span>
+        </Field>
+        <Field title="A cap per session" note="A session, or a routine run, that spends this much stops where it is and tells you; your next message lets it go on for another cap's worth. Claude Code reports cost; other tools can't be held to it.">
+          <span className="lc-st-budget">
+            <span className="lc-quiet">$</span>
+            <input
+              className="lc-input"
+              key={s.capUsd ?? 0}
+              defaultValue={s.capUsd || ""}
+              placeholder="None"
+              inputMode="decimal"
+              aria-label="Spending cap per session in dollars"
+              onBlur={(e) => {
+                const n = Math.max(0, Math.round((Number(e.target.value.replace(/[^\d.]/g, "")) || 0) * 100) / 100);
+                if (n !== (s.capUsd ?? 0)) save({ capUsd: n });
               }}
               onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             />
@@ -790,6 +770,9 @@ function Notifications({ sound }: { sound: boolean }) {
         </Field>
         <Field title="Count them on the Dock" note="The Dock icon shows how many sessions need you.">
           <Switch checked={s.badge} onCheckedChange={(badge) => save({ badge })} label="" />
+        </Field>
+        <Field title="Show them in the menu bar" note="A ring in the menu bar counts what works and what needs you; its menu opens a session, or allows a request waiting in one.">
+          <Switch checked={s.menuBar !== false} onCheckedChange={(menuBar) => save({ menuBar })} label="" />
         </Field>
       </Group>
       <Group title="In Liner Code">
@@ -1454,6 +1437,7 @@ function Projects() {
               </button>
             </Field>
             <ScriptsEditor project={p} />
+            <RulesEditor project={p} />
             {p.git && (
               <Field title="Set up each new worktree" note="Runs in a session's own worktree before its first turn, since a new worktree has none of this checkout's installed packages.">
                 <input
@@ -1473,6 +1457,56 @@ function Projects() {
       })}
       {projects.length === 0 && <Field title="No projects yet" note="Add a folder to start a session in it." />}
     </Group>
+  );
+}
+
+/**
+  A project's rules for every agent. Claude Code reads CLAUDE.md and the rest read AGENTS.md, so
+  the rules live in AGENTS.md and CLAUDE.md imports it: one text, the same for every tool. Two files
+  that differ open together, so nothing is lost when they become one.
+*/
+function RulesEditor({ project }: { project: Project }) {
+  const [rules, setRules] = useState<ProjectRules | null>(null);
+  useEffect(() => {
+    void rpc("project.rules", { id: project.id })
+      .then(setRules)
+      .catch(() => setRules(null));
+  }, [project.id]);
+  if (!rules) return null;
+  const { claude, agents, linked } = rules;
+  const same = linked || (claude !== undefined && agents !== undefined && claude.trim() === agents.trim());
+  const note = !claude && !agents ? "None yet. Every agent here reads what you write." : same ? "One text for every agent: AGENTS.md, which CLAUDE.md points to." : !agents ? "Only in CLAUDE.md, so Codex, OpenCode and Cursor don't see them." : !claude ? "Only in AGENTS.md, so Claude Code doesn't see them." : "CLAUDE.md and AGENTS.md say different things.";
+  // What the editor starts with: the one text, or both under their names so you can make them one.
+  const start = linked || !claude ? (agents ?? "") : !agents || same ? claude : `${agents.trim()}\n\n<!-- From CLAUDE.md -->\n${claude.trim()}\n`;
+  return (
+    <Field title="Rules for every agent" note={note}>
+      <Pop label={`Rules for ${project.name}`} align="end" width={520} triggerClass="lc-btn" trigger={<>{claude || agents ? "Edit" : "Write them"}</>}>
+        {(close) => <RulesForm project={project} start={start} merging={!same && Boolean(claude && agents)} onSaved={(r) => (setRules(r), close())} />}
+      </Pop>
+    </Field>
+  );
+}
+
+function RulesForm({ project, start, merging, onSaved }: { project: Project; start: string; merging: boolean; onSaved: (r: ProjectRules) => void }) {
+  const [text, setText] = useState(start);
+  const [busy, setBusy] = useState(false);
+  const save = () => {
+    setBusy(true);
+    void rpc("project.rules.save", { id: project.id, text })
+      .then((r) => (toast.success("Rules saved", { description: "AGENTS.md has them; CLAUDE.md points to it." }), onSaved(r)))
+      .catch(fail)
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="lc-rules">
+      <textarea className="lc-input lc-mono lc-rules-t" value={text} onChange={(e) => setText(e.target.value)} placeholder={"How to build and test, what to leave alone, the house style…"} spellCheck={false} aria-label={`Rules for ${project.name}`} autoFocus />
+      <p className="lc-quiet lc-rules-n">{merging ? "Both files are here, one under the other: make them one text. " : ""}Saving writes AGENTS.md and makes CLAUDE.md a one-line @AGENTS.md, which Claude Code follows. Commit them with the project.</p>
+      <div className="lc-rules-f">
+        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={busy || !text.trim()} onClick={save}>
+          {busy ? "Saving" : "Save for every agent"}
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -24,9 +24,8 @@ itself from this repository's releases.
 
 You need at least one coding tool installed and signed in: [Claude Code](https://code.claude.com),
 [Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai) or
-[Hermes](https://github.com/nousresearch/hermes-agent). The **Sample project** with the **Demo**
-agent works without any. Git and the Terminal need Apple's command line tools; first run says so
-if they're missing.
+[Hermes](https://github.com/nousresearch/hermes-agent). Git and the Terminal need Apple's command
+line tools; first run says so if they're missing.
 
 Found something? **Help › Report a Problem…** makes a zip with the log and versions and opens an
 [issue](https://github.com/lynnarize/liner-code/issues/new/choose).
@@ -74,8 +73,9 @@ command line tools (for the Mac addon and the icon).
 
 The first launch plays the intro, then three steps: connect models (it finds the CLIs you have),
 add projects (it finds your Git repositories), and how you'll work (just a model, a lead and a
-coder, or your own team). The **Sample project** with the **Demo** agent runs every flow with no
-account at all.
+coder, or your own team). The **Demo**, a scripted agent with its own **Sample project**, runs
+every flow with no account at all. It's hidden: tap your name at the foot of the sidebar six times
+to show it (and six more to hide it again).
 
 ## What's in it
 

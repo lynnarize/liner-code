@@ -607,6 +607,18 @@
   justify-content: flex-end;
   gap: 8px;
 }
+.lc-ag-small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-ag-small input {
+  margin: 0;
+  accent-color: var(--l-accent);
+}
 
 /* The writer's helpers sit indented under it, on a line of their own. */
 .lc-ag-helpers {

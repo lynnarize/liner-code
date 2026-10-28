@@ -272,7 +272,7 @@ function Models({ onNext }: { onNext: () => void }) {
       </p>
       <div className="lc-step-foot">
         <span className="lc-quiet">
-          {ready || keys.length ? `${plural(ready, "tool")} and ${plural(keys.length, "key")} ${ready + keys.length === 1 ? "is" : "are"} ready.` : "Nothing is connected yet: the sample project works without any account."} Add more any time in Settings.
+          {ready || keys.length ? `${plural(ready, "tool")} and ${plural(keys.length, "key")} ${ready + keys.length === 1 ? "is" : "are"} ready.` : "Nothing is connected yet."} Add more any time in Settings.
         </span>
         <span className="lc-grow" />
         <button type="button" className="lc-btn" data-kind="accent" data-size="lg" onClick={onNext}>
@@ -286,7 +286,9 @@ function Models({ onNext }: { onNext: () => void }) {
 function Projects({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const [found, setFound] = useState<FoundRepo[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [sample, setSample] = useState(true);
+  // The sample project is the Demo's, so it's offered only while the Demo is shown.
+  const showDemo = useEngine((s) => s.settings.showDemo === true);
+  const [sample, setSample] = useState(showDemo);
   const [clone, setClone] = useState("");
   const [busy, setBusy] = useState(false);
   const projects = useEngine((s) => s.projects);
@@ -360,15 +362,17 @@ function Projects({ onBack, onNext }: { onBack: () => void; onNext: () => void }
       </p>
       <div className="lc-frame lc-setup-frame">
         <div className="lc-fcard lc-prj">
-          <label className="lc-prj-row">
-            <input type="checkbox" checked={sample} onChange={(e) => setSample(e.target.checked)} />
-            <I.sparkle size={14} />
-            <span>
-              <b>Sample project</b>
-              <small>Tide tables, with the Demo agent. No account needed.</small>
-            </span>
-            <span className="lc-quiet lc-mono">main</span>
-          </label>
+          {showDemo && (
+            <label className="lc-prj-row">
+              <input type="checkbox" checked={sample} onChange={(e) => setSample(e.target.checked)} />
+              <I.sparkle size={14} />
+              <span>
+                <b>Sample project</b>
+                <small>Tide tables, with the Demo agent. No account needed.</small>
+              </span>
+              <span className="lc-quiet lc-mono">main</span>
+            </label>
+          )}
           {(found ?? []).slice(0, 12).map((f) => (
             <label key={f.path} className="lc-prj-row" data-added={f.added || undefined}>
               <input
@@ -412,7 +416,7 @@ function Projects({ onBack, onNext }: { onBack: () => void; onNext: () => void }
         </div>
       </div>
       <div className="lc-step-foot">
-        <span className="lc-quiet">{count ? `${plural(count, "project")}${projects.length ? "" : ""}.` : "No projects yet."} Quick tasks can still run in the sample project.</span>
+        <span className="lc-quiet">{count ? `${plural(count, "project")}${projects.length ? "" : ""}.` : "No projects yet."} {showDemo ? "Quick tasks can still run in the sample project." : "Quick tasks can still run without a project."}</span>
         <span className="lc-grow" />
         <button type="button" className="lc-btn" data-kind="ghost" data-size="lg" onClick={onBack}>
           Back

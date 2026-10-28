@@ -9,7 +9,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { isNative } from "./bridge";
 import { rpc } from "./engine";
-import { readLook, type Look } from "./Settings";
+import { readLook, type Look } from "./look";
 
 const urls = new Map<string, Promise<string | null>>();
 let ownVersion = 0;

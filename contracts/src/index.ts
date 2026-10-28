@@ -283,6 +283,8 @@ export type Thread = {
   forkSession?: string;
   turns: number;
   usage: Usage;
+  /** Where the spending cap stops this session now: the cap, plus another cap's worth each time you go on past it. */
+  spendLimit?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -368,6 +370,8 @@ export type Item =
       reverted?: boolean;
       /** The commit these changes went into, once you committed them. */
       committed?: string;
+      /** Files from this turn already committed with only some others: `files` keeps the rest, so they're what's left to commit or undo. */
+      done?: FileChange[];
       seconds?: number;
     })
   | (Base & { kind: "error"; message: string })
@@ -395,6 +399,8 @@ export type Settings = {
   setup?: string;
   /** How many times the Reviewer sends blocking findings back before it's yours (default 2). */
   reviewRounds?: number;
+  /** The Reviewer reads small changes too (SMALL_CHANGE lines or fewer, or only docs), which it otherwise lets through. */
+  reviewSmall?: boolean;
   /** Claude Code bills to your Claude plan, or to the Anthropic key you added. */
   claudeBilling: "plan" | "key";
   /** Settle sessions that wait on nothing from you after this many days (0: never, the default). */
@@ -415,6 +421,12 @@ export type Settings = {
   badge: boolean;
   /** A monthly budget in dollars, for the Usage page's pace line (0: none). */
   budgetUsd?: number;
+  /** What one session, or one routine run, may spend before it stops and asks, in dollars (0: no cap). Only tools that report cost (Claude Code) can be held to it. */
+  capUsd?: number;
+  /** Keeps the Mac from sleeping while an agent works (on unless turned off). */
+  keepAwake?: boolean;
+  /** The menu bar item: what works and what needs you (on unless turned off). */
+  menuBar?: boolean;
   /** Settle a session when its pull request merges, or when a routine run handled everything itself. Off unless you turn them on. */
   settleOnMerge?: boolean;
   settleOnRoutine?: boolean;
@@ -438,9 +450,57 @@ export type Settings = {
   updateApp?: UpdateMode;
   /** The agent tools' own updaters: run when no session is working on that tool, only told about ("notify", the default), or not looked for. */
   updateTools?: UpdateMode;
+  /** The Demo (Demo run, its model, the sample project): hidden until you tap your name in the sidebar six times. */
+  showDemo?: boolean;
 };
 
 export type UpdateMode = "auto" | "notify" | "off";
+
+/**
+  A project's rules for agents, at its root: CLAUDE.md for Claude Code, AGENTS.md for Codex,
+  OpenCode, Cursor and the rest. `linked`: CLAUDE.md only imports AGENTS.md (`@AGENTS.md`), so
+  the two say the same.
+*/
+export type ProjectRules = { claude?: string; agents?: string; linked: boolean };
+
+/** A past Claude Code or Codex session in a project's folder, that can be brought in to carry on here. */
+export type ImportableSession = { tool: "claude" | "codex"; id: string; title: string; at: number };
+
+/** One row of what fills a session's context, as its tool counts it. "deferred" rows sit outside the window. */
+export type ContextPart = { name: string; tokens: number; kind: "used" | "free" | "buffer" | "deferred" };
+
+/** What the Session surface shows from the engine: where a session runs, and what fills its context. */
+export type SessionInfo = {
+  machine: string;
+  project: string;
+  /** The folder the agent works in: the project, or the session's worktree. */
+  path: string;
+  worktree: boolean;
+  branch?: string;
+  /** The tool (its name and id) and the model the writer runs on. */
+  tool: string;
+  provider: ProviderId;
+  model: string;
+  access: Access;
+  /** A session is open in the tool, so the context is what it says now. */
+  live: boolean;
+  /** From the tool now, by part (`measured`), or the last turn's total. None before the first turn. */
+  context?: { used: number; max: number; parts: ContextPart[]; measured: boolean };
+  /** The tool compacts on request: the Compact button sends it `/compact`. */
+  compact: boolean;
+};
+
+/** A change this many lines or under (added and removed together) is small: the Reviewer lets it through unless `reviewSmall`. */
+export const SMALL_CHANGE = 6;
+
+/** A change the Reviewer lets through: a few lines, or only docs. From `git diff --numstat` ("3\t1\tsrc/a.ts" a line; "-" for a binary). */
+export function smallChange(numstat: string) {
+  const files = numstat.split("\n").filter(Boolean).map((l) => l.split("\t"));
+  if (!files.length) return true;
+  const docs = files.every((f) => /\.(md|mdx|txt|rst|adoc)$/i.test(f[2] ?? "") || /^docs\//.test(f[2] ?? ""));
+  const lines = files.reduce((n, f) => n + (f[0] === "-" ? Infinity : Number(f[0]) + Number(f[1])), 0);
+  return docs || lines <= SMALL_CHANGE;
+}
 
 /** The update settings as they stand. Liner Code updates itself; the tools are yours, so it only says when one has something new until you choose Automatically. */
 export const updateModes = (s: Pick<Settings, "updateApp" | "updateTools">): { app: UpdateMode; tools: UpdateMode } => ({ app: s.updateApp ?? "auto", tools: s.updateTools ?? "notify" });
@@ -699,7 +759,8 @@ export type Rpc = {
   "review.run": [{ threadId: string }, null];
   "checkpoint.diff": [{ threadId: string; itemId: string }, FileDiff[]];
   "checkpoint.revert": [{ threadId: string; itemId: string }, Item];
-  "git.commit": [{ threadId: string; message?: string }, { sha: string; files: number }];
+  /** Commits the session's open changes, or only `paths` of them. */
+  "git.commit": [{ threadId: string; message?: string; paths?: string[] }, { sha: string; files: number }];
   /** Pushes the session's branch to origin, setting its upstream. */
   "git.push": [{ threadId: string }, { branch: string; remote: string }];
   /** Switches the session's checkout to a branch, or to a new one made from where it is. */
@@ -723,6 +784,18 @@ export type Rpc = {
   "pr.draft": [{ threadId: string }, { title: string; body: string; by: string }];
   /** A question about a session's case on the Desk, answered by a quick model from the session and the case (`context`); the session itself carries on undisturbed. */
   "desk.ask": [{ threadId: string; question: string; context: string }, { answer: string; by: string }];
+  /** The Session surface: where a session runs, and what fills its context. */
+  "thread.info": [{ id: string }, SessionInfo];
+  /** The session as Markdown (asks, plans, answers, findings, diffs), saved in Downloads; where it went. */
+  "thread.export": [{ id: string }, { path: string }];
+  /** Past Claude Code and Codex sessions in the project's folder, newest first. */
+  "sessions.importable": [{ projectId: string }, ImportableSession[]];
+  /** Brings one in as a session here: its timeline, and its own id, so the next turn carries it on. */
+  "sessions.import": [{ projectId: string; tool: "claude" | "codex"; id: string }, Thread];
+  /** A project's rules for agents, as its CLAUDE.md and AGENTS.md say them. */
+  "project.rules": [{ id: string }, ProjectRules];
+  /** Writes the rules to AGENTS.md and makes CLAUDE.md point to it, so every tool reads the same. */
+  "project.rules.save": [{ id: string; text: string }, ProjectRules];
   "projects.scan": [{ roots?: string[] }, FoundRepo[]];
   "project.clone": [{ url: string; into?: string }, Project];
   "github.repos": [Record<string, never>, { gh: "ready" | "missing" | "signed-out"; detail?: string; login?: string; repos: GitHubRepo[] }];

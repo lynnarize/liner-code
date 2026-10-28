@@ -14,14 +14,16 @@ import { Home } from "./Home";
 import { I, Mark } from "./icons";
 import { ACCESS_LEVELS, agentOf, bucketOf } from "./model";
 import { Session } from "./Session";
-import { Settings, applyLook, readLook } from "./Settings";
-import { Setup } from "./Setup";
+import { applyLook, readLook } from "./look";
 import { Sidebar } from "./Sidebar";
-import { Usage } from "./Usage";
-import { RoutinesPage } from "./Routines";
 // The builder brings Liner's workflow canvas; it loads when you first edit a routine.
 const RoutineBuilder = lazy(() => import("./RoutineBuilder").then((m) => ({ default: m.RoutineBuilder })));
-import { Compare } from "./Compare";
+// Screens you open now and then load when you first do, so launch has less to read.
+const Settings = lazy(() => import("./Settings").then((m) => ({ default: m.Settings })));
+const Setup = lazy(() => import("./Setup").then((m) => ({ default: m.Setup })));
+const Usage = lazy(() => import("./Usage").then((m) => ({ default: m.Usage })));
+const RoutinesPage = lazy(() => import("./Routines").then((m) => ({ default: m.RoutinesPage })));
+const Compare = lazy(() => import("./Compare").then((m) => ({ default: m.Compare })));
 import { keepPanel, keptPanel, openTab, type Tab } from "./Surfaces";
 import { startAgentBrowser } from "./agentBrowser";
 import { MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
@@ -77,6 +79,15 @@ export function App() {
   // The Dock says how many sessions need you; notifications say which, while you're elsewhere.
   const needs = threads.filter((t) => !t.archived && bucketOf(t) === "needs" && t.turns > 0).length;
   useEffect(() => bridge.badge(badgeOn ? needs : 0), [needs, badgeOn]);
+  // The menu bar item says the same, with which sessions, while the window is out of sight.
+  const menuBar = useEngine((s) => s.settings.menuBar !== false);
+  const live = threads.filter((t) => !t.archived && !t.routine && !t.trial);
+  const traySay = JSON.stringify({
+    show: menuBar,
+    working: live.filter((t) => t.status === "running").map((t) => ({ id: t.id, title: t.title })),
+    needs: live.filter((t) => bucketOf(t) === "needs" && t.turns > 0).map((t) => ({ id: t.id, title: t.title, waiting: t.status === "waiting" })),
+  });
+  useEffect(() => bridge.status(JSON.parse(traySay)), [traySay]);
   useEffect(() => {
     const off = onNotify((e) => {
       const open = view.kind === "session" && view.id === e.threadId && document.hasFocus();
@@ -240,7 +251,9 @@ export function App() {
   if (!onboarded)
     return (
       <>
-        <Setup onDone={() => setView({ kind: "home" })} />
+        <Suspense fallback={null}>
+          <Setup onDone={() => setView({ kind: "home" })} />
+        </Suspense>
         <Toaster />
       </>
     );
@@ -249,7 +262,9 @@ export function App() {
     <div className="lc-app" data-sidebar={sidebar || settings || undefined}>
       <Scene />
       {settings ? (
-        <Settings onClose={() => setSettings(false)} onAgent={(agent) => setAgentDialog({ open: true, agent })} onOpen={(id) => (setSettings(false), openSession(id))} />
+        <Suspense fallback={null}>
+          <Settings onClose={() => setSettings(false)} onAgent={(agent) => setAgentDialog({ open: true, agent })} onOpen={(id) => (setSettings(false), openSession(id))} />
+        </Suspense>
       ) : (
         <>
           <div className="lc-side" inert={!sidebar || undefined}>
@@ -257,6 +272,7 @@ export function App() {
           </div>
           <main className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
+            <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening</span></div>}>
             {view.kind === "session" && current ? (
               <Session key={current.id} thread={current} sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, current.projectId)} />
             ) : view.kind === "routines" ? (
@@ -287,6 +303,7 @@ export function App() {
                 onNewAgent={() => setAgentDialog({ open: true })}
               />
             )}
+            </Suspense>
           </main>
         </>
       )}

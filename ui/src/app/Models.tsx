@@ -37,7 +37,8 @@ type Line = { kind: "row"; m: ModelChoice; sub: string } | { kind: "head"; text:
 export function ModelPicker({ value, also = [], onPick, only, height = 320, autoFocus, foot }: Props) {
   const providers = useEngine((s) => s.providers);
   const favs = useEngine((s) => s.settings.favoriteModels) ?? [];
-  const tools = useMemo(() => providers.filter((p) => p.available && p.adapter && p.models.length && (!only || only(p))), [providers, only]);
+  const showDemo = useEngine((s) => s.settings.showDemo === true);
+  const tools = useMemo(() => providers.filter((p) => p.available && p.adapter && p.models.length && (showDemo || p.id !== "demo") && (!only || only(p))), [providers, only, showDemo]);
   const models = useMemo(() => allModels(tools), [tools]);
   const start = value ? value.slice(0, value.indexOf(":")) : undefined;
   const [rail, setRail] = useState<string>(() => (favs.length && !value ? "fav" : (tools.find((p) => p.id === start)?.id ?? tools[0]?.id ?? "fav")));

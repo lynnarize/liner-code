@@ -4,9 +4,9 @@
   is never touched, and are kept under refs/liner/ so git's cleanup doesn't drop them.
   Ignored files (node_modules, build output) are left out, as git leaves them out.
 */
-import { rmSync } from "node:fs";
+import { copyFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { FileChange, FileDiff } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
 
@@ -23,13 +23,33 @@ export async function branchOf(cwd: string) {
   return r.code === 0 ? r.stdout.trim() : undefined;
 }
 
+/**
+  Starts the throwaway index from a copy of the repo's own, so `git add -A` reads only the files
+  whose size or time changed since git last looked. Started from HEAD alone it reads every file,
+  twice a turn: seconds on a large repo. A copy that marks files to be passed over
+  (assume-unchanged, skip-worktree, a sparse checkout) would hide their changes, so then it
+  starts from HEAD after all.
+*/
+async function seed(cwd: string, index: string, env: NodeJS.ProcessEnv, head: boolean) {
+  try {
+    const own = (await git(cwd, ["rev-parse", "--git-path", "index"])).stdout.trim();
+    copyFileSync(resolve(cwd, own), index);
+    const tags = await git(cwd, ["ls-files", "-v"], env);
+    if (tags.code === 0 && !/^(?:[a-z]|S) /m.test(tags.stdout)) return;
+  } catch {
+    // no index yet
+  }
+  rmSync(index, { force: true });
+  if (head) await git(cwd, ["read-tree", "HEAD"], env);
+}
+
 /** Captures the working tree as a commit under refs/liner/<name>. Returns the commit, or null. */
 export async function capture(cwd: string, name: string): Promise<string | null> {
   const index = join(tmpdir(), `liner-index-${process.pid}-${n++}`);
   const env = { GIT_INDEX_FILE: index };
   try {
     const head = await git(cwd, ["rev-parse", "--verify", "-q", "HEAD"]);
-    if (head.code === 0) await git(cwd, ["read-tree", "HEAD"], env);
+    await seed(cwd, index, env, head.code === 0);
     const add = await git(cwd, ["add", "-A", "--", "."], env);
     if (add.code !== 0) return null;
     const tree = (await git(cwd, ["write-tree"], env)).stdout.trim();

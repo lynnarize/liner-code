@@ -10,6 +10,7 @@
 */
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentProfile, Thread } from "@contracts";
+import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, Mark } from "./icons";
 import { agentOf, ago, bucketOf, clock, markOf, modelLabel, plural, statusLine, type Bucket } from "./model";
@@ -107,6 +108,17 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   const [now, setNow] = useState(Date.now());
   const scroller = useRef<HTMLDivElement>(null);
   const [plate, setPlate] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Six taps on your name within a few seconds show the Demo, or hide it again.
+  const showDemo = useEngine((s) => s.settings.showDemo === true);
+  const taps = useRef<number[]>([]);
+  const tapMe = () => {
+    const now = Date.now();
+    taps.current = [...taps.current.filter((t) => now - t < 3000), now];
+    if (taps.current.length < 6) return;
+    taps.current = [];
+    void rpc("settings.save", { showDemo: !showDemo });
+    toast(showDemo ? "The Demo is hidden" : "The Demo is on", { description: showDemo ? "Tap your name six times to bring it back." : "Demo run is in Who works on this, and the sample project on Home." });
+  };
 
   // Times and snoozes move on their own.
   useEffect(() => {
@@ -586,6 +598,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
               {menu.t.group && <Row title="Take it out of its group" onPick={() => (close(), void moveTo(menu.t, null))} />}
               <Sep />
               <Row title="Rename" end="F2" onPick={() => (close(), setRenaming(menu.t.id))} />
+              <Row title="Export as Markdown" note="Asks, plans, answers and diffs, saved in Downloads" onPick={() => (close(), exportSession(menu.t.id))} />
               <Row title="Archive" onPick={() => (close(), void rpc("thread.update", { id: menu.t.id, archived: true }).then(() => toast(`Archived ${menu.t.title}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: menu.t.id, archived: false }) } })))} />
             </>
           )
@@ -625,7 +638,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         </div>
       </section>
 
-      <div className="lc-sb-me">
+      <div className="lc-sb-me" onClick={(e) => (e.target as HTMLElement).closest("button") || tapMe()}>
         <span className="lc-me-av">{initials(window.__LINER__?.user ?? "You")}</span>
         <span className="lc-me-t">
           <span>{window.__LINER__?.user ?? "You"}</span>
@@ -639,6 +652,14 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         </button>
       </div>
     </nav>
+  );
+}
+
+/** Saves a session as Markdown in Downloads, and says where with a way to show it. */
+export function exportSession(threadId: string) {
+  void rpc("thread.export", { id: threadId }).then(
+    ({ path }) => toast.success("Saved as Markdown", { description: path.replace(/^\/Users\/[^/]+/, "~"), action: { label: "Show", onClick: () => bridge.reveal(path) } }),
+    (e: Error) => toast.error(e.message),
   );
 }
 

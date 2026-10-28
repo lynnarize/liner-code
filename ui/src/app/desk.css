@@ -173,12 +173,13 @@
     box-shadow: 0 0 0 4px color-mix(in oklab, var(--l-warn) 22%, transparent);
   }
 }
-/* Armed: a line under the words drains for as long as the second scroll counts. */
+/* Armed: a line under the words drains for as long as the second scroll counts. It starts where
+   the words do (the pill's 7px, the chevron's 22px, the 8px gap), clear of the chevron's disc. */
 .lc-desk-cue-bar {
   position: absolute;
   right: 14px;
-  bottom: 4px;
-  left: 14px;
+  bottom: 5px;
+  left: 37px;
   height: 2px;
   border-radius: 2px;
   background: var(--l-ink-4);

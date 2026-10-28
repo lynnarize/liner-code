@@ -13,11 +13,12 @@ import { checkpointsOf, plural, sumLines } from "./model";
 import { Kbd, Lines } from "./ui";
 import "./surfaces.css";
 
-export type SurfaceId = "changes" | "agents" | "files" | "terminal" | "browser" | "pr" | "linked" | "device" | "routines";
+export type SurfaceId = "session" | "changes" | "agents" | "files" | "terminal" | "browser" | "pr" | "linked" | "device" | "routines";
 /** A tab: a surface, or one routine run (`run:<id>`). */
 export type Tab = SurfaceId | `run:${string}`;
 
 export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { size?: number }) => ReactNode }[] = [
+  { id: "session", label: "Session", key: "I", icon: I.details },
   { id: "browser", label: "Browser", key: "B", icon: I.globe },
   { id: "terminal", label: "Terminal", key: "T", icon: I.terminal },
   { id: "files", label: "Files", key: "F", icon: I.file },
@@ -32,7 +33,7 @@ export const surfaceOf = (id: Tab) => SURFACES.find((s) => s.id === id);
 const short = (id: Tab) => (id === "linked" ? "Linked" : id.startsWith("run:") ? "Run" : (surfaceOf(id)?.label ?? id));
 
 export type PanelState = { open: boolean; tabs: Tab[]; tab: Tab; wide: boolean; dock: "side" | "bottom"; picking: boolean };
-export const initialPanel = (): PanelState => ({ open: false, tabs: ["agents", "changes"], tab: "changes", wide: false, dock: "side", picking: false });
+export const initialPanel = (): PanelState => ({ open: false, tabs: ["session", "agents", "changes"], tab: "changes", wide: false, dock: "side", picking: false });
 
 /** Each session keeps its own panel while the app is open. */
 const kept = new Map<string, PanelState>();
@@ -174,6 +175,7 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
     device: device ?? "Looking for simulators",
     routines: routines.length ? `${on} on${waits ? `, ${waits} ${waits === 1 ? "waits" : "wait"} for you` : ""}` : "None yet",
     agents: "Who works here, and on what",
+    session: "Where it runs, its context, what changed",
   };
 
   return (

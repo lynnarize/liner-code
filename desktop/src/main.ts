@@ -14,6 +14,7 @@ import { basename, join } from "node:path";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
 import { mac, type Frame, type Rect } from "./mac";
+import { StatusItem, type TrayStatus } from "./tray";
 import { bundlePath, install as installUpdate, staged } from "./update";
 
 app.setName("Liner Code");
@@ -232,6 +233,16 @@ function send(command: string) {
   win?.webContents.send("liner:command", command);
 }
 
+/** The engine's RPC, for the menu bar item's menu, with the same token the page uses. */
+async function engineRpc(method: string, params: Record<string, unknown>) {
+  const r = await fetch(`http://127.0.0.1:${engine.port}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": engine.token }, body: JSON.stringify({ method, params }) });
+  const body = (await r.json()) as { ok: boolean; result?: unknown; error?: string };
+  if (!body.ok) throw new Error(body.error ?? "The engine said no.");
+  return body.result;
+}
+
+const statusItem = new StatusItem({ open: (id) => (id ? send(`open:${id}`) : show()), quit: () => app.quit(), rpc: engineRpc });
+
 async function fail(message: string) {
   const r = dialog.showMessageBoxSync({ type: "error", message: "Liner Code can't start", detail: message, buttons: ["Quit", "Show the log"], defaultId: 0 });
   if (r === 1) await shell.openPath(logFile);
@@ -278,6 +289,8 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       else app.setBadgeCount(n);
       return;
     }
+    case "status":
+      return statusItem.set(p as unknown as TrayStatus);
     case "reveal":
       if (str(p.path)) shell.showItemInFolder(str(p.path));
       return;

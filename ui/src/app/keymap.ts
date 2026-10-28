@@ -13,6 +13,7 @@ import type { KeyBinding } from "@contracts";
 export type Command = { id: string; label: string; group: string; keys: string[]; when?: string };
 
 const SURFACE_KEYS: [string, string, string][] = [
+  ["session", "Session", "i"],
   ["browser", "Browser", "b"],
   ["terminal", "Terminal", "t"],
   ["files", "Files", "f"],

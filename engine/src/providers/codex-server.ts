@@ -187,16 +187,20 @@ export class CodexServerSession implements ProviderSession {
     const finished = new Promise<void>((resolve) => {
       this.done = resolve;
     });
-    const r = await this.server.request("turn/start", {
-      threadId: this.thread,
-      input: [{ type: "text", text, text_elements: [] }],
-      cwd: this.o.cwd,
-      approvalPolicy: p.approval,
-      sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
-      model: this.o.model && this.o.model !== "default" ? this.o.model : null,
-      effort,
-    });
-    this.turnId = String((r.turn as Json | undefined)?.id ?? "");
+    // `/compact` is the Codex CLI's own command, not words for the model: app-server compacts on request.
+    if (text.trim() === "/compact") await this.server.request("thread/compact/start", { threadId: this.thread });
+    else {
+      const r = await this.server.request("turn/start", {
+        threadId: this.thread,
+        input: [{ type: "text", text, text_elements: [] }],
+        cwd: this.o.cwd,
+        approvalPolicy: p.approval,
+        sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
+        model: this.o.model && this.o.model !== "default" ? this.o.model : null,
+        effort,
+      });
+      this.turnId = String((r.turn as Json | undefined)?.id ?? "");
+    }
     const stop = () => {
       if (this.thread && this.turnId) void this.server.request("turn/interrupt", { threadId: this.thread, turnId: this.turnId }).catch(() => {});
       this.done?.();
@@ -274,6 +278,11 @@ export class CodexServerSession implements ProviderSession {
         this.done?.();
         return;
       }
+      // A compaction asked for with /compact: done whether or not it ran as a turn of its own.
+      case "thread/compacted":
+        sink.notice("Codex compacted the conversation.");
+        this.done?.();
+        return;
     }
   }
 

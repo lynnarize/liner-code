@@ -286,9 +286,177 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-spick-foot {
-  margin: 18px 0 0;
+/* As specific as `.lc-spick > p`, so the subtitle's tight margin doesn't win here. */
+.lc-spick > .lc-spick-foot {
+  margin: 22px 0 0;
   font-size: 12px;
+  color: var(--l-ink-3);
+}
+
+/* ---------- Session: environment, context, changes ---------- */
+.lc-sinfo {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  padding: 2px 10px 16px;
+  overflow: auto;
+}
+.lc-sinfo-card {
+  display: grid;
+  gap: 2px;
+  padding: 2px 12px 10px;
+  border-radius: 14px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  animation: l-blur-in 360ms var(--l-ease-out) backwards;
+}
+.lc-sinfo-card .lc-pop-head {
+  padding-inline: 0;
+}
+.lc-sinfo-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 30px;
+  font-size: 13px;
+}
+.lc-sinfo-ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  color: var(--l-ink-3);
+}
+.lc-sinfo-v {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sinfo-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-sinfo-total b {
+  font-weight: 500;
+}
+.lc-sinfo-bar {
+  display: flex;
+  gap: 1px;
+  height: 6px;
+  margin: 6px 0 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--l-wash-2);
+}
+.lc-sinfo-bar i {
+  flex: none;
+  min-width: 2px;
+  transition: width 420ms var(--l-ease-out);
+}
+.lc-sinfo-parts {
+  display: grid;
+  gap: 1px;
+}
+.lc-sinfo-part {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto 46px;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.lc-sinfo-part > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sinfo-part > span:last-child {
+  text-align: right;
+}
+.lc-sinfo-part i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+.lc-sinfo-part[data-kind="free"] i {
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+}
+.lc-sinfo-part[data-kind="deferred"] {
+  color: var(--l-ink-3);
+}
+.lc-sinfo-part[data-kind="deferred"]:first-of-type,
+.lc-sinfo-part:not([data-kind="deferred"]) + .lc-sinfo-part[data-kind="deferred"] {
+  margin-top: 6px;
+}
+.lc-sinfo-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 30px;
+  margin-inline: -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-sinfo-file:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-sinfo-st {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-family: var(--l-font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.lc-sinfo-st[data-status="added"] {
+  color: var(--l-ok-text);
+}
+.lc-sinfo-st[data-status="deleted"] {
+  color: var(--l-danger-text);
+}
+.lc-sinfo-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sinfo-export {
+  justify-self: center;
+}
+.lc-sinfo-note {
+  margin: 4px 0 2px;
+  font-size: 12.5px;
+  line-height: 1.45;
   color: var(--l-ink-3);
 }
 
@@ -2247,6 +2415,11 @@
   padding: 0;
   font-size: inherit;
 }
+/* The carry-on list's popover sits in the sentence. */
+.lc-home-or .lc-pop {
+  display: inline-flex;
+  vertical-align: baseline;
+}
 
 /* The sidebar's group of places (New session, Routines, Search), groups and new-group field. */
 .lc-sb-go {
@@ -2479,6 +2652,27 @@
   width: 30px;
   height: 30px;
   border-radius: 9px;
+}
+.lc-rules {
+  display: grid;
+  gap: 8px;
+  padding: 6px;
+}
+.lc-rules-t {
+  height: 260px;
+  padding: 10px 12px;
+  resize: vertical;
+  font-size: 12.5px;
+  line-height: 19px;
+}
+.lc-rules-n {
+  margin: 0 2px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.lc-rules-f {
+  display: flex;
+  justify-content: flex-end;
 }
 .lc-st-setup {
   width: 220px;
@@ -2863,6 +3057,36 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
+}
+.lc-commit-files {
+  display: grid;
+  max-height: 168px;
+  overflow: auto;
+  padding: 2px 0;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+}
+.lc-commit-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lc-commit-file input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--l-accent);
+}
+.lc-commit-file .lc-mono {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-commit-m {
   height: 110px;

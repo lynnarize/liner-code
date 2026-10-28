@@ -20,7 +20,7 @@ import { query, type Options, type PermissionMode, type Query, type SDKMessage, 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Access, ModelInfo, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
+import type { Access, ContextPart, ModelInfo, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
 import { run, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { linerTitle } from "../agent-tools.ts";
@@ -415,6 +415,14 @@ class ClaudeSession implements ProviderSession {
     Object.assign(this.o, o);
     this.access = o.access;
     return true;
+  }
+
+  /** Claude Code's own /context, from the last answer's usage and its estimates (no token-count calls). */
+  async context() {
+    if (!this.q) return null;
+    const u = await this.q.getContextUsage({ detail: "summary" });
+    const parts = u.categories.filter((c) => c.tokens > 0).map((c): ContextPart => ({ name: c.name, tokens: c.tokens, kind: c.kind ?? (c.isDeferred ? "deferred" : "used") }));
+    return { used: u.totalTokens, max: u.maxTokens, parts };
   }
 
   close() {

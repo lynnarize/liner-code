@@ -23,6 +23,7 @@ import { RoutinesList, RunDetail } from "./Routines";
 import { openTab, PanelTabs, SurfacePicker, surfaceOf, type PanelState, type Tab } from "./Surfaces";
 // The terminal brings xterm.js; it loads the first time you open one.
 const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
+const SessionSurface = lazy(() => import("./SessionInfo").then((m) => ({ default: m.SessionSurface })));
 
 export function Panel({
   thread,
@@ -66,6 +67,12 @@ export function Panel({
     const visible = !state.picking && state.tab === t;
     if (t === "changes") return wideReview ? <Review thread={thread} items={items} focus={focus} onFocus={onFocus} onBack={() => onState({ ...state, wide: false })} /> : <Changes thread={thread} items={items} focus={focus} onFocus={onFocus} />;
     if (t === "agents") return <Agents thread={thread} items={items} />;
+    if (t === "session")
+      return (
+        <Suspense fallback={null}>
+          <SessionSurface thread={thread} items={items} visible={visible} onShowChange={(path) => (onFocus({ id: "all", path }), open("changes"))} />
+        </Suspense>
+      );
     if (t === "terminal")
       return (
         <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening a terminal</span></div>}>

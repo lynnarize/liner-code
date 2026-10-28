@@ -8,7 +8,7 @@
 */
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentProfile, ProviderInfo, RunMode, Settings as EngineSettings, Setup, Thread, WayStats } from "@contracts";
-import { familyOf, setupOf, setupsOf, splitModel, TRIAL } from "@contracts";
+import { familyOf, setupOf, setupsOf, SMALL_CHANGE, splitModel, TRIAL } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
@@ -1016,6 +1016,7 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
   const notes = useMemo(() => (s ? notesOf(s, cast) : []), [s, cast]);
   const checker = s ? checkerOf(s, all, providers) : null;
   const autoChecker = s ? checkerOf({ ...s, checks: { ...s.checks, by: "auto" } }, all, providers) : null;
+  const reviewSmall = useEngine((x) => x.settings.reviewSmall === true);
 
   const patch = (p: Partial<Setup>) => s && putSetups(setups.map((x) => (x.id === s.id ? { ...x, ...p } : x)));
   const setStage = (i: number, p: Partial<Setup["stages"][number]>) => s && patch({ stages: s.stages.map((st, k) => (k === i ? { ...st, ...p } : st)) });
@@ -1161,7 +1162,7 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
       node: <I.shield size={12} />,
       off: !checker,
       title: "Checks the diff",
-      note: checker ? `Reads the whole change${stages.length > 1 ? " from every stage" : ""} against five fixed criteria. Blocking notes go back to ${lastName}, up to ${s.checks.rounds === 1 ? "once" : `${s.checks.rounds} times`}.` : "Nobody: changes come straight to you.",
+      note: checker ? `Reads the whole change${stages.length > 1 ? " from every stage" : ""} against five fixed criteria. Blocking notes go back to ${lastName}, up to ${s.checks.rounds === 1 ? "once" : `${s.checks.rounds} times`}.${reviewSmall ? "" : ` Lets ${SMALL_CHANGE} lines or fewer, or docs alone, through.`}` : "Nobody: changes come straight to you.",
       sees: checker ? [1, "Your first ask and the diff"] : undefined,
       back: checker ? `back to ${lastName}` : undefined,
       control: (
@@ -1200,6 +1201,10 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
                 aria-label="Rounds before it's yours"
               />
               <span className="lc-quiet lc-ag-unit">{s.checks.rounds === 1 ? "round" : "rounds"}</span>
+              <label className="lc-ag-unit lc-ag-small" title="Small changes are a few lines, or only docs: every setup's Reviewer lets them through unless this is on.">
+                <input type="checkbox" checked={reviewSmall} onChange={(e) => void rpc("settings.save", { reviewSmall: e.target.checked }).catch(fail)} />
+                Small ones too
+              </label>
             </>
           )}
         </span>

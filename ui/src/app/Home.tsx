@@ -6,7 +6,7 @@
   update and the agent tools'.
 */
 import { useEffect, useMemo, useState } from "react";
-import type { Project } from "@contracts";
+import type { ImportableSession, Project } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
@@ -14,8 +14,8 @@ import { DeskPresence } from "./Desk";
 import { DeskStage } from "./DeskStage";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { setupOf } from "./model";
-import { Pop, Row, Sep, Kbd } from "./ui";
+import { ago, setupOf } from "./model";
+import { PanelHead, Pop, Row, Sep, Kbd } from "./ui";
 import { ProjectChooser } from "./Projects";
 import { HomeUpdates } from "./Updates";
 
@@ -36,7 +36,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     if (project?.agent === "demo") return { agent: "demo", lead: workStyle === "lead" ? "demo" : undefined, effort: "low", access };
     const firstModel = providers.find((p) => p.available && p.adapter && p.id !== "demo");
     const lead = agents.find((a) => /lead/i.test(a.role));
-    const coder = agents.find((a) => a.specialty === "coder") ?? agents.find((a) => a.id !== "demo");
+    const coder = agents.find((a) => a.specialty === "coder" && a.id !== "demo") ?? agents.find((a) => a.id !== "demo");
     // A project set to start with one agent (Settings → Projects): a lead brings its coder along.
     const own = agents.find((a) => a.id === project?.agent);
     if (own && /lead/i.test(own.role) && coder) return { agent: coder.id, lead: own.id, effort: "medium", access };
@@ -106,13 +106,13 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
             <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />?
           </h2>
           {project.name !== "Scratch" && (
-            <p className="lc-home-or">
+            <div className="lc-home-or">
               or{" "}
               <button type="button" className="lc-link l-focus" onClick={() => void scratch()}>
                 start without a project
               </button>
-              , in a scratch folder
-            </p>
+              , in a scratch folder, or <CarryOn project={project} onOpen={onStarted} />
+            </div>
           )}
           <div className="lc-home-compose">
             <Composer
@@ -158,9 +158,11 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               <I.folder size={14} />
               Add a folder
             </button>
-            <button type="button" className="lc-btn" data-kind="plain" onClick={() => void add("@sample")}>
-              Try the sample project
-            </button>
+            {engineSettings.showDemo && (
+              <button type="button" className="lc-btn" data-kind="plain" onClick={() => void add("@sample")}>
+                Try the sample project
+              </button>
+            )}
             <button type="button" className="lc-btn" data-kind="ghost" onClick={() => void scratch()}>
               Start without a project
             </button>
@@ -202,7 +204,40 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   );
 }
 
+/** Past Claude Code and Codex sessions in this project's folder: one press brings it in to carry on here. */
+function CarryOn({ project, onOpen }: { project: Project; onOpen: (threadId: string) => void }) {
+  return (
+    <Pop label="Carry on a session from Claude Code or Codex" align="center" width={440} triggerClass="lc-link l-focus" trigger={<>carry on one from Claude Code or Codex</>}>
+      {(close) => <CarryOnList project={project} onOpen={(id) => (close(), onOpen(id))} />}
+    </Pop>
+  );
+}
+
+/** Looked for each time the list opens, since the tools keep adding sessions. */
+function CarryOnList({ project, onOpen }: { project: Project; onOpen: (threadId: string) => void }) {
+  const [list, setList] = useState<ImportableSession[] | null>(null);
+  useEffect(() => void rpc("sessions.importable", { projectId: project.id }).then(setList, () => setList([])), [project.id]);
+  const bring = (s: ImportableSession) =>
+    void rpc("sessions.import", { projectId: project.id, tool: s.tool, id: s.id }).then(
+      (t) => onOpen(t.id),
+      (e: Error) => toast.error(e.message),
+    );
+  return (
+    <>
+      <PanelHead>Sessions in {project.name}</PanelHead>
+      {list === null ? (
+        <Row title="Looking" note="Claude Code's and Codex's own history for this folder" />
+      ) : list.length ? (
+        list.slice(0, 20).map((s) => <Row key={`${s.tool}:${s.id}`} title={s.title} note={`${s.tool === "claude" ? "Claude Code" : "Codex"} · ${ago(s.at)}`} onPick={() => bring(s)} />)
+      ) : (
+        <Row title="None here" note="Neither Claude Code nor Codex has a session in this folder that isn't here already." />
+      )}
+    </>
+  );
+}
+
 function ProjectPick({ project, projects, onPick, onSample }: { project: Project; projects: Project[]; onPick: (id: string) => void; onSample: () => void }) {
+  const showDemo = useEngine((s) => s.settings.showDemo === true);
   return (
     <Pop label={`Project: ${project.name}. Change it`} align="center" width={420} triggerClass="lc-proj" trigger={<span>{project.name}</span>}>
       {(close) => (
@@ -210,6 +245,7 @@ function ProjectPick({ project, projects, onPick, onSample }: { project: Project
           value={project.id}
           onPick={(p) => (onPick(p.id), close())}
           extra={
+            showDemo &&
             !projects.some((p) => p.agent === "demo") && (
               <>
                 <Sep />

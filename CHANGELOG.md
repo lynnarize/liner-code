@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **Session tab** (⌘⇧I, first in the panel): where the session runs (Mac, folder, branch, tool and
+  model, access), what fills its context (Claude Code's own breakdown; the last turn's total for
+  the rest) with **Compact**, and the changes still to commit, each opening in the diff.
+- **Commit some of the files.** The commit form lists them; untick what should wait for a later
+  commit. Undoing a turn leaves its committed files alone.
+- **Export a session as Markdown** (the session's menu, or the Session tab): asks, plans, answers,
+  findings and each turn's diff, saved in Downloads.
+- **Carry on a Claude Code or Codex session** from Home: one from the project's folder comes in
+  with its timeline, and the next turn resumes the tool's own session.
+- **Rules for every agent** (Settings › Projects): one text in AGENTS.md, with CLAUDE.md pointing
+  to it, so Claude Code, Codex, OpenCode and Cursor read the same rules.
+- **A spending cap per session** (Settings › General): a session or routine run that spends it
+  stops and says so; your next message lets it go on for another cap's worth. Claude Code reports
+  cost; other tools can't be held to it.
+- **The menu bar**: a ring counts what works and what needs you; its menu opens a session or
+  allows a request waiting in one. Settings › Notifications turns it off.
+- **The Mac stays awake** while a session or routine run works (no idle sleep). Settings › General.
+
+### Changed
+
+- The Demo is hidden: tap your name at the foot of the sidebar six times to show it, six more to
+  hide it.
+- The Reviewer lets small changes through (6 lines or fewer, or docs alone); "Small ones too" on
+  its row in Agentic features has it read them.
+- Snapshots start from the repository's own index, so they only read changed files: a 30,000-file
+  repository went from about 2 s to under 0.1 s per snapshot.
+- Settings, Setup, Usage and Compare load when you first open them; the app's main script is a
+  fifth smaller.
+
+### Fixed
+
+- The Desk cue's draining line runs under its words, clear of the chevron.
+- The note under Open a surface has its own spacing again.
+
 ## 0.1.1 (alpha), 2026-10-28
 
 **Update from 0.1.0 if you have it.** Liner Code does it by itself (Restart to update), or

@@ -9,7 +9,7 @@
 */
 import { spawn } from "node:child_process";
 import type { Access, Effort, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, Settings, Thread, Usage } from "../../contracts/src/index.ts";
-import { emptyUsage, familyOf, PR_TEST_TOOL, splitModel } from "../../contracts/src/index.ts";
+import { emptyUsage, familyOf, PR_TEST_TOOL, smallChange, splitModel } from "../../contracts/src/index.ts";
 import { capture, changes, isRepo } from "./checkpoints.ts";
 import { run } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
@@ -84,6 +84,14 @@ export class Runtime {
     return { agent, provider, model, effort, access: t.access };
   }
 
+  /** What the open session says about itself for the Session surface: what fills its context. */
+  async inspect(threadId: string) {
+    const t = this.store.thread(threadId);
+    const session = this.live.get(`${t.id}:${t.agent}`)?.session;
+    const context = (await session?.context?.().catch(() => null)) ?? null;
+    return { ...this.resolve(t), live: Boolean(session), context };
+  }
+
   envFor(provider: ProviderId) {
     const env = { ...this.env };
     if (provider === "claude" && this.store.settings.claudeBilling === "key" && this.keys.get("anthropic")) env.ANTHROPIC_API_KEY = this.keys.get("anthropic");
@@ -155,6 +163,12 @@ export class Runtime {
       return;
     }
     const t = store.thread(threadId);
+    // Past its spending cap: your message is the go-ahead for another cap's worth.
+    const cap = store.settings.capUsd ?? 0;
+    if (cap > 0 && t.usage.costUsd >= (t.spendLimit ?? cap)) {
+      store.patchThread(threadId, { spendLimit: t.usage.costUsd + cap });
+      store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `Going on: another $${cap} for this session before it stops again.` });
+    }
     if (!anchor && isPrAsk(text)) return this.openPr(threadId, text);
     // With a lead, your message goes to the lead, who answers or plans; otherwise straight to the agent.
     // A question about lines in the diff goes to whoever wrote them.
@@ -424,6 +438,15 @@ export class Runtime {
     const cp = [...store.timeline(threadId)].reverse().find((x) => x.kind === "checkpoint" && x.turn <= turn && !x.reverted);
     if (cp?.kind !== "checkpoint" || !cp.from || !cp.to) return;
     const cwd = t.worktree?.path ?? store.project(t.projectId).path;
+    // A few lines, or only docs, aren't worth a second model's full read (unless you ask for it).
+    // A fix for its own findings is always read again.
+    if (round === 1 && !store.settings.reviewSmall) {
+      const numstat = (await run("git", ["diff", "--numstat", since ?? cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
+      if (smallChange(numstat)) {
+        store.putItem(threadId, { kind: "notice", id: uid("it"), turn: cp.turn, at: Date.now(), text: "A small change, so the Reviewer let it through. Settings › Agentic features has it read these too." });
+        return;
+      }
+    }
     // After several stages, the whole change from before the first one.
     const diff = (await run("git", ["diff", "--no-color", "-U3", since ?? cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
     const ask = this.askOf(threadId);
@@ -505,6 +528,7 @@ export class Runtime {
         const cur = { ...emptyUsage(), ...t.usage };
         for (const k of ["inputTokens", "outputTokens", "cacheReadTokens", "costUsd"] as const) if (u[k] !== undefined) cur[k] = total ? before[k] + (u[k] as number) : cur[k] + (u[k] as number);
         this.store.patchThread(threadId, { usage: cur });
+        this.holdToCap(threadId);
       },
       session: () => {},
       notice: () => {},
@@ -539,6 +563,20 @@ export class Runtime {
   stop(threadId: string) {
     this.turns.get(threadId)?.abort.abort();
     this.prStops.get(threadId)?.abort();
+  }
+
+  /**
+    The spending cap (Settings › General): a session, or a routine run's, that has spent its cap
+    stops where it is and says so; your next message lets it go on for another cap's worth.
+  */
+  private holdToCap(threadId: string) {
+    const cap = this.store.settings.capUsd ?? 0;
+    const t = this.store.thread(threadId);
+    const turn = this.turns.get(threadId);
+    if (!cap || !turn || turn.abort.signal.aborted || t.usage.costUsd < (t.spendLimit ?? cap)) return;
+    this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `Stopped: this session has spent $${t.usage.costUsd.toFixed(2)}, past its $${(t.spendLimit ?? cap).toFixed(2)} cap. Send a message to go on.` });
+    this.store.emit({ type: "notify", threadId, kind: "waiting", title: "A session reached its spending cap", body: `${t.title}: $${t.usage.costUsd.toFixed(2)} spent` });
+    this.stop(threadId);
   }
 
   answer(threadId: string, itemId: string, allow: boolean, reason?: string, always?: boolean) {
@@ -854,6 +892,7 @@ export class Runtime {
         if (u.contextTokens !== undefined) cur.contextTokens = u.contextTokens;
         if (u.contextWindow !== undefined) cur.contextWindow = u.contextWindow;
         store.patchThread(threadId, { usage: cur });
+        this.holdToCap(threadId);
       },
       session: (id) => {
         const t = store.thread(threadId);

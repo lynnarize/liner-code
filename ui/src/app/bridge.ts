@@ -54,6 +54,10 @@ export const bridge = {
   badge(count: number) {
     if (isNative()) void call("badge", { count }).catch(() => {});
   },
+  /** The menu bar item: the sessions that work and the ones that need you. */
+  status(s: { show: boolean; working: { id: string; title: string }[]; needs: { id: string; title: string; waiting: boolean }[] }) {
+    if (isNative()) void call("status", s).catch(() => {});
+  },
   reveal(path: string) {
     if (isNative()) void call("reveal", { path }).catch(() => {});
   },

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import type { AgentProfile, ProviderInfo } from "../../contracts/src/index.ts";
-import { setupsOf } from "../../contracts/src/index.ts";
+import { setupsOf, smallChange } from "../../contracts/src/index.ts";
 import { claudeTeam, parseFindings, reviewerFor, subagentName } from "../src/review.ts";
 import { describeTrigger, fill, nextRun, sameSecret } from "../src/routines.ts";
 import { Proxies } from "../src/proxy.ts";
@@ -16,6 +16,7 @@ import { clean, isPrAsk } from "../src/runtime.ts";
 import { testCommand, testSummary } from "../src/prflow.ts";
 import { Store } from "../src/store.ts";
 import { run, secretsFrom, takeSecrets } from "../src/exec.ts";
+import { sessionMarkdown } from "../src/export.ts";
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -395,4 +396,108 @@ test("setups: your old team becomes the first; agents that are gone drop out; mo
   assert.deepEqual([saved[0].crew, saved[0].checks], [[], { by: null, rounds: 3 }]);
   // None left that works: your coder alone comes back, so there's always a way to start.
   assert.deepEqual(setupsOf({ setups: [{ id: "x", name: "Old", lead: null, stages: [{ who: "gone", job: "" }], crew: [], checks: { by: "auto", rounds: 2 } }] }, all).map((x) => x.id), ["mine"]);
+});
+
+test("reviewer: a few lines or docs alone are small; code past the line, or a binary, isn't", () => {
+  assert.ok(smallChange(""));
+  assert.ok(smallChange("3\t2\tsrc/a.ts\n1\t0\tsrc/b.ts\n"));
+  assert.ok(!smallChange("5\t2\tsrc/a.ts\n"));
+  assert.ok(smallChange("120\t40\tREADME.md\n30\t0\tdocs/guide/setup.ts\n"));
+  assert.ok(!smallChange("120\t40\tREADME.md\n1\t0\tsrc/a.ts\n"));
+  assert.ok(!smallChange("-\t-\tlogo.png\n"));
+});
+
+test("export: a session reads as Markdown, with its asks, answers, tools, findings and diffs", async () => {
+  const home = mkdtempSync(join(tmpdir(), "lc-home-"));
+  const now = Date.now();
+  const thread = { id: "t", projectId: "p", title: "Fix the tide table", agent: "@claude:claude-opus-5-5", status: "done", access: "ask", turns: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 }, createdAt: now, updatedAt: now };
+  writeFileSync(join(home, "state.json"), JSON.stringify({ settings: { onboarded: true }, projects: [{ id: "p", name: "tidewater", path: home, git: true }], threads: [thread] }));
+  new Store(home);
+  const at = (o: Record<string, unknown>) => JSON.stringify({ turn: 1, at: now, ...o });
+  writeFileSync(
+    join(home, "threads", "t.jsonl"),
+    [
+      at({ kind: "user", id: "u", text: "Why is high tide off by an hour?" }),
+      at({ kind: "turn", id: "tn", agent: "@claude:claude-opus-5-5", model: "claude-opus-5-5", status: "done" }),
+      at({ kind: "text", id: "x", text: "Daylight saving wasn't applied.", streaming: false }),
+      at({ kind: "tool", id: "tl", tool: "Bash", toolKind: "execute", title: "Run npm test", status: "done" }),
+      at({ kind: "checkpoint", id: "c", files: [{ path: "src/tide.ts", status: "modified", added: 2, removed: 1 }], from: "a1", to: "b2" }),
+      at({ kind: "review", id: "r", reviewer: "codex:x", round: 1, status: "passed", findings: [{ file: "src/tide.ts", line: 4, severity: "note", note: "Name the offset" }] }),
+    ].join("\n") + "\n",
+  );
+  const md = await sessionMarkdown(new Store(home), "t", async (from, to) => `diff --git a/src/tide.ts b/src/tide.ts\n-old ${from}\n+new ${to} \`\`\`\n`);
+  assert.match(md, /^# Fix the tide table\n/);
+  assert.match(md, /## You\n\nWhy is high tide off by an hour\?/);
+  assert.match(md, /Daylight saving wasn't applied\.\n\n- Run npm test/);
+  assert.match(md, /### Changes in turn 1\n\n- src\/tide\.ts \(modified, \+2 −1\)/);
+  // A diff with ``` in it gets a longer fence, so it stays one block.
+  assert.match(md, /````diff\ndiff --git[\s\S]*\+new b2 ```\n````/);
+  assert.match(md, /### The Reviewer, round 1: passed\n\n- \*\*src\/tide\.ts:4\*\* \(note\) Name the offset/);
+});
+
+test("rules: one text in AGENTS.md, with CLAUDE.md importing it, reads as linked", async () => {
+  const home = mkdtempSync(join(tmpdir(), "lc-home-"));
+  const root = mkdtempSync(join(tmpdir(), "lc-proj-"));
+  writeFileSync(join(root, "CLAUDE.md"), "Use pnpm.\n");
+  writeFileSync(join(home, "state.json"), JSON.stringify({ settings: { onboarded: true }, projects: [{ id: "p", name: "proj", path: root, git: false }] }));
+  const { createApi } = await import("../src/api.ts");
+  const { Runtime } = await import("../src/runtime.ts");
+  const store = new Store(home);
+  const api = createApi(store, new Runtime(store, { PATH: "/usr/bin:/bin" }), { PATH: "/usr/bin:/bin" }, { routines: {}, terms: {}, logs: {}, proxies: {} } as never);
+  assert.deepEqual(await api.call("project.rules", { id: "p" }), { claude: "Use pnpm.\n", agents: undefined, linked: false });
+  assert.deepEqual(await api.call("project.rules.save", { id: "p", text: "Use pnpm.\nRun the tests before you finish." }), { claude: "@AGENTS.md\n", agents: "Use pnpm.\nRun the tests before you finish.\n", linked: true });
+});
+
+test("imports: Claude Code and Codex sessions in a folder come in as timelines that resume them", async () => {
+  const { importable, transcript } = await import("../src/imports.ts");
+  const cwd = mkdtempSync(join(tmpdir(), "lc-proj-"));
+  const claude = mkdtempSync(join(tmpdir(), "lc-claude-"));
+  const codex = mkdtempSync(join(tmpdir(), "lc-codex-"));
+  const env = { CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex };
+  const real = (await import("node:fs")).realpathSync(cwd);
+  const cdir = join(claude, "projects", real.replace(/[^a-zA-Z0-9]/g, "-"));
+  const { mkdirSync } = await import("node:fs");
+  mkdirSync(cdir, { recursive: true });
+  const ts = "2026-10-01T10:00:00.000Z";
+  const line = (o: Record<string, unknown>) => JSON.stringify({ timestamp: ts, cwd: real, sessionId: "s1", ...o });
+  writeFileSync(
+    join(cdir, "s1.jsonl"),
+    [
+      line({ type: "user", isMeta: true, message: { role: "user", content: "<local-command-caveat>ignore</local-command-caveat>" } }),
+      line({ type: "user", message: { role: "user", content: "Fix the tide offset" } }),
+      line({ type: "assistant", message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "thinking", thinking: "hm" }, { type: "tool_use", name: "Edit", input: { file_path: join(real, "src/tide.ts") } }] } }),
+      line({ type: "user", message: { role: "user", content: [{ type: "tool_result", content: "ok" }] } }),
+      line({ type: "assistant", isSidechain: true, message: { role: "assistant", content: [{ type: "text", text: "a subagent's words" }] } }),
+      line({ type: "assistant", message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "Fixed: DST now applies." }] } }),
+      JSON.stringify({ type: "custom-title", customTitle: "Tide offset", sessionId: "s1" }),
+    ].join("\n") + "\n",
+  );
+  const rdir = join(codex, "sessions", "2026", "10", "02");
+  mkdirSync(rdir, { recursive: true });
+  const item = (payload: Record<string, unknown>, type = "response_item") => JSON.stringify({ timestamp: ts, type, payload });
+  writeFileSync(
+    join(rdir, "rollout-2026-10-02-c1.jsonl"),
+    [
+      item({ id: "c1", cwd: real }, "session_meta"),
+      item({ model: "gpt-5.6-sol" }, "turn_context"),
+      item({ type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>x</environment_context>" }] }),
+      item({ type: "message", role: "user", content: [{ type: "input_text", text: "Add a test for leap years" }] }),
+      item({ type: "function_call", name: "shell", arguments: JSON.stringify({ command: ["bash", "-lc", "npm test"] }) }),
+      item({ type: "message", role: "assistant", content: [{ type: "output_text", text: "Added and passing." }] }),
+    ].join("\n") + "\n",
+  );
+  // Another folder's Codex session stays out.
+  writeFileSync(join(rdir, "rollout-2026-10-02-c2.jsonl"), item({ id: "c2", cwd: "/elsewhere" }, "session_meta") + "\n");
+
+  const found = importable(cwd, env, new Set());
+  assert.deepEqual(found.map((s) => [s.tool, s.id, s.title]).sort(), [["claude", "s1", "Tide offset"], ["codex", "c1", "Add a test for leap years"]]);
+  assert.deepEqual(importable(cwd, env, new Set(["claude:s1"])).map((s) => s.id), ["c1"], "one already here isn't offered again");
+
+  const c = transcript("claude", "s1", cwd, env);
+  assert.equal(c.turns, 1);
+  assert.equal(c.model, "claude-opus-5-5");
+  assert.deepEqual(c.items.map((i) => (i.kind === "text" || i.kind === "user" ? `${i.kind}:${i.text}` : i.kind === "tool" ? `tool:${i.title}` : i.kind)), ["user:Fix the tide offset", "turn", "tool:Edit src/tide.ts", "text:Fixed: DST now applies."]);
+  const x = transcript("codex", "c1", cwd, env);
+  assert.equal(x.model, "gpt-5.6-sol");
+  assert.deepEqual(x.items.map((i) => (i.kind === "text" || i.kind === "user" ? `${i.kind}:${i.text}` : i.kind === "tool" ? `tool:${i.title}` : i.kind)), ["user:Add a test for leap years", "turn", "tool:Run npm test", "text:Added and passing."]);
 });

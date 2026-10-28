@@ -25,7 +25,7 @@ const TOOLS: { id: ProviderInfo["id"]; tile: string; name: string; beta?: boolea
 /** The API key that stands in for a tool's own sign-in. */
 const KEY_OF: Partial<Record<string, string>> = { claude: "anthropic", codex: "openai" };
 const KEYS: { id: string; tile: string; name: string; note: string; live: boolean }[] = [
-  { id: "anthropic", tile: "A", name: "Anthropic", note: "Opus, Sonnet, Haiku, through Claude Code. Anthropic asks apps built on its Agent SDK to use a key", live: true },
+  { id: "anthropic", tile: "A", name: "Anthropic", note: "Claude models, as Anthropic asks apps to use them", live: true },
   { id: "openai", tile: "O", name: "OpenAI", note: "GPT models, through Codex", live: true },
   { id: "google", tile: "G", name: "Google", note: "Gemini models", live: false },
   { id: "xai", tile: "X", name: "xAI", note: "Grok models", live: false },
@@ -272,7 +272,7 @@ function Models({ onNext }: { onNext: () => void }) {
       </p>
       <div className="lc-step-foot">
         <span className="lc-quiet">
-          {ready || keys.length ? `${plural(ready, "plan")} and ${plural(keys.length, "key")} ${ready + keys.length === 1 ? "is" : "are"} ready.` : "Nothing is connected yet: the sample project works without any account."} Add more any time in Settings.
+          {ready || keys.length ? `${plural(ready, "tool")} and ${plural(keys.length, "key")} ${ready + keys.length === 1 ? "is" : "are"} ready.` : "Nothing is connected yet: the sample project works without any account."} Add more any time in Settings.
         </span>
         <span className="lc-grow" />
         <button type="button" className="lc-btn" data-kind="accent" data-size="lg" onClick={onNext}>

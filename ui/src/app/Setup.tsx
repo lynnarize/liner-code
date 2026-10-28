@@ -5,7 +5,8 @@
   projects you work in, and pick how you'll work (optional).
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { FoundRepo, ProviderInfo } from "@contracts";
+import type { FoundRepo, ProviderInfo, SystemCheck } from "@contracts";
+import { Alert } from "@liner/components/alert/alert";
 import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { bridge } from "./bridge";
@@ -13,16 +14,18 @@ import { rpc, useEngine } from "./engine";
 import { Glyph, I, Mark } from "./icons";
 import { plural, since } from "./model";
 
-const TOOLS: { id: ProviderInfo["id"]; tile: string; name: string }[] = [
+const TOOLS: { id: ProviderInfo["id"]; tile: string; name: string; beta?: boolean }[] = [
   { id: "claude", tile: "CC", name: "Claude Code" },
   { id: "codex", tile: "CX", name: "Codex CLI" },
   { id: "opencode", tile: "OC", name: "OpenCode" },
   { id: "hermes", tile: "HE", name: "Hermes" },
-  { id: "cursor", tile: "CU", name: "Cursor" },
-  { id: "grok", tile: "GR", name: "Grok CLI" },
+  { id: "cursor", tile: "CU", name: "Cursor", beta: true },
+  { id: "grok", tile: "GR", name: "Grok Build", beta: true },
 ];
+/** The API key that stands in for a tool's own sign-in. */
+const KEY_OF: Partial<Record<string, string>> = { claude: "anthropic", codex: "openai" };
 const KEYS: { id: string; tile: string; name: string; note: string; live: boolean }[] = [
-  { id: "anthropic", tile: "A", name: "Anthropic", note: "Opus, Sonnet, Haiku, through Claude Code", live: true },
+  { id: "anthropic", tile: "A", name: "Anthropic", note: "Opus, Sonnet, Haiku, through Claude Code. Anthropic asks apps built on its Agent SDK to use a key", live: true },
   { id: "openai", tile: "O", name: "OpenAI", note: "GPT models, through Codex", live: true },
   { id: "google", tile: "G", name: "Google", note: "Gemini models", live: false },
   { id: "xai", tile: "X", name: "xAI", note: "Grok models", live: false },
@@ -105,6 +108,9 @@ function Models({ onNext }: { onNext: () => void }) {
   const [typing, setTyping] = useState<string | null>(null);
   const [value, setValue] = useState("");
   const [checking, setChecking] = useState(false);
+  const [mac, setMac] = useState<SystemCheck | null>(null);
+  const checkMac = () => void rpc("system.check", {}).then(setMac, () => {});
+  useEffect(checkMac, []);
   const ready = TOOLS.filter((t) => providers.find((p) => p.id === t.id && p.available && p.adapter)).length;
 
   const save = async (id: string) => {
@@ -125,11 +131,29 @@ function Models({ onNext }: { onNext: () => void }) {
   return (
     <section className="lc-step" aria-label="Connect your models">
       <h1>Connect your models</h1>
-      <p className="lc-step-sub">Bring the plans you already pay for, or API keys. Liner Code doesn't resell tokens: every call is billed to your own account.</p>
+      <p className="lc-step-sub">Use the coding tools you already have, each signed in its own way, or API keys. Liner Code never sees a sign-in and doesn't resell tokens: every call is billed to your own account.</p>
+      {mac && mac.install && (
+        <Alert
+          tone="warning"
+          title="This Mac needs Apple's command line tools"
+          actions={
+            <>
+              <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal(mac.install!)}>
+                Install them
+              </button>
+              <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={checkMac}>
+                Look again
+              </button>
+            </>
+          }
+        >
+          {[!mac.git && "Git (for undo, diffs and worktrees)", !mac.python && "Python (for the Terminal)"].filter(Boolean).join(" and ")} come with them. Apple's installer takes a few minutes; then look again.
+        </Alert>
+      )}
       <div className="lc-grp">
         <div className="lc-grp-h">
-          <b>Plans you already have</b>
-          <span>Each tool signs in on its own; Liner Code works within your plan's limits</span>
+          <b>Tools on this Mac</b>
+          <span>Each signs in through its own login; Liner Code only asks whether it is</span>
           <span className="lc-grow" />
           <button
             type="button"
@@ -154,11 +178,18 @@ function Models({ onNext }: { onNext: () => void }) {
                 <div key={t.id} style={{ ["--i" as string]: i }}>
                   <span className="lc-tile-av">{t.tile}</span>
                   <span>
-                    <b>{t.name}</b>
+                    <b>
+                      {t.name}
+                      {t.beta && <small className="lc-quiet"> · Beta</small>}
+                    </b>
                     <code>{p?.login || "—"}</code>
                   </span>
                   {!p ? (
                     <span className="lc-quiet">…</span>
+                  ) : p.available && p.adapter && p.signedIn === false && !keys.includes(KEY_OF[t.id] ?? "") ? (
+                    <button type="button" className="lc-btn" data-kind="plain" data-size="sm" title={`${p.login}, in Terminal`} onClick={() => bridge.runInTerminal(p.login)}>
+                      Sign in
+                    </button>
                   ) : p.available && p.adapter ? (
                     <span className="lc-ready" title={p.version}>
                       <I.check size={12} />
@@ -228,7 +259,7 @@ function Models({ onNext }: { onNext: () => void }) {
       <p className="lc-sure">
         <span>
           <I.check size={12} />
-          No tokens resold, no quota caps
+          No tokens resold, nothing in between
         </span>
         <span>
           <I.check size={12} />

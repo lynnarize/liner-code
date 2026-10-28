@@ -5,12 +5,12 @@
   keys kept encrypted, Terminal and Finder. The page asks for these over one IPC channel
   ("liner") with the same methods it sent the Swift shell; preload.ts is its side of it.
 */
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, screen, shell, systemPreferences, type MenuItemConstructorOptions, type Rectangle } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, screen, session, shell, systemPreferences, type MenuItemConstructorOptions, type Rectangle } from "electron";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Engine, loginEnvironment, logFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
 import { mac, type Frame, type Rect } from "./mac";
@@ -113,6 +113,23 @@ function lights() {
   return lastLights;
 }
 const syncLights = () => win && !win.isDestroyed() && win.webContents.send("liner:lights", lights());
+
+// Electron says yes to every permission a page asks for unless told otherwise. The app's own page
+// gets the two it uses (the clipboard for Copy, notifications); every other page and permission,
+// the Browser surface's dev servers included, gets no.
+let appOrigin = "";
+const ALLOWED = new Set(["clipboard-sanitized-write", "notifications"]);
+const mayAsk = (permission: string, url: string) => {
+  try {
+    return ALLOWED.has(permission) && new URL(url).origin === appOrigin;
+  } catch {
+    return false;
+  }
+};
+function guardPermissions() {
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, done, details) => done(mayAsk(permission, details.requestingUrl)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => mayAsk(permission, origin));
+}
 
 const isLocal = (url: string) => {
   try {
@@ -414,8 +431,53 @@ function buildMenu() {
       ],
     },
     { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: [
+        { label: "Report a Problem…", click: () => void reportProblem().catch((e: unknown) => dialog.showErrorBox("Liner Code couldn't make the report", e instanceof Error ? e.message : String(e))) },
+        { label: "Liner Code on GitHub", enabled: Boolean(releasesRepo()), click: () => void shell.openExternal(`https://github.com/${releasesRepo()}`) },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ---------- Report a problem ----------
+
+/** "owner/name": where the app's releases come from (the build writes it into the app's package.json). */
+function releasesRepo(): string | undefined {
+  try {
+    const root = app.isPackaged ? app.getAppPath() : join(__dirname, "../..");
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { liner?: { releases?: string }; repository?: string | { url?: string } };
+    const named = pkg.liner?.releases || (typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url) || "";
+    return /^(?:[\w.-]+\/[\w.-]+)$/.exec(named)?.[0] ?? /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(named)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+/** The engine's log and the versions, zipped into Downloads and shown in Finder; then a new issue on GitHub. Nothing is sent by itself. */
+async function reportProblem() {
+  const { response } = await dialog.showMessageBox({
+    type: "info",
+    message: "Report a problem",
+    detail: "Liner Code puts its engine log and the versions in a zip in your Downloads folder, shows it, and opens a new issue on GitHub. Nothing is sent until you attach it. The log can hold folder names and parts of what the agents did, so look at it first.",
+    buttons: ["Make the Report", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) return;
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  const dir = join(tmpdir(), `Liner Code report ${stamp}`);
+  mkdirSync(dir, { recursive: true });
+  const versions = [`Liner Code ${app.getVersion()}`, `Electron ${process.versions.electron}`, `${isMac ? "macOS" : process.platform} ${process.getSystemVersion()} (${process.arch})`];
+  writeFileSync(join(dir, "versions.txt"), `${versions.join("\n")}\n`);
+  if (existsSync(logFile)) copyFileSync(logFile, join(dir, "engine.log"));
+  const zip = join(app.getPath("downloads"), `${basename(dir)}.zip`);
+  await new Promise<void>((done, fail) => execFile("ditto", ["-c", "-k", "--keepParent", dir, zip], (e) => (e ? fail(e) : done())));
+  shell.showItemInFolder(zip);
+  const repo = releasesRepo();
+  if (repo) void shell.openExternal(`https://github.com/${repo}/issues/new?template=bug.yml&version=${encodeURIComponent(app.getVersion())}&macos=${encodeURIComponent(process.getSystemVersion())}`);
 }
 
 // ---------- Launch ----------
@@ -445,6 +507,7 @@ nativeTheme.on("updated", () => {
 void app.whenReady().then(async () => {
   loadPrefs();
   material = prefs.material ?? "solid";
+  guardPermissions();
   buildMenu();
   createWindow();
   mac?.quietWritingBadge();
@@ -454,6 +517,7 @@ void app.whenReady().then(async () => {
 
   if (devUrl) {
     boot.token = process.env.LINER_TOKEN || "liner-dev";
+    appOrigin = new URL(devUrl).origin;
     void win?.loadURL(devUrl);
     return;
   }
@@ -470,7 +534,8 @@ void app.whenReady().then(async () => {
       savePrefs();
     }
     boot.token = engine.token;
-    void win?.loadURL(`http://127.0.0.1:${port}/`);
+    appOrigin = `http://127.0.0.1:${port}`;
+    void win?.loadURL(`${appOrigin}/`);
   };
   engine.onFail = (m) => void fail(m);
   engine.port = prefs.port ?? 0;

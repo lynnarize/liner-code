@@ -55,6 +55,9 @@ export type ModelInfo = {
   custom?: boolean;
 };
 
+/** On a Mac without Apple's command line tools, /usr/bin/git and /usr/bin/python3 are stubs that pop an installer. */
+export type SystemCheck = { git: boolean; python: boolean; clt: boolean; install?: string };
+
 export type ProviderInfo = {
   id: ProviderId;
   label: string;
@@ -64,6 +67,8 @@ export type ProviderInfo = {
   adapter: boolean;
   /** The command that signs it in, shown on the setup screen. */
   login: string;
+  /** What the tool's own status command says (`claude auth status`, `codex login status`); unset when it has none. */
+  signedIn?: boolean;
   version?: string;
   /** Why it is unavailable, or how it is signed in. */
   detail?: string;
@@ -696,6 +701,8 @@ export type Rpc = {
   "git.switch": [{ threadId: string; branch: string; create?: boolean }, { branch: string }];
   /** The editors and terminals on this Mac that can open a folder, by bundle id. */
   "apps.editors": [Record<string, never>, { id: string; name: string; kind: "editor" | "terminal" }[]];
+  /** What Liner Code needs from the Mac itself: Git (snapshots, undo, worktrees) and Python (the Terminal's pty). */
+  "system.check": [Record<string, never>, SystemCheck];
   /** Opens a folder in one of them. */
   "apps.open": [{ path: string; app: string }, null];
   /** Pictures for behind the session: the landscapes this Mac keeps, and whether you've added one of your own. */

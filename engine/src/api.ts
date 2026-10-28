@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSyn
 import { basename, join, relative, resolve } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { setupOf, setupsOf, splitModel, TRIAL } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, Effort, FoundRepo, ModelInfo, SkillInfo, ProviderInfo, Rpc, RpcMethod, Snapshot, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, Effort, FoundRepo, ModelInfo, SkillInfo, ProviderInfo, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, restore } from "./checkpoints.ts";
 import { run, which } from "./exec.ts";
@@ -27,6 +27,19 @@ import { Updater } from "./updates.ts";
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
 
 const git = (cwd: string, args: string[]) => run("git", args, { cwd, timeout: 120000 });
+
+/** Git and Python, for real: Apple's stubs in /usr/bin only work once the command line tools are in. */
+export async function systemCheck(env: NodeJS.ProcessEnv): Promise<SystemCheck> {
+  if (process.platform !== "darwin") return { git: Boolean(which("git", env)), python: Boolean(which("python3", env)), clt: true };
+  const clt = (await run("xcode-select", ["-p"], { env, timeout: 10000 })).code === 0;
+  const real = (cmd: string) => {
+    const path = which(cmd, env);
+    return Boolean(path) && (clt || path !== `/usr/bin/${cmd}`);
+  };
+  const git = real("git");
+  const python = real("python3");
+  return { git, python, clt, install: git && python ? undefined : "xcode-select --install" };
+}
 
 /** "git@github.com:halcyon/app.git" or "https://github.com/halcyon/app" → "halcyon/app". */
 export const githubName = (url: string) => /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(url.trim())?.[1];
@@ -662,6 +675,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { branch: name };
     },
     "apps.editors": () => editors(),
+    "system.check": () => systemCheck(env),
     "background.list": () => backgrounds.list(),
     "background.image": ({ id, dark }) => backgrounds.image(id, dark),
     "background.save": async ({ data, name }) => (await backgrounds.save(data, name), null),

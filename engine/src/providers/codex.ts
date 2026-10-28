@@ -175,7 +175,10 @@ export const codex: Provider = {
     const configured = configuredModel(env);
     const base = { id: "codex" as const, label: "Codex CLI", adapter: true, login: "codex login", supports: { approvals: false, resume: true, effort: true, plan: true } };
     if (!path) return { ...base, models: [], available: false, detail: "Codex isn't installed.", install: "npm install -g @openai/codex, then codex login" };
-    const [version, listed, server] = await Promise.all([versionOf(path, env), catalog(path, env), run(path, ["app-server", "--help"], { env, timeout: 15000 })]);
+    const [version, listed, server, status] = await Promise.all([versionOf(path, env), catalog(path, env), run(path, ["app-server", "--help"], { env, timeout: 15000 }), run(path, ["login", "status"], { env, timeout: 15000 })]);
+    // "Logged in using ChatGPT" / "Not logged in"; an OpenAI key in the environment works too.
+    const answer = `${status.stdout}${status.stderr}`;
+    const signedIn = /logged in/i.test(answer) ? status.code === 0 && !/not logged in/i.test(answer) : env.OPENAI_API_KEY ? true : undefined;
     // A Codex with the app server can stop and ask; an older one runs through exec, which can't.
     appServer = server.code === 0;
     const models: ModelInfo[] = listed.map((m) => ({ id: m.slug, label: m.display_name ?? m.slug, description: m.description ?? "", efforts: (m.supported_reasoning_levels ?? []).map((e) => effortOf(e.effort, e.description)), defaultEffort: m.default_reasoning_level }));
@@ -185,7 +188,8 @@ export const codex: Provider = {
     if (!models.length) models.push({ id: "default", label: configured ?? "Configured model", description: "What ~/.codex/config.toml sets" });
     if (models[0]) models[0].isDefault = true;
     const detail = usable ? "Uses your Codex sign-in. Runs in Codex's sandbox; it can't stop to ask." : `Your config.toml picks ${configured}, which this sign-in can't use. Liner Code uses ${models[0].label} instead.`;
-    return { ...base, supports: { ...base.supports, approvals: appServer }, models, modelsFrom: listed.length ? ("cli" as const) : ("builtin" as const), modelsAt: Date.now(), available: true, version, detail: appServer ? detail.replace(" Runs in Codex's sandbox; it can't stop to ask.", " Asks before it acts, through its app server.") : detail };
+    const said = appServer ? detail.replace(" Runs in Codex's sandbox; it can't stop to ask.", " Asks before it acts, through its app server.") : detail;
+    return { ...base, supports: { ...base.supports, approvals: appServer }, models, modelsFrom: listed.length ? ("cli" as const) : ("builtin" as const), modelsAt: Date.now(), available: true, version, signedIn, detail: signedIn === false ? "Not signed in: run codex login, or add an OpenAI key" : said };
   },
   open: (o) => (appServer ? new CodexServerSession(o) : new CodexSession(o)),
   async commands(env, cwd) {

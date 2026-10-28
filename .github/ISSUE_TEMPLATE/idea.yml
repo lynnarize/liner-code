@@ -1,0 +1,11 @@
+name: An idea
+description: Something Liner Code could do, or do better
+labels: [idea]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you'd like
+      description: What you were trying to do, and what would have helped.
+    validations:
+      required: true

@@ -21,7 +21,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
-import { versionOf, which } from "../exec.ts";
+import { run, versionOf, which } from "../exec.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { subagentName } from "../review.ts";
@@ -430,8 +430,13 @@ export const claude: Provider = {
     const path = which("claude", env);
     const base = { id: "claude" as const, label: "Claude Code", adapter: true, login: "claude auth login", models: FALLBACK, modelsFrom: "builtin" as const, supports: { approvals: true, resume: true, effort: true, plan: true } };
     if (!path) return { ...base, available: false, detail: "Claude Code isn't installed.", install: "npm install -g @anthropic-ai/claude-code, then claude auth login" };
-    const version = await versionOf(path, env);
-    return { ...base, available: true, version, detail: "Uses your Claude Code sign-in" };
+    const [version, status] = await Promise.all([versionOf(path, env), run(path, ["auth", "status"], { env, timeout: 15000 })]);
+    // Claude Code's own answer; Liner Code never sees the sign-in itself. An older claude has no `auth status`.
+    let signedIn: boolean | undefined;
+    try {
+      signedIn = Boolean((JSON.parse(status.stdout) as { loggedIn?: boolean }).loggedIn) || Boolean(env.ANTHROPIC_API_KEY);
+    } catch {}
+    return { ...base, available: true, version, signedIn, detail: signedIn === false ? "Not signed in: run claude auth login, or add an Anthropic key" : "Uses your Claude Code sign-in" };
   },
   models: listModels,
   async commands(env, cwd) {

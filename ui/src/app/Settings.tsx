@@ -261,6 +261,8 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 /** One empty list, so a store read of a missing one doesn't change every time. */
 const NONE: never[] = [];
+/** Tools with a driver that hasn't been run against the real tool yet. */
+const UNTRIED = new Set(["cursor", "grok"]);
 const save = (patch: Partial<EngineSettings>) => void rpc("settings.save", patch).catch(fail);
 const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
 
@@ -941,7 +943,7 @@ function Models() {
         {providers
           .filter((p) => p.id !== "demo" && !p.id.includes("."))
           .map((p) => {
-            const state = !p.available ? "Not installed" : p.adapter ? "Ready" : "Soon";
+            const state = !p.available ? "Not installed" : !p.adapter ? "Soon" : p.signedIn === false ? "Signed out" : "Ready";
             return (
               <div key={p.id} className="lc-st-prov">
                 <Field
@@ -953,13 +955,14 @@ function Models() {
                   title={
                     <>
                       {p.label} <Badge tone={state === "Ready" ? "ok" : state === "Soon" ? "neutral" : "warn"}>{state}</Badge>
+                      {UNTRIED.has(p.id) && p.adapter && <Badge tone="neutral">Beta</Badge>}
                     </>
                   }
                   note={p.available ? `${p.version ?? "Installed"}${p.adapter ? ` · ${p.detail ?? ""}` : " · Liner Code can't drive it yet"}` : (p.detail ?? "Not installed")}
                 >
                   {p.available && p.adapter ? (
                     <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.runInTerminal(p.login)}>
-                      Sign in again
+                      {p.signedIn === false ? "Sign in" : "Sign in again"}
                     </button>
                   ) : !p.available && p.install ? (
                     <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.runInTerminal(p.install!)}>
@@ -991,7 +994,7 @@ function Models() {
       <AddedAgents />
       <CustomModels />
       <Group title="Billing and keys" note="Keys stay in the login keychain. The engine only holds them in memory.">
-        <Field title="Claude Code bills to" note={keys.includes("anthropic") ? "Your plan, or the Anthropic key you added" : "Add an Anthropic key to bill to it instead"}>
+        <Field title="Claude Code bills to" note={keys.includes("anthropic") ? "Your plan through Claude Code's own sign-in, or the Anthropic key you added" : "Anthropic asks apps built on its Agent SDK to use an API key: add one below"}>
           <Segmented
             size="sm"
             value={s.claudeBilling}

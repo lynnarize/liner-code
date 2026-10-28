@@ -1,0 +1,46 @@
+name: Something went wrong
+description: A bug, a crash, or something that didn't do what it said
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying the alpha. **Help › Report a Problem…** in the app makes a zip with the engine's log and the versions; look through the log before you attach it (it can hold folder names and parts of what the agents did).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Open a session in…
+        2. Ask…
+        3. …
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Which tool was working
+      multiple: true
+      options: [Claude Code, Codex, OpenCode, Hermes, Cursor, Grok Build, Demo, None of them]
+  - type: input
+    id: version
+    attributes:
+      label: Liner Code version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "27.2"
+  - type: textarea
+    id: files
+    attributes:
+      label: The report, screenshots
+      description: Drop the zip from Help › Report a Problem…, or screenshots, here.

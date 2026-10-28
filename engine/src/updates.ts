@@ -6,7 +6,8 @@
   against the SHA-256 the release gives (GitHub's own digest, or a .sha256 file beside the zip),
   unpacked, and checked again (the bundle id, the version, an intact signature) before it waits in
   <home>/updates. The shell puts it in place of the running app when you restart or quit; the
-  engine never touches the app itself. A private repository is read with the GitHub CLI's sign-in.
+  engine never touches the app itself, and says so when that swap didn't go through. A private
+  repository is read with the GitHub CLI's sign-in.
 
   The tools: each one's newest version from where it's published (npm, or Hermes's own check),
   and its own updater (claude update, codex update, opencode upgrade, hermes update), run only
@@ -18,7 +19,7 @@ import { accessSync, constants, createWriteStream, existsSync, mkdirSync, readdi
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { AppUpdate, BuiltinProvider, Settings, ToolUpdate, Updates } from "../../contracts/src/index.ts";
-import { newerVersion } from "../../contracts/src/index.ts";
+import { newerVersion, updateModes } from "../../contracts/src/index.ts";
 import { run, which } from "./exec.ts";
 import type { Store } from "./store.ts";
 
@@ -151,6 +152,12 @@ export class Updater {
   private wanted = new Set<BuiltinProvider>();
   private running: BuiltinProvider | null = null;
   private release?: Release;
+  /**
+    A version that downloaded but couldn't take this copy's place. The shell's swap script leaves
+    why in swap-failed.txt; that version isn't downloaded and tried again by itself, since it
+    would only fail the same way at every quit. A newer release is tried as usual.
+  */
+  private stuck?: { version: string; why: string };
   private token: string | undefined | null = null;
   private timers: NodeJS.Timeout[] = [];
   private readonly dir: string;
@@ -180,23 +187,50 @@ export class Updater {
       can: !bundle || process.platform !== "darwin" ? "source" : bundle.includes("/AppTranslocation/") ? "translocated" : writable(dirname(bundle)) && writable(bundle) ? "install" : "readonly",
     };
     try {
-      const s = JSON.parse(readFileSync(join(this.dir, "state.json"), "utf8")) as { dismissed?: Record<string, string>; checkedAt?: number };
+      const s = JSON.parse(readFileSync(join(this.dir, "state.json"), "utf8")) as { dismissed?: Record<string, string>; checkedAt?: number; stuck?: Updater["stuck"] };
       this.dismissed = s.dismissed ?? {};
       this.checkedAt = s.checkedAt;
+      if (s.stuck && newer(s.stuck.version, this.app.current)) this.stuck = s.stuck;
     } catch {
       // first run
     }
+    this.readSwap();
     this.readStaged();
+    // A newer release that's already waiting comes before one that didn't go in.
+    if (this.stuck && this.app.state !== "ready") this.app = { ...this.app, latest: this.stuck.version, state: "failed", stuck: true, error: this.stuckError() };
+  }
+
+  private stuckError() {
+    return `It downloaded, but couldn't take this copy's place (${this.stuck?.why || "no reason given"}). Get it from the release page and drag it to Applications.`;
+  }
+
+  /** What the swap script left after a swap that didn't go through. */
+  private readSwap() {
+    const file = join(this.dir, "swap-failed.txt");
+    if (!existsSync(file)) return;
+    try {
+      const said = short(readFileSync(file, "utf8"));
+      console.error(`[updates] the update didn't go in: ${said}`);
+      // mv's own words end with the reason ("…: Operation not permitted"); the paths stay in the log.
+      const why = said.split(": ").pop() ?? said;
+      const r = JSON.parse(readFileSync(join(this.dir, "ready.json"), "utf8")) as { version?: string };
+      if (r.version && newer(r.version, this.app.current)) this.stuck = { version: r.version, why };
+    } catch {
+      // nothing was staged
+    }
+    rmSync(file, { force: true });
+    this.clearStaged();
+    this.save();
   }
 
   private get settings(): Settings {
     return this.store.settings;
   }
   private get modeApp() {
-    return this.settings.updateApp ?? "auto";
+    return updateModes(this.settings).app;
   }
   private get modeTools() {
-    return this.settings.updateTools ?? "auto";
+    return updateModes(this.settings).tools;
   }
 
   get state(): Updates {
@@ -209,7 +243,7 @@ export class Updater {
 
   private save() {
     mkdirSync(this.dir, { recursive: true });
-    writeFileSync(join(this.dir, "state.json"), JSON.stringify({ dismissed: this.dismissed, checkedAt: this.checkedAt }, null, 2));
+    writeFileSync(join(this.dir, "state.json"), JSON.stringify({ dismissed: this.dismissed, checkedAt: this.checkedAt, stuck: this.stuck }, null, 2));
   }
 
   start() {
@@ -303,6 +337,7 @@ export class Updater {
       this.release = r;
       const fresh = newer(latest, this.app.current);
       const staged = this.app.state === "ready" && this.app.latest === latest;
+      const stuck = fresh && !staged && this.stuck?.version === latest;
       this.app = {
         ...this.app,
         latest,
@@ -310,13 +345,14 @@ export class Updater {
         url: r.html_url,
         publishedAt: r.published_at ? Date.parse(r.published_at) : undefined,
         size: pickAsset(r.assets)?.size,
-        state: staged ? "ready" : fresh ? "available" : "current",
-        error: undefined,
+        state: staged ? "ready" : stuck ? "failed" : fresh ? "available" : "current",
+        stuck: stuck || undefined,
+        error: stuck ? this.stuckError() : undefined,
       };
-      if (fresh && !staged && !pickAsset(r.assets)) this.app.error = "This release has no download for this Mac yet.";
+      if (fresh && !staged && !stuck && !pickAsset(r.assets)) this.app.error = "This release has no download for this Mac yet.";
     } catch (e) {
       const status = (e as { status?: number }).status;
-      this.app = { ...this.app, state: this.app.state === "ready" ? "ready" : "failed", error: status === 404 ? `No published release in ${this.app.repo} yet.` : `Couldn't reach GitHub: ${(e as Error).message}` };
+      this.app = { ...this.app, state: this.app.state === "ready" ? "ready" : "failed", stuck: undefined, error: status === 404 ? `No published release in ${this.app.repo} yet.` : `Couldn't reach GitHub: ${(e as Error).message}` };
     }
   }
 

@@ -9,7 +9,7 @@
 */
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Item, Routine, RoutineRun, RoutineStep, RunStep, Thread, Trigger } from "../../contracts/src/index.ts";
 import { emptyUsage, splitModel } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
@@ -22,6 +22,13 @@ type Context = { subject?: Subject; body?: unknown; headers?: Record<string, str
 
 const TICK = 30_000;
 const POLL = 5 * 60_000;
+
+/** A webhook's secret against the one sent, in the same time however much of it matches. */
+export function sameSecret(want: string, got: string) {
+  const a = Buffer.from(want);
+  const b = Buffer.from(got);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 /** When a schedule fires next, after `from`. */
 export function nextRun(t: Trigger, from = Date.now()): number | undefined {
@@ -161,7 +168,7 @@ export class Routines {
 
   webhook(id: string, secret: string, body: unknown, headers: Record<string, string>) {
     const r = this.list.find((x) => x.id === id);
-    if (!r || r.trigger.kind !== "webhook" || r.trigger.secret !== secret) return false;
+    if (!r || r.trigger.kind !== "webhook" || !sameSecret(r.trigger.secret, secret)) return false;
     if (!r.on) return true;
     void this.fire(id, "Its webhook was called", { body, headers });
     return true;

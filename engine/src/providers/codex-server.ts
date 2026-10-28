@@ -12,6 +12,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Access, PlanEntry, Question } from "../../../contracts/src/index.ts";
 import { jsonLines, spawn, which } from "../exec.ts";
+import { VERSION } from "../version.ts";
 import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import type { OpenOptions, ProviderSession, TurnSink } from "./types.ts";
@@ -89,7 +90,7 @@ class CodexServer {
       this.booting = null;
     });
     this.booting = (async () => {
-      await this.request("initialize", { clientInfo: { name: "liner-code", title: "Liner Code", version: "0.1.0" }, capabilities: { experimentalApi: true, requestAttestation: false } });
+      await this.request("initialize", { clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION }, capabilities: { experimentalApi: true, requestAttestation: false } });
       this.notify("initialized", {});
     })();
     return this.booting;

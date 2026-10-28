@@ -10,6 +10,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ProviderId, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
 import { jsonLines, spawn, versionOf, which } from "../exec.ts";
+import { VERSION } from "../version.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
 import type { OpenOptions, Provider, ProviderSession, TurnSink } from "./types.ts";
@@ -70,7 +71,7 @@ class AcpSession implements ProviderSession {
       const init = await this.request("initialize", {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
-        clientInfo: { name: "liner-code", title: "Liner Code", version: "0.1.0" },
+        clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION },
       });
       this.canLoad = Boolean((init.agentCapabilities as Json | undefined)?.loadSession);
       if (this.o.resume && this.canLoad) {

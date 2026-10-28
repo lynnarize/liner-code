@@ -6,7 +6,7 @@
 */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, type WriteStream } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, renameSync, type WriteStream } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -15,6 +15,8 @@ export type Paths = { engine: string; ui: string };
 // A test home (LINER_HOME) keeps its log apart, so a test copy doesn't write over your app's.
 export const logDir = process.env.LINER_HOME ? join(process.env.LINER_HOME, "logs") : process.platform === "darwin" ? join(homedir(), "Library/Logs/Liner Code") : join(homedir(), ".liner-code", "logs");
 export const logFile = join(logDir, "engine.log");
+/** The launch before this one's log, kept so a report made after a crash and a relaunch still has the crash. */
+export const previousLogFile = join(logDir, "engine.previous.log");
 
 export class Engine {
   port = 0;
@@ -30,6 +32,11 @@ export class Engine {
 
   start(paths: Paths, env: NodeJS.ProcessEnv, keys: Record<string, string>) {
     mkdirSync(logDir, { recursive: true });
+    try {
+      renameSync(logFile, previousLogFile);
+    } catch {
+      // the first launch
+    }
     this.log = createWriteStream(logFile, { flags: "w" });
     this.launch(paths, env, keys);
   }
@@ -84,14 +91,49 @@ export class Engine {
 const run = (cmd: string, args: string[], timeout = 5000) =>
   new Promise<string>((resolve) => execFile(cmd, args, { timeout, encoding: "utf8" }, (err, out) => resolve(err ? "" : out.trim())));
 
-/** The user's login shell's PATH, which an app opened from the Dock doesn't get, plus where tools often land. */
+/**
+  The PATH a shell prints between marks (an interactive one may greet you first), or "". It runs in
+  a session of its own with nothing on stdin, so it never reaches for a terminal or waits on a
+  question; whatever it hasn't said in `timeout` ms is left.
+*/
+const pathFrom = (sh: string, flags: string[], timeout: number) =>
+  new Promise<string>((resolve) => {
+    const child = spawn(sh, [...flags, 'printf "__LINER_PATH__%s__LINER_PATH__" "$PATH"'], { detached: true, stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    const done = () => {
+      clearTimeout(timer);
+      resolve(/__LINER_PATH__(.*?)__LINER_PATH__/s.exec(out)?.[1]?.trim() ?? "");
+    };
+    const timer = setTimeout(() => {
+      try {
+        if (child.pid) process.kill(-child.pid, "SIGKILL");
+      } catch {
+        // already gone
+      }
+      done();
+    }, timeout);
+    child.stdout.on("data", (d: Buffer) => {
+      out += d.toString("utf8");
+      // Said: something it left running may hold stdout open, so this doesn't wait for the close.
+      if (out.split("__LINER_PATH__").length > 2) done();
+    });
+    child.on("error", done);
+    child.on("close", done);
+  });
+
+/** The user's shell's PATH, which an app opened from the Dock doesn't get, plus where tools often land. */
 export async function loginEnvironment(): Promise<NodeJS.ProcessEnv> {
   const env = { ...process.env };
   if (process.platform === "win32") return env;
   const sh = process.env.SHELL || "/bin/zsh";
-  const path = (await run(sh, ["-l", "-c", 'printf "%s" "$PATH"'])) || process.env.PATH || "/usr/bin:/bin";
+  // Interactive as well as login: nvm, Volta, pnpm, mise and asdf go on PATH in .zshrc, which a
+  // login shell alone doesn't read. A shell whose .zshrc stalls still gets its login PATH.
+  const path = (await pathFrom(sh, ["-i", "-l", "-c"], 8000)) || (await pathFrom(sh, ["-l", "-c"], 5000)) || process.env.PATH || "/usr/bin:/bin";
   const parts = path.split(":");
-  const extra = ["/opt/homebrew/bin", "/usr/local/bin", join(homedir(), ".local/bin"), join(homedir(), ".bun/bin")].filter((p) => !parts.includes(p) && existsSync(p));
+  const home = homedir();
+  const extra = ["/opt/homebrew/bin", "/usr/local/bin", ".local/bin", ".bun/bin", ".volta/bin", "Library/pnpm", ".local/share/mise/shims", ".asdf/shims"]
+    .map((p) => (p.startsWith("/") ? p : join(home, p)))
+    .filter((p) => !parts.includes(p) && existsSync(p));
   env.PATH = [...parts, ...extra].join(":");
   return env;
 }

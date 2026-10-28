@@ -1,20 +1,21 @@
 /*
   The engine's pure parts: what the Reviewer's answer means, who reviews whom, how a Claude
-  agent's team is set up, when a routine fires next and what its prompt says, and the Browser
-  surface's proxy. Run with `npm test -w engine`.
+  agent's team is set up, when a routine fires next and what its prompt says, the Browser
+  surface's proxy, and the secrets the engine keeps from what it starts. Run with `npm test -w engine`.
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createServer, request } from "node:http";
 import type { AgentProfile, ProviderInfo } from "../../contracts/src/index.ts";
 import { setupsOf } from "../../contracts/src/index.ts";
 import { claudeTeam, parseFindings, reviewerFor, subagentName } from "../src/review.ts";
-import { describeTrigger, fill, nextRun } from "../src/routines.ts";
+import { describeTrigger, fill, nextRun, sameSecret } from "../src/routines.ts";
 import { Proxies } from "../src/proxy.ts";
 import { compareWays, githubName } from "../src/api.ts";
 import { clean, isPrAsk } from "../src/runtime.ts";
 import { testCommand, testSummary } from "../src/prflow.ts";
 import { Store } from "../src/store.ts";
+import { run, takeSecrets } from "../src/exec.ts";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,6 +74,13 @@ test("routines: a prompt quotes only what the call sent", () => {
   assert.equal(out, "PR 142 was opened via pull_request; .");
 });
 
+test("routines: a webhook answers only to its own secret", () => {
+  assert.ok(sameSecret("a1b2c3", "a1b2c3"));
+  assert.ok(!sameSecret("a1b2c3", "a1b2c4"));
+  assert.ok(!sameSecret("a1b2c3", "a1b2c"));
+  assert.ok(!sameSecret("a1b2c3", ""));
+});
+
 test("proxy: pages get the probe, framing headers come off, other files pass through", async () => {
   const site = createServer((req, res) => {
     if (req.url === "/") res.writeHead(200, { "content-type": "text/html", "x-frame-options": "DENY" }).end("<html><head><title>x</title></head><body>hi</body></html>");
@@ -99,6 +107,47 @@ test("proxy: pages get the probe, framing headers come off, other files pass thr
     proxies.closeAll();
     site.close();
   }
+});
+
+/** A GET with headers fetch won't let you set (Host): its status and body. */
+function get(url: string, headers: Record<string, string>) {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const req = request(url, { headers }, (res) => {
+      let body = "";
+      res.on("data", (c: Buffer) => (body += c.toString("utf8")));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+test("proxy: only requests for the proxy itself get through; other sites keep their origin", async () => {
+  const site = createServer((req, res) => res.writeHead(200, { "content-type": "text/plain" }).end(req.headers.origin ?? "none"));
+  await new Promise<void>((r) => site.listen(0, "127.0.0.1", () => r()));
+  const port = (site.address() as { port: number }).port;
+  const proxies = new Proxies();
+  try {
+    const base = await proxies.url(port);
+    const host = new URL(base).host;
+    // A page that rebinds its own name to 127.0.0.1 says so in its Host.
+    assert.equal((await get(`${base}/`, { host: `evil.example:${new URL(base).port}` })).status, 403);
+    assert.deepEqual(await get(`${base}/`, { host, origin: base }), { status: 200, body: "none" });
+    assert.deepEqual(await get(`${base}/`, { host, origin: "https://evil.example" }), { status: 200, body: "https://evil.example" });
+  } finally {
+    proxies.closeAll();
+    site.close();
+  }
+});
+
+test("secrets: the engine's token and keys don't reach anything it starts", async () => {
+  process.env.LINER_TOKEN = "t0ken";
+  process.env.LINER_KEYS = JSON.stringify({ anthropic: "sk-test" });
+  assert.deepEqual(takeSecrets(process.env), { token: "t0ken", keys: { anthropic: "sk-test" } });
+  const seen = (await run("/usr/bin/env", [])).stdout;
+  assert.match(seen, /PATH=/);
+  assert.doesNotMatch(seen, /LINER_TOKEN|LINER_KEYS|t0ken|sk-test/);
+  assert.deepEqual(takeSecrets({ LINER_KEYS: "{not json" }), { token: undefined, keys: {} });
 });
 
 test("github: a remote's owner and name, whichever way it's written", () => {

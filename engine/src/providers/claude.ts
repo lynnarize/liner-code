@@ -22,6 +22,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
 import { run, versionOf, which } from "../exec.ts";
+import { VERSION } from "../version.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { subagentName } from "../review.ts";
@@ -50,7 +51,7 @@ async function probe<T>(env: NodeJS.ProcessEnv, scratch: string, ask: (q: Query)
   const idle = async function* (): AsyncGenerator<SDKUserMessage> {
     await new Promise((r) => abort.signal.addEventListener("abort", r));
   };
-  const q = query({ prompt: idle(), options: { cwd: scratch, pathToClaudeCodeExecutable: path, env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: "liner-code/0.1.0" }, settingSources: ["user"], abortController: abort } });
+  const q = query({ prompt: idle(), options: { cwd: scratch, pathToClaudeCodeExecutable: path, env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: ["user"], abortController: abort } });
   try {
     return await Promise.race([ask(q), new Promise<never>((_, no) => setTimeout(() => no(new Error("Claude Code didn't answer in time.")), 30000))]);
   } finally {
@@ -205,7 +206,7 @@ class ClaudeSession implements ProviderSession {
       forkSession: o.fork || undefined,
       settingSources: ["user", "project", "local"],
       systemPrompt: { type: "preset", preset: "claude_code", append: o.soul || undefined },
-      env: { ...o.env, CLAUDE_AGENT_SDK_CLIENT_APP: "liner-code/0.1.0" },
+      env: { ...o.env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` },
       permissionPrompts: "host",
       pathToClaudeCodeExecutable: this.path ?? undefined,
       mcpServers: o.mcp ? { liner: { type: "stdio", command: o.mcp.command, args: o.mcp.args, env: o.mcp.env } } : undefined,
@@ -448,7 +449,7 @@ export const claude: Provider = {
     const idle = async function* (): AsyncGenerator<SDKUserMessage> {
       await new Promise((r) => abort.signal.addEventListener("abort", r));
     };
-    const q = query({ prompt: idle(), options: { cwd, pathToClaudeCodeExecutable: path, env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: "liner-code/0.1.0" }, settingSources: ["user", "project", "local"], abortController: abort } });
+    const q = query({ prompt: idle(), options: { cwd, pathToClaudeCodeExecutable: path, env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: ["user", "project", "local"], abortController: abort } });
     try {
       const list = await Promise.race([q.supportedCommands(), new Promise<never>((_, no) => setTimeout(() => no(new Error("Claude Code didn't list its commands in time.")), 30000))]);
       const commands = list.filter((c) => !names.has(c.name)).map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint || undefined, source: "tool" as const }));

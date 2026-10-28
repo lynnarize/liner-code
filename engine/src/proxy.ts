@@ -4,12 +4,30 @@
   request through (WebSockets too, so hot reload keeps working) and adds one script to each HTML
   page. That script reports console lines and navigation to the app, and answers its commands:
   back, forward, reload, pick an element, simulate offline, and, for an agent, read the page and
-  click or type in it. Only ports on this machine, only on 127.0.0.1.
+  click or type in it. Only ports on this machine, only on 127.0.0.1, and only requests addressed
+  to the proxy itself.
 */
 import { createServer, request, type IncomingMessage, type Server } from "node:http";
 import { connect } from "node:net";
 
 const PROBE_PATH = "/__liner/probe.js";
+
+/**
+  A request for the proxy itself. A web page that points a name of its own at 127.0.0.1 (DNS
+  rebinding) sends that name as its Host, and the dev server's own check for it never sees it,
+  since the proxy writes localhost there.
+*/
+function addressed(server: Server, host?: string) {
+  const a = server.address();
+  const port = typeof a === "object" && a ? a.port : -1;
+  return host === `127.0.0.1:${port}` || host === `localhost:${port}`;
+}
+
+/**
+  A request from the page the proxy serves, whose origin the dev server doesn't know, so it goes.
+  Any other origin stays, so the dev server's own checks still turn other sites away.
+*/
+const fromItself = (req: IncomingMessage) => req.headers.origin === `http://${req.headers.host}`;
 
 export class Proxies {
   private open = new Map<number, { server: Server; port: number }>();
@@ -20,12 +38,13 @@ export class Proxies {
     const have = this.open.get(target);
     if (have) return `http://127.0.0.1:${have.port}`;
     const server = createServer((req, res) => {
+      if (!addressed(server, req.headers.host)) return void res.writeHead(403).end();
       if (req.url === PROBE_PATH) {
         res.writeHead(200, { "content-type": "text/javascript", "cache-control": "no-store" }).end(PROBE);
         return;
       }
       const headers = { ...req.headers, host: `localhost:${target}`, "accept-encoding": "identity" };
-      delete headers.origin;
+      if (fromItself(req)) delete headers.origin;
       delete headers.referer;
       const up = request({ host: "localhost", port: target, method: req.method, path: req.url, headers }, (r) => this.answer(r, res, target, own()));
       up.on("error", () => {
@@ -36,12 +55,13 @@ export class Proxies {
     });
     // Hot reload and anything else that upgrades: the raw socket goes straight through.
     server.on("upgrade", (req, socket, head) => {
+      if (!addressed(server, req.headers.host)) return void socket.destroy();
       const up = connect({ host: "localhost", port: target }, () => {
         const lines = [`${req.method} ${req.url} HTTP/1.1`];
         for (let i = 0; i < req.rawHeaders.length; i += 2) {
           const k = req.rawHeaders[i];
           if (/^host$/i.test(k)) lines.push(`Host: localhost:${target}`);
-          else if (!/^origin$/i.test(k)) lines.push(`${k}: ${req.rawHeaders[i + 1]}`);
+          else if (!/^origin$/i.test(k) || !fromItself(req)) lines.push(`${k}: ${req.rawHeaders[i + 1]}`);
         }
         up.write(`${lines.join("\r\n")}\r\n\r\n`);
         if (head.length) up.write(head);

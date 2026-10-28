@@ -34,6 +34,24 @@ export function which(cmd: string, env: NodeJS.ProcessEnv = process.env): string
 /** "cursor-agent" → "LINER_BIN_CURSOR_AGENT". */
 export const binVar = (cmd: string) => `LINER_BIN_${cmd.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
 
+/**
+  The engine's token and the keys from the keychain, taken out of `env`. Everything the engine
+  starts (agents, their commands, the Terminal, git) inherits the environment, and a command
+  that could read the token could answer its own approvals through /rpc.
+*/
+export function takeSecrets(env: NodeJS.ProcessEnv): { token?: string; keys: Record<string, string> } {
+  const token = env.LINER_TOKEN || undefined;
+  let keys: Record<string, string> = {};
+  try {
+    keys = JSON.parse(env.LINER_KEYS || "{}") as Record<string, string>;
+  } catch {
+    // none
+  }
+  delete env.LINER_TOKEN;
+  delete env.LINER_KEYS;
+  return { token, keys };
+}
+
 export type RunResult = { code: number; stdout: string; stderr: string };
 
 /** Runs a command to the end and collects its output. Never throws on a non-zero exit. */

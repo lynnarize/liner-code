@@ -7,7 +7,7 @@
 */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, KeyBinding, Project, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
-import { ACCOUNT_HOME } from "@contracts";
+import { ACCOUNT_HOME, updateModes } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
@@ -1731,8 +1731,7 @@ function UpdatesPlace() {
     setLooking(false);
   };
   const due = u.tools.filter((t) => t.state === "available" || t.state === "failed");
-  const appMode = s.updateApp ?? "auto";
-  const toolMode = s.updateTools ?? "auto";
+  const { app: appMode, tools: toolMode } = updateModes(s);
   return (
     <>
       <Group
@@ -1810,7 +1809,8 @@ function AppRow({ a }: { a: AppUpdate }) {
   let control: ReactNode = null;
   if (a.state === "failed") {
     note = <span className="lc-up-err">{a.error}</span>;
-    if (news && a.can === "install")
+    if (a.stuck) control = page;
+    else if (news && a.can === "install")
       control = (
         <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={updates.download}>
           Try again

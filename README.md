@@ -6,12 +6,10 @@ as GUI instead of a log: plans you approve, questions you answer, requests that 
 a diff for every turn that you can undo or commit or question line by line, a Reviewer from
 another model family, surfaces beside the session (Terminal, Browser, Files, Pull request, Device,
 Routines), models compared side by side, and sessions that sort themselves by what they need
-from you. It's built from [Liner UI](../Liner%20UI), so it has Liner's look and motion:
+from you. It's built from [Liner UI](https://linerui.sorafel.com), so it has Liner's look and motion:
 white paper in a glass frame, one accent, text that comes into focus, springs that never overshoot.
 
-The design is the **Liner Code Design** session's boards
-([Design artifact](https://linerui.sorafel.com), 33 boards). Ideas came from
-[T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
+Ideas came from [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) (MIT); no code was copied from either.
 
 ## Install the alpha
@@ -44,8 +42,13 @@ Found something? **Help › Report a Problem…** makes a zip with the log and v
   Code bill to your Anthropic key.
 - **Nothing in between.** Model traffic goes from each tool to its own provider and is billed to
   your account. Liner Code has no server, no telemetry and no analytics. Besides its own releases from GitHub and
-  the tools' versions on npm, it only fetches the Agent Client Protocol registry when you look for
-  agents to add.
+  the tools' versions on npm, it fetches the Agent Client Protocol registry when you look for
+  agents to add, and reaches GitHub through your `gh` sign-in for pull requests and routines
+  (which look every 5 minutes while one is on). Hermes's own update check runs a `git fetch`.
+- **The Reviewer is another model family.** A coder's turns are read by another family by default:
+  Codex or OpenCode for Claude, Claude for the rest. So with Claude Code and Codex both here, a
+  Claude coder's diffs also go to OpenAI through Codex, billed to that account. Set the Reviewer
+  to Nobody, or one of the same family, in the agent's settings.
 - **Everything else is on this Mac**: sessions, snapshots and settings in `~/.liner-code` (see
   Where things live).
 
@@ -127,25 +130,28 @@ docs/BACKEND.md            what the backend needs, now and later
 | Turn snapshots | `refs/liner/<thread>/<turn>-before|after` in each repo |
 | API keys | `~/Library/Application Support/Liner Code/keys.json`, sealed with a key macOS keeps in the login keychain as "Liner Code Safe Storage" (the engine gets them in memory only) |
 | The window's frame and material | `~/Library/Application Support/Liner Code/shell.json` |
-| Engine log | `~/Library/Logs/Liner Code/engine.log` (a test home's own: `$LINER_HOME/logs`) |
+| Engine log | `~/Library/Logs/Liner Code/engine.log`, and `engine.previous.log` from the launch before (a test home's own: `$LINER_HOME/logs`) |
 | A downloaded update, waiting to go in | `~/.liner-code/updates/` |
 
 ## Updates
 
 Liner Code keeps itself and the agent tools current; both show on Home's corner and in
-Settings › Updates, each set to Automatically (the default), Just tell me, or Off.
+Settings › Updates, each set to Automatically, Just tell me, or Off. Liner Code itself starts on
+Automatically. The tools are yours, so they start on Just tell me.
 
 - **Liner Code** looks at the latest release of its GitHub repository a few seconds after it opens
   and every six hours. It downloads the zip for this Mac, checks it against the release's SHA-256
   (GitHub's own digest, or the `.sha256` file beside the zip), unpacks it and checks it again
   (bundle id, version, signature), then puts it in place when you press Restart to update, or
-  when you quit. A copy run from source, from a folder you can't write to, or from Downloads
-  without being moved to Applications says so and links the release page instead. A private
-  repository is read with the GitHub CLI's sign-in.
+  when you quit. If it can't take the old copy's place, it says why next time it opens and links
+  the release page instead of trying again at every quit. A copy run from source, from a folder
+  you can't write to, or from Downloads without being moved to Applications says so and links the
+  release page instead. A private repository is read with the GitHub CLI's sign-in.
 - **The agent tools** (Claude Code, Codex, OpenCode, Hermes, Grok Build) are compared with where
-  each is published (npm; Hermes asks itself) and updated with their own updaters (`claude update`,
-  `codex update`, `opencode upgrade`, `hermes update --yes`), one at a time and only while no
-  session is working on that tool. Its idle sessions restart after, and resume where they were.
+  each is published (npm; Hermes asks itself). When you press Update (or by themselves, set to
+  Automatically), they're updated with their own updaters (`claude update`, `codex update`,
+  `opencode upgrade`, `hermes update --yes`), one at a time and only while no session is working
+  on that tool. Its idle sessions restart after, and resume where they were.
 
 To publish a release: the repository is package.json's `"repository"`, or else this checkout's
 GitHub origin (`npm run mac` writes it into the app, so build after adding it). Then:

@@ -2,7 +2,8 @@
   Starts the engine. The desktop shell runs it as a child process and reads one line from it:
     LINER_READY {"port":53121}
   Flags: --port <n> (0 picks a free one), --ui <dir> (serve the built app), --dev (a fixed
-  token for the Vite dev server). The token comes from LINER_TOKEN.
+  token for the Vite dev server). The token comes from LINER_TOKEN, and nothing the engine starts
+  inherits it.
 */
 import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
@@ -16,6 +17,7 @@ import { Proxies } from "./proxy.ts";
 import { DeviceLogs, Terminals } from "./surfaces.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
+import { takeSecrets } from "./exec.ts";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -26,6 +28,8 @@ const dev = process.argv.includes("--dev");
 // The Electron shell runs the engine on its own Node with ELECTRON_RUN_AS_NODE. Nothing the engine
 // starts may inherit that: an agent's `npm run dev` on an Electron project would get a bare Node.
 delete process.env.ELECTRON_RUN_AS_NODE;
+// The token and the keys are the engine's alone: out of the environment before anything starts.
+const secrets = takeSecrets(process.env);
 
 const store = new Store();
 // The shell passes your login shell's PATH; without it, a Dock-launched app can't find agents.
@@ -33,13 +37,7 @@ const env: NodeJS.ProcessEnv = { ...process.env, PATH: process.env.LINER_PATH ||
 const tools = new AgentTools(store, env);
 const runtime = new Runtime(store, env, tools);
 // Keys the shell read from the keychain, handed over once at launch and kept in memory only.
-try {
-  for (const [k, v] of Object.entries(JSON.parse(process.env.LINER_KEYS || "{}") as Record<string, string>)) if (v) runtime.keys.set(k, v);
-} catch {
-  // none
-}
-delete process.env.LINER_KEYS;
-delete env.LINER_KEYS;
+for (const [k, v] of Object.entries(secrets.keys)) if (v) runtime.keys.set(k, v);
 const terms = new Terminals(store, env);
 const logs = new DeviceLogs(store, env);
 const routines = new Routines(store, runtime, env);
@@ -48,7 +46,7 @@ const proxies = new Proxies();
 const api = createApi(store, runtime, env, { routines, terms, logs, proxies, tools });
 
 // In dev the token is written where the Vite dev server can read it; the shell passes its own.
-const token = process.env.LINER_TOKEN || (dev ? "liner-dev" : randomBytes(24).toString("hex"));
+const token = secrets.token || (dev ? "liner-dev" : randomBytes(24).toString("hex"));
 if (dev) writeFileSync(join(store.home, "dev-token"), token);
 
 const server = await startServer({

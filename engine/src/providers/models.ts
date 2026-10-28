@@ -9,6 +9,7 @@ import { join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { CommandInfo, EffortInfo, ModelInfo, SkillInfo } from "../../../contracts/src/index.ts";
 import { jsonLines, spawn, which } from "../exec.ts";
+import { VERSION } from "../version.ts";
 
 const LEVELS: Record<string, { label: string; description: string }> = {
   minimal: { label: "Minimal", description: "Barely thinks, for the smallest asks" },
@@ -71,7 +72,7 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
   try {
     const s = await Promise.race([
       (async () => {
-        await request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: "liner-code", title: "Liner Code", version: "0.1.0" } });
+        await request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION } });
         return request("session/new", { cwd: scratch, mcpServers: [] });
       })(),
       timeout,
@@ -163,7 +164,7 @@ export async function acpCommands(cmd: string[], env: NodeJS.ProcessEnv, cwd: st
   try {
     await Promise.race([
       (async () => {
-        await request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: "liner-code", title: "Liner Code", version: "0.1.0" } });
+        await request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION } });
         await request("session/new", { cwd, mcpServers: [] });
         await Promise.race([arrived, new Promise((r) => setTimeout(r, 2500))]);
       })(),

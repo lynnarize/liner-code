@@ -436,11 +436,14 @@ export type Settings = {
   keybindings?: KeyBinding[];
   /** Liner Code's own releases: downloaded and put in when you quit or restart ("auto", the default), only told about, or not looked for. */
   updateApp?: UpdateMode;
-  /** The agent tools' own updaters: run when no session is working on that tool ("auto", the default), only told about, or not looked for. */
+  /** The agent tools' own updaters: run when no session is working on that tool, only told about ("notify", the default), or not looked for. */
   updateTools?: UpdateMode;
 };
 
 export type UpdateMode = "auto" | "notify" | "off";
+
+/** The update settings as they stand. Liner Code updates itself; the tools are yours, so it only says when one has something new until you choose Automatically. */
+export const updateModes = (s: Pick<Settings, "updateApp" | "updateTools">): { app: UpdateMode; tools: UpdateMode } => ({ app: s.updateApp ?? "auto", tools: s.updateTools ?? "notify" });
 
 /** Liner Code against its latest release on GitHub. */
 export type AppUpdate = {
@@ -463,6 +466,8 @@ export type AppUpdate = {
   */
   can: "install" | "source" | "readonly" | "translocated";
   error?: string;
+  /** "failed" because this version downloaded but couldn't take this copy's place: it comes from the release page, by hand. */
+  stuck?: boolean;
 };
 
 /** One agent tool: what's here, what's out, and how its update is going. */

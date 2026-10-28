@@ -9,9 +9,9 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, s
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { Engine, loginEnvironment, logFile, whoami, type Paths } from "./engine";
+import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
 import { mac, type Frame, type Rect } from "./mac";
 import { bundlePath, install as installUpdate, staged } from "./update";
@@ -33,6 +33,8 @@ let quitting = false;
 /** A downloaded update is being put in; quitting doesn't start it again. */
 let updating = false;
 let loaded = false;
+/** Your shell's environment, read once at launch; a report looks for the tools on its PATH. */
+let shellEnv: NodeJS.ProcessEnv | undefined;
 const engine = new Engine();
 const keys = new Keys(app.getPath("userData"));
 /** What the page reads as window.__LINER__ before its scripts run. */
@@ -456,12 +458,28 @@ function releasesRepo(): string | undefined {
   }
 }
 
-/** The engine's log and the versions, zipped into Downloads and shown in Finder; then a new issue on GitHub. Nothing is sent by itself. */
+/** The agent tools Liner Code drives, and gh, by the name each has on PATH. */
+const REPORT_TOOLS = ["claude", "codex", "opencode", "hermes", "cursor-agent", "grok", "gh"];
+
+/** Each tool's version as it says it, for the report: "codex: codex-cli 0.165.0 (~/.local/bin/codex)". */
+async function toolVersions(env: NodeJS.ProcessEnv) {
+  const dirs = (env.PATH ?? "").split(":").filter(Boolean);
+  return Promise.all(
+    REPORT_TOOLS.map(async (bin) => {
+      const path = dirs.map((d) => join(d, bin)).find((p) => existsSync(p));
+      if (!path) return `${bin}: not on PATH`;
+      const said = await new Promise<string>((done) => execFile(path, ["--version"], { env, timeout: 10_000, encoding: "utf8" }, (_e, out, err) => done(`${out || err || ""}`.trim().split("\n")[0])));
+      return `${bin}: ${said || "no answer"} (${path.replace(homedir(), "~")})`;
+    }),
+  );
+}
+
+/** The engine's logs and the versions, zipped into Downloads and shown in Finder; then a new issue on GitHub. Nothing is sent by itself. */
 async function reportProblem() {
   const { response } = await dialog.showMessageBox({
     type: "info",
     message: "Report a problem",
-    detail: "Liner Code puts its engine log and the versions in a zip in your Downloads folder, shows it, and opens a new issue on GitHub. Nothing is sent until you attach it. The log can hold folder names and parts of what the agents did, so look at it first.",
+    detail: "Liner Code puts its engine log (this launch's and the one before) and the versions in a zip in your Downloads folder, shows it, and opens a new issue on GitHub. Nothing is sent until you attach it. The log can hold folder names and parts of what the agents did, so look at it first.",
     buttons: ["Make the Report", "Cancel"],
     defaultId: 0,
     cancelId: 1,
@@ -471,8 +489,10 @@ async function reportProblem() {
   const dir = join(tmpdir(), `Liner Code report ${stamp}`);
   mkdirSync(dir, { recursive: true });
   const versions = [`Liner Code ${app.getVersion()}`, `Electron ${process.versions.electron}`, `${isMac ? "macOS" : process.platform} ${process.getSystemVersion()} (${process.arch})`];
-  writeFileSync(join(dir, "versions.txt"), `${versions.join("\n")}\n`);
+  const tools = await toolVersions(shellEnv ?? (await loginEnvironment()));
+  writeFileSync(join(dir, "versions.txt"), `${[...versions, "", ...tools].join("\n")}\n`);
   if (existsSync(logFile)) copyFileSync(logFile, join(dir, "engine.log"));
+  if (existsSync(previousLogFile)) copyFileSync(previousLogFile, join(dir, "engine.previous.log"));
   const zip = join(app.getPath("downloads"), `${basename(dir)}.zip`);
   await new Promise<void>((done, fail) => execFile("ditto", ["-c", "-k", "--keepParent", dir, zip], (e) => (e ? fail(e) : done())));
   shell.showItemInFolder(zip);
@@ -525,6 +545,7 @@ void app.whenReady().then(async () => {
   const paths = resources();
   if (!paths) return fail("Liner Code can't find its engine. Reinstall the app.");
   const [env, own] = await Promise.all([loginEnvironment(), keys.all().catch(() => ({}))]);
+  shellEnv = env;
   engine.onReady = (port) => {
     // A restarted engine keeps its port and token; the page reconnects by itself.
     if (loaded) return;

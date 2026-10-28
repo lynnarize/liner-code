@@ -4,6 +4,7 @@
   the work (see agent-tools.ts). It runs on its own, so it imports nothing from the engine.
 */
 import { createInterface } from "node:readline";
+import { VERSION } from "./version.ts";
 
 type Schema = { type: "object"; properties: Record<string, { type: string; description: string }>; required?: string[] };
 type ToolDef = { name: string; description: string; inputSchema: Schema };
@@ -76,7 +77,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       result: {
         protocolVersion: String(m.params?.protocolVersion ?? "2025-06-18"),
         capabilities: { tools: {} },
-        serverInfo: { name: "liner", title: "Liner Code", version: "0.1.0" },
+        serverInfo: { name: "liner", title: "Liner Code", version: VERSION },
         instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, and show_page to show a chart, table or mockup instead of describing it.",
       },
     });

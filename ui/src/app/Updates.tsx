@@ -5,7 +5,7 @@
   newer version comes out. Settings › Updates has the rest.
 */
 import type { AppUpdate, BuiltinProvider, ToolUpdate, Updates } from "@contracts";
-import { newerVersion } from "@contracts";
+import { newerVersion, updateModes } from "@contracts";
 import { NoticeStack, type Notice } from "@liner/components/notice-stack/notice-stack";
 import { toast } from "@liner/components/toast/toast";
 import { bridge, isNative } from "./bridge";
@@ -51,6 +51,7 @@ export function appNotice(a: AppUpdate, native = isNative()): Notice | null {
   if (a.state === "ready")
     return { ...base, title: `${v} is ready`, body: native ? "Restart now, or it goes in when you next quit." : "Restart Liner Code to start using it.", action: native ? { label: "Restart to update", onClick: () => void updates.restart() } : page };
   if (a.state === "downloading") return { ...base, title: `Downloading ${v}`, body: `${Math.round((a.progress ?? 0) * 100)}%${a.size ? ` of ${sizeOf(a.size)}` : ""}. It goes in when you restart or quit.`, action: page };
+  if (a.state === "failed" && a.stuck) return { ...base, title: `${v} couldn't go in`, body: a.error, action: a.url ? { label: "Release page", onClick: () => bridge.openExternal(a.url!) } : details };
   if (a.state === "failed") return { ...base, title: `${v} didn't download`, body: a.error, action: a.can === "install" ? { label: "Try again", onClick: updates.download } : page };
   const news = firstNote(a.notes);
   if (a.can === "source") return { ...base, title: `${v} is out`, body: `${news ? `${news} ` : ""}This copy runs from source: pull and build it to update.`, action: page };
@@ -132,8 +133,8 @@ function dismissNotice(id: string) {
 /** Home's corner: the notices, stacked. */
 export function HomeUpdates() {
   const u = useEngine((s) => s.updates);
-  const app = useEngine((s) => s.settings.updateApp ?? "auto");
-  const tools = useEngine((s) => s.settings.updateTools ?? "auto");
+  const app = useEngine((s) => updateModes(s.settings).app);
+  const tools = useEngine((s) => updateModes(s.settings).tools);
   const notices = noticesOf(u, { app, tools });
   if (!notices.length) return null;
   return <NoticeStack className="lc-up-home" label="Updates" notices={notices} onDismiss={dismissNotice} />;

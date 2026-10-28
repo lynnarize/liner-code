@@ -1,0 +1,71 @@
+.l-mention__box {
+  --i-h: auto;
+  --line: 22px;
+  display: grid;
+  align-items: stretch;
+  padding: 0;
+}
+/* The mirror and the textarea share one cell, one font and one wrap, so they line up. */
+.l-mention__mirror,
+.l-mention__box > textarea {
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  min-height: calc(var(--rows) * var(--line) + 24px);
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 15px;
+  line-height: var(--line);
+  letter-spacing: var(--l-track-body);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.l-mention__mirror {
+  overflow: hidden;
+  color: var(--l-ink);
+  pointer-events: none;
+}
+.l-mention__box > textarea {
+  height: 100%;
+  resize: none;
+  overflow: hidden;
+  color: transparent;
+  caret-color: var(--l-accent-text);
+}
+.l-mention__box > textarea::selection {
+  background: color-mix(in oklab, var(--l-accent) 22%, transparent);
+  color: transparent;
+}
+.l-mention__box > textarea::placeholder {
+  color: var(--l-ink-5);
+}
+.l-mention__tag {
+  border-radius: 5px;
+  background: var(--l-accent-soft);
+  box-shadow: 0 0 0 2px var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+[data-anchor] {
+  display: inline-block;
+  width: 0;
+  height: var(--line);
+  vertical-align: top;
+}
+.l-mention__pop {
+  width: 240px;
+  transform-origin: 20px 0;
+}
+.l-mention__avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--l-surface-3);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}

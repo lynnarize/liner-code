@@ -1,0 +1,45 @@
+.l-slot {
+  display: inline-flex;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.l-slot__col {
+  position: relative;
+  display: inline-grid;
+  height: 1.15em;
+  overflow: hidden;
+}
+/* The landed character sets the column's width; the strip rolls over it. */
+.l-slot__ghost {
+  visibility: hidden;
+}
+.l-slot__strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  justify-items: center;
+  transform: translateY(calc(var(--n) * -1.15em));
+  animation: l-slot-roll 900ms cubic-bezier(0.2, 0.75, 0.2, 1.06) backwards;
+}
+.l-slot__strip[data-still] {
+  animation: none;
+}
+.l-slot__strip span {
+  height: 1.15em;
+}
+@keyframes l-slot-roll {
+  from {
+    transform: translateY(0);
+    filter: blur(1.5px);
+  }
+  70% {
+    filter: blur(0.6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-slot__strip {
+    animation: none;
+  }
+}

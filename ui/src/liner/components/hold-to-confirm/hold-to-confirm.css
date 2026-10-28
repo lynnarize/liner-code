@@ -1,0 +1,117 @@
+.l-hold {
+  --p: 0;
+  --h-h: var(--l-h-md);
+  --h-tint: var(--l-danger-text);
+  position: relative;
+  display: inline-grid;
+  height: var(--h-h);
+  padding: 0;
+  border: 0;
+  border-radius: var(--l-r-control);
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--h-tint);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  letter-spacing: var(--l-track-body);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  /* Pressing harder: the button sinks while you hold. */
+  transition:
+    scale 300ms var(--l-ease-snap),
+    box-shadow var(--l-dur-fast) ease;
+}
+.l-hold[data-size="lg"] {
+  --h-h: var(--l-h-lg);
+  border-radius: 16px;
+  font-size: 15px;
+}
+.l-hold[data-state="holding"] {
+  scale: 0.965;
+  transition: scale 1.2s cubic-bezier(0.2, 0.6, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-hold:hover {
+    box-shadow: var(--l-ctl-shadow-hover);
+  }
+}
+
+.l-hold__base,
+.l-hold__fill {
+  grid-area: 1 / 1;
+  display: grid;
+  align-items: center;
+  padding: 0 18px;
+  border-radius: inherit;
+}
+/* Every label shares one cell, so the width is reserved and never jumps. */
+.l-hold__base > *,
+.l-hold__fill > * {
+  grid-area: 1 / 1;
+}
+/* The filled layer is the same content in inverse colors, clipped to progress:
+   the text flips color exactly where the fill passes. */
+.l-hold__fill {
+  background: var(--h-tint);
+  color: oklch(0.99 0 0);
+  clip-path: inset(0 calc((1 - var(--p)) * 100%) 0 0 round var(--l-r-control));
+}
+
+.l-hold__label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  filter: blur(4px);
+  transform: translateY(30%);
+  transition:
+    opacity 180ms ease,
+    filter 180ms ease,
+    transform 180ms var(--l-ease-exit);
+}
+.l-hold__label[data-on] {
+  opacity: 1;
+  filter: none;
+  transform: none;
+  transition:
+    opacity var(--l-dur-base) ease,
+    filter var(--l-dur-base) ease,
+    transform var(--l-dur-slow) var(--l-ease-out);
+}
+.l-hold__label svg {
+  width: 16px;
+  height: 16px;
+}
+.l-hold__check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.l-hold[data-state="done"] .l-hold__check path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 420ms var(--l-ease-out) 120ms;
+}
+.l-hold[data-state="hint"] .l-hold__base {
+  animation: l-shake 380ms ease;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-hold {
+    --h-h: 48px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-hold[data-state="holding"] {
+    scale: none;
+  }
+  .l-hold__label {
+    filter: none;
+    transform: none;
+  }
+}

@@ -1,0 +1,68 @@
+/*
+  Updates: a notice stack in Home's bottom-left corner, clear of the Desk cue in the middle,
+  and the Updates place in Settings (prefix lc-up-).
+*/
+/* With no project there's no Desk stage around Home: Home itself holds the corner. */
+.lc-home {
+  position: relative;
+}
+.lc-up-home {
+  position: absolute;
+  bottom: 16px;
+  left: 18px;
+  z-index: 2;
+  width: min(300px, calc(50% - 120px));
+}
+/* The cards behind take the front one's box, so every card has one shape: two lines of body
+   (the whole story is in Settings) and one action under them. */
+.lc-up-home .l-notes__body {
+  display: -webkit-box;
+  min-height: calc(2 * 1.45em);
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* ---------- Settings › Updates ---------- */
+.lc-up-ver {
+  font-family: var(--l-font-display);
+  font-variant-numeric: tabular-nums;
+}
+.lc-up-arrow {
+  color: var(--l-ink-4);
+}
+.lc-up-bar {
+  display: block;
+  width: 120px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--l-well-fill);
+}
+.lc-up-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--l-accent);
+  transform-origin: 0 50%;
+  transition: transform 300ms var(--l-spring-smooth);
+}
+.lc-up-notes {
+  max-height: 220px;
+  overflow: auto;
+}
+.lc-up-notes > .lc-md {
+  color: var(--l-ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lc-up-notes > .lc-md :is(h1, h2, h3, h4) {
+  font-size: 13px;
+}
+.lc-up-err {
+  color: var(--l-danger-text);
+}
+.lc-up-quiet {
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+}

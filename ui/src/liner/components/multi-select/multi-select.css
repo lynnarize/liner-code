@@ -1,0 +1,94 @@
+.l-multi__box {
+  --i-h: auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  cursor: text;
+}
+.l-multi__box > input {
+  flex: 1 0 80px;
+  height: 30px;
+  padding-left: 4px;
+}
+.l-multi__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border-radius: 9px;
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  animation: l-multi-in 300ms var(--l-ease-snap) backwards;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+@keyframes l-multi-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    scale: 0.8;
+  }
+}
+.l-multi__chip[data-armed] {
+  background: color-mix(in oklab, var(--l-danger) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-danger) 40%, transparent);
+}
+.l-multi__x {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--l-ink-4);
+  cursor: pointer;
+}
+.l-multi__x:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-multi__x svg {
+  width: 12px;
+  height: 12px;
+}
+.l-multi__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.l-multi__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 6px -6px -6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--l-line);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-multi__foot span {
+  animation: l-swap-in 200ms var(--l-ease-out) backwards;
+}
+.l-multi__clear {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.l-multi__clear:hover {
+  background: var(--l-wash-2);
+}

@@ -1,0 +1,94 @@
+.l-scrub {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 120px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 11px;
+  background: var(--l-field-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-strong);
+  transition:
+    box-shadow 180ms var(--l-ease-out),
+    scale 300ms var(--l-ease-snap);
+}
+.l-scrub:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 4px var(--l-wash);
+}
+.l-scrub[data-scrubbing] {
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink-3),
+    0 0 0 4px var(--l-wash);
+}
+/* At a limit the field gives a little, like reaching the end of a scroll. */
+.l-scrub[data-edge="max"] {
+  scale: 1.02 1;
+  transform-origin: left;
+}
+.l-scrub[data-edge="min"] {
+  scale: 1.02 1;
+  transform-origin: right;
+}
+.l-scrub__handle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 30px;
+  height: 100%;
+  padding: 0 4px 0 10px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  transition: color var(--l-dur-fast) ease;
+}
+.l-scrub__handle:hover,
+.l-scrub[data-scrubbing] .l-scrub__handle {
+  color: var(--l-ink);
+}
+.l-scrub__handle svg {
+  width: 14px;
+  height: 14px;
+}
+.l-scrub__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px 0 4px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  caret-color: var(--l-accent-text);
+}
+.l-scrub[data-scrubbing] .l-scrub__input {
+  cursor: ew-resize;
+}
+/* Where the value sits in its range, as a hairline along the bottom. */
+.l-scrub__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--l-ink-2);
+  opacity: 0.18;
+  transform: scaleX(var(--f));
+  transform-origin: left;
+  transition:
+    transform 160ms var(--l-ease-out),
+    opacity 200ms ease;
+  pointer-events: none;
+}
+.l-scrub[data-scrubbing] .l-scrub__fill,
+.l-scrub:focus-within .l-scrub__fill {
+  opacity: 0.5;
+}

@@ -1,0 +1,99 @@
+.l-xcard {
+  display: grid;
+  width: 100%;
+  padding: var(--l-frame-pad);
+  border: 0;
+  color: var(--l-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: translate 360ms var(--l-spring-snappy);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-xcard:hover {
+    translate: 0 -2px;
+  }
+}
+.l-xcard:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 3px;
+}
+.l-xcard[data-hidden] {
+  visibility: hidden;
+}
+.l-xcard__card {
+  overflow: hidden;
+}
+.l-xcard__media {
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--l-surface-2);
+}
+.l-xcard__media--big {
+  aspect-ratio: 16 / 9;
+}
+.l-xcard__media > * {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.l-xcard__preview {
+  padding: 12px 14px 14px;
+}
+.l-xcard__layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--l-scrim);
+  animation: l-xcard-scrim 300ms ease backwards;
+}
+[data-blur="live"] .l-xcard__layer {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+@keyframes l-xcard-scrim {
+  from {
+    opacity: 0;
+  }
+}
+.l-xcard__open {
+  position: relative;
+  display: grid;
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 48px);
+  outline: none;
+}
+.l-xcard__open .l-xcard__card {
+  overflow-y: auto;
+}
+.l-xcard__detail {
+  padding: 18px 20px 22px;
+  animation: l-unblur 420ms var(--l-ease-out) 120ms backwards;
+}
+.l-xcard__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--l-ink);
+  cursor: pointer;
+  animation: l-unblur 300ms var(--l-ease-out) 160ms backwards;
+}
+.l-xcard__close svg {
+  width: 15px;
+  height: 15px;
+}
+/* Only this card's morph takes the slower, smoother timing; other transitions keep theirs. */
+::view-transition-group(*.l-xcard) {
+  animation-duration: 460ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}

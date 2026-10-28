@@ -1,0 +1,318 @@
+.l-otp {
+  --gap: 8px;
+  --s: min(48px, calc((100cqi - (var(--n) + 1) * var(--gap) - 10px) / var(--n)));
+  --cell-h: calc(var(--s) * 1.2);
+  --cell-r: calc(var(--s) * 0.27);
+  container-type: inline-size;
+  display: grid;
+  justify-items: center;
+  width: 100%;
+}
+.l-otp__slots {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+.l-otp__wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  transition:
+    transform 380ms var(--l-ease-out),
+    opacity 240ms ease;
+}
+
+/* Empty cells sit in the tray; filled cells rise out of it. */
+.l-otp__cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--s);
+  height: var(--cell-h);
+  overflow: hidden;
+  border-radius: var(--cell-r);
+  background: var(--l-field-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-2),
+    inset 0 1px 2px var(--l-drop);
+  color: var(--l-ink);
+  font-size: calc(var(--s) * 0.46);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  transition:
+    background-color 220ms ease,
+    box-shadow 220ms ease;
+}
+.l-otp__cell[data-filled] {
+  background: var(--l-surface-2);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-strong),
+    inset 0 1px 0 var(--l-hi),
+    0 1px 2px var(--l-drop);
+}
+.l-otp__char {
+  display: block;
+  animation: l-otp-pop 300ms var(--l-ease-out) both;
+}
+.l-otp__slots[data-clearing] .l-otp__char {
+  animation: l-otp-out 220ms ease both;
+  animation-delay: calc((var(--n) - 1 - var(--i)) * 22ms);
+}
+@keyframes l-otp-pop {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+    transform: translateY(42%) scale(0.8);
+  }
+}
+@keyframes l-otp-out {
+  to {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateY(-30%) scale(0.85);
+  }
+}
+.l-otp__caret {
+  width: 2px;
+  height: 42%;
+  border-radius: 2px;
+  background: var(--l-accent-text);
+  animation: l-otp-breathe 1.05s ease-in-out infinite alternate;
+}
+@keyframes l-otp-breathe {
+  to {
+    opacity: 0.2;
+  }
+}
+.l-otp__sep {
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--l-ink-5);
+  transition: opacity 200ms ease;
+}
+
+/* The gliding focus ring. */
+.l-otp__ring {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 1;
+  height: var(--cell-h);
+  margin-top: calc(var(--cell-h) / -2);
+  border-radius: var(--cell-r);
+  box-shadow:
+    inset 0 0 0 1.5px var(--l-ink),
+    0 0 0 4px var(--l-wash-2);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 280ms var(--l-ease-out),
+    width 280ms var(--l-ease-out),
+    opacity 180ms ease,
+    box-shadow 220ms ease;
+}
+.l-otp__ring[data-show] {
+  opacity: 1;
+}
+.l-otp__slots:has(.l-otp__input:focus-visible) .l-otp__ring {
+  box-shadow:
+    inset 0 0 0 1.5px var(--l-ink),
+    0 0 0 4px var(--l-accent-soft),
+    0 0 0 5px var(--l-accent-line);
+}
+
+/* The real input covers the cells: paste, SMS autofill and backspace come free. */
+.l-otp__input {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  letter-spacing: -1em;
+  cursor: text;
+  appearance: none;
+}
+.l-otp__input::selection {
+  background: transparent;
+}
+.l-otp__input:autofill,
+.l-otp__input:-webkit-autofill {
+  box-shadow: 0 0 0 100px transparent inset;
+  transition: background-color 9999s;
+}
+
+/* Verifying: a light sweep runs across the cells, one after another. */
+.l-otp__cell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 25%, var(--l-wash-3) 50%, transparent 75%);
+  transform: translateX(-120%);
+  opacity: 0;
+  pointer-events: none;
+}
+.l-otp[data-status="verifying"] .l-otp__cell::after {
+  opacity: 1;
+  animation: l-otp-sweep 1.25s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 70ms);
+}
+.l-otp[data-status="verifying"] .l-otp__cell {
+  color: var(--l-ink-3);
+}
+@keyframes l-otp-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  55%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+/* Error */
+.l-otp[data-status="error"] .l-otp__cell {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--l-danger) 65%, transparent),
+    inset 0 1px 2px var(--l-drop);
+}
+.l-otp[data-status="error"] .l-otp__ring {
+  box-shadow:
+    inset 0 0 0 1.5px var(--l-danger),
+    0 0 0 4px color-mix(in oklab, var(--l-danger) 16%, transparent);
+}
+.l-otp[data-status="error"] .l-otp__char {
+  color: var(--l-danger-text);
+}
+
+/* Success: the cells gather in the middle and become one pill. */
+.l-otp__pill {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--s);
+  height: var(--cell-h);
+  overflow: hidden;
+  border-radius: var(--cell-r);
+  background: var(--l-surface-2);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-strong),
+    inset 0 1px 0 var(--l-hi),
+    0 1px 2px var(--l-drop);
+  opacity: 0;
+  translate: -50% -50%;
+  pointer-events: none;
+  transition:
+    width 300ms var(--l-ease-out),
+    height 300ms var(--l-ease-out),
+    border-radius 300ms var(--l-ease-out),
+    opacity 160ms ease 140ms;
+}
+.l-otp__pill-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  padding: 0 17px 0 13px;
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.l-otp__check {
+  width: 17px;
+  height: 17px;
+  stroke: var(--l-ok);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.l-otp__check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.l-otp[data-status="success"] .l-otp__wrap {
+  transform: translateX(calc(((var(--n) - 1) / 2 - var(--i)) * (var(--s) + var(--gap)))) scale(0.7);
+  opacity: 0;
+  transition:
+    transform 340ms var(--l-ease-out),
+    opacity 220ms ease 120ms;
+}
+.l-otp[data-status="success"] .l-otp__pill {
+  width: var(--pill-w);
+  height: 40px;
+  border-radius: 999px;
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    width 480ms var(--l-spring-snappy) 200ms,
+    height 480ms var(--l-spring-snappy) 200ms,
+    border-radius 480ms var(--l-ease-out) 200ms,
+    opacity 160ms ease 120ms;
+}
+.l-otp[data-status="success"] .l-otp__pill-inner {
+  opacity: 1;
+  transition: opacity 240ms ease 440ms;
+}
+.l-otp[data-status="success"] .l-otp__check path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 380ms var(--l-ease-out) 560ms;
+}
+.l-otp[data-status="success"] .l-otp__input {
+  cursor: pointer;
+}
+
+.l-otp__msg {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  transition: grid-template-rows 300ms var(--l-ease-out);
+}
+.l-otp__msg[data-show] {
+  grid-template-rows: 1fr;
+}
+.l-otp__msg-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.l-otp__msg-text {
+  margin: 0;
+  padding-top: 12px;
+  color: var(--l-danger-text);
+  font-size: var(--l-text-sm);
+  text-align: center;
+  text-wrap: balance;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 200ms ease,
+    transform 300ms var(--l-ease-out);
+}
+.l-otp__msg[data-show] .l-otp__msg-text {
+  opacity: 1;
+  transform: none;
+  transition-delay: 60ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-otp__char,
+  .l-otp__caret {
+    animation: none;
+  }
+}

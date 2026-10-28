@@ -1,0 +1,74 @@
+.l-split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  height: var(--l-h-md);
+  border-radius: 12px;
+  background: var(--l-primary-fill);
+  box-shadow: var(--l-primary-shadow);
+  color: var(--l-primary-ink);
+}
+.l-split[data-variant="secondary"] {
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+}
+.l-split-main,
+.l-split-chev {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-split-main {
+  padding: 0 14px 0 16px;
+  border-radius: 12px 0 0 12px;
+}
+.l-split-chev {
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+  border-radius: 0 12px 12px 0;
+}
+.l-split-main:hover,
+.l-split-chev:hover,
+.l-split-chev[data-open] {
+  background: color-mix(in oklab, currentColor 10%, transparent);
+}
+.l-split-main:active,
+.l-split-chev:active {
+  scale: 0.96;
+}
+.l-split-sep {
+  width: 1px;
+  margin: 9px 0;
+  background: color-mix(in oklab, currentColor 22%, transparent);
+}
+.l-split-icon {
+  display: grid;
+}
+.l-split-icon svg,
+.l-split-chev svg {
+  width: 16px;
+  height: 16px;
+}
+.l-split-chev svg {
+  transition: rotate 300ms var(--l-ease-snap);
+}
+.l-split-chev[data-open] svg {
+  rotate: 180deg;
+}
+/* The new default comes into focus where the old one was. */
+.l-split-label {
+  display: inline-block;
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}

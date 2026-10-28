@@ -1,0 +1,95 @@
+.l-sign {
+  display: grid;
+  width: min(100%, 440px);
+}
+.l-sign__card {
+  position: relative;
+  overflow: hidden;
+}
+.l-sign__canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  color: var(--l-ink);
+  cursor: crosshair;
+  touch-action: none;
+}
+.l-sign__line {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 38px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  color: var(--l-ink-4);
+  pointer-events: none;
+}
+.l-sign__line span {
+  font-size: 18px;
+  line-height: 1;
+  translate: 0 4px;
+}
+.l-sign__line i {
+  flex: 1;
+  height: 1px;
+  background: var(--l-line-strong);
+}
+.l-sign__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  translate: -50% 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  transition:
+    opacity 300ms ease,
+    filter 300ms ease;
+}
+.l-sign:not([data-empty]) .l-sign__hint {
+  opacity: 0;
+  filter: blur(4px);
+}
+.l-sign__strip {
+  padding: 4px 6px 2px 10px;
+}
+.l-sign__status {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.l-sign__tools {
+  display: inline-flex;
+  gap: 2px;
+}
+.l-sign__btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    opacity 200ms ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-sign__btn:hover:not(:disabled) {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-sign__btn:active:not(:disabled) {
+  scale: 0.95;
+}
+.l-sign__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

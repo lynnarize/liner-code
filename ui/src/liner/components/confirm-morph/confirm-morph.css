@@ -1,0 +1,162 @@
+/* One capsule whose width springs to whatever it is saying. */
+.l-cmorph {
+  display: inline-flex;
+  align-items: center;
+  height: var(--l-h-md);
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  transition:
+    width var(--l-dur-spring-snappy) var(--l-spring-snappy),
+    background-color 240ms ease,
+    box-shadow 240ms ease;
+}
+.l-cmorph[data-state="ask"] {
+  background: color-mix(in oklab, var(--l-danger) 8%, var(--l-surface));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--l-danger) 30%, transparent);
+}
+.l-cmorph-in {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  white-space: nowrap;
+}
+.l-cmorph-swap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.l-cmorph-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--l-danger-text);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  cursor: pointer;
+}
+.l-cmorph-trigger svg {
+  width: 16px;
+  height: 16px;
+}
+.l-cmorph-ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.l-cmorph-q {
+  padding: 0 8px 0 10px;
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  font-weight: 500;
+}
+.l-cmorph-btn {
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  animation: l-unblur 320ms var(--l-ease-out) 60ms backwards;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-cmorph-btn:hover {
+  background: var(--l-wash-2);
+}
+.l-cmorph-btn[data-danger] {
+  background: var(--l-danger);
+  color: oklch(0.99 0 0);
+}
+.l-cmorph-btn[data-danger]:hover {
+  background: color-mix(in oklab, var(--l-danger), black 8%);
+}
+.l-cmorph-btn:active {
+  scale: 0.94;
+}
+.l-cmorph-status {
+  height: 32px;
+  padding: 0 4px 0 10px;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-md);
+  font-weight: 500;
+}
+.l-cmorph-spin {
+  width: 15px;
+  height: 15px;
+  border: 1.75px solid var(--l-wash-3);
+  border-top-color: var(--l-ink-2);
+  border-radius: 999px;
+  animation: l-spin 0.8s linear infinite;
+}
+.l-cmorph-check {
+  width: 16px;
+  height: 16px;
+  color: var(--l-ok);
+}
+.l-cmorph-check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-cmorph-draw 380ms var(--l-ease-out) 80ms forwards;
+}
+@keyframes l-cmorph-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.l-cmorph-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-left: 6px;
+  padding: 0 10px 0 7px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-wash);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.l-cmorph-undo:hover {
+  background: var(--l-wash-2);
+}
+/* The ring drains for as long as Undo is offered. */
+.l-cmorph-ring {
+  width: 15px;
+  height: 15px;
+  rotate: -90deg;
+  fill: none;
+  stroke: var(--l-ink-3);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  animation: l-cmorph-drain var(--undo) linear forwards;
+}
+@keyframes l-cmorph-drain {
+  to {
+    stroke-dashoffset: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-cmorph {
+    transition: none;
+  }
+}

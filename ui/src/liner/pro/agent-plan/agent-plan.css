@@ -1,0 +1,495 @@
+/* The plan is a frame (.l-frame): whose it is and the team ride on the glass above, the line
+   of tasks is the white card, and the add field rides on the glass below. The line is yours:
+   grey where a task is yours, the accent where it branches off to an agent, amber where one
+   is back with you. Every lane sits on a fixed 22px step. */
+.l-aplan {
+  --main: 22px;
+  --lane: 22px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 560px;
+  height: 560px;
+  color: var(--l-ink);
+  container-type: inline-size;
+}
+
+/* ---------- Whose plan, and the team ---------- */
+.l-aplan-top {
+  min-height: 48px;
+  padding: 0 4px 0 12px;
+}
+.l-aplan-heading {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.l-aplan-heading b {
+  font-size: var(--l-text-md);
+  font-weight: 600;
+}
+.l-aplan-heading span {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  text-overflow: ellipsis;
+}
+.l-aplan-team {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+.l-aplan-mate {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: none;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    box-shadow var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-aplan-mate:hover {
+    background: var(--l-wash-2);
+  }
+}
+.l-aplan-mate[aria-pressed="true"] {
+  background: var(--l-card-fill);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+}
+
+/* ---------- The card: the key, then the line ---------- */
+.l-aplan-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+/* The counts stay on one line: in a narrow plan they drop their longer words, since the
+   marks already say what each one counts. */
+.l-aplan-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  white-space: nowrap;
+  margin: 0;
+  padding: 13px 16px 2px calc(var(--main) - 5px);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-aplan-sum > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.l-aplan-sum .l-roll {
+  color: var(--l-ink);
+  font-weight: 600;
+}
+.l-aplan-sum i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 99px;
+}
+.l-aplan-sum [data-k="back"] i {
+  background: radial-gradient(circle, var(--l-warn) 0 2px, transparent 2.5px);
+  box-shadow: inset 0 0 0 1.5px var(--l-warn);
+}
+.l-aplan-sum [data-k="out"] i {
+  box-shadow: inset 0 0 0 1.5px var(--l-accent);
+}
+.l-aplan-sum [data-k="done"] i {
+  background: var(--l-ink);
+}
+
+/* Both ends of the list fade, so tasks dissolve as they slide under the counts instead of
+   being cut; the top padding keeps the first task clear of the fade at rest. */
+.l-aplan-list {
+  min-height: 0;
+  margin: 0;
+  padding: 6px 0 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  list-style: none;
+  mask-image: linear-gradient(transparent, #000 14px, #000 calc(100% - 18px), transparent);
+}
+.l-aplan-list::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---------- A task ---------- */
+.l-aplan-task {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 11px 14px 11px calc(var(--main) + var(--lane) + 24px);
+  transition: opacity 240ms ease;
+}
+.l-aplan-task[data-dim] {
+  opacity: 0.34;
+}
+/* Your line runs through every task, from the first mark to the last. */
+.l-aplan-task::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--main) - 0.75px);
+  width: 1.5px;
+  background: var(--l-line-strong);
+}
+.l-aplan-task:first-child::before {
+  background: linear-gradient(transparent, var(--l-line-strong) 14px);
+}
+.l-aplan-task:last-child::before {
+  background: linear-gradient(var(--l-line-strong) calc(100% - 18px), transparent);
+}
+.l-aplan-task + .l-aplan-task::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 14px;
+  left: calc(var(--main) + var(--lane) + 24px);
+  height: 1px;
+  background: var(--l-line);
+}
+
+/* The branch: off the line, down the lane while the agent works, and back. */
+.l-aplan-rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--main) + var(--lane) + 12px);
+  pointer-events: none;
+}
+.l-aplan-fork,
+.l-aplan-return {
+  position: absolute;
+  left: calc(var(--main) - 0.75px);
+  width: calc(var(--lane) + 1.5px);
+  height: 12px;
+  overflow: visible;
+}
+.l-aplan-fork {
+  top: 0;
+  opacity: 0;
+  transition: opacity 0s 440ms;
+}
+.l-aplan-return {
+  bottom: 0;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.l-aplan-fork path,
+.l-aplan-return path {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.l-aplan-fork path {
+  stroke: var(--l-accent);
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 320ms var(--l-ease-out) 120ms;
+}
+.l-aplan-return path {
+  stroke: var(--l-accent-line);
+  stroke-dasharray: 2 3;
+}
+.l-aplan-branch {
+  position: absolute;
+  top: 35px;
+  bottom: 12px;
+  left: calc(var(--main) + var(--lane) - 0.75px);
+  width: 1.5px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: var(--l-accent-line);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 220ms var(--l-ease-out);
+}
+/* Progress fills the lane from the top. */
+.l-aplan-branch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--l-accent);
+  transform: scaleY(var(--p));
+  transform-origin: top;
+  transition: transform 600ms var(--l-spring-smooth);
+}
+/* Hidden curves also go transparent: a round cap would leave a dot behind. */
+.l-aplan-task[data-hold="out"] .l-aplan-fork {
+  opacity: 1;
+  transition: none;
+}
+.l-aplan-task[data-hold="out"] .l-aplan-fork path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 420ms var(--l-ease-out);
+}
+.l-aplan-task[data-hold="out"] .l-aplan-branch {
+  transform: scaleY(1);
+  transition: transform 360ms var(--l-ease-out) 260ms;
+}
+.l-aplan-task[data-hold="out"] .l-aplan-return {
+  opacity: 1;
+  transition: opacity 240ms ease 520ms;
+}
+
+/* The mark on the line: a ring that is yours, amber when it is back, ink when done, or the
+   agent's face out on the lane. It glides between the two on a spring. */
+.l-aplan-node {
+  position: absolute;
+  z-index: 1;
+  top: 11px;
+  left: calc(var(--main) - 11px);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  transition: transform 560ms var(--l-spring-smooth);
+}
+.l-aplan-task[data-hold="out"] .l-aplan-node {
+  transform: translateX(var(--lane));
+}
+.l-aplan-node-in {
+  display: grid;
+  border-radius: 99px;
+  box-shadow:
+    0 0 0 2px var(--l-card-fill),
+    0 0 0 3.5px var(--l-accent-line);
+  animation: l-aplan-pop 320ms var(--l-ease-out) backwards;
+}
+.l-aplan-check {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1.5px var(--l-ink-5);
+  color: var(--l-on-ink);
+  cursor: pointer;
+  animation: l-aplan-pop 320ms var(--l-ease-out) backwards;
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+}
+.l-aplan-check > svg,
+.l-aplan-check::after {
+  grid-area: 1 / 1;
+}
+.l-aplan-check svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.l-aplan-check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 300ms var(--l-ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-aplan-check:hover {
+    box-shadow: inset 0 0 0 1.5px var(--l-ink-3);
+  }
+}
+.l-aplan-task[data-hold="back"] .l-aplan-check {
+  box-shadow: inset 0 0 0 1.5px var(--l-warn);
+}
+.l-aplan-task[data-hold="back"] .l-aplan-check::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--l-warn);
+  animation: l-aplan-ping 1.4s var(--l-ease-in-out) 3;
+}
+.l-aplan-task[data-hold="done"] .l-aplan-check {
+  background: var(--l-ink);
+  box-shadow: none;
+}
+.l-aplan-task[data-hold="done"] .l-aplan-check path {
+  stroke-dashoffset: 0;
+  transition-delay: 80ms;
+}
+@keyframes l-aplan-pop {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+@keyframes l-aplan-ping {
+  50% {
+    scale: 0.55;
+    opacity: 0.55;
+  }
+}
+
+/* ---------- What it says ---------- */
+.l-aplan-body {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+}
+.l-aplan-title {
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  line-height: 20px;
+  text-decoration: line-through transparent;
+  transition:
+    color 240ms ease,
+    text-decoration-color 240ms ease;
+}
+/* A title you can press, to open the task. */
+.l-aplan-open {
+  justify-self: start;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--l-text-md);
+  text-align: start;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .l-aplan-open:hover {
+    color: var(--l-ink-2);
+  }
+}
+.l-aplan-empty {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  text-align: center;
+  text-wrap: balance;
+  animation: l-blur-in 360ms var(--l-ease-out) backwards;
+}
+.l-aplan-task[data-hold="done"] .l-aplan-title {
+  color: var(--l-ink-3);
+  text-decoration-color: var(--l-ink-5);
+}
+.l-aplan-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 5px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  line-height: 18px;
+}
+.l-aplan-note b {
+  color: var(--l-ink-2);
+  font-weight: 600;
+}
+.l-aplan-task[data-hold="done"] .l-aplan-note,
+.l-aplan-task[data-hold="done"] .l-aplan-note b {
+  color: var(--l-ink-3);
+}
+.l-aplan-note-text {
+  animation: l-swap-in 300ms var(--l-ease-out) backwards;
+}
+.l-aplan-task[data-hold="back"] .l-aplan-note-text {
+  color: var(--l-ink-2);
+}
+.l-aplan-count {
+  color: var(--l-ink-3);
+}
+.l-aplan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 7px;
+  animation: l-blur-in 320ms var(--l-ease-out) backwards;
+}
+.l-aplan-waiting {
+  color: var(--l-warn-text);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-aplan-give {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin-top: 3px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  animation: l-blur-in 320ms var(--l-ease-out) backwards;
+}
+.l-aplan-give > span {
+  margin-right: 4px;
+}
+.l-aplan-give-to {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: none;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    scale 200ms var(--l-ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-aplan-give-to:hover {
+    background: var(--l-wash-2);
+  }
+}
+.l-aplan-give-to:active {
+  scale: 0.9;
+}
+.l-aplan-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.l-aplan-due {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  line-height: 20px;
+}
+.l-aplan-due[data-today] {
+  color: var(--l-ink-2);
+  font-weight: 500;
+}
+
+@container (max-width: 440px) {
+  .l-aplan-heading span,
+  .l-aplan-side .l-who,
+  .l-aplan-long {
+    display: none;
+  }
+  .l-aplan-sum {
+    gap: 4px 12px;
+  }
+}

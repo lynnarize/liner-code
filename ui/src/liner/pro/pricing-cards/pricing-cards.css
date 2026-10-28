@@ -1,0 +1,121 @@
+.l-price {
+  container-type: inline-size;
+  display: grid;
+  width: 100%;
+  gap: 14px;
+  min-width: 0;
+  color: var(--l-ink);
+}
+.l-price__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+.l-price__head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.l-price__head p {
+  margin: 3px 0 0;
+  color: var(--l-ink-3);
+  font-size: 13.5px;
+}
+.l-price__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.l-price__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  gap: 10px;
+}
+.l-price__card {
+  --l-frame-r: 22px;
+  display: grid;
+  grid-template-rows: auto auto auto auto 1fr auto;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px 16px 16px;
+}
+/* The plan you are on: its glass takes a breath of the accent. */
+.l-price__card[data-current] {
+  --l-frame-fill: color-mix(in oklab, var(--l-accent) 26%, var(--l-frame-glass));
+}
+.l-price__name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+}
+.l-price__name b {
+  font-size: var(--l-text-md);
+  font-weight: 600;
+}
+.l-price__name .l-badge {
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-price__amount {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 4px;
+}
+.l-price__figure {
+  font-family: var(--l-font-display);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.l-price__per {
+  color: var(--l-ink-3);
+  font-size: 13px;
+}
+.l-price__billed {
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+}
+.l-price__billed b {
+  color: var(--l-ink-2);
+  font-weight: 600;
+}
+.l-price__tag {
+  margin: 6px 0 0;
+  color: var(--l-ink-3);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.l-price__features {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--l-line);
+  list-style: none;
+}
+.l-price__features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--l-ink-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.l-price__features svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  color: var(--l-ink-3);
+}
+.l-price__card .l-btn {
+  width: 100%;
+}

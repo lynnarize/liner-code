@@ -1,0 +1,89 @@
+.l-progress {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 360px);
+}
+.l-progress__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+}
+.l-progress__pct {
+  color: var(--l-ink);
+  font-weight: 600;
+}
+.l-progress__track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+}
+.l-progress[data-size="sm"] .l-progress__track {
+  height: 4px;
+}
+.l-progress__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--l-ink);
+  transform-origin: left;
+  transition: transform 600ms var(--l-spring-smooth);
+}
+.l-progress[data-tone="accent"] .l-progress__fill {
+  background: var(--l-accent);
+}
+.l-progress[data-done] .l-progress__fill {
+  background: var(--l-ok);
+  transition:
+    transform 600ms var(--l-spring-smooth),
+    background-color 400ms ease 300ms;
+}
+/* No value: a soft band sweeps across, slowly. */
+.l-progress__track[data-indeterminate] .l-progress__fill {
+  inset: 0 auto 0 0;
+  width: 40%;
+  transform: none;
+  animation: l-progress-sweep 1.5s var(--l-ease-in-out) infinite;
+}
+@keyframes l-progress-sweep {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 250% 0;
+  }
+}
+.l-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+.l-ring svg {
+  position: absolute;
+  inset: 0;
+  rotate: -90deg;
+}
+.l-ring circle {
+  fill: none;
+}
+.l-ring__track {
+  stroke: var(--l-wash-2);
+}
+.l-ring__fill {
+  stroke: var(--l-ink);
+  stroke-linecap: round;
+  transition:
+    stroke-dashoffset 700ms var(--l-spring-smooth),
+    stroke 400ms ease;
+}
+.l-ring[data-done] .l-ring__fill {
+  stroke: var(--l-ok);
+}
+.l-ring__center {
+  position: relative;
+  font-size: 12px;
+  font-weight: 600;
+}

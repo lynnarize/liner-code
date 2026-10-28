@@ -1,0 +1,99 @@
+.l-act-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.l-act {
+  --a-h: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--a-h);
+  height: var(--a-h);
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-act[data-size="sm"] {
+  --a-h: 28px;
+  border-radius: 9px;
+}
+.l-act[data-labelled] {
+  padding: 0 11px 0 9px;
+}
+.l-act:hover:not(:disabled) {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.l-act:active:not(:disabled) {
+  scale: 0.92;
+  transition-duration: var(--l-dur-instant);
+}
+.l-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* Pressed reads as a quiet inset, not a color. */
+.l-act[data-on] {
+  background: var(--l-wash-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink);
+}
+.l-act-icon {
+  display: grid;
+  place-items: center;
+}
+.l-act-icon svg {
+  width: 17px;
+  height: 17px;
+}
+.l-act[data-size="sm"] .l-act-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* A small glass label under the button once the pointer rests. */
+.l-act-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--l-float);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop-sm);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop-sm);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  color: var(--l-ink);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  translate: -50% 0;
+  animation: l-act-tip 180ms var(--l-ease-out) backwards;
+}
+.l-act-tip kbd {
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 11px;
+}
+@keyframes l-act-tip {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(-3px);
+  }
+}

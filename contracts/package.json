@@ -1,0 +1,8 @@
+{
+  "name": "@liner-code/contracts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Everything that crosses the wire between the engine and the app.",
+  "exports": { ".": "./src/index.ts" }
+}

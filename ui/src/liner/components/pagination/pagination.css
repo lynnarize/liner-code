@@ -1,0 +1,100 @@
+.l-pages {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.l-pages__row {
+  position: relative;
+  display: flex;
+  gap: 2px;
+}
+.l-pages__pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 11px;
+  background: var(--l-ink);
+  pointer-events: none;
+  transition:
+    transform 420ms var(--l-spring-snappy),
+    width 300ms var(--l-spring-snappy);
+}
+.l-pages__num,
+.l-pages__arrow {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color 200ms ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-pages__num:hover:not([aria-current]),
+.l-pages__arrow:hover:not(:disabled) {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-pages__num:active,
+.l-pages__arrow:active:not(:disabled) {
+  scale: 0.92;
+}
+.l-pages__num:focus-visible,
+.l-pages__arrow:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 1px;
+}
+.l-pages__num[aria-current] {
+  color: var(--l-on-ink);
+  font-weight: 600;
+}
+.l-pages__arrow {
+  color: var(--l-ink-2);
+}
+.l-pages__arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.l-pages__arrow svg {
+  width: 16px;
+  height: 16px;
+}
+.l-pages__gap {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  color: var(--l-ink-4);
+  letter-spacing: 0.1em;
+}
+.l-pages[data-variant="compact"] {
+  gap: 6px;
+  padding: 3px;
+  border-radius: 14px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+}
+.l-pages__status {
+  min-width: 64px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-md);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.l-pages__status b {
+  display: inline-block;
+  color: var(--l-ink);
+  font-weight: 600;
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}

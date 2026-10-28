@@ -1,0 +1,70 @@
+.l-sheet {
+  width: min(560px, 100vw);
+  height: 100dvh;
+  margin: 0 auto;
+  pointer-events: none;
+}
+.l-sheet__frame {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -28px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  padding-bottom: 28px;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  pointer-events: auto;
+  will-change: transform;
+}
+.l-sheet__grab {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  cursor: grab;
+  touch-action: none;
+  outline: none;
+}
+.l-sheet__grab:active {
+  cursor: grabbing;
+}
+.l-sheet__grab span {
+  width: 38px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--l-ink-5);
+  transition:
+    width 240ms var(--l-spring-snappy),
+    background-color 200ms ease;
+}
+.l-sheet__grab:hover span,
+.l-sheet__grab:focus-visible span {
+  width: 48px;
+  background: var(--l-ink-4);
+}
+.l-sheet__grab:focus-visible span {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-accent) 40%, transparent);
+}
+.l-sheet__card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  overflow: hidden;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.l-sheet__title {
+  margin: 0;
+  padding: 16px 20px 6px;
+  font-family: var(--l-font-display);
+  font-size: var(--l-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--l-track-display);
+}
+.l-sheet__body {
+  min-height: 0;
+  padding: 6px 20px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}

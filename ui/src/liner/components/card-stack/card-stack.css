@@ -1,0 +1,107 @@
+.l-stack {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  outline: none;
+}
+.l-stack:focus-visible .l-stack__card[data-depth="0"] {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 6px;
+}
+.l-stack__deck {
+  position: relative;
+  display: grid;
+  width: min(100%, 300px);
+}
+.l-stack__card {
+  position: relative;
+  grid-area: 1 / 1;
+  overflow: hidden;
+  border-radius: var(--l-frame-r);
+  touch-action: none;
+  user-select: none;
+  transition:
+    scale 420ms var(--l-spring-snappy),
+    translate 420ms var(--l-spring-snappy),
+    opacity 300ms ease;
+}
+.l-stack__card[data-depth="0"] {
+  z-index: 3;
+  cursor: grab;
+}
+.l-stack__card[data-held] {
+  cursor: grabbing;
+}
+.l-stack__card[data-depth="1"] {
+  z-index: 2;
+  scale: 0.94;
+  translate: 0 14px;
+}
+.l-stack__card[data-depth="2"] {
+  z-index: 1;
+  scale: 0.88;
+  translate: 0 28px;
+  opacity: 0.7;
+}
+.l-stack__tag {
+  position: absolute;
+  top: 16px;
+  z-index: 2;
+  padding: 4px 10px;
+  border-radius: 9px;
+  background: var(--l-card-fill);
+  box-shadow: 0 0 0 1.5px currentColor;
+  font-size: var(--l-text-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.l-stack__tag[data-side="left"] {
+  right: 16px;
+  color: var(--l-ink-3);
+  rotate: 8deg;
+}
+.l-stack__tag[data-side="right"] {
+  left: 16px;
+  color: var(--l-accent-text);
+  rotate: -8deg;
+}
+.l-stack__actions {
+  display: flex;
+  gap: 14px;
+  margin-top: 24px;
+}
+.l-stack__actions button {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition: scale 260ms var(--l-ease-snap);
+}
+.l-stack__actions button[data-primary] {
+  background: var(--l-primary-fill);
+  box-shadow: var(--l-primary-shadow);
+  color: var(--l-primary-ink);
+}
+.l-stack__actions button:hover {
+  scale: 1.06;
+}
+.l-stack__actions button:active {
+  scale: 0.9;
+}
+.l-stack__actions svg {
+  width: 18px;
+  height: 18px;
+}
+.l-stack__empty {
+  padding: 40px;
+  color: var(--l-ink-3);
+}

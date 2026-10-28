@@ -1,0 +1,129 @@
+.l-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  overflow: clip;
+  border-radius: var(--l-frame-r);
+}
+.l-grid__scroll {
+  overflow: auto;
+  scrollbar-width: thin;
+  font-size: var(--l-text-md);
+}
+.l-grid__row {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+}
+.l-grid__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--l-card-fill);
+}
+.l-grid__th,
+.l-grid__corner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 10px;
+  border-right: 1px solid var(--l-line);
+  border-bottom: 1px solid var(--l-line-2);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-grid__th[data-type="number"] {
+  justify-content: flex-end;
+}
+.l-grid__resize {
+  position: absolute;
+  top: 6px;
+  right: -3px;
+  bottom: 6px;
+  z-index: 1;
+  width: 6px;
+  border-radius: 3px;
+  cursor: col-resize;
+  transition: background-color 160ms ease;
+}
+.l-grid__resize:hover,
+.l-grid__resize:active {
+  background: var(--l-accent);
+}
+.l-grid__num {
+  display: grid;
+  place-items: center;
+  border-right: 1px solid var(--l-line);
+  border-bottom: 1px solid var(--l-line);
+  background: var(--l-surface-2);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.l-grid__cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 38px;
+  min-width: 0;
+  padding: 0 10px;
+  border-right: 1px solid var(--l-line);
+  border-bottom: 1px solid var(--l-line);
+  color: var(--l-ink);
+  outline: none;
+  cursor: cell;
+}
+/* The frame's edge is the last column's edge. */
+.l-grid__row > :last-child {
+  border-right: 0;
+}
+.l-grid__cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-grid__cell[data-type="number"] {
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+/* The active cell: an ink outline drawn inside, so neighbours don't move. */
+.l-grid__cell[data-active] {
+  z-index: 1;
+  background: var(--l-accent-soft);
+  box-shadow: inset 0 0 0 2px var(--l-ink);
+  border-radius: 3px;
+}
+.l-grid__cell[data-active]:has(input) {
+  background: var(--l-card-fill);
+  box-shadow:
+    inset 0 0 0 2px var(--l-accent),
+    0 6px 16px -6px var(--l-drop);
+}
+.l-grid__input {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  text-align: inherit;
+  caret-color: var(--l-accent-text);
+}
+.l-grid__cell[data-type="number"] .l-grid__input {
+  text-align: right;
+}
+.l-grid__foot .l-grid__cell,
+.l-grid__foot .l-grid__num {
+  border-bottom: 0;
+  background: var(--l-surface-2);
+  cursor: default;
+}
+.l-grid__foot b {
+  font-weight: 600;
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}

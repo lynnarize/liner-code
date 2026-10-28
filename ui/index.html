@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-look="glass" data-blur="fake" data-accent="blue" writingsuggestions="false">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Liner Code</title>
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Theme before first paint, so nothing flashes.
+      (function () {
+        try {
+          var s = JSON.parse(localStorage.getItem("liner-code:look") || "{}");
+          var dark = s.theme === "dark" || (s.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+          var h = document.documentElement;
+          h.dataset.theme = dark ? "dark" : "light";
+          if (s.accent) h.dataset.accent = s.accent;
+          if (s.glass) h.style.setProperty("--l-glass-opacity", s.glass);
+        } catch (e) {}
+        // The shell: Electron's preload put linerShell here; the Swift shell has a WebKit handler.
+        var root = document.documentElement;
+        if (window.linerShell) {
+          root.dataset.shell = "electron";
+          root.dataset.native = window.linerShell.platform === "darwin" ? "mac" : window.linerShell.platform;
+        } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.liner) root.dataset.native = "mac";
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

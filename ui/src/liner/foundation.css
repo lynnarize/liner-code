@@ -1,0 +1,609 @@
+/*
+  Liner UI foundation
+  Import once at the root of your app. Every component reads these tokens.
+
+  The feel: light, quiet and smooth. Every container is a liquid-glass frame holding a
+  white card (.l-frame, .l-frame-card, .l-frame-strip, or .l-frame-solo for one element;
+  add .l-frame-float when it floats over content); overlays are glass too; text arrives
+  by coming into focus.
+
+  Axes you can set on <html> or on any container:
+    data-theme  = light | dark
+    data-look   = glass | flat
+    data-accent = blue | violet | teal | orange | rose
+    data-blur   = fake | live   (fake when unset)
+
+  Glass is Apple-style Liquid Glass, and its rim catches the light. Its blur is fake by
+  default: a denser tint and no backdrop-filter, so nothing behind it is redrawn while the
+  page scrolls or animates. data-blur="live" makes it the real thing: it blurs what is
+  behind it and bends it at the rim (call startLiquidGlass() from lib/liquid-glass once;
+  Chromium renders the lens, other browsers keep a clear blur), at a GPU cost on every frame
+  that anything behind it moves. How tinted it is, from Clear to Tinted, is one number on
+  <html> or on any element:
+    style="--l-glass-opacity: 0.8"
+  Reduce transparency and Increase contrast force it tinted, as macOS does.
+*/
+
+:root {
+  /* Type */
+  --l-font-display: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --l-font-body: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --l-font-mono: "Geist Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --l-text-xs: 12px;
+  --l-text-sm: 13px;
+  --l-text-md: 14px;
+  --l-text-base: 16px;
+  --l-text-lg: 18px;
+  --l-text-xl: 22px;
+  --l-text-2xl: 28px;
+  --l-text-3xl: 40px;
+  --l-text-4xl: 56px;
+  --l-text-5xl: 76px;
+  /* Liquid Glass, from Clear (0.25, the default, as on macOS) to Tinted (0.9). */
+  --l-glass-opacity: 0.25;
+  /* Frame: the glass rim around a card. */
+  --l-frame-pad: 4px;
+  --l-frame-r: 28px;
+  --l-track-display: -0.025em;
+  --l-track-body: -0.004em;
+
+  /* Radii. Nest them concentrically: inner = outer - gap. */
+  --l-r-xs: 6px;
+  --l-r-sm: 10px;
+  --l-r-control: 14px;
+  --l-r-panel: 20px;
+  --l-r-surface: 28px;
+  --l-r-pill: 999px;
+
+  /* Sizes */
+  --l-h-sm: 32px;
+  --l-h-md: 40px;
+  --l-h-lg: 48px;
+
+  /* Motion. Exits are faster than entrances; state never overshoots. */
+  --l-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --l-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --l-ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --l-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --l-ease-snap: cubic-bezier(0.3, 1.12, 0.4, 1);
+  --l-ease-pop: cubic-bezier(0.34, 1.56, 0.44, 1);
+  /* Critically damped spring, never overshoots. ~730ms to settle, reads done by ~450ms. */
+  --l-spring-smooth: linear(0, 0.0203, 0.0651, 0.1295, 0.1982, 0.2701, 0.3418, 0.4156, 0.4808, 0.5412, 0.5966, 0.6499, 0.6947, 0.7346, 0.7699, 0.801, 0.83, 0.8537, 0.8743, 0.8922, 0.9087, 0.9219, 0.9333, 0.9431, 0.9521, 0.9592, 0.9654, 0.9706, 0.975, 0.9791, 0.9823, 0.985, 0.9873, 0.9894, 0.991, 0.9924, 0.9936, 0.9946, 0.9955, 0.9962, 0.9968, 0.9973, 0.9978, 0.9981, 0.9984, 0.9987, 0.9989, 0.9991, 1);
+  /* Small life for presses and shared highlights. */
+  --l-spring-snappy: linear(0, 0.0209, 0.0716, 0.1343, 0.2154, 0.2936, 0.3819, 0.4597, 0.5418, 0.6105, 0.68, 0.736, 0.7908, 0.8336, 0.8706, 0.9051, 0.931, 0.9545, 0.9714, 0.9862, 0.9964, 1.0049, 1.0103, 1.0144, 1.0166, 1.0178, 1.0182, 1.0178, 1.0169, 1.0158, 1.0143, 1.0129, 1.0113, 1.0099, 1.0084, 1.0071, 1.0059, 1.0048, 1.0039, 1.0031, 1.0024, 1.0018, 1.0013, 1.0008, 1.0005, 1.0003, 1.0001, 0.9999, 1);
+  /* Visible bounce. Celebrations and toys only. */
+  --l-spring-bouncy: linear(0, 0.0463, 0.145, 0.2866, 0.4461, 0.5977, 0.7484, 0.88, 0.9817, 1.0644, 1.1187, 1.1534, 1.1678, 1.1664, 1.153, 1.1316, 1.1072, 1.0799, 1.0534, 1.031, 1.0107, 0.9948, 0.9838, 0.9763, 0.9724, 0.9716, 0.973, 0.9758, 0.9799, 0.9845, 0.9888, 0.993, 0.9968, 0.9996, 1.0019, 1.0035, 1.0044, 1.0048, 1.0047, 1.0043, 1.0037, 1.003, 1.0022, 1.0015, 1.0008, 1.0003, 0.9998, 0.9995, 1);
+  --l-dur-instant: 90ms;
+  --l-dur-fast: 160ms;
+  --l-dur-base: 240ms;
+  --l-dur-slow: 380ms;
+  --l-dur-spring-snappy: 450ms;
+  --l-dur-spring: 730ms;
+  --l-dur-bouncy: 800ms;
+}
+
+/* ---------- Theme: light (default) ---------- */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --l-bg: oklch(0.984 0.002 265);
+  --l-panel: oklch(0.996 0.001 265);
+  --l-surface: oklch(1 0 0);
+  --l-surface-2: oklch(0.974 0.003 265);
+  --l-surface-3: oklch(0.95 0.004 265);
+  --l-tray: oklch(0.966 0.003 265);
+  --l-raised: oklch(1 0 0);
+  --l-float-solid: oklch(1 0 0);
+  --l-ink: oklch(0.21 0.008 265);
+  --l-ink-2: oklch(0.37 0.008 265);
+  --l-ink-3: oklch(0.5 0.008 265);
+  --l-ink-4: oklch(0.62 0.006 265);
+  --l-ink-5: oklch(0.74 0.005 265);
+  --l-on-ink: oklch(0.995 0 0);
+  --l-line: oklch(0.25 0.02 265 / 0.07);
+  --l-line-2: oklch(0.25 0.02 265 / 0.11);
+  --l-line-strong: oklch(0.25 0.02 265 / 0.2);
+  --l-wash: oklch(0.25 0.02 265 / 0.04);
+  --l-wash-2: oklch(0.25 0.02 265 / 0.065);
+  --l-wash-3: oklch(0.25 0.02 265 / 0.1);
+  --l-hi: oklch(1 0 0 / 0.9);
+  --l-drop: oklch(0.3 0.04 265 / 0.08);
+  --l-scrim: oklch(0.97 0.004 265 / 0.5);
+  --l-ok: oklch(0.6 0.15 152);
+  --l-warn: oklch(0.7 0.15 65);
+  --l-danger: oklch(0.6 0.21 25);
+  /* Status as text: the tone with enough ink in it to pass 4.5:1 on the surfaces, wells and
+     its own 12% tint. The tones themselves are for fills, icons and bars. */
+  --l-ok-text: color-mix(in oklab, var(--l-ok) 75%, var(--l-ink));
+  --l-warn-text: color-mix(in oklab, var(--l-warn) 62%, var(--l-ink));
+  --l-danger-text: color-mix(in oklab, var(--l-danger) 82%, var(--l-ink));
+  /* Accent as text: 4.5:1 or better on the surfaces and the accent tint, for all five accents. */
+  --l-accent-text-mix: 70%;
+  /* Data viz: lightness of the five accent steps (light to dark here), and the opt-in
+     categorical palette. Both validated against this surface: ordinal ramp checks for the
+     steps, the six categorical checks for the hues. */
+  --l-viz-l1: 0.76;
+  --l-viz-l2: 0.67;
+  --l-viz-l3: 0.58;
+  --l-viz-l4: 0.49;
+  --l-viz-l5: 0.4;
+  --l-cat-1: #2a78d6;
+  --l-cat-2: #eb6834;
+  --l-cat-3: #1baf7a;
+  --l-cat-4: #eda100;
+  --l-cat-5: #e87ba4;
+  --l-cat-6: #008300;
+  --l-cat-7: #6250d6;
+  --l-cat-8: #e34948;
+  --l-primary-solid: oklch(0.21 0.008 265);
+  --l-primary-ink: oklch(0.995 0 0);
+  /* Liquid glass: the base color its tint is mixed from. Opacity comes from --l-glass-opacity. */
+  --l-glass-base: oklch(1 0 0);
+  --l-glass-edge-hi: oklch(1 0 0 / 1);
+  --l-glass-edge: oklch(1 0 0 / 0.6);
+  --l-glass-glow: oklch(1 0 0 / 0.5);
+  --l-glass-line: oklch(0.25 0.02 265 / 0.1);
+  --l-glass-rim-hi: oklch(1 0 0 / 1);
+  --l-glass-rim-lo: oklch(1 0 0 / 0.12);
+  --l-shadow-float: 0 0 0 1px var(--l-glass-line), 0 18px 44px -18px oklch(0.3 0.04 265 / 0.22), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
+}
+
+/* ---------- Theme: dark ---------- */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --l-bg: oklch(0.155 0.004 265);
+  --l-panel: oklch(0.178 0.004 265);
+  --l-surface: oklch(0.205 0.004 265);
+  --l-surface-2: oklch(0.235 0.004 265);
+  --l-surface-3: oklch(0.27 0.004 265);
+  --l-tray: oklch(0.135 0.004 265);
+  /* Raised sits on a well (wash-2 over the surface, about 0.28 here), so it has to climb
+     well clear of it: slider fills, segmented pills and tab plates read by this step. */
+  --l-raised: oklch(0.35 0.005 265);
+  --l-float-solid: oklch(0.225 0.005 265);
+  --l-ink: oklch(0.97 0.002 265);
+  --l-ink-2: oklch(0.83 0.004 265);
+  --l-ink-3: oklch(0.69 0.005 265);
+  --l-ink-4: oklch(0.56 0.005 265);
+  --l-ink-5: oklch(0.43 0.005 265);
+  --l-on-ink: oklch(0.17 0.004 265);
+  --l-line: oklch(1 0 0 / 0.075);
+  --l-line-2: oklch(1 0 0 / 0.12);
+  --l-line-strong: oklch(1 0 0 / 0.22);
+  --l-wash: oklch(1 0 0 / 0.055);
+  --l-wash-2: oklch(1 0 0 / 0.09);
+  --l-wash-3: oklch(1 0 0 / 0.14);
+  --l-hi: oklch(1 0 0 / 0.08);
+  --l-drop: oklch(0 0 0 / 0.4);
+  --l-scrim: oklch(0.12 0.004 265 / 0.6);
+  --l-ok: oklch(0.78 0.16 152);
+  --l-warn: oklch(0.84 0.15 75);
+  --l-danger: oklch(0.7 0.19 24);
+  /* Dark: the tones already pass as text. */
+  --l-ok-text: var(--l-ok);
+  --l-warn-text: var(--l-warn);
+  --l-danger-text: var(--l-danger);
+  --l-accent-text-mix: 72%;
+  /* Dark: the steps run the other way, so more still reads as further from the surface. */
+  --l-viz-l1: 0.46;
+  --l-viz-l2: 0.55;
+  --l-viz-l3: 0.64;
+  --l-viz-l4: 0.73;
+  --l-viz-l5: 0.82;
+  --l-cat-1: #3987e5;
+  --l-cat-2: #d95926;
+  --l-cat-3: #199e70;
+  --l-cat-4: #c98500;
+  --l-cat-5: #d55181;
+  --l-cat-6: #008300;
+  --l-cat-7: #9085e9;
+  --l-cat-8: #e66767;
+  --l-primary-solid: oklch(0.97 0.002 265);
+  --l-primary-ink: oklch(0.17 0.004 265);
+  --l-glass-base: oklch(0.27 0.004 265);
+  --l-glass-edge-hi: oklch(1 0 0 / 0.2);
+  --l-glass-edge: oklch(1 0 0 / 0.07);
+  --l-glass-glow: oklch(1 0 0 / 0.05);
+  --l-glass-line: oklch(0 0 0 / 0.5);
+  --l-glass-rim-hi: oklch(1 0 0 / 0.42);
+  --l-glass-rim-lo: oklch(1 0 0 / 0.04);
+  --l-shadow-float: 0 0 0 1px var(--l-glass-line), 0 18px 48px -12px oklch(0 0 0 / 0.6), 0 4px 14px -4px oklch(0 0 0 / 0.45);
+}
+
+/* ---------- Accent ---------- */
+:root,
+[data-accent="blue"] {
+  /* The diverging pole opposite the accent: warm for cool accents, blue for warm ones. */
+  --l-viz-neg-h: 38;
+  --l-accent: oklch(0.6 0.19 258);
+  --l-accent-ink: oklch(0.99 0 0);
+}
+[data-accent="violet"] {
+  --l-viz-neg-h: 38;
+  --l-accent: oklch(0.6 0.2 292);
+  --l-accent-ink: oklch(0.99 0 0);
+}
+[data-accent="teal"] {
+  --l-viz-neg-h: 38;
+  --l-accent: oklch(0.64 0.12 192);
+  --l-accent-ink: oklch(0.99 0 0);
+}
+[data-accent="orange"] {
+  --l-viz-neg-h: 255;
+  --l-accent: oklch(0.68 0.17 48);
+  --l-accent-ink: oklch(0.99 0 0);
+}
+[data-accent="rose"] {
+  --l-viz-neg-h: 255;
+  --l-accent: oklch(0.63 0.2 12);
+  --l-accent-ink: oklch(0.99 0 0);
+}
+/* Derived tokens are recomputed wherever an axis is set, so nested previews stay right. */
+:root,
+[data-theme],
+[data-look],
+[data-accent] {
+  --l-accent-text: color-mix(in oklab, var(--l-accent) var(--l-accent-text-mix), var(--l-ink));
+  /* The accent as a fill under --l-accent-ink: deep enough for 4.5:1 with all five accents.
+     Selection tints, focus, rings and chart marks keep --l-accent itself. */
+  --l-accent-fill: color-mix(in oklab, var(--l-accent) 76%, oklch(0.21 0.008 265));
+  --l-accent-soft: color-mix(in oklab, var(--l-accent) 12%, transparent);
+  --l-accent-line: color-mix(in oklab, var(--l-accent) 42%, transparent);
+  --l-mark: color-mix(in oklab, var(--l-accent) 22%, transparent);
+  --l-mark-soft: color-mix(in oklab, var(--l-accent) 13%, transparent);
+  /* Data viz, derived. One accent hue in five validated steps (sequential and ordinal),
+     the opposite pole for diverging, a neutral midpoint, and the grey that context wears. */
+  --l-viz-1: oklch(from var(--l-accent) var(--l-viz-l1) calc(c * 0.6) h);
+  --l-viz-2: oklch(from var(--l-accent) var(--l-viz-l2) calc(c * 0.85) h);
+  --l-viz-3: oklch(from var(--l-accent) var(--l-viz-l3) c h);
+  --l-viz-4: oklch(from var(--l-accent) var(--l-viz-l4) calc(c * 0.92) h);
+  --l-viz-5: oklch(from var(--l-accent) var(--l-viz-l5) calc(c * 0.8) h);
+  --l-viz-neg: oklch(from var(--l-accent) var(--l-viz-l3) calc(c * 0.95) var(--l-viz-neg-h));
+  --l-viz-neg-soft: oklch(from var(--l-accent) var(--l-viz-l1) calc(c * 0.6) var(--l-viz-neg-h));
+  --l-viz-mid: color-mix(in oklab, var(--l-ink) 12%, var(--l-surface));
+  --l-viz-gray: color-mix(in oklab, var(--l-ink) 24%, var(--l-surface));
+}
+
+/* ---------- Look ----------
+   Content sits on white cards with hairlines and quiet grey fills. The glass is the
+   frame around each card and everything that floats on top (menus, popovers, toasts,
+   a sticky bar). The look decides the glass: glass shows what is behind, flat keeps it
+   solid. An element that sets --l-glass-opacity inline gets its own glass here too. */
+:root,
+[data-theme],
+[data-look],
+[data-accent],
+[data-blur],
+[style*="--l-glass-opacity"],
+[data-look="flat"] [data-look="glass"],
+[data-look="flat"] [data-look="glass"] [data-theme],
+[data-look="flat"] [data-look="glass"] [data-accent] {
+  /* In the flow: the same in both looks. */
+  --l-ctl-fill: var(--l-surface);
+  --l-ctl-fill-hover: var(--l-surface-2);
+  --l-ctl-shadow: 0 0 0 1px var(--l-line-2), 0 1px 1px var(--l-drop);
+  --l-ctl-shadow-hover: 0 0 0 1px var(--l-line-strong), 0 1px 2px var(--l-drop);
+  --l-primary-fill: var(--l-primary-solid);
+  --l-primary-shadow: 0 1px 2px var(--l-drop);
+  --l-field-fill: var(--l-surface);
+  --l-field-shadow: none;
+  --l-well-fill: var(--l-wash-2);
+  --l-well-shadow: none;
+  --l-raised-fill: var(--l-raised);
+  --l-raised-shadow: 0 0 0 0.5px var(--l-line-2), 0 1px 2px var(--l-drop), 0 3px 10px -3px var(--l-drop);
+  --l-card-fill: var(--l-surface);
+  --l-card-shadow: 0 0 0 1px var(--l-line);
+  --l-tray-fill: transparent;
+  --l-tray-pad: 0px;
+  --l-tray-ring: none;
+  --l-thumb-shadow: 0 0 0 0.5px oklch(0 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.16), 0 3px 8px -2px oklch(0 0 0 / 0.14), inset 0 1px 0 oklch(1 0 0 / 0.8);
+  /* On top: liquid glass, with a lit rim and a soft inner glow. The blur is fake: no
+     backdrop-filter, and a tint dense enough that sharp content behind it reads as a faint
+     wash. Clear to Tinted still moves it, from 92% to 97%. Live blur, below, is the rest. */
+  --l-glass-blur: calc(1px + var(--l-glass-opacity) * 17px);
+  --l-glass-tint: calc(0.9 + var(--l-glass-opacity) * 0.08);
+  --l-backdrop: none;
+  --l-backdrop-sm: none;
+  --l-glass: color-mix(in oklab, var(--l-glass-base) calc(var(--l-glass-tint) * 100%), transparent);
+  /* The denser glass for overlays scales with it, so frosted is never solid. */
+  --l-glass-strong: color-mix(in oklab, var(--l-glass-base) calc(40% + var(--l-glass-tint) * 60%), transparent);
+  --l-glass-shadow: inset 0 1px 1px -0.5px var(--l-glass-edge-hi), inset 0 -1px 1px -0.5px var(--l-glass-edge), inset 0 0 0 0.5px var(--l-glass-edge), inset 0 0 10px 0 var(--l-glass-glow), 0 0 0 0.5px var(--l-glass-line), 0 1px 2px var(--l-drop), 0 10px 30px -12px var(--l-drop);
+  /* Light catches the top-left and bottom-right of the rim, like a lens. It stays put: a
+     highlight that followed the pointer restyled the whole page on every mouse move. */
+  --l-glass-rim: linear-gradient(135deg, var(--l-glass-rim-hi), var(--l-glass-rim-lo) 30%, transparent 50%, var(--l-glass-rim-lo) 70%, var(--l-glass-rim-hi));
+  --l-float: var(--l-glass-strong);
+  /* The frame: denser glass with a breath of ink, so it stays apart from the white card
+     and labels on it stay readable over busy content. A frame on the page never blurs, so
+     it keeps the clear tint in both blur modes; one that floats takes the overlays' tint. */
+  --l-frame-glass: color-mix(in oklab, var(--l-glass-base) calc(40% + var(--l-glass-opacity) * 60%), transparent);
+  --l-frame-fill: color-mix(in oklab, var(--l-frame-glass), var(--l-ink) 3%);
+  --l-frame-float-fill: color-mix(in oklab, var(--l-glass-strong), var(--l-ink) 3%);
+  --l-frame-backdrop: none;
+}
+
+/* Live blur: the glass blurs and saturates what is behind it, at the clear tint, and the
+   lens bends it at the rim. The GPU redraws it on every frame that anything behind it moves,
+   so it is the opt-in: set data-blur="live" on <html> or on a container. */
+[data-blur="live"],
+:where([data-blur="live"]) [data-theme],
+:where([data-blur="live"]) [data-look],
+:where([data-blur="live"]) [data-accent],
+:where([data-blur="live"]) [style*="--l-glass-opacity"] {
+  --l-glass-tint: var(--l-glass-opacity);
+  --l-backdrop: blur(var(--l-glass-blur)) saturate(185%);
+  --l-backdrop-sm: blur(calc(var(--l-glass-blur) * 0.6)) saturate(170%);
+  --l-frame-backdrop: blur(calc(var(--l-glass-blur) + 4px)) saturate(190%);
+}
+
+/* Reduce transparency or Increase contrast: the glass goes Tinted, as it does on macOS. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root,
+  [style*="--l-glass-opacity"] {
+    --l-glass-opacity: 0.95 !important;
+  }
+}
+
+/* Flat: the frame and overlays are solid. */
+[data-look="flat"],
+[data-look="flat"] [data-theme],
+[data-look="flat"] [data-accent],
+[data-look="flat"] [style*="--l-glass-opacity"] {
+  --l-backdrop: none;
+  --l-backdrop-sm: none;
+  --l-glass: var(--l-float-solid);
+  --l-glass-strong: var(--l-float-solid);
+  --l-glass-shadow: 0 0 0 1px var(--l-line), 0 1px 2px var(--l-drop), 0 10px 30px -12px var(--l-drop);
+  --l-glass-rim: none;
+  --l-float: var(--l-float-solid);
+  --l-frame-glass: var(--l-float-solid);
+  --l-frame-fill: var(--l-surface-2);
+  --l-frame-float-fill: var(--l-surface-2);
+  --l-frame-backdrop: none;
+}
+
+/* ---------- Base ---------- */
+.l-root,
+.l-scope {
+  font-family: var(--l-font-body);
+  letter-spacing: var(--l-track-body);
+  color: var(--l-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+.l-scope *,
+.l-scope *::before,
+.l-scope *::after {
+  box-sizing: border-box;
+}
+.l-num {
+  font-variant-numeric: tabular-nums;
+}
+.l-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Keyboard focus only. Pointer focus never draws a ring. */
+.l-focus:focus-visible,
+.l-focus-within:has(:focus-visible) {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* Liquid glass for what floats on top. Flat look makes it solid. */
+.l-glass {
+  background: var(--l-glass);
+  box-shadow: var(--l-glass-shadow);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+}
+:where(.l-glass, .l-glass-rim) {
+  position: relative;
+}
+/* The lit rim, drawn as a 1px ring so it never tints what is inside. */
+.l-glass::after,
+.l-glass-rim::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--l-glass-rim);
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
+/* ---------- Frame: the default container ----------
+   Every container is liquid glass holding a white card. Put .l-frame on the outside,
+   .l-frame-card on the content and, when there are quiet controls, .l-frame-strip above
+   or below the card. For a single element, .l-frame-solo draws both at once: a glass
+   border and a white middle.
+   Keep filter off every ancestor of a frame, including entrance animations that fill
+   forwards: a wrapper left at filter: blur(0) cuts the glass off from what scrolls behind
+   it. */
+.l-frame,
+.l-frame-solo {
+  border-radius: var(--l-frame-r);
+}
+/* A frame on the plain page keeps its tint and lit rim but no live blur: blurring a flat
+   page gives back the same flat page, at a GPU cost on every repaint. A frame that floats
+   over content (a dialog, a drawer, a sheet) adds .l-frame-float for the overlays' denser
+   tint and, with live blur, the real blur and lens. */
+.l-frame-float {
+  --l-frame-fill: var(--l-frame-float-fill);
+  backdrop-filter: var(--l-lens,) var(--l-frame-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-frame-backdrop);
+}
+:where(.l-frame, .l-frame-solo) {
+  position: relative;
+}
+.l-frame {
+  padding: var(--l-frame-pad);
+  background: var(--l-frame-fill);
+  box-shadow: var(--l-glass-shadow);
+}
+.l-frame-card {
+  border-radius: calc(var(--l-frame-r) - var(--l-frame-pad));
+  background: var(--l-card-fill);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+}
+.l-frame-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 6px;
+}
+.l-frame-strip > * {
+  min-width: 0;
+}
+.l-frame-solo {
+  border: var(--l-frame-pad) solid transparent;
+  background:
+    linear-gradient(var(--l-card-fill), var(--l-card-fill)) padding-box,
+    linear-gradient(var(--l-frame-fill), var(--l-frame-fill)) border-box;
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-2),
+    0 0 0 0.5px var(--l-glass-line),
+    0 1px 2px var(--l-drop),
+    0 10px 30px -12px var(--l-drop);
+}
+/* Chrome renders a lensed surface's whole content blurred once it holds a cross-origin
+   iframe (a payment button, an embedded video), so those keep the plain blur. */
+[style*="--l-lens"]:has(iframe) {
+  --l-lens: initial !important;
+}
+/* The lit rim on the outer edge. */
+.l-frame::after,
+.l-frame-solo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--l-glass-rim);
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+.l-frame-solo::after {
+  inset: calc(var(--l-frame-pad) * -1);
+}
+/* A solo frame that clips its content (overflow: clip) still shows its rim. */
+.l-frame-solo {
+  overflow-clip-margin: var(--l-frame-pad);
+}
+/* A hover plate that springs in under icon buttons. */
+.l-plate {
+  position: relative;
+  isolation: isolate;
+}
+.l-plate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--l-wash-2);
+  opacity: 0;
+  scale: 0.86;
+  transition:
+    opacity var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-plate:hover::before {
+    opacity: 1;
+    scale: 1;
+  }
+}
+.l-plate:focus-visible::before,
+.l-plate[data-on]::before {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Shared keyframes */
+@keyframes l-rise-in {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+    transform: translateY(40%) scale(0.86);
+  }
+}
+/* The house motion for text: it comes into focus. */
+@keyframes l-unblur {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+}
+@keyframes l-blur-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(2px);
+  }
+}
+@keyframes l-blur-out {
+  to {
+    opacity: 0;
+    filter: blur(3px);
+    transform: translateY(-3px);
+  }
+}
+@keyframes l-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(1.5px); }
+}
+/* Endless motion animates transform, never rotate, scale or translate: Chrome runs transform
+   on the compositor for SVG too, but those three on an SVG element repaint the page on the main
+   thread every frame, for as long as the spinner shows. */
+@keyframes l-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes l-shimmer-text {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+
+/* Ongoing work: a calm light passes through the words. Remove the class when done. */
+.l-shimmer {
+  background: linear-gradient(100deg, var(--l-ink-3) 35%, var(--l-ink) 50%, var(--l-ink-3) 65%) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: l-shimmer-text 1.9s linear infinite;
+}
+/* A label replacing another: it unblurs into place. */
+@keyframes l-swap-in {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+  }
+}
+
+/* Timers (data-timer) keep their real duration: they measure time, not motion. */
+@media (prefers-reduced-motion: reduce) {
+  .l-scope *:not([data-timer]),
+  .l-scope *::before,
+  .l-scope *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

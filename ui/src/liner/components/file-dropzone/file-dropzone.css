@@ -1,0 +1,214 @@
+.l-drop {
+  display: grid;
+  width: min(100%, 460px);
+  transition:
+    scale 420ms var(--l-spring-snappy),
+    box-shadow 300ms ease;
+}
+.l-drop[data-over] {
+  scale: 1.015;
+}
+.l-drop__card {
+  display: grid;
+  overflow: hidden;
+}
+.l-drop__zone {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  margin: 6px;
+  padding: 26px 16px 24px;
+  border: 0;
+  border-radius: calc(var(--l-frame-r) - var(--l-frame-pad) - 6px);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background-color 220ms ease,
+    box-shadow 220ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-drop__zone:hover {
+    background: var(--l-wash);
+  }
+}
+.l-drop__zone:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: -2px;
+}
+.l-drop[data-over] .l-drop__zone {
+  background: var(--l-accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--l-accent-line);
+}
+.l-drop__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 6px;
+  border-radius: 14px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-3);
+  transition:
+    translate 420ms var(--l-spring-bouncy),
+    color 200ms ease,
+    background-color 200ms ease;
+}
+.l-drop__icon svg {
+  width: 22px;
+  height: 22px;
+}
+.l-drop[data-over] .l-drop__icon {
+  translate: 0 -4px;
+  background: var(--l-card-fill);
+  color: var(--l-accent-text);
+}
+.l-drop__title {
+  font-size: var(--l-text-md);
+  font-weight: 600;
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}
+.l-drop__sub {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+}
+.l-drop__sub u {
+  color: var(--l-ink-2);
+  text-decoration-color: var(--l-line-strong);
+  text-underline-offset: 3px;
+}
+.l-drop__list {
+  display: grid;
+  margin: 0;
+  padding: 0 6px 6px;
+  list-style: none;
+}
+.l-drop__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px 8px 8px;
+  border-top: 1px solid var(--l-line);
+  animation: l-drop-in 320ms var(--l-ease-out) backwards;
+  transition:
+    opacity 200ms ease,
+    filter 200ms ease,
+    translate 220ms var(--l-ease-out);
+}
+.l-drop__row:first-child {
+  border-top-color: transparent;
+}
+@keyframes l-drop-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    translate: 0 6px;
+  }
+}
+.l-drop__row[data-leaving] {
+  opacity: 0;
+  filter: blur(4px);
+  translate: 8px 0;
+}
+.l-drop__kind {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-3);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.l-drop__row[data-status="error"] .l-drop__kind {
+  color: var(--l-danger);
+}
+.l-drop__meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.l-drop__name {
+  overflow: hidden;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-drop__info {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+  animation: l-swap-in 200ms var(--l-ease-out) backwards;
+}
+.l-drop__row[data-status="error"] .l-drop__info {
+  color: var(--l-danger-text);
+}
+.l-drop__bar {
+  position: relative;
+  height: 3px;
+  margin-top: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+}
+.l-drop__bar i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--l-ink);
+  transform-origin: left;
+  transition: transform 200ms var(--l-ease-out);
+}
+.l-drop__ok {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--l-ok);
+  color: var(--l-on-ink);
+  animation: l-drop-ok 420ms var(--l-ease-pop) backwards;
+}
+@keyframes l-drop-ok {
+  from {
+    opacity: 0;
+    scale: 0.3;
+  }
+}
+.l-drop__ok svg {
+  width: 11px;
+  height: 11px;
+}
+.l-drop__x {
+  display: grid;
+  grid-column: 4;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--l-ink-4);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-drop__x:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-drop__x svg {
+  width: 14px;
+  height: 14px;
+}

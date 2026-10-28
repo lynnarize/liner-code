@@ -1,0 +1,40 @@
+.l-count {
+  --digit: 32px;
+  display: inline-flex;
+  gap: 10px;
+}
+.l-count[data-size="lg"] {
+  --digit: 52px;
+  gap: 14px;
+}
+.l-count__unit {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  animation: l-unblur 400ms var(--l-ease-out) backwards;
+}
+.l-count__box {
+  display: grid;
+  place-items: center;
+  min-width: calc(var(--digit) * 1.9);
+  height: calc(var(--digit) * 1.7);
+  padding: 0 6px;
+  border-radius: calc(var(--digit) * 0.5);
+  font-family: var(--l-font-display);
+  font-size: var(--digit);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.l-count__name {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.l-count__done {
+  font-family: var(--l-font-display);
+  font-size: calc(var(--digit) * 0.9);
+  font-weight: 600;
+  animation: l-unblur 600ms var(--l-ease-out) backwards;
+}

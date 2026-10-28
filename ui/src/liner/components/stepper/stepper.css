@@ -1,0 +1,74 @@
+.l-stepper {
+  --st-h: 44px;
+  --st-pad: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--st-h);
+  padding: var(--st-pad);
+  border-radius: 16px;
+  background: var(--l-well-fill);
+  box-shadow: var(--l-well-shadow);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.l-stepper[data-size="lg"] {
+  --st-h: 54px;
+  --st-pad: 5px;
+  border-radius: 19px;
+}
+
+.l-stepper__btn {
+  display: grid;
+  place-items: center;
+  width: calc(var(--st-h) - var(--st-pad) * 2);
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: calc(16px - var(--st-pad));
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  color: var(--l-ink-2);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color var(--l-dur-fast) ease,
+    opacity var(--l-dur-fast) ease,
+    scale 360ms var(--l-spring-snappy);
+}
+.l-stepper[data-size="lg"] .l-stepper__btn {
+  border-radius: calc(19px - var(--st-pad));
+}
+.l-stepper__btn svg {
+  width: 16px;
+  height: 16px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-stepper__btn:hover {
+    color: var(--l-ink);
+  }
+}
+.l-stepper__btn:active,
+.l-stepper__btn[data-held] {
+  scale: 0.9;
+  transition-duration: var(--l-dur-fast), var(--l-dur-fast), var(--l-dur-instant);
+}
+.l-stepper__btn[data-limit] {
+  color: var(--l-ink-5);
+}
+
+.l-stepper__value {
+  display: grid;
+  place-items: center;
+  min-width: 3.2ch;
+  padding: 0 10px;
+  color: var(--l-ink);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.l-stepper[data-size="lg"] .l-stepper__value {
+  font-size: 26px;
+  min-width: 3.4ch;
+}

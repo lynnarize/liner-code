@@ -1,0 +1,78 @@
+.l-optlist {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.l-opt-match {
+  color: var(--l-ink);
+  font-weight: 600;
+}
+.l-optlist-empty {
+  padding: 16px 10px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  text-align: center;
+  animation: l-unblur 240ms var(--l-ease-out) backwards;
+}
+.l-optbox {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1.5px var(--l-line-strong);
+  color: var(--l-on-ink);
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.l-optbox svg {
+  width: 12px;
+  height: 12px;
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  transition: stroke-dashoffset 220ms var(--l-ease-out);
+}
+.l-optbox[data-on] {
+  background: var(--l-ink);
+  box-shadow: none;
+}
+.l-optbox[data-on] svg {
+  stroke-dashoffset: 0;
+}
+/* A field-shaped trigger, shared by Select and Multi-select. */
+.l-trigger {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.l-trigger-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.l-trigger-value[data-placeholder] {
+  color: var(--l-ink-5);
+}
+.l-trigger-chev {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--l-ink-4);
+  transition: rotate 300ms var(--l-ease-snap);
+}
+[aria-expanded="true"] > .l-trigger-chev,
+[data-open] .l-trigger-chev {
+  rotate: 180deg;
+}
+.l-pop.l-listpop {
+  left: 0;
+  right: 0;
+  min-width: 0;
+}

@@ -1,0 +1,97 @@
+.l-avatar {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--av);
+  height: var(--av);
+  border-radius: 999px;
+  background: var(--l-surface-3);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+  font-size: calc(var(--av) * 0.36);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+.l-avatar[data-square] {
+  border-radius: calc(var(--av) * 0.28);
+}
+.l-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+.l-avatar__status {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: max(8px, calc(var(--av) * 0.26));
+  height: max(8px, calc(var(--av) * 0.26));
+  border-radius: 999px;
+  background: var(--l-ink-5);
+  box-shadow: 0 0 0 2px var(--l-card-fill);
+}
+.l-avatar__status[data-status="online"] {
+  background: var(--l-ok);
+}
+.l-avatar__status[data-status="away"] {
+  background: var(--l-warn);
+}
+.l-avatar__status[data-status="busy"] {
+  background: var(--l-danger);
+}
+.l-avgroup {
+  display: inline-flex;
+  align-items: center;
+  padding-left: calc(var(--av) * 0.28);
+}
+.l-avgroup__item {
+  position: relative;
+  display: inline-grid;
+  margin-left: calc(var(--av) * -0.28);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2.5px var(--l-card-fill);
+  transition: margin 380ms var(--l-spring-snappy), translate 300ms var(--l-spring-snappy);
+}
+/* Near the pointer the group fans out so every face shows. */
+@media (hover: hover) and (pointer: fine) {
+  .l-avgroup:hover .l-avgroup__item {
+    margin-left: 4px;
+  }
+  .l-avgroup__item:hover {
+    translate: 0 -2px;
+  }
+}
+.l-avgroup__more {
+  display: grid;
+  place-items: center;
+  width: var(--av);
+  height: var(--av);
+  background: var(--l-surface-2);
+  color: var(--l-ink-3);
+  font-size: calc(var(--av) * 0.34);
+  font-weight: 600;
+}
+.l-avgroup__tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 10;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  translate: -50% 0;
+  pointer-events: none;
+  animation: l-avtip-in 180ms var(--l-ease-out) backwards;
+}
+@keyframes l-avtip-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(4px);
+  }
+}

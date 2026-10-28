@@ -1,0 +1,214 @@
+.l-seg {
+  --sg-h: 32px;
+  --sg-px: 13px;
+  --sg-fs: 13.5px;
+  --sg-r: 12px;
+  --sg-pad: 3px;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  border-radius: var(--sg-r);
+  background: var(--l-well-fill);
+  box-shadow: var(--l-well-shadow);
+  color: var(--l-ink-3);
+  font-size: var(--sg-fs);
+  line-height: 1;
+  vertical-align: middle;
+}
+.l-seg[data-size="sm"] {
+  --sg-h: 26px;
+  --sg-px: 10px;
+  --sg-fs: 12.5px;
+  --sg-r: 10px;
+  --sg-pad: 2px;
+}
+.l-seg[data-size="lg"] {
+  --sg-h: 38px;
+  --sg-px: 16px;
+  --sg-fs: 14px;
+  --sg-r: 14px;
+  --sg-pad: 4px;
+}
+.l-seg[data-full] {
+  display: flex;
+  width: 100%;
+}
+
+.l-seg__track {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding: var(--sg-pad);
+  touch-action: pan-x pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.l-seg[data-full] .l-seg__track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+.l-seg[data-columns] .l-seg__track {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(var(--sg-cols), minmax(0, 1fr));
+}
+/* Full-width segments may get narrow; let labels shrink instead of overflowing the row. */
+.l-seg[data-full] .l-seg__opt {
+  min-width: 0;
+  padding: 0 6px;
+}
+.l-seg[data-full] .l-seg__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.l-seg__opt {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--sg-h);
+  padding: 0 var(--sg-px);
+  border: 0;
+  border-radius: calc(var(--sg-r) - var(--sg-pad));
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--sg-fs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 200ms ease;
+}
+.l-seg__opt[data-active] {
+  color: var(--l-ink);
+}
+.l-seg__opt:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-seg__opt:not([data-active]):not(:disabled):hover {
+    color: var(--l-ink-2);
+  }
+}
+.l-seg__icon {
+  display: grid;
+  width: 15px;
+  height: 15px;
+}
+.l-seg__icon svg {
+  width: 100%;
+  height: 100%;
+}
+.l-seg__label {
+  display: grid;
+  justify-items: center;
+}
+.l-seg__text,
+.l-seg__text-on {
+  grid-area: 1 / 1;
+  transition: opacity 200ms ease;
+}
+.l-seg__text {
+  font-weight: 450;
+}
+.l-seg__text-on {
+  font-weight: 560;
+  opacity: 0;
+}
+.l-seg__opt[data-active] .l-seg__text {
+  opacity: 0;
+}
+.l-seg__opt[data-active] .l-seg__text-on {
+  opacity: 1;
+}
+.l-seg__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+  font-size: 11px;
+  font-weight: 500;
+  animation: l-blur-in 260ms var(--l-ease-out) both;
+}
+.l-seg__opt[data-active] .l-seg__count {
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+
+/* The pill. Leading edge arrives first, trailing edge catches up: a small stretch. */
+.l-seg__pill {
+  position: absolute;
+  top: var(--sg-pad);
+  bottom: var(--sg-pad);
+  left: 0;
+  right: 100%;
+  z-index: 0;
+  border-radius: calc(var(--sg-r) - var(--sg-pad));
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  opacity: 0;
+  pointer-events: none;
+}
+.l-seg[data-ready] .l-seg__pill {
+  transition:
+    left 400ms var(--l-ease-out),
+    right 400ms var(--l-ease-out),
+    top 360ms var(--l-ease-out),
+    bottom 360ms var(--l-ease-out),
+    scale 220ms var(--l-ease-out),
+    opacity 160ms ease;
+}
+.l-seg[data-ready] .l-seg__pill[data-dir="right"] {
+  transition-duration: 420ms, 260ms, 360ms, 360ms, 220ms, 160ms;
+}
+.l-seg[data-ready] .l-seg__pill[data-dir="left"] {
+  transition-duration: 260ms, 420ms, 360ms, 360ms, 220ms, 160ms;
+}
+.l-seg[data-pressed]:not([data-variant="underline"]) .l-seg__pill {
+  scale: 0.96;
+}
+
+/* Underline variant */
+.l-seg[data-variant="underline"] {
+  --sg-px: 2px;
+  --sg-pad: 0px;
+  border-radius: 0;
+  background: none;
+  box-shadow: inset 0 -1px 0 var(--l-line-2);
+}
+.l-seg[data-variant="underline"] .l-seg__track {
+  gap: 22px;
+}
+.l-seg[data-variant="underline"] .l-seg__opt {
+  height: calc(var(--sg-h) + 8px);
+  border-radius: 6px;
+}
+.l-seg[data-variant="underline"] .l-seg__pill {
+  top: auto;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--l-ink);
+  box-shadow: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-seg {
+    --sg-h: 40px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-seg[data-ready] .l-seg__pill {
+    transition: none;
+  }
+}

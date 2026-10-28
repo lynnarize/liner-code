@@ -1,0 +1,301 @@
+.l-viz {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+}
+.l-viz__card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 18px 14px;
+}
+.l-viz__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.l-viz__titles {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.l-viz__title {
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  font-weight: 600;
+}
+.l-viz__sub {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+}
+.l-viz__figure {
+  flex: none;
+  font-size: var(--l-text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.l-viz__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: -4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-viz__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+  transition: color 200ms ease;
+}
+/* A muted series fades its swatch; its name stays readable. */
+.l-viz__legend li > i {
+  transition: opacity 200ms ease;
+}
+.l-viz__legend li[data-muted] > i {
+  opacity: 0.4;
+}
+.l-viz__legend:has(li[data-muted]) li:not([data-muted]) {
+  color: var(--l-ink);
+}
+.l-viz__legend i,
+.l-viz-tip i {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2.5px;
+}
+.l-viz__legend i[data-kind="line"],
+.l-viz-tip i[data-kind="line"] {
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+}
+.l-viz__plot {
+  position: relative;
+  min-width: 0;
+}
+.l-viz__plot svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.l-viz__table {
+  max-height: 280px;
+  overflow: auto;
+  animation: l-unblur 260ms var(--l-ease-out) backwards;
+}
+.l-viz__table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--l-text-sm);
+}
+.l-viz__table th,
+.l-viz__table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--l-line);
+  text-align: right;
+  white-space: nowrap;
+}
+.l-viz__table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--l-card-fill);
+  color: var(--l-ink-3);
+  font-weight: 500;
+}
+.l-viz__table th:first-child {
+  color: var(--l-ink-2);
+  font-weight: 500;
+  text-align: left;
+}
+.l-viz__table td {
+  font-variant-numeric: tabular-nums;
+}
+.l-viz__strip {
+  padding: 4px 6px 2px 10px;
+}
+.l-viz__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-viz__views {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--l-wash);
+}
+.l-viz__views button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+.l-viz__views button[aria-pressed="true"] {
+  background: var(--l-card-fill);
+  box-shadow: 0 0 0 0.5px var(--l-line-2), 0 1px 2px var(--l-drop);
+  color: var(--l-ink);
+}
+.l-viz__views button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+}
+
+/* Chrome: hairline, solid, recessive. */
+.l-viz__grid line {
+  stroke: var(--l-line);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.l-viz__grid line[data-zero] {
+  stroke: var(--l-line-strong);
+}
+.l-viz text,
+.l-viz-axis text {
+  fill: var(--l-ink-3);
+  font-family: var(--l-font-body);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.l-viz-axis line {
+  stroke: var(--l-line-strong);
+  shape-rendering: crispEdges;
+}
+.l-viz .l-viz-label {
+  fill: var(--l-ink-2);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.l-viz .l-viz-label-strong {
+  fill: var(--l-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+/* Marks that lift when hovered, and the crosshair. */
+.l-viz-mark {
+  transition:
+    opacity 200ms ease,
+    fill 200ms ease,
+    stroke 200ms ease;
+}
+.l-viz-cross {
+  stroke: var(--l-ink-4);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+  pointer-events: none;
+}
+.l-viz-dot {
+  stroke: var(--l-card-fill);
+  stroke-width: 2;
+}
+
+/* The shared tooltip. */
+.l-viz-tip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 4px;
+  min-width: 120px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: var(--l-text-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(14px, -50%);
+  transition:
+    left 90ms linear,
+    top 90ms linear;
+}
+.l-viz-tip[data-side="left"] {
+  transform: translate(calc(-100% - 14px), -50%);
+}
+.l-viz-tip[data-align="above"] {
+  transform: translate(-50%, calc(-100% - 12px));
+}
+.l-viz-tip__title {
+  color: var(--l-ink-3);
+  font-weight: 500;
+}
+.l-viz-tip__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.l-viz-tip__row b {
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.l-viz-tip__row span {
+  color: var(--l-ink-3);
+}
+
+/* Entrances: lines draw, bars grow from the baseline, areas and segments come in soft. */
+.l-viz-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-viz-draw 1100ms var(--l-ease-out) forwards;
+}
+@keyframes l-viz-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.l-viz-grow {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: l-viz-grow 700ms var(--l-spring-smooth) backwards;
+}
+.l-viz-grow[data-dir="x"] {
+  transform-origin: 0 50%;
+  animation-name: l-viz-grow-x;
+}
+@keyframes l-viz-grow {
+  from {
+    scale: 1 0;
+  }
+}
+@keyframes l-viz-grow-x {
+  from {
+    scale: 0 1;
+  }
+}
+.l-viz-fade {
+  animation: l-viz-fade 600ms var(--l-ease-out) backwards;
+}
+@keyframes l-viz-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-viz-draw {
+    stroke-dasharray: none;
+    animation: none;
+  }
+  .l-viz-grow,
+  .l-viz-fade {
+    animation: none;
+  }
+}
+.l-viz-hit {
+  position: relative;
+  touch-action: pan-y;
+}

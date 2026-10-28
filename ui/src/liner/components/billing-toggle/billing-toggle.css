@@ -1,0 +1,52 @@
+.l-bill__yearly {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.l-bill__save {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition:
+    background-color 260ms ease,
+    color 260ms ease,
+    scale 360ms var(--l-ease-pop);
+}
+.l-bill__save[data-on] {
+  background: var(--l-accent-soft);
+  /* It sits on the raised plate, which in dark is light enough to need more ink. */
+  color: color-mix(in oklab, var(--l-accent-text) 70%, var(--l-ink));
+  scale: 1.04;
+}
+.l-bill-price {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 8px;
+  font-family: var(--l-font-display);
+  font-size: var(--l-text-3xl);
+  font-weight: 600;
+  letter-spacing: var(--l-track-display);
+  line-height: 1;
+}
+.l-bill-price__per {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 4px;
+  font-family: var(--l-font-body);
+  font-size: var(--l-text-sm);
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1.2;
+}
+.l-bill-price__per > span:first-child {
+  color: var(--l-ink-3);
+}
+.l-bill-price__note {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}

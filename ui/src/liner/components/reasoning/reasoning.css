@@ -1,0 +1,226 @@
+.l-reason {
+  display: grid;
+  min-width: 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-md);
+}
+
+.l-reason-head {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  height: 30px;
+  margin-left: -6px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--l-ink-3);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color var(--l-dur-fast) ease,
+    background-color var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-reason-head:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+.l-reason-chev {
+  width: 14px;
+  height: 14px;
+  color: var(--l-ink-5);
+  transition: rotate 260ms var(--l-ease-out);
+}
+.l-reason[data-open] .l-reason-chev {
+  rotate: 90deg;
+}
+/* The label width eases between "Thinking" and "Thought for 8s". */
+.l-reason-label {
+  display: inline-grid;
+  interpolate-size: allow-keywords;
+}
+.l-reason-swap {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  animation: l-swap-in 160ms var(--l-ease-out) both;
+}
+.l-reason-time {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Height follows the measured content on a no-bounce ease. */
+.l-reason-body {
+  overflow: hidden;
+  transition: height 360ms var(--l-ease-out);
+}
+.l-reason-inner {
+  padding: 6px 0 4px;
+}
+
+.l-reason-steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-reason-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 8px;
+  padding-bottom: 12px;
+  animation: l-reason-in 360ms var(--l-ease-out) both;
+}
+/* The thread that joins one step to the next. */
+.l-reason-step::before {
+  content: "";
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  left: 9.5px;
+  width: 1px;
+  background: var(--l-line-2);
+  transform-origin: top;
+  animation: l-reason-line 420ms var(--l-ease-out) both;
+}
+.l-reason-step:last-child::before {
+  display: none;
+}
+.l-reason-step:last-child {
+  padding-bottom: 2px;
+}
+@keyframes l-reason-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes l-reason-line {
+  from {
+    scale: 1 0;
+  }
+}
+.l-reason-dot {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--l-ink-4);
+}
+.l-reason-dot svg {
+  width: 16px;
+  height: 16px;
+}
+.l-reason-step[data-kind="step"] .l-reason-dot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--l-ink-5);
+  transition: background-color 300ms ease;
+}
+.l-reason-step[data-active] .l-reason-dot::before {
+  background: var(--l-ink-2);
+  animation: l-reason-pulse 1.2s var(--l-ease-in-out) infinite;
+}
+@keyframes l-reason-pulse {
+  50% {
+    scale: 1.5;
+    opacity: 0.6;
+  }
+}
+.l-reason-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 1px;
+}
+.l-reason-text {
+  justify-self: start;
+  line-height: 18px;
+}
+.l-reason-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.l-reason-chip,
+.l-reason-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px 0 6px;
+  border-radius: 8px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  white-space: nowrap;
+  animation: l-reason-chip 340ms var(--l-ease-snap) both;
+}
+.l-reason-more {
+  padding: 0 6px;
+  background: none;
+  box-shadow: none;
+  color: var(--l-ink-3);
+}
+@keyframes l-reason-chip {
+  from {
+    opacity: 0;
+    scale: 0.85;
+    filter: blur(2px);
+  }
+}
+.l-reason-check svg {
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 99px;
+  background: var(--l-accent);
+  stroke: var(--l-accent-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.l-reason-check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-reason-draw 380ms var(--l-ease-out) 120ms forwards;
+}
+@keyframes l-reason-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.l-reason-final .l-reason-text {
+  color: var(--l-ink);
+}
+
+/* Letter tiles standing in for favicons. Mixed with theme tokens: one rule, both themes. */
+.l-srcmark {
+  --h: 220;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 4px;
+  background: color-mix(in oklab, oklch(0.68 0.13 var(--h)) 32%, var(--l-surface));
+  color: color-mix(in oklab, oklch(0.6 0.16 var(--h)) 72%, var(--l-ink));
+  font-family: var(--l-font-body);
+  font-weight: 650;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-reason-body {
+    transition: none;
+  }
+}

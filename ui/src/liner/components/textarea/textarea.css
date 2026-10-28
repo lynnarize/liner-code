@@ -1,0 +1,59 @@
+.l-textarea__box {
+  --i-h: auto;
+  align-items: stretch;
+  padding: 0;
+}
+.l-textarea__box > textarea {
+  box-sizing: border-box;
+  height: auto;
+  padding: 11px 14px 12px;
+  resize: none;
+  line-height: 22px;
+  transition: height 260ms var(--l-ease-out);
+  scrollbar-width: thin;
+}
+.l-textarea__box > textarea:not([data-scroll]) {
+  overflow: hidden;
+}
+.l-textarea__count {
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px 2px 3px;
+  border-radius: 999px;
+  background: var(--l-field-fill);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.l-textarea__count svg {
+  width: 16px;
+  height: 16px;
+  rotate: -90deg;
+  fill: none;
+  stroke-width: 2.2;
+}
+.l-textarea__count circle:first-child {
+  stroke: var(--l-line-2);
+}
+.l-textarea__count circle:last-child {
+  stroke: var(--l-ink-3);
+  stroke-linecap: round;
+  transition: stroke-dasharray 240ms var(--l-ease-out), stroke 200ms ease;
+}
+.l-textarea__count[data-near] circle:last-child {
+  stroke: var(--l-warn);
+}
+.l-textarea__count[data-over] {
+  color: var(--l-danger-text);
+}
+.l-textarea__count[data-over] circle:last-child {
+  stroke: var(--l-danger);
+}
+.l-textarea__count span {
+  animation: l-swap-in 200ms var(--l-ease-out) backwards;
+}

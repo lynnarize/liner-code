@@ -1,0 +1,117 @@
+.l-react {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.l-react-chip,
+.l-react-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  animation: l-react-in 360ms var(--l-ease-pop) backwards;
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease,
+    color 200ms ease,
+    scale 260ms var(--l-ease-snap);
+}
+@keyframes l-react-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    scale: 0.6;
+  }
+}
+.l-react-chip:hover,
+.l-react-add:hover {
+  background: var(--l-wash-2);
+}
+.l-react-chip:active,
+.l-react-add:active {
+  scale: 0.92;
+}
+/* Yours wear the accent: a soft tint and a ring. */
+.l-react-chip[data-mine] {
+  background: var(--l-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--l-accent-line);
+  color: var(--l-accent-text);
+}
+.l-react-emoji {
+  display: inline-block;
+  font-size: 15px;
+  line-height: 1;
+}
+.l-react-chip[data-pop] .l-react-emoji {
+  animation: l-react-pop 520ms var(--l-ease-pop);
+}
+@keyframes l-react-pop {
+  30% {
+    scale: 1.45;
+    rotate: -10deg;
+  }
+  60% {
+    scale: 0.92;
+    rotate: 4deg;
+  }
+}
+.l-react-n {
+  font-variant-numeric: tabular-nums;
+}
+.l-react-add {
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+  color: var(--l-ink-3);
+  animation: none;
+}
+.l-react-add svg {
+  width: 16px;
+  height: 16px;
+}
+.l-react-picker {
+  display: grid;
+  grid-template-columns: repeat(4, 36px);
+  gap: 2px;
+  min-width: 0;
+  padding: 6px;
+  border-radius: 18px;
+}
+.l-react-pick {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+  animation: l-react-in 320ms var(--l-ease-pop) backwards;
+  transition:
+    background-color 160ms ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-react-pick:hover,
+.l-react-pick:focus-visible {
+  background: var(--l-wash-2);
+  scale: 1.12;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-react-chip,
+  .l-react-pick {
+    animation: none;
+  }
+}

@@ -1,0 +1,73 @@
+.l-tswitch {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-tswitch:hover {
+  background: var(--l-ctl-fill-hover);
+}
+.l-tswitch:active {
+  scale: 0.9;
+}
+
+/* The page-wide transitions. Only the new appearance moves; the old one waits under it. */
+html[data-theme-switch]::view-transition-old(root),
+html[data-theme-switch]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html[data-theme-switch="eclipse"]::view-transition-new(root) {
+  animation: l-ts-eclipse 760ms var(--l-ease-in-out) both;
+}
+html[data-theme-switch="split"]::view-transition-new(root) {
+  animation: l-ts-split 620ms var(--l-ease-out) both;
+}
+html[data-theme-switch="rise"]::view-transition-new(root) {
+  animation: l-ts-rise 640ms var(--l-ease-out) both;
+}
+html[data-theme-switch="fade"]::view-transition-new(root) {
+  animation: l-ts-fade 420ms ease both;
+}
+/* A disc enters from the switch's side and grows until it covers the page. */
+@keyframes l-ts-eclipse {
+  from {
+    clip-path: circle(0 at var(--ts-x) var(--ts-y));
+  }
+  to {
+    clip-path: circle(var(--ts-r) at var(--ts-x) var(--ts-y));
+  }
+}
+@keyframes l-ts-split {
+  from {
+    clip-path: inset(0 50% 0 50%);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes l-ts-rise {
+  from {
+    clip-path: inset(100% 0 0 0);
+    transform: translateY(24px);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+    transform: none;
+  }
+}
+@keyframes l-ts-fade {
+  from {
+    opacity: 0;
+  }
+}

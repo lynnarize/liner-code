@@ -1,0 +1,18 @@
+.l-tshimmer {
+  color: var(--l-ink);
+  animation: l-swap-in 360ms var(--l-ease-out) backwards;
+}
+.l-tshimmer[data-active] {
+  background: linear-gradient(100deg, var(--l-ink-3) calc(50% - var(--spread)), var(--l-ink) 50%, var(--l-ink-3) calc(50% + var(--spread))) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: l-shimmer-text var(--dur) linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-tshimmer[data-active] {
+    animation: none;
+    background: none;
+    color: var(--l-ink-3);
+  }
+}

@@ -1,0 +1,106 @@
+.l-tree,
+.l-tree__group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-tree {
+  display: grid;
+  width: min(100%, 320px);
+  font-size: var(--l-text-md);
+}
+.l-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px 0 calc(6px + var(--level) * 18px);
+  border-radius: 9px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition: background-color 120ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-tree__row:hover {
+    background: var(--l-wash);
+  }
+}
+.l-tree__row:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--l-accent) 55%, transparent);
+}
+.l-tree__row[data-selected] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+  font-weight: 500;
+}
+.l-tree__chev {
+  display: grid;
+  flex: none;
+  width: 14px;
+  color: var(--l-ink-4);
+  transition: rotate 300ms var(--l-spring-snappy);
+}
+.l-tree__chev[data-hidden] {
+  visibility: hidden;
+}
+.l-tree__item[data-open] > .l-tree__row .l-tree__chev {
+  rotate: 90deg;
+}
+.l-tree__chev svg {
+  width: 14px;
+  height: 14px;
+}
+.l-tree__icon {
+  display: grid;
+  flex: none;
+  color: var(--l-ink-4);
+}
+.l-tree__icon svg {
+  width: 16px;
+  height: 16px;
+}
+.l-tree__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-tree__meta {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.l-tree__kids {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--l-spring-smooth);
+}
+.l-tree__item[data-open] > .l-tree__kids {
+  grid-template-rows: 1fr;
+}
+.l-tree__group {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+/* A faint guide down the left of each open branch. */
+.l-tree__group::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 6px;
+  left: calc(13px + var(--level) * 18px);
+  width: 1px;
+  background: var(--l-line-2);
+}
+.l-tree__group > .l-tree__item {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.l-tree__item[data-open] > .l-tree__kids > .l-tree__group > .l-tree__item {
+  opacity: 1;
+  transition-delay: 60ms;
+}

@@ -1,0 +1,99 @@
+.l-datep .l-trigger {
+  min-width: 240px;
+}
+.l-datep__pop {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 22px;
+}
+.l-datep__quick {
+  display: flex;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--l-line);
+}
+.l-datep__quick button,
+.l-datep__presets button {
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-datep__quick button:hover,
+.l-datep__presets button:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-datep__quick button:active,
+.l-datep__presets button:active {
+  scale: 0.95;
+}
+.l-datep__range {
+  grid-template-columns: auto auto;
+  gap: 0;
+  padding: 10px;
+}
+.l-datep__presets {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 4px 10px 4px 2px;
+  margin-right: 12px;
+  border-right: 1px solid var(--l-line);
+}
+.l-datep__presets button {
+  justify-self: stretch;
+  background: transparent;
+  text-align: left;
+}
+.l-datep__presets button[data-on] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-datep__main {
+  display: grid;
+  gap: 10px;
+}
+.l-datep__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--l-line);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+}
+.l-datep__foot > span:first-child {
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}
+.l-datep__btns {
+  display: inline-flex;
+  gap: 6px;
+}
+@media (max-width: 640px) {
+  .l-datep__range {
+    grid-template-columns: 1fr;
+  }
+  .l-datep__presets {
+    display: flex;
+    overflow-x: auto;
+    margin: 0 0 10px;
+    padding: 0 0 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--l-line);
+  }
+}

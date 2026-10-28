@@ -1,0 +1,1125 @@
+/*
+  Settings › Agentic features: the ways as cards, the side-by-side tables, the run modes, and the
+  team down a wire with what to watch for beside it. Prefix lc-ag-.
+*/
+.lc-st-col[data-wide] {
+  max-width: 1060px;
+}
+/* General's way into this page, under Who you talk to. */
+.lc-st-more {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.lc-ag {
+  display: grid;
+  gap: 32px;
+  container: lc-ag / inline-size;
+}
+.lc-ag-cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+
+/* ------------------------------ Choices (ways, run modes) ------------------------------ */
+
+.lc-ag-ways,
+.lc-ag-modes {
+  display: grid;
+  gap: 12px;
+}
+@container lc-ag (min-width: 900px) {
+  .lc-ag-ways {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.lc-ag-modes {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.lc-ag-modes > [data-slim] {
+  grid-column: 1 / -1;
+}
+@container lc-ag (max-width: 720px) {
+  .lc-ag-modes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.lc-ag-choice {
+  cursor: pointer;
+  transition: box-shadow 280ms var(--l-spring-smooth);
+}
+.lc-ag-choice[data-on] {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 5px var(--l-accent-soft),
+    0 1px 2px var(--l-drop);
+}
+.lc-ag-choice > .lc-fcard {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  box-sizing: border-box;
+  padding: 16px 18px 18px;
+}
+.lc-ag-choice-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: -4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-ag-choice-h b {
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+.lc-ag-radio {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--l-surface);
+  box-shadow: inset 0 0 0 1.5px var(--l-line-2);
+  transition: box-shadow 280ms var(--l-spring-smooth);
+}
+.lc-ag-choice[data-on] .lc-ag-radio {
+  box-shadow: inset 0 0 0 5.5px var(--l-accent);
+}
+@media (hover: hover) {
+  .lc-ag-choice:not([data-on]):hover .lc-ag-radio {
+    box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
+  }
+}
+.lc-ag-tag {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+}
+.lc-ag-tag[data-tone="accent"] {
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+.lc-ag-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lc-ag-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px 0 6px;
+  border-radius: 10px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  font-size: 13px;
+  color: var(--l-ink);
+  white-space: nowrap;
+}
+.lc-ag-chip b {
+  font-weight: 600;
+}
+.lc-ag-chip .lc-quiet {
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+}
+.lc-ag-chip[data-soft] {
+  padding: 0 10px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+}
+.lc-ag-chip[data-soft] svg {
+  color: var(--l-ink-3);
+}
+.lc-ag-joint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-ag-kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 18px;
+  margin: 0;
+  padding-top: 14px;
+  box-shadow: 0 -1px 0 var(--l-line);
+  font-size: 13px;
+  line-height: 19px;
+}
+.lc-ag-kv dt {
+  color: var(--l-ink-3);
+}
+.lc-ag-kv dd {
+  margin: 0;
+  color: var(--l-ink);
+}
+/* Three across, each card reads like a spec sheet: the label over its line. */
+@container lc-ag (min-width: 900px) {
+  .lc-ag-ways .lc-ag-kv {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+  }
+  .lc-ag-ways .lc-ag-kv dt {
+    font-size: 12px;
+  }
+  .lc-ag-ways .lc-ag-kv dd + dt {
+    margin-top: 9px;
+  }
+}
+.lc-ag-warnword {
+  color: var(--l-warn-text);
+}
+/* The plain choice: one line, its note beside the name. */
+.lc-ag-choice[data-slim] > .lc-fcard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+  padding: 12px 18px;
+}
+.lc-ag-choice[data-slim] .lc-ag-kv {
+  flex: 1;
+  min-width: 260px;
+  padding: 0;
+  box-shadow: none;
+}
+
+/* ------------------------------------ Tables ------------------------------------ */
+
+.lc-ag-tablecard {
+  overflow-x: auto;
+  padding: 6px 14px 14px;
+}
+.lc-ag-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+.lc-ag-table th,
+.lc-ag-table td {
+  padding: 11px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.lc-ag-table thead th {
+  padding-top: 13px;
+  padding-bottom: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+}
+.lc-ag-table tbody th {
+  width: 24%;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-ag-table tbody td {
+  color: var(--l-ink);
+}
+.lc-ag-table tbody tr > * {
+  box-shadow: inset 0 1px 0 var(--l-line);
+}
+/* The way you start with is a soft band down its column. */
+.lc-ag-table [data-on] {
+  background: color-mix(in oklab, var(--l-accent-soft) 55%, transparent);
+}
+.lc-ag-table thead th[data-on] {
+  border-radius: 10px 10px 0 0;
+  color: var(--l-accent-text);
+}
+.lc-ag-table tbody tr:last-child td[data-on] {
+  border-radius: 0 0 10px 10px;
+}
+.lc-ag-sub > * {
+  padding-top: 20px !important;
+  padding-bottom: 6px !important;
+}
+.lc-ag-sub th {
+  font-size: 12px;
+  font-weight: 600 !important;
+  color: var(--l-ink-2) !important;
+  white-space: nowrap;
+}
+.lc-ag-num {
+  font-variant-numeric: tabular-nums;
+}
+.lc-ag-num small {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-ag-wait {
+  display: inline-block;
+  width: 34px;
+  height: 9px;
+  border-radius: 5px;
+  background: var(--l-wash-2);
+  animation: lc-ag-wait 900ms ease-in-out infinite alternate;
+}
+@keyframes lc-ag-wait {
+  to {
+    opacity: 0.4;
+  }
+}
+.lc-ag-table[data-compact] th,
+.lc-ag-table[data-compact] td {
+  padding: 9px 10px;
+  font-size: 12.5px;
+}
+.lc-ag-table[data-compact] tbody th {
+  width: 30%;
+}
+.lc-ag-foot {
+  margin: 8px 12px 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+.lc-ag-pad {
+  padding: 16px 18px;
+}
+.lc-ag-plain {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--l-ink-2);
+}
+
+/* --------------------------- The escalation and the modes' table --------------------------- */
+
+.lc-ag-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 14px;
+  margin-top: 8px;
+}
+@container lc-ag (max-width: 760px) {
+  .lc-ag-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.lc-ag-panel {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+.lc-ag-sample {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+.lc-ag-sample-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.lc-ag-sample-h b {
+  font-weight: 600;
+}
+.lc-ag-sample p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 20px;
+}
+
+/* ------------------------------------ The team ------------------------------------ */
+
+.lc-ag-board {
+  display: grid;
+  align-items: start;
+  gap: 14px;
+}
+@container lc-ag (min-width: 900px) {
+  .lc-ag-board {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+  .lc-ag-notes {
+    position: sticky;
+    top: 16px;
+  }
+}
+.lc-ag-wirecard {
+  padding: 0 18px 6px 6px;
+  container: lc-ag-wire / inline-size;
+}
+.lc-ag-wirehead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding: 14px 0 12px 14px;
+  box-shadow: inset 0 -1px 0 var(--l-line);
+  font-size: 13px;
+}
+.lc-ag-wirehead b {
+  font-weight: 600;
+}
+.lc-ag-legend {
+  display: inline-flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-ag-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lc-ag-legend i {
+  width: 18px;
+  border-top: 1.5px dashed var(--l-accent);
+}
+.lc-ag-legend i[data-solid] {
+  border-top-style: solid;
+  border-top-color: var(--l-ink-4);
+}
+.lc-ag-wire {
+  position: relative;
+  display: grid;
+  padding: 4px 0;
+}
+.lc-ag-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.lc-ag-spine {
+  fill: none;
+  stroke: var(--l-ink-4);
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+.lc-ag-loop,
+.lc-ag-head {
+  fill: none;
+  stroke: var(--l-accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lc-ag-loop {
+  stroke-dasharray: 3 4;
+  animation: lc-ag-flow 1.6s linear infinite;
+}
+/* The dashes drift back up toward the writer, the way the work goes. */
+@keyframes lc-ag-flow {
+  to {
+    stroke-dashoffset: 14;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-ag-loop {
+    animation: none;
+  }
+}
+.lc-ag-job {
+  position: relative;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px 14px;
+  padding: 14px 0;
+}
+.lc-ag-job + .lc-ag-job::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 72px;
+  height: 1px;
+  background: var(--l-line);
+}
+.lc-ag-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  justify-self: end;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 0 0 5px var(--l-surface);
+  color: var(--l-ink-2);
+}
+.lc-ag-node[data-agent] {
+  background: none;
+  box-shadow: 0 0 0 5px var(--l-surface);
+}
+.lc-ag-node[data-agent] .lc-disc {
+  width: 24px !important;
+  height: 24px !important;
+}
+/* Steps that are yours or the harness's sit quieter on the wire. */
+.lc-ag-job[data-fixed] {
+  padding: 10px 0;
+}
+.lc-ag-job[data-fixed] .lc-ag-node {
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+  background: var(--l-wash-2);
+  box-shadow: 0 0 0 5px var(--l-surface);
+  color: var(--l-ink-3);
+}
+.lc-ag-job[data-fixed] .lc-ag-node svg {
+  width: 10px;
+  height: 10px;
+}
+.lc-ag-job[data-fixed] .lc-ag-job-t b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-ag-job[data-off] .lc-ag-node:not([data-agent]) {
+  color: var(--l-ink-4);
+  box-shadow:
+    0 0 0 1px var(--l-line),
+    0 0 0 5px var(--l-surface);
+}
+.lc-ag-job-t {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.lc-ag-job-t b {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.lc-ag-job-t small {
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+}
+.lc-ag-job-c {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lc-ag-job-u {
+  grid-column: 2 / -1;
+  min-width: 0;
+}
+@container lc-ag-wire (max-width: 620px) {
+  .lc-ag-job {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+  .lc-ag-job-c {
+    grid-column: 2;
+  }
+}
+.lc-ag-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  border-radius: 999px;
+  background: var(--l-accent-soft);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--l-accent-text);
+}
+.lc-ag-sees {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--l-ink-2);
+}
+.lc-ag-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+.lc-ag-bars i {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--l-line-2);
+}
+.lc-ag-bars i:nth-child(1) {
+  height: 4px;
+}
+.lc-ag-bars i:nth-child(2) {
+  height: 6px;
+}
+.lc-ag-bars i:nth-child(3) {
+  height: 8px;
+}
+.lc-ag-bars i:nth-child(4) {
+  height: 10px;
+}
+.lc-ag-bars i[data-on] {
+  background: var(--l-ink-2);
+}
+
+.lc-ag-revc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The writer's helpers sit indented under it, on a line of their own. */
+.lc-ag-helpers {
+  display: grid;
+  gap: 6px;
+  margin-left: 5px;
+  padding-left: 14px;
+  box-shadow: inset 1.5px 0 0 var(--l-line-2);
+}
+.lc-ag-helper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 12px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.lc-ag-helper[data-off] {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.lc-ag-helper-t {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 160px;
+}
+.lc-ag-helper-t b {
+  font-size: 13px;
+  font-weight: 500;
+}
+.lc-ag-helper-t small {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+.lc-ag-helper .lc-ag-sees {
+  margin-top: 0;
+}
+.lc-ag-helper > .lc-quiet {
+  font-size: 12px;
+}
+.lc-ag-crew {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.lc-ag-crewchip {
+  gap: 6px;
+  padding: 0 10px 0 5px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.lc-ag-crewchip[data-on] {
+  color: var(--l-ink);
+}
+.lc-ag-crewchip > svg {
+  color: var(--l-accent);
+}
+.lc-ag-crewchip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.lc-ag-crew > .lc-quiet {
+  font-size: 12px;
+}
+
+/* What to watch for: warnings first, in amber; notes after. */
+.lc-ag-notes {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+.lc-ag-notelist {
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+}
+.lc-ag-note {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-2);
+  animation: l-blur-in 320ms var(--l-ease-out) backwards;
+}
+.lc-ag-note + .lc-ag-note:not([data-tone="warn"]) {
+  box-shadow: 0 -1px 0 var(--l-line);
+  border-radius: 0 0 14px 14px;
+}
+.lc-ag-note > svg {
+  margin-top: 2px;
+  color: var(--l-ink-3);
+}
+.lc-ag-note b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-ag-note[data-tone="warn"] {
+  background: color-mix(in oklab, var(--l-warn) 10%, transparent);
+}
+.lc-ag-note[data-tone="warn"] > svg {
+  color: var(--l-warn-text);
+}
+.lc-ag-note[data-tone="ok"] > svg {
+  color: var(--l-ok-text);
+}
+
+/* ---------------------------------- The cost test ---------------------------------- */
+
+.lc-ag-trial {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px 18px;
+}
+.lc-ag-task {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.lc-ag-task-l {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-ag-task p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--l-ink);
+}
+.lc-ag-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 12px;
+}
+.lc-ag-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  color: var(--l-ink);
+}
+.lc-ag-file svg {
+  color: var(--l-ink-3);
+}
+.lc-ag-file .lc-quiet {
+  font-family: var(--l-font-sans, inherit);
+}
+.lc-ag-trialbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.lc-ag-trialbar .lc-ag-crewchip .lc-quiet {
+  font-size: 11.5px;
+}
+.lc-ag-cost {
+  margin: -4px 0 0;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+}
+.lc-ag-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+.lc-ag-result {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  animation: l-blur-in 320ms var(--l-ease-out) backwards;
+}
+.lc-ag-result[data-state="working"] {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--l-accent) 40%, var(--l-line-2)),
+    0 1px 2px var(--l-drop);
+}
+.lc-ag-result-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+.lc-ag-result-h b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.lc-ag-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--l-accent-text);
+}
+.lc-ag-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--l-ok-text);
+}
+.lc-ag-result .lc-ag-chain {
+  gap: 4px;
+}
+.lc-ag-result .lc-ag-chip {
+  height: 26px;
+  padding: 0 8px 0 4px;
+  font-size: 12px;
+}
+.lc-ag-result .lc-ag-chip .lc-quiet {
+  font-size: 11.5px;
+}
+.lc-ag-big {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--l-font-display, inherit);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.lc-ag-big > .lc-quiet {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.lc-ag-big small {
+  font-family: var(--l-font-sans, inherit);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--l-ink-3);
+}
+.lc-ag-stats {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 14px;
+  margin: 0;
+  padding-top: 10px;
+  box-shadow: 0 -1px 0 var(--l-line);
+  font-size: 12.5px;
+}
+.lc-ag-stats dt {
+  color: var(--l-ink-3);
+}
+.lc-ag-stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  justify-self: end;
+}
+.lc-ag-why {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-warn-text);
+}
+.lc-ag-aside {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+.lc-ag-open {
+  justify-self: start;
+}
+.lc-ag-trialfoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 0;
+}
+
+/* ------------------------------------ Setups ------------------------------------ */
+
+.lc-ag-anchor {
+  scroll-margin-top: 12px;
+}
+.lc-ag-newbtn {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 9px;
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 1px var(--l-drop);
+  font-size: 12.5px;
+  color: var(--l-ink);
+}
+.lc-ag-newbtn[data-open] {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+.lc-ag-editlink {
+  justify-self: start;
+}
+.lc-ag-stagelist {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 18px;
+}
+.lc-ag-stagelist b {
+  font-weight: 600;
+}
+.lc-ag-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 4px;
+}
+.lc-ag-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.lc-ag-tab[aria-selected="true"] {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-ag-tab:not([aria-selected="true"]):hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink-2);
+  }
+}
+.lc-ag-inuse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-ok);
+}
+.lc-ag-name {
+  min-width: 0;
+  width: 15ch;
+  max-width: 260px;
+  height: 30px;
+  margin: -4px 0 -4px -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--l-ink);
+  field-sizing: content;
+  transition: box-shadow 140ms ease;
+}
+@media (hover: hover) {
+  .lc-ag-name:hover {
+    box-shadow: inset 0 0 0 1px var(--l-line);
+  }
+}
+.lc-ag-name:focus {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+.lc-ag-count {
+  font-size: 12.5px;
+}
+.lc-ag-wirehead .lc-ib:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.lc-ag-step {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-ag-stagec {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.lc-ag-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lc-ag-who b {
+  font-weight: 600;
+}
+.lc-ag-who .lc-quiet,
+.lc-ag-nobody-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-ag-nobody-t {
+  color: var(--l-ink-2);
+}
+.lc-ag-job-u {
+  display: grid;
+  gap: 8px;
+}
+.lc-ag-jobf {
+  display: grid;
+  gap: 6px;
+}
+.lc-ag-jobl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.lc-ag-jobl > span {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-ag-jobl .lc-input {
+  height: 32px;
+  font-size: 13px;
+}
+.lc-ag-phrases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 52px;
+}
+.lc-ag-phrase {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  font-size: 12px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-ag-phrase svg {
+  color: var(--l-ink-4);
+}
+@media (hover: hover) {
+  .lc-ag-phrase:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+/* The hand-off row reads as a gap in the wire you can fill. */
+.lc-ag-job[data-add] .lc-ag-node {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 0 0 5px var(--l-surface);
+  border: 1px dashed var(--l-ink-4);
+  box-sizing: border-box;
+  color: var(--l-ink-3);
+}
+.lc-ag-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.lc-ag-auto .lc-quiet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

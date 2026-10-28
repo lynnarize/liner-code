@@ -1,0 +1,146 @@
+.l-like {
+  --heart: oklch(0.68 0.2 15);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    box-shadow var(--l-dur-fast) ease,
+    background var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease,
+    scale 380ms var(--l-spring-snappy);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-like:hover {
+    box-shadow: var(--l-ctl-shadow-hover);
+    color: var(--l-ink);
+  }
+}
+.l-like:active {
+  scale: 0.95;
+  transition-duration: var(--l-dur-instant);
+}
+.l-like[data-on] {
+  background: color-mix(in oklab, var(--heart) 14%, var(--l-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--heart) 34%, transparent);
+  color: var(--l-ink);
+}
+
+.l-like__icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+.l-like__heart {
+  width: 20px;
+  height: 20px;
+  fill: transparent;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  transition:
+    fill 200ms ease,
+    stroke 200ms ease;
+}
+.l-like[data-on] .l-like__heart {
+  fill: var(--heart);
+  stroke: var(--heart);
+  /* Playful moment: this is the one place a visible bounce belongs. */
+  animation: l-like-pop 620ms var(--l-ease-out) both;
+}
+@keyframes l-like-pop {
+  0% {
+    scale: 0.2;
+  }
+  30% {
+    scale: 0.2;
+  }
+  62% {
+    scale: 1.28;
+  }
+  80% {
+    scale: 0.94;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+.l-like__burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.l-like__ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 10px solid var(--heart);
+  animation: l-like-ring 520ms var(--l-ease-out) forwards;
+}
+@keyframes l-like-ring {
+  0% {
+    scale: 0.1;
+    border-width: 12px;
+    border-color: var(--heart);
+  }
+  45% {
+    scale: 1;
+    border-width: 12px;
+    border-color: color-mix(in oklab, var(--heart) 55%, var(--l-surface));
+  }
+  80% {
+    opacity: 1;
+    border-width: 1.5px;
+  }
+  100% {
+    scale: 1.15;
+    border-width: 0;
+    opacity: 0;
+  }
+}
+.l-like__dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: var(--heart);
+  opacity: 0;
+  animation: l-like-dot 600ms var(--l-ease-out) 220ms forwards;
+}
+/* The red is the like itself; the sparks around it stay quiet. */
+.l-like__dot:nth-child(odd) {
+  background: var(--l-ink-4);
+}
+/* rotate() first, so translateY travels along each dot's own angle. */
+@keyframes l-like-dot {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--a)) translateY(-8px) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(var(--a)) translateY(calc(-8px - var(--far))) scale(0);
+  }
+}
+
+.l-like__count {
+  min-width: 1ch;
+  font-variant-numeric: tabular-nums;
+}

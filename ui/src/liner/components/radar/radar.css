@@ -1,0 +1,59 @@
+.l-radar {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.l-radar svg {
+  width: auto !important;
+  overflow: visible;
+}
+.l-radar__ring {
+  fill: none;
+  stroke: var(--l-line);
+}
+.l-radar__spoke {
+  stroke: var(--l-line);
+  transition: stroke 160ms ease;
+}
+.l-radar__spoke[data-on] {
+  stroke: var(--l-ink-4);
+}
+.l-radar__shape {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: l-radar-in 700ms var(--l-spring-smooth) backwards;
+}
+@keyframes l-radar-in {
+  from {
+    scale: 0.2;
+    opacity: 0;
+  }
+}
+.l-radar__read {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 14px;
+  min-height: 22px;
+  font-size: var(--l-text-sm);
+  animation: l-swap-in 180ms var(--l-ease-out) backwards;
+}
+.l-radar__read b {
+  font-weight: 600;
+}
+.l-radar__read span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--l-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.l-radar__read i {
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+}
+.l-radar__hint {
+  color: var(--l-ink-3) !important;
+}

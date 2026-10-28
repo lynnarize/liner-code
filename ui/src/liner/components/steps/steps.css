@@ -1,0 +1,152 @@
+.l-steps {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-steps[data-orientation="vertical"] {
+  flex-direction: column;
+}
+.l-step {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.l-steps[data-orientation="horizontal"] .l-step {
+  flex-direction: column;
+}
+.l-step:last-child {
+  flex: 0 0 auto;
+}
+.l-step__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.l-steps[data-orientation="horizontal"] .l-step__head {
+  flex-direction: column;
+  align-items: flex-start;
+}
+button.l-step__head {
+  cursor: pointer;
+}
+button.l-step__head:focus-visible {
+  border-radius: 10px;
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 4px;
+}
+.l-step__dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1.5px var(--l-line-strong);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 300ms ease,
+    box-shadow 300ms ease,
+    color 300ms ease,
+    scale 400ms var(--l-ease-pop);
+}
+.l-step[data-state="current"] .l-step__dot {
+  background: var(--l-ink);
+  box-shadow: 0 0 0 5px var(--l-wash-2);
+  color: var(--l-on-ink);
+}
+.l-step[data-state="done"] .l-step__dot {
+  background: var(--l-ink);
+  box-shadow: none;
+  color: var(--l-on-ink);
+}
+button.l-step__head:hover .l-step__dot {
+  scale: 1.08;
+}
+.l-step__dot svg {
+  width: 14px;
+  height: 14px;
+  animation: l-step-check 380ms var(--l-ease-pop) backwards;
+}
+@keyframes l-step-check {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+.l-step__text {
+  display: grid;
+  gap: 2px;
+  padding-right: 12px;
+}
+.l-steps[data-orientation="vertical"] .l-step__text {
+  padding: 3px 0 22px;
+}
+.l-step__text b {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  transition: color 300ms ease;
+}
+.l-step[data-state="current"] .l-step__text b,
+.l-step[data-state="done"] .l-step__text b {
+  color: var(--l-ink);
+}
+.l-step__text > span {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+}
+/* The line to the next step, filling as this step is done. */
+.l-step__line {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--l-line-2);
+}
+.l-steps[data-orientation="horizontal"] .l-step__line {
+  top: 13px;
+  left: 36px;
+  right: 8px;
+  height: 2px;
+}
+.l-steps[data-orientation="vertical"] .l-step__line {
+  top: 34px;
+  bottom: 4px;
+  left: 13px;
+  width: 2px;
+}
+.l-step__line i {
+  position: absolute;
+  inset: 0;
+  background: var(--l-ink);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 520ms var(--l-spring-smooth);
+}
+.l-steps[data-orientation="vertical"] .l-step__line i {
+  transform: scaleY(0);
+  transform-origin: top;
+}
+.l-step[data-state="done"] .l-step__line i {
+  transform: none;
+}
+.l-step-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

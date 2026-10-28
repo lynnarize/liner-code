@@ -1,0 +1,107 @@
+.l-range {
+  display: grid;
+  width: min(100%, 360px);
+  user-select: none;
+}
+.l-range__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 64px;
+  padding: 0 1px;
+}
+.l-range__bars i {
+  flex: 1;
+  min-width: 0;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--l-wash-3);
+  transition:
+    background-color 240ms ease,
+    height 400ms var(--l-ease-out);
+}
+.l-range__bars i[data-in] {
+  background: var(--l-ink-3);
+}
+.l-range[data-active] .l-range__bars i[data-in] {
+  background: var(--l-ink-2);
+}
+.l-range__track {
+  position: relative;
+  height: 28px;
+  margin: 0 11px;
+  cursor: pointer;
+  touch-action: none;
+}
+.l-range__rail,
+.l-range__fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+}
+.l-range__rail {
+  left: -11px;
+  right: -11px;
+  background: var(--l-wash-3);
+}
+.l-range__fill {
+  background: var(--l-ink);
+}
+.l-range__thumb {
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: var(--l-thumb-shadow);
+  outline: none;
+  cursor: grab;
+  transition:
+    scale 260ms var(--l-ease-snap),
+    box-shadow 200ms ease;
+}
+.l-range__thumb:hover,
+.l-range__thumb[data-held] {
+  scale: 1.12;
+}
+.l-range__thumb[data-held] {
+  cursor: grabbing;
+}
+.l-range__thumb:focus-visible {
+  box-shadow:
+    var(--l-thumb-shadow),
+    0 0 0 4px color-mix(in oklab, var(--l-accent) 35%, transparent);
+}
+.l-range__read {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.l-range__read > span {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--l-field-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+}
+.l-range__read small {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-range__read b {
+  font-size: var(--l-text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  animation: l-swap-in 160ms var(--l-ease-out) backwards;
+}
+.l-range__read > i {
+  width: 10px;
+  height: 1px;
+  background: var(--l-line-strong);
+}

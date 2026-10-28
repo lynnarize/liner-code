@@ -1,0 +1,152 @@
+.l-morph {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+.l-morph svg {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.l-morph line,
+.l-morph g,
+.l-morph circle {
+  transform-box: view-box;
+  transform-origin: 10px 10px;
+  transition:
+    transform 420ms var(--l-spring-snappy),
+    opacity 220ms ease;
+}
+
+/* Menu: the outer lines fold into a cross, the middle one leaves. */
+.l-morph[data-on] .l-morph-1 {
+  transform: translateY(4px) rotate(45deg);
+}
+.l-morph[data-on] .l-morph-2 {
+  opacity: 0;
+  transform: scaleX(0.2);
+}
+.l-morph[data-on] .l-morph-3 {
+  transform: translateY(-4px) rotate(-45deg);
+}
+
+/* Plus: the upright stroke lies down into the other. */
+.l-morph[data-on] .l-morph-v {
+  transform: rotate(90deg);
+}
+
+/* Chevron: both arms tip over. */
+.l-morph-l {
+  transform-origin: 10px 12.5px !important;
+}
+.l-morph-r {
+  transform-origin: 10px 12.5px !important;
+}
+.l-morph[data-on] .l-morph-l,
+.l-morph[data-on] .l-morph-r {
+  transform: translateY(-4px) scaleY(-1);
+}
+
+/* Play to pause: the triangle's two halves reshape into the two bars. */
+.l-morph-play {
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  transition: clip-path 380ms var(--l-spring-snappy);
+}
+.l-morph-play[data-half="a"] {
+  clip-path: polygon(24% 12%, 56% 31%, 56% 69%, 24% 88%);
+}
+.l-morph-play[data-half="b"] {
+  clip-path: polygon(55% 30.5%, 86% 50%, 86% 50%, 55% 69.5%);
+}
+.l-morph[data-on] .l-morph-play[data-half="a"] {
+  clip-path: polygon(24% 14%, 42% 14%, 42% 86%, 24% 86%);
+}
+.l-morph[data-on] .l-morph-play[data-half="b"] {
+  clip-path: polygon(58% 14%, 76% 14%, 76% 86%, 58% 86%);
+}
+
+/* Copy to check: one comes into focus as the other leaves. */
+.l-morph-a,
+.l-morph-b {
+  transition:
+    opacity 220ms ease,
+    filter 260ms ease,
+    scale 380ms var(--l-spring-snappy);
+}
+.l-morph-b {
+  opacity: 0;
+  filter: blur(3px);
+  scale: 0.6;
+}
+.l-morph-b path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 360ms var(--l-ease-out) 80ms;
+}
+.l-morph[data-on] .l-morph-a {
+  opacity: 0;
+  filter: blur(3px);
+  scale: 0.7;
+}
+.l-morph[data-on] .l-morph-b {
+  opacity: 1;
+  filter: none;
+  scale: 1;
+}
+.l-morph[data-on][data-kind="copy"] {
+  color: var(--l-ok);
+}
+.l-morph[data-on] .l-morph-b path {
+  stroke-dashoffset: 0;
+}
+
+/* Sun to moon: the rays draw in, a shadow slides across the core. */
+.l-morph-bite {
+  transform: translate(9px, -9px);
+}
+.l-morph-core {
+  transform: scale(1);
+}
+.l-morph[data-on] .l-morph-bite {
+  transform: translate(0, 0);
+}
+.l-morph[data-on] .l-morph-core {
+  transform: scale(1.45);
+}
+.l-morph[data-on] .l-morph-rays {
+  opacity: 0;
+  transform: scale(0.5) rotate(-45deg);
+}
+
+.l-morph-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-morph-btn:hover {
+  background: var(--l-ctl-fill-hover);
+}
+.l-morph-btn:active {
+  scale: 0.92;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-morph *,
+  .l-morph-play {
+    transition-duration: 1ms !important;
+  }
+}

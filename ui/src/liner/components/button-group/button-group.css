@@ -1,0 +1,219 @@
+/* ---------- Joined group ---------- */
+.l-bgroup {
+  --g-h: var(--l-h-md);
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  height: var(--g-h);
+  padding: 0;
+  border-radius: 12px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+}
+.l-bgroup[data-size="sm"] {
+  --g-h: var(--l-h-sm);
+  border-radius: 10px;
+}
+.l-bgroup-cell {
+  display: inline-flex;
+  align-items: stretch;
+}
+.l-bgroup-sep {
+  align-self: center;
+  width: 1px;
+  height: 50%;
+  background: var(--l-line-2);
+}
+.l-bgroup-hl {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: 9px;
+  background: var(--l-wash-2);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 320ms var(--l-spring-snappy),
+    width 320ms var(--l-spring-snappy),
+    opacity 160ms ease;
+}
+.l-bgroup-hl[data-show] {
+  opacity: 1;
+}
+.l-bgroup-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-bgroup-btn:hover {
+  color: var(--l-ink);
+}
+/* The pressed segment answers in place. */
+.l-bgroup-btn:active {
+  scale: 0.95;
+  transition-duration: var(--l-dur-instant);
+}
+.l-bgroup-more {
+  padding: 0 10px;
+}
+.l-bgroup-icon {
+  display: grid;
+}
+.l-bgroup-icon svg,
+.l-bgroup-more svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---------- Floating group ---------- */
+/* It floats over content, so it is glass (.l-glass). On a narrow screen it scrolls
+   sideways inside itself rather than pushing the page wider. */
+.l-fgroup {
+  position: relative;
+  display: inline-flex;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px;
+  overflow-x: auto;
+  border-radius: 16px;
+  scrollbar-width: none;
+}
+.l-fgroup::-webkit-scrollbar {
+  display: none;
+}
+.l-fgroup-hl {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  border-radius: 12px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 0.5px var(--l-line-2),
+    0 1px 2px var(--l-drop),
+    0 4px 10px -4px var(--l-drop);
+  pointer-events: none;
+  transition:
+    transform 420ms var(--l-spring-snappy),
+    width 420ms var(--l-spring-snappy),
+    opacity 200ms ease;
+}
+/* While the pointer explores, the highlight is a lighter preview of the move. */
+.l-fgroup-hl[data-hover] {
+  opacity: 0.6;
+}
+.l-fgroup-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 200ms ease,
+    scale 280ms var(--l-ease-snap);
+}
+.l-fgroup-btn:hover,
+.l-fgroup-btn[data-on] {
+  color: var(--l-ink);
+}
+.l-fgroup-btn:active {
+  scale: 0.95;
+}
+
+/* ---------- Expanding group ---------- */
+/* Floating, so glass (.l-glass). */
+.l-egroup {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 16px;
+}
+.l-egroup-btn {
+  display: inline-grid;
+  grid-template-columns: auto 0fr;
+  align-items: center;
+  height: 36px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    grid-template-columns var(--l-dur-spring-snappy) var(--l-spring-snappy),
+    padding var(--l-dur-spring-snappy) var(--l-spring-snappy),
+    background-color 200ms ease,
+    color 200ms ease;
+}
+.l-egroup-btn[data-open] {
+  grid-template-columns: auto 1fr;
+  padding-right: 13px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 0.5px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  color: var(--l-ink);
+}
+.l-egroup-btn[data-done] {
+  color: var(--l-ok);
+}
+.l-egroup-icon {
+  display: grid;
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.l-egroup-icon svg {
+  width: 17px;
+  height: 17px;
+}
+.l-egroup-label {
+  min-width: 0;
+  overflow: hidden;
+}
+.l-egroup-label > span {
+  display: block;
+  padding-left: 7px;
+  white-space: nowrap;
+  opacity: 0;
+  filter: blur(4px);
+  transition:
+    opacity 200ms ease,
+    filter 260ms ease;
+}
+.l-egroup-btn[data-open] .l-egroup-label > span {
+  opacity: 1;
+  filter: none;
+  transition-delay: 60ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-bgroup-hl,
+  .l-fgroup-hl,
+  .l-egroup-btn {
+    transition: none;
+  }
+}

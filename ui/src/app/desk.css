@@ -1,0 +1,382 @@
+/*
+  Home in two areas: the question, and the Desk behind it, reached by scrolling twice (the first
+  scroll arms the cue, the second slides the Desk up). Leaving is quick, arriving settles on a
+  spring that doesn't overshoot. At rest neither area carries a transform, so menus inside them
+  place themselves as usual.
+*/
+.lc-desk-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  /* Clip, not hidden: the Desk waiting below would make the stage scrollable, and focus near
+     Home's foot (a notice's button) scrolled Home up by the Desk's offset. */
+  overflow: clip;
+}
+.lc-desk-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  visibility: hidden;
+  transition:
+    transform 380ms var(--l-ease-out),
+    opacity 260ms ease,
+    visibility 0s linear 380ms;
+}
+.lc-desk-stage[data-area="ask"] .lc-desk-page-ask,
+.lc-desk-stage[data-area="desk"] .lc-desk-page-desk {
+  visibility: visible;
+  transition:
+    transform 640ms var(--l-ease-enter) 60ms,
+    opacity 420ms ease 60ms,
+    visibility 0s;
+}
+.lc-desk-stage[data-area="desk"] .lc-desk-page-ask {
+  opacity: 0;
+  transform: translateY(-14%) scale(0.98);
+}
+.lc-desk-stage[data-area="ask"] .lc-desk-page-desk {
+  opacity: 0;
+  transform: translateY(12%);
+}
+/* Armed: the area gives a little toward where the next scroll goes. */
+.lc-desk-stage[data-armed="down"] .lc-desk-page-ask {
+  transform: translateY(-12px);
+}
+.lc-desk-stage[data-armed="up"] .lc-desk-page-desk {
+  transform: translateY(12px);
+}
+.lc-desk-page-ask > .lc-home-in {
+  flex: 1;
+}
+.lc-desk-page-desk {
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px 48px;
+  overflow: auto;
+}
+.lc-desk {
+  width: min(1120px, 100%);
+  container-type: inline-size;
+}
+
+/* ---------- The cue between the areas ---------- */
+.lc-desk-cue {
+  --nod: 3px;
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px 0 7px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 99px;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 420ms var(--l-ease-out),
+    color 200ms ease;
+}
+.lc-desk-cue[data-dir="up"] {
+  --nod: -3px;
+}
+.lc-desk-page-ask > .lc-desk-cue {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  translate: -50% 0;
+  animation: lc-cue-in 520ms 700ms var(--l-ease-out) backwards;
+}
+@keyframes lc-cue-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@media (hover: hover) {
+  .lc-desk-cue:hover {
+    color: var(--l-ink);
+    transform: translateY(calc(var(--nod) * -0.4));
+  }
+}
+.lc-desk-cue[data-armed] {
+  color: var(--l-ink);
+  transform: translateY(calc(var(--nod) * -1.4));
+}
+/* The chevron nods toward the Desk a few times, then rests; it nods again when something new comes back. */
+.lc-desk-cue-chev {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 99px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  animation: lc-cue-nod 1.5s var(--l-ease-in-out) 1.2s 3;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease;
+}
+.lc-desk-cue[data-armed] .lc-desk-cue-chev {
+  background: var(--l-ink);
+  color: var(--l-surface);
+  animation: lc-cue-nod 700ms var(--l-ease-in-out) infinite;
+}
+@keyframes lc-cue-nod {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(var(--nod));
+  }
+}
+.lc-desk-cue-t {
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.lc-desk-cue-n {
+  display: inline-flex;
+  gap: 10px;
+  margin-left: 2px;
+  padding-left: 10px;
+  box-shadow: inset 1px 0 0 var(--l-line-2);
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.lc-desk-cue-n > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.lc-desk-cue-n i {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+}
+.lc-desk-cue-n [data-k="back"] i {
+  background: var(--l-warn);
+  animation: lc-cue-ping 1.5s var(--l-ease-in-out) 3;
+}
+.lc-desk-cue-n [data-k="out"] i {
+  box-shadow: inset 0 0 0 1.5px var(--l-accent);
+}
+@keyframes lc-cue-ping {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--l-warn) 22%, transparent);
+  }
+}
+/* Armed: a line under the words drains for as long as the second scroll counts. */
+.lc-desk-cue-bar {
+  position: absolute;
+  right: 14px;
+  bottom: 4px;
+  left: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--l-ink-4);
+  transform-origin: left;
+  animation: lc-cue-drain 1800ms linear forwards;
+}
+@keyframes lc-cue-drain {
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-desk-page,
+  .lc-desk-cue {
+    transform: none !important;
+  }
+  .lc-desk-cue-chev,
+  .lc-desk-cue[data-armed] .lc-desk-cue-chev,
+  .lc-desk-cue-n [data-k="back"] i {
+    animation: none;
+  }
+}
+
+.lc-desk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 700px);
+  justify-content: center;
+  align-items: start;
+  gap: 16px;
+}
+@container (min-width: 900px) {
+  .lc-desk-grid[data-side] {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+    justify-content: stretch;
+  }
+  /* Side by side, the case stays in view while the line scrolls past. */
+  .lc-desk-grid[data-side] .lc-desk-side {
+    position: sticky;
+    top: 8px;
+  }
+}
+
+/* The line grows with what's on it, and scrolls inside once it's tall. */
+.lc-desk-plan.l-aplan {
+  max-width: none;
+  height: auto;
+  max-height: min(680px, 78vh);
+}
+
+/* Beside it: the case, or what happened while you were away and what comes back. */
+.lc-desk-side {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+}
+.lc-desk-hint {
+  margin: 0;
+  padding: 2px 6px;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-wrap: pretty;
+  animation: l-unblur 420ms var(--l-ease-out) backwards;
+}
+
+/* ---------- The case ---------- */
+.lc-desk-case {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  animation: lc-desk-case-in 380ms var(--l-ease-out) backwards;
+}
+@keyframes lc-desk-case-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+.lc-desk-case-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  font-size: 12.5px;
+}
+.lc-desk-case-x,
+.lc-desk-case-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+@media (hover: hover) {
+  .lc-desk-case-x:hover,
+  .lc-desk-case-open:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-desk-case-t {
+  flex: 1;
+  color: var(--l-ink-3);
+  text-align: center;
+}
+.lc-desk-feed.l-feed {
+  max-width: none;
+  height: auto;
+  min-height: 440px;
+  max-height: min(660px, 80vh);
+}
+
+/* ---------- While you were away ---------- */
+.lc-desk-notes {
+  min-width: 0;
+}
+
+/* ---------- Coming back: snoozes that end and limits that reset, counting down ---------- */
+.lc-desk-soon-h {
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.lc-desk-soon-h b {
+  font-weight: 600;
+}
+.lc-desk-soon-h span {
+  color: var(--l-ink-3);
+}
+.lc-desk-soon-list {
+  display: grid;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+.lc-desk-soon-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+@media (hover: hover) {
+  .lc-desk-soon-row:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-desk-soon-t {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  line-height: 1.3;
+}
+.lc-desk-soon-t b {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-desk-soon-t span {
+  color: var(--l-ink-3);
+  font-size: 11.5px;
+}
+.lc-desk-count.l-count {
+  --digit: 12px;
+  flex: none;
+  gap: 4px;
+}
+.lc-desk-count .l-count__unit {
+  gap: 3px;
+}
+.lc-desk-count .l-count__name {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+/* ---------- Who works now, in Home's bar ---------- */
+.lc-desk-presence {
+  flex: none;
+}
+.lc-desk-presence .l-presence__line {
+  font-size: 12px;
+}

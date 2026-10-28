@@ -1,0 +1,90 @@
+.l-elastic {
+  --pull: 0px;
+  --sx: 1;
+  --sy: 1;
+  display: grid;
+  gap: 10px;
+  width: min(100%, 320px);
+  user-select: none;
+}
+.l-elastic__head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  transition: opacity 200ms ease;
+}
+.l-elastic__value {
+  color: var(--l-ink);
+  font-variant-numeric: tabular-nums;
+}
+.l-elastic__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.l-elastic__icon {
+  display: grid;
+  flex: none;
+  color: var(--l-ink-4);
+  transition:
+    translate 600ms var(--l-spring-bouncy),
+    scale 600ms var(--l-spring-bouncy),
+    color 200ms ease;
+}
+.l-elastic__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.l-elastic[data-side="start"] .l-elastic__icon[data-end="start"],
+.l-elastic[data-side="end"] .l-elastic__icon[data-end="end"] {
+  translate: var(--pull) 0;
+  scale: calc(1 + (var(--sx) - 1) * 1.5);
+  color: var(--l-ink-2);
+}
+.l-elastic__track {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--l-wash-3);
+  cursor: grab;
+  touch-action: none;
+  outline: none;
+  transform: scale(var(--sx), var(--sy));
+  transform-origin: left;
+  transition:
+    transform 600ms var(--l-spring-bouncy),
+    height 300ms var(--l-spring-snappy);
+}
+.l-elastic[data-side="start"] .l-elastic__track {
+  transform-origin: right;
+}
+.l-elastic[data-dragging] .l-elastic__track,
+.l-elastic[data-dragging] .l-elastic__icon {
+  transition: height 300ms var(--l-spring-snappy);
+}
+.l-elastic:hover .l-elastic__track,
+.l-elastic[data-dragging] .l-elastic__track,
+.l-elastic__track:focus-visible {
+  height: 14px;
+}
+.l-elastic[data-dragging] .l-elastic__track {
+  cursor: grabbing;
+}
+.l-elastic__track:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 3px;
+}
+.l-elastic__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--l-ink);
+  transition: width 120ms var(--l-ease-out);
+}
+.l-elastic[data-dragging] .l-elastic__fill {
+  transition: none;
+}

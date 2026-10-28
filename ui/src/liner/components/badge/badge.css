@@ -1,0 +1,122 @@
+.l-badge {
+  --tone: var(--l-ink-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-size: var(--l-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.l-badge[data-size="sm"] {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.l-badge[data-tone="accent"] {
+  --tone: var(--l-accent);
+  --tone-text: var(--l-accent-text);
+}
+.l-badge[data-tone="success"] {
+  --tone: var(--l-ok);
+  --tone-text: var(--l-ok-text);
+}
+.l-badge[data-tone="warning"] {
+  --tone: var(--l-warn);
+  --tone-text: var(--l-warn-text);
+}
+.l-badge[data-tone="danger"] {
+  --tone: var(--l-danger);
+  --tone-text: var(--l-danger-text);
+}
+.l-badge:not([data-tone="neutral"])[data-variant="soft"] {
+  background: color-mix(in oklab, var(--tone) 13%, transparent);
+  color: var(--tone-text, color-mix(in oklab, var(--tone) 78%, var(--l-ink)));
+}
+.l-badge[data-variant="outline"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tone) 40%, transparent);
+  color: var(--tone-text, color-mix(in oklab, var(--tone) 78%, var(--l-ink)));
+}
+.l-badge[data-variant="solid"] {
+  background: var(--tone);
+  color: var(--l-on-ink);
+}
+/* White on a status tone needs the deeper text twin as its fill (the same tone in dark). */
+.l-badge[data-variant="solid"]:is([data-tone="success"], [data-tone="warning"], [data-tone="danger"]) {
+  background: var(--tone-text);
+}
+.l-badge[data-variant="solid"][data-tone="neutral"] {
+  background: var(--l-ink);
+}
+.l-badge[data-variant="solid"][data-tone="accent"] {
+  background: var(--l-accent-fill);
+  color: var(--l-accent-ink);
+}
+.l-badge__icon {
+  display: grid;
+}
+.l-badge__icon svg {
+  width: 12px;
+  height: 12px;
+}
+.l-count-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--l-ink);
+  color: var(--l-on-ink);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.l-count-badge[data-pop] {
+  animation: l-count-pop 420ms var(--l-ease-pop);
+}
+@keyframes l-count-pop {
+  40% {
+    scale: 1.22;
+  }
+}
+/* The status dot takes the tone; pulsing rings it three times, then rests. */
+.l-badge__dot {
+  position: relative;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--tone);
+}
+.l-badge[data-tone="neutral"] .l-badge__dot {
+  background: var(--l-ink-4);
+}
+.l-badge__dot[data-pulse]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: l-badge-pulse 1.6s var(--l-ease-out) 3;
+}
+@keyframes l-badge-pulse {
+  from {
+    opacity: 0.7;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 2.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-badge__dot[data-pulse]::after {
+    animation: none;
+  }
+}

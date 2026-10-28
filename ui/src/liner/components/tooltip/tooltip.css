@@ -1,0 +1,56 @@
+.l-tip-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.l-tip {
+  position: absolute;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: l-tip-in 200ms var(--l-ease-out) backwards;
+}
+.l-tip kbd {
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 11px;
+}
+.l-tip[data-side="top"] {
+  bottom: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+  --ty: 4px;
+}
+.l-tip[data-side="bottom"] {
+  top: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+  --ty: -4px;
+}
+.l-tip[data-side="left"] {
+  right: calc(100% + 8px);
+  top: 50%;
+  translate: 0 -50%;
+  --tx: 4px;
+}
+.l-tip[data-side="right"] {
+  left: calc(100% + 8px);
+  top: 50%;
+  translate: 0 -50%;
+  --tx: -4px;
+}
+@keyframes l-tip-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translate(var(--tx, 0), var(--ty, 0)) scale(0.96);
+  }
+}

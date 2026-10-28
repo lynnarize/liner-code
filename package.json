@@ -1,0 +1,34 @@
+{
+  "name": "liner-code",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Liner Code: a desktop agent harness built on Liner UI, on Electron. Drives Claude Code, Codex, Hermes and OpenCode on your machine.",
+  "workspaces": [
+    "contracts",
+    "engine",
+    "ui",
+    "desktop"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.ts",
+    "dev:engine": "npm run dev -w engine",
+    "dev:ui": "npm run dev -w ui",
+    "build": "npm run build -w ui",
+    "typecheck": "npm run typecheck -w engine && npm run typecheck -w ui && npm run typecheck -w desktop",
+    "app": "npm run build -w ui && node desktop/build.ts && electron desktop",
+    "app:dev": "node desktop/build.ts && LINER_UI_URL=http://localhost:5179 electron desktop",
+    "mac": "bash scripts/build-mac.sh",
+    "mac:swift": "bash scripts/build-mac-swift.sh",
+    "release": "bash scripts/release.sh",
+    "sync-liner": "bash scripts/sync-liner.sh",
+    "test": "npm test -w engine"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "electron@44.9.3": true
+  }
+}

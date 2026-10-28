@@ -1,0 +1,276 @@
+/*
+  Surfaces beside a session. The panel holds them as tabs: Diff and Agents, and whatever else
+  you open from the + (Browser, Terminal, Files, Pull request, Linked pull requests, Device,
+  Routines). Each key opens its surface from the picker. Tabs keep their state while you
+  switch, so a terminal keeps running and a page stays loaded. The panel sits beside the
+  session, fills the window, or docks under the thread.
+*/
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { Item, Thread } from "@contracts";
+import { rpc, useEngine } from "./engine";
+import { I } from "./icons";
+import { checkpointsOf, plural, sumLines } from "./model";
+import { Kbd, Lines } from "./ui";
+import "./surfaces.css";
+
+export type SurfaceId = "changes" | "agents" | "files" | "terminal" | "browser" | "pr" | "linked" | "device" | "routines";
+/** A tab: a surface, or one routine run (`run:<id>`). */
+export type Tab = SurfaceId | `run:${string}`;
+
+export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { size?: number }) => ReactNode }[] = [
+  { id: "browser", label: "Browser", key: "B", icon: I.globe },
+  { id: "terminal", label: "Terminal", key: "T", icon: I.terminal },
+  { id: "files", label: "Files", key: "F", icon: I.file },
+  { id: "changes", label: "Diff", key: "D", icon: I.changes },
+  { id: "pr", label: "Pull request", key: "P", icon: I.pr },
+  { id: "linked", label: "Linked pull requests", key: "L", icon: I.link },
+  { id: "device", label: "Device", key: "M", icon: I.device },
+  { id: "routines", label: "Routines", key: "R", icon: I.routines },
+  { id: "agents", label: "Agents", key: "A", icon: I.agents },
+];
+export const surfaceOf = (id: Tab) => SURFACES.find((s) => s.id === id);
+const short = (id: Tab) => (id === "linked" ? "Linked" : id.startsWith("run:") ? "Run" : (surfaceOf(id)?.label ?? id));
+
+export type PanelState = { open: boolean; tabs: Tab[]; tab: Tab; wide: boolean; dock: "side" | "bottom"; picking: boolean };
+export const initialPanel = (): PanelState => ({ open: false, tabs: ["agents", "changes"], tab: "changes", wide: false, dock: "side", picking: false });
+
+/** Each session keeps its own panel while the app is open. */
+const kept = new Map<string, PanelState>();
+export const keptPanel = (threadId: string) => kept.get(threadId) ?? initialPanel();
+export const keepPanel = (threadId: string, p: PanelState) => void kept.set(threadId, p);
+
+/** Opens a tab (adding it when it isn't there yet) and shows the panel. */
+export const openTab = (p: PanelState, tab: Tab): PanelState => ({ ...p, open: true, picking: false, tab, tabs: p.tabs.includes(tab) ? p.tabs : [...p.tabs, tab] });
+export const closeTab = (p: PanelState, tab: Tab): PanelState => {
+  const tabs = p.tabs.filter((t) => t !== tab);
+  if (!tabs.length) return { ...p, tabs, open: false, wide: false, picking: false };
+  const i = p.tabs.indexOf(tab);
+  return { ...p, tabs, tab: p.tab === tab ? tabs[Math.max(0, i - 1)] : p.tab };
+};
+
+/** The strip on top of the panel: its tabs, the + that opens a surface, and how the panel sits. */
+export function PanelTabs({ state, onState, label }: { state: PanelState; onState: (p: PanelState) => void; label: (t: Tab) => string }) {
+  // One white plate glides to the open tab (Liner's rule: one highlight moves between targets).
+  const row = useRef<HTMLDivElement>(null);
+  const [plate, setPlate] = useState<{ x: number; w: number; moved: boolean } | null>(null);
+  const on = state.picking ? null : state.tab;
+  useLayoutEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    const place = () => {
+      const tab = el.querySelector<HTMLElement>(".lc-stab[data-on]");
+      setPlate((p) => (tab ? { x: tab.offsetLeft, w: tab.offsetWidth, moved: Boolean(p) } : null));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    for (const t of el.querySelectorAll(".lc-stab")) ro.observe(t);
+    return () => ro.disconnect();
+  }, [on, state.tabs.join()]);
+  return (
+    <div className="lc-panel-top lc-stabs" role="tablist" aria-label="Surfaces">
+      <div ref={row} className="lc-stabs-row" data-many={state.tabs.length > 3 || undefined} data-plate={plate ? "" : undefined}>
+        {plate && <span className="lc-stab-plate" data-moved={plate.moved || undefined} style={{ transform: `translateX(${plate.x}px)`, width: plate.w }} aria-hidden />}
+        {state.tabs.map((t) => {
+          const s = surfaceOf(t);
+          const Icon = s?.icon ?? I.routines;
+          const on = !state.picking && state.tab === t;
+          return (
+            <span key={t} className="lc-stab" data-on={on || undefined}>
+              <button type="button" role="tab" aria-selected={on} className="lc-stab-b l-focus" onClick={() => onState({ ...state, tab: t, picking: false })} title={label(t)}>
+                <Icon size={13} />
+                <span>{short(t) === "Run" ? label(t) : short(t)}</span>
+              </button>
+              <button type="button" className="lc-stab-x l-focus" aria-label={`Close ${label(t)}`} onClick={() => onState(closeTab(state, t))}>
+                <I.close size={10} />
+              </button>
+            </span>
+          );
+        })}
+      </div>
+      <button type="button" className="lc-ib l-focus" aria-label="Open a surface" aria-pressed={state.picking} title="Open a surface" onClick={() => onState({ ...state, picking: !state.picking })}>
+        <I.plus size={14} />
+      </button>
+      <span className="lc-grow" />
+      <button type="button" className="lc-ib l-focus" aria-label={state.wide ? "Back beside the session" : "Fill the window"} title={state.wide ? "Back beside the session" : "Fill the window"} aria-pressed={state.wide} onClick={() => onState({ ...state, wide: !state.wide, dock: "side" })}>
+        <I.expand size={15} />
+      </button>
+      <button
+        type="button"
+        className="lc-ib l-focus"
+        aria-label={state.dock === "bottom" ? "Dock beside the session" : "Dock under the session"}
+        title={state.dock === "bottom" ? "Dock beside the session" : "Dock under the session"}
+        aria-pressed={state.dock === "bottom"}
+        onClick={() => onState({ ...state, dock: state.dock === "bottom" ? "side" : "bottom", wide: false })}
+      >
+        {state.dock === "bottom" ? <I.panel size={15} /> : <I.bottom size={15} />}
+      </button>
+      <button type="button" className="lc-ib l-focus" aria-label="Close the panel" onClick={() => onState({ ...state, open: false, wide: false, picking: false })}>
+        <I.close size={14} />
+      </button>
+    </div>
+  );
+}
+
+/** "Open a surface": every surface with what it holds right now, and its key. */
+export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Thread; items: Item[]; agentName: string; onOpen: (s: SurfaceId) => void }) {
+  const routines = useEngine((s) => s.routines);
+  const runs = useEngine((s) => s.runs);
+  const [ports, setPorts] = useState<{ port: number; process: string }[] | null>(null);
+  const [pr, setPr] = useState<string | null>(null);
+  const [linked, setLinked] = useState<string | null>(null);
+  const [device, setDevice] = useState<string | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let live = true;
+    void rpc("ports.list", {}).then((p) => live && setPorts(p)).catch(() => live && setPorts([]));
+    void rpc("pr.status", { threadId: thread.id })
+      .then((s) => live && setPr(s.pr ? `#${s.pr.number}, ${prLine(s.pr)}` : s.gh === "ready" ? (s.ahead ? `Open one for ${plural(s.ahead, "commit")}` : "Nothing to open yet") : ghLine(s.gh)))
+      .catch(() => live && setPr("Not available"));
+    void rpc("pr.list", { projectId: thread.projectId })
+      .then((s) => {
+        if (!live) return;
+        if (s.gh !== "ready") return setLinked(ghLine(s.gh));
+        const open = s.prs.filter((p) => p.state === "OPEN").length;
+        const merged = s.prs.filter((p) => p.state === "MERGED").length;
+        setLinked(s.prs.length ? `${open} open${merged ? `, ${merged} merged` : ""}` : "None in this project");
+      })
+      .catch(() => live && setLinked("Not available"));
+    void rpc("device.list", {})
+      .then((d) => {
+        if (!live) return;
+        const booted = d.devices.find((x) => x.state === "Booted");
+        setDevice(!d.ready ? "Needs Xcode" : booted ? `${booted.name}, booted` : d.devices.length ? plural(d.devices.length, "simulator") : "No simulators yet");
+      })
+      .catch(() => live && setDevice("Not available"));
+    box.current?.focus({ preventScroll: true });
+    return () => {
+      live = false;
+    };
+  }, [thread.id]);
+
+  const cps = checkpointsOf(items);
+  const last = cps[cps.length - 1];
+  const open = cps.filter((c) => !c.reverted && !c.committed);
+  const lines = sumLines(open.flatMap((c) => c.files));
+  const files = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
+  const on = routines.filter((r) => r.on).length;
+  const waits = runs.filter((r) => r.status === "handed" && !r.test).length;
+  const dev = ports?.find((p) => /node|vite|next|bun|deno|python|ruby|php|astro|webpack/i.test(p.process)) ?? ports?.[0];
+
+  const note: Record<SurfaceId, ReactNode> = {
+    browser: ports === null ? "Looking for a dev server" : dev ? `localhost:${dev.port}` : "Nothing is listening yet",
+    terminal: `A shell in ${thread.worktree ? "its worktree" : "the project"}`,
+    files: last ? `${plural(last.files.length, "file")} changed in turn ${last.turn}` : "The project's files",
+    changes: files ? (
+      <>
+        <Lines {...lines} /> in {plural(files, "file")}
+      </>
+    ) : (
+      "Nothing to review"
+    ),
+    pr: pr ?? "Asking GitHub",
+    linked: linked ?? "Asking GitHub",
+    device: device ?? "Looking for simulators",
+    routines: routines.length ? `${on} on${waits ? `, ${waits} ${waits === 1 ? "waits" : "wait"} for you` : ""}` : "None yet",
+    agents: "Who works here, and on what",
+  };
+
+  return (
+    <div
+      ref={box}
+      className="lc-spick"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement).tagName === "INPUT") return;
+        const s = SURFACES.find((x) => x.key === e.key.toUpperCase());
+        if (s) {
+          e.preventDefault();
+          onOpen(s.id);
+        }
+      }}
+    >
+      <h2>Open a surface</h2>
+      <p>Beside {agentName}'s session. Press its key, or pick one.</p>
+      <div className="lc-spick-grid">
+        {SURFACES.map((s, i) => (
+          <button key={s.id} type="button" className="lc-spick-b l-focus" style={{ animationDelay: `${i * 22}ms` }} onClick={() => onOpen(s.id)}>
+            <span className="lc-spick-i">
+              <s.icon size={15} />
+            </span>
+            <span className="lc-spick-t">
+              <b>{s.label}</b>
+              <small>{note[s.id]}</small>
+            </span>
+            <Kbd>{s.key}</Kbd>
+          </button>
+        ))}
+      </div>
+      <p className="lc-spick-foot">Surfaces open as tabs up top. Dock the panel under the session from the strip.</p>
+    </div>
+  );
+}
+
+export const ghLine = (gh: string) => (gh === "missing" ? "Needs the GitHub CLI" : gh === "signed-out" ? "Sign in to GitHub first" : gh === "no-remote" ? "No GitHub remote" : "Not available");
+export function prLine(pr: { state: string; checks: { state: string }[]; isDraft?: boolean }) {
+  if (pr.state === "MERGED") return "merged";
+  if (pr.state === "CLOSED") return "closed";
+  if (pr.checks.some((c) => c.state === "fail")) return "a check failed";
+  if (pr.checks.some((c) => c.state === "pending")) return "checks running";
+  if (pr.isDraft) return "a draft";
+  return pr.checks.length ? "checks pass" : "open";
+}
+
+/** A surface's empty or waiting state, centred. */
+export function SurfaceNote({ icon, title, children, action }: { icon?: ReactNode; title: string; children?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="lc-panel-empty">
+      {icon}
+      <b>{title}</b>
+      {children && <p>{children}</p>}
+      {action}
+    </div>
+  );
+}
+
+/** Reads a CSS colour as hex, for libraries that can't read oklch. */
+export function hexOf(css: string, fallback = "#000000") {
+  const c = document.createElement("canvas");
+  c.width = c.height = 1;
+  const x = c.getContext("2d");
+  if (!x) return fallback;
+  x.fillStyle = fallback;
+  x.fillStyle = css;
+  x.fillRect(0, 0, 1, 1);
+  const [r, g, b, a] = x.getImageData(0, 0, 1, 1).data;
+  const h = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}${a < 255 ? h(a) : ""}`;
+}
+export const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/** The session's working folder, for surfaces that open things there. */
+export function useCwd(thread: Thread) {
+  const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
+  return useMemo(() => thread.worktree?.path ?? project?.path ?? "", [thread.worktree?.path, project?.path]);
+}
+
+/* Project scripts sent to a session's Terminal surface: each runs in a shell of its own. */
+type Script = { name: string; command: string };
+const pendingScripts = new Map<string, Script[]>();
+const scriptListeners = new Map<string, Set<(s: Script) => void>>();
+export function runScript(threadId: string, s: Script) {
+  const ls = scriptListeners.get(threadId);
+  if (ls?.size) for (const l of ls) l(s);
+  else pendingScripts.set(threadId, [...(pendingScripts.get(threadId) ?? []), s]);
+}
+export function takeScripts(threadId: string) {
+  const list = pendingScripts.get(threadId) ?? [];
+  pendingScripts.delete(threadId);
+  return list;
+}
+export function onScript(threadId: string, fn: (s: Script) => void) {
+  const set = scriptListeners.get(threadId) ?? new Set();
+  set.add(fn);
+  scriptListeners.set(threadId, set);
+  return () => void set.delete(fn);
+}

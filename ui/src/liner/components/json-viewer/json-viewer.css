@@ -1,0 +1,118 @@
+.l-json {
+  position: relative;
+  display: grid;
+  width: min(100%, 460px);
+  overflow: clip;
+  border-radius: var(--l-frame-r);
+}
+.l-json__scroll {
+  max-height: 340px;
+  padding: 12px 10px;
+  overflow: auto;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  line-height: 1.75;
+  scrollbar-width: thin;
+}
+.l-json__row {
+  display: flex;
+  align-items: center;
+  padding-left: calc(var(--d) * 16px);
+  white-space: nowrap;
+}
+.l-json__twist {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--l-ink-4);
+  cursor: pointer;
+}
+button.l-json__twist:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-json__twist svg {
+  width: 12px;
+  height: 12px;
+  transition: rotate 260ms var(--l-spring-snappy);
+}
+.l-json__node[data-open] > .l-json__row .l-json__twist svg {
+  rotate: 90deg;
+}
+.l-json__key {
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: copy;
+}
+.l-json__key[data-index] {
+  color: var(--l-ink-3);
+  font-weight: 400;
+}
+.l-json__key:hover {
+  background: var(--l-accent-soft);
+}
+.l-json__p {
+  color: var(--l-ink-3);
+}
+.l-json__str {
+  color: var(--l-ink-3);
+}
+.l-json__num,
+.l-json__bool {
+  color: var(--l-accent-text);
+}
+.l-json__null {
+  color: var(--l-ink-3);
+  font-style: italic;
+}
+.l-json__more {
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.l-json__more:hover {
+  color: var(--l-ink);
+}
+.l-json__kids {
+  animation: l-unblur 240ms var(--l-ease-out) backwards;
+}
+.l-json__toast {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: var(--l-text-xs);
+  white-space: nowrap;
+  translate: -50% 0;
+  animation: l-json-in 220ms var(--l-ease-out) backwards;
+}
+.l-json__toast code {
+  font-family: var(--l-font-mono);
+  font-weight: 600;
+}
+@keyframes l-json-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(4px);
+  }
+}

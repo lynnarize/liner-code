@@ -1,0 +1,101 @@
+.l-roll {
+  display: inline-flex;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+.l-roll__row {
+  display: inline-flex;
+}
+
+/* New columns grow from zero width; leaving columns collapse back to it. */
+.l-roll__col {
+  display: inline-grid;
+  grid-template-columns: 1fr;
+}
+.l-roll__col[data-grow] {
+  animation: l-roll-grow 420ms var(--l-ease-out) both;
+}
+.l-roll__col[data-leaving] {
+  animation: l-roll-shrink 300ms var(--l-ease-out) both;
+}
+@keyframes l-roll-grow {
+  from {
+    grid-template-columns: 0fr;
+    opacity: 0;
+    filter: blur(3px);
+  }
+}
+@keyframes l-roll-shrink {
+  to {
+    grid-template-columns: 0fr;
+    opacity: 0;
+    filter: blur(3px);
+  }
+}
+
+/* The clip gives digits a soft edge to slide behind. */
+.l-roll__clip {
+  position: relative;
+  display: inline-grid;
+  min-width: 0;
+  padding: 0.14em 0;
+  margin: -0.14em 0;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+}
+.l-roll__digit {
+  grid-area: 1 / 1;
+  display: block;
+  text-align: center;
+}
+.l-roll__digit[data-enter] {
+  animation: l-roll-in-up 520ms var(--l-spring-snappy) both;
+  animation-delay: var(--delay);
+}
+.l-roll__digit[data-exit] {
+  animation: l-roll-out-up 260ms var(--l-ease-out) both;
+  animation-delay: var(--delay);
+}
+.l-roll__col[data-dir="down"] .l-roll__digit[data-enter] {
+  animation-name: l-roll-in-down;
+}
+.l-roll__col[data-dir="down"] .l-roll__digit[data-exit] {
+  animation-name: l-roll-out-down;
+}
+@keyframes l-roll-in-up {
+  from {
+    transform: translateY(75%);
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+@keyframes l-roll-out-up {
+  to {
+    transform: translateY(-75%);
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+@keyframes l-roll-in-down {
+  from {
+    transform: translateY(-75%);
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+@keyframes l-roll-out-down {
+  to {
+    transform: translateY(75%);
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-roll__col,
+  .l-roll__digit[data-enter],
+  .l-roll__digit[data-exit] {
+    animation-duration: 1ms;
+  }
+}

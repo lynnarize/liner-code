@@ -1,0 +1,833 @@
+/*
+  The composer. A glass frame around a white card: what's queued sits on the glass above, you
+  write in the card, and the run's settings sit on the glass below. On Home the strip says where
+  the session runs instead.
+
+  - Who works on this: talk to the lead (it plans, then hands off) or straight to a coder, or
+    to a model on its own.
+  - Effort and access open glass menus; access has five levels, from Read only to Full access.
+  - @ finds a file in the project; files come from the clip, a paste or a drop.
+  - While an agent works, Enter queues the message for when the turn ends; ⌘Enter steers the
+    running turn instead. Your pick becomes what Enter does.
+*/
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { Access, CommandInfo, SkillInfo, Effort, Project, QueuedMessage, RpcResult, Thread } from "@contracts";
+import { toast } from "@liner/components/toast/toast";
+import { is } from "./keymap";
+import { mirror } from "./mdMirror";
+import { rpc, useEngine, useItems } from "./engine";
+import { I, ModelMark } from "./icons";
+import { ACCESS_LEVELS, accessOf, ago, agentOf, isModelAgent, markOf, modelLabel, plural, setupLine, setupsOf, since } from "./model";
+import { onComposerInsert } from "./Find";
+import { EffortPick, ModelPicker } from "./Models";
+import { ContextRing, Disc, ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
+
+export type RunSettings = { agent: string; lead?: string; model?: string; effort: Effort; access: Access; helpers?: string[]; setup?: string };
+export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" };
+
+type Props = {
+  variant: "home" | "session";
+  project: Project;
+  thread?: Thread;
+  settings: RunSettings;
+  onSettings: (patch: Partial<RunSettings>) => void;
+  onSend: (m: Outgoing) => void | Promise<void>;
+  onStop?: () => void;
+  onNewAgent?: () => void;
+  busy?: boolean;
+  placeholder?: string;
+  /** Home's strip: run in this checkout, a new worktree (from `base`), or an existing worktree. */
+  worktree?: boolean;
+  onWorktree?: (on: boolean) => void;
+  base?: string;
+  onBase?: (branch: string | undefined) => void;
+  inWorktree?: { path: string; branch?: string };
+  onInWorktree?: (w: { path: string; branch?: string } | undefined) => void;
+  autoFocus?: boolean;
+  /** Home: more models given the same ask, to compare and keep one ("@provider:model"). */
+  compare?: string[];
+  onCompare?: (refs: string[]) => void;
+};
+
+type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$"; hint?: string; note?: string; path?: string; liner?: boolean };
+const commandCache = new Map<string, Promise<{ commands: CommandInfo[]; skills: SkillInfo[] }>>();
+const commandsFor = (projectId: string, agent: string, threadId?: string) => {
+  const key = `${projectId}|${agent}`;
+  if (!commandCache.has(key)) commandCache.set(key, rpc("agent.commands", { projectId, agent, threadId }).catch(() => ({ commands: [], skills: [] })));
+  return commandCache.get(key)!;
+};
+
+const gitCache = new Map<string, Promise<RpcResult<"git.branches">>>();
+const branchesFor = (projectId: string) => {
+  if (!gitCache.has(projectId)) gitCache.set(projectId, rpc("git.branches", { projectId }).finally(() => setTimeout(() => gitCache.delete(projectId), 30000)));
+  return gitCache.get(projectId)!;
+};
+
+/** Where a new session works: this checkout, a new worktree, or one that's already there. */
+function WhereRows({ project, git, onOpen, worktree, inWorktree, onPick }: { project: Project; git: RpcResult<"git.branches"> | null; onOpen: () => void; worktree: boolean; inWorktree?: { path: string }; onPick: (worktree: boolean, existing?: { path: string; branch?: string }) => void }) {
+  useEffect(onOpen, []);
+  const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+  return (
+    <>
+      <PanelHead>Where it runs</PanelHead>
+      <Row title="This checkout" note={tilde(project.path)} on={!worktree && !inWorktree} onPick={() => onPick(false)} />
+      <Row title="A new worktree" note="Its own branch and folder, so sessions never edit the same files" on={worktree && !inWorktree} onPick={() => onPick(true)} />
+      {git && git.worktrees.length > 0 && (
+        <>
+          <Sep />
+          <PanelHead>Or carry on in a worktree</PanelHead>
+          {git.worktrees.slice(0, 8).map((w) => (
+            <Row key={w.path} title={w.branch ?? "Detached"} note={`${tilde(w.path)}${w.threadId ? " · has a session" : ""}`} on={inWorktree?.path === w.path} icon={<I.branch size={12} />} onPick={() => onPick(false, { path: w.path, branch: w.branch })} />
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+function BaseRows({ git, onOpen, current, onPick }: { git: RpcResult<"git.branches"> | null; onOpen: () => void; current?: string; onPick: (b: string | undefined) => void }) {
+  useEffect(onOpen, []);
+  if (!git) return <p className="l-shimmer lc-pop-note">Reading the branches</p>;
+  return (
+    <>
+      <PanelHead>Start the worktree from</PanelHead>
+      {git.branches.slice(0, 14).map((b) => (
+        <Row key={b.name} title={<span className="lc-mono">{b.name}</span>} note={[b.name === git.current ? "this checkout" : "", b.name === git.base ? "the default branch" : "", b.lastCommitAt ? since(b.lastCommitAt) : ""].filter(Boolean).join(" · ")} on={b.name === current} onPick={() => onPick(b.name === git.current ? undefined : b.name)} />
+      ))}
+    </>
+  );
+}
+
+const LINE = 22;
+const MAX_LINES = 8;
+
+const toBase64 = (f: File) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(f);
+  });
+
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, compare = [], onCompare }: Props) {
+  const [git, setGit] = useState<Awaited<ReturnType<typeof branchesFor>> | null>(null);
+  const loadGit = () => void branchesFor(project.id).then(setGit);
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
+  const [text, setText] = useState(() => (thread ? (sessionStorage.getItem(`lc:draft:${thread.id}`) ?? "") : ""));
+  const [files, setFiles] = useState<File[]>([]);
+  const [mode, setMode] = useState<"queue" | "steer">(() => (localStorage.getItem("lc:enter") as "steer") ?? "queue");
+  const [mention, setMention] = useState<{ start: number; query: string; kind: "@" | "/" | "$" } | null>(null);
+  const [found, setFound] = useState<Choice[]>([]);
+  const [tools, setTools] = useState<{ commands: CommandInfo[]; skills: SkillInfo[] } | null>(null);
+  const [hl, setHl] = useState(0);
+  const [drag, setDrag] = useState(false);
+  const field = useRef<HTMLTextAreaElement>(null);
+  // Markdown styled as you type: the mirror behind the field draws the same text with its look.
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  const md = useMemo(() => mirror(text), [text]);
+  const clip = useRef<HTMLInputElement>(null);
+
+  const talkTo = agentOf(settings.lead ?? settings.agent, agents, providers);
+  const coder = agentOf(settings.agent, agents, providers);
+  const model = settings.model ?? coder.model;
+  const shownModel = settings.lead ? talkTo.model : model;
+  const lev = accessOf(settings.access);
+  const queue = thread?.queue ?? [];
+  const usage = thread?.usage;
+  const ctx = usage?.contextTokens && usage.contextWindow ? usage.contextTokens / usage.contextWindow : undefined;
+
+  // The draft is kept per session, so switching away and back finds it as you left it.
+  useEffect(() => {
+    if (thread) sessionStorage.setItem(`lc:draft:${thread.id}`, text);
+  }, [text, thread]);
+  useEffect(() => localStorage.setItem("lc:enter", mode), [mode]);
+
+  // The field grows with what you write, up to eight lines, then scrolls.
+  useLayoutEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, LINE * MAX_LINES + 20)}px`;
+  }, [text]);
+  useEffect(() => {
+    if (autoFocus) field.current?.focus();
+  }, [autoFocus, thread?.id]);
+
+  // What / and $ offer: the tool's own commands and skills, asked once per tool and folder.
+  const who = settings.lead ?? settings.agent;
+  useEffect(() => {
+    if (mention?.kind !== "/" && mention?.kind !== "$") return;
+    if (tools) return;
+    let live = true;
+    void commandsFor(project.id, who, thread?.id).then((r) => live && setTools(r));
+    return () => {
+      live = false;
+    };
+  }, [mention?.kind, project.id, who]);
+  useEffect(() => setTools(null), [project.id, who]);
+
+  // @ looks up files as you type; / and $ filter the tool's commands and skills.
+  useEffect(() => {
+    if (!mention) return;
+    let live = true;
+    const q = mention.query.toLowerCase();
+    const rank = (name: string) => (name.toLowerCase().startsWith(q) ? 0 : 1);
+    if (mention.kind === "@")
+      void rpc("fs.files", { projectId: project.id, query: mention.query, limit: 8 }).then((r) => {
+        if (!live) return;
+        setFound(r.map((f) => ({ key: f.path, insert: `@${f.path}`, label: f.path, kind: "@" })));
+        setHl(0);
+      });
+    else if (tools) {
+      const list =
+        mention.kind === "/"
+          ? tools.commands.filter((c) => `${c.name} ${c.description}`.toLowerCase().includes(q)).sort((a, b) => rank(a.name) - rank(b.name)).map((c): Choice => ({ key: c.name, insert: `/${c.name}`, label: `/${c.name}`, hint: c.hint, note: c.description, kind: "/", liner: c.source === "liner" }))
+          : tools.skills.filter((x) => `${x.name} ${x.description}`.toLowerCase().includes(q)).sort((a, b) => rank(a.name) - rank(b.name)).map((x): Choice => ({ key: x.name, insert: `$${x.name}`, label: `$${x.name}`, note: x.description, kind: "$", path: x.path }));
+      setFound(list.slice(0, 12));
+      setHl(0);
+    }
+    return () => {
+      live = false;
+    };
+  }, [mention, project.id, tools]);
+
+  const onType = (v: string, caret: number) => {
+    setText(v);
+    const before = v.slice(0, caret);
+    // A command only at the very start; a file or a skill anywhere after a space.
+    const slash = /^\/([\w:.-]*)$/.exec(before);
+    const at = /(^|\s)([@$])([\w./:-]*)$/.exec(before);
+    setMention(slash ? { start: 0, query: slash[1], kind: "/" } : at ? { start: caret - at[3].length - 1, query: at[3], kind: at[2] as "@" | "$" } : null);
+  };
+  const skillsUsed = useRef(new Map<string, string | undefined>());
+  const pickFile = (c: Choice) => {
+    if (!mention) return;
+    const end = mention.start + 1 + mention.query.length;
+    const next = `${text.slice(0, mention.start)}${c.insert} ${text.slice(end)}`;
+    if (c.kind === "$") skillsUsed.current.set(c.key, c.path);
+    setText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      const el = field.current;
+      if (!el) return;
+      const at = mention.start + c.insert.length + 1;
+      el.focus();
+      el.setSelectionRange(at, at);
+    });
+  };
+
+  const send = async (how = mode) => {
+    let t = text.trim();
+    if (!t && !files.length) return;
+    // $skill in the text: the tool is told to use it, by name (and where it lives, when known).
+    const used = [...skillsUsed.current].filter(([name]) => t.includes(`$${name}`));
+    if (used.length) t = `${t}\n\n${used.map(([name, path]) => `Use the ${name} skill${path ? ` (${path})` : ""}.`).join("\n")}`;
+    skillsUsed.current.clear();
+    const payload = { text: t || "Here are the files.", files: await Promise.all(files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how };
+    setText("");
+    setFiles([]);
+    setMention(null);
+    await onSend(payload);
+  };
+
+  const addFiles = (list: FileList | File[] | null) => {
+    if (!list) return;
+    setFiles((f) => [...f, ...Array.from(list)].slice(0, 10));
+  };
+
+  const setQueue = (q: QueuedMessage[]) => thread && void rpc("thread.queue", { id: thread.id, queue: q });
+
+  // Text sent here from elsewhere (a quote, a terminal excerpt) lands at the caret.
+  useEffect(() => {
+    if (!thread) return;
+    return onComposerInsert(thread.id, (add) => {
+      setText((cur) => {
+        const el = field.current;
+        const at = el && document.activeElement === el ? el.selectionStart : cur.length;
+        const before = cur.slice(0, at);
+        const lead = before && !before.endsWith("\n") ? "\n\n" : "";
+        return `${before}${lead}${add}${cur.slice(at)}`;
+      });
+      requestAnimationFrame(() => {
+        const el = field.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+    });
+  }, [thread?.id]);
+
+  // ↑ in an empty composer brings back what you sent here, newest first; ↓ comes forward.
+  const items = useItems(thread?.id);
+  const sent = items.flatMap((x) => (x.kind === "user" && !x.steer ? [x.text] : []));
+  const recall = useRef(-1);
+  useEffect(() => {
+    recall.current = -1;
+  }, [thread?.id, sent.length]);
+
+  // ⌘S keeps the draft for later; on an empty composer it brings one back.
+  const stashKey = `lc:stash:${project.id}`;
+  const readStash = (): { text: string; at: number }[] => {
+    try {
+      return JSON.parse(localStorage.getItem(stashKey) || "[]") as { text: string; at: number }[];
+    } catch {
+      return [];
+    }
+  };
+  const [stashOpen, setStashOpen] = useState(false);
+  const stash = () => {
+    const list = readStash();
+    if (text.trim()) {
+      localStorage.setItem(stashKey, JSON.stringify([{ text, at: Date.now() }, ...list].slice(0, 20)));
+      setText("");
+      toast("Stashed the draft", { description: "⌘S on an empty composer brings it back." });
+      return;
+    }
+    if (list.length === 1) {
+      setText(list[0].text);
+      localStorage.setItem(stashKey, "[]");
+    } else if (list.length > 1) setStashOpen(true);
+    else toast("Nothing stashed", { description: "⌘S keeps a draft for later." });
+  };
+  const unstash = (i: number) => {
+    const list = readStash();
+    setText(list[i]?.text ?? "");
+    localStorage.setItem(stashKey, JSON.stringify(list.filter((_, k) => k !== i)));
+    setStashOpen(false);
+    requestAnimationFrame(() => field.current?.focus());
+  };
+
+  // Images show as thumbnails before they go.
+  const thumbs = useMemo(() => files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : null)), [files]);
+  useEffect(() => () => thumbs.forEach((u) => u && URL.revokeObjectURL(u)), [thumbs]);
+
+  const engineSettings = useEngine((s) => s.settings);
+  const setups = useMemo(() => setupsOf(engineSettings, agents), [engineSettings, agents]);
+  const setup = settings.setup ? setups.find((x) => x.id === settings.setup) : undefined;
+  const leadAgents = agents.filter((a) => /lead/i.test(a.role) && a.id !== "demo");
+  const mainCoder = agents.find((a) => a.specialty === "coder" && a.id !== "demo") ?? agents.find((a) => a.id !== "demo" && !/lead/i.test(a.role));
+  // A session started straight with one agent before setups: it keeps a row of its own while it runs that way.
+  const loner = !setup && !settings.lead && !isModelAgent(settings.agent) && settings.agent !== "demo";
+  /** The makers of everyone in a way, as small marks. */
+  const marksOf = (ids: string[]) => [...new Set(ids.map((id) => markOf(agentOf(id, agents, providers).model)))].map((k) => <ModelMark key={k} kind={k} size={11} />);
+
+  const whoChip =
+    setup || settings.lead ? (
+      <>
+        <span className="lc-way-chip-i">{setup ? <I.flow size={12} /> : <I.agents size={12} />}</span>
+        <span className="lc-chip-name">{setup ? setup.name : "Lead and coder"}</span>
+        <span className="lc-way-marks">{marksOf(setup ? [...(setup.lead ? [setup.lead] : []), ...setup.stages.map((st) => st.who)] : [settings.lead!, settings.agent])}</span>
+        <I.chevD size={11} />
+      </>
+    ) : (
+      <>
+        <Disc agent={talkTo} size={20} />
+        <span className="lc-chip-name">{isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}</span>
+        {!isModelAgent(settings.agent) && settings.agent !== "demo" ? <ModelTag kind={markOf(shownModel)} label={modelLabel(shownModel, providers)} /> : null}
+        {compare.length > 0 && <span className="lc-quiet">· {compare.length + 1} models</span>}
+        <I.chevD size={11} />
+      </>
+    );
+  const helpers = settings.helpers ?? [];
+  const helperPool = agents.filter((a) => a.id !== "demo" && a.id !== settings.lead && a.id !== settings.agent && !/lead/i.test(a.role));
+
+  // Who the lead can bring in, how to compare, and a new agent: under the agents, in the room the
+  // model list leaves there, so the panel is only as tall as its taller column.
+  const teamExtras = (close: () => void) => (
+    <>
+      {settings.lead && !setup && helperPool.length > 0 && (
+        <div className="lc-team-help">
+          <div className="lc-team-lab">{talkTo.name} can bring in</div>
+          <div className="lc-team-chips">
+            {helperPool.map((a) => {
+              const on = helpers.includes(a.id);
+              return (
+                <button key={a.id} type="button" className="lc-mchip l-focus" data-on={on || undefined} aria-pressed={on} title={a.role} onClick={() => onSettings({ helpers: on ? helpers.filter((x) => x !== a.id) : [...helpers, a.id] })}>
+                  <Disc agent={a} size={16} />
+                  {a.name}
+                  <span className="lc-quiet">{modelLabel(a.model, providers)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="lc-quiet lc-team-note">Steps in {talkTo.name}'s plan can go to them; {coder.name} still builds the rest.</p>
+        </div>
+      )}
+      {onCompare && (
+        <p className="lc-quiet lc-team-note lc-team-cmp">
+          {compare.length ? `Sending to ${compare.length + 1}: each gets its own session and worktree from ${project.branch ?? "main"}. When they finish, compare and keep one.` : "Shift-click more models to give them the same ask, side by side."}
+        </p>
+      )}
+      <div className="lc-team-foot">
+        <button
+          type="button"
+          className="lc-link l-focus"
+          onClick={() => {
+            close();
+            window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "agentic" }));
+          }}
+        >
+          <I.flow size={13} />
+          Set up a way of working
+        </button>
+        {onNewAgent && (
+          <button
+            type="button"
+            className="lc-link l-focus"
+            onClick={() => {
+              close();
+              onNewAgent();
+            }}
+          >
+            <I.plus size={13} />
+            New agent
+          </button>
+        )}
+      </div>
+    </>
+  );
+
+  const teamPanel = (close: () => void) => (
+    <div className="lc-team">
+      <PanelHead end={project.name}>Who works on this</PanelHead>
+      {/* Two columns side by side, as tall as the taller one, so the panel opens where it's asked. */}
+      <div className="lc-team-cols">
+        {agents.some((a) => a.id !== "demo") && (
+          <div className="lc-team-col">
+            <div className="lc-team-lab">How it works</div>
+            {/* The ways by what they do, with who's in them underneath: a lead with its coder, your setups, the demo. */}
+            {leadAgents.map((l) => (
+              <WayRow
+                key={l.id}
+                on={!setup && settings.lead === l.id}
+                icon={<I.agents size={13} />}
+                title={leadAgents.length > 1 ? `Lead and coder, with ${l.name}` : "Lead and coder"}
+                note={`${l.name} plans, ${(mainCoder ?? coder).name} builds`}
+                marks={marksOf([l.id, (mainCoder ?? coder).id])}
+                onPick={() => {
+                  onSettings({ setup: undefined, lead: l.id, agent: mainCoder?.id ?? settings.agent, model: undefined });
+                  close();
+                }}
+              />
+            ))}
+            {setups.map((x) => (
+              <WayRow
+                key={x.id}
+                on={settings.setup === x.id}
+                icon={<I.flow size={13} />}
+                title={x.name}
+                note={setupLine(x, agents, providers)}
+                marks={marksOf([...(x.lead ? [x.lead] : []), ...x.stages.map((st) => st.who)])}
+                onPick={() => {
+                  onSettings({ setup: x.id, agent: x.stages[0].who, lead: x.lead ?? undefined, helpers: x.crew, model: undefined });
+                  close();
+                }}
+              />
+            ))}
+            {loner && <WayRow on icon={<I.edit size={13} />} title={`Straight to ${coder.name}`} note="an agent on its own, from before setups" marks={marksOf([coder.id])} onPick={close} />}
+            {agents.some((a) => a.id === "demo") && (
+              <WayRow
+                on={!setup && !settings.lead && settings.agent === "demo"}
+                icon={<I.sparkle size={13} />}
+                title="Demo run"
+                note="a scripted run, no account"
+                onPick={() => {
+                  onSettings({ setup: undefined, lead: undefined, agent: "demo", model: undefined });
+                  close();
+                }}
+              />
+            )}
+            <div className="lc-team-extras">{teamExtras(close)}</div>
+          </div>
+        )}
+        <div className="lc-team-col">
+          <div className="lc-team-lab">Or just a model</div>
+          {/* The models each tool said it runs: a rail of tools, a search, ⌘1 to ⌘9. */}
+          <ModelPicker
+            value={isModelAgent(settings.agent) && !settings.lead && !settings.setup ? settings.agent.slice(1) : undefined}
+            also={compare.map((c) => c.slice(1))}
+            autoFocus={false}
+            height={330}
+            onPick={(ref, how) => {
+              const id = `@${ref}`;
+              const on = isModelAgent(settings.agent) && !settings.lead && !settings.setup && settings.agent === id;
+              // Shift-click gives the same ask to this model too, to compare and keep one.
+              if (how.shiftKey && onCompare) {
+                if (on) return;
+                onCompare(compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id].slice(0, 3));
+                return;
+              }
+              onSettings({ setup: undefined, lead: undefined, agent: id, model: undefined });
+              onCompare?.(compare.filter((x) => x !== id));
+              close();
+            }}
+          />
+        </div>
+      </div>
+      {!agents.some((a) => a.id !== "demo") && teamExtras(close)}
+    </div>
+  );
+
+  // The levels the coder's model takes; Claude Code's Ultracode and Ultrathink sit after them.
+  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} hideEmpty />;
+  const accessPick = (
+    <Pop
+      label={`Access: ${lev.label}. Change it`}
+      side={variant === "home" ? "bottom" : "top"}
+      align="end"
+      width={320}
+      triggerClass="lc-pb"
+      trigger={
+        <>
+          <I.lock size={13} />
+          {variant === "home" ? lev.short : lev.label}
+          <I.chevD size={11} />
+        </>
+      }
+    >
+      {(close) => (
+        <>
+          <PanelHead>What {settings.lead ? coder.name : isModelAgent(settings.agent) ? "it" : coder.name} may do in this session</PanelHead>
+          {ACCESS_LEVELS.map((l) => (
+            <Row key={l.id} title={l.label} note={l.note} on={settings.access === l.id} onPick={() => (onSettings({ access: l.id }), close())} />
+          ))}
+          <div className="lc-pop-foot">Read only also makes the agent plan first: you approve before anything changes.</div>
+        </>
+      )}
+    </Pop>
+  );
+
+  const sendButton =
+    busy && variant === "session" ? (
+      <div className="lc-send-split">
+        <button type="button" className="lc-stop l-focus" aria-label="Stop" title="Stop (Esc)" onClick={onStop}>
+          <I.stop />
+        </button>
+        <button type="button" className="lc-queue l-focus" disabled={!text.trim() && !files.length} onClick={() => void send()}>
+          {mode === "queue" ? "Queue" : "Steer"}
+        </button>
+        <Pop label="Queue or steer" side="top" align="end" width={300} triggerClass="lc-queue-more" trigger={<I.chevU size={12} />}>
+          {(close) => (
+            <>
+              <Row title="Queue it" note="Sent when this turn ends. You can still edit it." on={mode === "queue"} end={<kbd className="lc-kbd">Enter</kbd>} onPick={() => (setMode("queue"), close())} />
+              <Row title="Steer now" note="Read at its next step, without stopping." on={mode === "steer"} end={<kbd className="lc-kbd">⌘ Enter</kbd>} onPick={() => (setMode("steer"), close())} />
+              <div className="lc-pop-foot">Your pick becomes what Enter does.</div>
+            </>
+          )}
+        </Pop>
+      </div>
+    ) : (
+      compare.length > 0 ? (
+        <button type="button" className="lc-send lc-send-n l-focus" aria-label={`Send to ${compare.length + 1} models`} data-ready={Boolean(text.trim() || files.length) || undefined} onClick={() => void send()}>
+          Send to {compare.length + 1}
+        </button>
+      ) : (
+        <button type="button" className="lc-send l-focus" aria-label="Send" title="Send (Enter)" data-ready={Boolean(text.trim() || files.length) || undefined} onClick={() => void send()}>
+          <I.send size={15} />
+        </button>
+      )
+    );
+
+  return (
+    <div
+      className="lc-composer"
+      data-variant={variant}
+      data-drag={drag || undefined}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) {
+          e.preventDefault();
+          setDrag(true);
+        }
+      }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDrag(false);
+        addFiles(e.dataTransfer.files);
+      }}
+    >
+      {queue.length > 0 && (
+        <div className="lc-queued">
+          <div className="lc-queued-h">Queued for the next turn · {queue.length}</div>
+          {queue.map((q, i) => (
+            <div key={q.id} className="lc-queued-row">
+              <span className="lc-queued-handle" aria-hidden>
+                <I.drag size={13} />
+              </span>
+              <span className="lc-queued-t">{q.text}</span>
+              {i > 0 && (
+                <button type="button" className="lc-ib l-focus" aria-label="Move up" onClick={() => setQueue([...queue.slice(0, i - 1), q, queue[i - 1], ...queue.slice(i + 1)])}>
+                  <I.chevU size={12} />
+                </button>
+              )}
+              <button
+                type="button"
+                className="lc-ib l-focus"
+                aria-label="Edit"
+                onClick={() => {
+                  setText(q.text);
+                  setQueue(queue.filter((x) => x.id !== q.id));
+                }}
+              >
+                <I.edit size={12} />
+              </button>
+              <button type="button" className="lc-ib l-focus" aria-label="Remove" onClick={() => setQueue(queue.filter((x) => x.id !== q.id))}>
+                <I.close size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="lc-card">
+        {files.length > 0 && (
+          <div className="lc-files">
+            {files.map((f, i) => (
+              <span key={`${f.name}${i}`} className="lc-file-chip" data-image={thumbs[i] ? true : undefined}>
+                {thumbs[i] ? <img src={thumbs[i]!} alt="" className="lc-file-thumb" /> : <I.file size={13} />}
+                {f.name}
+                <span>{f.size < 1024 ? `${f.size} B` : `${Math.round(f.size / 1024)} KB`}</span>
+                <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>
+                  <I.close size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="lc-field-box">
+        <div ref={mirrorRef} className="lc-field lc-field-md" aria-hidden>
+          {md}
+        </div>
+        <textarea
+          ref={field}
+          className="lc-field"
+          data-md=""
+          onScroll={(e) => mirrorRef.current && (mirrorRef.current.scrollTop = e.currentTarget.scrollTop)}
+          rows={variant === "home" ? 3 : 1}
+          value={text}
+          placeholder={placeholder}
+          aria-label="Message"
+          onChange={(e) => {
+            onType(e.target.value, e.target.selectionStart);
+            setStashOpen(false);
+          }}
+          onBlur={() => setStashOpen(false)}
+          onPaste={(e) => {
+            if (e.clipboardData.files.length) {
+              e.preventDefault();
+              addFiles(e.clipboardData.files);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (mention && found.length) {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                setHl((h) => (h + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
+                return;
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                pickFile(found[hl]);
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setMention(null);
+                return;
+              }
+            }
+            if (is(e.nativeEvent, "stash")) {
+              e.preventDefault();
+              stash();
+              return;
+            }
+            // ↑ recalls only when the caret is on the first line, so editing a long draft still moves up.
+            if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !mention && sent.length && (!text || recall.current >= 0) && !(e.key === "ArrowUp" && !text && queue.length)) {
+              const el = e.currentTarget;
+              const firstLine = !el.value.slice(0, el.selectionStart).includes("\n");
+              if (e.key === "ArrowUp" && firstLine && recall.current < sent.length - 1) {
+                e.preventDefault();
+                recall.current += 1;
+                setText(sent[sent.length - 1 - recall.current]);
+                return;
+              }
+              if (e.key === "ArrowDown" && recall.current >= 0) {
+                e.preventDefault();
+                recall.current -= 1;
+                setText(recall.current >= 0 ? sent[sent.length - 1 - recall.current] : "");
+                return;
+              }
+            }
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void send(busy && (e.metaKey || e.ctrlKey) ? "steer" : busy ? mode : "queue");
+            } else if (e.key === "Escape" && busy) onStop?.();
+            else if (e.key === "ArrowUp" && !text && queue.length) {
+              const last = queue[queue.length - 1];
+              setText(last.text);
+              setQueue(queue.slice(0, -1));
+            }
+          }}
+        />
+        </div>
+        {stashOpen && (
+          <div className="lc-mention l-glass" role="listbox" aria-label="Stashed drafts">
+            <span className="lc-quiet lc-mention-wait">Stashed drafts</span>
+            {readStash().map((x, i) => (
+              <button key={x.at} type="button" role="option" aria-selected={false} className="lc-mention-row" onMouseDown={(e) => (e.preventDefault(), unstash(i))}>
+                <I.edit size={12} />
+                <span className="lc-mention-d lc-stash-t">{x.text.split("\n")[0]}</span>
+                <span className="lc-quiet">{ago(x.at)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {mention && (found.length > 0 || (mention.kind !== "@" && !tools)) && (
+          <div className="lc-mention l-glass" role="listbox" aria-label={mention.kind === "@" ? "Files" : mention.kind === "/" ? "Commands" : "Skills"}>
+            {mention.kind !== "@" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
+            {found.map((f, i) => (
+              <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
+                {f.kind === "@" ? <I.file size={13} /> : f.kind === "/" ? <span className="lc-mention-k">/</span> : <I.sparkle size={13} />}
+                <span className="lc-mono lc-mention-n">
+                  {f.label}
+                  {f.hint && <span className="lc-quiet"> {f.hint}</span>}
+                </span>
+                {f.note && <span className="lc-mention-d">{f.note}</span>}
+                {f.liner && <span className="lc-mp-def">Liner Code</span>}
+              </button>
+            ))}
+            {mention.kind !== "@" && tools && found.length === 0 && <span className="lc-quiet lc-mention-wait">No {mention.kind === "/" ? "command" : "skill"} matches that.</span>}
+          </div>
+        )}
+        <div className="lc-card-row">
+          {variant === "home" ? (
+            <>
+              <Pop label="Who works on this" width={640} keep triggerClass="lc-chip" trigger={whoChip}>
+                {teamPanel}
+              </Pop>
+              {effortPick}
+              {accessPick}
+            </>
+          ) : (
+            <>
+              <button type="button" className="lc-ib l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
+                <I.attach size={15} />
+              </button>
+              <Pop label="Who works on this" side="top" width={640} triggerClass="lc-chip" trigger={whoChip}>
+                {teamPanel}
+              </Pop>
+              {ctx !== undefined && <ContextRing used={ctx} />}
+            </>
+          )}
+          <span className="lc-grow" />
+          {variant === "home" && (
+            <button type="button" className="lc-ib l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
+              <I.attach size={15} />
+            </button>
+          )}
+          {sendButton}
+        </div>
+        <input ref={clip} type="file" multiple hidden onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />
+      </div>
+
+      {variant === "home" ? (
+        <div className="lc-strip">
+          {project.git ? (
+            <Pop
+              label="Where it runs"
+              width={300}
+              triggerClass="lc-pb"
+              trigger={
+                <>
+                  <I.folder size={13} />
+                  {compare.length ? `${compare.length + 1} new worktrees` : inWorktree ? `The ${inWorktree.branch ?? "other"} worktree` : worktree ? "A new worktree" : "This checkout"}
+                  <I.chevD size={11} />
+                </>
+              }
+            >
+              {(close) => (
+                <WhereRows
+                  project={project}
+                  git={git}
+                  onOpen={loadGit}
+                  worktree={Boolean(worktree)}
+                  inWorktree={inWorktree}
+                  onPick={(w, existing) => {
+                    onWorktree?.(w);
+                    onInWorktree?.(existing);
+                    close();
+                  }}
+                />
+              )}
+            </Pop>
+          ) : (
+            <span className="lc-strip-note">
+              <I.folder size={13} />
+              {project.path.replace(/^\/Users\/[^/]+/, "~")}
+            </span>
+          )}
+          <span className="lc-grow" />
+          {worktree && !inWorktree && project.git && !compare.length ? (
+            // A new worktree starts from a branch you pick: this one by default.
+            <Pop
+              label="The branch it starts from"
+              align="end"
+              width={300}
+              triggerClass="lc-pb"
+              trigger={
+                <>
+                  from <I.branch size={13} />
+                  <span className="lc-mono">{base ?? project.branch ?? "HEAD"}</span>
+                  <I.chevD size={11} />
+                </>
+              }
+            >
+              {(close) => <BaseRows git={git} onOpen={loadGit} current={base ?? project.branch} onPick={(b) => (onBase?.(b), close())} />}
+            </Pop>
+          ) : (
+            (inWorktree?.branch ?? project.branch) && (
+              <span className="lc-strip-note">
+                on <I.branch size={13} />
+                <span className="lc-mono">{inWorktree?.branch ?? project.branch}</span>
+              </span>
+            )
+          )}
+        </div>
+      ) : (
+        <div className="lc-strip">
+          <span className="lc-strip-note">
+            {settings.lead ? (
+              <>
+                {talkTo.name} plans · {coder.name} builds
+              </>
+            ) : (
+              <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} />
+            )}
+          </span>
+          {effortPick}
+          {accessPick}
+          <span className="lc-grow" />
+          {busy && <span className="lc-strip-note">{mode === "queue" ? "Enter queues · ⌘Enter steers" : "Enter steers · ⌘Enter steers"}</span>}
+          {!busy && queue.length > 0 && <span className="lc-strip-note">{plural(queue.length, "message")} waiting</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A way of working in the panel: what it does, who's in it underneath, and their makers' marks. */
+function WayRow({ on, icon, title, note, marks, onPick }: { on: boolean; icon: ReactNode; title: string; note: string; marks?: ReactNode; onPick: () => void }) {
+  return (
+    <button type="button" className="lc-agent-row lc-way-row l-focus" data-on={on || undefined} aria-pressed={on} onClick={onPick}>
+      <span className="lc-radio" data-on={on || undefined} />
+      <span className="lc-way-i">{icon}</span>
+      <span className="lc-agent-row-t">
+        <b>{title}</b>
+        <span>{note}</span>
+      </span>
+      {marks && <span className="lc-way-marks">{marks}</span>}
+    </button>
+  );
+}
+
+export const Hints = ({ children }: { children?: ReactNode }) => <div className="lc-hints">{children}</div>;

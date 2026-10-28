@@ -1,0 +1,69 @@
+.l-cbrand {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink);
+}
+.l-cbrand b {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.l-cbrand[data-brand="visa"] {
+  background: var(--l-primary-solid);
+  box-shadow: none;
+  color: var(--l-primary-ink);
+}
+.l-cbrand[data-brand="visa"] b {
+  font-size: 11px;
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+.l-cbrand[data-brand="mastercard"] svg {
+  width: 26px;
+  height: 17px;
+}
+.l-cbrand[data-brand="mastercard"] circle:first-child {
+  fill: var(--l-ink-2);
+}
+.l-cbrand[data-brand="mastercard"] circle:last-child {
+  fill: var(--l-ink-4);
+  opacity: 0.85;
+}
+.l-cbrand[data-brand="amex"] b {
+  padding: 2px 3px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px currentColor;
+  font-size: 8.5px;
+}
+.l-cbrand[data-brand="discover"] b {
+  display: flex;
+  align-items: center;
+  font-size: 7px;
+}
+.l-cbrand[data-brand="discover"] i {
+  width: 6px;
+  height: 6px;
+  margin: 0 0.5px;
+  border-radius: 99px;
+  background: currentColor;
+}
+.l-cbrand > svg {
+  width: 18px;
+  height: 18px;
+}
+.l-paym__dots {
+  color: var(--l-ink-4);
+  letter-spacing: 0.08em;
+}
+.l-paym__exp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

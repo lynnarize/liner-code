@@ -1,0 +1,245 @@
+/* The sidebar sits on glass: no surface of its own. The current page wears a white plate
+   (the raised fill), which glides from item to item. */
+.l-side {
+  --side-w: 240px;
+  --side-rail: 60px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: var(--side-w);
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  padding: 10px 8px 8px;
+  overflow: hidden;
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  transition: width 460ms var(--l-spring-smooth);
+}
+.l-side[data-collapsed] {
+  width: var(--side-rail);
+}
+
+.l-side__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 0 0 2px;
+}
+.l-side[data-collapsed] .l-side__head {
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+}
+.l-side__brand {
+  flex: 1;
+  min-width: 0;
+}
+.l-side[data-collapsed] .l-side__brand {
+  flex: none;
+}
+.l-side__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.l-side__btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-side__btn svg {
+  width: 16px;
+  height: 16px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-side__btn:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.l-side__btn:active {
+  scale: 0.92;
+}
+
+.l-side__body {
+  position: relative;
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 14px;
+  min-height: 0;
+  /* A little room on each side, given back with the margin, so the plate's ring is not cut by
+     the scroll clip. */
+  margin-inline: -2px;
+  padding: 2px;
+  overflow: hidden auto;
+  scrollbar-width: none;
+}
+.l-side__body::-webkit-scrollbar {
+  display: none;
+}
+.l-side__plate {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  right: 2px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 440ms var(--l-spring-snappy),
+    height 440ms var(--l-spring-snappy),
+    opacity var(--l-dur-fast) ease;
+}
+.l-side__section {
+  display: grid;
+  gap: 1px;
+}
+.l-side__label {
+  overflow: hidden;
+  height: 26px;
+  padding: 6px 10px 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    opacity 140ms ease,
+    height 300ms var(--l-spring-smooth);
+}
+.l-side[data-collapsed] .l-side__label {
+  height: 0;
+  opacity: 0;
+}
+.l-side__list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-side__list .l-tip-anchor {
+  display: flex;
+}
+.l-side__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px 0 13px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color var(--l-dur-fast) ease,
+    background-color var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-side__item:not([data-on]):hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+.l-side__item[data-on] {
+  color: var(--l-ink);
+}
+.l-side__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--l-ink-3);
+  transition: color var(--l-dur-fast) ease;
+}
+.l-side__item[data-on] .l-side__icon,
+.l-side__item:hover .l-side__icon {
+  color: var(--l-ink);
+}
+.l-side__icon svg {
+  width: 16px;
+  height: 16px;
+}
+.l-side__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    opacity 260ms ease 120ms,
+    filter 260ms ease 120ms;
+}
+.l-side__count {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  transition: opacity 260ms ease 120ms;
+}
+.l-side__item[data-on] .l-side__count {
+  color: var(--l-ink-2);
+}
+/* Folding: words leave first and quickly, then the width springs in. */
+.l-side[data-collapsed] :is(.l-side__text, .l-side__count, [data-side-label]) {
+  opacity: 0;
+  filter: blur(4px);
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    filter 120ms ease;
+}
+
+.l-side__foot {
+  display: grid;
+  gap: 8px;
+  animation: l-unblur 320ms var(--l-ease-out) 160ms backwards;
+}
+.l-side__user {
+  display: grid;
+  min-width: 0;
+}
+/* Folded, the person is just their avatar. */
+.l-side[data-collapsed] .l-side__user {
+  justify-items: center;
+}
+.l-side[data-collapsed] .l-side__user :is(.l-umenu-name, .l-umenu-chev) {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-side,
+  .l-side__plate,
+  .l-side__label {
+    transition: none;
+  }
+  .l-side__foot {
+    animation: none;
+  }
+}

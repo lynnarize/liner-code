@@ -1,0 +1,207 @@
+.l-table {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  overflow: clip;
+  border-radius: var(--l-frame-r);
+}
+.l-table__scroll {
+  max-height: 420px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.l-table table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--l-text-md);
+}
+.l-table__caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.l-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--l-line-2);
+  background: var(--l-card-fill);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.l-table th[data-align="right"],
+.l-table td[data-align="right"] {
+  text-align: right;
+}
+.l-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+th[data-align="right"] .l-table__sort {
+  flex-direction: row-reverse;
+}
+.l-table__sort:hover,
+.l-table__sort[data-dir] {
+  color: var(--l-ink);
+}
+.l-table__sort:hover {
+  background: var(--l-wash-2);
+}
+.l-table__sort:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+}
+.l-table__sort svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0;
+  transition:
+    opacity 160ms ease,
+    rotate 320ms var(--l-spring-snappy);
+}
+.l-table__sort:hover svg {
+  opacity: 0.45;
+}
+.l-table__sort[data-dir] svg {
+  opacity: 1;
+}
+.l-table__sort[data-dir="desc"] svg {
+  rotate: 180deg;
+}
+.l-table tbody th,
+.l-table tbody td {
+  height: 48px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--l-line);
+  color: var(--l-ink-2);
+  text-align: left;
+  white-space: nowrap;
+}
+.l-table tbody th {
+  color: var(--l-ink);
+  font-weight: 500;
+}
+.l-table tbody td[data-align="right"] {
+  font-variant-numeric: tabular-nums;
+}
+.l-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.l-table tbody tr {
+  transition: background-color 120ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-table tbody tr:hover {
+    background: var(--l-wash);
+  }
+}
+.l-table tbody tr[data-selected] {
+  background: var(--l-accent-soft);
+}
+.l-table__check {
+  width: 40px;
+  padding-right: 0 !important;
+}
+.l-table__box {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--l-line-strong);
+  color: var(--l-on-ink);
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-table__box:active {
+  scale: 0.88;
+}
+.l-table__box:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+.l-table__box svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+}
+.l-table__box[data-state="true"],
+.l-table__box[data-state="mixed"] {
+  background: var(--l-ink);
+  box-shadow: none;
+}
+.l-table__box[data-state="true"] svg,
+.l-table__box[data-state="mixed"] svg {
+  opacity: 1;
+  animation: l-swap-in 200ms var(--l-ease-out) backwards;
+}
+.l-table__empty {
+  padding: 32px;
+  color: var(--l-ink-3);
+  text-align: center;
+}
+/* The selection bar floats as glass over the bottom of the table. */
+.l-table__bar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 999px;
+  background: var(--l-float);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  translate: -50% 0;
+  animation: l-table-bar 360ms var(--l-spring-snappy) backwards;
+}
+@keyframes l-table-bar {
+  from {
+    opacity: 0;
+    translate: -50% 12px;
+  }
+}
+.l-table__bar button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.l-table:has(.l-table__bar) .l-table__scroll {
+  padding-bottom: 56px;
+}

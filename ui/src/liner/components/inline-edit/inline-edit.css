@@ -1,0 +1,163 @@
+.l-iedit {
+  --ie-size: var(--l-text-base);
+  --ie-weight: 500;
+  position: relative;
+  display: inline-grid;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.l-iedit[data-size="lg"] {
+  --ie-size: var(--l-text-xl);
+  --ie-weight: 600;
+}
+.l-iedit__view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* The margins pull the hover plate out past the text; the cap has to allow for them, or
+     the box comes up 16px short and every value ellipsizes. */
+  max-width: calc(100% + 16px);
+  margin: -4px -8px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--ie-size);
+  font-weight: var(--ie-weight);
+  letter-spacing: var(--l-track-body);
+  text-align: left;
+  cursor: text;
+  transition: background-color var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-iedit__view:hover {
+    background: var(--l-wash);
+  }
+}
+.l-iedit__view:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 0;
+}
+.l-iedit__view[data-empty] {
+  color: var(--l-ink-5);
+}
+.l-iedit__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-iedit__mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--l-ink-4);
+  opacity: 0;
+  transition: opacity var(--l-dur-fast) ease;
+}
+.l-iedit__mark svg {
+  width: 14px;
+  height: 14px;
+}
+.l-iedit__view:hover .l-iedit__mark,
+.l-iedit__view:focus-visible .l-iedit__mark {
+  opacity: 1;
+}
+.l-iedit__mark[data-state="done"] {
+  color: var(--l-ok);
+  opacity: 1;
+  animation: l-iedit-done 1.4s var(--l-ease-out) forwards;
+}
+@keyframes l-iedit-done {
+  0% {
+    opacity: 0;
+    scale: 0.5;
+  }
+  15%,
+  70% {
+    opacity: 1;
+    scale: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.l-iedit__box {
+  position: relative;
+  display: inline-grid;
+  align-items: center;
+  max-width: 100%;
+  margin: -4px -8px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: var(--l-field-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 4px var(--l-wash);
+  font-size: var(--ie-size);
+  font-weight: var(--ie-weight);
+  letter-spacing: var(--l-track-body);
+  animation: l-iedit-open 220ms var(--l-ease-out) backwards;
+}
+@keyframes l-iedit-open {
+  from {
+    box-shadow:
+      inset 0 0 0 1px transparent,
+      0 0 0 0 transparent;
+  }
+}
+.l-iedit__box[data-invalid] {
+  box-shadow:
+    inset 0 0 0 1px var(--l-danger),
+    0 0 0 4px color-mix(in oklab, var(--l-danger) 10%, transparent);
+}
+.l-iedit__sizer,
+.l-iedit__box input {
+  grid-area: 1 / 1;
+  min-width: 2ch;
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: pre;
+}
+.l-iedit__sizer {
+  visibility: hidden;
+  padding-right: 2px;
+}
+.l-iedit__box input {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  caret-color: var(--l-accent-text);
+}
+.l-iedit__box input::placeholder {
+  color: var(--l-ink-5);
+}
+.l-iedit__box[data-busy] input {
+  color: var(--l-ink-3);
+}
+.l-iedit__spin {
+  position: absolute;
+  top: 50%;
+  right: -22px;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border: 1.6px solid var(--l-line-2);
+  border-top-color: var(--l-ink-3);
+  border-radius: 50%;
+  animation: l-spin 0.7s linear infinite;
+}
+.l-iedit__error {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  white-space: nowrap;
+}

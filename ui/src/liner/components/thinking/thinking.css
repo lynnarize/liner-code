@@ -1,0 +1,93 @@
+.l-think {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 15px 0 12px;
+  border-radius: 999px;
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  white-space: nowrap;
+  interpolate-size: allow-keywords;
+  transition: width 420ms var(--l-spring-snappy);
+}
+
+.l-think__mark {
+  position: relative;
+  display: grid;
+  width: 18px;
+  height: 18px;
+}
+.l-think__mark svg {
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 18px;
+  transition:
+    opacity 220ms ease,
+    scale 320ms var(--l-ease-snap),
+    filter 220ms ease;
+}
+/* Eight rays, the brightest a beat ahead: a spinner without a spin. The group steps round a
+   ray at a time, so the mark changes eight times a turn instead of on every frame. */
+.l-think__rays line {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.l-think__turn {
+  transform-origin: 10px 10px;
+  animation: l-spin 0.8s steps(8) infinite;
+}
+.l-think__check {
+  stroke: var(--l-ok);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  scale: 0.5;
+}
+.l-think__check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.l-think[data-done] .l-think__rays {
+  opacity: 0;
+  scale: 0.6;
+  filter: blur(2px);
+}
+.l-think[data-done] .l-think__check {
+  opacity: 1;
+  scale: 1;
+}
+.l-think[data-done] .l-think__check path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 380ms var(--l-ease-out) 120ms;
+}
+
+.l-think__labels {
+  display: inline-grid;
+}
+.l-think__label {
+  grid-area: 1 / 1;
+  animation: l-think-in 380ms var(--l-ease-out) both;
+}
+@keyframes l-think-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(55%);
+  }
+}
+/* A sheen travels through the text while work is happening. */
+.l-think__label[data-shimmer] {
+  background: linear-gradient(100deg, var(--l-ink-2) 35%, var(--l-ink) 50%, var(--l-ink-2) 65%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation:
+    l-think-in 380ms var(--l-ease-out) both,
+    l-shimmer-text 1.8s linear infinite;
+}

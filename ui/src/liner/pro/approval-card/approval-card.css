@@ -1,0 +1,187 @@
+.l-appr {
+  --l-frame-r: 22px;
+  min-width: 0;
+  color: var(--l-ink);
+}
+.l-appr__card {
+  overflow: hidden;
+  transition: height 380ms var(--l-spring-smooth);
+}
+.l-appr__ask {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.l-appr__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.l-appr__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+}
+.l-appr__icon svg {
+  width: 16px;
+  height: 16px;
+}
+.l-appr__titles {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+.l-appr__titles span {
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+}
+.l-appr__titles b {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.l-appr__desc {
+  margin: -4px 0 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.5;
+}
+/* What will go out, as plain rows between hairlines. */
+.l-appr__fields {
+  display: grid;
+  margin: 0;
+  font-size: var(--l-text-sm);
+}
+.l-appr__fields div {
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 0;
+  box-shadow: inset 0 1px 0 var(--l-line);
+}
+.l-appr__fields div:last-child {
+  box-shadow:
+    inset 0 1px 0 var(--l-line),
+    inset 0 -1px 0 var(--l-line);
+}
+.l-appr__fields dt {
+  color: var(--l-ink-3);
+}
+.l-appr__fields dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-appr__why {
+  display: grid;
+  gap: 6px;
+  font-size: var(--l-text-sm);
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.l-appr__why span {
+  color: var(--l-ink-3);
+}
+.l-appr__why textarea {
+  min-height: 60px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 12px;
+  outline: none;
+  background: var(--l-field-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-strong);
+  color: var(--l-ink);
+  font: inherit;
+  resize: none;
+  transition: box-shadow 180ms var(--l-ease-out);
+}
+.l-appr__why textarea:focus {
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 4px var(--l-wash);
+}
+.l-appr__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+/* The hold sits at the size of the buttons beside it and fills with ink, not red. */
+.l-appr__actions .l-hold {
+  --h-h: var(--l-h-sm);
+  --h-tint: var(--l-ink);
+  border-radius: 11px;
+  font-size: var(--l-text-sm);
+}
+.l-appr__receipt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.l-appr__receipt > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.l-appr__receipt b {
+  font-size: var(--l-text-md);
+  font-weight: 600;
+}
+.l-appr__receipt span {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-appr__tick {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 99px;
+  background: color-mix(in oklab, var(--l-ok) 16%, transparent);
+  color: color-mix(in oklab, var(--l-ok) 80%, var(--l-ink));
+}
+.l-appr[data-state="denied"] .l-appr__tick {
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+}
+.l-appr__tick svg {
+  width: 16px;
+  height: 16px;
+}
+.l-appr__tick path {
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-appr-draw 380ms var(--l-ease-out) 120ms forwards;
+}
+@keyframes l-appr-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-appr__card {
+    transition: none;
+  }
+  .l-appr__tick path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

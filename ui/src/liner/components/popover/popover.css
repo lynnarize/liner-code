@@ -1,0 +1,10 @@
+.l-popover__panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+}
+.l-popover__title {
+  font-size: var(--l-text-md);
+  font-weight: 600;
+}

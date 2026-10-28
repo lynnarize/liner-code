@@ -1,0 +1,71 @@
+.l-funnel {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-funnel__stage {
+  display: grid;
+  transition: opacity 200ms ease;
+}
+.l-funnel__stage.is-dim {
+  opacity: 0.5;
+}
+.l-funnel__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 2px 118px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.l-funnel__step svg {
+  width: 12px;
+  height: 12px;
+}
+.l-funnel__row {
+  display: grid;
+  grid-template-columns: 110px 1fr 86px;
+  align-items: center;
+  gap: 8px;
+}
+.l-funnel__label {
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-funnel__track {
+  display: flex;
+  height: 24px;
+}
+.l-funnel__bar {
+  min-width: 3px;
+  border-radius: 0 4px 4px 0;
+  transform-origin: left;
+  animation: l-funnel-grow 700ms var(--l-spring-smooth) backwards;
+}
+@keyframes l-funnel-grow {
+  from {
+    scale: 0 1;
+  }
+}
+.l-funnel__value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--l-text-sm);
+}
+.l-funnel__value b {
+  font-weight: 600;
+}
+.l-funnel__value em {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}

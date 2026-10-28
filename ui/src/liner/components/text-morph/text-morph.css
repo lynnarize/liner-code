@@ -1,0 +1,20 @@
+.l-morphtext {
+  position: relative;
+  display: inline-block;
+  white-space: pre;
+}
+.l-morphtext__ch {
+  display: inline-block;
+}
+.l-morphtext__ghost {
+  position: absolute;
+  pointer-events: none;
+  animation: l-morphtext-out 300ms var(--l-ease-out) forwards;
+}
+@keyframes l-morphtext-out {
+  to {
+    opacity: 0;
+    filter: blur(6px);
+    scale: 0.8;
+  }
+}

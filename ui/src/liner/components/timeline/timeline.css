@@ -1,0 +1,92 @@
+.l-timeline {
+  display: grid;
+  width: min(100%, 440px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-timeline__event {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding-bottom: 20px;
+  animation: l-unblur 420ms var(--l-ease-out) backwards;
+}
+.l-timeline__event:last-child {
+  padding-bottom: 0;
+}
+/* The hairline joining marks. */
+.l-timeline__event:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 30px;
+  bottom: 2px;
+  left: 13.5px;
+  width: 1px;
+  background: var(--l-line-2);
+}
+.l-timeline__mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink-3);
+}
+.l-timeline__mark svg {
+  width: 14px;
+  height: 14px;
+}
+.l-timeline__mark:empty::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--l-ink-4);
+}
+.l-timeline__event[data-state="current"] .l-timeline__mark {
+  background: var(--l-ink);
+  box-shadow: 0 0 0 4px var(--l-wash-2);
+  color: var(--l-on-ink);
+}
+.l-timeline__event[data-state="current"] .l-timeline__mark:empty::after {
+  background: var(--l-on-ink);
+}
+.l-timeline__event[data-state="upcoming"] .l-timeline__mark {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink-5);
+}
+.l-timeline__event[data-state="upcoming"] .l-timeline__head b {
+  color: var(--l-ink-3);
+}
+.l-timeline__body {
+  display: grid;
+  gap: 4px;
+  padding-top: 4px;
+}
+.l-timeline__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.l-timeline__head b {
+  font-size: var(--l-text-md);
+  font-weight: 500;
+}
+.l-timeline__head time {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.l-timeline__text {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.5;
+}

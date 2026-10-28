@@ -1,0 +1,174 @@
+.l-chatx {
+  display: grid;
+  width: min(100%, 400px);
+}
+.l-chatx__card {
+  position: relative;
+  overflow: hidden;
+}
+.l-chatx__scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.l-chatx__day {
+  align-self: center;
+  margin: 2px 0 10px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-chatx__msg {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 82%;
+  animation: l-chatx-in 380ms var(--l-spring-snappy) backwards;
+}
+.l-chatx__msg[data-first] {
+  margin-top: 8px;
+}
+.l-chatx__msg[data-mine] {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+@keyframes l-chatx-in {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+    scale: 0.96;
+  }
+}
+.l-chatx__face {
+  flex: none;
+  width: 28px;
+}
+.l-chatx__col {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  min-width: 0;
+}
+.l-chatx__msg[data-mine] .l-chatx__col {
+  justify-items: end;
+}
+.l-chatx__name {
+  padding: 0 12px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-chatx__bubble {
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+/* Runs: corners tighten between messages from the same person. */
+.l-chatx__msg:not([data-mine]):not([data-first]) .l-chatx__bubble {
+  border-top-left-radius: 6px;
+}
+.l-chatx__msg:not([data-mine]):not([data-last]) .l-chatx__bubble {
+  border-bottom-left-radius: 6px;
+}
+.l-chatx__msg[data-mine] .l-chatx__bubble {
+  background: var(--l-primary-fill);
+  box-shadow: none;
+  color: var(--l-primary-ink);
+}
+.l-chatx__msg[data-mine]:not([data-first]) .l-chatx__bubble {
+  border-top-right-radius: 6px;
+}
+.l-chatx__msg[data-mine]:not([data-last]) .l-chatx__bubble {
+  border-bottom-right-radius: 6px;
+}
+.l-chatx__meta {
+  margin-bottom: 4px;
+  padding: 0 6px;
+  color: var(--l-ink-3);
+  font-size: 11px;
+}
+.l-chatx__meta span {
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.l-chatx__typing {
+  margin: 8px 0 0 36px;
+  font-size: var(--l-text-sm);
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.l-chatx__jump {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  translate: -50% 0;
+  cursor: pointer;
+  animation: l-chatx-in 320ms var(--l-spring-snappy) backwards;
+}
+.l-chatx__jump svg {
+  width: 14px;
+  height: 14px;
+}
+.l-chatx__compose {
+  gap: 6px;
+  padding: 4px 4px 2px 12px;
+}
+.l-chatx__compose input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+}
+.l-chatx__compose input::placeholder {
+  color: var(--l-ink-4);
+}
+.l-chatx__send {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-primary-fill);
+  color: var(--l-primary-ink);
+  cursor: pointer;
+  transition:
+    opacity 200ms ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-chatx__send:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.l-chatx__send:active:not(:disabled) {
+  scale: 0.88;
+}
+.l-chatx__send svg {
+  width: 15px;
+  height: 15px;
+}

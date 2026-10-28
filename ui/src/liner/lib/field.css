@@ -1,0 +1,143 @@
+/* Liner field base: the shape every single-line input shares, so they read as one family
+   with the Text field. A hairline that darkens on hover and turns to ink on focus. */
+.l-in {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.l-in-label {
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-in-hint {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  line-height: 1.45;
+  animation: l-unblur 260ms var(--l-ease-out) backwards;
+}
+.l-in-hint[data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.l-in-hint[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.l-in-box {
+  --i-h: 44px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: var(--i-h);
+  padding: 0 12px;
+  /* Triggers (Select, Date and Time pickers) are buttons: drop the browser's bevelled border. */
+  border: 0;
+  border-radius: var(--l-r-control);
+  background: var(--l-field-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-strong);
+  color: var(--l-ink);
+  transition:
+    box-shadow 180ms var(--l-ease-out),
+    background-color 180ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-in-box:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-ink) 38%, transparent);
+  }
+}
+.l-in-box:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 4px var(--l-wash);
+}
+.l-in-box[data-invalid] {
+  box-shadow:
+    inset 0 0 0 1px var(--l-danger),
+    0 0 0 4px color-mix(in oklab, var(--l-danger) 10%, transparent);
+}
+.l-in-box[data-disabled] {
+  opacity: 0.5;
+}
+.l-in-box > input,
+.l-in-box > textarea,
+.l-in-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: var(--l-track-body);
+  caret-color: var(--l-accent-text);
+}
+.l-in-box input::placeholder,
+.l-in-box textarea::placeholder {
+  color: var(--l-ink-5);
+}
+.l-in-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--l-ink-4);
+  transition: color 180ms ease;
+}
+.l-in-box:focus-within .l-in-icon {
+  color: var(--l-ink-2);
+}
+.l-in-icon svg {
+  width: 16px;
+  height: 16px;
+}
+/* A small round button inside a field: clear, step, reveal. */
+.l-in-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--l-ink-4);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-in-btn:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-in-btn:active {
+  scale: 0.9;
+}
+.l-in-btn svg {
+  width: 14px;
+  height: 14px;
+}
+/* Keys */
+.l-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 0.5px var(--l-line-2),
+    0 1px 0 var(--l-line-2);
+  color: var(--l-ink-2);
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+}

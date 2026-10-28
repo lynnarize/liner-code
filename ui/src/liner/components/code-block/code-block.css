@@ -1,0 +1,144 @@
+.l-code {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+}
+.l-code__bar {
+  min-height: 38px;
+  padding: 0 6px 2px 12px;
+}
+.l-code__name {
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-code__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.l-code__lang {
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+}
+.l-code__copy {
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--l-dur-fast) ease;
+}
+.l-code__copy:hover {
+  background: var(--l-wash-2);
+}
+.l-code__copy > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}
+.l-code__copy svg {
+  width: 13px;
+  height: 13px;
+}
+.l-code__card {
+  min-width: 0;
+  overflow: hidden;
+}
+.l-code__pre {
+  margin: 0;
+  padding: 12px 0;
+  overflow: auto;
+  outline: none;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  scrollbar-width: thin;
+  /* Syntax in ink and one accent: keywords take the accent, structure reads by weight and
+     the rest steps back in greys. It follows the theme and the accent on its own. */
+  --t-k: var(--l-accent-text);
+  --t-s: var(--l-ink-3);
+  --t-t: var(--l-ink);
+  --t-n: var(--l-ink-2);
+  --t-f: var(--l-ink);
+  --t-y: var(--l-ink);
+  --t-a: var(--l-ink-3);
+}
+.l-code__pre:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--l-accent) 55%, transparent);
+}
+.l-code__pre code {
+  display: grid;
+  min-width: max-content;
+}
+.l-code[data-wrap] .l-code__pre code {
+  min-width: 0;
+}
+.l-code__line {
+  display: flex;
+  padding-right: 18px;
+}
+.l-code__line[data-hl] {
+  background: var(--l-accent-soft);
+  box-shadow: inset 2px 0 0 var(--l-accent);
+}
+.l-code__n {
+  flex: none;
+  width: 44px;
+  padding-right: 14px;
+  color: var(--l-ink-5);
+  text-align: right;
+  user-select: none;
+}
+.l-code__line[data-hl] .l-code__n {
+  color: var(--l-accent-text);
+}
+.l-code__src {
+  padding-left: 4px;
+  color: var(--l-ink);
+  white-space: pre;
+}
+.l-code[data-wrap] .l-code__src {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.l-code__line:not(:has(.l-code__n)) .l-code__src {
+  padding-left: 16px;
+}
+.l-tok-keyword {
+  color: var(--t-k);
+}
+.l-tok-string {
+  color: var(--t-s);
+}
+.l-tok-tag {
+  color: var(--t-t);
+  font-weight: 500;
+}
+.l-tok-number {
+  color: var(--t-n);
+}
+.l-tok-fn {
+  color: var(--t-f);
+}
+.l-tok-type {
+  color: var(--t-y);
+  font-weight: 500;
+}
+.l-tok-attr {
+  color: var(--t-a);
+}
+.l-tok-comment {
+  color: var(--l-ink-3);
+  font-style: italic;
+}

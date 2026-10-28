@@ -1,0 +1,121 @@
+.l-switch-row {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.l-switch-row[data-disabled] {
+  opacity: 0.5;
+}
+
+.l-switch {
+  --w: 42px;
+  --h: 24px;
+  --pad: 2px;
+  --tw: calc(var(--h) - var(--pad) * 2);
+  --stretch: 5px;
+  --x: 0px;
+  position: relative;
+  flex: none;
+  width: var(--w);
+  height: var(--h);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash-3);
+  box-shadow: inset 0 1px 2px var(--l-drop), inset 0 0 0 1px var(--l-line);
+  cursor: pointer;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 220ms var(--l-ease-out),
+    box-shadow 220ms ease;
+}
+.l-switch[data-size="sm"] {
+  --w: 34px;
+  --h: 20px;
+  --stretch: 4px;
+}
+.l-switch:disabled {
+  cursor: not-allowed;
+}
+.l-switch[data-on] {
+  --x: calc(var(--w) - var(--pad) * 2 - var(--tw));
+  background: var(--l-accent);
+  box-shadow: inset 0 1px 2px color-mix(in oklab, var(--l-accent-ink) 30%, transparent), inset 0 0 0 1px color-mix(in oklab, var(--l-accent-ink) 12%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-switch:not([data-on]):not(:disabled):hover {
+    background: color-mix(in oklab, var(--l-wash-3), var(--l-ink) 6%);
+  }
+}
+
+/* The thumb never overshoots: a switch must not show a state that is not true.
+   Pressing stretches it toward the side it will travel to. */
+.l-switch__thumb {
+  position: absolute;
+  top: var(--pad);
+  left: var(--pad);
+  display: grid;
+  place-items: center;
+  width: var(--tw);
+  height: var(--tw);
+  border-radius: 999px;
+  background: oklch(0.995 0 0);
+  box-shadow: var(--l-thumb-shadow);
+  transform: translateX(var(--x));
+  transition:
+    transform var(--l-dur-spring) var(--l-spring-smooth),
+    width 260ms var(--l-ease-out);
+}
+.l-switch[data-pressed] .l-switch__thumb {
+  width: calc(var(--tw) + var(--stretch));
+}
+.l-switch[data-pressed][data-on] .l-switch__thumb {
+  transform: translateX(calc(var(--x) - var(--stretch)));
+}
+.l-switch[data-dragging] .l-switch__thumb {
+  transform: translateX(min(var(--drag), calc(var(--w) - var(--pad) * 2 - var(--tw) - var(--stretch))));
+  transition: width 260ms var(--l-ease-out);
+}
+.l-switch__thumb svg {
+  width: 70%;
+  height: 70%;
+  stroke: var(--l-accent-ink);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.l-switch__thumb path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 160ms ease;
+}
+.l-switch[data-on] .l-switch__thumb path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 340ms var(--l-ease-out) 120ms;
+}
+
+.l-switch__text {
+  display: grid;
+  gap: 3px;
+  padding-top: 2px;
+}
+.l-switch__label {
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.l-switch__desc {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.4;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-switch {
+    --w: 48px;
+    --h: 28px;
+  }
+}

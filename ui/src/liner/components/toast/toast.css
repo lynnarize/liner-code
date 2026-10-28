@@ -1,0 +1,292 @@
+.l-toaster {
+  --gap: 10px;
+  position: fixed;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 1000;
+  width: min(380px, calc(100vw - 32px));
+  translate: -50% 0;
+  pointer-events: none;
+}
+.l-toaster[data-placement="contained"] {
+  position: absolute;
+  bottom: 20px;
+  /* Inside a panel, the panel sets the width, not the screen. */
+  width: min(380px, calc(100% - 24px));
+}
+.l-toaster__list {
+  position: relative;
+  height: var(--front-h);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  transition: height 400ms var(--l-ease-out);
+}
+
+.l-toast {
+  --i: 0;
+  --y: 0px;
+  --sx: 0px;
+  --sy: 0px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  /* Newest first in the DOM, so stack it on top explicitly. */
+  z-index: calc(20 - var(--i));
+  height: var(--front-h);
+  overflow: visible;
+  border-radius: 16px;
+  outline-offset: 3px;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transform-origin: 50% 0;
+  /* Collapsed: each one behind peeks 10px higher and a little smaller. */
+  transform: translateY(calc(var(--i) * -10px)) scale(calc(1 - var(--i) * 0.05));
+  transition:
+    transform 420ms var(--l-ease-out),
+    opacity 320ms ease,
+    height 420ms var(--l-ease-out);
+}
+.l-toast[data-front] {
+  height: auto;
+}
+.l-toast:not([data-mounted]) {
+  opacity: 0;
+  transform: translateY(110%) scale(0.96);
+}
+.l-toast[data-hidden] {
+  opacity: 0;
+  pointer-events: none;
+}
+/* Bridge the gap between expanded toasts so hover never flickers off. */
+.l-toast::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: calc(var(--gap) + 2px);
+}
+
+.l-toaster[data-expanded] .l-toast {
+  height: auto;
+  transform: translateY(calc(var(--y) * -1)) scale(1);
+}
+.l-toaster[data-expanded] .l-toast[data-hidden] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Swipe: follow the finger with no transition. */
+.l-toast[data-swiping] {
+  transform: translate(var(--sx), calc(var(--sy) - var(--i) * 10px)) scale(calc(1 - var(--i) * 0.05));
+  transition: none;
+}
+.l-toaster[data-expanded] .l-toast[data-swiping] {
+  transform: translate(var(--sx), calc(var(--sy) - var(--y)));
+}
+
+/* Exits are faster than entrances. */
+.l-toast[data-removing] {
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform 260ms var(--l-ease-out),
+    opacity 200ms ease;
+}
+.l-toast[data-removing="auto"] {
+  transform: translateY(calc(var(--i) * -10px + 30%)) scale(0.96);
+}
+.l-toast[data-removing="down"] {
+  transform: translate(var(--sx), 120%);
+}
+.l-toast[data-removing="left"] {
+  transform: translate(calc(-100% - 40px), var(--sy));
+}
+.l-toast[data-removing="right"] {
+  transform: translate(calc(100% + 40px), var(--sy));
+}
+
+.l-toast__body {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-height: 56px;
+  padding: 14px 14px 14px 14px;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--l-float);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: var(--l-shadow-float), inset 0 1px 0 var(--l-hi);
+  color: var(--l-ink);
+}
+.l-toast:not([data-front]) .l-toast__body {
+  height: 100%;
+}
+.l-toaster[data-expanded] .l-toast .l-toast__body {
+  height: auto;
+}
+.l-toast__body > * {
+  transition: opacity 260ms ease;
+}
+.l-toaster:not([data-expanded]) .l-toast:not([data-front]) .l-toast__body > * {
+  opacity: 0;
+}
+
+.l-toast__icon {
+  display: grid;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 0px;
+  animation: l-rise-in 360ms var(--l-ease-out) both;
+}
+.l-toast__icon svg {
+  width: 20px;
+  height: 20px;
+}
+.l-toast[data-kind="success"] .l-toast__icon {
+  color: var(--l-ok);
+}
+.l-toast[data-kind="error"] .l-toast__icon {
+  color: var(--l-danger);
+}
+.l-toast[data-kind="info"] .l-toast__icon {
+  color: var(--l-accent-text);
+}
+.l-toast[data-kind="loading"] .l-toast__icon {
+  color: var(--l-ink-3);
+}
+.l-toast__spin {
+  animation: l-spin 0.8s linear infinite;
+}
+.l-toast__svg-ok path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-toast-draw 420ms var(--l-ease-out) 140ms forwards;
+}
+@keyframes l-toast-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.l-toast__text {
+  flex: 1;
+  min-width: 0;
+  padding-top: 1px;
+}
+.l-toast__title {
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  line-height: 18px;
+  animation: l-blur-in 300ms var(--l-ease-out) both;
+}
+.l-toast__desc {
+  margin-top: 3px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 18px;
+}
+.l-toast__action {
+  flex: none;
+  height: 30px;
+  margin: -2px 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: scale 300ms var(--l-ease-snap);
+}
+.l-toast__action:active {
+  scale: 0.95;
+  transition-duration: var(--l-dur-instant);
+}
+
+/* Time left, as a hairline. It holds still while you read. */
+.l-toast__timer {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--l-ink-4);
+  opacity: 0.4;
+  transform-origin: left center;
+  animation: l-toast-timer linear forwards;
+}
+.l-toaster[data-expanded] .l-toast__timer,
+.l-toast:focus-within .l-toast__timer {
+  animation-play-state: paused;
+}
+@keyframes l-toast-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.l-toast__close {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-float);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: 0 0 0 1px var(--l-line-2), 0 1px 3px var(--l-drop);
+  color: var(--l-ink-3);
+  cursor: pointer;
+  opacity: 0;
+  scale: 0.6;
+  transition:
+    opacity var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap),
+    color var(--l-dur-fast) ease;
+}
+.l-toast__close svg {
+  width: 12px;
+  height: 12px;
+}
+.l-toast__close:hover {
+  color: var(--l-ink);
+}
+.l-toaster[data-expanded] .l-toast:hover .l-toast__close,
+.l-toast:focus-visible .l-toast__close,
+.l-toast__close:focus-visible {
+  opacity: 1;
+  scale: 1;
+}
+@media (hover: none) {
+  .l-toast__close {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-toast,
+  .l-toast[data-removing] {
+    transition: opacity 160ms linear;
+  }
+}

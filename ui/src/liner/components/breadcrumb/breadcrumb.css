@@ -1,0 +1,77 @@
+.l-crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--l-text-md);
+}
+/* A crumb comes into focus when it is added; the ones already there stay put. */
+.l-crumbs__item {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.l-crumbs__link,
+.l-crumbs__current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 4px 6px;
+  overflow: hidden;
+  border-radius: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-crumbs__link {
+  color: var(--l-ink-3);
+  text-decoration: none;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-crumbs__link:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.l-crumbs__link:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+}
+.l-crumbs__current {
+  color: var(--l-ink);
+  font-weight: 500;
+}
+.l-crumbs__link svg,
+.l-crumbs__current svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.l-crumbs__sep {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  color: var(--l-ink-5);
+}
+.l-crumbs__sep svg {
+  width: 14px;
+  height: 14px;
+}
+.l-crumbs__more .l-menu-trigger {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--l-ink-3);
+  letter-spacing: 0.08em;
+}
+.l-crumbs__more .l-menu-trigger:hover,
+.l-crumbs__more .l-menu-trigger[data-open] {
+  background: var(--l-wash-2);
+  box-shadow: none;
+  color: var(--l-ink);
+}

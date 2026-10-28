@@ -1,0 +1,293 @@
+.l-field {
+  --f-h: 50px;
+  --f-x: 15px;
+  --f-r: var(--l-r-control);
+  --f-line: var(--l-line-strong);
+  --f-label-scale: 0.8;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+}
+.l-field[data-lead] {
+  --f-x: 42px;
+}
+
+.l-field__box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--f-h);
+  border-radius: var(--f-r);
+  background: var(--l-field-fill);
+  box-shadow: var(--l-field-shadow);
+  cursor: text;
+  transition: background-color var(--l-dur-fast) ease;
+}
+
+/* The outline is a fieldset so the label can cut a real notch into the border. */
+.l-field__outline {
+  position: absolute;
+  /* The border runs through the legend's middle, so lift the box by half of it. */
+  inset: -5.5px 0 0;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--f-line);
+  border-radius: inherit;
+  pointer-events: none;
+  text-align: left;
+  min-width: 0;
+  transition: border-color var(--l-dur-fast) var(--l-ease-out);
+}
+.l-field__outline legend {
+  float: unset;
+  width: auto;
+  max-width: 0.01px;
+  height: 11px;
+  padding: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-size: calc(var(--l-text-base) * var(--f-label-scale));
+  white-space: nowrap;
+  transition: max-width 80ms linear;
+}
+.l-field__outline legend > span {
+  display: inline-block;
+  padding: 0 5px;
+  visibility: hidden;
+  opacity: 0;
+}
+.l-field[data-up] .l-field__outline legend {
+  max-width: 100%;
+  transition: max-width 260ms var(--l-ease-out) 40ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .l-field__box:hover {
+    --f-line: color-mix(in oklab, var(--l-ink) 38%, transparent);
+  }
+}
+.l-field[data-focus] {
+  --f-line: var(--l-ink);
+}
+.l-field[data-focus] .l-field__box {
+  background: color-mix(in oklab, var(--l-field-fill), var(--l-ink) 2%);
+}
+.l-field[data-invalid] {
+  --f-line: color-mix(in oklab, var(--l-danger) 70%, transparent);
+}
+.l-field[data-invalid][data-focus] {
+  --f-line: var(--l-danger);
+}
+
+/* Label: rests inside, lifts into the notch. Each letter hops on focus. */
+.l-field__label {
+  position: absolute;
+  top: 50%;
+  left: var(--f-x);
+  z-index: 1;
+  display: inline-flex;
+  max-width: calc(100% - var(--f-x) - 12px);
+  overflow: visible;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-base);
+  line-height: 1;
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: 0 50%;
+  translate: 0 -50%;
+  transition:
+    translate 420ms var(--l-ease-out),
+    scale 420ms var(--l-ease-out),
+    color var(--l-dur-base) ease;
+}
+.l-field__label span {
+  display: inline-block;
+}
+.l-field[data-up] .l-field__label,
+.l-field:has(.l-field__input:autofill) .l-field__label {
+  translate: calc(15px - var(--f-x)) calc(-50% - var(--f-h) / 2);
+  scale: var(--f-label-scale);
+  color: var(--l-ink-3);
+}
+.l-field[data-focus] .l-field__label {
+  color: var(--l-ink);
+}
+.l-field[data-invalid] .l-field__label {
+  color: var(--l-danger-text);
+}
+.l-field[data-focus] .l-field__label span {
+  animation: l-field-hop 460ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--i) * 22ms);
+}
+@keyframes l-field-hop {
+  38% {
+    transform: translateY(-3px);
+  }
+}
+
+.l-field__input {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 14px 0 var(--f-x);
+  border: 0;
+  border-radius: inherit;
+  outline: none;
+  background: transparent;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-base);
+  letter-spacing: var(--l-track-body);
+  caret-color: var(--l-accent-text);
+}
+.l-field__input::placeholder {
+  color: var(--l-ink-5);
+  opacity: 0;
+  transition: opacity var(--l-dur-fast) ease;
+}
+.l-field[data-focus] .l-field__input::placeholder {
+  opacity: 1;
+  transition-delay: 120ms;
+}
+.l-field__input::selection {
+  background: var(--l-mark-soft);
+}
+/* Kill the yellow autofill wash; keep the text color ours. */
+.l-field__input:autofill,
+.l-field__input:-webkit-autofill {
+  -webkit-text-fill-color: var(--l-ink);
+  box-shadow: 0 0 0 100px var(--l-surface) inset;
+  transition: background-color 9999s;
+}
+
+.l-field__lead,
+.l-field__trail {
+  display: grid;
+  place-items: center;
+  color: var(--l-ink-4);
+  transition: color var(--l-dur-fast) ease;
+}
+.l-field__lead {
+  position: absolute;
+  left: 14px;
+  pointer-events: none;
+}
+.l-field[data-focus] .l-field__lead {
+  color: var(--l-ink-2);
+}
+.l-field__trail {
+  padding-right: 12px;
+}
+.l-field__lead svg,
+.l-field__trail svg {
+  width: 16px;
+  height: 16px;
+}
+
+.l-field__clear {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--l-ink-4);
+  cursor: pointer;
+  opacity: 0;
+  scale: 0.6;
+  filter: blur(2px);
+  pointer-events: none;
+  transition:
+    opacity var(--l-dur-fast) ease,
+    scale var(--l-dur-base) var(--l-ease-snap),
+    filter var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-field__clear svg {
+  width: 16px;
+  height: 16px;
+}
+.l-field__clear[data-show] {
+  opacity: 1;
+  scale: 1;
+  filter: none;
+  pointer-events: auto;
+}
+.l-field__clear:hover {
+  color: var(--l-ink);
+}
+
+/* Message: height opens with grid rows, text fades after the space exists. */
+.l-field__msg {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--l-dur-slow) var(--l-ease-out);
+}
+.l-field__msg[data-show] {
+  grid-template-rows: 1fr;
+}
+.l-field__msg-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.l-field__msg-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 2px 0;
+}
+.l-field__msg-text {
+  flex: 1;
+  margin: 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.4;
+  text-wrap: pretty;
+  animation: l-blur-in var(--l-dur-base) var(--l-ease-out) both;
+}
+.l-field__msg-text[data-error] {
+  color: var(--l-danger-text);
+  animation: none;
+}
+.l-field__alert {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2.5px;
+  animation: l-rise-in 300ms var(--l-ease-out) both;
+}
+.l-stagger {
+  display: inline-block;
+  animation: l-blur-in 320ms var(--l-ease-out) both;
+}
+.l-field__count {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  transition: color var(--l-dur-fast) ease;
+}
+.l-field__count[data-near] {
+  color: var(--l-warn-text);
+}
+.l-field__count[data-full] {
+  color: var(--l-danger-text);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-field {
+    --f-h: 52px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-field[data-focus] .l-field__label span,
+  .l-stagger {
+    animation: none;
+  }
+}

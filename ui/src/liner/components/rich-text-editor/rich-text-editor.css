@@ -1,0 +1,128 @@
+.l-rte {
+  display: grid;
+  width: min(100%, 560px);
+}
+.l-rte__bar {
+  padding: 0 8px 4px 2px;
+}
+.l-rte__tools {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px;
+}
+.l-rte__sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 5px;
+  background: var(--l-line-2);
+}
+.l-rte__count {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+  animation: l-swap-in 200ms var(--l-ease-out) backwards;
+}
+.l-rte__card {
+  position: relative;
+}
+.l-rte__page {
+  box-sizing: border-box;
+  max-height: 420px;
+  padding: 18px 22px 22px;
+  overflow-y: auto;
+  outline: none;
+  color: var(--l-ink);
+  font-size: var(--l-text-base);
+  line-height: 1.6;
+  letter-spacing: var(--l-track-body);
+  caret-color: var(--l-accent-text);
+  overflow-wrap: break-word;
+}
+.l-rte__page[data-empty]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  color: var(--l-ink-5);
+  pointer-events: none;
+}
+.l-rte__page > :first-child {
+  margin-top: 0;
+}
+.l-rte__page p {
+  margin: 0 0 0.6em;
+}
+.l-rte__page h2 {
+  margin: 0.9em 0 0.4em;
+  font-family: var(--l-font-display);
+  font-size: var(--l-text-xl);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: var(--l-track-display);
+}
+.l-rte__page blockquote {
+  margin: 0.8em 0;
+  padding: 2px 0 2px 14px;
+  box-shadow: inset 2px 0 0 var(--l-line-strong);
+  color: var(--l-ink-2);
+}
+.l-rte__page ul,
+.l-rte__page ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.4em;
+}
+.l-rte__page li {
+  padding-left: 0.2em;
+}
+.l-rte__page li::marker {
+  color: var(--l-ink-4);
+}
+.l-rte__page ol > li::marker {
+  color: var(--l-ink-3);
+}
+.l-rte__page a {
+  color: var(--l-accent-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--l-accent) 40%, transparent);
+  text-underline-offset: 3px;
+}
+.l-rte__page b,
+.l-rte__page strong {
+  font-weight: 600;
+}
+.l-rte__page ::selection {
+  background: color-mix(in oklab, var(--l-accent) 22%, transparent);
+}
+.l-rte__link {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(320px, calc(100% - 24px));
+  height: 40px;
+  padding: 0 8px 0 14px;
+  border-radius: 14px;
+  translate: -50% 0;
+  animation: l-pop-in 220ms var(--l-ease-enter) backwards;
+}
+.l-rte__link input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+}
+.l-rte__link input::placeholder {
+  color: var(--l-ink-4);
+}
+.l-rte__enter {
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}

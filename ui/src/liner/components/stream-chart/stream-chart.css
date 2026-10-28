@@ -1,0 +1,61 @@
+/* Each tick, the drawing starts one step right and glides left by exactly one step. */
+.l-stream__slide {
+  animation: l-stream-shift 1s linear both;
+}
+.l-stream__slide[data-hold] {
+  animation: none;
+  transform: translateX(calc(var(--step) * -1));
+}
+@keyframes l-stream-shift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(var(--step) * -1));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-stream__slide {
+    animation: none;
+    transform: translateX(calc(var(--step) * -1));
+  }
+}
+.l-stream__now {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  transition: color 300ms ease;
+}
+.l-stream__now[data-over] {
+  color: var(--l-warn-text);
+}
+.l-stream__now small {
+  color: var(--l-ink-3);
+  font-size: 14px;
+  font-weight: 500;
+}
+.l-stream__pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px 0 7px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  cursor: pointer;
+}
+.l-stream__pause:hover {
+  background: var(--l-wash-2);
+}
+.l-stream__pause svg {
+  width: 12px;
+  height: 12px;
+}
+.l-stream__status {
+  animation: l-swap-in 200ms var(--l-ease-out) backwards;
+}

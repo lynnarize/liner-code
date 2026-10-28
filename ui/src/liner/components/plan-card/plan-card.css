@@ -1,0 +1,74 @@
+.l-plancard {
+  --l-frame-r: 22px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px 18px 18px;
+  color: var(--l-ink);
+}
+.l-plancard__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.l-plancard__label {
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+}
+.l-plancard__top .l-badge {
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-plancard__name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--l-font-display);
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+.l-plancard__name b {
+  font-weight: 600;
+}
+.l-plancard__name span {
+  color: var(--l-ink-3);
+}
+.l-plancard__line {
+  min-height: 1.5em;
+  margin: 0;
+  color: var(--l-ink-3);
+  font-size: 13.5px;
+  line-height: 1.5;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-plancard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+/* With a ring: the ring takes the right edge, beside the name and the renew line. */
+.l-plancard[data-ring] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 16px;
+}
+.l-plancard[data-ring] > :not(.l-plancard__ring) {
+  grid-column: 1;
+}
+.l-plancard__ring {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  color: var(--l-ink-3);
+  font-size: 11.5px;
+}
+.l-plancard__ring b {
+  color: var(--l-ink);
+  font-size: 15px;
+  font-weight: 600;
+}

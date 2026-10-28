@@ -1,0 +1,143 @@
+.l-tags {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+.l-tags__label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-tags__count {
+  color: var(--l-ink-3);
+  font-weight: 400;
+}
+
+.l-tags__box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 50px;
+  padding: 8px;
+  border-radius: var(--l-r-control);
+  background: var(--l-field-fill);
+  box-shadow: var(--l-field-shadow), inset 0 0 0 1px var(--l-line-strong);
+  cursor: text;
+  transition: box-shadow var(--l-dur-fast) ease;
+}
+.l-tags__box:focus-within {
+  box-shadow: var(--l-field-shadow), inset 0 0 0 1px var(--l-ink);
+}
+.l-tags[data-error] .l-tags__box {
+  box-shadow: var(--l-field-shadow), inset 0 0 0 1px var(--l-danger);
+}
+
+/* Chips grow in place: the wrapper animates its width, the chip blurs in. */
+.l-tag {
+  display: inline-grid;
+  grid-template-columns: 1fr;
+  animation: l-tag-in 360ms var(--l-ease-out) both;
+}
+.l-tag[data-static] {
+  animation: none;
+}
+.l-tag[data-leaving] {
+  pointer-events: none;
+  animation: l-tag-out 260ms var(--l-ease-out) both;
+}
+@keyframes l-tag-in {
+  from {
+    grid-template-columns: 0fr;
+    opacity: 0;
+    filter: blur(3px);
+    scale: 0.8;
+  }
+}
+@keyframes l-tag-out {
+  to {
+    grid-template-columns: 0fr;
+    margin-right: -6px;
+    opacity: 0;
+    filter: blur(3px);
+    scale: 0.8;
+  }
+}
+.l-tag__inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 4px 0 11px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background 200ms ease,
+    box-shadow 200ms ease,
+    color 200ms ease;
+}
+.l-tag[data-armed] .l-tag__inner {
+  background: color-mix(in oklab, var(--l-danger) 18%, var(--l-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-danger) 55%, transparent);
+  color: var(--l-danger-text);
+}
+.l-tag__x {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--l-ink-4);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-tag__x:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-tag__x svg {
+  width: 14px;
+  height: 14px;
+}
+
+.l-tags__input {
+  flex: 1 0 90px;
+  min-width: 90px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+  caret-color: var(--l-accent-text);
+}
+.l-tags__input::placeholder {
+  color: var(--l-ink-5);
+}
+
+.l-tags__hint {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  animation: l-blur-in 260ms var(--l-ease-out) both;
+}
+.l-tags__hint[data-error] {
+  color: var(--l-danger-text);
+}

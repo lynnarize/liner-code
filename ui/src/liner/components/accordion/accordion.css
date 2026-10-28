@@ -1,0 +1,105 @@
+.l-acc {
+  display: grid;
+  width: min(100%, 520px);
+}
+.l-acc__item + .l-acc__item {
+  border-top: 1px solid var(--l-line);
+}
+.l-acc__item h3 {
+  margin: 0;
+}
+.l-acc__item button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 16px;
+  border: 0;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-base);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-acc__item button:hover:not(:disabled) {
+    background: var(--l-wash);
+  }
+}
+.l-acc__item button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: -2px;
+}
+.l-acc__item:first-child button {
+  border-radius: calc(var(--l-frame-r) - var(--l-frame-pad)) calc(var(--l-frame-r) - var(--l-frame-pad)) 0 0;
+}
+.l-acc__item:last-child:not([data-open]) button {
+  border-radius: 0 0 calc(var(--l-frame-r) - var(--l-frame-pad)) calc(var(--l-frame-r) - var(--l-frame-pad));
+}
+.l-acc__item button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.l-acc__icon {
+  display: grid;
+  color: var(--l-ink-3);
+}
+.l-acc__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.l-acc__title {
+  flex: 1;
+}
+.l-acc__chev {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--l-ink-4);
+  transition: rotate 380ms var(--l-spring-snappy);
+}
+.l-acc__item[data-open] .l-acc__chev {
+  rotate: 180deg;
+}
+/* 0fr to 1fr: the panel grows to its own height without being measured. */
+.l-acc__panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 380ms var(--l-spring-smooth);
+}
+.l-acc__item[data-open] .l-acc__panel {
+  grid-template-rows: 1fr;
+}
+.l-acc__clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.l-acc__content {
+  padding: 0 16px 16px;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-md);
+  line-height: 1.6;
+  opacity: 0;
+  filter: blur(4px);
+  translate: 0 -4px;
+  transition:
+    opacity 200ms ease,
+    filter 240ms ease,
+    translate 300ms var(--l-ease-out);
+}
+.l-acc__item[data-open] .l-acc__content {
+  opacity: 1;
+  filter: none;
+  translate: 0 0;
+  transition-delay: 80ms;
+}
+.l-acc__icon + .l-acc__title ~ * {
+  margin-left: 0;
+}
+.l-acc__item:has(.l-acc__icon) .l-acc__content {
+  padding-left: 46px;
+}

@@ -1,0 +1,119 @@
+.l-filters {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+.l-filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.l-filters__search {
+  flex: 1 1 200px;
+  max-width: 280px;
+}
+.l-filters__menu .l-menu-trigger {
+  height: 36px;
+  gap: 6px;
+  border-radius: 11px;
+  font-size: var(--l-text-sm);
+}
+.l-filters__menu .l-menu-trigger svg:not(.l-menu-chev) {
+  width: 15px;
+  height: 15px;
+  color: var(--l-ink-4);
+}
+.l-filters__n {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--l-ink);
+  color: var(--l-on-ink);
+  font-size: 11px;
+  font-weight: 700;
+  animation: l-filters-pop 360ms var(--l-ease-pop) backwards;
+}
+@keyframes l-filters-pop {
+  from {
+    scale: 0.5;
+    opacity: 0;
+  }
+}
+.l-filters__count {
+  margin-left: auto;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  white-space: nowrap;
+}
+.l-filters__count .l-roll {
+  color: var(--l-ink);
+  font-weight: 600;
+}
+.l-filters__tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.l-filters__token {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 3px 0 10px;
+  border-radius: 9px;
+  background: var(--l-wash-2);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  animation: l-filters-in 300ms var(--l-ease-snap) backwards;
+}
+@keyframes l-filters-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    scale: 0.85;
+  }
+}
+.l-filters__key {
+  color: var(--l-ink-3);
+  font-weight: 400;
+}
+.l-filters__token button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--l-ink-4);
+  cursor: pointer;
+}
+.l-filters__token button:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-filters__token svg {
+  width: 12px;
+  height: 12px;
+}
+.l-filters__clear {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.l-filters__clear:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}

@@ -1,0 +1,296 @@
+.l-todo {
+  display: grid;
+  width: min(100%, 420px);
+}
+.l-todo__head {
+  padding: 8px 8px 10px 14px;
+}
+.l-todo__titles {
+  display: grid;
+  gap: 1px;
+}
+.l-todo__titles b {
+  font-size: var(--l-text-base);
+  font-weight: 600;
+}
+.l-todo__titles span {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  animation: l-swap-in 260ms var(--l-ease-out) backwards;
+}
+.l-todo__list {
+  display: grid;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+.l-todo__task + .l-todo__task {
+  border-top: 1px solid var(--l-line);
+}
+.l-todo__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+}
+.l-todo__box {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+}
+.l-todo__box svg {
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--l-line-strong);
+  color: var(--l-on-ink);
+  transition:
+    background-color 220ms ease,
+    box-shadow 220ms ease,
+    scale 380ms var(--l-ease-pop);
+}
+.l-todo__box svg path {
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  transition: stroke-dashoffset 300ms var(--l-ease-out) 80ms;
+}
+.l-todo__task[data-done] .l-todo__box svg {
+  background: var(--l-ok);
+  box-shadow: none;
+  scale: 1.06;
+}
+.l-todo__task[data-done] .l-todo__box svg path {
+  stroke-dashoffset: 0;
+}
+.l-todo__box:hover svg {
+  box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
+}
+.l-todo__box:focus-visible,
+.l-todo__title:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+.l-todo__title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.l-todo__title:hover {
+  background: var(--l-wash);
+}
+.l-todo__title span {
+  position: relative;
+  transition: color 300ms ease;
+}
+/* Done tasks are struck through by a line that draws itself. */
+.l-todo__title span::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 52%;
+  height: 1.5px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 360ms var(--l-ease-out);
+}
+.l-todo__task[data-done] .l-todo__title span {
+  color: var(--l-ink-3);
+}
+.l-todo__task[data-done] .l-todo__title span::after {
+  transform: none;
+}
+.l-todo__title svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--l-ink-4);
+  transition: rotate 360ms var(--l-spring-snappy);
+}
+.l-todo__task[data-open] .l-todo__title svg {
+  rotate: 180deg;
+}
+.l-todo__more {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 380ms var(--l-spring-smooth);
+}
+.l-todo__task[data-open] .l-todo__more {
+  grid-template-rows: 1fr;
+}
+.l-todo__clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.l-todo__body {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 0 12px 14px 44px;
+}
+.l-todo__body p {
+  margin: 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.5;
+}
+.l-todo__foot {
+  padding: 6px 6px 2px 14px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  animation: l-unblur 400ms var(--l-ease-out) backwards;
+}
+.l-todo__foot button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.l-todo__foot button:hover {
+  background: var(--l-wash-2);
+}
+
+/* The nudge: a small white card with a word of encouragement and a thin bar. */
+.l-nudge {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+.l-nudge__card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px 11px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--l-card-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  color: var(--l-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    box-shadow var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-nudge__card:hover {
+    box-shadow:
+      inset 0 0 0 1px var(--l-line-strong),
+      0 1px 2px var(--l-drop);
+  }
+}
+.l-nudge__card:active {
+  scale: 0.985;
+}
+.l-nudge__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.l-nudge__head b {
+  font-weight: 600;
+}
+.l-nudge__head svg {
+  width: 14px;
+  height: 14px;
+  color: var(--l-ink-4);
+  transition: rotate 300ms var(--l-spring-smooth);
+}
+.l-nudge__card[aria-expanded="true"] .l-nudge__head svg {
+  rotate: -90deg;
+}
+.l-nudge__meta {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+}
+.l-nudge__meta > span {
+  flex: none;
+}
+.l-nudge__meta .l-nudge__next {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--l-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-nudge__bar {
+  overflow: hidden;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 4px;
+  background: var(--l-wash-2);
+}
+.l-nudge__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--l-accent);
+  transform-origin: 0 50%;
+  transition: transform 520ms var(--l-spring-smooth);
+}
+.l-nudge__pop {
+  position: absolute;
+  left: 0;
+  z-index: 40;
+  width: min(340px, calc(100vw - 32px));
+  animation: l-pop-up 240ms var(--l-ease-enter) backwards;
+}
+.l-nudge__pop[data-side="top"] {
+  bottom: calc(100% + 8px);
+  transform-origin: 30px 100%;
+}
+.l-nudge__pop[data-side="bottom"] {
+  top: calc(100% + 8px);
+  transform-origin: 30px 0;
+  animation-name: l-pop-in;
+}
+.l-nudge__pop .l-todo {
+  width: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-nudge__bar i {
+    transition: none;
+  }
+  .l-nudge__pop {
+    animation: none;
+  }
+}

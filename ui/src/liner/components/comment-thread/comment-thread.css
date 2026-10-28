@@ -1,0 +1,213 @@
+.l-thread {
+  display: grid;
+  width: min(100%, 420px);
+}
+.l-thread__bar {
+  padding: 2px 4px 4px 12px;
+}
+.l-thread__count {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-thread__resolve {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color 200ms ease;
+}
+.l-thread__resolve:hover {
+  background: var(--l-wash-2);
+}
+.l-thread__resolve[aria-pressed="true"] {
+  color: var(--l-ok-text);
+}
+.l-thread__resolve svg {
+  width: 16px;
+  height: 16px;
+}
+.l-thread__resolve span {
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}
+.l-thread__fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 420ms var(--l-spring-smooth),
+    opacity 260ms ease;
+}
+.l-thread[data-resolved] .l-thread__fold {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.l-thread__card {
+  min-height: 0;
+  overflow: hidden;
+}
+.l-thread__anchor {
+  margin: 12px 14px 0;
+  padding: 2px 0 2px 10px;
+  box-shadow: inset 2px 0 0 var(--l-accent);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.5;
+}
+.l-thread__list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 14px 14px 6px;
+  list-style: none;
+}
+.l-thread__item {
+  display: flex;
+  gap: 10px;
+}
+.l-thread__item[data-reply] {
+  padding-left: 8px;
+}
+.l-thread__item[data-fresh] {
+  animation: l-unblur 400ms var(--l-ease-out) backwards;
+}
+.l-thread__main {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+.l-thread__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.l-thread__meta b {
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+}
+.l-thread__meta time {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-thread__body {
+  color: var(--l-ink-2);
+  font-size: var(--l-text-md);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.l-thread__reacts {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+}
+.l-thread__reacts button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-thread__reacts button:active {
+  scale: 0.9;
+}
+.l-thread__reacts button[aria-pressed="true"] {
+  background: var(--l-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--l-accent-line);
+}
+.l-thread__reacts button span {
+  font-variant-numeric: tabular-nums;
+  animation: l-swap-in 200ms var(--l-ease-out) backwards;
+}
+.l-thread__add {
+  opacity: 0;
+  transition: opacity 160ms ease !important;
+}
+.l-thread__item:hover .l-thread__add,
+.l-thread__add:focus-visible {
+  opacity: 1;
+}
+.l-thread__reply {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px 8px;
+  padding: 6px 6px 6px 8px;
+  border-radius: 14px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  cursor: text;
+}
+.l-thread__reply:focus-within {
+  background: var(--l-card-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 3px var(--l-wash);
+}
+.l-thread__reply textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 120px;
+  padding: 4px 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+  line-height: 1.4;
+  resize: none;
+  field-sizing: content;
+}
+.l-thread__reply textarea::placeholder {
+  color: var(--l-ink-4);
+}
+.l-thread__send {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-primary-fill);
+  color: var(--l-primary-ink);
+  cursor: pointer;
+  transition:
+    opacity 200ms ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-thread__send:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.l-thread__send:active:not(:disabled) {
+  scale: 0.88;
+}
+.l-thread__send svg {
+  width: 14px;
+  height: 14px;
+}

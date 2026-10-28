@@ -1,0 +1,30 @@
+.l-skel {
+  display: block;
+  border-radius: 6px;
+  background:
+    linear-gradient(100deg, transparent 30%, color-mix(in oklab, var(--l-card-fill) 70%, transparent) 50%, transparent 70%) 0 0 / 220% 100% no-repeat,
+    var(--l-wash-2);
+  animation: l-skel 1.8s linear infinite;
+}
+@keyframes l-skel {
+  from {
+    background-position: 160% 0, 0 0;
+  }
+  to {
+    background-position: -60% 0, 0 0;
+  }
+}
+.l-skel-text {
+  display: grid;
+  gap: 9px;
+}
+.l-skswap {
+  display: grid;
+}
+.l-skswap__skel,
+.l-skswap__content {
+  grid-area: 1 / 1;
+}
+.l-skswap__content {
+  animation: l-unblur 480ms var(--l-ease-out) backwards;
+}

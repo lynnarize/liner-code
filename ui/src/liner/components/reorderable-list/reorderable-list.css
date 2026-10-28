@@ -1,0 +1,109 @@
+/* One glass frame holding a white card; rows are split by hairlines, and the row you
+   move lifts out of the card as its own. */
+.l-reorder {
+  width: min(100%, 380px);
+}
+.l-reorder__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-reorder__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 6px 12px 6px 4px;
+  border-radius: 14px;
+  background: transparent;
+  transition:
+    transform 260ms var(--l-spring-snappy),
+    box-shadow 200ms ease,
+    scale 200ms ease;
+}
+.l-reorder__item + .l-reorder__item::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 12px;
+  left: 12px;
+  height: 1px;
+  background: var(--l-line);
+  pointer-events: none;
+}
+.l-reorder__item:is([data-dragged], [data-lifted])::before,
+.l-reorder__item:is([data-dragged], [data-lifted]) + .l-reorder__item::before {
+  opacity: 0;
+}
+.l-reorder__list[data-settling] .l-reorder__item {
+  transition: none;
+}
+.l-reorder__list[data-dragging] .l-reorder__item {
+  user-select: none;
+}
+.l-reorder__item[data-dragged] {
+  z-index: 2;
+  scale: 1.02;
+  background: var(--l-card-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-2),
+    0 16px 32px -12px var(--l-drop),
+    0 4px 10px -4px var(--l-drop);
+  transition:
+    box-shadow 200ms ease,
+    scale 200ms ease;
+}
+.l-reorder__item[data-lifted] {
+  z-index: 2;
+  scale: 1.02;
+  background: var(--l-card-fill);
+  box-shadow:
+    inset 0 0 0 1.5px var(--l-ink),
+    0 12px 28px -12px var(--l-drop);
+}
+.l-reorder__handle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--l-ink-5);
+  cursor: grab;
+  touch-action: none;
+  transition:
+    color var(--l-dur-fast) ease,
+    background-color var(--l-dur-fast) ease;
+}
+.l-reorder__handle:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+}
+.l-reorder__item[data-dragged] .l-reorder__handle {
+  cursor: grabbing;
+  color: var(--l-ink);
+}
+.l-reorder__handle:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+}
+.l-reorder__handle svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+.l-reorder__body {
+  flex: 1;
+  min-width: 0;
+}
+.l-reorder__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

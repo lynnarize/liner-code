@@ -1,0 +1,638 @@
+/* The reply bar is a frame (.l-frame): suggested replies on the glass above, the white card
+   you write in (.l-frame-card), and the run's settings on the glass below (.l-frame-strip).
+   The frame is also the size container for the narrow layouts at the end. */
+.l-reply {
+  --reply-font: 15px;
+  --reply-line: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  container-type: inline-size;
+  color: var(--l-ink);
+}
+
+/* Rows that open and close: they ease between 0fr and 1fr, so nothing jumps a frame. */
+.l-reply__above,
+.l-reply__files {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms var(--l-ease-out);
+}
+.l-reply__above[data-open],
+.l-reply__files[data-open] {
+  grid-template-rows: 1fr;
+  transition-duration: 420ms;
+  transition-timing-function: var(--l-ease-enter);
+}
+.l-reply__clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---------- Suggested replies, on the glass ---------- */
+.l-reply__ideas {
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 0;
+  padding: 4px 4px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+.l-reply__ideas::-webkit-scrollbar {
+  display: none;
+}
+.l-reply__idea {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--l-r-pill);
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--l-track-body);
+  white-space: nowrap;
+  cursor: pointer;
+  /* They step aside quickly, together. */
+  opacity: 0;
+  filter: blur(4px);
+  transition:
+    opacity 180ms ease,
+    filter 180ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease,
+    scale 300ms var(--l-spring-snappy);
+}
+/* And come into focus a beat apart. */
+.l-reply__above[data-open] .l-reply__idea {
+  opacity: 1;
+  filter: none;
+  transition:
+    opacity 380ms var(--l-ease-out) calc(90ms + var(--i) * 55ms),
+    filter 380ms var(--l-ease-out) calc(90ms + var(--i) * 55ms),
+    box-shadow 160ms ease,
+    color 160ms ease,
+    scale 300ms var(--l-spring-snappy);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-reply__idea:hover {
+    box-shadow: var(--l-ctl-shadow-hover);
+    color: var(--l-ink);
+  }
+}
+.l-reply__idea:active {
+  scale: 0.96;
+  transition-duration: var(--l-dur-instant);
+}
+
+/* ---------- The card ---------- */
+.l-reply__card {
+  position: relative;
+  display: grid;
+  transition: box-shadow 220ms var(--l-ease-out);
+}
+.l-reply[data-focus] .l-reply__card {
+  box-shadow:
+    0 0 0 1px var(--l-line-strong),
+    0 1px 2px var(--l-drop),
+    0 10px 28px -16px var(--l-drop);
+}
+
+.l-reply__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+}
+.l-reply__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  height: 32px;
+}
+
+/* The field: a real textarea pinned to the bottom of a box that eases to its height, so the
+   newest line stays put and earlier lines rise into view above it. */
+.l-reply__field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  margin: 4px 0;
+  overflow: hidden;
+  transition: height var(--l-dur-slow) var(--l-ease-out);
+}
+.l-reply__field textarea,
+.l-reply__mirror,
+.l-reply__ghost {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  font-size: var(--reply-font);
+  line-height: var(--reply-line);
+  letter-spacing: var(--l-track-body);
+}
+.l-reply__field textarea,
+.l-reply__mirror {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.l-reply__mirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.l-reply__field textarea {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: block;
+  width: 100%;
+  resize: none;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  caret-color: var(--l-accent);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.l-reply__field textarea::-webkit-scrollbar {
+  display: none;
+}
+.l-reply__field textarea::placeholder {
+  color: var(--l-ink-4);
+}
+/* Past six lines the edges fade instead of a scrollbar appearing. */
+.l-reply__field[data-top] textarea {
+  mask-image: linear-gradient(transparent, #000 16px);
+}
+.l-reply__field[data-bottom] textarea {
+  mask-image: linear-gradient(#000 calc(100% - 16px), transparent);
+}
+.l-reply__field[data-top][data-bottom] textarea {
+  mask-image: linear-gradient(transparent, #000 16px, #000 calc(100% - 16px), transparent);
+}
+/* What you sent lifts away as the field clears. */
+.l-reply__ghost {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: l-reply-lift 300ms var(--l-ease-out) forwards;
+}
+@keyframes l-reply-lift {
+  to {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(-10px);
+  }
+}
+
+.l-reply__glyph {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+/* ---------- Clip and send ---------- */
+.l-reply__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  height: 32px;
+}
+.l-reply__tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--l-r-pill);
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+.l-reply__tool .l-reply__glyph {
+  width: 17px;
+  height: 17px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-reply__tool:hover {
+    color: var(--l-ink);
+  }
+}
+.l-reply__send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--l-r-pill);
+  background: var(--l-wash-2);
+  color: var(--l-ink-4);
+  cursor: default;
+  transition:
+    background 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms ease,
+    scale 380ms var(--l-spring-snappy);
+}
+.l-reply__send[data-ready],
+.l-reply__send[data-busy] {
+  background: var(--l-primary-fill);
+  box-shadow: var(--l-primary-shadow);
+  color: var(--l-primary-ink);
+  cursor: pointer;
+}
+.l-reply__send[data-ready]:active,
+.l-reply__send[data-busy]:active {
+  scale: 0.9;
+  transition-duration: var(--l-dur-instant);
+}
+.l-reply__send > * {
+  grid-area: 1 / 1;
+}
+.l-reply__arrow {
+  width: 16px;
+  height: 16px;
+  transition:
+    opacity 200ms ease,
+    scale 300ms var(--l-ease-snap),
+    filter 200ms ease;
+}
+.l-reply__send[data-ready] .l-reply__arrow {
+  animation: l-reply-arrow 420ms var(--l-ease-out);
+}
+@keyframes l-reply-arrow {
+  from {
+    translate: 0 6px;
+    opacity: 0;
+  }
+}
+.l-reply__stop {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: currentColor;
+  opacity: 0;
+  scale: 0.4;
+  filter: blur(2px);
+  transition:
+    opacity 200ms ease,
+    scale 300ms var(--l-ease-snap),
+    filter 200ms ease;
+}
+.l-reply__send[data-busy] .l-reply__arrow {
+  opacity: 0;
+  scale: 0.5;
+  filter: blur(3px);
+}
+.l-reply__send[data-busy] .l-reply__stop {
+  opacity: 1;
+  scale: 1;
+  filter: none;
+}
+/* Enter while the agent answers: stop nudges, so it's clear nothing went. */
+.l-reply__send[data-nudge] {
+  animation: l-shake 360ms var(--l-ease-out);
+}
+
+/* ---------- Files ---------- */
+.l-reply__files-in {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 8px 0;
+}
+.l-reply__file {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: none;
+  animation: l-reply-file-in 420ms var(--l-ease-out) both;
+}
+.l-reply__file[data-leaving] {
+  pointer-events: none;
+  animation: l-reply-file-out 240ms var(--l-ease-out) both;
+}
+@keyframes l-reply-file-in {
+  from {
+    grid-template-columns: 0fr;
+    opacity: 0;
+    filter: blur(6px);
+    scale: 0.94;
+  }
+}
+@keyframes l-reply-file-out {
+  to {
+    grid-template-columns: 0fr;
+    margin-right: -6px;
+    opacity: 0;
+    filter: blur(4px);
+    scale: 0.94;
+  }
+}
+.l-reply__file-in {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  width: 196px;
+  height: 44px;
+  padding: 0 4px 0 6px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.l-reply__thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  background: var(--l-surface) center / cover no-repeat;
+  box-shadow: 0 0 0 1px var(--l-line);
+  color: var(--l-ink-3);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.l-reply__file-meta {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.l-reply__file-name,
+.l-reply__file-size {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-reply__file-name {
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-reply__file-size {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-reply__file-x {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--l-r-pill);
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+.l-reply__file-x .l-reply__glyph {
+  width: 13px;
+  height: 13px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-reply__file-x:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+
+/* ---------- Drop target ---------- */
+.l-reply__drop {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--l-card-fill) 90%, var(--l-accent));
+  box-shadow: inset 0 0 0 1.5px var(--l-accent-line);
+  color: var(--l-accent-text);
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.l-reply__card[data-drag] .l-reply__drop {
+  opacity: 1;
+}
+
+/* ---------- Run settings, on the glass ---------- */
+/* The first setting's mark lines up with the mark in the card. */
+.l-reply__strip {
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 4px;
+}
+.l-reply__sets {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.l-reply__sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background: var(--l-line-2);
+}
+.l-reply__anchor {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+/* Quiet until pointed at: no fill, ink-3 words, the plate springs in under them. */
+.l-reply__set {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--l-track-body);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    width var(--l-dur-spring) var(--l-spring-smooth),
+    color 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-reply__set:hover {
+    color: var(--l-ink);
+  }
+}
+.l-reply__set[data-on] {
+  color: var(--l-ink);
+}
+.l-reply__set-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.l-reply__set .l-reply__glyph,
+.l-reply__set .l-modelmark,
+.l-reply__set .l-reply__bars {
+  width: 14px;
+  height: 14px;
+}
+.l-reply__set [data-glyph="chev"] {
+  width: 12px;
+  height: 12px;
+  margin-left: -2px;
+  color: var(--l-ink-4);
+  transition: rotate 260ms var(--l-ease-out);
+}
+.l-reply__set[data-on] [data-glyph="chev"] {
+  rotate: 180deg;
+}
+/* Full access is the one setting with a status: the bolt wears the warning tone. */
+.l-reply__set [data-glyph="full"],
+.l-ai-menu-item [data-glyph="full"] {
+  color: var(--l-warn);
+}
+/* A label that changes comes into focus. */
+.l-reply__swap {
+  display: inline-block;
+  animation: l-unblur 360ms var(--l-ease-out) both;
+}
+
+/* Three bars that fill to the effort. */
+.l-reply__bars {
+  flex: none;
+  fill: currentColor;
+}
+.l-reply__bars rect {
+  opacity: 0.3;
+  transition: opacity 240ms ease;
+}
+.l-reply__bars[data-level="1"] rect:nth-child(1),
+.l-reply__bars[data-level="2"] rect:nth-child(-n + 2),
+.l-reply__bars[data-level="3"] rect {
+  opacity: 1;
+}
+
+/* The keys, only while you are writing (or how to stop, while the agent answers). */
+.l-reply__keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding-right: 6px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  white-space: nowrap;
+  opacity: 0;
+  filter: blur(3px);
+  transition:
+    opacity 180ms ease,
+    filter 180ms ease;
+}
+.l-reply__keys[data-show] {
+  opacity: 1;
+  filter: none;
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.l-reply__keys kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-family: var(--l-font-mono);
+  font-size: 10.5px;
+}
+.l-reply__keys kbd:not(:first-child) {
+  margin-left: 6px;
+}
+
+/* ---------- Narrow ---------- */
+@container (max-width: 540px) {
+  .l-reply__keys {
+    display: none;
+  }
+}
+@container (max-width: 400px) {
+  .l-reply__set[data-squeeze] .l-reply__swap {
+    display: none;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-reply__tool,
+  .l-reply__send {
+    width: 36px;
+    height: 36px;
+  }
+  .l-reply__icon,
+  .l-reply__tools {
+    height: 36px;
+  }
+  .l-reply__field {
+    margin: 6px 0;
+  }
+  .l-reply__set {
+    height: 32px;
+  }
+  .l-reply__idea {
+    height: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-reply__above,
+  .l-reply__files,
+  .l-reply__field,
+  .l-reply__set,
+  .l-reply__idea,
+  .l-reply__above[data-open] .l-reply__idea {
+    transition: none;
+  }
+  .l-reply__ghost,
+  .l-reply__swap,
+  .l-reply__keys[data-show],
+  .l-reply__file,
+  .l-reply__send[data-nudge],
+  .l-reply__send[data-ready] .l-reply__arrow {
+    animation-duration: 1ms;
+  }
+}

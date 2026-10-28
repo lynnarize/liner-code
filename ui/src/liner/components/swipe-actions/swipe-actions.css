@@ -1,0 +1,125 @@
+.l-swipe {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--l-wash-2);
+  transition:
+    height 300ms var(--l-ease-out),
+    opacity 300ms ease;
+}
+.l-swipe-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 10px 8px 10px 14px;
+  border-radius: inherit;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  touch-action: pan-y;
+  user-select: none;
+  transition: transform var(--l-dur-spring-snappy) var(--l-spring-snappy);
+}
+.l-swipe-row[data-drag] {
+  transition: none;
+}
+/* A run action sends the row off the side. */
+.l-swipe[data-gone="left"] .l-swipe-row {
+  transform: translateX(-110%);
+  transition: transform 300ms var(--l-ease-exit);
+}
+.l-swipe[data-gone="right"] .l-swipe-row {
+  transform: translateX(110%);
+  transition: transform 300ms var(--l-ease-exit);
+}
+.l-swipe-acts {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+}
+.l-swipe-act,
+.l-swipe-lead {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 3px;
+  border: 0;
+  color: oklch(0.99 0 0);
+  font: inherit;
+  font-size: var(--l-text-xs);
+  font-weight: 600;
+}
+.l-swipe-act {
+  height: 100%;
+  cursor: pointer;
+  transition: width 200ms var(--l-ease-out);
+}
+.l-swipe-act svg,
+.l-swipe-lead svg {
+  width: 17px;
+  height: 17px;
+}
+.l-swipe-act[data-tone="neutral"] {
+  background: var(--l-ink-3);
+}
+.l-swipe-act[data-tone="accent"],
+.l-swipe-lead[data-tone="accent"] {
+  background: var(--l-accent);
+}
+.l-swipe-act[data-tone="danger"],
+.l-swipe-lead[data-tone="danger"] {
+  background: var(--l-danger);
+}
+.l-swipe-lead {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 50%;
+  justify-content: start;
+  padding-left: 18px;
+  grid-auto-flow: column;
+  gap: 8px;
+}
+.l-swipe-more {
+  margin-left: auto;
+}
+.l-swipe-more-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--l-ink-4);
+  cursor: pointer;
+}
+.l-swipe-more-btn:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.l-swipe-more-btn svg {
+  width: 16px;
+  height: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-swipe-row {
+    transition: none;
+  }
+}
+
+/* In a SwipeList the rows share one white card: square, ringless, split by hairlines. */
+.l-swipe-list__card {
+  overflow: hidden;
+}
+.l-swipe-list .l-swipe {
+  border-radius: 0;
+}
+.l-swipe-list .l-swipe-row {
+  box-shadow: none;
+}
+.l-swipe-list .l-swipe + .l-swipe .l-swipe-row {
+  box-shadow: inset 0 1px 0 var(--l-line);
+}

@@ -1,0 +1,1070 @@
+/* The composer is part of the page: a flat white card with a hairline. Only what opens
+   over it (suggestions, menus) turns to glass. */
+.l-cmp {
+  --cmp-font: 15px;
+  --cmp-line: 24px;
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  color: var(--l-ink);
+}
+/* The composer is a frame (.l-frame): glass holding the white card (.l-frame-card), with
+   the project strip (.l-frame-strip) under it when there is one. Only focus and the limit
+   change the card's edge. */
+/* The card is the size container for the narrow layouts below. */
+.l-cmp__card {
+  position: relative;
+  padding: 14px 10px 10px 16px;
+  container-type: inline-size;
+  transition: box-shadow 220ms var(--l-ease-out);
+}
+.l-cmp .l-cmp__card[data-focus] {
+  box-shadow:
+    0 0 0 1px var(--l-line-strong),
+    0 0 0 5px var(--l-wash),
+    0 12px 32px -18px var(--l-drop);
+}
+.l-cmp .l-cmp__card[data-over] {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--l-danger) 60%, transparent),
+    0 0 0 5px color-mix(in oklab, var(--l-danger) 10%, transparent);
+}
+
+.l-cmp__glyph {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+/* A label that changes comes into focus. */
+.l-cmp__swap {
+  display: inline-block;
+  animation: l-unblur 360ms var(--l-ease-out) both;
+}
+
+/* ---------- Drop target ---------- */
+.l-cmp__drop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--l-card-fill) 90%, var(--l-accent));
+  box-shadow: inset 0 0 0 1.5px var(--l-accent-line);
+  color: var(--l-accent-text);
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.l-cmp__drop svg {
+  width: 26px;
+  height: 26px;
+}
+.l-cmp__card[data-drag] .l-cmp__drop {
+  opacity: 1;
+}
+.l-cmp__card[data-drag] .l-cmp__drop svg {
+  animation: l-cmp-bob 900ms var(--l-ease-in-out) infinite alternate;
+}
+/* transform, not translate: it moves an SVG (see l-spin in the foundation). */
+@keyframes l-cmp-bob {
+  to {
+    transform: translateY(-4px);
+  }
+}
+
+/* ---------- Attachments ---------- */
+.l-cmp__files {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-right: 6px;
+  transition: grid-template-rows 360ms var(--l-ease-out);
+}
+.l-cmp__files[data-show] {
+  grid-template-rows: 1fr;
+}
+.l-cmp__files-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.l-cmp__files-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 0 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.l-cmp__file {
+  display: grid;
+  grid-template-columns: 1fr;
+  flex: none;
+  animation: l-cmp-file-in 420ms var(--l-ease-out) both;
+}
+.l-cmp__file[data-leaving] {
+  pointer-events: none;
+  animation: l-cmp-file-out 260ms var(--l-ease-out) both;
+}
+@keyframes l-cmp-file-in {
+  from {
+    grid-template-columns: 0fr;
+    opacity: 0;
+    filter: blur(6px);
+    scale: 0.92;
+  }
+}
+@keyframes l-cmp-file-out {
+  to {
+    grid-template-columns: 0fr;
+    margin-right: -8px;
+    opacity: 0;
+    filter: blur(4px);
+    scale: 0.92;
+  }
+}
+.l-cmp__file-in {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 212px;
+  height: 52px;
+  padding: 0 6px 0 8px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.l-cmp__thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--l-surface) center / cover no-repeat;
+  box-shadow: 0 0 0 1px var(--l-line);
+  color: var(--l-ink-3);
+}
+.l-cmp__ext {
+  color: var(--l-ink-3);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.l-cmp__ring {
+  position: absolute;
+  inset: 4px;
+  width: calc(100% - 8px);
+  height: calc(100% - 8px);
+  rotate: -90deg;
+  fill: none;
+  stroke: var(--l-ink);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  transition:
+    stroke-dashoffset 260ms var(--l-ease-out),
+    opacity 240ms ease;
+}
+.l-cmp__file[data-done] .l-cmp__ring,
+.l-cmp__file[data-kind="paste"] .l-cmp__ring {
+  opacity: 0;
+}
+/* A check pops in when an upload lands, then hands back to the file. */
+.l-cmp__tick {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: var(--l-surface);
+  color: var(--l-ok);
+  opacity: 0;
+  pointer-events: none;
+}
+.l-cmp__file[data-kind="file"][data-done] .l-cmp__tick {
+  animation: l-cmp-tick 1100ms var(--l-ease-out) both;
+}
+@keyframes l-cmp-tick {
+  0% {
+    opacity: 0;
+    scale: 0.6;
+  }
+  20% {
+    opacity: 1;
+    scale: 1.08;
+  }
+  32% {
+    scale: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.l-cmp__file-meta {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+.l-cmp__file-name {
+  overflow: hidden;
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-cmp__file-size {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-cmp__file[data-done] .l-cmp__file-size {
+  animation: l-unblur 300ms var(--l-ease-out) both;
+}
+.l-cmp__file[data-error] .l-cmp__file-size {
+  color: var(--l-danger-text);
+}
+.l-cmp__file-x {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--l-ink-4);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-cmp__file-x:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-cmp__file-x .l-cmp__glyph {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- The field ----------
+   A real textarea over a mirror that paints the tokens. Both share every metric so
+   the tint lands exactly under the letters. */
+.l-cmp__field {
+  position: relative;
+  margin-right: 6px;
+  transition: height var(--l-dur-slow) var(--l-ease-out);
+}
+.l-cmp__clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.l-cmp__clip[data-top] {
+  mask-image: linear-gradient(transparent, #000 14px);
+}
+.l-cmp__clip[data-bottom] {
+  mask-image: linear-gradient(#000 calc(100% - 14px), transparent);
+}
+.l-cmp__clip[data-top][data-bottom] {
+  mask-image: linear-gradient(transparent, #000 14px, #000 calc(100% - 14px), transparent);
+}
+.l-cmp__mirror,
+.l-cmp__input,
+.l-cmp__measure,
+.l-cmp__ghost,
+.l-cmp__placeholder,
+.l-cmp__voice-text {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-family: var(--l-font-body);
+  font-size: var(--cmp-font);
+  line-height: var(--cmp-line);
+  letter-spacing: var(--l-track-body);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 4;
+}
+.l-cmp__mirror,
+.l-cmp__measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  color: transparent;
+  pointer-events: none;
+}
+.l-cmp__measure {
+  visibility: hidden;
+}
+.l-cmp__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  outline: none;
+  background: transparent;
+  color: var(--l-ink);
+  caret-color: var(--l-accent-text);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.l-cmp__input::-webkit-scrollbar {
+  display: none;
+}
+.l-cmp__input::selection {
+  background: var(--l-mark-soft);
+}
+/* Spread with box-shadow, never padding: padding would shift the text under the textarea. */
+.l-cmp__token {
+  border-radius: 5px;
+  background: var(--l-mark-soft);
+  box-shadow: 0 0 0 2px var(--l-mark-soft);
+  color: transparent;
+  animation: l-cmp-mark 380ms var(--l-ease-out) both;
+}
+.l-cmp__token[data-kind="command"] {
+  background: var(--l-wash-3);
+  box-shadow: 0 0 0 2px var(--l-wash-3);
+}
+@keyframes l-cmp-mark {
+  from {
+    box-shadow: 0 0 0 2px transparent;
+    background-color: transparent;
+  }
+}
+.l-cmp__placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  color: var(--l-ink-5);
+  pointer-events: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-cmp-hint 520ms var(--l-ease-out) both;
+}
+@keyframes l-cmp-hint {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(40%);
+  }
+}
+.l-cmp__ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  color: var(--l-ink);
+  pointer-events: none;
+  animation: l-cmp-ghost 420ms var(--l-ease-out) forwards;
+}
+@keyframes l-cmp-ghost {
+  to {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(-22px) scale(0.98);
+  }
+}
+
+/* Dictation: the words come into focus as the recognizer hears them. */
+.l-cmp__voice-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  min-height: 100%;
+  background: var(--l-card-fill);
+  color: var(--l-ink-2);
+}
+.l-cmp__word {
+  display: inline-block;
+  animation: l-unblur 520ms var(--l-ease-out) both;
+}
+.l-cmp__listening {
+  color: var(--l-ink-3);
+}
+
+/* ---------- Caret suggestions: glass, like the AI kit menu ---------- */
+.l-cmp__pop {
+  z-index: 20;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--l-float);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  outline: none;
+  animation: l-cmp-pop 240ms var(--l-ease-enter) backwards;
+}
+@keyframes l-cmp-pop {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(6px) scale(0.96);
+  }
+}
+.l-cmp__pop {
+  position: absolute;
+  left: clamp(-10px, calc(var(--x) - 14px), calc(100% - 270px));
+  bottom: calc(100% - var(--y) + 8px);
+  width: 280px;
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  transform-origin: 20px 100%;
+}
+.l-cmp__pop-head {
+  padding: 8px 8px 4px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-cmp__pop-list {
+  position: relative;
+}
+.l-cmp__hl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-radius: 10px;
+  background: var(--l-wash-2);
+  pointer-events: none;
+  transition:
+    transform 240ms var(--l-spring-snappy),
+    height 240ms var(--l-ease-out);
+}
+.l-cmp__opt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 8px;
+  border-radius: 10px;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-md);
+  cursor: pointer;
+}
+.l-cmp__opt[data-active] {
+  color: var(--l-ink);
+}
+.l-cmp__opt-name {
+  white-space: nowrap;
+}
+.l-cmp__opt-name mark {
+  border-radius: 2px;
+  background: var(--l-mark-soft);
+  color: inherit;
+}
+.l-cmp__opt-sub {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-cmp__opt-tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+}
+.l-cmp__opt-tile .l-cmp__glyph {
+  width: 14px;
+  height: 14px;
+}
+.l-cmp__opt-slash {
+  font-family: var(--l-font-mono);
+  font-size: 13px;
+}
+.l-cmp__avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 999px;
+  background: var(--l-surface-3);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.l-cmp__anchor {
+  position: relative;
+  display: inline-flex;
+}
+/* Effort: three stops and one gliding pill. Left and right arrows move it. */
+.l-cmp__effort {
+  margin: 6px -6px -6px;
+  padding: 8px 10px 10px;
+  box-shadow: inset 0 1px 0 var(--l-line);
+}
+.l-cmp__effort-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 2px 7px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-cmp__effort-hint {
+  color: var(--l-ink-3);
+  font-weight: 400;
+}
+.l-cmp__effort-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--l-wash-2);
+}
+.l-cmp__effort-pill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 3);
+  border-radius: 8px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 0.5px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  transform: translateX(calc(var(--i) * 100%));
+  transition: transform var(--l-dur-spring-snappy) var(--l-spring-snappy);
+}
+.l-cmp__effort-row button {
+  position: relative;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 200ms ease;
+}
+.l-cmp__effort-row button[data-on] {
+  color: var(--l-ink);
+}
+
+/* ---------- Toolbar ---------- */
+.l-cmp__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+.l-cmp__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: -6px;
+}
+.l-cmp__end {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+.l-cmp__tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition: color var(--l-dur-fast) ease;
+}
+.l-cmp__tool:hover,
+.l-cmp__tool[data-open] {
+  color: var(--l-ink);
+}
+.l-cmp__tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.l-cmp__tool .l-cmp__glyph {
+  transition: scale 260ms var(--l-ease-snap);
+}
+.l-cmp__tool:active .l-cmp__glyph {
+  scale: 0.88;
+  transition-duration: var(--l-dur-instant);
+}
+.l-cmp__plus {
+  width: 17px;
+  height: 17px;
+  transition: rotate 320ms var(--l-ease-snap);
+}
+.l-cmp__tool[data-open] .l-cmp__plus {
+  rotate: 45deg;
+}
+
+/* Off it is just an icon; on, its label grows in and it takes the accent tint. */
+.l-cmp__toggle {
+  display: inline-grid;
+  grid-template-columns: auto 0fr;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    grid-template-columns var(--l-dur-spring-snappy) var(--l-spring-snappy),
+    padding var(--l-dur-spring-snappy) var(--l-spring-snappy),
+    background-color 200ms ease,
+    color 200ms ease;
+}
+.l-cmp__toggle:hover {
+  color: var(--l-ink);
+}
+.l-cmp__toggle[data-on] {
+  grid-template-columns: auto 1fr;
+  padding-right: 11px;
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+.l-cmp__toggle-label {
+  min-width: 0;
+  overflow: hidden;
+}
+.l-cmp__toggle-label > span {
+  display: block;
+  padding-left: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  filter: blur(5px);
+  transition:
+    opacity 200ms ease,
+    filter 260ms ease;
+}
+.l-cmp__toggle[data-on] .l-cmp__toggle-label > span {
+  opacity: 1;
+  filter: none;
+  transition-delay: 60ms;
+}
+.l-cmp__toggle:active {
+  scale: 0.96;
+}
+
+/* The model chip springs to the width of its label. */
+.l-cmp__model {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  margin-right: 2px;
+  padding: 0 9px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--l-ink-2);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    width var(--l-dur-spring-snappy) var(--l-spring-snappy),
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-cmp__model:hover,
+.l-cmp__model[data-open] {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.l-cmp__model-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.l-cmp__model-effort {
+  color: var(--l-ink-3);
+  font-weight: 400;
+}
+.l-cmp__model .l-cmp__glyph {
+  width: 13px;
+  height: 13px;
+  margin-left: -1px;
+  color: var(--l-ink-4);
+  transition: rotate 300ms var(--l-ease-snap);
+}
+.l-cmp__model[data-open] .l-cmp__glyph {
+  rotate: 180deg;
+}
+
+/* ---------- Send ---------- */
+.l-cmp__send-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Backwards fill only: a filter left on an ancestor would cut the glass menus off
+     from the page behind them. */
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.l-cmp__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 4px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  opacity: 0;
+  scale: 0.6;
+  filter: blur(2px);
+  transition:
+    opacity 200ms ease,
+    scale 300ms var(--l-ease-snap),
+    filter 200ms ease;
+}
+.l-cmp__count:not([data-show]) {
+  position: absolute;
+  pointer-events: none;
+}
+.l-cmp__count[data-show] {
+  opacity: 1;
+  scale: 1;
+  filter: none;
+}
+.l-cmp__count svg {
+  width: 22px;
+  height: 22px;
+  rotate: -90deg;
+}
+.l-cmp__count circle {
+  fill: none;
+  stroke-width: 2.5;
+}
+.l-cmp__count-track {
+  stroke: var(--l-wash-3);
+}
+.l-cmp__count-fill {
+  stroke: var(--l-ink-3);
+  stroke-linecap: round;
+  transition:
+    stroke-dashoffset 200ms var(--l-ease-out),
+    stroke 200ms ease;
+}
+.l-cmp__count[data-over] {
+  color: var(--l-danger-text);
+}
+.l-cmp__count[data-over] .l-cmp__count-fill {
+  stroke: var(--l-danger);
+}
+.l-cmp__count > span {
+  animation: l-unblur 220ms ease both;
+}
+
+.l-cmp__send,
+.l-cmp__keep {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-5);
+  cursor: default;
+  transition:
+    background 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms ease,
+    scale 380ms var(--l-spring-snappy);
+}
+.l-cmp__send[data-ready],
+.l-cmp__send[data-busy],
+.l-cmp__keep {
+  background: var(--l-primary-fill);
+  box-shadow: var(--l-primary-shadow);
+  color: var(--l-primary-ink);
+  cursor: pointer;
+}
+.l-cmp__send[data-ready]:active,
+.l-cmp__send[data-busy]:active,
+.l-cmp__keep:active {
+  scale: 0.9;
+  transition-duration: var(--l-dur-instant);
+}
+.l-cmp__send > * {
+  grid-area: 1 / 1;
+}
+.l-cmp__arrow {
+  width: 16px;
+  height: 16px;
+  transition:
+    opacity 200ms ease,
+    scale 300ms var(--l-ease-snap),
+    filter 200ms ease;
+}
+.l-cmp__send[data-ready] .l-cmp__arrow {
+  animation: l-cmp-arrow 420ms var(--l-ease-out);
+}
+@keyframes l-cmp-arrow {
+  from {
+    translate: 0 6px;
+    opacity: 0;
+  }
+}
+.l-cmp__stop {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: currentColor;
+  opacity: 0;
+  scale: 0.4;
+  filter: blur(2px);
+  transition:
+    opacity 200ms ease,
+    scale 300ms var(--l-ease-snap),
+    filter 200ms ease;
+}
+.l-cmp__send[data-busy] .l-cmp__arrow {
+  opacity: 0;
+  scale: 0.5;
+  filter: blur(3px);
+}
+.l-cmp__send[data-busy] .l-cmp__stop {
+  opacity: 1;
+  scale: 1;
+  filter: none;
+}
+/* A span turns round the svg, so the spin stays on the compositor even inside a zoomed parent,
+   where Chrome runs SVG transform animations on the main thread. The stroke inherits in. */
+.l-cmp__busy-ring {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  margin: -4px;
+  fill: none;
+  stroke: var(--l-ink-3);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-dasharray: 0.22 0.78;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+.l-cmp__busy-ring svg {
+  width: 100%;
+  height: 100%;
+}
+.l-cmp__send[data-busy] .l-cmp__busy-ring {
+  opacity: 1;
+  animation: l-spin 1s linear infinite;
+}
+
+/* ---------- Dictation controls ---------- */
+.l-cmp__voice-ctl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.l-cmp__keep .l-cmp__glyph {
+  width: 16px;
+  height: 16px;
+}
+.l-cmp__wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  margin-right: 8px;
+}
+.l-cmp__wave i {
+  width: 2.5px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--l-ink-3);
+  transform: scaleY(0.2);
+}
+
+.l-cmp__chip,
+.l-cmp__access {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  cursor: pointer;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease;
+}
+.l-cmp__chip {
+  flex: 0 1 auto;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+/* A long project name shortens instead of wrapping onto two lines. */
+.l-cmp__chip > .l-cmp__swap {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.l-cmp__chip .l-cmp__glyph {
+  width: 14px;
+  height: 14px;
+}
+.l-cmp__chip .l-cmp__glyph:last-child {
+  width: 12px;
+  height: 12px;
+  color: var(--l-ink-4);
+  transition: rotate 300ms var(--l-ease-snap);
+}
+.l-cmp__chip[data-open] .l-cmp__glyph:last-child {
+  rotate: 180deg;
+}
+.l-cmp__chip:hover,
+.l-cmp__chip[data-open],
+.l-cmp__access:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.l-cmp__access {
+  flex: none;
+  padding: 0 10px;
+  overflow: hidden;
+  transition:
+    width var(--l-dur-spring-snappy) var(--l-spring-snappy),
+    background-color 200ms ease,
+    color 200ms ease;
+}
+.l-cmp__access-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  white-space: nowrap;
+}
+.l-cmp__access .l-cmp__glyph {
+  width: 14px;
+  height: 14px;
+}
+.l-cmp__short {
+  display: none;
+}
+/* A narrow strip says it shorter, so the project name keeps its room. */
+.l-cmp__strip {
+  container-type: inline-size;
+}
+@container (max-width: 340px) {
+  .l-cmp__long {
+    display: none;
+  }
+  .l-cmp__short {
+    display: inline;
+  }
+}
+.l-cmp__access[data-mode="auto"],
+.l-cmp__access[data-mode="auto"]:hover {
+  background: color-mix(in oklab, var(--l-warn) 14%, transparent);
+  color: var(--l-warn-text);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-cmp {
+    --cmp-font: 16px;
+  }
+  .l-cmp__tool,
+  .l-cmp__toggle,
+  .l-cmp__model {
+    height: 38px;
+  }
+  .l-cmp__tool {
+    width: 38px;
+  }
+  .l-cmp__send,
+  .l-cmp__keep {
+    width: 38px;
+    height: 38px;
+  }
+}
+/* Narrow containers: the toggles keep only their icons. */
+@container (max-width: 440px) {
+  .l-cmp__toggle[data-on] {
+    grid-template-columns: auto 0fr;
+    padding-right: 8px;
+  }
+  .l-cmp__model-effort {
+    display: none;
+  }
+}
+/* Phone width: the model chip keeps only its mark so every control stays in one row. */
+@container (max-width: 400px) {
+  .l-cmp__model-in > .l-cmp__swap {
+    display: none;
+  }
+  .l-cmp__tools,
+  .l-cmp__send-wrap {
+    gap: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-cmp__field,
+  .l-cmp__toggle,
+  .l-cmp__model,
+  .l-cmp__access,
+  .l-cmp__effort-pill {
+    transition: none;
+  }
+  .l-cmp__word,
+  .l-cmp__swap,
+  .l-cmp__pop {
+    animation-duration: 1ms;
+  }
+}

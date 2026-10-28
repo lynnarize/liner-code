@@ -1,0 +1,130 @@
+.l-check {
+  --c-size: 20px;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 11px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.l-check[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.l-check__box {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--c-size);
+  height: var(--c-size);
+  margin-top: 0px;
+  border-radius: 6.5px;
+  background: var(--l-well-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-strong),
+    inset 0 1px 2px var(--l-drop);
+  transition:
+    background-color 200ms var(--l-ease-out),
+    box-shadow 200ms ease,
+    scale 380ms var(--l-spring-snappy);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-check:not([data-disabled]):hover .l-check__box {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--l-ink) 45%, transparent),
+      inset 0 1px 2px var(--l-drop);
+  }
+}
+.l-check:active:not([data-disabled]) .l-check__box {
+  scale: 0.88;
+  transition-duration: var(--l-dur-instant), var(--l-dur-instant), var(--l-dur-instant);
+}
+.l-check[data-on] .l-check__box,
+.l-check[data-mixed] .l-check__box {
+  background: var(--l-accent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--l-accent-ink) 18%, transparent),
+    inset 0 1px 0 oklch(1 0 0 / 0.35);
+}
+.l-check__box:has(.l-check__input:focus-visible) {
+  outline: 2px solid color-mix(in oklab, var(--l-ink) 46%, transparent);
+  outline-offset: 2px;
+}
+
+.l-check__input {
+  position: absolute;
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.l-check__mark {
+  width: 16px;
+  height: 16px;
+  stroke: var(--l-accent-ink);
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.l-check__tick,
+.l-check__dash {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 120ms ease;
+}
+.l-check[data-on] .l-check__tick {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 340ms var(--l-ease-out) 60ms;
+}
+.l-check[data-mixed] .l-check__dash {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 260ms var(--l-ease-out) 40ms;
+}
+
+.l-check__text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.l-check__label {
+  position: relative;
+  justify-self: start;
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  line-height: 20px;
+  transition: color 280ms ease;
+}
+.l-check__desc {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.4;
+}
+
+/* Task list: a line draws through the label, left to right. */
+.l-check[data-strike] .l-check__label::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -2px;
+  right: -2px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform 260ms var(--l-ease-exit);
+}
+.l-check[data-strike][data-on] .l-check__label {
+  color: var(--l-ink-3);
+}
+.l-check[data-strike][data-on] .l-check__label::after {
+  transform: scaleX(1);
+  transform-origin: left center;
+  transition: transform 420ms var(--l-ease-out) 80ms;
+}

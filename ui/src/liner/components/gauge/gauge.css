@@ -1,0 +1,71 @@
+.l-gauge {
+  --tone: var(--l-accent);
+  position: relative;
+  display: inline-grid;
+  justify-items: center;
+}
+.l-gauge[data-state="warn"] {
+  --tone: var(--l-warn);
+}
+.l-gauge[data-state="danger"] {
+  --tone: var(--l-danger);
+}
+.l-gauge svg {
+  overflow: visible;
+}
+.l-gauge__track {
+  fill: color-mix(in oklab, var(--tone) 16%, var(--l-card-fill));
+  transition: fill 400ms ease;
+}
+.l-gauge__fill {
+  fill: var(--tone);
+  transition:
+    d 700ms var(--l-spring-smooth),
+    fill 400ms ease;
+}
+.l-gauge__tick {
+  stroke: var(--l-card-fill);
+  stroke-width: 2;
+}
+.l-gauge__read {
+  position: absolute;
+  top: 34%;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+.l-gauge__read b {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.l-gauge__read small {
+  color: var(--l-ink-3);
+  font-size: 16px;
+  font-weight: 500;
+}
+.l-gauge__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: color-mix(in oklab, var(--tone) 75%, var(--l-ink));
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.l-gauge[data-state="ok"] .l-gauge__state {
+  color: var(--l-ink-2);
+}
+.l-gauge__state svg {
+  width: 14px;
+  height: 14px;
+}
+.l-gauge__label {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}

@@ -1,0 +1,32 @@
+.l-unblur-piece {
+  display: inline-block;
+  white-space: pre;
+  opacity: 0;
+  filter: blur(10px);
+}
+/* Each piece sharpens in place; a whisper of rise keeps it from feeling static. */
+.l-unblur[data-on] .l-unblur-piece {
+  animation: l-unblur-piece 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes l-unblur-piece {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(0.12em);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-unblur-piece {
+    opacity: 1;
+    filter: none;
+  }
+  .l-unblur[data-on] .l-unblur-piece {
+    animation: none;
+  }
+}

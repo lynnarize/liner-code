@@ -1,0 +1,118 @@
+.l-msel {
+  --r: 12px;
+  position: relative;
+  display: inline-flex;
+  z-index: 1;
+}
+.l-msel[data-open] {
+  z-index: 40;
+}
+.l-msel__trigger,
+.l-msel__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  white-space: nowrap;
+}
+.l-msel__trigger {
+  border: 0;
+  border-radius: var(--r);
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-msel__trigger:hover {
+  background: var(--l-ctl-fill-hover);
+}
+.l-msel__trigger:active {
+  scale: 0.97;
+}
+.l-msel__trigger:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+.l-msel__label {
+  color: var(--l-ink-3);
+}
+.l-msel__value {
+  font-weight: 500;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-msel__chev {
+  width: 14px;
+  height: 14px;
+  color: var(--l-ink-4);
+  transition: rotate 380ms var(--l-ease-snap);
+}
+/* The panel sits over the trigger, clipped to the trigger's own box until it opens. */
+.l-msel__panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  min-width: max(232px, var(--tw));
+  padding-bottom: 6px;
+  border-radius: 18px;
+  background: var(--l-ctl-fill);
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  outline: none;
+  clip-path: inset(0 calc(100% - var(--tw)) calc(100% - var(--th)) 0 round var(--r));
+  visibility: hidden;
+  box-shadow: 0 0 0 transparent;
+  transition:
+    clip-path 380ms var(--l-spring-smooth),
+    background-color 300ms ease,
+    box-shadow 300ms ease,
+    visibility 0s linear 380ms;
+}
+.l-msel[data-open] .l-msel__panel {
+  clip-path: inset(-24px -24px -40px -24px round 18px);
+  visibility: visible;
+  background: var(--l-float);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  transition:
+    clip-path 520ms var(--l-spring-snappy),
+    background-color 200ms ease,
+    box-shadow 300ms ease,
+    visibility 0s;
+}
+.l-msel__head {
+  cursor: pointer;
+}
+.l-msel[data-open] .l-msel__head .l-msel__chev {
+  rotate: 180deg;
+}
+.l-msel__opts {
+  margin: 0 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--l-line);
+}
+.l-msel__opt {
+  opacity: 0;
+  filter: blur(4px);
+  translate: 0 -4px;
+  transition:
+    opacity 160ms ease,
+    filter 160ms ease,
+    translate 160ms ease;
+}
+.l-msel[data-open] .l-msel__opt {
+  opacity: 1;
+  filter: none;
+  translate: 0 0;
+  transition:
+    opacity 260ms ease calc(60ms + var(--i) * 24ms),
+    filter 300ms var(--l-ease-out) calc(60ms + var(--i) * 24ms),
+    translate 360ms var(--l-ease-out) calc(60ms + var(--i) * 24ms);
+}

@@ -1,0 +1,3645 @@
+/*
+  Liner Code · Surfaces beside a session: the panel's tabs and picker, Terminal, Browser, Files,
+  Device, Pull request, Linked pull requests, Routines and their runs, the full-width Review,
+  and the comparison view. Same rules as the rest: white paper, washes for grouping, one accent.
+*/
+
+/* ---------- The panel's tabs ---------- */
+.lc-surface {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+/* A tab you aren't on stays laid out, out of sight: a terminal keeps its size, a page keeps running. */
+.lc-panel {
+  position: relative;
+}
+.lc-surface[hidden] {
+  display: flex;
+  position: absolute;
+  inset: 46px 0 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.lc-stabs {
+  gap: 2px;
+  padding: 0 8px 0 8px;
+}
+/* The row scrolls sideways, which clips on every side: 4px of room (given back by the margin)
+   keeps the open tab's rim and shadow whole. */
+.lc-stabs-row {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin: -4px;
+  padding: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.lc-stabs-row::-webkit-scrollbar {
+  display: none;
+}
+/* With many tabs, the ones you aren't on keep only their icon; the name is in the tooltip. */
+.lc-stabs-row[data-many] .lc-stab:not([data-on]) {
+  min-width: 0;
+}
+.lc-stabs-row[data-many] .lc-stab:not([data-on]) .lc-stab-b {
+  padding: 0 9px;
+}
+.lc-stabs-row[data-many] .lc-stab:not([data-on]) .lc-stab-b > span,
+.lc-stabs-row[data-many] .lc-stab:not([data-on]) .lc-stab-x {
+  display: none;
+}
+.lc-stab {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  max-width: 180px;
+  height: 30px;
+  border-radius: 9px;
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+.lc-stab[data-on] {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+}
+/* With the plate measured, it carries the white; the tab itself stays clear so the plate can glide. */
+.lc-stabs-row {
+  position: relative;
+}
+.lc-stabs-row[data-plate] .lc-stab[data-on] {
+  background: none;
+  box-shadow: none;
+}
+.lc-stab-plate {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 30px;
+  margin-top: -15px;
+  border-radius: 9px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  pointer-events: none;
+}
+.lc-stab-plate[data-moved] {
+  transition:
+    transform 420ms var(--l-spring-smooth),
+    width 420ms var(--l-spring-smooth);
+}
+.lc-stab {
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-stab-plate[data-moved] {
+    transition: none;
+  }
+}
+@media (hover: hover) {
+  .lc-stab:not([data-on]):hover {
+    background: var(--l-wash);
+  }
+}
+.lc-stab-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 11px 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-stab-b > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-stab[data-on] .lc-stab-b {
+  color: var(--l-ink);
+}
+.lc-stab-b > svg {
+  flex: none;
+  transition: opacity 140ms ease;
+}
+/* Close sits where the icon is and takes its place while you point at the tab (as Safari does),
+   so no tab keeps empty room for it and none changes width. */
+.lc-stab-x {
+  position: absolute;
+  top: 50%;
+  left: 8.5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  translate: 0 -50%;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--l-ink-4);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 140ms ease;
+}
+.lc-stab:hover .lc-stab-x,
+.lc-stab-x:focus-visible {
+  opacity: 1;
+}
+.lc-stab:hover .lc-stab-b > svg,
+.lc-stab:has(.lc-stab-x:focus-visible) .lc-stab-b > svg {
+  opacity: 0;
+}
+/* A tab down to its icon has no close, so its icon stays. */
+.lc-stabs-row[data-many] .lc-stab:not([data-on]) .lc-stab-b > svg {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .lc-stab-x:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+
+/* The panel under the session instead of beside it. */
+.lc-session[data-dock="bottom"] .lc-body {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(160px, 1fr) minmax(220px, 44%);
+}
+.lc-session[data-dock="bottom"] .lc-panel {
+  box-shadow: inset 0 1px 0 var(--l-line);
+  animation-name: lc-panel-up;
+}
+@keyframes lc-panel-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+.lc-panel[data-wide-review] {
+  box-shadow: none;
+}
+
+/* ---------- Open a surface ---------- */
+.lc-spick {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 22px 32px;
+  outline: none;
+  text-align: center;
+}
+.lc-spick h2 {
+  margin: 0;
+  font-family: var(--l-font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  animation: l-unblur 420ms var(--l-ease-out) backwards;
+}
+.lc-spick > p {
+  margin: 6px 0 18px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-spick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 560px);
+}
+@container (max-width: 420px) {
+  .lc-spick-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.lc-panel {
+  container-type: inline-size;
+}
+.lc-spick-b {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 10px 8px 8px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  text-align: left;
+  cursor: pointer;
+  animation: l-blur-in 360ms var(--l-ease-out) backwards;
+  transition: box-shadow 160ms ease;
+}
+@media (hover: hover) {
+  .lc-spick-b:hover {
+    box-shadow:
+      0 0 0 1px var(--l-line-2),
+      0 2px 8px var(--l-drop);
+  }
+}
+.lc-spick-i {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+}
+.lc-spick-t {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.lc-spick-t b {
+  font-size: 13px;
+  font-weight: 500;
+}
+.lc-spick-t small {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-spick-foot {
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+
+/* ---------- Terminal ---------- */
+.lc-term {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 10px 10px;
+}
+.lc-term-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 2px 0 4px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-term-where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-term-err {
+  margin: 0 4px 8px;
+  font-size: 12.5px;
+  color: var(--l-danger-text);
+}
+.lc-term-box {
+  flex: 1;
+  /* The shell fits the panel, never the other way round: a narrower panel refits it. */
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 6px 6px 12px;
+  border-radius: 14px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.lc-term-box .xterm {
+  height: 100%;
+}
+.lc-term-box .xterm-viewport {
+  background: transparent !important;
+  scrollbar-width: thin;
+}
+
+/* ---------- Browser ---------- */
+.lc-br {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.lc-br-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 6px;
+}
+.lc-br-addrf {
+  flex: 1;
+  min-width: 0;
+  margin: 0 4px;
+}
+.lc-br-addr {
+  width: 100%;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+  background: var(--l-wash-2);
+  font-size: 12px;
+  color: var(--l-ink-2);
+  transition: box-shadow 160ms ease;
+}
+.lc-br-addr:focus {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+  color: var(--l-ink);
+}
+.lc-br-opts {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+  padding: 0 12px 8px;
+}
+.lc-br-stage {
+  position: relative;
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  margin: 0 10px;
+  overflow: auto;
+  border-radius: 14px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.lc-br-frame {
+  flex: none;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  transition: width 420ms var(--l-spring-smooth);
+}
+.lc-br-stage[data-width="tablet"] .lc-br-frame,
+.lc-br-stage[data-width="phone"] .lc-br-frame {
+  height: calc(100% - 24px);
+  margin: 12px 0;
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 6px 20px -8px var(--l-drop);
+}
+.lc-br-hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  translate: -50% 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: l-blur-in 260ms var(--l-ease-out) backwards;
+}
+.lc-br-ask {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 8px;
+  width: 320px;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 16px;
+  animation: l-pop-in 240ms var(--l-ease-enter) backwards;
+}
+.lc-br-ask-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.lc-br-ask-p {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-br-ask-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.lc-br-console,
+.lc-dev-log {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 40%;
+  margin: 8px 10px 10px;
+  border-radius: 14px;
+  background: var(--l-wash);
+}
+.lc-br-console-h {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-br-console-h b {
+  flex: none;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-br-console-h > svg {
+  flex: none;
+  transition: rotate 280ms var(--l-spring-smooth);
+}
+[data-open] > .lc-br-console-h > svg,
+[data-open] > .lc-dev-log-h .lc-br-console-h > svg {
+  rotate: 180deg;
+}
+.lc-br-last {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-br-last[data-level="error"],
+.lc-br-log[data-level="error"] {
+  color: var(--l-danger-text);
+}
+.lc-br-log[data-level="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-br-logs {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 10px;
+  font-size: 11.5px;
+  line-height: 17px;
+  scrollbar-width: thin;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.lc-br-logs p {
+  margin: 4px 0;
+  font-family: var(--l-font-sans, inherit);
+}
+.lc-br-log {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+  color: var(--l-ink-2);
+  word-break: break-word;
+}
+.lc-br-log time {
+  flex: none;
+  color: var(--l-ink-4);
+}
+.lc-br-ports {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+.lc-br-first {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* ---------- Files ---------- */
+.lc-fsv {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(170px, 0.36fr) minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  padding: 0 10px 10px;
+}
+@container (max-width: 520px) {
+  .lc-fsv {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(140px, 0.4fr) minmax(0, 1fr);
+  }
+}
+.lc-files-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+.lc-files-find {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+}
+.lc-files-find input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink);
+}
+.lc-files-side > .l-seg {
+  flex: none;
+}
+.lc-files-n {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 11px;
+}
+.lc-files-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  font-size: 12.5px;
+}
+.lc-files-wait,
+.lc-files-none {
+  display: block;
+  margin: 10px 4px;
+  font-size: 12.5px;
+}
+.lc-files-view {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 14px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  overflow: hidden;
+}
+.lc-files-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--l-line);
+}
+.lc-files-path {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-files-code {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.lc-code-view {
+  min-width: max-content;
+  margin: 0;
+  padding: 6px 0 10px;
+  font-size: 12px;
+  line-height: 19px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.lc-cl {
+  display: flex;
+  position: relative;
+}
+.lc-cl-n {
+  position: sticky;
+  left: 0;
+  flex: none;
+  width: 44px;
+  padding-right: 12px;
+  box-sizing: border-box;
+  background: var(--l-surface);
+  color: var(--l-ink-4);
+  text-align: right;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.lc-cl-t {
+  padding-right: 16px;
+  white-space: pre;
+}
+.lc-cl[data-mark] .lc-cl-t {
+  background: var(--lc-add);
+}
+.lc-cl[data-mark="changed"] .lc-cl-t {
+  background: color-mix(in oklab, var(--l-warn) 12%, transparent);
+}
+.lc-cl[data-mark] .lc-cl-n {
+  box-shadow: inset -2px 0 0 var(--l-ok);
+}
+.lc-cl[data-mark="changed"] .lc-cl-n {
+  box-shadow: inset -2px 0 0 var(--l-warn);
+}
+.lc-files-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 12px;
+  border-top: 1px solid var(--l-line);
+  font-size: 12px;
+}
+.lc-cl-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--l-ink-3);
+}
+.lc-cl-key::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--lc-add);
+  box-shadow: inset 2px 0 0 var(--l-ok);
+}
+.lc-cl-key[data-mark="changed"]::before {
+  background: color-mix(in oklab, var(--l-warn) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--l-warn);
+}
+
+/* ---------- Device ---------- */
+.lc-dev {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.lc-dev-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 8px 12px;
+}
+.lc-dev-state {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-dev-state[data-on] {
+  background: color-mix(in oklab, var(--l-ok) 13%, transparent);
+  color: var(--l-ok-text);
+}
+.lc-dev-stage {
+  position: relative;
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  margin: 0 10px;
+  padding: 14px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--l-wash);
+}
+.lc-dev-screen {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 100%;
+  max-height: 100%;
+  aspect-ratio: 9 / 19.5;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 34px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--l-ink) 88%, transparent),
+    0 0 0 7px var(--l-line-2),
+    0 18px 40px -16px var(--l-drop);
+  font-size: 12.5px;
+}
+.lc-dev-screen img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.lc-dev-screen[data-pointing] {
+  cursor: crosshair;
+}
+.lc-dev-dot {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  translate: -50% -50%;
+  border: 2px solid var(--l-accent);
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--l-accent) 18%, transparent);
+  pointer-events: none;
+  transition:
+    left 260ms var(--l-spring-smooth),
+    top 260ms var(--l-spring-smooth);
+}
+.lc-dev-ask {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 14px;
+  animation: l-pop-in 240ms var(--l-ease-enter) backwards;
+}
+.lc-dev-ask .lc-input {
+  flex: 1;
+  height: 32px;
+}
+.lc-dev-log-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+}
+.lc-dev-log-h .lc-br-console-h {
+  flex: 1;
+}
+.lc-dev-filter {
+  width: 46%;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  font: inherit;
+  font-size: 12px;
+}
+
+/* ---------- Pull request and runs ---------- */
+.lc-pr,
+.lc-run {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.lc-pr-scroll,
+.lc-run-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 16px 16px;
+  scrollbar-width: thin;
+}
+.lc-pr-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.lc-pr-title {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.lc-pr-title b {
+  font-family: var(--l-font-display);
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 21px;
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.lc-pr-title > span {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.lc-pr-branches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--l-ink-4);
+}
+.lc-pr-sec {
+  margin-top: 16px;
+}
+.lc-pr-lab {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 2px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--l-ink-2);
+}
+.lc-pr-lab > span {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-pr-checks {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--l-wash);
+  list-style: none;
+}
+.lc-pr-checks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line);
+  font-size: 13px;
+}
+.lc-pr-checks b {
+  font-weight: 500;
+}
+.lc-pr-checks li > .lc-quiet {
+  margin-left: auto;
+  overflow: hidden;
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pr-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+}
+.lc-pr-dot[data-tone="ok"] {
+  background: var(--l-ok);
+}
+.lc-pr-dot[data-tone="danger"] {
+  background: var(--l-danger);
+}
+.lc-pr-dot[data-tone="warn"] {
+  background: var(--l-warn);
+  animation: lc-breathe 1.6s ease-in-out infinite;
+}
+@keyframes lc-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+.lc-pr-person,
+.lc-pr-commit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 4px;
+  font-size: 13px;
+}
+.lc-pr-person + .lc-pr-person,
+.lc-pr-commit + .lc-pr-commit {
+  border-top: 1px solid var(--l-line);
+}
+.lc-pr-person b {
+  font-weight: 500;
+}
+.lc-pr-person .lc-me-av {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+.lc-pr-commit > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pr-commit > .lc-mono {
+  font-size: 11.5px;
+}
+.lc-pr-none {
+  margin: 4px 2px;
+  font-size: 12.5px;
+}
+.lc-pr-foot {
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-pr-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-pr-status[data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.lc-pr-status[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-pr-spin,
+.lc-rt-spin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid color-mix(in oklab, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: l-spin 900ms linear infinite;
+}
+.lc-pr-new {
+  display: grid;
+  gap: 10px;
+  width: min(100%, 520px);
+  margin: 8px auto;
+  padding: 0 16px 16px;
+}
+.lc-pr-new h2 {
+  margin: 8px 0 0;
+  font-family: var(--l-font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.lc-pr-new > p {
+  margin: 0;
+  font-size: 13px;
+}
+.lc-pr-warn {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--l-warn) 12%, transparent);
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-warn-text);
+}
+.lc-pr-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-pr-body {
+  height: 120px;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: 19px;
+}
+.lc-pr-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lc-run-sum {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--l-ink-2);
+}
+.lc-run-steps {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-run-steps li {
+  display: grid;
+  grid-template-columns: 42px 18px minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 8px;
+  padding: 9px 4px;
+  font-size: 13px;
+}
+.lc-run-steps li + li {
+  border-top: 1px solid var(--l-line);
+}
+.lc-run-steps time {
+  padding-top: 1px;
+  font-size: 11.5px;
+}
+.lc-run-step-t {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.lc-run-step-t b {
+  font-weight: 500;
+}
+.lc-run-step-t small {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+
+/* ---------- Linked pull requests ---------- */
+.lc-linked {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.lc-linked-top {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 8px 12px;
+}
+.lc-linked-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 10px 12px;
+}
+.lc-linked-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-radius: 16px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  animation: l-blur-in 360ms var(--l-ease-out) backwards;
+}
+.lc-linked-card[data-mine] {
+  box-shadow:
+    0 0 0 1.5px color-mix(in oklab, var(--l-accent) 55%, transparent),
+    0 1px 2px var(--l-drop);
+}
+.lc-linked-h {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.lc-linked-t {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.lc-linked-t b {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-linked-t small {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.lc-linked-f {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.lc-linked-line {
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.lc-linked-line[data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.lc-linked-line[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+
+/* ---------- Routines ---------- */
+.lc-rt {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 0 10px 14px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.lc-surface > .lc-rt {
+  flex: 1;
+  min-height: 0;
+}
+.lc-rt-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 2px 0 4px;
+  font-size: 12.5px;
+}
+.lc-rt-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--l-warn-text);
+}
+.lc-rt-wait i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-warn);
+}
+.lc-rt-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 40px 24px 48px;
+  text-align: center;
+}
+.lc-rt-empty b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.lc-rt-empty p {
+  max-width: 420px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--l-ink-3);
+}
+.lc-rt-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  animation: l-blur-in 380ms var(--l-ease-out) backwards;
+}
+.lc-rt-card[data-off] .lc-rt-h,
+.lc-rt-card[data-off] .lc-rt-who {
+  opacity: 0.62;
+}
+.lc-rt-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lc-rt-h > .lc-tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+.lc-rt-name {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-rt-name b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.lc-rt-name small {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rt-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.lc-rt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+}
+.lc-rt-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--l-ink-3);
+}
+.lc-rt-live {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--l-wash);
+}
+.lc-rt-live-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 2px 0 4px;
+  font-size: 13px;
+  color: var(--l-accent-text);
+}
+.lc-rt-live-h b {
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rt-steps {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-rt-steps li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+.lc-rt-steps li[data-s="running"] {
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line);
+}
+.lc-rt-steps li[data-s="skipped"] {
+  color: var(--l-ink-3);
+}
+.lc-rt-steps li > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rt-mk {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--l-line-2);
+  border-radius: 50%;
+  color: var(--l-surface);
+}
+.lc-rt-mk[data-s="done"] {
+  border: 0;
+  background: var(--l-ok);
+}
+.lc-rt-mk[data-s="fail"] {
+  border: 0;
+  background: var(--l-danger);
+}
+.lc-rt-mk[data-s="skip"] {
+  border-style: dashed;
+}
+.lc-rt-mk[data-s="run"] {
+  border-color: color-mix(in oklab, var(--l-accent) 25%, transparent);
+  border-top-color: var(--l-accent);
+  animation: l-spin 900ms linear infinite;
+}
+.lc-rt-runs {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-rt-runs li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-rt-runs li[data-handed] {
+  margin: 2px 0;
+  padding-right: 6px;
+  border-top-color: transparent;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--l-warn) 10%, transparent);
+}
+.lc-rt-run {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-rt-run .lc-mono {
+  flex: none;
+  font-size: 11.5px;
+}
+.lc-rt-run-t {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rt-run-w {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-rt-run-w[data-tone="accent"] {
+  color: var(--l-accent-text);
+}
+.lc-rt-run-w[data-tone="ok"] {
+  color: var(--l-ok-text);
+}
+.lc-rt-run-w[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-rt-run-w[data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.lc-rt-when {
+  flex: none;
+  font-size: 12px;
+}
+.lc-rt-acts {
+  display: flex;
+  gap: 4px;
+  margin: -4px -4px -4px;
+}
+.lc-rtp-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.lc-rtp-in {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 18px 20px 40px;
+  box-sizing: border-box;
+}
+.lc-rtp-in > .lc-rt {
+  overflow: visible;
+  padding: 0;
+}
+
+/* ---------- The routine builder ---------- */
+.lc-rb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  animation: lc-paper-in 420ms var(--l-ease-enter) backwards;
+}
+.lc-rb-name {
+  min-width: 120px;
+  max-width: 360px;
+  /* A long name says it goes on; editing it shows all of it. */
+  text-overflow: ellipsis;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  field-sizing: content;
+}
+.lc-rb-name:focus {
+  box-shadow: 0 0 0 1.5px var(--l-accent);
+}
+.lc-rb-saved {
+  font-size: 12px;
+}
+.lc-rb-test {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: var(--l-wash-2);
+  font-size: 12.5px;
+}
+.lc-rb-test input {
+  width: 46px;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.lc-rb-hook {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--l-line);
+  font-size: 12px;
+}
+.lc-rb-url {
+  max-width: 420px;
+  overflow: hidden;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: var(--l-wash-2);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-user-select: all;
+  user-select: all;
+}
+.lc-rb-canvas {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 10px;
+}
+.lc-rb-canvas > .l-wf {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+/* The builder's own version and publish controls: a routine is on or off instead. */
+.lc-rb .l-wf-badge,
+.lc-rb .l-wf-saved,
+.lc-rb .l-wf-acts > :last-child {
+  display: none;
+}
+.lc-rb-last {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 40px);
+  padding: 6px 6px 6px 14px;
+  translate: -50% 0;
+  border-radius: 999px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  animation: l-pop-in 260ms var(--l-ease-enter) backwards;
+}
+.lc-rb-last > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-rb-foot {
+  flex: none;
+  margin: 0;
+  padding: 0 20px 12px;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---------- Review, full width ---------- */
+.lc-rv {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.lc-rv-top {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--lc-head);
+  padding: 8px 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--l-line);
+}
+.lc-rv-title {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rv-sub {
+  flex: none;
+  font-size: 13px;
+}
+.lc-rv-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 230px minmax(0, 1fr);
+  min-height: 0;
+}
+@container (max-width: 760px) {
+  .lc-rv-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lc-rv-nav {
+    display: none !important;
+  }
+}
+.lc-rv-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 10px;
+  box-shadow: inset -1px 0 0 var(--l-line);
+}
+.lc-rv-navh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-rv-navh > span {
+  margin-left: auto;
+  font-weight: 400;
+}
+.lc-rv-f {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+.lc-rv-f[data-on] {
+  color: var(--l-ink-3);
+}
+@media (hover: hover) {
+  .lc-rv-f:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-rv-f input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--l-ok);
+}
+.lc-rv-fb {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lc-rv-checked {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--l-wash);
+}
+.lc-rv-sub-a {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+.lc-rv-sub-a b {
+  font-weight: 500;
+}
+.lc-rv-sub-a .lc-model {
+  display: flex;
+  margin-top: 1px;
+}
+.lc-rv-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 12px 0;
+}
+.lc-rv-strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+.lc-rv-count {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-rv-files {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.lc-rv-file {
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+.lc-rv-fh {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--l-line);
+  background: color-mix(in oklab, var(--l-surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+}
+.lc-rv-code {
+  overflow-x: auto;
+  padding: 4px 0;
+  font-size: 12px;
+  line-height: 20px;
+}
+.lc-rv-l {
+  display: grid;
+  grid-template-columns: 40px 44px 16px minmax(0, 1fr);
+  min-width: max-content;
+}
+.lc-rv-l[data-kind="add"] {
+  background: var(--lc-add);
+}
+.lc-rv-l[data-kind="del"] {
+  background: var(--lc-del);
+}
+.lc-rv-l[data-sel] {
+  box-shadow: inset 3px 0 0 var(--l-accent);
+  background: color-mix(in oklab, var(--l-accent) 10%, transparent);
+}
+.lc-rv-n {
+  padding-right: 10px;
+  color: var(--l-ink-4);
+  text-align: right;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.lc-rv-pick {
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-rv-pick:hover {
+    color: var(--l-accent-text);
+    text-decoration: underline;
+  }
+}
+.lc-rv-s {
+  color: var(--l-ink-4);
+}
+.lc-rv-l[data-kind="add"] .lc-rv-s {
+  color: var(--l-ok-text);
+}
+.lc-rv-l[data-kind="del"] .lc-rv-s {
+  color: var(--l-danger-text);
+}
+.lc-rv-t {
+  padding-right: 20px;
+  white-space: pre;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.lc-rv-fold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px 0 52px;
+  border: 0;
+  background: var(--l-wash);
+  font: inherit;
+  font-family: var(--l-font-sans, inherit);
+  font-size: 12px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-rv-thread,
+.lc-rv-ask,
+.lc-rv-note {
+  margin: 6px 12px 8px 100px;
+  font-family: var(--l-font-sans, "Instrument Sans", system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 19px;
+}
+@container (max-width: 560px) {
+  .lc-rv-thread,
+  .lc-rv-ask,
+  .lc-rv-note {
+    margin-left: 12px;
+  }
+}
+.lc-rv-thread {
+  display: grid;
+  gap: 10px;
+  max-width: 620px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 4px 14px -8px var(--l-drop);
+  white-space: normal;
+  animation: l-blur-in 320ms var(--l-ease-out) backwards;
+}
+.lc-rv-q {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+}
+.lc-rv-q p {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--l-ink);
+}
+.lc-rv-lines {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--l-accent-soft);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--l-accent-text);
+}
+.lc-rv-a {
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-rv-a > b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.lc-rv-a .lc-md {
+  font-size: 13px;
+}
+.lc-rv-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 620px;
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1.5px color-mix(in oklab, var(--l-accent) 45%, transparent),
+    0 4px 14px -8px var(--l-drop);
+  animation: l-pop-in 240ms var(--l-ease-enter) backwards;
+}
+.lc-rv-ask .lc-input {
+  flex: 1;
+  height: 32px;
+}
+.lc-rv-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 620px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+}
+.lc-rv-note > svg {
+  flex: none;
+  margin-top: 3px;
+}
+.lc-rv-note b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-rv-note[data-sev="blocking"] {
+  background: color-mix(in oklab, var(--l-danger) 10%, transparent);
+}
+.lc-rv-note[data-sev="blocking"] b {
+  color: var(--l-danger-text);
+}
+.lc-rv-hint {
+  margin-left: 6px;
+  font-size: 12px;
+}
+@container (max-width: 700px) {
+  .lc-rv-hint {
+    display: none;
+  }
+}
+
+/* ---------- Comparing models ---------- */
+.lc-cmp-cols {
+  display: grid;
+  flex: 1;
+  gap: 10px;
+  min-height: 0;
+  overflow-x: auto;
+  padding: 12px;
+}
+.lc-cmp-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 18px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  animation: l-blur-in 380ms var(--l-ease-out) backwards;
+}
+.lc-cmp-h {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid var(--l-line);
+  font-size: 13px;
+}
+.lc-cmp-h .lc-model {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-cmp-s {
+  font-size: 12.5px;
+}
+.lc-cmp-stats {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--l-line);
+}
+.lc-cmp-stats dt {
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-cmp-stats dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-cmp-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  scrollbar-width: thin;
+}
+.lc-cmp-f {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--l-line);
+}
+
+/* ---------- Timeline additions ---------- */
+.lc-you-anchor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  margin-bottom: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-accent-soft);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--l-accent-text);
+  cursor: pointer;
+}
+.lc-esc,
+.lc-rev {
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--l-wash);
+}
+.lc-esc-h,
+.lc-rev-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-esc-h:disabled,
+.lc-rev-h:disabled {
+  cursor: default;
+}
+.lc-esc-h > span:nth-child(2),
+.lc-rev-h > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rev-h b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-esc-b,
+.lc-rev-b {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line);
+  animation: l-blur-in 300ms var(--l-ease-out) backwards;
+}
+.lc-rev-b > p {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--l-ink-2);
+}
+.lc-rev-f {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) minmax(0, 1fr);
+  gap: 10px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-size: 12.5px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-rev-f .lc-mono {
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-rev-f[data-sev="blocking"] .lc-mono {
+  color: var(--l-danger-text);
+}
+@media (hover: hover) {
+  .lc-rev-f:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-verdict {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+/* The plan card's estimate, run mode and step editing. */
+.lc-plan-est {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--l-wash);
+}
+.lc-plan-est dt {
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-plan-est dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.lc-plan-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.lc-plan-modeb {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.lc-step-edit {
+  width: 100%;
+  height: 28px;
+  box-sizing: border-box;
+  margin: -3px 0 2px -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  outline: none;
+  background: var(--l-wash-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+.lc-step-edit:focus {
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1.5px var(--l-accent);
+}
+.lc-step-who {
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--l-wash-2);
+  font: inherit;
+  font-size: 12px;
+  color: var(--l-ink-2);
+}
+.lc-step-acts {
+  display: inline-flex;
+  gap: 0;
+}
+.lc-step-acts .lc-ib {
+  width: 24px;
+  height: 24px;
+}
+
+/* The composer's helpers and comparing. */
+.lc-team-help {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 4px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-team-help .lc-team-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lc-team-help .lc-mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lc-team-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 17px;
+}
+.lc-team-cmp {
+  padding: 8px 12px 0;
+}
+.lc-mchip[data-also] {
+  box-shadow:
+    0 0 0 1.5px color-mix(in oklab, var(--l-accent) 60%, transparent),
+    0 1px 1px var(--l-drop);
+}
+.lc-send-n {
+  width: auto;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.lc-home-or {
+  margin: -6px 0 14px;
+  font-size: 13.5px;
+  color: var(--l-ink-3);
+  text-align: center;
+  animation: l-unblur 420ms var(--l-ease-out) 120ms backwards;
+}
+.lc-home-or .lc-link {
+  display: inline;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* The sidebar's group of places (New session, Routines, Search), groups and new-group field. */
+.lc-sb-go {
+  display: grid;
+  gap: 1px;
+}
+.lc-sb-key {
+  flex: none;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.lc-sb-navw {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-warn-text);
+}
+.lc-sb-newg {
+  margin: 0 8px 6px;
+}
+.lc-sb-newg input {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  outline: none;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+  font: inherit;
+  font-size: 13px;
+  animation: l-pop-in 220ms var(--l-ease-enter) backwards;
+}
+.lc-sb-hint {
+  margin: 2px 8px 6px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-sb-sec[data-drop],
+.lc-sb-tab[data-drop] {
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--l-accent) 8%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--l-accent) 40%, transparent);
+}
+.lc-sb-gacts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-sb-gdel {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--l-ink-4);
+}
+@media (hover: hover) {
+  .lc-sb-gdel:hover {
+    background: var(--l-wash-2);
+    color: var(--l-danger-text);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-spick h2,
+  .lc-spick-b,
+  .lc-linked-card,
+  .lc-rt-card,
+  .lc-rv-thread,
+  .lc-rv-ask,
+  .lc-cmp-col,
+  .lc-esc-b,
+  .lc-rev-b,
+  .lc-br-ask,
+  .lc-br-hint,
+  .lc-dev-ask,
+  .lc-dev-screen img,
+  .lc-rb,
+  .lc-rb-last,
+  .lc-home-or,
+  .lc-sb-newg input,
+  .lc-pr-title b {
+    animation: none !important;
+  }
+  .lc-br-frame,
+  .lc-dev-dot,
+  .lc-br-console-h > svg {
+    transition: none !important;
+  }
+  .lc-pr-dot[data-tone="warn"],
+  .lc-pr-spin,
+  .lc-rt-spin,
+  .lc-rt-mk[data-s="run"] {
+    animation-duration: 3s;
+  }
+}
+
+/* Agent settings: how it runs, and its subagents' models. */
+.lc-runmodes {
+  display: grid;
+  gap: 6px;
+}
+.lc-runmodes .lc-spec {
+  text-align: left;
+}
+.lc-subs {
+  display: grid;
+  gap: 0;
+  padding: 2px 12px;
+  border-radius: 12px;
+  background: var(--l-wash);
+}
+.lc-subrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+}
+.lc-subrow + .lc-subrow {
+  border-top: 1px solid var(--l-line);
+}
+.lc-subrow > span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+.lc-subrow b {
+  font-weight: 500;
+}
+.lc-subrow small {
+  font-size: 12px;
+}
+.lc-subsel {
+  max-width: 54%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink);
+}
+
+/* Usage: the month against a budget. */
+.lc-budget {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.lc-budget-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--l-wash-3);
+}
+.lc-budget-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--l-accent);
+  transition: width 700ms var(--l-spring-smooth);
+}
+.lc-budget-bar[data-over] i {
+  background: var(--l-warn);
+}
+.lc-budget-bar b {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  translate: -1px 0;
+  border-radius: 1px;
+  background: var(--l-ink-3);
+}
+.lc-budget-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-budget-line .lc-link {
+  margin-left: auto;
+  padding: 0;
+  font-size: 12.5px;
+}
+.lc-budget-over {
+  font-weight: 500;
+  color: var(--l-warn-text);
+}
+.lc-budget-set {
+  margin-top: 12px;
+  padding: 0;
+  font-size: 13px;
+}
+.lc-budget-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.lc-budget-edit .lc-input {
+  width: 96px;
+  height: 30px;
+}
+.lc-st-budget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lc-st-budget .lc-input {
+  width: 100px;
+  height: 30px;
+}
+.lc-sub-tile {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+.lc-st-setup {
+  width: 220px;
+  height: 30px;
+  font-size: 12px;
+}
+
+/* Long sessions: turns well above the fold skip layout and paint until you scroll near them.
+   The last two always render, so following the newest turn stays exact. */
+.lc-turn:not(:nth-last-child(-n + 2)) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+
+/* A message you sent: its actions under it, and editing it in place. */
+.lc-you-more {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.lc-you:hover .lc-you-more,
+.lc-you:focus-within .lc-you-more {
+  opacity: 1;
+}
+.lc-you-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-you-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-you-btn:not(:disabled):hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-you-edit {
+  align-items: stretch;
+  width: min(100%, 620px);
+  margin-left: auto;
+  padding: 8px;
+  border-radius: 18px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1.5px color-mix(in oklab, var(--l-accent) 45%, transparent),
+    0 4px 16px -8px var(--l-drop);
+  animation: l-pop-in 220ms var(--l-ease-enter) backwards;
+}
+.lc-you-field {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--l-ink);
+}
+.lc-you-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-you-edit {
+    animation: none;
+  }
+}
+
+/* A usage limit in the timeline. */
+.lc-limit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--l-warn) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-warn) 22%, transparent);
+}
+.lc-limit .lc-tile {
+  color: var(--l-warn-text);
+}
+.lc-limit-t {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+}
+.lc-limit-t b {
+  font-weight: 600;
+}
+.lc-limit-t small {
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-2);
+}
+.lc-limit:not([data-current]) {
+  opacity: 0.7;
+}
+
+/* Usage → Limits */
+.lc-limits {
+  margin-bottom: 14px;
+}
+.lc-limits-none {
+  margin: 8px 0 2px;
+  font-size: 13px;
+}
+.lc-limits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.lc-limits-tool {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--l-wash);
+}
+.lc-limits-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.lc-limits-w {
+  display: grid;
+  gap: 5px;
+}
+.lc-limits-l {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.lc-limits-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--l-wash-3);
+}
+.lc-limits-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--l-accent);
+  transition: width 700ms var(--l-spring-smooth);
+}
+.lc-limits-w[data-high] .lc-limits-bar i {
+  background: var(--l-warn);
+}
+.lc-limits-w small {
+  font-size: 11.5px;
+}
+
+/* The composer's / and $ menus. */
+.lc-mention {
+  max-height: min(420px, 60vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lc-mention[aria-label="Commands"],
+.lc-mention[aria-label="Skills"] {
+  width: min(580px, calc(100% - 20px));
+}
+.lc-mention-row {
+  flex: none;
+  min-width: 0;
+}
+.lc-mention-k {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  font-family: var(--l-font-mono);
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-mention-n {
+  flex: none;
+  max-width: 48%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-mention-d {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-mention-wait {
+  display: block;
+  padding: 7px 9px;
+  font-size: 12.5px;
+}
+
+/* A goal the agent works toward across turns. */
+.lc-goal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 auto 6px;
+  width: min(100% - 32px, var(--lc-measure, 712px));
+  min-height: 34px;
+  padding: 2px 4px 2px 12px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  /* It floats over the text with the composer, so it is solid: the accent's wash on the paper. */
+  background: color-mix(in oklab, var(--l-accent) 10%, var(--l-surface));
+  font-size: 12.5px;
+  animation: l-blur-in 300ms var(--l-ease-out) backwards;
+}
+.lc-goal-k {
+  flex: none;
+  font-weight: 600;
+  color: var(--l-accent-text);
+}
+.lc-goal-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-goal-n {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Several shells in the Terminal surface. */
+.lc-terms {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.lc-terms-pane {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.lc-terms-pane[hidden] {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.lc-terms {
+  position: relative;
+}
+.lc-terms-tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 0 10px 4px;
+  scrollbar-width: none;
+}
+.lc-terms-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border-radius: 8px;
+}
+.lc-terms-tab[data-on] {
+  background: var(--l-wash-2);
+}
+.lc-terms-tab > button:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-terms-x {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--l-ink-4);
+  cursor: pointer;
+}
+.lc-pop-note {
+  margin: 4px 9px 8px;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+/* Settings: a project's scripts. */
+.lc-scripts {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+.lc-script {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.6fr) minmax(0, 1.4fr) auto auto auto;
+  align-items: center;
+  gap: 6px;
+}
+.lc-script .lc-input {
+  height: 32px;
+  font-size: 12.5px;
+}
+.lc-script-wt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-script-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lc-st-input.lc-st-wide {
+  min-width: 240px;
+}
+
+/* Committing, with a written message. */
+.lc-pick.lc-commit-b {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--l-accent-fill);
+  color: var(--l-accent-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.lc-pick.lc-commit-b:disabled {
+  opacity: 0.5;
+}
+.lc-commit {
+  display: grid;
+  gap: 8px;
+  padding: 6px;
+}
+.lc-commit-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.lc-commit-m {
+  height: 110px;
+  padding: 10px 12px;
+  resize: vertical;
+  font-size: 12.5px;
+  line-height: 19px;
+}
+.lc-commit-wait {
+  margin: 14px 4px;
+  font-size: 13px;
+}
+.lc-commit-f {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lc-pr-write {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+/* Settings, Models: other accounts, agents you added, model ids you added. The forms fold to one column when the paper is narrow. */
+.lc-st-scroll {
+  container-type: inline-size;
+}
+.lc-st-none {
+  margin: 0;
+  padding: 16px 0;
+  font-size: 12.5px;
+}
+.lc-pick.lc-st-addb {
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-pick.lc-st-addb[data-open] {
+  background: var(--l-wash-2);
+}
+@media (hover: hover) {
+  .lc-pick.lc-st-addb:hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-st-form {
+  display: grid;
+  gap: 10px;
+  padding: 16px 0;
+}
+.lc-st-form-g {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 12px;
+}
+.lc-st-form-g > label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.lc-st-form-g > label > span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-st-form-w {
+  grid-column: 1 / -1;
+}
+.lc-st-form .lc-input {
+  height: 34px;
+  font-size: 13px;
+}
+.lc-st-form textarea.lc-input {
+  height: auto;
+  min-height: 56px;
+  padding: 8px 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.lc-st-form .lc-input.lc-mono {
+  font-size: 12.5px;
+}
+.lc-st-form .lc-input[aria-invalid] {
+  box-shadow: 0 0 0 1.5px var(--l-danger);
+}
+.lc-st-form-n {
+  margin: 0;
+  font-size: 12px;
+}
+.lc-st-form-f {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.lc-st-cm {
+  grid-template-columns: 170px minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  align-items: center;
+}
+.lc-st-cm .l-in-box {
+  --i-h: 34px;
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+@container (max-width: 560px) {
+  .lc-st-form-g {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lc-st-cm {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .lc-st-cm > :nth-child(2),
+  .lc-st-cm > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The ACP registry, in a popover. */
+.lc-reg {
+  display: grid;
+  gap: 6px;
+  padding: 4px;
+}
+.lc-reg-find {
+  margin: 0;
+}
+.lc-reg-list {
+  display: grid;
+  align-content: start;
+  max-height: min(340px, 38vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.lc-reg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px 8px 8px;
+  border-radius: 10px;
+}
+.lc-reg-row + .lc-reg-row {
+  box-shadow: 0 -1px 0 var(--l-line);
+}
+.lc-reg-row[data-off] .lc-reg-t b {
+  color: var(--l-ink-3);
+}
+.lc-reg-t {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.lc-reg-t b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-reg-t b .lc-quiet {
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.lc-reg-t small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--l-ink-3);
+}
+.lc-reg-tag {
+  flex: none;
+  font-size: 12px;
+}
+.lc-reg-none {
+  margin: 0;
+  padding: 20px 8px;
+  font-size: 12.5px;
+  text-align: center;
+}
+.lc-reg-h {
+  display: grid;
+  gap: 2px;
+  padding: 4px 4px 6px;
+}
+.lc-reg-h b {
+  font-size: 13px;
+  font-weight: 600;
+}
+.lc-reg-h .lc-quiet {
+  font-size: 12px;
+}
+.lc-reg-own {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0 4px 4px;
+}
+.lc-reg .lc-st-form-f {
+  padding: 0 4px 2px;
+}
+.lc-reg-f {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  box-shadow: 0 -1px 0 var(--l-line);
+}
+
+/* The model picker's rail: another account of a tool carries its initial. */
+.lc-mp-tool {
+  position: relative;
+}
+.lc-mp-acct {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 2px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--l-ink-2);
+}
+
+/* The Browser while an agent uses it: a quiet pill at the top, its dot breathing. */
+.lc-br-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.lc-br-agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-accent);
+  animation: lc-br-breathe 1.6s ease-in-out infinite;
+}
+@keyframes lc-br-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-br-agent-dot {
+    animation: none;
+  }
+}
+
+/* A page an agent showed: its name above, the sandboxed page in the card. */
+.lc-page {
+  margin: 0;
+}
+.lc-page .lc-fcard {
+  display: grid;
+  overflow: hidden;
+  padding: 0;
+}
+.lc-page-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px 0 14px;
+  box-shadow: 0 1px 0 var(--l-line);
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-page-h b {
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-page-f {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: var(--l-surface);
+  transition: height 240ms var(--l-spring-smooth);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-page-f {
+    transition: none;
+  }
+}
+
+/* Settings, Keyboard: a command's keys, clicked to record new ones; the same list as JSON. */
+.lc-kb-id {
+  font-size: 11.5px;
+}
+.lc-kb-rec {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 96px;
+  height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+.lc-kb-rec[data-on] {
+  justify-content: center;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+@media (hover: hover) {
+  .lc-kb-rec:not([data-on]):hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-kb-json {
+  width: 100%;
+  height: auto;
+  min-height: 120px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.lc-kb-f {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.lc-kb-err {
+  color: var(--l-danger-text);
+}
+
+/* Appearance: an accent of your own, and your themes. */
+.lc-swatch-own {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  background: conic-gradient(from 90deg, oklch(0.7 0.15 30), oklch(0.75 0.15 120), oklch(0.7 0.15 200), oklch(0.65 0.18 290), oklch(0.7 0.15 30));
+  color: oklch(1 0 0);
+}
+.lc-swatch-own input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.lc-swatch-own svg {
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px oklch(0 0 0 / 0.3));
+}
+.lc-th-chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--l-bg);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+}
+.lc-th-chip span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line);
+  font-family: var(--l-font-display);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-th-chip i {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--l-accent);
+  box-shadow: 0 0 0 1.5px var(--l-bg);
+}
+.lc-th-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.lc-th-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-th-color input {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.lc-th-color input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.lc-th-color input::-webkit-color-swatch {
+  border: 0;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.12);
+}
+.lc-linkbtn {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  color: var(--l-accent-text);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-linkbtn:hover {
+    text-decoration: underline;
+  }
+}
+
+/* The composer: Markdown styled as you type. The field's own text is see-through over a mirror
+   that draws the same characters; nothing here may change a glyph's width. */
+.lc-field-box {
+  position: relative;
+  display: grid;
+}
+.lc-field-box > .lc-field {
+  grid-area: 1 / 1;
+  /* Styled spans would break kerning and ligatures at their edges; with none, both layers match. */
+  font-kerning: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "kern" 0, "liga" 0, "calt" 0;
+}
+.lc-field-md {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  min-height: 0 !important;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  user-select: none;
+  transition: none;
+}
+.lc-field[data-md] {
+  position: relative;
+  color: transparent;
+  caret-color: var(--l-ink);
+}
+.lc-field[data-md]::selection {
+  color: transparent;
+  background: color-mix(in oklab, var(--l-accent) 26%, transparent);
+}
+.lc-field-md .md-mk {
+  color: var(--l-ink-4);
+}
+.lc-field-md .md-b {
+  color: var(--l-ink);
+  -webkit-text-stroke: 0.035em currentColor;
+}
+.lc-field-md .md-i {
+  font-style: italic;
+  font-synthesis: style;
+}
+.lc-field-md .md-s {
+  text-decoration: line-through;
+  text-decoration-color: var(--l-ink-4);
+  color: var(--l-ink-3);
+}
+.lc-field-md .md-code,
+.lc-field-md .md-cb {
+  border-radius: 4px;
+  background: var(--l-wash-2);
+  box-shadow: 0 0 0 1.5px var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lc-field-md .md-fence {
+  color: var(--l-ink-4);
+}
+.lc-field-md .md-h {
+  color: var(--l-ink);
+  -webkit-text-stroke: 0.035em currentColor;
+}
+.lc-field-md .md-q {
+  color: var(--l-ink-3);
+}
+.lc-field-md .md-q-mk {
+  color: var(--l-accent-text);
+}
+.lc-field-md .md-li {
+  color: var(--l-accent-text);
+}
+.lc-field-md .md-a {
+  color: var(--l-accent-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--l-accent) 40%, transparent);
+  text-underline-offset: 2px;
+}
+.lc-field-md .md-url {
+  color: var(--l-ink-4);
+}
+.lc-field-md .md-at {
+  border-radius: 4px;
+  background: var(--l-accent-soft);
+  box-shadow: 0 0 0 1.5px var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+
+/* A script's keys, beside its command. */
+.lc-script-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.lc-kb-rec.lc-script-rec {
+  justify-content: center;
+  min-width: 72px;
+  height: 32px;
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+
+/* The PR card in the chat: the card, the request to run the tests, then their console, one width:
+   the conversation's own, so its edges meet the text and the composer. */
+.lc-prchat {
+  display: grid;
+  gap: 8px;
+}
+.lc-prchat > *,
+.lc-prchat .l-prf {
+  width: 100%;
+}
+.lc-prcon .lc-fcard {
+  overflow: hidden;
+}
+.lc-prcon-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-prcon-h code {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  color: var(--l-ink);
+}
+.lc-prcon-h > svg:last-child {
+  flex: none;
+  color: var(--l-ink-3);
+  transition: rotate 240ms var(--l-spring-smooth);
+}
+.lc-prcon[data-open] .lc-prcon-h > svg:last-child {
+  rotate: 90deg;
+}
+.lc-prcon-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  animation: lc-focus-in 320ms var(--l-ease-enter) backwards;
+}
+.lc-prcon[data-state="done"] .lc-prcon-st {
+  color: var(--l-ok-text);
+}
+.lc-prcon[data-state="failed"] .lc-prcon-st {
+  color: var(--l-danger-text);
+}
+.lc-prcon-out {
+  max-height: 220px;
+  margin: 0 10px 10px;
+  overflow: auto;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--l-surface-2);
+  box-shadow: 0 0 0 1px var(--l-line);
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  line-height: 17px;
+  color: var(--l-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.lc-prcon-f {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 12px;
+  font-size: 12.5px;
+}
+
+/* The Pull request surface: Liner's PR flow card, then what it doesn't draw. */
+.lc-prf {
+  margin: 8px 0 16px;
+}
+.lc-pr-edit {
+  margin-top: 4px;
+}
+.lc-pr-fold {
+  width: 100%;
+  padding: 6px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-pr-fold svg {
+  flex: none;
+  align-self: center;
+  color: var(--l-ink-3);
+  transition: rotate 240ms var(--l-spring-smooth);
+}
+.lc-pr-edit[data-open] .lc-pr-fold svg {
+  rotate: 90deg;
+}
+.lc-pr-edit .lc-pr-new {
+  display: grid;
+  gap: 12px;
+  padding: 6px 2px 4px;
+}
+.lc-pr-out {
+  margin: 4px 2px 0;
+  font-size: 12.5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-pr-fold svg {
+    transition: none;
+  }
+}
+
+/* Approvals: Liner's approval card, with commands shown whole and the session rule on a strip under it. */
+.lc-appr-wrap {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+.lc-appr {
+  min-width: 0;
+}
+.lc-appr .l-appr__titles,
+.lc-appr .l-appr__head {
+  min-width: 0;
+}
+.lc-appr .l-appr__titles b {
+  overflow-wrap: anywhere;
+}
+.lc-ask-cmd {
+  display: block;
+  max-height: 14lh;
+  overflow: auto;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--l-ink);
+  scrollbar-width: thin;
+}
+.lc-appr-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 14px;
+  padding: 9px 2px 2px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--l-ink-3);
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.lc-appr-strip input {
+  flex: none;
+  margin-top: 2px;
+}
+.lc-appr-strip code {
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-appr-strip {
+    animation: none;
+  }
+}
+
+/* Tool calls in the timeline: Liner's, with the step's words first and the tool's name quiet beside it. */
+.lc-tc .l-tcalls__fold > .l-tcalls__list {
+  padding-top: 6px;
+}
+.lc-tc .l-tcalls__label {
+  color: var(--l-ink);
+}
+.lc-tc .l-tcalls__line code {
+  max-width: 34%;
+  overflow: hidden;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-tc .l-tcalls__state {
+  margin-left: 0;
+}
+.lc-tc .l-tcalls__detail .lc-pre {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lc-tc .l-tcalls__detail .lc-pre + .lc-pre {
+  margin-top: 8px;
+  padding-top: 8px;
+  box-shadow: inset 0 1px 0 var(--l-line);
+}
+
+/* A plan step that changes state swaps its mark in: the tick lands, the rays start. */
+.lc-todo-mk > svg {
+  animation: l-swap-in 260ms var(--l-ease-out) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-todo-mk > svg {
+    animation: none;
+  }
+}
+.lc-thought-h .l-aimark {
+  flex: none;
+}
+
+/* A Reviewer or escalation line in a narrow column: the words stay, the model and round give way first. */
+.lc-rev-h > span:nth-child(2),
+.lc-esc-h > span:nth-child(2) {
+  flex-shrink: 0.2;
+  min-width: 5.5em;
+}
+.lc-rev-h > .lc-model,
+.lc-rev-h > .lc-quiet {
+  flex-shrink: 6;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

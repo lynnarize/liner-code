@@ -1,0 +1,108 @@
+.l-xsearch {
+  --xs-h: var(--l-h-md);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: var(--xs-h);
+  height: var(--xs-h);
+  border-radius: 999px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  transition:
+    width 520ms var(--l-spring-snappy),
+    box-shadow 200ms ease,
+    background-color 200ms ease;
+}
+.l-xsearch[data-align="end"] {
+  flex-direction: row;
+  margin-left: auto;
+}
+.l-xsearch[data-open] {
+  width: var(--xs-w);
+  max-width: 100%;
+  background: var(--l-field-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 4px var(--l-wash);
+}
+.l-xsearch__btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--xs-h);
+  height: var(--xs-h);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition: scale 240ms var(--l-ease-snap), color 200ms ease;
+}
+.l-xsearch__btn:active {
+  scale: 0.9;
+}
+.l-xsearch[data-open] .l-xsearch__btn {
+  color: var(--l-ink-4);
+  cursor: text;
+}
+.l-xsearch__btn svg {
+  width: 17px;
+  height: 17px;
+}
+.l-xsearch__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 15px;
+  opacity: 0;
+  filter: blur(4px);
+  caret-color: var(--l-accent-text);
+  transition:
+    opacity 200ms ease,
+    filter 260ms var(--l-ease-out);
+}
+.l-xsearch__input::placeholder {
+  color: var(--l-ink-5);
+}
+.l-xsearch__input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+.l-xsearch[data-open] .l-xsearch__input {
+  opacity: 1;
+  filter: none;
+  transition-delay: 90ms;
+}
+.l-xsearch__clear {
+  margin-right: 7px;
+  opacity: 0;
+  scale: 0.6;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-xsearch__clear[data-show] {
+  opacity: 1;
+  scale: 1;
+  pointer-events: auto;
+}
+.l-xsearch:not([data-open]) {
+  overflow: hidden;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-xsearch:not([data-open]):hover {
+    background: var(--l-ctl-fill-hover);
+    box-shadow: var(--l-ctl-shadow-hover);
+  }
+}
+.l-xsearch:not([data-open]):has(.l-xsearch__btn:focus-visible) {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}

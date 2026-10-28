@@ -1,0 +1,818 @@
+/* Shared pieces for AI surfaces: streamed markdown, citations, marks. */
+
+/* ---------- Streamed text ----------
+   Each chunk comes into focus: it starts soft and transparent and sharpens in place.
+   Nothing moves, so the eye never chases the line. */
+.l-chunk {
+  animation: l-chunk-in 620ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes l-chunk-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+  40% {
+    opacity: 0.7;
+  }
+}
+
+/* ---------- Markdown ---------- */
+.l-md {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  color: var(--l-ink);
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+.l-md p,
+.l-md h4,
+.l-md ul,
+.l-md ol {
+  margin: 0;
+}
+.l-md h4 {
+  font-family: var(--l-font-body);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: var(--l-track-body);
+}
+.l-md ul,
+.l-md ol {
+  display: grid;
+  gap: 6px;
+  padding-left: 22px;
+}
+.l-md li {
+  padding-left: 2px;
+}
+.l-md li::marker {
+  color: var(--l-ink-5);
+  font-variant-numeric: tabular-nums;
+}
+.l-md ol > li::marker {
+  color: var(--l-ink-3);
+}
+.l-md strong {
+  color: var(--l-ink);
+  font-weight: 600;
+}
+.l-md code {
+  padding: 1.5px 5px;
+  border-radius: 5px;
+  background: var(--l-wash-2);
+  font-family: var(--l-font-mono);
+  font-size: 0.86em;
+}
+.l-md > * {
+  min-width: 0;
+}
+.l-md-code {
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--l-well-fill);
+  box-shadow: var(--l-well-shadow);
+}
+.l-md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 4px 0 14px;
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.l-md-code pre {
+  margin: 0;
+  padding: 2px 16px 14px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.l-md-code pre code {
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+/* ---------- Sentences lit by a citation ----------
+   A soft tint washes over the sentence a citation supports. */
+.l-sent {
+  border-radius: 4px;
+  background-color: transparent;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition:
+    background-color 320ms var(--l-ease-out),
+    box-shadow 320ms var(--l-ease-out);
+}
+.l-sent[data-lit] {
+  background-color: var(--l-mark-soft);
+  box-shadow: 0 0 0 2px var(--l-mark-soft);
+}
+
+/* ---------- Citation chips ---------- */
+.l-cite {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  margin: 0 1px 0 3px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  vertical-align: 0.12em;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+  animation: l-cite-in 360ms var(--l-ease-snap) both;
+}
+/* A bigger hit area than the chip draws. */
+.l-cite::after {
+  content: "";
+  position: absolute;
+  inset: -8px -3px;
+}
+.l-cite:hover {
+  background: var(--l-wash-3);
+  color: var(--l-ink);
+}
+.l-cite[data-lit] {
+  background: var(--l-mark-soft);
+  color: var(--l-ink);
+}
+.l-cite[data-open] {
+  background: var(--l-ink);
+  color: var(--l-on-ink);
+}
+.l-cite-more {
+  opacity: 0.7;
+}
+.l-cites {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 3px;
+  vertical-align: 0.12em;
+}
+.l-cite-num {
+  min-width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0 5px;
+  border-radius: 99px;
+  font-size: 11px;
+  justify-content: center;
+}
+@keyframes l-cite-in {
+  from {
+    opacity: 0;
+    scale: 0.7;
+  }
+}
+.l-cite-plain {
+  color: var(--l-ink-3);
+  font-size: 0.8em;
+}
+
+/* The shared preview card */
+.l-cite-card {
+  position: absolute;
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  width: min(300px, calc(100% - 8px));
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--l-float);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: var(--l-shadow-float), inset 0 1px 0 var(--l-hi);
+  transform-origin: 50% 0;
+  animation: l-cite-card-in 200ms var(--l-ease-enter) both;
+}
+.l-cite-card:not([data-below]) {
+  translate: 0 -100%;
+  transform-origin: 50% 100%;
+}
+@keyframes l-cite-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+.l-cite-card:not([data-below]) {
+  animation-name: l-cite-card-in-up;
+}
+@keyframes l-cite-card-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+.l-cite-card-item {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px 10px;
+  border-radius: 11px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 140ms ease;
+}
+a.l-cite-card-item:hover {
+  background: var(--l-wash);
+}
+.l-cite-card-site {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-cite-card-n {
+  margin-left: auto;
+  color: var(--l-ink-3);
+}
+.l-cite-card-title {
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.l-cite-card-snip {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.5;
+}
+
+/* ---------- Marks ---------- */
+/* Model marks are told apart by shape, not color. */
+.l-modelmark {
+  flex: none;
+  color: var(--l-ink-3);
+}
+
+/* The assistant mark: a small glass orb with a spark. It breathes while thinking,
+   a sheen sweeps it while reading, and the spark turns while writing. */
+.l-aimark {
+  flex: none;
+  overflow: visible;
+}
+.l-aimark-rim {
+  fill: none;
+  stroke: oklch(1 0 0 / 0.55);
+  stroke-width: 0.8;
+}
+.l-aimark-sheen {
+  fill: oklch(1 0 0 / 0.55);
+  opacity: 0;
+}
+.l-aimark-spark {
+  fill: oklch(1 0 0);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: scale 300ms var(--l-ease-snap);
+}
+.l-aimark-core {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.l-aimark[data-phase="thinking"] .l-aimark-core {
+  animation: l-aimark-breathe 1.6s var(--l-ease-in-out) infinite;
+}
+.l-aimark[data-phase="thinking"] .l-aimark-spark {
+  animation: l-aimark-twinkle 1.6s var(--l-ease-in-out) infinite;
+}
+.l-aimark[data-phase="reading"] .l-aimark-sheen {
+  opacity: 1;
+  animation: l-aimark-sheen 1.3s var(--l-ease-in-out) infinite;
+}
+.l-aimark[data-phase="writing"] .l-aimark-spark {
+  animation: l-aimark-turn 1.4s var(--l-ease-in-out) infinite;
+}
+.l-aimark[data-phase="stopped"] .l-aimark-spark,
+.l-aimark[data-phase="error"] .l-aimark-spark {
+  scale: 0.6;
+}
+/* transform, not scale, rotate or translate: on SVG parts only transform stays on the compositor
+   (see l-spin in the foundation). */
+@keyframes l-aimark-breathe {
+  50% {
+    transform: scale(0.88);
+  }
+}
+@keyframes l-aimark-twinkle {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(0.7);
+  }
+  50% {
+    transform: rotate(45deg) scale(1);
+  }
+}
+@keyframes l-aimark-turn {
+  to {
+    transform: rotate(180deg);
+  }
+}
+/* A CSS transform replaces the sheen's transform attribute, so its tilt, rotate(20 12 12), is
+   carried in each frame: the slide, then the turn about 12,12. */
+@keyframes l-aimark-sheen {
+  from {
+    transform: translate(-2px, 12px) rotate(20deg) translate(-12px, -12px);
+  }
+  to {
+    transform: translate(26px, 12px) rotate(20deg) translate(-12px, -12px);
+  }
+}
+
+/* A label that replaces another */
+.l-swap {
+  display: inline-block;
+  animation: l-swap-in 160ms var(--l-ease-out) both;
+}
+
+/* ================= The AI surface =================
+   AI chat, AI answer and the Composer share every piece below, so they read as one
+   design. Their containers are the foundation frame (.l-frame, .l-frame-card,
+   .l-frame-strip); here are the assistant row, the source card, the action row and the
+   glass menu. */
+
+/* ---------- Who is answering ---------- */
+.l-ai-who {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 30px;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-ai-who > :not(.l-ai-who-mark) {
+  flex: 1;
+  min-width: 0;
+}
+.l-ai-who-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 30px;
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.l-ai-who-text {
+  padding-top: 6px;
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+
+/* ---------- Source cards ---------- */
+.l-ai-sources {
+  --bleed: 0px;
+  display: flex;
+  gap: 8px;
+  margin: 0 calc(var(--bleed) * -1);
+  padding: 2px var(--bleed) 4px;
+  overflow-x: auto;
+  scroll-padding: 0 var(--bleed);
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, transparent, #000 calc(var(--bleed) * 0.8), #000 calc(100% - 26px), transparent);
+}
+.l-ai-sources::-webkit-scrollbar {
+  display: none;
+}
+/* Each source is a small piece of liquid glass: a tint with a breath of ink, a lit rim
+   (.l-glass-rim on the element) and a soft shadow. */
+.l-ai-source {
+  --src-shadow:
+    inset 0 1px 1px -0.5px var(--l-glass-edge-hi),
+    inset 0 0 0 0.5px var(--l-glass-edge),
+    inset 0 0 8px 0 var(--l-glass-glow),
+    0 0 0 0.5px var(--l-glass-line),
+    0 1px 2px var(--l-drop),
+    0 6px 16px -10px var(--l-drop);
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  flex: none;
+  width: 168px;
+  padding: 10px 12px 11px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--l-glass), var(--l-ink) 4%);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop-sm);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop-sm);
+  box-shadow: var(--src-shadow);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    background-color 160ms ease,
+    box-shadow 220ms ease;
+  animation: l-ai-card-in 460ms var(--l-ease-out) backwards;
+}
+.l-ai-source:hover {
+  background: color-mix(in oklab, var(--l-glass-strong), var(--l-ink) 7%);
+}
+/* Lit by a citation: the glass takes the accent tint and an accent ring. */
+.l-ai-source[data-lit] {
+  background: color-mix(in oklab, var(--l-accent) 12%, var(--l-glass));
+  box-shadow:
+    var(--src-shadow),
+    inset 0 0 0 1.5px var(--l-accent-line);
+}
+@keyframes l-ai-card-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(6px) scale(0.96);
+  }
+}
+/* A place held for a source still on the way: the card's size, a quiet fill, two lines. */
+.l-ai-slot {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  flex: none;
+  width: 168px;
+  padding: 13px 12px 12px;
+  border-radius: 14px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.l-ai-slot > i {
+  height: 7px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--l-wash-2) 30%, var(--l-wash-3) 50%, var(--l-wash-2) 70%) 0 0 / 300% 100%;
+  animation: l-ai-slot-sheen 1.6s linear infinite;
+}
+.l-ai-slot > i:first-child {
+  width: 46%;
+}
+.l-ai-slot > i:last-child {
+  width: 82%;
+  height: 9px;
+}
+@keyframes l-ai-slot-sheen {
+  to {
+    background-position: -150% 0;
+  }
+}
+.l-ai-source-site {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-ai-source-n {
+  margin-left: auto;
+  color: var(--l-ink-3);
+}
+.l-ai-source-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  line-height: 1.4;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ---------- Actions and feedback ---------- */
+.l-ai-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+}
+.l-ai-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  animation: l-unblur 260ms var(--l-ease-out) backwards;
+}
+.l-ai-act,
+.l-ai-actions-row .l-btn {
+  --b-h: 32px;
+  --b-r: 10px;
+  color: var(--l-ink-4);
+}
+.l-ai-act {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-ai-act:hover:not(:disabled),
+.l-ai-actions-row .l-btn:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.l-ai-act[data-on] {
+  color: var(--l-ink);
+}
+.l-ai-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.l-ai-act svg {
+  width: 16px;
+  height: 16px;
+  transition: scale 280ms var(--l-ease-snap);
+}
+.l-ai-act:active:not(:disabled) svg {
+  scale: 0.85;
+  transition-duration: var(--l-dur-instant);
+}
+.l-ai-thumb[data-dir="down"] {
+  rotate: 180deg;
+}
+.l-ai-act[data-on] .l-ai-thumb {
+  fill: var(--l-accent);
+  stroke: var(--l-accent-ink);
+  animation: l-ai-thumb 420ms var(--l-ease-out);
+}
+.l-ai-act[data-on] .l-ai-thumb[data-dir="down"] {
+  fill: var(--l-wash-3);
+  stroke: currentColor;
+}
+@keyframes l-ai-thumb {
+  40% {
+    scale: 1.25;
+    translate: 0 -1px;
+  }
+}
+.l-ai-regen {
+  animation: l-ai-regen 520ms var(--l-ease-out);
+}
+@keyframes l-ai-regen {
+  from {
+    rotate: -360deg;
+  }
+}
+.l-ai-versions {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+}
+.l-ai-versions .l-num {
+  min-width: 3.2em;
+  text-align: center;
+}
+.l-ai-ver {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.l-ai-ver svg {
+  width: 14px;
+  height: 14px;
+}
+.l-ai-ver:hover:not(:disabled) {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.l-ai-ver:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.l-ai-meta {
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  white-space: nowrap;
+  animation: l-unblur 260ms var(--l-ease-out) backwards;
+}
+.l-ai-reasons {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 320ms var(--l-ease-out),
+    opacity 200ms ease;
+}
+.l-ai-reasons[data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.l-ai-reasons > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 2px 0 0;
+}
+.l-ai-reasons[data-open] > div {
+  padding-bottom: 8px;
+}
+.l-ai-reason {
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--l-surface);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  opacity: 0;
+  translate: 0 4px;
+  transition:
+    opacity 220ms ease,
+    translate 300ms var(--l-ease-out),
+    color 140ms ease;
+}
+.l-ai-reasons[data-open] .l-ai-reason {
+  opacity: 1;
+  translate: 0 0;
+}
+.l-ai-reason:hover {
+  color: var(--l-ink);
+}
+
+/* ---------- The glass menu ---------- */
+.l-ai-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  width: 252px;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--l-float);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  outline: none;
+  /* Backwards fill only: a filter left on the menu would cut its glass off from the page. */
+  animation: l-ai-menu-in 240ms var(--l-ease-enter) backwards;
+}
+@keyframes l-ai-menu-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(6px) scale(0.96);
+  }
+}
+.l-ai-menu[data-place="start"] {
+  left: -4px;
+  transform-origin: 18px 100%;
+}
+.l-ai-menu[data-place="end"] {
+  right: -4px;
+  transform-origin: calc(100% - 18px) 100%;
+}
+.l-ai-menu[data-below] {
+  top: calc(100% + 6px);
+  bottom: auto;
+  animation-name: l-ai-menu-down;
+}
+.l-ai-menu[data-below][data-place="start"] {
+  transform-origin: 18px 0;
+}
+.l-ai-menu[data-below][data-place="end"] {
+  transform-origin: calc(100% - 18px) 0;
+}
+@keyframes l-ai-menu-down {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(-6px) scale(0.96);
+  }
+}
+.l-ai-menu-list {
+  position: relative;
+}
+.l-ai-hl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-radius: 10px;
+  background: var(--l-wash-2);
+  pointer-events: none;
+  transition:
+    transform 240ms var(--l-spring-snappy),
+    height 240ms var(--l-ease-out);
+}
+.l-ai-menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 7px 10px 7px 9px;
+  border-radius: 10px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.l-ai-menu-item[data-active] {
+  color: var(--l-ink);
+}
+.l-ai-menu-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  color: var(--l-ink-3);
+}
+.l-ai-menu-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.l-ai-menu-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.l-ai-menu-name {
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-ai-menu-desc {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-ai-menu-check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--l-accent-text);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-ai-act,
+  .l-ai-reason {
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-chunk,
+  .l-cite,
+  .l-ai-source,
+  .l-ai-slot,
+  .l-ai-slot > i,
+  .l-ai-menu {
+    animation: none;
+  }
+  .l-ai-reasons,
+  .l-ai-reason {
+    transition: none;
+  }
+  .l-sent {
+    transition: none;
+  }
+}
+
+/* Eight rays, the brightest a beat ahead: a spinner without a spin. The group steps round a
+   ray at a time, so the mark changes eight times a turn instead of on every frame. */
+.l-rays line {
+  stroke: var(--l-ink-3);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.l-rays__turn {
+  transform-origin: 10px 10px;
+  animation: l-spin 0.96s steps(8) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-rays__turn {
+    animation: none;
+  }
+}

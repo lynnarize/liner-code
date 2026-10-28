@@ -1,0 +1,177 @@
+.l-slide {
+  --x: 0px;
+  --p: 0;
+  --pad: 4px;
+  --grip: 50px;
+  position: relative;
+  display: grid;
+  align-items: center;
+  width: 100%;
+  max-width: 340px;
+  height: calc(var(--grip) + var(--pad) * 2);
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--l-well-fill);
+  box-shadow: var(--l-well-shadow);
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 400ms ease;
+}
+
+/* The wash trails the grip, so the track fills as you commit. */
+.l-slide__wash {
+  position: absolute;
+  top: var(--pad);
+  bottom: var(--pad);
+  left: var(--pad);
+  width: calc(var(--x) + var(--grip));
+  border-radius: 16px;
+  background: linear-gradient(90deg, transparent, var(--l-accent-soft));
+  opacity: calc(var(--p) * 1.2);
+}
+
+.l-slide__label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-left: calc(var(--grip) + 8px);
+  pointer-events: none;
+  /* The hint fades as it is answered. */
+  opacity: calc(1 - var(--p) * 1.6);
+  translate: calc(var(--p) * 18px) 0;
+}
+.l-slide__text {
+  background: linear-gradient(100deg, var(--l-ink-3) 38%, var(--l-ink) 50%, var(--l-ink-3) 62%);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  white-space: nowrap;
+  animation: l-shimmer-text 2.4s linear infinite;
+}
+.l-slide[data-phase="dragging"] .l-slide__text {
+  animation-play-state: paused;
+}
+
+.l-slide__grip {
+  position: absolute;
+  top: var(--pad);
+  left: var(--pad);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: var(--grip);
+  height: var(--grip);
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: var(--l-primary-fill);
+  box-shadow: var(--l-primary-shadow);
+  color: var(--l-primary-ink);
+  cursor: grab;
+  touch-action: none;
+  transform: translateX(var(--x));
+  transition:
+    width 520ms var(--l-spring-snappy),
+    left 520ms var(--l-spring-snappy),
+    border-radius 400ms var(--l-ease-out),
+    opacity 200ms ease,
+    scale 300ms var(--l-ease-snap);
+}
+.l-slide[data-phase="dragging"] .l-slide__grip {
+  cursor: grabbing;
+  scale: 1.04;
+}
+.l-slide__arrow {
+  width: 20px;
+  height: 20px;
+  transition:
+    translate 300ms var(--l-ease-snap),
+    opacity 200ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-slide[data-phase="idle"] .l-slide__grip:hover .l-slide__arrow {
+    translate: 2px 0;
+  }
+}
+
+/* Commit: the grip becomes the whole track and turns into the result. */
+.l-slide[data-phase="busy"] .l-slide__grip,
+.l-slide[data-phase="done"] .l-slide__grip {
+  width: calc(100% - var(--pad) * 2);
+  transform: none;
+  cursor: default;
+  opacity: 0;
+}
+.l-slide[data-phase="busy"] .l-slide__arrow,
+.l-slide[data-phase="done"] .l-slide__arrow {
+  opacity: 0;
+}
+.l-slide[data-phase="busy"] .l-slide__label,
+.l-slide[data-phase="done"] .l-slide__label {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.l-slide__result {
+  position: absolute;
+  inset: var(--pad);
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--l-primary-fill);
+  box-shadow: var(--l-primary-shadow);
+  color: var(--l-primary-ink);
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  opacity: 0;
+  clip-path: inset(0 calc(100% - var(--grip) - var(--x)) 0 var(--x) round 16px);
+  transition:
+    clip-path 520ms var(--l-spring-snappy),
+    opacity 120ms ease;
+}
+.l-slide[data-phase="busy"] .l-slide__result,
+.l-slide[data-phase="done"] .l-slide__result {
+  opacity: 1;
+  clip-path: inset(0 0 0 0 round 16px);
+}
+.l-slide[data-phase="done"] .l-slide__result {
+  background: var(--l-ok);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.3), 0 0 0 1px color-mix(in oklab, var(--l-ok) 70%, black);
+  color: oklch(0.18 0.03 150);
+  transition:
+    clip-path 520ms var(--l-spring-snappy),
+    background-color 300ms ease;
+}
+.l-slide__result-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.l-slide__result-in > span {
+  animation: l-blur-in 320ms var(--l-ease-out) both;
+}
+.l-slide__spin {
+  width: 16px;
+  height: 16px;
+  animation: l-spin 0.7s linear infinite;
+}
+.l-slide__check {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.l-slide__check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.l-slide[data-phase="done"] .l-slide__check path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 420ms var(--l-ease-out) 100ms;
+}

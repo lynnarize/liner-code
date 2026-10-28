@@ -1,0 +1,1421 @@
+/* Workflow builder: one glass frame. The canvas and the settings are two white cards in it;
+   the name and the two presses sit on the glass above. Steps are cards on one quiet line.
+   The accent is spent on the step you picked, the line a test has run along, and Publish;
+   status comes only from the semantic tones. */
+.l-wf {
+  --wf-h: 640px;
+  --wf-side: 304px;
+  --wf-canvas: var(--l-bg);
+  --wf-node: var(--l-surface);
+  --wf-line: var(--l-viz-gray);
+  --wf-dot: var(--l-line-2);
+  container-type: inline-size;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: var(--wf-h);
+  color: var(--l-ink);
+  font-size: var(--l-text-md);
+  animation: l-wf-rise 560ms var(--l-spring-smooth) backwards;
+}
+.l-wf[data-mode="view"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+@keyframes l-wf-rise {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+
+/* ---------- On the glass: what it is, and the two presses ---------- */
+.l-wf-top {
+  gap: 12px;
+  min-height: 46px;
+  padding: 2px 2px 6px 8px;
+}
+.l-wf-id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.l-wf-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  color: var(--l-ink-2);
+}
+.l-wf-mark svg {
+  width: 16px;
+  height: 16px;
+}
+.l-wf-name {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-wf-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  animation: l-swap-in 320ms var(--l-ease-out) backwards;
+}
+.l-wf-badge[data-live] {
+  background: color-mix(in oklab, var(--l-ok) 14%, transparent);
+  color: var(--l-ok-text);
+}
+.l-wf-badge[data-live]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-ok);
+}
+.l-wf-saved {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-wf-acts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+.l-wf-people {
+  margin-right: 2px;
+}
+@container (max-width: 600px) {
+  .l-wf-saved {
+    display: none;
+  }
+}
+@container (max-width: 400px) {
+  .l-wf-mark {
+    display: none;
+  }
+}
+
+/* ---------- The two cards ---------- */
+.l-wf-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--wf-side);
+  gap: var(--l-frame-pad);
+  min-height: 0;
+}
+.l-wf[data-narrow] .l-wf-body,
+.l-wf[data-mode="view"] .l-wf-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.l-wf-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+}
+.l-wf-side {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--l-line-strong) transparent;
+}
+
+/* ---------- The canvas ---------- */
+.l-wf-view {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  background-color: var(--wf-canvas);
+  background-image: radial-gradient(circle at center, var(--wf-dot) 0 1px, transparent 1.6px);
+  background-size: 22px 22px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.l-wf-view[data-panning] {
+  cursor: grabbing;
+}
+.l-wf-view[data-mode="view"] {
+  cursor: default;
+  touch-action: auto;
+}
+.l-wf-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.l-wf-wires {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.l-wf-steps {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  outline: none;
+  pointer-events: none;
+}
+
+/* The line: quiet grey, drawn top to bottom the first time. A test fills it with the accent
+   on its way to each step, a stretch at a time; the path it skipped steps back. */
+.l-wf-wire__base,
+.l-wf-wire__lit {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.l-wf-wire__base {
+  stroke: var(--wf-line);
+  stroke-dasharray: 1;
+  transition: opacity 320ms ease;
+  animation: l-wf-draw 640ms var(--l-ease-out) backwards;
+}
+.l-wf-view[data-intro] .l-wf-wire__base {
+  animation-delay: calc(var(--i) * 70ms - 30ms);
+}
+@keyframes l-wf-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+.l-wf-wire[data-kind="tail"] .l-wf-wire__base {
+  stroke: var(--l-line-strong);
+  stroke-dasharray: 0 6;
+  animation-name: l-wf-fade;
+}
+@keyframes l-wf-fade {
+  from {
+    opacity: 0;
+  }
+}
+.l-wf-wire[data-dim] .l-wf-wire__base {
+  opacity: 0.3;
+}
+.l-wf-wire[data-exit] {
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.l-wf-wire__lit {
+  stroke: var(--l-accent);
+  stroke-width: 2.25;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  transition:
+    opacity 320ms ease,
+    stroke-dashoffset 0s linear 320ms;
+}
+.l-wf-wire[data-lit] .l-wf-wire__lit {
+  opacity: 1;
+  stroke-dashoffset: 0;
+  transition:
+    opacity 60ms ease calc(var(--o) * 150ms),
+    stroke-dashoffset 380ms var(--l-ease-in-out) calc(var(--o) * 150ms);
+}
+.l-wf-dot {
+  fill: var(--wf-line);
+  stroke: var(--wf-canvas);
+  stroke-width: 2.5;
+  transition: opacity 180ms ease;
+  animation: l-wf-fade 420ms ease backwards;
+}
+.l-wf-view[data-intro] .l-wf-dot {
+  animation-delay: 320ms;
+}
+.l-wf-dot[data-exit] {
+  opacity: 0;
+}
+
+/* A step: a white card with its glyph, what kind it is, its name and one line of what it does. */
+.l-wf-node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  width: 248px;
+  height: 72px;
+  padding: 0 14px;
+  border-radius: 18px;
+  background: var(--wf-node);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop),
+    0 8px 20px -14px var(--l-drop);
+  outline: none;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    box-shadow 200ms ease,
+    opacity 320ms ease,
+    scale 360ms var(--l-spring-snappy);
+  animation: l-wf-in 560ms var(--l-spring-smooth) backwards;
+}
+.l-wf-view[data-intro] .l-wf-node {
+  animation-delay: calc(var(--i) * 70ms);
+}
+@keyframes l-wf-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    scale: 0.94;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-wf-view[data-mode="edit"] .l-wf-node:hover {
+    box-shadow:
+      0 0 0 1px var(--l-line-strong),
+      0 2px 4px var(--l-drop),
+      0 10px 24px -14px var(--l-drop);
+  }
+}
+.l-wf-view[data-mode="edit"] .l-wf-node:active {
+  scale: 0.985;
+  transition-duration: 200ms, 320ms, 90ms;
+}
+.l-wf-view[data-mode="view"] .l-wf-node {
+  cursor: inherit;
+}
+.l-wf-node[data-exit] {
+  pointer-events: none;
+  animation: l-wf-out 220ms var(--l-ease-exit) forwards;
+}
+@keyframes l-wf-out {
+  to {
+    opacity: 0;
+    filter: blur(4px);
+    scale: 0.95;
+  }
+}
+.l-wf-node[data-state="skipped"] {
+  opacity: 0.42;
+}
+.l-wf-node__glyph {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+  transition:
+    background-color 260ms ease,
+    color 260ms ease;
+}
+.l-wf-node__glyph > svg:not(.l-aimark) {
+  width: 18px;
+  height: 18px;
+}
+.l-wf-node[data-kind="ai"] .l-wf-node__glyph {
+  background: color-mix(in oklab, var(--l-accent) 9%, transparent);
+}
+.l-wf-node[data-on] .l-wf-node__glyph {
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+.l-wf-node__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.l-wf-node__kind,
+.l-wf-node__title,
+.l-wf-node__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-wf-node__kind {
+  color: var(--l-ink-3);
+  font-size: 11.5px;
+  line-height: 15px;
+}
+.l-wf-node__title {
+  color: var(--l-ink);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 19px;
+  letter-spacing: -0.01em;
+  animation: l-swap-in 320ms var(--l-ease-out) backwards;
+}
+.l-wf-node__meta {
+  color: var(--l-ink-3);
+  font-size: 12px;
+  line-height: 16px;
+  animation: l-swap-in 320ms var(--l-ease-out) backwards;
+}
+.l-wf-node__meta > .l-wf-val {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--l-ink-2);
+  font-weight: 500;
+}
+.l-wf-node[data-state="done"] .l-wf-node__meta {
+  color: var(--l-ink-2);
+}
+.l-wf-node[data-state="failed"] .l-wf-node__meta {
+  color: var(--l-danger-text);
+}
+/* How the last test went, in the top corner, so the name keeps the card's width. */
+.l-wf-node__side {
+  position: absolute;
+  top: 11px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-wf-node:has(.l-wf-node__side) .l-wf-node__kind {
+  padding-right: 46px;
+}
+.l-wf-node__side > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--l-danger-text);
+}
+.l-wf-node__side > .l-wf-rays {
+  color: var(--l-ink-3);
+}
+.l-wf-took {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--l-ok-text);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.l-wf-took > svg {
+  width: 13px;
+  height: 13px;
+}
+/* The check draws itself as the time lands. */
+.l-wf-took > svg path {
+  stroke-dasharray: 13;
+  animation: l-wf-tick 420ms var(--l-ease-out) 60ms backwards;
+}
+@keyframes l-wf-tick {
+  from {
+    stroke-dashoffset: 13;
+  }
+}
+
+/* One ring for the step you picked. It glides from step to step and never doubles up. */
+.l-wf-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 256px;
+  height: 80px;
+  margin: -4px 0 0 -4px;
+  border-radius: 22px;
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--l-accent) 80%, transparent),
+    0 0 0 6px color-mix(in oklab, var(--l-accent) 12%, transparent);
+  opacity: 0;
+  scale: 1.03;
+  pointer-events: none;
+  transition:
+    opacity 200ms ease,
+    scale 380ms var(--l-spring-smooth);
+}
+.l-wf-ring[data-on] {
+  opacity: 1;
+  scale: 1;
+}
+
+/* A path's name and share of runs, sitting on its line. The path a test took wears the accent. */
+.l-wf-pill-at {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+.l-wf-pill-at[data-exit] {
+  opacity: 0;
+}
+.l-wf-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--wf-node);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  color: var(--l-ink-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  transition:
+    background-color 300ms ease,
+    box-shadow 300ms ease,
+    color 300ms ease,
+    opacity 300ms ease;
+  animation: l-wf-pill-in 420ms var(--l-ease-out) backwards;
+}
+.l-wf-view[data-intro] .l-wf-pill {
+  animation-delay: 260ms;
+}
+@keyframes l-wf-pill-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+.l-wf-pill > b {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--l-ink-3);
+  font-weight: 500;
+}
+/* On a zoomed canvas the digits land between pixels; a pixel of room keeps their edges. */
+.l-wf-world .l-roll__clip {
+  margin-inline: -1px;
+  padding-inline: 1px;
+}
+.l-wf-pill[data-taken] {
+  background: color-mix(in oklab, var(--l-accent) 12%, var(--wf-node));
+  box-shadow: 0 0 0 1px var(--l-accent-line);
+  color: var(--l-accent-text);
+}
+.l-wf-pill[data-taken] > b {
+  color: inherit;
+}
+.l-wf-pill[data-dim] {
+  opacity: 0.45;
+}
+
+/* The + on each stretch of line, and the way on at the end. */
+.l-wf-add {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--wf-node);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  color: var(--l-ink-4);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    scale 300ms var(--l-spring-snappy),
+    color 160ms ease,
+    box-shadow 160ms ease,
+    opacity 200ms ease;
+  animation: l-wf-pop 380ms var(--l-spring-snappy) backwards;
+}
+.l-wf-add svg {
+  width: 12px;
+  height: 12px;
+}
+.l-wf-view[data-intro] .l-wf-add {
+  animation-delay: 520ms;
+}
+@keyframes l-wf-pop {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-wf-add:hover {
+    color: var(--l-ink);
+    box-shadow:
+      0 0 0 1px var(--l-line-strong),
+      0 2px 6px var(--l-drop);
+    scale: 1.2;
+  }
+}
+.l-wf-add:active {
+  scale: 0.92;
+  transition-duration: 90ms;
+}
+.l-wf-add[data-exit] {
+  opacity: 0;
+  scale: 0.5;
+  pointer-events: none;
+}
+.l-wf-end {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 132px;
+  height: 34px;
+  margin-left: -66px;
+  padding: 0;
+  border: 1.5px dashed var(--l-line-strong);
+  border-radius: 999px;
+  background: var(--wf-canvas);
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 200ms ease,
+    scale 300ms var(--l-spring-snappy);
+  animation: l-wf-fade 420ms ease backwards;
+}
+.l-wf-view[data-intro] .l-wf-end {
+  animation-delay: 560ms;
+}
+.l-wf-end svg {
+  width: 13px;
+  height: 13px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-wf-end:hover {
+    border-color: color-mix(in oklab, var(--l-ink) 30%, transparent);
+    background: var(--wf-node);
+    color: var(--l-ink);
+  }
+}
+.l-wf-end:active {
+  scale: 0.97;
+}
+.l-wf-end:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+.l-wf-view[data-run] :is(.l-wf-add, .l-wf-end) {
+  opacity: 0;
+  scale: 0.6;
+  pointer-events: none;
+}
+
+/* ---------- Glass over the canvas ---------- */
+.l-wf-zoom,
+.l-wf-ask,
+.l-wf-notice {
+  position: absolute;
+  z-index: 3;
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.l-wf-zoom {
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 4px;
+  border-radius: 999px;
+}
+.l-wf-tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.l-wf-tool svg {
+  width: 16px;
+  height: 16px;
+}
+.l-wf-zoom__pct {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  min-width: 46px;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-wf-zoom__sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--l-line-2);
+}
+.l-wf-ask {
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(330px, calc(100% - 192px));
+  height: 40px;
+  padding: 0 4px 0 11px;
+  border-radius: 999px;
+  transition: width 520ms var(--l-spring-smooth);
+}
+.l-wf-ask:focus-within {
+  width: min(420px, calc(100% - 192px));
+}
+.l-wf-ask__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  caret-color: var(--l-accent-text);
+}
+.l-wf-ask__input::placeholder {
+  color: var(--l-ink-4);
+}
+.l-wf-ask__send {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-primary-fill);
+  color: var(--l-primary-ink);
+  cursor: pointer;
+  opacity: 0;
+  scale: 0.6;
+  transition:
+    opacity 160ms ease,
+    scale 300ms var(--l-spring-snappy);
+}
+.l-wf-ask[data-filled] .l-wf-ask__send {
+  opacity: 1;
+  scale: 1;
+}
+.l-wf-ask[data-busy] .l-wf-ask__send {
+  opacity: 0.5;
+}
+.l-wf-ask__send svg {
+  width: 15px;
+  height: 15px;
+}
+/* What just happened, said once at the top: a test, a change, an undo. */
+.l-wf-notice {
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  min-height: 36px;
+  margin: 0 auto;
+  padding: 6px 14px 6px 12px;
+  border-radius: 18px;
+  font-size: var(--l-text-sm);
+  line-height: 1.35;
+  animation: l-wf-note-in 380ms var(--l-ease-enter) backwards;
+}
+/* A picture of the workflow tells its run on the line alone; the words go to the status region. */
+.l-wf[data-mode="view"] .l-wf-notice {
+  display: none;
+}
+.l-wf-notice:has(.l-wf-notice__act) {
+  padding-right: 5px;
+}
+@keyframes l-wf-note-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    scale: 0.96;
+  }
+}
+.l-wf-notice[data-out] {
+  opacity: 0;
+  filter: blur(3px);
+  scale: 0.97;
+  transition:
+    opacity 200ms var(--l-ease-exit),
+    filter 200ms var(--l-ease-exit),
+    scale 200ms var(--l-ease-exit);
+}
+.l-wf-notice__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--l-ink-3);
+}
+.l-wf-notice__icon > svg:not(.l-aimark) {
+  width: 16px;
+  height: 16px;
+}
+.l-wf-notice[data-tone="ok"] .l-wf-notice__icon {
+  color: var(--l-ok-text);
+}
+.l-wf-notice[data-tone="danger"] .l-wf-notice__icon {
+  color: var(--l-danger-text);
+}
+.l-wf-notice__text {
+  min-width: 0;
+  color: var(--l-ink);
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.l-wf-notice__act {
+  flex: none;
+  height: 26px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-wf-notice__act:hover {
+    background: var(--l-wash-3);
+  }
+}
+
+/* ---------- The add menu ---------- */
+.l-wf-pick {
+  z-index: 6;
+  width: 296px;
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.l-wf-pick__find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border-radius: 11px;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+}
+.l-wf-pick__find svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+.l-wf-pick__find input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+  caret-color: var(--l-accent-text);
+}
+.l-wf-pick__find input::placeholder {
+  color: var(--l-ink-4);
+}
+.l-wf-pick__list {
+  max-height: min(var(--pick-max, 340px), 340px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.l-wf-pick__glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+}
+.l-wf-pick__glyph[data-kind="ai"] {
+  background: color-mix(in oklab, var(--l-accent) 9%, transparent);
+}
+.l-wf-pick__glyph > svg:not(.l-aimark) {
+  width: 15px;
+  height: 15px;
+}
+.l-wf-pick .l-opt-label > b {
+  color: var(--l-ink);
+  font-weight: 600;
+}
+.l-wf-pick__none {
+  margin: 0;
+  padding: 16px 12px 18px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  text-align: center;
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+
+/* ---------- Settings ---------- */
+/* Every column here is held to the card's width, so a long name or a wide field never pushes past it. */
+.l-wf-ins,
+.l-wf-ins__id,
+.l-wf-ins__body,
+.l-wf-fields,
+.l-wf-sec,
+.l-wf-sheet {
+  grid-template-columns: minmax(0, 1fr);
+}
+.l-wf-ins {
+  display: grid;
+  align-content: start;
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.l-wf-ins__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 10px 12px 14px;
+  background: var(--l-card-fill);
+  box-shadow: 0 1px 0 var(--l-line);
+}
+.l-wf-ins__glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+}
+.l-wf-ins__glyph[data-kind="ai"] {
+  background: color-mix(in oklab, var(--l-accent) 9%, transparent);
+}
+.l-wf-ins__glyph > svg:not(.l-aimark) {
+  width: 18px;
+  height: 18px;
+}
+.l-wf-ins__id {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.l-wf-ins__title {
+  --ie-size: 15px;
+  --ie-weight: 600;
+  grid-template-columns: minmax(0, 1fr);
+  justify-self: start;
+  min-width: 0;
+}
+.l-wf-ins__name {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-wf-ins__sub {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-wf-ins__more .l-menu-trigger {
+  background: none;
+  box-shadow: none;
+  color: var(--l-ink-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-wf-ins__more .l-menu-trigger:hover {
+    background: var(--l-wash-2);
+    box-shadow: none;
+    color: var(--l-ink);
+  }
+}
+.l-wf-ins__more .l-menu-trigger[data-open] {
+  background: var(--l-wash-2);
+  box-shadow: none;
+  color: var(--l-ink);
+}
+.l-wf-ins__close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.l-wf-ins__close svg {
+  width: 16px;
+  height: 16px;
+}
+.l-wf-ins__body {
+  display: grid;
+  gap: 18px;
+  padding: 14px 14px 18px;
+}
+.l-wf-ins__where,
+.l-wf-ins__empty,
+.l-wf-tip {
+  margin: 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.5;
+}
+.l-wf-ins__where b {
+  color: var(--l-ink);
+  font-weight: 500;
+}
+.l-wf-fields {
+  display: grid;
+  gap: 16px;
+}
+.l-wf-sec {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--l-line);
+}
+.l-wf-sec__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+}
+.l-wf-sec__head > span {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 400;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-wf-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.l-wf-stats > span {
+  display: grid;
+  gap: 2px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-wf-stats > span > b {
+  color: var(--l-ink);
+  font-family: var(--l-font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.l-wf-paths {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-wf-paths > li {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--l-text-sm);
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.l-wf-paths__name {
+  overflow: hidden;
+  color: var(--l-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-wf-paths__bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+}
+.l-wf-paths__bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--l-accent);
+  transition: width 620ms var(--l-spring-smooth);
+}
+.l-wf-paths > li > b {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  color: var(--l-ink);
+  font-weight: 500;
+}
+.l-wf-paths__add {
+  justify-self: start;
+  margin-left: -8px;
+}
+.l-wf-test__note {
+  margin: 0;
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.l-wf-test[data-state="skipped"] .l-wf-test__note {
+  color: var(--l-ink-3);
+}
+.l-wf-out {
+  display: grid;
+  margin: 0;
+  padding: 2px 12px;
+  border-radius: 12px;
+  background: var(--l-wash);
+}
+.l-wf-out > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--l-line);
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.l-wf-out > div:first-child {
+  border-top: 0;
+}
+.l-wf-out dt {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+}
+.l-wf-out dd {
+  margin: 0;
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.l-wf-runs {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-wf-runs > li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--l-line);
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.l-wf-runs > li:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+.l-wf-runs__mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--l-danger) 12%, transparent);
+  color: var(--l-danger-text);
+}
+.l-wf-runs > li[data-ok] .l-wf-runs__mark {
+  background: color-mix(in oklab, var(--l-ok) 13%, transparent);
+  color: var(--l-ok-text);
+}
+.l-wf-runs__mark svg {
+  width: 13px;
+  height: 13px;
+}
+.l-wf-runs__text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--l-text-sm);
+}
+.l-wf-runs__text > b,
+.l-wf-runs__text > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-wf-runs__text > b {
+  color: var(--l-ink);
+  font-weight: 500;
+}
+.l-wf-runs__text > span {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-wf-runs__when {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-wf-tip__plus {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0 4px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink-3);
+  vertical-align: -4px;
+}
+.l-wf-tip__plus svg {
+  width: 10px;
+  height: 10px;
+}
+.l-wf-list__rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  list-style: none;
+}
+.l-wf-list__rows > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 5px 0 12px;
+  border-top: 1px solid var(--l-line);
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.l-wf-list__rows > li:first-child {
+  border-top: 0;
+}
+.l-wf-list__rows code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--l-ink);
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-wf-list__type {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-size: 11.5px;
+  line-height: 1.2;
+}
+.l-wf-list__rm {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-4);
+  cursor: pointer;
+  transition:
+    opacity var(--l-dur-fast) ease,
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-wf-list__rm svg {
+  width: 13px;
+  height: 13px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-wf-list__rm {
+    opacity: 0;
+  }
+  .l-wf-list__rows > li:hover .l-wf-list__rm,
+  .l-wf-list__rm:focus-visible {
+    opacity: 1;
+  }
+  .l-wf-list__rm:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.l-wf-list__add {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  height: 28px;
+  margin-left: -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--l-accent-text);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--l-dur-fast) ease;
+}
+.l-wf-list__add svg {
+  width: 14px;
+  height: 14px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-wf-list__add:hover {
+    background: var(--l-accent-soft);
+  }
+}
+
+/* ---------- Narrow: the settings rise as a sheet over the canvas ---------- */
+.l-wf-sheet {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  left: 6px;
+  z-index: 5;
+  display: grid;
+  max-height: min(62%, 440px);
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  animation: l-wf-sheet-in 560ms var(--l-spring-smooth) backwards;
+}
+@keyframes l-wf-sheet-in {
+  from {
+    translate: 0 calc(100% + 12px);
+  }
+}
+.l-wf-sheet[data-out] {
+  translate: 0 calc(100% + 12px);
+  transition: translate 240ms var(--l-ease-exit);
+}
+.l-wf-sheet__card {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.l-wf[data-narrow] .l-wf-ask {
+  width: calc(100% - 192px);
+}
+/* Phones pinch to zoom, so the zoom glass keeps only the level and Fit, and the field gets the room. */
+@container (max-width: 460px) {
+  .l-wf-tool[data-step],
+  .l-wf-zoom__sep {
+    display: none;
+  }
+  .l-wf[data-mode] .l-wf-ask {
+    width: calc(100% - 118px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-wf,
+  .l-wf-node,
+  .l-wf-node__title,
+  .l-wf-node__meta,
+  .l-wf-node__side,
+  .l-wf-wire__base,
+  .l-wf-dot,
+  .l-wf-pill,
+  .l-wf-add,
+  .l-wf-end,
+  .l-wf-notice,
+  .l-wf-notice__text,
+  .l-wf-sheet,
+  .l-wf-ins,
+  .l-wf-took > svg path {
+    animation: none;
+  }
+  .l-wf-node[data-exit] {
+    animation: none;
+    opacity: 0;
+  }
+  .l-wf-wire__lit,
+  .l-wf-wire[data-lit] .l-wf-wire__lit,
+  .l-wf-ring,
+  .l-wf-paths__bar > i,
+  .l-wf-ask,
+  .l-wf-sheet[data-out],
+  .l-wf-notice[data-out] {
+    transition: none;
+  }
+}

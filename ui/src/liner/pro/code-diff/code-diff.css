@@ -1,0 +1,433 @@
+.l-cdiff {
+  --l-frame-r: 22px;
+  /* Added and removed: the status tones as a quiet row tint, stronger on changed words. */
+  --cd-add: color-mix(in oklab, var(--l-ok) 9%, transparent);
+  --cd-add-w: color-mix(in oklab, var(--l-ok) 24%, transparent);
+  --cd-del: color-mix(in oklab, var(--l-danger) 8%, transparent);
+  --cd-del-w: color-mix(in oklab, var(--l-danger) 20%, transparent);
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+  color: var(--l-ink);
+}
+
+/* The strip: what changed and how much, then the view. */
+.l-cdiff__top {
+  gap: 10px;
+  min-height: 42px;
+  padding: 2px 4px 4px 12px;
+}
+.l-cdiff__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: var(--l-text-sm);
+}
+.l-cdiff__label {
+  overflow: hidden;
+  color: var(--l-ink);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-cdiff__tally {
+  display: inline-flex;
+  flex: none;
+  gap: 7px;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  line-height: 1;
+}
+/* The sign and the rolling digits share one line box. */
+.l-cdiff__tally > span {
+  display: inline-flex;
+  align-items: center;
+}
+.l-cdiff [data-add] {
+  color: var(--l-ok-text);
+}
+.l-cdiff [data-del] {
+  color: var(--l-danger-text);
+}
+.l-cdiff__tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.l-cdiff__view {
+  margin: 0 4px;
+}
+.l-cdiff__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition: color var(--l-dur-fast) ease;
+}
+.l-cdiff__icon svg {
+  width: 15px;
+  height: 15px;
+}
+.l-cdiff__icon[aria-pressed="true"] {
+  color: var(--l-ink);
+}
+.l-cdiff__icon:disabled {
+  cursor: default;
+}
+.l-cdiff__icon:disabled:not([aria-pressed="true"]) {
+  opacity: 0.35;
+}
+.l-cdiff__icon:disabled[aria-pressed="true"] {
+  color: var(--l-ink-4);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-cdiff__icon:not(:disabled):hover {
+    color: var(--l-ink);
+  }
+}
+
+/* The card scrolls; each file's header stays pinned while its lines pass under it. */
+.l-cdiff__card {
+  position: relative;
+  min-width: 0;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+}
+.l-cdiff__file + .l-cdiff__file {
+  border-top: 1px solid var(--l-line-2);
+}
+.l-cdiff__head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px 0 4px;
+  background: var(--l-card-fill);
+  box-shadow: 0 1px 0 var(--l-line);
+}
+.l-cdiff__name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-cdiff__name:hover {
+    background: var(--l-wash);
+  }
+}
+.l-cdiff__chev {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--l-ink-4);
+  transition: rotate 420ms var(--l-spring-smooth);
+}
+.l-cdiff__file[data-folded] .l-cdiff__chev {
+  rotate: -90deg;
+  transition-duration: 260ms;
+}
+.l-cdiff__path {
+  display: flex;
+  min-width: 0;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.l-cdiff__dir {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+}
+.l-cdiff__path b {
+  flex: none;
+  font-weight: 500;
+}
+.l-cdiff__status {
+  flex: none;
+  overflow: hidden;
+  max-width: 40%;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-cdiff__status[data-status="New"] {
+  background: var(--cd-add);
+  color: var(--l-ok-text);
+}
+.l-cdiff__status[data-status="Deleted"] {
+  background: var(--cd-del);
+  color: var(--l-danger-text);
+}
+.l-cdiff__counts {
+  display: flex;
+  flex: none;
+  gap: 7px;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+
+/* Folding a file: its lines close up under the header without being measured. Exits are quicker. */
+.l-cdiff__body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 420ms var(--l-spring-smooth);
+}
+.l-cdiff__file[data-folded] .l-cdiff__body {
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms var(--l-ease-out);
+}
+/* clip, not hidden: hidden would become the scroller that sticky gutters stick to. */
+.l-cdiff__clip {
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+}
+.l-cdiff__scroll {
+  padding: 4px 0;
+  overflow-x: auto;
+  outline: none;
+  scrollbar-width: thin;
+}
+.l-cdiff__scroll:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--l-accent) 55%, transparent);
+}
+.l-cdiff__same {
+  margin: 0;
+  padding: 12px 16px 14px 34px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+}
+
+/* Lines: number, sign, code. Syntax in ink and one accent, as Code block draws it. */
+.l-cdiff__rows {
+  --cd-gut: calc(var(--cd-digits, 3) * 1ch + 22px);
+  --t-k: var(--l-accent-text);
+  --t-s: var(--l-ink-3);
+  --t-t: var(--l-ink);
+  --t-n: var(--l-ink-2);
+  --t-f: var(--l-ink);
+  --t-y: var(--l-ink);
+  --t-a: var(--l-ink-3);
+  display: grid;
+  min-width: max-content;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  tab-size: 2;
+}
+.l-cdiff[data-wrap] .l-cdiff__rows,
+.l-cdiff[data-view="split"] .l-cdiff__rows {
+  min-width: 0;
+}
+.l-cdiff__line {
+  display: grid;
+  grid-template-columns: var(--cd-gut) 16px minmax(0, 1fr);
+  min-height: 1.7em;
+  background: var(--cd-bg, transparent);
+}
+.l-cdiff__line[data-kind="add"] {
+  --cd-bg: var(--cd-add);
+  --cd-w: var(--cd-add-w);
+  --cd-bar: var(--l-ok);
+  --cd-ink: var(--l-ok-text);
+}
+.l-cdiff__line[data-kind="del"] {
+  --cd-bg: var(--cd-del);
+  --cd-w: var(--cd-del-w);
+  --cd-bar: var(--l-danger);
+  --cd-ink: var(--l-danger-text);
+}
+/* The gutter holds still while long lines scroll, so it needs the card under its tint. */
+.l-cdiff__n {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding-right: 10px;
+  background: linear-gradient(var(--cd-bg, transparent) 0 0), var(--l-card-fill);
+  box-shadow: inset 2px 0 0 var(--cd-bar, transparent);
+  color: var(--cd-ink, var(--l-ink-5));
+  text-align: right;
+  user-select: none;
+}
+.l-cdiff__sign {
+  color: var(--cd-ink);
+  user-select: none;
+}
+.l-cdiff__code {
+  padding-right: 18px;
+  white-space: pre;
+}
+.l-cdiff__code .l-sr-only {
+  user-select: none;
+}
+.l-cdiff[data-wrap] .l-cdiff__code,
+.l-cdiff[data-view="split"] .l-cdiff__code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.l-cdiff__w {
+  border-radius: 3px;
+  background: var(--cd-w);
+  color: inherit;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* Split: before on the left, after on the right, a hairline between. */
+.l-cdiff__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.l-cdiff__pair > .l-cdiff__line + .l-cdiff__line {
+  box-shadow: inset 1px 0 0 var(--l-line-2);
+}
+.l-cdiff__pair > .l-cdiff__line + .l-cdiff__line .l-cdiff__n {
+  box-shadow:
+    inset 1px 0 0 var(--l-line-2),
+    inset 3px 0 0 var(--cd-bar, transparent);
+}
+.l-cdiff__line[data-empty] {
+  background: repeating-linear-gradient(-45deg, var(--l-wash) 0 1px, transparent 1px 7px);
+}
+
+/* An unchanged run, folded to one quiet line. Pressed, it gives way as the lines open below. */
+.l-cdiff__fold {
+  display: grid;
+}
+.l-cdiff__bar {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 260ms var(--l-ease-out),
+    opacity 140ms ease;
+}
+.l-cdiff__fold[data-open] .l-cdiff__bar {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.l-cdiff__unfold {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+  font: inherit;
+  font-family: var(--l-font-body);
+  font-size: var(--l-text-xs);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-cdiff__unfold:focus-visible {
+  outline-offset: -2px;
+}
+.l-cdiff__unfold > span {
+  position: sticky;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 30px;
+}
+/* The glyph sits under the numbers and the words line up with the code. */
+.l-cdiff__unfold svg {
+  box-sizing: content-box;
+  width: 14px;
+  height: 14px;
+  padding: 0 10px 0 calc(var(--cd-gut) - 24px);
+  color: var(--l-ink-4);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-cdiff__unfold:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.l-cdiff__more {
+  display: grid;
+  grid-template-rows: 1fr;
+  outline: none;
+  transition: grid-template-rows 480ms var(--l-spring-smooth);
+}
+@starting-style {
+  .l-cdiff__more {
+    grid-template-rows: 0fr;
+  }
+}
+/* The opened lines come into focus as they make room. */
+.l-cdiff__more > .l-cdiff__clip {
+  animation: l-unblur 420ms var(--l-ease-out) backwards;
+}
+
+/* One accent bar glides to the change you step to. */
+.l-cdiff__here {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--l-accent);
+  pointer-events: none;
+  transition:
+    translate 480ms var(--l-spring-smooth),
+    height 480ms var(--l-spring-smooth),
+    opacity 220ms ease;
+}
+@starting-style {
+  .l-cdiff__here {
+    opacity: 0;
+  }
+}
+
+/* In a narrow column the strip keeps the totals and the steps. */
+@container (max-width: 380px) {
+  .l-cdiff__label {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-cdiff__body,
+  .l-cdiff__bar,
+  .l-cdiff__more,
+  .l-cdiff__here,
+  .l-cdiff__chev {
+    transition: none;
+  }
+  .l-cdiff__more > .l-cdiff__clip {
+    animation: none;
+  }
+}

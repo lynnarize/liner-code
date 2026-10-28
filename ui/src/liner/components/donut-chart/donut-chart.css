@@ -1,0 +1,86 @@
+.l-donut {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin: 4px 0;
+}
+.l-donut svg {
+  width: auto !important;
+  overflow: visible;
+}
+.l-donut__seg {
+  outline: none;
+  cursor: pointer;
+  animation: l-viz-fade 600ms var(--l-ease-out) backwards;
+  transition:
+    fill 220ms ease,
+    d 360ms var(--l-spring-snappy);
+}
+.l-donut__seg:focus-visible {
+  stroke: var(--l-ink);
+  stroke-width: 2;
+}
+.l-donut__center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+.l-donut__center b {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.l-donut__center span {
+  max-width: 100px;
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.l-donut__legend {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--l-text-sm);
+}
+.l-donut__legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 9px;
+  transition: background-color 160ms ease;
+}
+.l-donut__legend li.is-lit {
+  background: var(--l-wash);
+}
+.l-donut__legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2.5px;
+  transition: background-color 220ms ease;
+}
+.l-donut__legend span {
+  flex: 1;
+  color: var(--l-ink-2);
+}
+.l-donut__legend b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.l-donut__legend em {
+  width: 38px;
+  color: var(--l-ink-3);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

@@ -1,0 +1,66 @@
+/* A quiet trigger: no plate until you point at it, so it reads as the sidebar's title. */
+.l-wsw {
+  max-width: 100%;
+}
+.l-wsw .l-menu-trigger {
+  gap: 8px;
+  max-width: 100%;
+  height: 34px;
+  padding: 0 8px 0 5px;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--l-text-md);
+  font-weight: 600;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-wsw .l-menu-trigger:hover {
+    background: var(--l-wash-2);
+    box-shadow: none;
+  }
+}
+.l-wsw .l-menu-trigger[data-open] {
+  background: var(--l-wash-2);
+  box-shadow: none;
+}
+.l-wsw__tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--l-primary-solid);
+  color: var(--l-primary-ink);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+}
+.l-wsw__tile[data-size="sm"] {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 10.5px;
+}
+.l-wsw__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 260ms var(--l-ease-out) backwards;
+}
+.l-wsw .l-menu {
+  min-width: 240px;
+}
+.l-wsw .l-opt-icon {
+  width: 20px;
+}
+/* In a folded Sidebar only the tile stays, centred on the rail. */
+.l-side[data-collapsed] .l-wsw .l-menu-trigger {
+  gap: 0;
+  padding: 0 5px;
+}
+.l-side[data-collapsed] .l-wsw :is(.l-wsw__name, .l-menu-chev) {
+  width: 0 !important;
+  max-width: 0;
+}

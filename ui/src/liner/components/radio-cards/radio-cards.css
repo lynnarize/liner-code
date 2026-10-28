@@ -1,0 +1,124 @@
+.l-rcards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.l-rcard {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 14px 14px 16px;
+  border-radius: 18px;
+  background: var(--l-card-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  color: var(--l-ink);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition:
+    box-shadow 220ms var(--l-ease-out),
+    scale 260ms var(--l-ease-snap),
+    background-color 200ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-rcard:hover:not([data-on]):not([aria-disabled]) {
+    box-shadow:
+      inset 0 0 0 1px var(--l-line-strong),
+      0 2px 8px -2px var(--l-drop);
+  }
+}
+.l-rcard:active:not([aria-disabled]) {
+  scale: 0.985;
+}
+.l-rcard:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+.l-rcard[data-on] {
+  box-shadow:
+    inset 0 0 0 1.5px var(--l-ink),
+    0 4px 16px -6px var(--l-drop);
+}
+.l-rcard[aria-disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.l-rcard__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: 20px;
+  margin-bottom: 6px;
+}
+.l-rcard__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+}
+.l-rcard__icon svg {
+  width: 17px;
+  height: 17px;
+}
+.l-rcard__radio {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--l-line-strong);
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+}
+.l-rcard__radio::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: inherit;
+  background: var(--l-on-ink);
+  scale: 0;
+  transition: scale 320ms var(--l-ease-pop);
+}
+.l-rcard[data-on] .l-rcard__radio {
+  background: var(--l-ink);
+  box-shadow: none;
+}
+.l-rcard[data-on] .l-rcard__radio::after {
+  scale: 1;
+}
+.l-rcard__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--l-text-md);
+  font-weight: 600;
+}
+.l-rcard__badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.l-rcard__desc {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  line-height: 1.45;
+}
+.l-rcard__meta {
+  margin-top: 8px;
+  color: var(--l-ink);
+  font-size: var(--l-text-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

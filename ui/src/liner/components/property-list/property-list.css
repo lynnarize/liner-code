@@ -1,0 +1,61 @@
+.l-props {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  color: var(--l-ink);
+  font-size: 13.5px;
+}
+.l-props__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  min-height: 32px;
+}
+.l-props dt {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  color: var(--l-ink-3);
+}
+.l-props__icon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--l-ink-4);
+}
+.l-props__icon svg {
+  width: 16px;
+  height: 16px;
+}
+.l-props dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-props[data-layout="stacked"] {
+  gap: 12px;
+}
+.l-props[data-layout="stacked"] .l-props__row {
+  display: grid;
+  gap: 3px;
+  min-height: 0;
+}
+.l-props[data-layout="stacked"] dd {
+  padding-left: 25px;
+  text-align: left;
+  white-space: normal;
+}
+.l-props[data-layout="stacked"] .l-props__row:not(:has(.l-props__icon)) dd {
+  padding-left: 0;
+}

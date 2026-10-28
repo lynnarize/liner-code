@@ -1,0 +1,63 @@
+.l-menu {
+  min-width: 220px;
+}
+.l-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--l-h-sm);
+  padding: 0 10px 0 12px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    box-shadow var(--l-dur-fast) ease,
+    scale 260ms var(--l-ease-snap);
+}
+.l-menu-trigger:hover,
+.l-menu-trigger[data-open] {
+  background: var(--l-ctl-fill-hover);
+  box-shadow: var(--l-ctl-shadow-hover);
+}
+.l-menu-trigger:active {
+  scale: 0.97;
+}
+.l-menu-trigger[data-icon-only] {
+  justify-content: center;
+  width: var(--l-h-sm);
+  padding: 0;
+}
+.l-menu-trigger svg {
+  width: 16px;
+  height: 16px;
+}
+.l-menu-chev {
+  width: 14px !important;
+  height: 14px !important;
+  color: var(--l-ink-4);
+  transition: rotate 300ms var(--l-ease-snap);
+}
+.l-menu-trigger[data-open] .l-menu-chev {
+  rotate: 180deg;
+}
+
+/* Context menu: the area it belongs to, and a panel at the pointer. */
+.l-context {
+  position: relative;
+  outline: none;
+  -webkit-touch-callout: none;
+}
+.l-context:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+.l-context-panel {
+  transform-origin: 0 0;
+}

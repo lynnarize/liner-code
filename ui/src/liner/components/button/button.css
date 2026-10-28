@@ -1,0 +1,276 @@
+.l-btn {
+  --b-h: var(--l-h-md);
+  --b-px: 16px;
+  --b-r: var(--l-r-control);
+  --b-fs: var(--l-text-md);
+  --b-gap: 8px;
+  position: relative;
+  isolation: isolate;
+  display: inline-grid;
+  place-items: center;
+  height: var(--b-h);
+  padding: 0 var(--b-px);
+  border: 0;
+  border-radius: var(--b-r);
+  font: inherit;
+  font-size: var(--b-fs);
+  font-weight: 500;
+  letter-spacing: var(--l-track-body);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--l-dur-fast) var(--l-ease-out),
+    box-shadow var(--l-dur-fast) var(--l-ease-out),
+    color var(--l-dur-fast) var(--l-ease-out),
+    opacity var(--l-dur-fast) ease,
+    scale var(--l-dur-spring-snappy) var(--l-spring-snappy);
+}
+.l-btn[data-size="sm"] {
+  --b-h: var(--l-h-sm);
+  --b-px: 12px;
+  --b-r: 11px;
+  --b-fs: var(--l-text-sm);
+  --b-gap: 6px;
+}
+.l-btn[data-size="lg"] {
+  --b-h: var(--l-h-lg);
+  --b-px: 20px;
+  --b-r: 16px;
+  --b-fs: 15px;
+}
+.l-btn[data-icon-only] {
+  width: var(--b-h);
+  padding: 0;
+}
+
+/* A soft overlay tints any fill on hover without knowing its color. */
+.l-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-btn:hover:not(:disabled, [aria-disabled="true"])::after {
+    opacity: 0.06;
+  }
+}
+
+/* Press: quick in, spring out. Icon-only presses a little deeper. */
+.l-btn[data-press]:active:not(:disabled, [aria-disabled="true"]) {
+  scale: 0.97;
+  transition-duration: var(--l-dur-instant);
+  transition-timing-function: var(--l-ease-out);
+}
+.l-btn[data-press][data-icon-only]:active:not(:disabled, [aria-disabled="true"]) {
+  scale: 0.92;
+}
+
+/* Variants */
+.l-btn[data-variant="primary"] {
+  background: var(--l-primary-fill);
+  color: var(--l-primary-ink);
+  box-shadow: var(--l-primary-shadow);
+}
+.l-btn[data-variant="accent"] {
+  background: var(--l-accent-fill);
+  color: var(--l-accent-ink);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.22), 0 1px 2px var(--l-drop), 0 6px 16px -8px color-mix(in oklab, var(--l-accent) 60%, transparent);
+}
+.l-btn[data-variant="accent"]:disabled {
+  opacity: 0.45;
+}
+.l-btn[data-variant="secondary"],
+.l-btn[data-variant="danger"] {
+  background: var(--l-ctl-fill);
+  color: var(--l-ink);
+  box-shadow: var(--l-ctl-shadow);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-btn[data-variant="secondary"]:hover:not(:disabled, [aria-disabled="true"]),
+  .l-btn[data-variant="danger"]:hover:not(:disabled, [aria-disabled="true"]) {
+    box-shadow: var(--l-ctl-shadow-hover);
+  }
+}
+.l-btn[data-variant="danger"] {
+  color: var(--l-danger-text);
+}
+.l-btn[data-variant="ghost"] {
+  background: transparent;
+  color: var(--l-ink-2);
+}
+.l-btn[data-variant="ghost"]::after {
+  background: var(--l-ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-btn[data-variant="ghost"]:hover:not(:disabled, [aria-disabled="true"]) {
+    color: var(--l-ink);
+  }
+  .l-btn[data-variant="ghost"]:hover:not(:disabled, [aria-disabled="true"])::after {
+    opacity: 0.07;
+  }
+}
+
+/* Disabled: primary fades whole; others keep their shape and mute the label. */
+.l-btn:disabled {
+  cursor: not-allowed;
+}
+.l-btn[data-variant="primary"]:disabled {
+  opacity: 0.45;
+}
+.l-btn[data-variant="secondary"]:disabled,
+.l-btn[data-variant="danger"]:disabled,
+.l-btn[data-variant="ghost"]:disabled {
+  color: var(--l-ink-5);
+}
+.l-btn[data-loading] {
+  cursor: progress;
+}
+
+/* Width morph */
+.l-btn__sizer {
+  display: grid;
+  justify-items: center;
+  overflow: visible;
+}
+.l-btn__sizer[data-ready] {
+  transition: width var(--l-dur-spring-snappy) var(--l-spring-snappy);
+}
+.l-btn__content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--b-gap);
+  width: max-content;
+}
+
+/* Leading slot: the icon and spinner swap with a blur, never a hard cut. */
+.l-btn__lead {
+  position: relative;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  margin-inline-start: -2px;
+}
+.l-btn[data-icon-only] .l-btn__lead {
+  margin: 0;
+}
+.l-btn__lead > * {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity var(--l-dur-fast) ease,
+    scale var(--l-dur-base) var(--l-ease-out),
+    filter var(--l-dur-fast) ease;
+}
+.l-btn__lead svg {
+  width: 16px;
+  height: 16px;
+}
+.l-btn__icon[data-hide] {
+  opacity: 0;
+  scale: 0.6;
+  filter: blur(2px);
+}
+.l-btn__spin {
+  opacity: 0;
+  scale: 0.6;
+  filter: blur(2px);
+}
+.l-btn__spin[data-show] {
+  opacity: 1;
+  scale: 1;
+  filter: none;
+}
+/* Turns only while it shows: every button with an icon carries one. */
+.l-btn__spin[data-show] svg {
+  animation: l-spin 0.7s linear infinite;
+}
+.l-btn__end {
+  display: grid;
+  margin-inline-end: -3px;
+  transition: translate var(--l-dur-base) var(--l-ease-snap);
+}
+.l-btn__end svg {
+  width: 16px;
+  height: 16px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-btn:hover:not(:disabled) .l-btn__end {
+    translate: 2px 0;
+  }
+}
+
+/* Label crossfade */
+.l-btn__label {
+  position: relative;
+  display: inline-grid;
+  justify-items: center;
+}
+.l-btn__text[data-enter] {
+  animation: l-btn-in var(--l-dur-slow) var(--l-ease-out) both;
+}
+.l-btn__ghost {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  pointer-events: none;
+  animation: l-btn-out 180ms var(--l-ease-exit) both;
+}
+@keyframes l-btn-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(35%);
+  }
+}
+@keyframes l-btn-out {
+  to {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(-35%);
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-btn[data-size="sm"] {
+    --b-h: 40px;
+  }
+  .l-btn[data-size="md"] {
+    --b-h: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-btn,
+  .l-btn__sizer[data-ready] {
+    transition-property: background, box-shadow, color, opacity;
+  }
+  .l-btn[data-press]:active {
+    scale: none;
+  }
+  .l-btn__text[data-enter] {
+    animation: l-btn-fade 120ms linear both;
+  }
+  .l-btn__ghost {
+    animation: l-btn-fade-out 120ms linear both;
+  }
+}
+@keyframes l-btn-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes l-btn-fade-out {
+  to {
+    opacity: 0;
+  }
+}

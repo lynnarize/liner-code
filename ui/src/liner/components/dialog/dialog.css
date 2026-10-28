@@ -1,0 +1,140 @@
+/* Shared by Dialog, Drawer and Bottom sheet: the dim, soft page behind a modal. */
+.l-dialog,
+.l-drawer,
+.l-sheet {
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--l-ink);
+  overflow: visible;
+}
+.l-dialog::backdrop,
+.l-drawer::backdrop,
+.l-sheet::backdrop {
+  background: var(--l-scrim);
+  animation: l-scrim-in 260ms ease backwards;
+}
+/* With live blur the page behind softens too. */
+[data-blur="live"] .l-dialog::backdrop,
+[data-blur="live"] .l-drawer::backdrop,
+[data-blur="live"] .l-sheet::backdrop {
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+}
+.l-dialog[data-closing]::backdrop,
+.l-drawer[data-closing]::backdrop,
+.l-sheet[data-closing]::backdrop {
+  animation: l-scrim-out 220ms ease forwards;
+}
+@keyframes l-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes l-scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+.l-dialog {
+  --w: 440px;
+  width: min(var(--w), calc(100vw - 32px));
+  margin: auto;
+}
+.l-dialog[data-size="sm"] {
+  --w: 380px;
+}
+.l-dialog[data-size="lg"] {
+  --w: 600px;
+}
+.l-dialog__frame {
+  display: grid;
+  animation: l-dialog-in 420ms var(--l-spring-snappy) backwards;
+}
+.l-dialog[data-closing] .l-dialog__frame {
+  animation: l-dialog-out 200ms var(--l-ease-exit) forwards;
+}
+@keyframes l-dialog-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+    translate: 0 8px;
+  }
+}
+@keyframes l-dialog-out {
+  to {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+.l-dialog__card {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  padding: 22px 22px 20px;
+}
+.l-dialog__x {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--l-ink-4);
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-dialog__x:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-dialog__x svg {
+  width: 15px;
+  height: 15px;
+}
+.l-dialog__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+  border-radius: 13px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+}
+.l-dialog__icon svg {
+  width: 20px;
+  height: 20px;
+}
+.l-dialog__title {
+  margin: 0;
+  padding-right: 28px;
+  font-family: var(--l-font-display);
+  font-size: var(--l-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--l-track-display);
+}
+.l-dialog__desc {
+  margin: 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-md);
+  line-height: 1.5;
+}
+.l-dialog__body {
+  margin-top: 12px;
+}
+.l-dialog__actions {
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 6px 2px;
+}

@@ -1,0 +1,140 @@
+.l-presence__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: calc(var(--av) + 10px);
+  padding: 0 12px 0 5px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--l-dur-fast) ease;
+}
+.l-presence__btn:hover,
+.l-presence__btn[aria-expanded="true"] {
+  background: var(--l-ctl-fill-hover);
+}
+.l-presence__btn:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+.l-presence__stack {
+  display: inline-flex;
+  padding-left: calc(var(--av) * 0.3);
+}
+.l-presence__face {
+  position: relative;
+  display: inline-grid;
+  margin-left: calc(var(--av) * -0.3);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--l-ctl-fill, var(--l-card-fill));
+  transition:
+    margin 360ms var(--l-spring-snappy),
+    opacity 300ms ease,
+    filter 300ms ease,
+    scale 300ms ease;
+}
+/* Editing faces wear a thin accent ring. */
+.l-presence__face[data-activity="editing"]::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 1.5px var(--l-accent);
+}
+.l-presence__face[data-joined] {
+  animation: l-presence-join 600ms var(--l-spring-bouncy) backwards;
+}
+.l-presence__face[data-joined]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  animation: l-presence-ring 900ms var(--l-ease-out) forwards;
+  pointer-events: none;
+}
+@keyframes l-presence-join {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+@keyframes l-presence-ring {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--l-accent) 55%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+.l-presence__face[data-leaving] {
+  margin-left: calc(var(--av) * -1);
+  opacity: 0;
+  filter: blur(4px);
+  scale: 0.7;
+}
+.l-presence__more {
+  display: grid;
+  place-items: center;
+  width: var(--av);
+  height: var(--av);
+  background: var(--l-surface-2);
+  color: var(--l-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+.l-presence__line {
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  white-space: nowrap;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-presence__line[data-typing] {
+  background: linear-gradient(100deg, var(--l-ink-3) 35%, var(--l-ink) 50%, var(--l-ink-3) 65%) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation:
+    l-swap-in 280ms var(--l-ease-out) backwards,
+    l-shimmer-text 1.9s linear infinite;
+}
+.l-presence__pop {
+  width: 260px;
+  padding: 8px;
+  border-radius: 18px;
+}
+.l-presence__head {
+  padding: 4px 8px 8px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-presence__pop ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-presence__pop li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  font-size: var(--l-text-md);
+}
+.l-presence__pop li span {
+  flex: 1;
+}
+.l-presence__pop em {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-style: normal;
+}
+.l-presence__pop em[data-activity="editing"] {
+  color: var(--l-accent-text);
+}

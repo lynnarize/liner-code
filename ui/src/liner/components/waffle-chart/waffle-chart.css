@@ -1,0 +1,28 @@
+.l-waffle {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  gap: 3px;
+  width: min(100%, 240px);
+  aspect-ratio: 1;
+  margin: 4px auto;
+}
+.l-waffle__cell {
+  border-radius: 3px;
+  animation: l-waffle-in 420ms var(--l-spring-snappy) backwards;
+  transition:
+    opacity 200ms ease,
+    scale 240ms var(--l-ease-snap);
+}
+@keyframes l-waffle-in {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+.l-waffle[data-hot] .l-waffle__cell:not(.is-hot) {
+  opacity: 0.35;
+}
+.l-waffle__cell.is-hot {
+  scale: 1.06;
+}

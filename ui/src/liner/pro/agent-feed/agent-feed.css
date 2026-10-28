@@ -1,0 +1,465 @@
+/* The feed is a frame (.l-frame): the case is the white card, where it stands and your one
+   press ride on the glass under it, the same place the PR flow keeps its press, and the
+   question field sits below that. */
+.l-feed {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 420px;
+  height: 560px;
+  color: var(--l-ink);
+}
+.l-feed-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---------- Who is making the case ---------- */
+.l-feed-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 12px 12px;
+  box-shadow: inset 0 -1px 0 var(--l-line);
+}
+.l-feed-who {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+.l-feed-who b {
+  overflow: hidden;
+  font-size: var(--l-text-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-feed-who > span {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-feed-state {
+  display: inline-block;
+  animation: l-swap-in 320ms var(--l-ease-out) backwards;
+}
+.l-feed-state[data-status="waiting on you"],
+.l-feed-state[data-status="holding for you"] {
+  color: var(--l-warn-text);
+}
+.l-feed-state[data-status="done"] {
+  color: var(--l-ok-text);
+}
+.l-feed-tally {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+
+.l-feed-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 14px), transparent);
+}
+.l-feed-scroll::-webkit-scrollbar {
+  display: none;
+}
+.l-feed-content {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px 18px;
+}
+
+/* ---------- The case ---------- */
+.l-feed-case {
+  display: grid;
+  gap: 2px;
+}
+.l-feed-amount {
+  font-family: var(--l-font-display);
+  font-size: var(--l-text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.l-feed-case-sub {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  line-height: 1.45;
+}
+
+/* Each claim: a mark that says how it stands, the claim, and its proof under it. */
+.l-feed-checks {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-feed-check {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 0;
+}
+.l-feed-check + .l-feed-check {
+  box-shadow: inset 0 1px 0 var(--l-line);
+}
+.l-feed-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--l-ink-4);
+  animation: l-feed-pop 300ms var(--l-ease-out) backwards;
+}
+.l-feed-mark svg {
+  width: 20px;
+  height: 20px;
+}
+.l-feed-mark-n {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink-3);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.l-feed-mark-ok {
+  border-radius: 99px;
+  background: color-mix(in oklab, var(--l-ok) 16%, transparent);
+}
+.l-feed-mark-ok path {
+  stroke: color-mix(in oklab, var(--l-ok) 80%, var(--l-ink));
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-feed-draw 360ms var(--l-ease-out) 60ms forwards;
+}
+.l-feed-mark-wait {
+  border-radius: 99px;
+  background: color-mix(in oklab, var(--l-warn) 20%, transparent);
+}
+.l-feed-mark-wait path {
+  stroke: color-mix(in oklab, var(--l-warn) 80%, var(--l-ink));
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.l-feed-mark-no {
+  border-radius: 99px;
+  background: color-mix(in oklab, var(--l-danger) 16%, transparent);
+}
+.l-feed-mark-no path {
+  stroke: var(--l-danger-text);
+  stroke-width: 1.9;
+  stroke-linecap: round;
+}
+.l-feed-mark-you {
+  width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  background: radial-gradient(circle, var(--l-warn) 0 3.5px, transparent 4px);
+  box-shadow: inset 0 0 0 1.5px var(--l-warn);
+  animation: l-feed-ping 1.5s var(--l-ease-in-out) 3;
+}
+@keyframes l-feed-pop {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+@keyframes l-feed-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes l-feed-ping {
+  50% {
+    box-shadow:
+      inset 0 0 0 1.5px var(--l-warn),
+      0 0 0 4px color-mix(in oklab, var(--l-warn) 18%, transparent);
+  }
+}
+.l-feed-check-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.l-feed-claim {
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+  line-height: 20px;
+}
+.l-feed-check[data-mark="pending"] .l-feed-claim {
+  color: var(--l-ink-3);
+  font-weight: 500;
+}
+.l-feed-proof {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  line-height: 1.5;
+  text-wrap: pretty;
+  animation: l-swap-in 320ms var(--l-ease-out) backwards;
+}
+.l-feed-proof[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.l-feed-proof[data-tone="bad"] {
+  color: var(--l-danger-text);
+}
+.l-feed-proof[data-tone="quiet"] {
+  color: var(--l-ink-3);
+}
+.l-feed-proof[data-tone="live"] {
+  background: linear-gradient(100deg, var(--l-ink-3) 35%, var(--l-ink) 50%, var(--l-ink-3) 65%) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation:
+    l-swap-in 320ms var(--l-ease-out) backwards,
+    l-shimmer-text 1.9s linear infinite;
+}
+/* One pip per thing counted: ink once it matches, amber while it is missing. */
+.l-feed-pips {
+  display: flex;
+  gap: 3px;
+  margin-top: 3px;
+}
+.l-feed-pips i {
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--l-wash-3);
+  transition: background-color 240ms ease;
+}
+.l-feed-pips i[data-on] {
+  background: var(--l-ink-2);
+}
+.l-feed-pips i[data-missing] {
+  background: var(--l-warn);
+}
+.l-feed-pips i[data-bad] {
+  background: color-mix(in oklab, var(--l-danger) 70%, var(--l-wash-3));
+}
+
+/* Questions, answered under the claim they are about, or at the foot for anything else. */
+.l-feed-qa {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--l-surface-2);
+  animation: l-blur-in 360ms var(--l-ease-out) backwards;
+}
+.l-feed-qa[data-free] {
+  margin-top: 0;
+}
+.l-feed-q {
+  justify-self: end;
+  max-width: 90%;
+  padding: 6px 11px;
+  border-radius: 13px 13px 4px 13px;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.l-feed-a {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.l-feed-reading {
+  justify-self: start;
+  padding-top: 1px;
+  font-size: var(--l-text-xs);
+  animation: l-unblur 400ms var(--l-ease-out) both;
+}
+.l-feed-md {
+  font-size: var(--l-text-xs);
+  line-height: 1.55;
+}
+.l-feed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.l-feed-chip {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    box-shadow var(--l-dur-fast) ease,
+    scale 240ms var(--l-ease-out);
+  animation: l-blur-in 420ms var(--l-ease-out) both;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-feed-chip:hover {
+    box-shadow: var(--l-ctl-shadow-hover);
+  }
+}
+.l-feed-chip:active {
+  scale: 0.96;
+}
+
+.l-feed-jump {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: -15px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: var(--l-float);
+  box-shadow: var(--l-shadow-float);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  color: var(--l-ink-2);
+  cursor: pointer;
+  opacity: 0;
+  scale: 0.8;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    scale 260ms var(--l-ease-out);
+}
+.l-feed-jump[data-show] {
+  opacity: 1;
+  scale: 1;
+  pointer-events: auto;
+}
+.l-feed-jump svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* ---------- On the glass: where it stands, and your press ---------- */
+.l-feed-decide {
+  gap: 10px;
+  min-height: 52px;
+  padding: 4px 4px 0 12px;
+}
+.l-feed-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  animation: l-swap-in 300ms var(--l-ease-out) backwards;
+}
+.l-feed-now > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-feed-now-ico {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+.l-feed-now-ico svg {
+  width: 16px;
+  height: 16px;
+}
+.l-feed-now-ico[data-tone="warn"]::before,
+.l-feed-now-ico[data-tone="bad"]::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--l-warn);
+}
+.l-feed-now-ico[data-tone="bad"]::before {
+  background: var(--l-danger);
+}
+.l-feed-step {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-feed-buttons {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  animation: l-swap-in 300ms var(--l-ease-out) backwards;
+}
+.l-feed-receipt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  animation: l-blur-in 360ms var(--l-ease-out) backwards;
+}
+.l-feed-receipt > span:last-child {
+  display: grid;
+  min-width: 0;
+  line-height: 1.3;
+}
+.l-feed-receipt b {
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+}
+.l-feed-receipt > span:last-child > span {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-feed-tick {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 99px;
+  background: var(--l-ok);
+  color: var(--l-surface);
+}
+.l-feed-tick svg {
+  width: 16px;
+  height: 16px;
+}
+.l-feed-tick path {
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-feed-draw 380ms var(--l-ease-out) 120ms forwards;
+}

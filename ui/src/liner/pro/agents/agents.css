@@ -1,0 +1,228 @@
+/* Agent avatar: a quiet grey disc with an ink glyph. Only the status badge carries color. */
+.l-agent {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 999px;
+  background: var(--l-surface-3);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+  transition: opacity 300ms ease;
+}
+.l-agent[data-dim] {
+  opacity: 0.5;
+}
+.l-agent-glyph {
+  width: 62%;
+  height: 62%;
+}
+.l-agent-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 45%;
+  min-width: 11px;
+  aspect-ratio: 1;
+  border-radius: 99px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1.5px var(--l-surface);
+  color: var(--l-ink-3);
+  animation: l-agent-badge-in 320ms var(--l-ease-snap) both;
+}
+.l-agent-badge svg {
+  width: 100%;
+  height: 100%;
+}
+.l-agent[data-status="done"] .l-agent-badge {
+  background: var(--l-ok);
+  color: var(--l-surface);
+}
+.l-agent[data-status="done"] .l-agent-badge path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-agent-draw 360ms var(--l-ease-out) 120ms forwards;
+}
+.l-agent[data-status="waiting"] .l-agent-badge {
+  background: var(--l-warn);
+  box-shadow: 0 0 0 1.5px var(--l-surface);
+}
+.l-agent[data-status="waiting"] .l-agent-badge::after {
+  content: "";
+  width: 40%;
+  height: 40%;
+  border-radius: 99px;
+  background: var(--l-surface);
+  animation: l-agent-pulse 1.4s var(--l-ease-in-out) infinite;
+}
+.l-agent[data-status="working"] .l-agent-badge {
+  color: var(--l-accent);
+}
+/* The span turns, not the svg: inside a zoomed parent (a docs preview, a scaled screen) Chrome
+   runs any SVG transform animation on the main thread, every frame. */
+.l-agent-spin {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  animation: l-spin 0.9s linear infinite;
+}
+@keyframes l-agent-badge-in {
+  from {
+    scale: 0.4;
+    opacity: 0;
+  }
+}
+@keyframes l-agent-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes l-agent-pulse {
+  50% {
+    scale: 0.6;
+    opacity: 0.6;
+  }
+}
+
+/* Person or organisation */
+.l-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 8px 0 3px;
+  border-radius: 99px;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.l-who-tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 99px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 0.5px var(--l-line-2);
+  color: var(--l-ink-2);
+  font-size: 9.5px;
+  font-weight: 650;
+}
+.l-who[data-kind="org"] .l-who-tile {
+  border-radius: 5px;
+}
+
+/* The ask line: a white field on the glass strip under the card, shaped like the pill above
+   it on the desk. It is one of the field family: a hairline that darkens on hover and turns
+   to ink on focus. */
+.l-agent-ask {
+  justify-self: stretch;
+  display: block;
+  min-height: 0;
+  padding: 6px 0 0;
+}
+.l-agent-ask__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  padding: 0 6px 0 8px;
+  border-radius: 999px;
+  background: var(--l-field-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  transition: box-shadow 180ms var(--l-ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-agent-ask__field:hover {
+    box-shadow:
+      inset 0 0 0 1px var(--l-line-strong),
+      0 1px 2px var(--l-drop);
+  }
+}
+.l-agent-ask__field:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 3px var(--l-wash-2);
+}
+.l-agent-ask__icon {
+  display: grid;
+  flex: none;
+}
+.l-agent-ask__add {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--l-surface-3);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+}
+.l-agent-ask__add svg {
+  width: 14px;
+  height: 14px;
+}
+.l-agent-ask__field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: var(--l-text-md);
+  letter-spacing: var(--l-track-body);
+  caret-color: var(--l-accent-text);
+}
+.l-agent-ask__field input::placeholder {
+  color: var(--l-ink-4);
+}
+.l-agent-ask__send {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-4);
+  cursor: default;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    scale 280ms var(--l-ease-snap);
+}
+.l-agent-ask__send[data-ready] {
+  background: var(--l-primary-fill);
+  color: var(--l-primary-ink);
+  cursor: pointer;
+}
+.l-agent-ask__send[data-ready]:active {
+  scale: 0.9;
+}
+.l-agent-ask__send svg {
+  width: 14px;
+  height: 14px;
+}
+@media (hover: none) and (pointer: coarse) {
+  .l-agent-ask__field {
+    height: 46px;
+  }
+  .l-agent-ask__send {
+    width: 34px;
+    height: 34px;
+  }
+}

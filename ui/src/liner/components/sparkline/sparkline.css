@@ -1,0 +1,46 @@
+.l-spark {
+  position: relative;
+  min-width: 60px;
+  cursor: crosshair;
+}
+.l-spark svg {
+  display: block;
+  overflow: visible;
+}
+.l-spark__line {
+  fill: none;
+  stroke: var(--l-viz-gray);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.l-spark__area {
+  fill: var(--l-viz-gray);
+  opacity: 0.12;
+}
+.l-spark__now {
+  fill: var(--l-accent);
+  transition: r 160ms var(--l-ease-out);
+}
+.l-spark__now[data-hover] {
+  fill: var(--l-ink);
+}
+.l-spark__tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: var(--l-text-xs);
+  white-space: nowrap;
+  translate: -50% 0;
+  pointer-events: none;
+}
+.l-spark__tip b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.l-spark__tip span {
+  color: var(--l-ink-3);
+}

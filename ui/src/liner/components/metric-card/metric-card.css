@@ -1,0 +1,73 @@
+.l-metric {
+  display: grid;
+  gap: 6px;
+  min-width: 200px;
+  padding: 16px 18px;
+  border-radius: var(--l-frame-r);
+}
+.l-metric__label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-metric__icon {
+  display: grid;
+  color: var(--l-ink-4);
+}
+.l-metric__icon svg {
+  width: 15px;
+  height: 15px;
+}
+/* Proportional figures at display size: tabular digits look loose this big. */
+.l-metric__value {
+  font-size: 34px;
+  font-weight: 600;
+  font-variant-numeric: proportional-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.l-metric__value .l-roll {
+  font-variant-numeric: proportional-nums;
+}
+.l-metric__delta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--l-text-sm);
+}
+.l-metric__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px 0 5px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.l-metric__delta[data-good="true"] .l-metric__chip {
+  background: color-mix(in oklab, var(--l-ok) 14%, transparent);
+  color: var(--l-ok-text);
+}
+.l-metric__delta[data-good="false"] .l-metric__chip {
+  background: color-mix(in oklab, var(--l-danger) 12%, transparent);
+  color: var(--l-danger-text);
+}
+.l-metric__chip svg {
+  width: 12px;
+  height: 12px;
+}
+.l-metric__chip svg[data-dir="down"] {
+  rotate: 180deg;
+}
+.l-metric__period {
+  color: var(--l-ink-3);
+}
+.l-metric__trend {
+  margin-top: 8px;
+}

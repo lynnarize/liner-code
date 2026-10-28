@@ -1,0 +1,140 @@
+.l-slider {
+  --sl-h: 42px;
+  --sl-r: 12px;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+}
+
+.l-slider__bar {
+  --f: 0;
+  --sx: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: var(--sl-h);
+  padding: 0 14px;
+  overflow: hidden;
+  border-radius: var(--sl-r);
+  background: var(--l-well-fill);
+  box-shadow: var(--l-well-shadow);
+  cursor: ew-resize;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  scale: var(--sx) 1;
+  transition: box-shadow var(--l-dur-fast) ease;
+}
+.l-slider__bar:has(.l-slider__range:focus-visible) {
+  outline: 2px solid color-mix(in oklab, var(--l-ink) 46%, transparent);
+  outline-offset: 2px;
+}
+
+/* The fill is clipped, not resized: one paint, no layout. */
+.l-slider__fill {
+  position: absolute;
+  inset: 0;
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  clip-path: inset(0 calc((1 - var(--f)) * 100%) 0 0);
+  pointer-events: none;
+  transition: background var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  /* A breath of ink: darker in light, lighter in dark, never sinking into the well. */
+  .l-slider__bar:hover .l-slider__fill {
+    background: color-mix(in oklab, var(--l-raised-fill), var(--l-ink) 4%);
+  }
+}
+
+/* A hairline marks the edge of the fill and grows while you drag. */
+.l-slider__edge {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--f) * 100%);
+  width: 2px;
+  height: 36%;
+  margin-left: -7px;
+  border-radius: 2px;
+  background: var(--l-ink-3);
+  opacity: 0;
+  translate: 0 -50%;
+  pointer-events: none;
+  transition:
+    opacity var(--l-dur-fast) ease,
+    height 260ms var(--l-ease-snap),
+    background-color var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-slider__bar:hover .l-slider__edge {
+    opacity: 0.7;
+  }
+}
+.l-slider[data-dragging] .l-slider__edge {
+  opacity: 1;
+  height: 52%;
+  background: var(--l-accent-text);
+}
+
+.l-slider__marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.l-slider__marks > span {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 2px;
+  margin: -1px 0 0 -1px;
+  border-radius: 2px;
+  background: var(--l-ink-5);
+  opacity: 0.7;
+  transition: opacity var(--l-dur-fast) ease;
+}
+.l-slider__marks > span[data-on] {
+  opacity: 0;
+}
+
+.l-slider__label,
+.l-slider__value {
+  position: relative;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.l-slider__label {
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.l-slider__value {
+  color: var(--l-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.l-slider__unit {
+  margin-left: 1px;
+  color: var(--l-ink-3);
+}
+
+/* The native range stays for keyboard and assistive tech; pointer input is ours. */
+.l-slider__range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+  appearance: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .l-slider {
+    --sl-h: 46px;
+  }
+}

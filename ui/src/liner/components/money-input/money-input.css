@@ -1,0 +1,135 @@
+.l-money__box {
+  gap: 4px;
+  cursor: text;
+}
+.l-money__grow {
+  display: inline-grid;
+  flex: 1;
+  min-width: 0;
+}
+.l-money__sizer,
+.l-money__grow > input {
+  grid-area: 1 / 1;
+  min-width: 1ch;
+  font: inherit;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--l-track-body);
+  white-space: pre;
+}
+.l-money__sizer {
+  visibility: hidden;
+  height: 0;
+}
+.l-money__grow > input {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  caret-color: var(--l-accent-text);
+}
+.l-money__grow > input::placeholder {
+  color: var(--l-ink-5);
+}
+.l-money__sym {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: 15px;
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.l-money__code {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-money__cur {
+  flex: none;
+  margin-right: -6px;
+}
+.l-money__curbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+  padding: 0 6px 0 9px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    scale 240ms var(--l-ease-snap);
+}
+.l-money__curbtn:hover,
+.l-money__curbtn[aria-expanded="true"] {
+  background: var(--l-wash-2);
+}
+.l-money__curbtn:active {
+  scale: 0.95;
+}
+.l-money__curbtn span {
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.l-money__curbtn svg {
+  width: 13px;
+  height: 13px;
+  color: var(--l-ink-4);
+  transition: rotate 300ms var(--l-ease-snap);
+}
+.l-money__curbtn[aria-expanded="true"] svg {
+  rotate: 180deg;
+}
+.l-money__menu {
+  min-width: 220px;
+}
+
+/* Large: the amount is the page. Centered, no box until focus. */
+.l-money[data-size="lg"] {
+  justify-items: center;
+  text-align: center;
+}
+.l-money[data-size="lg"] .l-money__box {
+  --i-h: 76px;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 16px;
+  border-radius: 22px;
+  background: transparent;
+  box-shadow: none;
+}
+.l-money[data-size="lg"] .l-money__box:focus-within {
+  background: var(--l-wash);
+}
+.l-money[data-size="lg"] .l-money__box[data-invalid] {
+  background: color-mix(in oklab, var(--l-danger) 7%, transparent);
+}
+.l-money[data-size="lg"] .l-money__grow {
+  flex: none;
+}
+.l-money[data-size="lg"] .l-money__sizer,
+.l-money[data-size="lg"] .l-money__grow > input {
+  font-family: var(--l-font-display);
+  font-size: 48px;
+  font-weight: 600;
+  letter-spacing: var(--l-track-display);
+  text-align: center;
+}
+.l-money[data-size="lg"] .l-money__sym {
+  align-self: flex-start;
+  margin-top: 14px;
+  color: var(--l-ink-3);
+  font-size: 24px;
+  font-weight: 500;
+}
+.l-money[data-size="lg"] .l-money__cur {
+  margin-right: 0;
+  margin-left: 6px;
+}

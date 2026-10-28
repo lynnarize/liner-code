@@ -1,0 +1,502 @@
+/*
+  Liner Code · The model picker: a rail of tools, a search, rows with the model's mark, its
+  default, a key and a star. White rows on a wash, one plate on the tool you're in.
+*/
+/* As tall as its rows or its rail, whichever is taller, up to --lc-mp-max; the list scrolls past that. */
+.lc-mp {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 6px;
+  min-height: 0;
+  max-height: var(--lc-mp-max, 320px);
+}
+.lc-mp-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 4px 0;
+  overflow: hidden auto;
+  scrollbar-width: none;
+  border-radius: 12px;
+  background: var(--l-wash);
+}
+.lc-mp-tool {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+.lc-mp-tool[aria-selected="true"] {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-mp-tool:not([aria-selected="true"]):hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-mp-ini {
+  font-family: var(--l-font-display);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lc-mp-sep {
+  width: 16px;
+  height: 1px;
+  margin: 2px 0;
+  background: var(--l-line-2);
+}
+.lc-mp-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.lc-mp-find {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+}
+.lc-mp-find:focus-within {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+.lc-mp-find input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+}
+.lc-mp-src {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-mp-list {
+  flex: 1;
+  min-height: 0;
+  margin: calc(var(--lc-ring) * -1);
+  padding: var(--lc-ring);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lc-mp-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 8px 4px;
+  background: linear-gradient(var(--l-float, var(--l-surface)) 70%, transparent);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-mp-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  transition: background 120ms ease;
+}
+.lc-mp-row[data-hl] {
+  background: var(--l-wash-2);
+}
+.lc-mp-row[data-on] {
+  background: var(--l-accent-soft);
+}
+.lc-mp-row[data-also]::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--l-accent);
+}
+.lc-mp-pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 4px 4px 4px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-mp-t {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.lc-mp-t b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 500;
+}
+.lc-mp-t b .lc-model {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+}
+.lc-mp-row[data-on] .lc-mp-t b .lc-model {
+  color: var(--l-accent-text);
+}
+.lc-mp-t small {
+  overflow: hidden;
+  padding-left: 16px;
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-mp-def {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+.lc-mp-key {
+  flex: none;
+  opacity: 0.8;
+}
+.lc-mp-star {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-4);
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 140ms ease,
+    color 140ms ease;
+}
+.lc-mp-row:hover .lc-mp-star,
+.lc-mp-row[data-hl] .lc-mp-star,
+.lc-mp-star[data-on],
+.lc-mp-star:focus-visible {
+  opacity: 1;
+}
+.lc-mp-star[data-on] {
+  color: var(--l-warn);
+}
+.lc-mp-star[data-on] svg path {
+  fill: currentColor;
+}
+.lc-mp-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  margin-top: 4px;
+  padding: 4px 12px 4px 10px;
+  border: 0;
+  border-top: 1px solid var(--l-line);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-mp-fold > span {
+  display: grid;
+  flex: 1;
+}
+.lc-mp-fold b {
+  font-size: 13px;
+  font-weight: 500;
+}
+.lc-mp-fold small {
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-mp-fold > svg {
+  color: var(--l-ink-4);
+  transition: rotate 260ms var(--l-spring-smooth);
+}
+.lc-mp-fold[aria-expanded="true"] > svg {
+  rotate: 90deg;
+}
+.lc-mp-none {
+  margin: 10px;
+  font-size: 12.5px;
+}
+.lc-mp-foot {
+  flex: none;
+  padding: 6px 4px 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-mp-fold > svg,
+  .lc-mp-row,
+  .lc-mp-tool {
+    transition: none;
+  }
+}
+.lc-ad-models {
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+.lc-pb.lc-ad-effort {
+  justify-content: flex-start;
+  width: 100%;
+  height: 36px;
+}
+.lc-pb.lc-ad-effort > svg:last-child {
+  margin-left: auto;
+}
+.lc-st-src {
+  flex-basis: 100%;
+  font-size: 11.5px;
+}
+
+/* Choosing a project: tabs, a search, and the list. */
+.lc-pc {
+  display: grid;
+  gap: 6px;
+  padding: 4px;
+}
+.lc-pc-find {
+  margin: 0;
+}
+.lc-pc-list {
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  max-height: calc(340px + var(--lc-ring) * 2);
+  min-height: calc(120px + var(--lc-ring) * 2);
+  margin: calc(var(--lc-ring) * -1);
+  padding: var(--lc-ring);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lc-pc-list .lc-row-t b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.lc-pc-clone {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--l-accent-soft);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--l-accent-text);
+}
+.lc-pc-note {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  padding: 10px 10px 12px;
+  font-size: 13px;
+}
+.lc-pc-note p {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+}
+.lc-pc-foot {
+  margin: 6px 8px 4px;
+  font-size: 12px;
+  line-height: 17px;
+}
+.lc-pc-foot .lc-link {
+  display: inline;
+  padding: 0;
+  font-size: inherit;
+}
+.lc-pc-warn {
+  margin: 4px;
+}
+.lc-pb.lc-rb-proj {
+  max-width: 220px;
+}
+.lc-rb-warn {
+  color: var(--l-warn-text);
+  background: color-mix(in oklab, var(--l-warn) 8%, transparent);
+}
+.lc-pc-list .lc-row-t small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pc-list .lc-row-t {
+  min-width: 0;
+}
+
+/* Find in a thread or a diff. */
+.lc-find {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: min(360px, calc(100% - 28px));
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 4px 0 12px;
+  border-radius: 12px;
+  color: var(--l-ink-3);
+  animation: l-pop-in 200ms var(--l-ease-enter) backwards;
+}
+.lc-find input {
+  flex: 1;
+  min-width: 0;
+  margin-left: 6px;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+}
+.lc-find-n {
+  flex: none;
+  padding: 0 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+::highlight(lc-find) {
+  background-color: color-mix(in oklab, var(--l-warn) 35%, transparent);
+  color: inherit;
+}
+::highlight(lc-find-on) {
+  background-color: var(--l-warn);
+  color: var(--l-ink);
+}
+.lc-rv-main {
+  position: relative;
+}
+
+/* Cite part of an answer in the composer. */
+.lc-cite {
+  position: fixed;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  translate: -50% calc(-100% - 8px);
+  border: 0;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+  cursor: pointer;
+  animation: l-pop-in 180ms var(--l-ease-enter) backwards;
+}
+
+/* Attachments before they go, and stashed drafts. */
+.lc-file-chip[data-image] {
+  padding-left: 3px;
+}
+.lc-file-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.lc-stash-t {
+  color: var(--l-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-find,
+  .lc-cite {
+    animation: none;
+  }
+}
+
+/* A model as a chip that opens the picker (Settings › Agentic features). */
+.lc-mpop {
+  gap: 6px;
+  height: 30px;
+  max-width: 240px;
+  padding: 0 9px 0 10px;
+  border-radius: 9px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  font-size: 12.5px;
+  color: var(--l-ink);
+  white-space: nowrap;
+  transition: box-shadow 140ms ease;
+}
+.lc-mpop > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-mpop .lc-model {
+  font-size: 12.5px;
+  color: var(--l-ink);
+}
+.lc-mpop > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-mpop[data-open] {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}

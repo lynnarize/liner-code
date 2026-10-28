@@ -1,0 +1,80 @@
+.l-panes {
+  display: grid;
+  min-width: 0;
+  transition:
+    grid-template-columns 360ms var(--l-spring-smooth),
+    grid-template-rows 360ms var(--l-spring-smooth);
+}
+.l-panes[data-dragging] {
+  transition: none;
+  cursor: col-resize;
+  user-select: none;
+}
+.l-panes[data-direction="vertical"][data-dragging] {
+  cursor: row-resize;
+}
+.l-panes__panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: opacity 200ms ease;
+}
+.l-panes__panel[data-collapsed] {
+  opacity: 0;
+  pointer-events: none;
+}
+.l-panes__inner {
+  height: 100%;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.l-panes__handle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.l-panes[data-direction="vertical"] .l-panes__handle {
+  cursor: row-resize;
+}
+.l-panes__grip {
+  width: 4px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--l-ink-5);
+  opacity: 0.5;
+  transition:
+    height 260ms var(--l-spring-snappy),
+    width 260ms var(--l-spring-snappy),
+    opacity 200ms ease,
+    background-color 200ms ease;
+}
+.l-panes[data-direction="vertical"] .l-panes__grip {
+  width: 32px;
+  height: 4px;
+}
+.l-panes__handle:hover .l-panes__grip,
+.l-panes__handle:focus-visible .l-panes__grip {
+  height: 48px;
+  opacity: 1;
+  background: var(--l-ink-3);
+}
+.l-panes[data-direction="vertical"] .l-panes__handle:hover .l-panes__grip,
+.l-panes[data-direction="vertical"] .l-panes__handle:focus-visible .l-panes__grip {
+  width: 48px;
+  height: 4px;
+}
+.l-panes__handle[data-held] .l-panes__grip {
+  height: 64px;
+  opacity: 1;
+  background: var(--l-ink);
+}
+.l-panes[data-direction="vertical"] .l-panes__handle[data-held] .l-panes__grip {
+  width: 64px;
+  height: 4px;
+}
+.l-panes__handle:focus-visible .l-panes__grip {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-accent) 40%, transparent);
+}

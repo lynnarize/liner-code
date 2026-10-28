@@ -1,0 +1,103 @@
+.l-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.l-chip {
+  --c-h: 34px;
+  display: inline-flex;
+  align-items: center;
+  height: var(--c-h);
+  padding: 0 14px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-md);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    box-shadow 200ms ease,
+    padding 320ms var(--l-spring-snappy),
+    scale 240ms var(--l-ease-snap);
+}
+.l-chips[data-size="sm"] .l-chip {
+  --c-h: 28px;
+  padding: 0 11px 0 10px;
+  font-size: var(--l-text-sm);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-chip:hover:not([data-on]) {
+    background: var(--l-ctl-fill-hover);
+    box-shadow: var(--l-ctl-shadow-hover);
+    color: var(--l-ink);
+  }
+}
+.l-chip:active:not(:disabled) {
+  scale: 0.95;
+}
+.l-chip:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+.l-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.l-chip[data-on] {
+  padding-left: 10px;
+  background: var(--l-primary-fill);
+  box-shadow: var(--l-primary-shadow);
+  color: var(--l-primary-ink);
+}
+/* The check takes no room until the chip is on; then it grows in and draws itself. */
+.l-chip__check {
+  display: grid;
+  place-items: center;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width 320ms var(--l-spring-snappy),
+    margin 320ms var(--l-spring-snappy),
+    opacity 160ms ease;
+}
+.l-chip[data-on] .l-chip__check {
+  width: 15px;
+  margin-right: 6px;
+  opacity: 1;
+}
+.l-chip__check svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  transition: stroke-dashoffset 260ms var(--l-ease-out) 80ms;
+}
+.l-chip[data-on] .l-chip__check svg {
+  stroke-dashoffset: 0;
+}
+.l-chip__icon {
+  display: grid;
+  margin-right: 6px;
+  color: var(--l-ink-4);
+}
+.l-chip__icon svg {
+  width: 15px;
+  height: 15px;
+}
+.l-chip__count {
+  margin-left: 6px;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.l-chip[data-on] .l-chip__count {
+  color: color-mix(in oklab, var(--l-primary-ink) 65%, transparent);
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@liner-code/engine",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The local engine: runs agent sessions, keeps threads, checkpoints each turn with git, and streams events to the app.",
+  "main": "src/main.ts",
+  "scripts": {
+    "dev": "node --watch src/main.ts --port 7317 --dev",
+    "start": "node src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.310"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.3"
+  }
+}

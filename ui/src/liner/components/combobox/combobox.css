@@ -1,0 +1,16 @@
+.l-combo__box {
+  width: 100%;
+  padding-right: 6px;
+}
+.l-combo__box[data-open] .l-trigger-chev {
+  rotate: 180deg;
+}
+.l-combo__create {
+  margin-top: 4px;
+  box-shadow: 0 -1px 0 var(--l-line);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.l-combo__create b {
+  font-weight: 600;
+}

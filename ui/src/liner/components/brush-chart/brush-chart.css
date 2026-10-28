@@ -1,0 +1,63 @@
+.l-brush {
+  position: relative;
+  margin-top: 10px;
+  border-radius: 10px;
+  touch-action: none;
+  user-select: none;
+}
+.l-brush svg {
+  display: block;
+}
+.l-brush__shade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in oklab, var(--l-card-fill) 62%, transparent);
+  pointer-events: none;
+}
+.l-brush__window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 8px;
+  background: var(--l-accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--l-accent);
+  cursor: grab;
+  outline: none;
+}
+.l-brush__window:active {
+  cursor: grabbing;
+}
+.l-brush__window:focus-visible {
+  box-shadow:
+    inset 0 0 0 1.5px var(--l-accent),
+    0 0 0 3px color-mix(in oklab, var(--l-accent) 30%, transparent);
+}
+.l-brush__handle {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: var(--l-thumb-shadow);
+  cursor: ew-resize;
+  outline: none;
+  transition: scale 200ms var(--l-ease-snap);
+}
+.l-brush__handle[data-side="lo"] {
+  left: -5px;
+}
+.l-brush__handle[data-side="hi"] {
+  right: -5px;
+}
+.l-brush__handle:hover,
+.l-brush__handle:focus-visible {
+  scale: 1.15;
+}
+.l-brush__handle:focus-visible {
+  box-shadow:
+    var(--l-thumb-shadow),
+    0 0 0 3px color-mix(in oklab, var(--l-accent) 40%, transparent);
+}

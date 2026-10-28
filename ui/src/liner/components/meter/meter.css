@@ -1,0 +1,73 @@
+.l-meter {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--l-ink);
+}
+.l-meter__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+}
+.l-meter__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--l-warn);
+  animation: l-meter-dot 360ms var(--l-ease-snap) backwards;
+}
+.l-meter[data-state="full"] .l-meter__dot {
+  background: var(--l-danger);
+}
+@keyframes l-meter-dot {
+  from {
+    opacity: 0;
+    scale: 0.3;
+  }
+}
+.l-meter__value {
+  font-size: var(--l-text-md);
+}
+.l-meter__value b {
+  font-weight: 600;
+}
+.l-meter__value > span {
+  color: var(--l-ink-3);
+}
+.l-meter__bar {
+  overflow: hidden;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 4px;
+  background: var(--l-wash-2);
+}
+.l-meter__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--l-ink-2);
+  transform-origin: 0 50%;
+  transition:
+    transform 560ms var(--l-spring-smooth),
+    background-color 300ms ease;
+  animation: l-meter-grow 720ms var(--l-ease-out) 120ms backwards;
+}
+.l-meter[data-state="warn"] .l-meter__bar i {
+  background: var(--l-warn);
+}
+.l-meter[data-state="full"] .l-meter__bar i {
+  background: var(--l-danger);
+}
+@keyframes l-meter-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-meter__bar i {
+    transition: none;
+    animation: none;
+  }
+}

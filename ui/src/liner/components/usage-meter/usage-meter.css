@@ -1,0 +1,105 @@
+.l-usage {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 380px);
+  padding: 16px 18px;
+}
+.l-usage__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.l-usage__label {
+  font-size: var(--l-text-md);
+  font-weight: 600;
+}
+.l-usage__total {
+  font-size: var(--l-text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.l-usage__total > span {
+  color: var(--l-ink-3);
+  font-weight: 400;
+}
+.l-usage__bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+/* Parts in a monochrome ramp: the first is darkest. */
+.l-usage__seg,
+.l-usage__legend i {
+  --shade: var(--l-ink);
+}
+.l-usage [data-i="1"] {
+  --shade: color-mix(in oklab, var(--l-ink) 62%, var(--l-surface));
+}
+.l-usage [data-i="2"] {
+  --shade: color-mix(in oklab, var(--l-ink) 38%, var(--l-surface));
+}
+.l-usage [data-i="3"] {
+  --shade: color-mix(in oklab, var(--l-ink) 22%, var(--l-surface));
+}
+.l-usage__seg {
+  flex-basis: 0;
+  min-width: 3px;
+  border-radius: 3px;
+  background: var(--shade);
+  transition: flex-grow 700ms var(--l-spring-smooth);
+}
+.l-usage__seg:first-child {
+  border-radius: 999px 3px 3px 999px;
+}
+.l-usage__rest {
+  flex-basis: 0;
+  border-radius: 3px 999px 999px 3px;
+  background: var(--l-wash-2);
+  transition: flex-grow 700ms var(--l-spring-smooth);
+}
+.l-usage[data-state="warn"] .l-usage__rest {
+  background: color-mix(in oklab, var(--l-warn) 25%, var(--l-wash-2));
+}
+.l-usage__legend {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-usage__legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--l-text-sm);
+}
+.l-usage__legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--shade);
+}
+.l-usage__legend span {
+  flex: 1;
+  color: var(--l-ink-3);
+}
+.l-usage__legend b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.l-usage__foot {
+  padding-top: 10px;
+  border-top: 1px solid var(--l-line);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.l-usage[data-state="warn"] .l-usage__foot {
+  color: var(--l-warn-text);
+}
+.l-usage[data-state="full"] .l-usage__foot {
+  color: var(--l-danger-text);
+}

@@ -1,0 +1,910 @@
+/* The sidebar sits on glass, so it draws no surface of its own: the open session wears the
+   one white plate, and everything else is quiet text. Menus and the dialog float over it. */
+.l-asb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  color: var(--l-ink);
+}
+.l-asb-glyph {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+/* ---------- Header ---------- */
+.l-asb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 12px 8px 0 16px;
+}
+.l-asb-brand {
+  flex: 1;
+  min-width: 0;
+}
+.l-asb-new {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-asb-new:hover {
+    color: var(--l-ink);
+  }
+}
+
+/* ---------- The scrolling middle ---------- */
+.l-asb-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 14px 8px 14px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 16px), transparent);
+}
+.l-asb-scroll::-webkit-scrollbar {
+  display: none;
+}
+.l-asb-inner {
+  display: grid;
+  gap: 22px;
+}
+.l-asb-sec {
+  display: grid;
+  gap: 2px;
+}
+.l-asb-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.l-asb-label [data-tone="warn"] {
+  color: var(--l-warn-text);
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+
+/* The plate under the open session. It glides between rows, across projects. */
+.l-asb-plate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-radius: 14px;
+  background: var(--l-card-fill);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 520ms var(--l-spring-smooth),
+    width 520ms var(--l-spring-smooth),
+    height 520ms var(--l-spring-smooth),
+    opacity 200ms ease;
+}
+
+/* ---------- Projects ---------- */
+.l-asb-project + .l-asb-project {
+  margin-top: 6px;
+}
+.l-asb-proj-head {
+  position: relative;
+}
+.l-asb-proj {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  padding: 0 36px 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.l-asb-proj [data-glyph="chev"] {
+  width: 13px;
+  height: 13px;
+  color: var(--l-ink-4);
+  rotate: 90deg;
+  transition: rotate 300ms var(--l-spring-smooth);
+}
+.l-asb-project[data-folded] .l-asb-proj [data-glyph="chev"] {
+  rotate: 0deg;
+}
+.l-asb-proj-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-asb-proj-count {
+  margin-left: auto;
+  color: var(--l-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-asb-proj-count[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+/* Small buttons that wait at the end of a row until it is pointed at or focused. */
+.l-asb-proj-add,
+.l-asb-agent-add,
+.l-asb-more {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  opacity: 0;
+  translate: 0 -50%;
+  transition:
+    opacity 160ms ease,
+    color 160ms ease;
+}
+.l-asb-proj-head:hover .l-asb-proj-add,
+.l-asb-proj-head:focus-within .l-asb-proj-add,
+.l-asb-agent:hover .l-asb-agent-add,
+.l-asb-agent:focus-within .l-asb-agent-add {
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-asb-proj-add:hover,
+  .l-asb-agent-add:hover,
+  .l-asb-more:hover {
+    color: var(--l-ink);
+  }
+}
+
+.l-asb-fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 420ms var(--l-ease-enter);
+}
+.l-asb-project[data-folded] .l-asb-fold {
+  grid-template-rows: 0fr;
+  transition-duration: 260ms;
+  transition-timing-function: var(--l-ease-out);
+}
+.l-asb-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.l-asb-rows {
+  display: grid;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+/* ---------- A session ---------- */
+.l-asb-row {
+  --pad: 10px;
+  position: relative;
+  display: grid;
+}
+.l-asb-row[data-depth="1"] {
+  --pad: 30px;
+}
+.l-asb-pick {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  padding: 9px 10px 9px var(--pad);
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+.l-asb-pick:focus-visible,
+.l-asb-more:focus-visible,
+.l-asb-agent-pick:focus-visible,
+.l-asb-agent-new:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: -2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-asb-row:not([data-current]) .l-asb-pick:hover {
+    background: var(--l-wash);
+  }
+}
+.l-asb-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.l-asb-text > b {
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-size: 14.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--l-dur-fast) ease;
+}
+.l-asb-row[data-current] .l-asb-text > b {
+  color: var(--l-ink);
+}
+.l-asb-text > span {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-asb-text [data-status] {
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-asb-text [data-status="waiting"] {
+  color: var(--l-warn-text);
+}
+.l-asb-pick time {
+  color: var(--l-ink-3);
+  font-size: 12px;
+  transition: opacity 160ms ease;
+}
+/* The time steps aside for the row's menu while the row is pointed at or focused. */
+.l-asb-more {
+  top: 9px;
+  right: 6px;
+  translate: none;
+}
+.l-asb-row:hover .l-asb-more,
+.l-asb-row:focus-within .l-asb-more,
+.l-asb-more[aria-expanded="true"] {
+  opacity: 1;
+}
+.l-asb-row:hover .l-asb-pick time,
+.l-asb-row:focus-within .l-asb-pick time,
+.l-asb-row:has([aria-expanded="true"]) .l-asb-pick time {
+  opacity: 0;
+}
+.l-asb-more[aria-expanded="true"] {
+  color: var(--l-ink);
+}
+.l-asb-more[aria-expanded="true"]::before {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Rename in place. */
+.l-asb-pick[data-editing] {
+  align-items: center;
+  cursor: default;
+}
+.l-asb-rename {
+  grid-column: 2 / -1;
+  min-width: 0;
+  height: 28px;
+  margin: -3px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  background: var(--l-field-fill);
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 3px var(--l-wash-2);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+/* Forks hang off the session they came from on a thin branch line. */
+.l-asb-row[data-forked]::after,
+.l-asb-row[data-depth="1"][data-more]::after,
+.l-asb-row[data-depth="1"]::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  border-left: 1.5px solid var(--l-line-strong);
+  pointer-events: none;
+}
+.l-asb-row[data-forked]::after {
+  top: 30px;
+  bottom: -2px;
+}
+.l-asb-row[data-depth="1"][data-more]::after {
+  top: 0;
+  bottom: -2px;
+}
+.l-asb-row[data-depth="1"]::before {
+  top: 0;
+  width: 9px;
+  height: 19px;
+  border-bottom: 1.5px solid var(--l-line-strong);
+  border-bottom-left-radius: 8px;
+}
+
+/* Arriving rows open their space as they come into focus; leaving ones blur and close it. */
+.l-asb-row[data-fresh] {
+  animation: l-asb-in 460ms var(--l-ease-enter) backwards;
+}
+.l-asb-row[data-leaving] {
+  pointer-events: none;
+  animation: l-asb-out 260ms var(--l-ease-out) forwards;
+}
+@keyframes l-asb-in {
+  from {
+    margin-top: -58px;
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+@keyframes l-asb-out {
+  to {
+    margin-top: -58px;
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+/* ---------- Status marks ---------- */
+.l-asb-mark {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  color: var(--l-ink-3);
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-asb-mark svg {
+  width: 17px;
+  height: 17px;
+}
+.l-asb-mark .l-rays line {
+  stroke: var(--l-accent-text);
+}
+.l-asb-mark > i {
+  width: 9px;
+  height: 9px;
+  border-radius: 99px;
+  background: var(--l-warn);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 24%, transparent);
+  animation: l-asb-ping 1.5s var(--l-ease-in-out) 3;
+}
+@keyframes l-asb-ping {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--l-warn) 0%, transparent);
+  }
+}
+.l-asb-mark > b {
+  width: 9px;
+  height: 9px;
+  border-radius: 99px;
+  box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
+}
+.l-asb-mark path {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: l-asb-draw 380ms var(--l-ease-out) 80ms forwards;
+}
+@keyframes l-asb-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ---------- Archive, with a short undo ---------- */
+.l-asb-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 5px 5px 5px 10px;
+  border-radius: 12px;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+  font-size: 12.5px;
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.l-asb-undo > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-asb-undo b {
+  font-weight: 500;
+}
+.l-asb-undo button {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* ---------- Agents ---------- */
+.l-asb-agents {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.l-asb-agent {
+  position: relative;
+}
+.l-asb-agent[data-fresh] {
+  animation: l-unblur 420ms var(--l-ease-out) backwards;
+}
+.l-asb-agent-pick,
+.l-asb-agent-new {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-asb-agent-pick:hover,
+  .l-asb-agent-new:hover {
+    background: var(--l-wash);
+  }
+}
+.l-asb-agent-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.l-asb-agent-name b {
+  flex: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+.l-asb-agent-name span {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-asb-agent-state {
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  transition: opacity 160ms ease;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-asb-agent[data-state="waiting"] .l-asb-agent-state {
+  color: var(--l-warn-text);
+}
+.l-asb-agent[data-state="running"] .l-asb-agent-state {
+  color: var(--l-accent-text);
+}
+.l-asb-agent:hover .l-asb-agent-state,
+.l-asb-agent:focus-within .l-asb-agent-state {
+  opacity: 0;
+}
+.l-asb-agent-new {
+  color: var(--l-ink-3);
+  font-size: 14px;
+  font-weight: 500;
+}
+.l-asb-agent-new > span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 99px;
+  box-shadow: inset 0 0 0 1px var(--l-line-strong);
+}
+.l-asb-agent-new > span .l-asb-glyph {
+  width: 13px;
+  height: 13px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-asb-agent-new:hover {
+    color: var(--l-ink);
+  }
+}
+
+/* ---------- Footer ---------- */
+.l-asb-foot {
+  display: grid;
+  gap: 10px;
+  padding: 6px 8px 8px 10px;
+}
+
+/* ---------- Row menu ---------- */
+.l-asb-menu-at {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+}
+.l-asb-menu-at .l-ai-menu {
+  width: 212px;
+  pointer-events: auto;
+}
+
+/* ---------- Agent dialog ---------- */
+.l-asb-dialog {
+  --w: 780px;
+}
+/* On a short screen the form scrolls between the title and the buttons, and the preview
+   stays in view beside it. */
+.l-asb-dialog .l-dialog__body {
+  max-height: calc(100dvh - 210px);
+  margin: 12px -22px 0;
+  padding: 2px 22px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.l-asb-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 224px;
+  gap: 20px;
+  align-items: start;
+  container-type: inline-size;
+}
+.l-asb-fields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.l-asb-field {
+  display: grid;
+  gap: 7px;
+}
+.l-asb-field-label {
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-asb-hint {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+
+/* Specialties: cards in a quiet well, with one plate that glides to the choice. */
+.l-asb-spec {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border-radius: 16px;
+  background: var(--l-well-fill);
+}
+.l-asb-spec-plate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 13px;
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 460ms var(--l-spring-smooth),
+    width 460ms var(--l-spring-smooth),
+    height 460ms var(--l-spring-smooth),
+    opacity 200ms ease;
+}
+.l-asb-spec-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 13px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+.l-asb-spec-card[aria-checked="true"] {
+  color: var(--l-ink);
+}
+.l-asb-spec-card:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: -2px;
+}
+.l-asb-spec-card > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+.l-asb-spec-card b {
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-asb-spec-card b + span {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* soul.md: a plain file you can write in, or drop one onto. */
+.l-asb-soul {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--l-field-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  transition: box-shadow 180ms var(--l-ease-out);
+}
+.l-asb-soul:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 3px var(--l-wash-2);
+}
+.l-asb-soul-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 6px 0 12px;
+  box-shadow: inset 0 -1px 0 var(--l-line);
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+}
+.l-asb-soul-file {
+  color: var(--l-ink-2);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.l-asb-soul-reset {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--l-accent-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-asb-soul textarea {
+  height: 172px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 0;
+  outline: none;
+  resize: vertical;
+  background: none;
+  color: var(--l-ink);
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  line-height: 19px;
+  tab-size: 2;
+}
+.l-asb-soul-drop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--l-card-fill) 90%, var(--l-accent));
+  box-shadow: inset 0 0 0 1.5px var(--l-accent-line);
+  color: var(--l-accent-text);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.l-asb-soul[data-drop] .l-asb-soul-drop {
+  opacity: 1;
+}
+
+/* The preview: the agent as it will appear, coming into focus as it changes. */
+.l-asb-preview {
+  position: sticky;
+  top: 0;
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 16px;
+}
+.l-asb-pv-kicker {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-asb-pv-avatar,
+.l-asb-pv-who > *,
+.l-asb-pv-chips > *,
+.l-asb-pv-intro,
+.l-asb-pv-sections {
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.l-asb-pv-avatar {
+  display: grid;
+}
+.l-asb-pv-who {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  max-width: 100%;
+}
+.l-asb-pv-who b {
+  overflow: hidden;
+  font-family: var(--l-font-display);
+  font-size: var(--l-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--l-track-display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-asb-pv-who span {
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+}
+.l-asb-pv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.l-asb-pv-chips > span,
+.l-asb-pv-sections > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 99px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+}
+.l-asb-pv-intro {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+.l-asb-pv-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.l-asb-pv-sections > span {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink-3);
+}
+.l-asb-dialog-fail {
+  margin-right: auto;
+  padding-left: 8px;
+  color: var(--l-danger-text);
+  font-size: var(--l-text-sm);
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+
+/* Narrow: the preview goes on top as one line, and specialties sit two to a row. */
+@container (max-width: 560px) {
+  .l-asb-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .l-asb-preview {
+    position: static;
+    grid-row: 1;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    padding: 12px;
+  }
+  .l-asb-pv-kicker,
+  .l-asb-pv-chips,
+  .l-asb-pv-intro,
+  .l-asb-pv-sections {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .l-asb-spec {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  /* No hover on touch: the open session always shows its menu. */
+  .l-asb-row[data-current] .l-asb-more {
+    opacity: 1;
+  }
+  .l-asb-row[data-current] .l-asb-pick time {
+    opacity: 0;
+  }
+  .l-asb-proj-add,
+  .l-asb-agent-add {
+    opacity: 1;
+  }
+  .l-asb-agent-state {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-asb-plate,
+  .l-asb-spec-plate,
+  .l-asb-fold,
+  .l-asb-proj [data-glyph="chev"] {
+    transition: none;
+  }
+  .l-asb-row[data-fresh],
+  .l-asb-row[data-leaving],
+  .l-asb-agent[data-fresh],
+  .l-asb-mark > i {
+    animation-duration: 1ms;
+  }
+}

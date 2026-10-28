@@ -1,0 +1,1015 @@
+/* PR flow: one glass frame, the pull request on white, the agent's status and your one press
+   on the glass. Your branch is the accent, main is grey, conflicts are amber, passes green. */
+.l-prf {
+  --prf-yours: var(--l-accent);
+  --prf-base: var(--l-viz-gray);
+  --prf-warn: color-mix(in oklab, var(--l-warn) 72%, var(--l-ink));
+  --prf-ok: color-mix(in oklab, var(--l-ok) 72%, var(--l-ink));
+  display: grid;
+  width: min(100%, 560px);
+  font-size: var(--l-text-md);
+  outline: none;
+  animation: l-prf-rise 560ms var(--l-spring-smooth) backwards;
+}
+@keyframes l-prf-rise {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+@keyframes l-prf-pop {
+  from {
+    opacity: 0;
+    scale: 0.3;
+  }
+}
+.l-prf__card {
+  container-type: inline-size;
+  padding: 14px 14px 12px;
+}
+
+/* Header: what it is, how big, and whether it is open or merged. */
+.l-prf__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.l-prf__glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+  transition:
+    background-color 360ms ease,
+    color 360ms ease;
+}
+.l-prf__glyph > span {
+  display: grid;
+  animation: l-swap-in 320ms var(--l-ease-out) backwards;
+}
+.l-prf__glyph .l-prf-ico {
+  width: 18px;
+  height: 18px;
+}
+.l-prf[data-open] .l-prf__glyph {
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+.l-prf[data-stage="merged"] .l-prf__glyph {
+  background: var(--l-accent-fill);
+  color: var(--l-accent-ink);
+}
+.l-prf__id {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.l-prf__title {
+  overflow: hidden;
+  color: var(--l-ink);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-prf__meta {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.l-prf__meta > span {
+  animation: l-swap-in 320ms var(--l-ease-out) backwards;
+}
+.l-prf__meta > span + span::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--l-ink-5);
+}
+.l-prf__diff {
+  display: inline-flex;
+  gap: 5px;
+}
+.l-prf__diff b {
+  font-weight: 500;
+}
+.l-prf__diff b[data-tone="add"] {
+  color: var(--prf-ok);
+}
+.l-prf__diff b[data-tone="del"] {
+  color: var(--l-danger-text);
+}
+@container (max-width: 340px) {
+  .l-prf__diff {
+    display: none;
+  }
+}
+.l-prf__pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+  font-size: var(--l-text-xs);
+  font-weight: 600;
+  animation: l-prf-pop 380ms var(--l-spring-snappy) backwards;
+}
+.l-prf__pill[data-state="merged"] {
+  background: var(--l-accent-fill);
+  color: var(--l-accent-ink);
+}
+
+/* The picture: main below, your branch lifted above it, the landing point on the right.
+   Once merged there is one line, so the picture closes up over the room the branch had. */
+.l-prf__hero {
+  position: relative;
+  height: 88px;
+  margin: 8px -6px 0;
+  transition: height 720ms var(--l-spring-smooth);
+}
+.l-prf[data-stage="merged"] .l-prf__hero {
+  height: 60px;
+}
+.l-prf__plot {
+  position: absolute;
+  inset: auto 0 0;
+  height: 88px;
+}
+.l-prf__plot svg {
+  display: block;
+  overflow: visible;
+}
+.l-prf-main,
+.l-prf-ghost,
+.l-prf-branch,
+.l-prf-sync {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.l-prf-main {
+  stroke: var(--prf-base);
+}
+.l-prf-branch {
+  stroke: var(--prf-yours);
+}
+/* The way still to go: dashed, amber while conflicts stand in it. */
+.l-prf-ghost {
+  stroke: var(--l-line-strong);
+  stroke-dasharray: 4 5;
+  transition: stroke 360ms ease;
+}
+.l-prf[data-stage="conflicts"] .l-prf-ghost,
+.l-prf[data-stage="resolving"] .l-prf-ghost {
+  stroke: color-mix(in oklab, var(--l-warn) 75%, transparent);
+}
+.l-prf[data-stage="testing"] .l-prf-ghost {
+  stroke: color-mix(in oklab, var(--prf-yours) 50%, transparent);
+}
+/* Main flowing up into the branch, drawn once. */
+.l-prf-sync {
+  stroke: var(--prf-base);
+  stroke-dasharray: 1;
+  animation: l-prf-draw 760ms var(--l-ease-out) backwards;
+}
+@keyframes l-prf-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+.l-prf-fork {
+  fill: var(--prf-base);
+  stroke: var(--l-card-fill);
+  stroke-width: 2.5;
+}
+.l-prf-bead {
+  transition: transform 600ms var(--l-spring-smooth);
+}
+.l-prf-lift {
+  transform: translateY(calc(var(--lift, 1) * -32px));
+}
+.l-prf-dot {
+  stroke: var(--l-card-fill);
+  stroke-width: 2.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: fill 320ms ease;
+  animation: l-prf-pop 420ms var(--l-spring-snappy) backwards;
+}
+.l-prf-bead[data-lane="branch"] .l-prf-dot {
+  fill: var(--prf-yours);
+}
+.l-prf-bead[data-lane="base"] .l-prf-dot {
+  fill: var(--prf-base);
+}
+.l-prf-bead[data-merge] .l-prf-dot {
+  fill: var(--l-card-fill);
+  stroke: var(--prf-yours);
+  stroke-width: 2;
+}
+.l-prf-bead[data-conflict] .l-prf-dot {
+  fill: var(--l-warn);
+}
+.l-prf-halo {
+  fill: color-mix(in oklab, var(--l-warn) 18%, transparent);
+  stroke: color-mix(in oklab, var(--l-warn) 55%, transparent);
+  stroke-width: 1;
+  opacity: 0;
+  scale: 0.4;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    opacity 240ms ease,
+    scale 240ms var(--l-ease-out);
+}
+.l-prf-bead[data-conflict] .l-prf-halo {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity 320ms ease,
+    scale 560ms var(--l-spring-smooth);
+}
+.l-prf-hit {
+  fill: transparent;
+}
+/* The landing point: waits dashed, turns while busy, fills with the checks, closes on merge. */
+.l-prf-target__ring {
+  fill: var(--l-card-fill);
+  stroke: var(--l-line-strong);
+  stroke-width: 1.6;
+  stroke-dasharray: 3 2.3;
+  transition:
+    fill 360ms ease,
+    stroke 360ms ease;
+}
+.l-prf-target__arc {
+  fill: none;
+  stroke: var(--prf-yours);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  rotate: -90deg;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    stroke-dashoffset 400ms var(--l-ease-out),
+    opacity 200ms ease;
+}
+.l-prf-target__tick {
+  fill: none;
+  stroke: var(--l-accent-text);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  scale: 0.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    opacity 200ms ease,
+    scale 200ms var(--l-ease-out),
+    stroke 360ms ease;
+}
+.l-prf-target:is([data-state="busy"], [data-state="testing"]) .l-prf-target__ring {
+  stroke: var(--l-line-2);
+  stroke-dasharray: none;
+}
+.l-prf-target[data-state="busy"] .l-prf-target__arc {
+  opacity: 1;
+  stroke-dasharray: 0.28 1;
+  stroke-dashoffset: 0;
+  animation: l-spin 0.9s linear infinite;
+}
+.l-prf-target[data-state="testing"] .l-prf-target__arc {
+  opacity: 1;
+  stroke-dashoffset: calc(1 - var(--p, 0));
+}
+.l-prf-target[data-state="conflict"] .l-prf-target__ring {
+  stroke: var(--l-warn);
+  stroke-dasharray: none;
+}
+.l-prf-target[data-state="ready"] .l-prf-target__ring {
+  stroke: var(--prf-yours);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+.l-prf-target[data-state="merged"] .l-prf-target__ring {
+  fill: var(--prf-yours);
+  stroke: var(--prf-yours);
+  stroke-dasharray: none;
+}
+.l-prf-target:is([data-state="ready"], [data-state="merged"]) .l-prf-target__tick {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity 300ms ease,
+    scale 420ms var(--l-spring-snappy),
+    stroke 360ms ease;
+}
+.l-prf-target[data-state="merged"] .l-prf-target__tick {
+  stroke: var(--l-accent-ink);
+}
+.l-prf-lbl {
+  position: absolute;
+  overflow: hidden;
+  font-family: var(--l-font-mono);
+  font-size: 11px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  transition:
+    color 360ms ease,
+    opacity 260ms ease,
+    translate 600ms var(--l-spring-smooth);
+}
+.l-prf-lbl[data-lane="branch"] {
+  top: 7px;
+  color: var(--l-ink-3);
+}
+.l-prf__hero[data-pushed] .l-prf-lbl[data-lane="branch"] {
+  color: var(--l-accent-text);
+}
+.l-prf-lbl[data-lane="base"] {
+  top: 70px;
+  color: var(--l-ink-3);
+}
+.l-prf[data-stage="merged"] .l-prf-lbl[data-lane="branch"] {
+  opacity: 0;
+  translate: 0 12px;
+}
+/* What a bead is, while the pointer rests on it. */
+.l-prf-peek {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 1px;
+  width: max-content;
+  max-width: 230px;
+  padding: 7px 11px 8px;
+  border-radius: 12px;
+  background: var(--l-float);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  translate: -50% 0;
+  font-size: var(--l-text-xs);
+  line-height: 1.4;
+  pointer-events: none;
+  animation: l-prf-peek 180ms var(--l-ease-out) backwards;
+}
+.l-prf-peek[data-side="top"] {
+  translate: -50% -100%;
+}
+@keyframes l-prf-peek {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+.l-prf-peek b {
+  color: var(--l-ink);
+  font-weight: 500;
+}
+.l-prf-peek span {
+  color: var(--l-ink-3);
+}
+.l-prf-peek [data-tone="warn"] {
+  color: var(--prf-warn);
+}
+.l-prf-peek [data-tone="ok"] {
+  color: var(--prf-ok);
+}
+
+/* The agent's note: words come into focus. */
+.l-prf__note {
+  margin: 8px 2px 0;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-md);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.l-prf-word {
+  display: inline-block;
+  animation: l-unblur 420ms var(--l-ease-out) backwards;
+}
+.l-prf__note code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--l-wash-2);
+  font-family: var(--l-font-mono);
+  font-size: 0.86em;
+}
+
+/* Folds open to their content; exits are quicker than entrances. */
+.l-prf-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 260ms var(--l-ease-out),
+    opacity 160ms ease;
+}
+.l-prf-fold[data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 560ms var(--l-spring-smooth),
+    opacity 320ms ease 80ms;
+}
+.l-prf-fold__in {
+  min-height: 0;
+  overflow: hidden;
+}
+.l-prf-fold[data-rest] > .l-prf-fold__in {
+  overflow: visible;
+}
+
+/* Conflicts: a summary line, then each file with its pairs of lines. */
+.l-prf__fix {
+  display: grid;
+  padding-top: 10px;
+}
+.l-prf-sum {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin: 0 -6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--prf-warn);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  text-align: left;
+}
+.l-prf-sum[data-done] {
+  color: var(--prf-ok);
+  cursor: pointer;
+  transition: background-color var(--l-dur-fast) ease;
+}
+.l-prf-sum[data-done]:hover {
+  background: var(--l-wash);
+}
+.l-prf-sum:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+}
+.l-prf-sum > span:first-of-type {
+  animation: l-swap-in 300ms var(--l-ease-out) backwards;
+}
+.l-prf-sum__aside {
+  margin-left: auto;
+  color: var(--l-ink-3);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.l-prf-sum__chev {
+  margin-left: -4px;
+  color: var(--l-ink-4);
+  transition: rotate 320ms var(--l-spring-smooth);
+}
+.l-prf-sum[aria-expanded="true"] .l-prf-sum__chev {
+  rotate: 180deg;
+}
+.l-prf-files {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 0 2px;
+  list-style: none;
+}
+.l-prf-file {
+  border-radius: 14px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.l-prf-file__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  color: var(--l-ink-3);
+}
+.l-prf-file__name {
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-prf-file__state {
+  flex: none;
+  margin-left: auto;
+  color: var(--prf-warn);
+  font-size: var(--l-text-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  animation: l-swap-in 300ms var(--l-ease-out) backwards;
+}
+.l-prf-file__state[data-done] {
+  color: var(--prf-ok);
+}
+.l-prf-hunks {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 6px 6px;
+  list-style: none;
+}
+/* Two lines, main's and yours; resolving folds them into the one that keeps both. Each
+   line folds on its own, so a long line never stretches its partner. */
+.l-prf-hunk {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  transition: box-shadow 300ms ease;
+}
+.l-prf-hunk[data-active] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--prf-yours) 40%, transparent);
+}
+/* A calm light passes over the pair being worked on. */
+.l-prf-hunk[data-active]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--prf-yours) 10%, transparent), transparent) 0 0 / 50% 100% no-repeat;
+  pointer-events: none;
+  animation: l-prf-scan 1.2s var(--l-ease-in-out) infinite;
+}
+@keyframes l-prf-scan {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+.l-prf-code {
+  --bar: var(--prf-base);
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 560ms var(--l-spring-smooth);
+}
+.l-prf-hunk[data-done] .l-prf-code:not([data-side="both"]),
+.l-prf-hunk:not([data-done]) .l-prf-code[data-side="both"] {
+  grid-template-rows: 0fr;
+}
+.l-prf-code > div {
+  min-height: 0;
+  overflow: hidden;
+}
+/* Code wraps rather than cutting off: a conflict is only worth showing whole. */
+.l-prf-code p {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 26px;
+  margin: 0;
+  padding: 5px 9px 5px 10px;
+  box-shadow: inset 2px 0 0 var(--bar);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  transition:
+    opacity 240ms ease,
+    filter 240ms ease;
+}
+.l-prf-code[data-side="base"] {
+  color: var(--l-ink-3);
+}
+.l-prf-code[data-side="yours"] {
+  --bar: var(--prf-yours);
+  background: color-mix(in oklab, var(--prf-yours) 6%, transparent);
+  color: var(--l-ink);
+}
+.l-prf-code[data-side="both"] {
+  --bar: var(--l-ok);
+  background: color-mix(in oklab, var(--l-ok) 8%, transparent);
+  color: var(--l-ink);
+}
+.l-prf-hunk[data-done] .l-prf-code:not([data-side="both"]) p,
+.l-prf-hunk:not([data-done]) .l-prf-code[data-side="both"] p {
+  opacity: 0;
+  filter: blur(4px);
+}
+.l-prf-hunk[data-done] .l-prf-code[data-side="both"] p {
+  transition:
+    opacity 360ms ease 120ms,
+    filter 420ms var(--l-ease-out) 120ms;
+}
+.l-prf-code i {
+  flex: none;
+  min-width: 2ch;
+  color: var(--l-ink-5);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.l-prf-code code {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.l-prf-code em {
+  flex: none;
+  color: var(--l-ink-3);
+  font-family: var(--l-font-body);
+  font-size: 11px;
+  font-style: normal;
+}
+.l-prf-code[data-side="both"] em {
+  color: var(--prf-ok);
+}
+@container (max-width: 420px) {
+  .l-prf-code em {
+    display: none;
+  }
+}
+
+/* Checks: four tiles whose rings fill as they run. */
+.l-prf__checks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 10px 0 0;
+  list-style: none;
+}
+@container (max-width: 440px) {
+  .l-prf__checks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.l-prf__checks > li {
+  display: grid;
+  min-width: 0;
+  animation: l-prf-tile 420ms var(--l-ease-out) backwards;
+}
+@keyframes l-prf-tile {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+.l-prf__checks .l-tip-anchor {
+  display: grid;
+  min-width: 0;
+}
+.l-prf-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--l-surface-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.l-prf-check:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 1px;
+}
+.l-prf-check__text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.3;
+}
+.l-prf-check b {
+  color: var(--l-ink);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+}
+.l-prf-check__text > span {
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-prf-check[data-state="passed"] .l-prf-check__text > span {
+  color: var(--prf-ok);
+}
+.l-prf-check[data-state="failed"] .l-prf-check__text > span {
+  color: var(--l-danger-text);
+}
+.l-prf-ring {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+}
+.l-prf-ring__track {
+  fill: none;
+  stroke: var(--l-line-2);
+  stroke-width: 1.8;
+}
+.l-prf-ring[data-state="queued"] .l-prf-ring__track {
+  stroke: var(--l-line-strong);
+  stroke-dasharray: 2.6 2.4;
+}
+.l-prf-ring__arc {
+  fill: none;
+  stroke: var(--prf-yours);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  rotate: -90deg;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: stroke-dashoffset 300ms var(--l-ease-out);
+}
+.l-prf-ring[data-spin] .l-prf-ring__arc {
+  stroke-dasharray: 0.3 1;
+  animation: l-spin 0.9s linear infinite;
+}
+.l-prf-ring__done {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: l-prf-pop 380ms var(--l-spring-snappy) backwards;
+}
+.l-prf-ring__done circle {
+  fill: var(--l-ok);
+}
+.l-prf-ring[data-state="failed"] .l-prf-ring__done circle {
+  fill: var(--l-danger);
+}
+.l-prf-ring__done path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The strip: what the agent is doing, and the one press when it is your turn. */
+.l-prf__strip {
+  min-height: 48px;
+  padding: 4px 6px 4px 14px;
+}
+/* The status takes what room the strip has and never sets its width: a long branch name
+   ellipsizes instead of widening the card. */
+.l-prf__status {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  contain: inline-size;
+  margin: 0;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+}
+.l-prf__status[data-tone="warn"] {
+  color: var(--prf-warn);
+}
+.l-prf__status[data-tone="ok"] {
+  color: var(--prf-ok);
+}
+.l-prf__status[data-tone="done"] {
+  color: var(--l-accent-text);
+}
+.l-prf__status-ico {
+  display: grid;
+  place-items: center;
+  flex: none;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-prf__status-ico .l-prf-ico {
+  width: 15px;
+  height: 15px;
+}
+.l-prf__status[data-tone="warn"] .l-prf-ico {
+  color: var(--l-warn);
+}
+.l-prf__status-text {
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-prf__status code {
+  color: var(--l-ink);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.l-prf__act {
+  display: inline-flex;
+  flex: none;
+  animation: l-prf-act 380ms var(--l-spring-snappy) backwards;
+  transition:
+    opacity 140ms ease-in,
+    scale 140ms ease-in,
+    filter 140ms ease-in;
+}
+@keyframes l-prf-act {
+  from {
+    opacity: 0;
+    scale: 0.94;
+    filter: blur(4px);
+  }
+}
+.l-prf__act[data-out] {
+  opacity: 0;
+  scale: 0.96;
+  filter: blur(3px);
+}
+.l-prf__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 11px;
+  color: var(--l-ink-2);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease;
+}
+.l-prf__link:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.l-prf__link:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 1px;
+}
+
+.l-prf-ico {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+/* In a conversation: your request on the right, the agent's working line, the card, and a
+   Create PR button over your composer until the pull request is on its way. */
+.l-prf-chat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  width: min(100%, 560px);
+  font-size: var(--l-text-md);
+}
+.l-prf-chat .l-prf {
+  width: 100%;
+  animation-delay: 260ms;
+}
+.l-prf-ask {
+  justify-self: end;
+  max-width: min(82%, 34rem);
+  margin: 0;
+  padding: 9px 15px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  animation: l-prf-ask-in 320ms var(--l-ease-out) backwards;
+}
+@keyframes l-prf-ask-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+.l-prf-work {
+  display: grid;
+  margin-bottom: -4px;
+  animation: l-unblur 360ms var(--l-ease-out) 140ms backwards;
+}
+.l-prf-work__line {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -6px;
+  padding: 3px 8px 3px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  cursor: pointer;
+  transition: background-color var(--l-dur-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-prf-work__line:hover {
+    background: var(--l-wash);
+  }
+}
+.l-prf-work__line > .l-prf-ico {
+  width: 13px;
+  height: 13px;
+  color: var(--l-ink-4);
+  transition: rotate 320ms var(--l-spring-smooth);
+}
+.l-prf-work__line[aria-expanded="true"] > .l-prf-ico {
+  rotate: 90deg;
+}
+.l-prf-work__line > span:not(.l-prf-work__secs) {
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.l-prf-work__secs {
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.l-prf-work__log {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 0 6px 2px;
+  list-style: none;
+}
+.l-prf-work__log li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+  color: var(--l-ink-3);
+  font-size: var(--l-text-sm);
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.l-prf-work__log li > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.l-prf-work__log li > .l-prf-ico {
+  color: var(--l-ink-4);
+}
+.l-prf-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 2px 0;
+}
+.l-prf-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-surface);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--l-dur-fast) ease,
+    color var(--l-dur-fast) ease,
+    scale 300ms var(--l-ease-snap);
+}
+.l-prf-start > .l-prf-ico {
+  color: var(--l-accent-text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .l-prf-start:hover {
+    background: var(--l-surface-2);
+    color: var(--l-ink);
+  }
+}
+.l-prf-start:active {
+  scale: 0.97;
+}

@@ -1,0 +1,92 @@
+.l-carousel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.l-carousel__track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 2px;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding: 2px;
+  outline: none;
+  cursor: grab;
+}
+.l-carousel__track::-webkit-scrollbar {
+  display: none;
+}
+.l-carousel__track[data-dragging] {
+  scroll-snap-type: none;
+  cursor: grabbing;
+  user-select: none;
+}
+.l-carousel__track:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+.l-carousel__slide {
+  flex: none;
+  width: var(--slide);
+  scroll-snap-align: start;
+}
+.l-carousel__bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.l-carousel__progress {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+}
+.l-carousel__progress i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--l-ink-2);
+  transition:
+    left 120ms linear,
+    width 200ms ease;
+}
+.l-carousel__nav {
+  display: inline-flex;
+  gap: 4px;
+}
+.l-carousel__nav button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-ctl-fill);
+  box-shadow: var(--l-ctl-shadow);
+  color: var(--l-ink);
+  cursor: pointer;
+  transition:
+    opacity 200ms ease,
+    scale 240ms var(--l-ease-snap),
+    background-color var(--l-dur-fast) ease;
+}
+.l-carousel__nav button:hover:not(:disabled) {
+  background: var(--l-ctl-fill-hover);
+}
+.l-carousel__nav button:active:not(:disabled) {
+  scale: 0.9;
+}
+.l-carousel__nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.l-carousel__nav svg {
+  width: 16px;
+  height: 16px;
+}

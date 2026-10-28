@@ -1,0 +1,48 @@
+.l-copy-icon {
+  position: relative;
+  display: grid;
+  width: 16px;
+  height: 16px;
+}
+.l-copy-icon > svg {
+  grid-area: 1 / 1;
+  width: 16px;
+  height: 16px;
+  transition:
+    opacity var(--l-dur-fast) ease,
+    scale var(--l-dur-slow) var(--l-ease-snap),
+    filter var(--l-dur-fast) ease;
+}
+.l-copy-icon__check,
+.l-copy-icon__fail {
+  opacity: 0;
+  scale: 0.5;
+  filter: blur(2px);
+}
+.l-copy-icon__check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0s 0.2s;
+}
+.l-copy-icon[data-state="done"] .l-copy-icon__copy,
+.l-copy-icon[data-state="failed"] .l-copy-icon__copy {
+  opacity: 0;
+  scale: 0.5;
+  filter: blur(2px);
+}
+.l-copy-icon[data-state="done"] .l-copy-icon__check,
+.l-copy-icon[data-state="failed"] .l-copy-icon__fail {
+  opacity: 1;
+  scale: 1;
+  filter: none;
+}
+.l-copy-icon[data-state="done"] .l-copy-icon__check path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--l-dur-slow) var(--l-ease-out) 60ms;
+}
+.l-copy-icon[data-state="done"] {
+  color: var(--l-ok);
+}
+.l-copy-icon[data-state="failed"] {
+  color: var(--l-danger);
+}

@@ -14,7 +14,42 @@ The design is the **Liner Code Design** session's boards
 [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) (MIT); no code was copied from either.
 
-## Run it
+## Install the alpha
+
+Liner Code is in **alpha** (0.1.x): for Macs with Apple Silicon, tried on macOS 27, and expect
+rough edges. Download `Liner-Code-<version>-mac-arm64.dmg` from
+[Releases](https://github.com/lynnarize/liner-code/releases), open it and drag Liner Code to
+Applications. The alphas aren't notarized by Apple yet, so the first open is blocked: open
+System Settings › Privacy & Security, press **Open Anyway** beside Liner Code, and confirm. (Or, in
+Terminal: `xattr -dr com.apple.quarantine "/Applications/Liner Code.app"`.) After that it updates
+itself from this repository's releases.
+
+You need at least one coding tool installed and signed in: [Claude Code](https://code.claude.com),
+[Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai) or
+[Hermes](https://github.com/nousresearch/hermes-agent). The **Sample project** with the **Demo**
+agent works without any. Git and the Terminal need Apple's command line tools; first run says so
+if they're missing.
+
+Found something? **Help › Report a Problem…** makes a zip with the log and versions and opens an
+[issue](https://github.com/lynnarize/liner-code/issues/new/choose).
+
+## Your accounts and your data
+
+- **Sign-ins stay with each tool.** Liner Code runs the tools you installed, unmodified, and asks
+  them only whether they're signed in (`claude auth status`, `codex login status`); "Sign in"
+  opens the tool's own login in Terminal. It never sees, stores or forwards a sign-in.
+- **API keys** you add are sealed in this Mac's keychain and handed to the tool's process in
+  memory. For Claude, Anthropic asks apps built on its Agent SDK to use an API key (see its
+  [terms](https://code.claude.com/docs/en/legal-and-compliance)), so Settings › Models lets Claude
+  Code bill to your Anthropic key.
+- **Nothing in between.** Model traffic goes from each tool to its own provider and is billed to
+  your account. Liner Code has no server, no telemetry and no analytics. Besides its own releases from GitHub and
+  the tools' versions on npm, it only fetches the Agent Client Protocol registry when you look for
+  agents to add.
+- **Everything else is on this Mac**: sessions, snapshots and settings in `~/.liner-code` (see
+  Where things live).
+
+## Run it from source
 
 ```bash
 npm install
@@ -58,7 +93,7 @@ engine/                    the local backend (Node, TypeScript run directly, one
   src/store.ts             state.json plus an append-only log per thread
   src/providers/claude.ts  Claude Code through the Claude Agent SDK (canUseTool, resume, fork)
   src/providers/codex.ts   Codex through `codex app-server` (`codex exec --json` for an older Codex), models from its own catalog
-  src/providers/acp.ts     any Agent Client Protocol agent: Hermes, OpenCode (Cursor, Grok: found, not driven yet)
+  src/providers/acp.ts     any Agent Client Protocol agent: Hermes, OpenCode, Cursor and Grok Build (those two in beta), the ACP registry
   src/providers/demo.ts    a scripted lead and coder, and the sample project it edits
 ui/                        the app (React 19 + Vite), built from Liner UI
   src/liner/               the Liner UI library, copied in (npm run sync-liner refreshes it)
@@ -128,5 +163,12 @@ npm run release -- 0.2.0 --publish   # …and creates the release v0.2.0 with gh
 | Codex CLI | `codex app-server` | yes: commands, edits and MCP tools (an older Codex's `exec` maps access to its sandbox) | yes | models come from `codex debug models` |
 | OpenCode | ACP over stdio | yes | when the agent can | any model OpenCode is set up with |
 | Hermes | ACP over stdio | yes | yes | depends on Hermes's own provider being up |
-| Cursor, Grok CLI | found on setup | – | – | shown as Soon until they get an adapter |
+| Cursor, Grok Build | ACP (`cursor-agent acp`, `grok agent stdio`) | yes | when the agent can | Beta: the drivers haven't been run against the real tools yet |
 | Demo | scripted | yes | – | edits only its sample project |
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). The app also contains other people's software under their own terms,
+listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the Claude Agent SDK inside it is
+Anthropic's and isn't covered by the MIT licence. Tool and model names belong to their owners, and
+Liner Code isn't made or endorsed by any of them.

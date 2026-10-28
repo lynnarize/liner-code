@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newerVersion } from "../../contracts/src/index.ts";
-import { pickAsset, repoName, Updater, versionOf } from "../src/updates.ts";
+import { pickAsset, repoName, teamIn, Updater, versionOf } from "../src/updates.ts";
 import { Store } from "../src/store.ts";
 
 test("versions: the first x.y.z of what a tool prints, compared part by part", () => {
@@ -113,4 +113,10 @@ test("a copy run from the repo can't put a release in its own place", async () =
   assert.equal(installed.state.app.current, "0.3.0");
   const moved = new Updater(new Store(home), { PATH: "/usr/bin:/bin", LINER_APP_BUNDLE: "/private/var/folders/x/AppTranslocation/ABC/d/Liner Code.app" }, { working: () => 0, restartIdle: () => {} }, () => {});
   assert.equal(moved.state.app.can, process.platform === "darwin" ? "translocated" : "source");
+});
+
+test("a signed copy is pinned to its Team ID; ad-hoc and unsigned copies have none", () => {
+  assert.equal(teamIn("Executable=/A.app/Contents/MacOS/A\nAuthority=Developer ID Application: Lin (AB12CD34EF)\nTeamIdentifier=AB12CD34EF\nSealed Resources version=2"), "AB12CD34EF");
+  assert.equal(teamIn("Signature=adhoc\nTeamIdentifier=not set\n"), undefined);
+  assert.equal(teamIn("code object is not signed at all"), undefined);
 });

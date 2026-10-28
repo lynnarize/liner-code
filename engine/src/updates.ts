@@ -34,6 +34,13 @@ export function versionParts(s?: string) {
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
 export const versionOf = (s?: string) => versionParts(s)?.join(".");
+
+/** The Team ID in `codesign -dv` output; nothing for an ad-hoc or unsigned app. */
+export function teamIn(out: string) {
+  const id = /^TeamIdentifier=(.+)$/m.exec(out)?.[1]?.trim();
+  return id && id !== "not set" ? id : undefined;
+}
+const teamOf = async (app: string) => teamIn((await run("codesign", ["-dv", "--verbose=2", app], { timeout: 60_000 })).stderr);
 export const newer = newerVersion;
 
 /** "github:o/n", "o/n", "https://github.com/o/n.git", { url } → "o/n". */
@@ -133,6 +140,8 @@ const short = (s: string) => s.trim().split("\n").filter(Boolean).slice(-1)[0]?.
 
 export class Updater {
   private app: AppUpdate;
+  /** The running app's bundle, when it runs from one. */
+  private bundle?: string;
   private tools: ToolUpdate[] = [];
   private checkedAt?: number;
   private checking: Promise<Updates> | null = null;
@@ -163,6 +172,7 @@ export class Updater {
       // no package.json beside the engine
     }
     const bundle = env.LINER_APP_BUNDLE;
+    this.bundle = bundle;
     this.app = {
       current: env.LINER_APP_VERSION || pkg.version || "0.0.0",
       repo: repoName(env.LINER_UPDATE_REPO) ?? repoName(pkg.liner?.releases) ?? repoName(pkg.repository),
@@ -429,8 +439,16 @@ export class Updater {
     if ((await read("CFBundleIdentifier")) !== BUNDLE_ID) return "The download isn't Liner Code (its bundle id is different).";
     const v = await read("CFBundleShortVersionString");
     if (v !== version) return `The download says it's ${v || "no version"}, not ${version}.`;
-    const sig = await run("codesign", ["--verify", "--deep", app], { timeout: 120_000 });
+    const sig = await run("codesign", ["--verify", "--deep", "--strict", app], { timeout: 120_000 });
     if (sig.code !== 0) return `The download's signature is broken: ${short(sig.stderr)}`;
+    // A signature only says the files weren't changed since someone signed them. Once this copy is
+    // signed by a developer, an update has to come from the same one; an ad-hoc copy (the alphas)
+    // takes the first signed release, and from then on it's pinned.
+    const mine = this.bundle ? await teamOf(this.bundle) : undefined;
+    if (mine) {
+      const theirs = await teamOf(app);
+      if (theirs !== mine) return `The download is signed by ${theirs ? `another developer (${theirs})` : "nobody you know"}, not by ${mine}, who signed this copy.`;
+    }
     return null;
   }
 

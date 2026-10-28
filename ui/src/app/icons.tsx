@@ -5,7 +5,7 @@
   is a ticked circle, not the plain tick; Snooze is a moon, not a clock.
   The mark is two nested Ls sharing a corner: the outer in ink, the inner in a light accent.
 */
-import type { CSSProperties, ReactNode } from "react";
+import { useId, type CSSProperties, type ReactNode } from "react";
 import type { AgentGlyph } from "@contracts";
 import { BRANDS, type Brand } from "./brands";
 
@@ -148,9 +148,10 @@ export function Glyph({ glyph, size = 13 }: { glyph: AgentGlyph; size?: number }
   }
 }
 
-/** Whose model it is: the maker's own mark, in the current ink. A model nobody's list knows gets a diamond. */
+/** Whose model it is: a tile in the current ink with the maker's letters cut out of it. A model nobody's list knows gets a diamond. */
 export type MarkKind = Brand | "other" | "demo";
 export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }) {
+  const cut = useId();
   if (kind === "demo") return <S size={size} w={1.3}><path d="M8 3.9 9 7l3.1 1L9 9l-1 3.1L7 9 3.9 8 7 7Z" /></S>;
   if (kind === "other")
     return (
@@ -158,11 +159,16 @@ export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }
         <path d="M8 2.5 13.5 8 8 13.5 2.5 8Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       </svg>
     );
+  const { letters } = BRANDS[kind];
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden className="lc-mark" data-brand={kind}>
-      {BRANDS[kind].paths.map((d, i) => (
-        <path key={i} d={d} />
-      ))}
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden className="lc-mark" data-brand={kind}>
+      <mask id={cut}>
+        <rect width="16" height="16" rx="4.5" fill="#fff" />
+        <text x="8" y="8.6" textAnchor="middle" dominantBaseline="middle" fill="#000" fontFamily="var(--l-font-display, system-ui)" fontWeight="700" fontSize={letters.length > 1 ? 7.6 : 9.6} letterSpacing={letters.length > 1 ? -0.4 : 0}>
+          {letters}
+        </text>
+      </mask>
+      <rect width="16" height="16" rx="4.5" fill="currentColor" mask={`url(#${cut})`} />
     </svg>
   );
 }

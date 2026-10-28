@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Liner Code: a desktop agent harness built on Liner UI, on Electron. Drives Claude Code, Codex, Hermes and OpenCode on your machine.",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/lynnarize/liner-code.git"

@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 (alpha), 2026-10-28
+
+**Update from 0.1.1 if you have it.** Liner Code does it by itself (Restart to update), or
+download the new DMG.
 
 ### New
 

@@ -9,6 +9,7 @@ import type { Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine, useItems } from "./engine";
 import { checkpointsOf, modelLabel, plural } from "./model";
+import { ship } from "./Ship";
 import { Lines, Pop } from "./ui";
 
 export function CommitButton({ thread, files, disabled }: { thread: Thread; files: number; disabled?: boolean }) {
@@ -57,15 +58,18 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
   };
   useEffect(write, []);
   const commit = async () => {
+    // Commit and push plays out in the thread, as a card that grows from the chip and folds back.
+    if (then === "push") {
+      onDone();
+      const lines = (open.length ? chosen : []).reduce((n, f) => ({ added: n.added + f.added, removed: n.removed + f.removed }), { added: 0, removed: 0 });
+      await ship(thread, { message, paths: left.size ? chosen.map((f) => f.path) : undefined, files: count, ...lines });
+      return;
+    }
     setBusy(true);
     try {
       const r = await rpc("git.commit", { threadId: thread.id, message: message.trim() || undefined, paths: left.size ? chosen.map((f) => f.path) : undefined });
       toast.success(`Committed ${plural(r.files, "file")}`, { description: `${r.sha} · ${message.split("\n")[0] || thread.title}` });
       onDone();
-      if (then === "push") {
-        const p = await rpc("git.push", { threadId: thread.id }).catch((e) => (toast.error(e instanceof Error ? e.message : String(e)), null));
-        if (p) toast.success(`Pushed ${p.branch} to ${p.remote}`);
-      }
       // The PR card takes it from here, in the chat.
       if (then === "pr") await rpc("thread.send", { id: thread.id, text: "create pr" });
     } catch (e) {

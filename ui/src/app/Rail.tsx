@@ -10,6 +10,7 @@ import type { Thread } from "@contracts";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { toast } from "@liner/components/toast/toast";
 import { CommitForm, type Then } from "./Commit";
+import { ship } from "./Ship";
 import { rpc } from "./engine";
 import { I } from "./icons";
 import { shortcutOf } from "./keymap";
@@ -94,9 +95,7 @@ export function Rail({ thread, panel, onPanel, onTab, files, branch }: { thread:
                       icon={<I.push size={13} />}
                       onPick={() => {
                         close();
-                        void rpc("git.push", { threadId: thread.id })
-                          .then((p) => toast.success(`Pushed ${p.branch} to ${p.remote}`))
-                          .catch(fail);
+                        void ship(thread, null);
                       }}
                     />
                     <Row title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={13} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail))} />

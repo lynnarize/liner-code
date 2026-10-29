@@ -5278,3 +5278,443 @@ html[data-native="mac"] .lc-st-side {
     animation-duration: 8s;
   }
 }
+
+/* ---------- Commit and push, in the thread ---------- */
+/*
+  The chip is the card: it widens to the thread (a critically damped spring, no overshoot), the
+  rows rise bottom-up out of a blur, the status line cross-blurs between stages, the dashed line
+  to origin flows while the push runs, and the ring turns solid green when it lands. It folds back
+  into a chip faster than it opened. Reduced motion keeps the fades. The skin is a well: no rim.
+*/
+.lc-ship {
+  --k: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 18px;
+  transition: opacity 220ms var(--l-ease-exit);
+}
+.lc-ship[data-out] {
+  opacity: 0;
+}
+.lc-ship-msg {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  transition: grid-template-rows calc(520ms * var(--k)) var(--l-spring-smooth);
+}
+.lc-ship-msg > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.lc-ship-msg p {
+  margin: 0 0 2px;
+  font-size: 14.5px;
+  line-height: 22px;
+  color: var(--l-ink-2);
+  opacity: 0;
+  filter: blur(5px);
+  transition:
+    opacity calc(320ms * var(--k)) ease,
+    filter calc(400ms * var(--k)) var(--l-ease-out);
+}
+.lc-ship[data-p="4"] .lc-ship-msg {
+  grid-template-rows: 1fr;
+}
+.lc-ship[data-p="4"] .lc-ship-msg p {
+  opacity: 1;
+  filter: none;
+  transition-delay: calc(260ms * var(--k));
+}
+.lc-ship-msg code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--lc-plate);
+  font-size: 12.5px;
+}
+.lc-ship-wrap {
+  position: relative;
+  width: 100%;
+  container-type: inline-size;
+}
+.lc-ship-morph {
+  position: relative;
+  width: 168px;
+  overflow: hidden;
+  border-radius: 15px;
+  background: var(--lc-well);
+  transition:
+    width calc(620ms * var(--k)) var(--l-spring-smooth),
+    border-radius calc(620ms * var(--k)) var(--l-spring-smooth),
+    background-color calc(300ms * var(--k)) ease;
+}
+.lc-ship:is([data-p="1"], [data-p="2"], [data-p="3"]) .lc-ship-morph {
+  width: 100%;
+  border-radius: 16px;
+}
+/* Folding back is quicker than opening: the exit runs ahead of the entrance. */
+.lc-ship[data-p="4"] .lc-ship-morph {
+  width: 176px;
+  background: color-mix(in oklab, var(--l-ok) 13%, var(--lc-ground));
+  transition-duration: calc(420ms * var(--k)), calc(420ms * var(--k)), calc(300ms * var(--k));
+  transition-delay: calc(380ms * var(--k));
+}
+.lc-ship[data-p="4"][data-error] .lc-ship-morph {
+  width: 230px;
+  background: color-mix(in oklab, var(--l-danger) 12%, var(--lc-ground));
+}
+.lc-ship-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows calc(380ms * var(--k)) var(--l-spring-smooth);
+}
+.lc-ship-body > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.lc-ship:is([data-p="1"], [data-p="2"], [data-p="3"]) .lc-ship-body {
+  grid-template-rows: 1fr;
+  transition-duration: calc(560ms * var(--k));
+  transition-delay: calc(140ms * var(--k));
+}
+.lc-ship-in {
+  width: 100cqi;
+  box-sizing: border-box;
+  padding: 12px 14px 0;
+}
+.lc-ship-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.lc-ship-ttl {
+  font-weight: 600;
+}
+.lc-ship-tag {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--l-accent-soft);
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  color: var(--l-accent-text);
+}
+.lc-ship-tag[data-m] {
+  background: var(--lc-plate);
+  color: var(--l-ink-3);
+}
+.lc-ship-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 4px -14px 0;
+}
+.lc-ship-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 14px 0 44px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.lc-ship-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Rows come into focus bottom-up, each on its own delay; leaving, they all go at once, faster. */
+.lc-ship-head,
+.lc-ship-row {
+  opacity: 0;
+  filter: blur(5px);
+  translate: 0 5px;
+  transition:
+    opacity calc(200ms * var(--k)) ease,
+    filter calc(200ms * var(--k)) ease,
+    translate calc(200ms * var(--k)) ease;
+}
+.lc-ship:is([data-p="1"], [data-p="2"], [data-p="3"]) :is(.lc-ship-head, .lc-ship-row) {
+  opacity: 1;
+  filter: none;
+  translate: 0 0;
+  transition:
+    opacity calc(360ms * var(--k)) ease,
+    filter calc(440ms * var(--k)) var(--l-ease-out),
+    translate calc(440ms * var(--k)) var(--l-ease-out);
+  transition-delay: calc(var(--d) * var(--k));
+}
+.lc-ship-rail {
+  position: absolute;
+  top: 0;
+  left: 12px;
+  width: 30px;
+  height: 30px;
+  overflow: visible;
+}
+.lc-ship-rail .rb {
+  fill: none;
+  stroke: var(--l-accent);
+  stroke-width: 1.6;
+}
+.lc-ship-rail .rm {
+  fill: none;
+  stroke: var(--l-ink-5);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.lc-ship-rail .dash {
+  stroke-dasharray: 2 2.5;
+}
+.lc-ship[data-p="2"] .lc-ship-rail .dash {
+  animation: lc-ship-flow calc(600ms * var(--k)) linear infinite;
+}
+.lc-ship:is([data-p="3"], [data-p="4"]) .lc-ship-rail .dash {
+  stroke-dasharray: none;
+}
+@keyframes lc-ship-flow {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+.lc-ship-rail .ring {
+  fill: var(--lc-well);
+  stroke: var(--l-ink-4);
+  stroke-width: 1.4;
+  stroke-dasharray: 2 2;
+  transition:
+    stroke calc(300ms * var(--k)) ease,
+    fill calc(300ms * var(--k)) ease;
+}
+.lc-ship:is([data-p="3"], [data-p="4"]):not([data-error]) .lc-ship-rail .ring {
+  fill: color-mix(in oklab, var(--l-ok) 13%, var(--lc-well));
+  stroke: var(--l-ok);
+  stroke-dasharray: none;
+}
+.lc-ship-rail .ck {
+  fill: none;
+  stroke: var(--l-ok);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity calc(240ms * var(--k)) ease;
+}
+.lc-ship[data-p="3"] .lc-ship-rail .ck {
+  opacity: 1;
+  transition-delay: calc(140ms * var(--k));
+}
+.lc-ship-rail :is(.dot, .dotm) {
+  stroke: var(--lc-well);
+  stroke-width: 2;
+}
+.lc-ship-rail .dot {
+  fill: var(--l-accent);
+}
+.lc-ship-rail .dotm {
+  fill: var(--l-ink-4);
+}
+/* The new commit's dot pops in last. */
+.lc-ship-rail .new {
+  transform-box: fill-box;
+  transform-origin: center;
+  scale: 0.3;
+  opacity: 0;
+  transition:
+    scale calc(420ms * var(--k)) var(--l-spring-smooth),
+    opacity calc(200ms * var(--k)) ease;
+}
+.lc-ship:is([data-p="1"], [data-p="2"], [data-p="3"]) .lc-ship-rail .new {
+  scale: 1;
+  opacity: 1;
+  transition-delay: calc(760ms * var(--k));
+}
+.lc-ship .t2 {
+  color: var(--l-ink-2);
+}
+.lc-ship .t3 {
+  color: var(--l-ink-3);
+}
+.lc-ship-meta {
+  margin-left: auto;
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-ship-meta > span {
+  margin-left: 8px;
+  font-family: var(--l-font-body);
+  font-size: 12px;
+}
+.lc-ship-meta.lc-ship-sw {
+  justify-items: end;
+  font-family: var(--l-font-body);
+  font-size: 12px;
+}
+.lc-ship-meta.lc-ship-sw > span {
+  margin-left: 0;
+}
+.lc-ship-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+}
+/* A status that changes cross-blurs: every state sits in one cell; only the current one is in focus. */
+.lc-ship-sw {
+  display: grid;
+}
+.lc-ship-sw > * {
+  display: inline-flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  gap: 7px;
+  opacity: 0;
+  filter: blur(4px);
+  transition:
+    opacity calc(240ms * var(--k)) ease,
+    filter calc(300ms * var(--k)) var(--l-ease-out);
+}
+.lc-ship-hsw {
+  margin-left: auto;
+  font-size: 12.5px;
+  justify-items: end;
+}
+.lc-ship[data-p="0"] .x0,
+.lc-ship[data-p="1"] .x1,
+.lc-ship[data-p="2"] .x2,
+.lc-ship[data-p="3"] .x3,
+.lc-ship[data-p="4"] .x4,
+.lc-ship[data-p="1"] .h1,
+.lc-ship[data-p="2"] .h2,
+.lc-ship:is([data-p="3"], [data-p="4"]) .h3,
+.lc-ship:is([data-p="0"], [data-p="1"], [data-p="2"]) .m0,
+.lc-ship:is([data-p="3"], [data-p="4"]) .m1 {
+  opacity: 1;
+  filter: none;
+}
+.lc-ship[data-p="4"] .x4 {
+  transition-delay: calc(380ms * var(--k));
+}
+.lc-ship .x0 {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-ship :is(.x3, .x4) {
+  font-weight: 500;
+  color: var(--l-ok-text);
+}
+.lc-ship[data-error] .x4 {
+  color: var(--l-danger-text);
+}
+.lc-ship .h1 {
+  color: var(--l-ink-3);
+}
+.lc-ship .h2 {
+  color: var(--l-accent-text);
+}
+.lc-ship :is(.h3, .m1) {
+  color: var(--l-ok-text);
+}
+.lc-ship .h3 i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.lc-ship-spin {
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.6px solid color-mix(in oklab, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: l-spin 900ms linear infinite;
+}
+.lc-ship-diff {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  font-size: 12.5px;
+  opacity: 0;
+  transition: opacity calc(240ms * var(--k)) ease;
+}
+.lc-ship:is([data-p="1"], [data-p="2"], [data-p="3"]) .lc-ship-diff {
+  opacity: 1;
+  transition-delay: calc(300ms * var(--k));
+}
+.lc-ship-diff .plus {
+  color: var(--l-ok-text);
+}
+.lc-ship-diff .minus {
+  color: var(--l-danger-text);
+}
+.lc-ship-bars {
+  display: inline-flex;
+  gap: 2px;
+}
+.lc-ship-bars i {
+  width: 6px;
+  height: 6px;
+  border-radius: 1.5px;
+  background: var(--lc-hair);
+}
+.lc-ship-bars i[data-k="add"] {
+  background: var(--l-ok);
+}
+.lc-ship-bars i[data-k="del"] {
+  background: var(--l-danger);
+}
+/* Open a pull request steps in beside the folded chip. */
+.lc-ship-next {
+  position: absolute;
+  bottom: 0;
+  left: 184px;
+  opacity: 0;
+  filter: blur(4px);
+  pointer-events: none;
+  transition:
+    opacity calc(240ms * var(--k)) ease,
+    filter calc(300ms * var(--k)) var(--l-ease-out);
+}
+.lc-ship[data-error] .lc-ship-next {
+  left: 238px;
+}
+.lc-ship[data-p="4"] .lc-ship-next {
+  opacity: 1;
+  filter: none;
+  pointer-events: auto;
+  transition-delay: calc(760ms * var(--k));
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-ship *,
+  .lc-ship {
+    translate: none !important;
+    filter: none !important;
+    scale: none !important;
+  }
+  .lc-ship-morph,
+  .lc-ship-body,
+  .lc-ship-msg {
+    transition-duration: 0ms !important;
+  }
+  .lc-ship[data-p="2"] .lc-ship-rail .dash,
+  .lc-ship-spin {
+    animation: none;
+  }
+  .lc-ship .l-shimmer {
+    animation: none;
+    background: none;
+    color: var(--l-ink-3);
+  }
+}

@@ -11,6 +11,7 @@ import { loadItems, rpc, useEngine, useItems } from "./engine";
 import { Composer, type RunSettings } from "./Composer";
 import { EnvMenu } from "./Env";
 import { Rail } from "./Rail";
+import { ShipCard } from "./Ship";
 import { I } from "./icons";
 import { agentOf, checkpointsOf, isModelAgent, markOf, modelLabel, sumLines } from "./model";
 import { Panel } from "./Panel";
@@ -253,6 +254,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                 ) : (
                   <Timeline threadId={thread.id} items={items} seen={seen.current ?? new Set()} onReview={review} reviewing={panel.open && panel.tab === "changes" && !panel.picking ? focus : null} onGrow={follow} />
                 )}
+                <ShipCard thread={thread} />
               </div>
             </div>
             <Rail thread={thread} panel={panel} onPanel={setPanel} onTab={toggle} files={openFiles} branch={branch} />

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSyn
 import { basename, join, relative, resolve } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { castOf, setupOf, setupsOf, splitModel, TRIAL } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, Effort, FileChange, FoundRepo, ModelInfo, SkillInfo, ProviderInfo, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, Effort, FileChange, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderInfo, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, restore } from "./checkpoints.ts";
 import { saveToDownloads, sessionMarkdown } from "./export.ts";
@@ -745,6 +745,37 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const r = await run("git", ["push", "-u", remote, branch], { cwd, env, timeout: 120000 });
       if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || "The push failed.");
       return { branch, remote };
+    },
+    "git.outgoing": async ({ threadId }) => {
+      const cwd = cwdOf(threadId);
+      const branch = store.thread(threadId).worktree?.branch ?? (await branchOf(cwd)) ?? "HEAD";
+      const remotes = (await git(cwd, ["remote"])).stdout.split("\n").map((r) => r.trim()).filter(Boolean);
+      const remote = remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
+      const upstream = (await git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])).stdout.trim();
+      // Before its first push a branch is measured from the base it left: main, master, or what origin calls HEAD.
+      const head = remote ? (await git(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`])).stdout.trim() : "";
+      let base = "";
+      for (const b of [head, "main", "master"].filter(Boolean)) if ((await git(cwd, ["rev-parse", "--verify", "--quiet", b])).code === 0 && b !== branch) { base = b; break; }
+      const from = upstream || base;
+      const fork = base ? (await git(cwd, ["merge-base", base, "HEAD"])).stdout.trim() : "";
+      const log = async (range: string[]) => {
+        const r = await git(cwd, ["log", "--format=%h%x1f%s%x1f%ct", "--shortstat", "-n", "30", ...range]);
+        const out: GitCommit[] = [];
+        for (const line of r.stdout.split("\n")) {
+          const [sha, subject, at] = line.split("\x1f");
+          if (sha && subject !== undefined && at) out.push({ sha, subject, at: Number(at) * 1000 });
+          else if (out.length && /changed/.test(line)) {
+            const last = out[out.length - 1];
+            last.added = Number(/(\d+) insertion/.exec(line)?.[1] ?? 0);
+            last.removed = Number(/(\d+) deletion/.exec(line)?.[1] ?? 0);
+          }
+        }
+        return out;
+      };
+      const commits = from ? await log([`${from}..HEAD`]) : await log(["-n", "1", "HEAD"]);
+      const at = fork ? (await log(["-n", "1", fork]))[0] : undefined;
+      const ahead = fork ? Number((await git(cwd, ["rev-list", "--count", `${fork}..HEAD`])).stdout.trim()) || 0 : commits.length;
+      return { branch, remote, commits, base: at ? { ...at, branch: base.replace(/^[^/]+\//, "") } : undefined, ahead };
     },
     "git.switch": async ({ threadId, branch, create }) => {
       const t = store.thread(threadId);

@@ -739,6 +739,8 @@ export const TRIAL = {
 /** A slash command the tool (or Liner Code) understands, and a skill it can use. */
 export type CommandInfo = { name: string; description: string; hint?: string; source: "tool" | "liner" };
 export type SkillInfo = { name: string; description: string; path?: string };
+/** One commit as a list shows it: its short sha, its subject, when, and its added and removed lines. */
+export type GitCommit = { sha: string; subject: string; at: number; added?: number; removed?: number };
 export type LimitWindow = { label: string; usedPercent: number; resetsAt?: number };
 export type ToolLimits = { provider: ProviderId; label: string; plan?: string; windows: LimitWindow[]; detail?: string; at: number };
 export type FoundRepo = { path: string; name: string; branch?: string; lastCommitAt?: number; added: boolean; remote?: string };
@@ -827,6 +829,12 @@ export type Rpc = {
   "git.commit": [{ threadId: string; message?: string; paths?: string[] }, { sha: string; files: number }];
   /** Pushes the session's branch to origin, setting its upstream. */
   "git.push": [{ threadId: string }, { branch: string; remote: string }];
+  /**
+    What a push would send: the commits its remote hasn't got (before the first push, all since the
+    base), newest first; the commit the branch left the base at (main, master, or the remote's
+    HEAD); and how many commits ahead of the base it is.
+  */
+  "git.outgoing": [{ threadId: string }, { branch: string; remote: string | null; commits: GitCommit[]; base?: GitCommit & { branch: string }; ahead: number }];
   /** Switches the session's checkout to a branch, or to a new one made from where it is. */
   "git.switch": [{ threadId: string; branch: string; create?: boolean }, { branch: string }];
   /** The editors and terminals on this Mac that can open a folder, by bundle id. */

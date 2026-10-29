@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5 (alpha), 2026-10-29
+
+**Update from 0.1.4 if you have it.** Liner Code does it by itself (Restart to update), or
+download the new DMG.
+
+### Fixed
+
+- In Agentic features, the way you picked had a square blue ring round its rounded card. The
+  ring follows the card's corners again.
+- Liner Code's name and the sidebar button beside it, and Settings' name, sat 6px under the
+  traffic lights. They sit on them again.
+- With the sidebar hidden, the top bar's row sits on the traffic lights too (in full screen,
+  where they're hidden, it stays where it was).
+
 ## 0.1.4 (alpha), 2026-10-29
 
 **Update from 0.1.2 if you have it.** Liner Code does it by itself (Restart to update), or

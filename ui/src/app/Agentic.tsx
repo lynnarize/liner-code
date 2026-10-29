@@ -379,6 +379,7 @@ function Compare({ cast }: { cast: Cast }) {
   const sessions = useEngine((x) => x.threads.length);
   const [days, setDays] = useState<"30" | "90">("30");
   const [stats, setStats] = useState<WayStats[] | null>(null);
+  const [showRuns, setShowRuns] = useState(false);
   useEffect(() => {
     let live = true;
     void rpc("ways.compare", { days: Number(days) })
@@ -455,12 +456,16 @@ function Compare({ cast }: { cast: Cast }) {
                 </tr>
               ))}
               <tr className="lc-ag-sub">
-                <th scope="rowgroup">In your sessions, the last {days} days</th>
-                {cols.map((k) => (
-                  <td key={k} data-on={key === k || undefined} />
-                ))}
+                <th scope="rowgroup" colSpan={cols.length + 1}>
+                  <button type="button" className="lc-ag-subtoggle l-focus" aria-expanded={showRuns} onClick={() => setShowRuns((o) => !o)}>
+                    <I.chevR size={12} />
+                    In your sessions, the last {days} days
+                    <small>{stats === null ? "" : plural(stats.reduce((n, s) => n + s.sessions, 0), "session")}</small>
+                    <span className="lc-ag-show">{showRuns ? "Hide" : "Show"}</span>
+                  </button>
+                </th>
               </tr>
-              {measured.map(([label, f]) => (
+              {showRuns && measured.map(([label, f]) => (
                 <tr key={label}>
                   <th scope="row">{label}</th>
                   {cols.map((k) => {
@@ -475,11 +480,11 @@ function Compare({ cast }: { cast: Cast }) {
               ))}
             </tbody>
           </table>
-          <p className="lc-ag-foot">
+          {showRuns && <p className="lc-ag-foot">
             {none
               ? "No sessions in this period yet. Numbers fill in as you work, whichever way you start."
               : "Sorted by how each session ran, whatever it started as; sessions from before setups count under your first. A change is kept when you didn't undo it; costs are at API prices, with the Reviewer's share counted in."}
-          </p>
+          </p>}
         </div>
       </div>
     </Part>
@@ -502,6 +507,7 @@ function Trial({ cast, onOpen }: { cast: Cast; onOpen?: (threadId: string) => vo
   const keys = keysOf(cast);
   const [off, setOff] = useState<Key[]>([]);
   const [starting, setStarting] = useState(false);
+  const [unfolded, setUnfolded] = useState<string[]>([]);
   const [pace, setPace] = useState<number | null>(null);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -673,11 +679,18 @@ function Trial({ cast, onOpen }: { cast: Cast; onOpen?: (threadId: string) => vo
                         </span>
                       )}
                     </span>
-                    <span className="lc-ag-chain">{who(t)}</span>
-                    <span className="lc-ag-big">
-                      {t.usage.costUsd ? <Num value={t.usage.costUsd} as="money" /> : <span className="lc-quiet">{state === "working" ? "$0.00" : "No cost reported"}</span>}
-                      <small>at API prices</small>
+                    <span className="lc-ag-line">
+                      <b>{t.usage.costUsd ? <Num value={t.usage.costUsd} as="money" /> : state === "working" ? "$0.00" : "No cost"}</b>
+                      <span>
+                        {duration(tookOf(t))} · {t.verdict?.state === "verified" ? <span className="lc-ag-ok">Verified</span> : t.verdict?.state === "blocked" ? "Blocked" : t.verdict?.state === "checking" ? "Checking" : "no reviewer"}
+                      </span>
+                      <button type="button" className="lc-ag-more l-focus" aria-expanded={unfolded.includes(t.id)} aria-label={`Details of ${t.setup?.name ?? nameOf(cast, tr.way)}`} onClick={() => setUnfolded((u) => (u.includes(t.id) ? u.filter((x) => x !== t.id) : [...u, t.id]))}>
+                        <I.chevD size={12} />
+                      </button>
                     </span>
+                    {unfolded.includes(t.id) && (
+                    <div className="lc-ag-detail">
+                    <span className="lc-ag-chain">{who(t)}</span>
                     <dl className="lc-ag-stats">
                       <dt>Tokens</dt>
                       <dd>{compact(tokensOf(t))}</dd>
@@ -709,6 +722,8 @@ function Trial({ cast, onOpen }: { cast: Cast; onOpen?: (threadId: string) => vo
                         Open the session
                         <I.chevR size={12} />
                       </button>
+                    )}
+                    </div>
                     )}
                   </div>
                 );
@@ -888,7 +903,10 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
     const firstName = cast.who(stages[0].who).name;
     const inStages = stages.map((st) => st.who);
     jobs.push({ id: "you", node: <I.compose size={12} />, title: "You ask", note: "A message, files, or lines you point at in the diff.", fixed: true });
-    jobs.push({
+    // Who takes your message sits with the other optional steps, after the writing, so the spine
+    // starts with what always happens: you ask, it writes.
+    const leadJobs: Job[] = [];
+    leadJobs.push({
       id: "lead",
       node: lead ? <NodeOf id={lead} cast={cast} /> : <I.hand size={12} />,
       agent: Boolean(lead && !lead.startsWith("@")),
@@ -898,7 +916,7 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
       sees: lead ? [4, "Your whole conversation"] : undefined,
       control: <WhoPick label="Who takes your message" value={lead} none={`Nobody, straight to ${firstName}`} cast={cast} exclude={[stages[0].who]} onPick={(v) => patch({ lead: v })} />,
     });
-    if (lead) jobs.push({ id: "approve", node: <I.check size={12} />, title: "You approve the plan", note: "Edit steps, hand a step to the crew, or send it back with a note.", fixed: true });
+    if (lead) leadJobs.push({ id: "approve", node: <I.check size={12} />, title: "You approve the plan", note: "Edit steps, hand a step to the crew, or send it back with a note.", fixed: true });
     stages.forEach((st, i) => {
       const a = cast.who(st.who);
       const claudeAgent = !st.who.startsWith("@") && onClaude(a.model);
@@ -977,6 +995,7 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
           </button>
         ),
       });
+    jobs.push(...leadJobs);
     const pool = agents.filter((a) => a.id !== lead && !inStages.includes(a.id));
     jobs.push({
       id: "crew",

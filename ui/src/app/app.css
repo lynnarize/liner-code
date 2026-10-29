@@ -4612,6 +4612,7 @@ html[data-native="mac"] .lc-st-side {
 }
 /* Settings and Setup keep white cards, with a 1px ring where the glass frame was. */
 .lc-fcard.lc-st-card,
+.lc-st-col .lc-fcard,
 .lc-setup .lc-fcard,
 .lc-usage-in .lc-fcard {
   border-radius: 18px;

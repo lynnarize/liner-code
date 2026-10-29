@@ -7,7 +7,8 @@ a diff for every turn that you can undo or commit or question line by line, a Re
 another model family, surfaces beside the session (Terminal, Browser, Files, Pull request, Device,
 Routines), models compared side by side, and sessions that sort themselves by what they need
 from you. It's built from [Liner UI](https://linerui.sorafel.com), so it has Liner's look and motion:
-white paper in a glass frame, one accent, text that comes into focus, springs that never overshoot.
+white paper on one solid ground, glass only on the session tray, one accent, text that comes into
+focus, springs that never overshoot.
 
 Ideas came from [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) (MIT); no code was copied from either.

@@ -67,10 +67,8 @@
     box-shadow 160ms ease;
 }
 .lc-stab[data-on] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
 }
 /* With the plate measured, it carries the white; the tab itself stays clear so the plate can glide. */
 .lc-stabs-row {
@@ -87,10 +85,8 @@
   height: 30px;
   margin-top: -15px;
   border-radius: 9px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
   pointer-events: none;
 }
 .lc-stab-plate[data-moved] {
@@ -244,10 +240,8 @@
   padding: 8px 10px 8px 8px;
   border: 0;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
   text-align: left;
   cursor: pointer;
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
@@ -307,10 +301,8 @@
   gap: 2px;
   padding: 2px 12px 10px;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-well);
+  box-shadow: none;
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
 }
 .lc-sinfo-card .lc-pop-head {
@@ -796,8 +788,8 @@
   min-width: 0;
   min-height: 0;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-well);
+  box-shadow: none;
   overflow: hidden;
 }
 .lc-files-head {
@@ -1000,8 +992,8 @@
   border: 0;
   border-radius: 8px;
   outline: none;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-well);
+  box-shadow: none;
   font: inherit;
   font-size: 12px;
 }
@@ -1090,8 +1082,8 @@
   min-height: 34px;
   padding: 0 10px;
   border-radius: 10px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  background: var(--lc-well);
+  box-shadow: none;
   font-size: 13px;
 }
 .lc-pr-checks b {
@@ -1307,10 +1299,8 @@
   gap: 8px;
   padding: 12px 12px 10px;
   border-radius: 16px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-well);
+  box-shadow: none;
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
 }
 .lc-linked-card[data-mine] {
@@ -1417,10 +1407,8 @@
   gap: 10px;
   padding: 12px;
   border-radius: 18px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-well);
+  box-shadow: none;
   animation: l-blur-in 380ms var(--l-ease-out) backwards;
 }
 .lc-rt-card[data-off] .lc-rt-h,
@@ -1522,8 +1510,8 @@
   font-size: 12.5px;
 }
 .lc-rt-steps li[data-s="running"] {
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  background: var(--lc-plate);
+  box-shadow: none;
 }
 .lc-rt-steps li[data-s="skipped"] {
   color: var(--l-ink-3);
@@ -1916,8 +1904,8 @@
 .lc-rv-file {
   overflow: hidden;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-well);
+  box-shadow: none;
 }
 .lc-rv-fh {
   position: sticky;
@@ -2025,10 +2013,8 @@
   max-width: 620px;
   padding: 12px;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 4px 14px -8px var(--l-drop);
+  background: var(--lc-well);
+  box-shadow: none;
   white-space: normal;
   animation: l-blur-in 320ms var(--l-ease-out) backwards;
 }
@@ -2135,10 +2121,8 @@
   min-width: 0;
   min-height: 0;
   border-radius: 18px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-well);
+  box-shadow: none;
   animation: l-blur-in 380ms var(--l-ease-out) backwards;
 }
 .lc-cmp-h {
@@ -2256,8 +2240,8 @@
   gap: 4px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  background: var(--lc-plate);
+  box-shadow: none;
   animation: l-blur-in 300ms var(--l-ease-out) backwards;
 }
 .lc-rev-b > p {
@@ -2566,8 +2550,8 @@
   padding: 0 8px;
   border: 0;
   border-radius: 9px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-plate);
+  box-shadow: none;
   font: inherit;
   font-size: 12.5px;
   color: var(--l-ink);
@@ -3315,8 +3299,8 @@
   padding: 0 2px;
   box-sizing: border-box;
   border-radius: 4px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-well);
+  box-shadow: none;
   font-size: 8px;
   font-weight: 600;
   line-height: 1;
@@ -3474,8 +3458,8 @@
   width: 22px;
   height: 18px;
   border-radius: 6px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  background: var(--lc-plate);
+  box-shadow: none;
   font-family: var(--l-font-display);
   font-size: 10px;
   font-weight: 600;

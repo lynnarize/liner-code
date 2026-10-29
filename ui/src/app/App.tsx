@@ -1,6 +1,6 @@
 /*
-  Liner Code. The window is one glass frame holding the sidebar; the white paper inside it holds
-  Home, a session or Usage. ⌘K reaches everything; the shell's menu bar sends the same commands.
+  Liner Code. The window is one ground: the sidebar beside Home, a session or Usage, with
+  nothing drawn between them. ⌘K reaches everything; the shell's menu bar sends the same commands.
 */
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { AgentProfile, RoutineRun } from "@contracts";
@@ -308,7 +308,7 @@ export function App() {
         </>
       )}
       {!connected && (
-        <div className="lc-offline l-glass" role="status">
+        <div className="lc-offline" role="status">
           <span className="l-shimmer">Reconnecting to the engine</span>
         </div>
       )}

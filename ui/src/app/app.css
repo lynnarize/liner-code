@@ -495,21 +495,23 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   transition: stroke-dashoffset 700ms var(--l-spring-smooth);
 }
 
-/* Buttons */
+/* Buttons on the ground, outside a tray: pills. Accent for the main action, ink (the tray's
+   control) once on a page, quiet (a well) for the rest, ghost, and danger as text. */
 .lc-btn {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 13px;
+  height: 36px;
+  padding: 0 16px;
   border: 0;
-  border-radius: 10px;
-  background: var(--l-surface);
-  font-size: 13px;
+  border-radius: 999px;
+  background: var(--lc-well);
+  font-size: 13.5px;
   font-weight: 500;
   white-space: nowrap;
+  color: var(--l-ink);
   cursor: pointer;
   transition:
     background 160ms ease,
@@ -525,47 +527,47 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   cursor: default;
 }
 .lc-btn[data-kind="primary"] {
-  background: var(--l-primary-solid);
-  color: var(--l-primary-ink);
+  background: var(--lc-ctl);
+  color: var(--lc-ctl-ink);
 }
 .lc-btn[data-kind="accent"] {
   background: var(--l-accent-fill);
   color: var(--l-accent-ink);
 }
-.lc-btn[data-kind="plain"] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 1px var(--l-drop);
+.lc-btn[data-kind="plain"],
+.lc-btn[data-kind="secondary"] {
+  background: var(--lc-well);
 }
 .lc-btn[data-kind="ghost"] {
+  padding: 0 12px;
   background: none;
   color: var(--l-ink-2);
 }
 @media (hover: hover) {
+  .lc-btn:not([data-kind]):hover:not(:disabled),
+  .lc-btn[data-kind="plain"]:hover:not(:disabled),
+  .lc-btn[data-kind="secondary"]:hover:not(:disabled),
   .lc-btn[data-kind="ghost"]:hover:not(:disabled) {
-    background: var(--l-wash-2);
+    background: var(--lc-plate);
   }
-  .lc-btn[data-kind="plain"]:hover:not(:disabled) {
-    box-shadow:
-      0 0 0 1px var(--l-line-strong),
-      0 1px 2px var(--l-drop);
+  .lc-btn[data-kind="primary"]:hover:not(:disabled) {
+    background: var(--lc-ctl-hover);
   }
-  .lc-btn[data-kind="primary"]:hover:not(:disabled),
   .lc-btn[data-kind="accent"]:hover:not(:disabled) {
     filter: brightness(1.08);
   }
 }
 .lc-btn[data-size="sm"] {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 9px;
+  height: 30px;
+  padding: 0 12px;
   font-size: 12.5px;
 }
+.lc-btn[data-kind="ghost"][data-size="sm"] {
+  padding: 0 10px;
+}
 .lc-btn[data-size="lg"] {
-  height: 38px;
-  padding: 0 18px;
-  border-radius: 11px;
+  height: 40px;
+  padding: 0 20px;
   font-size: 14px;
 }
 .lc-link {
@@ -5027,11 +5029,18 @@ html[data-native="mac"] .lc-st-side {
   bottom: 18px;
   translate: -50% 0;
   z-index: 60;
-  padding: 8px 14px;
+  padding: 9px 16px;
   border-radius: 999px;
+  background: var(--lc-ctl);
+  box-shadow: var(--lc-float-shadow);
   font-size: 12.5px;
-  color: var(--l-ink-2);
+  font-weight: 500;
+  color: var(--lc-ctl-ink);
   animation: l-pop-in 260ms var(--l-ease-enter) backwards;
+}
+
+.lc-offline .l-shimmer {
+  background-image: linear-gradient(100deg, var(--lc-ctl-ink-2) 35%, var(--lc-ctl-ink) 50%, var(--lc-ctl-ink-2) 65%);
 }
 
 /* Narrow windows: the panel takes over the paper rather than squeezing the session. */

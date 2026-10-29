@@ -15,7 +15,7 @@ download the new DMG.
   what you read. It is the one glass surface left: solid controls inside, the open surface's
   icon on a tile, and the files waiting to be committed in a chip inside Commit and push.
   Settings › Appearance › Session tray sets its glass: Clear, Tinted or Solid.
-- **The composer** is one text box with its controls inside, in a tray of their own: who works on
+- **The composer** is one text box with its controls inside, under what you type: who works on
   it, effort, access, and Send in the accent. While a turn runs, Stop sits beside Send, and the
   note beside them says what Enter does (press it to change that).
 - **Commit and push plays out in the thread.** The chip grows into a card, your commits come into
@@ -23,8 +23,11 @@ download the new DMG.
   it lands; then it folds back into a chip, with Open a pull request beside it.
 - **The pull request card** in the thread and the Pull request panel read the same way: your
   commits on a rail under Merge into main, what reached main in amber beside them, each clash
-  with its two lines, the checks in a list, and one status line with Resolve conflicts or Squash
+  with its two lines, the checks in one row, and one status line with Resolve conflicts or Squash
   and merge beside it.
+- **Asks are one row**: what the agent wants, its risk, Not this and Allow side by side. What it
+  says and exactly where it runs fold under Details; a high-risk ask shows them, so you read
+  before you hold.
 - **New agent, in two columns**, and three new things an agent knows: a **prompt** added to every
   turn after its soul, **skills** (skill.md files it reads when a task calls for one, yours or
   each project's own) and **context files** read at the start of each session.
@@ -50,6 +53,7 @@ download the new DMG.
 ### Fixed
 
 - Pickers inside a dialog (New agent's effort and model) opened underneath it.
+- An empty composer could stay several lines tall after the window widened.
 - Usage › Limits showed rows of NaN%: only Claude Code's five-hour and weekly windows count now.
 - The cost test lets Codex run read-only commands, a quick model that changed nothing is read by
   the judge and handed up, and Codex's running token totals no longer write over Claude's.

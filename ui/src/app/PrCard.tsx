@@ -183,8 +183,8 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
         </div>
       )}
       {checks.length > 0 && (
-        <>
-          <p className="lc-prc-lab">Checks</p>
+        <div className="lc-prc-checks-row">
+          <span className="lc-prc-lab">Checks</span>
           <ul className="lc-prc-checks" aria-label="Checks">
             {checks.map((k) => (
               <li key={k.id} data-state={k.state} title={k.detail}>
@@ -198,7 +198,7 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
       <div className="lc-prc-line">
         <span className="lc-prc-status" data-tone={tone} role="status" key={line.replace(/\d+/g, "#")}>

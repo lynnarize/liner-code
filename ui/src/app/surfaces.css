@@ -3831,6 +3831,50 @@
 .lc-appr .l-appr__titles b {
   overflow-wrap: anywhere;
 }
+/* Compact: one row, the ask on the left and its buttons on the right; what it says and its
+   fields (folded under Details) and a reason to send it back go full width under it. */
+.lc-appr .l-appr__ask {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 10px 10px 10px 12px;
+}
+.lc-appr .l-appr__ask > :not(.l-appr__head, .l-appr__actions) {
+  grid-column: 1 / -1;
+}
+.lc-appr .l-appr__ask:has(.l-appr__why) .l-appr__actions {
+  grid-column: 1 / -1;
+  grid-row: 99;
+}
+.lc-appr .l-appr__head {
+  align-items: center;
+  gap: 10px;
+}
+.lc-appr .l-appr__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--lc-well);
+  box-shadow: none;
+}
+.lc-appr .l-appr__titles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+}
+.lc-appr .l-appr__titles span {
+  font-size: 13px;
+}
+.lc-appr .l-appr__titles b {
+  font-size: 13.5px;
+}
+.lc-appr .l-appr__head .l-badge {
+  flex: none;
+}
+.lc-appr .l-appr__desc {
+  margin: 0;
+}
 .lc-ask-cmd {
   display: block;
   max-height: 14lh;
@@ -3845,18 +3889,43 @@
 }
 .lc-appr-strip {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0 14px;
-  padding: 9px 2px 2px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0 12px;
+  padding: 7px 0 0;
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--l-ink-3);
   animation: l-unblur 320ms var(--l-ease-out) backwards;
 }
+.lc-appr-strip .lc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
 .lc-appr-strip input {
   flex: none;
-  margin-top: 2px;
+  margin: 0;
+}
+.lc-appr-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-appr-more > svg {
+  color: var(--l-ink-4);
+  transition: rotate 260ms var(--l-spring-smooth);
+}
+.lc-appr-more[aria-expanded="true"] > svg {
+  rotate: 90deg;
 }
 .lc-appr-strip code {
   overflow-wrap: anywhere;
@@ -3864,6 +3933,9 @@
 @media (prefers-reduced-motion: reduce) {
   .lc-appr-strip {
     animation: none;
+  }
+  .lc-appr-more > svg {
+    transition: none;
   }
 }
 

@@ -51,9 +51,6 @@
   /* The session tray's glass: blur 24, saturate 160%, a lit hairline rim. */
   --lc-tray: oklch(0.945 0.004 265 / 0.62);
   --lc-tray-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.95), inset 0 1px 0 oklch(1 0 0 / 0.9), 0 0 0 0.5px oklch(0.25 0.02 265 / 0.1), 0 14px 36px -14px oklch(0.3 0.04 265 / 0.28), 0 2px 6px -2px oklch(0.3 0.04 265 / 0.1);
-  /* The composer's tray: a lit pill around its controls, drawn, not blurred. */
-  --lc-fg: linear-gradient(180deg, oklch(0.965 0.003 265 / 0.94), oklch(0.91 0.005 265 / 0.94));
-  --lc-fg-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.95), inset 0 1px 0 oklch(1 0 0), inset 0 -1px 0 oklch(0.25 0.02 265 / 0.05), 0 0 0 0.5px oklch(0.25 0.02 265 / 0.09), 0 6px 14px -8px oklch(0.3 0.04 265 / 0.22);
 }
 [data-theme="dark"] {
   --lc-well: color-mix(in oklab, var(--l-ink) 5%, var(--lc-paper));
@@ -72,8 +69,6 @@
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
   --lc-tray: oklch(0.32 0.007 265 / 0.55);
   --lc-tray-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 0.5px oklch(0 0 0 / 0.6), 0 16px 40px -12px oklch(0 0 0 / 0.6);
-  --lc-fg: linear-gradient(180deg, oklch(0.36 0.008 265 / 0.78), oklch(0.27 0.007 265 / 0.78));
-  --lc-fg-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.1), inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 0.5px oklch(0 0 0 / 0.55), 0 8px 16px -8px oklch(0 0 0 / 0.7);
 }
 /* Session tray › Glass. Clear shows more of the thread; Solid draws none. */
 html[data-tray="clear"] {
@@ -2634,10 +2629,10 @@ html[data-tray="solid"] .lc-rail {
 
 /* ---------- The composer ---------- */
 /*
-  One solid text box (radius 24, the field tone) lifted off the ground by a soft shadow, with no
-  rim and no glass. Its controls sit inside it in a tray of their own, a lit pill like the session
-  tray, holding solid ink controls 40px tall: segments split by a hairline, rounds for icons, and
-  the open choice's icon on a tile. Send is the accent; while a turn runs, Stop (red) sits beside it.
+  One solid text box (radius 24, the field tone) lifted off the paper by a soft shadow, with no
+  glass. Its controls sit inside it under what you type: solid ink, 40px tall, segments split by
+  a hairline, rounds for icons, and the open choice's icon on a tile. Send is the accent; while a
+  turn runs, Stop (red) sits beside it.
 */
 .lc-composer {
   position: relative;
@@ -2692,17 +2687,13 @@ html[data-tray="solid"] .lc-rail {
 .lc-field::placeholder {
   color: var(--l-ink-4);
 }
-/* The tray: a lit gradient pill with a rim, drawn rather than blurred, so it costs nothing. */
+/* The controls sit straight in the text box, a row of solid ink under what you type. */
 .lc-card-row {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
-  margin: 8px -4px 0 -6px;
-  padding: 5px;
-  border-radius: 999px;
-  background: var(--lc-fg);
-  box-shadow: var(--lc-fg-rim);
+  margin: 8px 0 0 -6px;
 }
 .lc-card-row > * {
   flex-shrink: 0;
@@ -5994,26 +5985,32 @@ html[data-native="mac"] .lc-st-side {
   font-style: normal;
   color: var(--l-ink-3);
 }
+/* The checks read across, in one row that wraps: the mark, the name, and how it went. */
+.lc-prc-checks-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 18px;
+  min-width: 0;
+}
 .lc-prc-lab {
-  margin: 2px 0 -4px;
   font-size: 12px;
   font-weight: 500;
   color: var(--l-ink-3);
 }
 .lc-prc-checks {
-  display: grid;
+  display: contents;
   margin: 0;
-  padding: 6px 12px;
-  border-radius: 12px;
-  background: var(--lc-well);
+  padding: 0;
   list-style: none;
 }
 .lc-prc-checks li {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 12.5px;
-  line-height: 26px;
+  line-height: 24px;
+  white-space: nowrap;
   color: var(--l-ink-2);
   animation: l-unblur 300ms var(--l-ease-out) backwards;
 }
@@ -6041,8 +6038,7 @@ html[data-native="mac"] .lc-st-side {
   color: var(--l-danger);
 }
 .lc-prc-cm {
-  margin-left: auto;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
   animation: l-swap-in 260ms var(--l-ease-out) backwards;
 }

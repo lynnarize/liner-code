@@ -143,13 +143,30 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   }, [text, thread]);
   useEffect(() => localStorage.setItem("lc:enter", mode), [mode]);
 
-  // The field grows with what you write, up to eight lines, then scrolls.
-  useLayoutEffect(() => {
+  // The field grows with what you write, up to eight lines, then scrolls. It measures again when
+  // its width changes, or a height taken while the column was narrow (the placeholder wrapping)
+  // would stay after it widens.
+  const fit = () => {
     const el = field.current;
     if (!el) return;
     el.style.height = "0px";
     el.style.height = `${Math.min(el.scrollHeight, LINE * MAX_LINES + 20)}px`;
-  }, [text]);
+  };
+  useLayoutEffect(fit, [text]);
+  useEffect(() => {
+    const el = field.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let width = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    ro.observe(el);
+    // The font arriving changes how the placeholder wraps too.
+    void document.fonts?.ready.then(fit);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     if (autoFocus) field.current?.focus();
   }, [autoFocus, thread?.id]);

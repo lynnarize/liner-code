@@ -1720,7 +1720,7 @@
 /* The canvas and Step settings sit on the ground, side by side, with nothing drawn around them:
    white nodes on the ground, and the settings' groups as wells. */
 .lc-rb .l-wf {
-  --wf-canvas: var(--lc-ground);
+  --wf-canvas: var(--lc-paper);
   --wf-dot: color-mix(in oklab, var(--l-ink) 7%, transparent);
 }
 .lc-rb .l-wf-stage,
@@ -1729,7 +1729,7 @@
   background: none;
 }
 .lc-rb .l-wf-ins__head {
-  background: var(--lc-ground);
+  background: var(--lc-paper);
   box-shadow: none;
 }
 /* A step's settings are one well of rows split by hairlines, each switch at its row's end. */

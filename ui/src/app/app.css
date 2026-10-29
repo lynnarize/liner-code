@@ -31,8 +31,9 @@
 :root,
 [data-theme] {
   --lc-ground: var(--l-bg);
-  --lc-well: color-mix(in oklab, var(--l-ink) 4.5%, var(--l-bg));
-  --lc-plate: color-mix(in oklab, var(--l-ink) 7.5%, var(--l-bg));
+  --lc-paper: var(--l-surface);
+  --lc-well: color-mix(in oklab, var(--l-ink) 4.5%, var(--lc-paper));
+  --lc-plate: color-mix(in oklab, var(--l-ink) 7.5%, var(--lc-paper));
   --lc-field: var(--l-surface);
   --lc-float: var(--l-surface);
   --lc-ctl: oklch(0.215 0.007 265);
@@ -52,10 +53,10 @@
   --lc-fg-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.95), inset 0 1px 0 oklch(1 0 0), inset 0 -1px 0 oklch(0.25 0.02 265 / 0.05), 0 0 0 0.5px oklch(0.25 0.02 265 / 0.09), 0 6px 14px -8px oklch(0.3 0.04 265 / 0.22);
 }
 [data-theme="dark"] {
-  --lc-well: color-mix(in oklab, var(--l-ink) 5%, var(--l-bg));
-  --lc-plate: color-mix(in oklab, var(--l-ink) 9.5%, var(--l-bg));
-  --lc-field: color-mix(in oklab, var(--l-ink) 6%, var(--l-bg));
-  --lc-float: color-mix(in oklab, var(--l-ink) 7%, var(--l-bg));
+  --lc-well: color-mix(in oklab, var(--l-ink) 5%, var(--lc-paper));
+  --lc-plate: color-mix(in oklab, var(--l-ink) 9.5%, var(--lc-paper));
+  --lc-field: color-mix(in oklab, var(--l-ink) 5%, var(--lc-paper));
+  --lc-float: color-mix(in oklab, var(--l-ink) 6%, var(--lc-paper));
   --lc-ctl: oklch(0.13 0.003 265);
   --lc-ctl-hover: oklch(0.2 0.004 265);
   --lc-ctl-tile: oklch(0.28 0.006 265);
@@ -185,19 +186,26 @@ pre {
   font-size: 12px;
 }
 
-/* ---------- The window: one ground ---------- */
+/* ---------- The window: one ground, and the paper ---------- */
 /*
-  The sidebar and the session sit side by side on the ground, edge to edge. The session doesn't
-  sit on a paper of its own any more: Home, a session and Usage draw straight on the ground.
+  The sidebar sits on the ground. Home, a session, Usage and Settings' places sit on the paper, a
+  white sheet a gap in from the window's edges, as before but with no glass round it. The side
+  panel is a column inside the paper with nothing drawn round it.
 */
 .lc-app {
+  --lc-gap: 6px;
+  --lc-paper-r: 18px;
   position: relative;
   display: grid;
   grid-template-columns: 0px minmax(0, 1fr);
   height: 100%;
   box-sizing: border-box;
+  padding: var(--lc-gap) var(--lc-gap) var(--lc-gap) 0;
   background: var(--lc-ground);
   transition: grid-template-columns 520ms var(--l-spring-smooth);
+}
+html[data-native="mac"] .lc-app {
+  --lc-paper-r: 14px;
 }
 .lc-app[data-sidebar] {
   grid-template-columns: var(--lc-side) minmax(0, 1fr);
@@ -216,10 +224,17 @@ pre {
   position: relative;
   min-width: 0;
   min-height: 0;
-  /* Clip, not hidden: a thread's screen-reader labels reach past the session, which made it
+  /* Clip, not hidden: a thread's screen-reader labels reach past the paper, which made it
      scrollable, and opening a diff (scrollIntoView) scrolled the session's head out of sight. */
   overflow: clip;
-  background: var(--lc-ground);
+  border-radius: var(--lc-paper-r);
+  background: var(--lc-paper);
+  box-shadow:
+    0 0 0 1px var(--lc-hair),
+    0 1px 2px oklch(0.3 0.04 265 / 0.05);
+}
+.lc-app:not([data-sidebar]) .lc-paper {
+  margin-left: var(--lc-gap);
 }
 /* The picture behind the session (Settings, Appearance): blurred, under a wash of the ground so
    the work reads. It's still, so it costs the graphics card nothing once drawn. The sidebar
@@ -229,6 +244,7 @@ pre {
   inset: 0;
   z-index: 0;
   overflow: hidden;
+  border-radius: inherit;
   pointer-events: none;
   animation: lc-bg-in 700ms var(--l-ease-out) backwards;
 }
@@ -248,7 +264,7 @@ pre {
   content: "";
   position: absolute;
   inset: 0;
-  background: color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-bg-show)) * 100%), transparent);
+  background: color-mix(in oklab, var(--lc-paper) calc((1 - var(--lc-bg-show)) * 100%), transparent);
 }
 html[data-bg] .lc-paper > :not(.lc-bg) {
   position: relative;
@@ -256,7 +272,7 @@ html[data-bg] .lc-paper > :not(.lc-bg) {
 }
 /* The side panel keeps a steady ground of its own over a picture: terminals and diffs want one. */
 html[data-bg] .lc-panel {
-  background: color-mix(in oklab, var(--lc-ground) 86%, transparent);
+  background: color-mix(in oklab, var(--lc-paper) 86%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-bg {
@@ -2634,7 +2650,9 @@ html[data-tray="solid"] .lc-rail {
   padding: 14px 12px 12px 18px;
   border-radius: 24px;
   background: var(--lc-field);
-  box-shadow: var(--lc-lift);
+  box-shadow:
+    0 0 0 1px var(--lc-hair),
+    var(--lc-lift);
   transition: box-shadow 200ms ease;
 }
 .lc-composer[data-variant="home"] .lc-card {
@@ -4972,7 +4990,9 @@ html[data-native="mac"] .lc-st-side {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
+  grid-template-columns: 100px minmax(0, 1fr);
+  padding: 4px 4px 4px 0;
+  box-sizing: border-box;
   width: min(100%, 400px);
   height: 210px;
   overflow: hidden;
@@ -5022,8 +5042,11 @@ html[data-native="mac"] .lc-st-side {
   display: flex;
   flex-direction: column;
   gap: 9px;
-  padding: 18px 40px 0 18px;
+  padding: 14px 36px 0 14px;
   overflow: hidden;
+  border-radius: 9px;
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair);
 }
 .lc-pv-paper[data-bg]::before,
 .lc-pv-paper[data-bg]::after {
@@ -5038,7 +5061,7 @@ html[data-native="mac"] .lc-st-side {
 }
 .lc-pv-paper[data-bg]::after {
   inset: 0;
-  background: color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-pv-show, 0.45)) * 100%), transparent);
+  background: color-mix(in oklab, var(--lc-paper) calc((1 - var(--lc-pv-show, 0.45)) * 100%), transparent);
 }
 .lc-pv-you {
   align-self: flex-end;
@@ -5354,13 +5377,13 @@ html[data-native="mac"] .lc-st-side {
 /* Folding back is quicker than opening: the exit runs ahead of the entrance. */
 .lc-ship[data-p="4"] .lc-ship-morph {
   width: 176px;
-  background: color-mix(in oklab, var(--l-ok) 13%, var(--lc-ground));
+  background: color-mix(in oklab, var(--l-ok) 13%, var(--lc-paper));
   transition-duration: calc(420ms * var(--k)), calc(420ms * var(--k)), calc(300ms * var(--k));
   transition-delay: calc(380ms * var(--k));
 }
 .lc-ship[data-p="4"][data-error] .lc-ship-morph {
   width: 230px;
-  background: color-mix(in oklab, var(--l-danger) 12%, var(--lc-ground));
+  background: color-mix(in oklab, var(--l-danger) 12%, var(--lc-paper));
 }
 .lc-ship-body {
   display: grid;

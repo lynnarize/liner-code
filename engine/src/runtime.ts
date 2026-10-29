@@ -26,6 +26,7 @@ import { codex } from "./providers/codex.ts";
 import { demo } from "./providers/demo.ts";
 import type { Provider, ProviderSession, TurnSink, ToolUpdate } from "./providers/types.ts";
 import type { AgentTools } from "./agent-tools.ts";
+import { briefOf } from "./agents.ts";
 import { commandRisk, readsOnly, ruleFor } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 
@@ -140,7 +141,7 @@ export class Runtime {
       effort: r.effort,
       access,
       planning,
-      soul: planning ? [r.agent.soul, leadRules(this.resolve(t).agent.name, (t.helpers ?? []).map((h) => this.store.agent(h)).map((a) => `${a.name} (${a.role})`))].filter(Boolean).join("\n\n") : r.agent.soul,
+      soul: planning ? [briefOf(r.agent, cwd), leadRules(this.resolve(t).agent.name, (t.helpers ?? []).map((h) => this.store.agent(h)).map((a) => `${a.name} (${a.role})`))].filter(Boolean).join("\n\n") : briefOf(r.agent, cwd),
       resume: forking ? t.forkSession!.slice(t.forkSession!.indexOf(":") + 1) : resume,
       fork: forking,
       guard: this.store.settings.guardDestructive,

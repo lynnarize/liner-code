@@ -125,6 +125,15 @@ export type AgentProfile = {
   effort: Effort;
   /** Appended to the provider's own system prompt. */
   soul: string;
+  /** Added to every turn, after the soul. */
+  prompt?: string;
+  /**
+    skill.md files it reads when a task calls for one. An absolute path is one of yours, the same
+    in every project; a relative one is looked for in each session's project.
+  */
+  skills?: string[];
+  /** Files read at the start of each session and handed to it: absolute paths, or relative to each project. */
+  contextFiles?: string[];
   /** What it may change on its own in a new session; the session can lower it. */
   access?: Access;
   /**
@@ -861,6 +870,8 @@ export type Rpc = {
   "usage.limits": [Record<string, never>, { tools: ToolLimits[] }];
   /** What `/` and `$` offer in the composer, for the tool an agent runs on in a project. */
   "agent.commands": [{ projectId: string; agent: string; threadId?: string }, { commands: CommandInfo[]; skills: SkillInfo[] }];
+  /** The skill.md files an agent can be given: yours (Claude Code's and Codex's skills folders) and, with a project, its own. */
+  "skills.list": [{ projectId?: string }, { yours: SkillInfo[]; project: SkillInfo[] }];
   "keys.set": [{ provider: string; key: string | null }, string[]];
   "machine.info": [Record<string, never>, { name: string; user: string; home: string }];
   "agents.save": [{ agents: AgentProfile[] }, AgentProfile[]];

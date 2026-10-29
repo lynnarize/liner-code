@@ -16,6 +16,7 @@ import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
 import { findFiles, gitStatus, tree } from "./files.ts";
 import { ensureSampleProject } from "./providers/demo.ts";
+import { skillsIn } from "./providers/models.ts";
 import type { Routines } from "./routines.ts";
 import { providers, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
@@ -807,6 +808,15 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
 
     "agents.save": ({ agents }) => store.setAgents(agents),
+    "skills.list": ({ projectId }) => {
+      const env = process.env;
+      const file = (x: SkillInfo) => ({ ...x, path: join(x.path!, "SKILL.md") });
+      const yours = skillsIn([join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "skills"), join(env.CODEX_HOME || join(homedir(), ".codex"), "skills")]).map(file);
+      const root = projectId ? store.project(projectId).path : undefined;
+      // A project's own skills are kept relative, so an agent finds the same one in each project that has it.
+      const project = root ? skillsIn([join(root, ".claude", "skills"), join(root, ".codex", "skills")]).map((x) => ({ ...file(x), path: relative(root, join(x.path!, "SKILL.md")) })) : [];
+      return { yours, project };
+    },
     "settings.save": (patch) => {
       const settings = store.setSettings(patch);
       // A new or changed account is a tool to find; a model id you added only changes the lists.

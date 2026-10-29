@@ -287,20 +287,6 @@
     transition: none;
   }
 }
-.lc-ad-models {
-  padding: 6px;
-  border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
-}
-.lc-pb.lc-ad-effort {
-  justify-content: flex-start;
-  width: 100%;
-  height: 36px;
-}
-.lc-pb.lc-ad-effort > svg:last-child {
-  margin-left: auto;
-}
 .lc-st-src {
   flex-basis: 100%;
   font-size: 11.5px;

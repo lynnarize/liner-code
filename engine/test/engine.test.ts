@@ -501,3 +501,22 @@ test("imports: Claude Code and Codex sessions in a folder come in as timelines t
   assert.equal(x.model, "gpt-5.6-sol");
   assert.deepEqual(x.items.map((i) => (i.kind === "text" || i.kind === "user" ? `${i.kind}:${i.text}` : i.kind === "tool" ? `tool:${i.title}` : i.kind)), ["user:Add a test for leap years", "turn", "tool:Run npm test", "text:Added and passing."]);
 });
+
+test("an agent's brief: its soul, its prompt, the skills it may read and its context files as they read now", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { briefOf } = await import("../src/agents.ts");
+  const dir = mkdtempSync(join(tmpdir(), "liner-brief-"));
+  mkdirSync(join(dir, ".claude", "skills", "release-notes"), { recursive: true });
+  writeFileSync(join(dir, ".claude", "skills", "release-notes", "SKILL.md"), "---\nname: release-notes\ndescription: Writes the changelog entry\n---\nSteps.");
+  writeFileSync(join(dir, "AGENTS.md"), "Use tabs.");
+  const brief = briefOf({ soul: "You are Forge.", prompt: "Keep diffs small.", skills: [".claude/skills/release-notes/SKILL.md", "missing/SKILL.md"], contextFiles: ["AGENTS.md", "gone.md"] }, dir);
+  assert.ok(brief.startsWith("You are Forge.\n\nKeep diffs small."));
+  assert.match(brief, /- release-notes \(\.claude\/skills\/release-notes\/SKILL\.md\): Writes the changelog entry/);
+  assert.doesNotMatch(brief, /missing/);
+  assert.match(brief, /<file path="AGENTS\.md">\nUse tabs\.\n<\/file>/);
+  assert.doesNotMatch(brief, /gone\.md/);
+  // An agent with only a soul is told only its soul.
+  assert.equal(briefOf({ soul: "You are Helm." }, dir), "You are Helm.");
+});

@@ -137,7 +137,8 @@ export function Pop({
           >
             {children(close)}
           </div>,
-          document.body,
+          // Inside a modal dialog the panel joins it in the top layer, or the dialog would cover it.
+          wrap.current?.closest("dialog[open]") ?? document.body,
         )}
     </div>
   );

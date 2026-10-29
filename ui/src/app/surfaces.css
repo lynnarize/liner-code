@@ -3842,6 +3842,14 @@
 .lc-appr .l-appr__ask > :not(.l-appr__head, .l-appr__actions) {
   grid-column: 1 / -1;
 }
+.lc-appr .l-appr__head {
+  grid-row: 1;
+  grid-column: 1;
+}
+.lc-appr .l-appr__actions {
+  grid-row: 1;
+  grid-column: 2;
+}
 .lc-appr .l-appr__ask:has(.l-appr__why) .l-appr__actions {
   grid-column: 1 / -1;
   grid-row: 99;

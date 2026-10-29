@@ -1362,27 +1362,24 @@ html[data-native="mac"] .lc-sb-head {
   background: var(--lc-plate);
   box-shadow: none;
 }
+/* Snoozed and Settled: two quiet pills side by side; the open shelf's pill is a plate. */
 .lc-sb-tray {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  gap: 6px;
 }
 .lc-sb-tab {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 28px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 9px;
-  background: none;
+  border-radius: 999px;
+  background: var(--lc-well);
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--l-ink-2);
   cursor: pointer;
@@ -1414,7 +1411,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 @media (hover: hover) {
   .lc-sb-tab:not([aria-pressed="true"]):hover {
-    background: var(--l-wash-2);
+    background: var(--lc-plate);
     color: var(--l-ink);
   }
 }
@@ -4597,7 +4594,8 @@ html[data-native="mac"] .lc-st-side {
 }
 /* Settings and Setup keep white cards, with a 1px ring where the glass frame was. */
 .lc-fcard.lc-st-card,
-.lc-setup .lc-fcard {
+.lc-setup .lc-fcard,
+.lc-usage-in .lc-fcard {
   border-radius: 18px;
   background: var(--l-surface);
   box-shadow:

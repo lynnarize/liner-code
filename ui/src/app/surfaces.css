@@ -1717,6 +1717,43 @@
   height: 100%;
   min-height: 0;
 }
+/* The canvas and Step settings sit on the ground, side by side, with nothing drawn around them:
+   white nodes on the ground, and the settings' groups as wells. */
+.lc-rb .l-wf {
+  --wf-canvas: var(--lc-ground);
+  --wf-dot: color-mix(in oklab, var(--l-ink) 7%, transparent);
+}
+.lc-rb .l-wf-stage,
+.lc-rb .l-wf-side {
+  border-radius: 0;
+  background: none;
+}
+.lc-rb .l-wf-ins__head {
+  background: var(--lc-ground);
+  box-shadow: none;
+}
+/* A step's settings are one well of rows split by hairlines, each switch at its row's end. */
+.lc-rb .l-wf-fields {
+  gap: 0;
+  padding: 2px 12px;
+  border-radius: 14px;
+  background: var(--lc-well);
+}
+.lc-rb .l-wf-fields > * {
+  padding-block: 10px;
+}
+.lc-rb .l-wf-fields > * + * {
+  box-shadow: inset 0 1px 0 var(--lc-hair);
+}
+.lc-rb .l-wf-fields > .l-switch-row {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  width: 100%;
+}
+.lc-rb .l-wf-sec {
+  border-top: 0;
+}
 /* The builder's own version and publish controls: a routine is on or off instead. */
 .lc-rb .l-wf-badge,
 .lc-rb .l-wf-saved,
@@ -2788,7 +2825,7 @@
 }
 .lc-limits-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
   margin-top: 10px;
 }
@@ -2798,7 +2835,7 @@
   gap: 10px;
   padding: 12px;
   border-radius: 14px;
-  background: var(--l-wash);
+  background: var(--lc-well);
 }
 .lc-limits-h {
   display: flex;
@@ -2826,7 +2863,7 @@
   display: block;
   height: 100%;
   border-radius: 3px;
-  background: var(--l-accent);
+  background: var(--l-ink-4);
   transition: width 700ms var(--l-spring-smooth);
 }
 .lc-limits-w[data-high] .lc-limits-bar i {

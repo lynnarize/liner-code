@@ -474,7 +474,9 @@ export const claude: Provider = {
     if (!u) return null;
     if (!u.rate_limits_available || !u.rate_limits) return { plan: u.subscription_type ?? undefined, windows: [], detail: "No plan limits: this sign-in bills by the token." };
     const names: Record<string, string> = { five_hour: "5-hour window", seven_day: "Weekly", seven_day_opus: "Weekly, Opus", seven_day_sonnet: "Weekly, Sonnet", seven_day_oauth_apps: "Weekly, apps" };
-    const windows = Object.entries(u.rate_limits).flatMap(([k, w]) => (w && w.utilization !== null ? [{ label: names[k] ?? k.replace(/_/g, " "), usedPercent: w.utilization, resetsAt: w.resets_at ? Date.parse(w.resets_at) : undefined }] : []));
+    // The call also returns keys that aren't windows (spend, breakdowns, codenamed experiments): only the
+    // five-hour and weekly windows with a number are a plan's limits.
+    const windows = Object.entries(u.rate_limits).flatMap(([k, w]) => (w && typeof w.utilization === "number" && /^(five_hour|seven_day)/.test(k) ? [{ label: names[k] ?? k.replace(/_/g, " "), usedPercent: w.utilization, resetsAt: w.resets_at ? Date.parse(w.resets_at) : undefined }] : []));
     return { plan: u.subscription_type ?? undefined, windows };
   },
   open: (o) => new ClaudeSession(o),

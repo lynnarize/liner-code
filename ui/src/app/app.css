@@ -1,8 +1,9 @@
 /*
-  Liner Code. The window is one glass frame: the sidebar sits on it, and the session is the white
-  paper inside it, in a gap of glass all round. Behind the glass is the desktop (Vibrancy or
-  Liquid Glass, the shell's material behind the frame alone), and Clear to Tinted is how much of
-  it comes through; with Solid it is Liner's frame tint. Your picture is the paper's alone.
+  Liner Code, seamless. The window, the sidebar, the session and the side panel are one ground:
+  no frame, rim, gap or line between them. Space, tone and type tell them apart. Glass is left
+  on one tray, the session tray, which keeps a lane of its own and never covers text; what it
+  holds is solid. The composer is one solid text box with its controls inside, in a tray of
+  their own. Menus, popovers, ⌘K and toasts are solid. Your picture sits behind the session.
   Motion follows Liner: state never overshoots, exits are faster than entrances, text and
   cards arrive by coming into focus, and reduced motion keeps only the fades.
 */
@@ -11,20 +12,122 @@
   --l-font-display: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --l-font-body: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --lc-side: 244px;
-  --lc-gap: 6px;
-  --lc-paper-r: 24px;
   --lc-head: 52px;
   /* How far a ring reaches past its control: Liner's focus ring (2px, 2px out) and a picked row's
      halo. A list that clips its rows (it scrolls, or folds) keeps this much room inside its edge
      and gives it back with a negative margin, so the rows stay put and no ring is cut. */
   --lc-ring: 4px;
   --lc-warn-dot: var(--l-warn);
-  --lc-frame-c: color-mix(in oklab, var(--l-surface-3) 70%, var(--l-surface-2));
   --lc-add: color-mix(in oklab, var(--l-ok) 9%, transparent);
   --lc-del: color-mix(in oklab, var(--l-danger) 8%, transparent);
 }
+
+/*
+  The surfaces. Ground: the window and everything on it. Well: a card in the thread, a notice,
+  the diff, a field. Plate: the picked row, a hover. Field: the composer's text box. Float: what
+  opens over the window. They come from Liner's background and ink, so your themes carry them.
+  The controls in a tray are solid ink in both themes (ctl), with a tile under the open one.
+*/
+:root,
+[data-theme] {
+  --lc-ground: var(--l-bg);
+  --lc-well: color-mix(in oklab, var(--l-ink) 4.5%, var(--l-bg));
+  --lc-plate: color-mix(in oklab, var(--l-ink) 7.5%, var(--l-bg));
+  --lc-field: var(--l-surface);
+  --lc-float: var(--l-surface);
+  --lc-ctl: oklch(0.215 0.007 265);
+  --lc-ctl-hover: oklch(0.285 0.007 265);
+  --lc-ctl-tile: oklch(0.355 0.008 265);
+  --lc-ctl-ink: oklch(0.965 0.002 265);
+  --lc-ctl-ink-2: oklch(0.74 0.006 265);
+  --lc-ctl-div: oklch(1 0 0 / 0.14);
+  --lc-hair: color-mix(in oklab, var(--l-ink) 8%, transparent);
+  --lc-lift: 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 14px 36px -16px oklch(0.3 0.04 265 / 0.24);
+  --lc-float-shadow: 0 0 0 0.5px oklch(0.3 0.04 265 / 0.08), 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 20px 48px -18px oklch(0.3 0.04 265 / 0.3), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
+  /* The session tray's glass: blur 24, saturate 160%, a lit hairline rim. */
+  --lc-tray: oklch(0.945 0.004 265 / 0.62);
+  --lc-tray-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.95), inset 0 1px 0 oklch(1 0 0 / 0.9), 0 0 0 0.5px oklch(0.25 0.02 265 / 0.1), 0 14px 36px -14px oklch(0.3 0.04 265 / 0.28), 0 2px 6px -2px oklch(0.3 0.04 265 / 0.1);
+  /* The composer's tray: a lit pill around its controls, drawn, not blurred. */
+  --lc-fg: linear-gradient(180deg, oklch(0.965 0.003 265 / 0.94), oklch(0.91 0.005 265 / 0.94));
+  --lc-fg-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.95), inset 0 1px 0 oklch(1 0 0), inset 0 -1px 0 oklch(0.25 0.02 265 / 0.05), 0 0 0 0.5px oklch(0.25 0.02 265 / 0.09), 0 6px 14px -8px oklch(0.3 0.04 265 / 0.22);
+}
 [data-theme="dark"] {
-  --lc-frame-c: oklch(0.255 0.004 265);
+  --lc-well: color-mix(in oklab, var(--l-ink) 5%, var(--l-bg));
+  --lc-plate: color-mix(in oklab, var(--l-ink) 9.5%, var(--l-bg));
+  --lc-field: color-mix(in oklab, var(--l-ink) 6%, var(--l-bg));
+  --lc-float: color-mix(in oklab, var(--l-ink) 7%, var(--l-bg));
+  --lc-ctl: oklch(0.13 0.003 265);
+  --lc-ctl-hover: oklch(0.2 0.004 265);
+  --lc-ctl-tile: oklch(0.28 0.006 265);
+  --lc-ctl-ink: oklch(0.94 0.003 265);
+  --lc-ctl-ink-2: oklch(0.66 0.006 265);
+  --lc-ctl-div: oklch(1 0 0 / 0.1);
+  --lc-lift: 0 1px 2px oklch(0 0 0 / 0.4), 0 18px 44px -16px oklch(0 0 0 / 0.75);
+  --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
+  --lc-tray: oklch(0.32 0.007 265 / 0.55);
+  --lc-tray-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 0.5px oklch(0 0 0 / 0.6), 0 16px 40px -12px oklch(0 0 0 / 0.6);
+  --lc-fg: linear-gradient(180deg, oklch(0.36 0.008 265 / 0.78), oklch(0.27 0.007 265 / 0.78));
+  --lc-fg-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.1), inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 0.5px oklch(0 0 0 / 0.55), 0 8px 16px -8px oklch(0 0 0 / 0.7);
+}
+/* Session tray › Glass. Clear shows more of the thread; Solid draws none. */
+html[data-tray="clear"] {
+  --lc-tray: oklch(0.945 0.004 265 / 0.38);
+}
+html[data-tray="clear"][data-theme="dark"] {
+  --lc-tray: oklch(0.32 0.007 265 / 0.32);
+}
+html[data-tray="solid"] {
+  --lc-tray: var(--lc-plate);
+}
+/*
+  Everything Liner floats (popovers, menus, ⌘K, toasts, tooltips' panels) is a solid float
+  surface with a soft shadow: no blur and no rim. Liner's own frames, where a part still draws
+  one, lose their glass and their padding.
+*/
+:root,
+[data-theme],
+[data-accent],
+[style*="--l-glass-opacity"] {
+  --l-backdrop: none;
+  --l-backdrop-sm: none;
+  --l-glass: var(--lc-float);
+  --l-glass-strong: var(--lc-float);
+  --l-float: var(--lc-float);
+  --l-glass-rim: none;
+  --l-glass-shadow: var(--lc-float-shadow);
+  --l-shadow-float: 0 0 #0000;
+  --l-frame-glass: transparent;
+  --l-frame-fill: transparent;
+  --l-frame-float-fill: var(--lc-float);
+  --l-frame-backdrop: none;
+  --l-frame-pad: 0px;
+}
+
+/* Liner's frames lose their glass and rim: a frame is its card alone, a well on the ground, and
+   one that floats (a dialog) is a solid float surface. */
+.l-frame {
+  box-shadow: none;
+}
+.l-frame::after,
+.l-frame-solo::after {
+  content: none;
+}
+.l-frame-float {
+  background: var(--lc-float);
+  box-shadow: var(--lc-float-shadow);
+}
+.l-frame-card {
+  border-radius: 16px;
+  background: var(--lc-well);
+  box-shadow: none;
+}
+.l-frame-float > .l-frame-card {
+  background: var(--lc-float);
+}
+.l-frame-solo {
+  border-width: 0;
+  background: var(--lc-well);
+  box-shadow: none;
 }
 
 html,
@@ -35,18 +138,11 @@ body,
   overflow: hidden;
 }
 body {
-  background: var(--l-bg);
+  background: var(--lc-ground);
   font-size: var(--l-text-md);
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
-}
-/* In the shell the desktop shows through the frame while a live material is behind it. */
-html[data-native="mac"][data-scene="desktop"] body {
-  background: transparent;
-}
-html[data-native="mac"] {
-  --lc-paper-r: 14px;
 }
 input,
 textarea,
@@ -89,41 +185,22 @@ pre {
   font-size: 12px;
 }
 
-/* ---------- The window: one glass frame ---------- */
+/* ---------- The window: one ground ---------- */
 /*
-  The frame's tint is Liner's frame glass: glass with a breath of ink, so the white paper stands
-  apart. How much of it is tint follows Clear to Tinted (--l-glass-opacity). Over the desktop it
-  starts lower, since the system's material is already frosted, and the sidebar's quieter inks
-  step up one, as vibrancy does, so its words read through the glass.
+  The sidebar and the session sit side by side on the ground, edge to edge. The session doesn't
+  sit on a paper of its own any more: Home, a session and Usage draw straight on the ground.
 */
 .lc-app {
-  --lc-tint: calc(40% + var(--l-glass-opacity) * 60%);
   position: relative;
   display: grid;
   grid-template-columns: 0px minmax(0, 1fr);
   height: 100%;
   box-sizing: border-box;
-  padding: var(--lc-gap);
-  padding-left: 0;
-  background: color-mix(in oklab, color-mix(in oklab, var(--l-glass-base) var(--lc-tint), transparent), var(--l-ink) 3%);
+  background: var(--lc-ground);
   transition: grid-template-columns 520ms var(--l-spring-smooth);
-}
-html[data-scene="desktop"] .lc-app {
-  --lc-tint: calc(var(--l-glass-opacity) * 92%);
-}
-html[data-scene="desktop"] .lc-side {
-  --l-ink-3: var(--l-ink-2);
-  --l-ink-4: color-mix(in oklab, var(--l-ink-2) 50%, var(--l-ink-3));
 }
 .lc-app[data-sidebar] {
   grid-template-columns: var(--lc-side) minmax(0, 1fr);
-}
-html:not([data-native]) .lc-app {
-  padding: 10px;
-  box-shadow: var(--l-glass-shadow);
-}
-html:not([data-native]) .lc-app[data-sidebar] {
-  grid-template-columns: calc(var(--lc-side) - 4px) minmax(0, 1fr);
 }
 .lc-side {
   min-width: 0;
@@ -139,26 +216,19 @@ html:not([data-native]) .lc-app[data-sidebar] {
   position: relative;
   min-width: 0;
   min-height: 0;
-  /* Clip, not hidden: a thread's screen-reader labels reach past the paper, which made it
+  /* Clip, not hidden: a thread's screen-reader labels reach past the session, which made it
      scrollable, and opening a diff (scrollIntoView) scrolled the session's head out of sight. */
   overflow: clip;
-  border-radius: var(--lc-paper-r);
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-ground);
 }
-.lc-app:not([data-sidebar]) .lc-paper {
-  margin-left: var(--lc-gap);
-}
-/* The picture behind the session (Settings, Appearance): blurred, with the paper laid over it so
-   the work reads. It's still, so it costs the graphics card nothing once drawn. */
+/* The picture behind the session (Settings, Appearance): blurred, under a wash of the ground so
+   the work reads. It's still, so it costs the graphics card nothing once drawn. The sidebar
+   never shows it. */
 .lc-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  border-radius: inherit;
   pointer-events: none;
   animation: lc-bg-in 700ms var(--l-ease-out) backwards;
 }
@@ -178,18 +248,15 @@ html:not([data-native]) .lc-app[data-sidebar] {
   content: "";
   position: absolute;
   inset: 0;
-  background: color-mix(in oklab, var(--l-surface) calc((1 - var(--lc-bg-show)) * 100%), transparent);
+  background: color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-bg-show)) * 100%), transparent);
 }
 html[data-bg] .lc-paper > :not(.lc-bg) {
   position: relative;
   z-index: 1;
 }
-/* The side panel keeps a frosted paper of its own: terminals and diffs want a steady ground. */
+/* The side panel keeps a steady ground of its own over a picture: terminals and diffs want one. */
 html[data-bg] .lc-panel {
-  background: color-mix(in oklab, var(--l-surface) 84%, transparent);
-}
-html[data-bg] .lc-top {
-  border-bottom-color: transparent;
+  background: color-mix(in oklab, var(--lc-ground) 86%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-bg {
@@ -381,8 +448,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   flex: none;
   place-items: center;
   border-radius: 50%;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-plate);
   color: var(--l-ink-2);
 }
 .lc-disc[data-filled] {
@@ -625,10 +691,8 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   transition: background 140ms ease;
 }
 .lc-row[data-on] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
 }
 @media (hover: hover) {
   .lc-row:hover:not([data-on]):not(:disabled) {
@@ -804,7 +868,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
 }
 /* The head row's centre sits on the traffic lights' centre, which the shell reports. */
 html[data-native="mac"] .lc-sb {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
+  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - 17px));
 }
 .lc-sb-head {
   display: flex;
@@ -822,38 +886,17 @@ html[data-native="mac"] .lc-sb-head {
   padding-bottom: 0;
   padding-left: max(4px, calc(var(--lc-lights-x, 70px) + 2px));
 }
-html[data-native="mac"] .lc-brand {
-  font-size: 17px;
-}
-html[data-native="mac"] .lc-brand svg {
-  height: 15px;
-  width: auto;
-}
 .lc-brand {
   display: inline-flex;
   flex: 1;
   align-items: center;
   gap: 9px;
   min-width: 0;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
   line-height: 1;
   white-space: nowrap;
-}
-.lc-mark-o {
-  fill: none;
-  stroke: var(--l-ink);
-  stroke-width: 2.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.lc-mark-i {
-  fill: none;
-  stroke: color-mix(in oklab, var(--l-accent) 80%, white);
-  stroke-width: 2.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .lc-sb-find {
   display: flex;
@@ -862,8 +905,7 @@ html[data-native="mac"] .lc-brand svg {
   height: 32px;
   padding: 0 3px 0 10px;
   border-radius: 10px;
-  background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  background: var(--lc-well);
   color: var(--l-ink-4);
 }
 .lc-sb-find input {
@@ -935,10 +977,8 @@ html[data-native="mac"] .lc-brand svg {
 }
 .lc-sb-nav[aria-current],
 .lc-st-nav .l-side__plate {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
 }
 @media (hover: hover) {
   .lc-sb-nav:not([aria-current]):hover,
@@ -1010,10 +1050,8 @@ html[data-native="mac"] .lc-brand svg {
   left: 0;
   right: 0;
   border-radius: 12px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
   pointer-events: none;
   transition:
     transform 460ms var(--l-spring-smooth),
@@ -1319,10 +1357,8 @@ html[data-native="mac"] .lc-brand svg {
   opacity: 0.62;
 }
 .lc-sb-shelf .lc-sb-row[aria-current] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
 }
 .lc-sb-tray {
   display: grid;
@@ -1367,10 +1403,8 @@ html[data-native="mac"] .lc-brand svg {
   color: var(--l-ink-3);
 }
 .lc-sb-tab[aria-pressed="true"] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
   color: var(--l-ink);
 }
 .lc-sb-tab[aria-pressed="true"] > svg {
@@ -1498,7 +1532,6 @@ html[data-native="mac"] .lc-brand svg {
   gap: 10px;
   min-height: 42px;
   padding: 2px 4px 0 8px;
-  border-top: 1px solid var(--l-line);
   font-size: 13px;
 }
 .lc-me-av {
@@ -1586,10 +1619,6 @@ html[data-native="mac"] .lc-brand svg {
   min-height: var(--lc-head);
   box-sizing: border-box;
   padding: 8px 10px 8px 20px;
-  border-bottom: 1px solid var(--l-line);
-}
-.lc-top-home {
-  border-bottom-color: transparent;
 }
 .lc-title {
   overflow: hidden;
@@ -1703,22 +1732,15 @@ html[data-native="mac"] .lc-brand svg {
   flex-direction: column;
   min-height: 0;
 }
+/* The session tray keeps a lane of its own at the thread's right edge (14 + 56 + 14): the text
+   and the composer stop short of it, so nothing you read ever passes under the glass. */
 .lc-thread {
+  --lc-lane: 84px;
   container: lc-thread / inline-size;
 }
-/* A narrow column (the panel open) gives the rail its own margin, so it never sits on the text. */
-@container lc-thread (max-width: 900px) {
-  .lc-stage .lc-scroll-in {
-    padding-right: 76px;
-  }
-  /* The composer keeps the text's edges: the same box, the same room for the rail. */
-  .lc-thread .lc-compose {
-    max-width: calc(var(--lc-measure) + 48px);
-    padding: 0 76px 12px 24px;
-  }
-  .lc-thread .lc-jump {
-    left: calc(50% - 26px);
-  }
+.lc-stage > .lc-scroll {
+  box-sizing: border-box;
+  padding-right: var(--lc-lane);
 }
 .lc-scroll {
   flex: 1;
@@ -1727,20 +1749,34 @@ html[data-native="mac"] .lc-brand svg {
   scrollbar-width: thin;
 }
 
-/* The rail: Liner's glass rim around pill segments, like a call's controls stood on end. */
+/*
+  The session tray: the one glass surface left, upright at the thread's right edge, 56 wide. It
+  holds three solid segments (the panel; the surfaces; shipping). The open item's icon rests on a
+  tile; the files waiting to be committed show as a small chip under the arrow, inside its button.
+*/
 .lc-rail {
   position: absolute;
   z-index: 6;
-  /* Centred on what you can see of the conversation, above the floating composer. */
+  /* Centred on what you can see of the conversation, above the composer. */
   top: calc((100% - var(--lc-dock-h, 0px)) / 2);
   right: 14px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px;
+  gap: 6px;
+  width: 56px;
+  box-sizing: border-box;
+  padding: 6px;
   border-radius: 999px;
+  background: var(--lc-tray);
+  box-shadow: var(--lc-tray-rim);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   translate: 0 -50%;
   animation: lc-rail-in 520ms var(--l-spring-smooth) 120ms backwards;
+}
+html[data-tray="solid"] .lc-rail {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 @keyframes lc-rail-in {
   from {
@@ -1752,13 +1788,13 @@ html[data-native="mac"] .lc-brand svg {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 4px;
+  padding: 4px 0;
   border-radius: 999px;
-  background: var(--l-card-fill);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-ctl);
+  color: var(--lc-ctl-ink);
+}
+.lc-rail-seg[data-solo] {
+  padding: 0;
 }
 .lc-rail-pop {
   display: grid;
@@ -1767,61 +1803,114 @@ html[data-native="mac"] .lc-brand svg {
   position: relative;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 40px;
   padding: 0;
   border: 0;
   border-radius: 999px;
   background: none;
-  color: var(--l-ink-3);
+  color: var(--lc-ctl-ink);
   isolation: isolate;
   cursor: pointer;
-  transition: color 160ms ease;
+  transition:
+    height 320ms var(--l-spring-smooth),
+    opacity 200ms ease;
 }
-/* The tile: springs in under a pressed or pointed-at button, a rounded square on the pill. */
+.lc-rail-seg[data-solo] .lc-rail-b {
+  height: 44px;
+}
+/* The tile: 32px, radius 10. Faint on hover, ctl-tile when open; it never overshoots. */
 .lc-rail-b::before {
   content: "";
   position: absolute;
-  inset: 2px;
+  top: 50%;
+  left: 6px;
   z-index: -1;
-  border-radius: 9px;
-  background: var(--l-wash-2);
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--lc-ctl-tile);
   opacity: 0;
+  translate: 0 -50%;
   scale: 0.8;
   transition:
     opacity var(--l-dur-fast) ease,
     scale 320ms var(--l-spring-smooth),
-    background 160ms ease;
+    background 160ms ease,
+    height 320ms var(--l-spring-smooth);
 }
 @media (hover: hover) {
-  .lc-rail-b:not(:disabled):hover {
-    color: var(--l-ink);
-  }
   .lc-rail-b:not(:disabled):hover::before {
     opacity: 1;
     scale: 1;
+    background: oklch(1 0 0 / 0.1);
   }
-}
-.lc-rail-b[aria-pressed="true"],
-.lc-rail-b[data-open] {
-  color: var(--l-ink);
 }
 .lc-rail-b[aria-pressed="true"]::before,
 .lc-rail-b[data-open]::before {
   opacity: 1;
   scale: 1;
-  background: color-mix(in oklab, var(--l-ink) 9%, var(--l-card-fill));
-  box-shadow:
-    inset 0 0 0 1px var(--l-line-2),
-    0 1px 1px var(--l-drop);
+  background: var(--lc-ctl-tile);
 }
 .lc-rail-b:disabled {
-  color: var(--l-ink-5);
+  opacity: 0.4;
   cursor: default;
+}
+/* Commit and push, with the count: the button grows from 40 to 54 to hold the chip. */
+.lc-rail-b.lc-rail-ship {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.lc-rail-pop[data-count] .lc-rail-b {
+  height: 54px;
+}
+.lc-rail-pop[data-count] .lc-rail-b::before {
+  height: 46px;
+}
+.lc-rail-count {
+  min-width: 18px;
+  height: 14px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--lc-ctl-ink);
+  color: var(--lc-ctl);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  text-align: center;
+  animation: lc-count-in 320ms var(--l-ease-enter) backwards;
+}
+@keyframes lc-count-in {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+    scale: 0.8;
+  }
+}
+/* A tooltip is a solid ink pill, with the item's keys. */
+.l-tip.l-glass {
+  border-radius: 999px;
+  background: var(--lc-ctl);
+  box-shadow: 0 4px 12px -4px oklch(0 0 0 / 0.3);
+  color: var(--lc-ctl-ink);
+  font-size: 12.5px;
+}
+.l-tip.l-glass kbd {
+  color: var(--lc-ctl-ink-2);
+}
+.l-tip.l-glass::after {
+  content: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-rail,
-  .lc-rail-b::before {
+  .lc-rail-b,
+  .lc-rail-b::before,
+  .lc-rail-count {
     animation: none;
     transition: none;
   }
@@ -1844,12 +1933,12 @@ html[data-native="mac"] .lc-brand svg {
   box-sizing: border-box;
   padding: 0 14px 12px;
 }
-/* The composer floats over the conversation: the text scrolls on beneath it, through the glass
-   round its card, and only the sliver under it fades out. The dock lets clicks through beside it. */
+/* The composer floats over the conversation: the text scrolls on beneath it and only the sliver
+   under it fades out. The dock lets clicks through beside it. */
 .lc-dock {
   position: absolute;
   z-index: 5;
-  right: 0;
+  right: var(--lc-lane, 0px);
   bottom: 0;
   left: 0;
   pointer-events: none;
@@ -1857,20 +1946,9 @@ html[data-native="mac"] .lc-brand svg {
 .lc-dock > * {
   pointer-events: auto;
 }
-.lc-dock .lc-composer {
-  background: var(--l-frame-float-fill);
-  backdrop-filter: var(--l-lens,) var(--l-frame-backdrop);
-  -webkit-backdrop-filter: var(--l-lens,) var(--l-frame-backdrop);
-}
-.lc-dock .lc-composer:not([data-drag]) {
-  box-shadow:
-    inset 0 1px 1px -0.5px var(--l-glass-edge-hi),
-    0 0 0 0.5px var(--l-glass-line),
-    0 1px 2px var(--l-drop),
-    0 12px 32px -14px var(--l-drop);
-}
+/* No line under the bar: what scrolls up under it fades out, as the end fades under the composer. */
 .lc-thread .lc-scroll {
-  mask-image: linear-gradient(#000 calc(100% - 28px), transparent calc(100% - 2px));
+  mask-image: linear-gradient(transparent, #000 18px, #000 calc(100% - 28px), transparent calc(100% - 2px));
 }
 .lc-jump {
   position: absolute;
@@ -2106,24 +2184,15 @@ html[data-native="mac"] .lc-brand svg {
   color: var(--l-ink-3);
 }
 
-/* Cards in the thread wear a 4px glass rim around a white card. */
+/* A card in the thread is a well: its tone is its edge, with no rim, shadow or glass. Settings and
+   Setup keep white cards with a 1px ring (their own sections). */
 .lc-frame {
   display: grid;
-  padding: 4px;
-  border-radius: 22px;
-  background: var(--lc-frame-c);
-  box-shadow:
-    inset 0 1px 1px -0.5px var(--l-glass-edge-hi),
-    0 0 0 0.5px var(--l-glass-line),
-    0 1px 2px var(--l-drop);
 }
 .lc-fcard {
   min-width: 0;
-  border-radius: 18px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  border-radius: 16px;
+  background: var(--lc-well);
 }
 .lc-todo .lc-fcard {
   padding: 12px 14px;
@@ -2543,25 +2612,19 @@ html[data-native="mac"] .lc-brand svg {
 }
 
 /* ---------- The composer ---------- */
+/*
+  One solid text box (radius 24, the field tone) lifted off the ground by a soft shadow, with no
+  rim and no glass. Its controls sit inside it in a tray of their own, a lit pill like the session
+  tray, holding solid ink controls 40px tall: segments split by a hairline, rounds for icons, and
+  the open choice's icon on a tile. Send is the accent; while a turn runs, Stop (red) sits beside it.
+*/
 .lc-composer {
   position: relative;
   display: grid;
   /* One column that never grows past the composer, whatever is queued or typed in it. */
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  border-radius: 22px;
-  background: var(--lc-frame-c);
-  box-shadow:
-    inset 0 1px 1px -0.5px var(--l-glass-edge-hi),
-    0 0 0 0.5px var(--l-glass-line),
-    0 1px 2px var(--l-drop);
-  padding: 4px;
-  transition: box-shadow 200ms ease;
-}
-.lc-composer[data-drag] {
-  box-shadow:
-    0 0 0 1.5px var(--l-accent),
-    0 0 0 5px var(--l-accent-soft);
+  container: lc-composer / inline-size;
 }
 .lc-card {
   position: relative;
@@ -2569,15 +2632,20 @@ html[data-native="mac"] .lc-brand svg {
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 4px;
-  padding: 12px 10px 8px 14px;
-  border-radius: 18px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  padding: 14px 12px 12px 18px;
+  border-radius: 24px;
+  background: var(--lc-field);
+  box-shadow: var(--lc-lift);
+  transition: box-shadow 200ms ease;
 }
 .lc-composer[data-variant="home"] .lc-card {
-  padding: 16px 12px 10px 18px;
+  padding: 16px 12px 12px 18px;
+}
+.lc-composer[data-drag] .lc-card {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 5px var(--l-accent-soft),
+    var(--lc-lift);
 }
 .lc-field {
   width: 100%;
@@ -2589,7 +2657,7 @@ html[data-native="mac"] .lc-brand svg {
   resize: none;
   background: none;
   font: inherit;
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 22px;
   color: var(--l-ink);
   transition: height 200ms var(--l-ease-out);
@@ -2601,81 +2669,154 @@ html[data-native="mac"] .lc-brand svg {
 .lc-field::placeholder {
   color: var(--l-ink-4);
 }
+/* The tray: a lit gradient pill with a rim, drawn rather than blurred, so it costs nothing. */
 .lc-card-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 34px;
-}
-.lc-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 8px 0 4px;
+  gap: 5px;
+  min-width: 0;
+  margin: 8px -4px 0 -6px;
+  padding: 5px;
   border-radius: 999px;
-  background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
-  font-size: 13px;
-  color: var(--l-ink-2);
-  transition: background 160ms ease;
+  background: var(--lc-fg);
+  box-shadow: var(--lc-fg-rim);
 }
-.lc-chip[data-open] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+.lc-card-row > * {
+  flex-shrink: 0;
 }
-.lc-chip-name {
-  font-weight: 500;
-  color: var(--l-ink);
+.lc-card-row > .lc-grow {
+  flex-shrink: 1;
 }
-.lc-chip > svg:last-child,
-.lc-pb > svg:last-child {
-  color: var(--l-ink-4);
+/* Solid controls. A segment holds related ones, split by a hairline. */
+.lc-seg,
+.lc-ctl-pill,
+.lc-ctl-round,
+.lc-send,
+.lc-stop {
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lc-ctl);
+  color: var(--lc-ctl-ink);
 }
-.lc-pb {
+.lc-seg {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  min-width: 0;
+  padding: 0 4px;
+}
+.lc-seg > .lc-pop {
+  min-width: 0;
+}
+.lc-seg-b,
+.lc-ctl-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 8px;
-  border-radius: 9px;
+  gap: 8px;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
   font-size: 13px;
-  color: var(--l-ink-2);
+  font-weight: 500;
   white-space: nowrap;
+  color: inherit;
+  cursor: pointer;
   transition: background 160ms ease;
 }
-.lc-pb[data-open] {
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+.lc-ctl-pill {
+  padding: 0 12px 0 6px;
+  background: var(--lc-ctl);
+  color: var(--lc-ctl-ink);
 }
-@media (hover: hover) {
-  .lc-pb:hover,
-  .lc-chip:hover {
-    background: var(--l-wash-2);
-  }
+.lc-seg-b.lc-who {
+  max-width: 260px;
+  padding-left: 6px;
 }
-.lc-send {
+.lc-seg-b > svg:last-child,
+.lc-ctl-pill > svg:last-child {
+  flex: none;
+  color: var(--lc-ctl-ink-2);
+}
+.lc-seg-div {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  background: var(--lc-ctl-div);
+}
+.lc-seg-div:last-child,
+.lc-seg-div + .lc-seg-div {
+  display: none;
+}
+.lc-seg .lc-ring {
+  padding: 0 12px 0 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--lc-ctl-ink-2);
+}
+.lc-seg .lc-ring[data-warn] {
+  color: var(--l-warn);
+}
+/* The open choice's icon (and an agent's disc) rests on a tile. */
+.lc-ctl-tile,
+.lc-card-row .lc-way-chip-i {
   display: grid;
   flex: none;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--lc-ctl-tile);
+  color: var(--lc-ctl-ink);
+}
+.lc-card-row .lc-disc,
+.lc-card-row .lc-disc[data-filled] {
+  background: var(--lc-ctl-tile);
+  color: var(--lc-ctl-ink);
+}
+.lc-chip-name {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.lc-chip-more {
+  color: var(--lc-ctl-ink-2);
+}
+.lc-card-row .lc-way-marks {
+  color: var(--lc-ctl-ink-2);
+}
+.lc-ctl-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-ctl-round,
+.lc-send,
+.lc-stop {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
   padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: var(--l-wash-2);
-  color: var(--l-ink-4);
   cursor: pointer;
   transition:
     background 240ms var(--l-ease-out),
     color 240ms ease,
+    box-shadow 240ms ease,
     transform 200ms var(--l-spring-snappy);
 }
+.lc-send {
+  color: var(--lc-ctl-ink-2);
+}
 .lc-send[data-ready] {
-  background: var(--l-primary-solid);
-  color: var(--l-primary-ink);
+  background: var(--l-accent);
+  box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--l-accent) 55%, transparent);
+  color: var(--l-accent-ink, #fff);
+}
+.lc-send:disabled {
+  cursor: default;
 }
 .lc-send[data-ready] svg {
   animation: lc-lift 360ms var(--l-ease-enter);
@@ -2686,53 +2827,106 @@ html[data-native="mac"] .lc-brand svg {
     opacity: 0;
   }
 }
-.lc-send:active {
-  transform: scale(0.94);
+.lc-stop {
+  background: var(--l-danger);
+  color: #fff;
+  animation: lc-stop-in 260ms var(--l-ease-enter) backwards;
 }
-.lc-send-split {
+@keyframes lc-stop-in {
+  from {
+    opacity: 0;
+    scale: 0.86;
+  }
+}
+.lc-send:not(:disabled):active,
+.lc-stop:active,
+.lc-ctl-round:active,
+.lc-ctl-pill:active {
+  transform: scale(0.95);
+}
+@media (hover: hover) {
+  .lc-ctl-round:hover,
+  .lc-ctl-pill:hover,
+  .lc-send:not([data-ready]):not(:disabled):hover {
+    background: var(--lc-ctl-hover);
+  }
+  .lc-seg-b:hover,
+  .lc-seg-b[data-open] {
+    background: oklch(1 0 0 / 0.08);
+  }
+  .lc-send[data-ready]:hover {
+    background: color-mix(in oklab, var(--l-accent) 88%, black);
+  }
+  .lc-stop:hover {
+    background: color-mix(in oklab, var(--l-danger) 88%, black);
+  }
+}
+.lc-ctl-pill[data-open] {
+  background: var(--lc-ctl-hover);
+}
+/* What Enter does while a turn runs, and what's waiting: a quiet note in the tray. */
+.lc-tray-note {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  min-width: 0;
+  height: 32px;
+  padding: 0 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+/* A narrow composer keeps the controls and lets the words go: the who segment's name, the note,
+   then the access label. */
+@container lc-composer (max-width: 520px) {
+  .lc-tray-note,
+  .lc-ctl-pill .lc-ctl-label {
+    display: none;
+  }
+  .lc-ctl-pill {
+    padding-right: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-stop,
+  .lc-send[data-ready] svg {
+    animation: none;
+  }
+}
+/* A quiet picker on the ground: the composer's strip on Home, and pickers elsewhere. */
+.lc-pb {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-.lc-stop {
-  display: grid;
-  place-items: center;
-  width: 30px;
   height: 30px;
-  padding: 0;
+  padding: 0 8px;
   border: 0;
-  border-radius: 50%;
-  background: var(--l-wash-2);
-  color: var(--l-ink-2);
-  cursor: pointer;
-}
-.lc-queue {
-  height: 32px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 10px 0 0 10px;
-  background: var(--l-primary-solid);
-  color: var(--l-primary-ink);
+  border-radius: 9px;
+  background: none;
+  font: inherit;
   font-size: 13px;
-  font-weight: 500;
+  color: var(--l-ink-2);
+  white-space: nowrap;
   cursor: pointer;
+  transition: background 160ms ease;
 }
-.lc-queue:disabled {
-  opacity: 0.4;
-  cursor: default;
+.lc-pb > svg:last-child {
+  color: var(--l-ink-4);
 }
-.lc-send-split .lc-pop {
-  margin-left: -5px;
+.lc-pb[data-open] {
+  background: var(--lc-plate);
 }
-.lc-queue-more {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 32px;
-  border-radius: 0 10px 10px 0;
-  background: var(--l-primary-solid);
-  box-shadow: inset 1px 0 0 color-mix(in oklab, var(--l-primary-ink) 22%, transparent);
-  color: var(--l-primary-ink);
+@media (hover: hover) {
+  .lc-pb:hover {
+    background: var(--lc-well);
+  }
 }
 .lc-strip {
   display: flex;
@@ -2751,9 +2945,6 @@ html[data-native="mac"] .lc-brand svg {
 .lc-strip > .lc-grow {
   flex-shrink: 1;
   min-width: 0;
-}
-.lc-composer {
-  container: lc-composer / inline-size;
 }
 @container lc-composer (max-width: 460px) {
   .lc-strip > .lc-grow ~ .lc-strip-note {
@@ -3018,10 +3209,8 @@ html[data-native="mac"] .lc-brand svg {
   cursor: pointer;
 }
 .lc-agent-row[data-on] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
 }
 @media (hover: hover) {
   .lc-agent-row:not([data-on]):hover {
@@ -3162,12 +3351,12 @@ html[data-native="mac"] .lc-brand svg {
 }
 
 /* ---------- The panel ---------- */
+/* The panel is a column on the ground beside the thread, with nothing drawn between them. */
 .lc-panel {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  box-shadow: inset 1px 0 0 var(--l-line);
   animation: lc-panel-in 460ms var(--l-ease-enter) backwards;
 }
 @keyframes lc-panel-in {
@@ -3197,8 +3386,9 @@ html[data-native="mac"] .lc-brand svg {
   overflow: auto;
   scrollbar-width: thin;
 }
+/* The diff sits in a well only as tall as its content. */
 .lc-diff .l-cdiff {
-  min-height: 100%;
+  min-height: 0;
 }
 .lc-diff-wait {
   display: grid;
@@ -3213,11 +3403,8 @@ html[data-native="mac"] .lc-brand svg {
   gap: 6px;
   height: 30px;
   padding: 0 8px 0 10px;
-  border-radius: 10px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 1px var(--l-drop);
+  border-radius: 999px;
+  background: var(--lc-plate);
   font-size: 13px;
   font-weight: 500;
 }
@@ -3489,9 +3676,9 @@ html[data-native="mac"] .lc-setup-top {
   display: inline-flex;
   align-items: center;
   gap: 11px;
-  font-size: 26px;
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
   white-space: nowrap;
   transform-origin: 50% 50%;
   transition: transform 1000ms cubic-bezier(0.32, 0.72, 0, 1);
@@ -3510,7 +3697,7 @@ html[data-native="mac"] .lc-setup-top {
   }
 }
 .lc-lockup-wm {
-  animation: lc-wm 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 1000ms backwards;
+  animation: lc-wm 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 200ms backwards;
 }
 @keyframes lc-wm {
   from {
@@ -3542,27 +3729,6 @@ html[data-native="mac"] .lc-setup-top {
   70% {
     opacity: 1;
     filter: none;
-  }
-}
-svg[data-draw] .lc-mark-o,
-svg[data-draw] .lc-mark-i {
-  stroke-dasharray: 1;
-}
-.lc-setup[data-intro] svg[data-draw] .lc-mark-o {
-  animation: lc-draw 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 150ms backwards;
-}
-.lc-setup[data-intro] svg[data-draw] .lc-mark-i {
-  animation: lc-draw 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 450ms backwards;
-}
-.lc-boot svg[data-draw] .lc-mark-o {
-  animation: lc-draw 800ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
-}
-.lc-boot svg[data-draw] .lc-mark-i {
-  animation: lc-draw 800ms cubic-bezier(0.2, 0.8, 0.2, 1) 250ms backwards;
-}
-@keyframes lc-draw {
-  from {
-    stroke-dashoffset: 1;
   }
 }
 .lc-setup .lc-stepper,
@@ -4182,7 +4348,7 @@ svg[data-draw] .lc-mark-i {
   animation: l-unblur 320ms var(--l-ease-out) backwards;
 }
 html[data-native="mac"] .lc-st-side {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
+  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - 17px));
 }
 /* Settings' name sits where Liner Code's does, in the same type; the way back is beside it. */
 .lc-st-head .lc-brand {
@@ -4234,11 +4400,19 @@ html[data-native="mac"] .lc-st-side {
   font-weight: 400;
   color: var(--l-ink-4);
 }
-/* The way back sits where you are in the sessions' sidebar: on the foot, over a hairline. */
+/* The way back sits where you are in the sessions' sidebar: on the foot. */
 .lc-st-nav .l-side__user {
   min-height: 42px;
   align-content: center;
-  border-top: 1px solid var(--l-line);
+}
+/* Settings and Setup keep white cards, with a 1px ring where the glass frame was. */
+.lc-fcard.lc-st-card,
+.lc-setup .lc-fcard {
+  border-radius: 18px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--lc-hair),
+    0 1px 2px oklch(0 0 0 / 0.03);
 }
 
 .lc-st-paper {
@@ -4496,79 +4670,140 @@ html[data-native="mac"] .lc-st-side {
   background: color-mix(in oklab, var(--l-danger) 12%, transparent);
   color: var(--l-danger-text);
 }
-/* The mode's swatch is the card's icon: it fills Liner's 32px tile rather than sitting in it. */
-.l-rcard__icon:has(> .lc-st-themechip) {
-  overflow: hidden;
-  background: none;
-  box-shadow: none;
+/* Light, dark or the system's: cards with a swatch of the ground and its well, the picked one ringed. */
+.lc-st-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.lc-st-mode {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--lc-hair);
+  font: inherit;
+  text-align: left;
+  color: var(--l-ink);
+  cursor: pointer;
+  transition: box-shadow 200ms var(--l-ease-out);
+}
+.lc-st-mode[data-on] {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+.lc-st-mode-t b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+.lc-st-mode-t small {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-st-tick {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--l-accent);
+  color: var(--l-accent-ink, #fff);
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
 }
 .lc-st-themechip {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  display: flex;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px var(--lc-hair);
 }
-.lc-st-themechip[data-kind="light"] {
-  background: linear-gradient(90deg, oklch(0.92 0.003 265) 0 34%, oklch(1 0 0) 34%);
+.lc-st-themechip i {
+  flex: 1;
 }
-.lc-st-themechip[data-kind="dark"] {
-  background: linear-gradient(90deg, oklch(0.2 0.004 265) 0 34%, oklch(0.28 0.004 265) 34%);
+.lc-st-themechip[data-kind="light"] i:first-child {
+  background: oklch(0.984 0.002 265);
 }
-.lc-st-themechip[data-kind="system"] {
-  background: linear-gradient(135deg, oklch(1 0 0) 0 50%, oklch(0.25 0.004 265) 50%);
+.lc-st-themechip[data-kind="light"] i:last-child {
+  flex: 0.5;
+  background: oklch(0.96 0.003 265);
+}
+.lc-st-themechip[data-kind="dark"] i:first-child {
+  background: oklch(0.17 0.004 265);
+}
+.lc-st-themechip[data-kind="dark"] i:last-child {
+  flex: 0.5;
+  background: oklch(0.215 0.004 265);
+}
+.lc-st-themechip[data-kind="system"] i:first-child {
+  background: linear-gradient(135deg, oklch(0.984 0.002 265) 50%, oklch(0.17 0.004 265) 50%);
+}
+.lc-st-themechip[data-kind="system"] i:last-child {
+  display: none;
+}
+/* A colour of your own: the system's picker behind a button. */
+.lc-st-colour {
+  position: relative;
+  overflow: hidden;
+}
+.lc-st-colour input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.lc-st-colour-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--lc-hair);
 }
 
-/* The window in miniature, on a quiet grey wallpaper so the glass setting shows. */
+/* The window in miniature, on a white card: one ground, the tray in its lane, the composer. */
 .lc-st-preview {
   display: grid;
   justify-items: center;
   gap: 12px;
-  padding: 26px 22px 16px;
-  border-radius: 24px;
-  background:
-    radial-gradient(circle at 18% 28%, color-mix(in oklab, var(--l-ink) 16%, transparent), transparent 42%),
-    radial-gradient(circle at 82% 78%, color-mix(in oklab, var(--l-ink) 10%, transparent), transparent 46%),
-    var(--l-surface-2);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  padding: 22px 22px 14px;
+  border-radius: 18px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--lc-hair),
+    0 1px 2px oklch(0 0 0 / 0.03);
 }
-/* The preview window is the real one small: one glass frame, tinted as the window's is. */
 .lc-pv-win {
-  --lc-pv-tint: calc(40% + var(--l-glass-opacity) * 60%);
-  --lc-pv-glass: color-mix(in oklab, color-mix(in oklab, var(--l-glass-base) var(--lc-pv-tint), transparent), var(--l-ink) 3%);
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: 30% minmax(0, 1fr);
-  gap: 6px;
-  width: min(100%, 420px);
-  aspect-ratio: 2 / 1;
-  box-sizing: border-box;
-  padding: 6px;
+  grid-template-columns: 104px minmax(0, 1fr);
+  width: min(100%, 400px);
+  height: 210px;
   overflow: hidden;
-  border-radius: 16px;
-  background: linear-gradient(var(--lc-pv-glass), var(--lc-pv-glass)), var(--l-bg);
+  border-radius: 12px;
+  background: var(--lc-ground);
   box-shadow:
-    inset 0 1px 1px -0.5px var(--l-glass-edge-hi),
-    0 0 0 0.5px var(--l-glass-line),
-    0 12px 32px -12px oklch(0 0 0 / 0.35);
-}
-.lc-pv-win[data-scene="desktop"] {
-  --lc-pv-tint: calc(var(--l-glass-opacity) * 92%);
-  background: var(--lc-pv-glass);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  backdrop-filter: blur(14px) saturate(1.4);
+    0 0 0 0.5px var(--lc-hair),
+    0 18px 40px -18px oklch(0.3 0.04 265 / 0.35);
 }
 .lc-pv-side {
   display: grid;
   align-content: start;
-  gap: 8px;
-  padding: 8px 6px;
+  gap: 9px;
+  padding: 12px 10px;
 }
 .lc-pv-lights {
   display: flex;
   gap: 3px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .lc-pv-lights i {
   width: 6px;
@@ -4579,37 +4814,28 @@ html[data-native="mac"] .lc-st-side {
 }
 .lc-pv-line {
   display: block;
-  height: 5px;
+  height: 6px;
   border-radius: 3px;
   background: var(--l-ink-4);
   opacity: 0.4;
 }
 .lc-pv-plate {
   display: block;
-  padding: 5px;
+  padding: 5px 6px;
   border-radius: 6px;
-  background: var(--l-raised-fill);
-  box-shadow: var(--l-raised-shadow);
+  background: var(--lc-plate);
 }
 .lc-pv-plate .lc-pv-line {
-  opacity: 0.7;
+  opacity: 0.6;
 }
 .lc-pv-paper {
   position: relative;
   isolation: isolate;
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 18px 40px 0 18px;
   overflow: hidden;
-  border-radius: 11px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
-}
-.lc-pv-paper[data-bg] {
-  background: none;
 }
 .lc-pv-paper[data-bg]::before,
 .lc-pv-paper[data-bg]::after {
@@ -4624,34 +4850,71 @@ html[data-native="mac"] .lc-st-side {
 }
 .lc-pv-paper[data-bg]::after {
   inset: 0;
-  background: color-mix(in oklab, var(--l-surface) calc((1 - var(--lc-pv-show, 0.45)) * 100%), transparent);
+  background: color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-pv-show, 0.45)) * 100%), transparent);
 }
 .lc-pv-you {
-  justify-self: end;
-  width: 42%;
-  height: 14px;
-  margin-bottom: 4px;
-  border-radius: 7px;
-  background: var(--l-wash-2);
+  align-self: flex-end;
+  width: 90px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--lc-plate);
 }
 .lc-pv-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
   padding: 8px;
-  border-radius: 9px;
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  border-radius: 8px;
+  background: var(--lc-well);
 }
 .lc-pv-btn {
-  width: 36px;
-  height: 13px;
-  border-radius: 7px;
+  width: 26px;
+  height: 10px;
+  border-radius: 5px;
   background: var(--l-accent);
 }
+.lc-pv-tray {
+  position: absolute;
+  top: 50px;
+  right: 9px;
+  width: 14px;
+  height: 64px;
+  border-radius: 7px;
+  background: var(--lc-tray);
+  box-shadow: inset 0 0 0 0.5px oklch(1 0 0 / 0.7);
+}
+.lc-pv-win[data-tray="clear"] .lc-pv-tray {
+  background: oklch(0.945 0.004 265 / 0.38);
+}
+.lc-pv-win[data-tray="solid"] .lc-pv-tray {
+  background: var(--lc-plate);
+  box-shadow: none;
+}
+.lc-pv-tray::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 5px;
+  background: var(--lc-ctl);
+}
+.lc-pv-comp {
+  position: absolute;
+  right: 40px;
+  bottom: 10px;
+  left: 18px;
+  height: 22px;
+  border-radius: 9px;
+  background: var(--lc-field);
+  box-shadow: 0 2px 6px oklch(0 0 0 / 0.12);
+}
 .lc-pv-cap {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--l-ink-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-st-tick {
+    animation: none;
+  }
 }
 /* Background pictures: small tiles, the chosen one ringed in the accent. */
 .lc-bgs {
@@ -4661,20 +4924,20 @@ html[data-native="mac"] .lc-st-side {
 }
 .lc-bgs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
   gap: 8px;
 }
 .lc-bgs-t {
   position: relative;
   display: grid;
   place-items: center;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   padding: 0;
   border: 0;
   border-radius: 10px;
-  background: var(--l-surface-2);
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  background: var(--lc-well);
+  box-shadow: inset 0 0 0 1px var(--lc-hair);
   color: var(--l-ink-3);
   cursor: pointer;
   transition: box-shadow 160ms ease;
@@ -4698,6 +4961,10 @@ html[data-native="mac"] .lc-st-side {
 .lc-bgs-none {
   font-size: 12px;
   font-weight: 500;
+}
+.lc-bgs-add:not([data-on]) {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
 }
 .lc-bgs-add > input {
   position: absolute;
@@ -4740,10 +5007,19 @@ html[data-native="mac"] .lc-st-side {
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 16px;
+  gap: 14px;
   height: 100%;
+  background: var(--lc-ground);
   font-size: 13px;
   color: var(--l-ink-3);
+}
+/* The name comes into focus while the engine starts. */
+.lc-boot-wm {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--l-ink);
+  animation: lc-wm 700ms var(--l-ease-enter) backwards;
 }
 .lc-offline {
   position: fixed;
@@ -4798,8 +5074,7 @@ html[data-native="mac"] .lc-st-side {
   .lc-st-col,
   .lc-lockup,
   .lc-lockup *,
-  .lc-mark-o,
-  .lc-mark-i {
+  .lc-boot-wm {
     animation: none !important;
   }
   .lc-rays {

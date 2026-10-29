@@ -21,7 +21,7 @@ import { I, ModelMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, isModelAgent, markOf, modelLabel, plural, setupLine, setupsOf, since } from "./model";
 import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
-import { ContextRing, Disc, ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
+import { ContextRing, Disc, PanelHead, Pop, Row, Sep } from "./ui";
 
 export type RunSettings = { agent: string; lead?: string; model?: string; effort: Effort; access: Access; helpers?: string[]; setup?: string; route?: RouteLevel };
 export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" };
@@ -335,10 +335,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       </>
     ) : (
       <>
-        <Disc agent={talkTo} size={20} />
-        <span className="lc-chip-name">{isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}</span>
-        {!isModelAgent(settings.agent) && settings.agent !== "demo" ? <ModelTag kind={markOf(shownModel)} label={modelLabel(shownModel, providers)} /> : null}
-        {compare.length > 0 && <span className="lc-quiet">· {compare.length + 1} models</span>}
+        <Disc agent={talkTo} size={28} />
+        <span className="lc-chip-name" title={isModelAgent(settings.agent) || settings.agent === "demo" ? undefined : modelLabel(shownModel, providers)}>
+          {isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}
+        </span>
+        {compare.length > 0 && <span className="lc-chip-more">· {compare.length + 1} models</span>}
         <I.chevD size={11} />
       </>
     );
@@ -509,18 +510,20 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   );
 
   // The levels the coder's model takes; Claude Code's Ultracode and Ultrathink sit after them.
-  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} hideEmpty />;
+  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} triggerClass="lc-seg-b" icon={false} hideEmpty />;
   const accessPick = (
     <Pop
       label={`Access: ${lev.label}. Change it`}
       side={variant === "home" ? "bottom" : "top"}
       align="end"
       width={320}
-      triggerClass="lc-pb"
+      triggerClass="lc-ctl-pill"
       trigger={
         <>
-          <I.lock size={13} />
-          {variant === "home" ? lev.short : lev.label}
+          <span className="lc-ctl-tile">
+            <I.lock size={14} />
+          </span>
+          <span className="lc-ctl-label">{lev.short}</span>
           <I.chevD size={11} />
         </>
       }
@@ -537,16 +540,18 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     </Pop>
   );
 
+  const ready = Boolean(text.trim() || files.length);
   const sendButton =
     busy && variant === "session" ? (
-      <div className="lc-send-split">
-        <button type="button" className="lc-stop l-focus" aria-label="Stop" title="Stop (Esc)" onClick={onStop}>
-          <I.stop />
-        </button>
-        <button type="button" className="lc-queue l-focus" disabled={!text.trim() && !files.length} onClick={() => void send()}>
-          {mode === "queue" ? "Queue" : "Steer"}
-        </button>
-        <Pop label="Queue or steer" side="top" align="end" width={300} triggerClass="lc-queue-more" trigger={<I.chevU size={12} />}>
+      <>
+        <Pop
+          label="Queue or steer"
+          side="top"
+          align="end"
+          width={300}
+          triggerClass="lc-tray-note"
+          trigger={mode === "queue" ? "Enter queues · ⌘Enter steers" : "Enter steers"}
+        >
           {(close) => (
             <>
               <Row title="Queue it" note="Sent when this turn ends. You can still edit it." on={mode === "queue"} end={<kbd className="lc-kbd">Enter</kbd>} onPick={() => (setMode("queue"), close())} />
@@ -555,18 +560,27 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             </>
           )}
         </Pop>
-      </div>
+        <button type="button" className="lc-stop l-focus" aria-label="Stop" title="Stop (Esc)" onClick={onStop}>
+          <I.stop />
+        </button>
+        <button type="button" className="lc-send l-focus" aria-label={mode === "queue" ? "Queue it" : "Steer now"} title={mode === "queue" ? "Queue it (Enter)" : "Steer now (Enter)"} data-ready={ready || undefined} disabled={!ready} onClick={() => void send()}>
+          <I.send size={16} />
+        </button>
+      </>
+    ) : compare.length > 0 ? (
+      <button type="button" className="lc-send lc-send-n l-focus" aria-label={`Send to ${compare.length + 1} models`} data-ready={ready || undefined} onClick={() => void send()}>
+        Send to {compare.length + 1}
+      </button>
     ) : (
-      compare.length > 0 ? (
-        <button type="button" className="lc-send lc-send-n l-focus" aria-label={`Send to ${compare.length + 1} models`} data-ready={Boolean(text.trim() || files.length) || undefined} onClick={() => void send()}>
-          Send to {compare.length + 1}
-        </button>
-      ) : (
-        <button type="button" className="lc-send l-focus" aria-label="Send" title="Send (Enter)" data-ready={Boolean(text.trim() || files.length) || undefined} onClick={() => void send()}>
-          <I.send size={15} />
-        </button>
-      )
+      <button type="button" className="lc-send l-focus" aria-label="Send" title="Send (Enter)" data-ready={ready || undefined} onClick={() => void send()}>
+        <I.send size={16} />
+      </button>
     );
+  const attach = (
+    <button type="button" className="lc-ctl-round l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
+      <I.attach size={16} />
+    </button>
+  );
 
   return (
     <div
@@ -739,32 +753,26 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             {mention.kind !== "@" && tools && found.length === 0 && <span className="lc-quiet lc-mention-wait">No {mention.kind === "/" ? "command" : "skill"} matches that.</span>}
           </div>
         )}
+        {/* The controls sit in a tray of their own inside the text box: solid ink in a lit pill. */}
         <div className="lc-card-row">
-          {variant === "home" ? (
-            <>
-              <Pop label="Who works on this" width={640} keep triggerClass="lc-chip" trigger={whoChip}>
-                {teamPanel}
-              </Pop>
-              {effortPick}
-              {accessPick}
-            </>
-          ) : (
-            <>
-              <button type="button" className="lc-ib l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
-                <I.attach size={15} />
-              </button>
-              <Pop label="Who works on this" side="top" width={640} triggerClass="lc-chip" trigger={whoChip}>
-                {teamPanel}
-              </Pop>
-              {ctx !== undefined && <ContextRing used={ctx} />}
-            </>
-          )}
+          {variant === "session" && attach}
+          <span className="lc-seg">
+            <Pop label="Who works on this" side={variant === "home" ? "bottom" : "top"} width={640} keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
+              {teamPanel}
+            </Pop>
+            {effortPick && <span className="lc-seg-div" aria-hidden />}
+            {effortPick}
+            {variant === "session" && ctx !== undefined && (
+              <>
+                <span className="lc-seg-div" aria-hidden />
+                <ContextRing used={ctx} />
+              </>
+            )}
+          </span>
+          {accessPick}
           <span className="lc-grow" />
-          {variant === "home" && (
-            <button type="button" className="lc-ib l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
-              <I.attach size={15} />
-            </button>
-          )}
+          {variant === "session" && !busy && queue.length > 0 && <span className="lc-tray-note">{plural(queue.length, "message")} waiting</span>}
+          {variant === "home" && attach}
           {sendButton}
         </div>
         <input ref={clip} type="file" multiple hidden onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />
@@ -833,24 +841,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             )
           )}
         </div>
-      ) : (
-        <div className="lc-strip">
-          <span className="lc-strip-note">
-            {settings.lead ? (
-              <>
-                {talkTo.name} plans · {coder.name} builds
-              </>
-            ) : (
-              <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} />
-            )}
-          </span>
-          {effortPick}
-          {accessPick}
-          <span className="lc-grow" />
-          {busy && <span className="lc-strip-note">{mode === "queue" ? "Enter queues · ⌘Enter steers" : "Enter steers · ⌘Enter steers"}</span>}
-          {!busy && queue.length > 0 && <span className="lc-strip-note">{plural(queue.length, "message")} waiting</span>}
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }

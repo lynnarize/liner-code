@@ -11,7 +11,7 @@ import { Backdrop, Scene } from "./Backdrop";
 import { bridge, onCommand } from "./bridge";
 import { onNotify, onStream, rpc, startEngine, useEngine } from "./engine";
 import { Home } from "./Home";
-import { I, Mark } from "./icons";
+import { I } from "./icons";
 import { ACCESS_LEVELS, agentOf, bucketOf } from "./model";
 import { Session } from "./Session";
 import { applyLook, readLook } from "./look";
@@ -243,7 +243,7 @@ export function App() {
   if (!ready)
     return (
       <div className="lc-boot" data-drag>
-        <Mark size={30} draw />
+        <span className="lc-boot-wm">Liner Code</span>
         <span className="l-shimmer">{connected ? "Opening" : "Starting the engine"}</span>
       </div>
     );

@@ -12,7 +12,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type K
 import type { AgentProfile, Thread } from "@contracts";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { I, Mark } from "./icons";
+import { I } from "./icons";
 import { agentOf, ago, bucketOf, clock, markOf, modelLabel, plural, statusLine, type Bucket } from "./model";
 import { ContextMenu, Disc, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
 import { shortcutOf } from "./keymap";
@@ -423,10 +423,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   return (
     <nav className="lc-sb" aria-label="Sessions">
       <div className="lc-sb-head" data-drag>
-        <span className="lc-brand" role="img" aria-label="Liner Code">
-          <Mark size={17} />
-          Liner Code
-        </span>
+        <span className="lc-brand">Liner Code</span>
         <button type="button" className="lc-ib l-focus" aria-label="Hide the sidebar" title={`Hide the sidebar${key("sidebar")}`} onClick={onHide}>
           <I.sidebar size={16} />
         </button>

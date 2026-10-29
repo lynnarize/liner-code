@@ -11,7 +11,7 @@ import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { Glyph, I, Mark } from "./icons";
+import { Glyph, I } from "./icons";
 import { plural, since } from "./model";
 
 const TOOLS: { id: ProviderInfo["id"]; tile: string; name: string; beta?: boolean }[] = [
@@ -93,7 +93,6 @@ function Lockup({ intro }: { intro: boolean }) {
   }, [intro]);
   return (
     <span ref={ref} className="lc-lockup" data-intro={intro || undefined} data-measured={Boolean(from) || undefined} style={from && intro ? ({ "--fx": `${from.x}px`, "--fy": `${from.y}px` } as CSSProperties) : undefined}>
-      <Mark size={26} draw />
       <span className="lc-lockup-wm">Liner Code</span>
       <span className="lc-lockup-tag" aria-hidden={!intro}>
         Your models, your code. Agents when you want them.

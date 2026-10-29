@@ -1,8 +1,8 @@
 /*
-  Settings take the whole window. The glass column swaps the sessions for the settings' own
-  places (Liner's Sidebar, with a search that narrows them), and the paper holds one place at a
-  time: a title that says what it covers, then groups of rows in glass frames, each row a name,
-  a line on what it does, and its control. Looks live in this window (localStorage) and apply at
+  Settings take the whole window. The column on the left swaps the sessions for the settings'
+  own places (Liner's Sidebar, with a search that narrows them), and the right holds one place at
+  a time: a title that says what it covers, then groups of rows on white cards with a 1px ring,
+  each row a name, a line on what it does, and its control. Looks live in this window (localStorage) and apply at
   once; the rest lives in the engine. Escape, ⌘, or Back returns to the sessions.
 */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -20,7 +20,7 @@ import { toast } from "@liner/components/toast/toast";
 import { feedback } from "@liner/lib/feedback";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { Agentic } from "./Agentic";
-import { Backdrop, ownChanged, sceneOf, useBackgroundUrl } from "./Backdrop";
+import { Backdrop, ownChanged, useBackgroundUrl } from "./Backdrop";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
@@ -29,7 +29,7 @@ import { Badge, Disc, Kbd, ModelTag, Pop } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
-import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type Look } from "./look";
+import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type Look, type TrayGlass } from "./look";
 
 const isMac = /Mac/.test(navigator.platform);
 
@@ -46,7 +46,7 @@ export type SettingsPage = "general" | "appearance" | "notifications" | "keyboar
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "How new sessions start, and what Enter does while an agent works.", words: "work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the window's glass, and a picture behind the session.", words: "theme dark light accent color glass tint clear material vibrancy liquid background wallpaper picture image photo blur" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the session tray's glass, and a picture behind the session.", words: "theme dark light accent color glass tint clear solid tray rail background wallpaper picture image photo blur" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: "The agent tools on this Mac, how they sign in, and the keys they bill to.", words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai" },
@@ -225,7 +225,7 @@ const UNTRIED = new Set(["cursor", "grok"]);
 const save = (patch: Partial<EngineSettings>) => void rpc("settings.save", patch).catch(fail);
 const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
 
-/** A titled group of rows in a glass frame. */
+/** A titled group of rows on a white card. */
 function Group({ title, note, end, children, flush }: { title: string; note?: ReactNode; end?: ReactNode; children: ReactNode; flush?: boolean }) {
   return (
     <section className="lc-st-group">
@@ -404,14 +404,15 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
 
 /* --------------------------------- Appearance --------------------------------- */
 
-/** The window in miniature: the glass column and the paper, in the look you're choosing. */
+/** The window in miniature, in the look you're choosing: one ground, the session tray, the composer. */
 function Preview({ look }: { look: Look }) {
   const bg = useBackgroundUrl(look.background);
-  // The same scene as the window: the desktop behind the frame (the stage's blur stands in for it), or the frame alone.
   const vars = bg ? ({ "--lc-pv-bg": `url("${bg}")`, "--lc-pv-blur": `${Math.round((look.bgBlur ?? 28) * 0.3)}px`, "--lc-pv-show": String(look.bgShow ?? 0.45) } as CSSProperties) : undefined;
+  const mode = look.theme === "system" ? "Matches the system" : look.theme === "dark" ? "Dark" : "Light";
+  const accent = look.accent === "own" ? "your own colour" : look.accent;
   return (
     <div className="lc-st-preview" aria-hidden>
-      <div className="lc-pv-win" data-scene={sceneOf(look)} style={vars}>
+      <div className="lc-pv-win" data-tray={look.tray} style={vars}>
         <div className="lc-pv-side">
           <span className="lc-pv-lights">
             <i />
@@ -433,16 +434,47 @@ function Preview({ look }: { look: Look }) {
             <span className="lc-pv-line" style={{ width: "40%" }} />
             <span className="lc-pv-btn" />
           </span>
+          <span className="lc-pv-tray" />
+          <span className="lc-pv-comp" />
         </div>
       </div>
       <span className="lc-pv-cap">
-        {look.theme === "system" ? "Matches the system" : look.theme === "dark" ? "Dark" : "Light"} · {look.accent} · {look.glass === "0.25" ? "clear" : look.glass === "0.9" ? "tinted" : "balanced"} glass
+        {mode} · {accent} · {bg ? "a picture behind the session" : `${look.tray} tray`}
       </span>
     </div>
   );
 }
 
-const ThemeChip = ({ kind }: { kind: "light" | "dark" | "system" }) => <span className="lc-st-themechip" data-kind={kind} />;
+const MODES: { value: Look["theme"]; title: string; note: string }[] = [
+  { value: "light", title: "Light", note: "One light ground" },
+  { value: "dark", title: "Dark", note: "One dark ground" },
+  { value: "system", title: "Match the system", note: "Follows macOS, day and night" },
+];
+
+/** Light, dark or the system's, as cards: a swatch of the ground and its well, the name, a line. */
+function ModeCards({ value, onPick }: { value: Look["theme"] | ""; onPick: (v: Look["theme"]) => void }) {
+  return (
+    <span className="lc-st-modes" role="radiogroup" aria-label="Theme">
+      {MODES.map((m) => (
+        <button key={m.value} type="button" role="radio" aria-checked={value === m.value} className="lc-st-mode l-focus" data-on={value === m.value || undefined} onClick={() => onPick(m.value)}>
+          {value === m.value && (
+            <span className="lc-st-tick" aria-hidden>
+              <I.check size={10} />
+            </span>
+          )}
+          <span className="lc-st-themechip" data-kind={m.value} aria-hidden>
+            <i />
+            <i />
+          </span>
+          <span className="lc-st-mode-t">
+            <b>{m.title}</b>
+            <small>{m.note}</small>
+          </span>
+        </button>
+      ))}
+    </span>
+  );
+}
 
 function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) {
   // One of your themes holds the mode and the accent; choosing either goes back to Liner's own.
@@ -453,62 +485,42 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
       <Preview look={look} />
       <Group title="Theme">
         <Field title="Mode" note={held} below>
-          <RadioCards
-            label="Theme"
-            columns={3}
-            value={own ? "" : look.theme}
-            onValueChange={(theme) => set({ theme: theme as Look["theme"], custom: undefined })}
-            options={[
-              { value: "light", title: "Light", description: "White paper on light glass.", icon: <ThemeChip kind="light" /> },
-              { value: "dark", title: "Dark", description: "Ink paper on dark glass.", icon: <ThemeChip kind="dark" /> },
-              { value: "system", title: "Match the system", description: "Follows macOS, day and night.", icon: <ThemeChip kind="system" /> },
-            ]}
-          />
+          <ModeCards value={own ? "" : look.theme} onPick={(theme) => set({ theme, custom: undefined })} />
         </Field>
         <Field title="Accent" note={held ?? "One colour, spent on selection, focus and the main action."}>
           <span className="lc-swatches" role="radiogroup" aria-label="Accent">
             {ACCENTS.map((a) => (
               <button key={a.id} type="button" role="radio" aria-checked={!own && look.accent === a.id} aria-label={a.id} title={a.id} className="lc-swatch l-focus" data-on={(!own && look.accent === a.id) || undefined} style={{ background: a.color }} onClick={() => set({ accent: a.id, custom: undefined })} />
             ))}
-            <label className="lc-swatch lc-swatch-own l-focus" data-on={(!own && look.accent === "own") || undefined} title="A colour of your own" style={look.accentColor ? { background: look.accentColor } : undefined}>
-              <input type="color" aria-label="A colour of your own" value={look.accentColor ?? "#2f7ae5"} onChange={(e) => set({ accent: "own", accentColor: e.target.value, custom: undefined })} onClick={() => look.accentColor && set({ accent: "own", custom: undefined })} />
-              {!look.accentColor && <I.plus size={11} />}
-            </label>
+            {look.accentColor && (
+              <button type="button" role="radio" aria-checked={!own && look.accent === "own"} aria-label="Your own colour" title="Your own colour" className="lc-swatch l-focus" data-on={(!own && look.accent === "own") || undefined} style={{ background: look.accentColor }} onClick={() => set({ accent: "own", custom: undefined })} />
+            )}
           </span>
         </Field>
+        <Field title="A colour of your own" note="Liner keeps the text on it easy to read.">
+          <label className="lc-btn lc-st-colour l-focus-within" data-kind="secondary" data-size="sm">
+            <input type="color" aria-label="A colour of your own" value={look.accentColor ?? "#2f7ae5"} onChange={(e) => set({ accent: "own", accentColor: e.target.value, custom: undefined })} />
+            {look.accentColor && <span className="lc-st-colour-dot" style={{ background: look.accentColor }} aria-hidden />}
+            Choose a colour
+          </label>
+        </Field>
       </Group>
-      <Themes look={look} set={set} />
-      <Group title="Glass" note="The window is one glass frame around the paper, and what floats over the session (menus, the rail) is glass too.">
-        <Field title="Glass" note="How much of what's behind it comes through, from clear to tinted, as in macOS Appearance.">
+      <Group title="Session tray" note="The one glass surface left. Everything else sits on one solid ground.">
+        <Field title="Glass" note="How much of the thread shows through the tray.">
           <Segmented
             size="sm"
-            value={look.glass}
-            onValueChange={(glass) => set({ glass })}
+            value={look.tray}
+            onValueChange={(tray) => set({ tray: tray as TrayGlass })}
             options={[
-              { value: "0.25", label: "Clear" },
-              { value: "0.575", label: "Balanced" },
-              { value: "0.9", label: "Tinted" },
+              { value: "clear", label: "Clear" },
+              { value: "tinted", label: "Tinted" },
+              { value: "solid", label: "Solid" },
             ]}
-            aria-label="Glass"
+            aria-label="Session tray glass"
           />
         </Field>
-        {isNative() && (
-          <Field title="Behind the glass" note="Vibrancy and Liquid Glass show the desktop through the frame, which keeps the graphics card working while the window is in front. Solid costs nothing.">
-            <Segmented
-              size="sm"
-              value={look.material}
-              onValueChange={(material) => set({ material })}
-              options={[
-                { value: "solid", label: "Solid" },
-                { value: "vibrancy", label: "Vibrancy" },
-                { value: "glass", label: "Liquid Glass" },
-              ]}
-              aria-label="Window material"
-            />
-          </Field>
-        )}
       </Group>
-      <Group title="Background" note="A picture behind the session, blurred and under the paper, so the work stays easy to read. The sidebar keeps its glass.">
+      <Group title="Background" note="A picture behind the session, blurred and under a wash, so the work stays easy to read. The sidebar never shows it.">
         <Field title="Picture" below>
           <Backgrounds value={look.background ?? "none"} onPick={(background) => set({ background })} />
         </Field>
@@ -517,12 +529,13 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
             <Field title="Blur" note="Softer keeps the eye on the work.">
               <Slider label="Blur" min={8} max={48} step={2} unit="px" marks={false} value={look.bgBlur ?? 28} onValueChange={(bgBlur) => set({ bgBlur })} />
             </Field>
-            <Field title="Shows through" note="How much of the picture comes through the paper.">
+            <Field title="Shows through" note="How much of the picture comes through.">
               <Slider label="Shows through" min={15} max={75} step={5} unit="%" marks={false} value={Math.round((look.bgShow ?? 0.45) * 100)} onValueChange={(v) => set({ bgShow: v / 100 })} />
             </Field>
           </>
         )}
       </Group>
+      <Themes look={look} set={set} />
     </>
   );
 }

@@ -40,20 +40,21 @@
 }
 .lc-ag-choice {
   cursor: pointer;
-  transition: box-shadow 280ms var(--l-spring-smooth);
 }
-.lc-ag-choice[data-on] {
-  box-shadow:
-    0 0 0 1.5px var(--l-accent),
-    0 0 0 5px var(--l-accent-soft),
-    0 1px 2px var(--l-drop);
-}
+/* The frame draws nothing now and has square corners, so the ring goes round the card. */
 .lc-ag-choice > .lc-fcard {
   display: grid;
   align-content: start;
   gap: 14px;
   box-sizing: border-box;
   padding: 16px 18px 18px;
+  transition: box-shadow 280ms var(--l-spring-smooth);
+}
+.lc-ag-choice[data-on] > .lc-fcard {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 5px var(--l-accent-soft),
+    0 1px 2px var(--l-drop);
 }
 .lc-ag-choice-h {
   display: flex;

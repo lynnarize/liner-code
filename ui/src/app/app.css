@@ -292,8 +292,15 @@ html[data-shell="electron"] :is(.l-pop, .lc-layer, dialog, [popover], [role="dia
 html[data-shell="electron"] body > :not(#root) {
   -webkit-app-region: no-drag;
 }
-/* With the sidebar away, the paper's top bar starts after the traffic lights. */
+/*
+  With the sidebar away, the paper's top bar starts after the traffic lights, and its row moves up
+  by the window's gap so its centre sits on theirs; the bar keeps its height. In full screen the
+  lights are hidden (their x is 0), so the cap is 0 and the row stays put.
+*/
 html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
+  --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 26px)), min(8px, var(--lc-lights-x, 70px)));
+  padding-top: calc(8px - var(--lc-up));
+  padding-bottom: calc(8px + var(--lc-up));
   padding-left: max(20px, calc(var(--lc-lights-x, 70px) + 4px));
 }
 
@@ -885,9 +892,10 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   box-sizing: border-box;
   padding: 10px 8px 6px 12px;
 }
-/* The head row's centre sits on the traffic lights' centre, which the shell reports. */
+/* The head row's centre sits on the traffic lights' centre, which the shell reports from the
+   window's top: the window's gap is above the sidebar already. */
 html[data-native="mac"] .lc-sb {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - 17px));
+  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
 }
 .lc-sb-head {
   display: flex;
@@ -4550,7 +4558,7 @@ html[data-native="mac"] .lc-setup-top {
   animation: l-unblur 320ms var(--l-ease-out) backwards;
 }
 html[data-native="mac"] .lc-st-side {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - 17px));
+  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
 }
 /* Settings' name sits where Liner Code's does, in the same type; the way back is beside it. */
 .lc-st-head .lc-brand {

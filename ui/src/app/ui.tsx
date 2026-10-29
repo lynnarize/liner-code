@@ -13,7 +13,7 @@ import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 type Side = "top" | "bottom";
 const EDGE = 10;
 const GAP = 6;
-type Place = { side: Side; top: number; left: number; max?: number; ready: boolean };
+type Place = { side: Side | "left"; top: number; left: number; max?: number; ready: boolean };
 
 /** The least room a panel that keeps its side needs there, before it gives up and flips. */
 const KEEP_MIN = 260;
@@ -22,9 +22,10 @@ const KEEP_MIN = 260;
   Where a panel opens. Panels live in a layer above the whole window (a portal), so no sidebar,
   paper or scroller clips them. It takes the preferred side when it fits, else the side with more
   room, is never taller than that room (it scrolls inside), and stays inside the window sideways.
-  One that `keep`s its side stays there while it has a fair room, and fits itself to it.
+  One that `keep`s its side stays there while it has a fair room, and fits itself to it. One
+  `beside` its trigger opens to its left, level with it, while there's room there.
 */
-function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number, keep: boolean) {
+function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number, keep: boolean, beside = false) {
   const [at, setAt] = useState<Place>({ side: prefer, top: -9999, left: -9999, ready: false });
   useLayoutEffect(() => {
     if (!open) return setAt((a) => ({ ...a, ready: false }));
@@ -49,6 +50,13 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       const max = h > room(side) ? Math.max(120, Math.floor(room(side))) : undefined;
       const tall = Math.min(h, max ?? h);
       const w = Math.min(width, vw - EDGE * 2);
+      // Beside, to the left (the session tray's menus): level with the trigger's top, kept on screen.
+      if (beside && r.left - GAP - w >= EDGE) {
+        const fit = Math.min(h, vh - EDGE * 2);
+        const top = Math.max(EDGE, Math.min(r.top, vh - EDGE - fit));
+        setAt({ side: "left", top: Math.round(top), left: Math.round(r.left - GAP * 2 - w), max: h > fit ? fit : undefined, ready: true });
+        return;
+      }
       let left = align === "end" ? r.right - w : align === "center" ? r.left + r.width / 2 - w / 2 : r.left;
       left = Math.max(EDGE, Math.min(left, vw - EDGE - w));
       const top = side === "bottom" ? r.bottom + GAP : r.top - GAP - tall;
@@ -87,7 +95,8 @@ export function Pop({
   label: string;
   children: (close: () => void) => ReactNode;
   align?: "start" | "end" | "center";
-  side?: "top" | "bottom";
+  /** "left" opens beside the trigger, as the session tray's menus do. */
+  side?: "top" | "bottom" | "left";
   width?: number;
   className?: string;
   triggerClass?: string;
@@ -99,7 +108,7 @@ export function Pop({
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const at = usePlace(open, btn, panel, side, align, width, keep);
+  const at = usePlace(open, btn, panel, side === "left" ? "bottom" : side, align, width, keep, side === "left");
   useDismiss(open, () => setOpen(false), [wrap, panel], btn);
   const close = () => {
     setOpen(false);

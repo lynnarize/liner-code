@@ -83,7 +83,7 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
         <b>Commit {plural(count, "file")}</b>
         <span className="lc-quiet">{writing ? "" : by ? `Written by ${by}` : ""}</span>
       </div>
-      {open.length > 1 && (
+      {open.length > 0 && (
         <div className="lc-commit-files">
           {open.map((f) => (
             <label key={f.path} className="lc-commit-file" title={f.path}>

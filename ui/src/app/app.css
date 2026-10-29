@@ -36,6 +36,9 @@
   --lc-plate: color-mix(in oklab, var(--l-ink) 7.5%, var(--lc-paper));
   --lc-field: var(--l-surface);
   --lc-float: var(--l-surface);
+  /* A card on the paper: white, with a 1px ring for its edge. */
+  --lc-card: var(--l-surface);
+  --lc-card-ring: 0 0 0 1px var(--lc-hair), 0 1px 2px oklch(0.3 0.04 265 / 0.04);
   --lc-ctl: oklch(0.215 0.007 265);
   --lc-ctl-hover: oklch(0.285 0.007 265);
   --lc-ctl-tile: oklch(0.355 0.008 265);
@@ -57,6 +60,8 @@
   --lc-plate: color-mix(in oklab, var(--l-ink) 9.5%, var(--lc-paper));
   --lc-field: color-mix(in oklab, var(--l-ink) 5%, var(--lc-paper));
   --lc-float: color-mix(in oklab, var(--l-ink) 6%, var(--lc-paper));
+  --lc-card: color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper));
+  --lc-card-ring: 0 0 0 1px var(--lc-hair);
   --lc-ctl: oklch(0.13 0.003 265);
   --lc-ctl-hover: oklch(0.2 0.004 265);
   --lc-ctl-tile: oklch(0.28 0.006 265);
@@ -119,16 +124,16 @@ html[data-tray="solid"] {
 }
 .l-frame-card {
   border-radius: 16px;
-  background: var(--lc-well);
-  box-shadow: none;
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 .l-frame-float > .l-frame-card {
   background: var(--lc-float);
 }
 .l-frame-solo {
   border-width: 0;
-  background: var(--lc-well);
-  box-shadow: none;
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 
 html,
@@ -651,7 +656,8 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   box-sizing: border-box;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 5px;
+  padding: 6px;
+  border-radius: 20px;
   text-align: left;
 }
 /* Panels sit in the layer above the window: placed by script, so nothing they open from clips them. */
@@ -2199,15 +2205,15 @@ html[data-tray="solid"] .lc-rail {
   color: var(--l-ink-3);
 }
 
-/* A card in the thread is a well: its tone is its edge, with no rim, shadow or glass. Settings and
-   Setup keep white cards with a 1px ring (their own sections). */
+/* Every card is white on the paper, with a 1px ring for its edge: no glass, no frame. */
 .lc-frame {
   display: grid;
 }
 .lc-fcard {
   min-width: 0;
   border-radius: 16px;
-  background: var(--lc-well);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 .lc-todo .lc-fcard {
   padding: 12px 14px;
@@ -4616,10 +4622,6 @@ html[data-native="mac"] .lc-st-side {
 .lc-setup .lc-fcard,
 .lc-usage-in .lc-fcard {
   border-radius: 18px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--lc-hair),
-    0 1px 2px oklch(0 0 0 / 0.03);
 }
 
 .lc-st-paper {
@@ -5077,7 +5079,8 @@ html[data-native="mac"] .lc-st-side {
   justify-content: space-between;
   padding: 8px;
   border-radius: 8px;
-  background: var(--lc-well);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 .lc-pv-btn {
   width: 26px;
@@ -5365,7 +5368,8 @@ html[data-native="mac"] .lc-st-side {
   width: 168px;
   overflow: hidden;
   border-radius: 15px;
-  background: var(--lc-well);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   transition:
     width calc(620ms * var(--k)) var(--l-spring-smooth),
     border-radius calc(620ms * var(--k)) var(--l-spring-smooth),
@@ -5738,5 +5742,348 @@ html[data-native="mac"] .lc-st-side {
     animation: none;
     background: none;
     color: var(--l-ink-3);
+  }
+}
+
+/* ---------- A pull request: the PR card ---------- */
+/*
+  The Commit and push card's skin: rows on a rail under Merge into the base, the checks in a list,
+  a status line that cross-blurs from step to step. A white card in the thread; on the paper,
+  with nothing round it, in the panel.
+*/
+.lc-prc {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+  animation: l-blur-in 320ms var(--l-ease-out) backwards;
+}
+.lc-prc[data-variant="panel"] {
+  padding: 4px 2px;
+  background: none;
+  box-shadow: none;
+}
+.lc-prc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.lc-prc-ttl {
+  font-weight: 600;
+}
+.lc-prc-num {
+  color: var(--l-ink-3);
+}
+.lc-prc-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
+.lc-prc-state[data-tone="ok"] {
+  color: var(--l-ok-text);
+}
+.lc-prc-state[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-prc-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.lc-prc-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.lc-prc-title b {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-prc-diff {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  margin-left: auto;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.lc-prc-diff .plus {
+  color: var(--l-ok-text);
+}
+.lc-prc-diff .minus {
+  color: var(--l-danger-text);
+}
+.lc-prc-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -14px;
+}
+.lc-prc[data-variant="panel"] .lc-prc-rows {
+  margin: 0 -4px;
+}
+/* The rows rise in bottom-up, as the commit card's do, once; after that they stay put. */
+.lc-prc-row {
+  opacity: 1;
+  filter: none;
+  translate: 0 0;
+  animation: lc-prc-row 440ms var(--l-ease-out) backwards;
+}
+.lc-prc-row:nth-last-child(1) {
+  animation-delay: 60ms;
+}
+.lc-prc-row:nth-last-child(2) {
+  animation-delay: 120ms;
+}
+.lc-prc-row:nth-last-child(3) {
+  animation-delay: 180ms;
+}
+.lc-prc-row:nth-last-child(n + 4) {
+  animation-delay: 240ms;
+}
+@keyframes lc-prc-row {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    translate: 0 5px;
+  }
+}
+.lc-prc-row .lc-ship-meta.lc-prc-meta {
+  font-family: var(--l-font-body);
+  font-size: 12px;
+}
+.lc-prc[data-stage="conflicts"] .lc-prc-meta {
+  color: var(--l-warn-text);
+}
+.lc-prc:is([data-stage="ready"], [data-stage="merged"]) .lc-prc-meta {
+  color: var(--l-ok-text);
+}
+/* The line to the base flows while it works, and the ring turns green once it can merge. */
+.lc-prc[data-busy] .lc-ship-rail .dash {
+  animation: lc-ship-flow 600ms linear infinite;
+}
+.lc-prc:is([data-stage="ready"], [data-stage="merged"]) .lc-ship-rail .dash {
+  stroke-dasharray: none;
+}
+.lc-prc:is([data-stage="ready"], [data-stage="merged"]) .lc-ship-rail .ring {
+  fill: color-mix(in oklab, var(--l-ok) 13%, var(--lc-card));
+  stroke: var(--l-ok);
+  stroke-dasharray: none;
+}
+.lc-prc:is([data-stage="ready"], [data-stage="merged"]) .lc-ship-rail .ck {
+  opacity: 1;
+}
+.lc-prc[data-stage="conflicts"] .lc-ship-rail .ring {
+  stroke: var(--l-warn);
+}
+.lc-prc .lc-ship-rail .ring {
+  fill: var(--lc-card);
+}
+.lc-prc[data-variant="panel"] .lc-ship-rail .ring,
+.lc-prc[data-variant="panel"] .lc-ship-rail :is(.dot, .dotm, .dotw) {
+  stroke: var(--lc-paper);
+}
+.lc-prc .lc-ship-rail :is(.dot, .dotm, .dotw) {
+  stroke: var(--lc-card);
+  stroke-width: 2;
+}
+.lc-ship-rail .dotw {
+  fill: var(--l-warn);
+}
+.lc-prc-row[data-landed] .lc-ship-sub {
+  color: var(--l-warn-text);
+}
+.lc-prc-note {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--l-ink-2);
+  animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.lc-prc-note code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--lc-plate);
+  font-size: 12px;
+}
+.lc-prc-fix {
+  display: grid;
+  gap: 6px;
+}
+.lc-prc-sum {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--l-warn) 12%, var(--lc-card));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-warn-text);
+  cursor: pointer;
+}
+.lc-prc-sum[data-done] {
+  background: var(--lc-well);
+  color: var(--l-ok-text);
+}
+.lc-prc-aside {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-prc-hunks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-prc-hunks li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--lc-well);
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.lc-prc-hunks li[data-active] {
+  box-shadow: inset 0 0 0 1px var(--l-accent-line);
+}
+.lc-prc-file {
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-prc-hunks code {
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre;
+}
+.lc-prc-hunks code[data-side="base"] {
+  background: var(--lc-del);
+}
+.lc-prc-hunks code[data-side="yours"] {
+  background: var(--lc-add);
+}
+.lc-prc-hunks code em {
+  margin-left: auto;
+  font-family: var(--l-font-body);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--l-ink-3);
+}
+.lc-prc-lab {
+  margin: 2px 0 -4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-prc-checks {
+  display: grid;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: var(--lc-well);
+  list-style: none;
+}
+.lc-prc-checks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 26px;
+  color: var(--l-ink-2);
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.lc-prc-ck {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--l-ok);
+}
+.lc-prc-ck > span {
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border: 1.4px dashed var(--l-ink-4);
+  border-radius: 50%;
+}
+.lc-prc-checks li[data-state="running"] .lc-prc-ck > span {
+  border: 1.6px solid color-mix(in oklab, var(--l-accent) 25%, transparent);
+  border-top-color: var(--l-accent);
+  animation: l-spin 900ms linear infinite;
+}
+.lc-prc-checks li[data-state="failed"] .lc-prc-ck {
+  color: var(--l-danger);
+}
+.lc-prc-cm {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+  animation: l-swap-in 260ms var(--l-ease-out) backwards;
+}
+.lc-prc-checks li[data-state="failed"] .lc-prc-cm {
+  color: var(--l-danger-text);
+}
+.lc-prc-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.lc-prc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+  animation: l-swap-in 300ms var(--l-ease-out) backwards;
+}
+.lc-prc-status > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-prc-status[data-tone="ok"] {
+  color: var(--l-ok-text);
+}
+.lc-prc-status[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-prc-line .lc-btn {
+  animation: l-swap-in 260ms var(--l-ease-out) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-prc,
+  .lc-prc *,
+  .lc-prc-row {
+    animation: none !important;
   }
 }

@@ -703,8 +703,9 @@
   gap: 8px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: var(--lc-well);
+  background: var(--lc-card);
   animation: l-blur-in 320ms var(--l-ease-out) backwards;
+  box-shadow: var(--lc-card-ring);
 }
 .lc-ag-result[data-state="working"] {
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-accent) 40%, transparent);

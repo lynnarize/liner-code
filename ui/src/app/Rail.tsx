@@ -67,9 +67,8 @@ export function Rail({ thread, panel, onPanel, onTab, files, branch }: { thread:
           <span className="lc-rail-pop" data-count={files > 0 || undefined}>
             <Pop
               label={files ? `Commit and push, ${plural(files, "file")} waiting` : "Commit and push"}
-              align="end"
-              side="top"
-              width={files ? 420 : 280}
+              side="left"
+              width={files ? 380 : 280}
               triggerClass="lc-rail-b lc-rail-ship"
               disabled={running}
               trigger={
@@ -87,7 +86,7 @@ export function Rail({ thread, panel, onPanel, onTab, files, branch }: { thread:
                 files > 0 ? (
                   <CommitForm thread={thread} files={files} then={savedThen()} onDone={close} />
                 ) : (
-                  <>
+                  <div className="lc-ship-menu">
                     <PanelHead>Nothing to commit</PanelHead>
                     <Row
                       title={`Push ${branch ?? "this branch"}`}
@@ -99,7 +98,7 @@ export function Rail({ thread, panel, onPanel, onTab, files, branch }: { thread:
                       }}
                     />
                     <Row title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={13} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail))} />
-                  </>
+                  </div>
                 )
               }
             </Pop>

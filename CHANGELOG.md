@@ -21,6 +21,10 @@ download the new DMG.
 - **Commit and push plays out in the thread.** The chip grows into a card, your commits come into
   focus from the bottom up, the line to origin flows while it pushes and the ring turns green when
   it lands; then it folds back into a chip, with Open a pull request beside it.
+- **The pull request card** in the thread and the Pull request panel read the same way: your
+  commits on a rail under Merge into main, what reached main in amber beside them, each clash
+  with its two lines, the checks in a list, and one status line with Resolve conflicts or Squash
+  and merge beside it.
 - **New agent, in two columns**, and three new things an agent knows: a **prompt** added to every
   turn after its soul, **skills** (skill.md files it reads when a task calls for one, yours or
   each project's own) and **context files** read at the start of each session.
@@ -31,8 +35,9 @@ download the new DMG.
 
 ### Changed
 
-- Menus, popovers, ⌘K, tooltips and toasts are solid, with a soft shadow. Reconnecting is an
-  ink pill.
+- Every card is white on the paper, with a 1px ring. Menus, popovers, ⌘K, tooltips and toasts
+  are solid, with a soft shadow; the session tray's commit form and push menu open beside it.
+  Reconnecting is an ink pill.
 - The L mark is gone: the sidebar and Setup say Liner Code, a size larger.
 - Settings keeps its layout, with white cards and a 1px ring. Appearance shows the window in
   miniature, the modes as cards and pictures as tiles; Behind the glass and the window's Clear to

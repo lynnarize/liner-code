@@ -313,8 +313,14 @@ function Todo({ it }: { it: Extract<Item, { kind: "plan" }> }) {
 
 
 /** A request to do something: what, where, and what leaves this machine. */
+/**
+  An agent asking: compact, one row with its buttons beside what it wants, so a run of asks doesn't
+  fill the thread. What it says and exactly where it runs fold under Details; a high-risk ask
+  shows them open, so you read what happens before you hold to allow it.
+*/
 function Approval({ threadId, it, who }: { threadId: string; it: Extract<Item, { kind: "approval" }>; who: string }) {
   const [always, setAlways] = useState(false);
+  const [details, setDetails] = useState(it.risk === "high");
   // An approval answered here stays Liner's card, so it settles into its receipt; one answered
   // before you opened the session is just a line.
   const live = useRef(it.state === "asking");
@@ -349,10 +355,10 @@ function Approval({ threadId, it, who }: { threadId: string; it: Extract<Item, {
         className="lc-appr"
         title={it.title}
         agent={who}
-        description={it.description}
+        description={details ? it.description : undefined}
         icon={icon}
         risk={it.risk}
-        fields={it.fields.map((f) => ({
+        fields={(details ? it.fields : []).map((f) => ({
           label: f.label,
           // A command is shown whole: what runs is what you read.
           value: f.label === "Command" || f.label === "File" ? <code className="lc-ask-cmd">{f.value.replace(/^\/Users\/[^/]+/, "~")}</code> : f.value.replace(/^\/Users\/[^/]+/, "~"),
@@ -364,13 +370,23 @@ function Approval({ threadId, it, who }: { threadId: string; it: Extract<Item, {
         approvedText={it.state === "expired" ? "No longer waiting" : shell ? "Running it" : "Allowed"}
         deniedText={`Sent back to ${who}`}
       />
-      {asking && it.rule && it.risk !== "high" && (
-        <label className="lc-appr-strip lc-check">
-          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
-          <span>
-            Don't ask again for <code className="lc-code">{it.rule === "Edit" ? "edits" : it.rule}</code> this session
-          </span>
-        </label>
+      {asking && (it.description || it.fields.length > 0 || (it.rule && it.risk !== "high")) && (
+        <div className="lc-appr-strip">
+          {(it.description || it.fields.length > 0) && (
+            <button type="button" className="lc-appr-more l-focus" aria-expanded={details} onClick={() => setDetails((d) => !d)}>
+              <I.chevR size={11} />
+              {details ? "Less" : "Details"}
+            </button>
+          )}
+          {it.rule && it.risk !== "high" && (
+            <label className="lc-check">
+              <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+              <span>
+                Don't ask again for <code className="lc-code">{it.rule === "Edit" ? "edits" : it.rule}</code> this session
+              </span>
+            </label>
+          )}
+        </div>
       )}
     </div>
   );

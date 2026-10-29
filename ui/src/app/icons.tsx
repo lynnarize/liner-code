@@ -109,18 +109,6 @@ export const I = {
   tool: (p: P) => <S {...p}><path d="M10.2 2.9a3.25 3.25 0 0 0-4 4.25L2.9 10.45a1.4 1.4 0 0 0 2 2L8.2 9.15a3.25 3.25 0 0 0 4.25-4l-2 2-1.6-.4-.4-1.6Z" /></S>,
 };
 
-/** The Liner Code mark. `draw` animates both strokes in, as in the intro. */
-export function Mark({ size = 17, draw, className }: { size?: number; draw?: boolean; className?: string }) {
-  return (
-    <svg className={className} width={(size * 28) / 36.4} height={size} viewBox="0 0 28 36.4" aria-hidden data-draw={draw || undefined} style={{ flex: "none", overflow: "visible" }}>
-      <path className="lc-mark-o" pathLength={1} d="M1.13 1.13V29.9a5.3 5.3 0 0 0 5.3 5.3h20.44" />
-      <g className="lc-mark-g">
-        <path className="lc-mark-i" pathLength={1} d="M8.76 1.13V26.2a1.55 1.55 0 0 0 1.55 1.55h16.56" />
-      </g>
-    </svg>
-  );
-}
-
 /** An agent's glyph, for its disc. */
 export function Glyph({ glyph, size = 13 }: { glyph: AgentGlyph; size?: number }) {
   switch (glyph) {

@@ -27,27 +27,15 @@
   color: var(--l-ink-3);
 }
 
-/* ------------------------------ Choices (ways, run modes) ------------------------------ */
+/* ------------------------------------ The ways ------------------------------------ */
 
-.lc-ag-ways,
-.lc-ag-modes {
+.lc-ag-ways {
   display: grid;
   gap: 12px;
 }
-@container lc-ag (min-width: 900px) {
+@container lc-ag (min-width: 700px) {
   .lc-ag-ways {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-.lc-ag-modes {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.lc-ag-modes > [data-slim] {
-  grid-column: 1 / -1;
-}
-@container lc-ag (max-width: 720px) {
-  .lc-ag-modes {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 .lc-ag-choice {
@@ -185,37 +173,9 @@
   margin: 0;
   color: var(--l-ink);
 }
-/* Three across, each card reads like a spec sheet: the label over its line. */
-@container lc-ag (min-width: 900px) {
-  .lc-ag-ways .lc-ag-kv {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1px;
-  }
-  .lc-ag-ways .lc-ag-kv dt {
-    font-size: 12px;
-  }
-  .lc-ag-ways .lc-ag-kv dd + dt {
-    margin-top: 9px;
-  }
-}
 .lc-ag-warnword {
   color: var(--l-warn-text);
 }
-/* The plain choice: one line, its note beside the name. */
-.lc-ag-choice[data-slim] > .lc-fcard {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 22px;
-  padding: 12px 18px;
-}
-.lc-ag-choice[data-slim] .lc-ag-kv {
-  flex: 1;
-  min-width: 260px;
-  padding: 0;
-  box-shadow: none;
-}
-
 /* ------------------------------------ Tables ------------------------------------ */
 
 .lc-ag-tablecard {
@@ -295,70 +255,13 @@
     opacity: 0.4;
   }
 }
-.lc-ag-table[data-compact] th,
-.lc-ag-table[data-compact] td {
-  padding: 9px 10px;
-  font-size: 12.5px;
-}
-.lc-ag-table[data-compact] tbody th {
-  width: 30%;
-}
 .lc-ag-foot {
   margin: 8px 12px 0;
   font-size: 12px;
   line-height: 17px;
   color: var(--l-ink-3);
 }
-.lc-ag-pad {
-  padding: 16px 18px;
-}
-.lc-ag-plain {
-  margin: 0;
-  font-size: 13px;
-  line-height: 19px;
-  color: var(--l-ink-2);
-}
-
-/* --------------------------- The escalation and the modes' table --------------------------- */
-
-.lc-ag-pair {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 14px;
-  margin-top: 8px;
-}
-@container lc-ag (max-width: 760px) {
-  .lc-ag-pair {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.lc-ag-panel {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-width: 0;
-}
-.lc-ag-sample {
-  display: grid;
-  gap: 10px;
-  padding: 14px 16px 16px;
-}
-.lc-ag-sample-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
-}
-.lc-ag-sample-h b {
-  font-weight: 600;
-}
-.lc-ag-sample p {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 20px;
-}
-
-/* ------------------------------------ The team ------------------------------------ */
+/* ------------------------------------ The wire ------------------------------------ */
 
 .lc-ag-board {
   display: grid;
@@ -390,25 +293,6 @@
 }
 .lc-ag-wirehead b {
   font-weight: 600;
-}
-.lc-ag-legend {
-  display: inline-flex;
-  gap: 14px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-ag-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.lc-ag-legend i {
-  width: 18px;
-  border-top: 1.5px dashed var(--l-accent);
-}
-.lc-ag-legend i[data-solid] {
-  border-top-style: solid;
-  border-top-color: var(--l-ink-4);
 }
 .lc-ag-wire {
   position: relative;
@@ -599,13 +483,18 @@
 .lc-ag-bars i[data-on] {
   background: var(--l-ink-2);
 }
-
+.lc-ag-unit {
+  font-size: 12px;
+}
+/* The Reviewer's rounds and the small-changes switch, on a line under its words. */
 .lc-ag-revc {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
+}
+.lc-ag-revc .lc-ag-small {
+  margin-left: 8px;
 }
 .lc-ag-small {
   display: inline-flex;
@@ -807,22 +696,110 @@
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
 }
+/* A way's result is one line (what it cost, how long, the Reviewer), with its details folded under a chevron. */
 .lc-ag-result {
   display: grid;
   align-content: start;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 16px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--lc-card);
   animation: l-blur-in 320ms var(--l-ease-out) backwards;
+  box-shadow: var(--lc-card-ring);
 }
 .lc-ag-result[data-state="working"] {
-  box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--l-accent) 40%, var(--l-line-2)),
-    0 1px 2px var(--l-drop);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-accent) 40%, transparent);
+}
+.lc-ag-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.lc-ag-line > b {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.lc-ag-line > span {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  color: var(--l-ink-3);
+}
+.lc-ag-line .lc-ag-ok {
+  color: var(--l-ok-text);
+}
+.lc-ag-more {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--l-ink-4);
+  cursor: pointer;
+  transition:
+    rotate 260ms var(--l-spring-smooth),
+    background 160ms ease;
+}
+.lc-ag-more[aria-expanded="true"] {
+  rotate: 180deg;
+}
+@media (hover: hover) {
+  .lc-ag-more:hover {
+    background: var(--lc-plate);
+    color: var(--l-ink);
+  }
+}
+.lc-ag-detail {
+  display: grid;
+  gap: 10px;
+  animation: l-unblur 260ms var(--l-ease-out) backwards;
+}
+/* In your sessions, the last 30 days: one row that folds the measured rows away. */
+.lc-ag-subtoggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.lc-ag-subtoggle > svg {
+  flex: none;
+  color: var(--l-ink-4);
+  transition: rotate 260ms var(--l-spring-smooth);
+}
+.lc-ag-subtoggle[aria-expanded="true"] > svg {
+  rotate: 90deg;
+}
+.lc-ag-subtoggle small {
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-ag-subtoggle .lc-ag-show {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--l-accent-text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-ag-more,
+  .lc-ag-subtoggle > svg,
+  .lc-ag-detail {
+    transition: none;
+    animation: none;
+  }
 }
 .lc-ag-result-h {
   display: flex;

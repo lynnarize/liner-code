@@ -67,10 +67,8 @@
     box-shadow 160ms ease;
 }
 .lc-stab[data-on] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
 }
 /* With the plate measured, it carries the white; the tab itself stays clear so the plate can glide. */
 .lc-stabs-row {
@@ -87,10 +85,8 @@
   height: 30px;
   margin-top: -15px;
   border-radius: 9px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
   pointer-events: none;
 }
 .lc-stab-plate[data-moved] {
@@ -244,10 +240,8 @@
   padding: 8px 10px 8px 8px;
   border: 0;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-plate);
+  box-shadow: none;
   text-align: left;
   cursor: pointer;
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
@@ -307,10 +301,8 @@
   gap: 2px;
   padding: 2px 12px 10px;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
 }
 .lc-sinfo-card .lc-pop-head {
@@ -796,8 +788,8 @@
   min-width: 0;
   min-height: 0;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   overflow: hidden;
 }
 .lc-files-head {
@@ -1000,8 +992,8 @@
   border: 0;
   border-radius: 8px;
   outline: none;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-well);
+  box-shadow: none;
   font: inherit;
   font-size: 12px;
 }
@@ -1090,8 +1082,8 @@
   min-height: 34px;
   padding: 0 10px;
   border-radius: 10px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  background: var(--lc-well);
+  box-shadow: none;
   font-size: 13px;
 }
 .lc-pr-checks b {
@@ -1307,10 +1299,8 @@
   gap: 8px;
   padding: 12px 12px 10px;
   border-radius: 16px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
 }
 .lc-linked-card[data-mine] {
@@ -1417,10 +1407,8 @@
   gap: 10px;
   padding: 12px;
   border-radius: 18px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   animation: l-blur-in 380ms var(--l-ease-out) backwards;
 }
 .lc-rt-card[data-off] .lc-rt-h,
@@ -1522,8 +1510,8 @@
   font-size: 12.5px;
 }
 .lc-rt-steps li[data-s="running"] {
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  background: var(--lc-plate);
+  box-shadow: none;
 }
 .lc-rt-steps li[data-s="skipped"] {
   color: var(--l-ink-3);
@@ -1729,6 +1717,44 @@
   height: 100%;
   min-height: 0;
 }
+/* The canvas and Step settings sit on the ground, side by side, with nothing drawn around them:
+   white nodes on the ground, and the settings' groups as wells. */
+.lc-rb .l-wf {
+  --wf-canvas: var(--lc-paper);
+  --wf-dot: color-mix(in oklab, var(--l-ink) 7%, transparent);
+}
+.lc-rb .l-wf-stage,
+.lc-rb .l-wf-side {
+  border-radius: 0;
+  background: none;
+}
+.lc-rb .l-wf-ins__head {
+  background: var(--lc-paper);
+  box-shadow: none;
+}
+/* A step's settings are one well of rows split by hairlines, each switch at its row's end. */
+.lc-rb .l-wf-fields {
+  gap: 0;
+  padding: 2px 12px;
+  border-radius: 14px;
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+}
+.lc-rb .l-wf-fields > * {
+  padding-block: 10px;
+}
+.lc-rb .l-wf-fields > * + * {
+  box-shadow: inset 0 1px 0 var(--lc-hair);
+}
+.lc-rb .l-wf-fields > .l-switch-row {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  width: 100%;
+}
+.lc-rb .l-wf-sec {
+  border-top: 0;
+}
 /* The builder's own version and publish controls: a routine is on or off instead. */
 .lc-rb .l-wf-badge,
 .lc-rb .l-wf-saved,
@@ -1916,8 +1942,8 @@
 .lc-rv-file {
   overflow: hidden;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 .lc-rv-fh {
   position: sticky;
@@ -2025,10 +2051,8 @@
   max-width: 620px;
   padding: 12px;
   border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 4px 14px -8px var(--l-drop);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   white-space: normal;
   animation: l-blur-in 320ms var(--l-ease-out) backwards;
 }
@@ -2135,10 +2159,8 @@
   min-width: 0;
   min-height: 0;
   border-radius: 18px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   animation: l-blur-in 380ms var(--l-ease-out) backwards;
 }
 .lc-cmp-h {
@@ -2256,8 +2278,8 @@
   gap: 4px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  background: var(--lc-plate);
+  box-shadow: none;
   animation: l-blur-in 300ms var(--l-ease-out) backwards;
 }
 .lc-rev-b > p {
@@ -2524,52 +2546,54 @@
   }
 }
 
-/* Agent settings: how it runs, and its subagents' models. */
-.lc-runmodes {
-  display: grid;
-  gap: 6px;
-}
-.lc-runmodes .lc-spec {
-  text-align: left;
-}
+/* Agent settings: its subagents' models. */
 .lc-subs {
   display: grid;
   gap: 0;
-  padding: 2px 12px;
-  border-radius: 12px;
-  background: var(--l-wash);
+  padding: 2px 6px 2px 10px;
+  border-radius: 14px;
+  background: var(--lc-well);
 }
 .lc-subrow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 46px;
+  gap: 10px;
+  min-height: 40px;
 }
 .lc-subrow + .lc-subrow {
-  border-top: 1px solid var(--l-line);
+  box-shadow: inset 0 1px 0 var(--lc-hair);
 }
 .lc-subrow > span {
-  display: grid;
+  display: flex;
   flex: 1;
+  align-items: baseline;
+  gap: 10px;
   min-width: 0;
   font-size: 13px;
 }
 .lc-subrow b {
+  flex: none;
   font-weight: 500;
 }
 .lc-subrow small {
+  overflow: hidden;
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-subsel {
-  max-width: 54%;
-  height: 30px;
-  padding: 0 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 46%;
+  height: 28px;
+  padding: 0 9px 0 11px;
   border: 0;
-  border-radius: 9px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  border-radius: 999px;
+  background: var(--lc-plate);
+  box-shadow: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--l-ink);
 }
 
@@ -2802,7 +2826,7 @@
 }
 .lc-limits-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
   margin-top: 10px;
 }
@@ -2812,7 +2836,8 @@
   gap: 10px;
   padding: 12px;
   border-radius: 14px;
-  background: var(--l-wash);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 .lc-limits-h {
   display: flex;
@@ -2840,7 +2865,7 @@
   display: block;
   height: 100%;
   border-radius: 3px;
-  background: var(--l-accent);
+  background: var(--l-ink-4);
   transition: width 700ms var(--l-spring-smooth);
 }
 .lc-limits-w[data-high] .lc-limits-bar i {
@@ -3046,38 +3071,42 @@
 .lc-pick.lc-commit-b:disabled {
   opacity: 0.5;
 }
+/* The commit form, as the session tray opens it: who wrote the message, the files with a tick
+   each, the message in a well, Write it again and Commit and push. */
 .lc-commit {
   display: grid;
-  gap: 8px;
-  padding: 6px;
+  gap: 12px;
+  padding: 8px;
 }
 .lc-commit-h {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 13px;
+  font-size: 12px;
+}
+.lc-commit-h b {
+  font-size: 14px;
+  font-weight: 600;
 }
 .lc-commit-files {
   display: grid;
   max-height: 168px;
   overflow: auto;
-  padding: 2px 0;
-  border-radius: 10px;
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
 }
 .lc-commit-file {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   min-height: 28px;
-  padding: 0 10px;
   font-size: 12px;
   cursor: pointer;
 }
 .lc-commit-file input {
   flex: none;
+  width: 15px;
+  height: 15px;
   margin: 0;
   accent-color: var(--l-accent);
 }
@@ -3087,13 +3116,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--l-ink-2);
 }
-.lc-commit-m {
+.lc-input.lc-commit-m {
   height: 110px;
   padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--lc-well);
+  box-shadow: none;
   resize: vertical;
-  font-size: 12.5px;
-  line-height: 19px;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  line-height: 18px;
 }
 .lc-commit-wait {
   margin: 14px 4px;
@@ -3103,6 +3137,29 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+/* With nothing to commit: rows with a round icon tile. */
+.lc-ship-menu {
+  display: grid;
+  gap: 2px;
+}
+.lc-ship-menu .lc-row {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  padding-block: 8px;
+  border-radius: 12px;
+}
+.lc-ship-menu .lc-row-tick {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--lc-well);
+  color: var(--l-ink-2);
+}
+.lc-ship-menu .lc-row:hover .lc-row-tick {
+  background: var(--lc-field);
 }
 .lc-pr-write {
   display: flex;
@@ -3315,8 +3372,8 @@
   padding: 0 2px;
   box-sizing: border-box;
   border-radius: 4px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   font-size: 8px;
   font-weight: 600;
   line-height: 1;
@@ -3474,8 +3531,8 @@
   width: 22px;
   height: 18px;
   border-radius: 6px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  background: var(--lc-plate);
+  box-shadow: none;
   font-family: var(--l-font-display);
   font-size: 10px;
   font-weight: 600;
@@ -3774,6 +3831,58 @@
 .lc-appr .l-appr__titles b {
   overflow-wrap: anywhere;
 }
+/* Compact: one row, the ask on the left and its buttons on the right; what it says and its
+   fields (folded under Details) and a reason to send it back go full width under it. */
+.lc-appr .l-appr__ask {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 10px 10px 10px 12px;
+}
+.lc-appr .l-appr__ask > :not(.l-appr__head, .l-appr__actions) {
+  grid-column: 1 / -1;
+}
+.lc-appr .l-appr__head {
+  grid-row: 1;
+  grid-column: 1;
+}
+.lc-appr .l-appr__actions {
+  grid-row: 1;
+  grid-column: 2;
+}
+.lc-appr .l-appr__ask:has(.l-appr__why) .l-appr__actions {
+  grid-column: 1 / -1;
+  grid-row: 99;
+}
+.lc-appr .l-appr__head {
+  align-items: center;
+  gap: 10px;
+}
+.lc-appr .l-appr__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--lc-well);
+  box-shadow: none;
+}
+.lc-appr .l-appr__titles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+}
+.lc-appr .l-appr__titles span {
+  font-size: 13px;
+}
+.lc-appr .l-appr__titles b {
+  font-size: 13.5px;
+}
+.lc-appr .l-appr__head .l-badge {
+  flex: none;
+}
+.lc-appr .l-appr__desc {
+  margin: 0;
+}
 .lc-ask-cmd {
   display: block;
   max-height: 14lh;
@@ -3788,18 +3897,43 @@
 }
 .lc-appr-strip {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0 14px;
-  padding: 9px 2px 2px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0 12px;
+  padding: 7px 0 0;
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--l-ink-3);
   animation: l-unblur 320ms var(--l-ease-out) backwards;
 }
+.lc-appr-strip .lc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
 .lc-appr-strip input {
   flex: none;
-  margin-top: 2px;
+  margin: 0;
+}
+.lc-appr-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-appr-more > svg {
+  color: var(--l-ink-4);
+  transition: rotate 260ms var(--l-spring-smooth);
+}
+.lc-appr-more[aria-expanded="true"] > svg {
+  rotate: 90deg;
 }
 .lc-appr-strip code {
   overflow-wrap: anywhere;
@@ -3807,6 +3941,9 @@
 @media (prefers-reduced-motion: reduce) {
   .lc-appr-strip {
     animation: none;
+  }
+  .lc-appr-more > svg {
+    transition: none;
   }
 }
 

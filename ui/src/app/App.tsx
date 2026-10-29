@@ -1,6 +1,6 @@
 /*
-  Liner Code. The window is one glass frame holding the sidebar; the white paper inside it holds
-  Home, a session or Usage. ⌘K reaches everything; the shell's menu bar sends the same commands.
+  Liner Code. The window is one ground: the sidebar beside Home, a session or Usage, with
+  nothing drawn between them. ⌘K reaches everything; the shell's menu bar sends the same commands.
 */
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { AgentProfile, RoutineRun } from "@contracts";
@@ -11,7 +11,7 @@ import { Backdrop, Scene } from "./Backdrop";
 import { bridge, onCommand } from "./bridge";
 import { onNotify, onStream, rpc, startEngine, useEngine } from "./engine";
 import { Home } from "./Home";
-import { I, Mark } from "./icons";
+import { I } from "./icons";
 import { ACCESS_LEVELS, agentOf, bucketOf } from "./model";
 import { Session } from "./Session";
 import { applyLook, readLook } from "./look";
@@ -243,7 +243,7 @@ export function App() {
   if (!ready)
     return (
       <div className="lc-boot" data-drag>
-        <Mark size={30} draw />
+        <span className="lc-boot-wm">Liner Code</span>
         <span className="l-shimmer">{connected ? "Opening" : "Starting the engine"}</span>
       </div>
     );
@@ -308,7 +308,7 @@ export function App() {
         </>
       )}
       {!connected && (
-        <div className="lc-offline l-glass" role="status">
+        <div className="lc-offline" role="status">
           <span className="l-shimmer">Reconnecting to the engine</span>
         </div>
       )}

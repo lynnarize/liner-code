@@ -11,6 +11,7 @@ import { loadItems, rpc, useEngine, useItems } from "./engine";
 import { Composer, type RunSettings } from "./Composer";
 import { EnvMenu } from "./Env";
 import { Rail } from "./Rail";
+import { ShipCard } from "./Ship";
 import { I } from "./icons";
 import { agentOf, checkpointsOf, isModelAgent, markOf, modelLabel, sumLines } from "./model";
 import { Panel } from "./Panel";
@@ -72,7 +73,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const lead = thread.lead ? agentOf(thread.lead, agents, providers) : undefined;
   const coder = agentOf(thread.agent, agents, providers);
   const model = thread.model ?? coder.model;
-  const settings: RunSettings = { agent: thread.agent, lead: thread.lead, setup: thread.setup?.id, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, helpers: thread.helpers };
+  const settings: RunSettings = { agent: thread.agent, lead: thread.lead, setup: thread.setup?.id, route: thread.route?.level, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, helpers: thread.helpers };
   const open = checkpointsOf(items).filter((c) => !c.reverted && !c.committed);
   const lines = sumLines(open.flatMap((c) => c.files));
   const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
@@ -161,6 +162,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     if ("access" in patch) p.access = patch.access;
     if ("helpers" in patch) p.helpers = patch.helpers ?? [];
     if ("setup" in patch) p.setup = patch.setup ?? null;
+    if ("route" in patch) p.route = patch.route ?? null;
     void rpc("thread.update", p).catch((e) => toast.error(String(e?.message ?? e)));
   };
 
@@ -252,6 +254,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                 ) : (
                   <Timeline threadId={thread.id} items={items} seen={seen.current ?? new Set()} onReview={review} reviewing={panel.open && panel.tab === "changes" && !panel.picking ? focus : null} onGrow={follow} />
                 )}
+                <ShipCard thread={thread} />
               </div>
             </div>
             <Rail thread={thread} panel={panel} onPanel={setPanel} onTab={toggle} files={openFiles} branch={branch} />

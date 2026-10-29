@@ -53,6 +53,13 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
 - **The Reviewer.** After a coder turn that edited files, a model from another family reads the
   diff against fixed criteria and answers with findings as data (`<findings>{…}</findings>`). A
   blocker goes back to the coder; after two rounds it comes to you.
+- **Routed sessions** (after GitHub Copilot's Fusion). `route.ts` scores each message from its
+  words (reasoning, code, debugging, tools, reach) and rules in order pick the pattern: one model
+  alone; a cascade, where the everyday model (GPT Luna) writes and a judge from another family
+  (Opus) passes it or hands it to the strong model to repair; or a critique, where the strong
+  model writes, critics from other families read side by side and it revises once. Standard,
+  High and Max set how far it goes. A follow-up keeps the working model while its cache is warm.
+  Judge and critic reads are logged as their own usage rows.
 - **Routines.** A trigger (schedule, a pull request or issue through `gh`, a webhook, by hand)
   starts a run; AI steps read, audit or work in a session; then the gate, in code, checks its
   rules and only it acts (merge within a daily limit, comment, label, close, hand it to you).

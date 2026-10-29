@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.1.4 (alpha), 2026-10-29
+
+**Update from 0.1.2 if you have it.** Liner Code does it by itself (Restart to update), or
+download the new DMG.
+
+### New
+
+- **One solid ground.** The window's glass frame is gone: the sidebar sits on the ground, and
+  Home, a session, Usage and Settings sit on a white paper inside it, with no rim, gap of glass
+  or line between them. The side panel is a column inside the paper, and the diff ends where it
+  ends.
+- **The session tray** stands at the thread's right edge in a lane of its own, so it never covers
+  what you read. It is the one glass surface left: solid controls inside, the open surface's
+  icon on a tile, and the files waiting to be committed in a chip inside Commit and push.
+  Settings › Appearance › Session tray sets its glass: Clear, Tinted or Solid.
+- **The composer** is one text box with its controls inside, under what you type: who works on
+  it, effort, access, and Send in the accent. While a turn runs, Stop sits beside Send, and the
+  note beside them says what Enter does (press it to change that).
+- **Commit and push plays out in the thread.** The chip grows into a card, your commits come into
+  focus from the bottom up, the line to origin flows while it pushes and the ring turns green when
+  it lands; then it folds back into a chip, with Open a pull request beside it.
+- **The pull request card** in the thread and the Pull request panel read the same way: your
+  commits on a rail under Merge into main, what reached main in amber beside them, each clash
+  with its two lines, the checks in one row, and one status line with Resolve conflicts or Squash
+  and merge beside it.
+- **Asks are one row**: what the agent wants, its risk, Not this and Allow side by side. What it
+  says and exactly where it runs fold under Details; a high-risk ask shows them, so you read
+  before you hold.
+- **New agent, in two columns**, and three new things an agent knows: a **prompt** added to every
+  turn after its soul, **skills** (skill.md files it reads when a task calls for one, yours or
+  each project's own) and **context files** read at the start of each session.
+- **Routed sessions** (after GitHub Copilot's Fusion): pick Routed in the composer and each
+  message gets the least work likely to do it well: one model, a cascade where a judge from
+  another family passes the change or hands it to the strong model to repair, or a critique.
+  Standard, High and Max set how far it goes.
+
+### Changed
+
+- Every card is white on the paper, with a 1px ring. Menus, popovers, ⌘K, tooltips and toasts
+  are solid, with a soft shadow; the session tray's commit form and push menu open beside it.
+  Reconnecting is an ink pill.
+- The L mark is gone: the sidebar and Setup say Liner Code, a size larger.
+- Settings keeps its layout, with white cards and a 1px ring. Appearance shows the window in
+  miniature, the modes as cards and pictures as tiles; Behind the glass and the window's Clear to
+  Tinted are gone.
+- Usage sits on white cards; the routine builder's canvas and Step settings sit on the paper; in
+  Agentic features the ways are two across, the last 30 days fold under one row, each test result
+  is one line with its details a press away, and the wiring starts with who writes.
+- Buttons are pills; a picked row is a solid plate.
+
+### Fixed
+
+- Pickers inside a dialog (New agent's effort and model) opened underneath it.
+- The composer didn't shrink when you deleted lines (Shift-Enter, then Delete), and an empty one
+  could stay several lines tall after the window widened.
+- Usage › Limits showed rows of NaN%: only Claude Code's five-hour and weekly windows count now.
+- The cost test lets Codex run read-only commands, a quick model that changed nothing is read by
+  the judge and handed up, and Codex's running token totals no longer write over Claude's.
+
 ## 0.1.2 (alpha), 2026-10-28
 
 **Update from 0.1.1 if you have it.** Liner Code does it by itself (Restart to update), or

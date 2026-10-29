@@ -52,9 +52,9 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
           value={days}
           onValueChange={setDays}
           options={[
+            { value: "month", label: "This month" },
             { value: "7", label: "7 days" },
             { value: "30", label: "30 days" },
-            { value: "month", label: "This month" },
           ]}
           aria-label="Period"
         />

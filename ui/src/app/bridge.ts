@@ -153,50 +153,6 @@ export function quietFields() {
   cards or the routine canvas. Text you selected and fields you type in keep Copy and Paste,
   and anything with a menu of its own (a session row) has already handled the click.
 */
-/**
-  The window is one glass frame: the sidebar and the gaps around the paper. The shell keeps
-  Vibrancy or Liquid Glass behind the frame alone, with the paper (the session, or Settings' own)
-  cut out of it, so nothing is blurred where the paper covers it. It follows the paper as the
-  sidebar opens, closes and changes: watched by size, and by which paper is there, never by every change.
-*/
-export function trackFrameGlass() {
-  if (!isNative()) return;
-  let last = "";
-  let raf = 0;
-  let seen: Element | null = null;
-  const send = () => {
-    const app = document.querySelector(".lc-app");
-    const paper = app?.querySelector<HTMLElement>(":scope > .lc-paper") ?? null;
-    if (paper !== seen) {
-      if (seen) ro.unobserve(seen);
-      if (paper) ro.observe(paper);
-      seen = paper;
-    }
-    const r = paper?.getBoundingClientRect();
-    const hole = r && paper ? { x: r.left, y: r.top, width: r.width, height: r.height, radius: parseFloat(getComputedStyle(paper).borderTopLeftRadius) || 0 } : undefined;
-    const rect = app ? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight, hole } : { x: 0, y: 0, width: 0, height: 0 };
-    const key = JSON.stringify(rect);
-    if (key === last) return;
-    last = key;
-    bridge.setGlassRect(rect);
-  };
-  const soon = () => {
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(send);
-  };
-  const ro = new ResizeObserver(soon);
-  // The app mounts after this runs, and Settings swaps the paper: watch the root's children only.
-  const mo = new MutationObserver(soon);
-  const watch = () => {
-    const app = document.querySelector(".lc-app");
-    if (!app) return void requestAnimationFrame(watch);
-    mo.observe(app, { childList: true });
-    soon();
-  };
-  watch();
-  window.addEventListener("resize", soon);
-}
-
 export function quietMenus() {
   if (!isNative()) return;
   document.addEventListener("contextmenu", (e) => {

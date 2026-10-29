@@ -7,7 +7,6 @@
   life of the page.
 */
 import { useEffect, useState, type CSSProperties } from "react";
-import { isNative } from "./bridge";
 import { rpc } from "./engine";
 import { readLook, type Look } from "./look";
 
@@ -64,25 +63,18 @@ export function useLook() {
   return look;
 }
 
-/** What's behind the frame's glass: the desktop, or nothing but the window. */
-export type Scene = "desktop" | "none";
-export const sceneOf = (look: Look): Scene => (isNative() && look.material !== "solid" ? "desktop" : "none");
-
-/** Says on <html> what the frame's glass shows, and whether a picture is behind the session. */
+/** Says on <html> whether a picture is behind the session. */
 export function Scene() {
   const look = useLook();
   const url = useBackgroundUrl(look.background);
-  const scene = sceneOf(look);
   useEffect(() => {
-    const h = document.documentElement;
-    h.dataset.scene = scene;
-    // The paper's own surfaces turn see-through only while a picture is behind them.
-    h.toggleAttribute("data-bg", Boolean(url));
-  }, [scene, url]);
+    // The session's own surfaces turn see-through only while a picture is behind them.
+    document.documentElement.toggleAttribute("data-bg", Boolean(url));
+  }, [url]);
   return null;
 }
 
-/** Under a paper: the picture, blurred, under a white wash. */
+/** Behind the session: the picture, blurred, under a wash of the ground. */
 export function Backdrop() {
   const look = useLook();
   const url = useBackgroundUrl(look.background);

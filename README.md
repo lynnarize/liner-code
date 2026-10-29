@@ -7,7 +7,8 @@ a diff for every turn that you can undo or commit or question line by line, a Re
 another model family, surfaces beside the session (Terminal, Browser, Files, Pull request, Device,
 Routines), models compared side by side, and sessions that sort themselves by what they need
 from you. It's built from [Liner UI](https://linerui.sorafel.com), so it has Liner's look and motion:
-white paper in a glass frame, one accent, text that comes into focus, springs that never overshoot.
+white paper on one solid ground, glass only on the session tray, one accent, text that comes into
+focus, springs that never overshoot.
 
 Ideas came from [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) (MIT); no code was copied from either.
@@ -87,6 +88,7 @@ engine/                    the local backend (Node, TypeScript run directly, one
   src/api.ts               one handler per command
   src/runtime.ts           runs turns: lead → plan → coder and helpers, approvals, questions, queue and steer, the Reviewer loop
   src/review.ts            the Reviewer's prompt and findings, who reviews whom, Claude run modes and subagents
+  src/route.ts             routed sessions: each message scored and given one model, a cascade with a judge, or a critique
   src/routines.ts          routines: triggers, AI steps, the code gate, actions, test runs
   src/watch.ts             auto-settle and snooze until checks finish or someone replies
   src/updates.ts           Liner Code's releases on GitHub (download, check, stage) and the agent tools' own updaters

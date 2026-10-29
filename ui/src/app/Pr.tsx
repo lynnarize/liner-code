@@ -1,8 +1,8 @@
 /*
-  Pull requests, from the GitHub CLI. The Pull request surface is Liner's PR flow on this
-  session's branch: your commits ride a line above the base, what reached the base arrives
-  below, each clash shows its two lines, the checks fill in, and merging settles the branch
-  onto the base. A real agent drives it (see sessionPrAgent).
+  Pull requests, from the GitHub CLI. The Pull request surface is the PR card (PrCard.tsx) on
+  this session's branch: your commits as rows under Merge into the base, what reached the base
+  beside them, each clash with its two lines, the checks, and Squash and merge once it's ready.
+  A real agent drives it (see sessionPrAgent), with Liner's PR flow's events.
   Linked pull requests lists the project's, with the one this session opened on top, and says
   what each waits on.
   Asking for a pull request in the chat ("create pr", /pr) puts the same card in the conversation.
@@ -11,7 +11,7 @@
 */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PR_TEST_TOOL, type Item, type PrInfo, type PrPicture, type Thread } from "@contracts";
-import { PrFlow, type PrAgent, type PrCheck, type PrCommit, type PrConflict, type PrEvent, type PrStage } from "@liner/pro/pr-flow/pr-flow";
+import type { PrAgent, PrCheck, PrCommit, PrConflict, PrEvent, PrStage } from "@liner/pro/pr-flow/pr-flow";
 import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { Segmented } from "@liner/components/segmented/segmented";
@@ -19,6 +19,7 @@ import { bridge } from "./bridge";
 import { getState, rpc, subscribe, useEngine } from "./engine";
 import { I, Rays } from "./icons";
 import { agentOf, checkpointsOf, duration, plural, sumLines } from "./model";
+import { PrCard } from "./PrCard";
 import { prLine, SurfaceNote } from "./Surfaces";
 import { Badge, Lines } from "./ui";
 
@@ -348,9 +349,9 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
   return (
     <div className="lc-pr">
       <div className="lc-pr-scroll">
-        <PrFlow
+        <PrCard
           key={thread.id}
-          className="lc-prf"
+          variant="panel"
           title={pr?.title ?? (title.trim() || thread.title)}
           branch={st.branch ?? "this branch"}
           base={pr?.base ?? "main"}
@@ -582,7 +583,7 @@ export function PrChatCard({ threadId, it, fresh, run, ask }: { threadId: string
     const lines = sumLines(checkpointsOf(items ?? []).filter((c) => !c.reverted).flatMap((c) => c.files));
     return (
       <div className="lc-prchat">
-        <PrFlow key={it.id} title="Wrap round to tomorrow's first high tide" branch={branch} base="main" agent={agent} diff={lines.added || lines.removed ? { add: lines.added, del: lines.removed } : { add: 4, del: 1 }} start={live} />
+        <PrCard key={it.id} title="Wrap round to tomorrow's first high tide" branch={branch} base="main" agent={agent} diff={lines.added || lines.removed ? { add: lines.added, del: lines.removed } : { add: 4, del: 1 }} start={live} />
         {under}
       </div>
     );
@@ -592,7 +593,7 @@ export function PrChatCard({ threadId, it, fresh, run, ask }: { threadId: string
   const pr = st.pr;
   return (
     <div className="lc-prchat">
-      <PrFlow key={it.id} title={pr?.title ?? thread.title} branch={branch} base={pr?.base ?? "main"} agent={agent} diff={pr ? { add: pr.additions, del: pr.deletions } : (st.diff ?? { add: 0, del: 0 })} start={live || Boolean(pr)} />
+      <PrCard key={it.id} title={pr?.title ?? thread.title} branch={branch} base={pr?.base ?? "main"} agent={agent} diff={pr ? { add: pr.additions, del: pr.deletions } : (st.diff ?? { add: 0, del: 0 })} start={live || Boolean(pr)} />
       {under}
     </div>
   );

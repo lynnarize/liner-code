@@ -5,7 +5,7 @@
   carries the effort levels that tool accepts for it, named the same way everywhere.
 */
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { CommandInfo, EffortInfo, ModelInfo, SkillInfo } from "../../../contracts/src/index.ts";
 import { jsonLines, spawn, which } from "../exec.ts";
@@ -117,19 +117,26 @@ export function skillsIn(roots: string[]): SkillInfo[] {
       continue;
     }
     for (const n of names) {
-      const file = join(root, n, "SKILL.md");
-      if (!existsSync(file)) continue;
-      try {
-        const head = /^---\n([\s\S]*?)\n---/.exec(readFileSync(file, "utf8"))?.[1] ?? "";
-        const name = /^name:\s*(.+)$/m.exec(head)?.[1]?.trim().replace(/^["']|["']$/g, "") || n;
-        const description = /^description:\s*(.+)$/m.exec(head)?.[1]?.trim().replace(/^["']|["']$/g, "") ?? "";
-        if (!out.has(name)) out.set(name, { name, description, path: join(root, n) });
-      } catch {
-        // unreadable skill
-      }
+      const skill = skillAt(join(root, n, "SKILL.md"));
+      if (skill && !out.has(skill.name)) out.set(skill.name, { ...skill, path: join(root, n) });
     }
   }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** One skill.md file's name and description, from its front matter (its folder's name, else the file's, when it has none). */
+export function skillAt(file: string): SkillInfo | null {
+  if (!existsSync(file)) return null;
+  try {
+    const head = /^---\n([\s\S]*?)\n---/.exec(readFileSync(file, "utf8"))?.[1] ?? "";
+    const stem = basename(file).toLowerCase() === "skill.md" ? basename(dirname(file)) : basename(file).replace(/\.md$/i, "");
+    const name = /^name:\s*(.+)$/m.exec(head)?.[1]?.trim().replace(/^["']|["']$/g, "") || stem;
+    const description = /^description:\s*(.+)$/m.exec(head)?.[1]?.trim().replace(/^["']|["']$/g, "") ?? "";
+    return { name, description, path: file };
+  } catch {
+    // an unreadable skill
+    return null;
+  }
 }
 
 /** An ACP agent's commands, from the update it sends right after a session opens. */

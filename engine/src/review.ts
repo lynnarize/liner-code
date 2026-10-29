@@ -1,7 +1,9 @@
 /*
   The Reviewer and the subagents, as text and rules: what the Reviewer is asked, how its
   findings are read back, what the coder is told when a finding blocks, and which subagents a
-  Claude Code agent brings for each run mode. The runtime does the running.
+  Claude Code agent brings for each run mode. A routed session's judge and critics read the
+  same way; what the strong model is told to repair, and what a writer is told after a critique,
+  are here too. The runtime does the running.
 */
 import type { AgentProfile, Finding, ProviderInfo, RunMode } from "../../contracts/src/index.ts";
 import { familyOf, splitModel } from "../../contracts/src/index.ts";
@@ -15,9 +17,12 @@ export const CRITERIA = [
   "It reads like the code around it.",
 ];
 
-export function reviewPrompt(ask: string, diff: string, round: number) {
+/** reviewer: the Reviewer. judge: a cascade's, whose fail sends the change to a stronger model. critic: one of several reading side by side. */
+export function reviewPrompt(ask: string, diff: string, round: number, as: "reviewer" | "judge" | "critic" = "reviewer") {
   return [
     "You review a change another agent just made in this project, before the user sees it. You read only: never edit files or run commands that change anything.",
+    as === "judge" ? "A quicker model made it. If you pass it, it ships as it is; if you fail it, a stronger model repairs it from your findings alone, so pass what's right and name exactly what isn't." : "",
+    as === "critic" ? "Other reviewers read it at the same time. The author sees all of your findings together and revises once, so give each problem with where it is and what would fix it." : "",
     `What the user asked for:\n<ask>\n${ask.slice(0, 4000)}\n</ask>`,
     `The change (a unified diff):\n<diff>\n${diff}\n</diff>`,
     `Check it against these criteria, and read any file you need to:\n${CRITERIA.map((c, i) => `${i + 1}. ${c}`).join("\n")}`,
@@ -48,6 +53,37 @@ export function parseFindings(text: string): { verdict: "pass" | "fail"; summary
 export function fixPrompt(reviewer: string, findings: Finding[]) {
   const lines = findings.filter((f) => f.severity === "blocking").map((f) => `- ${f.file}${f.line ? `:${f.line}${f.endLine && f.endLine !== f.line ? `-${f.endLine}` : ""}` : ""}: ${f.note}`);
   return `The Reviewer (${reviewer}) found problems in your last change that must be fixed before it ships:\n${lines.join("\n")}\n\nFix these, run the tests that cover them, and say in one line what you changed. Leave everything else as it is.`;
+}
+
+const mustFixFirst = (findings: Finding[]) => [...findings].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
+
+/** What the strong model is told when a cascade's judge won't pass the quicker model's change. */
+export function repairPrompt(judge: string, writer: string, findings: Finding[]) {
+  const lines = mustFixFirst(findings).map((f) => `- ${f.severity === "blocking" ? "" : "(a note) "}${f.file}${f.line ? `:${f.line}${f.endLine && f.endLine !== f.line ? `-${f.endLine}` : ""}` : ""}: ${f.note}`);
+  return `${writer} just made a change for the request above, and a judge (${judge}) didn't pass it:\n${lines.join("\n")}\n\nYou're the stronger model, brought in to repair it. Read the change as it is in the files. Keep what's right and fix what the judge found; if the approach itself is wrong, redo it. Run the tests that cover it, then say in a line or two what you changed.`;
+}
+
+/** What a cascade's judge reads when the quicker model changed no files: the ask and its answer. */
+export function answerPrompt(ask: string, answer: string) {
+  return [
+    "You check another agent's work before the user sees it. You read only: never edit files or run commands that change anything.",
+    `What the user asked for:\n<ask>\n${ask.slice(0, 4000)}\n</ask>`,
+    `A quicker model worked on it and changed no files. What it said:\n<answer>\n${answer.slice(0, 8000) || "(nothing)"}\n</answer>`,
+    "Read any file you need. If the ask needed no change (a question, a check, a report) and the answer does it right, pass it. If it needed a change and none was made, or the answer is wrong, fail it: a stronger model then does the work from your summary alone, so say what's missing.",
+    'End your reply with exactly one block: <findings>{"verdict":"pass"|"fail","summary":"one sentence","findings":[]}</findings>. Findings may stay empty; put a file in one only when you point at a line.',
+  ].join("\n\n");
+}
+
+/** What the strong model is told when the quicker one didn't get the ask done at all. */
+export function takeOverPrompt(judge: string, writer: string, why: string, findings: Finding[]) {
+  const lines = mustFixFirst(findings).map((f) => `- ${f.file}${f.line ? `:${f.line}` : ""}: ${f.note}`);
+  return `${writer} worked on the request above and didn't get it done. A judge (${judge}) says: ${why || "it made no change."}${lines.length ? `\n${lines.join("\n")}` : ""}\n\nYou're the stronger model, brought in to do it. Read what you need, make the change, run the tests that cover it, then say in a line or two what you changed.`;
+}
+
+/** What a writer is told when critics read its change: everything they found, to keep or revise, once. */
+export function critiquePrompt(critics: string[], findings: Finding[]) {
+  const lines = mustFixFirst(findings).map((f) => `- ${f.severity === "blocking" ? "Must fix" : "Note"}, ${f.file}${f.line ? `:${f.line}${f.endLine && f.endLine !== f.line ? `-${f.endLine}` : ""}` : ""}: ${f.note}`);
+  return `${critics.join(" and ")} read your change side by side. What they found:\n${lines.join("\n")}\n\nRevise your change once with this. Fix what must be fixed; take a note only where it makes the change better, and where you're sure a finding is wrong, leave it and say why. Run the tests that cover it, then say in a line or two what you changed.`;
 }
 
 /**

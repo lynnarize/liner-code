@@ -5,8 +5,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { setupOf, setupsOf, splitModel, TRIAL } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, Effort, FileChange, FoundRepo, ModelInfo, SkillInfo, ProviderInfo, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
+import { castOf, setupOf, setupsOf, splitModel, TRIAL } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, Effort, FileChange, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderInfo, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, restore } from "./checkpoints.ts";
 import { saveToDownloads, sessionMarkdown } from "./export.ts";
@@ -16,6 +16,7 @@ import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
 import { findFiles, gitStatus, tree } from "./files.ts";
 import { ensureSampleProject } from "./providers/demo.ts";
+import { skillsIn } from "./providers/models.ts";
 import type { Routines } from "./routines.ts";
 import { providers, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
@@ -253,6 +254,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const s = setupOf(store.settings, store.agents, id);
     if (!s) throw new Error("Make a setup in Settings, Agentic features first.");
     return { setup: { id: s.id, name: s.name }, agent: s.stages[0].who, lead: s.lead ?? undefined, helpers: s.crew.length ? s.crew : undefined, stages: s.stages, checks: s.checks, model: undefined };
+  };
+
+  /**
+    What a session takes on to be routed at a level: the cast from what's ready (and your own
+    picks in Settings), starting on the everyday model. A routed session already keeps its cast
+    and the model working now. null lets it go, and the model working now carries on alone.
+  */
+  const routeFields = (level: RouteLevel | null, now?: Thread): Partial<Thread> => {
+    if (level === null) return now?.route ? { route: undefined, agent: `@${now.route.root}`, model: undefined } : {};
+    if (now?.route) return { route: { ...now.route, level } };
+    const cast = castOf(shown(), store.settings.route?.cast);
+    if (!cast) throw new Error("Routing needs a model ready: connect one in Settings, Models.");
+    return { route: { level, cast, root: cast.everyday }, agent: `@${cast.everyday}`, model: undefined, lead: undefined, ...setupFields(null) };
   };
 
   /** A folder that's a Git repository with one commit of these files, made once. */
@@ -506,7 +520,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, lead, setup, title, forkOf, id, access, effort, model, worktree, base, inWorktree }) => {
+    "thread.create": async ({ projectId, agent, lead, setup, route, title, forkOf, id, access, effort, model, worktree, base, inWorktree }) => {
       const project = store.project(projectId);
       const parent = forkOf ? store.thread(forkOf) : undefined;
       const who = agent ?? parent?.agent ?? project.agent ?? defaultAgent();
@@ -557,8 +571,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         usage: emptyUsage(),
         createdAt: now,
         updatedAt: now,
-        // A setup decides who works on it; a fork keeps its parent's.
+        // A setup or a route decides who works on it; a fork keeps its parent's.
         ...(setup ? setupFields(setup) : parent?.setup ? { setup: parent.setup, stages: parent.stages, checks: parent.checks, helpers: parent.helpers } : {}),
+        ...(route ? routeFields(route) : parent?.route ? { route: parent.route } : {}),
       };
       store.putThread(t);
       if (notice) store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: now, text: notice });
@@ -566,12 +581,16 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (parent) for (const it of store.timeline(parent.id)) store.putItem(t.id, { ...it, id: uid("it") });
       return t;
     },
-    "thread.update": ({ id, setup, ...patch }) => {
+    "thread.update": ({ id, setup, route, ...patch }) => {
       // null clears a field; undefined leaves it.
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : v]));
-      // A setup brings who works on it; letting it go comes before whoever you picked instead.
-      if (setup === undefined) return store.patchThread(id, clean);
-      return store.patchThread(id, setup === null ? { ...setupFields(null), ...clean } : { ...clean, ...setupFields(setup) });
+      const t = store.thread(id);
+      // A setup or a route brings who works on it; letting one go comes before whoever you picked instead.
+      if (route) return store.patchThread(id, { ...clean, ...routeFields(route, t) });
+      // Picking someone else to work on it ends routing.
+      const unroute = route === null || (t.route && (setup || (clean.agent && clean.agent !== t.agent)));
+      const off = { ...(unroute ? routeFields(null, t) : {}), ...(setup === null ? setupFields(null) : {}) };
+      return store.patchThread(id, setup ? { ...off, ...clean, ...setupFields(setup) } : { ...off, ...clean });
     },
     "thread.items": ({ id }) => store.timeline(id),
     "thread.export": async ({ id }) => {
@@ -727,6 +746,37 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || "The push failed.");
       return { branch, remote };
     },
+    "git.outgoing": async ({ threadId }) => {
+      const cwd = cwdOf(threadId);
+      const branch = store.thread(threadId).worktree?.branch ?? (await branchOf(cwd)) ?? "HEAD";
+      const remotes = (await git(cwd, ["remote"])).stdout.split("\n").map((r) => r.trim()).filter(Boolean);
+      const remote = remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
+      const upstream = (await git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])).stdout.trim();
+      // Before its first push a branch is measured from the base it left: main, master, or what origin calls HEAD.
+      const head = remote ? (await git(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`])).stdout.trim() : "";
+      let base = "";
+      for (const b of [head, "main", "master"].filter(Boolean)) if ((await git(cwd, ["rev-parse", "--verify", "--quiet", b])).code === 0 && b !== branch) { base = b; break; }
+      const from = upstream || base;
+      const fork = base ? (await git(cwd, ["merge-base", base, "HEAD"])).stdout.trim() : "";
+      const log = async (range: string[]) => {
+        const r = await git(cwd, ["log", "--format=%h%x1f%s%x1f%ct", "--shortstat", "-n", "30", ...range]);
+        const out: GitCommit[] = [];
+        for (const line of r.stdout.split("\n")) {
+          const [sha, subject, at] = line.split("\x1f");
+          if (sha && subject !== undefined && at) out.push({ sha, subject, at: Number(at) * 1000 });
+          else if (out.length && /changed/.test(line)) {
+            const last = out[out.length - 1];
+            last.added = Number(/(\d+) insertion/.exec(line)?.[1] ?? 0);
+            last.removed = Number(/(\d+) deletion/.exec(line)?.[1] ?? 0);
+          }
+        }
+        return out;
+      };
+      const commits = from ? await log([`${from}..HEAD`]) : await log(["-n", "1", "HEAD"]);
+      const at = fork ? (await log(["-n", "1", fork]))[0] : undefined;
+      const ahead = fork ? Number((await git(cwd, ["rev-list", "--count", `${fork}..HEAD`])).stdout.trim()) || 0 : commits.length;
+      return { branch, remote, commits, base: at ? { ...at, branch: base.replace(/^[^/]+\//, "") } : undefined, ahead };
+    },
     "git.switch": async ({ threadId, branch, create }) => {
       const t = store.thread(threadId);
       if (runtime.isRunning(threadId)) throw new Error("Wait for the turn to finish before switching branches.");
@@ -789,6 +839,15 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
 
     "agents.save": ({ agents }) => store.setAgents(agents),
+    "skills.list": ({ projectId }) => {
+      const env = process.env;
+      const file = (x: SkillInfo) => ({ ...x, path: join(x.path!, "SKILL.md") });
+      const yours = skillsIn([join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "skills"), join(env.CODEX_HOME || join(homedir(), ".codex"), "skills")]).map(file);
+      const root = projectId ? store.project(projectId).path : undefined;
+      // A project's own skills are kept relative, so an agent finds the same one in each project that has it.
+      const project = root ? skillsIn([join(root, ".claude", "skills"), join(root, ".codex", "skills")]).map((x) => ({ ...file(x), path: relative(root, join(x.path!, "SKILL.md")) })) : [];
+      return { yours, project };
+    },
     "settings.save": (patch) => {
       const settings = store.setSettings(patch);
       // A new or changed account is a tool to find; a model id you added only changes the lists.
@@ -831,8 +890,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const first = detected.find((p) => p.available && p.adapter && p.id !== "demo" && p.models.length);
       const setups = setupsOf(store.settings, store.agents);
       // Who each way puts to work, the way Home starts it: a model alone, the lead and its coder, or one of your setups.
-      const cast = (way: string): { agent: string; lead?: string; setup?: string; effort: Effort; name: string } | null => {
+      const cast = (way: string): { agent: string; lead?: string; setup?: string; route?: RouteLevel; effort: Effort; name: string } | null => {
         if (way === "model") return first ? { agent: `@${first.id}:${first.models[0].id}`, effort: "medium", name: "Just a model" } : null;
+        if (way === "routed") return first ? { agent: `@${first.id}:${first.models[0].id}`, route: store.settings.route?.level ?? "high", effort: "medium", name: "Routed" } : null;
         if (way === "lead") return lead && coder ? { agent: coder.id, lead: lead.id, effort: "medium", name: "A lead and a coder" } : null;
         const s = setups.find((x) => x.id === way);
         return s ? { agent: s.stages[0].who, setup: s.id, effort: s.lead ? "medium" : store.agent(s.stages[0].who).effort, name: s.name } : null;
@@ -842,7 +902,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       for (const way of ways) {
         const c = cast(way);
         if (!c) continue;
-        const t = await handlers["thread.create"]({ projectId: project.id, agent: c.agent, lead: c.lead, setup: c.setup, effort: c.effort, access: "edits", worktree: true, title: `Cost test · ${c.name}` });
+        const t = await handlers["thread.create"]({ projectId: project.id, agent: c.agent, lead: c.lead, setup: c.setup, route: c.route, effort: c.effort, access: "edits", worktree: true, title: `Cost test · ${c.name}` });
         made.push(store.patchThread(t.id, { trial: { id, way, at: Date.now() } }));
       }
       if (!made.length) throw new Error("Nothing to test yet: get a model ready in Models, or make agents in Team.");
@@ -1082,8 +1142,8 @@ export function compareWays(store: Store, days: number): WayStats[] {
   const out = new Map<string, WayStats>();
   const of = (way: string) => out.get(way) ?? out.set(way, { way, sessions: 0, turns: 0, changed: 0, kept: 0, costUsd: 0, seconds: 0, reviewed: 0, firstPass: 0 }).get(way)!;
   for (const way of ["model", "lead", ...setupsOf(store.settings, store.agents).map((x) => x.id)]) of(way);
-  // A setup's sessions under its id; a lead with a crew, or your agent with no lead, from before setups count as your first, "mine".
-  const wayOf = (t: Thread) => (t.setup ? t.setup.id : t.agent.startsWith("@") ? "model" : t.lead && !t.helpers?.length ? "lead" : "mine");
+  // A setup's sessions under its id, routed ones as "routed"; a lead with a crew, or your agent with no lead, from before setups count as your first, "mine".
+  const wayOf = (t: Thread) => (t.route ? "routed" : t.setup ? t.setup.id : t.agent.startsWith("@") ? "model" : t.lead && !t.helpers?.length ? "lead" : "mine");
   const threads = new Map(store.threads.filter((t) => t.agent !== "demo" && t.lead !== "demo" && !t.routine && !t.trial && t.updatedAt >= from).map((t) => [t.id, t]));
   for (const r of store.usage(from)) {
     const t = threads.get(r.threadId);

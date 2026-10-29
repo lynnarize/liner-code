@@ -1,10 +1,10 @@
 /*
   Agentic features: the ways to work (just a model, a lead and a coder, and setups you make and
   name), what each saves and what to watch for, side by side with numbers from your own sessions
-  and one small task you can run in each for real; your setups, wired job by job (who takes your
-  message, who writes in which stage and with what job, who checks), with what each one is
-  handed; and how an agent writer runs. Every hand-off is a summary, so the page says where
-  context thins out before you find out in a session.
+  and one small task you can run in each for real; and your setups, wired job by job (who takes
+  your message, who writes in which stage and with what job, who checks), with what each one is
+  handed. Every hand-off is a summary, so the page says where context thins out before you find
+  out in a session. How an agent runs (helpers, or asking Opus) is the agent's own setting, in Team.
 */
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentProfile, ProviderInfo, RunMode, Settings as EngineSettings, Setup, Thread, WayStats } from "@contracts";
@@ -13,7 +13,7 @@ import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark, Rays } from "./icons";
-import { agentOf, allModels, compact, duration, effortName, markOf, modelLabel, money, onClaude, plural, providerLabel } from "./model";
+import { agentOf, allModels, compact, duration, markOf, modelLabel, money, onClaude, plural } from "./model";
 import { ModelPop } from "./Models";
 import { Badge, Disc, Num, PanelHead, Pop, Row } from "./ui";
 import "./agentic.css";
@@ -108,7 +108,6 @@ export function Agentic({ onOpen }: { onOpen?: (threadId: string) => void }) {
       <div ref={editor} className="lc-ag-anchor">
         <Setups cast={cast} open={open} onEdit={edit} />
       </div>
-      <RunModes cast={cast} />
     </div>
   );
 }
@@ -151,9 +150,9 @@ const Joint = ({ children, to }: { children?: ReactNode; to?: boolean }) => (
 );
 
 /** One choice as a card: its radio and name, a tag, who it puts to work, and what it's like. */
-function Choice({ on, title, tag, tone, chain, rows, onPick, slim, end }: { on: boolean; title: ReactNode; tag?: string; tone?: "accent"; chain?: ReactNode; rows?: [string, ReactNode][]; onPick: () => void; slim?: boolean; end?: ReactNode }) {
+function Choice({ on, title, tag, tone, chain, rows, onPick, end }: { on: boolean; title: ReactNode; tag?: string; tone?: "accent"; chain?: ReactNode; rows?: [string, ReactNode][]; onPick: () => void; end?: ReactNode }) {
   return (
-    <div className="lc-frame lc-ag-choice" data-on={on || undefined} data-slim={slim || undefined} onClick={onPick}>
+    <div className="lc-frame lc-ag-choice" data-on={on || undefined} onClick={onPick}>
       <div className="lc-fcard">
         <button
           type="button"
@@ -380,6 +379,7 @@ function Compare({ cast }: { cast: Cast }) {
   const sessions = useEngine((x) => x.threads.length);
   const [days, setDays] = useState<"30" | "90">("30");
   const [stats, setStats] = useState<WayStats[] | null>(null);
+  const [showRuns, setShowRuns] = useState(false);
   useEffect(() => {
     let live = true;
     void rpc("ways.compare", { days: Number(days) })
@@ -456,12 +456,16 @@ function Compare({ cast }: { cast: Cast }) {
                 </tr>
               ))}
               <tr className="lc-ag-sub">
-                <th scope="rowgroup">In your sessions, the last {days} days</th>
-                {cols.map((k) => (
-                  <td key={k} data-on={key === k || undefined} />
-                ))}
+                <th scope="rowgroup" colSpan={cols.length + 1}>
+                  <button type="button" className="lc-ag-subtoggle l-focus" aria-expanded={showRuns} onClick={() => setShowRuns((o) => !o)}>
+                    <I.chevR size={12} />
+                    In your sessions, the last {days} days
+                    <small>{stats === null ? "" : plural(stats.reduce((n, s) => n + s.sessions, 0), "session")}</small>
+                    <span className="lc-ag-show">{showRuns ? "Hide" : "Show"}</span>
+                  </button>
+                </th>
               </tr>
-              {measured.map(([label, f]) => (
+              {showRuns && measured.map(([label, f]) => (
                 <tr key={label}>
                   <th scope="row">{label}</th>
                   {cols.map((k) => {
@@ -476,11 +480,11 @@ function Compare({ cast }: { cast: Cast }) {
               ))}
             </tbody>
           </table>
-          <p className="lc-ag-foot">
+          {showRuns && <p className="lc-ag-foot">
             {none
               ? "No sessions in this period yet. Numbers fill in as you work, whichever way you start."
               : "Sorted by how each session ran, whatever it started as; sessions from before setups count under your first. A change is kept when you didn't undo it; costs are at API prices, with the Reviewer's share counted in."}
-          </p>
+          </p>}
         </div>
       </div>
     </Part>
@@ -503,6 +507,7 @@ function Trial({ cast, onOpen }: { cast: Cast; onOpen?: (threadId: string) => vo
   const keys = keysOf(cast);
   const [off, setOff] = useState<Key[]>([]);
   const [starting, setStarting] = useState(false);
+  const [unfolded, setUnfolded] = useState<string[]>([]);
   const [pace, setPace] = useState<number | null>(null);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -674,11 +679,18 @@ function Trial({ cast, onOpen }: { cast: Cast; onOpen?: (threadId: string) => vo
                         </span>
                       )}
                     </span>
-                    <span className="lc-ag-chain">{who(t)}</span>
-                    <span className="lc-ag-big">
-                      {t.usage.costUsd ? <Num value={t.usage.costUsd} as="money" /> : <span className="lc-quiet">{state === "working" ? "$0.00" : "No cost reported"}</span>}
-                      <small>at API prices</small>
+                    <span className="lc-ag-line">
+                      <b>{t.usage.costUsd ? <Num value={t.usage.costUsd} as="money" /> : state === "working" ? "$0.00" : "No cost"}</b>
+                      <span>
+                        {duration(tookOf(t))} · {t.verdict?.state === "verified" ? <span className="lc-ag-ok">Verified</span> : t.verdict?.state === "blocked" ? "Blocked" : t.verdict?.state === "checking" ? "Checking" : "no reviewer"}
+                      </span>
+                      <button type="button" className="lc-ag-more l-focus" aria-expanded={unfolded.includes(t.id)} aria-label={`Details of ${t.setup?.name ?? nameOf(cast, tr.way)}`} onClick={() => setUnfolded((u) => (u.includes(t.id) ? u.filter((x) => x !== t.id) : [...u, t.id]))}>
+                        <I.chevD size={12} />
+                      </button>
                     </span>
+                    {unfolded.includes(t.id) && (
+                    <div className="lc-ag-detail">
+                    <span className="lc-ag-chain">{who(t)}</span>
                     <dl className="lc-ag-stats">
                       <dt>Tokens</dt>
                       <dd>{compact(tokensOf(t))}</dd>
@@ -711,6 +723,8 @@ function Trial({ cast, onOpen }: { cast: Cast; onOpen?: (threadId: string) => vo
                         <I.chevR size={12} />
                       </button>
                     )}
+                    </div>
+                    )}
                   </div>
                 );
               })}
@@ -729,160 +743,6 @@ function Trial({ cast, onOpen }: { cast: Cast; onOpen?: (threadId: string) => vo
               )}
             </p>
           )}
-        </div>
-      </div>
-    </Part>
-  );
-}
-
-/* --------------------------------- Run modes --------------------------------- */
-
-function RunModes({ cast }: { cast: Cast }) {
-  const { all, providers, active } = cast;
-  // The agent that writes in the way new sessions start with: a setup's first stage when that's an agent, else your coder.
-  const first = cast.key !== "model" && cast.key !== "lead" && active ? active.stages[0].who : undefined;
-  const who = first && !first.startsWith("@") ? cast.who(first) : cast.coder;
-  if (!who) return null;
-  const mine = (ref: string) => modelLabel(ref, providers);
-  const claude = onClaude(who.model);
-  const mode = runModeOf(who);
-  const set = (runMode: RunMode) => runMode !== mode && void rpc("agents.save", { agents: all.map((a) => (a.id === who.id ? { ...a, runMode } : a)) }).catch(fail);
-  const small = mine(who.subagents?.explorer ?? HAIKU);
-  const own = mine(who.model);
-  const opus = mine(OPUS);
-  const sonnet = mine(SONNET);
-  if (!claude) {
-    return (
-      <Part title={`How ${who.name} runs`} note="Whether it brings cheap helpers, or asks a bigger model when it's stuck.">
-        <div className="lc-frame">
-          <div className="lc-fcard lc-ag-pad">
-            <p className="lc-ag-plain">
-              Run modes are Claude Code's. {who.name} runs on {providerLabel(who.model, providers)}, so it reads the code and runs the tests itself, and its context fills faster on big changes. Pick a Claude model for {who.name} in Team to bring helpers.
-            </p>
-          </div>
-        </div>
-      </Part>
-    );
-  }
-  return (
-    <Part title={`How ${who.name} runs`} note={`A setting on each agent. All three keep ${who.name} as the one loop that writes; they differ in which model does the thinking.`}>
-      <div className="lc-ag-modes" role="radiogroup" aria-label={`How ${who.name} runs`}>
-        <Choice
-          on={mode === "helpers"}
-          title={`${own}, with cheap helpers`}
-          tag={`Closest to ${own} quality`}
-          tone="accent"
-          onPick={() => set("helpers")}
-          chain={
-            <>
-              <Chip agent={who} providers={providers} />
-              <Joint>with</Joint>
-              <span className="lc-ag-chip" data-soft>
-                <I.bolt size={12} />
-                Explorers on {small}
-              </span>
-              <span className="lc-ag-chip" data-soft>
-                Tests as a tool
-              </span>
-            </>
-          }
-          rows={[
-            ["Effort", `${effortName(who.effort, who.model, providers)}, higher on hard turns`],
-            ["Saves by", `Keeping files out of ${own}'s context: explorers read, the test runner reads the failures.`],
-            ["Good for", "Unclear asks, changes across many files, thin tests."],
-          ]}
-        />
-        <Choice
-          on={mode === "escalate"}
-          title={`${sonnet}, escalates to ${opus}`}
-          tag="Lowest cost on routine work"
-          onPick={() => set("escalate")}
-          chain={
-            <>
-              <Chip agent={who} providers={providers} note={sonnet} />
-              <Joint to>asks</Joint>
-              <span className="lc-ag-chip" data-soft>
-                <ModelMark kind="claude" size={13} />
-                {opus}, only when needed
-              </span>
-            </>
-          }
-          rows={[
-            ["Asks Opus", "To plan a change across several areas, after tests fail twice, or when the Reviewer rejects twice."],
-            ["Saves by", "Paying for Opus only on the hard parts."],
-            ["Good for", "Routine edits in code with strong tests."],
-          ]}
-        />
-        <Choice slim on={mode === "single"} title={`${own} alone`} tag="No helpers" onPick={() => set("single")} rows={[["Watch for", `${who.name} reads every file and runs every test itself, so its context fills with them on big changes.`]]} />
-      </div>
-      <div className="lc-ag-pair">
-        <div className="lc-ag-panel">
-          <span className="lc-ag-cap">An escalation, as it shows in the thread</span>
-          <div className="lc-frame">
-            <div className="lc-fcard lc-ag-sample">
-              <span className="lc-ag-sample-h">
-                <Disc agent={who} size={20} />
-                <b>{who.name}</b>
-                <span className="lc-quiet">{sonnet} · Turn 3</span>
-              </span>
-              <div className="lc-esc">
-                <button type="button" className="lc-esc-h" disabled tabIndex={-1}>
-                  <span className="lc-tile">
-                    <I.sparkle size={11} />
-                  </span>
-                  <span>
-                    Asked {opus} to plan this<span className="lc-quiet">, a change across sync/ and editor/</span>
-                  </span>
-                  <span className="lc-grow" />
-                  <span className="lc-mono lc-quiet">24s</span>
-                </button>
-              </div>
-              <p>Following {opus}'s plan: the queue first, then the pill. 1 of 3 files done.</p>
-            </div>
-          </div>
-        </div>
-        <div className="lc-ag-panel">
-          <span className="lc-ag-cap">The three, by design</span>
-          <div className="lc-frame">
-            <div className="lc-fcard lc-ag-tablecard">
-              <table className="lc-ag-table" data-compact>
-                <thead>
-                  <tr>
-                    <th aria-label="What" />
-                    <th scope="col" data-on={mode === "helpers" || undefined}>
-                      Helpers
-                    </th>
-                    <th scope="col" data-on={mode === "escalate" || undefined}>
-                      Escalates
-                    </th>
-                    <th scope="col" data-on={mode === "single" || undefined}>
-                      Alone
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(
-                    [
-                      ["Thinks on", own, `${sonnet}; ${opus} plans`, own],
-                      ["Reads the code", small, small, "Itself"],
-                      ["Runs the tests", small, small, "Itself"],
-                      ["Cost, routine work", "Middling", "Lowest", "Highest"],
-                      ["Its context", "Stays on the work", "Stays on the work", "Fills with files"],
-                    ] as const
-                  ).map(([k, ...v]) => (
-                    <tr key={k}>
-                      <th scope="row">{k}</th>
-                      {v.map((c, i) => (
-                        <td key={i} data-on={mode === (["helpers", "escalate", "single"] as const)[i] || undefined}>
-                          {c}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
       </div>
     </Part>
@@ -1043,7 +903,10 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
     const firstName = cast.who(stages[0].who).name;
     const inStages = stages.map((st) => st.who);
     jobs.push({ id: "you", node: <I.compose size={12} />, title: "You ask", note: "A message, files, or lines you point at in the diff.", fixed: true });
-    jobs.push({
+    // Who takes your message sits with the other optional steps, after the writing, so the spine
+    // starts with what always happens: you ask, it writes.
+    const leadJobs: Job[] = [];
+    leadJobs.push({
       id: "lead",
       node: lead ? <NodeOf id={lead} cast={cast} /> : <I.hand size={12} />,
       agent: Boolean(lead && !lead.startsWith("@")),
@@ -1053,7 +916,7 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
       sees: lead ? [4, "Your whole conversation"] : undefined,
       control: <WhoPick label="Who takes your message" value={lead} none={`Nobody, straight to ${firstName}`} cast={cast} exclude={[stages[0].who]} onPick={(v) => patch({ lead: v })} />,
     });
-    if (lead) jobs.push({ id: "approve", node: <I.check size={12} />, title: "You approve the plan", note: "Edit steps, hand a step to the crew, or send it back with a note.", fixed: true });
+    if (lead) leadJobs.push({ id: "approve", node: <I.check size={12} />, title: "You approve the plan", note: "Edit steps, hand a step to the crew, or send it back with a note.", fixed: true });
     stages.forEach((st, i) => {
       const a = cast.who(st.who);
       const claudeAgent = !st.who.startsWith("@") && onClaude(a.model);
@@ -1132,6 +995,7 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
           </button>
         ),
       });
+    jobs.push(...leadJobs);
     const pool = agents.filter((a) => a.id !== lead && !inStages.includes(a.id));
     jobs.push({
       id: "crew",
@@ -1166,49 +1030,48 @@ function Setups({ cast, open, onEdit }: { cast: Cast; open?: Setup; onEdit: (id:
       sees: checker ? [1, "Your first ask and the diff"] : undefined,
       back: checker ? `back to ${lastName}` : undefined,
       control: (
-        <span className="lc-ag-revc">
-          <ModelPop
-            label="Who checks the diff"
-            value={s.checks.by === null ? "none" : s.checks.by}
-            choices={[
-              {
-                id: "auto",
-                title: "Another model family",
-                note: autoChecker ? `Picked for you: ${modelLabel(autoChecker, providers)}, so it doesn't share ${lastName}'s blind spots` : "Picked for you when one is ready",
-                show: autoChecker ? (
-                  <span className="lc-ag-auto">
-                    <ModelMark kind={markOf(autoChecker)} size={12} />
-                    Another family
-                    <span className="lc-quiet">{modelLabel(autoChecker, providers)}</span>
-                  </span>
-                ) : undefined,
-              },
-              { id: "none", title: "Nobody", note: "Changes come straight to you" },
-            ]}
-            onPick={(v) => patch({ checks: { ...s.checks, by: v === "none" ? null : v } })}
-          />
-          {checker && (
-            <>
-              <Segmented
-                size="sm"
-                value={String(s.checks.rounds)}
-                onValueChange={(v) => patch({ checks: { ...s.checks, rounds: Number(v) } })}
-                options={[
-                  { value: "1", label: "1" },
-                  { value: "2", label: "2" },
-                  { value: "3", label: "3" },
-                ]}
-                aria-label="Rounds before it's yours"
-              />
-              <span className="lc-quiet lc-ag-unit">{s.checks.rounds === 1 ? "round" : "rounds"}</span>
-              <label className="lc-ag-unit lc-ag-small" title="Small changes are a few lines, or only docs: every setup's Reviewer lets them through unless this is on.">
-                <input type="checkbox" checked={reviewSmall} onChange={(e) => void rpc("settings.save", { reviewSmall: e.target.checked }).catch(fail)} />
-                Small ones too
-              </label>
-            </>
-          )}
-        </span>
+        <ModelPop
+          label="Who checks the diff"
+          value={s.checks.by === null ? "none" : s.checks.by}
+          choices={[
+            {
+              id: "auto",
+              title: "Another model family",
+              note: autoChecker ? `Picked for you: ${modelLabel(autoChecker, providers)}, so it doesn't share ${lastName}'s blind spots` : "Picked for you when one is ready",
+              show: autoChecker ? (
+                <span className="lc-ag-auto">
+                  <ModelMark kind={markOf(autoChecker)} size={12} />
+                  Another family
+                  <span className="lc-quiet">{modelLabel(autoChecker, providers)}</span>
+                </span>
+              ) : undefined,
+            },
+            { id: "none", title: "Nobody", note: "Changes come straight to you" },
+          ]}
+          onPick={(v) => patch({ checks: { ...s.checks, by: v === "none" ? null : v } })}
+        />
       ),
+      // How many rounds, and whether small changes get read too, sit under the words so they keep their width.
+      under: checker ? (
+        <div className="lc-ag-revc">
+          <Segmented
+            size="sm"
+            value={String(s.checks.rounds)}
+            onValueChange={(v) => patch({ checks: { ...s.checks, rounds: Number(v) } })}
+            options={[
+              { value: "1", label: "1" },
+              { value: "2", label: "2" },
+              { value: "3", label: "3" },
+            ]}
+            aria-label="Rounds before it's yours"
+          />
+          <span className="lc-quiet lc-ag-unit">{s.checks.rounds === 1 ? "round" : "rounds"}</span>
+          <label className="lc-ag-unit lc-ag-small" title="Small changes are a few lines, or only docs: every setup's Reviewer lets them through unless this is on.">
+            <input type="checkbox" checked={reviewSmall} onChange={(e) => void rpc("settings.save", { reviewSmall: e.target.checked }).catch(fail)} />
+            Small ones too
+          </label>
+        </div>
+      ) : undefined,
     });
     jobs.push({ id: "you2", node: <I.eye size={12} />, title: "You review", note: `Commit, Undo the turn, or point at lines and ask; your note goes straight to ${lastName}.`, fixed: true, back: `your lines, to ${lastName}` });
   }

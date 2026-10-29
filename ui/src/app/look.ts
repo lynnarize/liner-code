@@ -1,18 +1,21 @@
 /*
-  How the app looks: the theme, the accent, the glass and the backdrop, kept in this browser's
-  storage and put on the page (and the window) at launch, before Settings is ever opened.
+  How the app looks: the theme, the accent, the session tray's glass and the backdrop, kept in
+  this browser's storage and put on the page (and the window) at launch, before Settings is ever
+  opened.
 */
 import { bridge } from "./bridge";
 import { clearTheme, inkOn, readThemes, varsOf } from "./themes";
 
 /**
   `custom`: one of your themes, by id. `accentColor`: your own accent, when `accent` is "own".
+  `tray`: how much of the thread shows through the session tray, the one glass surface left.
   `background`: the picture behind the session ("apple:<name>", "own", or none), with how much it's
-  blurred (px) and how much of it shows through the paper (0 to 1).
+  blurred (px) and how much of it shows through (0 to 1).
 */
-export type Look = { theme: "light" | "dark" | "system"; accent: string; glass: string; material: "glass" | "vibrancy" | "solid"; custom?: string; accentColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
+export type TrayGlass = "clear" | "tinted" | "solid";
+export type Look = { theme: "light" | "dark" | "system"; accent: string; tray: TrayGlass; custom?: string; accentColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
 export const LOOK_KEY = "liner-code:look";
-export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", glass: "0.25", material: "solid" };
+export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", tray: "tinted" };
 export const readLook = (): Look => {
   let saved: Partial<Look> & { v?: number } = {};
   try {
@@ -20,10 +23,10 @@ export const readLook = (): Look => {
   } catch {
     // storage is off: the defaults
   }
-  // Liquid Glass was the default until 2026-10-27, behind the whole window, and it kept the GPU busy.
-  // A look saved before then starts on Solid; Liquid Glass is one choice away, behind the sidebar only.
-  if (saved.v !== 2 && saved.material === "glass") delete saved.material;
-  return { ...LOOK_DEFAULT, ...saved, v: 2 };
+  // Before 0.1.4 the whole window was glass, with a material behind it and Clear to Tinted; one
+  // ground replaced them, and only the session tray keeps glass.
+  const { glass: _glass, material: _material, ...rest } = saved as Partial<Look> & { glass?: string; material?: string };
+  return { ...LOOK_DEFAULT, ...rest, v: 3 };
 };
 
 /** Puts a look on the page (and on the window, in the shell). */
@@ -40,9 +43,9 @@ export function applyLook(l: Look) {
     h.style.setProperty("--l-accent", l.accentColor);
     h.style.setProperty("--l-accent-ink", inkOn(l.accentColor));
   }
-  h.style.setProperty("--l-glass-opacity", l.glass);
+  h.dataset.tray = l.tray;
   bridge.setAppearance(own ? own.base : l.theme);
-  bridge.setMaterial(l.material);
+  bridge.setMaterial("solid");
   // The backdrop behind the session follows along.
   window.dispatchEvent(new CustomEvent("lc:look", { detail: l }));
 }

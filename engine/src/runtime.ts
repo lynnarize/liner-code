@@ -6,6 +6,10 @@
   A session with a lead talks to the lead (read only). It answers talk and questions itself;
   a request for a change ends in a plan you approve, and then the coder builds it. Messages you write while a turn runs wait in the queue and go as
   one message when it ends; a steer reaches the agent at its next step instead.
+
+  A routed session (route.ts) picks for each message who writes and who reads: one model alone,
+  a cascade (a quick model writes, a judge passes it or hands it to the strong model to repair),
+  or a critique (the strong model writes, critics read it side by side, it revises once).
 */
 import { spawn } from "node:child_process";
 import type { Access, Effort, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, Settings, Thread, Usage } from "../../contracts/src/index.ts";
@@ -13,7 +17,8 @@ import { emptyUsage, familyOf, PR_TEST_TOOL, smallChange, splitModel } from "../
 import { capture, changes, isRepo } from "./checkpoints.ts";
 import { run } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
-import { assignments, claudeTeam, fixPrompt, parseFindings, reviewerFor, reviewPrompt } from "./review.ts";
+import { answerPrompt, assignments, claudeTeam, critiquePrompt, fixPrompt, parseFindings, repairPrompt, reviewerFor, reviewPrompt, takeOverPrompt } from "./review.ts";
+import { decide, hintOf } from "./route.ts";
 import { cursor, grok, hermes, opencode } from "./providers/acp.ts";
 import { accountProvider, addedProvider } from "./providers/added.ts";
 import { claude } from "./providers/claude.ts";
@@ -21,7 +26,8 @@ import { codex } from "./providers/codex.ts";
 import { demo } from "./providers/demo.ts";
 import type { Provider, ProviderSession, TurnSink, ToolUpdate } from "./providers/types.ts";
 import type { AgentTools } from "./agent-tools.ts";
-import { commandRisk, ruleFor } from "./risk.ts";
+import { briefOf } from "./agents.ts";
+import { commandRisk, readsOnly, ruleFor } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 
 export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, demo };
@@ -35,8 +41,10 @@ export function syncProviders(s: Settings) {
 
 type Live = { session: ProviderSession; provider: ProviderId; key: string };
 type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number };
-/** show: put your message on the timeline. prompt: what the agent is sent, when it differs from what shows. */
-type TurnOptions = { show?: boolean; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string };
+/** show: put your message on the timeline. prompt: what the agent is sent, when it differs from what shows. note: a line under your message (what a route chose). */
+type TurnOptions = { show?: boolean; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string; note?: string };
+/** A cascade's judge, and the strong model a change it won't pass goes to. */
+type Cascade = { judge: string; strong: string };
 /** How many times the Reviewer sends work back before it's yours. */
 const ROUNDS = 2;
 type Waiter<T> = { resolve: (v: T) => void; reject: (e: Error) => void };
@@ -60,6 +68,8 @@ export class Runtime {
   private env: NodeJS.ProcessEnv;
 
   private tools?: AgentTools;
+  /** The running totals each open session last reported (Codex reports totals, not each step). */
+  private totals = new WeakMap<ProviderSession, Partial<Usage>>();
 
   constructor(store: Store, env: NodeJS.ProcessEnv, tools?: AgentTools) {
     this.store = store;
@@ -72,10 +82,11 @@ export class Runtime {
     return this.turns.has(threadId);
   }
 
-  /** What an agent runs on in a thread: the thread's own model if set, else the agent's. */
+  /** What an agent runs on in a thread: the thread's own model if set, else the agent's. A routed session's writer is the model its route put to work. */
   resolve(t: Thread, agentId = t.agent) {
-    const agent = this.store.agent(agentId);
-    const own = agentId === t.agent ? t.model : undefined;
+    const root = agentId === t.agent ? t.route?.root : undefined;
+    const agent = this.store.agent(root ? `@${root}` : agentId);
+    const own = agentId === t.agent ? (root ?? t.model) : undefined;
     const { provider, model } = splitModel(own ?? agent.model);
     const asked: Effort = (agentId === t.agent ? t.effort : undefined) ?? agent.effort;
     // A level this model doesn't take (picked for another model) becomes the model's own default.
@@ -130,7 +141,7 @@ export class Runtime {
       effort: r.effort,
       access,
       planning,
-      soul: planning ? [r.agent.soul, leadRules(this.resolve(t).agent.name, (t.helpers ?? []).map((h) => this.store.agent(h)).map((a) => `${a.name} (${a.role})`))].filter(Boolean).join("\n\n") : r.agent.soul,
+      soul: planning ? [briefOf(r.agent, cwd), leadRules(this.resolve(t).agent.name, (t.helpers ?? []).map((h) => this.store.agent(h)).map((a) => `${a.name} (${a.role})`))].filter(Boolean).join("\n\n") : briefOf(r.agent, cwd),
       resume: forking ? t.forkSession!.slice(t.forkSession!.indexOf(":") + 1) : resume,
       fork: forking,
       guard: this.store.settings.guardDestructive,
@@ -170,6 +181,7 @@ export class Runtime {
       store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `Going on: another $${cap} for this session before it stops again.` });
     }
     if (!anchor && isPrAsk(text)) return this.openPr(threadId, text);
+    if (!anchor && t.route) return this.routed(threadId, text);
     // With a lead, your message goes to the lead, who answers or plans; otherwise straight to the agent.
     // A question about lines in the diff goes to whoever wrote them.
     // A question about lines goes to whoever wrote last: a setup's last stage, else the session's agent.
@@ -177,6 +189,85 @@ export class Runtime {
     // Straight to a setup's first stage: it's told its part, and who takes the change on after it.
     const part = !anchor && !t.lead ? this.partOf(t, 0) : "";
     await this.turn(threadId, text, who, Boolean(t.lead) && !anchor, { anchor, review: !anchor, ...(part ? { prompt: `${text}\n\n${part}` } : {}) });
+  }
+
+  /**
+    A routed session's message: the route says who writes it and who reads it after (route.ts).
+    The writer works in the session's own conversation; judges and critics read on the side.
+  */
+  private async routed(threadId: string, text: string) {
+    const store = this.store;
+    const route = store.thread(threadId).route!;
+    const d = decide(text, route);
+    // A follow-up that stays with the model working now carries on its job, repair and all.
+    const escalated = d.reuse && route.last?.escalated ? { escalated: true } : {};
+    store.patchThread(threadId, { route: { ...route, root: d.writer, last: { at: Date.now(), weight: d.weight, pattern: d.pattern, ...escalated } } });
+    await this.turn(threadId, text, store.thread(threadId).agent, false, { review: false, note: hintOf(d, (ref) => this.labelOf(ref)) });
+    const t = store.thread(threadId);
+    const turn = t.turns;
+    const changed = store.timeline(threadId).some((x) => x.kind === "checkpoint" && x.turn === turn);
+    // Stopped, waiting on you, or your next message already started: nothing more to read.
+    if (t.status === "done" && !this.turns.has(threadId)) {
+      const cascade = d.pattern === "cascade" ? { judge: d.judge!, strong: d.repair! } : undefined;
+      if (cascade && changed) await this.review(threadId, turn, 1, undefined, cascade);
+      // A quick model that changed nothing may not have done it at all: the judge reads its answer instead.
+      else if (cascade) await this.judgeAnswer(threadId, turn, text, cascade);
+      else if (d.pattern === "critique" && changed) await this.critique(threadId, turn, d.critics);
+    }
+    // The cache's clock starts when the work ends.
+    const now = store.thread(threadId).route;
+    if (now?.last) store.patchThread(threadId, { route: { ...now, last: { ...now.last, at: Date.now() } } });
+  }
+
+  /**
+    A cascade whose writer changed nothing: the judge reads what it said. An answer that does the
+    ask (a question, a check) passes; one that should have changed something and didn't goes to
+    the strong model to do, and the judge reads that change once.
+  */
+  private async judgeAnswer(threadId: string, turn: number, ask: string, cascade: Cascade) {
+    const store = this.store;
+    let t = store.thread(threadId);
+    const answer = store.timeline(threadId).flatMap((x) => (x.turn === turn && x.kind === "text" ? [x.text] : [])).join("\n\n");
+    const cwd = t.worktree?.path ?? store.project(t.projectId).path;
+    const started = Date.now();
+    const base: Extract<Item, { kind: "review" }> = { kind: "review", id: uid("it"), turn, at: started, reviewer: cascade.judge, round: 1, status: "running", findings: [] };
+    store.putItem(threadId, base);
+    t = store.patchThread(threadId, { status: "running", verdict: { state: "checking", round: 1 } });
+    const abort = new AbortController();
+    this.turns.set(threadId, { abort, started, turn: t.turns });
+    let found: ReturnType<typeof parseFindings> = null;
+    try {
+      found = parseFindings(await this.quiet(threadId, cascade.judge, cwd, answerPrompt(ask, answer), abort.signal, "judge"));
+    } catch {
+      // Stopped, or the judge's tool failed: the answer stands as it is.
+    } finally {
+      this.turns.delete(threadId);
+    }
+    const seconds = (Date.now() - started) / 1000;
+    if (!found || abort.signal.aborted) {
+      store.putItem(threadId, { ...base, status: "error", summary: abort.signal.aborted ? "You stopped the judge." : "The judge didn't give a verdict.", seconds });
+      store.patchThread(threadId, { status: "done", verdict: undefined });
+      return;
+    }
+    store.putItem(threadId, { ...base, status: found.verdict === "pass" ? "passed" : "blocked", findings: found.findings, summary: found.summary, seconds });
+    if (found.verdict === "pass") {
+      store.patchThread(threadId, { status: "done", verdict: { state: "verified", note: found.summary, round: 1 } });
+      return;
+    }
+    const writer = this.labelOf(t.route?.root ?? cascade.judge);
+    store.patchThread(threadId, { verdict: { state: "blocked", note: found.summary, round: 1 }, ...(t.route ? { route: { ...t.route, root: cascade.strong, last: t.route.last ? { ...t.route.last, escalated: true } : undefined } } : {}) });
+    store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `The judge says ${writer} didn't get it done, so ${this.labelOf(cascade.strong)} takes it on.` });
+    await this.turn(threadId, takeOverPrompt(this.labelOf(cascade.judge), writer, found.summary ?? "", found.findings), t.agent, false, { show: false, review: false });
+    const after = store.thread(threadId);
+    const changed = store.timeline(threadId).some((x) => x.kind === "checkpoint" && x.turn === after.turns);
+    if (after.status === "done" && changed) await this.review(threadId, after.turns, 2, undefined, cascade);
+    else if (after.status === "done") store.patchThread(threadId, { verdict: undefined });
+  }
+
+  /** "codex:gpt-6-luna" as its tool calls it ("GPT-6 Luna"), for the lines routes and reviews write. */
+  labelOf(ref: string) {
+    const { provider, model } = splitModel(ref);
+    return this.providerInfo.find((p) => p.id === provider)?.models.find((m) => m.id === model)?.label ?? reviewerLabel(ref);
   }
 
   /** "Create PR": no agent turn, the PR card itself opens the pull request in the chat. */
@@ -341,6 +432,7 @@ export class Runtime {
     const r = this.resolve(t, agentId);
     const marker: Item = { kind: "turn", id: uid("it"), turn, at: Date.now(), agent: agentId, model: `${r.provider}:${r.model}`, planning, status: "running" };
     if (show) store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}) });
+    if (o.note) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: o.note });
     store.putItem(threadId, marker);
 
     let prompt = o.prompt ? o.prompt : o.anchor ? `About ${o.anchor.file}:${o.anchor.line}${o.anchor.endLine && o.anchor.endLine !== o.anchor.line ? `-${o.anchor.endLine}` : ""} in your last change:\n\n${text}` : text;
@@ -425,16 +517,19 @@ export class Runtime {
   /**
     The Reviewer: another model family reads this turn's change against fixed criteria. A
     blocking finding goes back to the coder, up to ROUNDS times (or your own number); after that it's yours.
+    In a cascade it's the judge: a change it won't pass goes to the strong model to repair, and
+    it reads the repair once more.
   */
-  async review(threadId: string, turn: number, round: number, since?: string): Promise<void> {
+  async review(threadId: string, turn: number, round: number, since?: string, cascade?: Cascade): Promise<void> {
     const store = this.store;
     let t = store.thread(threadId);
     // Fixes go back to whoever wrote last: a setup's last stage, or the session's agent.
     const fixer = t.stages?.length ? t.stages[t.stages.length - 1].who : t.agent;
     const agent = store.agent(fixer);
-    // A setup says who checks; "auto" is another family than the last stage's model.
-    const ref = t.checks ? (t.checks.by === "auto" ? reviewerFor({ ...agent, subagents: { ...agent.subagents, reviewer: "auto" } }, this.providerInfo) : t.checks.by) : reviewerFor(agent, this.providerInfo);
+    // A setup says who checks; "auto" is another family than the last stage's model. A routed session's judge checks it.
+    const ref = cascade ? cascade.judge : t.route ? t.route.cast.judge : t.checks ? (t.checks.by === "auto" ? reviewerFor({ ...agent, subagents: { ...agent.subagents, reviewer: "auto" } }, this.providerInfo) : t.checks.by) : reviewerFor(agent, this.providerInfo);
     if (!ref) return;
+    const who = cascade ? "judge" : "Reviewer";
     const cp = [...store.timeline(threadId)].reverse().find((x) => x.kind === "checkpoint" && x.turn <= turn && !x.reverted);
     if (cp?.kind !== "checkpoint" || !cp.from || !cp.to) return;
     const cwd = t.worktree?.path ?? store.project(t.projectId).path;
@@ -443,7 +538,7 @@ export class Runtime {
     if (round === 1 && !store.settings.reviewSmall) {
       const numstat = (await run("git", ["diff", "--numstat", since ?? cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
       if (smallChange(numstat)) {
-        store.putItem(threadId, { kind: "notice", id: uid("it"), turn: cp.turn, at: Date.now(), text: "A small change, so the Reviewer let it through. Settings › Agentic features has it read these too." });
+        store.putItem(threadId, { kind: "notice", id: uid("it"), turn: cp.turn, at: Date.now(), text: `A small change, so the ${who} let it through. Settings › Agentic features has it read these too.` });
         return;
       }
     }
@@ -460,9 +555,9 @@ export class Runtime {
     let found: ReturnType<typeof parseFindings> = null;
     let failed = "";
     try {
-      const out = await this.quiet(threadId, ref, cwd, reviewPrompt(ask, diff.length > 60000 ? `${diff.slice(0, 60000)}\n… (the rest of the diff is cut off)` : diff, round), abort.signal);
+      const out = await this.quiet(threadId, ref, cwd, reviewPrompt(ask, cut(diff), round, cascade ? "judge" : "reviewer"), abort.signal, cascade ? "judge" : "reviewer");
       found = parseFindings(out);
-      if (!found) failed = "The Reviewer didn't give a verdict.";
+      if (!found) failed = `The ${who} didn't give a verdict.`;
     } catch (e) {
       failed = abort.signal.aborted ? "You stopped the review." : e instanceof Error ? e.message : String(e);
     } finally {
@@ -481,18 +576,76 @@ export class Runtime {
       store.patchThread(threadId, { status: "done", verdict: { state: "verified", note: found.summary, round } });
       return;
     }
-    const rounds = Math.min(3, Math.max(1, t.checks?.rounds ?? store.settings.reviewRounds ?? ROUNDS));
+    // A cascade reads twice at most: the first change, then the strong model's repair.
+    const rounds = cascade ? 2 : Math.min(3, Math.max(1, t.checks?.rounds ?? store.settings.reviewRounds ?? ROUNDS));
     if (round >= rounds) {
       const note = `${blocking.length} ${blocking.length === 1 ? "finding" : "findings"} still blocking after ${rounds === 1 ? "one round" : `${rounds} rounds`}`;
       t = store.patchThread(threadId, { status: "waiting", verdict: { state: "blocked", note, round } });
-      store.emit({ type: "notify", threadId, kind: "waiting", title: "The Reviewer needs you", body: `${t.title}: ${note}` });
+      store.emit({ type: "notify", threadId, kind: "waiting", title: `The ${who} needs you`, body: `${t.title}: ${note}` });
       return;
     }
     store.patchThread(threadId, { verdict: { state: "blocked", note: found.summary, round } });
-    store.putItem(threadId, { kind: "notice", id: uid("it"), turn: cp.turn, at: Date.now(), text: `The Reviewer sent ${blocking.length} ${blocking.length === 1 ? "finding" : "findings"} back to ${agent.name}.` });
-    await this.turn(threadId, fixPrompt(reviewerLabel(ref), blocking), fixer, false, { show: false, review: false });
+    const n = `${blocking.length} ${blocking.length === 1 ? "finding" : "findings"}`;
+    if (cascade && t.route) {
+      // The strong model takes the session's conversation over to repair it, and keeps it while the job lasts.
+      store.patchThread(threadId, { route: { ...t.route, root: cascade.strong, last: t.route.last ? { ...t.route.last, escalated: true } : undefined } });
+      store.putItem(threadId, { kind: "notice", id: uid("it"), turn: cp.turn, at: Date.now(), text: `The judge didn't pass it: ${n} go to ${this.labelOf(cascade.strong)} to repair.` });
+      await this.turn(threadId, repairPrompt(this.labelOf(ref), this.labelOf(t.route.root), found.findings), t.agent, false, { show: false, review: false });
+    } else {
+      store.putItem(threadId, { kind: "notice", id: uid("it"), turn: cp.turn, at: Date.now(), text: `The Reviewer sent ${n} back to ${agent.name}.` });
+      await this.turn(threadId, fixPrompt(reviewerLabel(ref), blocking), fixer, false, { show: false, review: false });
+    }
     const after = store.thread(threadId);
-    if (after.status === "done") await this.review(threadId, after.turns, round + 1, since);
+    if (after.status === "done") await this.review(threadId, after.turns, round + 1, since, cascade);
+  }
+
+  /**
+    Critique: critics from other families read the change side by side, read only, and the writer
+    gets everything they found at once to keep or revise its change, once. A change they all pass
+    is done; the revision isn't read again.
+  */
+  private async critique(threadId: string, turn: number, critics: string[]) {
+    const store = this.store;
+    let t = store.thread(threadId);
+    const cp = store.timeline(threadId).find((x) => x.kind === "checkpoint" && x.turn === turn);
+    if (cp?.kind !== "checkpoint" || !cp.from || !cp.to || !critics.length) return;
+    const cwd = t.worktree?.path ?? store.project(t.projectId).path;
+    const diff = (await run("git", ["diff", "--no-color", "-U3", cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
+    const prompt = reviewPrompt(this.askOf(threadId), cut(diff), 1, "critic");
+    const abort = new AbortController();
+    this.turns.set(threadId, { abort, started: Date.now(), turn: t.turns });
+    store.patchThread(threadId, { status: "running", verdict: { state: "checking", round: 1 } });
+    const reads = await Promise.all(
+      critics.map(async (ref) => {
+        const started = Date.now();
+        const base: Extract<Item, { kind: "review" }> = { kind: "review", id: uid("it"), turn, at: started, reviewer: ref, round: 1, status: "running", findings: [] };
+        store.putItem(threadId, base);
+        const done = (patch: Partial<typeof base>) => store.putItem(threadId, { ...base, ...patch, seconds: (Date.now() - started) / 1000 });
+        try {
+          const found = parseFindings(await this.quiet(threadId, ref, cwd, prompt, abort.signal, "critic"));
+          done(found ? { status: found.verdict === "pass" ? "passed" : "blocked", findings: found.findings, summary: found.summary } : { status: "error", summary: "This critic didn't give a verdict." });
+          return found;
+        } catch (e) {
+          done({ status: "error", summary: abort.signal.aborted ? "You stopped the critique." : e instanceof Error ? e.message : String(e) });
+          return null;
+        }
+      }),
+    );
+    this.turns.delete(threadId);
+    const got = reads.filter((r): r is NonNullable<typeof r> => Boolean(r));
+    if (abort.signal.aborted || !got.length) {
+      store.patchThread(threadId, { status: "done", verdict: undefined });
+      return;
+    }
+    const findings = got.flatMap((r) => r.findings);
+    if (got.every((r) => r.verdict === "pass")) {
+      store.patchThread(threadId, { status: "done", verdict: { state: "verified", note: got.length > 1 ? `${got.length} critics passed it` : got[0].summary, round: 1 } });
+      return;
+    }
+    t = store.patchThread(threadId, { verdict: undefined });
+    const r = this.resolve(t);
+    store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${findings.length} ${findings.length === 1 ? "finding goes" : "findings go"} back to ${this.labelOf(`${r.provider}:${r.model}`)}, to keep or revise once.` });
+    await this.turn(threadId, critiquePrompt([...new Set(critics.map((c) => this.labelOf(c)))], findings), t.agent, false, { show: false, review: false });
   }
 
   /** Runs one read-only turn on any model without putting it on the timeline; returns what it wrote. */
@@ -514,7 +667,8 @@ export class Runtime {
     const p = providers[provider] ?? demo;
     const session = p.open({ cwd, model, effort: "medium", access: "read", soul: "", guard: true, env: this.envFor(provider) });
     let text = "";
-    const before = { ...emptyUsage(), ...this.store.thread(threadId).usage };
+    // Its own tokens and cost, apart from the thread's, so reads side by side don't count each other's.
+    const own = emptyUsage();
     const sink: TurnSink = {
       text: (d) => void (text += d),
       reasoning: () => {},
@@ -526,7 +680,12 @@ export class Runtime {
       usage: (u, total) => {
         const t = this.store.thread(threadId);
         const cur = { ...emptyUsage(), ...t.usage };
-        for (const k of ["inputTokens", "outputTokens", "cacheReadTokens", "costUsd"] as const) if (u[k] !== undefined) cur[k] = total ? before[k] + (u[k] as number) : cur[k] + (u[k] as number);
+        for (const k of ["inputTokens", "outputTokens", "cacheReadTokens", "costUsd"] as const) {
+          if (u[k] === undefined) continue;
+          const add = total ? (u[k] as number) - own[k] : (u[k] as number);
+          own[k] += add;
+          cur[k] += add;
+        }
         this.store.patchThread(threadId, { usage: cur });
         this.holdToCap(threadId);
       },
@@ -541,7 +700,7 @@ export class Runtime {
     } finally {
       session.close();
       const t = this.store.thread(threadId);
-      this.store.logUsage({ at: Date.now(), threadId, projectId: t.projectId, agent: as, provider, model, inputTokens: Math.max(0, t.usage.inputTokens - before.inputTokens), outputTokens: Math.max(0, t.usage.outputTokens - before.outputTokens), cacheReadTokens: Math.max(0, t.usage.cacheReadTokens - before.cacheReadTokens), costUsd: Math.max(0, t.usage.costUsd - before.costUsd), seconds: (Date.now() - started) / 1000 });
+      this.store.logUsage({ at: Date.now(), threadId, projectId: t.projectId, agent: as, provider, model, inputTokens: own.inputTokens, outputTokens: own.outputTokens, cacheReadTokens: own.cacheReadTokens, costUsd: own.costUsd, seconds: (Date.now() - started) / 1000 });
     }
     return text;
   }
@@ -850,8 +1009,12 @@ export class Runtime {
         if (req.rule && this.rules.get(threadId)?.has(req.rule)) return Promise.resolve({ allow: true });
         // A routine runs with nobody watching: it may do what can be undone, never what can't.
         if (store.thread(threadId).routine) return Promise.resolve(req.risk === "high" ? { allow: false, reason: "Routines don't run commands that can't be undone. Leave it for the person." } : { allow: true });
-        // A cost test runs with nobody watching too, on a task that only needs edits: edits go ahead, anything else is declined.
-        if (store.thread(threadId).trial) return Promise.resolve(/edit|write|patch|filechange|notebook/i.test(req.tool) ? { allow: true } : { allow: false, reason: "This is a short cost test: make the edits without running anything." });
+        // A cost test runs with nobody watching too, on a task that only needs edits: edits go ahead, and so does reading
+        // (Codex reads files with commands), anything else is declined.
+        if (store.thread(threadId).trial) {
+          const command = req.fields.find((f) => f.label === "Command")?.value ?? req.title.replace(/^Run /, "");
+          return Promise.resolve(/edit|write|patch|filechange|notebook/i.test(req.tool) || readsOnly(command) ? { allow: true } : { allow: false, reason: "This is a short cost test: read and edit the files without running anything." });
+        }
         settle();
         const id = uid("it");
         store.putItem(threadId, { kind: "approval", id, turn, at: Date.now(), tool: req.tool, title: req.title, description: req.description, risk: req.risk, fields: req.fields, rule: req.rule, state: "asking" });
@@ -881,14 +1044,19 @@ export class Runtime {
       usage: (u: Partial<Usage>, total) => {
         const t = store.thread(threadId);
         const cur = { ...emptyUsage(), ...t.usage };
+        // A session's running totals add what's new since its last report, so what other models
+        // used in the thread (a judge, a repair, an earlier tool) stays counted.
+        const session = this.turns.get(threadId)?.session;
+        const seen = (total && session && this.totals.get(session)) || {};
         const add = (k: "inputTokens" | "outputTokens" | "cacheReadTokens" | "costUsd") => {
           if (u[k] === undefined) return;
-          cur[k] = total ? (u[k] as number) : cur[k] + (u[k] as number);
+          cur[k] += total ? Math.max(0, (u[k] as number) - (seen[k] ?? 0)) : (u[k] as number);
         };
         add("inputTokens");
         add("outputTokens");
         add("cacheReadTokens");
         add("costUsd");
+        if (total && session) this.totals.set(session, { ...seen, ...u });
         if (u.contextTokens !== undefined) cur.contextTokens = u.contextTokens;
         if (u.contextWindow !== undefined) cur.contextWindow = u.contextWindow;
         store.patchThread(threadId, { usage: cur });
@@ -966,6 +1134,8 @@ function planTitle(plan: string) {
 export const clean = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\r\n/g, "\n").replace(/^[^\n]*\r(?=[^\n])/gm, "");
 /** The end of a run's output, which is where test runners say how it went. */
 const tailOf = (s: string) => clean(s).split("\n").slice(-400).join("\n").slice(-24000);
+/** A diff short enough for a reader's prompt. */
+const cut = (diff: string) => (diff.length > 60000 ? `${diff.slice(0, 60000)}\n… (the rest of the diff is cut off)` : diff);
 
 /** A message that only asks for a pull request: "create pr", "open a pull request", "/pr". */
 export function isPrAsk(text: string) {

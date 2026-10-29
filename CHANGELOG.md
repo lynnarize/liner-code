@@ -53,7 +53,8 @@ download the new DMG.
 ### Fixed
 
 - Pickers inside a dialog (New agent's effort and model) opened underneath it.
-- An empty composer could stay several lines tall after the window widened.
+- The composer didn't shrink when you deleted lines (Shift-Enter, then Delete), and an empty one
+  could stay several lines tall after the window widened.
 - Usage › Limits showed rows of NaN%: only Claude Code's five-hour and weekly windows count now.
 - The cost test lets Codex run read-only commands, a quick model that changed nothing is read by
   the judge and handed up, and Codex's running token totals no longer write over Claude's.

@@ -149,8 +149,16 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const fit = () => {
     const el = field.current;
     if (!el) return;
+    // Measured with the height's transition off: with it on, the height set to measure only starts
+    // a transition, the old height is still what lays out, and the field never shrinks.
+    const was = el.style.height;
+    el.style.transition = "none";
     el.style.height = "0px";
-    el.style.height = `${Math.min(el.scrollHeight, LINE * MAX_LINES + 20)}px`;
+    const next = `${Math.min(el.scrollHeight, LINE * MAX_LINES + 20)}px`;
+    el.style.height = was;
+    void el.offsetHeight;
+    el.style.transition = "";
+    el.style.height = next;
   };
   useLayoutEffect(fit, [text]);
   useEffect(() => {

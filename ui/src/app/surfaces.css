@@ -4004,3 +4004,102 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- Side chat ---------- */
+/* Its own small thread in the panel: who answers and how far they know the session, the
+   answers, and a field to ask in. */
+.lc-sc {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.lc-sc-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px 0 14px;
+  box-shadow: inset 0 -1px 0 var(--lc-hair);
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-sc-head b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-sc-note {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sc-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+}
+.lc-sc-in {
+  padding: 16px 16px 20px;
+}
+.lc-sc-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 320px;
+  margin: 10vh auto 0;
+  font-size: 13px;
+  line-height: 19px;
+  text-align: center;
+  color: var(--l-ink-3);
+  animation: l-unblur 420ms var(--l-ease-out) backwards;
+}
+.lc-sc-empty b {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-sc-empty-i {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--lc-well);
+  color: var(--l-ink-2);
+}
+.lc-sc-compose {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 0 12px 12px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 26px;
+  background: var(--lc-field);
+  box-shadow: var(--lc-card-ring);
+}
+.lc-sc-compose textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 140px;
+  box-sizing: border-box;
+  padding: 10px 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--l-ink);
+  resize: none;
+  field-sizing: content;
+}
+.lc-sc-compose textarea::placeholder {
+  color: var(--l-ink-4);
+}

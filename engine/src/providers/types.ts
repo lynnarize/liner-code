@@ -64,6 +64,8 @@ export type OpenOptions = {
   guard: boolean;
   /** This turn is a lead's plan: read only, ending in a plan to approve rather than in edits. */
   planning?: boolean;
+  /** A side chat beside a session: read only, and it answers rather than plans. */
+  side?: boolean;
   /** Claude Code subagents this agent brings (Explorer, Test runner, Opus for hard parts). */
   subagents?: Record<string, { description: string; prompt: string; tools?: string[]; model?: string }>;
   /** PATH and friends, from the shell that launched the app. */

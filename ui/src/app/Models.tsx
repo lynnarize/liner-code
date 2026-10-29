@@ -232,23 +232,30 @@ export function EffortRows({ modelRef, value, onPick }: { modelRef: string; valu
 }
 
 /** A button with the effort, opening its menu. Disabled for a model that takes no level. */
-export function EffortPick({ modelRef, value, onChange, side = "bottom", triggerClass = "lc-pb", icon = true, hideEmpty }: { modelRef: string; value: string; onChange: (id: string) => void; side?: "top" | "bottom"; triggerClass?: string; icon?: boolean; hideEmpty?: boolean }) {
+export function EffortPick({ modelRef, value, onChange, side = "bottom", keep, triggerClass = "lc-pb", icon = true, hideEmpty }: { modelRef: string; value: string; onChange: (id: string) => void; side?: "top" | "bottom"; keep?: boolean; triggerClass?: string; icon?: boolean; hideEmpty?: boolean }) {
   const providers = useEngine((s) => s.providers);
   const { list, fallback } = effortsFor(modelRef, providers);
   if (!list.length && hideEmpty) return null;
   // A level this model doesn't take shows as the model's default, which is what will run.
   const shown = list.some((e) => e.id === value) ? value : (fallback ?? value);
+  // "Medium effort": in a narrow composer the word "effort" goes first (app.css).
+  const name = list.length ? effortName(shown, modelRef, providers) : "No effort setting";
+  const [level, word] = name.endsWith(" effort") ? [name.slice(0, -7), " effort"] : [name, ""];
   return (
     <Pop
       label={`Effort: ${shown}. Change it`}
       side={side}
+      keep={keep}
       width={290}
       triggerClass={triggerClass}
       disabled={!list.length}
       trigger={
         <>
           {icon && <I.effort size={14} />}
-          {list.length ? effortName(shown, modelRef, providers) : "No effort setting"}
+          <span className="lc-ctl-label">
+            {level}
+            {word && <span className="lc-effort-word">{word}</span>}
+          </span>
           {list.length > 0 && <I.chevD size={11} />}
         </>
       }

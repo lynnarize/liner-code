@@ -64,15 +64,19 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
     };
     place();
     window.addEventListener("resize", place);
-    // A scroller under the trigger moving it: the panel follows rather than floating off.
-    window.addEventListener("scroll", place, true);
+    // A scroller under the trigger moving it: the panel follows rather than floating off. Its own
+    // lists scrolling move nothing, and measuring would put them back at the top mid-scroll.
+    const moved = (e: Event) => {
+      if (!(e.target instanceof Node && panel.current?.contains(e.target))) place();
+    };
+    window.addEventListener("scroll", moved, true);
     // Content that arrives after it opens (a list still loading) gets room, or the other side.
     const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => place());
     if (panel.current?.firstElementChild) ro?.observe(panel.current.firstElementChild);
     return () => {
       ro?.disconnect();
       window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("scroll", moved, true);
     };
   }, [open]);
   return at;

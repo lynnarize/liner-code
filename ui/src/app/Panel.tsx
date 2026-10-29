@@ -20,6 +20,7 @@ import { FilesSurface } from "./Files";
 import { LinkedSurface, PrSurface } from "./Pr";
 import { Review, TurnPicker } from "./Review";
 import { RoutinesList, RunDetail } from "./Routines";
+import { SideChat } from "./SideChat";
 import { openTab, PanelTabs, SurfacePicker, surfaceOf, type PanelState, type Tab } from "./Surfaces";
 // The terminal brings xterm.js; it loads the first time you open one.
 const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
@@ -79,6 +80,7 @@ export function Panel({
           <TerminalSurface thread={thread} visible={visible} />
         </Suspense>
       );
+    if (t === "side") return <SideChat thread={thread} visible={visible} />;
     if (t === "browser") return <BrowserSurface thread={thread} agentName={agentName} />;
     if (t === "files") return <FilesSurface thread={thread} items={items} onShowChanges={(id, path) => (onFocus({ id, path }), open("changes"))} />;
     if (t === "pr") return <PrSurface thread={thread} agentName={agentName} visible={visible} />;

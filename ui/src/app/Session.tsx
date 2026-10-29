@@ -3,7 +3,7 @@
   composer. The panel beside it holds the diff or the agents; Review full width lets the diff
   take the whole paper.
 */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Project, ProjectScript, Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
@@ -18,7 +18,7 @@ import { Panel } from "./Panel";
 import { FindBar, toComposer } from "./Find";
 import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
-import { keepPanel, keptPanel, openTab, runScript, SURFACES, type PanelState, type Tab } from "./Surfaces";
+import { keepPanel, keptPanel, openTab, PanelGrip, runScript, SURFACES, usePanelWidth, type PanelState, type Tab } from "./Surfaces";
 import { Timeline } from "./Timeline";
 import { Badge, Disc, Kbd, Lines, ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
 
@@ -45,6 +45,10 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     });
   const [focus, setFocus] = useState<{ id: string; path?: string } | null>(null);
   const [renaming, setRenaming] = useState(false);
+  // The panel's width, while you drag its edge and after.
+  const body = useRef<HTMLDivElement>(null);
+  const [panelW, setPanelW] = usePanelWidth();
+  const [resizing, setResizing] = useState(false);
   const seen = useRef<Set<string> | null>(null);
   const { ref: scroller, contentRef, away, jump, stick, follow } = useStickToBottom();
   // The composer floats over the conversation; the text keeps room under it to scroll clear.
@@ -170,7 +174,14 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const empty = useMemo(() => items.length === 0, [items.length]);
 
   return (
-    <div className="lc-session" data-panel={panel.open || undefined} data-wide={(panel.open && panel.wide) || undefined} data-dock={panel.open && !panel.wide && panel.dock === "bottom" ? "bottom" : undefined}>
+    <div
+      className="lc-session"
+      data-panel={panel.open || undefined}
+      data-wide={(panel.open && panel.wide) || undefined}
+      data-dock={panel.open && !panel.wide && panel.dock === "bottom" ? "bottom" : undefined}
+      data-resizing={resizing || undefined}
+      style={panelW ? ({ "--lc-panel-w": `${panelW}px` } as CSSProperties) : undefined}
+    >
       <header className="lc-top" data-drag>
         {!sidebar && (
           <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title="Show the sidebar (⌘\)" onClick={onSidebar}>
@@ -240,7 +251,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
         </button>
       </header>
 
-      <div className="lc-body">
+      <div ref={body} className="lc-body">
         <section ref={threadRef} className="lc-thread" aria-label="Session">
           <div className="lc-stage">
             <div ref={scroller} className="lc-scroll">
@@ -316,6 +327,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             )}
           </div>
         </section>
+        {panel.open && !panel.wide && panel.dock !== "bottom" && <PanelGrip body={body} width={panelW} onWidth={setPanelW} onDrag={setResizing} />}
         {panel.open && <Panel thread={thread} items={items} state={panel} onState={setPanel} focus={focus} onFocus={setFocus} agentName={(lead ?? coder).name} onOpenSession={onOpenSession} onRoutine={onRoutine} />}
       </div>
     </div>

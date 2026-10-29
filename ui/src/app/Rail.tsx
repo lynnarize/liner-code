@@ -19,6 +19,7 @@ import type { PanelState, SurfaceId } from "./Surfaces";
 import { PanelHead, Pop, Row } from "./ui";
 
 const SHOWN: { id: SurfaceId; label: string; icon: (p: { size?: number }) => ReactNode }[] = [
+  { id: "side", label: "Side chat", icon: I.comment },
   { id: "terminal", label: "Terminal", icon: I.terminal },
   { id: "browser", label: "Browser", icon: I.globe },
   { id: "files", label: "Files", icon: I.file },
@@ -62,7 +63,7 @@ export function Rail({ thread, panel, onPanel, onTab, files, branch }: { thread:
           </Btn>
         ))}
       </div>
-      <div className="lc-rail-seg" role="group" aria-label="Ship">
+      <div className="lc-rail-seg" role="group" aria-label="Ship" data-act>
         <Tooltip content={files ? `Commit ${plural(files, "file")}` : "Push or open a PR"} side="left">
           <span className="lc-rail-pop" data-count={files > 0 || undefined}>
             <Pop

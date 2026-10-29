@@ -14,6 +14,7 @@ export type Command = { id: string; label: string; group: string; keys: string[]
 
 const SURFACE_KEYS: [string, string, string][] = [
   ["session", "Session", "i"],
+  ["side", "Side chat", "c"],
   ["browser", "Browser", "b"],
   ["terminal", "Terminal", "t"],
   ["files", "Files", "f"],

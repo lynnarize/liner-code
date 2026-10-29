@@ -19,7 +19,9 @@ export type EngineState = {
   version: string;
   home: string;
   projects: Project[];
+  /** Your sessions. Side chats are kept apart (`sides`), so no list of sessions shows them. */
   threads: Thread[];
+  sides: Thread[];
   agents: AgentProfile[];
   providers: ProviderInfo[];
   settings: Settings;
@@ -44,6 +46,7 @@ let state: EngineState = {
   home: "",
   projects: [],
   threads: [],
+  sides: [],
   agents: [],
   providers: [],
   settings: { onboarded: true, workStyle: "model", claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "ask", worktrees: false, branchPrefix: "liner/", badge: true },
@@ -107,15 +110,20 @@ function apply(e: EngineEvent) {
       const s = e.snapshot;
       // A reconnect starts from the snapshot; open timelines are fetched again.
       const open = Object.keys(state.items);
-      set({ connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads, agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), items: {} });
+      set({ connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), items: {} });
       for (const id of open) void loadItems(id);
       return;
     }
     case "project":
       return set({ projects: upsert(state.projects, e.project) });
     case "project.removed":
-      return set({ projects: state.projects.filter((p) => p.id !== e.id), threads: state.threads.filter((t) => t.projectId !== e.id) });
+      return set({ projects: state.projects.filter((p) => p.id !== e.id), threads: state.threads.filter((t) => t.projectId !== e.id), sides: state.sides.filter((t) => t.projectId !== e.id) });
     case "thread":
+      // A side chat that's let go comes as archived; it isn't kept like an archived session.
+      if (e.thread.sideOf) {
+        const sides = e.thread.archived ? state.sides.filter((t) => t.id !== e.thread.id) : upsert(state.sides, e.thread);
+        return set(state.threads.some((t) => t.id === e.thread.id) ? { sides, threads: state.threads.filter((t) => t.id !== e.thread.id) } : { sides });
+      }
       return set({ threads: e.thread.archived && !state.threads.some((t) => t.id === e.thread.id && !t.archived) ? state.threads.filter((t) => t.id !== e.thread.id) : upsert(state.threads, e.thread) });
     case "item": {
       const list = state.items[e.threadId];
@@ -233,5 +241,8 @@ export function useEngine<T>(pick: (s: EngineState) => T): T {
   return useSyncExternalStore(subscribe, () => pick(state));
 }
 
+/** A session or a side chat, by id. */
+export const threadOf = (s: EngineState, id: string) => s.threads.find((t) => t.id === id) ?? s.sides.find((t) => t.id === id);
+
 const EMPTY: Item[] = [];
-export const useItems = (threadId: string | undefined) => useEngine((s) => (threadId ? (s.items[threadId] ?? EMPTY) : EMPTY));
+export const useItems =(threadId: string | undefined) => useEngine((s) => (threadId ? (s.items[threadId] ?? EMPTY) : EMPTY));

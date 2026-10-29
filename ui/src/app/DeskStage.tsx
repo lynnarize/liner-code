@@ -67,6 +67,10 @@ export function DeskStage({ project, settings, worktree, onOpen, children }: Pro
   // of the swipe that started it); a fresh swipe during momentum shows as the deltas rising again.
   const onWheel = (e: WheelEvent<HTMLDivElement>) => {
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || !stage.current) return;
+    // A menu or dialog opened from Home sits outside it (in a portal), but its wheel events still
+    // reach here through React: scrolling one never moves Home. While one is open, Home stays
+    // under it, so it isn't left floating over the Desk.
+    if (!(e.target instanceof Node && stage.current.contains(e.target)) || document.querySelector(".lc-layer, dialog[open]")) return;
     const dir: Dir = e.deltaY > 0 ? "down" : "up";
     const wanted: Dir = area === "ask" ? "down" : "up";
     if (dir !== wanted || scrollsItself(e.target, dir, stage.current)) return;

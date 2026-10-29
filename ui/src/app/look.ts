@@ -9,13 +9,16 @@ import { clearTheme, inkOn, readThemes, varsOf } from "./themes";
 /**
   `custom`: one of your themes, by id. `accentColor`: your own accent, when `accent` is "own".
   `tray`: how much of the thread shows through the session tray, the one glass surface left.
+  `action`: the colour of the most important buttons (Send, Commit and push, a card's main button):
+  red, the accent, the tray's ink, or `actionColor` when it's "own".
   `background`: the picture behind the session ("apple:<name>", "own", or none), with how much it's
   blurred (px) and how much of it shows through (0 to 1).
 */
 export type TrayGlass = "clear" | "tinted" | "solid";
-export type Look = { theme: "light" | "dark" | "system"; accent: string; tray: TrayGlass; custom?: string; accentColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
+export type ActionColour = "red" | "accent" | "ink" | "own";
+export type Look = { theme: "light" | "dark" | "system"; accent: string; tray: TrayGlass; action: ActionColour; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
 export const LOOK_KEY = "liner-code:look";
-export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", tray: "tinted" };
+export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", tray: "tinted", action: "red" };
 export const readLook = (): Look => {
   let saved: Partial<Look> & { v?: number } = {};
   try {
@@ -44,6 +47,16 @@ export function applyLook(l: Look) {
     h.style.setProperty("--l-accent-ink", inkOn(l.accentColor));
   }
   h.dataset.tray = l.tray;
+  // The main buttons' colour: red by default (app.css); your own goes on the page, with ink that reads on it.
+  const action = l.action === "own" && !l.actionColor ? "red" : l.action;
+  h.dataset.action = action;
+  if (action === "own") {
+    h.style.setProperty("--lc-act", l.actionColor!);
+    h.style.setProperty("--lc-act-ink", inkOn(l.actionColor!));
+  } else {
+    h.style.removeProperty("--lc-act");
+    h.style.removeProperty("--lc-act-ink");
+  }
   bridge.setAppearance(own ? own.base : l.theme);
   bridge.setMaterial("solid");
   // The backdrop behind the session follows along.

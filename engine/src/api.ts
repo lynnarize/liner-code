@@ -196,6 +196,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   // Liner Code's releases and the tools' own updaters; a tool that was updated is found again.
   const updates = new Updater(store, env, runtime, () => void detect());
   const keyList = () => [...runtime.keys.keys()];
+  // A side chat works in its session's own folder, so letting it go never touches the worktree.
+  const dropSide = (id: string) => {
+    const t = store.thread(id);
+    runtime.closeThread(id);
+    store.removeThread(id);
+    store.emit({ type: "thread", thread: { ...t, archived: true } });
+  };
 
   // A new worktree has none of the checkout's installed packages; the project's setup command
   // runs there before the first turn, and says how it went on the timeline.
@@ -673,8 +680,45 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       runtime.stop(id);
       return null;
     },
+    /*
+      A side chat: a fork of the session that only reads and answers. Who you talk to there is who
+      you talk to in the session (the lead, if it has one), continuing that conversation where the
+      tool can branch it (Claude Code) and given it as text otherwise. A plan, a route or a setup
+      doesn't come along: it's one agent answering.
+    */
+    "thread.side": ({ id, fresh }) => {
+      const parent = store.thread(id);
+      const old = store.threads.find((t) => t.sideOf === id);
+      if (old && !fresh) return old;
+      if (old) dropSide(old.id);
+      const now = Date.now();
+      // Made whole in one go, so nothing ever sees it as a session of its own.
+      const t = store.putThread({
+        id: uid("th"),
+        projectId: parent.projectId,
+        title: `Side chat · ${parent.title}`,
+        agent: parent.lead ?? parent.agent,
+        status: "idle",
+        access: "read",
+        model: parent.lead ? undefined : parent.model,
+        effort: parent.effort,
+        forkOf: id,
+        forkSession: (parent.lead ? parent.leadSession : parent.providerSession) ?? "",
+        sideOf: id,
+        sideFrom: parent.turns,
+        worktree: parent.worktree,
+        turns: parent.turns,
+        usage: emptyUsage(),
+        createdAt: now,
+        updatedAt: now,
+      });
+      // The session's timeline comes along (out of sight), so a tool that can't branch it gets it as text.
+      for (const it of store.timeline(id)) store.putItem(t.id, { ...it, id: uid("it") });
+      return t;
+    },
     "thread.remove": async ({ id }) => {
       const t = store.thread(id);
+      for (const s of store.threads.filter((x) => x.sideOf === id)) dropSide(s.id);
       runtime.closeThread(id);
       const project = store.project(t.projectId);
       await forget(project.path, id).catch(() => {});

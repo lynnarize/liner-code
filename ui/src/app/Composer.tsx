@@ -535,11 +535,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   );
 
   // The levels the coder's model takes; Claude Code's Ultracode and Ultrathink sit after them.
-  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} triggerClass="lc-seg-b" icon={false} hideEmpty />;
+  // On Home they open downward, off the heading, and scroll in what room there is rather than flip.
+  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} triggerClass="lc-seg-b" icon={false} hideEmpty />;
   const accessPick = (
     <Pop
       label={`Access: ${lev.label}. Change it`}
       side={variant === "home" ? "bottom" : "top"}
+      keep={variant === "home"}
       align="end"
       width={320}
       triggerClass="lc-ctl-pill"

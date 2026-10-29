@@ -139,7 +139,9 @@ html:not([data-native]) .lc-app[data-sidebar] {
   position: relative;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  /* Clip, not hidden: a thread's screen-reader labels reach past the paper, which made it
+     scrollable, and opening a diff (scrollIntoView) scrolled the session's head out of sight. */
+  overflow: clip;
   border-radius: var(--lc-paper-r);
   background: var(--l-surface);
   box-shadow:

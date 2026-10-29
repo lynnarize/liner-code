@@ -88,7 +88,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         if (made[0]?.compare) onCompare(made[0].compare.id);
         return;
       }
-      const t = await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, setup: settings.setup, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
+      const t = await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, setup: settings.setup, route: settings.route, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
       if (settings.lead && !settings.setup && settings.helpers?.length) await rpc("thread.update", { id: t.id, helpers: settings.helpers });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
       onStarted(t.id);

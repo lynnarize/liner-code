@@ -27,27 +27,15 @@
   color: var(--l-ink-3);
 }
 
-/* ------------------------------ Choices (ways, run modes) ------------------------------ */
+/* ------------------------------------ The ways ------------------------------------ */
 
-.lc-ag-ways,
-.lc-ag-modes {
+.lc-ag-ways {
   display: grid;
   gap: 12px;
 }
 @container lc-ag (min-width: 900px) {
   .lc-ag-ways {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-.lc-ag-modes {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.lc-ag-modes > [data-slim] {
-  grid-column: 1 / -1;
-}
-@container lc-ag (max-width: 720px) {
-  .lc-ag-modes {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 .lc-ag-choice {
@@ -201,21 +189,6 @@
 .lc-ag-warnword {
   color: var(--l-warn-text);
 }
-/* The plain choice: one line, its note beside the name. */
-.lc-ag-choice[data-slim] > .lc-fcard {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 22px;
-  padding: 12px 18px;
-}
-.lc-ag-choice[data-slim] .lc-ag-kv {
-  flex: 1;
-  min-width: 260px;
-  padding: 0;
-  box-shadow: none;
-}
-
 /* ------------------------------------ Tables ------------------------------------ */
 
 .lc-ag-tablecard {
@@ -295,70 +268,13 @@
     opacity: 0.4;
   }
 }
-.lc-ag-table[data-compact] th,
-.lc-ag-table[data-compact] td {
-  padding: 9px 10px;
-  font-size: 12.5px;
-}
-.lc-ag-table[data-compact] tbody th {
-  width: 30%;
-}
 .lc-ag-foot {
   margin: 8px 12px 0;
   font-size: 12px;
   line-height: 17px;
   color: var(--l-ink-3);
 }
-.lc-ag-pad {
-  padding: 16px 18px;
-}
-.lc-ag-plain {
-  margin: 0;
-  font-size: 13px;
-  line-height: 19px;
-  color: var(--l-ink-2);
-}
-
-/* --------------------------- The escalation and the modes' table --------------------------- */
-
-.lc-ag-pair {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 14px;
-  margin-top: 8px;
-}
-@container lc-ag (max-width: 760px) {
-  .lc-ag-pair {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.lc-ag-panel {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-width: 0;
-}
-.lc-ag-sample {
-  display: grid;
-  gap: 10px;
-  padding: 14px 16px 16px;
-}
-.lc-ag-sample-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
-}
-.lc-ag-sample-h b {
-  font-weight: 600;
-}
-.lc-ag-sample p {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 20px;
-}
-
-/* ------------------------------------ The team ------------------------------------ */
+/* ------------------------------------ The wire ------------------------------------ */
 
 .lc-ag-board {
   display: grid;
@@ -390,25 +306,6 @@
 }
 .lc-ag-wirehead b {
   font-weight: 600;
-}
-.lc-ag-legend {
-  display: inline-flex;
-  gap: 14px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-ag-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.lc-ag-legend i {
-  width: 18px;
-  border-top: 1.5px dashed var(--l-accent);
-}
-.lc-ag-legend i[data-solid] {
-  border-top-style: solid;
-  border-top-color: var(--l-ink-4);
 }
 .lc-ag-wire {
   position: relative;
@@ -599,13 +496,18 @@
 .lc-ag-bars i[data-on] {
   background: var(--l-ink-2);
 }
-
+.lc-ag-unit {
+  font-size: 12px;
+}
+/* The Reviewer's rounds and the small-changes switch, on a line under its words. */
 .lc-ag-revc {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
+}
+.lc-ag-revc .lc-ag-small {
+  margin-left: 8px;
 }
 .lc-ag-small {
   display: inline-flex;

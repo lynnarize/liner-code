@@ -4,14 +4,15 @@
   the session runs instead.
 
   - Who works on this: talk to the lead (it plans, then hands off) or straight to a coder, or
-    to a model on its own.
+    to a model on its own, or Routed: the engine picks per message, at the level you choose.
   - Effort and access open glass menus; access has five levels, from Read only to Full access.
   - @ finds a file in the project; files come from the clip, a paste or a drop.
   - While an agent works, Enter queues the message for when the turn ends; ⌘Enter steers the
     running turn instead. Your pick becomes what Enter does.
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Access, CommandInfo, SkillInfo, Effort, Project, QueuedMessage, RpcResult, Thread } from "@contracts";
+import type { Access, CommandInfo, SkillInfo, Effort, Project, QueuedMessage, RouteLevel, RpcResult, Thread } from "@contracts";
+import { castOf, ROUTE_LEVELS } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
@@ -22,7 +23,7 @@ import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
 import { ContextRing, Disc, ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
 
-export type RunSettings = { agent: string; lead?: string; model?: string; effort: Effort; access: Access; helpers?: string[]; setup?: string };
+export type RunSettings = { agent: string; lead?: string; model?: string; effort: Effort; access: Access; helpers?: string[]; setup?: string; route?: RouteLevel };
 export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" };
 
 type Props = {
@@ -304,6 +305,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const engineSettings = useEngine((s) => s.settings);
   const setups = useMemo(() => setupsOf(engineSettings, agents), [engineSettings, agents]);
   const setup = settings.setup ? setups.find((x) => x.id === settings.setup) : undefined;
+  // Routed: who'd do what, from the models that are ready (and your own picks in Settings).
+  const cast = useMemo(() => castOf(providers, engineSettings.route?.cast), [providers, engineSettings.route?.cast]);
+  const routed = settings.route;
   // The Demo stays out of the list until it's shown (six taps on your name in the sidebar).
   const showDemo = engineSettings.showDemo === true;
   const leadAgents = agents.filter((a) => /lead/i.test(a.role) && a.id !== "demo");
@@ -313,8 +317,16 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   /** The makers of everyone in a way, as small marks. */
   const marksOf = (ids: string[]) => [...new Set(ids.map((id) => markOf(agentOf(id, agents, providers).model)))].map((k) => <ModelMark key={k} kind={k} size={11} />);
 
-  const whoChip =
-    setup || settings.lead ? (
+  const whoChip = routed ? (
+    <>
+      <span className="lc-way-chip-i">
+        <I.branchIf size={12} />
+      </span>
+      <span className="lc-chip-name">Routed · {ROUTE_LEVELS.find((l) => l.id === routed)?.label}</span>
+      {cast && <span className="lc-way-marks">{marksOf([`@${cast.everyday}`, `@${cast.strong}`])}</span>}
+      <I.chevD size={11} />
+    </>
+  ) : setup || settings.lead ? (
       <>
         <span className="lc-way-chip-i">{setup ? <I.flow size={12} /> : <I.agents size={12} />}</span>
         <span className="lc-chip-name">{setup ? setup.name : "Lead and coder"}</span>
@@ -337,6 +349,19 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   // model list leaves there, so the panel is only as tall as its taller column.
   const teamExtras = (close: () => void) => (
     <>
+      {routed && cast && (
+        <div className="lc-team-help">
+          <div className="lc-team-lab">How far it goes</div>
+          <div className="lc-team-chips">
+            {ROUTE_LEVELS.map((l) => (
+              <button key={l.id} type="button" className="lc-mchip l-focus" data-on={routed === l.id || undefined} aria-pressed={routed === l.id} title={l.note} onClick={() => onSettings({ route: l.id })}>
+                {l.label}
+              </button>
+            ))}
+          </div>
+          <p className="lc-quiet lc-team-note">{ROUTE_LEVELS.find((l) => l.id === routed)?.note}. {modelLabel(cast.everyday, providers)} does most of it, {modelLabel(cast.strong, providers)} the hard parts and repairs.</p>
+        </div>
+      )}
       {settings.lead && !setup && helperPool.length > 0 && (
         <div className="lc-team-help">
           <div className="lc-team-lab">{talkTo.name} can bring in</div>
@@ -407,7 +432,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 note={`${l.name} plans, ${(mainCoder ?? coder).name} builds`}
                 marks={marksOf([l.id, (mainCoder ?? coder).id])}
                 onPick={() => {
-                  onSettings({ setup: undefined, lead: l.id, agent: mainCoder?.id ?? settings.agent, model: undefined });
+                  onSettings({ setup: undefined, route: undefined, lead: l.id, agent: mainCoder?.id ?? settings.agent, model: undefined });
                   close();
                 }}
               />
@@ -415,26 +440,39 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             {setups.map((x) => (
               <WayRow
                 key={x.id}
-                on={settings.setup === x.id}
+                on={!routed && settings.setup === x.id}
                 icon={<I.flow size={13} />}
                 title={x.name}
                 note={setupLine(x, agents, providers)}
                 marks={marksOf([...(x.lead ? [x.lead] : []), ...x.stages.map((st) => st.who)])}
                 onPick={() => {
-                  onSettings({ setup: x.id, agent: x.stages[0].who, lead: x.lead ?? undefined, helpers: x.crew, model: undefined });
+                  onSettings({ setup: x.id, route: undefined, agent: x.stages[0].who, lead: x.lead ?? undefined, helpers: x.crew, model: undefined });
                   close();
                 }}
               />
             ))}
+            {cast && (
+              <WayRow
+                on={Boolean(routed)}
+                icon={<I.branchIf size={13} />}
+                title="Routed"
+                note={`picked per message: ${modelLabel(cast.everyday, providers)} alone, checked, or ${modelLabel(cast.strong, providers)} with critics`}
+                marks={marksOf([`@${cast.everyday}`, `@${cast.strong}`, `@${cast.judge}`, ...cast.critics.map((c) => `@${c}`)])}
+                onPick={() => {
+                  onSettings({ route: routed ?? engineSettings.route?.level ?? "high", setup: undefined, lead: undefined, helpers: undefined, agent: `@${cast.everyday}`, model: undefined });
+                  close();
+                }}
+              />
+            )}
             {loner && <WayRow on icon={<I.edit size={13} />} title={`Straight to ${coder.name}`} note="an agent on its own, from before setups" marks={marksOf([coder.id])} onPick={close} />}
             {showDemo && agents.some((a) => a.id === "demo") && (
               <WayRow
-                on={!setup && !settings.lead && settings.agent === "demo"}
+                on={!setup && !routed && !settings.lead && settings.agent === "demo"}
                 icon={<I.sparkle size={13} />}
                 title="Demo run"
                 note="a scripted run, no account"
                 onPick={() => {
-                  onSettings({ setup: undefined, lead: undefined, agent: "demo", model: undefined });
+                  onSettings({ setup: undefined, route: undefined, lead: undefined, agent: "demo", model: undefined });
                   close();
                 }}
               />
@@ -446,20 +484,20 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           <div className="lc-team-lab">Or just a model</div>
           {/* The models each tool said it runs: a rail of tools, a search, ⌘1 to ⌘9. */}
           <ModelPicker
-            value={isModelAgent(settings.agent) && !settings.lead && !settings.setup ? settings.agent.slice(1) : undefined}
+            value={isModelAgent(settings.agent) && !settings.lead && !settings.setup && !routed ? settings.agent.slice(1) : undefined}
             also={compare.map((c) => c.slice(1))}
             autoFocus={false}
             height={330}
             onPick={(ref, how) => {
               const id = `@${ref}`;
-              const on = isModelAgent(settings.agent) && !settings.lead && !settings.setup && settings.agent === id;
+              const on = isModelAgent(settings.agent) && !settings.lead && !settings.setup && !routed && settings.agent === id;
               // Shift-click gives the same ask to this model too, to compare and keep one.
               if (how.shiftKey && onCompare) {
                 if (on) return;
                 onCompare(compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id].slice(0, 3));
                 return;
               }
-              onSettings({ setup: undefined, lead: undefined, agent: id, model: undefined });
+              onSettings({ setup: undefined, route: undefined, lead: undefined, agent: id, model: undefined });
               onCompare?.(compare.filter((x) => x !== id));
               close();
             }}

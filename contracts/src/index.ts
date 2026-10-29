@@ -182,6 +182,57 @@ export const setupOf = (settings: Pick<Settings, "setups" | "team" | "reviewRoun
   return all.find((s) => s.id === id) ?? all[0];
 };
 
+/**
+  Routed (after GitHub Copilot's Fusion): for each message, the least work likely to do it well.
+  single: one model does it. cascade: the everyday model does it and a judge from another family
+  reads the change; it passes, or goes with the judge's findings to the strong model to repair,
+  and the judge reads the repair once. critique: the strong model does it, critics from other
+  families read it side by side, and it revises once with what they found. The level is how far
+  it may go: standard keeps to one model a message (the strong one for hard jobs), high adds the
+  cascade for medium jobs and a critic for hard ones, max checks everything and brings two
+  critics to the hardest.
+*/
+export type RouteLevel = "standard" | "high" | "max";
+export type RoutePattern = "single" | "cascade" | "critique";
+/** How big a job a message looks: light (talk, a small change), medium, heavy. */
+export type RouteWeight = "light" | "medium" | "heavy";
+/** Who does what in a routed session, each "<provider>:<model>". */
+export type RouteCast = { everyday: string; strong: string; judge: string; critics: string[] };
+/** A routed session: its level and cast, the model writing now (`root`), and what the last message got. */
+export type ThreadRoute = { level: RouteLevel; cast: RouteCast; root: string; last?: { at: number; weight: RouteWeight; pattern: RoutePattern; escalated?: boolean } };
+export const ROUTE_LEVELS: { id: RouteLevel; label: string; note: string }[] = [
+  { id: "standard", label: "Standard", note: "One model a message: the everyday one, the strong one for hard jobs" },
+  { id: "high", label: "High", note: "Medium jobs get a judge that passes them or hands them up; hard ones a critic" },
+  { id: "max", label: "Max", note: "Everything is checked; the hardest jobs get two critics" },
+];
+
+/**
+  The cast from what's ready, paired the way Fusion pairs them: a quick model for everyday work
+  (GPT Luna, else Sonnet), the strongest of another family for hard jobs and repairs (Opus, else
+  GPT Sol), a judge from another family than the everyday model's, and critics from families
+  other than the strong model's. `mine` (Settings) replaces any of them.
+*/
+export function castOf(providers: ProviderInfo[], mine: Partial<RouteCast> = {}): RouteCast | null {
+  const ready = providers.filter((p) => p.available && p.adapter && p.id !== "demo" && p.models.length);
+  if (!ready.length) return null;
+  const pick = (family: string, ...want: RegExp[]) => {
+    for (const re of want) for (const p of ready) if (familyOf(p.id) === family) for (const m of p.models) if (!m.legacy && re.test(m.id)) return `${p.id}:${m.id}`;
+    return undefined;
+  };
+  const first = `${ready[0].id}:${(ready[0].models.find((m) => m.isDefault) ?? ready[0].models[0]).id}`;
+  const best = (family: string) => (family === "claude" ? pick("claude", /opus/i, /sonnet/i) : family === "codex" ? pick("codex", /sol(?!.*pro)/i, /sol/i, /luna/i) : undefined);
+  const everyday = mine.everyday ?? pick("codex", /luna(?!.*pro)/i) ?? pick("claude", /sonnet/i) ?? first;
+  const strong = mine.strong ?? best("claude") ?? best("codex") ?? everyday;
+  const family = (ref: string) => familyOf(splitModel(ref).provider);
+  const other = (ref: string) => (family(ref) === "claude" ? best("codex") : best("claude"));
+  const judge = mine.judge ?? (family(strong) !== family(everyday) ? strong : (other(everyday) ?? strong));
+  // Reads from outside the strong model's family where there is one: its best, and the everyday model when that's another one.
+  const outside = other(strong);
+  const second = family(everyday) !== family(strong) ? everyday : undefined;
+  const critics = mine.critics?.length ? mine.critics : outside ? [...new Set([outside, second ?? outside])] : [everyday];
+  return { everyday, strong, judge, critics };
+}
+
 export type Project = {
   id: string;
   name: string;
@@ -266,6 +317,8 @@ export type Thread = {
   setup?: { id: string; name: string };
   stages?: Stage[];
   checks?: { by: string | null; rounds: number };
+  /** Routed: each message gets its own pattern and models (see ThreadRoute); `agent` is the everyday model. */
+  route?: ThreadRoute;
   /**
     Runs in a worktree of its own, on this branch. `path` is where it works; for a project inside
     a bigger repository that is the project's folder within the worktree, whose top is `root`.
@@ -401,6 +454,8 @@ export type Settings = {
   reviewRounds?: number;
   /** The Reviewer reads small changes too (SMALL_CHANGE lines or fewer, or only docs), which it otherwise lets through. */
   reviewSmall?: boolean;
+  /** Routed sessions: the level new ones start at (high unless set), and models of your own in place of the cast's. */
+  route?: { level?: RouteLevel; cast?: Partial<RouteCast> };
   /** Claude Code bills to your Claude plan, or to the Anthropic key you added. */
   claudeBilling: "plan" | "key";
   /** Settle sessions that wait on nothing from you after this many days (0: never, the default). */
@@ -744,8 +799,8 @@ export type Rpc = {
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number }];
   "project.remove": [{ id: string }, null];
-  "thread.create": [{ projectId: string; agent?: string; lead?: string; setup?: string; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string }, Thread];
-  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string; effort?: Effort; agent?: string; lead?: string | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; helpers?: string[]; setup?: string | null; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
+  "thread.create": [{ projectId: string; agent?: string; lead?: string; setup?: string; route?: RouteLevel; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string }, Thread];
+  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string; effort?: Effort; agent?: string; lead?: string | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; helpers?: string[]; setup?: string | null; route?: RouteLevel | null; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
   "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number } }, null];
   "thread.queue": [{ id: string; queue: QueuedMessage[] }, Thread];

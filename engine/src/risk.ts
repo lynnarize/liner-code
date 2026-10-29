@@ -30,6 +30,23 @@ export function commandRisk(command: string): Risk {
   return "low";
 }
 
+/**
+  A command that only reads (pwd, ls, cat, sed -n, rg, git diff…), alone or piped and chained,
+  including one wrapped in a login shell the way Codex runs them. Redirects, substitutions and
+  in-place edits never count as reading.
+*/
+export function readsOnly(command: string) {
+  const c = command.trim().replace(/^(?:\/bin\/)?(?:ba|z)?sh\s+-l?c\s+(["']?)([\s\S]*)\1$/, "$2").trim();
+  if (!c || /[<>`]|\$\(/.test(c)) return false;
+  return c.split(/&&|\|\||;|\|/).every((part) => {
+    const p = part.trim().replace(/^cd\s+\S+$/, "pwd");
+    if (/^(pwd|ls|cat|head|tail|wc|nl|grep|rg|file|stat|tree|echo)\b/.test(p)) return true;
+    if (/^sed\b/.test(p)) return /\s-n\b/.test(p) && !/\s-i/.test(p);
+    if (/^find\b/.test(p)) return !/-(delete|exec|execdir|ok|fprint)/.test(p);
+    return /^git\s+(status|diff|log|show|ls-files|rev-parse|branch)\b/.test(p);
+  });
+}
+
 /** True when the guard should ask even in Full access. */
 export function isDestructive(command: string) {
   return commandRisk(command) === "high";

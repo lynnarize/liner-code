@@ -114,8 +114,8 @@ export class Runtime {
   private async session(t: Thread, agentId: string, cwd: string, planning: boolean): Promise<{ session: ProviderSession; fresh: boolean; switched: boolean }> {
     const r = this.resolve(t, agentId);
     const access: Access = planning ? "read" : r.access;
-    // A Claude Code agent (not a bare model) brings its subagents, and its run mode may change its model.
-    const team = familyOf(r.provider) === "claude" && !agentId.startsWith("@") && !planning && !t.model ? claudeTeam(r.agent, r.model) : { model: r.model, agents: {} };
+    // A Claude Code agent (not a bare model) brings its subagents, and its run mode may change its model. A side chat brings none: it only answers.
+    const team = familyOf(r.provider) === "claude" && !agentId.startsWith("@") && !planning && !t.sideOf && !t.model ? claudeTeam(r.agent, r.model) : { model: r.model, agents: {} };
     const liveKey = `${t.id}:${agentId}`;
     const key = `${r.provider}|${team.model}|${r.effort}|${access}|${planning}|${Object.keys(team.agents).join(",")}`;
     const cur = this.live.get(liveKey);
@@ -141,7 +141,8 @@ export class Runtime {
       effort: r.effort,
       access,
       planning,
-      soul: planning ? [briefOf(r.agent, cwd), leadRules(this.resolve(t).agent.name, (t.helpers ?? []).map((h) => this.store.agent(h)).map((a) => `${a.name} (${a.role})`))].filter(Boolean).join("\n\n") : briefOf(r.agent, cwd),
+      soul: planning ? [briefOf(r.agent, cwd), leadRules(this.resolve(t).agent.name, (t.helpers ?? []).map((h) => this.store.agent(h)).map((a) => `${a.name} (${a.role})`))].filter(Boolean).join("\n\n") : t.sideOf ? [briefOf(r.agent, cwd), SIDE_RULES].filter(Boolean).join("\n\n") : briefOf(r.agent, cwd),
+      side: Boolean(t.sideOf),
       resume: forking ? t.forkSession!.slice(t.forkSession!.indexOf(":") + 1) : resume,
       fork: forking,
       guard: this.store.settings.guardDestructive,
@@ -180,6 +181,8 @@ export class Runtime {
       store.patchThread(threadId, { spendLimit: t.usage.costUsd + cap });
       store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `Going on: another $${cap} for this session before it stops again.` });
     }
+    // A side chat only answers: no pull request, route or lead, and nothing for the Reviewer.
+    if (t.sideOf) return this.turn(threadId, text, t.agent, false, { review: false });
     if (!anchor && isPrAsk(text)) return this.openPr(threadId, text);
     if (!anchor && t.route) return this.routed(threadId, text);
     // With a lead, your message goes to the lead, who answers or plans; otherwise straight to the agent.
@@ -437,7 +440,9 @@ export class Runtime {
 
     let prompt = o.prompt ? o.prompt : o.anchor ? `About ${o.anchor.file}:${o.anchor.line}${o.anchor.endLine && o.anchor.endLine !== o.anchor.line ? `-${o.anchor.endLine}` : ""} in your last change:\n\n${text}` : text;
 
-    const git = await isRepo(cwd);
+    // A side chat shares its session's folder and changes nothing, so it takes no snapshot: what
+    // the session edits meanwhile would read as the side chat's change.
+    const git = !t.sideOf && (await isRepo(cwd));
     const from = git ? await capture(cwd, `${threadId}/${turn}-before`) : null;
     const sink = this.sink(threadId, turn, abort.signal, agentId, planning);
     let failed = false;
@@ -491,10 +496,12 @@ export class Runtime {
 
     t = store.thread(threadId);
     this.logUsage(t, agentId, before, seconds);
-    const asking = store.timeline(threadId).some((x) => (x.kind === "proposal" || x.kind === "question" || x.kind === "approval") && x.state === "asking");
+    // A side chat starts with a copy of its session's timeline; only its own turns can wait on you.
+    const asking = store.timeline(threadId).some((x) => x.turn > (t.sideFrom ?? 0) && (x.kind === "proposal" || x.kind === "question" || x.kind === "approval") && x.state === "asking");
     const limited = sink.limited();
     t = store.patchThread(threadId, { status: limited ? "limited" : errored ? "error" : asking ? "waiting" : "done", limit: limited ?? undefined, forkSession: undefined, toReview: this.toReview(threadId), unread: true });
-    if (!stopped) {
+    // You're looking at a side chat when you ask in it, so it doesn't notify.
+    if (!stopped && !t.sideOf) {
       const who = this.resolve(t, agentId).agent.name;
       const kind = errored || limited ? "error" : asking ? "waiting" : "done";
       store.emit({ type: "notify", threadId, kind, title: limited ? `${who} hit its usage limit` : errored ? `${who} ran into a problem` : asking ? `${who} needs you` : `${who} is done`, body: limited?.until ? `${t.title}. It resets ${new Date(limited.until).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}.` : t.title });
@@ -1101,6 +1108,12 @@ export class Runtime {
     };
   }
 }
+
+/** What a side chat is told on top of its soul: the session goes on without it, and it only reads. */
+const SIDE_RULES = [
+  "This is a side chat beside a Liner Code session. The user is asking you about that session on the side while it carries on: what was done, why, how the code works, what to try next.",
+  "Answer directly. Read files and search the project as you need, but don't edit anything or plan changes to make: nothing said here goes back into the session.",
+].join("\n");
 
 /**
   What a lead is told on top of its soul. Not every message is a task: it answers talk and

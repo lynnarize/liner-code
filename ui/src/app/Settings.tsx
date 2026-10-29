@@ -29,7 +29,7 @@ import { Badge, Disc, Kbd, ModelTag, Pop } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
-import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type Look, type TrayGlass } from "./look";
+import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type Look, type TrayGlass } from "./look";
 
 const isMac = /Mac/.test(navigator.platform);
 
@@ -40,13 +40,19 @@ const ACCENTS = [
   { id: "orange", color: "oklch(0.68 0.17 50)" },
   { id: "rose", color: "oklch(0.62 0.2 12)" },
 ];
+/** The main buttons' colours (look.ts): red, the accent you picked, or the tray's ink. */
+const ACTIONS: { id: ActionColour; label: string; color: string }[] = [
+  { id: "red", label: "Red", color: "oklch(0.6 0.215 27)" },
+  { id: "accent", label: "The accent", color: "var(--l-accent)" },
+  { id: "ink", label: "Ink, like the tray", color: "var(--lc-ctl)" },
+];
 
 export type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "team" | "safety" | "projects" | "git" | "archive" | "updates" | "data";
 
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "How new sessions start, and what Enter does while an agent works.", words: "work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the session tray's glass, and a picture behind the session.", words: "theme dark light accent color glass tint clear solid tray rail background wallpaper picture image photo blur" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the session tray's glass, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid tray rail background wallpaper picture image photo blur main button buttons action send primary red" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: "The agent tools on this Mac, how they sign in, and the keys they bill to.", words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai" },
@@ -487,7 +493,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
         <Field title="Mode" note={held} below>
           <ModeCards value={own ? "" : look.theme} onPick={(theme) => set({ theme, custom: undefined })} />
         </Field>
-        <Field title="Accent" note={held ?? "One colour, spent on selection, focus and the main action."}>
+        <Field title="Accent" note={held ?? "One colour, spent on selection and focus."}>
           <span className="lc-swatches" role="radiogroup" aria-label="Accent">
             {ACCENTS.map((a) => (
               <button key={a.id} type="button" role="radio" aria-checked={!own && look.accent === a.id} aria-label={a.id} title={a.id} className="lc-swatch l-focus" data-on={(!own && look.accent === a.id) || undefined} style={{ background: a.color }} onClick={() => set({ accent: a.id, custom: undefined })} />
@@ -501,6 +507,25 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           <label className="lc-btn lc-st-colour l-focus-within" data-kind="secondary" data-size="sm">
             <input type="color" aria-label="A colour of your own" value={look.accentColor ?? "#2f7ae5"} onChange={(e) => set({ accent: "own", accentColor: e.target.value, custom: undefined })} />
             {look.accentColor && <span className="lc-st-colour-dot" style={{ background: look.accentColor }} aria-hidden />}
+            Choose a colour
+          </label>
+        </Field>
+      </Group>
+      <Group title="Main buttons" note="The most important button wherever it is: Send, Commit and push in the session tray, a card's main button.">
+        <Field title="Colour">
+          <span className="lc-swatches" role="radiogroup" aria-label="Main buttons">
+            {ACTIONS.map((a) => (
+              <button key={a.id} type="button" role="radio" aria-checked={look.action === a.id} aria-label={a.label} title={a.label} className="lc-swatch l-focus" data-on={look.action === a.id || undefined} style={{ background: a.color }} onClick={() => set({ action: a.id })} />
+            ))}
+            {look.actionColor && (
+              <button type="button" role="radio" aria-checked={look.action === "own"} aria-label="Your own colour" title="Your own colour" className="lc-swatch l-focus" data-on={look.action === "own" || undefined} style={{ background: look.actionColor }} onClick={() => set({ action: "own" })} />
+            )}
+          </span>
+        </Field>
+        <Field title="A colour of your own" note="Liner keeps the text on it easy to read.">
+          <label className="lc-btn lc-st-colour l-focus-within" data-kind="secondary" data-size="sm">
+            <input type="color" aria-label="A colour of your own for the main buttons" value={look.actionColor ?? "#e5484d"} onChange={(e) => set({ action: "own", actionColor: e.target.value })} />
+            {look.actionColor && <span className="lc-st-colour-dot" style={{ background: look.actionColor }} aria-hidden />}
             Choose a colour
           </label>
         </Field>

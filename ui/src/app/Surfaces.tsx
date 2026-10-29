@@ -5,7 +5,7 @@
   switch, so a terminal keeps running and a page stays loaded. The panel sits beside the
   session, fills the window, or docks under the thread.
 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Item, Thread } from "@contracts";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
@@ -13,12 +13,13 @@ import { checkpointsOf, plural, sumLines } from "./model";
 import { Kbd, Lines } from "./ui";
 import "./surfaces.css";
 
-export type SurfaceId = "session" | "changes" | "agents" | "files" | "terminal" | "browser" | "pr" | "linked" | "device" | "routines";
+export type SurfaceId = "session" | "side" | "changes" | "agents" | "files" | "terminal" | "browser" | "pr" | "linked" | "device" | "routines";
 /** A tab: a surface, or one routine run (`run:<id>`). */
 export type Tab = SurfaceId | `run:${string}`;
 
 export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { size?: number }) => ReactNode }[] = [
   { id: "session", label: "Session", key: "I", icon: I.details },
+  { id: "side", label: "Side chat", key: "C", icon: I.comment },
   { id: "browser", label: "Browser", key: "B", icon: I.globe },
   { id: "terminal", label: "Terminal", key: "T", icon: I.terminal },
   { id: "files", label: "Files", key: "F", icon: I.file },
@@ -39,6 +40,85 @@ export const initialPanel = (): PanelState => ({ open: false, tabs: ["session", 
 const kept = new Map<string, PanelState>();
 export const keptPanel = (threadId: string) => kept.get(threadId) ?? initialPanel();
 export const keepPanel = (threadId: string, p: PanelState) => void kept.set(threadId, p);
+
+/*
+  The panel's width beside the session, the same in every session: about a third of the paper
+  until you drag its edge (app.css). The panel keeps PANE_MIN, and the thread THREAD_MIN, so its
+  composer keeps its controls.
+*/
+const WIDTH_KEY = "lc:panel-w";
+const PANE_MIN = 320;
+const THREAD_MIN = 420;
+const readWidth = () => {
+  try {
+    const n = Number(localStorage.getItem(WIDTH_KEY));
+    return n >= PANE_MIN ? n : null;
+  } catch {
+    return null;
+  }
+};
+export const usePanelWidth = () => useState<number | null>(readWidth);
+
+/** The edge between the session and the panel: drag it, or use the arrow keys; double-click puts it back. */
+export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HTMLElement | null>; width: number | null; onWidth: (w: number | null) => void; onDrag: (on: boolean) => void }) {
+  // While dragging: where the pointer and the width started (the edge moves with the pointer, from
+  // wherever on the grip you took it), and the width it last asked for.
+  const start = useRef<{ x: number; w: number } | null>(null);
+  const last = useRef<number | null>(null);
+  const fit = (w: number) => Math.round(Math.max(PANE_MIN, Math.min(w, (body.current?.clientWidth ?? w + THREAD_MIN) - THREAD_MIN)));
+  // The width as it shows: a kept one can be more than this window leaves room for.
+  const shown = () => body.current?.querySelector<HTMLElement>(":scope > .lc-panel")?.offsetWidth ?? width ?? PANE_MIN;
+  const keep = (w: number | null) => {
+    onWidth(w);
+    try {
+      if (w === null) localStorage.removeItem(WIDTH_KEY);
+      else localStorage.setItem(WIDTH_KEY, String(w));
+    } catch {
+      // storage is off: it lasts while the app is open
+    }
+  };
+  // Ends on the last width the pointer reached: losing the capture says nothing about where it was.
+  const end = () => {
+    if (start.current === null) return;
+    if (last.current !== null) keep(last.current);
+    start.current = null;
+    last.current = null;
+    onDrag(false);
+  };
+  return (
+    <div
+      className="lc-grip"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="The panel's width"
+      aria-valuenow={Math.round(shown())}
+      aria-valuemin={PANE_MIN}
+      tabIndex={0}
+      title="Drag to resize · double-click to put it back"
+      onPointerDown={(e) => {
+        if (e.button !== 0 || !body.current) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        start.current = { x: e.clientX, w: shown() };
+        onDrag(true);
+      }}
+      onPointerMove={(e) => {
+        if (start.current === null) return;
+        last.current = fit(start.current.w + start.current.x - e.clientX);
+        onWidth(last.current);
+      }}
+      onPointerUp={end}
+      onLostPointerCapture={end}
+      onDoubleClick={() => keep(null)}
+      onKeyDown={(e) => {
+        const step = e.key === "ArrowLeft" ? 24 : e.key === "ArrowRight" ? -24 : 0;
+        if (!step) return;
+        e.preventDefault();
+        keep(fit(shown() + step));
+      }}
+    />
+  );
+}
 
 /** Opens a tab (adding it when it isn't there yet) and shows the panel. */
 export const openTab = (p: PanelState, tab: Tab): PanelState => ({ ...p, open: true, picking: false, tab, tabs: p.tabs.includes(tab) ? p.tabs : [...p.tabs, tab] });
@@ -176,6 +256,7 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
     routines: routines.length ? `${on} on${waits ? `, ${waits} ${waits === 1 ? "waits" : "wait"} for you` : ""}` : "None yet",
     agents: "Who works here, and on what",
     session: "Where it runs, its context, what changed",
+    side: "Ask about it without stopping it",
   };
 
   return (

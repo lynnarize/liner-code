@@ -272,7 +272,8 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     e.preventDefault();
   };
 
-  const row = (t: Thread, bucket: Bucket, forks?: { n: number; open: boolean; toggle: () => void }) => {
+  // Under its project's own header a row doesn't name the project again; in Pinned, your groups and the shelves it does.
+  const row = (t: Thread, bucket: Bucket, forks?: { n: number; open: boolean; toggle: () => void }, inProject = false) => {
     const project = projects.find((p) => p.id === t.projectId);
     const who = agentOf(t.agent, agents, providers).name;
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
@@ -306,32 +307,31 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             <StatusMark t={t} bucket={bucket} />
           </span>
           <span className="lc-sb-t">
-            <span className="lc-sb-pj">
-              <I.folder size={12} />
-              <em>{project?.name ?? "No project"}</em>
+            <span className="lc-sb-h">
+              {renaming === t.id ? (
+                <input
+                  className="lc-sb-rename"
+                  defaultValue={t.title}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") setRenaming(null);
+                    e.stopPropagation();
+                  }}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v && v !== t.title) void rpc("thread.update", { id: t.id, title: v });
+                    setRenaming(null);
+                  }}
+                />
+              ) : (
+                <b>{t.title}</b>
+              )}
               <span className="lc-sb-time">{ago(t.updatedAt, now)}</span>
             </span>
-            {renaming === t.id ? (
-              <input
-                className="lc-sb-rename"
-                defaultValue={t.title}
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  if (e.key === "Escape") setRenaming(null);
-                  e.stopPropagation();
-                }}
-                onBlur={(e) => {
-                  const v = e.target.value.trim();
-                  if (v && v !== t.title) void rpc("thread.update", { id: t.id, title: v });
-                  setRenaming(null);
-                }}
-              />
-            ) : (
-              <b>{t.title}</b>
-            )}
             <span className="lc-sb-s" data-warn={line.warn || undefined}>
+              {!inProject && <span className="lc-sb-pj">{project?.name ?? "No project"} · </span>}
               {/* The line morphs from one state to the next: shared letters slide, the rest come into focus. */}
               <TextMorph>{line.text}</TextMorph>
             </span>
@@ -400,7 +400,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     const shut = shutForks.includes(t.id);
     return (
       <Fragment key={t.id}>
-        {row(t, place(t), kids.length ? { n: kids.length, open: !shut, toggle: () => toggleForks(t.id) } : undefined)}
+        {row(t, place(t), kids.length ? { n: kids.length, open: !shut, toggle: () => toggleForks(t.id) } : undefined, true)}
         {kids.length > 0 && !shut && <div className="lc-sb-kids">{kids.map(branch)}</div>}
       </Fragment>
     );

@@ -343,6 +343,13 @@ export type Thread = {
   leadSession?: string;
   /** A fork's first turn: the parent's provider session it continues from. */
   forkSession?: string;
+  /**
+    A side chat beside the session `sideOf`: a fork of it that only reads and answers, so you can
+    ask about the session without stopping it or adding to it. It knows the session up to turn
+    `sideFrom`; its own turns come after. It never shows in the sidebar.
+  */
+  sideOf?: string;
+  sideFrom?: number;
   turns: number;
   usage: Usage;
   /** Where the spending cap stops this session now: the cap, plus another cap's worth each time you go on past it. */
@@ -818,6 +825,8 @@ export type Rpc = {
   /** Rewinds to just before a message you sent: the turns from there come off, and with `files`, so do their changes. */
   "thread.rewind": [{ threadId: string; itemId: string; files: boolean }, { turn: number; files: number }];
   "thread.remove": [{ id: string }, null];
+  /** The session's side chat, started now if it has none; `fresh` starts it again from where the session is. */
+  "thread.side": [{ id: string; fresh?: boolean }, Thread];
   "thread.stop": [{ id: string }, null];
   "approval.answer": [{ threadId: string; itemId: string; allow: boolean; reason?: string; always?: boolean }, null];
   "question.answer": [{ threadId: string; itemId: string; answers?: Record<string, string> }, null];

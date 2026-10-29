@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PR_TEST_TOOL, type Item, type ProviderInfo, type AgentProfile } from "@contracts";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
-import { rpc, useEngine } from "./engine";
+import { rpc, threadOf, useEngine } from "./engine";
 import { I, ModelMark, Rays, ToolIcon } from "./icons";
 import { PageCard } from "./Page";
 import { PrChatCard } from "./Pr";
@@ -514,7 +514,7 @@ const planOf = (title: string, steps: Step[], coder: string) => `${title}\n\n${s
 
 /** A plan to approve: who does each step, what it should cost, and one press to start. Edit steps reorders, drops or hands a step to someone else. */
 function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, { kind: "proposal" }>; who: string }) {
-  const thread = useEngine((s) => s.threads.find((t) => t.id === threadId));
+  const thread = useEngine((s) => threadOf(s, threadId));
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const [note, setNote] = useState("");
@@ -692,7 +692,7 @@ const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
 /** The tool's plan ran out mid-turn. It says which window and when it reopens; Resume carries on. */
 function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kind: "limit" }> }) {
-  const status = useEngine((s) => s.threads.find((t) => t.id === threadId)?.status);
+  const status = useEngine((s) => threadOf(s, threadId)?.status);
   const providers = useEngine((s) => s.providers);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -729,7 +729,7 @@ function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
   after come off, and with Revert files too, so do their changes. Then the edited message goes.
 */
 function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<Item, { kind: "user" }>; fresh: boolean; onReview: (checkpointId: string, path?: string) => void }) {
-  const running = useEngine((s) => s.threads.find((t) => t.id === threadId)?.status === "running");
+  const running = useEngine((s) => threadOf(s, threadId)?.status === "running");
   const all = useEngine((s) => s.items[threadId]);
   const [edit, setEdit] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

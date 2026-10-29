@@ -82,7 +82,7 @@ async function listModels(env: NodeJS.ProcessEnv, scratch: string): Promise<Mode
 }
 
 const MODE: Record<Access, PermissionMode> = { read: "plan", ask: "default", edits: "acceptEdits", auto: "auto", full: "acceptEdits" };
-/** A lead reads and plans; these stay with the coder. */
+/** A lead reads and plans, and a side chat reads and answers; these stay with the coder. */
 const LEAD_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
 
 /** What kind of thing a Claude Code tool does, for its icon and risk. */
@@ -198,8 +198,8 @@ class ClaudeSession implements ProviderSession {
       // Ultracode: standing multi-agent workflows on top of extra high effort.
       settings: o.effort === "ultracode" ? { ultracode: true } : undefined,
       thinking: { type: "adaptive", display: "summarized" },
-      permissionMode: o.planning ? "default" : MODE[this.access],
-      disallowedTools: o.planning ? LEAD_DENIED : undefined,
+      permissionMode: o.planning || o.side ? "default" : MODE[this.access],
+      disallowedTools: o.planning || o.side ? LEAD_DENIED : undefined,
       includePartialMessages: true,
       agents: o.subagents && Object.keys(o.subagents).length ? o.subagents : undefined,
       resume: o.resume,

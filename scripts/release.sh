@@ -54,12 +54,29 @@ ditto -c -k --sequesterRsrc --keepParent "$ROOT/build/Liner Code.app" "$ZIP"
 ( cd "$OUT" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
 
 echo "→ Making the disk image"
+# A writable image first, so Finder can lay out its window before it's compressed: the app on the
+# left, Applications on the right, and a picture with the arrow and what to do the first time
+# macOS won't open it (make-dmg-background.swift, dmg-layout.applescript). The volume is mounted
+# under its own name, or the picture's link in the layout would point at another.
 IMG="$ROOT/build/dmg"
-rm -rf "$IMG" "$DMG" && mkdir -p "$IMG"
+RW="$ROOT/build/dmg-rw.dmg"
+VOL="Liner Code $VERSION"
+rm -rf "$IMG" "$RW" "$DMG" "$ROOT/build/dmg-bg" && mkdir -p "$IMG/.background"
 ditto "$ROOT/build/Liner Code.app" "$IMG/Liner Code.app"
 ln -s /Applications "$IMG/Applications"
-hdiutil create -quiet -volname "Liner Code $VERSION" -srcfolder "$IMG" -fs HFS+ -format UDZO -ov "$DMG"
-rm -rf "$IMG"
+swift scripts/make-dmg-background.swift "$ROOT/build/dmg-bg" >/dev/null
+tiffutil -cathidpicheck "$ROOT/build/dmg-bg/background.png" "$ROOT/build/dmg-bg/background@2x.png" -out "$IMG/.background/background.tiff" >/dev/null
+if [[ -d "/Volumes/$VOL" ]]; then hdiutil detach -quiet "/Volumes/$VOL"; fi
+hdiutil create -quiet -volname "$VOL" -srcfolder "$IMG" -size "$(($(du -sm "$IMG" | cut -f1) + 20))m" -fs HFS+ -format UDRW -ov "$RW"
+MNT="$(hdiutil attach -readwrite -noverify -noautoopen "$RW" | awk -F'\t' '/Apple_HFS/ {print $NF}')"
+if ! osascript scripts/dmg-layout.applescript "$(basename "$MNT")" >/dev/null; then
+  echo "  (Finder couldn't lay out the window, so it opens as a plain folder)"
+fi
+rm -rf "$MNT/.fseventsd"
+sync
+hdiutil detach -quiet "$MNT"
+hdiutil convert -quiet "$RW" -format UDZO -imagekey zlib-level=9 -o "$DMG"
+rm -rf "$IMG" "$RW" "$ROOT/build/dmg-bg"
 if [[ -n "${LINER_SIGN_IDENTITY:-}" ]]; then codesign --sign "$LINER_SIGN_IDENTITY" "$DMG"; fi
 ( cd "$OUT" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
 

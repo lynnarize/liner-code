@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.1.5 (alpha), 2026-10-29
+
+**Update from 0.1.4 if you have it.** Liner Code does it by itself (Restart to update), or
+download the new DMG.
+
+### New
+
+- **Side chat** (⌘⇧C, or the top of the session tray): ask about a session beside it without
+  stopping it or adding to it. Who you talk to in the session answers from the conversation so
+  far, reads what it needs and changes nothing; a command still asks first. Catch up starts it
+  again from where the session is now.
+- **The panel beside a session is yours to size.** Drag its edge, or focus it and use the arrow
+  keys; double-click puts it back. It opens at about a third of the session now, and the width
+  you pick holds in every session.
+- **Main buttons in one colour, red to start.** Send, Commit and push in the session tray, and a
+  card's main button. Settings › Appearance › Main buttons sets it: red, the accent, ink like
+  the tray, or a colour of your own.
+
+### Changed
+
+- A sidebar row is two lines: the title with how long ago, then where it stands. Under its
+  project it doesn't name the project again; in Pinned, your groups and the shelves the second
+  line starts with it. Pin, snooze and settle show where the time was.
+- Home's effort and access menus open downward, under the composer, and scroll in the room
+  there rather than covering the question.
+- Tiles inside the composer's and the session tray's pills are round, like the pills.
+- A narrow composer lets the word "effort" and the model marks go, then shortens the name;
+  narrower still, its controls take two lines.
+- The disk image opens on a window that says what to drag where, with an arrow from Liner Code
+  to Applications, and how to open it the first time: System Settings › Privacy & Security,
+  Open Anyway.
+
+### Fixed
+
+- In Agentic features, the way you picked had a square blue ring round its rounded card. The
+  ring follows the card's corners again.
+- Liner Code's name and the sidebar button beside it, and Settings' name, sat 6px under the
+  traffic lights. They sit on them again.
+- With the sidebar hidden, the top bar's row sits on the traffic lights too (in full screen,
+  where they're hidden, it stays where it was).
+- A menu on Home that had more to show snapped back to its top as you scrolled, and scrolling in
+  it, or beside it, slid the Desk in under it.
+- In a narrow window the composer's controls ran over each other.
+- The highlight on the effort and agent pickers met the pill's edge instead of sitting inside it.
+
 ## 0.1.4 (alpha), 2026-10-29
 
 **Update from 0.1.2 if you have it.** Liner Code does it by itself (Restart to update), or

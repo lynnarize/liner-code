@@ -20,6 +20,18 @@
   --lc-warn-dot: var(--l-warn);
   --lc-add: color-mix(in oklab, var(--l-ok) 9%, transparent);
   --lc-del: color-mix(in oklab, var(--l-danger) 8%, transparent);
+  /* The action colour: the most important button wherever it is (Send, Commit and push, a card's
+     main button). Red unless Appearance › Main buttons says otherwise; your own is set on the page. */
+  --lc-act: oklch(0.6 0.215 27);
+  --lc-act-ink: #fff;
+}
+html[data-action="accent"] {
+  --lc-act: var(--l-accent);
+  --lc-act-ink: var(--l-accent-ink, #fff);
+}
+html[data-action="ink"] {
+  --lc-act: var(--lc-ctl);
+  --lc-act-ink: var(--lc-ctl-ink);
 }
 
 /*
@@ -292,8 +304,15 @@ html[data-shell="electron"] :is(.l-pop, .lc-layer, dialog, [popover], [role="dia
 html[data-shell="electron"] body > :not(#root) {
   -webkit-app-region: no-drag;
 }
-/* With the sidebar away, the paper's top bar starts after the traffic lights. */
+/*
+  With the sidebar away, the paper's top bar starts after the traffic lights, and its row moves up
+  by the window's gap so its centre sits on theirs; the bar keeps its height. In full screen the
+  lights are hidden (their x is 0), so the cap is 0 and the row stays put.
+*/
 html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
+  --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 26px)), min(8px, var(--lc-lights-x, 70px)));
+  padding-top: calc(8px - var(--lc-up));
+  padding-bottom: calc(8px + var(--lc-up));
   padding-left: max(20px, calc(var(--lc-lights-x, 70px) + 4px));
 }
 
@@ -511,8 +530,8 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   transition: stroke-dashoffset 700ms var(--l-spring-smooth);
 }
 
-/* Buttons on the ground, outside a tray: pills. Accent for the main action, ink (the tray's
-   control) once on a page, quiet (a well) for the rest, ghost, and danger as text. */
+/* Buttons on the ground, outside a tray: pills. The action colour for the main action ("accent"),
+   ink (the tray's control) once on a page, quiet (a well) for the rest, ghost, and danger as text. */
 .lc-btn {
   display: inline-flex;
   flex: none;
@@ -547,8 +566,8 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   color: var(--lc-ctl-ink);
 }
 .lc-btn[data-kind="accent"] {
-  background: var(--l-accent-fill);
-  color: var(--l-accent-ink);
+  background: var(--lc-act);
+  color: var(--lc-act-ink);
 }
 .lc-btn[data-kind="plain"],
 .lc-btn[data-kind="secondary"] {
@@ -885,9 +904,10 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   box-sizing: border-box;
   padding: 10px 8px 6px 12px;
 }
-/* The head row's centre sits on the traffic lights' centre, which the shell reports. */
+/* The head row's centre sits on the traffic lights' centre, which the shell reports from the
+   window's top: the window's gap is above the sidebar already. */
 html[data-native="mac"] .lc-sb {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - 17px));
+  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
 }
 .lc-sb-head {
   display: flex;
@@ -1222,12 +1242,17 @@ html[data-native="mac"] .lc-sb-head {
     transform: translateY(4px);
   }
 }
+/*
+  A session row, two lines: its mark and title with how long ago on the right, then where it
+  stands. Under its project's header that's all; elsewhere the second line starts with the
+  project. On hover the time gives its place to pin, snooze and settle.
+*/
 .lc-sb-pick {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
   align-items: start;
   column-gap: 10px;
-  padding: 6px 8px 7px 10px;
+  padding: 7px 8px 8px 10px;
   border-radius: 12px;
   outline: none;
   cursor: pointer;
@@ -1237,41 +1262,27 @@ html[data-native="mac"] .lc-sb-head {
     background: var(--l-wash-2);
   }
 }
+/* The mark sits on the title's line. */
 .lc-sb-mk {
   display: flex;
-  margin-top: 19px;
+  align-items: center;
+  height: 19px;
 }
 .lc-sb-t {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
-.lc-sb-pj {
+.lc-sb-h {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   min-width: 0;
-  height: 16px;
-  font-size: 11.5px;
-  line-height: 16px;
-  color: var(--l-ink-3);
-  white-space: nowrap;
+  height: 19px;
 }
-.lc-sb-pj > em {
-  overflow: hidden;
-  font-style: normal;
-  text-overflow: ellipsis;
-}
-.lc-sb-pj > svg {
-  color: var(--l-ink-4);
-}
-.lc-sb-time {
-  margin-left: auto;
-  padding-left: 8px;
-  font-variant-numeric: tabular-nums;
-  transition: opacity 140ms ease;
-}
-.lc-sb-t > b {
+.lc-sb-h > b {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   font-size: 13px;
   font-weight: 400;
@@ -1279,10 +1290,30 @@ html[data-native="mac"] .lc-sb-head {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-sb-row[aria-current] .lc-sb-t > b {
+.lc-sb-row[aria-current] .lc-sb-h > b {
   font-weight: 500;
 }
+.lc-sb-time {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+/* While the actions show, the title stops short of them and the time steps out. */
+.lc-sb-row:is(:hover, :focus-within) .lc-sb-h,
+.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h {
+  padding-right: 72px;
+}
+.lc-sb-row:is(:hover, :focus-within) .lc-sb-time,
+.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-time {
+  display: none;
+}
+.lc-sb-pj {
+  color: var(--l-ink-2);
+}
 .lc-sb-rename {
+  flex: 1;
+  min-width: 0;
   height: 20px;
   padding: 0 4px;
   margin: 0 -4px;
@@ -1305,23 +1336,20 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-s[data-warn] {
   color: var(--l-warn-text);
 }
+/* On the title's line, where the time was. They fade in, and go at once, as the time comes back. */
 .lc-sb-acts {
   position: absolute;
-  top: 3px;
-  right: 4px;
+  top: 5px;
+  right: 6px;
   display: flex;
   gap: 1px;
   opacity: 0;
-  transition: opacity 140ms ease;
 }
 .lc-sb-row:hover .lc-sb-acts,
 .lc-sb-row:focus-within .lc-sb-acts,
 .lc-sb-acts:has([data-open]) {
   opacity: 1;
-}
-.lc-sb-row:hover .lc-sb-time,
-.lc-sb-row:focus-within .lc-sb-time {
-  opacity: 0;
+  transition: opacity 140ms ease;
 }
 .lc-sb-a,
 .lc-sb-acts .lc-pick {
@@ -1708,8 +1736,55 @@ html[data-native="mac"] .lc-sb-head {
   min-height: 0;
   transition: grid-template-columns 520ms var(--l-spring-smooth);
 }
+/* The panel: as wide as you dragged it, else about a third of the paper; the thread keeps 420px
+   (Surfaces.tsx, THREAD_MIN), so its composer keeps its controls. */
 .lc-session[data-panel] .lc-body {
-  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.05fr);
+  grid-template-columns: minmax(420px, 1fr) min(var(--lc-panel-w, clamp(340px, 36%, 520px)), calc(100% - 420px));
+}
+/* The panel keeps its cell, so the grip on its edge can share it. The grip stays on the panel's
+   side of the edge: the thread's overlay scrollbar runs down the other side, and a pointer held
+   on it while dragging left that scrollbar stuck open, wide and with its track. */
+.lc-session:not([data-dock="bottom"]) .lc-body > .lc-panel {
+  grid-area: 1 / 2;
+}
+.lc-grip {
+  position: relative;
+  z-index: 5;
+  grid-area: 1 / 2;
+  justify-self: start;
+  width: 10px;
+  outline: none;
+  cursor: col-resize;
+  touch-action: none;
+}
+/* A hairline shows where it holds, on hover, while dragging, and from the keyboard. */
+.lc-grip::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--l-accent);
+  opacity: 0;
+  transition: opacity 160ms ease 80ms;
+}
+.lc-grip:hover::after,
+.lc-grip:focus-visible::after,
+.lc-session[data-resizing] .lc-grip::after {
+  opacity: 1;
+}
+.lc-session[data-resizing] {
+  cursor: col-resize;
+  user-select: none;
+}
+.lc-session[data-resizing] .lc-body {
+  transition: none;
+}
+/* A page in the Browser would take the pointer while it crosses. */
+.lc-session[data-resizing] .lc-panel {
+  pointer-events: none;
 }
 /* The session decides by its own width (the sidebar and Settings take part of the window): when the
    thread and the panel can't both fit, the panel takes over the paper rather than squeezing either. */
@@ -1719,6 +1794,9 @@ html[data-native="mac"] .lc-sb-head {
 @container lc-session (max-width: 700px) {
   .lc-session[data-panel] .lc-body {
     grid-template-columns: 0px minmax(0, 1fr);
+  }
+  .lc-grip {
+    display: none;
   }
   .lc-session[data-panel] .lc-thread {
     opacity: 0;
@@ -1812,6 +1890,14 @@ html[data-tray="solid"] .lc-rail {
 .lc-rail-seg[data-solo] {
   padding: 0;
 }
+/* Shipping is the tray's main action, so its segment wears the action colour. */
+.lc-rail-seg[data-act] {
+  background: var(--lc-act);
+  color: var(--lc-act-ink);
+}
+.lc-rail-seg[data-act] .lc-rail-b {
+  color: var(--lc-act-ink);
+}
 .lc-rail-pop {
   display: grid;
 }
@@ -1835,7 +1921,7 @@ html[data-tray="solid"] .lc-rail {
 .lc-rail-seg[data-solo] .lc-rail-b {
   height: 44px;
 }
-/* The tile: 32px, radius 10. Faint on hover, ctl-tile when open; it never overshoots. */
+/* The tile: 32px and round, like the pill it sits in. Faint on hover, ctl-tile when open; it never overshoots. */
 .lc-rail-b::before {
   content: "";
   position: absolute;
@@ -1844,7 +1930,7 @@ html[data-tray="solid"] .lc-rail {
   z-index: -1;
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--lc-ctl-tile);
   opacity: 0;
   translate: 0 -50%;
@@ -1867,6 +1953,10 @@ html[data-tray="solid"] .lc-rail {
   opacity: 1;
   scale: 1;
   background: var(--lc-ctl-tile);
+}
+.lc-rail-seg[data-act] .lc-rail-b[aria-pressed="true"]::before,
+.lc-rail-seg[data-act] .lc-rail-b[data-open]::before {
+  background: oklch(1 0 0 / 0.22);
 }
 .lc-rail-b:disabled {
   opacity: 0.4;
@@ -1900,6 +1990,10 @@ html[data-tray="solid"] .lc-rail {
   line-height: 14px;
   text-align: center;
   animation: lc-count-in 320ms var(--l-ease-enter) backwards;
+}
+.lc-rail-seg[data-act] .lc-rail-count {
+  background: var(--lc-act-ink);
+  color: var(--lc-act);
 }
 @keyframes lc-count-in {
   from {
@@ -2713,15 +2807,25 @@ html[data-tray="solid"] .lc-rail {
   background: var(--lc-ctl);
   color: var(--lc-ctl-ink);
 }
+/* A narrow composer takes room from the segment: the word "effort" and the who's model marks go
+   (below), then the who name gives way to an ellipsis while the effort level stays whole. What
+   still doesn't fit is cut at the segment's edge and each button's own, never drawn over the
+   controls beside it. */
 .lc-seg {
   display: inline-flex;
   flex-shrink: 1;
   align-items: center;
   min-width: 0;
   padding: 0 4px;
+  overflow: hidden;
 }
 .lc-seg > .lc-pop {
+  display: flex;
+  flex-shrink: 0;
   min-width: 0;
+}
+.lc-seg > .lc-pop:has(.lc-who) {
+  flex-shrink: 1;
 }
 .lc-seg-b,
 .lc-ctl-pill {
@@ -2746,9 +2850,15 @@ html[data-tray="solid"] .lc-rail {
   background: var(--lc-ctl);
   color: var(--lc-ctl-ink);
 }
+/* In a segment, a button's highlight sits 4px in all round, so its round ends follow the
+   segment's instead of meeting them; the who button's tile sits 6px in, like the lock's. */
+.lc-seg-b {
+  height: 32px;
+  overflow: hidden;
+}
 .lc-seg-b.lc-who {
   max-width: 260px;
-  padding-left: 6px;
+  padding-left: 2px;
 }
 .lc-seg-b > svg:last-child,
 .lc-ctl-pill > svg:last-child {
@@ -2774,7 +2884,7 @@ html[data-tray="solid"] .lc-rail {
 .lc-seg .lc-ring[data-warn] {
   color: var(--l-warn);
 }
-/* The open choice's icon (and an agent's disc) rests on a tile. */
+/* The open choice's icon (and an agent's disc) rests on a tile, round like the pill it sits in. */
 .lc-ctl-tile,
 .lc-card-row .lc-way-chip-i {
   display: grid;
@@ -2782,7 +2892,7 @@ html[data-tray="solid"] .lc-rail {
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: 50%;
   background: var(--lc-ctl-tile);
   color: var(--lc-ctl-ink);
 }
@@ -2821,13 +2931,16 @@ html[data-tray="solid"] .lc-rail {
     box-shadow 240ms ease,
     transform 200ms var(--l-spring-snappy);
 }
+/* Send is the composer's main button: in the action colour, a shade deeper until there's
+   something to send, then lifted. */
 .lc-send {
-  color: var(--lc-ctl-ink-2);
+  background: color-mix(in oklab, var(--lc-act) 78%, var(--lc-ctl));
+  color: color-mix(in oklab, var(--lc-act-ink) 72%, transparent);
 }
 .lc-send[data-ready] {
-  background: var(--l-accent);
-  box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--l-accent) 55%, transparent);
-  color: var(--l-accent-ink, #fff);
+  background: var(--lc-act);
+  box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--lc-act) 55%, transparent);
+  color: var(--lc-act-ink);
 }
 .lc-send:disabled {
   cursor: default;
@@ -2860,16 +2973,18 @@ html[data-tray="solid"] .lc-rail {
 }
 @media (hover: hover) {
   .lc-ctl-round:hover,
-  .lc-ctl-pill:hover,
-  .lc-send:not([data-ready]):not(:disabled):hover {
+  .lc-ctl-pill:hover {
     background: var(--lc-ctl-hover);
+  }
+  .lc-send:not([data-ready]):not(:disabled):hover {
+    background: color-mix(in oklab, var(--lc-act) 88%, var(--lc-ctl));
   }
   .lc-seg-b:hover,
   .lc-seg-b[data-open] {
     background: oklch(1 0 0 / 0.08);
   }
   .lc-send[data-ready]:hover {
-    background: color-mix(in oklab, var(--l-accent) 88%, black);
+    background: color-mix(in oklab, var(--lc-act) 88%, black);
   }
   .lc-stop:hover {
     background: color-mix(in oklab, var(--l-danger) 88%, black);
@@ -2906,6 +3021,23 @@ html[data-tray="solid"] .lc-rail {
   }
   .lc-ctl-pill {
     padding-right: 8px;
+  }
+}
+@container lc-composer (max-width: 640px) {
+  .lc-who .lc-way-marks,
+  .lc-seg .lc-effort-word {
+    display: none;
+  }
+}
+/* Narrower still (a session beside a wide panel), the segment takes a line of its own above the rest. */
+@container lc-composer (max-width: 380px) {
+  .lc-card-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .lc-card-row > .lc-seg {
+    order: -1;
+    flex: 1 1 100%;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -4550,7 +4682,7 @@ html[data-native="mac"] .lc-setup-top {
   animation: l-unblur 320ms var(--l-ease-out) backwards;
 }
 html[data-native="mac"] .lc-st-side {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - 17px));
+  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
 }
 /* Settings' name sits where Liner Code's does, in the same type; the way back is beside it. */
 .lc-st-head .lc-brand {
@@ -5077,7 +5209,7 @@ html[data-native="mac"] .lc-st-side {
   width: 26px;
   height: 10px;
   border-radius: 5px;
-  background: var(--l-accent);
+  background: var(--lc-act);
 }
 .lc-pv-tray {
   position: absolute;

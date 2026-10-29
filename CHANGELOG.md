@@ -28,6 +28,9 @@ download the new DMG.
 - Tiles inside the composer's and the session tray's pills are round, like the pills.
 - A narrow composer lets the word "effort" and the model marks go, then shortens the name;
   narrower still, its controls take two lines.
+- The disk image opens on a window that says what to drag where, with an arrow from Liner Code
+  to Applications, and how to open it the first time: System Settings › Privacy & Security,
+  Open Anyway.
 
 ### Fixed
 

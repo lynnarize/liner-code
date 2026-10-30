@@ -78,6 +78,10 @@ export const bridge = {
   snapshot(rect: { x: number; y: number; width: number; height: number }): Promise<string> {
     return call<string>("snapshot", rect);
   },
+  /** A local page drawn in a window nobody sees, as a PNG in base64: the Browser's, when it's out of sight. */
+  shotUrl(url: string, width: number, height: number): Promise<string> {
+    return call<string>("shotUrl", { url, width, height });
+  },
   openExternal(url: string) {
     if (isNative()) return void call("openExternal", { url }).catch(() => {});
     window.open(url, "_blank", "noopener");

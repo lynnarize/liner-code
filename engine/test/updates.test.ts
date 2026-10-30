@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { newerVersion } from "../../contracts/src/index.ts";
-import { pickAsset, repoName, teamIn, Updater, versionOf } from "../src/updates.ts";
+import { pickAsset, repoName, teamIn, Updater, versionOf, progressIn } from "../src/updates.ts";
 import { Store } from "../src/store.ts";
 
 test("versions: the first x.y.z of what a tool prints, compared part by part", () => {
@@ -220,4 +220,30 @@ test("a signed copy is pinned to its Team ID; ad-hoc and unsigned copies have no
   assert.equal(teamIn("Executable=/A.app/Contents/MacOS/A\nAuthority=Developer ID Application: Lin (AB12CD34EF)\nTeamIdentifier=AB12CD34EF\nSealed Resources version=2"), "AB12CD34EF");
   assert.equal(teamIn("Signature=adhoc\nTeamIdentifier=not set\n"), undefined);
   assert.equal(teamIn("code object is not signed at all"), undefined);
+});
+
+test("progress: a percentage or a size of a size, the last one printed, and the last line as the step", () => {
+  assert.deepEqual(progressIn("Checking for updates\nDownloading claude 2.1.312\r 12%\r 47%\r\x1b[2K 63.5%"), { progress: 0.635, step: "63.5%" });
+  assert.deepEqual(progressIn("Fetching 12.5 MB / 50 MB"), { progress: 0.25, step: "Fetching 12.5 MB / 50 MB" });
+  assert.deepEqual(progressIn("downloaded 512 KiB of 2 MiB"), { progress: 0.25, step: "downloaded 512 KiB of 2 MiB" });
+  assert.deepEqual(progressIn("npm notice\nchanged 1 package in 3s\n"), { progress: undefined, step: "changed 1 package in 3s" });
+  assert.equal(progressIn("").step, undefined);
+});
+
+test("progress: an updater's output shows while it runs, and is cleared when it's done", async () => {
+  const home = mkdtempSync(join(tmpdir(), "liner-up-"));
+  const bin = join(home, "bin");
+  mkdirSync(bin);
+  fakeTool(bin, "opencode", "1.0.0", `upgrade) echo "Downloading 1.2.0"; sleep 0.4; echo " 40%"; sleep 0.8; echo 1.2.0 > "$vf";;`);
+  const store = new Store(home);
+  const seen: { progress?: number; step?: string }[] = [];
+  store.on((e) => {
+    if (e.type === "updates" && e.updates.tools[0]?.state === "updating") seen.push({ progress: e.updates.tools[0].progress, step: e.updates.tools[0].step });
+  });
+  const up = new Updater(store, { PATH: `${bin}:/usr/bin:/bin` }, { working: () => 0, restartIdle: () => {} }, () => {});
+  (up as unknown as { tools: unknown[] }).tools = [{ id: "opencode", label: "OpenCode", current: "1.0.0", latest: "1.2.0", command: "opencode upgrade", state: "available" }];
+  up.updateTool("opencode");
+  await until(() => up.state.tools[0].state === "updated");
+  assert.ok(seen.some((s) => s.progress === 0.4 && s.step === "40%"), JSON.stringify(seen));
+  assert.deepEqual([up.state.tools[0].progress, up.state.tools[0].step], [undefined, undefined]);
 });

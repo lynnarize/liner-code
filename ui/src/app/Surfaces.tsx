@@ -196,7 +196,7 @@ export function PanelTabs({ state, onState, label }: { state: PanelState; onStat
 export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Thread; items: Item[]; agentName: string; onOpen: (s: SurfaceId) => void }) {
   const routines = useEngine((s) => s.routines);
   const runs = useEngine((s) => s.runs);
-  const [ports, setPorts] = useState<{ port: number; process: string }[] | null>(null);
+  const [ports, setPorts] = useState<{ port: number; owner: "session" | "project" | null; web: boolean }[] | null>(null);
   const [pr, setPr] = useState<string | null>(null);
   const [linked, setLinked] = useState<string | null>(null);
   const [device, setDevice] = useState<string | null>(null);
@@ -204,7 +204,7 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
 
   useEffect(() => {
     let live = true;
-    void rpc("ports.list", {}).then((p) => live && setPorts(p)).catch(() => live && setPorts([]));
+    void rpc("ports.list", { threadId: thread.id }).then((p) => live && setPorts(p)).catch(() => live && setPorts([]));
     void rpc("pr.status", { threadId: thread.id })
       .then((s) => live && setPr(s.pr ? `#${s.pr.number}, ${prLine(s.pr)}` : s.gh === "ready" ? (s.ahead ? `Open one for ${plural(s.ahead, "commit")}` : "Nothing to open yet") : ghLine(s.gh)))
       .catch(() => live && setPr("Not available"));
@@ -237,10 +237,10 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
   const files = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
   const on = routines.filter((r) => r.on).length;
   const waits = runs.filter((r) => r.status === "handed" && !r.test).length;
-  const dev = ports?.find((p) => /node|vite|next|bun|deno|python|ruby|php|astro|webpack/i.test(p.process)) ?? ports?.[0];
+  const dev = ports?.find((p) => p.owner && p.web);
 
   const note: Record<SurfaceId, ReactNode> = {
-    browser: ports === null ? "Looking for a dev server" : dev ? `localhost:${dev.port}` : "Nothing is listening yet",
+    browser: ports === null ? "Looking for a dev server" : dev ? `localhost:${dev.port}` : "Its dev server, or its HTML pages",
     terminal: `A shell in ${thread.worktree ? "its worktree" : "the project"}`,
     files: last ? `${plural(last.files.length, "file")} changed in turn ${last.turn}` : "The project's files",
     changes: files ? (

@@ -104,7 +104,7 @@ class DemoSession implements ProviderSession {
     let ran = true;
     if (this.o.access === "ask") {
       const a = await sink.approve(
-        { tool: "Bash", title: "Run npm test", description: "Runs the project's tests to check the change.", risk: "low", fields: [{ label: "Command", value: "npm test" }, { label: "Where", value: this.o.cwd }] },
+        { key: `${t}-4`, tool: "Bash", title: "Run npm test", description: "Runs the project's tests to check the change.", risk: "low", fields: [{ label: "Command", value: "npm test" }, { label: "Where", value: this.o.cwd }] },
         signal,
       );
       ran = a.allow;
@@ -159,12 +159,14 @@ class DemoSession implements ProviderSession {
       signal,
     ).catch(() => null);
     const pick = answers ? Object.values(answers)[0] : "Tomorrow's first high tide";
-    await stream((d) => sink.text(d, `${t}-a`), `Times are compared as strings, so after the last high tide it returns nothing. You picked: ${pick}. Here's the plan for the coder.`, signal);
-    void sink.propose(
-      "Wrap round to tomorrow's first high tide",
-      `## Wrap round to tomorrow's first high tide\n\n1. Fall back to the first high tide of the list when none is left today — src/tides.js\n2. Mark it as tomorrow so the label can say so — src/tides.js\n3. Add a test for a time after the last high tide — src/tides.test.js\n4. Run npm test`,
+    await stream((d) => sink.text(d, `${t}-a`), `Times are compared as strings, so after the last high tide it returns nothing. You picked: ${pick}. Here's the plan for the coder.\n\n`, signal);
+    // Handed over the way a real lead does it, in <plan> tags the turn turns into a card when it ends.
+    await stream(
+      (d) => sink.text(d, `${t}-a`),
+      `<plan title="Wrap round to tomorrow's first high tide">\n1. Fall back to the first high tide of the list when none is left today — src/tides.js\n2. Mark it as tomorrow so the label can say so — src/tides.js\n3. Add a test for a time after the last high tide — src/tides.test.js\n4. Run npm test\n</plan>`,
       signal,
-    ).catch(() => {});
+      90,
+    );
     sink.usage({ inputTokens: 900, outputTokens: 180, cacheReadTokens: 400, costUsd: 0, contextTokens: 4100, contextWindow: 200000 }, false);
   }
 

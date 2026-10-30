@@ -71,7 +71,7 @@ export function toolNotice(t: ToolUpdate): Notice | null {
         ? { ...base, title: `${t.latest} is waiting`, body: `It goes in as soon as the ${plural(t.busy, "session")} working on it ${t.busy === 1 ? "finishes" : "finish"}.`, action: details }
         : { ...base, title: `${t.latest} is next`, body: "It goes in after the update that's running now.", action: details };
     case "updating":
-      return { ...base, title: `Updating to ${t.latest}`, body: `Running ${t.command}, which takes a moment.`, action: details };
+      return { ...base, title: `Updating to ${t.latest}${t.progress !== undefined ? `, ${Math.round(t.progress * 100)}%` : ""}`, body: t.step ?? `Running ${t.command}, which takes a moment.`, action: details };
     case "updated":
       return { ...base, title: `Updated to ${t.current}`, body: `From ${t.from}. Sessions on it pick it up on their next turn.`, action: details };
     case "failed":

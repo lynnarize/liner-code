@@ -29,6 +29,32 @@ const APP_NAME = "Liner Code.app";
 /** The app's own package.json: the repo's root while developing, the staged one inside the app. */
 const PACKAGE = join(import.meta.dirname, "../../package.json");
 
+const SIZE: Record<string, number> = { b: 1, kb: 1e3, kib: 1024, mb: 1e6, mib: 1024 ** 2, gb: 1e9, gib: 1024 ** 3 };
+
+/**
+  How far an updater has got, from what it printed: its last line (colour codes and carriage-return
+  redraws taken out) as the step, and the last percentage or "12.5 MB / 40 MB" in it as progress.
+*/
+export function progressIn(text: string): { progress?: number; step?: string } {
+  const lines = text
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")
+    .split(/[\r\n]+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  let progress: number | undefined;
+  for (const l of lines) {
+    const bytes = /([\d.]+)\s*([kmg]i?b|b)\s*(?:\/|of)\s*([\d.]+)\s*([kmg]i?b|b)\b/i.exec(l);
+    const pct = [...l.matchAll(/(\d{1,3}(?:\.\d+)?)\s?%/g)].pop();
+    if (bytes) {
+      const got = Number(bytes[1]) * (SIZE[bytes[2].toLowerCase()] ?? 1);
+      const all = Number(bytes[3]) * (SIZE[bytes[4].toLowerCase()] ?? 1);
+      if (all > 0 && got <= all) progress = got / all;
+    } else if (pct && Number(pct[1]) <= 100) progress = Number(pct[1]) / 100;
+  }
+  const last = lines.at(-1);
+  return { progress, step: last ? (last.length > 90 ? `${last.slice(0, 89)}…` : last) : undefined };
+}
+
 /** "v0.2.0", "codex-cli 0.164.0" → [0, 2, 0]. */
 export function versionParts(s?: string) {
   const m = /(\d+)\.(\d+)\.(\d+)/.exec(s ?? "");
@@ -550,7 +576,7 @@ export class Updater {
     }
     this.wanted.delete(ready.id);
     this.running = ready.id;
-    Object.assign(ready, { state: "updating", busy: undefined, error: undefined });
+    Object.assign(ready, { state: "updating", busy: undefined, error: undefined, progress: undefined, step: undefined });
     this.emit();
     try {
       await this.runUpdate(ready);
@@ -575,8 +601,17 @@ export class Updater {
     const argv = spec.updater(path, real);
     if (!argv) return void Object.assign(t, { state: "failed", error: "Liner Code can't update this copy.", at: Date.now() });
     const before = t.current;
+    // What it prints goes to the progress bar as it comes, a few times a second at most.
+    let shown = 0;
+    let out = "";
+    const onOutput = (chunk: string) => {
+      out = (out + chunk).slice(-4000);
+      Object.assign(t, progressIn(out));
+      if (Date.now() - shown > 300) (shown = Date.now()), this.emit();
+    };
     // Its stdin is closed at once, so an updater that would stop to ask goes on (or fails) instead of hanging.
-    const r = await run(argv[0], argv.slice(1), { env: this.env, timeout: 15 * 60_000, input: "" });
+    const r = await run(argv[0], argv.slice(1), { env: this.env, timeout: 15 * 60_000, input: "", onOutput });
+    Object.assign(t, { progress: undefined, step: undefined });
     const now = versionOf((await run(path, ["--version"], { env: this.env, timeout: 10_000, input: "" })).stdout);
     if (now && newer(now, before)) {
       Object.assign(t, { state: "updated", from: before, current: now, latest: newer(t.latest, now) ? t.latest : now, at: Date.now() });

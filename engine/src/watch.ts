@@ -15,9 +15,12 @@ export class Watch {
   private baseline = new Map<string, number>();
   private store: Store;
   private env: NodeJS.ProcessEnv;
-  constructor(store: Store, env: NodeJS.ProcessEnv) {
+  /** Whether something works in a checkout now (a session's turn, a routine run), so it isn't pulled under it. */
+  private busy: (path: string) => boolean;
+  constructor(store: Store, env: NodeJS.ProcessEnv, busy: (path: string) => boolean = () => false) {
     this.store = store;
     this.env = env;
+    this.busy = busy;
   }
   start() {
     this.timer = setInterval(() => void this.tick(), EVERY);
@@ -35,17 +38,20 @@ export class Watch {
     this.store.emit({ type: "settled", threadId: t.id, reason });
   }
 
-  /** Fast-forwards each project's default branch when its checkout sits on it, clean. */
+  /**
+    Fast-forwards each project's default branch when its checkout sits on it, clean, and nothing
+    works in it: pulled under a turn, what came in would read as that turn's change.
+  */
   private pulled = new Map<string, number>();
   private async pull() {
     if (!this.store.settings.autoPull) return;
     for (const p of this.store.projects) {
-      if (!p.git || Date.now() - (this.pulled.get(p.id) ?? 0) < 15 * 60_000) continue;
+      if (!p.git || this.busy(p.path) || Date.now() - (this.pulled.get(p.id) ?? 0) < 15 * 60_000) continue;
       this.pulled.set(p.id, Date.now());
       const opts = { cwd: p.path, env: this.env, timeout: 60000 };
       const [status, branch, head] = await Promise.all([run("git", ["status", "--porcelain"], opts), run("git", ["rev-parse", "--abbrev-ref", "HEAD"], opts), run("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], opts)]);
       const main = head.stdout.trim().replace(/^origin\//, "") || "main";
-      if (status.code !== 0 || status.stdout.trim() || branch.stdout.trim() !== main) continue;
+      if (status.code !== 0 || status.stdout.trim() || branch.stdout.trim() !== main || this.busy(p.path)) continue;
       await run("git", ["pull", "--ff-only", "--quiet"], opts);
     }
   }

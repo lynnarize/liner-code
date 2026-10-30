@@ -94,6 +94,8 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
       onStarted(t.id);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
+      // Thrown on, so the composer puts the ask back.
+      throw e;
     }
   };
 

@@ -1113,3 +1113,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Routed: the two critics side by side in the row's control. */
+.lc-ag-critics {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}

@@ -19,6 +19,8 @@ export type ToolUpdate = {
 };
 
 export type ApprovalRequest = {
+  /** The tool call it's for: the key its tool updates carry. */
+  key?: string;
   tool: string;
   title: string;
   description?: string;
@@ -38,8 +40,8 @@ export type TurnSink = {
   approve(req: ApprovalRequest, signal: AbortSignal): Promise<{ allow: boolean; reason?: string }>;
   /** Asks you to pick between options; resolves with an answer per question, or null if you skipped. */
   ask(questions: Question[], signal: AbortSignal): Promise<Record<string, string> | null>;
-  /** Shows a plan to approve; resolves with your decision. */
-  propose(title: string, plan: string, signal: AbortSignal): Promise<{ approve: boolean; note?: string }>;
+  /** Shows a plan to approve; resolves with your decision, and the plan as you edited it when you did. */
+  propose(title: string, plan: string, signal: AbortSignal): Promise<{ approve: boolean; note?: string; plan?: string }>;
   /** Token use. `total` means the numbers are the session's running totals, not this turn's. */
   usage(u: Partial<Usage>, total?: boolean): void;
   /** The provider's own session id, kept for resume. */

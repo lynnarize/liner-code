@@ -66,3 +66,16 @@
   color: var(--l-ink-3);
   font-size: 12.5px;
 }
+
+/* A tool updating: its bar at the row's end, the updater's last line under its name. */
+.lc-up-bar {
+  width: 148px;
+}
+.lc-up-step {
+  display: block;
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

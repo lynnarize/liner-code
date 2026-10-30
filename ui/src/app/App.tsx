@@ -26,6 +26,7 @@ const RoutinesPage = lazy(() => import("./Routines").then((m) => ({ default: m.R
 const Compare = lazy(() => import("./Compare").then((m) => ({ default: m.Compare })));
 import { keepPanel, keptPanel, openTab, type Tab } from "./Surfaces";
 import { startAgentBrowser } from "./agentBrowser";
+import { HiddenBrowsers } from "./Browser";
 import { MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 
 type View = { kind: "home"; projectId?: string } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string };
@@ -238,7 +239,8 @@ export function App() {
     for (const p of projects) items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={15} />, onSelect: () => setView({ kind: "home", projectId: p.id }) });
     for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
     return items;
-  }, [threads, projects, agents, providers, current, sidebar]);
+    // New session and New routine read where you are and your last project, so they're here too.
+  }, [threads, projects, agents, providers, current, sidebar, view, lastProject]);
 
   if (!ready)
     return (
@@ -260,6 +262,7 @@ export function App() {
 
   return (
     <div className="lc-app" data-sidebar={sidebar || settings || undefined}>
+      <HiddenBrowsers />
       <Scene />
       {settings ? (
         <Suspense fallback={null}>

@@ -110,7 +110,10 @@ function Models({ onNext }: { onNext: () => void }) {
   const [mac, setMac] = useState<SystemCheck | null>(null);
   const checkMac = () => void rpc("system.check", {}).then(setMac, () => {});
   useEffect(checkMac, []);
-  const ready = TOOLS.filter((t) => providers.find((p) => p.id === t.id && p.available && p.adapter)).length;
+  // Ready the way its row says it: a tool still asking you to sign in (with no key standing in) isn't.
+  const ready = TOOLS.filter((t) => providers.find((p) => p.id === t.id && p.available && p.adapter && !(p.signedIn === false && !keys.includes(KEY_OF[t.id] ?? "")))).length;
+  // "1 tool is ready", "2 keys are ready", "1 tool and 1 key are ready": only what there is.
+  const readyLine = [ready > 0 && plural(ready, "tool"), keys.length > 0 && plural(keys.length, "key")].filter(Boolean).join(" and ");
 
   const save = async (id: string) => {
     const key = value.trim();
@@ -147,6 +150,26 @@ function Models({ onNext }: { onNext: () => void }) {
           }
         >
           {[!mac.git && "Git (for undo, diffs and worktrees)", !mac.python && "Python (for the Terminal)"].filter(Boolean).join(" and ")} come with them. Apple's installer takes a few minutes; then look again.
+        </Alert>
+      )}
+      {mac && !mac.rg && (
+        <Alert
+          tone="warning"
+          title="Agents search code with ripgrep, which isn't on this Mac"
+          actions={
+            mac.rgInstall ? (
+              <>
+                <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal(mac.rgInstall!)}>
+                  Install it
+                </button>
+                <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={checkMac}>
+                  Look again
+                </button>
+              </>
+            ) : undefined
+          }
+        >
+          Without it, an agent's first search fails. {mac.rgInstall ? "Homebrew adds it in a few seconds." : "Install it from github.com/BurntSushi/ripgrep, then look again."}
         </Alert>
       )}
       <div className="lc-grp">
@@ -271,7 +294,7 @@ function Models({ onNext }: { onNext: () => void }) {
       </p>
       <div className="lc-step-foot">
         <span className="lc-quiet">
-          {ready || keys.length ? `${plural(ready, "tool")} and ${plural(keys.length, "key")} ${ready + keys.length === 1 ? "is" : "are"} ready.` : "Nothing is connected yet."} Add more any time in Settings.
+          {readyLine ? `${readyLine} ${ready + keys.length === 1 ? "is" : "are"} ready.` : "Nothing is connected yet."} Add more any time in Settings.
         </span>
         <span className="lc-grow" />
         <button type="button" className="lc-btn" data-kind="accent" data-size="lg" onClick={onNext}>

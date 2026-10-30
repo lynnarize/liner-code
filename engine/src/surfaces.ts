@@ -4,10 +4,10 @@
   Simulator. Each one is a few commands the engine runs for the app.
 */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { relative, resolve } from "node:path";
-import type { Device, PrInfo } from "../../contracts/src/index.ts";
-import { run, which } from "./exec.ts";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { Device, LocalServer, PrInfo } from "../../contracts/src/index.ts";
+import { run, THREAD_ENV, which } from "./exec.ts";
 import { uid, type Store } from "./store.ts";
 
 /* ---------- Files ---------- */
@@ -86,12 +86,12 @@ export class Terminals {
     this.env = env;
   }
 
-  open(cwd: string, cols: number, rows: number, command?: string) {
+  open(cwd: string, cols: number, rows: number, command?: string, threadId?: string) {
     const python = which("python3", this.env) ?? "/usr/bin/python3";
     const id = uid("tm");
     const child = spawn(python, ["-I", "-c", PTY, String(Math.max(20, cols)), String(Math.max(5, rows))], {
       cwd,
-      env: { ...this.env, TERM: "xterm-256color", COLORTERM: "truecolor", LINER_CODE: "1" },
+      env: { ...this.env, TERM: "xterm-256color", COLORTERM: "truecolor", LINER_CODE: "1", ...(threadId ? { [THREAD_ENV]: threadId } : {}) },
       stdio: ["pipe", "pipe", "pipe", "pipe"],
     }) as unknown as ChildProcessWithoutNullStreams;
     const ctl = (child as unknown as { stdio: NodeJS.WritableStream[] }).stdio[3];
@@ -237,22 +237,192 @@ export async function prMerge(cwd: string, n: number, env: NodeJS.ProcessEnv) {
 
 /* ---------- Dev servers on this Mac ---------- */
 
-/** Ports something is listening on, that look like a dev server you'd open in the browser. */
-export async function listeningPorts(env: NodeJS.ProcessEnv) {
-  const r = await run("lsof", ["+c", "0", "-nP", "-iTCP", "-sTCP:LISTEN"], { env, timeout: 8000 });
-  const out = new Map<number, string>();
-  const skip = /^(rapportd|ControlCe|ControlCenter|sharingd|AirPlay|figma_age|Dropbox|Spotify|Adobe|com\.docke|postgres|mysqld|redis-ser|mongod|ollama|LM Studio)/i;
-  for (const line of r.stdout.split("\n").slice(1)) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 9) continue;
-    const proc = parts[0];
-    const m = /:(\d+)$/.exec(parts[8]);
-    if (!m) continue;
-    const port = Number(m[1]);
-    if (port < 1024 || skip.test(proc) || out.has(port)) continue;
-    out.set(port, proc.replace(/\\x20/g, " "));
+/** Each listening process, from `lsof -F pcn`: its pid, its name, and the ports it listens on. */
+export function parseListeners(out: string) {
+  const ports = new Map<number, { pid: number; process: string }>();
+  let pid = 0;
+  let name = "";
+  for (const line of out.split("\n")) {
+    const tag = line[0];
+    const v = line.slice(1);
+    if (tag === "p") (pid = Number(v)), (name = "");
+    else if (tag === "c") name = v.replace(/\\x20/g, " ");
+    else if (tag === "n") {
+      const m = /:(\d+)$/.exec(v);
+      if (m && pid && !ports.has(Number(m[1]))) ports.set(Number(m[1]), { pid, process: name });
+    }
   }
-  return [...out].sort((a, b) => a[0] - b[0]).map(([port, process]) => ({ port, process, url: `http://localhost:${port}` }));
+  return ports;
+}
+
+/** pid → the session named in its environment, from macOS `ps -E`, which prints it after the command. */
+export function parseThreads(out: string) {
+  const threads = new Map<number, string>();
+  const tag = new RegExp(`(?:^|\\s)${THREAD_ENV}=(\\S+)`);
+  for (const line of out.split("\n")) {
+    const m = /^\s*(\d+)\s(.*)$/.exec(line);
+    const t = m && tag.exec(m[2])?.[1];
+    if (t) threads.set(Number(m[1]), t);
+  }
+  return threads;
+}
+
+/** pid → its working folder, from `lsof -d cwd -Fn`. */
+function parseCwds(out: string) {
+  const cwds = new Map<number, string>();
+  let pid = 0;
+  for (const line of out.split("\n")) {
+    if (line[0] === "p") pid = Number(line.slice(1));
+    else if (line[0] === "n" && pid) cwds.set(pid, line.slice(1));
+  }
+  return cwds;
+}
+
+/** Whether a port answers with a page (or sends you to one), rather than an API, a database or nothing. */
+async function servesPage(port: number) {
+  try {
+    const r = await fetch(`http://localhost:${port}/`, { redirect: "manual", signal: AbortSignal.timeout(1200) });
+    void r.body?.cancel();
+    if (r.status >= 300 && r.status < 400) return Boolean(r.headers.get("location"));
+    return r.ok && /^(text\/html|application\/xhtml\+xml)/i.test(r.headers.get("content-type") ?? "");
+  } catch {
+    return false;
+  }
+}
+
+/**
+  Ports something is listening on, past the system's own, and whose each is: `session` when the
+  process carries the session's LINER_THREAD_ID (its agent or its Terminal started it), `project`
+  when it runs in the session's folder or the project's, else nobody's here. `web` when it answers
+  with a page. The session's own come first. The engine itself (its proxies too) is left out.
+*/
+export async function listeningPorts(env: NodeJS.ProcessEnv, mine?: { threadId: string; folders: string[] }): Promise<LocalServer[]> {
+  return (await scan(env, mine)).map(({ pid: _, ...s }) => s);
+}
+
+/** listeningPorts, with each server's pid. */
+async function scan(env: NodeJS.ProcessEnv, mine?: { threadId: string; folders: string[] }): Promise<(LocalServer & { pid: number })[]> {
+  const r = await run("lsof", ["+c", "0", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcn"], { env, timeout: 8000 });
+  const skip = /^(rapportd|ControlCe|ControlCenter|sharingd|AirPlay|figma_age|Dropbox|Spotify|Adobe|com\.docke|postgres|mysqld|redis-ser|mongod|ollama|LM Studio)/i;
+  const found = [...parseListeners(r.stdout)].filter(([port, l]) => port >= 1024 && l.pid !== process.pid && !skip.test(l.process));
+  const pids = [...new Set(found.map(([, l]) => l.pid))].join(",");
+  const [threads, cwds] = mine && pids
+    ? await Promise.all([
+        run("ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids], { env, timeout: 5000 }).then((x) => parseThreads(x.stdout)),
+        run("lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids], { env, timeout: 5000 }).then((x) => parseCwds(x.stdout)),
+      ])
+    : [new Map<number, string>(), new Map<number, string>()];
+  const inside = (dir?: string) => Boolean(dir && mine?.folders.some((f) => dir === f || dir.startsWith(`${f}/`)));
+  const web = await Promise.all(found.map(([port]) => servesPage(port)));
+  const rank = { session: 0, project: 1, none: 2 };
+  return found
+    .map(([port, l], i) => ({ port, pid: l.pid, process: l.process, url: `http://localhost:${port}`, owner: mine && threads.get(l.pid) === mine.threadId ? ("session" as const) : inside(cwds.get(l.pid)) ? ("project" as const) : null, web: web[i] }))
+    .sort((a, b) => rank[a.owner ?? "none"] - rank[b.owner ?? "none"] || a.port - b.port);
+}
+
+/** pid → its parent and its process group, from `ps -A -o pid=,ppid=,pgid=`. */
+export function parseTable(out: string) {
+  const rows = new Map<number, { ppid: number; pgid: number }>();
+  for (const line of out.split("\n")) {
+    const [pid, ppid, pgid] = line.trim().split(/\s+/).map(Number);
+    if (Number.isInteger(pid) && Number.isInteger(ppid) && Number.isInteger(pgid)) rows.set(pid, { ppid, pgid });
+  }
+  return rows;
+}
+
+/**
+  The process group that stopping `pid` signals: a shell gives each job a group of its own, so the
+  group is the dev server with whatever started it (npm and its shell). Null when the group also
+  holds `self` (the engine), something it runs under, or something it started directly (an agent's
+  CLI, a Terminal's shell); then only the server's own process is stopped. T3 Code's rule.
+*/
+export function stoppableGroup(table: Map<number, { ppid: number; pgid: number }>, pid: number, self: number): number | null {
+  const group = table.get(pid)?.pgid;
+  if (!group || group <= 1) return null;
+  const guarded = new Set([self]);
+  for (let p = table.get(self)?.ppid; p !== undefined && p > 1 && !guarded.has(p); p = table.get(p)?.ppid) guarded.add(p);
+  for (const [id, row] of table) if (row.pgid === group && (guarded.has(id) || row.ppid === self)) return null;
+  return group;
+}
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Stops one process (or its group): asked to end, then made to after three seconds. */
+async function stop(pid: number, group: number | null) {
+  const signal = (s: NodeJS.Signals) => {
+    try {
+      process.kill(group ? -group : pid, s);
+    } catch {
+      // gone already
+    }
+  };
+  signal("SIGTERM");
+  for (let i = 0; i < 12 && alive(pid); i++) await new Promise((r) => setTimeout(r, 250));
+  if (alive(pid)) signal("SIGKILL");
+}
+
+/**
+  Stops a dev server that is the session's (its agent or its Terminal started it, or it runs in
+  its folder). Anything else on the Mac is left alone. With `only: "session"`, just the ones the
+  session started, as when it's archived; the project's own servers stay up.
+*/
+export async function stopServers(env: NodeJS.ProcessEnv, mine: { threadId: string; folders: string[] }, o: { port?: number; only?: "session" }) {
+  const found = (await scan(env, mine)).filter((s) => (o.port === undefined || s.port === o.port) && (o.only ? s.owner === o.only : s.owner));
+  if (o.port !== undefined && !found.length) throw new Error(`localhost:${o.port} isn't this session's, so Liner Code leaves it alone.`);
+  if (!found.length) return [];
+  const table = parseTable((await run("ps", ["-A", "-o", "pid=,ppid=,pgid="], { env, timeout: 5000 })).stdout);
+  for (const pid of new Set(found.map((s) => s.pid))) await stop(pid, stoppableGroup(table, pid, process.pid));
+  return found.map((s) => s.port);
+}
+
+/**
+  A page the Browser is asked to open, as a path in the session's folder: "index.html",
+  "/games/snake.html?level=2", or the file's full path (file:// too). Outside the folder throws.
+*/
+export function pagePath(root: string, asked: string) {
+  const [, file, rest] = /^([^?#]*)(.*)$/s.exec(asked.trim().replace(/^file:\/\//i, "")) ?? ["", "", ""];
+  const full = isAbsolute(file) && (file.startsWith(`${root}/`) || file === root || existsSync(file));
+  const rel = relative(root, full ? file : resolve(root, file.replace(/^\/+/, "")));
+  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("That file is outside this session's folder.");
+  return `/${rel.split(sep).join("/")}${rest}`;
+}
+
+/** The pages in a folder a Browser can open without a server: its HTML files, index.html first, a few levels down. */
+export function htmlPages(root: string, limit = 24) {
+  const out: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir).sort();
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      if (out.length >= limit) return;
+      if (n.startsWith(".") || n === "node_modules") continue;
+      const abs = join(dir, n);
+      let st;
+      try {
+        st = statSync(abs);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        if (depth < 3) walk(abs, depth + 1);
+      } else if (/\.html?$/i.test(n)) out.push(relative(root, abs));
+    }
+  };
+  walk(root, 0);
+  // index.html at the top, then shallower pages, then the rest as found.
+  const depth = (p: string) => p.split("/").length;
+  return out.sort((a, b) => Number(b === "index.html") - Number(a === "index.html") || Number(/(^|\/)index\.html?$/i.test(b)) - Number(/(^|\/)index\.html?$/i.test(a)) || depth(a) - depth(b));
 }
 
 /* ---------- The iOS Simulator ---------- */
@@ -323,7 +493,10 @@ export class DeviceLogs {
         batch = [];
       }, 250);
     });
-    child.on("close", () => this.live.delete(udid));
+    // A stream that was replaced (a new filter) closes after its successor started: that one stays.
+    child.on("close", () => {
+      if (this.live.get(udid) === child) this.live.delete(udid);
+    });
   }
   stopAll() {
     for (const c of this.live.values()) c.kill();

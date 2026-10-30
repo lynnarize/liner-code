@@ -285,7 +285,8 @@ export class Routines {
         if (st.role === "work" && rec.test) end(s, "skipped", "A test doesn't edit anything");
         else if (st.role === "work") {
           this.store.patchThread(thread.id, { agent: st.agent, access: "edits" });
-          await this.runtime.send(thread.id, prompt);
+          // Unattended only while its own step runs: what you send in this session later asks you as usual.
+          await this.runtime.unattendedTurn(thread.id, () => this.runtime.send(thread.id, prompt));
           const t = this.store.thread(thread.id);
           end(s, t.status === "error" ? "failed" : "done", t.status === "error" ? "The agent ran into a problem" : `${t.toReview ?? 0} files changed`);
         } else {

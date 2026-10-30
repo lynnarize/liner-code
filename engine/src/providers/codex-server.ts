@@ -7,11 +7,12 @@
   - ask:   read-only sandbox, asks to do anything more (every edit and write comes to you)
   - edits: workspace-write sandbox, asks before commands it doesn't trust
   - auto:  workspace-write sandbox, Codex decides when to ask
+  - review: workspace-write sandbox; what Codex doesn't trust goes to the Reviewer, then to you
   - full:  full access; Codex still asks when it judges a step risky
 */
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Access, PlanEntry, Question } from "../../../contracts/src/index.ts";
-import { jsonLines, spawn, which } from "../exec.ts";
+import { jsonLines, spawn, which, withCodexPath } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
@@ -25,9 +26,20 @@ const POLICY: Record<Access, { sandbox: string; approval: string }> = {
   ask: { sandbox: "read-only", approval: "on-request" },
   edits: { sandbox: "workspace-write", approval: "untrusted" },
   auto: { sandbox: "workspace-write", approval: "on-request" },
+  review: { sandbox: "workspace-write", approval: "untrusted" },
   full: { sandbox: "danger-full-access", approval: "on-request" },
 };
 const sandboxPolicy = (s: string, cwd: string) => (s === "read-only" ? { type: "readOnly", networkAccess: false } : s === "workspace-write" ? { type: "workspaceWrite", writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false } : { type: "dangerFullAccess" });
+/**
+  A failed command's output with how it ended, since Codex's output can leave out what the shell
+  said ("command not found" for a tool that isn't installed), and the row then failed with no reason.
+*/
+export function withExit(out: string | undefined, code: unknown) {
+  if (typeof code !== "number" || code === 0) return out;
+  const why = code === 127 ? ": a command in it isn't installed here" : code === 126 ? ": a command in it can't run" : code > 128 ? `: stopped by signal ${code - 128}` : "";
+  return `${out?.trimEnd() ? `${out.trimEnd()}\n` : ""}[exit ${code}${why}]`;
+}
+
 const short = (s: unknown, n = 80) => {
   const t = String(s ?? "").replace(/\s+/g, " ").trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
@@ -76,7 +88,7 @@ class CodexServer {
     if (this.booting) return this.booting;
     const bin = which("codex", this.env);
     if (!bin) return Promise.reject(new Error("Codex isn't installed."));
-    const child = spawn(bin, ["app-server"], { cwd: this.cwd, env: this.env, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    const child = spawn(bin, ["app-server"], { cwd: this.cwd, env: withCodexPath(bin, this.env), stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
     this.child = child;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d: string) => (this.stderr = (this.stderr + d).slice(-4000)));
@@ -144,7 +156,13 @@ export class CodexServerSession implements ProviderSession {
   private signal: AbortSignal | null = null;
   private done: (() => void) | null = null;
   private streamed = new Set<string>();
+  /** A running command's output so far, by item; it reaches the row a few times a second. */
+  private outputs = new Map<string, { text: string; title: string; input: string; timer?: NodeJS.Timeout }>();
   private changes = new Map<string, string[]>();
+  /** Codex's running totals at its last report, to count each step from; none yet in this process. */
+  private counted: { input: number; cached: number; output: number } | null = null;
+  /** This turn's failure, said once when the turn ends (Codex sends it as an error, then again with the turn). */
+  private failure: { message?: string; codexErrorInfo?: unknown } | null = null;
   private o: OpenOptions;
 
   constructor(o: OpenOptions) {
@@ -179,40 +197,49 @@ export class CodexServerSession implements ProviderSession {
     this.sink = sink;
     this.signal = signal;
     this.streamed.clear();
-    await this.open();
-    if (!this.thread) throw new Error("Codex didn't start a thread.");
-    sink.session(this.thread);
-    const p = POLICY[this.o.planning ? "read" : this.o.access];
-    const effort = this.o.effort && !/^ultra(code|think)$/.test(this.o.effort) ? this.o.effort : null;
-    const finished = new Promise<void>((resolve) => {
-      this.done = resolve;
-    });
-    // `/compact` is the Codex CLI's own command, not words for the model: app-server compacts on request.
-    if (text.trim() === "/compact") await this.server.request("thread/compact/start", { threadId: this.thread });
-    else {
-      const r = await this.server.request("turn/start", {
-        threadId: this.thread,
-        input: [{ type: "text", text, text_elements: [] }],
-        cwd: this.o.cwd,
-        approvalPolicy: p.approval,
-        sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
-        model: this.o.model && this.o.model !== "default" ? this.o.model : null,
-        effort,
-      });
-      this.turnId = String((r.turn as Json | undefined)?.id ?? "");
-    }
+    this.failure = null;
     const stop = () => {
       if (this.thread && this.turnId) void this.server.request("turn/interrupt", { threadId: this.thread, turnId: this.turnId }).catch(() => {});
       this.done?.();
     };
-    signal.addEventListener("abort", stop, { once: true });
     try {
+      await this.open();
+      if (!this.thread) throw new Error("Codex didn't start a thread.");
+      sink.session(this.thread);
+      // Stopped while Codex was starting: nothing was asked of it yet.
+      if (signal.aborted) return;
+      const p = POLICY[this.o.planning ? "read" : this.o.access];
+      const effort = this.o.effort && !/^ultra(code|think)$/.test(this.o.effort) ? this.o.effort : null;
+      const finished = new Promise<void>((resolve) => {
+        this.done = resolve;
+      });
+      // `/compact` is the Codex CLI's own command, not words for the model: app-server compacts on request.
+      if (text.trim() === "/compact") await this.server.request("thread/compact/start", { threadId: this.thread });
+      else {
+        const r = await this.server.request("turn/start", {
+          threadId: this.thread,
+          input: [{ type: "text", text, text_elements: [] }],
+          cwd: this.o.cwd,
+          approvalPolicy: p.approval,
+          sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
+          model: this.o.model && this.o.model !== "default" ? this.o.model : null,
+          effort,
+        });
+        this.turnId = String((r.turn as Json | undefined)?.id ?? "");
+      }
+      signal.addEventListener("abort", stop, { once: true });
+      // Stopped while the turn was starting: the signal won't say so again.
+      if (signal.aborted) stop();
       await finished;
     } finally {
       signal.removeEventListener("abort", stop);
       this.turnId = null;
       this.sink = null;
+      this.signal = null;
       this.done = null;
+      // A command cut off mid-run never completes here: its pending output isn't left to mark the row running again.
+      for (const out of this.outputs.values()) clearTimeout(out.timer);
+      this.outputs.clear();
     }
   }
 
@@ -241,6 +268,16 @@ export class CodexServerSession implements ProviderSession {
         this.streamed.add(String(p.itemId));
         sink.text(String(p.delta ?? ""), String(p.itemId));
         return;
+      case "item/commandExecution/outputDelta": {
+        const out = this.outputs.get(String(p.itemId));
+        if (!out) return;
+        out.text = (out.text + String(p.delta ?? "")).slice(-20000);
+        out.timer ??= setTimeout(() => {
+          out.timer = undefined;
+          if (this.outputs.get(String(p.itemId)) === out && this.sink === sink) sink.tool({ key: String(p.itemId), tool: "shell", toolKind: "exec", title: out.title, input: out.input, output: out.text, status: "running" });
+        }, 250);
+        return;
+      }
       case "item/reasoning/summaryTextDelta":
       case "item/reasoning/textDelta":
         this.streamed.add(String(p.itemId));
@@ -258,22 +295,35 @@ export class CodexServerSession implements ProviderSession {
       case "thread/tokenUsage/updated": {
         const u = p.tokenUsage as { total?: Json; last?: Json; modelContextWindow?: number | null } | undefined;
         const t = (u?.total ?? {}) as { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number };
-        const last = (u?.last ?? {}) as { inputTokens?: number };
-        sink.usage({ inputTokens: (t.inputTokens ?? 0) - (t.cachedInputTokens ?? 0), cacheReadTokens: t.cachedInputTokens ?? 0, outputTokens: t.outputTokens ?? 0, contextTokens: last.inputTokens, contextWindow: u?.modelContextWindow ?? undefined }, true);
+        // The last request's whole count is how full the context is (T3 Code reads it the same way).
+        const last = (u?.last ?? {}) as { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number; totalTokens?: number };
+        // The totals are the thread's, from before this process too when it resumed one: a step is what they grew
+        // by since the last report. With none to count from yet, or totals that went back, it's the newest
+        // response's own use (as T3 Code counts it).
+        const now = { input: t.inputTokens ?? 0, cached: t.cachedInputTokens ?? 0, output: t.outputTokens ?? 0 };
+        const base = this.counted;
+        this.counted = now;
+        const step =
+          base && now.input >= base.input && now.cached >= base.cached && now.output >= base.output
+            ? { input: now.input - base.input, cached: now.cached - base.cached, output: now.output - base.output }
+            : { input: last.inputTokens ?? 0, cached: last.cachedInputTokens ?? 0, output: last.outputTokens ?? 0 };
+        sink.usage({ inputTokens: step.input - step.cached, cacheReadTokens: step.cached, outputTokens: step.output, contextTokens: last.totalTokens ?? last.inputTokens, contextWindow: u?.modelContextWindow ?? undefined });
         return;
       }
       case "error": {
         const e = (p.error ?? {}) as { message?: string; codexErrorInfo?: unknown };
         if (p.willRetry) return sink.notice(`${e.message ?? "Codex hit a problem"}; it's trying again.`);
-        if (isLimit(e)) sink.limited(e.message ?? "Codex hit its usage limit.");
-        else sink.error(e.message ?? "Codex stopped with an error.");
+        // turn/completed brings the same error again: it's said there, once (as T3 Code does).
+        this.failure = e;
         return;
       }
       case "turn/completed": {
         const turn = p.turn as { status?: string; error?: { message?: string; codexErrorInfo?: unknown } | null } | undefined;
-        if (turn?.status === "failed" && turn.error) {
-          if (isLimit(turn.error)) sink.limited(turn.error.message ?? "Codex hit its usage limit.");
-          else sink.error(turn.error.message ?? "Codex stopped with an error.");
+        const failed = turn?.status === "interrupted" ? null : ((turn?.status === "failed" ? turn.error : null) ?? this.failure);
+        this.failure = null;
+        if (failed) {
+          if (isLimit(failed)) sink.limited(failed.message ?? "Codex hit its usage limit.");
+          else sink.error(failed.message ?? "Codex stopped with an error.");
         }
         this.done?.();
         return;
@@ -302,7 +352,13 @@ export class CodexServerSession implements ProviderSession {
       case "commandExecution": {
         const status = String(it.status);
         const failed = status === "failed" || status === "declined" || (done && typeof it.exitCode === "number" && it.exitCode !== 0);
-        sink.tool({ key: id, tool: "shell", toolKind: "exec", title: `Run ${short(unwrap(String(it.command ?? "")), 60)}`, input: unwrap(String(it.command ?? "")), output: (it.aggregatedOutput as string | null) ?? undefined, status: !done ? "running" : failed ? "failed" : "done" });
+        const input = unwrap(String(it.command ?? ""));
+        const title = `Run ${short(input, 60)}`;
+        // Its output streams in while it runs (outputDelta); the finished item brings all of it.
+        if (done) clearTimeout(this.outputs.get(id)?.timer), this.outputs.delete(id);
+        else if (!this.outputs.has(id)) this.outputs.set(id, { text: "", title, input });
+        const out = (it.aggregatedOutput as string | null) ?? undefined;
+        sink.tool({ key: id, tool: "shell", toolKind: "exec", title, input, output: done && failed ? withExit(out, it.exitCode) : out, status: !done ? "running" : failed ? "failed" : "done" });
         return;
       }
       case "fileChange": {
@@ -337,12 +393,12 @@ export class CodexServerSession implements ProviderSession {
       const fields = [{ label: "Command", value: command }];
       if (p.cwd) fields.push({ label: "Runs in", value: String(p.cwd) });
       if (p.reason) fields.push({ label: "Why", value: String(p.reason) });
-      const a = await sink.approve({ tool: "shell", title: `Run ${short(command, 60)}`, description: (p.reason as string | undefined) ?? undefined, risk: commandRisk(command), fields, rule: ruleFor(command) }, signal);
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "shell", title: `Run ${short(command, 60)}`, description: (p.reason as string | undefined) ?? undefined, risk: commandRisk(command), fields, rule: ruleFor(command) }, signal);
       return method === "execCommandApproval" ? { decision: a.allow ? "approved" : "denied" } : { decision: a.allow ? "accept" : "decline" };
     }
     if (method === "item/fileChange/requestApproval" || method === "applyPatchApproval") {
       const paths = this.changes.get(String(p.itemId)) ?? Object.keys((p.fileChanges as Json | undefined) ?? {});
-      const a = await sink.approve({ tool: "apply_patch", title: `Edit ${paths.slice(0, 3).join(", ") || "files"}`, description: (p.reason as string | undefined) ?? undefined, risk: "medium", fields: paths.map((x) => ({ label: "File", value: x })).concat(p.grantRoot ? [{ label: "Write access to", value: String(p.grantRoot) }] : []), rule: "Edit" }, signal);
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "apply_patch", title: `Edit ${paths.slice(0, 3).join(", ") || "files"}`, description: (p.reason as string | undefined) ?? undefined, risk: "medium", fields: paths.map((x) => ({ label: "File", value: x })).concat(p.grantRoot ? [{ label: "Write access to", value: String(p.grantRoot) }] : []), rule: "Edit" }, signal);
       return method === "applyPatchApproval" ? { decision: a.allow ? "approved" : "denied" } : { decision: a.allow ? "accept" : "decline" };
     }
     if (method === "item/tool/requestUserInput") {

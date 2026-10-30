@@ -274,6 +274,28 @@ ipcMain.handle("liner", async (e, method: unknown, params: unknown) => {
   }
 });
 
+/**
+  A local page drawn in a window nobody sees, then captured: what an agent's screenshot shows when
+  its session isn't on screen. No Node, no new windows, nowhere but this Mac; gone once captured.
+*/
+async function shoot(url: string, width: number, height: number) {
+  const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  w.webContents.on("will-navigate", (e, to) => {
+    if (!isLocal(to)) e.preventDefault();
+  });
+  try {
+    await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error("The page took too long to load.")), 15000))]);
+    // Its first frames, fonts and images.
+    await new Promise((r) => setTimeout(r, 800));
+    const img = await w.webContents.capturePage();
+    if (img.isEmpty()) throw new Error("The page didn't draw.");
+    return img.toPNG().toString("base64");
+  } finally {
+    w.destroy();
+  }
+}
+
 async function handle(method: string, p: Record<string, unknown>): Promise<unknown> {
   if (!win) throw new Error("No window.");
   switch (method) {
@@ -343,6 +365,12 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       const img = await win.webContents.capturePage({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
       if (img.isEmpty()) throw new Error("The window didn't give a snapshot.");
       return img.toPNG().toString("base64");
+    }
+    case "shotUrl": {
+      // The Browser's page while it's out of sight: only pages on this Mac.
+      const url = str(p.url);
+      if (!/^http:/i.test(url) || !isLocal(url)) throw new Error("Only pages on this Mac.");
+      return shoot(url, Math.min(2400, Math.max(320, num(p.width) || 1280)), Math.min(2400, Math.max(240, num(p.height) || 800)));
     }
     default:
       throw new Error(`Unknown method ${method}`);

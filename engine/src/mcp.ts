@@ -13,14 +13,24 @@ const none: Schema = { type: "object", properties: {} };
 const TOOLS: ToolDef[] = [
   {
     name: "browser_open",
-    description: "Opens a page of the app you are building in Liner Code's Browser, beside the session, where the person can watch. Only dev servers on this Mac: an address like localhost:5173/settings, or just a port. Returns what the page shows, as text, with its controls numbered.",
-    inputSchema: { type: "object", properties: { url: { type: "string", description: "localhost:<port>/<path>, or a port" } }, required: ["url"] },
+    description:
+      "Opens a page of the app you are building in Liner Code's Browser, beside the session, where the person can watch. Either a dev server on this Mac (localhost:5173/settings, or just a port) or an HTML file in the session's folder (index.html, games/snake.html), which needs no server: don't start one for plain HTML. Returns what the page shows, as text, with its controls numbered, and its console errors. After you build or change a web page, open it and check it works before you say it's done.",
+    inputSchema: { type: "object", properties: { url: { type: "string", description: "localhost:<port>/<path>, a port, or an HTML file's path in the session's folder" } }, required: ["url"] },
   },
   { name: "browser_read", description: "What the Browser shows now: its address, title, visible text, its controls numbered for browser_click and browser_type, and recent console errors.", inputSchema: none },
   {
     name: "browser_click",
-    description: "Clicks something in the Browser: a control's number from browser_read, the text on a button or link, or a CSS selector. Returns the page after the click.",
-    inputSchema: { type: "object", properties: { target: { type: "string", description: "A number from browser_read, visible text, or a CSS selector" } }, required: ["target"] },
+    description: "Clicks in the Browser: a control's number from browser_read, the text on a button or link, or a CSS selector. Or a point, with x and y: on a canvas (a game, say), give the canvas as target and the point in its own pixels, as its code draws; without a target, the point is in the page. times clicks again and again, like tapping to play. Returns the page after.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "A number from browser_read, visible text, or a CSS selector" },
+        x: { type: "number", description: "A point to click: across, in the target's pixels (a canvas's own), or the page's" },
+        y: { type: "number", description: "A point to click: down" },
+        times: { type: "number", description: "How many clicks, up to 20" },
+        every: { type: "number", description: "Milliseconds between clicks, default 150" },
+      },
+    },
   },
   {
     name: "browser_type",
@@ -31,6 +41,20 @@ const TOOLS: ToolDef[] = [
       required: ["target", "text"],
     },
   },
+  {
+    name: "browser_press",
+    description: "Presses a key in the Browser, on the focused element or the page: Space, Enter, Escape, Tab, Backspace, ArrowUp and the other arrows, or a letter. times presses again and again, like flapping in a game. Returns the page after.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "The key: Space, Enter, ArrowUp, a letter…" },
+        target: { type: "string", description: "Where to press it, like target in browser_click; the focused element when left out" },
+        times: { type: "number", description: "How many presses, up to 20" },
+        every: { type: "number", description: "Milliseconds between presses, default 150" },
+      },
+      required: ["key"],
+    },
+  },
   { name: "browser_screenshot", description: "A screenshot of the page in the Browser, as the person sees it.", inputSchema: none },
   { name: "device_list", description: "The iOS simulators on this Mac, and which one is booted.", inputSchema: none },
   { name: "device_screenshot", description: "A screenshot of a simulator's screen (the booted one, unless you name its udid).", inputSchema: { type: "object", properties: { udid: { type: "string", description: "Which simulator; the booted one when left out" } } } },
@@ -38,6 +62,17 @@ const TOOLS: ToolDef[] = [
     name: "device_open_url",
     description: "Opens a link or a deep link (myapp://settings) in a simulator.",
     inputSchema: { type: "object", properties: { url: { type: "string", description: "The link" }, udid: { type: "string", description: "Which simulator; the booted one when left out" } }, required: ["url"] },
+  },
+  {
+    name: "memory_add",
+    description:
+      "Saves one fact about this project for later sessions, which start knowing it: a command that works here, a convention the code follows, a decision the person made, a trap you found. One sentence, true beyond this task. Not for progress notes.",
+    inputSchema: { type: "object", properties: { fact: { type: "string", description: "The fact, in one sentence" } }, required: ["fact"] },
+  },
+  {
+    name: "sessions_search",
+    description: "Searches this project's earlier sessions: what the person asked and what agents answered. For \"like last time\", a decision made before, or how something was done. Returns the best snippets with each session's title and date.",
+    inputSchema: { type: "object", properties: { query: { type: "string", description: "Words to look for" } }, required: ["query"] },
   },
   {
     name: "show_page",

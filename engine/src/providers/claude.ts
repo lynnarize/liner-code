@@ -17,6 +17,7 @@
   talk directly, and wraps a plan in <plan> tags when you ask for a change (see the runtime).
 */
 import { query, type Options, type PermissionMode, type Query, type SDKMessage, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -81,7 +82,7 @@ async function listModels(env: NodeJS.ProcessEnv, scratch: string): Promise<Mode
   }
 }
 
-const MODE: Record<Access, PermissionMode> = { read: "plan", ask: "default", edits: "acceptEdits", auto: "auto", full: "acceptEdits" };
+const MODE: Record<Access, PermissionMode> = { read: "plan", ask: "default", edits: "acceptEdits", auto: "auto", review: "acceptEdits", full: "acceptEdits" };
 /** A lead reads and plans, and a side chat reads and answers; these stay with the coder. */
 const LEAD_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
 
@@ -104,6 +105,9 @@ function planTitle(plan: string) {
   const line = plan.split("\n").map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean) ?? "The plan";
   return line.length > 70 ? `${line.slice(0, 68)}…` : line;
 }
+
+/** What one request sent: its prompt, the cached part included. */
+const promptTokens = (u: { input_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }) => (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
 
 const short = (s: unknown, n = 80) => {
   const t = String(s ?? "").replace(/\s+/g, " ").trim();
@@ -142,14 +146,16 @@ function titleOf(name: string, input: Record<string, unknown>, cwd: string): { t
   }
 }
 
-/** A queue the SDK reads the prompt from: each push is one message you sent. */
+/** A queue the SDK reads the prompt from: each push is one message you sent, by an id Claude Code's results echo. */
 class Inbox implements AsyncIterable<SDKUserMessage> {
   private queue: SDKUserMessage[] = [];
   private wake: (() => void) | null = null;
   private done = false;
   push(text: string, priority?: "next") {
-    this.queue.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, ...(priority ? { priority } : {}) });
+    const uuid = randomUUID();
+    this.queue.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, uuid, ...(priority ? { priority } : {}) });
     this.wake?.();
+    return uuid;
   }
   end() {
     this.done = true;
@@ -180,6 +186,19 @@ class ClaudeSession implements ProviderSession {
   private o: OpenOptions;
   private path: string | null;
   private limited = false;
+  /**
+    The context the last request of the main thread used: its prompt (cache included) and what it
+    wrote. The result's usage adds up every request of the turn, so it can't say how full the
+    context is (T3 Code reads the last message's usage the same way).
+  */
+  private ctx: { id: string; input: number; output: number } | null = null;
+  /** This turn's messages (what you sent, and any steer) that no result has answered yet. */
+  private sent = new Set<string>();
+  /**
+    The query's running totals at its last result, so each turn reports only its own use. Null when
+    it resumed or forked a session: its first totals carry that transcript's earlier turns too.
+  */
+  private seen: { input: number; output: number; cache: number; cost: number } | null = null;
   /** Claude Code's slash commands and skills, as it last listed them. */
   commands: SlashCommand[] = [];
 
@@ -210,7 +229,7 @@ class ClaudeSession implements ProviderSession {
       permissionPrompts: "host",
       pathToClaudeCodeExecutable: this.path ?? undefined,
       mcpServers: o.mcp ? { liner: { type: "stdio", command: o.mcp.command, args: o.mcp.args, env: o.mcp.env } } : undefined,
-      canUseTool: async (name, input, { signal }) => {
+      canUseTool: async (name, input, { signal, toolUseID }) => {
         const sink = this.sink;
         if (!sink) return { behavior: "deny", message: "The turn has ended." };
         // Liner Code's own tools only reach this session's Browser, the Simulator and its timeline.
@@ -231,11 +250,12 @@ class ClaudeSession implements ProviderSession {
         if (name === "ExitPlanMode") {
           const plan = String(input.plan ?? "");
           const title = planTitle(plan);
-          const answer = await sink.propose(title, plan, signal).catch(() => ({ approve: false, note: undefined }));
+          const answer = await sink.propose(title, plan, signal).catch((): { approve: boolean; note?: string; plan?: string } => ({ approve: false }));
           if (!answer.approve) return { behavior: "deny", message: answer.note ? `Change the plan: ${answer.note}` : "The user didn't approve the plan. Ask what to change." };
           this.access = "edits";
           void this.q?.setPermissionMode(MODE.edits).catch(() => {});
-          return { behavior: "allow", updatedInput: input };
+          // The plan as you left it: you may have edited its steps before approving.
+          return { behavior: "allow", updatedInput: { ...input, plan: answer.plan ?? input.plan } };
         }
         const command = typeof input.command === "string" ? input.command : "";
         // Full access acts, except where the guard says the step can't be undone.
@@ -250,6 +270,7 @@ class ClaudeSession implements ProviderSession {
         fields.push({ label: "Runs in", value: o.cwd });
         const answer = await sink.approve(
           {
+            key: toolUseID,
             tool: name,
             // A command's own description reads as the ask ("Write the note and commit it"); the command is in its field.
             title: kind === "exec" ? (typeof input.description === "string" && input.description.trim() ? short(input.description.charAt(0).toUpperCase() + input.description.slice(1), 70) : `Run ${short(command, 60)}`) : title,
@@ -263,6 +284,7 @@ class ClaudeSession implements ProviderSession {
         return answer.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: answer.reason ? `The user said no, and asks instead: ${answer.reason}` : "The user said no to this step." };
       },
     };
+    this.seen = o.resume ? null : { input: 0, output: 0, cache: 0, cost: 0 };
     this.q = query({ prompt: this.inbox, options });
     void this.pump(this.q);
   }
@@ -283,12 +305,22 @@ class ClaudeSession implements ProviderSession {
     if (!sink) return;
     if (m.type === "system" && m.subtype === "init") {
       sink.session(m.session_id);
+      // A query started again (Claude Code stopped between turns) goes on from this session, not the one it opened with.
+      this.o.resume = m.session_id;
+      this.o.fork = false;
       return;
     }
-    // The plan ran out: Claude Code says so with a rejected rate limit, and when it resets.
+    // What a local slash command (/usage, /context) prints: no model writes it, so it never streams.
+    if (m.type === "system" && m.subtype === "local_command_output") {
+      sink.text(m.content, m.uuid);
+      return;
+    }
+    // The plan ran out: Claude Code says so with a rejected rate limit, and when it resets. With extra usage
+    // on, a rejected window carries on through it, so that isn't the end (as T3 Code reads it).
     if (m.type === "rate_limit_event") {
       const info = m.rate_limit_info;
-      if (info.status === "rejected") {
+      const overage = info.overageStatus === "allowed" || info.overageStatus === "allowed_warning" || info.isUsingOverage === true || info.overageInUse === true;
+      if (info.status === "rejected" && !overage) {
         this.limited = true;
         const until = info.resetsAt ? (info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt) : undefined;
         sink.limited(`Your Claude plan's ${limitName(info.rateLimitType)} is used up.`, until);
@@ -302,12 +334,29 @@ class ClaudeSession implements ProviderSession {
     if (m.type === "stream_event") {
       if (m.parent_tool_use_id) return; // a subagent's stream: its tool call row carries it
       const ev = m.event;
-      if (ev.type === "message_start") this.blocks.clear();
+      if (ev.type === "message_start") {
+        this.blocks.clear();
+        const u = ev.message.usage;
+        if (u) {
+          this.ctx = { id: ev.message.id, input: promptTokens(u), output: u.output_tokens ?? 0 };
+          if (this.ctx.input > 0) sink.usage({ contextTokens: this.ctx.input + this.ctx.output });
+        }
+      } else if (ev.type === "message_delta" && this.ctx) {
+        // Each delta carries the message's running count; fields it leaves out keep their start values.
+        const u = ev.usage;
+        if (u.input_tokens != null || u.cache_read_input_tokens != null || u.cache_creation_input_tokens != null) {
+          const input = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+          if (input > 0) this.ctx.input = input;
+        }
+        this.ctx.output = u.output_tokens ?? this.ctx.output;
+      }
       if (ev.type === "content_block_start") {
         const b = ev.content_block;
         const key = `${m.uuid}:${ev.index}`;
         if (b.type === "text") this.blocks.set(ev.index, { kind: "text", key });
         else if (b.type === "thinking") this.blocks.set(ev.index, { kind: "thinking", key });
+        // A plan is written into the call's input, which can take a while: the timeline says it's being written meanwhile.
+        else if (b.type === "tool_use" && b.name === "ExitPlanMode") sink.tool({ key: b.id, tool: b.name, toolKind: kindOf(b.name), title: "Write the plan", status: "running" });
       } else if (ev.type === "content_block_delta") {
         const blk = this.blocks.get(ev.index);
         if (!blk) return;
@@ -318,6 +367,11 @@ class ClaudeSession implements ProviderSession {
     }
     if (m.type === "assistant") {
       if (m.parent_tool_use_id) return; // a subagent's own calls stay inside its Task row
+      // Without a stream (or a stream that started with no counts), the message's own usage says it. Claude Code's
+      // "<synthetic>" notices report none.
+      const u = m.message.usage;
+      if (u && m.message.model !== "<synthetic>" && (this.ctx?.id !== m.message.id || this.ctx.input <= 0) && promptTokens(u) > 0)
+        this.ctx = { id: m.message.id, input: promptTokens(u), output: Math.max(u.output_tokens ?? 0, this.ctx?.id === m.message.id ? this.ctx.output : 0) };
       for (const b of m.message.content) {
         if (b.type !== "tool_use") continue;
         const input = (b.input ?? {}) as Record<string, unknown>;
@@ -351,14 +405,30 @@ class ClaudeSession implements ProviderSession {
     if (m.type === "result") {
       const models = Object.values(m.modelUsage ?? {});
       const window = models.reduce((w, u) => Math.max(w, u.contextWindow ?? 0), 0);
+      // The query's totals (subagents included) less what its last result said is this turn's. A resumed
+      // query's first totals also hold the transcript's earlier turns, and a /clear starts them over: then
+      // the main thread's own use this turn is what there is to go on, without a cost.
+      const now = {
+        input: models.reduce((s, u) => s + u.inputTokens + u.cacheCreationInputTokens, 0),
+        output: models.reduce((s, u) => s + u.outputTokens, 0),
+        cache: models.reduce((s, u) => s + u.cacheReadInputTokens, 0),
+        cost: m.total_cost_usd ?? 0,
+      };
+      const base = this.seen;
+      this.seen = now;
+      const grew = base && now.input >= base.input && now.output >= base.output && now.cache >= base.cache && now.cost >= base.cost;
       sink.usage({
-        inputTokens: models.reduce((s, u) => s + u.inputTokens + u.cacheCreationInputTokens, 0),
-        outputTokens: models.reduce((s, u) => s + u.outputTokens, 0),
-        cacheReadTokens: models.reduce((s, u) => s + u.cacheReadInputTokens, 0),
-        costUsd: m.total_cost_usd,
-        contextTokens: m.usage ? m.usage.input_tokens + (m.usage.cache_read_input_tokens ?? 0) + (m.usage.cache_creation_input_tokens ?? 0) : undefined,
+        ...(grew
+          ? { inputTokens: now.input - base.input, outputTokens: now.output - base.output, cacheReadTokens: now.cache - base.cache, costUsd: now.cost - base.cost }
+          : { inputTokens: m.usage.input_tokens + (m.usage.cache_creation_input_tokens ?? 0), outputTokens: m.usage.output_tokens, cacheReadTokens: m.usage.cache_read_input_tokens ?? 0 }),
+        contextTokens: this.ctx ? this.ctx.input + this.ctx.output : undefined,
         contextWindow: window || undefined,
-      }, true);
+      });
+      // Which messages this result answers. One that answers none of this turn's is a late one, from a turn
+      // that was stopped and let go of before Claude Code said it had ended.
+      const echoed = m.user_message_uuids ?? (m.user_message_uuid ? [m.user_message_uuid] : []);
+      if (echoed.length && !echoed.some((id) => this.sent.has(id))) return;
+      for (const id of echoed) this.sent.delete(id);
       const said = m.subtype !== "success" ? m.errors?.join("\n") || "Claude Code stopped with an error." : m.is_error ? m.result || "Claude Code stopped with an error." : "";
       // A limit was already said, with its reset time; the result's own words would repeat it.
       if (said && !this.limited) {
@@ -366,6 +436,8 @@ class ClaudeSession implements ProviderSession {
         else sink.error(said);
       }
       this.limited = false;
+      // A steer sent after the last step runs as a turn of its own, with its own result: the turn waits for that.
+      if (this.sent.size && (m.queued_turn_count ?? 0) > 0 && !this.signal?.aborted) return;
       this.finish?.();
     }
   }
@@ -378,17 +450,20 @@ class ClaudeSession implements ProviderSession {
       this.finish = resolve;
       this.fail = reject;
     });
+    let late: NodeJS.Timeout | undefined;
     const stop = () => {
       void this.q?.interrupt().catch(() => {});
       // An interrupt ends with a result message; if it never comes, let go after a moment.
-      setTimeout(() => this.finish?.(), 4000);
+      late = setTimeout(() => this.finish?.(), 4000);
     };
     signal.addEventListener("abort", stop, { once: true });
     // Ultrathink is a word Claude Code reads in the prompt, so every turn carries it.
-    this.inbox.push(this.o.effort === "ultrathink" ? `${text}\n\nultrathink` : text);
+    this.sent = new Set([this.inbox.push(this.o.effort === "ultrathink" ? `${text}\n\nultrathink` : text)]);
     try {
       await done;
     } finally {
+      // Not left to end the next turn, should that start within the moment.
+      clearTimeout(late);
       signal.removeEventListener("abort", stop);
       this.sink = null;
       this.signal = null;
@@ -398,7 +473,7 @@ class ClaudeSession implements ProviderSession {
 
   steer(text: string) {
     if (!this.q || !this.sink) return false;
-    this.inbox.push(text, "next");
+    this.sent.add(this.inbox.push(text, "next"));
     return true;
   }
 

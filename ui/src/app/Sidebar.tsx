@@ -254,7 +254,8 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   });
 
   const rowKeys = (e: KeyboardEvent, t: Thread) => {
-    if (e.target !== e.currentTarget) return;
+    // ⌘, ⌃ and ⌥ keys are the app's (⌘⇧D opens the Diff), not Pin, Snooze or Settle.
+    if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === "p" || e.key === "P") void act(t, "pin");
     else if (e.key === "d" || e.key === "D") void act(t, "settle");
     else if (e.key === "s" || e.key === "S") void act(t, "snooze", snoozeTimes()[0].at);
@@ -275,7 +276,8 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   // Under its project's own header a row doesn't name the project again; in Pinned, your groups and the shelves it does.
   const row = (t: Thread, bucket: Bucket, forks?: { n: number; open: boolean; toggle: () => void }, inProject = false) => {
     const project = projects.find((p) => p.id === t.projectId);
-    const who = agentOf(t.agent, agents, providers).name;
+    // Who's on it now: the lead while it plans and its plan waits on you, else the coder.
+    const who = agentOf(t.lead && (t.turns === 0 || t.turnBy === t.lead) ? t.lead : t.agent, agents, providers).name;
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
     const line =
       run?.status === "running"
@@ -284,7 +286,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           ? { text: t.wake.kind === "checks" ? `Until the checks on #${t.wake.pr} finish` : `Until someone replies on #${t.wake.pr}` }
           : bucket === "snoozed" && t.snoozedUntil
             ? { text: `Back ${clock(t.snoozedUntil, now)}` }
-            : statusLine(t, t.lead && t.turns === 0 ? agentOf(t.lead, agents, providers).name : who);
+            : statusLine(t, who);
     return (
       <div
         key={t.id}
@@ -544,7 +546,18 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
               </section>
             );
           })}
-          {list.length === 0 && <p className="lc-sb-empty">{query ? "No session matches that." : "Sessions you start show up here, under their project."}</p>}
+          {/* Empty here, though sessions may still wait on the shelves below. */}
+          {(list.length === 0 || (!byBucket.pinned.length && !byGroup.length && !tree.sections.length)) && (
+            <p className="lc-sb-empty">
+              {list.length === 0
+                ? query
+                  ? "No session matches that."
+                  : "Sessions you start show up here, under their project."
+                : query
+                  ? "Only snoozed or settled sessions match that, on the shelves below."
+                  : "Everything is snoozed or settled, on the shelves below."}
+            </p>
+          )}
         </div>
         <div className="lc-sb-blur" aria-hidden />
       </div>

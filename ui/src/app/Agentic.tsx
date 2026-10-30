@@ -7,8 +7,8 @@
   out in a session. How an agent runs (helpers, or asking Opus) is the agent's own setting, in Team.
 */
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AgentProfile, ProviderInfo, RunMode, Settings as EngineSettings, Setup, Thread, WayStats } from "@contracts";
-import { familyOf, setupOf, setupsOf, SMALL_CHANGE, splitModel, TRIAL } from "@contracts";
+import type { AgentProfile, ProviderInfo, RouteCast, RunMode, Settings as EngineSettings, Setup, Thread, WayStats } from "@contracts";
+import { castOf, familyOf, setupOf, setupsOf, SMALL_CHANGE, splitModel, TRIAL } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
@@ -103,12 +103,91 @@ export function Agentic({ onOpen }: { onOpen?: (threadId: string) => void }) {
   return (
     <div className="lc-ag">
       <Ways cast={cast} onEdit={edit} />
+      <Routed cast={cast} />
       <Compare cast={cast} />
       <Trial cast={cast} onOpen={onOpen} />
       <div ref={editor} className="lc-ag-anchor">
         <Setups cast={cast} open={open} onEdit={edit} />
       </div>
     </div>
+  );
+}
+
+/**
+  Routed: who does what when the engine picks per message. Each role is picked from the models
+  that are ready; any can be yours instead. New routed sessions take your picks, and so does a
+  session when you pick its level again.
+*/
+function Routed({ cast }: { cast: Cast }) {
+  const route = useEngine((x) => x.settings.route);
+  const mine = useMemo(() => route?.cast ?? {}, [route?.cast]);
+  const auto = useMemo(() => castOf(cast.providers), [cast.providers]);
+  const now = useMemo(() => castOf(cast.providers, mine), [cast.providers, mine]);
+  if (!auto || !now) return null;
+  const save = (next: Partial<RouteCast>) => {
+    const kept = Object.fromEntries(Object.entries(next).filter(([, v]) => (Array.isArray(v) ? v.length : v))) as Partial<RouteCast>;
+    void rpc("settings.save", { route: { ...route, cast: kept } }).catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
+  };
+  const automatic = (ref: string) => ({
+    id: "auto",
+    title: "Automatic",
+    note: `${modelLabel(ref, cast.providers)} now, from what's ready`,
+    show: (
+      <span className="lc-ag-who">
+        Automatic <span className="lc-quiet">{modelLabel(ref, cast.providers)}</span>
+      </span>
+    ),
+  });
+  const pick = (label: string, value: string | undefined, fallback: string, onPick: (v: string | undefined) => void) => (
+    <ModelPop label={label} value={value ?? "auto"} choices={[automatic(fallback)]} width={420} onPick={(v) => onPick(v === "auto" ? undefined : v)} />
+  );
+  const roles: { key: "everyday" | "strong" | "judge"; title: string; note: string }[] = [
+    { key: "everyday", title: "Everyday work", note: "Answers, and writes most changes." },
+    { key: "strong", title: "Hard jobs and repairs", note: "Takes the hardest messages, and repairs what the judge won't pass." },
+    { key: "judge", title: "The judge", note: "At High and Max, passes a medium job or hands it up. Best from another family than everyday work." },
+  ];
+  const critic = (i: number) => (v: string | undefined) => {
+    const next = [mine.critics?.[0], mine.critics?.[1]];
+    next[i] = v;
+    save({ ...mine, critics: next.filter((c): c is string => Boolean(c)) });
+  };
+  const any = Object.keys(mine).length > 0;
+  return (
+    <Part
+      title="Routed"
+      note="When the engine picks per message, these models do the work. Automatic picks from the tools that are ready."
+      end={
+        any ? (
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => save({})}>
+            All automatic
+          </button>
+        ) : undefined
+      }
+    >
+      <div className="lc-frame">
+        <div className="lc-fcard lc-st-card">
+          {roles.map((r) => (
+            <div key={r.key} className="lc-st-row">
+              <span className="lc-st-t">
+                <b>{r.title}</b>
+                <small>{mine[r.key] && mine[r.key] !== now[r.key] ? `${r.note} Your pick isn't ready, so it's automatic for now.` : r.note}</small>
+              </span>
+              <span className="lc-st-c">{pick(r.title, mine[r.key], auto[r.key], (v) => save({ ...mine, [r.key]: v }))}</span>
+            </div>
+          ))}
+          <div className="lc-st-row">
+            <span className="lc-st-t">
+              <b>The critics</b>
+              <small>Read the hardest jobs side by side; Max asks both. Best from outside hard jobs' family.</small>
+            </span>
+            <span className="lc-st-c lc-ag-critics">
+              {pick("First critic", mine.critics?.[0], auto.critics[0], critic(0))}
+              {pick("Second critic", mine.critics?.[1], auto.critics[1] ?? auto.critics[0], critic(1))}
+            </span>
+          </div>
+        </div>
+      </div>
+    </Part>
   );
 }
 

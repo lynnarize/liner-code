@@ -9,6 +9,7 @@ import { cx } from "@liner/lib/hooks";
 import type { AgentProfile, Thread } from "@contracts";
 import { Glyph, I, ModelMark, Rays, type MarkKind } from "./icons";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
+import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 
 type Side = "top" | "bottom";
 const EDGE = 10;
@@ -299,4 +300,20 @@ export function Num({ value, as = "count" }: { value: number; as?: "count" | "co
     );
   }
   return <RollingNumber value={value} />;
+}
+
+/**
+  Liner's Switch with a name for screen readers, when its words sit beside it (a settings row's
+  title) rather than in its own label. The wrapper takes no room, so the row lays out as before.
+*/
+export function NamedSwitch({ name, ...props }: SwitchProps & { name: string }) {
+  const wrap = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    wrap.current?.querySelector('[role="switch"]')?.setAttribute("aria-label", name);
+  }, [name]);
+  return (
+    <span ref={wrap} style={{ display: "contents" }}>
+      <Switch {...props} />
+    </span>
+  );
 }

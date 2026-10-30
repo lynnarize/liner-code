@@ -11,11 +11,11 @@ import { ACCOUNT_HOME, updateModes } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
+import { Progress } from "@liner/components/progress/progress";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Select } from "@liner/components/select/select";
 import { Slider } from "@liner/components/slider/slider";
 import { Sidebar, type SidebarSection } from "@liner/components/sidebar/sidebar";
-import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { feedback } from "@liner/lib/feedback";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
@@ -25,7 +25,7 @@ import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, agentOf, ago, markOf, modelLabel, plural, providerLabel, setupLine, setupOf, setupsOf, since } from "./model";
-import { Badge, Disc, Kbd, ModelTag, Pop } from "./ui";
+import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
@@ -334,15 +334,15 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
           />
         </Field>
         <Field title="Keep the Mac awake" note="No idle sleep while a session or a routine run works, so a long run isn't cut off. The display still sleeps.">
-          <Switch checked={s.keepAwake !== false} onCheckedChange={(keepAwake) => save({ keepAwake })} label="" />
+          <NamedSwitch name="Keep the Mac awake" checked={s.keepAwake !== false} onCheckedChange={(keepAwake) => save({ keepAwake })} />
         </Field>
       </Group>
       <Group title="Settle sessions on their own" note="Settling is yours: a session stays in its project until you settle it from its row (D), and settled ones fold away under Settled, still searchable. These rules can do it for you; they're off unless you turn them on.">
         <Field title="When its pull request merges">
-          <Switch checked={s.settleOnMerge ?? false} onCheckedChange={(settleOnMerge) => save({ settleOnMerge })} label="" />
+          <NamedSwitch name="When its pull request merges" checked={s.settleOnMerge ?? false} onCheckedChange={(settleOnMerge) => save({ settleOnMerge })} />
         </Field>
         <Field title="When a routine run handled everything itself" note="A run that waits for you stays in its project.">
-          <Switch checked={s.settleOnRoutine ?? false} onCheckedChange={(settleOnRoutine) => save({ settleOnRoutine })} label="" />
+          <NamedSwitch name="When a routine run handled everything itself" checked={s.settleOnRoutine ?? false} onCheckedChange={(settleOnRoutine) => save({ settleOnRoutine })} />
         </Field>
         <Field title="When nothing has happened for a while" note="Only sessions that wait on nothing from you.">
           <Segmented
@@ -356,6 +356,20 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
               { value: "7", label: "A week" },
             ]}
             aria-label="Settle after"
+          />
+        </Field>
+      </Group>
+      <Group title="Usage limits">
+        <Field title="When a tool runs out of usage" note="Carry on: another account of the same tool takes over, else a ready model from another family, with the conversation so far. Either way the session's card offers both.">
+          <Segmented
+            size="sm"
+            value={s.onLimit ?? "wait"}
+            onValueChange={(v) => save({ onLimit: v as "wait" | "carry" })}
+            options={[
+              { value: "wait", label: "Wait for it" },
+              { value: "carry", label: "Carry on" },
+            ]}
+            aria-label="When a tool runs out of usage"
           />
         </Field>
       </Group>
@@ -804,18 +818,18 @@ function Notifications({ sound }: { sound: boolean }) {
     <>
       <Group title="When you're in another app">
         <Field title="Tell me when a session needs me" note="A notification when an agent waits for you, finishes, or runs into a problem.">
-          <Switch checked={s.notify} onCheckedChange={(notify) => save({ notify })} label="" />
+          <NamedSwitch name="Tell me when a session needs me" checked={s.notify} onCheckedChange={(notify) => save({ notify })} />
         </Field>
         <Field title="Count them on the Dock" note="The Dock icon shows how many sessions need you.">
-          <Switch checked={s.badge} onCheckedChange={(badge) => save({ badge })} label="" />
+          <NamedSwitch name="Count them on the Dock" checked={s.badge} onCheckedChange={(badge) => save({ badge })} />
         </Field>
         <Field title="Show them in the menu bar" note="A ring in the menu bar counts what works and what needs you; its menu opens a session, or allows a request waiting in one.">
-          <Switch checked={s.menuBar !== false} onCheckedChange={(menuBar) => save({ menuBar })} label="" />
+          <NamedSwitch name="Show them in the menu bar" checked={s.menuBar !== false} onCheckedChange={(menuBar) => save({ menuBar })} />
         </Field>
       </Group>
       <Group title="In Liner Code">
         <Field title="Sounds" note="Soft ticks when you pick, toggle and send. Made on the fly, never loud.">
-          <Switch checked={sound} onCheckedChange={(on) => feedback.setEnabled(on)} label="" />
+          <NamedSwitch name="Sounds" checked={sound} onCheckedChange={(on) => feedback.setEnabled(on)} />
         </Field>
       </Group>
     </>
@@ -1382,21 +1396,52 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
 
 /* ----------------------------------- Safety ----------------------------------- */
 
+/**
+  Agents outside Liner Code: Claude Code or Codex in a terminal may list, read, start and message
+  sessions through Liner Code's MCP server, while this is on. Sessions they start ask you as any
+  other does.
+*/
+function Outside() {
+  const on = useEngine((x) => x.settings.outside === true);
+  const [info, setInfo] = useState<{ claude: string; codex: string } | null>(null);
+  useEffect(() => {
+    if (on) void rpc("outside.info", {}).then(setInfo).catch(() => setInfo(null));
+  }, [on]);
+  const copy = (cmd: string) => void navigator.clipboard.writeText(cmd).then(() => toast("Copied", { description: "Run it once in a terminal." }));
+  return (
+    <Group title="Agents outside Liner Code" note="Claude Code or Codex in a terminal can list and read your sessions, start one in a project, message it and wait for it. What those sessions ask still comes to you here.">
+      <Field title="Let them in" note={on ? "Through Liner Code's MCP server, with a key only you can read. Off, it turns them away." : "Off: nothing outside Liner Code can reach your sessions."}>
+        <NamedSwitch name="Let agents outside Liner Code in" checked={on} onCheckedChange={(outside) => save({ outside })} />
+      </Field>
+      {on &&
+        info &&
+        (["claude", "codex"] as const).map((k) => (
+          <Field key={k} title={k === "claude" ? "Add it to Claude Code" : "Add it to Codex"} note={<span className="lc-mono lc-st-cmd">{info[k]}</span>}>
+            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => copy(info[k])}>
+              Copy
+            </button>
+          </Field>
+        ))}
+    </Group>
+  );
+}
+
 function Safety() {
   const s = useEngine((x) => x.settings);
   return (
     <>
-      <Group title="What a new session may do" note="Five steps, from looking only to acting on its own. A session can change it any time from its composer.">
+      <Group title="What a new session may do" note="Six steps, from looking only to acting on its own. A session can change it any time from its composer.">
         <div className="lc-st-radios">
           <RadioGroup label="Default access" showLabel={false} value={s.defaultAccess} onValueChange={(v) => save({ defaultAccess: v as Access })} options={ACCESS_LEVELS.map((l) => ({ value: l.id, label: l.label, description: l.note }))} />
         </div>
       </Group>
       <Group title="Always asks">
         <Field title="Commands that can't be undone" note="Even in Full access: force pushes, rm -rf, sudo, publishing. They come back to you as a request.">
-          <Switch checked={s.guardDestructive} onCheckedChange={(guardDestructive) => save({ guardDestructive })} label="" />
+          <NamedSwitch name="Always ask before commands that can't be undone" checked={s.guardDestructive} onCheckedChange={(guardDestructive) => save({ guardDestructive })} />
         </Field>
         <Field title="Committing, pushing and merging" note="Agents never commit, push or merge on their own. Commit stays a press in the Changes panel." />
       </Group>
+      <Outside />
     </>
   );
 }
@@ -1476,6 +1521,7 @@ function Projects() {
             </Field>
             <ScriptsEditor project={p} />
             <RulesEditor project={p} />
+            <MemoryEditor project={p} />
             {p.git && (
               <Field title="Set up each new worktree" note="Runs in a session's own worktree before its first turn, since a new worktree has none of this checkout's installed packages.">
                 <input
@@ -1503,6 +1549,50 @@ function Projects() {
   the rules live in AGENTS.md and CLAUDE.md imports it: one text, the same for every tool. Two files
   that differ open together, so nothing is lost when they become one.
 */
+/** What agents saved about a project with memory_add: every new session there starts with it. */
+function MemoryEditor({ project }: { project: Project }) {
+  const [facts, setFacts] = useState<string[] | null>(null);
+  const [draft, setDraft] = useState("");
+  useEffect(() => {
+    void rpc("memory.list", { projectId: project.id })
+      .then(setFacts)
+      .catch(() => setFacts([]));
+  }, [project.id]);
+  if (!facts) return null;
+  const add = () => {
+    if (!draft.trim()) return;
+    void rpc("memory.add", { projectId: project.id, fact: draft })
+      .then((f) => (setFacts(f), setDraft("")))
+      .catch(fail);
+  };
+  return (
+    <Field title="What agents remember" note={facts.length ? `${plural(facts.length, "fact")} agents saved here. Every new session in this project starts with them.` : "Nothing yet. Agents save facts here as they learn them (a command that works, a decision you made), and every new session starts with them."} below>
+      <div className="lc-mem">
+        {facts.map((f, i) => (
+          <div key={`${i}:${f}`} className="lc-mem-row">
+            <span>{f}</span>
+            <button type="button" className="lc-ib l-focus" aria-label={`Forget: ${f}`} title="Forget it" onClick={() => void rpc("memory.forget", { projectId: project.id, index: i }).then(setFacts).catch(fail)}>
+              <I.close size={12} />
+            </button>
+          </div>
+        ))}
+        <form
+          className="lc-mem-add"
+          onSubmit={(e) => {
+            e.preventDefault();
+            add();
+          }}
+        >
+          <input className="lc-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add one yourself, like: tests run with npm test -- --run" aria-label={`Something agents should remember about ${project.name}`} />
+          <button type="submit" className="lc-btn" data-kind="plain" data-size="sm" disabled={!draft.trim()}>
+            Remember
+          </button>
+        </form>
+      </div>
+    </Field>
+  );
+}
+
 function RulesEditor({ project }: { project: Project }) {
   const [rules, setRules] = useState<ProjectRules | null>(null);
   useEffect(() => {
@@ -1661,7 +1751,7 @@ function Git() {
     <>
       <Group title="Worktrees">
         <Field title="Start new sessions in a worktree" note="Each gets a branch and a folder of its own. Off, they work in the project's checkout.">
-          <Switch checked={s.worktrees} onCheckedChange={(worktrees) => save({ worktrees })} label="" />
+          <NamedSwitch name="Start new sessions in a worktree" checked={s.worktrees} onCheckedChange={(worktrees) => save({ worktrees })} />
         </Field>
         <Field title="Branch names start with" note={`A new worktree's branch is this, then the session's id: ${s.branchPrefix}mvpa5q8q`}>
           <span className="lc-st-input">
@@ -1704,7 +1794,7 @@ function Git() {
           </button>
         </Field>
         <Field title="Keep the default branch pulled" note="Every 15 minutes, a project whose checkout sits on its default branch with nothing changed fast-forwards to the remote, so new worktrees start from the latest.">
-          <Switch checked={Boolean(s.autoPull)} onCheckedChange={(autoPull) => save({ autoPull })} label="" />
+          <NamedSwitch name="Keep the default branch pulled" checked={Boolean(s.autoPull)} onCheckedChange={(autoPull) => save({ autoPull })} />
         </Field>
       </Group>
       {trees.length > 0 && (
@@ -1940,7 +2030,7 @@ function ToolRow({ t }: { t: ToolUpdate }) {
     ) : t.state === "waiting" ? (
       `Waits for the ${plural(t.busy ?? 1, "session")} working on it`
     ) : t.state === "updating" ? (
-      <>Running {cmd}</>
+      t.step ? <span className="lc-mono lc-up-step">{t.step}</span> : <>Running {cmd}</>
     ) : t.state === "updated" ? (
       `Updated from ${t.from}${t.at ? ` ${since(t.at)}` : ""}. Sessions on it pick it up on their next turn.`
     ) : t.state === "failed" ? (
@@ -1957,7 +2047,8 @@ function ToolRow({ t }: { t: ToolUpdate }) {
           {t.state === "failed" ? "Try again" : "Update"}
         </button>
       )}
-      {t.state === "updating" && <span className="l-shimmer lc-up-quiet">Updating</span>}
+      {/* How far the updater has got when it says; a calm sweep while it doesn't. */}
+      {t.state === "updating" && <Progress className="lc-up-bar" size="sm" value={t.progress} label={t.progress === undefined ? "Updating" : undefined} />}
       {t.state === "waiting" && <Badge tone="warn">Waiting</Badge>}
       {t.state === "updated" && <Badge tone="ok">Updated</Badge>}
     </Field>

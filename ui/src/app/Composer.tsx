@@ -135,7 +135,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const lev = accessOf(settings.access);
   const queue = thread?.queue ?? [];
   const usage = thread?.usage;
-  const ctx = usage?.contextTokens && usage.contextWindow ? usage.contextTokens / usage.contextWindow : undefined;
+  // Past the window can't be: that's a total an older version saved, not how full the context is.
+  const ctx = usage?.contextTokens && usage.contextWindow && usage.contextTokens <= usage.contextWindow ? usage.contextTokens / usage.contextWindow : undefined;
 
   // The draft is kept per session, so switching away and back finds it as you left it.
   useEffect(() => {
@@ -242,18 +243,35 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     });
   };
 
+  // One send at a time: a second Enter while the files are read, or while the first is on its way, does nothing.
+  const sending = useRef(false);
   const send = async (how = mode) => {
     let t = text.trim();
-    if (!t && !files.length) return;
-    // $skill in the text: the tool is told to use it, by name (and where it lives, when known).
-    const used = [...skillsUsed.current].filter(([name]) => t.includes(`$${name}`));
-    if (used.length) t = `${t}\n\n${used.map(([name, path]) => `Use the ${name} skill${path ? ` (${path})` : ""}.`).join("\n")}`;
-    skillsUsed.current.clear();
-    const payload = { text: t || "Here are the files.", files: await Promise.all(files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how };
-    setText("");
-    setFiles([]);
-    setMention(null);
-    await onSend(payload);
+    if ((!t && !files.length) || sending.current) return;
+    sending.current = true;
+    // What was written, put back if the send fails, so nothing is lost.
+    const draft = { text, files, skills: new Map(skillsUsed.current) };
+    let handed = false;
+    try {
+      // $skill in the text: the tool is told to use it, by name (and where it lives, when known).
+      const used = [...skillsUsed.current].filter(([name]) => t.includes(`$${name}`));
+      if (used.length) t = `${t}\n\n${used.map(([name, path]) => `Use the ${name} skill${path ? ` (${path})` : ""}.`).join("\n")}`;
+      skillsUsed.current.clear();
+      const payload = { text: t || "Here are the files.", files: await Promise.all(files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how };
+      setText("");
+      setFiles([]);
+      setMention(null);
+      handed = true;
+      await onSend(payload);
+    } catch (e) {
+      // The draft comes back to try again, unless you've started a new one. Whoever sent it has said what went wrong.
+      setText((cur) => (cur.trim() ? cur : draft.text));
+      setFiles((cur) => (cur.length ? cur : draft.files));
+      skillsUsed.current = draft.skills;
+      if (!handed) toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      sending.current = false;
+    }
   };
 
   const addFiles = (list: FileList | File[] | null) => {
@@ -385,7 +403,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               </button>
             ))}
           </div>
-          <p className="lc-quiet lc-team-note">{ROUTE_LEVELS.find((l) => l.id === routed)?.note}. {modelLabel(cast.everyday, providers)} does most of it, {modelLabel(cast.strong, providers)} the hard parts and repairs.</p>
+          <p className="lc-quiet lc-team-note">
+            {ROUTE_LEVELS.find((l) => l.id === routed)?.note}. {modelLabel(cast.everyday, providers)} does most of it, {modelLabel(cast.strong, providers)} the hard parts and repairs, {modelLabel(cast.judge, providers)} judges. Settings › Agentic features picks them.
+          </p>
         </div>
       )}
       {settings.lead && !setup && helperPool.length > 0 && (
@@ -716,6 +736,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 setMention(null);
                 return;
               }
+            }
+            // A list still showing (commands on their way, nothing matching, stashed drafts) closes first; Escape stops the turn only after.
+            if (e.key === "Escape" && ((mention && mention.kind !== "@") || stashOpen)) {
+              e.preventDefault();
+              setMention(null);
+              setStashOpen(false);
+              return;
             }
             if (is(e.nativeEvent, "stash")) {
               e.preventDefault();

@@ -7,14 +7,14 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, PlanEntry, ProviderInfo } from "../../../contracts/src/index.ts";
-import { jsonLines, run, spawn, versionOf, which } from "../exec.ts";
+import { jsonLines, run, spawn, versionOf, which, withCodexPath } from "../exec.ts";
 import { codexAsk, CodexServerSession, isLimit } from "./codex-server.ts";
 import { effortOf, skillsIn } from "./models.ts";
 import type { OpenOptions, Provider, ProviderSession, TurnSink } from "./types.ts";
 
 let appServer = false;
 
-const SANDBOX: Record<Access, string> = { read: "read-only", ask: "workspace-write", edits: "workspace-write", auto: "workspace-write", full: "danger-full-access" };
+const SANDBOX: Record<Access, string> = { read: "read-only", ask: "workspace-write", edits: "workspace-write", auto: "workspace-write", review: "workspace-write", full: "danger-full-access" };
 
 type CodexItem = {
   id: string;
@@ -81,7 +81,7 @@ class CodexSession implements ProviderSession {
     if (o.soul) common.push("-c", `developer_instructions=${JSON.stringify(o.soul)}`);
     const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {
-      const child = spawn(bin, args, { cwd: o.cwd, env: o.env, stdio: ["pipe", "pipe", "pipe"] });
+      const child = spawn(bin, args, { cwd: o.cwd, env: withCodexPath(bin, o.env), stdio: ["pipe", "pipe", "pipe"] });
       let err = "";
       const started = new Map<string, number>();
       // Codex repeats a failure as an item, an event and a turn failure; it's said once.

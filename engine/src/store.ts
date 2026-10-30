@@ -207,13 +207,19 @@ export class Store {
     for numbers across many sessions. Later lines replace earlier ones with the same id.
   */
   marks(threadId: string): Item[] {
+    return this.peek(threadId, ["checkpoint", "review"]);
+  }
+
+  /** A thread's items of these kinds, read from its log without keeping the timeline in memory: for numbers and search across many sessions. */
+  peek(threadId: string, kinds: Item["kind"][]): Item[] {
     const cached = this.items.get(threadId);
-    if (cached) return cached.filter((x) => x.kind === "checkpoint" || x.kind === "review");
+    if (cached) return cached.filter((x) => kinds.includes(x.kind));
     const file = this.logFile(threadId);
     if (!existsSync(file)) return [];
     const byId = new Map<string, Item>();
+    const tags = kinds.map((k) => `"kind":"${k}"`);
     for (const line of readFileSync(file, "utf8").split("\n")) {
-      if (!line.includes('"kind":"checkpoint"') && !line.includes('"kind":"review"')) continue;
+      if (!tags.some((t) => line.includes(t))) continue;
       try {
         const item = JSON.parse(line) as Item;
         byId.set(item.id, item);

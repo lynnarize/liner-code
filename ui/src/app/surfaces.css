@@ -2234,16 +2234,14 @@
   color: var(--l-accent-text);
   cursor: pointer;
 }
-.lc-esc,
-.lc-rev {
+.lc-esc {
   display: grid;
   gap: 2px;
   padding: 4px;
   border-radius: 16px;
   background: var(--l-wash);
 }
-.lc-esc-h,
-.lc-rev-h {
+.lc-esc-h {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2258,22 +2256,16 @@
   text-align: left;
   cursor: pointer;
 }
-.lc-esc-h:disabled,
-.lc-rev-h:disabled {
+.lc-esc-h:disabled {
   cursor: default;
 }
-.lc-esc-h > span:nth-child(2),
-.lc-rev-h > span:nth-child(2) {
+.lc-esc-h > span:nth-child(2) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-rev-h b {
-  font-weight: 600;
-  color: var(--l-ink);
-}
-.lc-esc-b,
-.lc-rev-b {
+
+.lc-esc-b {
   display: grid;
   gap: 4px;
   padding: 10px 12px;
@@ -2282,37 +2274,7 @@
   box-shadow: none;
   animation: l-blur-in 300ms var(--l-ease-out) backwards;
 }
-.lc-rev-b > p {
-  margin: 0 0 4px;
-  font-size: 13px;
-  line-height: 19px;
-  color: var(--l-ink-2);
-}
-.lc-rev-f {
-  display: grid;
-  grid-template-columns: minmax(80px, auto) minmax(0, 1fr);
-  gap: 10px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 9px;
-  background: none;
-  font-size: 12.5px;
-  line-height: 18px;
-  text-align: left;
-  cursor: pointer;
-}
-.lc-rev-f .lc-mono {
-  font-size: 11.5px;
-  color: var(--l-ink-3);
-}
-.lc-rev-f[data-sev="blocking"] .lc-mono {
-  color: var(--l-danger-text);
-}
-@media (hover: hover) {
-  .lc-rev-f:hover {
-    background: var(--l-wash);
-  }
-}
+
 .lc-verdict {
   display: inline-flex;
   flex: none;
@@ -2320,42 +2282,65 @@
   font-size: 12.5px;
 }
 
-/* The plan card's estimate, run mode and step editing. */
-.lc-plan-est {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin: 2px 0 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--l-wash);
-}
-.lc-plan-est dt {
-  font-size: 11.5px;
-  color: var(--l-ink-3);
-}
-.lc-plan-est dd {
-  margin: 2px 0 0;
-  font-size: 13px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.lc-plan-mode {
+/* The plan card: who builds it and what it should cost, a fold for long plans, and step editing. */
+.lc-plan-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
+  color: var(--l-ink-3);
   font-size: 12.5px;
+}
+.lc-plan-meta b {
+  color: var(--l-ink-2);
+  font-weight: 500;
 }
 .lc-plan-modeb {
-  height: 28px;
-  padding: 0 10px;
+  height: 26px;
+  padding: 0 9px;
   font-size: 12.5px;
 }
-.lc-step-edit {
+.lc-plan-more {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 4px;
+  height: 26px;
+  margin: -6px 0 0 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-plan-more:hover {
+    background: var(--l-wash);
+    color: var(--l-ink-2);
+  }
+}
+.lc-plan-more[aria-expanded="true"] .lc-trail-chev {
+  rotate: 180deg;
+}
+.lc-pstep-who {
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--l-wash-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 22px;
+  color: var(--l-ink-2);
+}
+.lc-pstep-edit {
   width: 100%;
   height: 28px;
   box-sizing: border-box;
-  margin: -3px 0 2px -6px;
+  margin-left: -6px;
   padding: 0 6px;
   border: 0;
   border-radius: 7px;
@@ -2363,27 +2348,17 @@
   background: var(--l-wash-2);
   font: inherit;
   font-size: 13px;
-  font-weight: 500;
 }
-.lc-step-edit:focus {
+.lc-pstep-edit:focus {
   background: var(--l-surface);
   box-shadow: 0 0 0 1.5px var(--l-accent);
 }
-.lc-step-who {
-  height: 22px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--l-wash-2);
-  font: inherit;
-  font-size: 12px;
-  color: var(--l-ink-2);
-}
-.lc-step-acts {
+.lc-pstep-acts {
   display: inline-flex;
-  gap: 0;
+  align-items: center;
+  gap: 2px;
 }
-.lc-step-acts .lc-ib {
+.lc-pstep-acts .lc-ib {
   width: 24px;
   height: 24px;
 }
@@ -2521,7 +2496,6 @@
   .lc-rv-ask,
   .lc-cmp-col,
   .lc-esc-b,
-  .lc-rev-b,
   .lc-br-ask,
   .lc-br-hint,
   .lc-dev-ask,
@@ -3850,9 +3824,11 @@
   grid-row: 1;
   grid-column: 2;
 }
+/* Sending it back: the buttons go under the reason, by their place in the markup. (A row number
+   past the last made every empty row's gap show, a tall blank card.) */
 .lc-appr .l-appr__ask:has(.l-appr__why) .l-appr__actions {
   grid-column: 1 / -1;
-  grid-row: 99;
+  grid-row: auto;
 }
 .lc-appr .l-appr__head {
   align-items: center;
@@ -3947,36 +3923,6 @@
   }
 }
 
-/* Tool calls in the timeline: Liner's, with the step's words first and the tool's name quiet beside it. */
-.lc-tc .l-tcalls__fold > .l-tcalls__list {
-  padding-top: 6px;
-}
-.lc-tc .l-tcalls__label {
-  color: var(--l-ink);
-}
-.lc-tc .l-tcalls__line code {
-  max-width: 34%;
-  overflow: hidden;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-tc .l-tcalls__state {
-  margin-left: 0;
-}
-.lc-tc .l-tcalls__detail .lc-pre {
-  max-height: 260px;
-  margin: 0;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.lc-tc .l-tcalls__detail .lc-pre + .lc-pre {
-  margin-top: 8px;
-  padding-top: 8px;
-  box-shadow: inset 0 1px 0 var(--l-line);
-}
-
 /* A plan step that changes state swaps its mark in: the tick lands, the rays start. */
 .lc-todo-mk > svg {
   animation: l-swap-in 260ms var(--l-ease-out) backwards;
@@ -3986,23 +3932,10 @@
     animation: none;
   }
 }
-.lc-thought-h .l-aimark {
-  flex: none;
-}
-
 /* A Reviewer or escalation line in a narrow column: the words stay, the model and round give way first. */
-.lc-rev-h > span:nth-child(2),
 .lc-esc-h > span:nth-child(2) {
   flex-shrink: 0.2;
   min-width: 5.5em;
-}
-.lc-rev-h > .lc-model,
-.lc-rev-h > .lc-quiet {
-  flex-shrink: 6;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---------- Side chat ---------- */
@@ -4102,4 +4035,403 @@
 }
 .lc-sc-compose textarea::placeholder {
   color: var(--l-ink-4);
+}
+
+/* The Browsers kept for sessions an agent drives off screen: in the window, so their pages run at
+   full speed, but behind everything and see-through. */
+.lc-br-hidden {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: -1;
+  display: grid;
+  width: 1280px;
+  height: 800px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.lc-br-hidden > .lc-br {
+  grid-area: 1 / 1;
+}
+
+
+/* ---------- The trail: a turn's work, compact ---------- */
+/* One line that says what the turn did; open, a rail of steps, each a line and its result under
+   it. Open and moving while the turn runs, folded to the line when it ends. */
+.lc-trail {
+  display: grid;
+  min-width: 0;
+}
+.lc-trail-sum {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-trail-sum:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-trail-parts {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-trail-mark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 3px;
+  border-radius: 999px;
+  background: var(--l-ok);
+}
+.lc-trail-mark[data-state="failed"] {
+  background: var(--l-danger);
+}
+.lc-trail-mark[data-state="running"] {
+  background: var(--l-accent);
+  animation: lc-pulse 1.6s var(--l-ease-out) infinite;
+}
+.lc-trail-chev {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--l-ink-4);
+  transition: rotate 320ms var(--l-spring-smooth);
+}
+.lc-trail[data-open] .lc-trail-chev {
+  rotate: 180deg;
+}
+/* Folding: the steps' height eases away when the turn ends, and back when you open them. */
+.lc-trail-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 420ms var(--l-spring-smooth),
+    opacity 220ms ease;
+}
+.lc-trail[data-open] .lc-trail-fold {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.lc-trail-list {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  margin: 6px 0 2px 10px;
+  padding: 2px 0 2px 18px;
+  list-style: none;
+  box-shadow: inset 1.5px 0 0 var(--l-line);
+  /* Its sides always paint whole (the dots on the rail, an ask's frame and shadow at the right);
+     folded or folding, its top and bottom clip tight, and open, they let a shadow out too. */
+  clip-path: inset(0 -14px);
+}
+.lc-trail[data-open] .lc-trail-list {
+  clip-path: inset(-14px);
+}
+/* While it works, a light runs down the rail. */
+.lc-trail[data-live] .lc-trail-list::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1.5px;
+  height: 40%;
+  background: linear-gradient(transparent, var(--l-accent), transparent);
+  animation: lc-rail 1.8s var(--l-ease-out) infinite;
+}
+.lc-tstep,
+.lc-trail-note,
+.lc-trail-say,
+.lc-trail-ask {
+  position: relative;
+  min-width: 0;
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+.lc-tstep-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-tstep-line:disabled {
+  cursor: default;
+}
+/* Centred on the rail: the list's padding back, then half the rail's width, less half the dot. */
+.lc-tstep-dot {
+  position: absolute;
+  top: 7px;
+  left: calc(-18px + 0.75px - 3.5px);
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--l-ok);
+  box-shadow: 0 0 0 3px var(--lc-paper);
+}
+.lc-tstep[data-state="failed"] .lc-tstep-dot {
+  background: var(--l-danger);
+}
+.lc-tstep[data-state="running"] .lc-tstep-dot {
+  background: var(--l-accent);
+  animation: lc-pulse 1.6s var(--l-ease-out) infinite;
+}
+.lc-tstep-verb {
+  flex: none;
+  font-weight: 600;
+}
+.lc-tstep-target {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-tstep-time {
+  flex: none;
+  color: var(--l-ink-3);
+  font-size: 12px;
+}
+.lc-tstep-res {
+  margin-top: 1px;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.lc-tstep-quote {
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-good {
+  color: var(--l-ok-text);
+}
+.lc-bad {
+  color: var(--l-danger-text);
+}
+/* The step at work shows the last lines it printed, as they come. */
+.lc-tstep-tail {
+  margin: 4px 0 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lc-tstep-more {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+.lc-tstep-more .lc-pre {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lc-trail-say {
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+/* On the trail, thinking lines up with the steps: its dot on the rail, its words at their verbs. */
+.lc-trail-note .lc-thought-h {
+  min-height: 20px;
+  padding: 0 6px 0 0;
+}
+.lc-trail-note .lc-thought-dot {
+  position: absolute;
+  top: 6.5px;
+  left: calc(-18px + 0.75px - 3.5px);
+  margin: 0;
+  box-shadow: 0 0 0 3px var(--lc-paper);
+}
+.lc-trail-note .lc-thought-t {
+  margin: 2px 0;
+  padding-left: 0;
+  box-shadow: none;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* A turn's last line: changes and the Reviewer, as two chips; findings under them. */
+.lc-foot {
+  display: grid;
+  gap: 8px;
+}
+.lc-foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lc-foot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: box-shadow 160ms ease;
+}
+.lc-foot-chip:disabled {
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  button.lc-foot-chip:not(:disabled):hover {
+    box-shadow: inset 0 0 0 1px var(--l-line-strong);
+  }
+}
+.lc-foot-chip[data-tone="quiet"] {
+  background: var(--l-wash);
+  box-shadow: none;
+  color: var(--l-ink-3);
+  cursor: default;
+}
+.lc-foot-chip[data-tone="ok"] b {
+  color: var(--l-ok-text);
+}
+.lc-foot-chip[data-tone="danger"] b,
+.lc-foot-chip[data-tone="danger"] > svg {
+  color: var(--l-danger-text);
+}
+.lc-foot-chip b {
+  font-weight: 600;
+}
+.lc-foot-chev {
+  width: 14px;
+  height: 14px;
+  color: var(--l-ink-4);
+  transition: rotate 320ms var(--l-spring-smooth);
+}
+.lc-foot-chip[aria-expanded="true"] .lc-foot-chev {
+  rotate: 180deg;
+}
+.lc-foot-findings {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--l-card-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  animation: l-unblur 300ms var(--l-ease-out) backwards;
+}
+.lc-foot-findings > p {
+  margin: 2px 6px 6px;
+  color: var(--l-ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lc-foot-f {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-foot-f > code {
+  flex: none;
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.lc-foot-f[data-sev="blocking"] > code {
+  color: var(--l-danger-text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-foot-f:hover {
+    background: var(--l-wash);
+  }
+}
+
+/* The turn's progress under its head while it works: its plan's steps done, or a sweep. */
+.lc-head {
+  flex-wrap: wrap;
+}
+.lc-head-bar {
+  flex-basis: 100%;
+  margin-top: 2px;
+}
+
+@keyframes lc-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--l-accent) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+@keyframes lc-rail {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(260%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-trail-fold,
+  .lc-trail-chev,
+  .lc-thought-chev,
+  .lc-foot-chev {
+    transition: none;
+  }
+  .lc-trail[data-live] .lc-trail-list::before,
+  .lc-trail-mark[data-state="running"],
+  .lc-tstep[data-state="running"] .lc-tstep-dot,
+  .lc-thought[data-live] .lc-thought-dot,
+  .lc-tstep,
+  .lc-trail-note,
+  .lc-trail-say,
+  .lc-trail-ask,
+  .lc-foot-findings {
+    animation: none;
+  }
 }

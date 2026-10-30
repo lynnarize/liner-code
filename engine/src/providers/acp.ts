@@ -31,6 +31,8 @@ class AcpSession implements ProviderSession {
   private signal: AbortSignal | null = null;
   private calls = new Map<string, ToolCall>();
   private canLoad = false;
+  /** The session's cost as the agent last said it; unknown until it says, in a session loaded from before. */
+  private spent: number | null = 0;
   private stderr = "";
   private o: OpenOptions;
   private cmd: string[];
@@ -78,6 +80,7 @@ class AcpSession implements ProviderSession {
         try {
           await this.request("session/load", { sessionId: this.o.resume, cwd: this.o.cwd, mcpServers: this.mcpServers() });
           this.session = this.o.resume;
+          this.spent = null;
           return;
         } catch {
           // The agent forgot it; start fresh below.
@@ -85,6 +88,7 @@ class AcpSession implements ProviderSession {
       }
       const s = await this.request("session/new", { cwd: this.o.cwd, mcpServers: this.mcpServers() });
       this.session = String(s.sessionId);
+      this.spent = 0;
       // A model picked in Liner Code, through whichever way this agent takes one.
       const pick = acpModelRequest(s, this.session, this.o.model);
       if (pick) await this.request(pick.method, pick.params).catch(() => this.sink?.notice(`${this.cmd[0]} didn't switch to ${this.o.model}; it runs on its own default.`));
@@ -150,14 +154,15 @@ class AcpSession implements ProviderSession {
       const pick = (allow: boolean) => (options.find((o) => o.kind === (allow ? "allow_once" : "reject_once")) ?? options.find((o) => o.kind.startsWith(allow ? "allow" : "reject")))?.optionId;
       const command = commandOf(call);
       const kindNow = KIND[call.kind ?? ""] ?? "other";
-      const free = this.o.access === "full" || (this.o.access === "edits" && kindNow === "edit");
+      // Edits go ahead from Edits on its own up; Auto and Reviewer decides hand the rest to Liner Code.
+      const free = this.o.access === "full" || ((this.o.access === "edits" || this.o.access === "auto" || this.o.access === "review") && kindNow === "edit");
       if (free && !(this.o.guard && isDestructive(command))) return { outcome: { outcome: "selected", optionId: pick(true) } };
       const sink = this.sink;
       if (!sink || !this.signal) return { outcome: { outcome: "cancelled" } };
       const kind = KIND[call.kind ?? ""] ?? "other";
       const fields = [command && { label: "Command", value: command }, call.locations?.[0] && { label: "File", value: this.rel(call.locations[0].path) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
       const rule = kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : call.kind;
-      const a = await sink.approve({ tool: call.kind ?? "tool", title: call.title ?? "Use a tool", risk: kind === "exec" ? commandRisk(command) : "low", fields, rule }, this.signal).catch(() => ({ allow: false }));
+      const a = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: call.title ?? "Use a tool", risk: kind === "exec" ? commandRisk(command) : "low", fields, rule }, this.signal).catch(() => ({ allow: false }));
       const id = pick(a.allow);
       return id ? { outcome: { outcome: "selected", optionId: id } } : { outcome: { outcome: "cancelled" } };
     }
@@ -173,8 +178,9 @@ class AcpSession implements ProviderSession {
     if (!sink || !u) return;
     const kind = u.sessionUpdate;
     const text = (c: unknown) => ((c as Json)?.type === "text" ? String((c as Json).text ?? "") : "");
-    if (kind === "agent_message_chunk") sink.text(text(u.content), String(u.messageId ?? "msg"));
-    else if (kind === "agent_thought_chunk") sink.reasoning(text(u.content), String(u.messageId ?? "thought"));
+    // An agent that leaves out messageId (it's optional) gets a new paragraph after each tool call, not one for the whole turn.
+    if (kind === "agent_message_chunk") sink.text(text(u.content), u.messageId ? String(u.messageId) : undefined);
+    else if (kind === "agent_thought_chunk") sink.reasoning(text(u.content), u.messageId ? String(u.messageId) : undefined);
     else if (kind === "tool_call" || kind === "tool_call_update") {
       const prev = this.calls.get(String(u.toolCallId));
       const call: ToolCall = { ...prev, ...(u as ToolCall), content: (u.content as Json[] | undefined) ?? prev?.content };
@@ -199,8 +205,12 @@ class AcpSession implements ProviderSession {
       const entries = (u.entries as { content: string; status: string }[]) ?? [];
       sink.plan(entries.map((e) => ({ title: e.content, status: e.status === "completed" ? "completed" : e.status === "in_progress" ? "in_progress" : "pending" })));
     } else if (kind === "usage_update") {
-      const cost = u.cost as { amount?: number } | undefined;
-      sink.usage({ contextTokens: Number(u.used) || undefined, contextWindow: Number(u.size) || undefined, ...(cost?.amount != null ? { costUsd: cost.amount } : {}) });
+      // The cost is the session's so far, so a step's is what it grew by. A loaded session's first one holds
+      // its earlier turns too: it only sets where counting starts.
+      const cost = (u.cost as { amount?: number } | undefined)?.amount;
+      const step = cost != null && this.spent != null && cost >= this.spent ? cost - this.spent : undefined;
+      if (cost != null) this.spent = cost;
+      sink.usage({ contextTokens: Number(u.used) || undefined, contextWindow: Number(u.size) || undefined, ...(step !== undefined ? { costUsd: step } : {}) });
     }
   }
 
@@ -209,6 +219,8 @@ class AcpSession implements ProviderSession {
     await this.ready;
     if (!this.session) throw new Error("The agent didn't open a session.");
     sink.session(this.session);
+    // Stopped while the agent was starting: nothing was asked of it yet.
+    if (signal.aborted) return;
     this.sink = sink;
     this.signal = signal;
     const cancel = () => this.send({ method: "session/cancel", params: { sessionId: this.session } });

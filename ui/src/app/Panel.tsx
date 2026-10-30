@@ -141,6 +141,8 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
   }, [diff, focus?.path]);
 
   const files = pick === "all" || pick === "branch" ? (diff ?? []).map((d) => ({ path: d.path, added: 0, removed: 0 })) : (cp?.files ?? []);
+  // Looked at: this turn's files you've opened, not ones from another turn.
+  const seen = files.filter((f) => viewed.has(f.path)).length;
   const open = cps.filter((c) => !c.reverted && !c.committed);
   const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
 
@@ -182,9 +184,9 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
       <div className="lc-panel-foot">
         <span className="lc-viewed">
           <span className="lc-viewed-bar" aria-hidden>
-            <i style={{ width: `${files.length ? (Math.min(viewed.size, files.length) / files.length) * 100 : 0}%` }} />
+            <i style={{ width: `${files.length ? (seen / files.length) * 100 : 0}%` }} />
           </span>
-          {Math.min(viewed.size, files.length)} of {plural(files.length, "file")} viewed
+          {seen} of {plural(files.length, "file")} viewed
         </span>
         <span className="lc-grow" />
         {cp && !cp.reverted && !cp.committed && (

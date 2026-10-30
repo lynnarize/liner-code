@@ -30,15 +30,18 @@ function rangesIn(root: HTMLElement, query: string) {
   return out;
 }
 
-export function FindBar({ root, onClose, label = "Find in this session", onQuery }: { root: RefObject<HTMLElement | null>; onClose: () => void; label?: string; onQuery?: (q: string) => void }) {
+export function FindBar({ root, onClose, label = "Find in this session", onQuery, asked }: { root: RefObject<HTMLElement | null>; onClose: () => void; label?: string; onQuery?: (q: string) => void; asked?: number }) {
   const [query, setQuery] = useState("");
   const [at, setAt] = useState(0);
   const [count, setCount] = useState(0);
   const ranges = useRef<Range[]>([]);
   const field = useRef<HTMLInputElement>(null);
+  // Into the field when it opens, and again each time ⌘F asks while it's open (`asked` counts them).
   useEffect(() => {
     field.current?.focus();
     field.current?.select();
+  }, [asked]);
+  useEffect(() => {
     return () => {
       registry()?.delete("lc-find");
       registry()?.delete("lc-find-on");

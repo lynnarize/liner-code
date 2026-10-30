@@ -1,18 +1,21 @@
 /*
   The Browser surface: your dev server, beside the session. The engine passes the page through
   a small proxy on this Mac, so the page can tell the app what it logs and which element you
-  pointed at. Pick an element and ask the agent about it; the question goes with the element's
+  pointed at. A page that needs no server (an index.html) comes straight from the session's
+  folder. It opens on its own only what is this session's: a server its agent or its Terminal
+  started, one running in its folder, or the folder's own HTML; other servers on the Mac are
+  offered, never picked. Pick an element and ask the agent about it; the question goes with the element's
   place in the page and its HTML. Desktop, Tablet and Phone set the page's width; Offline makes
   the page's requests fail the way they would without a network.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Thread } from "@contracts";
+import type { LocalServer, Thread } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { bridge, isNative } from "./bridge";
-import { onAgentBrowser } from "./agentBrowser";
-import { rpc } from "./engine";
+import { onAgentBrowser, useHiddenBrowsers } from "./agentBrowser";
+import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { SurfaceNote } from "./Surfaces";
 
@@ -21,25 +24,52 @@ type Picked = { selector: string; path: string; text: string; html: string; rect
 type Width = "desktop" | "tablet" | "phone";
 const WIDTH: Record<Width, number | null> = { desktop: null, tablet: 820, phone: 390 };
 
-const LIKELY = /node|vite|next|bun|deno|python|ruby|php|astro|webpack|rails|uvicorn|gunicorn|hugo|jekyll|java/i;
+/** What the Browser shows: a page of a local port, or (port null) a page of the session's own folder. */
+type Target = { port: number | null; path: string };
 
-/** "5173", "localhost:5173/notes", "http://127.0.0.1:3000/x" → a port and a path; anything else stays a link. */
-function parseAddress(s: string): { port: number; path: string } | { external: string } | null {
+/** "5173", "localhost:5173/notes", "http://127.0.0.1:3000/x" → a port and a path; "index.html" or a file's path → a file; anything else stays a link. */
+function parseAddress(s: string): { port: number; path: string } | { file: string } | { external: string } | null {
   const v = s.trim();
   if (!v) return null;
   if (/^\d{2,5}$/.test(v)) return { port: Number(v), path: "/" };
   const m = /^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):(\d{2,5})(\/.*)?$/i.exec(v);
   if (m) return { port: Number(m[1]), path: m[2] || "/" };
+  if (/^file:\/\//i.test(v) || /\.html?(?:[?#].*)?$/i.test(v) || /^\.{0,2}\//.test(v)) return { file: v };
   if (/^https?:\/\//i.test(v) || /^[\w-]+(\.[\w-]+)+/.test(v)) return { external: /^https?:/i.test(v) ? v : `https://${v}` };
   return null;
 }
 
-export function BrowserSurface({ thread, agentName }: { thread: Thread; agentName: string }) {
-  const key = `lc:browse:${thread.projectId}`;
-  const [ports, setPorts] = useState<{ port: number; process: string }[] | null>(null);
-  const [target, setTarget] = useState<{ port: number; path: string } | null>(() => {
+/** The address bar's text for a target. */
+const shown = (t: Target) => (t.port === null ? t.path.slice(1) || "index.html" : `localhost:${t.port}${t.path === "/" ? "" : t.path}`);
+
+/**
+  The Browsers the app keeps out of sight for sessions an agent drives while they aren't on
+  screen. They sit behind the app, see-through, at a desktop size: inside the window, so the
+  page's timers and animation frames keep running as they would for you.
+*/
+export function HiddenBrowsers() {
+  const ids = useHiddenBrowsers();
+  const all = useEngine((s) => s.threads);
+  const sides = useEngine((s) => s.sides);
+  const threads = useMemo(() => ids.map((id) => all.find((t) => t.id === id) ?? sides.find((t) => t.id === id)).filter((t): t is Thread => Boolean(t)), [ids, all, sides]);
+  if (!threads.length) return null;
+  return (
+    <div className="lc-br-hidden" aria-hidden inert>
+      {threads.map((t) => (
+        <BrowserSurface key={t.id} thread={t} agentName="The agent" hidden />
+      ))}
+    </div>
+  );
+}
+
+export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; agentName: string; hidden?: boolean }) {
+  // v2: before it, the first open could remember any dev server on the Mac, even another app's.
+  const key = `lc:browse:v2:${thread.projectId}`;
+  const [ports, setPorts] = useState<LocalServer[] | null>(null);
+  const [pages, setPages] = useState<string[]>([]);
+  const [target, setTarget] = useState<Target | null>(() => {
     try {
-      return JSON.parse(localStorage.getItem(key) || "null") as { port: number; path: string } | null;
+      return JSON.parse(localStorage.getItem(key) || "null") as Target | null;
     } catch {
       return null;
     }
@@ -59,43 +89,61 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
   // The agent at the wheel: the page's answers it waits on, and the loads it waits for.
   const answers = useRef(new Map<string, (r: { ok: boolean; value?: unknown; error?: string }) => void>());
   const loads = useRef(new Set<() => void>());
-  const now = useRef({ target, logs });
-  now.current = { target, logs };
+  const now = useRef({ target, logs, proxy });
+  now.current = { target, logs, proxy };
   const [driving, setDriving] = useState(0);
 
-  const findPorts = () =>
-    rpc("ports.list", {})
-      .then((p) => {
-        setPorts(p);
-        return p;
-      })
-      .catch(() => {
-        setPorts([]);
-        return [];
-      });
-
-  // The first time: the port you used last in this project, else the likeliest dev server.
-  useEffect(() => {
-    void findPorts().then((p) => {
-      if (!target) {
-        const dev = p.find((x) => LIKELY.test(x.process));
-        if (dev) setTarget({ port: dev.port, path: "/" });
-      }
+  /** What could open: the servers on the Mac (the session's first) and the folder's HTML pages. */
+  const look = () =>
+    Promise.all([
+      rpc("ports.list", { threadId: thread.id }).catch((): LocalServer[] => []),
+      rpc("browser.files", { threadId: thread.id })
+        .then((f) => f.pages)
+        .catch((): string[] => []),
+    ]).then(([p, f]) => {
+      setPorts(p);
+      setPages(f);
+      return { p, f };
     });
-  }, [thread.projectId]);
 
+  /**
+    What to open by itself: the page you had open last in this project while its server still
+    runs, else a server this session's agent or Terminal started, else one running in its folder,
+    else the folder's index.html. Never someone else's server.
+  */
+  const pick = (p: LocalServer[], f: string[], last: Target | null): Target | null => {
+    if (last && (last.port === null ? f.length > 0 : p.some((x) => x.port === last.port))) return last;
+    const own = p.find((x) => x.owner === "session" && x.web) ?? p.find((x) => x.owner === "project" && x.web);
+    if (own) return { port: own.port, path: "/" };
+    return f.length ? { port: null, path: `/${f[0]}` } : null;
+  };
+
+  // On opening, and again when a turn ends: it may have made a page or started a server. The
+  // folder's own pages have no hot reload, so one that's open reloads then, with the turn's edits.
+  // Waiting on you is the middle of a turn, its edits half made; only a turn that's over counts.
+  const seen = useRef({ id: "", status: thread.status });
+  useEffect(() => {
+    const was = seen.current;
+    seen.current = { id: thread.id, status: thread.status };
+    const busy = (s: Thread["status"]) => s === "running" || s === "waiting";
+    if (was.id === thread.id && (busy(thread.status) || !busy(was.status))) return;
+    if (was.id === thread.id && now.current.target?.port === null) cmd("reload");
+    void look().then(({ p, f }) => setTarget((t) => pick(p, f, t)));
+  }, [thread.id, thread.status]);
+
+  const where = target ? (target.port ?? `files:${thread.id}`) : null;
   useEffect(() => {
     if (!target) return;
     localStorage.setItem(key, JSON.stringify(target));
-    setAddress(`localhost:${target.port}${target.path === "/" ? "" : target.path}`);
+    setAddress(shown(target));
     let live = true;
-    void rpc("browser.proxy", { port: target.port })
+    void (target.port === null ? rpc("browser.files", { threadId: thread.id }) : rpc("browser.proxy", { port: target.port }))
       .then((r) => live && setProxy(r.url))
       .catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
     return () => {
       live = false;
     };
-  }, [target?.port]);
+  }, [where]);
 
   // What the page says: console lines, where it went, what you picked.
   useEffect(() => {
@@ -106,7 +154,7 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
       else if (d.kind === "nav") {
         const path = String(d.path || "/");
         setTarget((t) => (t ? { ...t, path } : t));
-        setAddress((a) => (document.activeElement?.classList.contains("lc-br-addr") ? a : `localhost:${target?.port ?? ""}${path === "/" ? "" : path}`));
+        setAddress((a) => (document.activeElement?.classList.contains("lc-br-addr") ? a : shown({ port: now.current.target?.port ?? null, path })));
       } else if (d.kind === "picked") {
         setPicking(false);
         setPicked(d as unknown as Picked);
@@ -149,28 +197,33 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
       loads.current.add(done);
     });
     const read = async () => {
-      const r = (await page("read")) as Record<string, unknown>;
-      return { ...r, port: now.current.target?.port, errors: now.current.logs.filter((l) => l.level === "error").slice(-10).map((l) => l.text) };
+      let r = (await page("read")) as Record<string, unknown>;
+      // Not laid out yet: the window is in the background, or the frame only just got its size.
+      for (let i = 0; i < 10 && r.laidOut === false; i++) {
+        await new Promise((ok) => setTimeout(ok, 300));
+        r = (await page("read")) as Record<string, unknown>;
+      }
+      return { ...r, port: now.current.target?.port ?? undefined, errors: now.current.logs.filter((l) => l.level === "error").slice(-10).map((l) => l.text) };
     };
     return onAgentBrowser(thread.id, async (op, args) => {
       setDriving(Date.now());
       if (op === "open") {
         const a = parseAddress(String(args.url ?? ""));
-        if (!a || "external" in a) throw new Error("Only pages on this Mac: localhost:<port>/<path>, or a port.");
+        if (!a || "external" in a) throw new Error("Only pages on this Mac: localhost:<port>/<path>, a port, or an HTML file in this session's folder.");
         // Asked afresh: the engine may have restarted since, with a new proxy for the port.
-        const { url } = await rpc("browser.proxy", { port: a.port });
+        const { url, path } = "file" in a ? await rpc("browser.files", { threadId: thread.id, path: a.file }) : { ...(await rpc("browser.proxy", { port: a.port })), path: a.path };
         const wait = loaded(15000);
         setPicked(null);
         setLogs([]);
         setProxy(url);
-        setTarget({ port: a.port, path: a.path });
+        setTarget({ port: "file" in a ? null : a.port, path });
         setNonce((n) => n + 1);
         await wait;
         await new Promise((r) => setTimeout(r, 400));
         return read();
       }
       if (op === "read") return read();
-      if (op === "click" || op === "type") {
+      if (op === "click" || op === "type" || op === "press") {
         await page(op, args);
         await new Promise((r) => setTimeout(r, 700));
         return read();
@@ -179,6 +232,9 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
         if (!isNative()) throw new Error("Screenshots of the Browser need the Liner Code app; this is its preview in a web browser.");
         const f = frame.current?.getBoundingClientRect();
         if (!f) throw new Error("No page is open in the Browser.");
+        // Out of sight, the page is drawn again in a window of the shell's own, at the same address and size.
+        const { proxy: base, target: at } = now.current;
+        if (hidden) return bridge.shotUrl(base && at ? `${base}${at.path}` : frame.current!.src, Math.round(f.width), Math.round(f.height));
         return bridge.snapshot({ x: f.left, y: f.top, width: f.width, height: f.height });
       }
       throw new Error(`The Browser can't ${op}.`);
@@ -190,25 +246,43 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
     return () => clearTimeout(t);
   }, [driving]);
 
-  const go = (raw: string) => {
+  const go = async (raw: string) => {
     const a = parseAddress(raw);
-    if (!a) return toast("Type a port or a local address", { description: "Like 5173, or localhost:3000/settings" });
+    if (!a) return toast("Type a port, a local address or a page", { description: "Like 5173, localhost:3000/settings, or index.html" });
     if ("external" in a) {
       bridge.openExternal(a.external);
       return toast("Opened in your browser", { description: "Only pages on this Mac open beside the session." });
     }
+    let next: Target;
+    try {
+      next = "file" in a ? { port: null, path: (await rpc("browser.files", { threadId: thread.id, path: a.file })).path } : a;
+    } catch (e) {
+      return toast.error(e instanceof Error ? e.message : String(e));
+    }
     setPicked(null);
     setLogs([]);
-    if (target && a.port === target.port) {
-      setTarget({ port: a.port, path: a.path });
-      setNonce((n) => n + 1);
-    } else setTarget({ port: a.port, path: a.path });
+    setTarget(next);
+    if (target && next.port === target.port) setNonce((n) => n + 1);
+  };
+
+  // A server the session started, or one running in its folder, can be stopped from here; no other.
+  const own = target?.port != null ? ports?.find((p) => p.port === target.port && p.owner) : undefined;
+  const stopIt = async () => {
+    if (!own) return;
+    try {
+      await rpc("ports.stop", { threadId: thread.id, port: own.port });
+      toast(`Stopped localhost:${own.port}`, { description: own.process });
+      setProxy(null);
+      const { p, f } = await look();
+      setTarget(pick(p, f, null));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const ask = async () => {
-    if (!picked || !question.trim()) return;
-    const where = `localhost:${target?.port}${target?.path ?? ""}`;
-    const text = `${question.trim()}\n\nAbout the element \`${picked.selector}\` on ${where} (${picked.path}):\n\n\`\`\`html\n${picked.html}\n\`\`\``;
+    if (!picked || !question.trim() || !target) return;
+    const text = `${question.trim()}\n\nAbout the element \`${picked.selector}\` on ${shown(target)} (${picked.path}):\n\n\`\`\`html\n${picked.html}\n\`\`\``;
     try {
       await rpc("thread.send", { id: thread.id, text, mode: thread.status === "running" ? "queue" : undefined });
       toast(`Asked ${agentName}`, { description: picked.selector });
@@ -219,7 +293,7 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
   };
 
   const errors = logs.filter((l) => l.level === "error").length;
-  const src = useMemo(() => (proxy && target ? `${proxy}${target.path}` : null), [proxy, target?.port, nonce]);
+  const src = useMemo(() => (proxy && target ? `${proxy}${target.path}` : null), [proxy, where, nonce]);
   const w = WIDTH[width];
 
   // Where the ask card sits: under the element, inside the stage.
@@ -233,28 +307,42 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
     return { left, top };
   }, [picked]);
 
-  if (!target)
+  if (!target) {
+    // Servers elsewhere on the Mac are offered, the ones that serve a page first, never opened by themselves.
+    const others = (ports ?? []).filter((p) => !p.owner).sort((a, b) => Number(b.web) - Number(a.web));
     return (
-      <SurfaceNote icon={<I.globe size={20} />} title={ports === null ? "Looking for a dev server" : "Nothing is listening yet"}>
+      <SurfaceNote icon={<I.globe size={20} />} title={ports === null ? "Looking for a dev server" : "Nothing of this session's is running yet"}>
         {ports === null ? null : (
           <>
-            Start your dev server in the Terminal, or type its port below.
-            <span className="lc-br-ports">
-              {ports.slice(0, 6).map((p) => (
-                <button key={p.port} type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setTarget({ port: p.port, path: "/" })}>
-                  <span className="lc-mono">:{p.port}</span>
-                  <span className="lc-quiet">{p.process}</span>
-                </button>
-              ))}
-            </span>
+            Start the dev server in the Terminal, or ask {agentName} to build a page. Plain HTML opens without one.
+            {pages.length > 0 && (
+              <span className="lc-br-ports">
+                {pages.slice(0, 6).map((f) => (
+                  <button key={f} type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setTarget({ port: null, path: `/${f}` })}>
+                    <span className="lc-mono">{f}</span>
+                  </button>
+                ))}
+              </span>
+            )}
+            {others.length > 0 && (
+              <span className="lc-br-ports" aria-label="Other servers on this Mac">
+                <span className="lc-quiet">Elsewhere on this Mac</span>
+                {others.slice(0, 6).map((p) => (
+                  <button key={p.port} type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setTarget({ port: p.port, path: "/" })}>
+                    <span className="lc-mono">:{p.port}</span>
+                    <span className="lc-quiet">{p.process}</span>
+                  </button>
+                ))}
+              </span>
+            )}
             <form
               className="lc-br-first"
               onSubmit={(e) => {
                 e.preventDefault();
-                go(address);
+                void go(address);
               }}
             >
-              <input className="lc-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="5173, or localhost:3000" aria-label="Address" />
+              <input className="lc-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="5173, localhost:3000 or index.html" aria-label="Address" />
               <button type="submit" className="lc-btn" data-kind="primary">
                 Open
               </button>
@@ -263,6 +351,7 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
         )}
       </SurfaceNote>
     );
+  }
 
   return (
     <div className="lc-br">
@@ -280,7 +369,7 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
           className="lc-br-addrf"
           onSubmit={(e) => {
             e.preventDefault();
-            go(address);
+            void go(address);
             (document.activeElement as HTMLElement | null)?.blur();
           }}
         >
@@ -303,7 +392,12 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
         >
           <I.target size={14} />
         </button>
-        <button type="button" className="lc-ib l-focus" aria-label="Open in your browser" title="Open in your browser" onClick={() => bridge.openExternal(`http://localhost:${target.port}${target.path}`)}>
+        {own && (
+          <button type="button" className="lc-ib l-focus" aria-label={`Stop localhost:${own.port}`} title={`Stop localhost:${own.port} (${own.process})`} onClick={() => void stopIt()}>
+            <I.stop size={12} />
+          </button>
+        )}
+        <button type="button" className="lc-ib l-focus" aria-label="Open in your browser" title="Open in your browser" onClick={() => bridge.openExternal(target.port === null ? `${proxy}${target.path}` : `http://localhost:${target.port}${target.path}`)}>
           <I.external size={14} />
         </button>
       </div>
@@ -333,7 +427,8 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
       <div ref={stage} className="lc-br-stage" data-width={width}>
         {src ? (
           <iframe
-            key={src}
+            // Opened again at the same address (an agent checking its edit), it loads afresh.
+            key={`${src}#${nonce}`}
             ref={frame}
             className="lc-br-frame"
             src={src}
@@ -344,7 +439,7 @@ export function BrowserSurface({ thread, agentName }: { thread: Thread; agentNam
           />
         ) : (
           <div className="lc-diff-wait">
-            <span className="l-shimmer">Opening localhost:{target.port}</span>
+            <span className="l-shimmer">Opening {shown(target)}</span>
           </div>
         )}
         {picking && <span className="lc-br-hint l-glass">Point at an element and click it. Escape stops.</span>}

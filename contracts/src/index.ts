@@ -32,8 +32,13 @@ export function familyOf(id: ProviderId): BuiltinProvider | "acp" {
   before commands), auto (a reviewer approves routine steps and asks you about the rest),
   full (acts, and tells you; destructive commands still ask while the guard is on).
 */
-export type Access = "read" | "ask" | "edits" | "auto" | "full";
-export const ACCESS: Access[] = ["read", "ask", "edits", "auto", "full"];
+/**
+  What an agent may do on its own. `auto` is the tool's own auto mode (Claude Code's classifier,
+  Codex judging when to ask); `review` hands each step it would ask about to the Reviewer, another
+  model family, which lets routine ones go ahead and passes the rest to you.
+*/
+export type Access = "read" | "ask" | "edits" | "auto" | "review" | "full";
+export const ACCESS: Access[] = ["read", "ask", "edits", "auto", "review", "full"];
 /** How hard it thinks, by the tool's own name for it: low, medium, high, xhigh, max, and Claude Code's ultracode and ultrathink. */
 export type Effort = string;
 export type EffortInfo = { id: string; label: string; description?: string };
@@ -56,7 +61,8 @@ export type ModelInfo = {
 };
 
 /** On a Mac without Apple's command line tools, /usr/bin/git and /usr/bin/python3 are stubs that pop an installer. */
-export type SystemCheck = { git: boolean; python: boolean; clt: boolean; install?: string };
+/** What agents need on this Mac. `rg`: ripgrep, which agents search code with; `rgInstall` when it's missing and Homebrew can add it. */
+export type SystemCheck = { git: boolean; python: boolean; clt: boolean; install?: string; rg: boolean; rgInstall?: string };
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -230,15 +236,18 @@ export function castOf(providers: ProviderInfo[], mine: Partial<RouteCast> = {})
   };
   const first = `${ready[0].id}:${(ready[0].models.find((m) => m.isDefault) ?? ready[0].models[0]).id}`;
   const best = (family: string) => (family === "claude" ? pick("claude", /opus/i, /sonnet/i) : family === "codex" ? pick("codex", /sol(?!.*pro)/i, /sol/i, /luna/i) : undefined);
-  const everyday = mine.everyday ?? pick("codex", /luna(?!.*pro)/i) ?? pick("claude", /sonnet/i) ?? first;
-  const strong = mine.strong ?? best("claude") ?? best("codex") ?? everyday;
+  // Your picks count while their tool is ready; one that isn't falls back to the automatic choice.
+  const ok = (ref?: string) => (ref && ready.some((p) => p.id === splitModel(ref).provider) ? ref : undefined);
+  const everyday = ok(mine.everyday) ?? pick("codex", /luna(?!.*pro)/i) ?? pick("claude", /sonnet/i) ?? first;
+  const strong = ok(mine.strong) ?? best("claude") ?? best("codex") ?? everyday;
   const family = (ref: string) => familyOf(splitModel(ref).provider);
   const other = (ref: string) => (family(ref) === "claude" ? best("codex") : best("claude"));
-  const judge = mine.judge ?? (family(strong) !== family(everyday) ? strong : (other(everyday) ?? strong));
+  const judge = ok(mine.judge) ?? (family(strong) !== family(everyday) ? strong : (other(everyday) ?? strong));
   // Reads from outside the strong model's family where there is one: its best, and the everyday model when that's another one.
   const outside = other(strong);
   const second = family(everyday) !== family(strong) ? everyday : undefined;
-  const critics = mine.critics?.length ? mine.critics : outside ? [...new Set([outside, second ?? outside])] : [everyday];
+  const yours = (mine.critics ?? []).filter((c) => ok(c));
+  const critics = yours.length ? [...new Set(yours)] : outside ? [...new Set([outside, second ?? outside])] : [everyday];
   return { everyday, strong, judge, critics };
 }
 
@@ -282,6 +291,8 @@ export type Thread = {
   agent: string;
   /** In a lead-and-coder session, the agent who plans first; you approve, then `agent` builds. */
   lead?: string;
+  /** Who took the last turn: the lead while it plans and its plan waits on you, then the coder. */
+  turnBy?: string;
   status: ThreadStatus;
   access: Access;
   /** Overrides the agent's model for this thread. */
@@ -427,6 +438,10 @@ export type Item =
       reason?: string;
       /** What "Don't ask again" would allow for the rest of the session, like "pnpm test". */
       rule?: string;
+      /** The tool call it was for: once answered, it folds into that call's row. */
+      toolId?: string;
+      /** The Reviewer's model, when it decided instead of you (Reviewer decides). */
+      reviewer?: string;
     })
   | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string> })
   | (Base & { kind: "proposal"; title: string; plan: string; state: "asking" | "approved" | "changed" | "expired"; note?: string })
@@ -444,7 +459,8 @@ export type Item =
       seconds?: number;
     })
   | (Base & { kind: "error"; message: string })
-  | (Base & { kind: "limit"; message: string; until?: number; provider: string })
+  /** `fallback`: another ready tool's model that can carry on (another account of the same tool first). */
+  | (Base & { kind: "limit"; message: string; until?: number; provider: string; fallback?: string })
   | (Base & { kind: "notice"; text: string });
 
 export type ItemKind = Item["kind"];
@@ -470,6 +486,10 @@ export type Settings = {
   reviewRounds?: number;
   /** The Reviewer reads small changes too (SMALL_CHANGE lines or fewer, or only docs), which it otherwise lets through. */
   reviewSmall?: boolean;
+  /** Agents outside Liner Code (Claude Code or Codex in a terminal) may list, read, start and message sessions, through its MCP server. */
+  outside?: boolean;
+  /** When a tool runs out of usage mid-session: wait for it to reset (the default), or carry on with another ready tool. */
+  onLimit?: "wait" | "carry";
   /** Routed sessions: the level new ones start at (high unless set), and models of your own in place of the cast's. */
   route?: { level?: RouteLevel; cast?: Partial<RouteCast> };
   /** Claude Code bills to your Claude plan, or to the Anthropic key you added. */
@@ -616,6 +636,10 @@ export type ToolUpdate = {
   from?: string;
   error?: string;
   at?: number;
+  /** While updating: how far, 0 to 1, when the updater says (a percentage, or "12 MB / 40 MB"). */
+  progress?: number;
+  /** While updating: the last line the updater printed, like "Downloading 2.1.312". */
+  step?: string;
 };
 
 export type Updates = {
@@ -797,7 +821,10 @@ export type EngineEvent =
   /** An agent uses the session's Browser; the app answers with agent.browser.reply. */
   | { type: "agent.browser"; id: string; threadId: string; op: AgentBrowserOp; args: Record<string, unknown> };
 
-export type AgentBrowserOp = "open" | "read" | "click" | "type" | "screenshot";
+export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot";
+
+/** A server listening on this Mac, as the Browser sees it. */
+export type LocalServer = { port: number; process: string; url: string; owner: "session" | "project" | null; web: boolean };
 
 /** App → engine. Each method's params and result. */
 export type Rpc = {
@@ -820,6 +847,16 @@ export type Rpc = {
   "thread.create": [{ projectId: string; agent?: string; lead?: string; setup?: string; route?: RouteLevel; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string }, Thread];
   "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string; effort?: Effort; agent?: string; lead?: string | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; helpers?: string[]; setup?: string | null; route?: RouteLevel | null; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
+  /** Agents outside Liner Code: whether they may in, and the commands that add its MCP server to Claude Code and Codex. */
+  "outside.info": [Record<string, never>, { on: boolean; claude: string; codex: string }];
+  /** What agents remember about a project (memory_add), oldest first; add, and forget by place. */
+  "memory.list": [{ projectId: string }, string[]];
+  "memory.add": [{ projectId: string; fact: string }, string[]];
+  "memory.forget": [{ projectId: string; index: number }, string[]];
+  /** A project's earlier sessions, searched: your messages and the agents' answers. */
+  "sessions.search": [{ projectId: string; query: string }, { threadId: string; title: string; at: number; who: "you" | "agent"; snippet: string }[]];
+  /** A limited session carries on with another tool's model (`model`, else the one its limit card offers). */
+  "thread.carryOn": [{ id: string; model?: string }, null];
   "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number } }, null];
   "thread.queue": [{ id: string; queue: QueuedMessage[] }, Thread];
   /** Rewinds to just before a message you sent: the turns from there come off, and with `files`, so do their changes. */
@@ -912,9 +949,18 @@ export type Rpc = {
   "pr.picture": [{ threadId: string }, PrPicture];
   /** Runs the project's tests on this Mac for the PR card `itemId`, asking first as the session's access says. */
   "pr.test": [{ threadId: string; itemId: string }, PrTestResult];
-  "ports.list": [Record<string, never>, { port: number; process: string; url: string }[]];
+  /**
+    The servers listening on this Mac. With a session: whose each is (`session`: its agent or its
+    Terminal started it; `project`: it runs in the session's folder), the session's first, and
+    which answer with a page (`web`).
+  */
+  "ports.list": [{ threadId?: string }, LocalServer[]];
+  /** Stops a dev server of the session's (never another app's); answers with the ports it stopped. */
+  "ports.stop": [{ threadId: string; port: number }, number[]];
   /** A proxy onto a local port, for the Browser surface: the page reports its console and answers picks. */
   "browser.proxy": [{ port: number }, { url: string }];
+  /** The session folder's own files, served for the Browser (no dev server needed): `path` as asked, in the folder, and its HTML pages. */
+  "browser.files": [{ threadId: string; path?: string }, { url: string; path: string; pages: string[] }];
   "device.list": [Record<string, never>, { devices: Device[]; ready: boolean; detail?: string }];
   "device.boot": [{ udid: string }, null];
   "device.shot": [{ udid: string }, { png: string }];

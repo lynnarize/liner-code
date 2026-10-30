@@ -2,6 +2,7 @@
   The commands the app can send, one handler each. Anything slow (a turn) runs in the
   background and reports through events; handlers answer as soon as the command is accepted.
 */
+import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
@@ -22,9 +23,10 @@ import { providers, syncProviders, titleFrom, type Runtime } from "./runtime.ts"
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
 import { picture } from "./prflow.ts";
 import { uid, type Store } from "./store.ts";
-import { appearance, boot, devices, ghState, listeningPorts, prCreate, prFor, prList, prMerge, readFile, screenshot, type DeviceLogs, type Terminals } from "./surfaces.ts";
+import { appearance, boot, devices, ghState, htmlPages, listeningPorts, pagePath, stopServers, prCreate, prFor, prList, prMerge, readFile, screenshot, type DeviceLogs, type Terminals } from "./surfaces.ts";
 import type { Proxies } from "./proxy.ts";
 import type { AgentTools } from "./agent-tools.ts";
+import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
 import { Updater } from "./updates.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
@@ -33,7 +35,10 @@ const git = (cwd: string, args: string[]) => run("git", args, { cwd, timeout: 12
 
 /** Git and Python, for real: Apple's stubs in /usr/bin only work once the command line tools are in. */
 export async function systemCheck(env: NodeJS.ProcessEnv): Promise<SystemCheck> {
-  if (process.platform !== "darwin") return { git: Boolean(which("git", env)), python: Boolean(which("python3", env)), clt: true };
+  // Found on PATH, or linked into Liner Code's helpers from another tool's copy.
+  const rg = Boolean(which("rg", env));
+  const rgInstall = rg ? undefined : which("brew", env) ? "brew install ripgrep" : undefined;
+  if (process.platform !== "darwin") return { git: Boolean(which("git", env)), python: Boolean(which("python3", env)), clt: true, rg, rgInstall };
   const clt = (await run("xcode-select", ["-p"], { env, timeout: 10000 })).code === 0;
   const real = (cmd: string) => {
     const path = which(cmd, env);
@@ -41,7 +46,7 @@ export async function systemCheck(env: NodeJS.ProcessEnv): Promise<SystemCheck> 
   };
   const git = real("git");
   const python = real("python3");
-  return { git, python, clt, install: git && python ? undefined : "xcode-select --install" };
+  return { git, python, clt, install: git && python ? undefined : "xcode-select --install", rg, rgInstall };
 }
 
 /** "git@github.com:halcyon/app.git" or "https://github.com/halcyon/app" → "halcyon/app". */
@@ -124,7 +129,7 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; outside?: { apply(): void } };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings);
@@ -592,6 +597,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // null clears a field; undefined leaves it.
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : v]));
       const t = store.thread(id);
+      if (patch.archived && !t.archived) leftBehind(id);
       // A setup or a route brings who works on it; letting one go comes before whoever you picked instead.
       if (route) return store.patchThread(id, { ...clean, ...routeFields(route, t) });
       // Picking someone else to work on it ends routing.
@@ -628,6 +634,25 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         compact: s.provider === "claude" || s.provider === "codex",
       };
     },
+    "outside.info": () => {
+      // How its MCP server starts: on the app's own Node when this is the app, else on this Node.
+      const script = fileURLToPath(new URL("./outside.ts", import.meta.url));
+      const electron = Boolean(process.versions.electron);
+      const home = store.home === join(homedir(), ".liner-code") ? [] : [`LINER_HOME=${store.home}`];
+      const vars = [...(electron ? ["ELECTRON_RUN_AS_NODE=1"] : []), ...home];
+      const q = (v: string) => (/^[\w./:=-]+$/.test(v) ? v : `'${v.replace(/'/g, "'\\''")}'`);
+      const argv = [process.execPath, script].map(q).join(" ");
+      return {
+        on: store.settings.outside === true,
+        claude: `claude mcp add liner-code${vars.map((v) => ` -e ${q(v)}`).join("")} -- ${argv}`,
+        codex: `codex mcp add liner-code${vars.map((v) => ` --env ${q(v)}`).join("")} -- ${argv}`,
+      };
+    },
+    "memory.list": ({ projectId }) => factsOf(store.home, store.project(projectId).id),
+    "memory.add": ({ projectId, fact }) => remember(store.home, store.project(projectId).id, fact).facts,
+    "memory.forget": ({ projectId, index }) => forgetFact(store.home, store.project(projectId).id, index),
+    "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query),
+    "thread.carryOn": async ({ id, model }) => (await runtime.carryOn(id, model), null),
     "thread.send": ({ id, text, files, mode, anchor }) => {
       const t = store.thread(id);
       // Liner Code's own commands, whichever tool the session runs on.
@@ -718,6 +743,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "thread.remove": async ({ id }) => {
       const t = store.thread(id);
+      leftBehind(id);
       for (const s of store.threads.filter((x) => x.sideOf === id)) dropSide(s.id);
       runtime.closeThread(id);
       const project = store.project(t.projectId);
@@ -894,6 +920,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "settings.save": (patch) => {
       const settings = store.setSettings(patch);
+      if (patch.outside !== undefined) x.outside?.apply();
       // A new or changed account is a tool to find; a model id you added only changes the lists.
       if (patch.accounts) {
         syncProviders(settings);
@@ -989,7 +1016,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { files };
     },
 
-    "term.open": ({ threadId, cols, rows, command }) => x.terms.open(cwdOf(threadId), cols, rows, command),
+    "term.open": ({ threadId, cols, rows, command }) => x.terms.open(cwdOf(threadId), cols, rows, command, threadId),
     "term.write": ({ id, data }) => (x.terms.write(id, data), null),
     "term.resize": ({ id, cols, rows }) => (x.terms.resize(id, cols, rows), null),
     "term.close": ({ id }) => (x.terms.close(id), null),
@@ -1086,8 +1113,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       await prMerge(store.project(projectId).path, number, env);
       return null;
     },
-    "ports.list": () => listeningPorts(env),
+    "ports.list": ({ threadId }) => (threadId ? listeningPorts(env, mine(threadId)) : listeningPorts(env)),
+    "ports.stop": ({ threadId, port }) => stopServers(env, mine(threadId), { port }),
     "browser.proxy": async ({ port }) => ({ url: await x.proxies.url(port) }),
+    "browser.files": async ({ threadId, path }) => {
+      const root = cwdOf(threadId);
+      return { url: await x.proxies.files(root), path: pagePath(root, path ?? ""), pages: htmlPages(root) };
+    },
     "agent.browser.reply": ({ id, ok, value, error }) => (x.tools?.reply(id, ok, value, error), null),
 
     "device.list": () => devices(env),
@@ -1111,6 +1143,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return undefined;
   }
 
+  /** A session, as the dev servers on this Mac are told apart: by its id, and its folders. */
+  function mine(threadId: string) {
+    return { threadId, folders: [...new Set([cwdOf(threadId), store.project(store.thread(threadId).projectId).path])] };
+  }
+  /** What a session started stops with it, when it's archived or removed (T3 Code's resource cleanup). */
+  function leftBehind(threadId: string) {
+    void stopServers(env, mine(threadId), { only: "session" }).catch(() => {});
+  }
   function cwdOf(threadId: string) {
     const t = store.thread(threadId);
     return t.worktree?.path ?? store.project(t.projectId).path;

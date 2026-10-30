@@ -3,9 +3,9 @@
   findings are read back, what the coder is told when a finding blocks, and which subagents a
   Claude Code agent brings for each run mode. A routed session's judge and critics read the
   same way; what the strong model is told to repair, and what a writer is told after a critique,
-  are here too. The runtime does the running.
+  are here too, and the one line Reviewer decides asks about each step. The runtime does the running.
 */
-import type { AgentProfile, Finding, ProviderInfo, RunMode } from "../../contracts/src/index.ts";
+import type { AgentProfile, Finding, ProviderInfo, Risk, RunMode } from "../../contracts/src/index.ts";
 import { familyOf, splitModel } from "../../contracts/src/index.ts";
 
 /** What the Reviewer checks, the same every time, so its calls are comparable. */
@@ -102,6 +102,44 @@ export function reviewerFor(agent: AgentProfile, providers: ProviderInfo[]): str
   const other = family === "claude" ? (ready("codex") ?? ready("opencode")) : ready("claude");
   if (other) return `${other.id}:${other.id === "claude" ? "claude-opus-5-5" : other.models[0].id}`;
   return ready("claude") ? "claude:claude-opus-5-5" : null;
+}
+
+/** The Reviewer's quickest model, for deciding one step at a time: Haiku for Claude, a mini for the others. */
+export function quickOf(ref: string, providers: ProviderInfo[]) {
+  const { provider } = splitModel(ref);
+  const quick = providers.find((p) => p.id === provider)?.models.find((m) => !m.legacy && /haiku|mini|flash|fast/i.test(m.id));
+  return quick ? `${provider}:${quick.id}` : ref;
+}
+
+/**
+  Reviewer decides: the Reviewer reads one step the agent would otherwise ask you about, and lets
+  it go ahead or hands it to you. It answers from what's here, without running anything.
+*/
+export function stepPrompt(ask: string, step: { title: string; fields: { label: string; value: string }[]; risk: Risk }, cwd: string) {
+  return [
+    "You decide, for a person, whether the coding agent working for them may take one step without asking them.",
+    "",
+    `What they asked the agent:\n"""\n${ask.trim().slice(0, 2000) || "(not said)"}\n"""`,
+    "",
+    `The step: ${step.title}`,
+    ...step.fields.map((f) => `${f.label}: ${f.value}`),
+    `Risk by the app's own rules: ${step.risk}`,
+    `The project's folder: ${cwd}`,
+    "",
+    "ALLOW it when it is routine for that ask and stays in the project's folder: reading anything, building, testing, linting, formatting, running or serving the app, installing the project's own dependencies.",
+    "ASK when it reaches outside the folder, deletes or overwrites what git can't bring back, pushes, publishes, deploys, spends money, sends anything off this machine other than fetching packages, touches secrets or keys, or has nothing to do with the ask. When unsure, ASK.",
+    "",
+    "Don't run or read anything; answer from what's above. Reply with one line: ALLOW or ASK, a colon, then why in under 15 words.",
+  ].join("\n");
+}
+
+/**
+  The Reviewer's call on a step, or null when it didn't make one: the last line that starts with
+  ALLOW or ASK (bold or not), so a word in passing ("I can't ALLOW this. ASK: …") isn't the call.
+*/
+export function parseStep(text: string): { allow: boolean; reason: string } | null {
+  const m = [...text.matchAll(/^[ \t*_`]*(ALLOW|ASK)\b[*_`]*[ \t]*[:\-–—]?[ \t]*([^\n]*)/gm)].pop();
+  return m ? { allow: m[1] === "ALLOW", reason: m[2].trim().replace(/^["']|["']$/g, "").slice(0, 160) } : null;
 }
 
 export type SubagentDef = { description: string; prompt: string; tools?: string[]; model?: string };

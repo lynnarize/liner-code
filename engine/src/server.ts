@@ -4,6 +4,8 @@
   - POST /rpc      { method, params } → { ok, result } or { ok: false, error }
   - POST /surface  { tool, args } from an agent's Liner Code tools (mcp.ts), with that session's
                    own key (x-liner-surface), which reaches its surfaces and nothing else
+  - POST /outside  { tool, args } from an agent outside Liner Code (outside.ts), with the key in
+                   outside.json (x-liner-outside), only while that's on in Settings
   - GET  /*        the built app, when there is one
   Every other request carries the token the shell made (x-liner-token), so other apps and web
   pages on this machine can't drive your agents.
@@ -20,8 +22,9 @@ const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".j
 type Api = { call(method: string, params: unknown): Promise<unknown>; ready: Promise<unknown> };
 type Hooks = (id: string, key: string, body: unknown, headers: Record<string, string>) => boolean;
 type Surface = (key: string, tool: string, args: Record<string, unknown>) => Promise<unknown> | null;
+type Outside = Surface;
 
-export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface }) {
+export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside }) {
   const { store, api, token } = o;
   const clients = new Set<ServerResponse>();
   store.on((e: EngineEvent) => {
@@ -74,10 +77,13 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       }
       return;
     }
-    if (url.pathname === "/surface" && req.method === "POST" && o.surface) {
+    if ((url.pathname === "/surface" || url.pathname === "/outside") && req.method === "POST") {
+      const outside = url.pathname === "/outside";
+      const take = outside ? o.outside : o.surface;
+      if (!take) return void res.writeHead(404).end();
       try {
         const { tool, args } = (await body(req)) as { tool?: string; args?: Record<string, unknown> };
-        const work = o.surface(String(req.headers["x-liner-surface"] ?? ""), String(tool ?? ""), args ?? {});
+        const work = take(String(req.headers[outside ? "x-liner-outside" : "x-liner-surface"] ?? ""), String(tool ?? ""), args ?? {});
         if (!work) return void res.writeHead(401).end("Unauthorized");
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, result: await work }));
       } catch (e) {

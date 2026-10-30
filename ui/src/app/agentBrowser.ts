@@ -1,23 +1,29 @@
 /*
   An agent using a session's Browser. The engine asks (an agent.browser event); the session's
   Browser surface answers when it's on screen. When it isn't, the session opens it, if the
-  session itself is open; otherwise the agent hears that the Browser isn't open, and the engine
+  session itself is open; otherwise the app keeps a Browser for it out of sight, where the page's
+  scripts run and its console is read just the same (T3 Code keeps a headless browser for this).
+  Only with no window at all does the agent hear that the Browser isn't open, and the engine
   reads the page from the server instead.
 */
+import { useSyncExternalStore } from "react";
 import type { AgentBrowserOp } from "@contracts";
 import { onStream, rpc } from "./engine";
 
 type Handler = (op: AgentBrowserOp, args: Record<string, unknown>) => Promise<unknown>;
-const handlers = new Map<string, Handler>();
+/** Each session's Browsers that can answer, the newest last: the one on screen over the hidden one. */
+const handlers = new Map<string, Handler[]>();
 const openers = new Map<string, () => void>();
 const arrived = new Map<string, Set<() => void>>();
 
-/** The Browser surface of a session answers for it while it's mounted. */
+/** A Browser of a session answers for it while it's mounted. */
 export function onAgentBrowser(threadId: string, fn: Handler) {
-  handlers.set(threadId, fn);
+  handlers.set(threadId, [...(handlers.get(threadId) ?? []), fn]);
   for (const f of arrived.get(threadId) ?? []) f();
   return () => {
-    if (handlers.get(threadId) === fn) handlers.delete(threadId);
+    const rest = (handlers.get(threadId) ?? []).filter((h) => h !== fn);
+    if (rest.length) handlers.set(threadId, rest);
+    else handlers.delete(threadId);
   };
 }
 
@@ -29,18 +35,51 @@ export function onBrowserWanted(threadId: string, open: () => void) {
   };
 }
 
+/* ---------- Hidden Browsers, for sessions that aren't on screen ---------- */
+
+/** Sessions an agent drives out of sight, and when each was last used; one idle for two minutes is let go. */
+const hidden = new Map<string, number>();
+let shown: string[] = [];
+const watchers = new Set<() => void>();
+const changed = () => {
+  shown = [...hidden.keys()];
+  for (const w of watchers) w();
+};
+const IDLE = 120_000;
+setInterval(() => {
+  const before = hidden.size;
+  for (const [id, at] of hidden) if (Date.now() - at > IDLE) hidden.delete(id);
+  if (hidden.size !== before) changed();
+}, 30_000);
+
+/** The sessions whose Browser the app keeps out of sight right now. */
+export function useHiddenBrowsers() {
+  return useSyncExternalStore(
+    (f) => (watchers.add(f), () => void watchers.delete(f)),
+    () => shown,
+  );
+}
+
+const top = (threadId: string) => handlers.get(threadId)?.at(-1);
+
 function handlerFor(threadId: string, wait: number) {
-  const have = handlers.get(threadId);
-  if (have) return Promise.resolve(have);
+  const have = top(threadId);
+  if (have) {
+    if (hidden.has(threadId)) hidden.set(threadId, Date.now());
+    return Promise.resolve(have);
+  }
   const open = openers.get(threadId);
-  if (!open) return Promise.resolve(undefined);
-  open();
+  if (open) open();
+  else {
+    hidden.set(threadId, Date.now());
+    changed();
+  }
   return new Promise<Handler | undefined>((resolve) => {
     const set = arrived.get(threadId) ?? new Set();
     const done = () => {
       set.delete(done);
       clearTimeout(timer);
-      resolve(handlers.get(threadId));
+      resolve(top(threadId));
     };
     const timer = setTimeout(done, wait);
     set.add(done);

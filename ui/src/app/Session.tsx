@@ -90,14 +90,14 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     setPanel((p) => openTab(p, "changes"));
   };
   const toggle = (tab: Tab) => setPanel((p) => (p.open && p.tab === tab && !p.picking ? { ...p, open: false, wide: false } : openTab(p, tab)));
-  // ⌘F finds in the thread (Review has its own, over the diff).
-  const [finding, setFinding] = useState(false);
+  // ⌘F finds in the thread (Review has its own, over the diff). It counts, so ⌘F with the bar open takes you back to its field.
+  const [finding, setFinding] = useState(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!is(e, "find")) return;
       if (panel.open && panel.wide && panel.tab === "changes") return;
       e.preventDefault();
-      setFinding(true);
+      setFinding((n) => n + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -155,6 +155,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       stick();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
+      // Thrown on, so the composer puts the message back.
+      throw e;
     }
   };
   const update = (patch: Partial<RunSettings>) => {
@@ -270,7 +272,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             </div>
             <Rail thread={thread} panel={panel} onPanel={setPanel} onTab={toggle} files={openFiles} branch={branch} />
           </div>
-          {finding && <FindBar root={contentRef} onClose={() => setFinding(false)} />}
+          {finding > 0 && <FindBar root={contentRef} asked={finding} onClose={() => setFinding(0)} />}
           {cite && (
             <button
               type="button"

@@ -10,7 +10,8 @@ export const ACCESS_LEVELS: { id: Access; label: string; short: string; note: st
   { id: "read", label: "Read only", short: "Read only", note: "Reads and answers. Changes nothing." },
   { id: "ask", label: "Asks first", short: "Asks before edits", note: "Asks before every command and edit." },
   { id: "edits", label: "Edits on its own", short: "Edits on its own", note: "Edits files, asks before commands." },
-  { id: "auto", label: "Reviewer decides", short: "Reviewer decides", note: "A reviewer approves routine steps and asks you about the rest." },
+  { id: "auto", label: "Auto", short: "Auto", note: "The tool's own auto mode lets routine steps through and asks you about the rest." },
+  { id: "review", label: "Reviewer decides", short: "Reviewer decides", note: "Your Reviewer, another model family, allows routine commands and hands you the rest." },
   { id: "full", label: "Full access", short: "Full access", note: "Acts, then tells you. Commands that can't be undone still ask." },
 ];
 export const accessOf = (a: Access) => ACCESS_LEVELS.find((x) => x.id === a) ?? ACCESS_LEVELS[1];
@@ -193,10 +194,12 @@ export function since(at: number, now = Date.now()) {
 /** "3m 43s", "1m 12s", "18s", "1.4s". */
 export function duration(seconds?: number) {
   if (seconds === undefined) return "";
-  if (seconds < 10) return `${seconds.toFixed(1)}s`;
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
+  if (seconds < 9.95) return `${seconds.toFixed(1)}s`;
+  // Rounded once, before it's split, so 119.6 seconds reads "2m 0s", not "1m 60s".
+  const whole = Math.round(seconds);
+  if (whole < 60) return `${whole}s`;
+  const m = Math.floor(whole / 60);
+  const s = whole % 60;
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m ${s}s`;
 }
 

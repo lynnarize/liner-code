@@ -3,8 +3,9 @@
   passes it in and everything here runs with it.
 */
 import { execFile, spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
-import { delimiter, join } from "node:path";
+import { accessSync, constants, existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 
 /** The full path of a command on PATH, or null. */
 export function which(cmd: string, env: NodeJS.ProcessEnv = process.env): string | null {
@@ -29,6 +30,66 @@ export function which(cmd: string, env: NodeJS.ProcessEnv = process.env): string
     }
   }
   return null;
+}
+
+/**
+  Named in the environment of everything a session's agent or its Terminal starts. A dev server
+  keeps it after the shell that started it exits, so the Browser can tell the session's own
+  server from every other one on the Mac. The idea is T3 Code's (T3CODE_THREAD_ID).
+*/
+export const THREAD_ENV = "LINER_THREAD_ID";
+
+/**
+  Codex's own install keeps the helpers its commands reach for (rg) in `codex-path`, beside its
+  `bin/`, and expects them on PATH. Started straight from the binary, they aren't: every Codex
+  session's first search (`rg --files …`) failed with "command not found" on a Mac without ripgrep.
+*/
+export function withCodexPath(bin: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  try {
+    const dir = join(dirname(dirname(realpathSync(bin))), "codex-path");
+    return existsSync(dir) ? { ...env, PATH: [dir, env.PATH].filter(Boolean).join(delimiter) } : env;
+  } catch {
+    return env;
+  }
+}
+
+/**
+  Helpers agents take for granted and a Mac may not have, with the copies other tools ship. Codex's
+  models search with `rg` first, and so do others; on a Mac without ripgrep that first command failed.
+*/
+export const HELPERS: Record<string, string[]> = {
+  rg: ["~/.codex/packages/standalone/current/codex-path/rg", "/Applications/ChatGPT.app/Contents/Resources/codex-cli/codex-path/rg", "/opt/homebrew/bin/rg", "/usr/local/bin/rg"],
+};
+
+/**
+  One folder of helpers (`~/.liner-code/bin`) first on the PATH of everything Liner Code runs: every
+  agent tool, the commands it runs, the Terminal. A helper already on PATH is left to PATH; one that
+  isn't is linked from a copy another tool ships. Returns the env to run with, and what's missing everywhere.
+*/
+export function linkHelpers(dir: string, env: NodeJS.ProcessEnv, helpers = HELPERS): { env: NodeJS.ProcessEnv; missing: string[] } {
+  const missing: string[] = [];
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch {
+    return { env, missing: Object.keys(helpers) };
+  }
+  for (const [name, places] of Object.entries(helpers)) {
+    const link = join(dir, name);
+    const ours = (() => {
+      try {
+        return lstatSync(link).isSymbolicLink() ? readlinkSync(link) : null;
+      } catch {
+        return null;
+      }
+    })();
+    const onPath = which(name, { ...env, PATH: (env.PATH ?? "").split(delimiter).filter((p) => p !== dir).join(delimiter) });
+    const copy = onPath ? null : places.map((p) => p.replace(/^~(?=\/)/, homedir())).find((p) => which(p, env));
+    if (copy === ours) continue;
+    if (ours !== null) rmSync(link, { force: true });
+    if (copy) symlinkSync(copy, link);
+    else if (!onPath) missing.push(name);
+  }
+  return { env: { ...env, PATH: [dir, ...(env.PATH ?? "").split(delimiter).filter((p) => p && p !== dir)].join(delimiter) }, missing };
 }
 
 /** "cursor-agent" → "LINER_BIN_CURSOR_AGENT". */
@@ -92,12 +153,14 @@ export function firstLine(stream: NodeJS.ReadableStream): Promise<string | null>
 export type RunResult = { code: number; stdout: string; stderr: string };
 
 /** Runs a command to the end and collects its output. Never throws on a non-zero exit. */
-export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; timeout?: number; maxBuffer?: number } = {}): Promise<RunResult> {
+export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; timeout?: number; maxBuffer?: number; onOutput?: (chunk: string) => void } = {}): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = execFile(cmd, args, { cwd: o.cwd, env: o.env ?? process.env, timeout: o.timeout ?? 30000, maxBuffer: o.maxBuffer ?? 32 * 1024 * 1024, encoding: "utf8" }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as NodeJS.ErrnoException & { code?: unknown }).code === "number" ? ((err as unknown as { code: number }).code) : 1) : 0;
       resolve({ code, stdout: stdout ?? "", stderr: stderr ?? (err ? String(err.message) : "") });
     });
+    // What it prints as it goes, both streams, for a caller that shows progress.
+    if (o.onOutput) for (const s of [child.stdout, child.stderr]) s?.on("data", (d: Buffer | string) => o.onOutput!(String(d)));
     if (o.input !== undefined) {
       child.stdin?.end(o.input);
     }

@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.1.6 (alpha), 2026-10-30
+
+**Update from 0.1.5 if you have it.** Liner Code does it by itself (Restart to update), or
+download the new DMG.
+
+### New
+
+- **Memory across sessions.** Agents save what they learn about a project with memory_add, and
+  every new session there starts with it; sessions_search reads earlier sessions. Settings ›
+  Projects shows the memory and lets you edit it.
+- **Agents outside Liner Code can work with your sessions** through its MCP server: list, read,
+  start, message and wait for them. It's off until you turn it on in Settings › Safety, with a
+  key only you can read.
+- **Agents check pages when the session isn't on screen.** The app keeps a hidden Browser for
+  it, where scripts run and the console is read, and a screenshot still works.
+- **The Browser opens only what's the session's.** A dev server is known by the session that
+  started it, plain HTML opens from the session's folder with no server, and archiving or
+  removing a session stops the servers it started.
+- **Carrying on at a usage limit:** another account of the same tool first, else another
+  family's everyday model, from the limit card or by itself (Settings › General).
+- **Reviewer decides** asks the Reviewer's quickest model about each step and brings you only
+  what it won't allow. Auto is the tool's own auto mode.
+- Routed work: the model for each role (everyday, hard jobs, judge, critics) is yours to pick.
+- Codex's command output streams into its running step, and every running step counts up.
+- A turn that has said nothing for 4 minutes (12 while a command runs) says so once, on the
+  timeline and as a notification.
+- A tool's update shows its progress as a bar.
+- Agents get a ripgrep when the Mac has none, and a failed command says how it ended (exit 127:
+  not installed).
+
+### Changed
+
+- **A plan writes quietly.** While the lead writes its plan, one line says so, with its steps so
+  far, and opens for a look; the plan card takes its place when it's done. Claude Code's own plan
+  mode gets the same line.
+- Edits in a row to one file are one step on the trail ("7 edits · ✓ You allowed ×4"), and
+  thinking too short to show leaves no gap.
+- The sidebar names the lead while it plans and while its plan waits on you.
+- Esc closes the / or $ list first; it stops the turn only after.
+
+### Fixed
+
+- The context ring read 100% in long sessions: it added up every request of a turn. It reads the
+  last one now, for Claude Code and Codex.
+- A message sent as a turn ended could start a second turn beside it, and one sent during a
+  review never went. What you send while work is in flight now waits and goes when it ends; Stop
+  keeps it for you.
+- Auto and "don't ask again" took `ls & rm …`, a command on a second line, `rg --pre` or a sed
+  that writes as reading. A routine's trust lasts only for its own step, and its steps never
+  push, merge or post.
+- Stop pressed while a tool was still opening didn't stop it, and a request left from a turn
+  that had ended kept the session in Needs you.
+- Claude Code: a steer's answer could be lost, spend was counted again after a restart, extra
+  usage read as a usage limit, and a plan you edited before approving wasn't the one it built.
+  /usage and other local commands now show what they print.
+- Codex showed an error twice, and a stopped command could go back to running. An ACP agent's
+  text either side of a step ran together, and its cost was counted more than once.
+- A failed send lost your prompt and files. Editing a plan step lost focus after each letter.
+  ⌘⇧D and ⌘⇧P could settle or pin the open session. A Browser step's line ended in a stray dot.
+- Keeping the default branch pulled no longer moves a checkout under a session working in it.
+- First run said "1 tool and 0 keys is ready", times could read "1m 60s", and settings switches
+  had no names for VoiceOver.
+
 ## 0.1.5 (alpha), 2026-10-29
 
 **Update from 0.1.4 if you have it.** Liner Code does it by itself (Restart to update), or

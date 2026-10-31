@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.1.7 (alpha), 2026-10-31
+
+**Update from 0.1.6 if you have it.** Liner Code does it by itself (Restart to update), or
+download the new DMG.
+
+### New
+
+- **A cleaner Home.** One light bar holds who works on it, the effort and the access, each drawn
+  small beside its word. Under the box, one line: the checkout and the branch, then a scratch
+  folder, a session to carry on from Claude Code or Codex, and a key that lists what the box
+  takes. The Desk's pill is solid white.
+- **A quieter sidebar.** Search sits on one row with a filter, a new project and a new session
+  beside it; the filter field shows from its button. Settings, Routines, the team and Usage are
+  icons along the foot, with you at the end, and the team opens as a list from its icon. A
+  project's + shows when you point at it.
+- **Terminals stay** when you switch sessions or close the panel, scrollback and all. ⌘-click a
+  localhost link in a terminal to open it in the Browser.
+- **Answers show** tables, links, `file.ts:42` references you can click, and highlighted code.
+- Images and PDFs go to the model as they are, and show as thumbnails in your message. A large
+  paste becomes an attachment.
+- Claude Code's background work, and the turns it starts on its own about it, now show up, and
+  Stop stops them too. Its newer task lists fill the plan panel, and a steer acts at once.
+- A turn cut off by a quit or a crash carries on by itself, up to 3 times in 5 minutes (Settings ›
+  Usage limits turns it off). Carrying on when a usage limit resets is a switch of its own, off to
+  begin with.
+- ⌘K opens any surface, searches inside messages, and copies the branch or the session's id.
+  ⌘1–9 open sessions, ⌥⌘↓ goes to the next one that needs you, and F6 moves between areas.
+- A minimap of your prompts, and each session opens again where you left it. Queued messages get
+  Send now, drafts survive a restart, and the context ring opens a Compact menu.
+- The Browser shows where the agent clicks. Files previews images and Markdown, and the diff has
+  word wrap and Hide tests.
+- Pick several sessions in the sidebar (⌘- or ⇧-click) to settle, snooze, archive or move them at
+  once. ⌘Enter on Home starts a session in the background.
+
+### Changed
+
+- ⌘Q asks first while sessions are working, and ⌘K's Delete asks first, with Keep it as the
+  default.
+- Retries ("overloaded"), compaction, sign-in trouble and failed turns say what happened.
+- A part of the window that breaks shows its own error with Try again, instead of blanking the
+  window. Streaming no longer draws the whole thread again on every token.
+
+### Fixed
+
+- File names with accents, or the spaces in macOS screenshots, work for the diff, Undo and Commit,
+  and an Undo that fails no longer counts as done.
+- Undo and Edit from here won't overwrite a file you changed after the turn: they say which files
+  and offer Undo anyway, and they wait while another session works in the same folder.
+- Deleting a session or cleaning up worktrees never forces a removal: a worktree with changes, one
+  another session works in, or one you made yourself stays.
+- Snapshots no longer miss an edit made in the same second, and a turn that pulls or merges claims
+  only its own files.
+- Auto no longer takes `git branch -D` as a read, and more destructive commands count as high
+  risk.
+- Saved state survives a crash. Commits get 10 minutes for hooks and signing, and diffs ignore
+  your own diff tool settings.
+- A resume that fails carries the conversation over: Claude Code no longer stops, and Codex and
+  ACP agents no longer start again with no memory. A Codex steer that fails goes to the queue, and
+  Stop on an ACP agent gives up after 15 s instead of hanging.
+- A link whose text is a URL no longer puts a link inside a link.
+
 ## 0.1.6 (alpha), 2026-10-30
 
 **Update from 0.1.5 if you have it.** Liner Code does it by itself (Restart to update), or

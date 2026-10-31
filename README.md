@@ -78,6 +78,104 @@ coder, or your own team). The **Demo**, a scripted agent with its own **Sample p
 every flow with no account at all. It's hidden: tap your name at the foot of the sidebar six times
 to show it (and six more to hide it again).
 
+## How agents share the work
+
+A session can be one model, or a small team: a **lead** that plans, a **coder** that builds,
+**helpers** the lead hands steps to, and a **Reviewer** from another model family that reads every
+change before it's yours (`engine/src/runtime.ts`, `review.ts`).
+
+```
+ ┌─ Session ─────────────────────────────────────────────────────────────────┐
+ │                                                                           │
+ │  You ──► Lead (reads only, never edits)                                   │
+ │            │  talk or a question → it answers itself, nothing else runs   │
+ │            │  a change → ends its reply with a <plan>                     │
+ │            ▼                                                              │
+ │  ┌─ Plan card ──────────────────────────────┐                             │
+ │  │ 1. Add the route          engine/api.ts  │                             │
+ │  │ 2. Wire the button        ui/Session.tsx │                             │
+ │  │ 3. Write the docs         — @Herald      │ ◄─ a step for a helper      │
+ │  │              [ Approve ]  [ Change it ]  │                             │
+ │  └──────────────────────────────────────────┘                             │
+ │            ▼                                                              │
+ │  Coder builds every step without a name ──► Helper builds its "@" steps   │
+ │            ▼                                                              │
+ │  Reviewer (another family: Codex reads Claude, Claude reads the rest)     │
+ │     pass ──► the diff is yours          blocking ──► back to the coder,   │
+ │                                         up to 2 rounds (3 at most), then  │
+ │                                         it's yours to decide              │
+ └───────────────────────────────────────────────────────────────────────────┘
+```
+
+**Inside a Claude Code coder**, its run mode decides who it can delegate to:
+
+```
+ helpers (coders and debuggers)        escalate                      single
+ ┌──────────────────────────────┐      ┌──────────────────────────┐  ┌──────────────┐
+ │ Coder, on its own model      │      │ Coder, on Sonnet         │  │ Coder alone  │
+ │  ├─ Explorer      (Haiku)    │      │  ├─ Explorer   (Haiku)   │  └──────────────┘
+ │  │   reads, greps, maps      │      │  ├─ Test runner (Haiku)  │
+ │  └─ Test runner   (Haiku)    │      │  └─ Opus planner (Opus)  │
+ │      runs tests, reports     │      │      only for a hard     │
+ │      the first useful line   │      │      change, or after 2  │
+ └──────────────────────────────┘      │      failed tries; reads │
+                                       │      and returns a plan  │
+                                       └──────────────────────────┘
+```
+
+**A routed session** (`engine/src/route.ts`) has no fixed team: each message is scored from its
+own words (reasoning, writing code, debugging, tools, how far it reaches) and weighed light,
+medium or heavy. That happens on this Mac with no model call, so routing costs nothing. The
+first rule that fits picks the pattern:
+
+```
+ message ─► score its words ─► light / medium / heavy ─► rule ─► pattern
+                                                                   │
+   single    ┌──────────┐                                          │
+             │ everyday │  or the strong model alone, for a hard job
+             └──────────┘
+   cascade   ┌──────────┐    ┌───────┐  pass ─► done
+             │ everyday │ ─► │ judge │
+             └──────────┘    └───────┘  fail ─► strong model repairs ─► judge once more
+   critique  ┌────────┐    ┌──────────┐ ┌──────────┐
+             │ strong │ ─► │ critic 1 │ │ critic 2 │ ─► strong revises once
+             └────────┘    └──────────┘ └──────────┘
+```
+
+| Level | Light job | Medium job | Heavy job |
+| --- | --- | --- | --- |
+| Standard | everyday alone | everyday alone | strong alone |
+| High | everyday alone | cascade | critique, 1 critic |
+| Max | cascade | critique, 1 critic | critique, 2 critics |
+
+Questions go to the everyday model at every level (the strong one for a hard question on High
+and Max). The cast comes from what's installed: a quick everyday model (GPT Luna, else Sonnet),
+the strongest of another family for hard jobs (Opus, else GPT Sol), and judges and critics from
+outside the writer's family. Settings can replace any of them.
+
+### What keeps the cost down
+
+- **The expensive model works only when the job needs it.** The everyday model takes light and
+  medium jobs; the strong one comes in for heavy jobs, or to repair what the judge failed.
+- **A judge reads instead of rewriting.** In a cascade the judge only reads the diff (or, when
+  nothing changed, the answer) and passes it; the strong model writes only when it fails.
+- **Haiku does the reading.** Explorer and Test runner keep long file reads and test output out
+  of the coder's context, so the coder's model never pays for them. In escalate mode the loop
+  runs on Sonnet and Opus is asked for a plan only when a change is hard.
+- **The lead only reads and plans.** Talk and questions end with its answer; nothing builds
+  until you approve a plan, so a misread ask costs one reply, not a whole build.
+- **Warm caches are kept.** A follow-up within five minutes of the last turn stays with the model
+  already working, so it reads its prompt cache instead of the whole thread at full price. The
+  composer shows when Claude's cache for the session is likely to run out.
+- **Small things go to the quickest model.** Commit messages, pull request text and Reviewer
+  decides (ALLOW or ASK for one step) run on Haiku or a mini model, not the session's own.
+- **Reviews have a limit.** At most 2 fix rounds by default (3 at most); after that it's yours.
+- **A spending cap.** Settings › General › Spending can stop a session at a dollar amount; your
+  next message is the go-ahead for another cap's worth. (Claude Code reports cost; other tools
+  can't be held to it.)
+- **You can see it all.** Every turn's tokens, cache reads and cost, by agent and model, go to
+  `~/.liner-code/usage.jsonl`, and the Usage page adds them up.
+
 ## What's in it
 
 ```

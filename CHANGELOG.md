@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.8 (alpha), 2026-10-31
+
+**Update from 0.1.7 if you have it.** Liner Code does it by itself (Restart to update), or
+download the new DMG.
+
+### Changed
+
+- **The session's tray matches Home:** who works on it, the effort, the context and the access sit
+  in one light bar, each drawn small beside its word, with attach as a light round.
+- A narrow tray gives way in steps instead of overlapping: the queue-or-steer note shortens, then
+  keeps only its key; access, effort and who keep only their icons; last, the row wraps.
+- A working turn's head no longer has a progress bar under it.
+
+### Fixed
+
+- A lead's plan card lands where its "Generating the plan" line was, without the thread jumping,
+  and what the lead says after the plan reads below the card instead of moving above it.
+
 ## 0.1.7 (alpha), 2026-10-31
 
 **Update from 0.1.6 if you have it.** Liner Code does it by itself (Restart to update), or

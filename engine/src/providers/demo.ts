@@ -167,6 +167,8 @@ class DemoSession implements ProviderSession {
       signal,
       90,
     );
+    // A real lead often says a word after the plan too; it reads below the card.
+    await stream((d) => sink.text(d, `${t}-a`), "\n\nIt's a small change in one file plus a test. Approve it and the coder starts, or tell me what to change.", signal);
     sink.usage({ inputTokens: 900, outputTokens: 180, cacheReadTokens: 400, costUsd: 0, contextTokens: 4100, contextWindow: 200000 }, false);
   }
 

@@ -18,7 +18,6 @@ import { Dialog } from "@liner/components/dialog/dialog";
 import { agentOf, clock, duration, isModelAgent, markOf, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
 import { Badge, Disc, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
 import { toast } from "@liner/components/toast/toast";
-import { Progress } from "@liner/components/progress/progress";
 import { Boundary } from "./Boundary";
 import { bridge } from "./bridge";
 import "./timeline.css";
@@ -79,12 +78,16 @@ const CARD_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show
 /** A lead wraps the plan it hands over in <plan> tags; the plan card shows it, so the text drops the tags. */
 const untag = (text: string) => text.replace(/<\/?plan\b[^>]*>/g, "");
 
-/** A plan being written in a lead's reply: what it said before the plan, the plan so far, and its title once the tag has one. */
+/** A plan being written in a lead's reply: what it said before the plan, the plan so far, its title once the tag has one, and what it says after. */
 function draftOf(text: string) {
   const m = /<plan\b([^>]*)>?/.exec(text);
   if (!m) return null;
   const title = /title\s*=\s*"([^"]+)"/.exec(m[1])?.[1]?.trim();
-  return { before: text.slice(0, m.index), plan: text.slice(m.index + m[0].length).replace(/<\/plan>[\s\S]*$/, "").trim(), title: title || undefined };
+  const rest = text.slice(m.index + m[0].length);
+  const end = rest.indexOf("</plan>");
+  // A closing tag still arriving isn't part of the plan.
+  const plan = (end < 0 ? rest.replace(/<\/?[a-z]*$/, "") : rest.slice(0, end)).trim();
+  return { before: text.slice(0, m.index), plan, title: title || undefined, after: end < 0 ? "" : rest.slice(end + "</plan>".length).trim() };
 }
 
 type Props = {
@@ -169,6 +172,8 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
   };
   for (const [i, it] of items.entries()) {
     if ((it.kind === "tool" || it.kind === "approval") && it.tool === PR_TEST_TOOL) continue;
+    // A lead's reply that was all plan keeps nothing once its card has it.
+    if (it.kind === "text" && !it.streaming && !it.text.trim()) continue;
     // Thinking too short to show leaves no row, so the steps either side stay one.
     if (it.kind === "reasoning" && !shown(it)) continue;
     // Answered, it's a word on its step's result, and the steps either side stay one trail.
@@ -197,11 +202,17 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
       else if (it.kind === "turn") blocks.push({ key: it.id, node: <TurnHead it={it} items={items} agents={agents} providers={providers} /> });
       else if (it.kind === "reasoning") blocks.push({ key: it.id, node: <Thought it={it} /> });
       else if (it.kind === "text") {
-        const draft = marker?.kind === "turn" && marker.planning && unplanned(i) ? draftOf(it.text) : null;
-        if (!draft) blocks.push({ key: it.id, node: <StreamedMarkdown className="lc-md" text={untag(it.text)} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
+        const planning = marker?.kind === "turn" && marker.planning;
+        const draft = planning && unplanned(i) ? draftOf(it.text) : null;
+        // A lead's tag still arriving ("<pl") isn't shown: the words before it stay as they were when the plan starts.
+        if (!draft) blocks.push({ key: it.id, node: <StreamedMarkdown className="lc-md" text={planning && it.streaming ? untag(it.text).replace(/<\/?[a-z]*$/i, "") : untag(it.text)} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
         else {
+          // What the lead says around its plan reads in order around this line, and the card and
+          // those words take the same keys when the turn ends (the engine's ids), so they settle
+          // in place: nothing moves above the card or comes in twice.
           if (draft.before.trim()) blocks.push({ key: it.id, node: <StreamedMarkdown className="lc-md" text={draft.before} streaming={false} animate={fresh(it.id)} onGrow={onGrow} /> });
           blocks.push({ key: `${it.id}-plan`, id: it.id, node: <PlanDraft text={draft.plan} title={draft.title} /> });
+          if (draft.after) blocks.push({ key: `${it.id}-after`, node: <StreamedMarkdown className="lc-md" text={draft.after} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
         }
       }
       else if (it.kind === "plan") blocks.push({ key: it.id, node: <Todo it={it} /> });
@@ -259,8 +270,6 @@ function TurnHead({ it, items, agents, providers }: { it: Extract<Item, { kind: 
   const planned = it.planning && items.some((x) => x.kind === "proposal");
   // A model on its own is named after the model, so its mark sits on the disc instead of a tag.
   const alone = isModelAgent(it.agent);
-  const plan = items.findLast((x): x is Extract<Item, { kind: "plan" }> => x.kind === "plan");
-  const progress = plan?.entries.length ? plan.entries.filter((e) => e.status === "completed").length / plan.entries.length : undefined;
   return (
     <div className="lc-head" data-running={it.status === "running" || undefined}>
       {alone ? (
@@ -284,8 +293,6 @@ function TurnHead({ it, items, agents, providers }: { it: Extract<Item, { kind: 
       <span className="lc-grow" />
       {it.status === "running" && <span className="lc-head-clock lc-mono">{duration(took)}</span>}
       <span className="lc-head-meta">Turn {it.turn}</span>
-      {/* How far it has got: its plan's steps done, when it keeps one; a calm sweep while it doesn't. */}
-      {it.status === "running" && <Progress className="lc-head-bar" size="sm" value={progress} showValue={false} />}
     </div>
   );
 }

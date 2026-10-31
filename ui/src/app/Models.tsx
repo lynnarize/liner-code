@@ -238,7 +238,7 @@ export function EffortPick({ modelRef, value, onChange, side = "bottom", keep, t
   if (!list.length && hideEmpty) return null;
   // A level this model doesn't take shows as the model's default, which is what will run.
   const shown = list.some((e) => e.id === value) ? value : (fallback ?? value);
-  // "Medium effort": in a narrow composer the word "effort" goes first (app.css).
+  // "Medium effort": the composer's bar drops the word "effort" (app.css).
   const name = list.length ? effortName(shown, modelRef, providers) : "No effort setting";
   const [level, word] = name.endsWith(" effort") ? [name.slice(0, -7), " effort"] : [name, ""];
   return (

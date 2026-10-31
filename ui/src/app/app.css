@@ -56,8 +56,7 @@ html[data-action="ink"] {
   --lc-ctl-tile: oklch(0.355 0.008 265);
   --lc-ctl-ink: oklch(0.965 0.002 265);
   --lc-ctl-ink-2: oklch(0.74 0.006 265);
-  --lc-ctl-div: oklch(1 0 0 / 0.14);
-  /* Home's bar of choices: a light segment on the text box, a shade deeper under a pointed-at or
+  /* The composer's bar of choices: a light segment on the text box, a shade deeper under a pointed-at or
      open choice, and a lit tile under an agent's disc. */
   --lc-bar: color-mix(in oklab, var(--l-ink) 6%, var(--lc-field));
   --lc-bar-hover: color-mix(in oklab, var(--l-ink) 11%, var(--lc-field));
@@ -81,7 +80,6 @@ html[data-action="ink"] {
   --lc-ctl-tile: oklch(0.28 0.006 265);
   --lc-ctl-ink: oklch(0.94 0.003 265);
   --lc-ctl-ink-2: oklch(0.66 0.006 265);
-  --lc-ctl-div: oklch(1 0 0 / 0.1);
   --lc-bar-tile: color-mix(in oklab, var(--l-ink) 16%, var(--lc-paper));
   --lc-lift: 0 1px 2px oklch(0 0 0 / 0.4), 0 18px 44px -16px oklch(0 0 0 / 0.75);
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
@@ -2656,9 +2654,9 @@ html[data-tray="solid"] .lc-rail {
 /* ---------- The composer ---------- */
 /*
   One solid text box (radius 24, the field tone) lifted off the paper by a soft shadow, with no
-  glass. Its controls sit inside it under what you type: solid ink, 40px tall, segments split by
-  a hairline, rounds for icons, and the open choice's icon on a tile. Send is the accent; while a
-  turn runs, Stop (red) sits beside it.
+  glass. Its controls sit inside it under what you type: the choices in one light bar split by
+  hairlines, attach as a light round. Send is the accent; while a turn runs, Stop (red) sits
+  beside it.
 */
 .lc-composer {
   position: relative;
@@ -2713,7 +2711,7 @@ html[data-tray="solid"] .lc-rail {
 .lc-field::placeholder {
   color: var(--l-ink-4);
 }
-/* The controls sit straight in the text box, a row of solid ink under what you type. */
+/* The controls sit straight in the text box, a row under what you type. */
 .lc-card-row {
   display: flex;
   align-items: center;
@@ -2727,46 +2725,33 @@ html[data-tray="solid"] .lc-rail {
 .lc-card-row > .lc-grow {
   flex-shrink: 1;
 }
-/* Solid controls. A segment holds related ones, split by a hairline. */
-.lc-seg,
-.lc-ctl-pill,
-.lc-ctl-round,
-.lc-send,
-.lc-stop {
-  height: 40px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--lc-ctl);
-  color: var(--lc-ctl-ink);
-}
-/* A narrow composer takes room from the segment: the word "effort" and the who's model marks go
-   (below), then the who name gives way to an ellipsis while the effort level stays whole. What
-   still doesn't fit is cut at the segment's edge and each button's own, never drawn over the
-   controls beside it. */
+/* The choices are one light bar, slim, each drawn small beside its word (Home and the session
+   alike); attach is a light round, and Send and Stop the solid ones. A bar never shrinks: what
+   doesn't fit gives way in steps instead (below). */
 .lc-seg {
   display: inline-flex;
-  flex-shrink: 1;
   align-items: center;
   min-width: 0;
-  padding: 0 4px;
+  height: 34px;
+  padding: 0 3px;
   overflow: hidden;
+  border-radius: 999px;
+  background: var(--lc-bar);
+  color: var(--l-ink);
 }
 .lc-seg > .lc-pop {
   display: flex;
   flex-shrink: 0;
   min-width: 0;
 }
-.lc-seg > .lc-pop:has(.lc-who) {
-  flex-shrink: 1;
-}
-.lc-seg-b,
-.lc-ctl-pill {
+.lc-seg-b {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
-  height: 40px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 10px;
+  overflow: hidden;
   border: 0;
   border-radius: 999px;
   background: none;
@@ -2777,72 +2762,55 @@ html[data-tray="solid"] .lc-rail {
   cursor: pointer;
   transition: background 160ms ease;
 }
-.lc-ctl-pill {
-  padding: 0 12px 0 6px;
-  background: var(--lc-ctl);
-  color: var(--lc-ctl-ink);
-}
-/* In a segment, a button's highlight sits 4px in all round, so its round ends follow the
-   segment's instead of meeting them; the who button's tile sits 6px in, like the lock's. */
-.lc-seg-b {
-  height: 32px;
-  overflow: hidden;
-}
 .lc-seg-b.lc-who {
   max-width: 260px;
-  padding-left: 2px;
+  padding-left: 3px;
+}
+.lc-seg-b > svg {
+  flex: none;
+  color: var(--l-ink-2);
 }
 .lc-seg-b > svg:last-child,
-.lc-ctl-pill > svg:last-child {
-  flex: none;
-  color: var(--lc-ctl-ink-2);
+.lc-card-row .lc-way-marks,
+.lc-chip-more {
+  color: var(--l-ink-3);
 }
 .lc-seg-div {
   flex: none;
   width: 1px;
-  height: 20px;
-  background: var(--lc-ctl-div);
+  height: 14px;
+  background: var(--lc-hair);
 }
 .lc-seg-div:last-child,
 .lc-seg-div + .lc-seg-div {
   display: none;
 }
 .lc-seg .lc-ring {
-  padding: 0 12px 0 10px;
+  padding: 0 10px;
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--lc-ctl-ink-2);
 }
-.lc-seg .lc-ring[data-warn] {
-  color: var(--l-warn);
+.lc-seg .lc-effort-word {
+  display: none;
 }
-/* The open choice's icon (and an agent's disc) rests on a tile, round like the pill it sits in. */
-.lc-ctl-tile,
-.lc-card-row .lc-way-chip-i {
+/* The who's icon (an agent's disc, a team's or a route's mark) rests on a small raised tile. */
+.lc-card-row .lc-way-chip-i,
+.lc-card-row .lc-disc,
+.lc-card-row .lc-disc[data-filled] {
   display: grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--lc-ctl-tile);
-  color: var(--lc-ctl-ink);
-}
-.lc-card-row .lc-disc,
-.lc-card-row .lc-disc[data-filled] {
-  background: var(--lc-ctl-tile);
-  color: var(--lc-ctl-ink);
+  background: var(--lc-bar-tile);
+  box-shadow: 0 1px 2px oklch(0.3 0.04 265 / 0.12);
+  color: var(--l-ink);
 }
 .lc-chip-name {
   overflow: hidden;
   font-weight: 500;
   text-overflow: ellipsis;
-}
-.lc-chip-more {
-  color: var(--lc-ctl-ink-2);
-}
-.lc-card-row .lc-way-marks {
-  color: var(--lc-ctl-ink-2);
 }
 .lc-ctl-label {
   overflow: hidden;
@@ -2854,14 +2822,23 @@ html[data-tray="solid"] .lc-rail {
   display: grid;
   flex: none;
   place-items: center;
-  width: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
+  border: 0;
+  border-radius: 999px;
   cursor: pointer;
   transition:
     background 240ms var(--l-ease-out),
     color 240ms ease,
     box-shadow 240ms ease,
     transform 200ms var(--l-spring-snappy);
+}
+.lc-ctl-round {
+  width: 34px;
+  height: 34px;
+  background: var(--lc-bar);
+  color: var(--l-ink);
 }
 /* Send is the composer's main button: in the action colour, a shade deeper until there's
    something to send, then lifted. */
@@ -2899,21 +2876,19 @@ html[data-tray="solid"] .lc-rail {
 }
 .lc-send:not(:disabled):active,
 .lc-stop:active,
-.lc-ctl-round:active,
-.lc-ctl-pill:active {
+.lc-ctl-round:active {
   transform: scale(0.95);
 }
+.lc-seg-b[data-open] {
+  background: var(--lc-bar-hover);
+}
 @media (hover: hover) {
-  .lc-ctl-round:hover,
-  .lc-ctl-pill:hover {
-    background: var(--lc-ctl-hover);
+  .lc-seg-b:hover,
+  .lc-ctl-round:hover {
+    background: var(--lc-bar-hover);
   }
   .lc-send:not([data-ready]):not(:disabled):hover {
     background: color-mix(in oklab, var(--lc-act) 88%, var(--lc-ctl));
-  }
-  .lc-seg-b:hover,
-  .lc-seg-b[data-open] {
-    background: oklch(1 0 0 / 0.08);
   }
   .lc-send[data-ready]:hover {
     background: color-mix(in oklab, var(--lc-act) 88%, black);
@@ -2922,14 +2897,12 @@ html[data-tray="solid"] .lc-rail {
     background: color-mix(in oklab, var(--l-danger) 88%, black);
   }
 }
-.lc-ctl-pill[data-open] {
-  background: var(--lc-ctl-hover);
-}
 /* What Enter does while a turn runs, and what's waiting: a quiet note in the tray. */
 .lc-tray-note {
   display: inline-flex;
   flex-shrink: 1;
   align-items: center;
+  gap: 6px;
   min-width: 0;
   height: 32px;
   padding: 0 6px;
@@ -2944,99 +2917,59 @@ html[data-tray="solid"] .lc-rail {
   color: var(--l-ink-3);
   cursor: pointer;
 }
-/* A narrow composer keeps the controls and lets the words go: the who segment's name, the note,
-   then the access label. */
-@container lc-composer (max-width: 520px) {
-  .lc-tray-note,
-  .lc-ctl-pill .lc-ctl-label {
-    display: none;
-  }
-  .lc-ctl-pill {
-    padding-right: 8px;
-  }
-}
-@container lc-composer (max-width: 640px) {
-  .lc-who .lc-way-marks,
-  .lc-seg .lc-effort-word {
-    display: none;
-  }
-}
-/* Narrower still (a session beside a wide panel), the segment takes a line of its own above the rest. */
-@container lc-composer (max-width: 380px) {
-  .lc-card-row {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-  .lc-card-row > .lc-seg {
-    order: -1;
-    flex: 1 1 100%;
-  }
-}
-/* Home: the choices are one light bar, slim, each drawn small beside its word, and attach is a
-   light round beside the red send. The session tray keeps its solid ink. */
-.lc-composer[data-variant="home"] .lc-seg {
-  height: 34px;
-  padding: 0 3px;
-  background: var(--lc-bar);
-  color: var(--l-ink);
-}
-.lc-composer[data-variant="home"] .lc-seg-b {
-  gap: 7px;
-  height: 28px;
-  padding: 0 10px;
-}
-.lc-composer[data-variant="home"] .lc-seg-b.lc-who {
-  padding-left: 3px;
-}
-.lc-composer[data-variant="home"] .lc-seg-b > svg {
-  flex: none;
-  color: var(--l-ink-2);
-}
-.lc-composer[data-variant="home"] .lc-seg-b > svg:last-child,
-.lc-composer[data-variant="home"] .lc-card-row .lc-way-marks,
-.lc-composer[data-variant="home"] .lc-chip-more {
-  color: var(--l-ink-3);
-}
-.lc-composer[data-variant="home"] .lc-seg-div {
-  height: 14px;
-  background: var(--lc-hair);
-}
-.lc-composer[data-variant="home"] .lc-card-row .lc-way-chip-i,
-.lc-composer[data-variant="home"] .lc-card-row .lc-disc,
-.lc-composer[data-variant="home"] .lc-card-row .lc-disc[data-filled] {
-  width: 22px;
-  height: 22px;
-  background: var(--lc-bar-tile);
-  box-shadow: 0 1px 2px oklch(0.3 0.04 265 / 0.12);
-  color: var(--l-ink);
-}
-.lc-composer[data-variant="home"] .lc-effort-word {
+.lc-tray-note > svg,
+.lc-note-short {
   display: none;
 }
-.lc-composer[data-variant="home"] .lc-ctl-round {
-  width: 34px;
-  height: 34px;
-  background: var(--lc-bar);
-  color: var(--l-ink);
-}
-.lc-composer[data-variant="home"] .lc-send {
-  width: 36px;
-  height: 36px;
-}
-.lc-composer[data-variant="home"] .lc-seg-b[data-open] {
-  background: var(--lc-bar-hover);
-}
 @media (hover: hover) {
-  .lc-composer[data-variant="home"] .lc-seg-b:hover,
-  .lc-composer[data-variant="home"] .lc-ctl-round:hover {
-    background: var(--lc-bar-hover);
+  button.lc-tray-note:hover {
+    color: var(--l-ink-2);
   }
 }
-/* Narrow, the access choice keeps its lock and lets its words go, as the session tray's pill does. */
-@container lc-composer (max-width: 520px) {
-  .lc-composer[data-variant="home"] .lc-seg > .lc-pop:last-child .lc-ctl-label {
-    display: none;
-  }
+/* Giving way (Composer's useTrayFit sets these, one more each time the row still spills): the
+   note's short form, then its key alone; then access, effort and who down to their icons; then
+   the row wraps, and a bar on a line of its own may cut its who's name. */
+.lc-card-row[data-give~="short"] .lc-note-long {
+  display: none;
+}
+.lc-card-row[data-give~="short"] .lc-note-short {
+  display: inline;
+}
+.lc-card-row[data-give~="note"] .lc-note-short {
+  display: none;
+}
+.lc-card-row[data-give~="note"] .lc-tray-note > svg {
+  display: block;
+}
+.lc-card-row[data-give~="note"] button.lc-tray-note {
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+}
+.lc-card-row[data-give~="access"] .lc-access .lc-ctl-label,
+.lc-card-row[data-give~="effort"] .lc-effort .lc-ctl-label,
+.lc-card-row[data-give~="who"] .lc-who :is(.lc-chip-name, .lc-way-marks, .lc-chip-more) {
+  display: none;
+}
+.lc-card-row[data-give~="access"] .lc-access,
+.lc-card-row[data-give~="effort"] .lc-effort {
+  gap: 4px;
+  padding: 0 8px;
+}
+.lc-card-row[data-give~="who"] .lc-who {
+  gap: 4px;
+  padding-right: 8px;
+}
+.lc-card-row[data-give~="wrap"] {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.lc-card-row[data-give~="wrap"] > .lc-seg {
+  flex-shrink: 1;
+  max-width: 100%;
+}
+.lc-card-row[data-give~="wrap"] .lc-seg > .lc-pop:has(.lc-who) {
+  flex-shrink: 1;
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-stop,

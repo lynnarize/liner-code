@@ -644,14 +644,19 @@ export class Runtime {
     }
     const errored = failed || sink.errored();
     // A lead that only talked (a greeting, a question) just answered. One that wrapped a plan in
-    // <plan> tags hands it over: the plan becomes a card to approve and leaves the text.
+    // <plan> tags hands it over: the plan becomes a card to approve where it was written, so what
+    // the lead said before it stays above the card and what it said after reads below. The card
+    // and those words take ids from the reply's, which the app's "Generating the plan" line and
+    // its words after already go by, so they settle in place instead of jumping.
     if (planning && !stopped && !errored && !sink.proposed()) {
       for (const x of store.timeline(threadId)) {
         if (x.turn !== turn || x.kind !== "text") continue;
         const found = takePlan(x.text);
         if (!found) continue;
-        store.putItem(threadId, { ...x, text: found.rest || `Here's the plan for ${this.resolve(t).agent.name}.` });
-        store.putItem(threadId, { kind: "proposal", id: uid("it"), turn, at: Date.now(), title: found.title || planTitle(found.plan) || t.title, plan: found.plan, state: "asking" });
+        // Left as it streamed, to the character, so the app doesn't type it out again.
+        store.putItem(threadId, { ...x, text: found.before.trim() ? found.before : "" });
+        store.putItem(threadId, { kind: "proposal", id: `${x.id}-plan`, turn, at: Date.now(), title: found.title || planTitle(found.plan) || t.title, plan: found.plan, state: "asking" });
+        if (found.after) store.putItem(threadId, { kind: "text", id: `${x.id}-after`, turn, at: Date.now(), text: found.after, streaming: false });
         break;
       }
     }
@@ -1500,12 +1505,12 @@ function leadRules(coder: string, helpers: string[] = []) {
   ].join("\n");
 }
 
-/** A plan a lead handed over in <plan> tags, and the text around it. */
-export function takePlan(text: string): { title?: string; plan: string; rest: string } | null {
+/** A plan a lead handed over in <plan> tags, and what it said before and after it. */
+export function takePlan(text: string): { title?: string; plan: string; before: string; after: string } | null {
   const m = /<plan\b([^>]*)>([\s\S]*?)(?:<\/plan>|$)/.exec(text);
   if (!m || !m[2].trim()) return null;
   const title = /title\s*=\s*"([^"]*)"/.exec(m[1])?.[1]?.trim();
-  return { title: title || undefined, plan: m[2].trim(), rest: (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim() };
+  return { title: title || undefined, plan: m[2].trim(), before: text.slice(0, m.index), after: text.slice(m.index + m[0].length).trim() };
 }
 
 /** A plan's name: its first heading or first line. */

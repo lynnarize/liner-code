@@ -4434,15 +4434,6 @@
   }
 }
 
-/* The turn's progress under its head while it works: its plan's steps done, or a sweep. */
-.lc-head {
-  flex-wrap: wrap;
-}
-.lc-head-bar {
-  flex-basis: 100%;
-  margin-top: 2px;
-}
-
 @keyframes lc-pulse {
   0% {
     box-shadow: 0 0 0 0 color-mix(in oklab, var(--l-accent) 45%, transparent);

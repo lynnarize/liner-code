@@ -12,7 +12,7 @@
     (⌘⇧Enter for the first), or edited where it waits.
   - A paste of 32 KiB or more comes as a text file. Drafts outlast a restart.
 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Access, CommandInfo, SkillInfo, Effort, Project, QueuedMessage, RouteLevel, RpcResult, Thread } from "@contracts";
 import { castOf, familyOf, ROUTE_LEVELS, splitModel } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
@@ -53,6 +53,37 @@ type Props = {
   /** Home: what else starts from here, at the far end of the strip under the box. */
   stripEnd?: ReactNode;
 };
+
+/*
+  What gives way, in order, when the tray's controls don't fit on one line: the queue-or-steer
+  note shortens, then keeps only its key; access, effort and who keep only their icons; last, the
+  row wraps. Each is tried until nothing spills, so a long name or a narrow window costs words,
+  never an overlap (T3 Code's composer measures its controls the same way). It refits when the
+  tray resizes, a control changes, or a font arrives.
+*/
+const GIVE = ["short", "note", "access", "effort", "who", "wrap"];
+function useTrayFit(tray: RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const row = tray.current;
+    if (!row) return;
+    const fit = () => {
+      let n = 0;
+      row.dataset.give = "";
+      while (n < GIVE.length && row.scrollWidth > row.clientWidth) row.dataset.give = GIVE.slice(0, ++n).join(" ");
+    };
+    const sizes = new ResizeObserver(fit);
+    const watch = () => {
+      sizes.disconnect();
+      for (const el of [row, ...row.children]) sizes.observe(el);
+      fit();
+    };
+    watch();
+    const changes = new MutationObserver(watch);
+    changes.observe(row, { childList: true, subtree: true, characterData: true });
+    document.fonts.addEventListener("loadingdone", fit);
+    return () => (sizes.disconnect(), changes.disconnect(), document.fonts.removeEventListener("loadingdone", fit));
+  }, [tray]);
+}
 
 type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$"; hint?: string; note?: string; path?: string; liner?: boolean };
 const commandCache = new Map<string, Promise<{ commands: CommandInfo[]; skills: SkillInfo[] }>>();
@@ -182,6 +213,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const mirrorRef = useRef<HTMLDivElement>(null);
   const md = useMemo(() => mirror(text), [text]);
   const clip = useRef<HTMLInputElement>(null);
+  const tray = useRef<HTMLDivElement>(null);
+  useTrayFit(tray);
 
   const talkTo = agentOf(settings.lead ?? settings.agent, agents, providers);
   const coder = agentOf(settings.agent, agents, providers);
@@ -553,7 +586,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       </>
     ) : (
       <>
-        <Disc agent={talkTo} size={variant === "home" ? 22 : 28} />
+        <Disc agent={talkTo} size={22} />
         <span className="lc-chip-name" title={isModelAgent(settings.agent) || settings.agent === "demo" ? undefined : modelLabel(shownModel, providers)}>
           {isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}
         </span>
@@ -731,9 +764,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
 
   // The levels the coder's model takes; Claude Code's Ultracode and Ultrathink sit after them.
   // On Home they open downward, off the heading, and scroll in what room there is rather than flip.
-  // Home's bar is one light segment, each choice drawn small beside its word: the access pick
-  // joins it there, where the session tray keeps it as a pill of its own.
-  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} triggerClass="lc-seg-b" icon={variant === "home"} hideEmpty />;
+  // Both trays hold their choices in one light bar, each drawn small beside its word.
+  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} triggerClass="lc-seg-b lc-effort" hideEmpty />;
   const accessPick = (
     <Pop
       label={`Access: ${lev.label}. Change it`}
@@ -741,16 +773,10 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       keep={variant === "home"}
       align="end"
       width={320}
-      triggerClass={variant === "home" ? "lc-seg-b" : "lc-ctl-pill"}
+      triggerClass="lc-seg-b lc-access"
       trigger={
         <>
-          {variant === "home" ? (
-            <I.lock size={14} />
-          ) : (
-            <span className="lc-ctl-tile">
-              <I.lock size={14} />
-            </span>
-          )}
+          <I.lock size={14} />
           <span className="lc-ctl-label">{lev.short}</span>
           <I.chevD size={11} />
         </>
@@ -782,7 +808,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           align="end"
           width={300}
           triggerClass="lc-tray-note"
-          trigger={mode === "queue" ? "Enter queues · ⌘Enter steers" : "Enter steers"}
+          trigger={
+            <>
+              <I.keyboard size={14} />
+              <span className="lc-note-long">{mode === "queue" ? "Enter queues · ⌘Enter steers" : "Enter steers"}</span>
+              <span className="lc-note-short">{mode === "queue" ? "Enter queues" : "Enter steers"}</span>
+            </>
+          }
         >
           {(close) => (
             <>
@@ -1041,7 +1073,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           </div>
         )}
         {/* The controls sit in a tray of their own inside the text box: solid ink in a lit pill. */}
-        <div className="lc-card-row">
+        <div className="lc-card-row" ref={tray}>
           {variant === "session" && attach}
           <span className="lc-seg">
             <Pop label="Who works on this" side={variant === "home" ? "bottom" : "top"} width={640} keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
@@ -1055,14 +1087,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 <ContextMeter used={usage.contextTokens} max={usage.contextWindow} running={busy} onCompact={canCompact ? compactNow : undefined} />
               </>
             )}
-            {variant === "home" && (
-              <>
-                <span className="lc-seg-div" aria-hidden />
-                {accessPick}
-              </>
-            )}
+            <span className="lc-seg-div" aria-hidden />
+            {accessPick}
           </span>
-          {variant === "session" && accessPick}
           <span className="lc-grow" />
           {editing ? (
             <span className="lc-tray-note">Editing a queued message · Enter saves · Esc leaves it</span>

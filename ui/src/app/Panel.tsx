@@ -8,7 +8,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff, Item, Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
-import { toast } from "@liner/components/toast/toast";
+import { Boundary } from "./Boundary";
 import { CommitButton } from "./Commit";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
@@ -22,6 +22,7 @@ import { Review, TurnPicker } from "./Review";
 import { RoutinesList, RunDetail } from "./Routines";
 import { SideChat } from "./SideChat";
 import { openTab, PanelTabs, SurfacePicker, surfaceOf, type PanelState, type Tab } from "./Surfaces";
+import { undoTurn } from "./undo";
 // The terminal brings xterm.js; it loads the first time you open one.
 const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
 const SessionSurface = lazy(() => import("./SessionInfo").then((m) => ({ default: m.SessionSurface })));
@@ -98,7 +99,10 @@ export function Panel({
       {state.tabs.map((t) =>
         mounted.has(t) ? (
           <div key={t} className="lc-surface" hidden={state.picking || state.tab !== t} role="tabpanel" aria-label={label(t)}>
-            {body(t)}
+            {/* One surface that breaks says so in its own tab; the others and the session go on. */}
+            <Boundary label={label(t)} quiet>
+              {body(t)}
+            </Boundary>
           </div>
         ) : null,
       )}
@@ -150,10 +154,7 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
     if (!cp) return;
     setBusy("undo");
     try {
-      await rpc("checkpoint.revert", { threadId: thread.id, itemId: cp.id });
-      toast(`Undid turn ${cp.turn}`, { description: `${plural(cp.files.length, "file")} back as they were` });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      await undoTurn(thread.id, cp);
     } finally {
       setBusy(null);
     }

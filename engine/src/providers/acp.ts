@@ -13,7 +13,8 @@ import { jsonLines, spawn, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
-import type { OpenOptions, Provider, ProviderSession, TurnSink } from "./types.ts";
+import { imageType, readUpTo } from "./attachments.ts";
+import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
 
 type Json = Record<string, unknown>;
 type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Json; result?: Json; error?: { code: number; message: string } };
@@ -26,7 +27,11 @@ class AcpSession implements ProviderSession {
   private seq = 1;
   private pending = new Map<number | string, { resolve: (v: Json) => void; reject: (e: Error) => void }>();
   private session: string | undefined;
-  private ready: Promise<void> | null = null;
+  private booting: Promise<void> | null = null;
+  /** The session it was to load and couldn't (or can't load any): said once, so the runtime sends the conversation so far. */
+  private lost: string | undefined;
+  /** The agent takes images in a prompt (its promptCapabilities say so). */
+  private images = false;
   private sink: TurnSink | null = null;
   private signal: AbortSignal | null = null;
   private calls = new Map<string, ToolCall>();
@@ -66,16 +71,19 @@ class AcpSession implements ProviderSession {
       const err = new Error(this.stderr.trim().split("\n").slice(-3).join("\n") || `${bin} exited with ${code}.`);
       for (const p of this.pending.values()) p.reject(err);
       this.pending.clear();
+      if (this.child !== child && this.child) return;
       this.child = null;
-      this.ready = null;
+      this.booting = null;
     });
-    this.ready = (async () => {
+    this.booting = (async () => {
       const init = await this.request("initialize", {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
         clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION },
       });
-      this.canLoad = Boolean((init.agentCapabilities as Json | undefined)?.loadSession);
+      const caps = init.agentCapabilities as Json | undefined;
+      this.canLoad = Boolean(caps?.loadSession);
+      this.images = Boolean((caps?.promptCapabilities as Json | undefined)?.image);
       if (this.o.resume && this.canLoad) {
         try {
           await this.request("session/load", { sessionId: this.o.resume, cwd: this.o.cwd, mcpServers: this.mcpServers() });
@@ -86,8 +94,13 @@ class AcpSession implements ProviderSession {
           // The agent forgot it; start fresh below.
         }
       }
+      // A session it can't load (or an agent that loads none) starts knowing nothing: the runtime is told,
+      // not left to think it resumed (T3 Code: ProviderTurnStartService.ts, its resume fallback).
+      if (this.o.resume) this.lost = this.o.resume;
       const s = await this.request("session/new", { cwd: this.o.cwd, mcpServers: this.mcpServers() });
       this.session = String(s.sessionId);
+      // Started again after its process ended, it loads this session rather than the one it opened with.
+      this.o.resume = this.session;
       this.spent = 0;
       // A model picked in Liner Code, through whichever way this agent takes one.
       const pick = acpModelRequest(s, this.session, this.o.model);
@@ -214,26 +227,52 @@ class AcpSession implements ProviderSession {
     }
   }
 
-  async turn(text: string, sink: TurnSink, signal: AbortSignal) {
+  async turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
     if (!this.child) this.boot();
-    await this.ready;
+    await this.booting;
     if (!this.session) throw new Error("The agent didn't open a session.");
     sink.session(this.session);
+    if (this.lost) {
+      const lost = this.lost;
+      this.lost = undefined;
+      // A new session knows nothing, so the soul goes again with the conversation so far.
+      this.soulSent = false;
+      throw new ResumeFailed(`${this.cmd[0]} couldn't load its session ${lost}.`);
+    }
     // Stopped while the agent was starting: nothing was asked of it yet.
     if (signal.aborted) return;
     this.sink = sink;
     this.signal = signal;
-    const cancel = () => this.send({ method: "session/cancel", params: { sessionId: this.session } });
+    // An agent that hasn't finished cancelling 15 seconds after Stop is stopped itself, and the turn
+    // ends as stopped; the next turn starts it again on the same session (T3 Code: AcpSessionRuntime.ts, defaultCancelTimeout).
+    let late: NodeJS.Timeout | undefined;
+    let giveUp = () => {};
+    const gaveUp = new Promise<null>((r) => (giveUp = () => r(null)));
+    const cancel = () => {
+      this.send({ method: "session/cancel", params: { sessionId: this.session } });
+      late = setTimeout(() => {
+        this.close();
+        giveUp();
+      }, CANCEL_MS);
+    };
     signal.addEventListener("abort", cancel, { once: true });
     try {
-      const prompt = this.o.soul && !this.soulSent ? `${this.o.soul}\n\n${text}` : text;
+      const said = this.o.soul && !this.soulSent ? `${this.o.soul}\n\n${text}` : text;
       this.soulSent = true;
-      const r = await this.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: prompt }] });
+      // Your images go as they are when the agent takes them; every file is named in the text either way.
+      const images = this.images ? files.flatMap((f) => {
+        const mimeType = imageType(f);
+        const bytes = mimeType ? readUpTo(f, 20 * 1024 * 1024) : null;
+        return mimeType && bytes ? [{ type: "image", mimeType, data: bytes.toString("base64") }] : [];
+      }) : [];
+      const r = await Promise.race([this.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: said }, ...images] }), gaveUp]);
+      if (!r) return;
       const usage = r.usage as { inputTokens?: number; outputTokens?: number; cachedReadTokens?: number } | undefined;
       if (usage) sink.usage({ inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0, cacheReadTokens: usage.cachedReadTokens ?? 0 });
       if (r.stopReason === "refusal") sink.notice("The agent declined this one.");
       if (r.stopReason === "max_tokens") sink.notice("The agent ran out of room in this turn.");
     } finally {
+      clearTimeout(late);
       signal.removeEventListener("abort", cancel);
       this.sink = null;
       this.signal = null;
@@ -253,6 +292,11 @@ class AcpSession implements ProviderSession {
     this.child = null;
   }
 }
+
+/** How long Stop waits for an ACP agent to finish cancelling before its process is stopped. */
+export let CANCEL_MS = 15_000;
+/** For tests: a shorter wait. */
+export const setCancelMs = (ms: number) => void (CANCEL_MS = ms);
 
 function commandOf(call: ToolCall) {
   const raw = call.rawInput as Json | undefined;

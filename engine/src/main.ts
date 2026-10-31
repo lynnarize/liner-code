@@ -88,6 +88,8 @@ outside.now.apply();
 // No idle sleep while a session or a routine run works.
 const awake = new Awake(store, () => routines.busy || store.threads.some((t) => t.status === "running"));
 void api.ready.then(() => {
+  // Sessions stopped mid-turn when Liner Code last quit or crashed carry on, now that the tools are known.
+  runtime.continueAfterRestart();
   routines.start();
   watch.start();
   api.updates.start();

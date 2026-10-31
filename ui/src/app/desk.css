@@ -68,14 +68,18 @@
   flex: none;
   align-items: center;
   gap: 8px;
-  height: 34px;
-  padding: 0 14px 0 7px;
+  height: 38px;
+  padding: 0 14px 0 4px;
   overflow: hidden;
   border: 0;
   border-radius: 99px;
+  background: var(--lc-float);
+  box-shadow:
+    0 0 0 1px var(--lc-hair),
+    var(--lc-lift);
   color: var(--l-ink-2);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -113,10 +117,10 @@
 .lc-desk-cue-chev {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   border-radius: 99px;
-  background: var(--l-wash-2);
+  background: var(--lc-well);
   color: var(--l-ink-2);
   animation: lc-cue-nod 1.5s var(--l-ease-in-out) 1.2s 3;
   transition:
@@ -139,6 +143,7 @@
   }
 }
 .lc-desk-cue-t {
+  color: var(--l-ink);
   animation: l-swap-in 280ms var(--l-ease-out) backwards;
 }
 .lc-desk-cue-n {
@@ -174,12 +179,12 @@
   }
 }
 /* Armed: a line under the words drains for as long as the second scroll counts. It starts where
-   the words do (the pill's 7px, the chevron's 22px, the 8px gap), clear of the chevron's disc. */
+   the words do (the pill's 4px, the chevron's 30px, the 8px gap), clear of the chevron's disc. */
 .lc-desk-cue-bar {
   position: absolute;
   right: 14px;
   bottom: 5px;
-  left: 37px;
+  left: 42px;
   height: 2px;
   border-radius: 2px;
   background: var(--l-ink-4);

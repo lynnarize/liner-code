@@ -4,12 +4,13 @@
 */
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { castOf, setupOf, setupsOf, splitModel, TRIAL } from "../../contracts/src/index.ts";
 import type { AddedAgent, CommandInfo, Effort, FileChange, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderInfo, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
-import { branchOf, capture, changes, diffFiles, forget, isRepo, restore } from "./checkpoints.ts";
+import { branchOf, capture, changes, diffFiles, forget, isRepo, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
+import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
 import { saveToDownloads, sessionMarkdown } from "./export.ts";
 import { importable, transcript } from "./imports.ts";
 import { run, which } from "./exec.ts";
@@ -228,27 +229,75 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       setups.delete(threadId);
     }
   };
+  /** What sets up a new worktree: the project's setup command, then its scripts marked to run there. */
+  const setupSteps = (projectId: string) => {
+    const p = store.project(projectId);
+    return [p.setup, ...(p.scripts ?? []).filter((x) => x.onWorktree).map((x) => x.command)].filter((x): x is string => Boolean(x));
+  };
+  /** A folder by its real path: /var is /private/var on a Mac, and git says the latter. */
+  const realOf = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return resolve(p);
+    }
+  };
+  /** Liner Code made this worktree, not you: marked since it could say, before that a session's folder under the worktree root. */
+  const madeHere = (w: NonNullable<Thread["worktree"]>) => {
+    if (w.made !== undefined) return w.made;
+    const root = w.root ?? w.path;
+    return realOf(dirname(root)) === realOf(worktreeRoot()) && /^th_/.test(basename(root));
+  };
+  /**
+    A session's worktree, put back on its branch when it's gone (a clean-up took it, or it was
+    deleted by hand) and the session is opened again or sent a message. Only one Liner Code made;
+    one you picked is yours. T3 Code's orchestration-v2/ProviderTurnStartService.ts.
+  */
+  const restoring = new Map<string, Promise<void>>();
+  const ensureWorktree = (threadId: string): Promise<void> => {
+    const t = store.thread(threadId);
+    const w = t.worktree;
+    const root = w ? (w.root ?? w.path) : "";
+    if (!w || existsSync(root) || !madeHere(w)) return Promise.resolve();
+    const busy = restoring.get(root);
+    if (busy) return busy;
+    const note = (text: string) => store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text });
+    const back = (async () => {
+      await recreateWorktree(store.project(t.projectId).path, root, w.branch);
+      note(`This session's worktree was gone, so it's back at ${root}, on ${w.branch}.`);
+      const sub = await submodules(root);
+      if (sub) note(`Its submodules didn't check out (${sub}), so their folders are empty.`);
+      const steps = setupSteps(t.projectId);
+      if (steps.length) await setUp(threadId, w.path, steps.join(" && "));
+    })().finally(() => restoring.delete(root));
+    restoring.set(root, back);
+    return back;
+  };
 
   const snapshot = (): Snapshot => ({ version: updates.state.app.current, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state });
 
   /** Mentioned files and attachments, said in words the agent can act on. */
+  /**
+    Mentioned files and attachments, said in words the agent can act on. Attachments are saved and
+    go with the message as files: the runtime names them in what the agent is sent, and images and
+    PDFs reach the model as they are where its tool takes them; your message shows them as files.
+  */
   const withContext = (t: Thread, text: string, files: { name: string; data: string }[] = []) => {
     const project = store.project(t.projectId);
     const cwd = t.worktree?.path ?? project.path;
-    const notes: string[] = [];
     const mentioned = [...text.matchAll(/(?:^|\s)@([\w./-]+)/g)].map((m) => m[1]).filter((p) => existsSync(join(cwd, p)));
-    if (mentioned.length) notes.push(`Files I pointed at: ${[...new Set(mentioned)].join(", ")}`);
+    let saved: string[] = [];
     if (files.length) {
       const dir = join(store.home, "attachments", t.id);
       mkdirSync(dir, { recursive: true });
-      const saved = files.map((f) => {
-        const path = join(dir, `${Date.now().toString(36)}-${basename(f.name)}`);
+      const stamp = Date.now().toString(36);
+      saved = files.map((f, i) => {
+        const path = join(dir, `${stamp}${i ? `-${i}` : ""}-${basename(f.name)}`);
         writeFileSync(path, Buffer.from(f.data, "base64"));
         return path;
       });
-      notes.push(`I attached: ${saved.join(", ")}`);
     }
-    return notes.length ? `${text}\n\n${notes.join("\n")}` : text;
+    return { text: mentioned.length ? `${text}\n\nFiles I pointed at: ${[...new Set(mentioned)].join(", ")}` : text, files: saved.length ? saved : undefined };
   };
 
   const addProject = async (abs: string, name?: string, agent?: string) => {
@@ -460,27 +509,39 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { current: cur, base, branches, worktrees, npmScripts };
     },
     "worktrees.clean": async ({ projectId }) => {
-      // A worktree whose session is archived or deleted is only taking room.
+      // A worktree whose sessions are all archived or deleted is only taking room, unless something
+      // in it would be lost: one with changes, or one Liner Code didn't make, stays (T3 Code's storageCleanup.ts).
       let removed = 0;
       let kept = 0;
+      const reasons: { path: string; reason: string }[] = [];
+      const base = `${realOf(worktreeRoot())}/`;
       for (const p of store.projects.filter((x) => x.git && (!projectId || x.id === projectId))) {
         const r = await git(p.path, ["worktree", "list", "--porcelain"]);
         const paths = r.stdout.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9));
         for (const path of paths) {
-          if (!path.startsWith(worktreeRoot())) continue;
-          const owner = store.threads.find((t) => t.worktree && (t.worktree.root ?? t.worktree.path) === path);
-          if (owner && !owner.archived) {
+          if (!realOf(path).startsWith(base)) continue;
+          const users = store.threads.filter((t) => t.worktree && realOf(t.worktree.root ?? t.worktree.path) === realOf(path));
+          if (users.some((t) => !t.archived || runtime.isRunning(t.id))) {
             kept++;
             continue;
           }
-          if ((await git(p.path, ["worktree", "remove", "--force", path])).code === 0) removed++;
+          const ours = users.length ? users.every((t) => madeHere(t.worktree!)) : /^th_/.test(basename(path));
+          const why = ours ? await removeWorktree(p.path, path) : "Liner Code didn't make it";
+          if (!why) removed++;
+          else {
+            kept++;
+            reasons.push({ path, reason: why });
+          }
         }
         await git(p.path, ["worktree", "prune"]);
       }
-      return { removed, kept };
+      return { removed, kept, reasons };
     },
     "project.remove": ({ id }) => {
-      for (const t of store.threads.filter((x) => x.projectId === id)) runtime.closeThread(t.id);
+      for (const t of store.threads.filter((x) => x.projectId === id)) {
+        runtime.closeThread(t.id);
+        x.terms.closeThread?.(t.id);
+      }
       store.removeProject(id);
       return null;
     },
@@ -546,7 +607,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         if (!top) throw new Error("That worktree isn't there any more.");
         const branch = (await branchOf(top)) ?? "HEAD";
         const sub = relative((await git(project.path, ["rev-parse", "--show-toplevel"])).stdout.trim(), realpathSync(project.path));
-        tree = sub ? { path: join(top, sub), branch, root: top } : { path: top, branch };
+        tree = sub ? { path: join(top, sub), branch, root: top, made: false } : { path: top, branch, made: false };
       } else if (worktree && project.git) {
         // A worktree of its own, so parallel sessions never edit the same files. A repository
         // with no commits has nothing to check out, so the session stays in the folder instead.
@@ -560,10 +621,18 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           if (r.code !== 0) throw new Error(r.stderr.trim() || "Couldn't make a worktree.");
           // A project inside a bigger repository works in the same folder of the worktree.
           const sub = relative(top.stdout.trim(), realpathSync(project.path));
-          tree = sub ? { path: join(root, sub), branch, root } : { path: root, branch };
-          // Setting up a new worktree: the project's setup command, then its scripts marked to run there.
-          const steps = [project.setup, ...(project.scripts ?? []).filter((x) => x.onWorktree).map((x) => x.command)].filter((x): x is string => Boolean(x));
-          if (steps.length) setups.set(tid, setUp(tid, tree.path, steps.join(" && ")));
+          tree = sub ? { path: join(root, sub), branch, root, made: true } : { path: root, branch, made: true };
+          // Setting up a new worktree: its submodules, which git leaves empty, then the project's setup
+          // command and its scripts marked to run there.
+          const steps = setupSteps(projectId);
+          const mods = existsSync(join(root, ".gitmodules"));
+          const at = tree.path;
+          const prep = async () => {
+            const why = mods ? await submodules(root) : null;
+            if (why) store.putItem(tid, { kind: "notice", id: uid("it"), turn: 0, at: Date.now(), text: `The worktree's submodules didn't check out (${why}), so their folders are empty.` });
+            if (steps.length) await setUp(tid, at, steps.join(" && "));
+          };
+          if (steps.length || mods) setups.set(tid, prep().finally(() => setups.delete(tid)));
         }
       }
       const t: Thread = {
@@ -598,6 +667,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : v]));
       const t = store.thread(id);
       if (patch.archived && !t.archived) leftBehind(id);
+      // Opened again: a worktree a clean-up took is put back.
+      if (patch.archived === false && t.archived) void ensureWorktree(id).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "Its worktree didn't come back", body: String(e?.message ?? e) }));
       // A setup or a route brings who works on it; letting one go comes before whoever you picked instead.
       if (route) return store.patchThread(id, { ...clean, ...routeFields(route, t) });
       // Picking someone else to work on it ends routing.
@@ -608,7 +679,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "thread.items": ({ id }) => store.timeline(id),
     "thread.export": async ({ id }) => {
       const cwd = cwdOf(id);
-      const md = await sessionMarkdown(store, id, async (from, to) => (await git(cwd, ["diff", "--no-color", "-M", from, to])).stdout);
+      const md = await sessionMarkdown(store, id, async (from, to) => (await git(cwd, ["diff", "--relative", ...PATCH, "-M", from, to])).stdout);
       return { path: saveToDownloads(store.thread(id).title, md) };
     },
     "thread.info": async ({ id }) => {
@@ -652,7 +723,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "memory.add": ({ projectId, fact }) => remember(store.home, store.project(projectId).id, fact).facts,
     "memory.forget": ({ projectId, index }) => forgetFact(store.home, store.project(projectId).id, index),
     "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query),
-    "thread.carryOn": async ({ id, model }) => (await runtime.carryOn(id, model), null),
+    "thread.carryOn": async ({ id, model }) => (await ensureWorktree(id), await runtime.carryOn(id, model), null),
     "thread.send": ({ id, text, files, mode, anchor }) => {
       const t = store.thread(id);
       // Liner Code's own commands, whichever tool the session runs on.
@@ -672,14 +743,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         void runtime.review(id, t.turns, 1);
         return null;
       }
-      // The turn runs on; its progress comes back as events. A new worktree finishes setting up first.
+      // The turn runs on; its progress comes back as events. A new worktree finishes setting up
+      // first, and one that's gone is put back.
       void (setups.get(id) ?? Promise.resolve())
-        .then(() => runtime.send(id, withContext(t, text, files), mode, anchor))
+        .then(() => ensureWorktree(id))
+        .then(() => {
+          const c = withContext(t, text, files);
+          return runtime.send(id, c.text, mode, anchor, c.files);
+        })
         .catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
       return null;
     },
     "thread.queue": ({ id, queue }) => store.patchThread(id, { queue }),
-    "thread.rewind": async ({ threadId, itemId, files }) => {
+    "thread.rewind": async ({ threadId, itemId, files, force }) => {
       // Edit from here: the conversation goes back to just before this message.
       const it = store.item(threadId, itemId);
       if (it.kind !== "user") throw new Error("Only a message you sent can be edited.");
@@ -690,8 +766,12 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (files && later.length) {
         const committed = later.find((x) => x.committed);
         if (committed) throw new Error(`Turn ${committed.turn}'s changes are committed (${committed.committed}). Revert the commit first, or keep the changes.`);
-        // Newest first, so each file ends as it was before the first of these turns.
-        for (const cp of [...later].reverse()) if (cp.from) await restore(cwdOf(threadId), cp.from, cp.files);
+        const other = busyBeside(threadId);
+        if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before putting files back.`);
+        // Newest first, so each file ends as it was before the first of these turns. The files as they
+        // are now are kept in a snapshot first, and one changed after its turn stops it unless forced.
+        const turns = [...later].reverse().flatMap((cp) => (cp.from ? [{ from: cp.from, to: cp.to, files: cp.files }] : []));
+        await undo(cwdOf(threadId), `${threadId}/undo-${Date.now().toString(36)}`, turns, force);
         undone = new Set(later.flatMap((x) => x.files.map((f) => f.path))).size;
       }
       runtime.closeThread(threadId);
@@ -748,10 +828,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       runtime.closeThread(id);
       const project = store.project(t.projectId);
       await forget(project.path, id).catch(() => {});
-      if (t.worktree) await git(project.path, ["worktree", "remove", "--force", t.worktree.root ?? t.worktree.path]).catch(() => {});
+      // Its worktree goes too, never forced: it stays while another session works there or it holds
+      // changes, and one Liner Code didn't make is yours (T3 Code's storageCleanup.ts).
+      let kept: string | null = null;
+      const root = t.worktree ? (t.worktree.root ?? t.worktree.path) : "";
+      if (t.worktree) {
+        const others = store.threads.filter((o) => o.id !== id && o.sideOf !== id && o.worktree && (o.worktree.root ?? o.worktree.path) === root);
+        if (others.length) kept = others.length === 1 ? `"${others[0].title}" works there too` : `${others.length} other sessions work there`;
+        else if (madeHere(t.worktree)) kept = await removeWorktree(project.path, root).catch((e) => String(e?.message ?? e));
+      }
       store.removeThread(id);
       store.emit({ type: "thread", thread: { ...t, archived: true } });
-      return null;
+      if (kept) store.emit({ type: "notify", threadId: id, kind: "done", title: "Kept its worktree", body: `${root} stays: ${kept}. Its branch ${t.worktree!.branch} stays too.` });
+      return kept ? { kept } : null;
     },
 
     "approval.answer": ({ threadId, itemId, allow, reason, always }) => {
@@ -794,13 +883,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (it.kind !== "checkpoint" || !it.from || !it.to) return [];
       return diffFiles(cwdOf(threadId), it.from, it.to, it.files);
     },
-    "checkpoint.revert": async ({ threadId, itemId }) => {
+    "checkpoint.revert": async ({ threadId, itemId, force }) => {
       const it = store.item(threadId, itemId);
       if (it.kind !== "checkpoint" || !it.from) throw new Error("That turn has no snapshot to go back to.");
       if (runtime.isRunning(threadId)) throw new Error("Stop the session before undoing a turn.");
       if (it.committed) throw new Error("Those changes are committed. Revert the commit instead.");
-      await restore(cwdOf(threadId), it.from, it.files);
-      const next = store.putItem(threadId, { ...it, reverted: true });
+      const other = busyBeside(threadId);
+      if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before undoing a turn.`);
+      // The files as they are now are kept first, so the undo can be taken back too; a file changed
+      // after the turn stops it unless forced, since putting the turn back would lose that change.
+      const redo = await undo(cwdOf(threadId), `${threadId}/undo-${it.turn}-${Date.now().toString(36)}`, [{ from: it.from, to: it.to, files: it.files }], force);
+      const next = store.putItem(threadId, { ...it, reverted: true, redo });
       store.patchThread(threadId, { toReview: runtime.toReview(threadId) });
       return next;
     },
@@ -851,6 +944,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const t = store.thread(threadId);
       if (runtime.isRunning(threadId)) throw new Error("Wait for the turn to finish before switching branches.");
       if (t.worktree) throw new Error(`This session works in a worktree of its own, on ${t.worktree.branch}.`);
+      const other = busyBeside(threadId);
+      if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before switching branches.`);
       const name = branch.trim();
       if (!name || name.startsWith("-") || /[\s~^:?*[\\]|\.\.|@\{/.test(name)) throw new Error("That isn't a name git takes for a branch.");
       const project = store.project(t.projectId);
@@ -873,9 +968,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const open = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? [x] : []));
       // Some of the files, when you picked: a rename takes its old path along.
       const picked = (f: FileChange) => !only?.length || only.includes(f.path);
-      const paths = [...new Set(open.flatMap((x) => x.files.filter(picked).flatMap((f) => [f.path, ...(f.from ? [f.from] : [])])))];
+      // Paths in the project's folder, as git reads them from here (an older checkpoint's from the repository's top).
+      const prefix = await prefixOf(cwd);
+      const paths = [...new Set(open.flatMap((x) => x.files.filter(picked).flatMap((f) => [f.path, ...(f.from ? [f.from] : [])])))].map((p) => local(p, prefix));
       if (!paths.length) throw new Error("Nothing to commit.");
-      const add = await git(cwd, ["add", "-A", "--", ...paths]);
+      const add = await git(cwd, ["add", "-A", "--", ...literal(paths)]);
       if (add.code !== 0) throw new Error(add.stderr.trim() || "git add failed.");
       // The approved plan's title, or the first line of what you asked, says what the commit is.
       const items = store.timeline(threadId);
@@ -883,8 +980,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const asked = items.find((x) => x.kind === "user");
       const line = (plan?.kind === "proposal" ? plan.title : asked?.kind === "user" ? asked.text.split("\n")[0] : t.title).trim();
       const subject = message ?? (line.length > 72 ? `${line.slice(0, 71).trimEnd()}…` : line);
-      const c = await run("git", ["commit", "-m", subject, "--", ...paths], { cwd, env });
-      if (c.code !== 0) throw new Error((c.stderr || c.stdout).trim().split("\n").pop() || "The commit failed.");
+      // Hooks and signing can take minutes, and nothing here can answer a prompt. What they say, all of it, is why it failed.
+      const c = await run("git", ["commit", "-m", subject, "--", ...literal(paths)], { cwd, env: { ...env, GIT_TERMINAL_PROMPT: "0" }, input: "", timeout: 10 * 60_000 });
+      if (c.code !== 0) throw new Error(c.stderr.trim() || c.stdout.trim() || "The commit failed.");
       const sha = (await git(cwd, ["rev-parse", "--short", "HEAD"])).stdout.trim();
       // A turn is committed once all its files are; until then the committed ones wait in `done`,
       // so what's left to commit or undo is only the rest.
@@ -939,6 +1037,40 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "fs.files": ({ projectId, query, limit }) => findFiles(store.project(projectId).path, query, limit),
     "fs.tree": ({ projectId, threadId }) => tree(threadId ? cwdOf(threadId) : store.project(projectId).path),
     "fs.read": ({ threadId, path }) => readFile(cwdOf(threadId), path),
+    "files.raw": ({ threadId, path }) => {
+      // Only inside the session's folder, with links followed first, so a symlink can't reach out of it.
+      const root = realpathSync(cwdOf(threadId));
+      const abs = resolve(root, path);
+      if (!existsSync(abs)) throw new Error("That file isn't there any more.");
+      const real = realpathSync(abs);
+      const rel = relative(root, real);
+      if (!rel || rel === ".." || rel.startsWith("../") || resolve(root, rel) !== real) throw new Error("That file is outside the session's folder.");
+      const st = statSync(real);
+      if (!st.isFile()) throw new Error("That isn't a file.");
+      if (st.size > 10 * 1024 * 1024) throw new Error("That file is over 10 MB, too big to preview.");
+      const ext = /\.([a-z0-9]+)$/i.exec(real)?.[1]?.toLowerCase() ?? "";
+      const types: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", svg: "image/svg+xml", ico: "image/x-icon", bmp: "image/bmp", pdf: "application/pdf" };
+      return { data: readFileSync(real).toString("base64"), mime: types[ext] ?? "application/octet-stream", size: st.size };
+    },
+    "attachment.read": ({ path }) => {
+      // Only what was attached to a message: inside the attachments folder, links followed first.
+      const dir = join(store.home, "attachments");
+      const abs = resolve(dir, path);
+      // Outside the folder is refused before anything is looked up, so it says nothing about other files.
+      const asked = relative(dir, abs);
+      if (!asked || asked === ".." || asked.startsWith("../")) throw new Error("That file isn't an attachment.");
+      if (!existsSync(dir) || !existsSync(abs)) throw new Error("That attachment isn't there any more.");
+      const root = realpathSync(dir);
+      const real = realpathSync(abs);
+      const rel = relative(root, real);
+      if (!rel || rel === ".." || rel.startsWith("../") || resolve(root, rel) !== real) throw new Error("That file isn't an attachment.");
+      const st = statSync(real);
+      if (!st.isFile()) throw new Error("That isn't a file.");
+      if (st.size > 20 * 1024 * 1024) throw new Error("That attachment is over 20 MB, too big to show.");
+      const ext = /\.([a-z0-9]+)$/i.exec(real)?.[1]?.toLowerCase() ?? "";
+      const types: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", svg: "image/svg+xml", bmp: "image/bmp", pdf: "application/pdf" };
+      return { data: readFileSync(real).toString("base64"), mime: types[ext] ?? "application/octet-stream", size: st.size };
+    },
     "git.status": ({ projectId }) => gitStatus(store.project(projectId).path),
 
     "groups.save": ({ groups }) => store.setGroups(groups),
@@ -995,7 +1127,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         const t = await handlers["thread.create"]({ projectId, agent: m, effort, access, worktree: true, title: `${titleFrom(text)} · ${label}` });
         made.push(store.patchThread(t.id, { compare: { id, base } }));
       }
-      for (const t of made) void runtime.send(t.id, withContext(t, text, files)).catch(() => {});
+      for (const t of made) {
+        const c = withContext(t, text, files);
+        void runtime.send(t.id, c.text, "queue", undefined, c.files).catch(() => {});
+      }
       return made;
     },
     "compare.keep": async ({ threadId }) => {
@@ -1004,7 +1139,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const project = store.project(t.projectId);
       const now = await capture(t.worktree.root ?? t.worktree.path, `${threadId}/keep`);
       if (!now) throw new Error("Couldn't read that session's changes.");
-      const patch = (await run("git", ["diff", "--binary", t.compare.base, now], { cwd: t.worktree.root ?? t.worktree.path, maxBuffer: 256 * 1024 * 1024 })).stdout;
+      const patch = (await run("git", ["diff", "--binary", ...PATCH, t.compare.base, now], { cwd: t.worktree.root ?? t.worktree.path, maxBuffer: 256 * 1024 * 1024 })).stdout;
       const files = (patch.match(/^diff --git /gm) ?? []).length;
       if (!files) throw new Error("That one didn't change anything.");
       const top = (await git(project.path, ["rev-parse", "--show-toplevel"])).stdout.trim() || project.path;
@@ -1016,9 +1151,12 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { files };
     },
 
-    "term.open": ({ threadId, cols, rows, command }) => x.terms.open(cwdOf(threadId), cols, rows, command, threadId),
+    "term.open": ({ threadId, cols, rows, command, title }) => x.terms.open(cwdOf(threadId), cols, rows, command, threadId, title),
+    "term.attach": ({ id }) => x.terms.attach(id),
+    "term.list": ({ threadId }) => x.terms.list(threadId),
     "term.write": ({ id, data }) => (x.terms.write(id, data), null),
     "term.resize": ({ id, cols, rows }) => (x.terms.resize(id, cols, rows), null),
+    "term.clear": ({ id }) => (x.terms.clear(id), null),
     "term.close": ({ id }) => (x.terms.close(id), null),
 
     "pr.status": async ({ threadId }) => {
@@ -1053,9 +1191,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const t = store.thread(threadId);
       const cwd = cwdOf(threadId);
       const open = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? [x] : []));
-      const paths = [...new Set(open.flatMap((x) => x.files.map((f) => f.path)))];
+      const prefix = await prefixOf(cwd);
+      const paths = [...new Set(open.flatMap((x) => x.files.map((f) => local(f.path, prefix))))];
       if (!paths.length) throw new Error("Nothing to commit.");
-      const diff = (await run("git", ["diff", "--no-color", "-U2", "HEAD", "--", ...paths], { cwd, timeout: 30000 })).stdout || (await run("git", ["diff", "--no-color", "--cached", "-U2", "--", ...paths], { cwd, timeout: 30000 })).stdout;
+      const diff = (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(paths)], { cwd, timeout: 30000 })).stdout || (await run("git", ["diff", "--relative", ...PATCH, "--cached", "-U2", "--", ...literal(paths)], { cwd, timeout: 30000 })).stdout;
       const by = runtime.writerFor(t);
       const out = await runtime.quiet(threadId, by, cwd, writePrompt("commit", asksOf(threadId), diff, paths), new AbortController().signal);
       const m = /<message>([\s\S]*?)<\/message>/.exec(out)?.[1]?.trim() || out.trim().split("\n\n")[0];
@@ -1067,7 +1206,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const cwd = cwdOf(threadId);
       const base = await mainBranch(cwd);
       const mb = base ? (await git(cwd, ["merge-base", "HEAD", base])).stdout.trim() : "";
-      const [diff, log] = await Promise.all([run("git", ["diff", "--no-color", "-U2", mb || "HEAD~1", "HEAD"], { cwd, timeout: 30000 }), run("git", ["log", "--format=- %s", `${mb || "HEAD~1"}..HEAD`], { cwd, timeout: 15000 })]);
+      const [diff, log] = await Promise.all([run("git", ["diff", ...PATCH, "-U2", mb || "HEAD~1", "HEAD"], { cwd, timeout: 30000 }), run("git", ["log", "--format=- %s", `${mb || "HEAD~1"}..HEAD`], { cwd, timeout: 15000 })]);
       // What the session checked: the commands it ran that passed, like the tests.
       const checks = store.timeline(threadId).flatMap((x) => (x.kind === "tool" && x.toolKind === "exec" && x.status === "done" && /test|lint|check|build|tsc/i.test(x.title) ? [x.title.replace(/^Run /, "")] : []));
       const by = runtime.writerFor(t);
@@ -1083,8 +1222,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const said = items.flatMap((x) => (x.kind === "text" && !x.streaming && x.text.trim() ? [x.text.trim()] : [])).slice(-3);
       const files = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted ? x.files.map((f) => `${f.path} (+${f.added} −${f.removed})`) : [])))].slice(0, 40);
       const cwd = cwdOf(threadId);
-      const open = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? x.files.map((f) => f.path) : [])))];
-      const diff = open.length ? (await run("git", ["diff", "--no-color", "-U2", "HEAD", "--", ...open], { cwd, timeout: 30000 }).catch(() => null))?.stdout ?? "" : "";
+      const prefix = await prefixOf(cwd);
+      const open = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? x.files.map((f) => local(f.path, prefix)) : [])))];
+      const diff = open.length ? (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(open)], { cwd, timeout: 30000 }).catch(() => null))?.stdout ?? "" : "";
       const by = runtime.writerFor(t);
       const out = await runtime.quiet(threadId, by, cwd, deskPrompt(t.title, asksOf(threadId), said, files, context, question.slice(0, 1000), diff), new AbortController().signal, "desk");
       const answer = out.trim();
@@ -1149,11 +1289,30 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   }
   /** What a session started stops with it, when it's archived or removed (T3 Code's resource cleanup). */
   function leftBehind(threadId: string) {
+    // Its Terminal's shells too: they outlive the surface, not the session. (Tests pass no Terminals.)
+    x.terms.closeThread?.(threadId);
     void stopServers(env, mine(threadId), { only: "session" }).catch(() => {});
   }
   function cwdOf(threadId: string) {
     const t = store.thread(threadId);
     return t.worktree?.path ?? store.project(t.projectId).path;
+  }
+  /**
+    Another session running now in this one's folder (or one inside it, or around it): putting
+    files back or switching branches there would pull them out from under it. A side chat only
+    reads. T3 Code's orchestration-v2/CheckpointRestoreSafety.ts.
+  */
+  function busyBeside(threadId: string) {
+    const inside = (a: string, b: string) => {
+      const r = relative(a, b);
+      return r === "" || (r !== ".." && !r.startsWith("../") && !isAbsolute(r));
+    };
+    const cwd = realOf(cwdOf(threadId));
+    return store.threads.find((o) => {
+      if (o.id === threadId || o.sideOf || !runtime.isRunning(o.id)) return false;
+      const there = realOf(cwdOf(o.id));
+      return inside(cwd, there) || inside(there, cwd);
+    });
   }
   function defaultAgent() {
     // Just a model: the first model that's ready. Otherwise the team's coder.

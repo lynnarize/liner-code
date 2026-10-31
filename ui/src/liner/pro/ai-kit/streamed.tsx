@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useReveal } from "./stream";
-import { parseMarkdown, renderMarkdown } from "./markdown";
+import { createMarkdownParser, renderMarkdown } from "./markdown";
 import { Cite, useCites } from "./cite";
 import "./ai-kit.css";
 
@@ -21,11 +21,16 @@ export type StreamedMarkdownProps = {
   className?: string;
 };
 
-export function StreamedMarkdown({ text, streaming = false, animate = true, speed, sentences, paused, onCaughtUp, onGrow, className }: StreamedMarkdownProps) {
+/** Memoised: a reply that didn't change doesn't redraw while another one streams. */
+export const StreamedMarkdown = memo(function StreamedMarkdown({ text, streaming = false, animate = true, speed, sentences, paused, onCaughtUp, onGrow, className }: StreamedMarkdownProps) {
   const r = useReveal(text, { animate, streaming, speed, paused });
   const cites = useCites();
   const shown = text.slice(0, r.end);
-  const blocks = useMemo(() => parseMarkdown(shown), [shown]);
+  // Still coming, or not all shown yet: formatting left open at the end stays open.
+  const partial = streaming || r.end < text.length;
+  // One parser per reply, so its finished blocks are kept as it grows.
+  const [parse] = useState(createMarkdownParser);
+  const blocks = useMemo(() => parse(shown, partial), [shown, partial]);
   const growRef = useRef(onGrow);
   growRef.current = onGrow;
   // Block body on purpose: an effect must return nothing or a cleanup function.
@@ -53,4 +58,4 @@ export function StreamedMarkdown({ text, streaming = false, animate = true, spee
       })}
     </div>
   );
-}
+});

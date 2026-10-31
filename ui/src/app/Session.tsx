@@ -3,11 +3,14 @@
   composer. The panel beside it holds the diff or the agents; Review full width lets the diff
   take the whole paper.
 */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { Project, ProjectScript, Thread } from "@contracts";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
+import type { Item, Project, ProjectScript, Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
-import { loadItems, rpc, useEngine, useItems } from "./engine";
+import { MarkdownLinks, type FileLink } from "@liner/pro/ai-kit/markdown";
+import { prefersReducedMotion } from "@liner/lib/spring";
+import { getState, isCheckpoint, isPrompt, isSubagent, loadItems, rpc, useEngine, useItems, useItemsWhere } from "./engine";
+import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
 import { EnvMenu } from "./Env";
 import { Rail } from "./Rail";
@@ -31,8 +34,26 @@ type Props = {
   onRoutine: (id?: string) => void;
 };
 
+/** Before the timeline has loaded, nothing has been seen. */
+const NONE_SEEN = new Set<string>();
+
+/*
+  Where you were in each session, while the app runs: opening one again puts you back there,
+  and at the end only if you were at the end or its agent is working (T3 Code:
+  useTimelinePositionRestore.ts, timelineScrollAnchoring.ts).
+*/
+const places = new Map<string, { top: number; atEnd: boolean }>();
+
+/**
+  The session reads only the parts of the timeline it shows (its checkpoints, your messages, its
+  subagents, how many items there are), so a streaming reply redraws the timeline and not the
+  composer, the header and the rest; the timeline and the panel read the whole of it themselves.
+*/
 export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession, onRoutine }: Props) {
-  const items = useItems(thread.id);
+  const cps = useItemsWhere(thread.id, isCheckpoint);
+  const prompts = useItemsWhere(thread.id, isPrompt);
+  const tasks = useItemsWhere(thread.id, isSubagent);
+  const count = useEngine((s) => s.items[thread.id]?.length ?? 0);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
@@ -67,9 +88,55 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     seen.current = null;
     setFocus(null);
     void loadItems(thread.id);
-    stick();
   }, [thread.id]);
-  if (seen.current === null && items.length) seen.current = new Set(items.map((x) => x.id));
+  if (seen.current === null && count) seen.current = new Set((getState().items[thread.id] ?? []).map((x) => x.id));
+
+  // Back where you were: once the timeline is there, before it paints. At the end (or working) it follows as before.
+  const placed = useRef(false);
+  const restoring = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (placed.current || !count) return;
+    placed.current = true;
+    const el = scroller.current;
+    const was = places.get(thread.id);
+    if (!el || !was || was.atEnd || thread.status === "running") return stick();
+    el.scrollTop = was.top;
+    restoring.current = was.top;
+  }, [count > 0]);
+  // The stick-to-bottom hook starts listening in an effect of its own, which has run by now: it lets go here.
+  useEffect(() => {
+    const el = scroller.current;
+    const top = restoring.current;
+    if (!el || top === null) return;
+    restoring.current = null;
+    letGo(el);
+    el.scrollTop = top;
+    // Pictures and code that settle a frame later can move it; it's set again until it holds, or you scroll.
+    let n = 0;
+    let frame = 0;
+    const hold = () => {
+      if (Math.abs(el.scrollTop - top) > 1 && el.scrollHeight - el.clientHeight >= top) el.scrollTop = top;
+      if (++n < 6) frame = requestAnimationFrame(hold);
+    };
+    frame = requestAnimationFrame(hold);
+    const stop = () => cancelAnimationFrame(frame);
+    el.addEventListener("wheel", stop, { once: true, passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener("wheel", stop);
+    };
+  }, [count > 0]);
+  // Remembered as you scroll, so it's there whenever the session closes.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const keep = () => {
+      if (!placed.current) return;
+      places.set(thread.id, { top: el.scrollTop, atEnd: el.scrollHeight - el.clientHeight - el.scrollTop < 30 });
+    };
+    el.addEventListener("scroll", keep, { passive: true });
+    return () => el.removeEventListener("scroll", keep);
+  }, [thread.id]);
   useEffect(() => {
     if (thread.unread) void rpc("thread.update", { id: thread.id, unread: false });
   }, [thread.id, thread.unread]);
@@ -78,17 +145,39 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const coder = agentOf(thread.agent, agents, providers);
   const model = thread.model ?? coder.model;
   const settings: RunSettings = { agent: thread.agent, lead: thread.lead, setup: thread.setup?.id, route: thread.route?.level, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, helpers: thread.helpers };
-  const open = checkpointsOf(items).filter((c) => !c.reverted && !c.committed);
+  const open = checkpointsOf(cps).filter((c) => !c.reverted && !c.committed);
   const lines = sumLines(open.flatMap((c) => c.files));
   const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
   const branch = thread.worktree?.branch ?? project?.branch;
   const busy = thread.status === "running";
-  const subagents = items.filter((x) => x.kind === "tool" && x.toolKind === "task").length;
+  const subagents = tasks.length;
 
-  const review = (id: string, path?: string) => {
+  // One identity for the session's life, so the timeline's turns don't redraw for a new one each time.
+  const review = useCallback((id: string, path?: string) => {
     setFocus({ id, path });
-    setPanel((p) => openTab(p, "changes"));
-  };
+    setPanelState((prev) => {
+      const next = openTab(prev, "changes");
+      keepPanel(thread.id, next);
+      return next;
+    });
+  }, [thread.id]);
+
+  // A path in an answer ("src/a.ts:42") brings up the Files surface, which takes the same event and
+  // opens the file at its line (Files.tsx); a web address opens in the browser you use.
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      if ((e as CustomEvent<{ path?: string }>).detail?.path) setPanel((p) => (p.open && p.tab === "files" ? p : openTab(p, "files")));
+    };
+    window.addEventListener("lc:open-file", onOpen);
+    return () => window.removeEventListener("lc:open-file", onOpen);
+  }, [thread.id]);
+  const links = useMemo(
+    () => ({
+      openExternal: (href: string) => bridge.openExternal(href),
+      openFile: (f: FileLink) => window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: f.path, line: f.line } })),
+    }),
+    [],
+  );
   const toggle = (tab: Tab) => setPanel((p) => (p.open && p.tab === tab && !p.picking ? { ...p, open: false, wide: false } : openTab(p, tab)));
   // ⌘F finds in the thread (Review has its own, over the diff). It counts, so ⌘F with the bar open takes you back to its field.
   const [finding, setFinding] = useState(0);
@@ -173,9 +262,31 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   };
 
   const placeholder = lead ? `Ask ${lead.name} for changes, or point at a file with @` : `Ask ${coder.name} for changes, or point at a file with @`;
-  const empty = useMemo(() => items.length === 0, [items.length]);
+  const empty = count === 0;
+
+  // ⌥↑ and ⌥↓ go to the prompt before or after the one you're reading (in the composer, only while it's empty).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+      const t = e.target instanceof Element ? e.target : null;
+      if (t?.closest("input, select, [contenteditable=''], [contenteditable='true']") || (t instanceof HTMLTextAreaElement && t.value)) return;
+      const el = scroller.current;
+      if (!el || !prompts.length) return;
+      e.preventDefault();
+      // The nearest prompt that going to would move the view up, or down; past the last one is the latest answer.
+      const tops = prompts.map((p) => (topOf(el, p.id) ?? 0) - PROMPT_PAD);
+      const down = e.key === "ArrowDown";
+      const below = el.scrollTop < el.scrollHeight - el.clientHeight - 2;
+      const i = down ? (below ? tops.findIndex((t) => t > el.scrollTop + 2) : -1) : tops.findLastIndex((t) => t < el.scrollTop - 2);
+      if (i >= 0) toPrompt(el, prompts[i].id);
+      else if (down) jump();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [prompts, jump]);
 
   return (
+    <MarkdownLinks.Provider value={links}>
     <div
       className="lc-session"
       data-panel={panel.open || undefined}
@@ -265,13 +376,15 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                     <span>Say what you need below. Anything that needs you will wait here as a card.</span>
                   </div>
                 ) : (
-                  <Timeline threadId={thread.id} items={items} seen={seen.current ?? new Set()} onReview={review} reviewing={panel.open && panel.tab === "changes" && !panel.picking ? focus : null} onGrow={follow} />
+                  <Timeline threadId={thread.id} seen={seen.current ?? NONE_SEEN} onReview={review} reviewing={panel.open && panel.tab === "changes" && !panel.picking ? focus : null} onGrow={follow} />
                 )}
                 <ShipCard thread={thread} />
               </div>
             </div>
+            <PromptMap prompts={prompts} scroller={scroller} />
             <Rail thread={thread} panel={panel} onPanel={setPanel} onTab={toggle} files={openFiles} branch={branch} />
           </div>
+          <Announcer status={thread.status} turns={thread.turns} who={(lead && thread.turnBy === lead.id ? lead : coder).name} />
           {finding > 0 && <FindBar root={contentRef} asked={finding} onClose={() => setFinding(0)} />}
           {cite && (
             <button
@@ -330,10 +443,132 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           </div>
         </section>
         {panel.open && !panel.wide && panel.dock !== "bottom" && <PanelGrip body={body} width={panelW} onWidth={setPanelW} onDrag={setResizing} />}
-        {panel.open && <Panel thread={thread} items={items} state={panel} onState={setPanel} focus={focus} onFocus={setFocus} agentName={(lead ?? coder).name} onOpenSession={onOpenSession} onRoutine={onRoutine} />}
+        {panel.open && <SessionPanel thread={thread} state={panel} onState={setPanel} focus={focus} onFocus={setFocus} agentName={(lead ?? coder).name} onOpenSession={onOpenSession} onRoutine={onRoutine} />}
       </div>
     </div>
+    </MarkdownLinks.Provider>
   );
+}
+
+/** The panel's surfaces read the whole timeline (a reply's words too), so the panel subscribes to it on its own. */
+function SessionPanel(props: Omit<ComponentProps<typeof Panel>, "items">) {
+  const items = useItems(props.thread.id);
+  return <Panel {...props} items={items} />;
+}
+
+/** useStickToBottom lets go when you scroll up; a scroll of nothing upward tells it so when the session moves you itself. */
+const letGo = (el: HTMLElement) => el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+/** Room above a prompt the session scrolls to. */
+const PROMPT_PAD = 16;
+/** Where a block of the timeline starts, in the scroller's own coordinates. */
+function topOf(el: HTMLElement, id: string) {
+  const b = el.querySelector<HTMLElement>(`[data-item="${CSS.escape(id)}"]`);
+  return b ? b.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop : null;
+}
+/**
+  The prompt you're reading under: the last one that starts at the top of the view or above it,
+  or, scrolled to the end where the last prompts can't reach the top, in its upper part. -1 above the first.
+*/
+function promptAt(el: HTMLElement, prompts: Item[]) {
+  const end = el.scrollHeight - el.clientHeight - el.scrollTop < 4;
+  const line = el.scrollTop + (end ? el.clientHeight * 0.6 : PROMPT_PAD + 24);
+  let at = -1;
+  prompts.forEach((p, i) => {
+    const t = topOf(el, p.id);
+    if (t !== null && t <= line) at = i;
+  });
+  return at;
+}
+function toPrompt(el: HTMLElement, id: string) {
+  const t = topOf(el, id);
+  if (t === null) return;
+  letGo(el);
+  el.scrollTo({ top: Math.max(0, t - PROMPT_PAD), behavior: prefersReducedMotion() ? "auto" : "smooth" });
+}
+
+/*
+  Your prompts as a column of ticks at the thread's left edge, one each, the one you're reading
+  under drawn darker: point at one to read it, press it to go there (T3 Code: TimelineMinimap.tsx,
+  timelineMinimapItems.ts). The Rail keeps the right edge. Fewer than three prompts need no map.
+*/
+function PromptMap({ prompts, scroller }: { prompts: Item[]; scroller: RefObject<HTMLDivElement | null> }) {
+  const [at, setAt] = useState(-1);
+  const [hover, setHover] = useState<number | null>(null);
+  const many = prompts.length >= 3;
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !many) return;
+    let frame = 0;
+    const look = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setAt(promptAt(el, prompts)));
+    };
+    look();
+    el.addEventListener("scroll", look, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener("scroll", look);
+    };
+  }, [prompts, many]);
+  if (!many) return null;
+  const shown = hover !== null ? prompts[hover] : null;
+  const text = shown?.kind === "user" ? shown.text.replace(/\s+/g, " ").trim() : "";
+  return (
+    <nav className="lc-pmap" aria-label="Your prompts" style={{ "--n": prompts.length } as CSSProperties} onMouseLeave={() => setHover(null)}>
+      {prompts.map((p, i) => (
+        <button
+          key={p.id}
+          type="button"
+          className="lc-pmap-tick l-focus"
+          data-at={i === at || undefined}
+          data-near={hover !== null && Math.abs(i - hover) === 1 ? true : undefined}
+          data-hover={i === hover || undefined}
+          aria-label={`Prompt ${i + 1}: ${p.kind === "user" ? p.text.slice(0, 80) : ""}`}
+          aria-current={i === at ? "location" : undefined}
+          onMouseEnter={() => setHover(i)}
+          onFocus={() => setHover(i)}
+          onBlur={() => setHover(null)}
+          onClick={() => scroller.current && toPrompt(scroller.current, p.id)}
+        />
+      ))}
+      {shown && (
+        <span className="lc-pmap-tip l-glass" style={{ "--i": hover } as CSSProperties} aria-hidden>
+          <small className="l-num">Prompt {(hover ?? 0) + 1}</small>
+          {text.length > 160 ? `${text.slice(0, 159)}…` : text || "A message with files"}
+        </span>
+      )}
+    </nav>
+  );
+}
+
+/*
+  Says out loud, once, when the agent finishes, needs you or runs into a problem: a polite live
+  region VoiceOver reads without moving you (T3 Code: ThreadActivityAnnouncer.tsx, useLiveRegion.ts).
+  It's written straight to the page, so speaking redraws nothing, and cleared after a while so it
+  isn't read again when focus comes back.
+*/
+function Announcer({ status, turns, who }: { status: Thread["status"]; turns: number; who: string }) {
+  const region = useRef<HTMLDivElement>(null);
+  const was = useRef({ status, turns });
+  const clear = useRef(0);
+  useEffect(() => {
+    const before = was.current;
+    was.current = { status, turns };
+    const el = region.current;
+    if ((before.status === status && before.turns === turns) || !el) return;
+    // A short turn can start and end between two looks (a window out of sight looks less often): a new turn that ended counts too.
+    const ran = before.status === "running" || turns > before.turns;
+    const text =
+      status === "waiting" ? `${who} needs you` : status === "error" ? `${who} ran into a problem` : status === "limited" ? `${who} hit its usage limit` : ran && (status === "idle" || status === "done") ? `${who} finished` : null;
+    if (!text) return;
+    window.clearTimeout(clear.current);
+    // The same words twice count as new with a space after them.
+    el.textContent = el.textContent === text ? `${text}\u00a0` : text;
+    clear.current = window.setTimeout(() => (el.textContent = ""), 7000);
+  }, [status, turns, who]);
+  useEffect(() => () => window.clearTimeout(clear.current), []);
+  // No role="status": a live region alone is read the same, without being taken for a status bar.
+  return <div ref={region} className="l-sr-only" aria-live="polite" />;
 }
 
 /** The Reviewer's last word on this session's changes, in the bar. */

@@ -87,6 +87,18 @@ function handlerFor(threadId: string, wait: number) {
   });
 }
 
+/**
+  A page you opened from the session's Terminal (⌘-click on localhost:5173): the session's Browser
+  comes up and goes there the way an agent's `open` does (T3 Code: web
+  components/preview/openTerminalLinkInPreview.ts).
+*/
+export async function browseTo(threadId: string, url: string) {
+  const h = await handlerFor(threadId, 5000);
+  if (!h) throw new Error("The session's Browser didn't open.");
+  // Yours, not the agent's: the Browser doesn't say the agent is using it.
+  await h("open", { url, yours: true });
+}
+
 export function startAgentBrowser() {
   return onStream((e) => {
     if (e.type !== "agent.browser") return;

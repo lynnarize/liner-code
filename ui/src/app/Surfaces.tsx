@@ -34,7 +34,8 @@ export const surfaceOf = (id: Tab) => SURFACES.find((s) => s.id === id);
 const short = (id: Tab) => (id === "linked" ? "Linked" : id.startsWith("run:") ? "Run" : (surfaceOf(id)?.label ?? id));
 
 export type PanelState = { open: boolean; tabs: Tab[]; tab: Tab; wide: boolean; dock: "side" | "bottom"; picking: boolean };
-export const initialPanel = (): PanelState => ({ open: false, tabs: ["session", "agents", "changes"], tab: "changes", wide: false, dock: "side", picking: false });
+/** A session's panel opens on Session (where it runs, what fills its context) until you pick another surface. */
+export const initialPanel = (): PanelState => ({ open: false, tabs: ["session", "agents", "changes"], tab: "session", wide: false, dock: "side", picking: false });
 
 /** Each session keeps its own panel while the app is open. */
 const kept = new Map<string, PanelState>();

@@ -372,6 +372,12 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
             aria-label="When a tool runs out of usage"
           />
         </Field>
+        <Field title="Carry on when the limit resets" note="A session that waits for its tool's usage to reset goes on by itself a minute after it does, when the tool said when. Off unless you turn it on.">
+          <NamedSwitch name="Carry on when the limit resets" checked={s.resumeAtReset ?? false} onCheckedChange={(resumeAtReset) => save({ resumeAtReset })} />
+        </Field>
+        <Field title="Carry on after a restart" note="A turn cut off when Liner Code quit or the Mac restarted goes on by itself when it opens again, up to three times in five minutes. A turn you stopped stays stopped.">
+          <NamedSwitch name="Carry on after a restart" checked={s.continueAfterRestart ?? true} onCheckedChange={(continueAfterRestart) => save({ continueAfterRestart })} />
+        </Field>
       </Group>
       <Group title="Spending">
         <Field title="A monthly budget" note="Usage shows how much of it is gone and where the month's pace ends. Nothing stops at the limit.">

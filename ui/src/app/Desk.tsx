@@ -94,8 +94,8 @@ const saveSeen = (ids: string[]) => {
   }
 };
 
-/** Waits on you: an answer, a decision, changes to read, an open pull request. */
-const needsYou = (t: Thread) => t.status === "waiting" || t.status === "error" || t.status === "limited" || (t.toReview ?? 0) > 0 || !!t.unread || t.pr?.state === "OPEN";
+/** Waits on you: an answer, a decision, an open pull request. Changes not committed don't: committing is yours to do or not. */
+const needsYou = (t: Thread) => t.status === "waiting" || t.status === "error" || t.status === "limited" || !!t.unread || t.pr?.state === "OPEN";
 
 /** On the desk: what works, what waits, what isn't started, and what finished today. Settled and snoozed sessions are out of the way. */
 function onDesk(t: Thread, today: number, now: number) {
@@ -141,9 +141,9 @@ function waitOf(t: Thread, items: Item[] | undefined, run: RoutineRun | undefine
   if (t.verdict?.state === "blocked") return { label: "Read the findings", note: t.verdict.note ? `The Reviewer: ${t.verdict.note}` : "The Reviewer found problems" };
   if (run?.status === "handed") return { label: "Decide on the run", note: run.outcome ?? run.cause, kind: "run" };
   if (t.pr?.state === "OPEN") return { label: `Merge #${t.pr.number}`, note: `Pull request #${t.pr.number} is open`, kind: "merge" };
-  if ((t.toReview ?? 0) > 0) return { label: `Review ${plural(t.toReview ?? 0, "file")}`, note: `${plural(t.toReview ?? 0, "file")} changed, not committed yet`, kind: git ? "commit" : undefined };
   const said = lastOf(items, "text", (x) => !x.streaming && !!x.text.trim());
   if (t.unread) return { label: "Read the answer", note: said ? gist(said.text) : `Answered ${since(t.updatedAt)}` };
+  if ((t.toReview ?? 0) > 0) return { label: `Review ${plural(t.toReview ?? 0, "file")}`, note: `${plural(t.toReview ?? 0, "file")} changed, not committed yet`, kind: git ? "commit" : undefined };
   return null;
 }
 

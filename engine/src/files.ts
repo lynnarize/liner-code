@@ -6,12 +6,14 @@ import { readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { FileChange, TreeEntry } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
+import { numstat } from "./checkpoints.ts";
 
 const SKIP = new Set([".git", "node_modules", ".next", "dist", "build", ".venv", "venv", "__pycache__", ".cache", "target", ".DS_Store", ".turbo", "coverage"]);
 
 export async function listFiles(root: string, limit = 20000): Promise<string[]> {
-  const r = await run("git", ["ls-files", "-co", "--exclude-standard"], { cwd: root, timeout: 15000 });
-  if (r.code === 0) return r.stdout.split("\n").filter(Boolean).slice(0, limit);
+  // -z: without it git quotes a name like café.txt as "caf\303\251.txt", which matches no file.
+  const r = await run("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, timeout: 15000 });
+  if (r.code === 0) return r.stdout.split("\0").filter(Boolean).slice(0, limit);
   const out: string[] = [];
   const walk = (dir: string, depth: number) => {
     if (out.length >= limit || depth > 8) return;
@@ -93,23 +95,24 @@ export async function tree(root: string): Promise<TreeEntry[]> {
 }
 
 export async function gitStatus(root: string) {
-  const [st, num] = await Promise.all([run("git", ["status", "--porcelain=v1", "-b"], { cwd: root }), run("git", ["diff", "--numstat", "HEAD"], { cwd: root })]);
+  const [st, num] = await Promise.all([run("git", ["status", "--porcelain=v1", "-b", "-z"], { cwd: root }), run("git", ["diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", "HEAD"], { cwd: root })]);
   if (st.code !== 0) return { ahead: 0, behind: 0, changes: [] as FileChange[] };
-  const lines = st.stdout.split("\n").filter(Boolean);
-  const head = lines[0]?.startsWith("## ") ? lines.shift()!.slice(3) : "";
+  const rec = st.stdout.split("\0");
+  const head = rec[0]?.startsWith("## ") ? rec.shift()!.slice(3) : "";
   const branch = head.split("...")[0].replace(/^No commits yet on /, "");
   const ahead = Number(/ahead (\d+)/.exec(head)?.[1] ?? 0);
   const behind = Number(/behind (\d+)/.exec(head)?.[1] ?? 0);
-  const counts = new Map(num.stdout.split("\n").filter(Boolean).map((l) => {
-    const [a, r, p] = l.split("\t");
-    return [p, [Number(a) || 0, Number(r) || 0]] as const;
-  }));
-  const changes: FileChange[] = lines.map((l) => {
-    const code = l.slice(0, 2);
-    const path = l.slice(3).replace(/^.* -> /, "");
+  const counts = numstat(num.stdout);
+  const changes: FileChange[] = [];
+  for (let i = 0; i < rec.length; i++) {
+    if (!rec[i]) continue;
+    const code = rec[i].slice(0, 2);
+    const path = rec[i].slice(3);
+    // -z: a rename's old path comes after it, as a record of its own.
+    if (/[RC]/.test(code)) i++;
     const [added, removed] = counts.get(path) ?? [0, 0];
     const status = code.includes("?") || code.includes("A") ? "added" : code.includes("D") ? "deleted" : code.includes("R") ? "renamed" : "modified";
-    return { path, status, added, removed };
-  });
+    changes.push({ path, status, added, removed });
+  }
   return { branch, ahead, behind, changes };
 }

@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { rpc, useEngine, useItems } from "./engine";
+import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
 import { checkpointsOf, modelLabel, plural } from "./model";
 import { ship } from "./Ship";
 import { Lines, Pop } from "./ui";
@@ -30,7 +30,7 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
   const [by, setBy] = useState<string | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   // The files still to commit, each once with its lines from every turn; unticked ones wait.
-  const items = useItems(thread.id);
+  const items = useItemsWhere(thread.id, isCheckpoint);
   const open = useMemo(() => {
     const by = new Map<string, { path: string; added: number; removed: number }>();
     for (const f of checkpointsOf(items ?? []).filter((c) => !c.reverted && !c.committed).flatMap((c) => c.files)) {

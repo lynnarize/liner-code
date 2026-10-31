@@ -9,6 +9,7 @@ import { createServer, request } from "node:http";
 import type { AgentProfile, ProviderInfo } from "../../contracts/src/index.ts";
 import { setupsOf, smallChange } from "../../contracts/src/index.ts";
 import { claudeTeam, parseFindings, reviewerFor, subagentName } from "../src/review.ts";
+import { contextSources } from "../src/providers/claude.ts";
 import { describeTrigger, fill, nextRun, sameSecret } from "../src/routines.ts";
 import { Proxies } from "../src/proxy.ts";
 import { compareWays, githubName } from "../src/api.ts";
@@ -519,4 +520,39 @@ test("an agent's brief: its soul, its prompt, the skills it may read and its con
   assert.doesNotMatch(brief, /gone\.md/);
   // An agent with only a soul is told only its soul.
   assert.equal(briefOf({ soul: "You are Helm." }, dir), "You are Helm.");
+});
+
+test("context: Claude Code's sources add up to what it uses, the conversation's estimate fitted inside its Messages", () => {
+  // What a session reported: the breakdown's attachments count the skills and MCP instructions again.
+  const u = {
+    categories: [
+      { id: "system_prompt", name: "System prompt", tokens: 3691, kind: "used" },
+      { id: "system_tools", name: "System tools", tokens: 7494, kind: "used" },
+      { id: "mcp_instructions", name: "MCP server instructions", tokens: 2339, kind: "used" },
+      { id: "mcp_tools_deferred", name: "MCP tools (deferred)", tokens: 105644, kind: "deferred" },
+      { id: "memory_files", name: "Memory files", tokens: 434, kind: "used" },
+      { id: "skills", name: "Skills", tokens: 9957, kind: "used" },
+      { id: "messages", name: "Messages", tokens: 12453, kind: "used" },
+      { id: "autocompact_buffer", name: "Autocompact buffer", tokens: 33000, kind: "buffer" },
+      { id: "free_space", name: "Free space", tokens: 931066, kind: "free" },
+    ],
+    memoryFiles: [{ path: "/Users/x/.claude/CLAUDE.md", type: "User", tokens: 434 }],
+    mcpTools: [{ name: "mcp__cua__add_space", serverName: "cua", tokens: 720, isLoaded: false }],
+    skills: { totalSkills: 100, includedSkills: 100, tokens: 9957, skillFrontmatter: [] },
+    agents: [],
+    messageBreakdown: { toolCallTokens: 104, toolResultTokens: 188, attachmentTokens: 35398, assistantMessageTokens: 454, userMessageTokens: 60, redirectedContextTokens: 0, unattributedTokens: 0, toolCallsByType: [{ name: "Read", callTokens: 66, resultTokens: 38 }, { name: "mcp__liner__browser_open", callTokens: 40, resultTokens: 900 }, { name: "mcp__cua__list_spaces", callTokens: 20, resultTokens: 300 }], attachmentsByType: [{ name: "prompt_snapshot", tokens: 19000 }, { name: "skill_listing", tokens: 8700 }] },
+  } as unknown as Parameters<typeof contextSources>[0];
+  const s = contextSources(u);
+  const used = u.categories.filter((c) => c.kind === "used").reduce((n, c) => n + c.tokens, 0);
+  assert.equal(s.reduce((n, x) => n + x.tokens, 0), used, "the chips add up to what's used");
+  const by = Object.fromEntries(s.map((x) => [x.name, x]));
+  assert.equal(by["CLAUDE.md"].group, "project");
+  assert.match(by["CLAUDE.md"].detail ?? "", /User: ~\/\.claude\/CLAUDE\.md/);
+  assert.equal(by["Browser"].group, "web");
+  assert.equal(by["Files read"].group, "files");
+  assert.equal(by["cua tools"].group, "tools", "an MCP server's calls go together under its name");
+  assert.ok(by["Added context"].tokens > 0, "what's left of Messages is the context Claude Code adds");
+  assert.equal(by["MCP tools"], undefined, "tools waiting outside the window aren't in it");
+  // In the bar's order: the tool's own first, then the project's, then the conversation.
+  assert.deepEqual([...new Set(s.map((x) => x.group))].slice(0, 3), ["setup", "project", "talk"]);
 });

@@ -8,20 +8,22 @@
   - Effort and access open glass menus; access has five levels, from Read only to Full access.
   - @ finds a file in the project; files come from the clip, a paste or a drop.
   - While an agent works, Enter queues the message for when the turn ends; ⌘Enter steers the
-    running turn instead. Your pick becomes what Enter does.
+    running turn instead. Your pick becomes what Enter does. A queued message can be sent now
+    (⌘⇧Enter for the first), or edited where it waits.
+  - A paste of 32 KiB or more comes as a text file. Drafts outlast a restart.
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Access, CommandInfo, SkillInfo, Effort, Project, QueuedMessage, RouteLevel, RpcResult, Thread } from "@contracts";
-import { castOf, ROUTE_LEVELS } from "@contracts";
+import { castOf, familyOf, ROUTE_LEVELS, splitModel } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
-import { rpc, useEngine, useItems } from "./engine";
+import { isPrompt, rpc, useEngine, useItemsWhere } from "./engine";
 import { I, ModelMark } from "./icons";
-import { ACCESS_LEVELS, accessOf, ago, agentOf, isModelAgent, markOf, modelLabel, plural, setupLine, setupsOf, since } from "./model";
+import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, isModelAgent, markOf, modelLabel, plural, setupLine, setupsOf, since } from "./model";
 import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
-import { ContextRing, Disc, PanelHead, Pop, Row, Sep } from "./ui";
+import { ContextMeter, Disc, PanelHead, Pop, Row, Sep } from "./ui";
 
 export type RunSettings = { agent: string; lead?: string; model?: string; effort: Effort; access: Access; helpers?: string[]; setup?: string; route?: RouteLevel };
 export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" };
@@ -48,6 +50,8 @@ type Props = {
   /** Home: more models given the same ask, to compare and keep one ("@provider:model"). */
   compare?: string[];
   onCompare?: (refs: string[]) => void;
+  /** Home: what else starts from here, at the far end of the strip under the box. */
+  stripEnd?: ReactNode;
 };
 
 type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$"; hint?: string; note?: string; path?: string; liner?: boolean };
@@ -101,6 +105,54 @@ function BaseRows({ git, onOpen, current, onPick }: { git: RpcResult<"git.branch
 const LINE = 22;
 const MAX_LINES = 8;
 
+/*
+  Drafts last: one per session and one for Home, in localStorage, so a restart finds them. A sent
+  draft goes, and only the 50 newest are kept (T3 Code: composerDraftStore.ts). Storage can be
+  full or shut (a private window): then a draft lasts as long as the composer.
+*/
+const DRAFTS = "lc:drafts:v1";
+const MAX_DRAFTS = 50;
+type Drafts = Record<string, { text: string; at: number }>;
+function readDrafts(): Drafts {
+  try {
+    const v = JSON.parse(localStorage.getItem(DRAFTS) || "{}") as unknown;
+    return v && typeof v === "object" ? (v as Drafts) : {};
+  } catch {
+    return {};
+  }
+}
+const draftOf = (key: string) => readDrafts()[key]?.text ?? "";
+function keepDraft(key: string, text: string) {
+  try {
+    const all = readDrafts();
+    if ((all[key]?.text ?? "") === text) return;
+    if (text.trim()) all[key] = { text, at: Date.now() };
+    else delete all[key];
+    const newest = Object.entries(all)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, MAX_DRAFTS);
+    localStorage.setItem(DRAFTS, JSON.stringify(Object.fromEntries(newest)));
+  } catch {
+    // Full or shut: the draft stays in the field.
+  }
+}
+
+/** A paste this big (in bytes, as T3 Code counts it: chat/useComposerAttachmentIntake.ts) comes as a text file. */
+const PASTE_AS_FILE = 32 * 1024;
+const bytesOf = (s: string) => (s.length * 3 < PASTE_AS_FILE ? s.length : new TextEncoder().encode(s).byteLength);
+/** pasted-143205.txt, by the time of the paste; a second in the same second gets -2. */
+function pastedName(taken: string[]) {
+  const d = new Date();
+  const stamp = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join("");
+  for (let i = 1; ; i++) {
+    const name = `pasted-${stamp}${i > 1 ? `-${i}` : ""}.txt`;
+    if (!taken.includes(name)) return name;
+  }
+}
+
+/** A long thread past its cache: the next message is read again at full price, so the composer offers to compact. */
+const COLD_TOKENS = 200_000;
+
 const toBase64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -109,12 +161,15 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, compare = [], onCompare }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, compare = [], onCompare, stripEnd }: Props) {
   const [git, setGit] = useState<Awaited<ReturnType<typeof branchesFor>> | null>(null);
   const loadGit = () => void branchesFor(project.id).then(setGit);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const [text, setText] = useState(() => (thread ? (sessionStorage.getItem(`lc:draft:${thread.id}`) ?? "") : ""));
+  const draftKey = thread?.id ?? "home";
+  const [text, setText] = useState(() => draftOf(draftKey));
+  // A queued message being edited: it keeps its place in the queue, and the draft it pushed aside comes back after.
+  const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [mode, setMode] = useState<"queue" | "steer">(() => (localStorage.getItem("lc:enter") as "steer") ?? "queue");
   const [mention, setMention] = useState<{ start: number; query: string; kind: "@" | "/" | "$" } | null>(null);
@@ -138,11 +193,27 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   // Past the window can't be: that's a total an older version saved, not how full the context is.
   const ctx = usage?.contextTokens && usage.contextWindow && usage.contextTokens <= usage.contextWindow ? usage.contextTokens / usage.contextWindow : undefined;
 
-  // The draft is kept per session, so switching away and back finds it as you left it.
+  // The draft is kept per session (and Home's), a moment after you stop typing and when you leave.
+  // While a queued message is edited, the draft kept is the one it pushed aside.
+  const pendingDraft = useRef<{ key: string; text: string } | null>(null);
+  const flushDraft = () => {
+    const p = pendingDraft.current;
+    pendingDraft.current = null;
+    if (p) keepDraft(p.key, p.text);
+  };
   useEffect(() => {
-    if (thread) sessionStorage.setItem(`lc:draft:${thread.id}`, text);
-  }, [text, thread]);
-  useEffect(() => localStorage.setItem("lc:enter", mode), [mode]);
+    pendingDraft.current = { key: draftKey, text: editing ? editing.draft : text };
+    const t = setTimeout(flushDraft, 300);
+    return () => clearTimeout(t);
+  }, [text, draftKey, editing]);
+  useEffect(() => flushDraft, [draftKey]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("lc:enter", mode);
+    } catch {
+      // Shut storage: Enter does this for as long as the window is open.
+    }
+  }, [mode]);
 
   // The field grows with what you write, up to eight lines, then scrolls. It measures again when
   // its width changes, or a height taken while the column was narrow (the placeholder wrapping)
@@ -248,6 +319,21 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const send = async (how = mode) => {
     let t = text.trim();
     if ((!t && !files.length) || sending.current) return;
+    // An edited queued message goes back in its place (T3 Code: chat/useQueuedRunEdit.ts). If the
+    // turn ended and took it meanwhile, or files came along (a queued message holds only text), it
+    // goes as a new message instead.
+    const edit = editing;
+    if (edit) {
+      setEditing(null);
+      const still = queue.some((x) => x.id === edit.id);
+      if (still && !files.length) {
+        setQueue(queue.map((x) => (x.id === edit.id ? { ...x, text: t } : x)));
+        setText(edit.draft);
+        setMention(null);
+        return;
+      }
+      if (still) setQueue(queue.filter((x) => x.id !== edit.id));
+    }
     sending.current = true;
     // What was written, put back if the send fails, so nothing is lost.
     const draft = { text, files, skills: new Map(skillsUsed.current) };
@@ -258,7 +344,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       if (used.length) t = `${t}\n\n${used.map(([name, path]) => `Use the ${name} skill${path ? ` (${path})` : ""}.`).join("\n")}`;
       skillsUsed.current.clear();
       const payload = { text: t || "Here are the files.", files: await Promise.all(files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how };
-      setText("");
+      setText(edit?.draft ?? "");
       setFiles([]);
       setMention(null);
       handed = true;
@@ -281,6 +367,94 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
 
   const setQueue = (q: QueuedMessage[]) => thread && void rpc("thread.queue", { id: thread.id, queue: q });
 
+  /** Edit a queued message in the field; it stays queued, in its place, until you save it. */
+  const editQueued = (q: QueuedMessage) => {
+    setEditing((e) => ({ id: q.id, draft: e ? e.draft : text }));
+    setText(q.text);
+    setMention(null);
+    requestAnimationFrame(() => {
+      const el = field.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  };
+  const stopEditing = () => {
+    if (!editing) return;
+    setText(editing.draft);
+    setEditing(null);
+  };
+
+  /*
+    Send now: out of the queue and into the running turn, read at its next step; with no turn
+    running it starts one. A tool that can't take it mid-turn queues it again, at the end; it goes
+    back where it was (T3 Code: chat/QueuedRunsControl.tsx).
+  */
+  const steered = useRef<{ text: string; at: number; until: number } | null>(null);
+  const sendNow = (q: QueuedMessage) => {
+    if (!thread) return;
+    const at = queue.findIndex((x) => x.id === q.id);
+    if (at < 0) return;
+    // The one being edited goes as it reads now.
+    const words = editing?.id === q.id ? text.trim() || q.text : q.text;
+    if (editing?.id === q.id) stopEditing();
+    const before = queue;
+    steered.current = { text: words, at, until: Date.now() + 5000 };
+    void rpc("thread.queue", { id: thread.id, queue: queue.filter((x) => x.id !== q.id) })
+      .then(() => rpc("thread.send", { id: thread.id, text: words, mode: "steer" }))
+      .catch((e) => {
+        steered.current = null;
+        void rpc("thread.queue", { id: thread.id, queue: before }).catch(() => {});
+        toast.error(e instanceof Error ? e.message : String(e));
+      });
+  };
+  useEffect(() => {
+    const s = steered.current;
+    if (!s || !thread) return;
+    if (Date.now() > s.until) return void (steered.current = null);
+    const last = queue.length - 1;
+    if (last < 0 || !queue[last].text.startsWith(s.text)) return;
+    steered.current = null;
+    if (s.at < last) setQueue([...queue.slice(0, s.at), queue[last], ...queue.slice(s.at, last)]);
+  }, [thread?.queue]);
+
+  // ⌘⇧Enter sends the first queued message now, wherever the focus is in the session.
+  const live = useRef({ queue, sendNow });
+  live.current = { queue, sendNow };
+  useEffect(() => {
+    if (!thread) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || !e.shiftKey || !(e.metaKey || e.ctrlKey) || e.altKey || e.isComposing) return;
+      const first = live.current.queue[0];
+      if (!first) return;
+      e.preventDefault();
+      live.current.sendNow(first);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [thread?.id]);
+
+  // Compact: the tool sums up what came before (as the Session surface's Compact does). Claude Code and Codex take it.
+  const canCompact = Boolean(thread) && ["claude", "codex"].includes(familyOf(splitModel(model).provider));
+  const compactNow = () => {
+    if (!thread) return;
+    rpc("thread.send", { id: thread.id, text: "/compact" }).then(
+      () => toast("Compacting the conversation", { description: "The tool sums up what came before, so the context has room again." }),
+      (e: Error) => toast.error(e.message),
+    );
+  };
+  // Past the cache's end, the next message re-reads the whole thread at full price. It shows once
+  // the time comes, without waiting for anything else to change.
+  const [, tick] = useState(0);
+  const [coldSeen, setColdSeen] = useState<number | undefined>(undefined);
+  const cacheUntil = thread?.cacheUntil;
+  useEffect(() => {
+    if (!cacheUntil || cacheUntil <= Date.now()) return;
+    const t = setTimeout(() => tick((n) => n + 1), Math.min(cacheUntil - Date.now() + 500, 2 ** 31 - 1));
+    return () => clearTimeout(t);
+  }, [cacheUntil]);
+  const cold = variant === "session" && !busy && canCompact && cacheUntil !== undefined && coldSeen !== cacheUntil && Date.now() > cacheUntil && (usage?.contextTokens ?? 0) > COLD_TOKENS;
+
   // Text sent here from elsewhere (a quote, a terminal excerpt) lands at the caret.
   useEffect(() => {
     if (!thread) return;
@@ -302,7 +476,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   }, [thread?.id]);
 
   // ↑ in an empty composer brings back what you sent here, newest first; ↓ comes forward.
-  const items = useItems(thread?.id);
+  // Only your messages: a reply streaming in doesn't redraw the composer.
+  const items = useItemsWhere(thread?.id, isPrompt);
   const sent = items.flatMap((x) => (x.kind === "user" && !x.steer ? [x.text] : []));
   const recall = useRef(-1);
   useEffect(() => {
@@ -378,7 +553,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       </>
     ) : (
       <>
-        <Disc agent={talkTo} size={28} />
+        <Disc agent={talkTo} size={variant === "home" ? 22 : 28} />
         <span className="lc-chip-name" title={isModelAgent(settings.agent) || settings.agent === "demo" ? undefined : modelLabel(shownModel, providers)}>
           {isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}
         </span>
@@ -556,7 +731,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
 
   // The levels the coder's model takes; Claude Code's Ultracode and Ultrathink sit after them.
   // On Home they open downward, off the heading, and scroll in what room there is rather than flip.
-  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} triggerClass="lc-seg-b" icon={false} hideEmpty />;
+  // Home's bar is one light segment, each choice drawn small beside its word: the access pick
+  // joins it there, where the session tray keeps it as a pill of its own.
+  const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} triggerClass="lc-seg-b" icon={variant === "home"} hideEmpty />;
   const accessPick = (
     <Pop
       label={`Access: ${lev.label}. Change it`}
@@ -564,12 +741,16 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       keep={variant === "home"}
       align="end"
       width={320}
-      triggerClass="lc-ctl-pill"
+      triggerClass={variant === "home" ? "lc-seg-b" : "lc-ctl-pill"}
       trigger={
         <>
-          <span className="lc-ctl-tile">
+          {variant === "home" ? (
             <I.lock size={14} />
-          </span>
+          ) : (
+            <span className="lc-ctl-tile">
+              <I.lock size={14} />
+            </span>
+          )}
           <span className="lc-ctl-label">{lev.short}</span>
           <I.chevD size={11} />
         </>
@@ -588,7 +769,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   );
 
   const ready = Boolean(text.trim() || files.length);
-  const sendButton =
+  const sendButton = editing ? (
+    <button type="button" className="lc-send l-focus" aria-label="Save the queued message" title="Save it in its place (Enter)" data-ready={ready || undefined} disabled={!ready} onClick={() => void send()}>
+      <I.check size={16} />
+    </button>
+  ) :
     busy && variant === "session" ? (
       <>
         <Pop
@@ -603,7 +788,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             <>
               <Row title="Queue it" note="Sent when this turn ends. You can still edit it." on={mode === "queue"} end={<kbd className="lc-kbd">Enter</kbd>} onPick={() => (setMode("queue"), close())} />
               <Row title="Steer now" note="Read at its next step, without stopping." on={mode === "steer"} end={<kbd className="lc-kbd">⌘ Enter</kbd>} onPick={() => (setMode("steer"), close())} />
-              <div className="lc-pop-foot">Your pick becomes what Enter does.</div>
+              <div className="lc-pop-foot">Your pick becomes what Enter does. ⌘⇧Enter sends the first queued message now.</div>
             </>
           )}
         </Pop>
@@ -651,32 +836,54 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         <div className="lc-queued">
           <div className="lc-queued-h">Queued for the next turn · {queue.length}</div>
           {queue.map((q, i) => (
-            <div key={q.id} className="lc-queued-row">
+            <div key={q.id} className="lc-queued-row" data-editing={editing?.id === q.id || undefined}>
               <span className="lc-queued-handle" aria-hidden>
                 <I.drag size={13} />
               </span>
               <span className="lc-queued-t">{q.text}</span>
+              {editing?.id === q.id && <span className="lc-queued-tag">Editing</span>}
+              <button
+                type="button"
+                className="lc-queued-now l-focus"
+                title={`${busy ? "Steer it into this turn now" : "Send it now"}${i === 0 ? " (⌘⇧Enter)" : ""}`}
+                onClick={() => sendNow(q)}
+              >
+                Send now
+              </button>
               {i > 0 && (
                 <button type="button" className="lc-ib l-focus" aria-label="Move up" onClick={() => setQueue([...queue.slice(0, i - 1), q, queue[i - 1], ...queue.slice(i + 1)])}>
                   <I.chevU size={12} />
                 </button>
               )}
+              <button type="button" className="lc-ib l-focus" aria-label="Edit" aria-pressed={editing?.id === q.id} title="Edit it in place" onClick={() => (editing?.id === q.id ? stopEditing() : editQueued(q))}>
+                <I.edit size={12} />
+              </button>
               <button
                 type="button"
                 className="lc-ib l-focus"
-                aria-label="Edit"
+                aria-label="Remove"
                 onClick={() => {
-                  setText(q.text);
+                  if (editing?.id === q.id) stopEditing();
                   setQueue(queue.filter((x) => x.id !== q.id));
                 }}
               >
-                <I.edit size={12} />
-              </button>
-              <button type="button" className="lc-ib l-focus" aria-label="Remove" onClick={() => setQueue(queue.filter((x) => x.id !== q.id))}>
                 <I.close size={12} />
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {cold && (
+        <div className="lc-cold" role="status">
+          <I.clock size={13} />
+          <span className="lc-cold-t">The cache has expired: this message re-reads {compact(usage?.contextTokens ?? 0)} tokens. Compact first?</span>
+          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={compactNow}>
+            Compact
+          </button>
+          <button type="button" className="lc-ib l-focus" aria-label="Not now" title="Not now" onClick={() => setColdSeen(cacheUntil)}>
+            <I.close size={12} />
+          </button>
         </div>
       )}
 
@@ -717,7 +924,27 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             if (e.clipboardData.files.length) {
               e.preventDefault();
               addFiles(e.clipboardData.files);
+              return;
             }
+            // A big paste (a log, a file's worth) comes as a text file instead, to keep the message
+            // readable; the toast puts it in the message after all if that's what you meant.
+            const plain = e.clipboardData.getData("text/plain");
+            if (!plain || bytesOf(plain) < PASTE_AS_FILE || files.length >= 10) return;
+            e.preventDefault();
+            const el = e.currentTarget;
+            const at = { start: el.selectionStart, end: el.selectionEnd };
+            const file = new File([plain], pastedName(files.map((f) => f.name)), { type: "text/plain" });
+            addFiles([file]);
+            toast(`Pasted as ${file.name}`, {
+              description: `${Math.round(file.size / 1024)} KB of text, sent as a file`,
+              action: {
+                label: "Put it in the message",
+                onClick: () => {
+                  setFiles((list) => list.filter((f) => f !== file));
+                  setText((cur) => `${cur.slice(0, Math.min(at.start, cur.length))}${plain}${cur.slice(Math.min(at.end, cur.length))}`);
+                },
+              },
+            });
           }}
           onKeyDown={(e) => {
             if (mention && found.length) {
@@ -742,6 +969,12 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               e.preventDefault();
               setMention(null);
               setStashOpen(false);
+              return;
+            }
+            // Escape leaves a queued message as it was, and brings back the draft it pushed aside.
+            if (e.key === "Escape" && editing) {
+              e.preventDefault();
+              stopEditing();
               return;
             }
             if (is(e.nativeEvent, "stash")) {
@@ -771,9 +1004,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               void send(busy && (e.metaKey || e.ctrlKey) ? "steer" : busy ? mode : "queue");
             } else if (e.key === "Escape" && busy) onStop?.();
             else if (e.key === "ArrowUp" && !text && queue.length) {
-              const last = queue[queue.length - 1];
-              setText(last.text);
-              setQueue(queue.slice(0, -1));
+              // The last queued message, to edit where it is.
+              e.preventDefault();
+              editQueued(queue[queue.length - 1]);
             }
           }}
         />
@@ -816,16 +1049,26 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             </Pop>
             {effortPick && <span className="lc-seg-div" aria-hidden />}
             {effortPick}
-            {variant === "session" && ctx !== undefined && (
+            {variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow && (
               <>
                 <span className="lc-seg-div" aria-hidden />
-                <ContextRing used={ctx} />
+                <ContextMeter used={usage.contextTokens} max={usage.contextWindow} running={busy} onCompact={canCompact ? compactNow : undefined} />
+              </>
+            )}
+            {variant === "home" && (
+              <>
+                <span className="lc-seg-div" aria-hidden />
+                {accessPick}
               </>
             )}
           </span>
-          {accessPick}
+          {variant === "session" && accessPick}
           <span className="lc-grow" />
-          {variant === "session" && !busy && queue.length > 0 && <span className="lc-tray-note">{plural(queue.length, "message")} waiting</span>}
+          {editing ? (
+            <span className="lc-tray-note">Editing a queued message · Enter saves · Esc leaves it</span>
+          ) : (
+            variant === "session" && !busy && queue.length > 0 && <span className="lc-tray-note">{plural(queue.length, "message")} waiting</span>
+          )}
           {variant === "home" && attach}
           {sendButton}
         </div>
@@ -868,12 +1111,10 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               {project.path.replace(/^\/Users\/[^/]+/, "~")}
             </span>
           )}
-          <span className="lc-grow" />
           {worktree && !inWorktree && project.git && !compare.length ? (
             // A new worktree starts from a branch you pick: this one by default.
             <Pop
               label="The branch it starts from"
-              align="end"
               width={300}
               triggerClass="lc-pb"
               trigger={
@@ -894,6 +1135,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               </span>
             )
           )}
+          <span className="lc-grow" />
+          {stripEnd}
         </div>
       ) : null}
     </div>

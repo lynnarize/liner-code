@@ -469,6 +469,10 @@ function buildMenu() {
         item("Toggle Sidebar", "sidebar", "mod+\\"),
         item("Usage and Cost", "usage", "mod+shift+u"),
         { type: "separator" },
+        item("Next Session That Needs You", "next-needs", "mod+alt+down"),
+        item("Move to Next Area", "focus.next", "f6"),
+        item("Move to Previous Area", "focus.prev", "shift+f6"),
+        { type: "separator" },
         { role: "togglefullscreen" },
         ...(inspect ? [{ type: "separator" } as const, { role: "reload" } as const, { role: "toggleDevTools" } as const] : []),
       ],
@@ -552,7 +556,39 @@ function resources(): Paths | null {
 
 app.on("second-instance", show);
 app.on("activate", show);
-app.on("before-quit", () => {
+/**
+  ⌘Q while sessions work asks first, in a native alert, since quitting stops their turns (T3 Code
+  holds to quit instead: web components/QuitHoldOverlay.tsx). The page says how many work, with
+  the menu bar item's status. An update going in, a launch that failed, or your yes has decided.
+*/
+let asking = false;
+async function askToQuit(n: number) {
+  asking = true;
+  const opts = {
+    type: "warning" as const,
+    message: n === 1 ? "A session is still working. Quit anyway?" : `${n} sessions are still working. Quit anyway?`,
+    detail: "Quitting stops their turns where they are. Their timelines and the changes so far are kept.",
+    buttons: ["Quit", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+  };
+  try {
+    // A sheet on the window when it's on screen; on its own when the window is shut.
+    const { response } = await (win?.isVisible() && !win.isMinimized() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts));
+    if (response !== 0) return;
+    quitting = true;
+    app.quit();
+  } finally {
+    asking = false;
+  }
+}
+
+app.on("before-quit", (e) => {
+  if (!quitting && statusItem.running() > 0) {
+    e.preventDefault();
+    if (!asking) void askToQuit(statusItem.running());
+    return;
+  }
   quitting = true;
   engine.stop();
   // A downloaded update goes in as the app quits, so the next launch is the new one.

@@ -1,11 +1,12 @@
 /*
   Home: start a session. One question, the project it's about, and the composer with who works
-  on it, how hard they think and what they may do. Under it: this checkout or a new worktree,
-  and the branch. Behind it, two scrolls down, the Desk: every open session on one line, and
-  the case for each decision that waits on you. In the corner, what's new: Liner Code's own
-  update and the agent tools'.
+  on it, how hard they think and what they may do. Under it, one line: this checkout or a new
+  worktree and the branch, and at its far end a scratch folder, a session to carry on from Claude
+  Code or Codex, and what the box takes. Behind it, two scrolls down, the Desk: every open
+  session on one line, and the case for each decision that waits on you. In the corner, what's
+  new: Liner Code's own update and the agent tools'.
 */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ImportableSession, Project } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
@@ -79,8 +80,14 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     }
   };
 
+  // ⌘Enter starts the session without opening it: a toast offers it, and Home clears for the next
+  // ask (T3 Code: web components/chat/backgroundThread.ts). The composer sends either way; the key
+  // is read here, as it goes by, before the composer takes it.
+  const background = useRef(false);
   const start = async (m: { text: string; files: { name: string; data: string }[] }) => {
     if (!project) return;
+    const quietly = background.current;
+    background.current = false;
     try {
       if (compare.length) {
         const made = await rpc("compare.start", { projectId: project.id, text: m.text, files: m.files, models: [settings.lead ?? settings.agent, ...compare], effort: settings.effort, access: settings.access });
@@ -91,7 +98,11 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
       const t = await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, setup: settings.setup, route: settings.route, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
       if (settings.lead && !settings.setup && settings.helpers?.length) await rpc("thread.update", { id: t.id, helpers: settings.helpers });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
-      onStarted(t.id);
+      if (quietly) {
+        setInWorktree(undefined);
+        const ask = m.text.split("\n")[0].trim();
+        toast("Started in the background", { description: ask.length > 72 ? `${ask.slice(0, 71)}…` : ask || "It's in the sidebar.", action: { label: "Open", onClick: () => onStarted(t.id) }, duration: 6000 });
+      } else onStarted(t.id);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
       // Thrown on, so the composer puts the ask back.
@@ -107,16 +118,13 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
             What should we build in{" "}
             <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />?
           </h2>
-          {project.name !== "Scratch" && (
-            <div className="lc-home-or">
-              or{" "}
-              <button type="button" className="lc-link l-focus" onClick={() => void scratch()}>
-                start without a project
-              </button>
-              , in a scratch folder, or <CarryOn project={project} onOpen={onStarted} />
-            </div>
-          )}
-          <div className="lc-home-compose">
+          <div
+            className="lc-home-compose"
+            onKeyDownCapture={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) background.current = e.metaKey || e.ctrlKey;
+            }}
+            onPointerDownCapture={() => (background.current = false)}
+          >
             <Composer
               variant="home"
               project={project}
@@ -134,21 +142,19 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               compare={project.git ? compare : undefined}
               onCompare={project.git ? setCompare : undefined}
               autoFocus
+              stripEnd={
+                <>
+                  {project.name !== "Scratch" && (
+                    <button type="button" className="lc-pb l-focus" title="Start without a project, in a scratch folder" onClick={() => void scratch()}>
+                      <I.folder size={13} />
+                      <span className="lc-strip-word">Scratch folder</span>
+                    </button>
+                  )}
+                  <CarryOn project={project} onOpen={onStarted} />
+                  <Keys />
+                </>
+              }
             />
-          </div>
-          <div className="lc-hints">
-            <span>
-              <Kbd>@</Kbd> a file
-            </span>
-            <span>
-              <Kbd>/</Kbd> a command
-            </span>
-            <span>
-              <Kbd>$</Kbd> a skill
-            </span>
-            <span>
-              <Kbd>⌘K</Kbd> everything else
-            </span>
           </div>
         </>
       ) : (
@@ -209,8 +215,50 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
 /** Past Claude Code and Codex sessions in this project's folder: one press brings it in to carry on here. */
 function CarryOn({ project, onOpen }: { project: Project; onOpen: (threadId: string) => void }) {
   return (
-    <Pop label="Carry on a session from Claude Code or Codex" align="center" width={440} triggerClass="lc-link l-focus" trigger={<>carry on one from Claude Code or Codex</>}>
+    <Pop
+      label="Carry on a session from Claude Code or Codex"
+      align="end"
+      width={440}
+      triggerClass="lc-pb"
+      trigger={
+        <>
+          <I.rotate size={13} />
+          <span className="lc-strip-word">Carry on a session</span>
+        </>
+      }
+    >
       {(close) => <CarryOnList project={project} onOpen={(id) => (close(), onOpen(id))} />}
+    </Pop>
+  );
+}
+
+/** What the box takes, kept behind one key-shaped button instead of a row of hints under it. */
+const KEYS = [
+  ["@", "A file"],
+  ["/", "A command"],
+  ["$", "A skill"],
+  ["⌘Enter", "Start it in the background"],
+  ["⌘K", "Everything else"],
+] as const;
+
+function Keys() {
+  return (
+    <Pop label="What the box takes" align="end" width={280} triggerClass="lc-pb lc-pb-keys" trigger={<I.keyboard size={15} />}>
+      {() => (
+        <>
+          <PanelHead>In the box</PanelHead>
+          <dl className="lc-box-keys">
+            {KEYS.map(([k, what]) => (
+              <div key={k}>
+                <dt>
+                  <Kbd>{k}</Kbd>
+                </dt>
+                <dd>{what}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
     </Pop>
   );
 }

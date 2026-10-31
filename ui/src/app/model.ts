@@ -142,7 +142,9 @@ export function bucketOf(t: Thread, now = Date.now()): Bucket {
   if (t.done) return "settled";
   if (t.pinned) return "pinned";
   if (t.status === "running") return "working";
-  const needs = t.status === "waiting" || t.status === "error" || t.status === "limited" || (t.toReview ?? 0) > 0 || t.unread || t.turns === 0;
+  // Files changed and not committed don't wait on you: committing is yours to do or not (T3 Code
+  // marks only what asks, fails or hasn't been seen, too).
+  const needs = t.status === "waiting" || t.status === "error" || t.status === "limited" || t.unread || t.turns === 0;
   return needs ? "needs" : "open";
 }
 
@@ -153,9 +155,10 @@ export function statusLine(t: Thread, who: string): { text: string; warn?: boole
   if (t.status === "error") return { text: `${who} · ran into a problem`, warn: true };
   if (t.status === "limited") return { text: `${who} · limited${t.limit?.until ? ` until ${clock(t.limit.until)}` : ""}`, warn: true };
   if (t.goal?.status === "active") return { text: `${who} · goal, turn ${t.goal.turns}` };
-  if ((t.toReview ?? 0) > 0) return { text: `${who} · ${t.toReview} ${t.toReview === 1 ? "file" : "files"} to review`, warn: true };
   if (t.turns === 0) return { text: `${who} · not started` };
   if (t.unread) return { text: `${who} · answered`, warn: true };
+  // Said quietly: what's left to commit, for whoever commits.
+  if ((t.toReview ?? 0) > 0) return { text: `${who} · ${t.toReview} ${t.toReview === 1 ? "file" : "files"} changed` };
   return { text: `${who} · done` };
 }
 
@@ -204,13 +207,27 @@ export function duration(seconds?: number) {
 }
 
 export const money = (n: number) => (n >= 100 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`);
-export const compact = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : `${n}`);
+/** 152k, 7.5k, 1M, 1.2M: one decimal where it says something, none where it would be .0. */
+export const compact = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : `${n}`);
 
-/** A thread's timeline, split into turns. */
-export function turnsOf(items: Item[]) {
+/**
+  A thread's timeline, split into turns, in one pass. Given the turns it made last time, a turn
+  none of whose items changed keeps its very list, so its view can skip redrawing while another
+  turn streams (T3 Code's useTimelineRows keeps its rows the same way).
+*/
+export function turnsOf(items: Item[], before?: Map<number, Item[]>) {
   const map = new Map<number, Item[]>();
-  for (const it of items) map.set(it.turn, [...(map.get(it.turn) ?? []), it]);
-  return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([turn, list]) => ({ turn, items: list }));
+  for (const it of items) {
+    const list = map.get(it.turn);
+    if (list) list.push(it);
+    else map.set(it.turn, [it]);
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([turn, list]) => {
+      const was = before?.get(turn);
+      return { turn, items: was && was.length === list.length && was.every((x, i) => x === list[i]) ? was : list };
+    });
 }
 
 /** Files changed across a thread's turns, by turn. */

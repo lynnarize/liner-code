@@ -4,7 +4,7 @@
   Claude Code, Codex, Hermes and OpenCode. A provider that can't do something (approvals in
   Codex exec, say) simply never calls that part of the sink.
 */
-import type { Access, CommandInfo, ContextPart, Effort, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
+import type { Access, CommandInfo, ContextUse, Effort, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
 
 export type ToolUpdate = {
   /** The provider's id for the call, so later updates find it. */
@@ -46,11 +46,37 @@ export type TurnSink = {
   usage(u: Partial<Usage>, total?: boolean): void;
   /** The provider's own session id, kept for resume. */
   session(id: string): void;
-  notice(text: string): void;
+  /** A line on the timeline. A later notice with the same `key` replaces it (a retry's count, a compaction that finished). */
+  notice(text: string, key?: string): void;
   error(message: string): void;
   /** The tool's plan ran out of usage; `until` is when its window reopens, if it said. */
   limited(message: string, until?: number): void;
+  /** The tool is at work where nothing shows (a subagent's step, a retry): the watchdog starts counting again. */
+  heard?(): void;
 };
+
+/**
+  A turn the tool started by itself, with no message from you: work it left running in the
+  background finished, and it answers about it (T3 Code: ClaudeAdapterV2.ts, its wake turns).
+  The runtime runs it as a turn of its own on the timeline.
+*/
+export type WakeTurn = {
+  /** What woke it, in a few words ("a background task finished"). */
+  why?: string;
+  /** False once a turn of yours took its messages in, so there's nothing left to run. */
+  pending(): boolean;
+  /** Writes the tool's own turn into `sink`; resolves when it ends. Stopping `signal` stops it. */
+  run(sink: TurnSink, signal: AbortSignal): Promise<void>;
+  /** Stops it without showing it: you pressed Stop before it began. */
+  cancel(): void;
+};
+
+/**
+  The session the tool was to resume is gone (Claude Code can't find its transcript, Codex its
+  thread, an ACP agent its session). The tool has opened a new one that knows nothing, and the
+  runtime sends the turn again with the conversation so far.
+*/
+export class ResumeFailed extends Error {}
 
 export type OpenOptions = {
   cwd: string;
@@ -74,18 +100,23 @@ export type OpenOptions = {
   env: NodeJS.ProcessEnv;
   /** Liner Code's own tools for this session (its Browser, the Simulator, pages), as an MCP server on stdio. */
   mcp?: { command: string; args: string[]; env: Record<string, string> };
+  /** The tool started a turn by itself; the runtime puts it on the timeline. */
+  wake?: (w: WakeTurn) => void;
 };
 
 /** One live connection to an agent for one thread. Turns run one at a time. */
 export interface ProviderSession {
-  /** Runs one turn; resolves when the agent stops. */
-  turn(text: string, sink: TurnSink, signal: AbortSignal): Promise<void>;
-  /** A message for the running turn, read at the agent's next step. Return false if it can't. */
-  steer?(text: string): boolean;
+  /**
+    Runs one turn; resolves when the agent stops. `files` are your attachments, saved on disk and
+    named in the text: images and PDFs also go to the model as they are where the tool takes them.
+  */
+  turn(text: string, sink: TurnSink, signal: AbortSignal, files?: string[]): Promise<void>;
+  /** A message for the running turn, read at the agent's next step. False (or a promise of it) if it couldn't take it. */
+  steer?(text: string, files?: string[]): boolean | Promise<boolean>;
   /** Settings changed between turns. Return false to be reopened instead. */
   update?(o: Pick<OpenOptions, "model" | "effort" | "access">): Promise<boolean>;
   /** What fills the context now, by the tool's own count; null when it can't say. */
-  context?(): Promise<{ used: number; max: number; parts: ContextPart[] } | null>;
+  context?(): Promise<ContextUse | null>;
   close(): void;
 }
 

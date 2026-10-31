@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, PlanEntry, ProviderInfo } from "../../../contracts/src/index.ts";
 import { jsonLines, run, spawn, versionOf, which, withCodexPath } from "../exec.ts";
-import { codexAsk, CodexServerSession, isLimit } from "./codex-server.ts";
+import { codexAsk, CodexServerSession, isLimit, reasoning } from "./codex-server.ts";
 import { effortOf, skillsIn } from "./models.ts";
 import type { OpenOptions, Provider, ProviderSession, TurnSink } from "./types.ts";
 
@@ -181,6 +181,8 @@ export const codex: Provider = {
     const signedIn = /logged in/i.test(answer) ? status.code === 0 && !/not logged in/i.test(answer) : env.OPENAI_API_KEY ? true : undefined;
     // A Codex with the app server can stop and ask; an older one runs through exec, which can't.
     appServer = server.code === 0;
+    // The models that reason get detailed summaries asked for on each turn.
+    for (const m of listed) if (m.supported_reasoning_levels?.length) reasoning.add(m.slug);
     const models: ModelInfo[] = listed.map((m) => ({ id: m.slug, label: m.display_name ?? m.slug, description: m.description ?? "", efforts: (m.supported_reasoning_levels ?? []).map((e) => effortOf(e.effort, e.description)), defaultEffort: m.default_reasoning_level }));
     const usable = !configured || models.some((m) => m.id === configured);
     // The configured model goes first when this sign-in can use it; otherwise the catalog's own order.

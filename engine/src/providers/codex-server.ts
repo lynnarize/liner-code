@@ -16,7 +16,8 @@ import { jsonLines, spawn, which, withCodexPath } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
-import type { OpenOptions, ProviderSession, TurnSink } from "./types.ts";
+import { dataUrl, imageType } from "./attachments.ts";
+import { ResumeFailed, type OpenOptions, type ProviderSession, type TurnSink } from "./types.ts";
 
 type Json = Record<string, unknown>;
 type Msg = { id?: number | string; method?: string; params?: Json; result?: Json; error?: { code?: number; message: string } };
@@ -50,6 +51,22 @@ export const unwrap = (cmd: string) => {
   const m = /^(?:\S*\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/.exec(cmd.trim());
   return m ? m[2].replace(/\\(["'\\])/g, "$1") : cmd;
 };
+
+/**
+  Codex's models that reason, from its catalog (codex.ts fills it as it detects Codex): a turn on one
+  asks for detailed reasoning summaries, which the catalog may default to none. Empty until then,
+  when every turn asks, as T3 Code does.
+*/
+export const reasoning = new Set<string>();
+
+/** What you sent, as Codex takes it: the text, and your images as data URLs (T3 Code: CodexAdapterV2.ts, resolveCodexAttachment). */
+function input(text: string, files: string[] = []) {
+  const images = files.filter((f) => imageType(f)).flatMap((f) => {
+    const url = dataUrl(f);
+    return url ? [{ type: "image", url }] : [];
+  });
+  return [{ type: "text", text, text_elements: [] }, ...images];
+}
 
 /** A Codex failure is a usage limit when Codex says so, by code or in words. */
 export const isLimit = (e: { codexErrorInfo?: unknown; message?: string }) => e.codexErrorInfo === "usageLimitExceeded" || /usage limit|rate limit|hit your limit/i.test(e.message ?? "");
@@ -186,14 +203,26 @@ export class CodexServerSession implements ProviderSession {
     const mcp = this.o.mcp ? { "mcp_servers.liner.command": this.o.mcp.command, "mcp_servers.liner.args": this.o.mcp.args, "mcp_servers.liner.env": this.o.mcp.env } : null;
     const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: this.o.model && this.o.model !== "default" ? this.o.model : null, developerInstructions: this.o.soul || null, config: mcp };
     let r: Json | null = null;
-    if (this.thread) r = await this.server.request("thread/resume", { threadId: this.thread, ...common }).catch(() => null);
+    let lost: string | undefined;
+    if (this.thread) {
+      // Only the thread's settings: its turns are already on the timeline (T3 Code: CodexAdapterV2.ts, resumeThread).
+      const threadId = this.thread;
+      const resume = () => this.server.request("thread/resume", { threadId, excludeTurns: true, ...common });
+      r = await resume().catch((e: Error) =>
+        // An archived thread resumes once it's unarchived.
+        /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(e.message) ? this.server.request("thread/unarchive", { threadId }).then(resume).catch(() => null) : null,
+      );
+      if (!r) lost = threadId;
+    }
     if (!r) r = await this.server.request("thread/start", common);
     this.thread = String((r.thread as Json).id);
     this.sink?.session(this.thread);
     this.opened = true;
+    // A thread Codex can't resume isn't swapped for a new one in silence: the runtime sends the new one the conversation so far.
+    if (lost) throw new ResumeFailed(`Codex couldn't resume its thread ${lost}.`);
   }
 
-  async turn(text: string, sink: TurnSink, signal: AbortSignal) {
+  async turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
     this.sink = sink;
     this.signal = signal;
     this.streamed.clear();
@@ -216,9 +245,12 @@ export class CodexServerSession implements ProviderSession {
       // `/compact` is the Codex CLI's own command, not words for the model: app-server compacts on request.
       if (text.trim() === "/compact") await this.server.request("thread/compact/start", { threadId: this.thread });
       else {
+        const model = this.o.model && this.o.model !== "default" ? this.o.model : null;
         const r = await this.server.request("turn/start", {
           threadId: this.thread,
-          input: [{ type: "text", text, text_elements: [] }],
+          input: input(text, files),
+          // The catalog can default summaries to none; ask for them on every turn of a model that reasons (T3 Code: CodexAdapterV2.ts).
+          ...(!model || !reasoning.size || reasoning.has(model) ? { summary: "detailed" } : {}),
           cwd: this.o.cwd,
           approvalPolicy: p.approval,
           sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
@@ -243,10 +275,13 @@ export class CodexServerSession implements ProviderSession {
     }
   }
 
-  steer(text: string) {
+  /** True once Codex took it; false when it couldn't (the turn ended first, say), and the runtime sends it next. */
+  steer(text: string, files: string[] = []) {
     if (!this.thread || !this.turnId) return false;
-    void this.server.request("turn/steer", { threadId: this.thread, input: [{ type: "text", text, text_elements: [] }], expectedTurnId: this.turnId }).catch(() => this.sink?.notice("Codex couldn't take that mid-turn; it goes next."));
-    return true;
+    return this.server.request("turn/steer", { threadId: this.thread, input: input(text, files), expectedTurnId: this.turnId }).then(
+      () => true,
+      () => false,
+    );
   }
 
   async update(o: Pick<OpenOptions, "model" | "effort" | "access">) {

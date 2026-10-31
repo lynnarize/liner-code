@@ -10,8 +10,21 @@ const HIGH = [
   /\bgit\s+push\b.*(--force|-f\b|--force-with-lease)/i,
   /\bgit\s+reset\s+--hard\b/i,
   /\bgit\s+clean\s+-[a-z]*f/i,
-  /\bgit\s+branch\s+-D\b/i,
-  /\bgit\s+checkout\s+--\s+\./i,
+  // What throws away work git can't give back: changes not committed, stashes, unmerged branches.
+  // [^;&|\n]* keeps a rule to the one command, so a later one in a chain isn't read as its flag.
+  /\bgit\s+branch\b[^;&|\n]*\s-[a-zA-Z]*D/,
+  /\bgit\s+branch\b(?=[^;&|\n]*\s(?:-[a-zA-Z]*d|--delete)\b)(?=[^;&|\n]*\s(?:-[a-zA-Z]*f|--force)\b)/,
+  /\bgit\s+checkout\b[^;&|\n]*\s--(?:\s|$)/,
+  /\bgit\s+checkout\b[^;&|\n]*\s\.(?:\/[^\s;&|]*)?(?=[\s;&|]|$)/,
+  /\bgit\s+checkout\b[^;&|\n]*\s(?:-f|--force)\b/,
+  // git restore puts back the working tree unless it's told only --staged (the index).
+  /\bgit\s+restore\b(?![^;&|\n]*\s(?:--staged|-S)\b)/,
+  /\bgit\s+restore\b(?=[^;&|\n]*\s(?:--worktree|-W)\b)/,
+  /\bgit\s+stash\s+(?:clear|drop)\b/,
+  /\bgit\s+switch\b[^;&|\n]*\s(?:--discard-changes|-f|--force)\b/,
+  /\bgit\s+worktree\s+remove\b[^;&|\n]*\s(?:--force|-f)\b/,
+  /\bfind\b[^;&|\n]*\s-delete\b/,
+  /\bfind\b[^;&|\n]*\s-exec(?:dir)?\s+rm\b/,
   /\bsudo\b/,
   /\bmkfs\b|\bdd\s+if=/,
   /\bchmod\s+-R\s+777\b/,
@@ -22,7 +35,7 @@ const HIGH = [
   /\bkubectl\s+delete\b|\bterraform\s+(apply|destroy)\b/,
   />\s*\/dev\/(sd|disk)/,
 ];
-const MEDIUM = [/\bgit\s+(push|commit|merge|rebase|tag)\b/, /\b(npm|pnpm|yarn|bun)\s+(i|install|add|remove)\b/, /\bpip\s+install\b/, /\bbrew\s+install\b/, /\bmv\b|\bcp\s+-r\b/, /\bgh\s+pr\s+(create|merge)\b/, /\bdocker\s+(rm|rmi|system\s+prune)\b/, /\bcurl\b.*-X\s*(POST|PUT|DELETE|PATCH)/i];
+const MEDIUM = [/\bgit\s+(push|commit|merge|rebase|tag)\b/, /\bgit\s+branch\b[^;&|\n]*\s(?:-d|--delete)\b/, /\b(npm|pnpm|yarn|bun)\s+(i|install|add|remove)\b/, /\bpip\s+install\b/, /\bbrew\s+install\b/, /\bmv\b|\bcp\s+-r\b/, /\bgh\s+pr\s+(create|merge)\b/, /\bdocker\s+(rm|rmi|system\s+prune)\b/, /\bcurl\b.*-X\s*(POST|PUT|DELETE|PATCH)/i];
 
 export function commandRisk(command: string): Risk {
   if (HIGH.some((r) => r.test(command))) return "high";
@@ -55,8 +68,32 @@ export function readsOnly(command: string) {
     if (/^file\b/.test(p)) return !words.some((w) => /^-[^-]*C|^--compile$/.test(w));
     if (/^sed\b/.test(p)) return sedReads(words);
     if (/^find\b/.test(p)) return !/-(delete|exec|execdir|ok|fprint|fls)/.test(p);
-    return /^git\s+(status|diff|log|show|ls-files|rev-parse|branch)\b/.test(p) && !words.some((w) => /^--output(=|$)/.test(w));
+    if (/^git\s+branch\b/.test(p)) return branchLists(words.slice(2));
+    return /^git\s+(status|diff|log|show|ls-files|rev-parse)\b/.test(p) && !words.some((w) => /^--output(=|$)/.test(w));
   });
+}
+
+/** `git branch` flags that only list, and the ones of them that take a value (a commit, a key, a format). */
+const LISTS = /^--(?:all|remotes|verbose|list|show-current|ignore-case|no-color|no-column|no-abbrev|omit-empty|(?:color|column|abbrev|contains|no-contains|merged|no-merged|points-at|sort|format)(?:=.*)?)$/;
+const TAKES = /^--(?:contains|no-contains|merged|no-merged|points-at|sort|format)$/;
+
+/**
+  `git branch` that only lists: listing flags alone, or --list with patterns. A name alone makes a
+  branch, and -d, -D, -m, -M, -c, -C, -f, -u and the like change them.
+*/
+function branchLists(args: string[]) {
+  let list = false;
+  let names = 0;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (/^-[arvil]+$/.test(w)) list ||= w.includes("l");
+    else if (LISTS.test(w)) {
+      list ||= w === "--list";
+      if (TAKES.test(w) && args[i + 1] && !args[i + 1].startsWith("-")) i++;
+    } else if (w.startsWith("-")) return false;
+    else names++;
+  }
+  return !names || list;
 }
 
 /** `sed -n` with scripts that only print: no -i or -f, and no w, W or e command or s flag (they write a file or run a command). */

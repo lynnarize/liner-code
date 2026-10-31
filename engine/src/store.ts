@@ -1,17 +1,61 @@
 /*
   The engine's memory. Projects, agents, threads and settings live in one state.json; each
   thread's timeline is an append-only log (threads/<id>.jsonl) of item snapshots, the newest
-  line for an id winning. Writes are small and atomic; a crash loses at most the text that was
-  still streaming.
+  line for an id winning. Writes are small and atomic, and on disk before they count; a crash
+  loses at most the text that was still streaming.
 */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import type { AgentProfile, EngineEvent, Item, Project, Settings, SidebarGroup, Thread, UsageRecord } from "../../contracts/src/index.ts";
 import { defaultAgents, modelAgent } from "./agents.ts";
 
 type State = { projects: Project[]; threads: Thread[]; agents: AgentProfile[]; settings: Settings; groups: SidebarGroup[] };
 type Listener = (e: EngineEvent) => void;
+
+/**
+  Writes a file whole or not at all: to a temporary file, flushed to disk, then renamed over it,
+  and the folder flushed so the rename lasts too. A rename alone can leave an empty file after a
+  power cut. With `backup`, the file it replaces is kept as .bak first, the last one that was good.
+*/
+export function writeAtomic(file: string, text: string, o: { backup?: boolean } = {}) {
+  const tmp = `${file}.tmp`;
+  const fd = openSync(tmp, "w");
+  try {
+    writeFileSync(fd, text);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  if (o.backup && existsSync(file)) copyFileSync(file, `${file}.bak`);
+  renameSync(tmp, file);
+  try {
+    const dir = openSync(dirname(file), "r");
+    try {
+      fsyncSync(dir);
+    } finally {
+      closeSync(dir);
+    }
+  } catch {
+    // a folder that can't be flushed: the rename is as safe as the system makes it
+  }
+}
+
+/**
+  state.json as it was last saved. One that doesn't read (cut short, or garbled) is moved aside as
+  state.json.broken, so the next save can't put it over the good .bak, and the .bak is read
+  instead. With neither, the engine starts empty rather than not at all.
+*/
+function loadState(file: string): Partial<State> {
+  if (!existsSync(file)) return existsSync(`${file}.bak`) ? loadState(`${file}.bak`) : {};
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Partial<State>;
+  } catch (e) {
+    console.error(`[store] ${file} didn't read (${e instanceof Error ? e.message : String(e)}); moved aside as ${file}.broken`);
+    renameSync(file, `${file}.broken`);
+    return file.endsWith(".bak") ? {} : loadState(file);
+  }
+}
 
 export const defaultSettings: Settings = { onboarded: false, workStyle: "model", claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "ask", worktrees: false, branchPrefix: "liner/", badge: true, budgetUsd: 0, settleOnMerge: false, settleOnRoutine: false, settleVersion: 2 };
 
@@ -26,7 +70,7 @@ export class Store {
     this.home = home;
     mkdirSync(join(home, "threads"), { recursive: true });
     const file = join(home, "state.json");
-    const saved: Partial<State> = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+    const saved = loadState(file);
     this.state = {
       projects: saved.projects ?? [],
       threads: saved.threads ?? [],
@@ -270,8 +314,7 @@ export class Store {
   private rewrite(threadId: string) {
     const list = this.items.get(threadId) ?? [];
     const file = this.logFile(threadId);
-    writeFileSync(`${file}.tmp`, list.map((x) => JSON.stringify(x)).join("\n") + (list.length ? "\n" : ""));
-    renameSync(`${file}.tmp`, file);
+    writeAtomic(file, list.map((x) => JSON.stringify(x)).join("\n") + (list.length ? "\n" : ""));
   }
 
   private save() {
@@ -281,9 +324,7 @@ export class Store {
   flush() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    const file = join(this.home, "state.json");
-    writeFileSync(`${file}.tmp`, JSON.stringify(this.state, null, 2));
-    renameSync(`${file}.tmp`, file);
+    writeAtomic(join(this.home, "state.json"), JSON.stringify(this.state, null, 2), { backup: true });
   }
 }
 

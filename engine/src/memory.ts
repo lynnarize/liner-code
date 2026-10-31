@@ -5,9 +5,9 @@
   Code's own folder rather than the project's, and given to every new session there. Search reads
   the project's earlier sessions (what was asked, what was answered) and returns the best snippets.
 */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Store } from "./store.ts";
+import { writeAtomic, type Store } from "./store.ts";
 
 /** At most this many facts per project; the oldest go first. */
 const MAX_FACTS = 60;
@@ -26,7 +26,8 @@ export function factsOf(home: string, projectId: string): string[] {
 
 function save(home: string, projectId: string, facts: string[]) {
   mkdirSync(join(home, "memory"), { recursive: true });
-  writeFileSync(fileOf(home, projectId), `# What agents remember about this project\n\n${facts.map((f) => `- ${f}`).join("\n")}\n`);
+  // Whole or not at all: a crash halfway would leave the project with half its memory.
+  writeAtomic(fileOf(home, projectId), `# What agents remember about this project\n\n${facts.map((f) => `- ${f}`).join("\n")}\n`);
 }
 
 /** Saves a fact once: one line, trimmed; the same fact again (any case) isn't added twice. */

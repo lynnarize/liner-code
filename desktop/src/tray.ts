@@ -8,7 +8,8 @@
 import { Menu, nativeImage, Tray, type MenuItemConstructorOptions, type NativeImage } from "electron";
 
 type Session = { id: string; title: string };
-export type TrayStatus = { show: boolean; working: Session[]; needs: (Session & { waiting: boolean })[] };
+/** `running`: every session with a turn going, routines' included, which quitting would stop. */
+export type TrayStatus = { show: boolean; working: Session[]; needs: (Session & { waiting: boolean })[]; running?: number };
 type Ask = { kind: string; id: string; title?: string; state?: string };
 type Hooks = { open: (threadId?: string) => void; quit: () => void; rpc: (method: string, params: Record<string, unknown>) => Promise<unknown> };
 
@@ -59,6 +60,11 @@ export class StatusItem {
     const kind = s.needs.length ? "needs" : s.working.length ? "working" : "quiet";
     this.tray.setImage(this.glyphs[kind]);
     this.tray.setTitle(kind === "needs" ? String(s.needs.length) : kind === "working" ? String(s.working.length) : "", { fontType: "monospacedDigit" });
+  }
+
+  /** How many sessions have a turn going, as the page last said: quitting asks first while any do. */
+  running() {
+    return this.status.running ?? this.status.working.length;
   }
 
   destroy() {

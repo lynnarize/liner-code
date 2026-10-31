@@ -6,7 +6,8 @@
   started, one running in its folder, or the folder's own HTML; other servers on the Mac are
   offered, never picked. Pick an element and ask the agent about it; the question goes with the element's
   place in the page and its HTML. Desktop, Tablet and Phone set the page's width; Offline makes
-  the page's requests fail the way they would without a network.
+  the page's requests fail the way they would without a network. The ⋯ menu zooms the page and
+  shows it light or dark. Where an agent clicks, its pointer glides there and pulses.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalServer, Thread } from "@contracts";
@@ -18,6 +19,7 @@ import { onAgentBrowser, useHiddenBrowsers } from "./agentBrowser";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { SurfaceNote } from "./Surfaces";
+import { PanelHead, Pop } from "./ui";
 
 type Log = { level: string; text: string; at: number };
 type Picked = { selector: string; path: string; text: string; html: string; rect: { x: number; y: number; w: number; h: number } };
@@ -26,6 +28,30 @@ const WIDTH: Record<Width, number | null> = { desktop: null, tablet: 820, phone:
 
 /** What the Browser shows: a page of a local port, or (port null) a page of the session's own folder. */
 type Target = { port: number | null; path: string };
+
+/** A browser's zoom steps, as Chrome's (T3 Code: preview/PreviewMoreMenu.tsx). */
+const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+type Scheme = "system" | "light" | "dark";
+/** How long the agent's pointer takes to glide to a point, before the click lands there. */
+const GLIDE_MS = 380;
+/** A page point the agent acted on, and whether it clicked there (the pulse). seq tells one act from the next. */
+type Pointer = { x: number; y: number; click: boolean; seq: number };
+
+const kept = <T,>(key: string, fallback: T, ok: (v: unknown) => boolean): T => {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? "null") as unknown;
+    return ok(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+const keep = (key: string, v: unknown) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    // Shut storage: it lasts until the window closes.
+  }
+};
 
 /** "5173", "localhost:5173/notes", "http://127.0.0.1:3000/x" → a port and a path; "index.html" or a file's path → a file; anything else stays a link. */
 function parseAddress(s: string): { port: number; path: string } | { file: string } | { external: string } | null {
@@ -84,6 +110,14 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const [logs, setLogs] = useState<Log[]>([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [nonce, setNonce] = useState(0);
+  // The page's zoom and its light or dark, kept per project.
+  const [zoom, setZoomState] = useState(() => kept(`lc:browse:zoom:${thread.projectId}`, 1, (v) => typeof v === "number" && ZOOMS.includes(v)));
+  const [scheme, setSchemeState] = useState<Scheme>(() => kept(`lc:browse:scheme:${thread.projectId}`, "system", (v) => v === "light" || v === "dark" || v === "system"));
+  const setZoom = (z: number) => (setZoomState(z), keep(`lc:browse:zoom:${thread.projectId}`, z));
+  const setScheme = (s: Scheme) => (setSchemeState(s), keep(`lc:browse:scheme:${thread.projectId}`, s));
+  const zoomBy = (step: 1 | -1) => setZoom(ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, ZOOMS.indexOf(zoom) + step))] ?? 1);
+  // Where the agent's pointer is, in page pixels; drawn over the frame while it drives.
+  const [pointer, setPointer] = useState<Pointer | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   // The agent at the wheel: the page's answers it waits on, and the loads it waits for.
@@ -206,7 +240,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       return { ...r, port: now.current.target?.port ?? undefined, errors: now.current.logs.filter((l) => l.level === "error").slice(-10).map((l) => l.text) };
     };
     return onAgentBrowser(thread.id, async (op, args) => {
-      setDriving(Date.now());
+      if (!args.yours) setDriving(Date.now());
       if (op === "open") {
         const a = parseAddress(String(args.url ?? ""));
         if (!a || "external" in a) throw new Error("Only pages on this Mac: localhost:<port>/<path>, a port, or an HTML file in this session's folder.");
@@ -224,7 +258,22 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       }
       if (op === "read") return read();
       if (op === "click" || op === "type" || op === "press") {
-        await page(op, args);
+        // The agent's pointer glides to where it acts and pulses on a click (T3 Code:
+        // preview/AgentBrowserCursor.tsx). A point on the page is known before the click; for a
+        // control, the probe says where it was, when it does (an `at` in its answer).
+        const aimed = op === "click" && args.target === undefined && typeof args.x === "number" && typeof args.y === "number" ? { x: args.x, y: args.y } : null;
+        const glide = async (at: { x: number; y: number }) => {
+          setPointer((p) => ({ ...at, click: false, seq: (p?.seq ?? 0) + 1 }));
+          await new Promise((r) => setTimeout(r, GLIDE_MS));
+        };
+        if (aimed) await glide(aimed);
+        const answer = (await page(op, args)) as { at?: { x?: unknown; y?: unknown } } | null | undefined;
+        const told = answer?.at && typeof answer.at.x === "number" && typeof answer.at.y === "number" ? { x: answer.at.x, y: answer.at.y } : null;
+        const at = aimed ?? told;
+        if (at && op !== "press") {
+          if (!aimed) await glide(at);
+          setPointer((p) => ({ ...at, click: op === "click", seq: (p?.seq ?? 0) + 1 }));
+        }
         await new Promise((r) => setTimeout(r, 700));
         return read();
       }
@@ -245,6 +294,19 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     const t = setTimeout(() => setDriving(0), 5000);
     return () => clearTimeout(t);
   }, [driving]);
+  // The pointer goes once the agent lets go of the page, or the page changes under it.
+  useEffect(() => {
+    if (!driving) setPointer(null);
+  }, [driving]);
+  useEffect(() => setPointer(null), [where, nonce, width, zoom]);
+  // Faint between acts: bright for a moment after each, as T3 Code's fades (agentBrowserCursorLogic.ts).
+  const [pointerLit, setPointerLit] = useState(false);
+  useEffect(() => {
+    if (!pointer) return;
+    setPointerLit(true);
+    const t = setTimeout(() => setPointerLit(false), 900);
+    return () => clearTimeout(t);
+  }, [pointer?.seq]);
 
   const go = async (raw: string) => {
     const a = parseAddress(raw);
@@ -296,16 +358,24 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const src = useMemo(() => (proxy && target ? `${proxy}${target.path}` : null), [proxy, where, nonce]);
   const w = WIDTH[width];
 
-  // Where the ask card sits: under the element, inside the stage.
+  // Where the ask card sits: under the element, inside the stage. The page's pixels are drawn at its zoom.
   const card = useMemo(() => {
     if (!picked || !frame.current || !stage.current) return null;
     const f = frame.current.getBoundingClientRect();
     const s = stage.current.getBoundingClientRect();
-    const left = Math.max(8, Math.min(f.left - s.left + picked.rect.x, s.width - 328));
-    const below = f.top - s.top + picked.rect.y + picked.rect.h + 8;
-    const top = below + 150 > s.height ? Math.max(8, f.top - s.top + picked.rect.y - 158) : below;
+    const left = Math.max(8, Math.min(f.left - s.left + picked.rect.x * zoom, s.width - 328));
+    const below = f.top - s.top + (picked.rect.y + picked.rect.h) * zoom + 8;
+    const top = below + 150 > s.height ? Math.max(8, f.top - s.top + picked.rect.y * zoom - 158) : below;
     return { left, top };
   }, [picked]);
+  // The agent's pointer, from page pixels to the stage's, past its scroll.
+  const pointerAt = useMemo(() => {
+    const st = stage.current;
+    if (!pointer || !frame.current || !st) return null;
+    const f = frame.current.getBoundingClientRect();
+    const s = st.getBoundingClientRect();
+    return { left: f.left - s.left + st.scrollLeft + pointer.x * zoom, top: f.top - s.top + st.scrollTop + pointer.y * zoom };
+  }, [pointer, zoom]);
 
   if (!target) {
     // Servers elsewhere on the Mac are offered, the ones that serve a page first, never opened by themselves.
@@ -400,6 +470,40 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         <button type="button" className="lc-ib l-focus" aria-label="Open in your browser" title="Open in your browser" onClick={() => bridge.openExternal(target.port === null ? `${proxy}${target.path}` : `http://localhost:${target.port}${target.path}`)}>
           <I.external size={14} />
         </button>
+        {/* More: the page's zoom, and light or dark (T3 Code: preview/PreviewMoreMenu.tsx). */}
+        <Pop label="More for the page" align="end" width={240} triggerClass="lc-ib" trigger={<I.more size={14} />}>
+          {() => (
+            <div className="lc-br-more">
+              <PanelHead end={zoom === 1 ? undefined : `${Math.round(zoom * 100)}%`}>Zoom</PanelHead>
+              <div className="lc-br-zoomrow">
+                <button type="button" className="lc-ib l-focus" aria-label="Zoom out" disabled={zoom <= ZOOMS[0]} onClick={() => zoomBy(-1)}>
+                  <span aria-hidden>−</span>
+                </button>
+                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-label="Reset the zoom" title="Back to 100%" disabled={zoom === 1} onClick={() => setZoom(1)}>
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button type="button" className="lc-ib l-focus" aria-label="Zoom in" disabled={zoom >= ZOOMS[ZOOMS.length - 1]} onClick={() => zoomBy(1)}>
+                  <I.plus size={13} />
+                </button>
+              </div>
+              <PanelHead>Page theme</PanelHead>
+              <div className="lc-br-zoomrow">
+                <Segmented
+                  size="sm"
+                  value={scheme}
+                  onValueChange={setScheme}
+                  options={[
+                    { value: "system", label: "As the app" },
+                    { value: "light", label: "Light" },
+                    { value: "dark", label: "Dark" },
+                  ]}
+                  aria-label="Page theme"
+                />
+              </div>
+              <p className="lc-pop-foot">The page's prefers-color-scheme follows this, for pages that style both.</p>
+            </div>
+          )}
+        </Pop>
       </div>
       <div className="lc-br-opts">
         <Segmented
@@ -426,21 +530,34 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       </div>
       <div ref={stage} className="lc-br-stage" data-width={width}>
         {src ? (
-          <iframe
-            // Opened again at the same address (an agent checking its edit), it loads afresh.
-            key={`${src}#${nonce}`}
-            ref={frame}
-            className="lc-br-frame"
-            src={src}
-            title="Page preview"
-            onLoad={onLoad}
-            style={w ? { width: w } : undefined}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
-          />
+          // Zoomed as a browser zooms: the frame lays out 1/zoom as wide and tall as the box it's
+          // shown in, then is drawn at zoom, so the page reflows rather than only growing.
+          <div className="lc-br-zoom" style={w ? { width: w } : undefined}>
+            <iframe
+              // Opened again at the same address (an agent checking its edit), it loads afresh.
+              key={`${src}#${nonce}`}
+              ref={frame}
+              className="lc-br-frame"
+              src={src}
+              title="Page preview"
+              onLoad={onLoad}
+              // A frame's color-scheme is what the page inside reads as prefers-color-scheme.
+              style={{ width: `${100 / zoom}%`, height: `${100 / zoom}%`, transform: zoom === 1 ? undefined : `scale(${zoom})`, colorScheme: scheme === "system" ? undefined : scheme }}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+            />
+          </div>
         ) : (
           <div className="lc-diff-wait">
             <span className="l-shimmer">Opening {shown(target)}</span>
           </div>
+        )}
+        {pointerAt && pointer && (
+          <span className="lc-br-pointer" data-lit={pointerLit || undefined} style={{ transform: `translate3d(${pointerAt.left}px, ${pointerAt.top}px, 0)` }} aria-hidden>
+            {pointer.click && <span key={pointer.seq} className="lc-br-pointer-pulse" />}
+            <svg width="18" height="18" viewBox="0 0 18 18">
+              <path d="M2.5 1.75 15 8.1l-5.6 1.45L6.9 15Z" />
+            </svg>
+          </span>
         )}
         {picking && <span className="lc-br-hint l-glass">Point at an element and click it. Escape stops.</span>}
         {driving > 0 && !picking && (

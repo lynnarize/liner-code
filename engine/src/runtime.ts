@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import type { Access, Effort, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, Risk, Settings, Thread, Usage } from "../../contracts/src/index.ts";
 import { castOf, emptyUsage, familyOf, PR_TEST_TOOL, smallChange, splitModel } from "../../contracts/src/index.ts";
-import { capture, changes, isRepo } from "./checkpoints.ts";
+import { capture, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { run, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
 import { answerPrompt, assignments, claudeTeam, critiquePrompt, fixPrompt, parseFindings, parseStep, quickOf, repairPrompt, reviewerFor, reviewPrompt, stepPrompt, takeOverPrompt } from "./review.ts";
@@ -24,7 +24,8 @@ import { accountProvider, addedProvider } from "./providers/added.ts";
 import { claude } from "./providers/claude.ts";
 import { codex } from "./providers/codex.ts";
 import { demo } from "./providers/demo.ts";
-import type { Provider, ProviderSession, TurnSink, ToolUpdate } from "./providers/types.ts";
+import { ResumeFailed, type Provider, type ProviderSession, type TurnSink, type ToolUpdate, type WakeTurn } from "./providers/types.ts";
+import { attachNote } from "./providers/attachments.ts";
 import type { AgentTools } from "./agent-tools.ts";
 import { briefOf } from "./agents.ts";
 import { memoryNote } from "./memory.ts";
@@ -46,8 +47,16 @@ type Turn = { abort: AbortController; started: number; session?: ProviderSession
 /** How long a turn may say nothing before the watchdog says so: longer while one of its commands runs (a build, the tests). */
 export const QUIET_MS = 4 * 60_000;
 export const QUIET_STEP_MS = 12 * 60_000;
-/** show: put your message on the timeline. prompt: what the agent is sent, when it differs from what shows. note: a line under your message (what a route chose). */
-type TurnOptions = { show?: boolean; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string; note?: string };
+/**
+  show: put your message on the timeline. prompt: what the agent is sent, when it differs from what shows. note: a line under your message (what a route chose).
+  files: your attachments, saved on disk. wake: a turn the tool began by itself, run on the session that began it instead of sending a message.
+*/
+type TurnOptions = { show?: boolean; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string; note?: string; files?: string[]; wake?: { session: ProviderSession; w: WakeTurn } };
+/** What's sent on your behalf to carry a turn on (after a restart, or when a usage window reopens). */
+const CONTINUE = "Continue where you left off.";
+/** The notice a turn that carries on after a restart starts with; counted, so a turn that brings the engine down can't loop. */
+const CARRIED = "Liner Code stopped while this turn ran, so it carries on where it left off.";
+const GAVE_UP = "Liner Code stopped mid-turn again";
 /** A cascade's judge, and the strong model a change it won't pass goes to. */
 type Cascade = { judge: string; strong: string };
 /** How many times the Reviewer sends work back before it's yours. */
@@ -88,13 +97,20 @@ export class Runtime {
   private tools?: AgentTools;
   /** The running totals each open session last reported (Codex reports totals, not each step). */
   private totals = new WeakMap<ProviderSession, Partial<Usage>>();
+  /** A turn a tool began by itself while the thread was busy: it runs when the thread is free, before your queue. */
+  private wakes = new Map<string, { agentId: string; planning: boolean; session: ProviderSession; w: WakeTurn }>();
+  /** Limits already carried on from when their window reopened, by thread and reset time, so each goes once. */
+  private reopened = new Set<string>();
 
   constructor(store: Store, env: NodeJS.ProcessEnv, tools?: AgentTools) {
     this.store = store;
     this.env = env;
     this.tools = tools;
     if (tools) tools.turnOf = (threadId) => this.turns.get(threadId)?.turn ?? this.store.thread(threadId).turns;
-    this.watchdog = setInterval(() => this.watchQuiet(), 30_000);
+    this.watchdog = setInterval(() => {
+      this.watchQuiet();
+      this.resumeLimited();
+    }, 30_000);
     this.watchdog.unref?.();
     if (tools)
       tools.cwdOf = (threadId) => {
@@ -131,18 +147,54 @@ export class Runtime {
       else {
         this.busy.delete(threadId);
         if (!this.halted.delete(threadId)) this.drain(threadId);
+        // You pressed Stop: a turn the tool began by itself meanwhile stops too, like the rest of the work.
+        else this.dropWake(threadId);
       }
     }
   }
 
   /** What you wrote while it worked goes next, as one message, unless something waits on you. */
   private drain(threadId: string) {
+    // A turn the tool began by itself goes first: it happened before what you queued.
+    const waking = this.wakes.get(threadId);
+    this.wakes.delete(threadId);
+    if (waking?.w.pending()) {
+      void this.hold(threadId, () => this.wakeNow(threadId, waking)).catch(() => {});
+      return;
+    }
     const t = this.store.threads.find((x) => x.id === threadId);
     const queued = t?.queue ?? [];
     if (!t || !queued.length || t.status === "limited" || t.archived) return;
     if (this.store.timeline(threadId).some((x) => x.turn > (t.sideFrom ?? 0) && (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) return;
     this.store.patchThread(threadId, { queue: [] });
-    void this.send(threadId, queued.map((q) => q.text).join("\n\n")).catch(() => {});
+    const files = queued.flatMap((q) => q.files ?? []);
+    void this.send(threadId, queued.map((q) => q.text).join("\n\n"), "queue", undefined, files.length ? files : undefined).catch(() => {});
+  }
+
+  /**
+    The tool began a turn by itself (T3 Code: ClaudeAdapterV2.ts, its wake turns): it runs as a turn
+    of its own, now if the thread is free, else when the work in flight ends. After you pressed Stop
+    it stops too, unseen, as your queue waits.
+  */
+  private wake(threadId: string, agentId: string, planning: boolean, w: WakeTurn) {
+    const session = this.live.get(`${threadId}:${agentId}`)?.session;
+    const t = this.store.threads.find((x) => x.id === threadId);
+    if (!session || !t || t.archived || this.halted.has(threadId)) return w.cancel();
+    if (this.isRunning(threadId)) {
+      this.wakes.get(threadId)?.w.cancel();
+      this.wakes.set(threadId, { agentId, planning, session, w });
+      return;
+    }
+    void this.hold(threadId, () => this.wakeNow(threadId, { agentId, planning, session, w })).catch(() => {});
+  }
+  private wakeNow(threadId: string, k: { agentId: string; planning: boolean; session: ProviderSession; w: WakeTurn }) {
+    if (!k.w.pending() || this.halted.has(threadId)) return Promise.resolve();
+    const name = this.resolve(this.store.thread(threadId), k.agentId).agent.name;
+    return this.turnNow(threadId, "", k.agentId, k.planning, { show: false, review: false, wake: { session: k.session, w: k.w }, note: `${name} carries on by itself${k.w.why ? `: ${k.w.why}` : ", with no message from you"}.` });
+  }
+  private dropWake(threadId: string) {
+    this.wakes.get(threadId)?.w.cancel();
+    this.wakes.delete(threadId);
   }
 
   /** What an agent runs on in a thread: the thread's own model if set, else the agent's. A routed session's writer is the model its route put to work. */
@@ -219,6 +271,8 @@ export class Runtime {
       env: { ...this.envFor(r.provider), [THREAD_ENV]: t.id },
       // The session's Browser and Device, and pages shown in it, as tools.
       mcp: this.tools?.serverFor(t.id) ?? undefined,
+      // A turn it begins by itself (a background task finished) shows as a turn of its own.
+      wake: (w) => (this.live.get(liveKey)?.session === session ? this.wake(t.id, agentId, planning, w) : w.cancel()),
     });
     this.live.set(liveKey, { session, provider: r.provider, key });
     // A saved session from another tool can't carry over: the new one gets the conversation as text.
@@ -232,23 +286,27 @@ export class Runtime {
   }
 
   /** You sent a message. While a turn runs it waits in the queue, or steers the running turn. */
-  async send(threadId: string, text: string, mode: "queue" | "steer" = "queue", anchor?: TurnOptions["anchor"]) {
+  async send(threadId: string, text: string, mode: "queue" | "steer" = "queue", anchor?: TurnOptions["anchor"], files?: string[]) {
     const store = this.store;
     const running = this.turns.get(threadId);
     if (running || this.busy.has(threadId)) {
-      if (mode === "steer" && running?.session?.steer?.(text)) {
-        store.putItem(threadId, { kind: "user", id: uid("it"), turn: running.turn, at: Date.now(), text, steer: true });
+      // A steer the tool couldn't take (its request failed, or the turn ended first) isn't lost: it goes
+      // next, from the queue (T3 Code: SteeringCompletion.integration.test.ts).
+      if (mode === "steer" && running?.session?.steer && (await running.session.steer([text, attachNote(files ?? [])].filter(Boolean).join("\n\n"), files))) {
+        store.putItem(threadId, { kind: "user", id: uid("it"), turn: running.turn, at: Date.now(), text, steer: true, ...(files?.length ? { files } : {}) });
         return;
       }
       const t = store.thread(threadId);
-      store.patchThread(threadId, { queue: [...(t.queue ?? []), { id: uid("q"), text, at: Date.now() }] });
+      store.patchThread(threadId, { queue: [...(t.queue ?? []), { id: uid("q"), text, at: Date.now(), ...(files?.length ? { files } : {}) }] });
+      // The turn ended while the steer was tried: nothing in flight will send the queue now.
+      if (!this.isRunning(threadId)) this.drain(threadId);
       return;
     }
-    return this.hold(threadId, () => this.dispatch(threadId, text, anchor));
+    return this.hold(threadId, () => this.dispatch(threadId, text, anchor, files));
   }
 
   /** A message to a thread with nothing in flight: to the lead, a route, a pull request or the agent. */
-  private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"]) {
+  private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"], files?: string[]) {
     const store = this.store;
     const t = store.thread(threadId);
     // Past its spending cap: your message is the go-ahead for another cap's worth.
@@ -258,30 +316,30 @@ export class Runtime {
       store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `Going on: another $${cap} for this session before it stops again.` });
     }
     // A side chat only answers: no pull request, route or lead, and nothing for the Reviewer.
-    if (t.sideOf) return this.turn(threadId, text, t.agent, false, { review: false });
-    if (!anchor && isPrAsk(text)) return this.openPr(threadId, text);
-    if (!anchor && t.route) return this.routed(threadId, text);
+    if (t.sideOf) return this.turn(threadId, text, t.agent, false, { review: false, files });
+    if (!anchor && !files?.length && isPrAsk(text)) return this.openPr(threadId, text);
+    if (!anchor && t.route) return this.routed(threadId, text, files);
     // With a lead, your message goes to the lead, who answers or plans; otherwise straight to the agent.
     // A question about lines in the diff goes to whoever wrote them.
     // A question about lines goes to whoever wrote last: a setup's last stage, else the session's agent.
     const who = anchor ? (t.stages?.length ? t.stages[t.stages.length - 1].who : t.agent) : (t.lead ?? t.agent);
     // Straight to a setup's first stage: it's told its part, and who takes the change on after it.
     const part = !anchor && !t.lead ? this.partOf(t, 0) : "";
-    await this.turn(threadId, text, who, Boolean(t.lead) && !anchor, { anchor, review: !anchor, ...(part ? { prompt: `${text}\n\n${part}` } : {}) });
+    await this.turn(threadId, text, who, Boolean(t.lead) && !anchor, { anchor, review: !anchor, files, ...(part ? { prompt: `${text}\n\n${part}` } : {}) });
   }
 
   /**
     A routed session's message: the route says who writes it and who reads it after (route.ts).
     The writer works in the session's own conversation; judges and critics read on the side.
   */
-  private async routed(threadId: string, text: string) {
+  private async routed(threadId: string, text: string, files?: string[]) {
     const store = this.store;
     const route = store.thread(threadId).route!;
     const d = decide(text, route);
     // A follow-up that stays with the model working now carries on its job, repair and all.
     const escalated = d.reuse && route.last?.escalated ? { escalated: true } : {};
     store.patchThread(threadId, { route: { ...route, root: d.writer, last: { at: Date.now(), weight: d.weight, pattern: d.pattern, ...escalated } } });
-    await this.turn(threadId, text, store.thread(threadId).agent, false, { review: false, note: hintOf(d, (ref) => this.labelOf(ref)) });
+    await this.turn(threadId, text, store.thread(threadId).agent, false, { review: false, files, note: hintOf(d, (ref) => this.labelOf(ref)) });
     const t = store.thread(threadId);
     const turn = t.turns;
     const changed = store.timeline(threadId).some((x) => x.kind === "checkpoint" && x.turn === turn);
@@ -513,20 +571,27 @@ export class Runtime {
     t = store.patchThread(threadId, { status: "running", turns: turn, title, archived: false, done: false, snoozedUntil: undefined, turnBy: agentId });
     const r = this.resolve(t, agentId);
     const marker: Item = { kind: "turn", id: uid("it"), turn, at: Date.now(), agent: agentId, model: `${r.provider}:${r.model}`, planning, status: "running" };
-    if (show) store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}) });
+    if (show) store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}), ...(o.files?.length ? { files: o.files } : {}) });
     if (o.note) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: o.note });
     store.putItem(threadId, marker);
 
     let prompt = o.prompt ? o.prompt : o.anchor ? `About ${o.anchor.file}:${o.anchor.line}${o.anchor.endLine && o.anchor.endLine !== o.anchor.line ? `-${o.anchor.endLine}` : ""} in your last change:\n\n${text}` : text;
+    // Your attachments are named only in what the agent is sent; the timeline shows them as files.
+    if (o.files?.length) prompt = `${prompt}\n\n${attachNote(o.files)}`;
 
     // A side chat shares its session's folder and changes nothing, so it takes no snapshot: what
     // the session edits meanwhile would read as the side chat's change.
     const git = !t.sideOf && (await isRepo(cwd));
     const from = git ? await capture(cwd, `${threadId}/${turn}-before`) : null;
+    // Said, not hidden: a turn with no snapshot can't be shown as a diff or taken back.
+    const unsnapped = "Couldn't snapshot this turn, so its changes can't be shown or undone.";
+    if (git && !from) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: unsnapped });
     const sink = this.sink(threadId, turn, abort.signal, agentId, planning);
     let failed = false;
+    let ran = false;
     try {
-      const { session, fresh, switched } = await this.session(t, agentId, cwd, planning);
+      // A turn the tool began by itself runs on the session that began it, as it is.
+      const { session, fresh, switched } = o.wake ? { session: o.wake.session, fresh: false, switched: false } : await this.session(t, agentId, cwd, planning);
       live.session = session;
       // Stopped while the snapshot was taken or the tool was opening: the turn never starts.
       if (abort.signal.aborted) throw new Error("stopped");
@@ -537,7 +602,19 @@ export class Runtime {
         prompt = `${handoff(earlier, switched ? "switch" : t.forkSession !== undefined ? "fork" : "restart")}\n\n${prompt}`;
         if (switched && show) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider} takes over here, with the conversation so far.` });
       }
-      await session.turn(prompt, sink.api, abort.signal);
+      const go = (p: string) => (o.wake ? o.wake.w.run(sink.api, abort.signal) : session.turn(p, sink.api, abort.signal, o.files));
+      ran = true;
+      try {
+        await go(prompt);
+      } catch (e) {
+        // The session it was to resume is gone: the tool opened a new one, which gets the conversation so far
+        // (T3 Code: ProviderTurnStartService.ts, its fallback when a resume fails).
+        if (!(e instanceof ResumeFailed) || abort.signal.aborted) throw e;
+        const tool = this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider;
+        store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${tool} couldn't pick up its own session any more, so it starts a new one with the conversation so far.` });
+        const talk = earlier.some((x) => x.kind === "user" || x.kind === "text");
+        await go(talk ? `${handoff(earlier, t.forkSession !== undefined ? "fork" : "restart")}\n\n${prompt}` : prompt);
+      }
     } catch (e) {
       if (!abort.signal.aborted) {
         failed = true;
@@ -551,13 +628,18 @@ export class Runtime {
       sink.end();
       this.turns.delete(threadId);
     }
+    // When Claude's prompt cache for this thread likely runs out: an hour after its last turn on a plan,
+    // five minutes with an API key. Past it a long thread is read again at full price (T3 Code: IdleCompaction.ts).
+    if (ran && familyOf(r.provider) === "claude") store.patchThread(threadId, { cacheUntil: Date.now() + (r.provider === "claude" && store.settings.claudeBilling === "key" && this.keys.get("anthropic") ? 5 : 60) * 60_000 });
 
     const stopped = abort.signal.aborted;
     if (stopped) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: "You stopped this turn." });
     const seconds = (Date.now() - live.started) / 1000;
     if (git && from) {
       const to = await capture(cwd, `${threadId}/${turn}-after`);
-      const files = to ? await changes(cwd, from, to) : [];
+      // Only what the turn wrote: a pull or checkout it ran brings files it didn't.
+      const files = to ? await changes(cwd, from, to, { turn: true }) : [];
+      if (!to) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: unsnapped });
       if (to && files.length) store.putItem(threadId, { kind: "checkpoint", id: uid("it"), turn, at: Date.now(), files, from, to, seconds });
     }
     const errored = failed || sink.errored();
@@ -627,14 +709,14 @@ export class Runtime {
     // A few lines, or only docs, aren't worth a second model's full read (unless you ask for it).
     // A fix for its own findings is always read again.
     if (round === 1 && !store.settings.reviewSmall) {
-      const numstat = (await run("git", ["diff", "--numstat", since ?? cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
+      const numstat = (await run("git", ["diff", "--relative", "--numstat", since ?? cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
       if (smallChange(numstat)) {
         store.putItem(threadId, { kind: "notice", id: uid("it"), turn: cp.turn, at: Date.now(), text: `A small change, so the ${who} let it through. Settings › Agentic features has it read these too.` });
         return;
       }
     }
     // After several stages, the whole change from before the first one.
-    const diff = (await run("git", ["diff", "--no-color", "-U3", since ?? cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
+    const diff = (await run("git", ["diff", "--relative", ...PATCH, "-U3", since ?? cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
     const ask = this.askOf(threadId);
     const id = uid("it");
     const started = Date.now();
@@ -701,7 +783,7 @@ export class Runtime {
     const cp = store.timeline(threadId).find((x) => x.kind === "checkpoint" && x.turn === turn);
     if (cp?.kind !== "checkpoint" || !cp.from || !cp.to || !critics.length) return;
     const cwd = t.worktree?.path ?? store.project(t.projectId).path;
-    const diff = (await run("git", ["diff", "--no-color", "-U3", cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
+    const diff = (await run("git", ["diff", "--relative", ...PATCH, "-U3", cp.from, cp.to], { cwd, timeout: 60000 })).stdout;
     const prompt = reviewPrompt(this.askOf(threadId), cut(diff), 1, "critic");
     const abort = new AbortController();
     this.turns.set(threadId, { abort, started: Date.now(), turn: t.turns });
@@ -949,7 +1031,7 @@ export class Runtime {
     const cwd = t.worktree?.path ?? this.store.project(t.projectId).path;
     const cps = this.store.timeline(threadId).filter((x) => x.kind === "checkpoint" && !x.reverted);
     const to = cps.length ? (cps[cps.length - 1] as Extract<Item, { kind: "checkpoint" }>).to : undefined;
-    const diff = from && to ? (await run("git", ["diff", "--no-color", "-U3", from, to], { cwd, timeout: 60000 })).stdout : "";
+    const diff = from && to ? (await run("git", ["diff", "--relative", ...PATCH, "-U3", from, to], { cwd, timeout: 60000 })).stdout : "";
     const prev = this.store.agent(t.stages![i - 1].who).name;
     return [
       `${prev} just made a change for this ask, and now it's yours to take on.`,
@@ -1046,7 +1128,64 @@ export class Runtime {
     // On another model the limit no longer holds the session, so the message below can go (straight away, or when the limited turn's hold ends).
     this.store.patchThread(threadId, { ...(t.route ? { route: { ...t.route, root: to } } : { model: to }), ...(t.status === "limited" ? { status: "idle" as const, limit: undefined } : {}) });
     this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `${this.labelOf(`${from.provider}:${from.model}`)} is out of usage, so ${this.labelOf(to)} carries on with the conversation so far.` });
-    await this.send(threadId, "Continue where you left off.");
+    await this.send(threadId, CONTINUE);
+  }
+
+  /**
+    A session out of usage carries on by itself once its window reopens, when you turned that on
+    in Settings and the tool said when (T3 Code: UsageLimitRecoveryWorker.ts). Each limit goes once,
+    a minute after the reset so the first request doesn't beat the window, and a limit that was said
+    after its own reset time can't start a loop.
+  */
+  resumeLimited(now = Date.now()) {
+    if (!this.store.settings.resumeAtReset) return;
+    for (const t of this.store.threads) {
+      const until = t.limit?.until;
+      if (t.status !== "limited" || !until || now < until + 60_000 || t.archived || t.sideOf || (t.snoozedUntil ?? 0) > now || this.isRunning(t.id)) continue;
+      const key = `${t.id}:${until}`;
+      if (this.reopened.has(key)) continue;
+      this.reopened.add(key);
+      const said = this.store.timeline(t.id).findLast((x) => x.kind === "limit");
+      if (said && said.at >= until) continue;
+      const tool = this.providerInfo.find((p) => p.id === t.limit?.provider)?.label ?? t.limit?.provider ?? "The tool";
+      this.store.patchThread(t.id, { status: "idle", limit: undefined });
+      this.store.putItem(t.id, { kind: "notice", id: uid("it"), turn: t.turns, at: now, text: `${tool}'s usage window reopened, so this session carries on by itself.` });
+      void this.send(t.id, CONTINUE).catch(() => {});
+    }
+  }
+
+  /**
+    After Liner Code quit or crashed mid-turn, the sessions it stopped carry on by themselves
+    (T3 Code: RestartContinuation.ts), unless Settings turns that off. A turn you stopped says so on
+    the timeline, and one that was waiting on you lost its question: neither goes on. At most three
+    times in five minutes a session, so a turn that brings the engine down doesn't loop. Run once,
+    when the engine has started.
+  */
+  continueAfterRestart(now = Date.now()) {
+    if (this.store.settings.continueAfterRestart === false) return [];
+    const went: string[] = [];
+    for (const t of this.store.threads) {
+      // The store leaves a thread that was working idle and unread.
+      if (t.status !== "idle" || !t.unread || t.archived || t.sideOf || t.trial || t.routine || (t.snoozedUntil ?? 0) > now || this.isRunning(t.id)) continue;
+      const items = this.store.timeline(t.id);
+      const last = items.findLast((x) => x.kind === "turn");
+      if (last?.kind !== "turn" || last.status !== "stopped" || last.turn !== t.turns) continue;
+      const of = items.filter((x) => x.turn === last.turn);
+      if (of.some((x) => (x.kind === "notice" && (x.text === "You stopped this turn." || x.text.startsWith(GAVE_UP))) || ((x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "expired"))) continue;
+      const note = (text: string) => this.store.putItem(t.id, { kind: "notice", id: uid("it"), turn: last.turn, at: now, text });
+      if (items.filter((x) => x.kind === "notice" && x.text === CARRIED && now - x.at < 5 * 60_000).length >= 3) {
+        note(`${GAVE_UP}: it carried on three times in five minutes, so it waits for you now.`);
+        continue;
+      }
+      note(CARRIED);
+      const who = t.turnBy ?? t.agent;
+      const planning = Boolean(t.lead) && who === t.lead && t.lead !== t.agent;
+      // What it had running didn't survive the restart, and won't report back (T3 Code: RestartBackgroundNote.ts).
+      const prompt = `${CONTINUE}\n\n(Liner Code restarted while you worked, so any command or background task you had running was stopped before it finished. It won't report back on its own: run again what you still need, and wait for its result.)`;
+      void this.turn(t.id, CONTINUE, who, planning, { prompt, review: !planning }).catch(() => {});
+      went.push(t.id);
+    }
+    return went;
   }
 
   /**
@@ -1090,6 +1229,8 @@ export class Runtime {
     /** What this turn asked you that may still be waiting, and whether the turn has ended. */
     const pending = new Set<string>();
     let over = false;
+    /** Keyed notices (see TurnSink.notice) → their items. */
+    const notices = new Map<string, string>();
     const reasonStart = new Map<string, number>();
 
     const settle = () => {
@@ -1278,10 +1419,15 @@ export class Runtime {
           if (t.leadSession !== ref) store.patchThread(threadId, { leadSession: ref });
         } else if (t.providerSession !== ref) store.patchThread(threadId, { providerSession: ref });
       },
-      notice: (text) => {
+      notice: (text, key) => {
         settle();
-        store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text });
+        // A keyed notice says the same thing again as it changes (a retry's count): one line, kept up to date.
+        const id = (key && notices.get(key)) || uid("it");
+        if (key) notices.set(key, id);
+        const prev = store.timeline(threadId).find((x) => x.id === id);
+        store.putItem(threadId, { kind: "notice", id, turn, at: prev?.at ?? Date.now(), text });
       },
+      heard: () => void (!over && heard()),
       error: (message) => {
         settle();
         errored = true;

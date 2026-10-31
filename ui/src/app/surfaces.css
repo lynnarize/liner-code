@@ -332,65 +332,136 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-sinfo-total {
+/*
+  Context: a bar of ticks in each source's colour over the grey of what's free, a mark where the
+  tool compacts, then each source as a chip. Resting on a chip lifts its ticks and dims the rest.
+*/
+.lc-cx {
+  --lc-cx-setup: color-mix(in oklab, var(--l-ink) 34%, var(--lc-card));
+  --lc-cx-project: oklch(0.62 0.15 300);
+  --lc-cx-talk: oklch(0.8 0.13 72);
+  --lc-cx-files: oklch(0.54 0.19 274);
+  --lc-cx-runs: oklch(0.66 0.13 162);
+  --lc-cx-web: oklch(0.69 0.13 230);
+  --lc-cx-tools: oklch(0.72 0.09 300);
+  gap: 0;
+}
+[data-theme="dark"] .lc-cx {
+  --lc-cx-setup: color-mix(in oklab, var(--l-ink) 40%, var(--lc-card));
+  --lc-cx-project: oklch(0.7 0.14 300);
+  --lc-cx-talk: oklch(0.83 0.13 75);
+  --lc-cx-files: oklch(0.66 0.17 274);
+  --lc-cx-runs: oklch(0.74 0.13 162);
+  --lc-cx-web: oklch(0.76 0.12 230);
+  --lc-cx-tools: oklch(0.78 0.08 300);
+}
+.lc-cx [data-g="setup"] { background: var(--lc-cx-setup); }
+.lc-cx [data-g="project"] { background: var(--lc-cx-project); }
+.lc-cx [data-g="talk"] { background: var(--lc-cx-talk); }
+.lc-cx [data-g="files"] { background: var(--lc-cx-files); }
+.lc-cx [data-g="runs"] { background: var(--lc-cx-runs); }
+.lc-cx [data-g="web"] { background: var(--lc-cx-web); }
+.lc-cx [data-g="tools"] { background: var(--lc-cx-tools); }
+.lc-cx-head {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
+  gap: 8px;
+  padding: 10px 0 0;
   font-size: 13px;
-  font-variant-numeric: tabular-nums;
 }
-.lc-sinfo-total b {
-  font-weight: 500;
+.lc-cx-head b {
+  font-size: 13px;
+  font-weight: 600;
 }
-.lc-sinfo-bar {
+.lc-cx-doing {
+  color: var(--l-ink-3);
+}
+.lc-cx-bar {
+  position: relative;
+  margin: 12px 0 12px;
+}
+/* The ticks: one bar cut into 3px slivers, so each source's share stays exact to the token. */
+.lc-cx-ticks {
   display: flex;
-  gap: 1px;
-  height: 6px;
-  margin: 6px 0 8px;
-  overflow: hidden;
-  border-radius: 99px;
+  height: 22px;
   background: var(--l-wash-2);
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 5px);
+  mask: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 5px);
 }
-.lc-sinfo-bar i {
+.lc-cx-ticks i {
   flex: none;
-  min-width: 2px;
-  transition: width 420ms var(--l-ease-out);
+  transition:
+    width 420ms var(--l-ease-out),
+    opacity 200ms ease;
 }
-.lc-sinfo-parts {
-  display: grid;
-  gap: 1px;
+.lc-cx-ticks[data-hl] i:not([data-on]) {
+  opacity: 0.28;
 }
-.lc-sinfo-part {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto 46px;
+.lc-cx-mark {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 1.5px;
+  margin-left: -0.75px;
+  border-radius: 1px;
+  background: var(--l-ink-3);
+}
+.lc-cx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lc-cx-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-height: 24px;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--lc-well);
+  color: var(--l-ink);
+  font: inherit;
   font-size: 12.5px;
-  color: var(--l-ink-2);
+  cursor: default;
+  transition: background 160ms ease;
 }
-.lc-sinfo-part > span:nth-child(2) {
+@media (hover: hover) {
+  .lc-cx-chip:hover {
+    background: var(--lc-plate);
+  }
+}
+.lc-cx-chip > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+}
+.lc-cx-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-sinfo-part > span:last-child {
-  text-align: right;
-}
-.lc-sinfo-part i {
-  width: 9px;
-  height: 9px;
-  border-radius: 3px;
-}
-.lc-sinfo-part[data-kind="free"] i {
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
-}
-.lc-sinfo-part[data-kind="deferred"] {
+.lc-cx-more {
   color: var(--l-ink-3);
+  cursor: pointer;
 }
-.lc-sinfo-part[data-kind="deferred"]:first-of-type,
-.lc-sinfo-part:not([data-kind="deferred"]) + .lc-sinfo-part[data-kind="deferred"] {
-  margin-top: 6px;
+.lc-cx-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-cx-ticks i {
+    transition: none;
+  }
 }
 .lc-sinfo-file {
   display: flex;
@@ -2400,29 +2471,7 @@
   font-weight: 500;
   white-space: nowrap;
 }
-.lc-home-or {
-  margin: -6px 0 14px;
-  font-size: 13.5px;
-  color: var(--l-ink-3);
-  text-align: center;
-  animation: l-unblur 420ms var(--l-ease-out) 120ms backwards;
-}
-.lc-home-or .lc-link {
-  display: inline;
-  padding: 0;
-  font-size: inherit;
-}
-/* The carry-on list's popover sits in the sentence. */
-.lc-home-or .lc-pop {
-  display: inline-flex;
-  vertical-align: baseline;
-}
-
-/* The sidebar's group of places (New session, Routines, Search), groups and new-group field. */
-.lc-sb-go {
-  display: grid;
-  gap: 1px;
-}
+/* A place's keys, and the new-group field. */
 .lc-sb-key {
   flex: none;
   font-size: 12px;
@@ -2430,11 +2479,6 @@
   color: var(--l-ink-4);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
-}
-.lc-sb-navw {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-warn-text);
 }
 .lc-sb-newg {
   margin: 0 8px 6px;
@@ -2502,7 +2546,6 @@
   .lc-dev-screen img,
   .lc-rb,
   .lc-rb-last,
-  .lc-home-or,
   .lc-sb-newg input,
   .lc-pr-title b {
     animation: none !important;
@@ -4433,5 +4476,178 @@
   .lc-trail-ask,
   .lc-foot-findings {
     animation: none;
+  }
+}
+
+/* ---------- Browser: the zoom box, the More menu, the agent's pointer ---------- */
+/* The box takes the frame's old place and size; the frame inside lays out at 1/zoom and is scaled. */
+.lc-br-zoom {
+  position: relative;
+  flex: none;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fff;
+  transition: width 420ms var(--l-spring-smooth);
+}
+.lc-br-stage[data-width="tablet"] .lc-br-zoom,
+.lc-br-stage[data-width="phone"] .lc-br-zoom {
+  height: calc(100% - 24px);
+  margin: 12px 0;
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 6px 20px -8px var(--l-drop);
+}
+.lc-br-stage .lc-br-zoom > .lc-br-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: 0 0;
+  transition: none;
+}
+.lc-br-more {
+  display: grid;
+  gap: 2px;
+}
+.lc-br-zoomrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 9px 6px;
+}
+.lc-br-zoomrow > .lc-btn {
+  min-width: 64px;
+  font-variant-numeric: tabular-nums;
+}
+/* The agent's pointer (T3 Code: preview/AgentBrowserCursor.tsx): it glides to each point, bright
+   for a moment after it acts, faint between; a click rings out from its tip. */
+.lc-br-pointer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  transition:
+    transform 380ms var(--l-spring-smooth),
+    opacity 260ms ease;
+  animation: l-blur-in 200ms var(--l-ease-out) backwards;
+}
+.lc-br-pointer[data-lit] {
+  opacity: 1;
+}
+.lc-br-pointer svg {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  overflow: visible;
+  filter: drop-shadow(0 1px 2px var(--l-drop));
+}
+.lc-br-pointer path {
+  fill: var(--l-accent);
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.lc-br-pointer-pulse {
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--l-accent-soft);
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--l-accent) 45%, transparent);
+  animation: lc-br-pulse 700ms var(--l-ease-out) forwards;
+}
+@keyframes lc-br-pulse {
+  from {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* ---------- Files: an image, rendered Markdown, the line a link asked for ---------- */
+.lc-files-img {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 20px;
+  font-size: 12px;
+}
+/* On a checkerboard, so a transparent image still reads (T3 Code: files/PreviewImage.tsx). */
+.lc-files-img img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  background: repeating-conic-gradient(var(--lc-well) 0 25%, var(--lc-card) 0 50%) 0 0 / 16px 16px;
+  box-shadow: 0 0 0 1px var(--l-line);
+}
+.lc-files-md {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px 22px 28px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.lc-cl[data-hl] .lc-cl-t {
+  background: color-mix(in oklab, var(--l-accent) 14%, transparent);
+}
+.lc-cl[data-hl] .lc-cl-n {
+  color: var(--l-accent);
+  box-shadow: inset -2px 0 0 var(--l-accent);
+}
+
+/* ---------- Review: wrapped lines, and the hidden tests' note ---------- */
+.lc-rv-files[data-wrap] .lc-rv-l {
+  min-width: 0;
+}
+.lc-rv-files[data-wrap] .lc-rv-t {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lc-rv-hidden {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-rv-hidden:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink-2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-br-pointer {
+    transition: opacity 160ms ease;
+    animation: none;
+  }
+  .lc-br-pointer-pulse {
+    animation: none;
+    opacity: 0;
+  }
+  .lc-br-zoom {
+    transition: none;
   }
 }

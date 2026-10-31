@@ -33,6 +33,10 @@ export const COMMANDS: Command[] = [
   { id: "sidebar", label: "Show or hide the sidebar", group: "Anywhere", keys: ["mod+\\"] },
   { id: "usage", label: "Usage and cost", group: "Anywhere", keys: ["mod+shift+u"] },
   { id: "open-project", label: "Add a project", group: "Anywhere", keys: ["mod+o"] },
+  { id: "next-needs", label: "Next session that needs you", group: "Anywhere", keys: ["mod+alt+down"] },
+  // T3 Code's workspace areas (docs/user/keyboard-focus.md): the sidebar, the thread, the composer, the panel.
+  { id: "focus.next", label: "Move to the next area: sidebar, thread, composer, panel", group: "Anywhere", keys: ["f6"] },
+  { id: "focus.prev", label: "Move to the area before", group: "Anywhere", keys: ["shift+f6"] },
   { id: "find", label: "Find in the session, or in the diff", group: "In a session", keys: ["mod+f"], when: "session || review" },
   ...SURFACE_KEYS.map(([id, label, k]) => ({ id: `surface.${id}`, label: `Open ${label}`, group: "In a session", keys: [`mod+shift+${k}`], when: "session" })),
   { id: "stash", label: "Put the draft aside, or bring it back", group: "Writing a message", keys: ["mod+s"], when: "composer" },
@@ -40,8 +44,10 @@ export const COMMANDS: Command[] = [
 
 /** Keys that are the app's behaviour rather than commands: shown, not changed. */
 export const FIXED: { group: string; label: string; keys: string[] }[] = [
+  { group: "Anywhere", label: "Open the first to ninth session in the sidebar", keys: ["⌘", "1–9"] },
   { group: "Writing a message", label: "Send, or queue it while the agent works", keys: ["Enter"] },
   { group: "Writing a message", label: "Steer the running turn", keys: ["⌘", "Enter"] },
+  { group: "Writing a message", label: "On Home: start it in the background", keys: ["⌘", "Enter"] },
   { group: "Writing a message", label: "A new line", keys: ["⇧", "Enter"] },
   { group: "Writing a message", label: "Your last messages", keys: ["↑", "↓"] },
   { group: "Writing a message", label: "Point at a file, a command, a skill", keys: ["@", "/", "$"] },
@@ -72,7 +78,8 @@ export function bindingsOf(id: string): { key: string; when?: string }[] {
 }
 
 type Chord = { mod: boolean; ctrl: boolean; alt: boolean; shift: boolean; key: string };
-const NAMES: Record<string, string> = { comma: ",", backslash: "\\", slash: "/", period: ".", space: " ", esc: "escape", return: "enter", plus: "+" };
+const NAMES: Record<string, string> = { comma: ",", backslash: "\\", slash: "/", period: ".", space: " ", esc: "escape", return: "enter", plus: "+", up: "arrowup", down: "arrowdown", left: "arrowleft", right: "arrowright" };
+const ARROWS: Record<string, string> = { arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→" };
 
 export function parse(spec: string): Chord | null {
   const parts = spec.toLowerCase().replace(/\s+/g, "").split("+");
@@ -158,7 +165,7 @@ export function pressed(e: KeyboardEvent, among: string[] = COMMANDS.map((c) => 
 export function glyphs(spec: string): string[] {
   const c = parse(spec);
   if (!c) return [spec];
-  const key = c.key === " " ? "Space" : c.key === "enter" ? "Enter" : c.key === "escape" ? "Esc" : c.key.length === 1 ? c.key.toUpperCase() : c.key.charAt(0).toUpperCase() + c.key.slice(1);
+  const key = c.key === " " ? "Space" : c.key === "enter" ? "Enter" : c.key === "escape" ? "Esc" : ARROWS[c.key] ? ARROWS[c.key] : c.key.length === 1 ? c.key.toUpperCase() : c.key.charAt(0).toUpperCase() + c.key.slice(1);
   return [c.ctrl && (mac ? "⌃" : "Ctrl"), c.alt && (mac ? "⌥" : "Alt"), c.shift && "⇧", c.mod && (mac ? "⌘" : "Ctrl"), key].filter(Boolean) as string[];
 }
 export const shortcutOf = (id: string) => {
@@ -189,5 +196,5 @@ export function readBindings(text: string): { list?: KeyBinding[]; error?: strin
 }
 
 /** Commands whose keys the Mac app's menu also holds, with their keys now (empty: none). */
-export const MENU_COMMANDS = ["new", "commands", "settings", "sidebar", "usage", "open-project"];
+export const MENU_COMMANDS = ["new", "commands", "settings", "sidebar", "usage", "open-project", "next-needs", "focus.next", "focus.prev"];
 export const menuKeys = () => Object.fromEntries(MENU_COMMANDS.map((id) => [id, bindingsOf(id)[0]?.key ?? ""]));

@@ -107,7 +107,7 @@ export function DeskStage({ project, settings, worktree, onOpen, children }: Pro
 }
 
 /**
-  The cue between the two areas: a glass pill whose chevron nods toward the Desk a few times
+  The cue between the two areas: a white pill whose chevron nods toward the Desk a few times
   (again whenever something new comes back to you), with what's on it. Armed, it widens, says
   to scroll again, and a line under it drains for as long as the second scroll counts.
 */
@@ -118,7 +118,7 @@ function Cue({ dir, armed, counts, onPress }: { dir: Dir; armed: boolean; counts
   return (
     <button
       type="button"
-      className="lc-desk-cue l-glass l-focus"
+      className="lc-desk-cue l-focus"
       data-dir={dir}
       data-armed={armed || undefined}
       aria-label={down ? `Open the Desk${said ? `: ${said}` : ""}` : "Back to the question"}

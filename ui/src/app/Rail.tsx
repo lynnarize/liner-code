@@ -5,7 +5,7 @@
   committed in a small chip under the arrow) and every other surface. The bar keeps the
   session's own things (who works on it, its place, Changes).
 */
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { Thread } from "@contracts";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { toast } from "@liner/components/toast/toast";
@@ -15,7 +15,7 @@ import { rpc } from "./engine";
 import { I } from "./icons";
 import { shortcutOf } from "./keymap";
 import { plural } from "./model";
-import type { PanelState, SurfaceId } from "./Surfaces";
+import { openTab, type PanelState, type SurfaceId } from "./Surfaces";
 import { PanelHead, Pop, Row } from "./ui";
 
 const SHOWN: { id: SurfaceId; label: string; icon: (p: { size?: number }) => ReactNode }[] = [
@@ -46,8 +46,28 @@ function Btn({ label, keys, on, onClick, children }: { label: string; keys?: str
   );
 }
 
+/*
+  The open session's panel, reachable from outside it: ⌘K's "Open Browser" and the like go to the
+  session on screen through its tray, which holds the panel. Answers whether a session took it.
+*/
+const panels = new Map<string, (tab: SurfaceId) => void>();
+export function openSurface(threadId: string, tab: SurfaceId) {
+  const open = panels.get(threadId);
+  open?.(tab);
+  return Boolean(open);
+}
+
 export function Rail({ thread, panel, onPanel, onTab, files, branch }: { thread: Thread; panel: PanelState; onPanel: (f: (p: PanelState) => PanelState) => void; onTab: (tab: SurfaceId) => void; files: number; branch?: string }) {
   const showing = panel.open && !panel.picking ? panel.tab : null;
+  const setPanel = useRef(onPanel);
+  setPanel.current = onPanel;
+  useEffect(() => {
+    const open = (tab: SurfaceId) => setPanel.current((p) => openTab(p, tab));
+    panels.set(thread.id, open);
+    return () => {
+      if (panels.get(thread.id) === open) panels.delete(thread.id);
+    };
+  }, [thread.id]);
   const running = thread.status === "running";
   return (
     <nav className="lc-rail" aria-label="Panel and surfaces">

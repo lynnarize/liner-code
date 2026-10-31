@@ -8,6 +8,7 @@ import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
 import type { AgentProfile, Thread } from "@contracts";
 import { Glyph, I, ModelMark, Rays, type MarkKind } from "./icons";
+import { compact } from "./model";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 
@@ -277,6 +278,37 @@ export function ContextRing({ used, size = 14 }: { used: number; size?: number }
       </svg>
       {Math.round(p * 100)}%
     </span>
+  );
+}
+
+/**
+  The ring as a button (T3 Code: chat/ContextWindowMeter.tsx): it opens how much of the window is
+  used, in tokens, and Compact, which asks the tool to sum up what came before. Compacting waits
+  for a running turn to end, so the action is there only while nothing runs.
+*/
+export function ContextMeter({ used, max, running, onCompact }: { used: number; max: number; running?: boolean; onCompact?: () => void }) {
+  const p = Math.max(0, Math.min(1, used / max));
+  const pct = Math.round(p * 100);
+  return (
+    <Pop label={`Context: ${pct}% used`} side="top" align="center" width={260} triggerClass="lc-seg-b lc-ring-b" trigger={<ContextRing used={p} />}>
+      {(close) => (
+        <div className="lc-ctxm">
+          <PanelHead end={`${pct}%`}>Context</PanelHead>
+          <span className="lc-ctxm-bar" role="progressbar" aria-label="Context used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} data-warn={p > 0.8 || undefined}>
+            <i style={{ width: `${pct}%` }} />
+          </span>
+          <p className="lc-ctxm-n">
+            {compact(used)} of {compact(max)} tokens
+          </p>
+          {onCompact &&
+            (running ? (
+              <p className="lc-pop-foot">Compact once this turn ends.</p>
+            ) : (
+              <Row title="Compact" note="Sums up what came before, so the window has room again" onPick={() => (close(), onCompact())} />
+            ))}
+        </div>
+      )}
+    </Pop>
   );
 }
 

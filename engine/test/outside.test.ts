@@ -44,7 +44,8 @@ test("outside: the key file is there only while it's on, readable by you alone, 
   assert.equal(url, "http://127.0.0.1:1/outside");
   assert.equal(statSync(o.file).mode & 0o777, 0o600);
   assert.equal(o.allows(key), true);
-  assert.equal(o.allows(`${key.slice(0, -1)}0`), false);
+  // One character off, whatever the last one is.
+  assert.equal(o.allows(`${key.slice(0, -1)}${key.endsWith("0") ? "1" : "0"}`), false);
   assert.equal(o.allows(""), false);
   store.setSettings({ outside: false });
   o.apply();
@@ -69,6 +70,8 @@ test("outside: the MCP server on stdio lists its tools and passes a call to the 
   const home = mkdtempSync(join(tmpdir(), "lc-out-mcp-"));
   const seen: { key?: string; tool?: string }[] = [];
   const server = createServer((req, res) => {
+    // Other tests look for dev servers on this Mac's ports; only the MCP server's calls are ours.
+    if (req.method !== "POST" || !req.url?.startsWith("/outside")) return void res.writeHead(404).end();
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {

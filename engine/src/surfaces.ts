@@ -75,8 +75,134 @@ _, status = os.waitpid(pid, 0)
 sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
 `;
 
-type Term = { child: ChildProcessWithoutNullStreams; ctl: NodeJS.WritableStream };
+/** How much of a terminal's output is kept: T3 Code's limits (apps/server/src/terminal/Manager.ts). */
+const BACKLOG_LINES = 5_000;
+const BACKLOG_BYTES = 8 * 1024 * 1024;
+/** Small writes join the last part, so a chatty command doesn't leave a long list behind. */
+const PART = 16 * 1024;
 
+const newlines = (s: string) => {
+  let n = 0;
+  for (let i = s.indexOf("\n"); i !== -1; i = s.indexOf("\n", i + 1)) n++;
+  return n;
+};
+
+/**
+  What a terminal printed, kept so its Terminal can show it again after you look away (another
+  session, the panel shut). The oldest goes first, a whole line at a time, once there are more
+  than `maxLines` lines or `maxBytes` bytes. `end` counts every character ever written, so a
+  reader that attaches while output streams can tell which live output it already has.
+*/
+export class Backlog {
+  end = 0;
+  private parts: { text: string; bytes: number; lines: number }[] = [];
+  private bytes = 0;
+  private lines = 0;
+  private maxLines: number;
+  private maxBytes: number;
+  constructor(maxLines = BACKLOG_LINES, maxBytes = BACKLOG_BYTES) {
+    this.maxLines = maxLines;
+    this.maxBytes = maxBytes;
+  }
+
+  push(text: string) {
+    if (!text) return;
+    const bytes = Buffer.byteLength(text);
+    const lines = newlines(text);
+    const last = this.parts.at(-1);
+    if (last && last.text.length + text.length <= PART) {
+      last.text += text;
+      last.bytes += bytes;
+      last.lines += lines;
+    } else this.parts.push({ text, bytes, lines });
+    this.bytes += bytes;
+    this.lines += lines;
+    this.end += text.length;
+    this.trim();
+  }
+
+  text() {
+    return this.parts.map((p) => p.text).join("");
+  }
+
+  /** Forgets what's kept (Clear in the Terminal); `end` stays, so live output still says where it starts. */
+  clear() {
+    this.parts = [];
+    this.bytes = 0;
+    this.lines = 0;
+  }
+
+  /** Drops the first part's first `chars` characters (all of it when that's its length). */
+  private cut(chars: number) {
+    const first = this.parts[0];
+    if (chars >= first.text.length) {
+      this.parts.shift();
+      this.bytes -= first.bytes;
+      this.lines -= first.lines;
+      return;
+    }
+    const gone = first.text.slice(0, chars);
+    const bytes = Buffer.byteLength(gone);
+    const lines = newlines(gone);
+    first.text = first.text.slice(chars);
+    first.bytes -= bytes;
+    first.lines -= lines;
+    this.bytes -= bytes;
+    this.lines -= lines;
+  }
+
+  private trim() {
+    // A last line that hasn't ended yet counts as a line.
+    const open = this.parts.at(-1)?.text.endsWith("\n") === false;
+    let drop = this.lines + (open ? 1 : 0) - this.maxLines;
+    while (drop > 0 && this.parts.length) {
+      const first = this.parts[0];
+      // Fewer line ends than lines to drop: all of it goes, its unended tail with it.
+      if (first.lines < drop) {
+        drop -= first.lines;
+        this.cut(first.text.length);
+        continue;
+      }
+      let at = 0;
+      for (let i = 0; i < drop; i++) at = first.text.indexOf("\n", at) + 1;
+      this.cut(at);
+      drop = 0;
+    }
+    while (this.bytes > this.maxBytes && this.parts.length) {
+      const first = this.parts[0];
+      const over = this.bytes - this.maxBytes;
+      if (first.bytes <= over) {
+        this.cut(first.text.length);
+        continue;
+      }
+      // A character is a byte or more, so `over` characters are enough; then on to the next line,
+      // so the replay never starts inside an escape sequence.
+      const nl = first.text.indexOf("\n", over);
+      this.cut(nl < 0 ? first.text.length : nl + 1);
+    }
+  }
+}
+
+type Term = {
+  id: string;
+  threadId?: string;
+  title: string;
+  command?: string;
+  cwd: string;
+  at: number;
+  /** null once the shell has ended; the terminal stays, with what it printed, until it's closed. */
+  child: ChildProcessWithoutNullStreams | null;
+  ctl: NodeJS.WritableStream | null;
+  backlog: Backlog;
+  exited?: number;
+};
+
+/**
+  Each terminal outlives the Terminal that shows it: switching sessions or shutting the panel
+  only lets go of the view, and coming back attaches to the same shell and replays its backlog
+  (T3 Code's terminal manager does the same). A terminal ends when you close its tab, when its
+  session is archived or deleted, or when the engine quits.
+*/
 export class Terminals {
   private terms = new Map<string, Term>();
   private store: Store;
@@ -86,7 +212,7 @@ export class Terminals {
     this.env = env;
   }
 
-  open(cwd: string, cols: number, rows: number, command?: string, threadId?: string) {
+  open(cwd: string, cols: number, rows: number, command?: string, threadId?: string, title?: string) {
     const python = which("python3", this.env) ?? "/usr/bin/python3";
     const id = uid("tm");
     const child = spawn(python, ["-I", "-c", PTY, String(Math.max(20, cols)), String(Math.max(5, rows))], {
@@ -95,13 +221,18 @@ export class Terminals {
       stdio: ["pipe", "pipe", "pipe", "pipe"],
     }) as unknown as ChildProcessWithoutNullStreams;
     const ctl = (child as unknown as { stdio: NodeJS.WritableStream[] }).stdio[3];
-    this.terms.set(id, { child, ctl });
-    // Output goes out in small batches, so a noisy command doesn't send an event per byte.
+    const t: Term = { id, threadId, title: title?.trim() || (command ? command : "Shell"), command, cwd, at: Date.now(), child, ctl, backlog: new Backlog() };
+    this.terms.set(id, t);
+    // Output goes out in small batches, so a noisy command doesn't send an event per byte. Each
+    // batch goes into the backlog as it goes out, with where it starts, so the two always agree.
     let pending = "";
     let timer: NodeJS.Timeout | null = null;
     const flush = () => {
       timer = null;
-      if (pending) this.store.emit({ type: "term", id, data: pending });
+      if (!pending) return;
+      const at = t.backlog.end;
+      t.backlog.push(pending);
+      this.store.emit({ type: "term", id, data: pending, at });
       pending = "";
     };
     child.stdout.setEncoding("utf8");
@@ -115,26 +246,53 @@ export class Terminals {
       timer ??= setTimeout(flush, 16);
     });
     child.on("close", (code) => {
+      if (timer) clearTimeout(timer);
       flush();
-      this.terms.delete(id);
+      t.child = null;
+      t.ctl = null;
+      if (this.terms.get(id) === t) t.exited = code ?? 0;
       this.store.emit({ type: "term.exit", id, code: code ?? 0 });
     });
     // A script to run: typed into the shell once it's up, so it stays after the command ends.
-    if (command) setTimeout(() => this.terms.get(id)?.child.stdin.write(`${command}\r`), 350);
+    if (command) setTimeout(() => this.terms.get(id)?.child?.stdin.write(`${command}\r`), 350);
     return { id, cwd };
   }
+
+  /** What the terminal printed so far, for a Terminal that shows it again; live output follows as `term` events. */
+  attach(id: string) {
+    const t = this.terms.get(id);
+    if (!t) throw new Error("That terminal has closed.");
+    return { text: t.backlog.text(), end: t.backlog.end, cwd: t.cwd, ...(t.exited !== undefined ? { exited: t.exited } : {}) };
+  }
+
+  /** A session's terminals, oldest first: the tabs its Terminal shows. */
+  list(threadId: string) {
+    return [...this.terms.values()]
+      .filter((t) => t.threadId === threadId)
+      .map((t) => ({ id: t.id, title: t.title, cwd: t.cwd, at: t.at, ...(t.command ? { command: t.command } : {}), ...(t.exited !== undefined ? { exited: t.exited } : {}) }));
+  }
+
   write(id: string, data: string) {
-    this.terms.get(id)?.child.stdin.write(data);
+    this.terms.get(id)?.child?.stdin.write(data);
   }
   resize(id: string, cols: number, rows: number) {
-    this.terms.get(id)?.ctl.write(`${cols} ${rows}\n`);
+    this.terms.get(id)?.ctl?.write(`${cols} ${rows}\n`);
+  }
+  /** Cleared in the Terminal stays cleared when it comes back. */
+  clear(id: string) {
+    this.terms.get(id)?.backlog.clear();
   }
   close(id: string) {
     const t = this.terms.get(id);
     if (!t) return;
+    this.terms.delete(id);
+    if (!t.child) return;
     t.child.stdin.end();
     t.child.kill("SIGHUP");
-    this.terms.delete(id);
+  }
+  /** Everything a session's Terminal started, when the session is archived or deleted. */
+  closeThread(threadId: string) {
+    for (const t of [...this.terms.values()]) if (t.threadId === threadId) this.close(t.id);
   }
   closeAll() {
     for (const id of [...this.terms.keys()]) this.close(id);

@@ -2,7 +2,9 @@
   Review, with the whole window: the files on the left with what you've looked at, what the
   subagents checked, and the diff beside them. Press a line number (shift for a range) to ask
   the agent about those lines; its answer stays on those lines. The Reviewer's findings sit on
-  the lines they name. Step through the changes with the arrows, or J and K.
+  the lines they name. Step through the changes with the arrows, or J and K. Long lines wrap, and
+  test files step aside, if you ask; both are remembered, and so is what you've viewed, until the
+  file changes again.
 */
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff, Finding, Item, Thread } from "@contracts";
@@ -19,8 +21,75 @@ import { baseOf, dirOf, langOf, linesOf, tokensOf, Toks } from "./code";
 import { Lines, ModelTag, Pop, Row as PickRow, Sep } from "./ui";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { FindBar } from "./Find";
+import { undoTurn } from "./undo";
 
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
+
+/** A switch in Review that's remembered: wrap and hide tests (T3 Code: diffs/useHideTestFiles.ts). */
+function usePref(key: string) {
+  const [on, set] = useState(() => {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const flip = (v: boolean) => {
+    set(v);
+    try {
+      localStorage.setItem(key, v ? "1" : "0");
+    } catch {
+      // Shut storage: it lasts until the window closes.
+    }
+  };
+  return [on, flip] as const;
+}
+
+/** Tests and their support (mocks, fixtures, snapshots), by path alone (T3 Code: shared/changedFileKind.ts). */
+const TEST_NAME = /(\.(test|spec|e2e)\.[^.]+$|_(test|spec)\.[^.]+$|^test_.+\.py$|^conftest\.py$|^(vitest|jest)\.setup\.[^.]+$)/i;
+const CLASS_TEST = /(Tests?|Spec)\.(java|kt|kts|scala|groovy|cs|php|swift|m)$/;
+const MOCK_NAME = /(\.snap$|\.(mocks?|fixtures?|stubs?|fakes?)\.[^.]+$|^(mocks?|fixtures?|stubs?|fakes?)([-_.A-Z]|$))/;
+const TEST_DIRS = new Set(["__tests__", "__test__", "cypress", "e2e", "spec", "specs", "test", "tests", "__fixtures__", "__mocks__", "__snapshots__", "fakes", "fixture", "fixtures", "mock", "mocks", "stubs", "testdata"]);
+export function isTestFile(path: string) {
+  const parts = path.split("/");
+  const name = parts.pop() ?? "";
+  return TEST_NAME.test(name) || CLASS_TEST.test(name) || MOCK_NAME.test(name) || parts.some((d) => TEST_DIRS.has(d.toLowerCase()));
+}
+
+/*
+  Viewed, kept per session, file and what the file now says: a file that changes again after you
+  looked comes back unviewed. Only the newest marks are kept.
+*/
+const VIEWED = "lc:review:viewed:v1";
+const MAX_VIEWED = 1500;
+/** FNV-1a over the file's new text: a short name for what it says now. */
+function hashOf(s: string | undefined) {
+  const t = s ?? "\u0000gone";
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) {
+    h ^= t.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+function readViewed(): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEWED) || "{}") as unknown;
+    return v && typeof v === "object" ? (v as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+function writeViewed(all: Record<string, number>) {
+  try {
+    const newest = Object.entries(all)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_VIEWED);
+    localStorage.setItem(VIEWED, JSON.stringify(Object.fromEntries(newest)));
+  } catch {
+    // Shut storage: viewed lasts as long as Review is open.
+  }
+}
 
 /** Which turn's changes to show: one turn, all of them, or the branch against main. */
 export function TurnPicker({ cps, pick, turns, onPick }: { cps: Checkpoint[]; pick: string; turns: number; onPick: (id: string) => void }) {
@@ -72,7 +141,9 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
   const cp = cps.find((c) => c.id === pick);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [view, setView] = useState<"unified" | "split">("unified");
-  const [viewed, setViewed] = useState<Set<string>>(new Set());
+  const [marks, setMarks] = useState<Record<string, number>>(readViewed);
+  const [wrap, setWrap] = usePref("lc:review:wrap");
+  const [hideTests, setHideTests] = usePref("lc:review:hide-tests");
   const [sel, setSel] = useState<Anchor | null>(null);
   const [ask, setAsk] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -119,17 +190,31 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
         const after = linesOf(f.after);
         const lang = langOf(f.path);
         const rows = diffRows(before, after);
-        return { file: f, rows, segs: segment(rows, 3), tb: tokensOf(before, lang), ta: tokensOf(after, lang), added: rows.filter((r) => r.kind === "add").length, removed: rows.filter((r) => r.kind === "del").length, isNew: f.before === undefined, gone: f.after === undefined };
+        return { file: f, rows, segs: segment(rows, 3), tb: tokensOf(before, lang), ta: tokensOf(after, lang), added: rows.filter((r) => r.kind === "add").length, removed: rows.filter((r) => r.kind === "del").length, isNew: f.before === undefined, gone: f.after === undefined, seenKey: `${thread.id}|${f.path}|${hashOf(f.after)}` };
       }),
     [diff],
   );
-  const changes = prepared.flatMap((p) => [...new Set(p.rows.flatMap((r) => (r.change === undefined ? [] : [r.change])))].map((c) => ({ path: p.file.path, change: c })));
+  // Test files out of the way when you ask, except the one you pressed (T3 Code: DiffPanel.tsx).
+  const tests = prepared.filter((p) => isTestFile(p.file.path)).length;
+  const shown = hideTests ? prepared.filter((p) => !isTestFile(p.file.path) || p.file.path === focus?.path) : prepared;
+  const changes = shown.flatMap((p) => [...new Set(p.rows.flatMap((r) => (r.change === undefined ? [] : [r.change])))].map((c) => ({ path: p.file.path, change: c })));
+  const viewed = useMemo(() => new Set(prepared.filter((p) => marks[p.seenKey]).map((p) => p.file.path)), [prepared, marks]);
+  const setViewed = (path: string, on: boolean) => {
+    const p = prepared.find((x) => x.file.path === path);
+    if (!p || Boolean(marks[p.seenKey]) === on) return;
+    // Read afresh, so another Review's marks aren't written over.
+    const all = { ...readViewed(), ...marks };
+    if (on) all[p.seenKey] = Date.now();
+    else delete all[p.seenKey];
+    setMarks(all);
+    writeViewed(all);
+  };
 
   // The file pressed elsewhere scrolls into view.
   useEffect(() => {
     if (!diff || !focus?.path) return;
     box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(focus.path)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
-    setViewed((v) => new Set(v).add(focus.path!));
+    setViewed(focus.path, true);
   }, [diff, focus?.path]);
 
   const goChange = (i: number) => {
@@ -170,10 +255,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
     if (!cp) return;
     setBusy("undo");
     try {
-      await rpc("checkpoint.revert", { threadId: thread.id, itemId: cp.id });
-      toast(`Undid turn ${cp.turn}`, { description: `${plural(cp.files.length, "file")} back as they were` });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      await undoTurn(thread.id, cp);
     } finally {
       setBusy(null);
     }
@@ -181,9 +263,9 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
 
   const openCps = cps.filter((c) => !c.reverted && !c.committed);
   const openFiles = new Set(openCps.flatMap((c) => c.files.map((f) => f.path))).size;
-  const files = prepared.map((p) => p.file.path);
+  const files = shown.map((p) => p.file.path);
   const seen = files.filter((f) => viewed.has(f)).length;
-  const lines = prepared.reduce((s, p) => ({ added: s.added + p.added, removed: s.removed + p.removed }), { added: 0, removed: 0 });
+  const lines = shown.reduce((s, p) => ({ added: s.added + p.added, removed: s.removed + p.removed }), { added: 0, removed: 0 });
   // What the subagents checked: the turn's Task calls and the Reviewer.
   const turnNo = cp?.turn;
   const subs = items.filter((x): x is Extract<Item, { kind: "tool" }> => x.kind === "tool" && x.toolKind === "task" && (turnNo === undefined || x.turn === turnNo));
@@ -289,15 +371,20 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               {seen} of {files.length} viewed
             </span>
           </div>
-          {prepared.map((p) => (
+          {shown.map((p) => (
             <label key={p.file.path} className="lc-rv-f" data-on={viewed.has(p.file.path) || undefined}>
-              <input type="checkbox" checked={viewed.has(p.file.path)} onChange={(e) => setViewed((v) => (e.target.checked ? new Set(v).add(p.file.path) : new Set([...v].filter((x) => x !== p.file.path))))} />
+              <input type="checkbox" checked={viewed.has(p.file.path)} onChange={(e) => setViewed(p.file.path, e.target.checked)} />
               <button type="button" className="lc-rv-fb lc-mono" title={p.file.path} onClick={() => onFocus({ id: pick, path: p.file.path })}>
                 {baseOf(p.file.path)}
               </button>
               <Lines added={p.added} removed={p.removed} />
             </label>
           ))}
+          {prepared.length > shown.length && (
+            <button type="button" className="lc-rv-hidden lc-quiet l-focus" onClick={() => setHideTests(false)}>
+              {plural(prepared.length - shown.length, "test file")} hidden · Show
+            </button>
+          )}
           {(subs.length > 0 || findings.reviewer) && (
             <div className="lc-rv-checked">
               <span className="lc-rv-navh">{coder.name}'s subagents checked</span>
@@ -343,6 +430,15 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
                 </button>
               </>
             )}
+            {/* Wrap long lines, and tests out of the way: both remembered (T3 Code: DiffPanel.tsx). */}
+            {tests > 0 && (
+              <button type="button" className="lc-ib l-focus" aria-pressed={hideTests} aria-label={hideTests ? "Show test files" : "Hide test files"} title={hideTests ? `Show test files (${tests})` : `Hide test files (${tests})`} onClick={() => setHideTests(!hideTests)}>
+                <I.eye size={14} />
+              </button>
+            )}
+            <button type="button" className="lc-ib l-focus" aria-pressed={wrap} aria-label={wrap ? "Scroll long lines" : "Wrap long lines"} title={wrap ? "Scroll long lines" : "Wrap long lines"} onClick={() => setWrap(!wrap)}>
+              <I.wrap size={14} />
+            </button>
             <Segmented
               size="sm"
               value={view}
@@ -363,7 +459,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               onQuery={(q) => q.trim() && setOpen(new Set(prepared.flatMap((p) => p.segs.flatMap((sg) => (sg.kind === "fold" ? [`${p.file.path}:${sg.id}`] : [])))))}
             />
           )}
-          <div ref={box} className="lc-rv-files">
+          <div ref={box} className="lc-rv-files" data-wrap={wrap || undefined}>
             {diff === null ? (
               <div className="lc-diff-wait">
                 <span className="l-shimmer">Reading the changes</span>
@@ -372,10 +468,17 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               <div className="lc-panel-empty">
                 <b>{pick === "branch" ? "This branch matches main" : "Nothing changed here"}</b>
               </div>
+            ) : !shown.length ? (
+              <div className="lc-panel-empty">
+                <b>Only test files changed here</b>
+                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setHideTests(false)}>
+                  Show them
+                </button>
+              </div>
             ) : view === "split" ? (
-              <CodeDiff files={diff} view="split" maxHeight={100000} />
+              <CodeDiff key={wrap ? "wrap" : "scroll"} files={shown.map((p) => p.file)} view="split" maxHeight={100000} defaultWrap={wrap} />
             ) : (
-              prepared.map((p) => (
+              shown.map((p) => (
                 <article key={p.file.path} className="lc-rv-file" data-file={p.file.path}>
                   <header className="lc-rv-fh">
                     <span className="lc-mono">

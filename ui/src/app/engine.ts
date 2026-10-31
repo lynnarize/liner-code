@@ -58,12 +58,40 @@ let state: EngineState = {
   items: {},
 };
 const listeners = new Set<() => void>();
+
+/*
+  Text deltas wait for the frame and go in together: a reply streaming a hundred tokens a second
+  copies its timeline once a frame, not once a token (T3 Code coalesces its live events the same
+  way, in orchestration-v2/ThreadLiveEventCoalescer.ts). Any other event takes them first, so
+  nothing lands out of order.
+*/
+const deltas = new Map<string, Map<string, string>>();
+function takeDeltas() {
+  if (!deltas.size) return;
+  const items = { ...state.items };
+  for (const [threadId, texts] of deltas) {
+    const list = items[threadId];
+    if (!list) continue;
+    const next = list.slice();
+    for (const [itemId, text] of texts) {
+      // The item that streams is nearly always the last one.
+      const i = next.findLastIndex((x) => x.id === itemId);
+      const it = next[i];
+      if (it && (it.kind === "text" || it.kind === "reasoning")) next[i] = { ...it, text: it.text + text };
+    }
+    items[threadId] = next;
+  }
+  deltas.clear();
+  set({ items });
+}
+
 // Listeners hear once per frame. A window that is hidden or covered paints no frames, so a timer
 // stands in: the Dock badge and notifications keep up while you're in another app.
 let pending = false;
 let frame = 0;
 let timer = 0;
 const flush = () => {
+  takeDeltas();
   if (!pending) return;
   pending = false;
   cancelAnimationFrame(frame);
@@ -105,6 +133,7 @@ export const onStream = (fn: (e: Stream) => void) => {
 };
 
 function apply(e: EngineEvent) {
+  if (e.type !== "delta") takeDeltas();
   switch (e.type) {
     case "hello": {
       const s = e.snapshot;
@@ -134,14 +163,11 @@ function apply(e: EngineEvent) {
       if (!state.items[e.threadId]) return;
       return set({ items: { ...state.items, [e.threadId]: e.items } });
     case "delta": {
-      const list = state.items[e.threadId];
-      if (!list) return;
-      const i = list.findIndex((x) => x.id === e.itemId);
-      const it = list[i];
-      if (!it || (it.kind !== "text" && it.kind !== "reasoning")) return;
-      const next = list.slice();
-      next[i] = { ...it, text: it.text + e.text };
-      return set({ items: { ...state.items, [e.threadId]: next } });
+      if (!state.items[e.threadId]) return;
+      let texts = deltas.get(e.threadId);
+      if (!texts) deltas.set(e.threadId, (texts = new Map()));
+      texts.set(e.itemId, (texts.get(e.itemId) ?? "") + e.text);
+      return notify();
     }
     case "agents":
       return set({ agents: e.agents });
@@ -226,6 +252,8 @@ export async function rpc<M extends RpcMethod>(method: M, params: RpcParams<M>):
 export async function loadItems(threadId: string) {
   if (!state.items[threadId]) set({ items: { ...state.items, [threadId]: [] } });
   const items = await rpc("thread.items", { id: threadId });
+  // Text that streamed in before the answer goes in first; the answer then stands for it, as it did.
+  takeDeltas();
   set({ items: { ...state.items, [threadId]: items } });
 }
 
@@ -246,3 +274,29 @@ export const threadOf = (s: EngineState, id: string) => s.threads.find((t) => t.
 
 const EMPTY: Item[] = [];
 export const useItems =(threadId: string | undefined) => useEngine((s) => (threadId ? (s.items[threadId] ?? EMPTY) : EMPTY));
+
+/*
+  Some of a thread's items, as one array that stays the same while those items do: a streamed
+  word changes the thread's list, not its checkpoints or your messages, so whoever reads only
+  those doesn't redraw with every frame of a reply. `keep` is a function made once (at the top of
+  a module), since it names the view; one filter a frame serves everyone who reads it.
+*/
+const views = new Map<(it: Item) => boolean, Map<string, { src: Item[]; out: Item[] }>>();
+export function itemsWhere(s: EngineState, threadId: string | undefined, keep: (it: Item) => boolean): Item[] {
+  if (!threadId) return EMPTY;
+  const src = s.items[threadId] ?? EMPTY;
+  let byThread = views.get(keep);
+  if (!byThread) views.set(keep, (byThread = new Map()));
+  const was = byThread.get(threadId);
+  if (was?.src === src) return was.out;
+  const out = src.filter(keep);
+  const same = was !== undefined && was.out.length === out.length && out.every((x, i) => x === was.out[i]);
+  byThread.set(threadId, { src, out: same ? was.out : out });
+  return same ? was.out : out;
+}
+export const useItemsWhere = (threadId: string | undefined, keep: (it: Item) => boolean) => useEngine((s) => itemsWhere(s, threadId, keep));
+
+/** Views for useItemsWhere. */
+export const isCheckpoint = (it: Item) => it.kind === "checkpoint";
+export const isPrompt = (it: Item) => it.kind === "user";
+export const isSubagent = (it: Item) => it.kind === "tool" && it.toolKind === "task";

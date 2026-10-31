@@ -1,0 +1,229 @@
+/*
+  The timeline's newer parts: what you attached to a message, the edit steps that open the Diff,
+  and the column of your prompts at the thread's left edge.
+*/
+
+/* ---------- Attachments in your message ---------- */
+.lc-you-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 82%;
+}
+.lc-you-thumb {
+  display: block;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  background: var(--l-wash-2);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  cursor: zoom-in;
+}
+.lc-you-thumb:disabled {
+  cursor: default;
+}
+.lc-you-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: scale 220ms var(--l-ease-out);
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+@media (hover: hover) {
+  .lc-you-thumb:not(:disabled):hover img {
+    scale: 1.04;
+  }
+}
+/* Waiting for its bytes: a calm wash, no spinner for a thumbnail. */
+.lc-you-thumb-wait {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent 30%, var(--l-wash-2) 50%, transparent 70%) 0 0 / 200% 100%;
+  animation: lc-thumb-wait 1.4s linear infinite;
+}
+@keyframes lc-thumb-wait {
+  to {
+    background-position: -200% 0;
+  }
+}
+.lc-you-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.lc-you-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-you-chip svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-you-chip[data-gone] {
+  color: var(--l-ink-4);
+  cursor: default;
+}
+@media (hover: hover) {
+  button.lc-you-chip:hover {
+    background: var(--l-wash-3);
+    color: var(--l-ink);
+  }
+}
+
+/* A picture opened from its thumbnail: as large as the window allows, on the dialog's well. */
+.l-dialog.lc-picture[data-size] {
+  --w: min(1040px, calc(100vw - 64px));
+}
+.lc-picture-frame {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  max-height: calc(100vh - 240px);
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--lc-well, var(--l-wash));
+}
+.lc-picture-frame img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 240px);
+  object-fit: contain;
+}
+
+/* ---------- An edit step opens the Diff ---------- */
+.lc-tstep-go {
+  flex: none;
+  color: var(--l-accent-text);
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.lc-tstep-line[data-diff]:focus-visible .lc-tstep-go {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .lc-tstep-line[data-diff]:hover .lc-tstep-go {
+    opacity: 1;
+  }
+  .lc-tstep-line[data-diff]:hover .lc-tstep-target {
+    color: var(--l-accent-text);
+  }
+}
+
+/* ---------- Your prompts, at the thread's left edge ----------
+   One tick a prompt, spread 9px apart and squeezed to fit when there are many, centred on what
+   you can see of the conversation like the Rail on the right. The one you're reading under is
+   darker; the one you point at grows, its neighbours a little (T3 Code's minimap does the same). */
+.lc-pmap {
+  position: absolute;
+  z-index: 5;
+  top: calc((100% - var(--lc-dock-h, 0px)) / 2);
+  left: 4px;
+  display: flex;
+  flex-direction: column;
+  width: 26px;
+  height: min(calc(var(--n) * 9px), calc(100% - var(--lc-dock-h, 0px) - 96px));
+  translate: 0 -50%;
+  animation: l-unblur 320ms var(--l-ease-out) 160ms backwards;
+}
+.lc-pmap-tick {
+  position: relative;
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+.lc-pmap-tick::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--l-ink-5);
+  transform-origin: left center;
+  translate: 0 -50%;
+  scale: 0.6 1;
+  transition:
+    scale 160ms var(--l-ease-out),
+    background-color 160ms ease;
+}
+.lc-pmap-tick[data-at]::before {
+  background: var(--l-ink-3);
+  scale: 1 1;
+}
+.lc-pmap-tick[data-near]::before {
+  scale: 0.9 1;
+}
+.lc-pmap-tick[data-hover]::before {
+  background: var(--l-ink);
+  scale: 1.35 1;
+}
+.lc-pmap-tip {
+  position: absolute;
+  z-index: 1;
+  top: calc((var(--i) + 0.5) / var(--n) * 100%);
+  left: 30px;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  max-width: min(320px, 56vw);
+  padding: 8px 11px;
+  border-radius: 12px;
+  color: var(--l-ink);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  translate: 0 -50%;
+  animation: lc-pmap-tip 160ms var(--l-ease-out) both;
+}
+.lc-pmap-tip small {
+  color: var(--l-ink-3);
+  font-size: 11px;
+}
+@keyframes lc-pmap-tip {
+  from {
+    opacity: 0;
+    translate: -4px -50%;
+  }
+}
+/* A narrow thread keeps its edge for the text. */
+@container lc-thread (max-width: 560px) {
+  .lc-pmap {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-pmap,
+  .lc-pmap-tip,
+  .lc-you-thumb img {
+    animation: none;
+  }
+  .lc-pmap-tick::before {
+    transition: none;
+  }
+}

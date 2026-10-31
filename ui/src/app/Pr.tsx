@@ -16,7 +16,7 @@ import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { bridge } from "./bridge";
-import { getState, rpc, subscribe, useEngine } from "./engine";
+import { getState, isCheckpoint, rpc, subscribe, useEngine, useItemsWhere } from "./engine";
 import { I, Rays } from "./icons";
 import { agentOf, checkpointsOf, duration, plural, sumLines } from "./model";
 import { PrCard } from "./PrCard";
@@ -544,7 +544,8 @@ function demoPrAgent(threadId: string, itemId: string, branch: string, base: str
 */
 export function PrChatCard({ threadId, it, fresh, run, ask }: { threadId: string; it: Extract<Item, { kind: "pr" }>; fresh: boolean; run?: Tool; ask?: (who: string) => ReactNode }) {
   const thread = useEngine((s) => s.threads.find((t) => t.id === threadId));
-  const items = useEngine((s) => s.items[threadId]);
+  // Only its checkpoints, so the card doesn't redraw with every word of a reply streaming beside it.
+  const items = useItemsWhere(threadId, isCheckpoint);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const agentName = agentOf(thread?.agent, agents, providers).name;

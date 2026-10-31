@@ -98,6 +98,152 @@
   line-height: 1.7;
   white-space: pre;
 }
+/* Code in the code block's colours: keywords take the accent, the rest reads in inks. */
+.l-md-code {
+  --t-k: var(--l-accent-text);
+  --t-s: var(--l-ink-3);
+  --t-t: var(--l-ink);
+  --t-n: var(--l-ink-2);
+  --t-f: var(--l-ink);
+  --t-y: var(--l-ink);
+  --t-a: var(--l-ink-3);
+}
+.l-md h3 {
+  margin: 0;
+  font-family: var(--l-font-body);
+  font-size: 1.07em;
+  font-weight: 600;
+  letter-spacing: var(--l-track-body);
+}
+.l-md em {
+  font-style: italic;
+}
+.l-md del {
+  color: var(--l-ink-3);
+  text-decoration-color: color-mix(in oklab, var(--l-ink-3) 70%, transparent);
+}
+.l-md li > ul,
+.l-md li > ol {
+  margin-top: 6px;
+}
+
+/* Links: the accent's ink, underlined softly until you point at them. */
+.l-md-link {
+  color: var(--l-accent-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--l-accent-text) 32%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2.5px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: text-decoration-color 160ms ease;
+}
+.l-md-link:hover {
+  text-decoration-color: currentColor;
+}
+.l-md-link[data-pending] {
+  cursor: default;
+}
+.l-md-link code {
+  color: inherit;
+}
+/* A path that opens in the app reads as code with the link's ink, not underlined twice. */
+.l-md-link[data-file]:has(> code) {
+  text-decoration: none;
+}
+.l-md-link[data-file] > code {
+  box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--l-accent-text) 30%, transparent);
+  transition: box-shadow 160ms ease;
+}
+.l-md-link[data-file]:hover > code {
+  box-shadow: inset 0 -1px 0 currentColor;
+}
+
+/* Quotes: set in from a quiet rule, a step softer. */
+.l-md blockquote {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 1px 0 1px 14px;
+  border-left: 2px solid var(--l-line-strong);
+  color: var(--l-ink-2);
+}
+.l-md blockquote > * {
+  margin: 0;
+}
+.l-md hr {
+  width: 100%;
+  height: 1px;
+  margin: 4px 0;
+  border: 0;
+  background: var(--l-line);
+}
+
+/* Tasks: a small box where the marker was, filled with the accent when done. */
+.l-md li[data-task] {
+  list-style: none;
+}
+.l-md-task {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin: 0 7px 0 -21px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
+  color: transparent;
+  vertical-align: -2.5px;
+}
+.l-md-task svg {
+  width: 13px;
+  height: 13px;
+}
+.l-md li[data-task="done"] > .l-md-task {
+  background: var(--l-accent);
+  box-shadow: none;
+  color: var(--l-accent-ink);
+}
+.l-md li[data-task="done"] {
+  color: var(--l-ink-3);
+}
+
+/* Tables: as wide as they need, up to the reply's width; wider ones scroll sideways. */
+.l-md-table {
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  scrollbar-width: thin;
+}
+.l-md-table table {
+  border-collapse: collapse;
+  font-size: 0.93em;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.l-md-table th,
+.l-md-table td {
+  min-width: 5ch;
+  max-width: 44ch;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--l-line);
+  text-align: left;
+  vertical-align: top;
+}
+.l-md-table th + th,
+.l-md-table td + td {
+  border-left: 1px solid var(--l-line);
+}
+.l-md-table th {
+  background: var(--l-wash);
+  color: var(--l-ink);
+  font-weight: 600;
+}
+.l-md-table tbody tr:last-child td {
+  border-bottom: 0;
+}
 
 /* ---------- Sentences lit by a citation ----------
    A soft tint washes over the sentence a citation supports. */

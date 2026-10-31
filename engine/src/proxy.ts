@@ -316,13 +316,16 @@ const PROBE = `(() => {
       const y = r.top + d.y * sy;
       if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) throw new Error("That point is off the page as it's shown (" + innerWidth + "×" + innerHeight + ").");
       await again(d, () => tap(x, y));
-      return { did: "clicked" };
+      // Where it happened, so the Browser can show the agent's cursor there.
+      return { did: "clicked", at: { x: x, y: y } };
     }
     let el = find(d.target);
     if (!el) throw new Error("Nothing on the page matches " + JSON.stringify(String(d.target)) + ". Read the page for its numbered controls.");
     if (el.tagName === "LABEL" && el.control) el = el.control;
     el.scrollIntoView({ block: "center" });
-    if (op === "click") { if (el.focus) el.focus(); await again(d, () => el.click()); return { did: "clicked" }; }
+    const box = el.getBoundingClientRect();
+    const mid = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    if (op === "click") { if (el.focus) el.focus(); await again(d, () => el.click()); return { did: "clicked", at: mid }; }
     if (op === "type") {
       el.focus();
       if (el.isContentEditable) el.textContent = d.text;
@@ -330,7 +333,7 @@ const PROBE = `(() => {
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
       if (d.submit) { const f = el.form; if (f && f.requestSubmit) f.requestSubmit(); else { el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true })); el.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true })); } }
-      return { did: "typed" };
+      return { did: "typed", at: mid };
     }
     throw new Error("The page can't " + op + ".");
   };

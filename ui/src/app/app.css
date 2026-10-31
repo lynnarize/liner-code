@@ -57,6 +57,11 @@ html[data-action="ink"] {
   --lc-ctl-ink: oklch(0.965 0.002 265);
   --lc-ctl-ink-2: oklch(0.74 0.006 265);
   --lc-ctl-div: oklch(1 0 0 / 0.14);
+  /* Home's bar of choices: a light segment on the text box, a shade deeper under a pointed-at or
+     open choice, and a lit tile under an agent's disc. */
+  --lc-bar: color-mix(in oklab, var(--l-ink) 6%, var(--lc-field));
+  --lc-bar-hover: color-mix(in oklab, var(--l-ink) 11%, var(--lc-field));
+  --lc-bar-tile: var(--lc-paper);
   --lc-hair: color-mix(in oklab, var(--l-ink) 8%, transparent);
   --lc-lift: 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 14px 36px -16px oklch(0.3 0.04 265 / 0.24);
   --lc-float-shadow: 0 0 0 0.5px oklch(0.3 0.04 265 / 0.08), 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 20px 48px -18px oklch(0.3 0.04 265 / 0.3), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
@@ -77,6 +82,7 @@ html[data-action="ink"] {
   --lc-ctl-ink: oklch(0.94 0.003 265);
   --lc-ctl-ink-2: oklch(0.66 0.006 265);
   --lc-ctl-div: oklch(1 0 0 / 0.1);
+  --lc-bar-tile: color-mix(in oklab, var(--l-ink) 16%, var(--lc-paper));
   --lc-lift: 0 1px 2px oklch(0 0 0 / 0.4), 0 18px 44px -16px oklch(0 0 0 / 0.75);
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
   --lc-tray: oklch(0.32 0.007 265 / 0.55);
@@ -937,6 +943,23 @@ html[data-native="mac"] .lc-sb-head {
   line-height: 1;
   white-space: nowrap;
 }
+/* Search, with what you start from here beside it, on one row. */
+.lc-sb-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.lc-sb-bar .lc-sb-search {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-sb-bar .lc-ib {
+  width: 30px;
+  height: 30px;
+}
 .lc-sb-find {
   display: flex;
   align-items: center;
@@ -1182,6 +1205,15 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-sb-plab > .lc-sb-pneeds + .lc-sb-add {
   margin-left: 4px;
+}
+/* A project's + comes when you point at its header, or reach it from the keyboard. */
+.lc-sb-plab > .lc-sb-add {
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.lc-sb-plab:hover > .lc-sb-add,
+.lc-sb-plab:focus-within > .lc-sb-add {
+  opacity: 1;
 }
 /* A session's forks: a toggle on its row, and the forks under it on a line. */
 .lc-sb-forks {
@@ -1466,54 +1498,36 @@ html[data-native="mac"] .lc-sb-head {
   line-height: 18px;
   color: var(--l-ink-3);
 }
-/* The team folds to its header: who's on it, a dot while any session works, and how many. */
-.lc-sb-team {
-  display: grid;
-}
-.lc-sb-team-head {
+/* Along the foot, your places as icons and you at the end. A dot on an icon: routines handed
+   back to you (warn), or sessions at work (accent) on the team's. */
+.lc-sb-foot {
   display: flex;
   align-items: center;
   gap: 2px;
+  min-height: 40px;
+  padding: 0 2px;
 }
-.lc-sb-team-t {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  height: 30px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 9px;
-  background: none;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-  cursor: pointer;
+.lc-sb-foot .lc-ib {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
 }
-.lc-sb-team-t > svg:first-child {
-  color: var(--l-ink-4);
+.lc-sb-fi {
+  position: relative;
 }
-.lc-sb-team-t > svg:last-child {
-  color: var(--l-ink-4);
-  transition: transform 300ms var(--l-spring-smooth);
-}
-.lc-sb-team-t[aria-expanded="false"] > svg:last-child {
-  transform: rotate(180deg);
-}
-@media (hover: hover) {
-  .lc-sb-team-t:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink-2);
-  }
-}
-.lc-sb-team-dot {
+.lc-sb-fdot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--l-accent);
+  box-shadow: 0 0 0 2px var(--lc-ground);
   animation: lc-dot-in 320ms var(--l-ease-enter) backwards;
+}
+.lc-sb-fdot[data-k="warn"] {
+  background: var(--l-warn);
 }
 @keyframes lc-dot-in {
   from {
@@ -1521,15 +1535,14 @@ html[data-native="mac"] .lc-sb-head {
     scale: 0.4;
   }
 }
-.lc-sb-team-n {
-  margin-left: auto;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
+.lc-sb-av {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
 }
-.lc-sb-team-head .lc-sb-add {
-  flex: none;
-  margin-left: 0;
-}
+/* The team, in the pop its icon opens. */
 .lc-sb-team-list {
   display: flex;
   flex-direction: column;
@@ -1570,14 +1583,6 @@ html[data-native="mac"] .lc-sb-head {
   margin-left: auto;
   color: var(--l-ink-2);
 }
-.lc-sb-me {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 2px 4px 0 8px;
-  font-size: 13px;
-}
 .lc-me-av {
   display: grid;
   flex: none;
@@ -1589,19 +1594,6 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 10.5px;
   font-weight: 600;
   color: var(--l-ink-2);
-}
-.lc-me-t {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  line-height: 16px;
-}
-.lc-me-t small {
-  overflow: hidden;
-  font-size: 11.5px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Status marks */
@@ -2980,6 +2972,72 @@ html[data-tray="solid"] .lc-rail {
     flex: 1 1 100%;
   }
 }
+/* Home: the choices are one light bar, slim, each drawn small beside its word, and attach is a
+   light round beside the red send. The session tray keeps its solid ink. */
+.lc-composer[data-variant="home"] .lc-seg {
+  height: 34px;
+  padding: 0 3px;
+  background: var(--lc-bar);
+  color: var(--l-ink);
+}
+.lc-composer[data-variant="home"] .lc-seg-b {
+  gap: 7px;
+  height: 28px;
+  padding: 0 10px;
+}
+.lc-composer[data-variant="home"] .lc-seg-b.lc-who {
+  padding-left: 3px;
+}
+.lc-composer[data-variant="home"] .lc-seg-b > svg {
+  flex: none;
+  color: var(--l-ink-2);
+}
+.lc-composer[data-variant="home"] .lc-seg-b > svg:last-child,
+.lc-composer[data-variant="home"] .lc-card-row .lc-way-marks,
+.lc-composer[data-variant="home"] .lc-chip-more {
+  color: var(--l-ink-3);
+}
+.lc-composer[data-variant="home"] .lc-seg-div {
+  height: 14px;
+  background: var(--lc-hair);
+}
+.lc-composer[data-variant="home"] .lc-card-row .lc-way-chip-i,
+.lc-composer[data-variant="home"] .lc-card-row .lc-disc,
+.lc-composer[data-variant="home"] .lc-card-row .lc-disc[data-filled] {
+  width: 22px;
+  height: 22px;
+  background: var(--lc-bar-tile);
+  box-shadow: 0 1px 2px oklch(0.3 0.04 265 / 0.12);
+  color: var(--l-ink);
+}
+.lc-composer[data-variant="home"] .lc-effort-word {
+  display: none;
+}
+.lc-composer[data-variant="home"] .lc-ctl-round {
+  width: 34px;
+  height: 34px;
+  background: var(--lc-bar);
+  color: var(--l-ink);
+}
+.lc-composer[data-variant="home"] .lc-send {
+  width: 36px;
+  height: 36px;
+}
+.lc-composer[data-variant="home"] .lc-seg-b[data-open] {
+  background: var(--lc-bar-hover);
+}
+@media (hover: hover) {
+  .lc-composer[data-variant="home"] .lc-seg-b:hover,
+  .lc-composer[data-variant="home"] .lc-ctl-round:hover {
+    background: var(--lc-bar-hover);
+  }
+}
+/* Narrow, the access choice keeps its lock and lets its words go, as the session tray's pill does. */
+@container lc-composer (max-width: 520px) {
+  .lc-composer[data-variant="home"] .lc-seg > .lc-pop:last-child .lc-ctl-label {
+    display: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .lc-stop,
   .lc-send[data-ready] svg {
@@ -3032,8 +3090,14 @@ html[data-tray="solid"] .lc-rail {
   flex-shrink: 1;
   min-width: 0;
 }
-@container lc-composer (max-width: 460px) {
-  .lc-strip > .lc-grow ~ .lc-strip-note {
+/* Narrower, the strip's far end keeps its icons and lets its words go; narrower still, the branch. */
+@container lc-composer (max-width: 600px) {
+  .lc-strip-word {
+    display: none;
+  }
+}
+@container lc-composer (max-width: 420px) {
+  .lc-strip > .lc-strip-note {
     display: none;
   }
 }
@@ -3050,6 +3114,32 @@ html[data-tray="solid"] .lc-rail {
   font-size: 12.5px;
   color: var(--l-ink-3);
   white-space: nowrap;
+}
+.lc-pb-keys > svg:last-child {
+  color: var(--l-ink-3);
+}
+/* What the box takes, behind the strip's key button: each key, and what it brings up. */
+.lc-box-keys {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 2px 6px 6px;
+}
+.lc-box-keys > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0 6px;
+}
+.lc-box-keys dt {
+  flex: none;
+  min-width: 56px;
+}
+.lc-box-keys dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--l-ink-2);
 }
 .lc-files {
   display: flex;
@@ -6193,4 +6283,156 @@ html[data-native="mac"] .lc-st-side {
   display: block;
   font-size: 11.5px;
   overflow-wrap: anywhere;
+}
+
+/* A part that broke: its own message and Try again, where it was (Boundary.tsx). */
+.lc-broke {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--l-danger) 7%, var(--lc-card));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-danger) 22%, transparent);
+  font-size: 13px;
+}
+.lc-broke .lc-quiet {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.lc-broke[data-quiet] {
+  margin: 4px 0;
+  padding: 8px 10px;
+}
+
+/* ---------- The composer's queue, the cold cache, the context meter ---------- */
+/* Send now on a queued message: a quiet pill that takes the accent when pointed at. */
+.lc-queued-now {
+  flex: none;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lc-well);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+@media (hover: hover) {
+  .lc-queued-now:hover {
+    background: var(--l-accent-soft);
+    color: var(--l-accent);
+  }
+}
+/* The queued message being edited in the field keeps its place, ringed. */
+.lc-queued-row[data-editing] {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+.lc-queued-row[data-editing] .lc-queued-t {
+  color: var(--l-ink-3);
+}
+.lc-queued-tag {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--l-accent);
+}
+/* Past the cache: one amber line over the card, with Compact. */
+.lc-cold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 2px 6px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--l-warn) 9%, var(--lc-card));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-warn) 24%, transparent);
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  animation: l-blur-in 260ms var(--l-ease-out) backwards;
+}
+.lc-cold > svg {
+  flex: none;
+  color: var(--l-warn-text);
+}
+.lc-cold-t {
+  flex: 1;
+  min-width: 0;
+}
+/* The ring is a button now; it keeps its own padding in the segment. */
+.lc-seg-b.lc-ring-b {
+  padding: 0;
+}
+.lc-ctxm {
+  display: grid;
+  gap: 6px;
+}
+.lc-ctxm-bar {
+  display: block;
+  height: 6px;
+  margin: 0 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--lc-well);
+}
+.lc-ctxm-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--l-ink-3);
+  transition: width 500ms var(--l-ease-out);
+}
+.lc-ctxm-bar[data-warn] > i {
+  background: var(--l-warn);
+}
+.lc-ctxm-n {
+  margin: 0 9px 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-3);
+}
+
+/* ---------- Sidebar: rows picked together, and the bar that acts on them ---------- */
+.lc-sb .lc-sb-row[data-picked] {
+  background: var(--l-accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-accent) 28%, transparent);
+}
+.lc-sb-bulk {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  animation: l-blur-in 220ms var(--l-ease-out) backwards;
+}
+.lc-sb-bulk .lc-sb-a {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.lc-sb-bulk-n {
+  margin-right: 6px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-cold,
+  .lc-sb-bulk {
+    animation: none;
+  }
+  .lc-ctxm-bar > i,
+  .lc-queued-now {
+    transition: none;
+  }
 }

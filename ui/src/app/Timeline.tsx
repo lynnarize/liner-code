@@ -5,18 +5,23 @@
   you (a request, a question, a plan) waits in place. The answer follows, and the turn ends with
   one line: what changed, and the Reviewer's verdict.
 */
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { PR_TEST_TOOL, type Item, type ProviderInfo, type AgentProfile } from "@contracts";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
-import { rpc, threadOf, useEngine } from "./engine";
+import { isCheckpoint, rpc, threadOf, useEngine, useItems, useItemsWhere } from "./engine";
 import { I, ModelMark, Rays } from "./icons";
 import { PageCard } from "./Page";
 import { PrChatCard } from "./Pr";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
+import { Dialog } from "@liner/components/dialog/dialog";
 import { agentOf, clock, duration, isModelAgent, markOf, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
 import { Badge, Disc, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
 import { toast } from "@liner/components/toast/toast";
 import { Progress } from "@liner/components/progress/progress";
+import { Boundary } from "./Boundary";
+import { bridge } from "./bridge";
+import "./timeline.css";
 
 type Tool = Extract<Item, { kind: "tool" }>;
 type Ask = Extract<Item, { kind: "approval" }>;
@@ -84,7 +89,8 @@ function draftOf(text: string) {
 
 type Props = {
   threadId: string;
-  items: Item[];
+  /** The thread's items. Left out, the timeline reads them itself, so a streaming reply redraws it and not the screen around it. */
+  items?: Item[];
   /** Items present when the session opened render at once; newer ones animate in. */
   seen: Set<string>;
   onReview: (checkpointId: string, path?: string) => void;
@@ -94,20 +100,40 @@ type Props = {
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 
-export function Timeline({ threadId, items, seen, onReview, reviewing, onGrow }: Props) {
+/** A callback that keeps one identity while it calls the latest one given, so it doesn't redraw what it's handed to. */
+function useSteady<A extends unknown[]>(fn: ((...a: A) => void) | undefined) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...a: A) => ref.current?.(...a), []);
+}
+
+export function Timeline({ threadId, items: given, seen, onReview, reviewing, onGrow }: Props) {
+  const own = useItems(given ? undefined : threadId);
+  const items = given ?? own;
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const turns = useMemo(() => turnsOf(items), [items]);
+  // Each turn keeps its item list while nothing in it changes, so only the turn that streams redraws.
+  const kept = useRef(new Map<number, Item[]>());
+  const turns = useMemo(() => {
+    const list = turnsOf(items, kept.current);
+    kept.current = new Map(list.map((t) => [t.turn, t.items]));
+    return list;
+  }, [items]);
+  const review = useSteady(onReview);
+  const grow = useSteady(onGrow);
   return (
     <div className="lc-tl">
       {turns.map(({ turn, items: list }) => (
-        <Turn key={turn} threadId={threadId} items={list} agents={agents} providers={providers} seen={seen} onReview={onReview} reviewing={reviewing} onGrow={onGrow} />
+        // One turn that can't show says so in its place; the rest of the thread stays (T3 Code's RenderErrorBoundary).
+        <Boundary key={turn} label="This turn" quiet>
+          <Turn threadId={threadId} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} />
+        </Boundary>
       ))}
     </div>
   );
 }
 
-function Turn({ threadId, items, agents, providers, seen, onReview, reviewing, onGrow }: { threadId: string; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
+const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onReview, reviewing, onGrow }: { threadId: string; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
   const marker = items.find((x) => x.kind === "turn");
   const running = marker?.kind === "turn" && marker.status === "running";
   const who = whoOf(marker, agents, providers);
@@ -139,7 +165,7 @@ function Turn({ threadId, items, agents, providers, seen, onReview, reviewing, o
         else if (e.kind === "say") blocks.push({ key: e.it.id, node: <StreamedMarkdown className="lc-md" text={untag(e.it.text)} streaming={e.it.streaming} animate={fresh(e.it.id)} onGrow={onGrow} /> });
       return;
     }
-    blocks.push({ key: `t${entries[0].it.id}`, id: entries[0].it.id, node: <Trail threadId={threadId} entries={entries} asks={asks} cp={cp} live={running} who={who} /> });
+    blocks.push({ key: `t${entries[0].it.id}`, id: entries[0].it.id, node: <Trail threadId={threadId} entries={entries} asks={asks} cp={cp} live={running} who={who} onReview={onReview} /> });
   };
   for (const [i, it] of items.entries()) {
     if ((it.kind === "tool" || it.kind === "approval") && it.tool === PR_TEST_TOOL) continue;
@@ -203,13 +229,14 @@ function Turn({ threadId, items, agents, providers, seen, onReview, reviewing, o
   return (
     <section className="lc-turn" data-running={running || undefined}>
       {blocks.map((b) => (
-        <div key={b.key} className="lc-blk" data-fresh={fresh(b.id ?? b.key) || undefined}>
+        // data-item lets the session find a block: the prompt minimap scrolls to your messages by it.
+        <div key={b.key} className="lc-blk" data-item={b.id ?? b.key} data-fresh={fresh(b.id ?? b.key) || undefined}>
           {b.node}
         </div>
       ))}
     </section>
   );
-}
+});
 
 const whoOf = (marker: Item | undefined, agents: AgentProfile[], providers: ProviderInfo[]) => (marker?.kind === "turn" ? agentOf(marker.agent, agents, providers).name : "The agent");
 
@@ -339,6 +366,13 @@ const lastLine = (s?: string) =>
     .filter(Boolean)
     .at(-1);
 const clip = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+/** A long output's last 6000 characters, from a whole line: what went wrong is at the end. "…" marks the cut. */
+const tailOf = (s: string, n = 6000) => {
+  if (s.length <= n) return s;
+  const tail = s.slice(-n);
+  const nl = tail.indexOf("\n");
+  return `…\n${nl >= 0 && nl < 240 ? tail.slice(nl + 1) : tail}`;
+};
 /** The command a step ran: Claude Code reports its input as JSON, Codex and the rest as the command. */
 function commandOf(t: Tool) {
   const raw = t.input ?? "";
@@ -352,7 +386,8 @@ function commandOf(t: Tool) {
 }
 
 /** One line of the trail: what it did (a verb and what it touched), how it went, and the fact that matters, under it. */
-type TrailStep = { key: string; tools: Tool[]; verb: string; target?: string; result?: ReactNode; state: "running" | "done" | "failed"; at: number; seconds: number; tail?: string };
+/** `diff`: the file in the turn's checkpoint an edit step changed, which a press opens in the Diff. */
+type TrailStep = { key: string; tools: Tool[]; verb: string; target?: string; result?: ReactNode; state: "running" | "done" | "failed"; at: number; seconds: number; tail?: string; diff?: string };
 type Row = { kind: "step"; step: TrailStep } | Exclude<Entry, { kind: "tool" }>;
 
 /** A line of output that says what went wrong. */
@@ -447,6 +482,7 @@ function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
       const missed = g.length > 1 ? g.filter((x) => x.status === "failed").length : 0;
       return {
         ...base,
+        diff: f && cp && !cp.reverted && state !== "running" ? f.path : undefined,
         verb: state === "running" ? "Editing" : f?.status === "added" ? "Created" : "Edited",
         target: t.path ? nameOf(t.path) : t.title.replace(/^(?:Edit|Write)\s+/, ""),
         result: joined([f && <Lines added={f.added} removed={f.removed} />, g.length > 1 && plural(g.length, "edit"), missed > 0 && <span className="lc-bad">{missed} didn't apply</span>]),
@@ -467,7 +503,7 @@ function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
   its last output, new steps slide in, and the rail carries a moving light. When the turn ends it
   folds by itself to one line that keeps the highlights; it opens again with a press.
 */
-function Trail({ threadId, entries, asks, cp, live, who }: { threadId: string; entries: Entry[]; asks: Map<string, Ask>; cp?: Checkpoint; live: boolean; who: string }) {
+function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId: string; entries: Entry[]; asks: Map<string, Ask>; cp?: Checkpoint; live: boolean; who: string; onReview: (checkpointId: string, path?: string) => void }) {
   const [open, setOpen] = useState<boolean | null>(null);
   const [rows, setRows] = useState<string[]>([]);
   const isOpen = open ?? live;
@@ -571,14 +607,25 @@ function Trail({ threadId, entries, asks, cp, live, who }: { threadId: string; e
             const said = s.tools.flatMap((t) => asks.get(t.id) ?? []);
             // A step you said no to failed because of it: your no says so, once.
             const result = said.length && said.every((a) => a.state === "denied") ? undefined : s.result;
-            const has = s.tools.some((t) => t.input || t.output) || said.some((a) => a.reason);
+            // An edit with its file in the turn's checkpoint opens the Diff at that file; the diff says more than the edit's input.
+            const diff = s.diff && cp ? { id: cp.id, path: s.diff } : null;
+            const has = !diff && (s.tools.some((t) => t.input || t.output) || said.some((a) => a.reason));
             const rowOpen = rows.includes(s.key);
             return (
               <li key={s.key} className="lc-tstep" data-state={s.state} style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
-                <button type="button" className="lc-tstep-line l-focus" aria-expanded={has ? rowOpen : undefined} disabled={!has} onClick={() => setRows((x) => (x.includes(s.key) ? x.filter((k) => k !== s.key) : [...x, s.key]))}>
+                <button
+                  type="button"
+                  className="lc-tstep-line l-focus"
+                  data-diff={diff ? true : undefined}
+                  aria-expanded={has ? rowOpen : undefined}
+                  disabled={!has && !diff}
+                  title={diff ? `Show ${nameOf(diff.path)} in the Diff` : undefined}
+                  onClick={() => (diff ? onReview(diff.id, diff.path) : setRows((x) => (x.includes(s.key) ? x.filter((k) => k !== s.key) : [...x, s.key])))}
+                >
                   <span className="lc-tstep-dot" aria-hidden />
                   <b className={s.state === "running" ? "lc-tstep-verb l-shimmer" : "lc-tstep-verb"}>{s.verb}</b>
                   {s.target && <code className="lc-tstep-target">{s.target}</code>}
+                  {diff && <span className="lc-tstep-go" aria-hidden>Diff ›</span>}
                   <span className="lc-grow" />
                   <span className="lc-tstep-time l-num">{s.state === "running" ? (now - s.at >= 2000 ? duration((now - s.at) / 1000) : "") : s.seconds >= 1 ? duration(s.seconds) : ""}</span>
                 </button>
@@ -589,7 +636,7 @@ function Trail({ threadId, entries, asks, cp, live, who }: { threadId: string; e
                     {s.tools.map((t) => (
                       <Fragment key={t.id}>
                         {t.input && <pre className="lc-pre">{t.input}</pre>}
-                        {t.output && <pre className="lc-pre" data-out>{t.output.length > 6000 ? `${t.output.slice(0, 6000)}\n…` : t.output}</pre>}
+                        {t.output && <pre className="lc-pre" data-out>{tailOf(t.output)}</pre>}
                       </Fragment>
                     ))}
                   </div>
@@ -1066,11 +1113,14 @@ function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
 */
 function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<Item, { kind: "user" }>; fresh: boolean; onReview: (checkpointId: string, path?: string) => void }) {
   const running = useEngine((s) => threadOf(s, threadId)?.status === "running");
-  const all = useEngine((s) => s.items[threadId]);
+  // Only the checkpoints: the whole timeline would redraw every message you sent with each streamed word.
+  const cps = useItemsWhere(threadId, isCheckpoint) as Checkpoint[];
   const [edit, setEdit] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
-  const later = (all ?? []).filter((x): x is Checkpoint => x.kind === "checkpoint" && x.turn >= it.turn && !x.reverted);
+  const later = cps.filter((x) => x.turn >= it.turn && !x.reverted);
+  // The files show above the words, so the line that tells the agent where they are doesn't show again.
+  const said = it.files?.length ? it.text.replace(/\n*I attached: [^\n]*$/, "") : it.text;
   const files = new Set(later.flatMap((c) => c.files.map((f) => f.path))).size;
   const committed = later.find((c) => c.committed);
   useEffect(() => {
@@ -1082,16 +1132,20 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
     el.style.height = "0px";
     el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
   }, [edit === null]);
-  const go = async (revertFiles: boolean) => {
+  const go = async (revertFiles: boolean, force = false) => {
     const text = (edit ?? "").trim();
     if (!text) return;
     setBusy(true);
     try {
-      const r = await rpc("thread.rewind", { threadId, itemId: it.id, files: revertFiles });
+      const r = await rpc("thread.rewind", { threadId, itemId: it.id, files: revertFiles, force });
       await rpc("thread.send", { id: threadId, text });
       toast(`Went back to turn ${r.turn}`, { description: revertFiles && r.files ? `${plural(r.files, "file")} back as they were` : "The files stay as they are" });
     } catch (e) {
-      fail(e);
+      const message = e instanceof Error ? e.message : String(e);
+      // A file changed after those turns: putting them back would lose that, so it's yours to say.
+      if (revertFiles && !force && /^Changed after that turn:/.test(message))
+        toast.error("Nothing was put back", { description: message, action: { label: "Go back anyway", onClick: () => void go(true, true) }, duration: 10000 });
+      else fail(e);
       setBusy(false);
     }
   };
@@ -1139,7 +1193,8 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
           {it.anchor.file.split("/").pop()}, {it.anchor.endLine && it.anchor.endLine !== it.anchor.line ? `lines ${it.anchor.line}–${it.anchor.endLine}` : `line ${it.anchor.line}`}
         </button>
       )}
-      <p>{it.text}</p>
+      {it.files && it.files.length > 0 && <Attachments files={it.files} />}
+      {said && <p>{said}</p>}
       {!it.steer && it.turn > 0 && (
         <span className="lc-you-more">
           <button type="button" className="lc-you-btn l-focus" disabled={running} title={running ? "Stop the turn to edit from here" : "Edit this message and go back to it"} onClick={() => setEdit(it.text)}>
@@ -1152,6 +1207,117 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
         </span>
       )}
     </div>
+  );
+}
+
+/*
+  What you attached to a message: pictures as thumbnails that open larger, other files as chips
+  with their names (T3 Code: UserMessageContextChips.tsx, ExpandedImageDialog.tsx,
+  media/AttachmentImage.tsx). The engine keeps them in its attachments folder and reads them
+  back only from there.
+*/
+const PICTURE = /\.(?:png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+/** Saved as "<time>-name.png"; the name is what you attached. */
+const attachedName = (path: string) => nameOf(path).replace(/^[0-9a-z]{6,10}-/, "");
+const pictures = new Map<string, Promise<string>>();
+const pictureOf = (path: string) => {
+  let p = pictures.get(path);
+  if (!p) {
+    p = rpc("attachment.read", { path }).then((r) => `data:${r.mime};base64,${r.data}`);
+    // A failed read is asked again next time, not remembered.
+    p.catch(() => pictures.delete(path));
+    pictures.set(path, p);
+  }
+  return p;
+};
+function usePicture(path: string) {
+  const [state, setState] = useState<{ src?: string; failed?: boolean }>({});
+  useEffect(() => {
+    let live = true;
+    pictureOf(path).then(
+      (src) => live && setState({ src }),
+      () => live && setState({ failed: true }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [path]);
+  return state;
+}
+
+function Attachments({ files }: { files: string[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const shown = files.filter((f) => PICTURE.test(f));
+  return (
+    <div className="lc-you-files">
+      {files.map((f) =>
+        PICTURE.test(f) ? (
+          <Thumb key={f} path={f} onOpen={() => setOpen(f)} />
+        ) : (
+          <button key={f} type="button" className="lc-you-chip l-focus" title={`${attachedName(f)}: show in Finder`} onClick={() => bridge.reveal(f)}>
+            <I.file size={12} />
+            <span>{attachedName(f)}</span>
+          </button>
+        ),
+      )}
+      {/* On the page itself, so the message's own styles (its bubble) don't reach into the dialog. */}
+      {open && createPortal(<Picture path={open} all={shown} onPath={setOpen} onClose={() => setOpen(null)} />, document.body)}
+    </div>
+  );
+}
+
+function Thumb({ path, onOpen }: { path: string; onOpen: () => void }) {
+  const { src, failed } = usePicture(path);
+  if (failed)
+    return (
+      <span className="lc-you-chip" data-gone title="This picture isn't there any more">
+        <I.file size={12} />
+        <span>{attachedName(path)}</span>
+      </span>
+    );
+  return (
+    <button type="button" className="lc-you-thumb l-focus" aria-label={`Open ${attachedName(path)}`} title={attachedName(path)} onClick={onOpen} disabled={!src}>
+      {src ? <img src={src} alt="" draggable={false} /> : <span className="lc-you-thumb-wait" aria-hidden />}
+    </button>
+  );
+}
+
+/** A picture you attached, as large as the window lets it be; ← and → go through the message's others. */
+function Picture({ path, all, onPath, onClose }: { path: string; all: string[]; onPath: (p: string) => void; onClose: () => void }) {
+  const { src, failed } = usePicture(path);
+  const at = all.indexOf(path);
+  useEffect(() => {
+    if (all.length < 2) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      onPath(all[(at + (e.key === "ArrowRight" ? 1 : all.length - 1)) % all.length]);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [at, all, onPath]);
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={attachedName(path)}
+      description={all.length > 1 ? `${at + 1} of ${all.length}` : undefined}
+      size="lg"
+      className="lc-picture"
+      actions={
+        <>
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => bridge.reveal(path)}>
+            Show in Finder
+          </button>
+          <span className="lc-grow" />
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={onClose}>
+            Done
+          </button>
+        </>
+      }
+    >
+      <div className="lc-picture-frame">{src ? <img src={src} alt={attachedName(path)} /> : <span className="lc-quiet">{failed ? "This picture isn't there any more." : "Opening…"}</span>}</div>
+    </Dialog>
   );
 }
 

@@ -7,6 +7,8 @@
   blur where it runs on past an edge, so nothing draws a line. Pointing at a row shows Pin,
   Snooze and Settle (P, S and D from the keyboard). One white plate glides to the open session.
   Below them, the team and the models they run on, a section that folds to its header.
+  ⌘-click picks rows and ⇧-click a run of them; with more than one picked, a bar settles, snoozes,
+  archives or moves them all at once. Esc lets them go.
 */
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AgentProfile, Thread } from "@contracts";
@@ -100,14 +102,18 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   const shown = shelf ?? lastShelf.current;
   const [shutProjects, toggleProject] = useFolded("lc:sb-shut");
   const [shutForks, toggleForks] = useFolded("lc:sb-shut-forks");
-  const [shutTeam, toggleTeam] = useFolded("lc:sb-shut-team");
-  const teamOpen = !shutTeam.includes("team");
+  // The filter field shows from its button, and stays while it holds a filter.
+  const [finding, setFinding] = useState(false);
   // Which edges the list runs on past, for the blur that dissolves it there.
   const [edges, setEdges] = useState({ up: false, down: false });
   const [renaming, setRenaming] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const scroller = useRef<HTMLDivElement>(null);
+  const nav = useRef<HTMLElement>(null);
   const [plate, setPlate] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Rows picked for one action on them all, and where a ⇧-click's run starts (T3 Code: threadSelectionStore.ts).
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
   // Six taps on your name within a few seconds show the Demo, or hide it again.
   const showDemo = useEngine((s) => s.settings.showDemo === true);
   const taps = useRef<number[]>([]);
@@ -137,6 +143,20 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   const place = (t: Thread): Bucket => bucketOf(t, now);
   const team = agents.filter((a) => a.id !== "demo");
   const working = threads.filter((t) => !t.archived && t.status === "running").length;
+  // Routines handed back to you wait on their icon as a dot; otherwise its tip says how many run.
+  const handed = runs.filter((r) => r.status === "handed" && !r.test).length;
+  const routinesNote = handed ? `${handed} waiting` : routines.length ? `${routines.filter((r) => r.on).length} on` : "";
+  const me = window.__LINER__?.user ?? "You";
+  const machine = window.__LINER__?.machine ?? "This computer";
+  const addProject = () =>
+    void bridge.pickFolder().then((p) =>
+      p
+        ? rpc("project.add", { path: p }).then(
+            (x) => onNew(x.id),
+            (e: Error) => toast.error(e.message),
+          )
+        : undefined,
+    );
   // A session in one of your groups sits there until it's snoozed or settled.
   const inGroup = (t: Thread, b: Bucket) => Boolean(t.group && groups.some((g) => g.id === t.group) && b !== "settled" && b !== "snoozed");
   const byBucket = useMemo(() => {
@@ -253,6 +273,60 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     "data-drop": dropOn === target || undefined,
   });
 
+  /* ---------- Picking several rows (T3 Code: Sidebar.tsx's handleThreadClick, threadSelectionStore.ts) ---------- */
+
+  // Only sessions still in the list count: one archived elsewhere leaves the pick.
+  const pickedThreads = useMemo(() => threads.filter((t) => picked.has(t.id) && !t.archived), [threads, picked]);
+  const clearPicked = () => {
+    setPicked((p) => (p.size ? new Set() : p));
+    setAnchor(null);
+  };
+  const togglePick = (id: string) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setPicked(next);
+    setAnchor(next.has(id) ? id : anchor);
+  };
+  /** ⇧-click: every row on screen from the anchor (or the open session) to this one, in the order they show. */
+  const pickRun = (id: string) => {
+    // A shelf folded away still holds its rows, out of sight: they aren't in the run.
+    const order = [...(nav.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])].filter((el) => !el.closest("[inert]")).map((el) => el.dataset.row ?? "");
+    const from = anchor ?? current;
+    const a = from ? order.indexOf(from) : -1;
+    const b = order.indexOf(id);
+    const next = new Set(picked);
+    if (a < 0 || b < 0) next.add(id);
+    else for (const x of order.slice(Math.min(a, b), Math.max(a, b) + 1)) next.add(x);
+    setPicked(next);
+    setAnchor(a < 0 ? id : from);
+  };
+  useEffect(() => {
+    if (!picked.size) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      // A menu closing on Escape has had it already.
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      clearPicked();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picked.size]);
+
+  /** One change for every picked session, with one Undo that puts each back as it was. */
+  const bulk = async (what: string, patch: Omit<Parameters<typeof rpc<"thread.update">>[1], "id">, note?: string) => {
+    const ts = pickedThreads;
+    if (!ts.length) return;
+    const before = ts.map((t) => ({ id: t.id, pinned: t.pinned ?? false, done: t.done ?? false, snoozedUntil: t.snoozedUntil ?? null, unread: t.unread ?? false, archived: t.archived ?? false, group: t.group ?? null }));
+    clearPicked();
+    try {
+      await Promise.all(ts.map((t) => rpc("thread.update", { id: t.id, ...patch })));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    toast(`${what} ${plural(ts.length, "session")}`, { description: note, action: { label: "Undo", onClick: () => void Promise.all(before.map((b) => rpc("thread.update", b))) }, duration: 5000 });
+  };
+
   const rowKeys = (e: KeyboardEvent, t: Thread) => {
     // ⌘, ⌃ and ⌥ keys are the app's (⌘⇧D opens the Diff), not Pin, Snooze or Settle.
     if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -293,6 +367,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         className="lc-sb-row"
         data-row={t.id}
         data-forks={forks ? "" : undefined}
+        data-picked={picked.has(t.id) || undefined}
         aria-current={t.id === current ? "page" : undefined}
         draggable={renaming !== t.id}
         onDragStart={(e) => {
@@ -304,7 +379,23 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           setMenu({ t, x: e.clientX, y: e.clientY });
         }}
       >
-        <div role="button" tabIndex={0} className="lc-sb-pick l-focus" onClick={() => onOpen(t.id)} onKeyDown={(e) => (e.key === "Enter" ? onOpen(t.id) : rowKeys(e, t))} onDoubleClick={() => setRenaming(t.id)}>
+        <div
+          role="button"
+          tabIndex={0}
+          className="lc-sb-pick l-focus"
+          aria-pressed={picked.size ? picked.has(t.id) : undefined}
+          // ⇧ would select the text between the rows; the run is the selection here.
+          onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey) return togglePick(t.id);
+            if (e.shiftKey) return pickRun(t.id);
+            // A plain click opens the session, and lets go of any picked rows.
+            clearPicked();
+            onOpen(t.id);
+          }}
+          onKeyDown={(e) => (e.key === "Enter" ? (clearPicked(), onOpen(t.id)) : rowKeys(e, t))}
+          onDoubleClick={(e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && setRenaming(t.id)}
+        >
           <span className="lc-sb-mk">
             <StatusMark t={t} bucket={bucket} />
           </span>
@@ -423,7 +514,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
 
 
   return (
-    <nav className="lc-sb" aria-label="Sessions">
+    <nav ref={nav} className="lc-sb" aria-label="Sessions">
       <div className="lc-sb-head" data-drag>
         <span className="lc-brand">Liner Code</span>
         <button type="button" className="lc-ib l-focus" aria-label="Hide the sidebar" title={`Hide the sidebar${key("sidebar")}`} onClick={onHide}>
@@ -431,69 +522,62 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         </button>
       </div>
 
-      {/* Where you go from anywhere: a new session, your routines, and the command menu. */}
-      <div className="lc-sb-go">
-        <button type="button" className="lc-sb-nav l-focus" onClick={() => onNew()}>
-          <I.compose size={16} />
-          New session
-          <span className="lc-grow" />
-          <span className="lc-sb-key">{shortcutOf("new")?.join("")}</span>
-        </button>
-        <button type="button" className="lc-sb-nav l-focus" aria-current={routinesOn ? "page" : undefined} onClick={onRoutines}>
-          <I.routines size={16} />
-          Routines
-          <span className="lc-grow" />
-          {runs.some((r) => r.status === "handed" && !r.test) ? (
-            <span className="lc-sb-navw">{runs.filter((r) => r.status === "handed" && !r.test).length} waiting</span>
-          ) : (
-            routines.length > 0 && <span className="lc-sb-key">{routines.filter((r) => r.on).length} on</span>
-          )}
-        </button>
-        <button type="button" className="lc-sb-nav l-focus" onClick={onSearch}>
+      {/* Search, and beside it what you start from here: a filter, a project, a session. */}
+      <div className="lc-sb-bar">
+        <button type="button" className="lc-sb-nav lc-sb-search l-focus" title={`Search${key("commands")}`} onClick={onSearch}>
           <I.search size={16} />
           Search
-          <span className="lc-grow" />
-          <span className="lc-sb-key">{shortcutOf("commands")?.join("")}</span>
+        </button>
+        <button type="button" className="lc-ib l-focus" aria-label="Filter sessions" aria-pressed={finding} title="Filter sessions" onClick={() => (finding && setQuery(""), setFinding(!finding))}>
+          <I.filter size={16} />
+        </button>
+        <button type="button" className="lc-ib l-focus" aria-label="Add a project" title={`Add a project${key("open-project")}`} onClick={addProject}>
+          <I.folderAdd size={16} />
+        </button>
+        <button type="button" className="lc-ib l-focus" aria-label="New session" title={`New session${key("new")}`} onClick={() => onNew()}>
+          <I.compose size={16} />
         </button>
       </div>
 
-      <div className="lc-sb-find" role="search">
-        <I.filter size={14} />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter sessions" aria-label="Filter sessions" onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
-        <Pop label="Your groups" align="end" width={250} triggerClass="lc-ib" trigger={<I.label size={14} />}>
-          {(close) => (
-            <>
-              <PanelHead>Your groups</PanelHead>
-              {groups.map((g) => (
-                <Row
-                  key={g.id}
-                  title={g.name}
-                  end={
-                    <span className="lc-sb-gacts">
-                      {threads.filter((t) => t.group === g.id && !t.archived).length}
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="lc-sb-gdel"
-                        aria-label={`Remove the ${g.name} group`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
-                        }}
-                        onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) }))}
-                      >
-                        <I.close size={10} />
+      {finding && (
+        <div className="lc-sb-find" role="search">
+          <I.filter size={14} />
+          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter sessions" aria-label="Filter sessions" onKeyDown={(e) => e.key === "Escape" && (setQuery(""), setFinding(false))} />
+          <Pop label="Your groups" align="end" width={250} triggerClass="lc-ib" trigger={<I.label size={14} />}>
+            {(close) => (
+              <>
+                <PanelHead>Your groups</PanelHead>
+                {groups.map((g) => (
+                  <Row
+                    key={g.id}
+                    title={g.name}
+                    end={
+                      <span className="lc-sb-gacts">
+                        {threads.filter((t) => t.group === g.id && !t.archived).length}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="lc-sb-gdel"
+                          aria-label={`Remove the ${g.name} group`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
+                          }}
+                          onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) }))}
+                        >
+                          <I.close size={10} />
+                        </span>
                       </span>
-                    </span>
-                  }
-                  onPick={close}
-                />
-              ))}
-              <Row title="New group" icon={<I.plus size={13} />} onPick={() => (close(), setNaming({}))} />
-            </>
-          )}
-        </Pop>
-      </div>
+                    }
+                    onPick={close}
+                  />
+                ))}
+                <Row title="New group" icon={<I.plus size={13} />} onPick={() => (close(), setNaming({}))} />
+              </>
+            )}
+          </Pop>
+        </div>
+      )}
 
       {naming && (
         <form
@@ -562,6 +646,52 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         <div className="lc-sb-blur" aria-hidden />
       </div>
 
+      {/* Several rows picked: one action for them all, as their own rows' buttons would do it one by one. */}
+      {pickedThreads.length > 1 && (
+        <div className="lc-sb-bulk l-glass" role="toolbar" aria-label={`${pickedThreads.length} sessions picked`}>
+          <span className="lc-sb-bulk-n">{pickedThreads.length} picked</span>
+          <button type="button" className="lc-sb-a l-focus" aria-label="Settle them" title="Settle them" onClick={() => void bulk("Settled", { done: true, unread: false, pinned: false })}>
+            <I.settle size={14} />
+          </button>
+          <button
+            type="button"
+            className="lc-sb-a l-focus"
+            aria-label="Snooze them for an hour"
+            title="Snooze them for an hour"
+            onClick={() => {
+              const at = snoozeTimes()[0];
+              void bulk("Snoozed", { snoozedUntil: at.at.getTime() }, `Back at ${at.note}`);
+            }}
+          >
+            <I.snooze size={14} />
+          </button>
+          <button type="button" className="lc-sb-a l-focus" aria-label="Archive them" title="Archive them" onClick={() => void bulk("Archived", { archived: true })}>
+            <I.box size={14} />
+          </button>
+          <Pop label="Move them to a group" side="top" align="center" width={230} triggerClass="lc-sb-a" trigger={<I.label size={14} />}>
+            {(close) => (
+              <>
+                <PanelHead>Move them to</PanelHead>
+                {groups.map((g) => (
+                  <Row key={g.id} title={g.name} onPick={() => (close(), void bulk("Moved", { group: g.id }, `To ${g.name}`))} />
+                ))}
+                {groups.length === 0 && <p className="lc-quiet lc-pop-note">No groups yet. Make one from a session's right-click menu.</p>}
+                {pickedThreads.some((t) => t.group) && (
+                  <>
+                    <Sep />
+                    <Row title="Out of their groups" onPick={() => (close(), void bulk("Moved", { group: null }, "Out of their groups"))} />
+                  </>
+                )}
+              </>
+            )}
+          </Pop>
+          <span className="lc-grow" />
+          <button type="button" className="lc-sb-a l-focus" aria-label="Let go of them" title="Let go of them (Esc)" onClick={clearPicked}>
+            <I.close size={13} />
+          </button>
+        </div>
+      )}
+
       {/* The two shelves, docked under the list: a tray of two, and the open one's sessions above it. */}
       <div className="lc-sb-dock" data-open={shelf ? "" : undefined}>
         <div className="lc-fold" inert={!shelf || undefined}>
@@ -615,50 +745,53 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         }
       </ContextMenu>
 
-      <section className="lc-sb-team" data-open={teamOpen || undefined} aria-label="Team">
-        <div className="lc-sb-team-head">
-          <button type="button" className="lc-sb-team-t l-focus" aria-expanded={teamOpen} onClick={() => toggleTeam("team")}>
-            <I.agents size={14} />
-            Team
-            {working > 0 && <span className="lc-sb-team-dot" title={`${plural(working, "session")} at work`} />}
-            <span className="lc-sb-team-n">
-              <Num value={team.length} />
-            </span>
-            <I.chevU size={11} />
-          </button>
-          <button type="button" className="lc-sb-add l-focus" aria-label="New agent" title="New agent" onClick={() => onAgent()}>
-            <I.plus size={12} />
-          </button>
-        </div>
-        <div className="lc-fold" inert={!teamOpen || undefined}>
-          <div>
-            <div className="lc-sb-team-list">
-              {team.map((a) => (
-                <button key={a.id} type="button" className="lc-sb-agent l-focus" onClick={() => onAgent(a)} title={`Edit ${a.name}`}>
-                  <Disc agent={a} size={24} />
-                  <span className="lc-sb-agent-t">
-                    <span>{a.name}</span>
-                    <small>{a.role}</small>
-                  </span>
-                  <ModelTag kind={markOf(a.model)} label={modelLabel(a.model, providers)} />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div className="lc-sb-me" onClick={(e) => (e.target as HTMLElement).closest("button") || tapMe()}>
-        <span className="lc-me-av">{initials(window.__LINER__?.user ?? "You")}</span>
-        <span className="lc-me-t">
-          <span>{window.__LINER__?.user ?? "You"}</span>
-          <small>{window.__LINER__?.machine ?? "This computer"}</small>
-        </span>
-        <button type="button" className="lc-ib l-focus" aria-label="Usage" aria-pressed={usageOn} title="Usage and cost" onClick={onUsage}>
-          <I.usage size={15} />
-        </button>
+      {/* Along the foot, your places as icons: settings, routines, the team, usage, and you at the end. */}
+      <div className="lc-sb-foot">
         <button type="button" className="lc-ib l-focus" aria-label="Settings" title="Settings (⌘,)" onClick={onSettings}>
-          <I.settings size={15} />
+          <I.settings size={16} />
+        </button>
+        <button type="button" className="lc-ib lc-sb-fi l-focus" aria-label={`Routines${routinesNote ? `, ${routinesNote}` : ""}`} aria-pressed={routinesOn} title={`Routines${routinesNote ? ` · ${routinesNote}` : ""}`} onClick={onRoutines}>
+          <I.routines size={16} />
+          {handed > 0 && <span className="lc-sb-fdot" data-k="warn" />}
+        </button>
+        <Pop
+          label={`Team, ${team.length}${working > 0 ? `, ${plural(working, "session")} at work` : ""}`}
+          side="top"
+          width={300}
+          triggerClass="lc-ib lc-sb-fi"
+          trigger={
+            <>
+              <I.agents size={16} />
+              {working > 0 && <span className="lc-sb-fdot" />}
+            </>
+          }
+        >
+          {(close) => (
+            <>
+              <PanelHead>Team · {team.length}</PanelHead>
+              <div className="lc-sb-team-list">
+                {team.map((a) => (
+                  <button key={a.id} type="button" className="lc-sb-agent l-focus" onClick={() => (close(), onAgent(a))} title={`Edit ${a.name}`}>
+                    <Disc agent={a} size={24} />
+                    <span className="lc-sb-agent-t">
+                      <span>{a.name}</span>
+                      <small>{a.role}</small>
+                    </span>
+                    <ModelTag kind={markOf(a.model)} label={modelLabel(a.model, providers)} />
+                  </button>
+                ))}
+              </div>
+              <Sep />
+              <Row title="New agent" icon={<I.plus size={13} />} onPick={() => (close(), onAgent())} />
+            </>
+          )}
+        </Pop>
+        <button type="button" className="lc-ib l-focus" aria-label="Usage" aria-pressed={usageOn} title="Usage and cost" onClick={onUsage}>
+          <I.usage size={16} />
+        </button>
+        <span className="lc-grow" />
+        <button type="button" className="lc-me-av lc-sb-av l-focus" aria-label={`${me}, ${machine}`} title={`${me} · ${machine}`} onClick={tapMe}>
+          {initials(me)}
         </button>
       </div>
     </nav>

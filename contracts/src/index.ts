@@ -293,6 +293,12 @@ export type Thread = {
   lead?: string;
   /** Who took the last turn: the lead while it plans and its plan waits on you, then the coder. */
   turnBy?: string;
+  /**
+    When the tool's prompt cache for this thread likely runs out (Claude Code: an hour after the
+    last turn on a subscription, five minutes with an API key). Past it, a long thread is read again
+    at full price, so the composer offers to compact first.
+  */
+  cacheUntil?: number;
   status: ThreadStatus;
   access: Access;
   /** Overrides the agent's model for this thread. */
@@ -342,8 +348,10 @@ export type Thread = {
   /**
     Runs in a worktree of its own, on this branch. `path` is where it works; for a project inside
     a bigger repository that is the project's folder within the worktree, whose top is `root`.
+    `made`: Liner Code made it for this session (or the one it was forked from), so it may put it
+    back when it's gone and remove it with the session; a worktree you picked stays yours.
   */
-  worktree?: { path: string; branch: string; root?: string };
+  worktree?: { path: string; branch: string; root?: string; made?: boolean };
   /** Why it's limited and when the window reopens, while `status` is "limited". */
   limit?: { message: string; until?: number; provider: string };
   /** A goal it keeps working toward across turns (/goal), until it says the goal is met. */
@@ -369,7 +377,8 @@ export type Thread = {
   updatedAt: number;
 };
 
-export type QueuedMessage = { id: string; text: string; at: number };
+/** files: what you attached, saved on disk, which go with the message when it's sent. */
+export type QueuedMessage = { id: string; text: string; at: number; files?: string[] };
 export type Question = { question: string; header?: string; options: { label: string; description?: string; suggested?: boolean }[]; multiSelect?: boolean };
 
 export type ToolKind = "read" | "edit" | "write" | "exec" | "search" | "fetch" | "think" | "task" | "web" | "other";
@@ -456,6 +465,8 @@ export type Item =
       committed?: string;
       /** Files from this turn already committed with only some others: `files` keeps the rest, so they're what's left to commit or undo. */
       done?: FileChange[];
+      /** Once undone: a snapshot (under refs/liner/) of the files as they were just before, so the undo can be taken back. */
+      redo?: string;
       seconds?: number;
     })
   | (Base & { kind: "error"; message: string })
@@ -490,6 +501,10 @@ export type Settings = {
   outside?: boolean;
   /** When a tool runs out of usage mid-session: wait for it to reset (the default), or carry on with another ready tool. */
   onLimit?: "wait" | "carry";
+  /** A session out of usage carries on by itself when its window reopens, if the tool said when (off unless turned on). */
+  resumeAtReset?: boolean;
+  /** A session Liner Code stopped mid-turn (it quit or crashed) carries on by itself when it starts again (on unless turned off). */
+  continueAfterRestart?: boolean;
   /** Routed sessions: the level new ones start at (high unless set), and models of your own in place of the cast's. */
   route?: { level?: RouteLevel; cast?: Partial<RouteCast> };
   /** Claude Code bills to your Claude plan, or to the Anthropic key you added. */
@@ -560,6 +575,27 @@ export type ImportableSession = { tool: "claude" | "codex"; id: string; title: s
 /** One row of what fills a session's context, as its tool counts it. "deferred" rows sit outside the window. */
 export type ContextPart = { name: string; tokens: number; kind: "used" | "free" | "buffer" | "deferred" };
 
+/**
+  One thing in a session's context, by what it is: the tool's own setup (its prompt and tools),
+  your project's (memory files, skills, agents), the conversation, and what its steps brought in
+  (files, commands, the web, other tools). detail says more, for a tooltip.
+*/
+export type ContextSource = { name: string; tokens: number; group: "setup" | "project" | "talk" | "files" | "runs" | "web" | "tools"; detail?: string };
+
+/** What fills a session's context, as its tool counts it: the parts it lists, and where it compacts. */
+export type ContextUse = {
+  used: number;
+  max: number;
+  parts: ContextPart[];
+  /** What's in it, source by source, when the tool says (Claude Code). */
+  sources?: ContextSource[];
+  /** Where the tool compacts older turns by itself, and whether it does. */
+  compactAt?: number;
+  autoCompact?: boolean;
+  /** Tool descriptions kept out of the window until they're used. */
+  deferred?: number;
+};
+
 /** What the Session surface shows from the engine: where a session runs, and what fills its context. */
 export type SessionInfo = {
   machine: string;
@@ -576,7 +612,7 @@ export type SessionInfo = {
   /** A session is open in the tool, so the context is what it says now. */
   live: boolean;
   /** From the tool now, by part (`measured`), or the last turn's total. None before the first turn. */
-  context?: { used: number; max: number; parts: ContextPart[]; measured: boolean };
+  context?: ContextUse & { measured: boolean };
   /** The tool compacts on request: the Compact button sends it `/compact`. */
   compact: boolean;
 };
@@ -813,7 +849,8 @@ export type EngineEvent =
   | { type: "routine"; routine: Routine }
   | { type: "routine.removed"; id: string }
   | { type: "run"; run: RoutineRun }
-  | { type: "term"; id: string; data: string }
+  /** `at`: how many characters the terminal had printed before this, so a Terminal that attached can skip what its backlog already held. */
+  | { type: "term"; id: string; data: string; at?: number }
   | { type: "term.exit"; id: string; code: number }
   | { type: "devlog"; udid: string; lines: string[] }
   | { type: "settled"; threadId: string; reason: string }
@@ -822,6 +859,9 @@ export type EngineEvent =
   | { type: "agent.browser"; id: string; threadId: string; op: AgentBrowserOp; args: Record<string, unknown> };
 
 export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot";
+
+/** A terminal of a session's Terminal surface; `exited` once its shell has ended (it stays until its tab is closed). */
+export type TermInfo = { id: string; title: string; cwd: string; at: number; command?: string; exited?: number };
 
 /** A server listening on this Mac, as the Browser sees it. */
 export type LocalServer = { port: number; process: string; url: string; owner: "session" | "project" | null; web: boolean };
@@ -842,7 +882,7 @@ export type Rpc = {
   /** The project's branches and worktrees, for starting a session from one. */
   "git.branches": [{ projectId: string }, { current?: string; base?: string; branches: { name: string; lastCommitAt?: number }[]; worktrees: { path: string; branch?: string; threadId?: string }[]; npmScripts: string[] }];
   /** Removes worktrees whose sessions are archived or gone. */
-  "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number }];
+  "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
   "thread.create": [{ projectId: string; agent?: string; lead?: string; setup?: string; route?: RouteLevel; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string }, Thread];
   "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string; effort?: Effort; agent?: string; lead?: string | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; helpers?: string[]; setup?: string | null; route?: RouteLevel | null; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
@@ -860,8 +900,9 @@ export type Rpc = {
   "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number } }, null];
   "thread.queue": [{ id: string; queue: QueuedMessage[] }, Thread];
   /** Rewinds to just before a message you sent: the turns from there come off, and with `files`, so do their changes. */
-  "thread.rewind": [{ threadId: string; itemId: string; files: boolean }, { turn: number; files: number }];
-  "thread.remove": [{ id: string }, null];
+  "thread.rewind": [{ threadId: string; itemId: string; files: boolean; force?: boolean }, { turn: number; files: number }];
+  /** `kept`: why the session's worktree stayed (another session works there, or it holds changes), to say so. */
+  "thread.remove": [{ id: string }, { kept?: string } | null];
   /** The session's side chat, started now if it has none; `fresh` starts it again from where the session is. */
   "thread.side": [{ id: string; fresh?: boolean }, Thread];
   "thread.stop": [{ id: string }, null];
@@ -870,7 +911,8 @@ export type Rpc = {
   "proposal.answer": [{ threadId: string; itemId: string; approve: boolean; note?: string; plan?: string }, null];
   "review.run": [{ threadId: string }, null];
   "checkpoint.diff": [{ threadId: string; itemId: string }, FileDiff[]];
-  "checkpoint.revert": [{ threadId: string; itemId: string }, Item];
+  /** Undoes a turn's changes. Refused when a file it changed was changed again after it, unless `force`. */
+  "checkpoint.revert": [{ threadId: string; itemId: string; force?: boolean }, Item];
   /** Commits the session's open changes, or only `paths` of them. */
   "git.commit": [{ threadId: string; message?: string; paths?: string[] }, { sha: string; files: number }];
   /** Pushes the session's branch to origin, setting its upstream. */
@@ -933,13 +975,23 @@ export type Rpc = {
   "fs.files": [{ projectId: string; query?: string; limit?: number }, { path: string; size: number }[]];
   "fs.tree": [{ projectId: string; threadId?: string }, TreeEntry[]];
   "fs.read": [{ threadId: string; path: string }, { text: string; size: number; binary: boolean }];
+  /** A file's bytes (base64) for the Files preview, an image say: up to 10 MB, only inside the session's folder. */
+  "files.raw": [{ threadId: string; path: string }, { data: string; mime: string; size: number }];
+  /** A file you attached to a message (base64), for its thumbnail: only from the engine's attachments folder. */
+  "attachment.read": [{ path: string }, { data: string; mime: string; size: number }];
   "groups.save": [{ groups: SidebarGroup[] }, SidebarGroup[]];
   "compare.start": [{ projectId: string; text: string; files?: { name: string; data: string }[]; models: string[]; effort?: Effort; access?: Access }, Thread[]];
   "compare.keep": [{ threadId: string }, { files: number }];
   "project.scratch": [Record<string, never>, Project];
-  "term.open": [{ threadId: string; cols: number; rows: number; command?: string }, { id: string; cwd: string }];
+  "term.open": [{ threadId: string; cols: number; rows: number; command?: string; title?: string }, { id: string; cwd: string }];
+  /** A terminal's backlog (`end`: characters printed so far); its live output follows as `term` events. */
+  "term.attach": [{ id: string }, { text: string; end: number; cwd: string; exited?: number }];
+  /** A session's terminals, which outlive its Terminal surface: the tabs it shows when it comes back. */
+  "term.list": [{ threadId: string }, TermInfo[]];
   "term.write": [{ id: string; data: string }, null];
   "term.resize": [{ id: string; cols: number; rows: number }, null];
+  /** Forgets a terminal's backlog, so Clear stays cleared when its Terminal comes back. */
+  "term.clear": [{ id: string }, null];
   "term.close": [{ id: string }, null];
   "pr.status": [{ threadId: string }, { pr: PrInfo | null; branch?: string; ahead?: number; gh: "ready" | "missing" | "signed-out" | "no-remote"; detail?: string }];
   "pr.create": [{ threadId: string; title: string; body: string; draft: boolean }, PrInfo];

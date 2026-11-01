@@ -4,14 +4,16 @@ A desktop agent harness for macOS, on Electron. It drives the coding agents alre
 machine (Claude Code, Codex CLI, OpenCode, Hermes) with your own sign-ins, and shows their work
 as GUI instead of a log: plans you approve, questions you answer, requests that wait as cards,
 a diff for every turn that you can undo or commit or question line by line, a Reviewer from
-another model family, surfaces beside the session (Terminal, Browser, Files, Pull request, Device,
-Routines), models compared side by side, and sessions that sort themselves by what they need
-from you. It's built from [Liner UI](https://linerui.sorafel.com), so it has Liner's look and motion:
+another model family, surfaces beside the session (Terminal, Browser, Design, Files, Pull request,
+Device, Routines), models compared side by side, and sessions that sort themselves by what they
+need from you. It's built from [Liner UI](https://linerui.sorafel.com), so it has Liner's look and motion:
 white paper on one solid ground, glass only on the session tray, one accent, text that comes into
 focus, springs that never overshoot.
 
 Ideas came from [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) (MIT); no code was copied from either.
+The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Design mode
+(PolyForm Noncommercial), and from T3 Code's HTML previews; no code was copied from them either.
 
 ## Install the alpha
 
@@ -36,8 +38,8 @@ Found something? **Help › Report a Problem…** makes a zip with the log and v
 - **Sign-ins stay with each tool.** Liner Code runs the tools you installed, unmodified, and asks
   them only whether they're signed in (`claude auth status`, `codex login status`); "Sign in"
   opens the tool's own login in Terminal. It never sees, stores or forwards a sign-in.
-- **API keys** you add are sealed in this Mac's keychain and handed to the tool's process in
-  memory. For Claude, Anthropic asks apps built on its Agent SDK to use an API key (see its
+- **API keys** you add (an endpoint's too) are sealed in this Mac's keychain and handed to the
+  tool's process in memory. For Claude, Anthropic asks apps built on its Agent SDK to use an API key (see its
   [terms](https://code.claude.com/docs/en/legal-and-compliance)), so Settings › Models lets Claude
   Code bill to your Anthropic key.
 - **Nothing in between.** Model traffic goes from each tool to its own provider and is billed to
@@ -176,6 +178,41 @@ outside the writer's family. Settings can replace any of them.
 - **You can see it all.** Every turn's tokens, cache reads and cost, by agent and model, go to
   `~/.liner-code/usage.jsonl`, and the Usage page adds them up.
 
+## Designs
+
+Ask any agent for a screen, a page or a prototype and it draws it in the **Design** surface
+beside the session (⌘⇧E), the same with Claude Code, Codex, OpenCode, Hermes, any ACP agent or a
+model from an API endpoint (see API endpoints below):
+
+```
+ You: "Design the settings screen"
+   │
+   ▼
+ Agent writes .liner/designs/settings.html          (its own Write/Edit tools; or hands the page over whole)
+   │  design_show { title, path, size }            (Liner Code's MCP server, which every agent tool gets)
+   ▼
+ Liner Code keeps it as version n ───────────────► timeline card with a picture of it
+   │  draws it out of sight at its size ─────────► the agent gets the picture, its height and its console errors back
+   ▼
+ Design surface: Desktop / Tablet / Phone, Live or any version, the code, light or dark
+   │  pick a part and comment ─────────────────────► the agent gets the element and your words, edits, shows v(n+1)
+   │  Build it ────────────────────────────────────► the agent builds it with the project's own components
+   ▼  Bring back version 2 ────────────────────────► v2 goes back in the file, as v(n+1)
+```
+
+- **One file, edited in place.** A design is one self-contained HTML file in the session's folder
+  (`.liner/designs/` by default). The agent changes it with its own edit tools, so a change costs
+  an edit, not the whole page again; the surface draws each edit as it lands, the next drawing
+  loading behind the one you see.
+- **Not your project's changes.** `.liner/` goes in the repository's `info/exclude` with the first
+  design and is left out of every turn's snapshot, so designs never show in the diff or a commit.
+- **The agent sees what it drew.** `design_show` answers with a picture of the design at its size
+  and as tall as it is (up to 2400 px), at its own pixels, with the errors it logged, so the agent
+  can fix what's off before it says it's done.
+- **No way into the app.** A version is drawn on its own with no origin; the live file comes from
+  the session folder's own address on 127.0.0.1. A lead (which never edits) draws a design by
+  handing over the page; asking for it to be built is a change it plans like any other.
+
 ## What's in it
 
 ```
@@ -192,16 +229,19 @@ engine/                    the local backend (Node, TypeScript run directly, one
   src/updates.ts           Liner Code's releases on GitHub (download, check, stage) and the agent tools' own updaters
   src/surfaces.ts          files, the terminal (a Python pty bridge), gh pull requests, ports, the iOS Simulator
   src/proxy.ts             the Browser surface's proxy: console, element picking, offline
+  src/designs.ts           designs: versions, the file each lives in, watching it, keeping .liner/ out of git
+  src/agent-tools.ts       what agents reach of the app through mcp.ts: the Browser, the simulator, pages, designs, memory
   src/checkpoints.ts       a git snapshot before and after every turn (undo, diff, commit)
   src/store.ts             state.json plus an append-only log per thread
   src/providers/claude.ts  Claude Code through the Claude Agent SDK (canUseTool, resume, fork)
   src/providers/codex.ts   Codex through `codex app-server` (`codex exec --json` for an older Codex), models from its own catalog
   src/providers/acp.ts     any Agent Client Protocol agent: Hermes, OpenCode, Cursor and Grok Build (those two in beta), the ACP registry
   src/providers/demo.ts    a scripted lead and coder, and the sample project it edits
+  src/providers/endpoint.ts  an API endpoint as a tool: Claude Code, Codex or OpenCode pointed at it, by protocol
 ui/                        the app (React 19 + Vite), built from Liner UI
   src/liner/               the Liner UI library, copied in (npm run sync-liner refreshes it)
   src/app/                 Setup, Sidebar, Home, Session, Timeline cards, Composer, Panel and its surfaces
-                           (Review, Files, Terminal, Browser, Pr, Device, Routines, RoutineBuilder), Compare, Usage, Settings
+                           (Review, Files, Terminal, Browser, Design, Pr, Device, Routines, RoutineBuilder), Compare, Usage, Settings
 desktop/                   the Electron shell
   src/main.ts              the window, the bridge the page calls, menus with your keys, notifications, the Dock badge
   src/engine.ts            the engine as a child process on Electron's own Node (ELECTRON_RUN_AS_NODE), restarts, your login PATH
@@ -228,6 +268,7 @@ docs/BACKEND.md            what the backend needs, now and later
 | Tokens and cost per turn | `~/.liner-code/usage.jsonl` |
 | Worktrees, attachments | `~/.liner-code/worktrees/`, `~/.liner-code/attachments/` |
 | Turn snapshots | `refs/liner/<thread>/<turn>-before|after` in each repo |
+| A design's file, and its versions | `.liner/designs/` in the session's folder; `~/.liner-code/designs/<thread>/<design>/v<n>.html` |
 | API keys | `~/Library/Application Support/Liner Code/keys.json`, sealed with a key macOS keeps in the login keychain as "Liner Code Safe Storage" (the engine gets them in memory only) |
 | The window's frame and material | `~/Library/Application Support/Liner Code/shell.json` |
 | Engine log | `~/Library/Logs/Liner Code/engine.log`, and `engine.previous.log` from the launch before (a test home's own: `$LINER_HOME/logs`) |
@@ -271,6 +312,31 @@ npm run release -- 0.2.0 --publish   # …and creates the release v0.2.0 with gh
 | Hermes | ACP over stdio | yes | yes | depends on Hermes's own provider being up |
 | Cursor, Grok Build | ACP (`cursor-agent acp`, `grok agent stdio`) | yes | when the agent can | Beta: the drivers haven't been run against the real tools yet |
 | Demo | scripted | yes | – | edits only its sample project |
+| API endpoints | through Claude Code, Codex or OpenCode, by protocol | as that tool | as that tool | Settings › Models › API endpoints |
+
+### API endpoints
+
+Models from an API (DeepSeek, Kimi, GLM, OpenRouter, a model in LM Studio or Ollama) run through
+the tool that speaks the endpoint's protocol, pointed at it, so they get everything that tool
+does (files, commands, approvals, resume) and Liner Code's own tools (the Browser, designs),
+with no agent loop of Liner Code's own (`engine/src/providers/endpoint.ts`):
+
+| The endpoint speaks | Runs through | How it's pointed there |
+| --- | --- | --- |
+| Anthropic Messages | Claude Code | `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`; its model for every alias (Sonnet, Haiku, subagents); tool search off, so every tool is in the list |
+| OpenAI Responses | Codex | a model provider of its own (`-c model_provider=…`, `wire_api = "responses"`), given to its app server at start |
+| OpenAI Chat Completions | OpenCode | a provider of its own in `OPENCODE_CONFIG_CONTENT` (`@ai-sdk/openai-compatible`) |
+
+Add one in Settings › Models › API endpoints. Pick its service and the address and protocol fill
+in (`ui/src/app/services.ts`, each address checked against the service): Anthropic, DeepSeek,
+Kimi, GLM (Z.ai and Zhipu) and MiniMax through Claude Code; OpenAI and xAI through Codex;
+OpenRouter, Gemini, Qwen, Groq, Mistral, Together, Fireworks, SiliconFlow, NVIDIA NIM and Ollama
+Cloud through OpenCode; LM Studio, Ollama, LiteLLM or vLLM on this Mac. Or give any other
+service's address and protocol. Then its key and its models (**Find its models** asks its
+`/models`). It shows in the model picker as a tool
+of its own. Its key is sealed in the keychain with the others and goes only to that tool's
+process, under a variable of its own; your Anthropic key never goes to another maker's endpoint,
+and Claude Code's own sign-in isn't sent there either. One on this Mac needs no key.
 
 ## Licence
 

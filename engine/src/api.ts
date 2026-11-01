@@ -18,6 +18,7 @@ import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
 import { findFiles, gitStatus, tree } from "./files.ts";
 import { ensureSampleProject } from "./providers/demo.ts";
+import { endpointModels } from "./providers/endpoint.ts";
 import { skillsIn } from "./providers/models.ts";
 import type { Routines } from "./routines.ts";
 import { providers, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
@@ -27,6 +28,7 @@ import { uid, type Store } from "./store.ts";
 import { appearance, boot, devices, ghState, htmlPages, listeningPorts, pagePath, stopServers, prCreate, prFor, prList, prMerge, readFile, screenshot, type DeviceLogs, type Terminals } from "./surfaces.ts";
 import type { Proxies } from "./proxy.ts";
 import type { AgentTools } from "./agent-tools.ts";
+import type { Designs } from "./designs.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
 import { Updater } from "./updates.ts";
 
@@ -130,10 +132,10 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; outside?: { apply(): void } };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void } };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
-  syncProviders(store.settings);
+  syncProviders(store.settings, runtime.keys);
   let detected: ProviderInfo[] = [];
   // Model ids you added go after the tool's own, taking the effort levels of its default model.
   const withCustom = (d: ProviderInfo): ProviderInfo => {
@@ -388,13 +390,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         agent = { id: slugFor(p.label || command[0].split("/").pop() || "agent", taken), label: p.label.trim() || (command[0].split("/").pop() ?? "Agent"), command, from: "local" };
       }
       store.setSettings({ addedAgents: [...have.filter((a) => !(agent.registryId && a.registryId === agent.registryId)), agent] });
-      syncProviders(store.settings);
+      syncProviders(store.settings, runtime.keys);
       await detect(true);
       return agent;
     },
     "acp.remove": async ({ id }) => {
       const settings = store.setSettings({ addedAgents: (store.settings.addedAgents ?? []).filter((a) => a.id !== id), customModels: (store.settings.customModels ?? []).filter((c) => c.provider !== `acp.${id}`) });
-      syncProviders(settings);
+      syncProviders(settings, runtime.keys);
       await detect();
       return settings;
     },
@@ -1003,8 +1005,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (key) runtime.keys.set(provider, key);
       else runtime.keys.delete(provider);
       store.emit({ type: "keys", keys: keyList() });
+      // An endpoint's key decides whether it's ready.
+      if (provider.startsWith("endpoint.")) void detect();
       return keyList();
     },
+    "endpoint.models": ({ url, protocol, key }) => endpointModels(url, protocol, key),
 
     "agents.save": ({ agents }) => store.setAgents(agents),
     "skills.list": ({ projectId }) => {
@@ -1019,9 +1024,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "settings.save": (patch) => {
       const settings = store.setSettings(patch);
       if (patch.outside !== undefined) x.outside?.apply();
-      // A new or changed account is a tool to find; a model id you added only changes the lists.
-      if (patch.accounts) {
-        syncProviders(settings);
+      // A new or changed account or endpoint is a tool to find; a model id you added only changes the lists.
+      if (patch.accounts || patch.endpoints) {
+        syncProviders(settings, runtime.keys);
         void detect();
       } else if (patch.customModels) publish();
       // Turned on: it looks now rather than in six hours.
@@ -1262,6 +1267,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "agent.browser.reply": ({ id, ok, value, error }) => (x.tools?.reply(id, ok, value, error), null),
 
+    "design.list": ({ threadId }) => designs().list(threadId),
+    "design.read": async ({ threadId, design, version }) => ({ ...designs().read(threadId, design, version), url: await x.proxies.files(cwdOf(threadId)) }),
+    "design.save": ({ threadId, title, html, design, size }) => designs().show(threadId, { title, html, design, size }).item,
+    "design.restore": ({ threadId, design, version }) => designs().restore(threadId, design, version),
+    "design.built": ({ threadId, design, version }) => designs().built(threadId, design, version),
+    "design.watch": ({ threadId, on }) => (x.designs?.watch(threadId, on), null),
+
     "device.list": () => devices(env),
     "device.boot": async ({ udid }) => (await boot(udid, env), null),
     "device.shot": async ({ udid }) => ({ png: await screenshot(udid, env) }),
@@ -1296,6 +1308,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   function cwdOf(threadId: string) {
     const t = store.thread(threadId);
     return t.worktree?.path ?? store.project(t.projectId).path;
+  }
+  function designs() {
+    if (!x.designs) throw new Error("Designs aren't available here.");
+    return x.designs;
   }
   /**
     Another session running now in this one's folder (or one inside it, or around it): putting

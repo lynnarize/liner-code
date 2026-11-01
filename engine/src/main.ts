@@ -17,6 +17,7 @@ import { Proxies } from "./proxy.ts";
 import { DeviceLogs, Terminals } from "./surfaces.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
+import { Designs } from "./designs.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
 import { firstLine, linkHelpers, secretsFrom, takeSecrets } from "./exec.ts";
@@ -60,8 +61,14 @@ const routines = new Routines(store, runtime, env);
 // Keeping the default branch pulled waits while a session works in that checkout (one in its own worktree doesn't count).
 const watch = new Watch(store, env, (path) => routines.busy || store.threads.some((t) => !t.worktree && (runtime.isRunning(t.id) || t.status === "running" || t.status === "waiting") && store.projects.some((p) => p.id === t.projectId && p.path === path)));
 const proxies = new Proxies();
+// Designs live in each session's folder and the engine's; the runtime knows both the folder and the turn.
+const designs = new Designs(store);
+designs.cwdOf = (id) => tools.cwdOf(id);
+designs.turnOf = (id) => tools.turnOf(id);
+tools.designs = designs;
+tools.filesUrl = (root) => proxies.files(root);
 const outside: { now?: Outside } = {};
-const api = createApi(store, runtime, env, { routines, terms, logs, proxies, tools, outside: { apply: () => outside.now?.apply() } });
+const api = createApi(store, runtime, env, { routines, terms, logs, proxies, tools, designs, outside: { apply: () => outside.now?.apply() } });
 outside.now = new Outside(store, api);
 
 // In dev the token is written where the Vite dev server can read it; the shell passes its own.

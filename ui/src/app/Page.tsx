@@ -6,6 +6,8 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Item } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
+import { openInDesign } from "./Design";
+import { rpc } from "./engine";
 import { I } from "./icons";
 import { cssVar } from "./Surfaces";
 
@@ -35,7 +37,7 @@ function documentOf(id: string, html: string, vars: Record<string, string>) {
   return /<\/body>/i.test(withHead) ? withHead.replace(/<\/body>/i, `${tail}</body>`) : `${withHead}${tail}`;
 }
 
-export function PageCard({ it }: { it: Extract<Item, { kind: "page" }> }) {
+export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item, { kind: "page" }> }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(160);
   const [tall, setTall] = useState(false);
@@ -68,6 +70,20 @@ export function PageCard({ it }: { it: Extract<Item, { kind: "page" }> }) {
               {tall ? "Less" : "All of it"}
             </button>
           )}
+          {/* Kept and drawn full size, version by version, where you can comment on its parts. */}
+          <button
+            type="button"
+            className="lc-ib l-focus"
+            aria-label="Open it as a design"
+            title="Open it as a design"
+            onClick={() =>
+              void rpc("design.save", { threadId, title: it.title, html: it.html })
+                .then((d) => d.kind === "design" && openInDesign(threadId, d.design))
+                .catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
+            }
+          >
+            <I.design size={13} />
+          </button>
           <button
             type="button"
             className="lc-ib l-focus"

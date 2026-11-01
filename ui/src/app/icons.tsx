@@ -89,6 +89,8 @@ export const I = {
   device: (p: P) => <S {...p}><rect x="4.25" y="1.75" width="7.5" height="12.5" rx="1.75" /><path d="M7.25 11.75h1.5" /></S>,
   camera: (p: P) => <S {...p}><path d="M2.25 5.75a1 1 0 0 1 1-1h1.85l1.1-1.75h3.6l1.1 1.75h1.85a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1Z" /><circle cx="8" cy="8.5" r="2.15" /></S>,
   target: (p: P) => <S {...p}><path d="m3.25 3.25 3.9 9.5 1.4-4.2 4.2-1.4Z" /></S>,
+  /** A pen nib, as design tools draw their pen. */
+  design: (p: P) => <S {...p}><path d="M8 13.25 4.25 8.5 6 2.75h4l1.75 5.75Z" /><path d="M8 13.25V9.4" /><circle cx="8" cy="8.25" r="1.15" /></S>,
   play: (p: P) => <S {...p}><path d="M5 3.5v9l7.25-4.5Z" /></S>,
   bolt: (p: P) => <S {...p}><path d="M8.75 1.75 3.75 9h4L7 14.25l5-7.25H8Z" /></S>,
   clock: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.25" /></S>,

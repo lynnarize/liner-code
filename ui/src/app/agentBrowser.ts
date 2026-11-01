@@ -8,6 +8,7 @@
 */
 import { useSyncExternalStore } from "react";
 import type { AgentBrowserOp } from "@contracts";
+import { bridge, isNative } from "./bridge";
 import { onStream, rpc } from "./engine";
 
 type Handler = (op: AgentBrowserOp, args: Record<string, unknown>) => Promise<unknown>;
@@ -102,6 +103,18 @@ export async function browseTo(threadId: string, url: string) {
 export function startAgentBrowser() {
   return onStream((e) => {
     if (e.type !== "agent.browser") return;
+    // A design's picture, for its agent: drawn out of sight by the shell, no Browser needed. A
+    // window that can't (the app's preview in a web browser) says so the way an absent one does,
+    // so the app's own answer wins when both are open.
+    if (e.op === "shot") {
+      const { url, width, height } = e.args as { url: string; width: number; height: number };
+      const said = isNative() ? bridge.shotPage(url, width, height) : Promise.reject(new Error("Pictures of designs need the Liner Code app; this window isn't open in Liner Code."));
+      void said.then(
+        (value) => rpc("agent.browser.reply", { id: e.id, ok: true, value }),
+        (err) => rpc("agent.browser.reply", { id: e.id, ok: false, error: err instanceof Error ? err.message : String(err) }),
+      ).catch(() => {});
+      return;
+    }
     void (async () => {
       const h = await handlerFor(e.threadId, 5000);
       if (!h) return void rpc("agent.browser.reply", { id: e.id, ok: false, error: "This session isn't open in Liner Code, so its Browser isn't open either." }).catch(() => {});

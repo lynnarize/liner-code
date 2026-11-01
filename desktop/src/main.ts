@@ -296,6 +296,39 @@ async function shoot(url: string, width: number, height: number) {
   }
 }
 
+/**
+  A design drawn out of sight, for its agent to look at: the page at its width, as tall as it is
+  (up to 2400 px), with the errors it logged while it loaded (T3 Code's html_preview does the same
+  in a headless Chrome).
+*/
+async function look(url: string, width: number, height: number) {
+  const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  const errors: string[] = [];
+  w.webContents.on("console-message", (e) => {
+    if (e.level === "error" && errors.length < 20) errors.push(`${e.message}${e.lineNumber ? ` (line ${e.lineNumber})` : ""}`);
+  });
+  w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  w.webContents.on("will-navigate", (e, to) => {
+    if (!isLocal(to)) e.preventDefault();
+  });
+  try {
+    await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error("The page took too long to load.")), 15000))]);
+    await new Promise((r) => setTimeout(r, 600));
+    const tall = Number(await w.webContents.executeJavaScript("Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0))").catch(() => 0)) || height;
+    if (tall > height) {
+      w.setContentSize(width, Math.min(2400, tall));
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    const img = await w.webContents.capturePage();
+    if (img.isEmpty()) throw new Error("The page didn't draw.");
+    // At the design's own pixels: a Retina capture is twice as wide, and costs the model four times as much to look at.
+    const shot = img.getSize().width > width ? img.resize({ width, quality: "good" }) : img;
+    return { png: shot.toPNG().toString("base64"), errors, height: tall };
+  } finally {
+    w.destroy();
+  }
+}
+
 async function handle(method: string, p: Record<string, unknown>): Promise<unknown> {
   if (!win) throw new Error("No window.");
   switch (method) {
@@ -371,6 +404,12 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       const url = str(p.url);
       if (!/^http:/i.test(url) || !isLocal(url)) throw new Error("Only pages on this Mac.");
       return shoot(url, Math.min(2400, Math.max(320, num(p.width) || 1280)), Math.min(2400, Math.max(240, num(p.height) || 800)));
+    }
+    case "shotPage": {
+      // A design, for its agent: only pages on this Mac.
+      const url = str(p.url);
+      if (!/^http:/i.test(url) || !isLocal(url)) throw new Error("Only pages on this Mac.");
+      return look(url, Math.min(2400, Math.max(320, num(p.width) || 1280)), Math.min(2400, Math.max(240, num(p.height) || 800)));
     }
     default:
       throw new Error(`Unknown method ${method}`);

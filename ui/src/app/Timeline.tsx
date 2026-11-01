@@ -12,6 +12,7 @@ import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { isCheckpoint, rpc, threadOf, useEngine, useItems, useItemsWhere } from "./engine";
 import { I, ModelMark, Rays } from "./icons";
 import { PageCard } from "./Page";
+import { DesignCard } from "./Design";
 import { PrChatCard } from "./Pr";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Dialog } from "@liner/components/dialog/dialog";
@@ -75,6 +76,12 @@ type Review = Extract<Item, { kind: "review" }>;
 type Entry = { kind: "tool"; it: Tool } | { kind: "thought"; it: Extract<Item, { kind: "reasoning" }> } | { kind: "say"; it: Extract<Item, { kind: "text" }> } | { kind: "ask"; it: Ask };
 
 const CARD_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show_page", "liner.show_page"]);
+/**
+  Showing a design: its card stands for it once the turn has one. One that failed, or that kept
+  the version before (nothing changed), stays a step, with what it said.
+*/
+const DESIGN_TOOLS = new Set(["mcp__liner__design_show", "liner.design_show"]);
+const isCard = (it: Item, designed: boolean) => it.kind === "tool" && (CARD_TOOLS.has(it.tool) || (designed && DESIGN_TOOLS.has(it.tool) && it.status === "done"));
 /** A lead wraps the plan it hands over in <plan> tags; the plan card shows it, so the text drops the tags. */
 const untag = (text: string) => text.replace(/<\/?plan\b[^>]*>/g, "");
 
@@ -149,7 +156,8 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
   const prRun = items.findLast((x): x is Tool => x.kind === "tool" && x.tool === PR_TEST_TOOL);
   const prAsk = items.find((x): x is Extract<Item, { kind: "approval" }> => x.kind === "approval" && x.tool === PR_TEST_TOOL && x.state === "asking");
   const escalation = (it: Item) => it.kind === "tool" && it.toolKind === "task" && /^Opus\b/.test(it.title);
-  const inTrail = (it: Item) => (it.kind === "tool" && it.tool !== PR_TEST_TOOL && !CARD_TOOLS.has(it.tool) && !escalation(it)) || (it.kind === "approval" && it.tool !== PR_TEST_TOOL && !folded.has(it.id));
+  const designed = items.some((x) => x.kind === "design");
+  const inTrail = (it: Item) => (it.kind === "tool" && it.tool !== PR_TEST_TOOL && !isCard(it, designed) && !escalation(it)) || (it.kind === "approval" && it.tool !== PR_TEST_TOOL && !folded.has(it.id));
   // The trail runs to the turn's last step: thinking and what's said before it are part of the work; after it, the answer.
   const lastStep = items.findLastIndex(inTrail);
   const cp = items.find((x): x is Checkpoint => x.kind === "checkpoint");
@@ -179,7 +187,7 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
     // Answered, it's a word on its step's result, and the steps either side stay one trail.
     if (it.kind === "approval" && folded.has(it.id)) continue;
     // Asking you and handing over a plan show as their own cards, not as steps too.
-    if (it.kind === "tool" && CARD_TOOLS.has(it.tool)) {
+    if (isCard(it, designed) && it.kind === "tool") {
       if (it.tool === "ExitPlanMode" && it.status === "running" && unplanned(i)) {
         flush();
         blocks.push({ key: it.id, node: <PlanDraft /> });
@@ -216,7 +224,8 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
         }
       }
       else if (it.kind === "plan") blocks.push({ key: it.id, node: <Todo it={it} /> });
-      else if (it.kind === "page") blocks.push({ key: it.id, node: <PageCard it={it} /> });
+      else if (it.kind === "page") blocks.push({ key: it.id, node: <PageCard threadId={threadId} it={it} /> });
+      else if (it.kind === "design") blocks.push({ key: it.id, node: <DesignCard threadId={threadId} it={it} /> });
       else if (it.kind === "pr") blocks.push({ key: it.id, node: <PrChatCard threadId={threadId} it={it} fresh={fresh(it.id)} run={prRun} ask={prAsk && ((w) => <Approval key={prAsk.id} threadId={threadId} it={prAsk} who={w} />)} /> });
       else if (it.kind === "question") blocks.push({ key: it.id, node: <QuestionCard threadId={threadId} it={it} who={who} /> });
       else if (it.kind === "proposal") blocks.push({ key: it.id, node: <Proposal threadId={threadId} it={it} who={who} /> });

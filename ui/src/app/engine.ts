@@ -124,8 +124,12 @@ export const onNotify = (fn: (e: NotifyEvent) => void) => {
   return () => notifyListeners.delete(fn);
 };
 
-/* Streams that don't belong in the state: terminal output, device logs, sessions that settled, an agent using a Browser. */
-type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "settled" | "agent.browser" }>;
+/*
+  Streams that don't belong in the state: terminal output, device logs, sessions that settled, an
+  agent using a Browser, a design's file changing. A design shown (an item) goes to the state and
+  here too, so the session can bring its Design surface up.
+*/
+type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "settled" | "agent.browser" | "design.changed" }> | Extract<EngineEvent, { type: "item" }>;
 const streamListeners = new Set<(e: Stream) => void>();
 export const onStream = (fn: (e: Stream) => void) => {
   streamListeners.add(fn);
@@ -155,6 +159,7 @@ function apply(e: EngineEvent) {
       }
       return set({ threads: e.thread.archived && !state.threads.some((t) => t.id === e.thread.id && !t.archived) ? state.threads.filter((t) => t.id !== e.thread.id) : upsert(state.threads, e.thread) });
     case "item": {
+      if (e.item.kind === "design") for (const fn of streamListeners) fn(e);
       const list = state.items[e.threadId];
       if (!list) return;
       return set({ items: { ...state.items, [e.threadId]: upsert(list, e.item) } });
@@ -198,6 +203,7 @@ function apply(e: EngineEvent) {
     case "devlog":
     case "settled":
     case "agent.browser":
+    case "design.changed":
       for (const fn of streamListeners) fn(e);
       return;
   }

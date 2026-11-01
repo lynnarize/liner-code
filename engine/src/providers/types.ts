@@ -100,6 +100,8 @@ export type OpenOptions = {
   env: NodeJS.ProcessEnv;
   /** Liner Code's own tools for this session (its Browser, the Simulator, pages), as an MCP server on stdio. */
   mcp?: { command: string; args: string[]; env: Record<string, string> };
+  /** Settings for the tool itself, the way Codex takes them with -c ("model_provider"): an API endpoint's, for one. */
+  config?: Record<string, unknown>;
   /** The tool started a turn by itself; the runtime puts it on the timeline. */
   wake?: (w: WakeTurn) => void;
 };

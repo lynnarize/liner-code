@@ -83,6 +83,15 @@ export async function codexAsk<T>(env: NodeJS.ProcessEnv, cwd: string, method: s
 }
 
 /** The process and its JSON-RPC plumbing. */
+/** A value as `codex -c` takes it, in TOML: a string, number, true or list is written as JSON is, a table inline. */
+export const toml = (v: unknown): string =>
+  v && typeof v === "object" && !Array.isArray(v)
+    ? `{ ${Object.entries(v)
+        .filter(([, x]) => x !== undefined)
+        .map(([k, x]) => `${k} = ${toml(x)}`)
+        .join(", ")} }`
+    : JSON.stringify(v);
+
 class CodexServer {
   child: ChildProcessWithoutNullStreams | null = null;
   private seq = 1;
@@ -96,16 +105,20 @@ class CodexServer {
   };
   private env: NodeJS.ProcessEnv;
   private cwd: string;
-  constructor(env: NodeJS.ProcessEnv, cwd: string) {
+  /** Settings the server itself starts with (an API endpoint's model provider): a thread can't change the server's provider. */
+  private config: Record<string, unknown>;
+  constructor(env: NodeJS.ProcessEnv, cwd: string, config: Record<string, unknown> = {}) {
     this.env = env;
     this.cwd = cwd;
+    this.config = config;
   }
 
   ready() {
     if (this.booting) return this.booting;
     const bin = which("codex", this.env);
     if (!bin) return Promise.reject(new Error("Codex isn't installed."));
-    const child = spawn(bin, ["app-server"], { cwd: this.cwd, env: withCodexPath(bin, this.env), stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    const args = ["app-server", ...Object.entries(this.config).flatMap(([k, v]) => ["-c", `${k}=${toml(v)}`])];
+    const child = spawn(bin, args, { cwd: this.cwd, env: withCodexPath(bin, this.env), stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
     this.child = child;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d: string) => (this.stderr = (this.stderr + d).slice(-4000)));
@@ -185,7 +198,7 @@ export class CodexServerSession implements ProviderSession {
   constructor(o: OpenOptions) {
     this.o = o;
     this.thread = o.resume;
-    this.server = new CodexServer(o.env, o.cwd);
+    this.server = new CodexServer(o.env, o.cwd, o.config);
     this.server.onNotify = (method, params) => this.onNotify(method, params);
     this.server.onRequest = (method, params) => this.onRequest(method, params);
     this.server.onExit = (message) => {
@@ -201,7 +214,9 @@ export class CodexServerSession implements ProviderSession {
     const p = POLICY[this.o.planning ? "read" : this.o.access];
     // Liner Code's own tools, as config overrides the way `codex -c` takes them.
     const mcp = this.o.mcp ? { "mcp_servers.liner.command": this.o.mcp.command, "mcp_servers.liner.args": this.o.mcp.args, "mcp_servers.liner.env": this.o.mcp.env } : null;
-    const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: this.o.model && this.o.model !== "default" ? this.o.model : null, developerInstructions: this.o.soul || null, config: mcp };
+    // An API endpoint's model provider, when this Codex runs one.
+    const config = mcp || this.o.config ? { ...mcp, ...this.o.config } : null;
+    const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: this.o.model && this.o.model !== "default" ? this.o.model : null, developerInstructions: this.o.soul || null, config };
     let r: Json | null = null;
     let lost: string | undefined;
     if (this.thread) {

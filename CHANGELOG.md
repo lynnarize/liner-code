@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **Designs, with every agent.** Ask Claude Code, Codex, OpenCode, Hermes or any ACP agent for a
+  screen, a page or a prototype, and it draws it in the new **Design** surface beside the session
+  (⌘⇧E): one HTML file in `.liner/designs/`, written and edited with the agent's own tools, then
+  shown with Liner Code's `design_show`. Each time it's shown it's kept as a version.
+- **The surface:** Desktop, Tablet and Phone frames fitted to the panel (or at 100%), Live or any
+  version, its code, light or dark. Each edit the agent makes draws as it lands, the next drawing
+  loading behind the one you see. Bring back an old version, open it in your browser, copy its
+  HTML, or show its file.
+- **Comment on a part:** pick any element of the design and say what should change; the agent
+  gets the element and your words, edits the file and shows the next version.
+- **Build it** asks the agent to make the design for real with the project's own components. The
+  surface remembers which version you had built and says when the design has changed since.
+- **The agent sees what it drew:** `design_show` answers with a picture of the design at its size
+  and full height, and its console errors.
+- Each version has a card on the timeline with a picture of it. A page shown in the chat can be
+  opened as a design. A lead draws a design itself, and plans its build when you ask.
+- The Demo draws a tide screen, and a new version for each comment.
+- **API endpoints** (Settings › Models): models from DeepSeek, Kimi, GLM, OpenRouter, LM Studio,
+  Ollama or any Anthropic- or OpenAI-compatible API, run through the tool that speaks it:
+  Claude Code for Anthropic's Messages, Codex for OpenAI's Responses, OpenCode for Chat
+  Completions. Each is a tool of its own in the model picker, with that tool's files, commands
+  and approvals, and Liner Code's Browser and designs. **Find its models** asks the endpoint for
+  its list. Keys go to the keychain, and only to that tool's process.
+- **Pick a service** and its address and protocol fill in: Anthropic, DeepSeek, Kimi, GLM,
+  MiniMax, OpenAI, xAI, OpenRouter, Gemini, Qwen, Groq, Mistral, Together, Fireworks,
+  SiliconFlow, NVIDIA NIM, Ollama Cloud, and LM Studio, Ollama, LiteLLM or vLLM on this Mac, with
+  a link to get each one's key. Any other service works by its address and protocol.
+
+### Changed
+
+- `.liner/` is left out of every turn's snapshot and goes in the repository's `info/exclude` with
+  the first design, so designs never show as changes to review or commit.
+- Codex through `codex exec` (an older Codex) gets Liner Code's tools too: the Browser, pages and
+  designs.
+- Liner Code's tools in an ACP agent (OpenCode's `liner_design_show`) show by their own names and
+  titles, as they do in Claude Code and Codex.
+- An agent is told Liner Code's tools by the names its tool offers them (`mcp__liner__design_show`
+  in Claude Code, `liner_design_show` in OpenCode): a smaller model through an API endpoint
+  called the plain name it was told, which Claude Code doesn't have.
+
 ## 0.1.8 (alpha), 2026-10-31
 
 **Update from 0.1.7 if you have it.** Liner Code does it by itself (Restart to update), or

@@ -15,6 +15,7 @@ import { I } from "./icons";
 import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, plural } from "./model";
 import { Disc, ModelTag, Num, PanelHead } from "./ui";
 import { BrowserSurface } from "./Browser";
+import { DesignSurface } from "./Design";
 import { DeviceSurface } from "./Device";
 import { FilesSurface } from "./Files";
 import { LinkedSurface, PrSurface } from "./Pr";
@@ -83,6 +84,7 @@ export function Panel({
       );
     if (t === "side") return <SideChat thread={thread} visible={visible} />;
     if (t === "browser") return <BrowserSurface thread={thread} agentName={agentName} />;
+    if (t === "design") return <DesignSurface thread={thread} items={items} agentName={agentName} visible={visible} />;
     if (t === "files") return <FilesSurface thread={thread} items={items} onShowChanges={(id, path) => (onFocus({ id, path }), open("changes"))} />;
     if (t === "pr") return <PrSurface thread={thread} agentName={agentName} visible={visible} />;
     if (t === "linked") return <LinkedSurface thread={thread} agentName={agentName} onOpenSession={(id) => onOpenSession(id)} />;

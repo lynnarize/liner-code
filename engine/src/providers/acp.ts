@@ -12,6 +12,7 @@ import type { ProviderId, ProviderInfo, ToolKind } from "../../../contracts/src/
 import { jsonLines, spawn, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
+import { linerTitle } from "../agent-tools.ts";
 import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
 import { imageType, readUpTo } from "./attachments.ts";
 import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
@@ -204,11 +205,13 @@ class AcpSession implements ProviderSession {
         .join("\n");
       const status = call.status === "completed" ? "done" : call.status === "failed" ? "failed" : "running";
       const path = call.locations?.[0]?.path ?? ((call.content ?? []).find((c) => c.type === "diff")?.path as string | undefined);
+      // Liner Code's own tools, under the name the agent gives them ("liner_design_show"): named and titled as every tool names them.
+      const ours = /^(?:mcp__)?liner(?:__|[_.:])([a-z_]+)$/.exec(call.title ?? "")?.[1];
       sink.tool({
         key: call.toolCallId,
-        tool: call.kind ?? "tool",
+        tool: ours ? `liner.${ours}` : (call.kind ?? "tool"),
         toolKind: KIND[call.kind ?? ""] ?? "other",
-        title: call.title ?? "Use a tool",
+        title: ours ? linerTitle(ours, call.rawInput) : (call.title ?? "Use a tool"),
         path: path ? this.rel(path) : undefined,
         input: call.rawInput === undefined ? undefined : JSON.stringify(call.rawInput, null, 2),
         output: out || (call.rawOutput === undefined ? undefined : JSON.stringify(call.rawOutput, null, 2).slice(0, 20000)),

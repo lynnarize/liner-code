@@ -1,7 +1,7 @@
 /*
   Surfaces beside a session. The panel holds them as tabs: Diff and Agents, and whatever else
-  you open from the + (Browser, Terminal, Files, Pull request, Linked pull requests, Device,
-  Routines). Each key opens its surface from the picker. Tabs keep their state while you
+  you open from the + (Browser, Design, Terminal, Files, Pull request, Linked pull requests,
+  Device, Routines). Each key opens its surface from the picker. Tabs keep their state while you
   switch, so a terminal keeps running and a page stays loaded. The panel sits beside the
   session, fills the window, or docks under the thread.
 */
@@ -13,7 +13,7 @@ import { checkpointsOf, plural, sumLines } from "./model";
 import { Kbd, Lines } from "./ui";
 import "./surfaces.css";
 
-export type SurfaceId = "session" | "side" | "changes" | "agents" | "files" | "terminal" | "browser" | "pr" | "linked" | "device" | "routines";
+export type SurfaceId = "session" | "side" | "changes" | "agents" | "files" | "terminal" | "browser" | "design" | "pr" | "linked" | "device" | "routines";
 /** A tab: a surface, or one routine run (`run:<id>`). */
 export type Tab = SurfaceId | `run:${string}`;
 
@@ -21,6 +21,7 @@ export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { 
   { id: "session", label: "Session", key: "I", icon: I.details },
   { id: "side", label: "Side chat", key: "C", icon: I.comment },
   { id: "browser", label: "Browser", key: "B", icon: I.globe },
+  { id: "design", label: "Design", key: "E", icon: I.design },
   { id: "terminal", label: "Terminal", key: "T", icon: I.terminal },
   { id: "files", label: "Files", key: "F", icon: I.file },
   { id: "changes", label: "Diff", key: "D", icon: I.changes },
@@ -239,9 +240,11 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
   const on = routines.filter((r) => r.on).length;
   const waits = runs.filter((r) => r.status === "handed" && !r.test).length;
   const dev = ports?.find((p) => p.owner && p.web);
+  const designs = new Set(items.filter((x) => x.kind === "design").map((x) => (x.kind === "design" ? x.design : ""))).size;
 
   const note: Record<SurfaceId, ReactNode> = {
     browser: ports === null ? "Looking for a dev server" : dev ? `localhost:${dev.port}` : "Its dev server, or its HTML pages",
+    design: designs ? plural(designs, "design") : "Screens and prototypes, version by version",
     terminal: `A shell in ${thread.worktree ? "its worktree" : "the project"}`,
     files: last ? `${plural(last.files.length, "file")} changed in turn ${last.turn}` : "The project's files",
     changes: files ? (

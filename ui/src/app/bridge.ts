@@ -82,6 +82,10 @@ export const bridge = {
   shotUrl(url: string, width: number, height: number): Promise<string> {
     return call<string>("shotUrl", { url, width, height });
   },
+  /** A page of this Mac drawn out of sight as tall as it is (a design, for its agent), with the errors it logged. */
+  shotPage(url: string, width: number, height: number): Promise<{ png: string; errors: string[]; height: number }> {
+    return call<{ png: string; errors: string[]; height: number }>("shotPage", { url, width, height });
+  },
   openExternal(url: string) {
     if (isNative()) return void call("openExternal", { url }).catch(() => {});
     window.open(url, "_blank", "noopener");

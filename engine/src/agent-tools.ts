@@ -1,7 +1,8 @@
 /*
   What the agents Liner Code runs can use of the app itself: the session's Browser (open a page of
   the app being built, read it, click and type, take a screenshot), the iOS Simulator (list,
-  screenshot, open a link), and a page shown in the session (a chart, a table, a mockup).
+  screenshot, open a link), a page shown in the session (a chart, a table, a mockup), and the
+  Design surface (a screen or prototype, kept version by version: designs.ts).
 
   Every agent tool reaches these the same way: it starts `mcp.ts` as an MCP server on stdio, and
   each call comes back here with the session's own key. A key reaches that one session's
@@ -11,6 +12,7 @@
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { AgentBrowserOp } from "../../contracts/src/index.ts";
+import { DESIGN_FRAME, sizeOf, type DesignItem, type Designs } from "./designs.ts";
 import { run } from "./exec.ts";
 import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
 import { remember, searchSessions } from "./memory.ts";
@@ -48,6 +50,8 @@ export function linerTitle(tool: string, input: unknown): string {
       return `Open ${s(a.url)} in the simulator`;
     case "show_page":
       return `Show ${s(a.title) || "a page"}`;
+    case "design_show":
+      return `Show the design ${s(a.title) ? `“${s(a.title)}”` : s(a.path) || ""}`.trim();
     case "memory_add":
       return `Remember: ${s(a.fact)}`;
     case "sessions_search":
@@ -130,6 +134,10 @@ export class AgentTools {
   turnOf: (threadId: string) => number = () => 0;
   /** The folder a thread works in, for an HTML file the agent opens while the session isn't on screen. */
   cwdOf: (threadId: string) => string | null = () => null;
+  /** The sessions' designs. */
+  designs?: Designs;
+  /** Where a session folder's files are served (proxy.ts), for drawing a design to look at. */
+  filesUrl: (root: string) => Promise<string> = async () => "";
 
   constructor(store: Store, env: NodeJS.ProcessEnv) {
     this.store = store;
@@ -265,12 +273,39 @@ export class AgentTools {
           this.store.putItem(threadId, { kind: "page", id: uid("it"), turn: this.turnOf(threadId), at: Date.now(), title: String(args.title ?? "").trim().slice(0, 120) || "A page", html });
           return text("It's showing in the session now, below your answer so far.");
         }
+        case "design_show": {
+          if (!this.designs) return fail("Designs aren't available in this session.");
+          const opt = (v: unknown) => (v === undefined || v === null || String(v).trim() === "" ? undefined : String(v));
+          const size = opt(args.size) === undefined ? undefined : sizeOf(String(args.size).trim().toLowerCase());
+          if (opt(args.size) !== undefined && !size) return fail("size is desktop, tablet or phone.");
+          const { item, fresh } = this.designs.show(threadId, { title: opt(args.title), path: opt(args.path), html: opt(args.html), design: opt(args.design), size, note: opt(args.note) });
+          const said = fresh
+            ? `Showing “${item.title}”, version ${item.version}, in the Design surface beside the session (design ${item.design}, file ${item.path}, drawn ${item.size}). To change it, edit that file, changing only what was asked, and call design_show again with its path: each call keeps a version the person can go back to.`
+            : `“${item.title}” is the same as version ${item.version}, so that version stays (design ${item.design}, file ${item.path}).`;
+          try {
+            const look = await this.look(threadId, item);
+            const errors = look.errors?.length ? `Console errors while it loaded:\n${look.errors.slice(-10).join("\n")}` : "No console errors.";
+            const tall = look.height ? ` It is ${look.height} px tall at ${DESIGN_FRAME[item.size].width} px wide${look.height > 2400 ? "; the picture shows the first 2400 px" : ""}.` : "";
+            return { content: [{ type: "text", text: `${said}\n\nThe picture is how it draws.${tall} ${errors} Look at it and fix what's off before you say it's done.` }, { type: "image", data: look.png, mimeType: "image/png" }] };
+          } catch (e) {
+            return text(`${said}\n\n(No picture of it: ${e instanceof Error ? e.message : String(e)})`);
+          }
+        }
         default:
           return fail(`Liner Code has no tool called ${tool}.`);
       }
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  /** A design drawn out of sight at its size, by the app: its picture, console errors and full height. */
+  private async look(threadId: string, d: DesignItem) {
+    const root = this.cwdOf(threadId);
+    const base = root ? await this.filesUrl(root) : "";
+    if (!base) throw new Error("its folder isn't served");
+    const url = `${base}/${d.path.split("/").map(encodeURIComponent).join("/")}`;
+    return this.browser<{ png: string; errors?: string[]; height?: number }>(threadId, "shot", { url, ...DESIGN_FRAME[d.size] }, 30000);
   }
 
   private async booted(udid: unknown) {

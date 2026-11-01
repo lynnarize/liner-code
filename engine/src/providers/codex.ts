@@ -7,8 +7,9 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, PlanEntry, ProviderInfo } from "../../../contracts/src/index.ts";
+import { linerTitle } from "../agent-tools.ts";
 import { jsonLines, run, spawn, versionOf, which, withCodexPath } from "../exec.ts";
-import { codexAsk, CodexServerSession, isLimit, reasoning } from "./codex-server.ts";
+import { codexAsk, CodexServerSession, isLimit, reasoning, toml } from "./codex-server.ts";
 import { effortOf, skillsIn } from "./models.ts";
 import type { OpenOptions, Provider, ProviderSession, TurnSink } from "./types.ts";
 
@@ -27,6 +28,7 @@ type CodexItem = {
   changes?: { path: string; kind?: string }[];
   server?: string;
   tool?: string;
+  arguments?: unknown;
   query?: string;
   items?: { text: string; completed: boolean }[];
   message?: string;
@@ -79,6 +81,10 @@ class CodexSession implements ProviderSession {
     if (o.effort && !/^ultra(code|think)$/.test(o.effort)) common.push("-c", `model_reasoning_effort="${o.effort}"`);
     if (o.model && o.model !== "default") common.push("-m", o.model);
     if (o.soul) common.push("-c", `developer_instructions=${JSON.stringify(o.soul)}`);
+    // Liner Code's own tools (the Browser, designs) and an API endpoint's model provider, as the
+    // app server gets them.
+    if (o.mcp) common.push("-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`);
+    for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
     const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {
       const child = spawn(bin, args, { cwd: o.cwd, env: withCodexPath(bin, o.env), stdio: ["pipe", "pipe", "pipe"] });
@@ -116,7 +122,7 @@ class CodexSession implements ProviderSession {
             break;
           }
           case "mcp_tool_call":
-            sink.tool({ key: it.id, tool: `${it.server}.${it.tool}`, toolKind: "other", title: `${it.server} · ${it.tool}`, status: !done ? "running" : it.status === "failed" ? "failed" : "done" });
+            sink.tool({ key: it.id, tool: `${it.server}.${it.tool}`, toolKind: "other", title: it.server === "liner" ? linerTitle(String(it.tool), it.arguments) : `${it.server} · ${it.tool}`, status: !done ? "running" : it.status === "failed" ? "failed" : "done" });
             break;
           case "web_search":
             sink.tool({ key: it.id, tool: "web_search", toolKind: "web", title: `Search the web for ${short(it.query, 50)}`, status: done ? "done" : "running" });

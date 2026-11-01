@@ -89,6 +89,8 @@ export type ProviderInfo = {
   account?: string;
   /** An ACP agent you added: from the registry, or a command of your own. */
   added?: "registry" | "local";
+  /** An API endpoint you added, run through this tool: its address. */
+  endpoint?: string;
 };
 
 /**
@@ -102,6 +104,18 @@ export type ToolAccount = { id: string; provider: BuiltinProvider; label: string
 export type AddedAgent = { id: string; label: string; command: string[]; env?: Record<string, string>; from: "registry" | "local"; registryId?: string; version?: string; description?: string };
 /** A model id a tool takes but doesn't list. */
 export type CustomModel = { provider: ProviderId; id: string; label?: string };
+/** How an API endpoint is spoken to: Anthropic's Messages, OpenAI's Responses, or OpenAI's Chat Completions. */
+export type EndpointProtocol = "anthropic" | "responses" | "chat";
+/**
+  An API endpoint you added: an Anthropic- or OpenAI-compatible service (DeepSeek, Kimi, GLM,
+  OpenRouter, LM Studio, Ollama…) and the models you use from it. Its models run through the tool
+  that speaks its protocol (ENDPOINT_TOOL), shown as a tool of its own ("claude.api-deepseek"), so
+  they get that tool's files, commands and approvals and Liner Code's own tools. Its key is kept
+  in the keychain as endpointKey(id); a local one needs none.
+*/
+export type Endpoint = { id: string; label: string; url: string; protocol: EndpointProtocol; models: string[] };
+export const ENDPOINT_TOOL: Record<EndpointProtocol, BuiltinProvider> = { anthropic: "claude", responses: "codex", chat: "opencode" };
+export const endpointKey = (id: string) => `endpoint.${id}`;
 /** An agent in the ACP registry, and how Liner Code would run it here. */
 export type RegistryAgent = {
   id: string;
@@ -385,6 +399,10 @@ export type ToolKind = "read" | "edit" | "write" | "exec" | "search" | "fetch" |
 export type FileChange = { path: string; status: "added" | "modified" | "deleted" | "renamed"; added: number; removed: number; from?: string };
 export type PlanEntry = { title: string; status: "pending" | "in_progress" | "completed" };
 export type Risk = "low" | "medium" | "high";
+/** What a design is drawn for: the frame the Design surface shows it in, and its picture's size. */
+export type DesignSize = "desktop" | "tablet" | "phone";
+/** A design of a session, as the Design surface lists it: its latest version, and the version you had built, if you did. */
+export type DesignInfo = { design: string; title: string; path: string; size: DesignSize; versions: number; built?: { version: number; at: number } };
 
 type Base = { id: string; turn: number; at: number };
 export type Item =
@@ -434,6 +452,12 @@ export type Item =
   | (Base & { kind: "plan"; entries: PlanEntry[] })
   /** A page the agent showed you: a chart, a table, a mockup. It runs sandboxed, in the app's colours. */
   | (Base & { kind: "page"; title: string; html: string })
+  /**
+    One version of a design an agent showed in the Design surface: a screen, a page, a prototype.
+    `design` is the design's id, the same for all its versions; `path` its HTML file in the
+    session's folder. The version itself is kept by the engine (engine/src/designs.ts).
+  */
+  | (Base & { kind: "design"; design: string; title: string; path: string; version: number; size: DesignSize; note?: string })
   /** You asked for a pull request in the chat: Liner's PR card opens it there. `demo` plays the story on the sample project. */
   | (Base & { kind: "pr"; demo?: boolean })
   | (Base & {
@@ -550,6 +574,8 @@ export type Settings = {
   addedAgents?: AddedAgent[];
   /** Model ids you added to a tool's list. */
   customModels?: CustomModel[];
+  /** API endpoints you added, each run through the tool that speaks its protocol. */
+  endpoints?: Endpoint[];
   /** Your shortcuts, the way VS Code writes keybindings.json: keys for a command in place of its own, "-command" to take its keys away. */
   keybindings?: KeyBinding[];
   /** Liner Code's own releases: downloaded and put in when you quit or restart ("auto", the default), only told about, or not looked for. */
@@ -856,9 +882,12 @@ export type EngineEvent =
   | { type: "settled"; threadId: string; reason: string }
   | { type: "updates"; updates: Updates }
   /** An agent uses the session's Browser; the app answers with agent.browser.reply. */
-  | { type: "agent.browser"; id: string; threadId: string; op: AgentBrowserOp; args: Record<string, unknown> };
+  | { type: "agent.browser"; id: string; threadId: string; op: AgentBrowserOp; args: Record<string, unknown> }
+  /** A design's file changed on disk (the agent is editing it): a Design surface showing it draws it again. */
+  | { type: "design.changed"; threadId: string; design: string; at: number };
 
-export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot";
+/** `shot` isn't the Browser's: the app draws a page of this Mac out of sight and answers with its picture (a design's, for its agent). */
+export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot" | "shot";
 
 /** A terminal of a session's Terminal surface; `exited` once its shell has ended (it stays until its tab is closed). */
 export type TermInfo = { id: string; title: string; cwd: string; at: number; command?: string; exited?: number };
@@ -1013,6 +1042,20 @@ export type Rpc = {
   "browser.proxy": [{ port: number }, { url: string }];
   /** The session folder's own files, served for the Browser (no dev server needed): `path` as asked, in the folder, and its HTML pages. */
   "browser.files": [{ threadId: string; path?: string }, { url: string; path: string; pages: string[] }];
+  /** The models an API endpoint lists (its /models), to pick from when you add it. */
+  "endpoint.models": [{ url: string; protocol: EndpointProtocol; key?: string }, string[]];
+  /** A session's designs, newest first. */
+  "design.list": [{ threadId: string }, DesignInfo[]];
+  /** A design's HTML: a kept version, or (no version) its file as it is now, with where it's served for the Design surface. */
+  "design.read": [{ threadId: string; design: string; version?: number }, { html: string; path: string; version: number; url: string }];
+  /** A page or HTML of yours as a design (a new version of `design`, when given). */
+  "design.save": [{ threadId: string; title: string; html: string; design?: string; size?: DesignSize }, Item];
+  /** Puts a kept version back in the design's file, as a new version. */
+  "design.restore": [{ threadId: string; design: string; version: number }, Item];
+  /** You asked the agent to build this version: remembered, so the surface can say when the design moved on since. */
+  "design.built": [{ threadId: string; design: string; version: number }, DesignInfo[]];
+  /** While a Design surface is open: tell it when a design's file changes. */
+  "design.watch": [{ threadId: string; on: boolean }, null];
   "device.list": [Record<string, never>, { devices: Device[]; ready: boolean; detail?: string }];
   "device.boot": [{ udid: string }, null];
   "device.shot": [{ udid: string }, { png: string }];

@@ -65,7 +65,7 @@ export class Proxies {
     A server for a session folder's own files, for a page that needs no dev server: an
     index.html and the scripts, styles and images beside it. Pages get the probe, nothing is
     cached (so a reload shows the agent's latest edit), and nothing outside the folder or
-    hidden in it (.env, .git) is served.
+    hidden in it (.env, .git) is served, but for the session's designs (.liner/designs/).
   */
   async files(root: string): Promise<string> {
     const have = this.folders.get(root);
@@ -82,7 +82,9 @@ export class Proxies {
       }
       let abs = resolve(root, `.${rel}`);
       const inside = relative(root, abs);
-      if (inside.startsWith("..") || isAbsolute(inside) || inside.split(sep).some((p) => p.startsWith("."))) return void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note("Not a file of this session's folder."));
+      const parts = inside.split(sep);
+      const design = parts[0] === ".liner" && parts[1] === "designs" && parts.length > 2;
+      if (inside.startsWith("..") || isAbsolute(inside) || parts.slice(design ? 2 : 0).some((p) => p.startsWith("."))) return void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note("Not a file of this session's folder."));
       try {
         if (statSync(abs).isDirectory()) abs = join(abs, "index.html");
       } catch {

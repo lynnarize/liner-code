@@ -13,7 +13,7 @@
 */
 import { spawn } from "node:child_process";
 import type { Access, Effort, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, Risk, Settings, Thread, Usage } from "../../contracts/src/index.ts";
-import { castOf, emptyUsage, familyOf, PR_TEST_TOOL, smallChange, splitModel } from "../../contracts/src/index.ts";
+import { castOf, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, PR_TEST_TOOL, smallChange, splitModel } from "../../contracts/src/index.ts";
 import { capture, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { run, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
@@ -24,6 +24,7 @@ import { accountProvider, addedProvider } from "./providers/added.ts";
 import { claude } from "./providers/claude.ts";
 import { codex } from "./providers/codex.ts";
 import { demo } from "./providers/demo.ts";
+import { endpointProvider } from "./providers/endpoint.ts";
 import { ResumeFailed, type Provider, type ProviderSession, type TurnSink, type ToolUpdate, type WakeTurn } from "./providers/types.ts";
 import { attachNote } from "./providers/attachments.ts";
 import type { AgentTools } from "./agent-tools.ts";
@@ -34,11 +35,18 @@ import { uid, type Store } from "./store.ts";
 
 export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, demo };
 
-/** Your other accounts and the agents you added, as tools beside the known ones. Run whenever they change. */
-export function syncProviders(s: Settings) {
+/**
+  Your other accounts, the agents you added and your API endpoints, as tools beside the known
+  ones. Run whenever they change. `keys` is the engine's, read when an endpoint's session opens.
+*/
+export function syncProviders(s: Settings, keys?: Map<string, string>) {
   for (const id of Object.keys(providers) as ProviderId[]) if (id.includes(".")) delete providers[id];
   for (const a of s.accounts ?? []) if (a.provider !== "demo" && providers[a.provider]) providers[`${a.provider}.${a.id}`] = accountProvider(providers[a.provider], a);
   for (const a of s.addedAgents ?? []) providers[`acp.${a.id}`] = addedProvider(a);
+  for (const e of s.endpoints ?? []) {
+    const tool = ENDPOINT_TOOL[e.protocol];
+    if (providers[tool]) providers[`${tool}.${e.id}`] = endpointProvider(providers[tool], e, () => keys?.get(endpointKey(e.id)));
+  }
 }
 
 type Live = { session: ProviderSession; provider: ProviderId; key: string };
@@ -257,8 +265,8 @@ export class Runtime {
       access,
       planning,
       soul: [
-        planning ? [briefOf(r.agent, cwd), leadRules(this.resolve(t).agent.name, (t.helpers ?? []).map((h) => this.store.agent(h)).map((a) => `${a.name} (${a.role})`))].filter(Boolean).join("\n\n") : t.sideOf ? [briefOf(r.agent, cwd), SIDE_RULES].filter(Boolean).join("\n\n") : briefOf(r.agent, cwd),
-        this.tools ? TOOLS_NOTE : "",
+        planning ? [briefOf(r.agent, cwd), leadRules(this.resolve(t).agent.name, (t.helpers ?? []).map((h) => this.store.agent(h)).map((a) => `${a.name} (${a.role})`), linerName(familyOf(r.provider)))].filter(Boolean).join("\n\n") : t.sideOf ? [briefOf(r.agent, cwd), SIDE_RULES].filter(Boolean).join("\n\n") : briefOf(r.agent, cwd),
+        this.tools ? toolsNote(linerName(familyOf(r.provider))) : "",
         memoryNote(this.store.home, t.projectId),
       ]
         .filter(Boolean)
@@ -1475,16 +1483,27 @@ export class Runtime {
 }
 
 /**
+  Liner Code's tools by the names a tool offers them: Claude Code calls an MCP tool
+  mcp__<server>__<tool>, OpenCode <server>_<tool>, and Codex lists them under the server's own
+  name. A model told one name and offered another can call the one it was told (GPT-OSS did,
+  through an API endpoint), so it's told the one it's offered.
+*/
+export const linerName = (family: string) => (tool: string) => (family === "claude" ? `mcp__liner__${tool}` : family === "opencode" ? `liner_${tool}` : tool);
+
+/**
   What every agent is told when Liner Code's tools come with it. Without it, a tool with a
   computer-use plugin of its own (Codex, say) reached for that to check a page, outside the app.
 */
-const TOOLS_NOTE = [
-  "Liner Code runs this session. Its own tools (the `liner` MCP server) reach what the person sees beside this chat:",
-  "- browser_open opens a page of what you build in their Browser: a dev server on this Mac (localhost:5173, or just a port) or an HTML file in this folder (index.html), which needs no server. browser_read, browser_click, browser_type, browser_press and browser_screenshot then use that page, and report its console errors. On a canvas (a game), click a point with x and y, or press keys.",
-  "- show_page shows them a chart, a table or a mockup in the chat.",
-  "- memory_add saves a fact about this project that later sessions start with; sessions_search looks through earlier sessions here.",
-  "Check web pages you build or change with these tools, not with any other browser or computer-use tool, and open the page again after each edit.",
-].join("\n");
+export function toolsNote(n: (tool: string) => string) {
+  return [
+    "Liner Code runs this session. Its own tools (the `liner` MCP server) reach what the person sees beside this chat:",
+    `- ${n("browser_open")} opens a page of what you build in their Browser: a dev server on this Mac (localhost:5173, or just a port) or an HTML file in this folder (index.html), which needs no server. ${["browser_read", "browser_click", "browser_type", "browser_press"].map(n).join(", ")} and ${n("browser_screenshot")} then use that page, and report its console errors. On a canvas (a game), click a point with x and y, or press keys.`,
+    `- ${n("show_page")} shows them a chart or a table in the chat.`,
+    `- ${n("design_show")} shows a screen, page or prototype you design in their Design surface, version by version: write it as one HTML file under .liner/designs/ and call it with the path (or pass the page as html). They comment on parts of it there, and ask for it to be built.`,
+    `- ${n("memory_add")} saves a fact about this project that later sessions start with; ${n("sessions_search")} looks through earlier sessions here.`,
+    "Check web pages you build or change with these tools, not with any other browser or computer-use tool, and open the page again after each edit.",
+  ].join("\n");
+}
 
 /** What a side chat is told on top of its soul: the session goes on without it, and it only reads. */
 const SIDE_RULES = [
@@ -1496,11 +1515,12 @@ const SIDE_RULES = [
   What a lead is told on top of its soul. Not every message is a task: it answers talk and
   questions itself, and only a request to change something ends in a plan for the coder.
 */
-function leadRules(coder: string, helpers: string[] = []) {
+function leadRules(coder: string, helpers: string[] = [], n: (tool: string) => string = (t) => t) {
   return [
     ...(helpers.length ? [`Besides ${coder}, you can give plan steps to: ${helpers.join(", ")}. End such a step with "— @Name"; steps without a name go to ${coder}.`] : []),
     `You are the lead in a Liner Code session, and ${coder} is the coder who builds what you plan. You can read the project and run read-only commands, but you never edit files yourself.`,
     "Not every message is a task. When the user says hello, chats, or asks a question, answer it directly and stop: no plan, no questions about what to plan.",
+    `When the user asks for a design (a screen, a mockup, a prototype) rather than a change to the code, draw it yourself with ${n("design_show")}, passing the page as html, and stop: no plan. When they ask for a design to be built, plan its build like any change.`,
     `When the user asks for a change to the project, read what you need, then end your reply with the plan inside <plan title="a short name"> … </plan>: the steps, the files each one touches, and how to check it works. The user approves it, then ${coder} builds it. Write at most one plan per reply.`,
   ].join("\n");
 }

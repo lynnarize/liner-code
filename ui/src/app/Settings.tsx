@@ -6,8 +6,8 @@
   once; the rest lives in the engine. Escape, ⌘, or Back returns to the sessions.
 */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
-import { ACCOUNT_HOME, updateModes } from "@contracts";
+import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
+import { ACCOUNT_HOME, ENDPOINT_TOOL, endpointKey, updateModes } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
@@ -29,6 +29,7 @@ import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
+import { groupOf, SERVICES } from "./services";
 import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type Look, type TrayGlass } from "./look";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -1033,6 +1034,7 @@ function Models() {
       </Group>
       <Accounts />
       <AddedAgents />
+      <Endpoints />
       <CustomModels />
       <Group title="Billing and keys" note="Keys stay in the login keychain. The engine only holds them in memory.">
         <Field title="Claude Code bills to" note={keys.includes("anthropic") ? "Your plan through Claude Code's own sign-in, or the Anthropic key you added" : "Anthropic asks apps built on its Agent SDK to use an API key: add one below"}>
@@ -1228,6 +1230,185 @@ function AddedAgents() {
       ))}
       {!added.length && <p className="lc-st-none lc-quiet">None yet. Gemini CLI, Goose, Amp and many more are in the registry.</p>}
     </Group>
+  );
+}
+
+/*
+  API endpoints: an Anthropic- or OpenAI-compatible service and the models you use from it, run
+  through the tool that speaks its protocol (engine/src/providers/endpoint.ts). Its key goes to the
+  keychain like the others.
+*/
+const PROTOCOLS: { value: EndpointProtocol; label: string; note: string; url: string }[] = [
+  { value: "anthropic", label: "Anthropic Messages", note: "Runs through Claude Code. DeepSeek, Kimi, GLM and MiniMax have Anthropic-compatible addresses.", url: "https://api.deepseek.com/anthropic" },
+  { value: "responses", label: "OpenAI Responses", note: "Runs through Codex. OpenAI, OpenRouter, LM Studio and Ollama speak it.", url: "http://localhost:1234/v1" },
+  { value: "chat", label: "OpenAI Chat Completions", note: "Runs through OpenCode: anything else OpenAI-compatible.", url: "https://api.example.com/v1" },
+];
+
+function Endpoints() {
+  const providers = useEngine((x) => x.providers);
+  const endpoints = useEngine((x) => x.settings.endpoints) ?? NONE;
+  const favs = useEngine((x) => x.settings.favoriteModels) ?? NONE;
+  const [adding, setAdding] = useState(false);
+  const remove = (e: Endpoint) => {
+    const id = `${ENDPOINT_TOOL[e.protocol]}.${e.id}`;
+    save({ endpoints: endpoints.filter((x) => x !== e), favoriteModels: favs.filter((r) => !r.startsWith(`${id}:`)) });
+    void bridge.keychainSet(`key:${endpointKey(e.id)}`, null).catch(() => {});
+    void rpc("keys.set", { provider: endpointKey(e.id), key: null }).catch(() => {});
+  };
+  return (
+    <Group
+      title="API endpoints"
+      note="Models from an API, run through the tool that speaks it: Claude Code, Codex or OpenCode. They get that tool's files, commands and approvals, and Liner Code's Browser and designs."
+      end={
+        !adding && (
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setAdding(true)}>
+            <I.plus size={12} />
+            Add an endpoint
+          </button>
+        )
+      }
+    >
+      {adding && <EndpointForm taken={endpoints} onDone={() => setAdding(false)} />}
+      {endpoints.map((e) => (
+        <ProviderRow key={e.id} p={providers.find((x) => x.id === `${ENDPOINT_TOOL[e.protocol]}.${e.id}`)} fallback={e.label} onRemove={() => remove(e)}>
+          <span className="lc-quiet" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+            {e.models.length === 1 ? e.models[0] : `${e.models.length} models`}
+          </span>
+        </ProviderRow>
+      ))}
+      {!adding && !endpoints.length && <p className="lc-st-none lc-quiet">None yet. A DeepSeek or Kimi key, OpenRouter, or a model running on this Mac in LM Studio or Ollama.</p>}
+    </Group>
+  );
+}
+
+function EndpointForm({ taken, onDone }: { taken: Endpoint[]; onDone: () => void }) {
+  const [service, setService] = useState<string>("other");
+  const [label, setLabel] = useState("");
+  const [protocol, setProtocol] = useState<EndpointProtocol>("anthropic");
+  const [url, setUrl] = useState("");
+  const known = SERVICES.find((x) => x.id === service);
+  // A service fills in what it is; its name too, unless you've written your own.
+  const pickService = (id: string) => {
+    const s = SERVICES.find((x) => x.id === id);
+    setService(id);
+    setFound(null);
+    if (!s) return;
+    if (!label.trim() || SERVICES.some((x) => x.label === label.trim())) setLabel(s.label);
+    setProtocol(s.protocol);
+    setUrl(s.url);
+  };
+  const [key, setKey] = useState("");
+  const [models, setModels] = useState("");
+  const [found, setFound] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState<"find" | "add" | null>(null);
+  const id = `api-${slug(label)}`;
+  const clash = taken.some((e) => e.id === id);
+  const list = [...new Set(models.split(/[\s,]+/).map((m) => m.trim()).filter(Boolean))];
+  const proto = PROTOCOLS.find((p) => p.value === protocol)!;
+  const find = async () => {
+    setBusy("find");
+    try {
+      const ids = await rpc("endpoint.models", { url: url.trim(), protocol, key: key.trim() || undefined });
+      setFound(ids);
+      if (!ids.length) toast("It listed no models", { description: "Type the ones you use." });
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const pick = (m: string) => setModels((list.includes(m) ? list.filter((x) => x !== m) : [...list, m]).join("\n"));
+  const add = async () => {
+    if (!slug(label) || clash || !url.trim() || !list.length) return;
+    setBusy("add");
+    try {
+      if (key.trim()) {
+        await bridge.keychainSet(`key:${endpointKey(id)}`, key.trim());
+        await rpc("keys.set", { provider: endpointKey(id), key: key.trim() });
+      }
+      await rpc("settings.save", { endpoints: [...taken, { id, label: label.trim(), url: url.trim(), protocol, models: list }] });
+      toast.success(`Added ${label.trim()}`, { description: `Its models are in the model picker, through ${proto.note.split(".")[0].replace("Runs through ", "")}.` });
+      onDone();
+    } catch (e) {
+      fail(e);
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="lc-st-form">
+      <div className="lc-st-form-g">
+        <label className="lc-st-form-w">
+          <span>Service</span>
+          <Select
+            options={[...SERVICES.map((s) => ({ value: s.id, label: s.label, hint: s.local ? "no key" : new URL(s.url).host, group: groupOf(s) })), { value: "other", label: "Another service", hint: "its address and protocol", group: "Anything else" }]}
+            value={service}
+            onValueChange={pickService}
+            placeholder="Pick a service"
+          />
+        </label>
+        <label>
+          <span>Name</span>
+          <input className="lc-input" autoFocus value={label} onChange={(e) => setLabel(e.target.value)} placeholder="DeepSeek" aria-invalid={clash || undefined} />
+        </label>
+        <label>
+          <span>Speaks</span>
+          <Select options={PROTOCOLS.map((p) => ({ value: p.value, label: p.label }))} value={protocol} onValueChange={(v) => setProtocol(v as EndpointProtocol)} placeholder="Protocol" />
+        </label>
+        <p className="lc-st-form-w lc-quiet" style={{ margin: 0, fontSize: 12 }}>
+          {proto.note}
+        </p>
+        <label className="lc-st-form-w">
+          <span>Address</span>
+          <input className="lc-input lc-mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder={proto.url} spellCheck={false} />
+        </label>
+        <label className="lc-st-form-w">
+          <span>
+            Key {known?.local ? "(none needed)" : "(none for one on this Mac)"}
+            {known?.keys && (
+              <>
+                {" · "}
+                <a
+                  href={known.keys}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    bridge.openExternal(known.keys!);
+                  }}
+                >
+                  Get a key
+                </a>
+              </>
+            )}
+          </span>
+          <input className="lc-input lc-mono" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={known?.local ? "None needed" : "Kept in the keychain"} autoComplete="off" />
+        </label>
+        <label className="lc-st-form-w">
+          <span>Models, one a line</span>
+          <textarea className="lc-input lc-mono" rows={2} value={models} onChange={(e) => setModels(e.target.value)} placeholder="Its model ids, as its docs give them" spellCheck={false} />
+        </label>
+        {found && found.length > 0 && (
+          <div className="lc-st-form-w" style={{ display: "flex", flexWrap: "wrap", gap: 6 }} role="group" aria-label="Models it lists">
+            {found.slice(0, 40).map((m) => (
+              <button key={m} type="button" className="lc-btn" data-kind={list.includes(m) ? "primary" : "plain"} data-size="sm" aria-pressed={list.includes(m)} onClick={() => pick(m)}>
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <p className="lc-quiet lc-st-form-n">{clash ? `There's already an endpoint called ${label.trim()}.` : "Its key goes to the keychain, and only to the tool's process when a session runs on it."}</p>
+      <div className="lc-st-form-f">
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={!url.trim() || busy !== null} onClick={() => void find()}>
+          {busy === "find" ? "Asking it" : "Find its models"}
+        </button>
+        <span className="lc-grow" />
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onDone}>
+          Cancel
+        </button>
+        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!slug(label) || clash || !url.trim() || !list.length || busy !== null} onClick={() => void add()}>
+          Add endpoint
+        </button>
+      </div>
+    </div>
   );
 }
 

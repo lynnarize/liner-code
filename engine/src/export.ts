@@ -85,6 +85,9 @@ export async function sessionMarkdown(store: Store, threadId: string, diff: (fro
       case "page":
         bullet(`- Showed a page: ${it.title}`);
         break;
+      case "design":
+        bullet(`- Showed the design ${it.title}, version ${it.version} (\`${it.path}\`${it.note ? `: ${it.note}` : ""})`);
+        break;
       case "notice":
       case "error":
       case "limit":

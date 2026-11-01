@@ -87,6 +87,8 @@ export function markOf(ref: string): MarkKind {
   for (const [re, kind] of MAKERS) if (re.test(name)) return kind;
   // An ACP agent you added says whose it is in its id ("acp.gemini").
   if (family === "acp") for (const [re, kind] of MAKERS) if (re.test(provider.slice(4))) return kind;
+  // An API endpoint's model isn't the tool's it runs through ("claude.api-deepseek").
+  if (/\.api-/.test(provider)) return "other";
   return TOOL_MARK[family] ?? "other";
 }
 

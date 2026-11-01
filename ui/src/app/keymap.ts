@@ -16,6 +16,7 @@ const SURFACE_KEYS: [string, string, string][] = [
   ["session", "Session", "i"],
   ["side", "Side chat", "c"],
   ["browser", "Browser", "b"],
+  ["design", "Design", "e"],
   ["terminal", "Terminal", "t"],
   ["files", "Files", "f"],
   ["changes", "Diff", "d"],

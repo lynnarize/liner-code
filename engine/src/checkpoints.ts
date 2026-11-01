@@ -108,10 +108,12 @@ async function seed(cwd: string, index: string, env: NodeJS.ProcessEnv, head: bo
 /**
   `git add -A` into the throwaway index. A folder in the project that's a repository of its own with
   no commit yet stops it ("does not have a commit checked out"), so then it's added again without
-  those folders (T3 Code's GitVcsDriver.ts stageFiles).
+  those folders (T3 Code's GitVcsDriver.ts stageFiles). The session's designs (.liner/) are never
+  a turn's changes. They're left out with a glob: once .liner/ is ignored too (designs.ts), git
+  refuses a plain exclude that names it ("paths are ignored"), and a glob it takes either way.
 */
 async function stage(cwd: string, env: NodeJS.ProcessEnv) {
-  const add = (skip: string[]) => steady(cwd, [...SCRATCH, "add", "-A", "--", ".", ...skip], env);
+  const add = (skip: string[]) => steady(cwd, [...SCRATCH, "add", "-A", "--", ".", ":(exclude,glob)**/.liner/**", ...skip], env);
   if ((await add([])).code === 0) return true;
   const others = await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z", "--", "."], env);
   if (others.code !== 0) return false;

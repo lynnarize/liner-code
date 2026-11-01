@@ -27,6 +27,7 @@ const Compare = lazy(() => import("./Compare").then((m) => ({ default: m.Compare
 import { keepPanel, keptPanel, openTab, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
 import { openSurface } from "./Rail";
 import { startAgentBrowser } from "./agentBrowser";
+import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
 import { matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 
@@ -99,6 +100,7 @@ export function App() {
   const [lastProject, setLastProject] = useState<string | undefined>(() => localStorage.getItem("lc:project") ?? undefined);
 
   useEffect(() => startAgentBrowser(), []);
+  useEffect(() => startDesigns(), []);
   useEffect(() => {
     startEngine();
     applyLook(readLook());

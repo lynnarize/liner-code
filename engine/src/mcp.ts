@@ -6,7 +6,7 @@
 import { createInterface } from "node:readline";
 import { VERSION } from "./version.ts";
 
-type Schema = { type: "object"; properties: Record<string, { type: string; description: string }>; required?: string[] };
+type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[] }>; required?: string[] };
 type ToolDef = { name: string; description: string; inputSchema: Schema };
 
 const none: Schema = { type: "object", properties: {} };
@@ -80,6 +80,27 @@ const TOOLS: ToolDef[] = [
       "Shows the person a page in the session, beside your answer: a chart, a table, a mockup, a diagram, a comparison. Write an HTML fragment or a whole document. It runs sandboxed: scripts work, but it can't reach the network or the app, so put data and code inline. For the app's look in light and dark, use the CSS variables --bg, --surface, --ink, --ink-2, --ink-3, --line, --accent and --font (already set on the page).",
     inputSchema: { type: "object", properties: { title: { type: "string", description: "A short name for it" }, html: { type: "string", description: "The page" } }, required: ["title", "html"] },
   },
+  {
+    name: "design_show",
+    description: [
+      "Shows a design in the Design surface beside the session: a screen, a page, a component sheet, a clickable prototype. The person sees it full size at the size it's drawn for, comments on any part of it, and asks for it to be built.",
+      "Write it as one self-contained HTML file in the session's folder, under .liner/designs/ (like .liner/designs/settings.html): CSS and scripts inline, pictures inline (SVG, data: URIs) or as files beside it; a font or a library from a CDN works too. Then call this with its path. To change it, read the file, change only what was asked, and call this again with the same path: each call keeps a version the person can go back to. If you can't write files, pass the whole page as html instead.",
+      "Design it the way a good product designer would: real content (no lorem ipsum), one type scale and one spacing scale, clear hierarchy, enough contrast, and the states that matter (empty, loading, error). When the project has a look of its own, read its styles first and match them.",
+      "It returns a picture of the design as drawn, with its console errors: look at it, and fix what's off before you say it's done.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "A short name for the design: \"Settings screen\"" },
+        path: { type: "string", description: "Its HTML file in the session's folder, like .liner/designs/settings.html" },
+        html: { type: "string", description: "The whole page, only when you can't write the file yourself" },
+        size: { type: "string", enum: ["desktop", "tablet", "phone"], description: "What it's drawn for: desktop (the default), tablet or phone" },
+        note: { type: "string", description: "What this version changed, in a few words" },
+        design: { type: "string", description: "The id of a design shown before, to make this its next version (the same path does that too)" },
+      },
+      required: ["title"],
+    },
+  },
 ];
 
 const url = process.env.LINER_SURFACE_URL ?? "";
@@ -113,7 +134,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         protocolVersion: String(m.params?.protocolVersion ?? "2025-06-18"),
         capabilities: { tools: {} },
         serverInfo: { name: "liner", title: "Liner Code", version: VERSION },
-        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, and show_page to show a chart, table or mockup instead of describing it.",
+        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design.",
       },
     });
   } else if (m.method === "tools/list") send({ id: m.id, result: { tools: TOOLS } });

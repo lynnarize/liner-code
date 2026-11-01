@@ -226,6 +226,19 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   // An agent that wants the Browser brings it up beside the session.
   useEffect(() => onBrowserWanted(thread.id, () => setPanel((p) => (p.open && p.tab === "browser" ? p : openTab(p, "browser")))), [thread.id]);
 
+  // A design to look at (the timeline's Open) brings the Design surface up. One an agent just
+  // showed does too, unless you're working in another surface (the diff, a terminal): then its
+  // card on the timeline opens it when you want.
+  useEffect(() => {
+    const onDesign = (e: Event) => {
+      const d = (e as CustomEvent<{ threadId?: string; auto?: boolean }>).detail;
+      if (d?.threadId !== thread.id) return;
+      setPanel((p) => (p.open && !p.picking && p.tab === "design" ? p : d.auto && p.open && !["session", "agents", "browser", "design"].includes(p.tab) ? p : openTab(p, "design")));
+    };
+    window.addEventListener("lc:open-design", onDesign);
+    return () => window.removeEventListener("lc:open-design", onDesign);
+  }, [thread.id]);
+
   // A key opens a surface (⌘⇧ and its letter, unless you changed it), while the session is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -247,14 +247,27 @@ export function Badge({ tone = "neutral", children, dot = true }: { tone?: "ok" 
   );
 }
 
-/** How a session stands: rays while it works, amber when it needs you, a ring before it starts, a check when done. */
-export function StatusMark({ t, bucket }: { t: Thread; bucket: string }) {
-  if (t.status === "running") return <span className="lc-mk" data-s="run" aria-label="Working"><Rays /></span>;
+/**
+  How a session stands: rays while it works (in the tint of whose model it runs on, when `brand`
+  says), amber when it needs you, an alert when it stopped on a problem, a ring before it starts,
+  a quiet check when done.
+*/
+export function StatusMark({ t, bucket, brand }: { t: Thread; bucket: string; brand?: MarkKind }) {
+  if (t.status === "running") return <span className="lc-mk" data-s="run" data-brand={brand} aria-label="Working"><Rays size={11} /></span>;
+  if (t.status === "error")
+    return (
+      <span className="lc-mk" data-s="error" aria-label="Ran into a problem">
+        <svg width={13} height={13} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden>
+          <circle cx="8" cy="8" r="5.75" />
+          <path d="M8 5.1v3.4M8 10.9v.01" />
+        </svg>
+      </span>
+    );
   if (bucket === "needs" && t.turns === 0) return <span className="lc-mk" data-s="new" aria-label="Not started"><i /></span>;
-  if (t.status === "limited") return <span className="lc-mk" data-s="needs" aria-label="Limited"><I.clock size={11} /></span>;
+  if (t.status === "limited") return <span className="lc-mk" data-s="needs" aria-label="Limited"><I.clock size={13} /></span>;
   if (bucket === "needs") return <span className="lc-mk" data-s="needs" aria-label="Needs you"><i /></span>;
   if (t.turns === 0) return <span className="lc-mk" data-s="new" aria-label="Not started"><i /></span>;
-  return <span className="lc-mk" data-s="done" aria-label="Done"><I.check size={11} /></span>;
+  return <span className="lc-mk" data-s="done" aria-label="Done"><I.check size={13} /></span>;
 }
 
 /** +19 −7, in mono. */

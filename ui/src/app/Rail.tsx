@@ -1,8 +1,9 @@
 /*
-  The session tray, upright at the right edge of the thread in a lane of its own: the one glass
-  surface left, holding three solid segments. The panel; the surfaces it holds, each a press
-  away, the open one's icon on a tile; and shipping: commit and push (the files waiting to be
-  committed in a small chip under the arrow) and every other surface. The bar keeps the
+  The session tray, upright at the right edge of the thread in a lane of its own: one quiet glass
+  column. The panel; the surfaces it holds, each a press away, the open one's icon on a tile; and
+  shipping: commit and push (the files waiting to be committed in a small badge on the arrow) and
+  every other surface. While the panel is open beside the thread its tabs hold the surfaces, so
+  the tray steps out of the way and shipping moves to the bar (ShipButton). The bar keeps the
   session's own things (who works on it, its place, Changes).
 */
 import { useEffect, useRef, type ReactNode } from "react";
@@ -57,7 +58,7 @@ export function openSurface(threadId: string, tab: SurfaceId) {
   return Boolean(open);
 }
 
-export function Rail({ thread, panel, onPanel, onTab, files, branch }: { thread: Thread; panel: PanelState; onPanel: (f: (p: PanelState) => PanelState) => void; onTab: (tab: SurfaceId) => void; files: number; branch?: string }) {
+export function Rail({ thread, panel, onPanel, onTab, files, branch, hidden }: { thread: Thread; panel: PanelState; onPanel: (f: (p: PanelState) => PanelState) => void; onTab: (tab: SurfaceId) => void; files: number; branch?: string; hidden?: boolean }) {
   const showing = panel.open && !panel.picking ? panel.tab : null;
   const setPanel = useRef(onPanel);
   setPanel.current = onPanel;
@@ -68,67 +69,76 @@ export function Rail({ thread, panel, onPanel, onTab, files, branch }: { thread:
       if (panels.get(thread.id) === open) panels.delete(thread.id);
     };
   }, [thread.id]);
-  const running = thread.status === "running";
   return (
-    <nav className="lc-rail" aria-label="Panel and surfaces">
+    // Hidden rather than gone: ⌘K's "Open Browser" reaches the panel through it (openSurface).
+    <nav className="lc-rail" aria-label="Panel and surfaces" hidden={hidden}>
       <div className="lc-rail-seg" data-solo>
         <Btn label={panel.open ? "Hide the panel" : "Show the panel"} on={panel.open} onClick={() => onPanel((p) => (p.open ? { ...p, open: false, wide: false, picking: false } : { ...p, open: true }))}>
-          <I.panel size={17} />
+          <I.panel size={16} />
         </Btn>
       </div>
       <div className="lc-rail-seg" role="group" aria-label="Surfaces">
         {SHOWN.map((s) => (
           <Btn key={s.id} label={s.label} keys={shortcutOf(`surface.${s.id}`)?.join("")} on={showing === s.id} onClick={() => onTab(s.id)}>
-            <s.icon size={17} />
+            <s.icon size={16} />
           </Btn>
         ))}
       </div>
       <div className="lc-rail-seg" role="group" aria-label="Ship" data-act>
-        <Tooltip content={files ? `Commit ${plural(files, "file")}` : "Push or open a PR"} side="left">
-          <span className="lc-rail-pop" data-count={files > 0 || undefined}>
-            <Pop
-              label={files ? `Commit and push, ${plural(files, "file")} waiting` : "Commit and push"}
-              side="left"
-              width={files ? 380 : 280}
-              triggerClass="lc-rail-b lc-rail-ship"
-              disabled={running}
-              trigger={
-                <>
-                  <I.push size={17} />
-                  {files > 0 && (
-                    <span key={files} className="lc-rail-count l-num" aria-hidden>
-                      {files > 99 ? "99+" : files}
-                    </span>
-                  )}
-                </>
-              }
-            >
-              {(close) =>
-                files > 0 ? (
-                  <CommitForm thread={thread} files={files} then={savedThen()} onDone={close} />
-                ) : (
-                  <div className="lc-ship-menu">
-                    <PanelHead>Nothing to commit</PanelHead>
-                    <Row
-                      title={`Push ${branch ?? "this branch"}`}
-                      note="To its branch on GitHub"
-                      icon={<I.push size={13} />}
-                      onPick={() => {
-                        close();
-                        void ship(thread, null);
-                      }}
-                    />
-                    <Row title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={13} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail))} />
-                  </div>
-                )
-              }
-            </Pop>
-          </span>
-        </Tooltip>
+        <ShipButton thread={thread} files={files} branch={branch} side="left" triggerClass="lc-rail-b lc-rail-ship" />
         <Btn label="Every surface" on={panel.open && panel.picking} onClick={() => onPanel((p) => ({ ...p, open: true, picking: !(p.open && p.picking) }))}>
-          <I.more size={17} />
+          <I.more size={16} />
         </Btn>
       </div>
     </nav>
+  );
+}
+
+/** Commit and push, with how many files wait in a badge on the arrow: in the tray, or in the bar while the panel is open. */
+export function ShipButton({ thread, files, branch, side, triggerClass }: { thread: Thread; files: number; branch?: string; side: "left" | "bottom"; triggerClass: string }) {
+  const running = thread.status === "running";
+  return (
+    <Tooltip content={files ? `Commit ${plural(files, "file")}` : "Push or open a PR"} side={side}>
+      <span className="lc-rail-pop" data-count={files > 0 || undefined}>
+        <Pop
+          label={files ? `Commit and push, ${plural(files, "file")} waiting` : "Commit and push"}
+          side={side}
+          align={side === "bottom" ? "end" : undefined}
+          width={files ? 380 : 280}
+          triggerClass={triggerClass}
+          disabled={running}
+          trigger={
+            <>
+              <I.push size={side === "left" ? 17 : 16} />
+              {files > 0 && (
+                <span key={files} className="lc-rail-count l-num" aria-hidden>
+                  {files > 99 ? "99+" : files}
+                </span>
+              )}
+            </>
+          }
+        >
+          {(close) =>
+            files > 0 ? (
+              <CommitForm thread={thread} files={files} then={savedThen()} onDone={close} />
+            ) : (
+              <div className="lc-ship-menu">
+                <PanelHead>Nothing to commit</PanelHead>
+                <Row
+                  title={`Push ${branch ?? "this branch"}`}
+                  note="To its branch on GitHub"
+                  icon={<I.push size={13} />}
+                  onPick={() => {
+                    close();
+                    void ship(thread, null);
+                  }}
+                />
+                <Row title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={13} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail))} />
+              </div>
+            )
+          }
+        </Pop>
+      </span>
+    </Tooltip>
   );
 }

@@ -1,6 +1,7 @@
 /*
-  The Design surface (Design.tsx): the design in a frame on a dotted ground, fitted to the panel,
-  under the Browser's bars; and its card on the timeline, a small picture that opens it.
+  The Design surface (Design.tsx): one bar over a canvas that runs edge to edge, a faint grid of
+  dots with the design floating on it and its size under it, and a zoom pill in the corner. Its
+  card on the timeline: a small picture beside the chat, or the design itself, wide, in the chat.
 */
 .lc-dz {
   display: flex;
@@ -8,36 +9,160 @@
   flex-direction: column;
   min-height: 0;
 }
+
+/* ---------- The bar ---------- */
 .lc-dz-bar {
-  gap: 4px;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 0 10px 0 14px;
 }
-/* The design and version pickers: a quiet pill with the name in it. */
-.lc-dz-pick {
+/* Which design: its name, plain, with the menu's chevron. */
+.lc-dz-bar > .lc-pop:first-child {
+  min-width: 0;
+  max-width: 50%;
+}
+.lc-dz-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
-  max-width: 220px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--l-wash-2);
-  font-size: 12.5px;
-  color: var(--l-ink-2);
+  max-width: 100%;
+  height: 28px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--l-ink);
 }
-.lc-dz-pick b {
+.lc-dz-name b {
   overflow: hidden;
   font-weight: 500;
-  color: var(--l-ink);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-dz-pick > svg {
+.lc-dz-name > svg {
   flex: none;
+  color: var(--l-ink-4);
 }
+/* Which version: a quiet pill, its dot green while it's the file as it is now. */
 .lc-dz-ver {
-  max-width: 130px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-left: 2px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--l-ink-3);
   font-variant-numeric: tabular-nums;
+}
+.lc-dz-ver > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+}
+.lc-dz-ver > i[data-live] {
+  background: var(--l-ok);
+}
+.lc-dz-ver > svg {
+  color: var(--l-ink-4);
+}
+@media (hover: hover) {
+  .lc-dz-name:hover,
+  .lc-dz-ver:hover {
+    background: var(--l-wash);
+  }
+}
+/* The size it's drawn at: three icons in one quiet group. */
+.lc-dz-sizes {
+  display: inline-flex;
+  flex: none;
+  gap: 1px;
+  margin-right: 4px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--l-wash);
+}
+.lc-dz-sizes > button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+.lc-dz-sizes > button[aria-pressed="true"] {
+  background: var(--lc-plate);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-dz-sizes > button:hover {
+    color: var(--l-ink);
+  }
+}
+.lc-dz-bar > .lc-ib {
+  color: var(--l-ink-3);
+}
+.lc-dz-build {
+  flex: none;
+  margin-left: 6px;
+}
+.lc-dz-ver,
+.lc-dz-build {
+  white-space: nowrap;
+}
+/* In a narrow panel the bar keeps the design's name: Build says it with its icon, the version
+   drops "Live" (its green dot says it), and the sizes and buttons pull in. */
+@container (max-width: 560px) {
+  .lc-dz-wide {
+    display: none;
+  }
+  .lc-dz-bar {
+    padding: 0 8px 0 12px;
+  }
+  .lc-dz-build {
+    margin-left: 2px;
+    padding-inline: 9px;
+  }
+  .lc-dz-sizes > button {
+    width: 24px;
+  }
+}
+@container (max-width: 470px) {
+  .lc-dz-build > span {
+    display: none;
+  }
+  .lc-dz-bar > .lc-ib {
+    width: 26px;
+  }
+}
+/* Narrower still, the bar takes two lines: the design and its version, then how it's drawn and
+   what to do with it. */
+@container (max-width: 400px) {
+  .lc-dz-bar {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding-block: 6px;
+  }
+  .lc-dz-bar > .lc-grow {
+    flex-basis: 100%;
+  }
+  .lc-dz-bar > .lc-pop:first-child {
+    max-width: 75%;
+  }
 }
 .lc-dz-menu {
   display: grid;
@@ -54,38 +179,41 @@
 .lc-dz-acts > .lc-btn {
   justify-content: flex-start;
 }
-.lc-dz-built {
-  font-size: 11.5px;
-  color: var(--l-ink-3);
-  white-space: nowrap;
-}
-.lc-dz-built[data-stale] {
-  color: var(--l-warn-text);
-}
 
-/* The ground the frame sits on: the app's wash with a faint grid of dots, as design tools draw theirs. */
-.lc-dz-stage {
+/* ---------- The canvas ---------- */
+.lc-dz-canvas {
   position: relative;
+  display: flex;
   flex: 1;
   min-height: 0;
-  margin: 0 10px 10px;
-  padding: 16px;
+}
+.lc-dz-stage {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
-  border-radius: 14px;
-  background-color: var(--l-wash);
-  background-image: radial-gradient(var(--l-line-2) 1px, transparent 1.2px);
-  background-size: 16px 16px;
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  background-image: radial-gradient(color-mix(in oklab, var(--l-ink) 10%, transparent) 1px, transparent 1.3px);
+  background-size: 18px 18px;
+}
+/* Centred while it fits; scrolls from its edge when it doesn't (auto margins never cut it off). */
+.lc-dz-wrap {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 10px;
+  margin: auto;
+  padding: 24px 24px 56px;
 }
 .lc-dz-board {
   position: relative;
-  margin: 0 auto;
-  border-radius: 10px;
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 10px 30px -14px var(--l-drop);
   overflow: hidden;
+  border-radius: 10px;
   background: #fff;
+  box-shadow:
+    0 0 0 1px var(--l-line),
+    0 22px 56px -22px oklch(0.15 0.02 265 / 0.45);
   transition:
     width 420ms var(--l-spring-smooth),
     height 420ms var(--l-spring-smooth);
@@ -121,31 +249,84 @@
   font-size: 13px;
   text-align: center;
 }
+.lc-dz-cap {
+  font-family: var(--l-font-mono);
+  font-size: 11px;
+  color: var(--l-ink-3);
+}
+.lc-dz-cap [data-stale] {
+  color: var(--l-warn-text);
+}
+/* Zoom: a small glass pill in the canvas's corner. */
+.lc-dz-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 32px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--lc-paper) 72%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--l-line-2),
+    0 8px 20px -10px oklch(0 0 0 / 0.35);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+.lc-dz-zoom > button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-dz-zoom > button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.lc-dz-zoom > button[aria-pressed="true"] {
+  color: var(--l-accent-text);
+}
+@media (hover: hover) {
+  .lc-dz-zoom > button:not(:disabled):hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-dz-zoom > span {
+  min-width: 38px;
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  color: var(--l-ink-2);
+  text-align: center;
+}
+.lc-dz-zoom > i {
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background: var(--l-line-2);
+}
 .lc-dz-code {
   flex: 1;
   min-height: 0;
-  margin: 0 10px 10px;
   overflow: auto;
-  border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  box-shadow: inset 0 1px 0 var(--l-line);
 }
 
-/* On the timeline. */
-.lc-dz-card {
+/* ---------- On the timeline ---------- */
+.lc-dz-card,
+.lc-dz-inline {
   margin: 0;
 }
-.lc-dz-card .lc-fcard {
-  display: grid;
-  overflow: hidden;
-  padding: 0;
-}
-.lc-dz-card-v {
-  overflow: hidden;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Beside the chat: a small picture, on a soft well, nothing drawn round it. */
 .lc-dz-thumb {
   display: flex;
   justify-content: center;
@@ -154,9 +335,8 @@
   padding: 0;
   overflow: hidden;
   border: 0;
-  background-color: var(--l-wash);
-  background-image: radial-gradient(var(--l-line-2) 1px, transparent 1.2px);
-  background-size: 14px 14px;
+  border-radius: 12px;
+  background: var(--lc-well);
   cursor: zoom-in;
 }
 .lc-dz-thumb[data-size="phone"],
@@ -178,11 +358,189 @@
   transform-origin: 0 0;
   pointer-events: none;
 }
+/* Under either: its name, its version, and what to do with it. */
+.lc-dz-capline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-dz-capline > svg {
+  flex: none;
+}
+.lc-dz-capline > b {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-dz-capnote {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-dz-capline > .lc-btn {
+  flex: none;
+}
+.lc-dz-open {
+  color: var(--l-accent-text);
+}
+.lc-dz-open > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+/* In the chat: wider than the text (to 880), centred on it, the design with nothing round it. */
+.lc-dz-inline {
+  position: relative;
+  left: 50%;
+  width: min(880px, calc(100cqi - var(--lc-lane, 0px) - 48px));
+  translate: -50% 0;
+}
+.lc-dz-in-band {
+  display: flex;
+  justify-content: center;
+}
+.lc-dz-in-board {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 22px 54px -30px oklch(0.15 0.02 265 / 0.55);
+}
+.lc-dz-inline:not([data-size="desktop"]) .lc-dz-in-board {
+  border-radius: 24px;
+}
+.lc-dz-in-f {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  background: #fff;
+  transform-origin: 0 0;
+}
+/* Its version and its buttons ride on it, in dark glass that reads over any design, while you point at it. */
+.lc-dz-chip,
+.lc-dz-over {
+  position: absolute;
+  top: 12px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  border-radius: 999px;
+  background: oklch(0.2 0.005 265 / 0.55);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
+  color: oklch(0.98 0 0);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.lc-dz-chip {
+  left: 12px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-dz-over {
+  right: 12px;
+  gap: 2px;
+  padding: 3px;
+}
+.lc-dz-over > button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.lc-dz-over > button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-dz-over > button:not(:disabled):hover {
+    background: oklch(1 0 0 / 0.16);
+  }
+}
+.lc-dz-inline:is(:hover, :focus-within) :is(.lc-dz-chip, .lc-dz-over) {
+  opacity: 1;
+}
+@media (hover: none) {
+  .lc-dz-chip,
+  .lc-dz-over {
+    opacity: 1;
+  }
+}
+
+/* ---------- Full screen ---------- */
+.lc-dz-full {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in oklab, var(--lc-ground) 84%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: lc-dz-full-in 260ms var(--l-ease-out) backwards;
+}
+@keyframes lc-dz-full-in {
+  from {
+    opacity: 0;
+  }
+}
+.lc-dz-full-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 12px 0 20px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+html[data-native="mac"] .lc-dz-full-bar {
+  padding-left: calc(var(--lc-lights-x, 70px) + 12px);
+}
+.lc-dz-full-bar b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-dz-full-stage {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  padding: 0 24px 24px;
+}
+.lc-dz-full-stage .lc-dz-in-board {
+  box-shadow:
+    0 0 0 1px var(--l-line),
+    0 30px 80px -30px oklch(0 0 0 / 0.6);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lc-dz-board {
     transition: none;
   }
-  .lc-dz-thumb-in {
+  .lc-dz-thumb-in,
+  .lc-dz-full {
     animation: none;
   }
 }

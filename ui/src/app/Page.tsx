@@ -1,7 +1,9 @@
 /*
   A page an agent showed you: a chart, a table, a mockup. It runs in a sandboxed frame with no
   network and no way into the app (no same-origin, a strict content policy), sized to what it
-  holds. The app's colours reach it as CSS variables, and follow light and dark while it's open.
+  holds, on the thread's own ground with nothing drawn round it (T3 Code: HtmlRenderFrame.tsx).
+  The app's colours reach it as CSS variables, and follow light and dark while it's open. Where
+  designs open beside the chat it shows its top, to open in the panel; in the chat, all of it.
 */
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Item } from "@contracts";
@@ -9,6 +11,7 @@ import { toast } from "@liner/components/toast/toast";
 import { openInDesign } from "./Design";
 import { rpc } from "./engine";
 import { I } from "./icons";
+import { useLook } from "./look";
 import { cssVar } from "./Surfaces";
 
 const VARS: [string, string][] = [
@@ -57,50 +60,47 @@ export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item,
       mo.disconnect();
     };
   }, [it.id]);
-  const cap = tall ? 2000 : 560;
+  const where = useLook().designs;
+  const cap = tall ? 2000 : where === "panel" ? 260 : 560;
+  const cut = height > cap;
+  const save = () =>
+    void rpc("design.save", { threadId, title: it.title, html: it.html })
+      .then((d) => d.kind === "design" && openInDesign(threadId, d.design))
+      .catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
   return (
-    <figure className="lc-page lc-frame">
-      <div className="lc-fcard">
-        <figcaption className="lc-page-h">
-          <I.sparkle size={13} />
-          <b>{it.title}</b>
-          <span className="lc-grow" />
-          {height > 560 && (
-            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" aria-expanded={tall} onClick={() => setTall((t) => !t)}>
-              {tall ? "Less" : "All of it"}
-            </button>
-          )}
-          {/* Kept and drawn full size, version by version, where you can comment on its parts. */}
-          <button
-            type="button"
-            className="lc-ib l-focus"
-            aria-label="Open it as a design"
-            title="Open it as a design"
-            onClick={() =>
-              void rpc("design.save", { threadId, title: it.title, html: it.html })
-                .then((d) => d.kind === "design" && openInDesign(threadId, d.design))
-                .catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
-            }
-          >
-            <I.design size={13} />
-          </button>
-          <button
-            type="button"
-            className="lc-ib l-focus"
-            aria-label="Copy the page's HTML"
-            title="Copy the HTML"
-            onClick={() =>
-              void navigator.clipboard
-                .writeText(it.html)
-                .then(() => toast.success("Copied the page's HTML"))
-                .catch(() => toast.error("Couldn't copy it"))
-            }
-          >
-            <I.copy size={13} />
-          </button>
-        </figcaption>
+    <figure className="lc-page">
+      <div className="lc-page-box" data-cut={cut || undefined}>
         <iframe ref={frame} className="lc-page-f" title={it.title} sandbox="allow-scripts" srcDoc={doc} onLoad={() => frame.current?.contentWindow?.postMessage({ __linerPing: 1 }, "*")} style={{ height: Math.min(height, cap) }} />
       </div>
+      <figcaption className="lc-dz-capline">
+        <I.sparkle size={13} />
+        <b>{it.title}</b>
+        <span className="lc-dz-capnote">· HTML page</span>
+        <span className="lc-grow" />
+        {(cut || tall) && (
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" aria-expanded={tall} onClick={() => setTall((t) => !t)}>
+            {tall ? "Less" : "All of it"}
+          </button>
+        )}
+        {/* Kept and drawn full size, version by version, where you can comment on its parts. */}
+        <button type="button" className="lc-ib l-focus" aria-label="Open it in the panel, as a design" title="Open it in the panel, as a design" onClick={save}>
+          <I.panel size={13} />
+        </button>
+        <button
+          type="button"
+          className="lc-ib l-focus"
+          aria-label="Copy the page's HTML"
+          title="Copy the HTML"
+          onClick={() =>
+            void navigator.clipboard
+              .writeText(it.html)
+              .then(() => toast.success("Copied the page's HTML"))
+              .catch(() => toast.error("Couldn't copy it"))
+          }
+        >
+          <I.copy size={13} />
+        </button>
+      </figcaption>
     </figure>
   );
 }

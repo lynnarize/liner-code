@@ -11,14 +11,17 @@
   The timeline's card for each version (DesignCard) draws a small picture of it and opens it here.
   Ideas from Kun's Design mode (github.com/KunAgent/Kun) and T3 Code's previews; no code from either.
 */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { DesignInfo, DesignSize, Item, Thread } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { langOf, linesOf, tokensOf, Toks } from "./code";
-import { onStream, rpc } from "./engine";
+import { onStream, rpc, useEngine } from "./engine";
 import { I } from "./icons";
+import { agentOf } from "./model";
+import { updateLook, useLook } from "./look";
 import { SurfaceNote, useCwd } from "./Surfaces";
 import { PanelHead, Pop, Row } from "./ui";
 import "./design.css";
@@ -77,6 +80,36 @@ export function versionHtml(threadId: string, design: string, version: number) {
   return p;
 }
 
+/** The sizes a design is drawn at, with their icons. */
+const SIZES: { id: DesignSize; label: string; icon: (p: { size?: number }) => ReactNode }[] = [
+  { id: "desktop", label: "Desktop", icon: I.monitor },
+  { id: "tablet", label: "Tablet", icon: I.tablet },
+  { id: "phone", label: "Phone", icon: I.device },
+];
+/** Zoom steps on the canvas; Fit leaves them for the panel's width. */
+const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2];
+
+/** What Build sends: make the design for real, with the project's own parts. */
+const buildAsk = (d: DesignItem) =>
+  `Build the design “${d.title}” into the app: version ${d.version}, in \`${d.path}\`. Read the design file first, then make the real thing with this project's own components, styles and conventions, matching its layout, spacing, type and colours closely. The design is a picture of the result, not code to paste in. When it's done, say what you couldn't match, if anything.`;
+/** Hands a version to the agent to build, and remembers it was built. */
+async function buildDesign(thread: Thread, d: DesignItem, agentName: string) {
+  try {
+    await rpc("thread.send", { id: thread.id, text: buildAsk(d), mode: thread.status === "running" ? "queue" : undefined });
+    toast(`Asked ${agentName} to build “${d.title}”`);
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : String(e));
+    return null;
+  }
+  return rpc("design.built", { threadId: thread.id, design: d.design, version: d.version }).catch(() => null);
+}
+
+/** Designs open beside the chat or in it; a design's own menu changes it for all of them. */
+function switchWhere(to: "panel" | "chat") {
+  updateLook({ designs: to });
+  toast(to === "chat" ? "Designs now show in the chat" : "Designs now open beside the chat", { description: "Settings › Appearance › Designs and pages", duration: 3000 });
+}
+
 const ago = (at: number) => {
   const s = Math.round((Date.now() - at) / 1000);
   if (s < 60) return "just now";
@@ -119,12 +152,14 @@ export function startDesigns() {
 
 export function DesignSurface({ thread, items, agentName, visible }: { thread: Thread; items: Item[]; agentName: string; visible: boolean }) {
   const designs = useMemo(() => designsIn(items), [items]);
+  const where = useLook().designs;
   const cwd = useCwd(thread);
   const [sel, setSel] = useState<string | null>(null);
   const [version, setVersion] = useState<number | "live">("live");
   const [view, setView] = useState<"design" | "code">("design");
   const [sizes, setSizes] = useState<Record<string, DesignSize>>({});
-  const [fit, setFit] = useState(true);
+  // Fit (null) follows the panel's width; a step on the zoom pill holds until you fit again.
+  const [zoom, setZoom] = useState<number | null>(null);
   const [scheme, setScheme] = useState<Scheme>("system");
   const [info, setInfo] = useState<DesignInfo[]>([]);
   const [base, setBase] = useState<string | null>(null);
@@ -260,9 +295,11 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
   const cmd = (c: string) => live.current?.contentWindow?.postMessage({ __linerCmd: c }, "*");
 
   const { width: W, height: H } = FRAME[size];
-  const scale = fit && box.w ? Math.min(1, (box.w - 32) / W) : 1;
-  // A desktop design fills the stage's height; a tablet or phone keeps its screen.
-  const frameH = size === "desktop" && box.h ? Math.max(H, Math.floor((box.h - 32) / scale)) : H;
+  const fitScale = box.w ? Math.min(1, (box.w - 48) / W) : 1;
+  const scale = zoom ?? fitScale;
+  const zoomBy = (step: 1 | -1) => setZoom(() => (step > 0 ? ZOOMS.find((z) => z > scale + 0.001) : [...ZOOMS].reverse().find((z) => z < scale - 0.001)) ?? scale);
+  // A desktop design fills the canvas's height, under its margins and caption; a tablet or phone keeps its screen.
+  const frameH = size === "desktop" && box.h ? Math.max(H, Math.floor((box.h - 110) / scale)) : H;
 
   // Where the comment card sits: under the part, inside the stage, past its scroll.
   const card = useMemo(() => {
@@ -297,11 +334,8 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
 
   const build = async () => {
     if (!latest) return;
-    const text = `Build the design “${latest.title}” into the app: version ${latest.version}, in \`${latest.path}\`. Read the design file first, then make the real thing with this project's own components, styles and conventions, matching its layout, spacing, type and colours closely. The design is a picture of the result, not code to paste in. When it's done, say what you couldn't match, if anything.`;
-    if (!(await send(text, `Asked ${agentName} to build “${latest.title}”`))) return;
-    void rpc("design.built", { threadId: thread.id, design: latest.design, version: latest.version })
-      .then(setInfo)
-      .catch(() => {});
+    const now = await buildDesign(thread, latest, agentName);
+    if (now) setInfo(now);
   };
 
   const restore = async () => {
@@ -336,10 +370,13 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
   const toks = view === "code" && code !== null ? tokensOf(linesOf(code), langOf("design.html")) : [];
   const frameStyle = { width: W, height: frameH, transform: scale === 1 ? undefined : `scale(${scale})`, colorScheme: scheme === "system" ? undefined : scheme };
 
+  const builtNote = built ? (built.version < latest.version ? `built v${built.version}, changed since` : `built v${built.version}`) : null;
+
   return (
     <div className="lc-dz">
-      <div className="lc-br-bar lc-dz-bar">
-        <Pop label="Designs in this session" width={300} triggerClass="lc-dz-pick" trigger={<><I.design size={13} /><b>{latest.title}</b><I.chevD size={12} /></>}>
+      {/* One row: which design and version, how it's drawn, and what to do with it. */}
+      <div className="lc-dz-bar">
+        <Pop label="Designs in this session" width={300} triggerClass="lc-dz-name" trigger={<><b>{latest.title}</b><I.chevD size={11} /></>}>
           {(close) => (
             <div className="lc-dz-menu">
               <PanelHead>Designs in this session</PanelHead>
@@ -355,7 +392,21 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
             </div>
           )}
         </Pop>
-        <Pop label="Versions" width={300} triggerClass="lc-dz-pick lc-dz-ver" trigger={<><span>{shownVersion ? `Version ${shownVersion.version}` : "Live"}</span><I.chevD size={12} /></>}>
+        <Pop
+          label="Versions"
+          width={300}
+          triggerClass="lc-dz-ver"
+          trigger={
+            <>
+              <i data-live={!shownVersion || undefined} aria-hidden />
+              <span>
+                {shownVersion ? `v${shownVersion.version}` : `v${latest.version}`}
+                {!shownVersion && <span className="lc-dz-wide"> · Live</span>}
+              </span>
+              <I.chevD size={10} />
+            </>
+          }
+        >
           {(close) => (
             <div className="lc-dz-menu">
               <PanelHead>Versions</PanelHead>
@@ -373,6 +424,15 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
           )}
         </Pop>
         <span className="lc-grow" />
+        {view === "design" && (
+          <span className="lc-dz-sizes" role="group" aria-label="The size it's drawn at">
+            {SIZES.map((x) => (
+              <button key={x.id} type="button" className="l-focus" aria-label={x.label} title={x.label} aria-pressed={size === x.id} onClick={() => (setSizes((s) => ({ ...s, [latest.design]: x.id })), setZoom(null))}>
+                <x.icon size={14} />
+              </button>
+            ))}
+          </span>
+        )}
         {view === "design" && version === "live" && (
           <button
             type="button"
@@ -393,9 +453,9 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
           </button>
         )}
         <button type="button" className="lc-ib l-focus" aria-label={view === "code" ? "Show the design" : "Show its code"} title={view === "code" ? "Show the design" : "Show its code"} aria-pressed={view === "code"} onClick={() => setView((v) => (v === "code" ? "design" : "code"))}>
-          <I.file size={14} />
+          <I.code size={14} />
         </button>
-        <Pop label="More for the design" align="end" width={250} triggerClass="lc-ib" trigger={<I.more size={14} />}>
+        <Pop label="More for the design" align="end" width={260} triggerClass="lc-ib" trigger={<I.more size={14} />}>
           {(close) => (
             <div className="lc-br-more">
               <div className="lc-dz-acts">
@@ -407,6 +467,9 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
                 </button>
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!cwd} onClick={() => (bridge.reveal(`${cwd}/${latest.path}`), close())}>
                   <I.folder size={13} /> Show its file
+                </button>
+                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (switchWhere(where === "chat" ? "panel" : "chat"), close())}>
+                  {where === "chat" ? <I.panel size={13} /> : <I.comment size={13} />} {where === "chat" ? "Open designs beside the chat" : "Show designs in the chat instead"}
                 </button>
               </div>
               <PanelHead>Theme</PanelHead>
@@ -423,42 +486,20 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
                   aria-label="The design's theme"
                 />
               </div>
-              <p className="lc-pop-foot">Its prefers-color-scheme follows this, for designs that draw both.</p>
+              <p className="lc-pop-foot">Its prefers-color-scheme follows this, for designs that draw both. Where designs open by default is in Settings › Appearance.</p>
             </div>
           )}
         </Pop>
-      </div>
-      <div className="lc-br-opts">
-        <Segmented
-          size="sm"
-          value={size}
-          onValueChange={(v) => setSizes((s) => ({ ...s, [latest.design]: v }))}
-          options={[
-            { value: "desktop", label: "Desktop" },
-            { value: "tablet", label: "Tablet" },
-            { value: "phone", label: "Phone" },
-          ]}
-          aria-label="The size it's drawn at"
-        />
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" aria-pressed={!fit} title={fit ? "Draw it at its own pixels" : "Fit it to the panel"} onClick={() => setFit((f) => !f)}>
-          {fit ? `${Math.round(scale * 100)}%` : "100%"}
-        </button>
-        <span className="lc-grow" />
         {shownVersion ? (
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void restore()} title={`Put version ${shownVersion.version} back in ${latest.path}`}>
-            <I.undo size={13} /> Bring back version {shownVersion.version}
+          <button type="button" className="lc-btn lc-dz-build" data-kind="plain" data-size="sm" onClick={() => void restore()} title={`Put version ${shownVersion.version} back in ${latest.path}`}>
+            <I.undo size={13} />
+            <span className="lc-dz-wide">Bring back</span> v{shownVersion.version}
           </button>
         ) : (
-          <>
-            {built && (
-              <span className="lc-dz-built" data-stale={built.version < latest.version || undefined} title={built.version < latest.version ? `You had version ${built.version} built; it has changed since` : `You had version ${built.version} built`}>
-                {built.version < latest.version ? `Built v${built.version}, changed since` : `Built v${built.version}`}
-              </span>
-            )}
-            <button type="button" className="lc-btn" data-kind={built?.version === latest.version ? "plain" : "primary"} data-size="sm" onClick={() => void build()} title={`Ask ${agentName} to build version ${latest.version} into the app`}>
-              <I.play size={12} /> {built ? "Build again" : "Build it"}
-            </button>
-          </>
+          <button type="button" className="lc-btn lc-dz-build" data-kind={built?.version === latest.version ? "plain" : "primary"} data-size="sm" onClick={() => void build()} title={`Ask ${agentName} to build version ${latest.version} into the app`}>
+            <I.play size={11} />
+            <span>{built ? "Build again" : "Build it"}</span>
+          </button>
         )}
       </div>
       {view === "code" ? (
@@ -480,70 +521,94 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
           )}
         </div>
       ) : (
-        <div ref={stage} className="lc-dz-stage" data-size={size}>
-          <div className="lc-dz-board" style={{ width: Math.ceil(W * scale), height: Math.ceil(frameH * scale) }}>
-            <div className="lc-dz-frame" style={frameStyle}>
-              {shownVersion ? (
-                oldHtml === null ? (
-                  <span className="l-shimmer lc-dz-wait">Opening version {shownVersion.version}</span>
-                ) : (
-                  // A version on its own: scripts run, but it has no origin, so it can't reach the app.
-                  <iframe key={`v${shownVersion.version}`} className="lc-dz-f" title={`${latest.title}, version ${shownVersion.version}`} srcDoc={withShim(oldHtml)} sandbox="allow-scripts allow-forms allow-modals" />
-                )
-              ) : (
-                <>
-                  {([0, 1] as const).map((i) =>
-                    slots[i] ? (
-                      <iframe
-                        key={`${i}:${slots[i]}`}
-                        ref={i === front ? (el) => void (live.current = el) : undefined}
-                        className="lc-dz-f"
-                        data-behind={i !== front || undefined}
-                        title={i === front ? latest.title : `${latest.title}, as it's being edited`}
-                        src={slots[i]!}
-                        // Served from the folder's own address, not the app's: it can't reach into the app.
-                        sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
-                        tabIndex={i === front && visible ? 0 : -1}
-                        aria-hidden={i !== front || undefined}
-                        // Only the newest drawing comes to the front, never a stale one that loaded again.
-                        onLoad={() => void (slots[i] === wanted.current && setFront(i))}
-                      />
-                    ) : null,
+        <div className="lc-dz-canvas">
+          {/* The canvas: edge to edge, nothing drawn round it; the design floats on it with its size under it. */}
+          <div ref={stage} className="lc-dz-stage" data-size={size}>
+            <div className="lc-dz-wrap">
+              <div className="lc-dz-board" style={{ width: Math.ceil(W * scale), height: Math.ceil(frameH * scale) }}>
+                <div className="lc-dz-frame" style={frameStyle}>
+                  {shownVersion ? (
+                    oldHtml === null ? (
+                      <span className="l-shimmer lc-dz-wait">Opening version {shownVersion.version}</span>
+                    ) : (
+                      // A version on its own: scripts run, but it has no origin, so it can't reach the app.
+                      <iframe key={`v${shownVersion.version}`} className="lc-dz-f" title={`${latest.title}, version ${shownVersion.version}`} srcDoc={withShim(oldHtml)} sandbox="allow-scripts allow-forms allow-modals" />
+                    )
+                  ) : (
+                    <>
+                      {([0, 1] as const).map((i) =>
+                        slots[i] ? (
+                          <iframe
+                            key={`${i}:${slots[i]}`}
+                            ref={i === front ? (el) => void (live.current = el) : undefined}
+                            className="lc-dz-f"
+                            data-behind={i !== front || undefined}
+                            title={i === front ? latest.title : `${latest.title}, as it's being edited`}
+                            src={slots[i]!}
+                            // Served from the folder's own address, not the app's: it can't reach into the app.
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+                            tabIndex={i === front && visible ? 0 : -1}
+                            aria-hidden={i !== front || undefined}
+                            // Only the newest drawing comes to the front, never a stale one that loaded again.
+                            onLoad={() => void (slots[i] === wanted.current && setFront(i))}
+                          />
+                        ) : null,
+                      )}
+                      {!shown && <span className="l-shimmer lc-dz-wait">Opening {latest.path}</span>}
+                    </>
                   )}
-                  {!shown && <span className="l-shimmer lc-dz-wait">Opening {latest.path}</span>}
-                </>
-              )}
+                </div>
+              </div>
+              <span className="lc-dz-cap l-num">
+                {SIZES.find((x) => x.id === size)?.label} · {W} × {H}
+                {builtNote && <span data-stale={built && built.version < latest.version ? true : undefined}> · {builtNote}</span>}
+              </span>
             </div>
+            {picking && <span className="lc-br-hint l-glass">Point at a part of the design and click it. Escape stops.</span>}
+            {picked && card && (
+              <div className="lc-br-ask l-glass" style={{ left: card.left, top: card.top }} role="dialog" aria-label={`Comment on this part for ${agentName}`}>
+                <div className="lc-br-ask-h">
+                  <span className="lc-code">{picked.selector}</span>
+                  <span className="lc-quiet lc-br-ask-p">{picked.text ? `“${picked.text.slice(0, 48)}${picked.text.length > 48 ? "…" : ""}”` : picked.path}</span>
+                  <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={() => setPicked(null)}>
+                    <I.close size={12} />
+                  </button>
+                </div>
+                <input
+                  className="lc-input"
+                  autoFocus
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="What should change here?"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void ask();
+                    if (e.key === "Escape") setPicked(null);
+                  }}
+                />
+                <div className="lc-br-ask-f">
+                  <span className="lc-quiet">Sends the part with your comment</span>
+                  <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!comment.trim()} onClick={() => void ask()}>
+                    Send to {agentName}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-          {picking && <span className="lc-br-hint l-glass">Point at a part of the design and click it. Escape stops.</span>}
-          {picked && card && (
-            <div className="lc-br-ask l-glass" style={{ left: card.left, top: card.top }} role="dialog" aria-label={`Comment on this part for ${agentName}`}>
-              <div className="lc-br-ask-h">
-                <span className="lc-code">{picked.selector}</span>
-                <span className="lc-quiet lc-br-ask-p">{picked.text ? `“${picked.text.slice(0, 48)}${picked.text.length > 48 ? "…" : ""}”` : picked.path}</span>
-                <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={() => setPicked(null)}>
-                  <I.close size={12} />
-                </button>
-              </div>
-              <input
-                className="lc-input"
-                autoFocus
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="What should change here?"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void ask();
-                  if (e.key === "Escape") setPicked(null);
-                }}
-              />
-              <div className="lc-br-ask-f">
-                <span className="lc-quiet">Sends the part with your comment</span>
-                <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!comment.trim()} onClick={() => void ask()}>
-                  Send to {agentName}
-                </button>
-              </div>
-            </div>
-          )}
+          <div className="lc-dz-zoom" role="group" aria-label="Zoom">
+            <button type="button" className="l-focus" aria-label="Zoom out" title="Zoom out" disabled={scale <= ZOOMS[0] + 0.001} onClick={() => zoomBy(-1)}>
+              <I.minus size={13} />
+            </button>
+            <span className="l-num" aria-live="polite">
+              {Math.round(scale * 100)}%
+            </span>
+            <button type="button" className="l-focus" aria-label="Zoom in" title="Zoom in" disabled={scale >= ZOOMS[ZOOMS.length - 1] - 0.001} onClick={() => zoomBy(1)}>
+              <I.plus size={13} />
+            </button>
+            <i aria-hidden />
+            <button type="button" className="l-focus" aria-label="Fit it to the panel" title="Fit it to the panel" aria-pressed={zoom === null} onClick={() => setZoom(null)}>
+              <I.fit size={13} />
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -552,12 +617,25 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
 
 /* ---------- The timeline's card ---------- */
 
-/** A version an agent showed, on the timeline: a small picture of it (drawn once it's in view) that opens it in the Design surface. */
+/**
+  A version an agent showed, on the timeline. Beside the chat (Settings › Appearance), a small
+  picture of it that opens it in the Design surface, and can show itself here instead. In the
+  chat, the design itself, wide and with nothing drawn round it, as part of the answer, its
+  buttons over it while you point at it (T3 Code: HtmlRenderFrame.tsx). Drawn once it's in view.
+*/
 export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem }) {
-  const box = useRef<HTMLButtonElement>(null);
+  const where = useLook().designs;
+  const [here, setHere] = useState(false);
+  const inline = where === "chat" || here;
+  const box = useRef<HTMLElement | null>(null);
+  const measure = (el: HTMLElement | null) => void (box.current = el);
   const [width, setWidth] = useState(0);
   const [seen, setSeen] = useState(false);
   const [html, setHtml] = useState<string | null>(null);
+  const [full, setFull] = useState(false);
+  const thread = useEngine((s) => s.threads.find((t) => t.id === threadId));
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -566,7 +644,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
     const io = new IntersectionObserver((es) => es.some((x) => x.isIntersecting) && (setSeen(true), io.disconnect()), { rootMargin: "200px" });
     io.observe(el);
     return () => (ro.disconnect(), io.disconnect());
-  }, []);
+  }, [inline]);
   useEffect(() => {
     if (!seen) return;
     let on = true;
@@ -578,34 +656,139 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
     };
   }, [seen, threadId, it.design, it.version]);
   const { width: W, height: H } = FRAME[it.size];
-  // A desktop design fills the card's width; a tablet or phone fits its whole screen in the card's height.
-  const tall = 260;
-  const scale = !width ? 0 : it.size === "desktop" ? width / W : Math.min(width / W, tall / H);
+  const size = SIZES.find((x) => x.id === it.size)?.label ?? it.size;
   const open = () => openInDesign(threadId, it.design, undefined);
-  return (
-    <figure className="lc-dz-card lc-frame">
-      <div className="lc-fcard">
-        <figcaption className="lc-page-h">
+  const agentName = thread ? agentOf(thread.lead ?? thread.agent, agents, providers).name : "the agent";
+
+  if (inline) {
+    // A desktop design takes the width; a tablet or phone keeps its screen, no taller than 640.
+    const scale = !width ? 0 : it.size === "desktop" ? width / W : Math.min(1, width / W, 640 / H);
+    const bw = Math.round(W * scale);
+    const bh = Math.round(H * scale);
+    return (
+      <figure ref={measure} className="lc-dz-inline" data-size={it.size}>
+        <div className="lc-dz-in-band">
+          <div className="lc-dz-in-board" style={{ width: bw || "100%", height: bh || 240 }}>
+            {html !== null && scale > 0 ? (
+              // Drawn on its own, with no origin: it can't reach the app.
+              <iframe className="lc-dz-in-f" title={`${it.title}, version ${it.version}`} srcDoc={withShim(html)} sandbox="allow-scripts allow-forms" style={{ width: W, height: H, transform: `scale(${scale})` }} />
+            ) : (
+              <span className="l-shimmer lc-dz-wait">Drawing {it.title}</span>
+            )}
+            <span className="lc-dz-chip">v{it.version}</span>
+            <span className="lc-dz-over" role="group" aria-label={it.title}>
+              <button type="button" className="l-focus" aria-label="Open in the panel" title="Open in the panel" onClick={open}>
+                <I.panel size={14} />
+              </button>
+              <button type="button" className="l-focus" aria-label="Full screen" title="Full screen" disabled={html === null} onClick={() => setFull(true)}>
+                <I.expand size={14} />
+              </button>
+            </span>
+          </div>
+        </div>
+        <figcaption className="lc-dz-capline">
           <I.design size={13} />
           <b>{it.title}</b>
-          <span className="lc-quiet lc-dz-card-v">
-            Version {it.version}
+          <span className="lc-dz-capnote">
+            · Version {it.version} · {size}
             {it.note ? ` · ${it.note}` : ""}
           </span>
           <span className="lc-grow" />
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={open}>
-            Open
-          </button>
-        </figcaption>
-        <button ref={box} type="button" className="lc-dz-thumb l-focus" data-size={it.size} aria-label={`Open “${it.title}” in the Design surface`} onClick={open} style={{ height: it.size === "desktop" ? Math.min(tall, Math.round(H * scale) || 200) : tall }}>
-          {html !== null && scale > 0 && (
-            <span className="lc-dz-thumb-in" style={{ width: Math.round(W * scale), height: Math.round(H * scale) }}>
-              {/* Drawn on its own, with no origin: it can't reach the app. */}
-              <iframe className="lc-dz-thumb-f" title={`${it.title}, version ${it.version}`} srcDoc={withShim(html)} sandbox="allow-scripts" tabIndex={-1} aria-hidden style={{ width: W, height: H, transform: `scale(${scale})` }} />
-            </span>
+          {here && where === "panel" && (
+            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setHere(false)}>
+              Back to a card
+            </button>
           )}
+          {thread && (
+            <button type="button" className="lc-btn lc-dz-buildsm" data-kind="plain" data-size="sm" onClick={() => void buildDesign(thread, it, agentName)} title={`Ask ${agentName} to build version ${it.version} into the app`}>
+              <I.play size={10} /> Build it
+            </button>
+          )}
+        </figcaption>
+        {full && html !== null && <DesignFull it={it} html={html} onOpen={() => (setFull(false), open())} onClose={() => setFull(false)} />}
+      </figure>
+    );
+  }
+
+  // A desktop design fills the card's width; a tablet or phone fits its whole screen in the card's height.
+  const tall = 200;
+  const scale = !width ? 0 : it.size === "desktop" ? width / W : Math.min(width / W, tall / H);
+  return (
+    <figure className="lc-dz-card">
+      <button ref={measure} type="button" className="lc-dz-thumb l-focus" data-size={it.size} aria-label={`Open “${it.title}” in the Design surface`} onClick={open} style={{ height: it.size === "desktop" ? Math.min(tall, Math.round(H * scale) || tall) : tall }}>
+        {html !== null && scale > 0 && (
+          <span className="lc-dz-thumb-in" style={{ width: Math.round(W * scale), height: Math.round(H * scale) }}>
+            {/* Drawn on its own, with no origin: it can't reach the app. */}
+            <iframe className="lc-dz-thumb-f" title={`${it.title}, version ${it.version}`} srcDoc={withShim(html)} sandbox="allow-scripts" tabIndex={-1} aria-hidden style={{ width: W, height: H, transform: `scale(${scale})` }} />
+          </span>
+        )}
+      </button>
+      <figcaption className="lc-dz-capline">
+        <I.design size={13} />
+        <b>{it.title}</b>
+        <span className="lc-dz-capnote">
+          · Version {it.version}
+          {it.note ? ` · ${it.note}` : ""}
+        </span>
+        <span className="lc-grow" />
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setHere(true)}>
+          Show it here
+        </button>
+        <button type="button" className="lc-btn lc-dz-open" data-kind="ghost" data-size="sm" onClick={open}>
+          <i aria-hidden />
+          Open in the panel
+        </button>
+      </figcaption>
+    </figure>
+  );
+}
+
+/** A design over the whole window, fitted to it; Escape or the close button puts it back. */
+function DesignFull({ it, html, onOpen, onClose }: { it: DesignItem; html: string; onOpen: () => void; onClose: () => void }) {
+  const stage = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const close = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBox({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    close.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => (ro.disconnect(), window.removeEventListener("keydown", onKey, true));
+  }, []);
+  const { width: W, height: H } = FRAME[it.size];
+  const scale = box.w ? Math.min(1, (box.w - 48) / W, (box.h - 48) / H) : 0;
+  return createPortal(
+    <div className="lc-dz-full" role="dialog" aria-modal="true" aria-label={`${it.title}, full screen`}>
+      <div className="lc-dz-full-bar">
+        <I.design size={14} />
+        <b>{it.title}</b>
+        <span className="lc-quiet">
+          Version {it.version} · {FRAME[it.size].width} × {FRAME[it.size].height}
+        </span>
+        <span className="lc-grow" />
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onOpen}>
+          <I.panel size={13} /> Open in the panel
+        </button>
+        <button ref={close} type="button" className="lc-ib l-focus" aria-label="Close full screen" title="Close (Esc)" onClick={onClose}>
+          <I.close size={14} />
         </button>
       </div>
-    </figure>
+      <div ref={stage} className="lc-dz-full-stage" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        {scale > 0 && (
+          <div className="lc-dz-in-board" style={{ width: Math.round(W * scale), height: Math.round(H * scale) }}>
+            <iframe className="lc-dz-in-f" title={`${it.title}, version ${it.version}`} srcDoc={withShim(html)} sandbox="allow-scripts allow-forms allow-modals" style={{ width: W, height: H, transform: `scale(${scale})` }} />
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
   );
 }

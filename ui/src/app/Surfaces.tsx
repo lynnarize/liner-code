@@ -150,8 +150,8 @@ export function PanelTabs({ state, onState, label }: { state: PanelState; onStat
     return () => ro.disconnect();
   }, [on, state.tabs.join()]);
   return (
-    <div className="lc-panel-top lc-stabs" role="tablist" aria-label="Surfaces">
-      <div ref={row} className="lc-stabs-row" data-many={state.tabs.length > 3 || undefined} data-plate={plate ? "" : undefined}>
+    <div className="lc-panel-top lc-stabs" role="tablist" aria-label="Surfaces" data-drag>
+      <div ref={row} className="lc-stabs-row" data-plate={plate ? "" : undefined}>
         {plate && <span className="lc-stab-plate" data-moved={plate.moved || undefined} style={{ transform: `translateX(${plate.x}px)`, width: plate.w }} aria-hidden />}
         {state.tabs.map((t) => {
           const s = surfaceOf(t);
@@ -159,7 +159,17 @@ export function PanelTabs({ state, onState, label }: { state: PanelState; onStat
           const on = !state.picking && state.tab === t;
           return (
             <span key={t} className="lc-stab" data-on={on || undefined}>
-              <button type="button" role="tab" aria-selected={on} className="lc-stab-b l-focus" onClick={() => onState({ ...state, tab: t, picking: false })} title={label(t)}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={on}
+                aria-label={label(t)}
+                className="lc-stab-b l-focus"
+                onClick={() => onState({ ...state, tab: t, picking: false })}
+                // A tab down to its icon has no close of its own: a middle click closes it, as in a browser.
+                onAuxClick={(e) => e.button === 1 && (e.preventDefault(), onState(closeTab(state, t)))}
+                title={on ? label(t) : `${label(t)} · middle-click to close`}
+              >
                 <Icon size={13} />
                 <span>{short(t) === "Run" ? label(t) : short(t)}</span>
               </button>

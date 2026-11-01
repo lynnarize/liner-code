@@ -19,7 +19,7 @@
 .lc-surface[hidden] {
   display: flex;
   position: absolute;
-  inset: 46px 0 0;
+  inset: var(--lc-head) 0 0;
   visibility: hidden;
   pointer-events: none;
 }
@@ -43,15 +43,15 @@
 .lc-stabs-row::-webkit-scrollbar {
   display: none;
 }
-/* With many tabs, the ones you aren't on keep only their icon; the name is in the tooltip. */
-.lc-stabs-row[data-many] .lc-stab:not([data-on]) {
+/* The tabs you aren't on keep only their icon; the name is in the tooltip, and the open one says it. */
+.lc-stab:not([data-on]) {
   min-width: 0;
 }
-.lc-stabs-row[data-many] .lc-stab:not([data-on]) .lc-stab-b {
-  padding: 0 9px;
+.lc-stab:not([data-on]) .lc-stab-b {
+  padding: 0 7px;
 }
-.lc-stabs-row[data-many] .lc-stab:not([data-on]) .lc-stab-b > span,
-.lc-stabs-row[data-many] .lc-stab:not([data-on]) .lc-stab-x {
+.lc-stab:not([data-on]) .lc-stab-b > span,
+.lc-stab:not([data-on]) .lc-stab-x {
   display: none;
 }
 .lc-stab {
@@ -60,14 +60,14 @@
   flex: none;
   align-items: center;
   max-width: 180px;
-  height: 30px;
-  border-radius: 9px;
+  height: 28px;
+  border-radius: 8px;
   transition:
     background 160ms ease,
     box-shadow 160ms ease;
 }
 .lc-stab[data-on] {
-  background: var(--lc-plate);
+  background: var(--l-wash-2);
   box-shadow: none;
 }
 /* With the plate measured, it carries the white; the tab itself stays clear so the plate can glide. */
@@ -82,10 +82,10 @@
   position: absolute;
   top: 50%;
   left: 0;
-  height: 30px;
-  margin-top: -15px;
-  border-radius: 9px;
-  background: var(--lc-plate);
+  height: 28px;
+  margin-top: -14px;
+  border-radius: 8px;
+  background: var(--l-wash-2);
   box-shadow: none;
   pointer-events: none;
 }
@@ -112,10 +112,10 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 30px;
-  padding: 0 11px 0 10px;
+  height: 28px;
+  padding: 0 10px 0 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: none;
   font-size: 12.5px;
   font-weight: 500;
@@ -139,7 +139,7 @@
 .lc-stab-x {
   position: absolute;
   top: 50%;
-  left: 8.5px;
+  left: 6.5px;
   display: grid;
   place-items: center;
   width: 16px;
@@ -162,8 +162,8 @@
 .lc-stab:has(.lc-stab-x:focus-visible) .lc-stab-b > svg {
   opacity: 0;
 }
-/* A tab down to its icon has no close, so its icon stays. */
-.lc-stabs-row[data-many] .lc-stab:not([data-on]) .lc-stab-b > svg {
+/* A tab down to its icon has no close (a middle click closes it), so its icon stays. */
+.lc-stab:not([data-on]) .lc-stab-b > svg {
   opacity: 1;
 }
 @media (hover: hover) {
@@ -3136,19 +3136,86 @@
   color: var(--l-ink-2);
 }
 .lc-input.lc-commit-m {
-  height: 110px;
+  box-sizing: border-box;
+  width: 100%;
+  field-sizing: content;
+  min-height: 110px;
+  max-height: 240px;
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--lc-well);
   box-shadow: none;
-  resize: vertical;
+  resize: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--l-line-2) transparent;
   font-family: var(--l-font-mono);
   font-size: 12px;
   line-height: 18px;
 }
+/* While the message is written: the well it lands in, with lines drawing in one after another
+   as if typed, then fading to start again. Same size as the field, so nothing jumps. */
 .lc-commit-wait {
-  margin: 14px 4px;
-  font-size: 13px;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  box-sizing: border-box;
+  min-height: 110px;
+  padding: 14px 12px;
+  border-radius: 12px;
+  background: var(--lc-well);
+}
+.lc-commit-wait > i {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--l-ink) 14%, transparent);
+  transform-origin: left;
+  animation: lc-commit-type 2.4s var(--l-ease-enter) infinite both;
+}
+.lc-commit-wait > i:nth-child(1) {
+  width: 62%;
+}
+.lc-commit-wait > i:nth-child(2) {
+  width: 0;
+  margin-bottom: 4px;
+  animation: none;
+}
+.lc-commit-wait > i:nth-child(3) {
+  width: 88%;
+  animation-delay: 0.3s;
+}
+.lc-commit-wait > i:nth-child(4) {
+  width: 74%;
+  animation-delay: 0.6s;
+}
+.lc-commit-wait > i:nth-child(5) {
+  width: 40%;
+  animation-delay: 0.9s;
+}
+.lc-commit-wait > span {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+@keyframes lc-commit-type {
+  0% {
+    scale: 0 1;
+    opacity: 1;
+  }
+  35%,
+  80% {
+    scale: 1 1;
+    opacity: 1;
+  }
+  100% {
+    scale: 1 1;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-commit-wait > i {
+    animation: none;
+  }
 }
 .lc-commit-f {
   display: flex;
@@ -3425,27 +3492,13 @@
 .lc-page {
   margin: 0;
 }
-.lc-page .lc-fcard {
-  display: grid;
+/* On the thread's own ground; cut short, its end fades rather than stopping on a line. */
+.lc-page-box {
   overflow: hidden;
-  padding: 0;
+  border-radius: 12px;
 }
-.lc-page-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 8px 0 14px;
-  box-shadow: 0 1px 0 var(--l-line);
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.lc-page-h b {
-  overflow: hidden;
-  font-weight: 500;
-  color: var(--l-ink);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.lc-page-box[data-cut] {
+  mask-image: linear-gradient(#000 calc(100% - 56px), transparent);
 }
 .lc-page-f {
   display: block;

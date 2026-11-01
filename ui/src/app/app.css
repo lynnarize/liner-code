@@ -321,6 +321,11 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
 }
 
 /* ---------- Shared bits ---------- */
+/* Every scrollbar thin and quiet: a soft thumb on no track. Set per element, with no weight, so
+   a scroller's own rule still wins and nothing inherits a hidden one. */
+:where(*) {
+  scrollbar-color: var(--l-line-2) transparent;
+}
 .lc-ib {
   display: grid;
   flex: none;
@@ -989,13 +994,11 @@ html[data-native="mac"] .lc-sb-head {
   flex: none;
 }
 /*
-  One row for every place in a sidebar: the session sidebar's New session, Routines and Search,
-  and each of Settings' places. 32px, the icon in ink-3 at 16, the name at 13 medium; the place
-  you're on sits on the white plate, the same plate the open session wears.
+  One row for every place in a sidebar: the session sidebar's New session, Routines and Search.
+  32px, the icon in ink-3 at 16, the name at 13 medium; the place you're on sits on the white
+  plate, the same plate the open session wears. (Settings' places: settings.css.)
 */
-.lc-sb-nav,
-.lc-st-nav .l-side__item,
-.lc-st-back {
+.lc-sb-nav {
   display: flex;
   flex: none;
   align-items: center;
@@ -1018,38 +1021,29 @@ html[data-native="mac"] .lc-sb-head {
     background 140ms ease,
     color 140ms ease;
 }
-.lc-sb-nav > svg,
-.lc-st-back > svg,
-.lc-st-nav .l-side__icon {
+.lc-sb-nav > svg {
   flex: none;
   width: 16px;
   height: 16px;
   color: var(--l-ink-3);
   transition: color 140ms ease;
 }
-.lc-sb-nav[aria-current],
-.lc-st-nav .l-side__item[data-on] {
+.lc-sb-nav[aria-current] {
   color: var(--l-ink);
 }
-.lc-sb-nav[aria-current] > svg,
-.lc-st-nav .l-side__item[data-on] .l-side__icon {
+.lc-sb-nav[aria-current] > svg {
   color: var(--l-ink);
 }
-.lc-sb-nav[aria-current],
-.lc-st-nav .l-side__plate {
+.lc-sb-nav[aria-current] {
   background: var(--lc-plate);
   box-shadow: none;
 }
 @media (hover: hover) {
-  .lc-sb-nav:not([aria-current]):hover,
-  .lc-st-nav .l-side__item:not([data-on]):hover,
-  .lc-st-back:hover {
+  .lc-sb-nav:not([aria-current]):hover {
     background: var(--l-wash-2);
     color: var(--l-ink);
   }
-  .lc-sb-nav:hover > svg,
-  .lc-st-back:hover > svg,
-  .lc-st-nav .l-side__item:hover .l-side__icon {
+  .lc-sb-nav:hover > svg {
     color: var(--l-ink);
   }
 }
@@ -1129,10 +1123,14 @@ html[data-native="mac"] .lc-sb-head {
   align-items: center;
   gap: 6px;
   height: 26px;
-  padding: 0 10px;
+  padding: 0 8px;
   font-size: 12px;
   font-weight: 500;
   color: var(--l-ink-3);
+}
+.lc-sb-lab > svg {
+  flex: none;
+  color: var(--l-ink-4);
 }
 .lc-sb-lab > span {
   margin-left: auto;
@@ -1161,39 +1159,89 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 12px;
   animation: lc-row-in 380ms var(--l-ease-enter) backwards;
 }
-/* A project's header folds its sessions; the count is how many need you. */
+/*
+  A project's header: its badge, its name, and how many of its sessions need you. It folds its
+  sessions; the chevron that says so comes when you point at it, and stays while it's folded.
+*/
+.lc-sb-plab {
+  height: 30px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
 .lc-sb-pt {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  height: 22px;
+  height: 26px;
   margin-left: -4px;
   padding: 0 6px 0 4px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   color: inherit;
   cursor: pointer;
 }
-.lc-sb-pt > span {
+.lc-sb-pt > span:not(.lc-pjb) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .lc-sb-pt > svg {
   flex: none;
+  margin-left: -3px;
   color: var(--l-ink-4);
-  transition: transform 300ms var(--l-spring-smooth);
+  opacity: 0;
+  transition:
+    transform 300ms var(--l-spring-smooth),
+    opacity 140ms ease;
 }
 .lc-sb-pt[aria-expanded="true"] > svg {
   transform: rotate(90deg);
 }
+.lc-sb-plab:hover .lc-sb-pt > svg,
+.lc-sb-pt:focus-visible > svg,
+.lc-sb-pt[aria-expanded="false"] > svg {
+  opacity: 1;
+}
 @media (hover: hover) {
   .lc-sb-pt:hover {
-    color: var(--l-ink-2);
+    color: var(--l-ink);
   }
+}
+/* The badge: two letters on the project's own hue (set on it as --lc-pjb-h). */
+.lc-pjb {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: oklch(0.6 0.085 var(--lc-pjb-h, 250));
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: oklch(0.99 0.005 var(--lc-pjb-h, 250));
+}
+[data-theme="dark"] .lc-pjb {
+  background: oklch(0.58 0.08 var(--lc-pjb-h, 250));
+}
+.lc-pjb[data-none] {
+  background: var(--l-ink-4);
+  color: var(--l-surface);
+}
+.lc-pjb[data-small] {
+  display: inline-grid;
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  border-radius: 4px;
+  font-size: 6.5px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
 }
 .lc-sb-plab > .lc-sb-pneeds {
   margin-left: auto;
@@ -1253,8 +1301,9 @@ html[data-native="mac"] .lc-sb-head {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-left: 15px;
-  padding-left: 9px;
+  /* The line runs down from the parent's mark, at the middle of its 18px column. */
+  margin-left: 16.5px;
+  padding-left: 8.5px;
 }
 .lc-sb-kids::before {
   content: "";
@@ -1273,16 +1322,17 @@ html[data-native="mac"] .lc-sb-head {
   }
 }
 /*
-  A session row, two lines: its mark and title with how long ago on the right, then where it
-  stands. Under its project's header that's all; elsewhere the second line starts with the
-  project. On hover the time gives its place to pin, snooze and settle.
+  A session row, two lines: its mark in a column of its own, the title and how long ago on the
+  right; then who, on what model, and where it stands. Under its project's header that's all;
+  elsewhere the second line starts with the project. On hover the time gives its place to pin,
+  snooze and settle. A finished or settled session's title steps back a shade.
 */
 .lc-sb-pick {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: start;
-  column-gap: 10px;
-  padding: 7px 8px 8px 10px;
+  column-gap: 8px;
+  padding: 7px 8px;
   border-radius: 12px;
   outline: none;
   cursor: pointer;
@@ -1294,9 +1344,9 @@ html[data-native="mac"] .lc-sb-head {
 }
 /* The mark sits on the title's line. */
 .lc-sb-mk {
-  display: flex;
-  align-items: center;
-  height: 19px;
+  display: grid;
+  place-items: center;
+  height: 20px;
 }
 .lc-sb-t {
   display: grid;
@@ -1308,20 +1358,20 @@ html[data-native="mac"] .lc-sb-head {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 19px;
+  height: 20px;
 }
 .lc-sb-h > b {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 19px;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-sb-row[aria-current] .lc-sb-h > b {
-  font-weight: 500;
+.lc-sb-row[data-quiet]:not([aria-current]) .lc-sb-h > b {
+  color: var(--l-ink-2);
 }
 .lc-sb-time {
   flex: none;
@@ -1332,7 +1382,7 @@ html[data-native="mac"] .lc-sb-head {
 /* While the actions show, the title stops short of them and the time steps out. */
 .lc-sb-row:is(:hover, :focus-within) .lc-sb-h,
 .lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h {
-  padding-right: 72px;
+  padding-right: 70px;
 }
 .lc-sb-row:is(:hover, :focus-within) .lc-sb-time,
 .lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-time {
@@ -1353,7 +1403,8 @@ html[data-native="mac"] .lc-sb-head {
   background: var(--l-surface);
   box-shadow: 0 0 0 1.5px var(--l-accent);
   font: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
+  font-weight: 500;
 }
 .lc-sb-s {
   overflow: hidden;
@@ -1363,13 +1414,21 @@ html[data-native="mac"] .lc-sb-head {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-sb-s[data-warn] {
+/* The morphing words run inline, so a line too long for the row ends in an ellipsis, letter by
+   letter, rather than losing all of them at once. */
+.lc-sb-s .l-morphtext {
+  display: inline;
+}
+.lc-sb-s[data-tone="warn"] {
   color: var(--l-warn-text);
+}
+.lc-sb-s[data-tone="danger"] {
+  color: var(--l-danger-text);
 }
 /* On the title's line, where the time was. They fade in, and go at once, as the time comes back. */
 .lc-sb-acts {
   position: absolute;
-  top: 5px;
+  top: 6px;
   right: 6px;
   display: flex;
   gap: 1px;
@@ -1501,11 +1560,13 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-foot {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   min-height: 40px;
   padding: 0 2px;
 }
 .lc-sb-foot .lc-ib {
+  display: grid;
+  place-items: center;
   width: 32px;
   height: 32px;
   border-radius: 10px;
@@ -1594,30 +1655,55 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-2);
 }
 
-/* Status marks */
+/* Status marks: rays at work (in the tint of whose model it is), an amber dot with a soft halo
+   when it needs you, an alert on a problem, a hollow ring before it starts, a quiet check. */
 .lc-mk {
   display: grid;
   place-items: center;
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   animation: l-swap-in 280ms var(--l-ease-out) backwards;
 }
 .lc-mk[data-s="run"] {
   color: var(--l-accent);
 }
+.lc-mk[data-s="run"][data-brand="claude"] {
+  color: oklch(0.67 0.13 41);
+}
+.lc-mk[data-s="run"][data-brand="openai"] {
+  color: oklch(0.64 0.11 170);
+}
+.lc-mk[data-s="run"]:is([data-brand="gemini"], [data-brand="deepseek"], [data-brand="meta"], [data-brand="glm"]) {
+  color: oklch(0.62 0.15 260);
+}
+.lc-mk[data-s="run"]:is([data-brand="qwen"], [data-brand="kimi"]) {
+  color: oklch(0.6 0.15 295);
+}
+.lc-mk[data-s="run"][data-brand="mistral"] {
+  color: oklch(0.68 0.16 50);
+}
+.lc-mk[data-s="run"]:is([data-brand="grok"], [data-brand="cursor"]) {
+  color: var(--l-ink-2);
+}
 .lc-mk[data-s="needs"] > i {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--l-warn);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 24%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 22%, transparent);
   animation: lc-ping 1.6s var(--l-ease-in-out) 3;
+}
+.lc-mk[data-s="needs"] {
+  color: var(--l-warn-text);
+}
+.lc-mk[data-s="error"] {
+  color: var(--l-danger-text);
 }
 .lc-mk[data-s="new"] > i {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1.3px var(--l-ink-4);
+  box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
 }
 .lc-mk[data-s="done"] {
   color: var(--l-ink-4);
@@ -1625,6 +1711,148 @@ html[data-native="mac"] .lc-sb-head {
 @keyframes lc-ping {
   50% {
     box-shadow: 0 0 0 6px color-mix(in oklab, var(--l-warn) 0%, transparent);
+  }
+}
+
+/*
+  The card a session row shows when the pointer rests on it: beside the sidebar, level with the
+  row, over everything. The row stays short; the context lives here. It comes into focus from a
+  touch smaller, glides from row to row, and goes at once.
+*/
+.lc-sbc {
+  position: fixed;
+  z-index: 100;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 320px;
+  padding: 13px 16px 11px;
+  border-radius: 14px;
+  background: var(--lc-float);
+  box-shadow: var(--lc-float-shadow);
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--l-ink-2);
+  pointer-events: none;
+  transform-origin: 0 24px;
+  animation: lc-sbc-in 170ms var(--l-ease-out) backwards;
+}
+.lc-sbc[data-glide] {
+  transition: top 180ms var(--l-ease-out);
+}
+@keyframes lc-sbc-in {
+  from {
+    opacity: 0;
+    scale: 0.97;
+    filter: blur(2px);
+  }
+}
+.lc-sbc-title {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 19px;
+  letter-spacing: -0.01em;
+  color: var(--l-ink);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.lc-sbc-where {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 6px 0 0;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--lc-hair);
+  white-space: nowrap;
+}
+.lc-sbc-where .lc-pjb {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 7.5px;
+}
+.lc-sbc-pj {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-sbc-dot {
+  color: var(--l-ink-4);
+}
+.lc-sbc-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-sbc-branch > svg {
+  flex: none;
+}
+.lc-sbc-branch > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-sbc-facts {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 8px;
+  align-items: start;
+  margin-top: 10px;
+}
+.lc-sbc-i {
+  display: grid;
+  place-items: center;
+  height: 17px;
+  color: var(--l-ink-3);
+}
+.lc-sbc-i .lc-mk {
+  animation: none;
+}
+.lc-sbc-facts > [data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-sbc-facts > [data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.lc-sbc-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 11px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--lc-hair);
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-sbc-keys kbd {
+  font-family: var(--l-font-mono);
+  font-size: 11px;
+  color: var(--l-ink-2);
+}
+.lc-sbc-open {
+  margin-left: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-sbc {
+    animation-name: lc-sbc-fade;
+  }
+  .lc-sbc[data-glide] {
+    transition: none;
+  }
+}
+@keyframes lc-sbc-fade {
+  from {
+    opacity: 0;
   }
 }
 
@@ -1655,6 +1883,8 @@ html[data-native="mac"] .lc-sb-head {
   padding: 8px 10px 8px 20px;
 }
 .lc-title {
+  flex: 0 1 auto;
+  min-width: 72px;
   overflow: hidden;
   margin: 0;
   font-size: 15px;
@@ -1683,13 +1913,20 @@ html[data-native="mac"] .lc-sb-head {
   align-items: center;
   gap: 6px;
   height: 28px;
-  padding: 0 10px 0 4px;
+  padding: 0 8px 0 4px;
   border: 0;
   border-radius: 999px;
-  background: var(--l-wash);
+  background: none;
   font-size: 12.5px;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
   cursor: pointer;
+  transition: background 160ms ease;
+}
+@media (hover: hover) {
+  .lc-chain:hover {
+    background: var(--l-wash);
+    color: var(--l-ink-2);
+  }
 }
 .lc-chain > svg {
   color: var(--l-ink-4);
@@ -1698,13 +1935,36 @@ html[data-native="mac"] .lc-sb-head {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 4px;
   border-radius: 8px;
-  background: var(--l-wash);
   font-size: 11.5px;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
+}
+/* The session's bar heads the thread's own column: narrow, it keeps the title and drops who works on it
+   to its discs, then the branch. */
+@container lc-thread (max-width: 720px) {
+  .lc-top .lc-branch {
+    display: none;
+  }
+}
+@container lc-thread (max-width: 620px) {
+  .lc-chain {
+    gap: 2px;
+    font-size: 0;
+  }
+  .lc-chain > :not(.lc-disc, svg) {
+    display: none;
+  }
+  .lc-tb-changes {
+    padding-inline: 8px;
+    font-size: 0;
+  }
+  .lc-tb-changes > svg,
+  .lc-tb-changes .lc-lines {
+    font-size: 11.5px;
+  }
 }
 .lc-crumb {
   display: inline-flex;
@@ -1816,11 +2076,14 @@ html[data-native="mac"] .lc-sb-head {
   flex-direction: column;
   min-height: 0;
 }
-/* The session tray keeps a lane of its own at the thread's right edge (14 + 56 + 14): the text
+/* The session tray keeps a lane of its own at the thread's right edge (14 + 44 + 14): the text
    and the composer stop short of it, so nothing you read ever passes under the glass. */
 .lc-thread {
-  --lc-lane: 84px;
+  --lc-lane: 72px;
   container: lc-thread / inline-size;
+}
+.lc-session[data-beside] .lc-thread {
+  --lc-lane: 0px;
 }
 .lc-stage > .lc-scroll {
   box-sizing: border-box;
@@ -1831,12 +2094,26 @@ html[data-native="mac"] .lc-sb-head {
   min-height: 0;
   overflow: hidden auto;
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+/* No track down the thread's edge, between it and the panel: the thumb shows only while the
+   pointer is over what scrolls. */
+@media (hover: hover) {
+  .lc-scroll:hover {
+    scrollbar-color: var(--l-line-2) transparent;
+  }
+}
+@media (hover: none) {
+  .lc-scroll {
+    scrollbar-color: var(--l-line-2) transparent;
+  }
 }
 
 /*
-  The session tray: the one glass surface left, upright at the thread's right edge, 56 wide. It
-  holds three solid segments (the panel; the surfaces; shipping). The open item's icon rests on a
-  tile; the files waiting to be committed show as a small chip under the arrow, inside its button.
+  The session tray: one quiet glass column at the thread's right edge, 44 wide. Its groups (the
+  panel; the surfaces; shipping) are parted by short hairlines, not drawn as segments. The open
+  item's icon rests on a soft tile; the files waiting to be committed show as a badge on the arrow.
+  While the panel is open beside the thread, the tray steps aside (Rail.tsx).
 */
 .lc-rail {
   position: absolute;
@@ -1846,17 +2123,20 @@ html[data-native="mac"] .lc-sb-head {
   right: 14px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: 56px;
+  gap: 2px;
+  width: 44px;
   box-sizing: border-box;
-  padding: 6px;
-  border-radius: 999px;
+  padding: 4px;
+  border-radius: 22px;
   background: var(--lc-tray);
   box-shadow: var(--lc-tray-rim);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   translate: 0 -50%;
   animation: lc-rail-in 520ms var(--l-spring-smooth) 120ms backwards;
+}
+.lc-rail[hidden] {
+  display: none;
 }
 html[data-tray="solid"] .lc-rail {
   backdrop-filter: none;
@@ -1872,21 +2152,15 @@ html[data-tray="solid"] .lc-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 4px 0;
-  border-radius: 999px;
-  background: var(--lc-ctl);
-  color: var(--lc-ctl-ink);
+  gap: 2px;
+  color: var(--l-ink-2);
 }
-.lc-rail-seg[data-solo] {
-  padding: 0;
-}
-/* Shipping is the tray's main action, so its segment wears the action colour. */
-.lc-rail-seg[data-act] {
-  background: var(--lc-act);
-  color: var(--lc-act-ink);
-}
-.lc-rail-seg[data-act] .lc-rail-b {
-  color: var(--lc-act-ink);
+.lc-rail-seg + .lc-rail-seg::before {
+  content: "";
+  width: 14px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--l-line-2);
 }
 .lc-rail-pop {
   display: grid;
@@ -1895,95 +2169,87 @@ html[data-tray="solid"] .lc-rail {
   position: relative;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 40px;
+  width: 36px;
+  height: 34px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 12px;
   background: none;
-  color: var(--lc-ctl-ink);
+  color: var(--l-ink-3);
   isolation: isolate;
   cursor: pointer;
   transition:
-    height 320ms var(--l-spring-smooth),
+    color 160ms ease,
     opacity 200ms ease;
 }
 .lc-rail-seg[data-solo] .lc-rail-b {
-  height: 44px;
+  color: var(--l-ink-2);
 }
-/* The tile: 32px and round, like the pill it sits in. Faint on hover, ctl-tile when open; it never overshoots. */
+/* The tile: soft and round. Faint on hover, a wash when open; it never overshoots. */
 .lc-rail-b::before {
   content: "";
   position: absolute;
-  top: 50%;
-  left: 6px;
+  inset: 1px 2px;
   z-index: -1;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: var(--lc-ctl-tile);
+  border-radius: 11px;
+  background: var(--l-wash-2);
   opacity: 0;
-  translate: 0 -50%;
-  scale: 0.8;
+  scale: 0.85;
   transition:
     opacity var(--l-dur-fast) ease,
     scale 320ms var(--l-spring-smooth),
-    background 160ms ease,
-    height 320ms var(--l-spring-smooth);
+    background 160ms ease;
 }
 @media (hover: hover) {
+  .lc-rail-b:not(:disabled):hover {
+    color: var(--l-ink);
+  }
   .lc-rail-b:not(:disabled):hover::before {
     opacity: 1;
     scale: 1;
-    background: oklch(1 0 0 / 0.1);
   }
+}
+.lc-rail-b[aria-pressed="true"],
+.lc-rail-b[data-open] {
+  color: var(--l-ink);
 }
 .lc-rail-b[aria-pressed="true"]::before,
 .lc-rail-b[data-open]::before {
   opacity: 1;
   scale: 1;
-  background: var(--lc-ctl-tile);
-}
-.lc-rail-seg[data-act] .lc-rail-b[aria-pressed="true"]::before,
-.lc-rail-seg[data-act] .lc-rail-b[data-open]::before {
-  background: oklch(1 0 0 / 0.22);
+  background: var(--l-wash-3, var(--l-wash-2));
 }
 .lc-rail-b:disabled {
   opacity: 0.4;
   cursor: default;
 }
-/* Commit and push, with the count: the button grows from 40 to 54 to hold the chip. */
-.lc-rail-b.lc-rail-ship {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
-.lc-rail-pop[data-count] .lc-rail-b {
-  height: 54px;
-}
-.lc-rail-pop[data-count] .lc-rail-b::before {
-  height: 46px;
+/* Commit and push: the arrow in ink, the files waiting in a badge on its corner, in the action colour. */
+.lc-rail-b.lc-rail-ship,
+.lc-tb.lc-tb-ship {
+  position: relative;
+  color: var(--l-ink);
 }
 .lc-rail-count {
-  min-width: 18px;
-  height: 14px;
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
   box-sizing: border-box;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--lc-ctl-ink);
-  color: var(--lc-ctl);
-  font-size: 10px;
-  font-weight: 600;
+  background: var(--lc-act);
+  color: var(--lc-act-ink);
+  font-size: 9.5px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
-  line-height: 14px;
+  line-height: 15px;
   text-align: center;
   animation: lc-count-in 320ms var(--l-ease-enter) backwards;
 }
-.lc-rail-seg[data-act] .lc-rail-count {
-  background: var(--lc-act-ink);
-  color: var(--lc-act);
+.lc-tb-ship .lc-rail-count {
+  top: 1px;
+  right: 0;
 }
 @keyframes lc-count-in {
   from {
@@ -2317,6 +2583,12 @@ html[data-tray="solid"] .lc-rail {
 }
 .lc-todo .lc-fcard {
   padding: 12px 14px;
+}
+/* In the chat and the panel, a card is a soft tint with no edge drawn round it: one sheet. */
+.lc-tl .lc-fcard,
+.lc-tl .lc-prc,
+.lc-panel :is(.lc-sinfo-card, .lc-files-view, .lc-linked-card, .lc-rt-card, .lc-rv-file, .lc-rv-thread, .lc-limits-tool, .lc-sc-compose) {
+  box-shadow: none;
 }
 .lc-todo-h {
   display: flex;
@@ -2682,6 +2954,24 @@ html[data-tray="solid"] .lc-rail {
 }
 .lc-composer[data-variant="home"] .lc-card {
   padding: 16px 12px 12px 18px;
+}
+/* In a session the composer is glass: the thread scrolling under it shows through, blurred
+   (Settings › Appearance › Glass). Its choices sit straight on it, with no bar of their own. */
+html:not([data-composer="solid"]) .lc-dock .lc-card {
+  background: color-mix(in oklab, var(--lc-field) 62%, transparent);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+html[data-composer="clear"] .lc-dock .lc-card {
+  background: color-mix(in oklab, var(--lc-field) 36%, transparent);
+}
+.lc-dock .lc-seg {
+  background: none;
+}
+@media (hover: hover) {
+  .lc-dock .lc-seg-b:hover {
+    background: var(--l-wash-2);
+  }
 }
 .lc-composer[data-drag] .lc-card {
   box-shadow:
@@ -3479,8 +3769,30 @@ html[data-tray="solid"] .lc-rail {
   flex: none;
   align-items: center;
   gap: 4px;
-  min-height: 46px;
-  padding: 0 8px 0 12px;
+  min-height: var(--lc-head);
+  box-sizing: border-box;
+  padding: 0 8px 0 10px;
+}
+.lc-panel-top .lc-ib {
+  color: var(--l-ink-4);
+}
+@media (hover: hover) {
+  .lc-panel-top .lc-ib:hover {
+    color: var(--l-ink);
+  }
+}
+/* With the panel over the whole paper and no sidebar, its bar starts after the traffic lights. */
+html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide] .lc-panel-top {
+  padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
+}
+@container lc-session (max-width: 700px) {
+  html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel] .lc-panel-top {
+    padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
+  }
+}
+/* Beside the thread, one sheet split by a hairline: the panel's header sits on the session's line. */
+.lc-session[data-beside] .lc-panel {
+  box-shadow: inset 1px 0 0 var(--l-line);
 }
 .lc-changes-panel {
   display: flex;
@@ -3498,6 +3810,12 @@ html[data-tray="solid"] .lc-rail {
 /* The diff sits in a well only as tall as its content. */
 .lc-diff .l-cdiff {
   min-height: 0;
+}
+/* One scroller, the panel's: the card grows to its content (over CodeDiff's own max-height, set
+   inline) and clips its corners without scrolling, so its pinned file headers hold to the panel. */
+.lc-diff .l-cdiff__card {
+  max-height: none !important;
+  overflow: clip;
 }
 .lc-diff-wait {
   display: grid;
@@ -4634,74 +4952,7 @@ html[data-native="mac"] .lc-setup-top {
   }
 }
 /* ---------- Settings: the whole window ---------- */
-.lc-st-side {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  height: 100%;
-  box-sizing: border-box;
-  padding: 10px 8px 6px 12px;
-  animation: l-unblur 320ms var(--l-ease-out) backwards;
-}
-html[data-native="mac"] .lc-st-side {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
-}
-/* Settings' name sits where Liner Code's does, in the same type; the way back is beside it. */
-.lc-st-head .lc-brand {
-  gap: 2px;
-}
-.lc-st-head .lc-ib {
-  margin-left: -6px;
-}
-.lc-st-find {
-  flex: none;
-}
-.lc-st-nav.l-side {
-  --side-w: calc(100% + var(--lc-ring) * 2);
-  flex: 1;
-  gap: 10px;
-  min-height: 0;
-  /* Liner's sidebar clips (it folds), and its body scrolls with 2px of room: both get a ring's. */
-  margin-inline: calc(var(--lc-ring) * -1);
-  padding: 0 var(--lc-ring);
-}
-.lc-st-nav .l-side__head {
-  display: none;
-}
-.lc-st-nav .l-side__body {
-  gap: 12px;
-  margin-inline: calc(var(--lc-ring) * -1);
-  padding-inline: var(--lc-ring);
-}
-.lc-st-nav .l-side__section,
-.lc-st-nav .l-side__list {
-  gap: 1px;
-}
-.lc-st-nav .l-side__label {
-  display: flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-}
-.lc-st-nav .l-side__plate {
-  left: var(--lc-ring);
-  right: var(--lc-ring);
-  border-radius: 10px;
-}
-.lc-st-nav .l-side__count {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--l-ink-4);
-}
-/* The way back sits where you are in the sessions' sidebar: on the foot. */
-.lc-st-nav .l-side__user {
-  min-height: 42px;
-  align-content: center;
-}
+/* Settings' sidebar (you, the search, the places and the open one's sections): settings.css. */
 /* Settings and Setup keep white cards, with a 1px ring where the glass frame was. */
 .lc-fcard.lc-st-card,
 .lc-st-col .lc-fcard,

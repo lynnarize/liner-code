@@ -1,14 +1,18 @@
 /*
-  How the app looks: the theme, the accent, the session tray's glass and the backdrop, kept in
-  this browser's storage and put on the page (and the window) at launch, before Settings is ever
-  opened.
+  How the app looks: the theme, the accent, the glass (the session tray's and the composer's),
+  where designs open, and the backdrop, kept in this browser's storage and put on the page (and
+  the window) at launch, before Settings is ever opened.
 */
+import { useEffect, useState } from "react";
 import { bridge } from "./bridge";
 import { clearTheme, inkOn, readThemes, varsOf } from "./themes";
 
 /**
   `custom`: one of your themes, by id. `accentColor`: your own accent, when `accent` is "own".
-  `tray`: how much of the thread shows through the session tray, the one glass surface left.
+  `tray`: how much of the thread shows through the session tray, and `composer` through the
+  composer: the two glass surfaces.
+  `designs`: where a design or an HTML page an agent shows opens: in the panel beside the chat,
+  or wide in the chat itself. `designsAuto`: beside the chat, whether the panel comes up on its own.
   `action`: the colour of the most important buttons (Send, Commit and push, a card's main button):
   red, the accent, the tray's ink, or `actionColor` when it's "own".
   `background`: the picture behind the session ("apple:<name>", "own", or none), with how much it's
@@ -16,9 +20,10 @@ import { clearTheme, inkOn, readThemes, varsOf } from "./themes";
 */
 export type TrayGlass = "clear" | "tinted" | "solid";
 export type ActionColour = "red" | "accent" | "ink" | "own";
-export type Look = { theme: "light" | "dark" | "system"; accent: string; tray: TrayGlass; action: ActionColour; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
+export type DesignsWhere = "panel" | "chat";
+export type Look = { theme: "light" | "dark" | "system"; accent: string; tray: TrayGlass; composer: TrayGlass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
 export const LOOK_KEY = "liner-code:look";
-export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", tray: "tinted", action: "red" };
+export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", tray: "tinted", composer: "tinted", designs: "panel", designsAuto: true, action: "red" };
 export const readLook = (): Look => {
   let saved: Partial<Look> & { v?: number } = {};
   try {
@@ -47,6 +52,7 @@ export function applyLook(l: Look) {
     h.style.setProperty("--l-accent-ink", inkOn(l.accentColor));
   }
   h.dataset.tray = l.tray;
+  h.dataset.composer = l.composer;
   // The main buttons' colour: red by default (app.css); your own goes on the page, with ink that reads on it.
   const action = l.action === "own" && !l.actionColor ? "red" : l.action;
   h.dataset.action = action;
@@ -61,4 +67,27 @@ export function applyLook(l: Look) {
   bridge.setMaterial("solid");
   // The backdrop behind the session follows along.
   window.dispatchEvent(new CustomEvent("lc:look", { detail: l }));
+}
+
+/** The look as it is now, again whenever Settings changes it. */
+export function useLook() {
+  const [look, setLook] = useState(readLook);
+  useEffect(() => {
+    const on = (e: Event) => setLook((e as CustomEvent<Look>).detail);
+    window.addEventListener("lc:look", on);
+    return () => window.removeEventListener("lc:look", on);
+  }, []);
+  return look;
+}
+
+/** Changes part of the look from outside Settings (a design's own menu), and puts it on the page. */
+export function updateLook(patch: Partial<Look>) {
+  const next = { ...readLook(), ...patch };
+  try {
+    localStorage.setItem(LOOK_KEY, JSON.stringify(next));
+  } catch {
+    // storage is off: it lasts while the app is open
+  }
+  applyLook(next);
+  return next;
 }

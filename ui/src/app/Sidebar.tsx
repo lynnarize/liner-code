@@ -4,20 +4,24 @@
   groups come first. A session stays in its project until you settle it, which puts it out of
   the way under Settled; Snoozed holds it until a time. Those two are shelves docked under the
   list, a tray of two that slides its sessions up when you open one; the list dissolves into
-  blur where it runs on past an edge, so nothing draws a line. Pointing at a row shows Pin,
-  Snooze and Settle (P, S and D from the keyboard). One white plate glides to the open session.
+  blur where it runs on past an edge, so nothing draws a line. A project's header carries its
+  badge (two letters on a colour of its own). A row is two lines: its title, then who works on
+  which model and where it stands. Pointing at a row shows Pin, Snooze and Settle (P, S and D
+  from the keyboard); resting on it brings a card beside the sidebar with the rest of its story.
+  One white plate glides to the open session.
   Below them, the team and the models they run on, a section that folds to its header.
   ⌘-click picks rows and ⇧-click a run of them; with more than one picked, a bar settles, snoozes,
   archives or moves them all at once. Esc lets them go.
 */
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import type { AgentProfile, Thread } from "@contracts";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import type { AgentProfile, ProviderInfo, Thread } from "@contracts";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { I } from "./icons";
-import { agentOf, ago, bucketOf, clock, markOf, modelLabel, plural, statusLine, type Bucket } from "./model";
+import { I, ModelMark } from "./icons";
+import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, plural, since, statusLine, type Bucket } from "./model";
 import { ContextMenu, Disc, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
-import { shortcutOf } from "./keymap";
+import { glyphs, shortcutOf } from "./keymap";
 import { TextMorph } from "@liner/components/text-morph/text-morph";
 import { toast } from "@liner/components/toast/toast";
 
@@ -347,20 +351,165 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     e.preventDefault();
   };
 
+  /* ---------- The card a row shows when the pointer rests on it ---------- */
+
+  const [card, setCard] = useState<{ id: string; el: HTMLElement } | null>(null);
+  const showing = useRef(false);
+  showing.current = card !== null;
+  const cardTimer = useRef(0);
+  const leaveTimer = useRef(0);
+  // Nothing floats over a row while you rename, pick several, or have a menu open (a drag hides it as it starts).
+  const busy = useRef(false);
+  busy.current = renaming !== null || picked.size > 0 || menu !== null;
+  const blocked = () => busy.current || document.querySelector(".lc-pop-panel") !== null;
+  const hideCard = () => {
+    window.clearTimeout(cardTimer.current);
+    window.clearTimeout(leaveTimer.current);
+    setCard(null);
+  };
+  const pointAt = (id: string, el: HTMLElement) => {
+    window.clearTimeout(cardTimer.current);
+    window.clearTimeout(leaveTimer.current);
+    if (blocked()) return;
+    const show = () => !blocked() && el.isConnected && setCard({ id, el });
+    // Once one shows, the next row's comes at once, as the pointer runs down the list.
+    if (showing.current) show();
+    else cardTimer.current = window.setTimeout(show, 450);
+  };
+  // A moment's grace, so crossing the gap to the next row doesn't drop the card.
+  const leaveRow = () => {
+    window.clearTimeout(cardTimer.current);
+    window.clearTimeout(leaveTimer.current);
+    leaveTimer.current = window.setTimeout(() => setCard(null), 80);
+  };
+  useEffect(() => {
+    if (renaming !== null || picked.size > 0 || menu) hideCard();
+  }, [renaming, picked.size, menu]);
+  useEffect(
+    () => () => {
+      window.clearTimeout(cardTimer.current);
+      window.clearTimeout(leaveTimer.current);
+    },
+    [],
+  );
+  // It goes on a click, a key's Escape, the list scrolling, or the window losing focus.
+  useEffect(() => {
+    if (!card) return;
+    const off = () => hideCard();
+    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && off();
+    const sb = nav.current;
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", off, true);
+    window.addEventListener("blur", off);
+    sb?.addEventListener("scroll", off, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", off, true);
+      window.removeEventListener("blur", off);
+      sb?.removeEventListener("scroll", off, true);
+    };
+  }, [card !== null]);
+
+  /** The card's contents: the title, where it is, then how it stands, who works, where, what changed, and the keys. */
+  const cardBody = (t: Thread) => {
+    const bucket = place(t);
+    const project = projects.find((p) => p.id === t.projectId);
+    const branch = t.worktree?.branch ?? project?.branch;
+    const on = onIt(t, agents, providers);
+    const coder = agentOf(t.agent, agents, providers);
+    const ref = t.model ?? coder.model;
+    const model = modelLabel(ref, providers);
+    const lead = t.lead ? agentOf(t.lead, agents, providers).name : undefined;
+    // "Helm plans, Forge builds on Sonnet 5.5"; "Forge on Sonnet 5.5"; a model on its own is named once.
+    const builds = coder.name === model ? model : `${coder.name}${lead ? " builds" : ""} on ${model}`;
+    const team = lead ? `${lead} plans, ${coder.name === model ? `${model} builds` : builds}` : builds;
+    const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
+    const state = cardState(t, bucket, on.who, on.leadOn ? lead : undefined, now, run);
+    const changes = [(t.toReview ?? 0) > 0 ? `${plural(t.toReview!, "file")} changed, not committed` : "", t.pr ? `pull request #${t.pr.number}${t.pr.state ? `, ${t.pr.state.toLowerCase()}` : ""}` : ""].filter(Boolean).join(" · ");
+    const u = t.usage;
+    const ctx = u?.contextTokens && u.contextWindow ? Math.round((u.contextTokens / u.contextWindow) * 100) : null;
+    const last = [`Last move ${agoLong(t.updatedAt, now)}`, ctx !== null ? `${ctx}% of context` : "", u?.costUsd ? money(u.costUsd) : ""].filter(Boolean).join(" · ");
+    // ⌘1 to ⌘9 go down the sidebar as it shows (App's sidebarOrder).
+    const n = [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].findIndex((r) => r.dataset.row === t.id) + 1;
+    return (
+      <>
+        <p className="lc-sbc-title">{t.title}</p>
+        <p className="lc-sbc-where">
+          <ProjectBadge id={project?.id ?? ""} name={project?.name ?? "No project"} />
+          <span className="lc-sbc-pj">{project?.name ?? "No project"}</span>
+          {branch && (
+            <>
+              <span className="lc-sbc-dot">·</span>
+              <span className="lc-sbc-branch">
+                <I.branch size={11} />
+                <span>{branch}</span>
+              </span>
+            </>
+          )}
+        </p>
+        <div className="lc-sbc-facts">
+          <span className="lc-sbc-i">
+            <StatusMark t={t} bucket={bucket} brand={markOf(on.ref)} />
+          </span>
+          <span data-tone={state.tone}>{state.text}</span>
+          <span className="lc-sbc-i">
+            <ModelMark kind={markOf(ref)} size={13} />
+          </span>
+          <span>{team}</span>
+          <span className="lc-sbc-i">
+            <I.laptop size={14} />
+          </span>
+          <span>
+            {machine} · {t.worktree ? "in its own worktree" : "in the project folder"}
+          </span>
+          {changes && (
+            <>
+              <span className="lc-sbc-i">{(t.toReview ?? 0) > 0 ? <I.changes size={14} /> : <I.pr size={14} />}</span>
+              <span>{changes}</span>
+            </>
+          )}
+          <span className="lc-sbc-i">
+            <I.clock size={14} />
+          </span>
+          <span>{last}</span>
+        </div>
+        <p className="lc-sbc-keys">
+          <span>
+            <kbd>P</kbd> {t.pinned ? "unpin" : "pin"}
+          </span>
+          <span>
+            <kbd>S</kbd> snooze
+          </span>
+          <span>
+            <kbd>D</kbd> {bucket === "settled" ? "bring back" : "settle"}
+          </span>
+          {n > 0 && n <= 9 && (
+            <span className="lc-sbc-open">
+              <kbd>{glyphs(`mod+${n}`).join("")}</kbd> open
+            </span>
+          )}
+        </p>
+      </>
+    );
+  };
+
   // Under its project's own header a row doesn't name the project again; in Pinned, your groups and the shelves it does.
   const row = (t: Thread, bucket: Bucket, forks?: { n: number; open: boolean; toggle: () => void }, inProject = false) => {
     const project = projects.find((p) => p.id === t.projectId);
-    // Who's on it now: the lead while it plans and its plan waits on you, else the coder.
-    const who = agentOf(t.lead && (t.turns === 0 || t.turnBy === t.lead) ? t.lead : t.agent, agents, providers).name;
+    const { who, model, ref } = onIt(t, agents, providers);
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
-    const line =
+    // Who, on what, and where it stands: "Forge · Sonnet 5.5 · working". A model on its own is named once.
+    const line: { text: string; warn?: boolean } =
       run?.status === "running"
         ? { text: `${run.subject ? `#${run.subject.number}` : "Running"} · step ${run.steps.length}` }
         : t.wake && bucket === "snoozed"
           ? { text: t.wake.kind === "checks" ? `Until the checks on #${t.wake.pr} finish` : `Until someone replies on #${t.wake.pr}` }
           : bucket === "snoozed" && t.snoozedUntil
             ? { text: `Back ${clock(t.snoozedUntil, now)}` }
-            : statusLine(t, who);
+            : statusLine(t, model === who ? who : `${who} · ${model}`);
+    const tone = t.status === "error" && !run ? "danger" : line.warn ? "warn" : undefined;
+    // Finished and nothing waits on you, or settled: the title steps back.
+    const quiet = bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0);
     return (
       <div
         key={t.id}
@@ -368,14 +517,21 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         data-row={t.id}
         data-forks={forks ? "" : undefined}
         data-picked={picked.has(t.id) || undefined}
+        data-quiet={quiet || undefined}
         aria-current={t.id === current ? "page" : undefined}
         draggable={renaming !== t.id}
         onDragStart={(e) => {
+          hideCard();
           e.dataTransfer.setData("text/x-liner-session", t.id);
           e.dataTransfer.effectAllowed = "move";
         }}
+        // A mouse at rest over the row: not a touch, and no button held (a drag, a selection).
+        onPointerEnter={(e) => e.pointerType === "mouse" && e.buttons === 0 && pointAt(t.id, e.currentTarget)}
+        onPointerLeave={leaveRow}
+        onPointerDown={hideCard}
         onContextMenu={(e) => {
           e.preventDefault();
+          hideCard();
           setMenu({ t, x: e.clientX, y: e.clientY });
         }}
       >
@@ -384,6 +540,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           tabIndex={0}
           className="lc-sb-pick l-focus"
           aria-pressed={picked.size ? picked.has(t.id) : undefined}
+          aria-describedby={card?.id === t.id ? CARD_ID : undefined}
           // ⇧ would select the text between the rows; the run is the selection here.
           onMouseDown={(e) => e.shiftKey && e.preventDefault()}
           onClick={(e) => {
@@ -397,7 +554,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           onDoubleClick={(e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && setRenaming(t.id)}
         >
           <span className="lc-sb-mk">
-            <StatusMark t={t} bucket={bucket} />
+            <StatusMark t={t} bucket={bucket} brand={markOf(ref)} />
           </span>
           <span className="lc-sb-t">
             <span className="lc-sb-h">
@@ -423,8 +580,13 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
               )}
               <span className="lc-sb-time">{ago(t.updatedAt, now)}</span>
             </span>
-            <span className="lc-sb-s" data-warn={line.warn || undefined}>
-              {!inProject && <span className="lc-sb-pj">{project?.name ?? "No project"} · </span>}
+            <span className="lc-sb-s" data-tone={tone}>
+              {!inProject && (
+                <span className="lc-sb-pj">
+                  <ProjectBadge id={project?.id ?? ""} name={project?.name ?? "No project"} small />
+                  {project?.name ?? "No project"} ·{" "}
+                </span>
+              )}
               {/* The line morphs from one state to the next: shared letters slide, the rest come into focus. */}
               <TextMorph>{line.text}</TextMorph>
             </span>
@@ -503,6 +665,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     byBucket[b].length > 0 && (
       <section key={b} className="lc-sb-sec" aria-label={NAME[b]} {...(b === "pinned" ? drop("pinned") : {})}>
         <div className="lc-sb-lab" data-warn={b === "needs" || undefined}>
+          {b === "pinned" && <I.pin size={12} />}
           {NAME[b]}
           <span>
             <Num value={byBucket[b].length} />
@@ -611,9 +774,10 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             return (
               <section key={x.id || "none"} className="lc-sb-sec lc-sb-proj" aria-label={x.name}>
                 <div className="lc-sb-lab lc-sb-plab">
-                  <button type="button" className="lc-sb-pt l-focus" aria-expanded={!shut} onClick={() => toggleProject(x.id)}>
-                    <I.chevR size={11} />
+                  <button type="button" className="lc-sb-pt l-focus" aria-expanded={!shut} title={shut ? "Show its sessions" : "Fold its sessions"} onClick={() => toggleProject(x.id)}>
+                    <ProjectBadge id={x.id} name={x.name} />
                     <span>{x.name}</span>
+                    <I.chevR size={11} />
                   </button>
                   {x.needs > 0 && (
                     <span className="lc-sb-pneeds" title={`${plural(x.needs, "session")} ${x.needs === 1 ? "needs" : "need"} you`}>
@@ -721,6 +885,11 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         </div>
       </div>
 
+      {(() => {
+        const t = card && card.el.isConnected ? threads.find((x) => x.id === card.id && !x.archived) : undefined;
+        return t && createPortal(<SessionCard el={card!.el} side={nav.current}>{cardBody(t)}</SessionCard>, document.body);
+      })()}
+
       <ContextMenu at={menu} label={menu ? `Actions for ${menu.t.title}` : "Actions"} onClose={() => setMenu(null)} width={250}>
         {(close) =>
           menu && (
@@ -814,3 +983,99 @@ const initials = (name: string) =>
     .join("")
     .slice(0, 2)
     .toUpperCase();
+
+/** Who's on a session now (the lead while it plans and its plan waits on you, else the coder), and the model they run on. */
+function onIt(t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) {
+  const leadOn = Boolean(t.lead && (t.turns === 0 || t.turnBy === t.lead));
+  const a = agentOf(leadOn ? t.lead : t.agent, agents, providers);
+  // A thread's own model stands in for its coder's; a lead keeps its own.
+  const ref = leadOn ? a.model : (t.model ?? a.model);
+  return { who: a.name, model: modelLabel(ref, providers), ref, leadOn };
+}
+
+/*
+  A project's badge: two letters on a colour of its own, picked from its id so it stays the same.
+  Eight muted hues at one lightness, so white letters read on each, in light and in dark.
+*/
+const HUES = [250, 290, 330, 15, 55, 85, 150, 195];
+function hueOf(id: string) {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return HUES[Math.abs(h) % HUES.length];
+}
+/** "Liner Code" → LC, "my-app" → MA, "Firefly" → FI. */
+function badgeLetters(name: string) {
+  const words = name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .split(/[\s_\-./]+/)
+    .filter(Boolean);
+  const letters = words.length > 1 ? [...words[0]][0] + [...words[1]][0] : [...(words[0] ?? "?")].slice(0, 2).join("");
+  return letters.toUpperCase();
+}
+function ProjectBadge({ id, name, small }: { id: string; name: string; small?: boolean }) {
+  return (
+    <span className="lc-pjb" data-small={small || undefined} data-none={!id || undefined} style={{ "--lc-pjb-h": hueOf(id) } as CSSProperties} aria-hidden>
+      {badgeLetters(name)}
+    </span>
+  );
+}
+
+/** "just now", "4 min ago", "2 hours ago", "yesterday". */
+const agoLong = (at: number, now: number) => {
+  const m = Math.floor((now - at) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : since(at, now);
+};
+
+/** How a session stands, in the card: the row's words, said in full. */
+function cardState(t: Thread, bucket: Bucket, who: string, lead: string | undefined, now: number, run?: { status: string; steps: unknown[]; subject?: { number: number } }): { text: string; tone?: "warn" | "danger" } {
+  if (run?.status === "running") return { text: `Working · a routine's run${run.subject ? ` on #${run.subject.number}` : ""}, step ${run.steps.length}` };
+  if (bucket === "snoozed") {
+    if (t.wake) return { text: t.wake.kind === "checks" ? `Snoozed · back when the checks on #${t.wake.pr} finish` : `Snoozed · back when someone replies on #${t.wake.pr}` };
+    if (t.snoozedUntil) return { text: `Snoozed · back ${clock(t.snoozedUntil, now)}` };
+  }
+  if (t.status === "running") {
+    if (t.goal?.status === "active") return { text: `Working · ${who} works toward its goal, turn ${t.goal.turns} of ${t.goal.max}` };
+    return { text: lead ? `Working · ${lead} draws up a plan` : `Working · ${who} is at it` };
+  }
+  if (t.status === "waiting") return { text: lead ? `Needs you · ${lead}'s plan waits for your OK` : `Needs you · ${who} waits for your answer`, tone: "warn" };
+  if (t.status === "error") return { text: `Ran into a problem · ${who} stopped short`, tone: "danger" };
+  if (t.status === "limited") return { text: `Limited · ${who}'s plan ran out${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" };
+  if (t.turns === 0) return { text: "Not started · nothing asked yet" };
+  if (t.unread) return { text: `Needs you · ${who} answered while you were away`, tone: "warn" };
+  if (bucket === "settled") return { text: "Settled · out of the way until it's busy again" };
+  return { text: `Done · ${who} finished, nothing waits on you` };
+}
+
+const CARD_ID = "lc-sb-card";
+const EDGE = 10;
+
+/**
+  The card beside the sidebar, level with the row it tells about, above everything and kept
+  inside the window. It follows its row as the list moves, and glides from one row to the next.
+*/
+function SessionCard({ el, side, children }: { el: HTMLElement; side: HTMLElement | null; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const placed = useRef(false);
+  useLayoutEffect(() => {
+    const card = ref.current;
+    if (!card) return;
+    const r = el.getBoundingClientRect();
+    const left = Math.round((side ?? el).getBoundingClientRect().right + 8);
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    const room = vw - EDGE - left;
+    // No room beside the sidebar: better none than one over the row.
+    card.style.visibility = room < 220 ? "hidden" : "";
+    card.style.width = `${Math.min(320, room)}px`;
+    card.style.left = `${left}px`;
+    const top = Math.round(Math.max(EDGE, Math.min(r.top - 6, vh - EDGE - card.offsetHeight)));
+    if (placed.current) card.dataset.glide = "";
+    card.style.top = `${top}px`;
+    placed.current = true;
+  });
+  return (
+    <div ref={ref} id={CARD_ID} role="tooltip" className="lc-sbc">
+      {children}
+    </div>
+  );
+}

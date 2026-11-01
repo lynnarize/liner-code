@@ -13,7 +13,7 @@ import { getState, isCheckpoint, isPrompt, isSubagent, loadItems, rpc, useEngine
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
 import { EnvMenu } from "./Env";
-import { Rail } from "./Rail";
+import { Rail, ShipButton } from "./Rail";
 import { ShipCard } from "./Ship";
 import { I } from "./icons";
 import { agentOf, checkpointsOf, isModelAgent, markOf, modelLabel, sumLines } from "./model";
@@ -21,6 +21,7 @@ import { Panel } from "./Panel";
 import { FindBar, toComposer } from "./Find";
 import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
+import { readLook } from "./look";
 import { keepPanel, keptPanel, openTab, PanelGrip, runScript, SURFACES, usePanelWidth, type PanelState, type Tab } from "./Surfaces";
 import { Timeline } from "./Timeline";
 import { Badge, Disc, Kbd, Lines, ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
@@ -227,12 +228,15 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   useEffect(() => onBrowserWanted(thread.id, () => setPanel((p) => (p.open && p.tab === "browser" ? p : openTab(p, "browser")))), [thread.id]);
 
   // A design to look at (the timeline's Open) brings the Design surface up. One an agent just
-  // showed does too, unless you're working in another surface (the diff, a terminal): then its
-  // card on the timeline opens it when you want.
+  // showed does too, when designs open beside the chat and you let the panel come up on its own,
+  // unless you're working in another surface (the diff, a terminal): then its card on the
+  // timeline opens it when you want. Shown in the chat, it stays there.
   useEffect(() => {
     const onDesign = (e: Event) => {
       const d = (e as CustomEvent<{ threadId?: string; auto?: boolean }>).detail;
       if (d?.threadId !== thread.id) return;
+      const look = readLook();
+      if (d.auto && (look.designs === "chat" || !look.designsAuto)) return;
       setPanel((p) => (p.open && !p.picking && p.tab === "design" ? p : d.auto && p.open && !["session", "agents", "browser", "design"].includes(p.tab) ? p : openTab(p, "design")));
     };
     window.addEventListener("lc:open-design", onDesign);
@@ -274,6 +278,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     void rpc("thread.update", p).catch((e) => toast.error(String(e?.message ?? e)));
   };
 
+  // Beside the thread, the panel's tabs hold the surfaces: the tray steps aside and shipping moves to the bar.
+  const beside = panel.open && !panel.wide && panel.dock !== "bottom";
   const placeholder = lead ? `Ask ${lead.name} for changes, or point at a file with @` : `Ask ${coder.name} for changes, or point at a file with @`;
   const empty = count === 0;
 
@@ -305,80 +311,81 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       data-panel={panel.open || undefined}
       data-wide={(panel.open && panel.wide) || undefined}
       data-dock={panel.open && !panel.wide && panel.dock === "bottom" ? "bottom" : undefined}
+      data-beside={beside || undefined}
       data-resizing={resizing || undefined}
       style={panelW ? ({ "--lc-panel-w": `${panelW}px` } as CSSProperties) : undefined}
     >
-      <header className="lc-top" data-drag>
-        {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title="Show the sidebar (⌘\)" onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
-        )}
-        {renaming ? (
-          <input
-            className="lc-title-edit"
-            defaultValue={thread.title}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              if (e.key === "Escape") setRenaming(false);
-            }}
-            onBlur={(e) => {
-              const v = e.target.value.trim();
-              if (v && v !== thread.title) void rpc("thread.update", { id: thread.id, title: v });
-              setRenaming(false);
-            }}
-          />
-        ) : (
-          <h1 className="lc-title" key={thread.title} onDoubleClick={() => setRenaming(true)} title="Double-click to rename">
-            {thread.title}
-          </h1>
-        )}
-        <button type="button" className="lc-chain l-focus" aria-label="Who works on this session" onClick={() => toggle("agents")}>
-          {lead && (
-            <>
-              <Disc agent={lead} size={20} lead />
-              {lead.name}
-              <I.chevR size={11} />
-            </>
-          )}
-          <Disc agent={coder} size={20} />
-          {isModelAgent(thread.agent) && !thread.model ? (
-            <ModelTag kind={markOf(model)} label={coder.name} />
-          ) : (
-            <>
-              {coder.name}
-              <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} />
-            </>
-          )}
-          {subagents > 0 && (
-            <>
-              <I.chevR size={11} />
-              <span className="lc-quiet">
-                {subagents} {subagents === 1 ? "subagent" : "subagents"}
-              </span>
-            </>
-          )}
-        </button>
-        {branch && (
-          <span className="lc-branch lc-mono" title={thread.worktree ? `Worktree at ${thread.worktree.path}` : project?.path}>
-            <I.branch size={12} />
-            {branch}
-          </span>
-        )}
-        <span className="lc-grow" data-drag />
-        {thread.verdict && <Verdict v={thread.verdict} />}
-        {project && <EnvMenu thread={thread} project={project} files={openFiles} lines={lines} onChanges={() => setPanel((p) => openTab(p, "changes"))} />}
-        {project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setPanel((p) => openTab(p, "terminal")))} />}
-        <button type="button" className="lc-tb lc-tb-changes l-focus" aria-label={`Changes, ${open.length ? "to review" : "none open"}`} aria-pressed={panel.open && panel.tab === "changes" && !panel.picking} onClick={() => toggle("changes")}>
-          <I.changes size={16} />
-          Changes
-          <Lines {...lines} />
-        </button>
-      </header>
-
       <div ref={body} className="lc-body">
         <section ref={threadRef} className="lc-thread" aria-label="Session">
+          <header className="lc-top" data-drag>
+            {!sidebar && (
+              <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title="Show the sidebar (⌘\)" onClick={onSidebar}>
+                <I.sidebar size={16} />
+              </button>
+            )}
+            {renaming ? (
+              <input
+                className="lc-title-edit"
+                defaultValue={thread.title}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") setRenaming(false);
+                }}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== thread.title) void rpc("thread.update", { id: thread.id, title: v });
+                  setRenaming(false);
+                }}
+              />
+            ) : (
+              <h1 className="lc-title" key={thread.title} onDoubleClick={() => setRenaming(true)} title="Double-click to rename">
+                {thread.title}
+              </h1>
+            )}
+            <button type="button" className="lc-chain l-focus" aria-label="Who works on this session" onClick={() => toggle("agents")}>
+              {lead && (
+                <>
+                  <Disc agent={lead} size={20} lead />
+                  {lead.name}
+                  <I.chevR size={11} />
+                </>
+              )}
+              <Disc agent={coder} size={20} />
+              {isModelAgent(thread.agent) && !thread.model ? (
+                <ModelTag kind={markOf(model)} label={coder.name} />
+              ) : (
+                <>
+                  {coder.name}
+                  <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} />
+                </>
+              )}
+              {subagents > 0 && (
+                <>
+                  <I.chevR size={11} />
+                  <span className="lc-quiet">
+                    {subagents} {subagents === 1 ? "subagent" : "subagents"}
+                  </span>
+                </>
+              )}
+            </button>
+            {branch && (
+              <span className="lc-branch lc-mono" title={thread.worktree ? `Worktree at ${thread.worktree.path}` : project?.path}>
+                <I.branch size={12} />
+                {branch}
+              </span>
+            )}
+            <span className="lc-grow" data-drag />
+            {thread.verdict && <Verdict v={thread.verdict} />}
+            {project && <EnvMenu thread={thread} project={project} files={openFiles} lines={lines} onChanges={() => setPanel((p) => openTab(p, "changes"))} />}
+            {project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setPanel((p) => openTab(p, "terminal")))} />}
+            <button type="button" className="lc-tb lc-tb-changes l-focus" aria-label={`Changes, ${open.length ? "to review" : "none open"}`} aria-pressed={panel.open && panel.tab === "changes" && !panel.picking} onClick={() => toggle("changes")}>
+              <I.changes size={16} />
+              Changes
+              <Lines {...lines} />
+            </button>
+            {beside && <ShipButton thread={thread} files={openFiles} branch={branch} side="bottom" triggerClass="lc-tb lc-tb-ship" />}
+          </header>
           <div className="lc-stage">
             <div ref={scroller} className="lc-scroll">
               <div ref={contentRef} className="lc-scroll-in">
@@ -395,7 +402,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               </div>
             </div>
             <PromptMap prompts={prompts} scroller={scroller} />
-            <Rail thread={thread} panel={panel} onPanel={setPanel} onTab={toggle} files={openFiles} branch={branch} />
+            <Rail thread={thread} panel={panel} onPanel={setPanel} onTab={toggle} files={openFiles} branch={branch} hidden={beside} />
           </div>
           <Announcer status={thread.status} turns={thread.turns} who={(lead && thread.turnBy === lead.id ? lead : coder).name} />
           {finding > 0 && <FindBar root={contentRef} asked={finding} onClose={() => setFinding(0)} />}

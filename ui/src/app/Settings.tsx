@@ -1,11 +1,13 @@
 /*
   Settings take the whole window. The column on the left swaps the sessions for the settings'
-  own places (Liner's Sidebar, with a search that narrows them), and the right holds one place at
-  a time: a title that says what it covers, then groups of rows on white cards with a 1px ring,
-  each row a name, a line on what it does, and its control. Looks live in this window (localStorage) and apply at
-  once; the rest lives in the engine. Escape, ⌘, or Back returns to the sessions.
+  own places: you, a search that narrows them, the places in their groups, and under the open
+  one the sections of its page, with a bar that follows the one you're reading. The right holds
+  one place at a time: a title that says what it covers, then groups of rows on white cards with
+  a 1px ring, each row a name, a line on what it does, and its control. Looks live in this
+  window (localStorage) and apply at once; the rest lives in the engine. Escape, ⌘, or Back
+  returns to the sessions.
 */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
 import { ACCOUNT_HOME, ENDPOINT_TOOL, endpointKey, updateModes } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
@@ -15,7 +17,6 @@ import { Progress } from "@liner/components/progress/progress";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Select } from "@liner/components/select/select";
 import { Slider } from "@liner/components/slider/slider";
-import { Sidebar, type SidebarSection } from "@liner/components/sidebar/sidebar";
 import { toast } from "@liner/components/toast/toast";
 import { feedback } from "@liner/lib/feedback";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
@@ -30,7 +31,8 @@ import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBinding
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
-import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type Look, type TrayGlass } from "./look";
+import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Look, type TrayGlass } from "./look";
+import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
 
@@ -53,7 +55,7 @@ export type SettingsPage = "general" | "appearance" | "notifications" | "keyboar
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "How new sessions start, and what Enter does while an agent works.", words: "work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the session tray's glass, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid tray rail background wallpaper picture image photo blur main button buttons action send primary red" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the glass, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid tray rail composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: "The agent tools on this Mac, how they sign in, and the keys they bill to.", words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai" },
@@ -76,8 +78,11 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
   const [sound, setSound] = useState(feedback.enabled);
   const scroller = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
+  const nav = useRef<HTMLElement>(null);
   const place = PLACES.find((p) => p.id === page) ?? PLACES[0];
   const archived = useEngine((s) => s.threads.filter((t) => t.archived).length);
+  const secs = useSections(scroller, page);
+  const me = window.__LINER__?.user?.trim() || "You";
 
   useEffect(() => sessionStorage.setItem("lc:settings", page), [page]);
   // Asked for a place while already open (Check for Updates…, a notice's Details).
@@ -90,9 +95,6 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
     const off = feedback.subscribe(setSound);
     return () => void off();
   }, []);
-  useEffect(() => {
-    scroller.current?.scrollTo({ top: 0 });
-  }, [page]);
   // Escape goes back, unless something inside (a menu, a field, a dialog) takes it first; ⌘F finds a setting.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -119,12 +121,57 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
   };
 
   // A search narrows the places to those whose name or settings match.
-  const sections = useMemo<SidebarSection[]>(() => {
+  const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     const hits = PLACES.filter((p) => !q || `${p.label} ${p.blurb} ${p.words}`.toLowerCase().includes(q));
-    const groups = [...new Set(hits.map((p) => p.group))];
-    return groups.map((g) => ({ id: g, label: g, items: hits.filter((p) => p.group === g).map((p) => ({ id: p.id, label: p.label, icon: p.icon, count: p.id === "archive" && archived ? archived : undefined })) }));
-  }, [query, archived]);
+    return [...new Set(hits.map((p) => p.group))].map((g) => ({ id: g, items: hits.filter((p) => p.group === g) }));
+  }, [query]);
+  // The open place again goes back to the top of its page.
+  const go = (id: SettingsPage) => {
+    if (id === page) return scroller.current?.scrollTo({ top: 0, behavior: calm() ? "auto" : "smooth" });
+    setPage(id);
+    feedback.play("tick", 3);
+  };
+  // A page of two or more sections lists them under its place, unless a search is on.
+  const hasSecs = secs.titles.length > 1;
+  const showSecs = hasSecs && !query;
+
+  // The list keeps the open place, and the section you're reading, in sight when it runs past the column.
+  useEffect(() => {
+    const box = nav.current;
+    const el = box?.querySelector<HTMLElement>('[aria-current="location"]') ?? box?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!box || !el) return;
+    const b = box.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const room = 32;
+    const by = r.top < b.top + room ? r.top - b.top - room : r.bottom > b.bottom - room ? r.bottom - b.bottom + room : 0;
+    if (by) box.scrollBy({ top: by, behavior: calm() ? "auto" : "smooth" });
+  }, [page, secs.at, showSecs]);
+  // The list fades where it runs on past an edge.
+  useEffect(() => {
+    const box = nav.current;
+    if (!box) return;
+    const edges = () => {
+      box.toggleAttribute("data-up", box.scrollTop > 2);
+      box.toggleAttribute("data-down", box.scrollTop + box.clientHeight < box.scrollHeight - 2);
+    };
+    edges();
+    box.addEventListener("scroll", edges, { passive: true });
+    const ro = new ResizeObserver(edges);
+    ro.observe(box);
+    if (box.firstElementChild) ro.observe(box.firstElementChild);
+    return () => (box.removeEventListener("scroll", edges), ro.disconnect());
+  }, []);
+  // Up and Down walk the places and sections, Home and End jump to the ends.
+  const walk = (e: ReactKeyboardEvent<HTMLElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const items = [...(nav.current?.querySelectorAll<HTMLElement>("[data-walk]") ?? [])];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+    e.preventDefault();
+    const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (at + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  };
 
   // What "Restore defaults" puts back on each place, if anything.
   const restore: Partial<Record<SettingsPage, () => void>> = {
@@ -154,8 +201,21 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
             Settings
           </span>
         </div>
+        <div className="lc-st-me">
+          <span className="lc-st-av" aria-hidden>
+            {me[0].toUpperCase()}
+          </span>
+          <span className="lc-st-me-t">
+            <b title={me}>{me}</b>
+            {/* Your name is your account's on this computer; nothing in Liner Code changes it, so this opens General. */}
+            <button type="button" className="lc-st-edit l-focus" onClick={() => go("general")}>
+              Edit profile
+              <I.edit size={11} />
+            </button>
+          </span>
+        </div>
         <div className="lc-sb-find lc-st-find" role="search">
-          <I.search size={14} />
+          <I.search size={15} />
           <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a setting" aria-label="Find a setting" onKeyDown={(e) => e.key === "Escape" && query && (e.preventDefault(), setQuery(""))} />
           {query ? (
             <button type="button" className="lc-ib l-focus" aria-label="Clear" onClick={() => (setQuery(""), find.current?.focus())}>
@@ -165,28 +225,73 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
             <span className="lc-sb-key">{isMac ? "⌘F" : "Ctrl F"}</span>
           )}
         </div>
-        <Sidebar
-          className="lc-st-nav"
-          label="Settings"
-          collapsible={false}
-          sections={sections}
-          value={page}
-          onValueChange={(id) => setPage(id as SettingsPage)}
-          footer={query && !sections.length ? <p className="lc-sb-empty">No setting matches that.</p> : undefined}
-          user={
-            <button type="button" className="lc-st-back l-focus" onClick={onClose}>
-              <I.back size={16} />
-              Back to sessions
-              <span className="lc-grow" />
-              <span className="lc-sb-key">esc</span>
-            </button>
-          }
-        />
+        <nav ref={nav} className="lc-st-nav" aria-label="Settings" onKeyDown={walk}>
+          <div className="lc-st-nav-in">
+            {groups.map((g, gi) => (
+              <div key={g.id} className="lc-st-grp" role="group" aria-label={g.id}>
+                {gi > 0 && <span className="lc-st-rule" aria-hidden />}
+                {g.id !== PLACES[0].group && (
+                  <span className="lc-st-label" aria-hidden>
+                    {g.id}
+                  </span>
+                )}
+                <ul className="lc-st-places">
+                  {g.items.map((p) => {
+                    const on = p.id === page;
+                    return (
+                      <li key={p.id}>
+                        <button type="button" className="lc-st-place l-focus" data-walk aria-current={on ? "page" : undefined} aria-label={p.id === "archive" && archived ? `${p.label}, ${archived}` : undefined} onClick={() => go(p.id)}>
+                          <span className="lc-st-place-i" aria-hidden>
+                            {p.icon}
+                          </span>
+                          <span className="lc-st-place-t">{p.label}</span>
+                          {p.id === "archive" && archived > 0 && (
+                            <span className="lc-st-count" aria-hidden>
+                              {archived}
+                            </span>
+                          )}
+                        </button>
+                        {on && showSecs && (
+                          <div className="lc-st-secs" style={{ "--at": secs.at } as CSSProperties}>
+                            <span className="lc-st-bar" aria-hidden />
+                            <ul aria-label={`${p.label}, its sections`}>
+                              {secs.titles.map((t, i) => (
+                                <li key={`${i}${t}`}>
+                                  <button type="button" className="lc-st-sec l-focus" data-walk aria-current={i === secs.at ? "location" : undefined} title={t} onClick={() => secs.go(i)}>
+                                    {t}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+            {query && !groups.length && <p className="lc-sb-empty">No setting matches that.</p>}
+          </div>
+        </nav>
+        <button type="button" className="lc-st-back l-focus" onClick={onClose}>
+          <I.back size={15} />
+          <span className="lc-grow">Back to sessions</span>
+          <span className="lc-sb-key">esc</span>
+        </button>
       </div>
       <main className="lc-paper lc-st-paper">
         <Backdrop />
         <header className="lc-top" data-drag>
-          <Breadcrumb separator="slash" items={[{ label: "Settings", onSelect: () => setPage("general") }, { label: place.label }]} className="lc-st-crumbs" />
+          <Breadcrumb
+            separator="slash"
+            items={[
+              { label: "Settings", onSelect: () => go("general") },
+              hasSecs ? { label: place.label, onSelect: () => go(page) } : { label: place.label },
+              ...(hasSecs && secs.titles[secs.at] ? [{ label: secs.titles[secs.at] }] : []),
+            ]}
+            className="lc-st-crumbs"
+          />
           <span className="lc-grow" data-drag />
           {reset && (
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (reset(), toast("Put back as it came"))}>
@@ -224,6 +329,142 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
   );
 }
 
+/** Reduced motion: scrolls jump rather than glide. */
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** Whether this engine says when a scroll is done (scrollend); where it doesn't, the scroll events stopping does. */
+const SCROLLEND = "onscrollend" in window;
+
+/**
+  The sections of the page showing, in order: each group's title (a `.lc-st-group`'s h2), or a
+  part that names itself with `data-st-sec`. A group inside a named part, or inside another
+  group, belongs to it and isn't listed; one that isn't drawn (display: none) isn't either.
+*/
+function sectionsIn(box: HTMLElement) {
+  const found: { title: string; el: HTMLElement }[] = [];
+  for (const n of box.querySelectorAll<HTMLElement>(".lc-st-group > header h2, [data-st-sec]")) {
+    const named = n.dataset.stSec !== undefined;
+    const el = named ? n : n.closest<HTMLElement>(".lc-st-group");
+    if (!el || (named ? n.parentElement?.closest("[data-st-sec]") : el.closest("[data-st-sec]") || el.parentElement?.closest(".lc-st-group"))) continue;
+    const title = (named ? n.dataset.stSec : (n.dataset.title ?? n.textContent))?.trim();
+    if (title && el.getClientRects().length) found.push({ title, el });
+  }
+  return found;
+}
+
+/**
+  Opens each place at its top, and follows the sections of its page in `scroller`: their titles,
+  again whenever the page changes or its content does (debounced), and which one you're reading:
+  the last whose top has passed 140px below the scroller's top, or the last one at the end (the
+  line slides down over the final stretch when the page ends before the last ones reach it).
+  `go` scrolls to one; the one you picked stays current until you scroll yourself, even when the
+  page can't bring it up.
+*/
+function useSections(scroller: RefObject<HTMLDivElement | null>, page: SettingsPage) {
+  const [titles, setTitles] = useState<string[]>([]);
+  const [at, setAt] = useState(0);
+  const els = useRef<HTMLElement[]>([]);
+  // "moving": scrolling to a section you picked; "held": there, until you scroll.
+  const hold = useRef<"moving" | "held" | null>(null);
+  const fallback = useRef(0);
+
+  useLayoutEffect(() => {
+    const sc = scroller.current;
+    if (!sc) return;
+    // A place opens at its top.
+    sc.scrollTop = 0;
+    hold.current = null;
+    setAt(0);
+    let soon = 0;
+    let idle = 0;
+    // Scroll events come at most once a frame, and this reads a few boxes: no need to wait for one.
+    const pick = () => {
+      const list = els.current;
+      if (hold.current || !list.length) return;
+      const top = sc.getBoundingClientRect().top;
+      const tops = list.map((el) => el.getBoundingClientRect().top - top);
+      const max = sc.scrollHeight - sc.clientHeight;
+      const left = max - sc.scrollTop;
+      // The last sections may never come up to the line, the page ending first: over the final
+      // stretch the line slides down to where the last one stops, so each still gets its turn.
+      const short = max > 4 ? Math.max(0, tops[tops.length - 1] - left - 140) : 0;
+      const stretch = Math.min(max, Math.max(short, 240));
+      const line = 140 + (short && left < stretch ? short * (1 - left / stretch) : 0);
+      let now = 0;
+      tops.forEach((t, i) => {
+        if (t <= line + 1) now = i;
+      });
+      if (max > 4 && left <= 4) now = list.length - 1;
+      setAt(now);
+    };
+    const read = () => {
+      soon = 0;
+      const found = sectionsIn(sc);
+      els.current = found.map((f) => f.el);
+      const next = found.map((f) => f.title);
+      setTitles((was) => (was.length === next.length && was.every((t, i) => t === next[i]) ? was : next));
+      setAt((a) => Math.min(a, Math.max(0, next.length - 1)));
+      pick();
+    };
+    const later = () => {
+      window.clearTimeout(soon);
+      soon = window.setTimeout(read, 120);
+    };
+    // A glide ends at scrollend, or where there's none, when the scroll events stop.
+    const ended = () => {
+      if (hold.current === "moving") hold.current = "held";
+    };
+    const onScroll = () => {
+      if (hold.current === "moving") {
+        if (!SCROLLEND) {
+          window.clearTimeout(idle);
+          idle = window.setTimeout(ended, 160);
+        }
+        return;
+      }
+      if (hold.current === "held") hold.current = null;
+      pick();
+    };
+    // You took the wheel: the page decides again.
+    const yours = () => {
+      if (hold.current) hold.current = null;
+    };
+    const mo = new MutationObserver(later);
+    mo.observe(sc, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["data-st-sec", "hidden"] });
+    const ro = new ResizeObserver(later);
+    ro.observe(sc);
+    if (sc.firstElementChild) ro.observe(sc.firstElementChild);
+    sc.addEventListener("scroll", onScroll, { passive: true });
+    sc.addEventListener("scrollend", ended);
+    for (const t of ["wheel", "touchstart", "keydown", "pointerdown"] as const) sc.addEventListener(t, yours, { passive: true });
+    read();
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+      sc.removeEventListener("scroll", onScroll);
+      sc.removeEventListener("scrollend", ended);
+      for (const t of ["wheel", "touchstart", "keydown", "pointerdown"] as const) sc.removeEventListener(t, yours);
+      window.clearTimeout(soon);
+      window.clearTimeout(idle);
+      window.clearTimeout(fallback.current);
+    };
+  }, [page]);
+
+  const go = (i: number) => {
+    const sc = scroller.current;
+    const el = els.current[i];
+    if (!sc || !el) return;
+    const to = Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, sc.scrollTop + el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 16));
+    setAt(i);
+    window.clearTimeout(fallback.current);
+    if (Math.abs(to - sc.scrollTop) < 2) return void (hold.current = "held");
+    hold.current = "moving";
+    sc.scrollTo({ top: to, behavior: calm() ? "auto" : "smooth" });
+    fallback.current = window.setTimeout(() => hold.current === "moving" && (hold.current = "held"), 2000);
+  };
+
+  return { titles, at, go };
+}
+
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 /** One empty list, so a store read of a missing one doesn't change every time. */
 const NONE: never[] = [];
@@ -232,13 +473,19 @@ const UNTRIED = new Set(["cursor", "grok"]);
 const save = (patch: Partial<EngineSettings>) => void rpc("settings.save", patch).catch(fail);
 const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
 
-/** A titled group of rows on a white card. */
-function Group({ title, note, end, children, flush }: { title: string; note?: ReactNode; end?: ReactNode; children: ReactNode; flush?: boolean }) {
+/** A small accent tag beside something that just arrived. */
+const New = () => <span className="lc-st-new">New</span>;
+
+/** A titled group of rows on a white card. Its title is a section in the sidebar (data-title keeps a tag out of it). */
+function Group({ title, note, end, children, flush, tag }: { title: string; note?: ReactNode; end?: ReactNode; children: ReactNode; flush?: boolean; tag?: ReactNode }) {
   return (
     <section className="lc-st-group">
       <header>
         <span>
-          <h2>{title}</h2>
+          <h2 data-title={title}>
+            {title}
+            {tag}
+          </h2>
           {note && <p>{note}</p>}
         </span>
         {end}
@@ -252,10 +499,10 @@ function Group({ title, note, end, children, flush }: { title: string; note?: Re
   );
 }
 
-/** One setting: its name, a line on what it does, and its control. `below` puts the control under the words. */
-function Field({ title, note, children, below, lead }: { title: ReactNode; note?: ReactNode; children?: ReactNode; below?: boolean; lead?: ReactNode }) {
+/** One setting: its name, a line on what it does, and its control. `below` puts the control under the words; `off` quiets a row that doesn't apply now. */
+function Field({ title, note, children, below, lead, off }: { title: ReactNode; note?: ReactNode; children?: ReactNode; below?: boolean; lead?: ReactNode; off?: boolean }) {
   return (
-    <div className="lc-st-row" data-below={below || undefined}>
+    <div className="lc-st-row" data-below={below || undefined} data-off={off || undefined}>
       {lead && <span className="lc-st-lead">{lead}</span>}
       <span className="lc-st-t">
         <b>{title}</b>
@@ -478,21 +725,18 @@ const MODES: { value: Look["theme"]; title: string; note: string }[] = [
   { value: "system", title: "Match the system", note: "Follows macOS, day and night" },
 ];
 
-/** Light, dark or the system's, as cards: a swatch of the ground and its well, the name, a line. */
-function ModeCards({ value, onPick }: { value: Look["theme"] | ""; onPick: (v: Look["theme"]) => void }) {
+/** Choices as cards: a small picture, the name, a line; the picked one ringed and ticked. */
+function PictureCards<T extends string>({ label, value, options, onPick }: { label: string; value: T | ""; options: { value: T; title: string; note: string; picture: ReactNode }[]; onPick: (v: T) => void }) {
   return (
-    <span className="lc-st-modes" role="radiogroup" aria-label="Theme">
-      {MODES.map((m) => (
+    <span className="lc-st-modes" role="radiogroup" aria-label={label} data-n={options.length}>
+      {options.map((m) => (
         <button key={m.value} type="button" role="radio" aria-checked={value === m.value} className="lc-st-mode l-focus" data-on={value === m.value || undefined} onClick={() => onPick(m.value)}>
           {value === m.value && (
             <span className="lc-st-tick" aria-hidden>
               <I.check size={10} />
             </span>
           )}
-          <span className="lc-st-themechip" data-kind={m.value} aria-hidden>
-            <i />
-            <i />
-          </span>
+          {m.picture}
           <span className="lc-st-mode-t">
             <b>{m.title}</b>
             <small>{m.note}</small>
@@ -502,6 +746,56 @@ function ModeCards({ value, onPick }: { value: Look["theme"] | ""; onPick: (v: L
     </span>
   );
 }
+
+/** Light, dark or the system's, as cards: a swatch of the ground and its well, the name, a line. */
+function ModeCards({ value, onPick }: { value: Look["theme"] | ""; onPick: (v: Look["theme"]) => void }) {
+  const options = MODES.map((m) => ({
+    ...m,
+    picture: (
+      <span className="lc-st-themechip" data-kind={m.value} aria-hidden>
+        <i />
+        <i />
+      </span>
+    ),
+  }));
+  return <PictureCards label="Theme" value={value} options={options} onPick={onPick} />;
+}
+
+/** Where designs and pages open, each drawn small: the chat with a card and the design in the panel, or the design wide in the chat. */
+const DESIGNS: { value: DesignsWhere; title: string; note: string; picture: ReactNode }[] = [
+  {
+    value: "panel",
+    title: "Beside the chat",
+    note: "Full size in the panel, a small card in the chat",
+    picture: (
+      <span className="lc-st-pic" data-kind="panel" aria-hidden>
+        <span className="lc-st-pic-chat">
+          <span className="lc-st-pic-l" style={{ width: "70%" }} />
+          <span className="lc-st-pic-card" />
+          <span className="lc-st-pic-l" style={{ width: "80%" }} />
+          <span className="lc-st-pic-in" />
+        </span>
+        <span className="lc-st-pic-panel">
+          <span className="lc-st-pic-art" />
+        </span>
+      </span>
+    ),
+  },
+  {
+    value: "chat",
+    title: "In the chat",
+    note: "Wide, as part of the answer",
+    picture: (
+      <span className="lc-st-pic" data-kind="chat" aria-hidden>
+        <span className="lc-st-pic-chat">
+          <span className="lc-st-pic-l" style={{ width: "55%" }} />
+          <span className="lc-st-pic-art" />
+          <span className="lc-st-pic-in" />
+        </span>
+      </span>
+    ),
+  },
+];
 
 function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) {
   // One of your themes holds the mode and the accent; choosing either goes back to Liner's own.
@@ -551,8 +845,8 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Session tray" note="The one glass surface left. Everything else sits on one solid ground.">
-        <Field title="Glass" note="How much of the thread shows through the tray.">
+      <Group title="Glass" note="The session tray and the composer let the thread show through. Everything else sits on one solid ground.">
+        <Field title="Session tray" note="How much of the thread shows through the tray.">
           <Segmented
             size="sm"
             value={look.tray}
@@ -564,6 +858,35 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
             ]}
             aria-label="Session tray glass"
           />
+        </Field>
+        <Field
+          title={
+            <>
+              Composer
+              <New />
+            </>
+          }
+          note="How much of the thread shows through the composer, blurred."
+        >
+          <Segmented
+            size="sm"
+            value={look.composer}
+            onValueChange={(composer) => set({ composer: composer as TrayGlass })}
+            options={[
+              { value: "clear", label: "Clear" },
+              { value: "tinted", label: "Tinted" },
+              { value: "solid", label: "Solid" },
+            ]}
+            aria-label="Composer glass"
+          />
+        </Field>
+      </Group>
+      <Group title="Designs and pages" tag={<New />} note="Where a design or an HTML page an agent shows you opens. Any one of them can still open the other way from its own buttons.">
+        <Field title="Open them" below>
+          <PictureCards label="Where designs and pages open" value={look.designs} options={DESIGNS} onPick={(designs) => set({ designs })} />
+        </Field>
+        <Field title="Bring the panel up when an agent shows one" note="Beside the chat only, and not while you're in the diff or a terminal." off={look.designs === "chat"}>
+          <NamedSwitch name="Bring the panel up when an agent shows one" checked={look.designsAuto} disabled={look.designs === "chat"} onCheckedChange={(designsAuto) => set({ designsAuto })} />
         </Field>
       </Group>
       <Group title="Background" note="A picture behind the session, blurred and under a wash, so the work stays easy to read. The sidebar never shows it.">

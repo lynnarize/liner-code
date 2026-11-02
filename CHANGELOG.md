@@ -1,9 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.1.9 (alpha), 2026-11-02
+
+**Update from 0.1.8 if you have it.** Liner Code does it by itself (Restart to update), or
+download the new DMG. **New: Liner Code for Windows**, as a zip.
 
 ### New
 
+- **Liner Code for Windows** (x64, alpha): download `Liner-Code-0.1.9-win-x64.zip`, unzip it
+  anywhere and open `Liner Code.exe`. It isn't signed yet, so SmartScreen asks the first time
+  (More info › Run anyway). It drives the Claude Code, Codex and OpenCode you installed with npm,
+  as on a Mac; Sign in and Install open a console. It puts itself in the Start menu, so its
+  notifications show. The Terminal is PowerShell, without full-screen programs for now, and the
+  app doesn't update itself yet: download the next zip.
+- On Windows the words follow: this PC, File Explorer, Ctrl in every shortcut, and keys sealed by
+  Windows rather than a keychain.
 - **Designs, with every agent.** Ask Claude Code, Codex, OpenCode, Hermes or any ACP agent for a
   screen, a page or a prototype, and it draws it in the new **Design** surface beside the session
   (⌘⇧E): one HTML file in `.liner/designs/`, written and edited with the agent's own tools, then
@@ -43,6 +54,37 @@
 - An agent is told Liner Code's tools by the names its tool offers them (`mcp__liner__design_show`
   in Claude Code, `liner_design_show` in OpenCode): a smaller model through an API endpoint
   called the plain name it was told, which Claude Code doesn't have.
+
+### Fixed
+
+- **Install** in Setup and Settings ran its note as part of the command (`npm install -g
+  @openai/codex, then codex login`), so it tried to install packages called "then" and "login".
+- Committing with every file unticked (⌘↩ in the message) committed all of them, and pushed too
+  with Commit and push on; pressing it twice made two commits.
+- Stop on the pull request card stopped nothing: the title was still written and the branch
+  pushed. "Open it as a draft" with no title or body of your own opened it ready for review.
+- A link in `.liner/designs/` to a file outside the folder let a design be written there; and
+  bringing back a version of a design kept outside `.liner/designs/` failed.
+- An agent tool that died or went quiet while starting (an ACP agent, the Codex app server) left
+  the turn waiting for good, Stop included. Stop while a session couldn't be picked up again
+  lost its conversation for the turns after.
+- Read only, and back, now reaches OpenCode's own mode: it stayed in plan, or could still edit.
+- A Codex app server that never started made usage limits wait for the rest of the run; one that
+  died as a session opened showed its error twice.
+- Forking while the Reviewer read a turn dropped that turn from the fork. Compared sessions
+  started before their worktree's setup command finished. Edit from here kept the refiner's
+  conversation with the turns taken back.
+- Editing the queue after Stop sent it at once, though Stop keeps the queue for you.
+- A question card with no questions broke the turn, with no Skip. A turn carried on by a second
+  model pointed each part's diff at the first part's.
+- The model picker's Enter picked the highlighted model even on a star or a source; a selection
+  dragged out of an agent's dialog closed it and lost your edits; Run the setup again set you
+  back to Solo.
+- Appearance's Restore defaults kept your own theme and picture. The Terminal kept old colours
+  after a theme of your own. Find counted, and jumped to, text in folded steps.
+- The Browser showed the last server's page under a new address while it switched, and an
+  agent's screenshot of a Browser tab you weren't on caught what covered it.
+- A routine step edited just before Turn on could switch it off again with a late save.
 
 ## 0.1.8 (alpha), 2026-10-31
 

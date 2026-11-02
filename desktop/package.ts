@@ -6,6 +6,8 @@
   app is signed with the hardened runtime, and with LINER_NOTARY_PROFILE too (a notarytool keychain
   profile: `xcrun notarytool store-credentials`) it's notarized and stapled. Without them the build
   script signs it ad hoc.
+  LINER_TARGET=win32-x64 (or win32-arm64) wraps it for Windows instead, as "Liner Code.exe" in a
+  folder, with an .ico for its icon. Nothing signs that one.
 */
 import { packager } from "@electron/packager";
 import { readFileSync } from "node:fs";
@@ -17,13 +19,37 @@ const electron = JSON.parse(readFileSync(createRequire(import.meta.url).resolve(
 const { version } = JSON.parse(readFileSync(`${dir}/package.json`, "utf8")) as { version: string };
 const identity = process.env.LINER_SIGN_IDENTITY;
 const profile = process.env.LINER_NOTARY_PROFILE;
+const [platform, arch] = (process.env.LINER_TARGET || `darwin-${process.arch === "arm64" ? "arm64" : "x64"}`).split("-") as [string, "x64" | "arm64"];
+
+if (platform === "win32") {
+  const [win] = await packager({
+    dir,
+    out,
+    name: "Liner Code",
+    platform,
+    arch,
+    electronVersion: electron.version,
+    appCopyright: "© 2026 Lin. MIT licence. Your models, your code.",
+    appVersion: version,
+    buildVersion: version,
+    icon,
+    extraResource,
+    asar: false,
+    prune: false,
+    overwrite: true,
+    quiet: true,
+    win32metadata: { CompanyName: "Lin", FileDescription: "Liner Code", ProductName: "Liner Code", InternalName: "Liner Code", OriginalFilename: "Liner Code.exe" },
+  });
+  console.log(win);
+  process.exit(0);
+}
 
 const [app] = await packager({
   dir,
   out,
   name: "Liner Code",
   platform: "darwin",
-  arch: process.arch === "arm64" ? "arm64" : "x64",
+  arch: arch === "arm64" ? "arm64" : "x64",
   electronVersion: electron.version,
   appBundleId: "app.liner.code",
   appCategoryType: "public.app-category.developer-tools",

@@ -171,6 +171,27 @@ test("agent tools: a click at a point (a canvas game) and key presses reach the 
   assert.equal(linerTitle("browser_press", { key: "Space", times: 4 }), "Press Space 4 times in the Browser");
 });
 
+test("agent tools: a page asked for under another name than url (target, as the other browser tools take) still opens", async () => {
+  let tools: AgentTools;
+  const sent: { op: string; args: Record<string, unknown> }[] = [];
+  const store = {
+    emit: (e: { id: string; op: string; args: Record<string, unknown> }) => {
+      sent.push({ op: e.op, args: e.args });
+      setTimeout(() => tools.reply(e.id, true, { url: "/index.html", title: "Firefly", text: "Tap or press Space", controls: [], errors: [] }), 0);
+    },
+  };
+  tools = new AgentTools(store as never, process.env);
+  // As Sonnet sent it, four times over, in a session where the page never opened.
+  const r = await tools.call("th_x", "browser_open", { target: "index.html" });
+  assert.equal(r.isError, undefined);
+  assert.deepEqual(sent[0], { op: "open", args: { url: "index.html" } });
+  assert.equal(linerTitle("browser_open", { target: "localhost:8765/index.html" }), "Open localhost:8765/index.html in the Browser");
+  const none = await tools.call("th_x", "browser_open", {});
+  assert.equal(none.isError, true);
+  assert.match((none.content[0] as { text: string }).text, /as url:/);
+  assert.equal(sent.length, 1);
+});
+
 test("helpers: what agents take for granted is linked into one folder first on PATH, only when PATH lacks it", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "liner-helpers-")));
   const shipped = join(root, "other-tool", "codex-path");

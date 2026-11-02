@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { DesignInfo, DesignSize, Item, Thread } from "@contracts";
+import { DESIGN_FRAME_STYLE } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
@@ -62,10 +63,16 @@ const noQuery = (url: string) => url.replace(/\?.*$/, "");
 /**
   A version drawn on its own (no origin of its own: it can't reach the app) can't use
   localStorage or sessionStorage, which throw there; a page that does gets ones that keep its
-  values for as long as it's open.
+  values for as long as it's open. Its own scrollbar doesn't show down the frame's edge.
 */
-const SHIM = `<script>(()=>{const m=()=>{const s=new Map();return{getItem:k=>s.has(String(k))?s.get(String(k)):null,setItem:(k,v)=>void s.set(String(k),String(v)),removeItem:k=>void s.delete(String(k)),clear:()=>s.clear(),key:i=>[...s.keys()][i]??null,get length(){return s.size}}};for(const n of["localStorage","sessionStorage"]){try{void window[n].length}catch{try{Object.defineProperty(window,n,{value:m(),configurable:true})}catch{}}}})()</script>`;
+const SHIM = `<script>(()=>{const m=()=>{const s=new Map();return{getItem:k=>s.has(String(k))?s.get(String(k)):null,setItem:(k,v)=>void s.set(String(k),String(v)),removeItem:k=>void s.delete(String(k)),clear:()=>s.clear(),key:i=>[...s.keys()][i]??null,get length(){return s.size}}};for(const n of["localStorage","sessionStorage"]){try{void window[n].length}catch{try{Object.defineProperty(window,n,{value:m(),configurable:true})}catch{}}}})()</script>${DESIGN_FRAME_STYLE}`;
 export const withShim = (html: string) => (/<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + SHIM) : SHIM + html);
+
+/**
+  A scaled design's box, in whole pixels and never past the design: the design covers it to its
+  edges, with no sliver of what's behind it showing down one side.
+*/
+const px = (n: number) => Math.floor(n + 1e-6);
 
 /** Versions' HTML, kept while the app is open: a version never changes. */
 const kept = new Map<string, Promise<string>>();
@@ -525,7 +532,7 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
           {/* The canvas: edge to edge, nothing drawn round it; the design floats on it with its size under it. */}
           <div ref={stage} className="lc-dz-stage" data-size={size}>
             <div className="lc-dz-wrap">
-              <div className="lc-dz-board" style={{ width: Math.ceil(W * scale), height: Math.ceil(frameH * scale) }}>
+              <div className="lc-dz-board" style={{ width: px(W * scale), height: px(frameH * scale) }}>
                 <div className="lc-dz-frame" style={frameStyle}>
                   {shownVersion ? (
                     oldHtml === null ? (
@@ -663,8 +670,8 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
   if (inline) {
     // A desktop design takes the width; a tablet or phone keeps its screen, no taller than 640.
     const scale = !width ? 0 : it.size === "desktop" ? width / W : Math.min(1, width / W, 640 / H);
-    const bw = Math.round(W * scale);
-    const bh = Math.round(H * scale);
+    const bw = px(W * scale);
+    const bh = px(H * scale);
     return (
       <figure ref={measure} className="lc-dz-inline" data-size={it.size}>
         <div className="lc-dz-in-band">
@@ -717,7 +724,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
     <figure className="lc-dz-card">
       <button ref={measure} type="button" className="lc-dz-thumb l-focus" data-size={it.size} aria-label={`Open “${it.title}” in the Design surface`} onClick={open} style={{ height: it.size === "desktop" ? Math.min(tall, Math.round(H * scale) || tall) : tall }}>
         {html !== null && scale > 0 && (
-          <span className="lc-dz-thumb-in" style={{ width: Math.round(W * scale), height: Math.round(H * scale) }}>
+          <span className="lc-dz-thumb-in" style={{ width: px(W * scale), height: px(H * scale) }}>
             {/* Drawn on its own, with no origin: it can't reach the app. */}
             <iframe className="lc-dz-thumb-f" title={`${it.title}, version ${it.version}`} srcDoc={withShim(html)} sandbox="allow-scripts" tabIndex={-1} aria-hidden style={{ width: W, height: H, transform: `scale(${scale})` }} />
           </span>
@@ -783,7 +790,7 @@ function DesignFull({ it, html, onOpen, onClose }: { it: DesignItem; html: strin
       </div>
       <div ref={stage} className="lc-dz-full-stage" onClick={(e) => e.target === e.currentTarget && onClose()}>
         {scale > 0 && (
-          <div className="lc-dz-in-board" style={{ width: Math.round(W * scale), height: Math.round(H * scale) }}>
+          <div className="lc-dz-in-board" style={{ width: px(W * scale), height: px(H * scale) }}>
             <iframe className="lc-dz-in-f" title={`${it.title}, version ${it.version}`} srcDoc={withShim(html)} sandbox="allow-scripts allow-forms allow-modals" style={{ width: W, height: H, transform: `scale(${scale})` }} />
           </div>
         )}

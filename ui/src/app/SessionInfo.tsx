@@ -4,7 +4,7 @@
   changes still to commit, each opening in the diff. It asks the engine when it shows, again when a
   turn starts or ends, and on Refresh.
 */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ContextPart, ContextSource, FileChange, Item, SessionInfo, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
@@ -13,8 +13,9 @@ import { I } from "./icons";
 import { accessOf, checkpointsOf, compact, markOf, modelLabel, plural, sumLines } from "./model";
 import { exportSession } from "./Sidebar";
 import { Lines, ModelTag, PanelHead } from "./ui";
+import * as os from "./os";
 
-const home = (path: string) => path.replace(/^\/Users\/[^/]+/, "~");
+const home = os.tilde;
 
 export function SessionSurface({ thread, items, visible, onShowChange }: { thread: Thread; items: Item[]; visible: boolean; onShowChange: (path: string) => void }) {
   const [info, setInfo] = useState<SessionInfo | null>(null);
@@ -23,11 +24,14 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
   const [looking, setLooking] = useState(false);
   const providers = useEngine((s) => s.providers);
   const running = thread.status === "running";
+  // Only the latest ask is shown: one sent as a turn started can answer after the one sent as it ended.
+  const asked = useRef(0);
   const look = () => {
+    const n = ++asked.current;
     setLooking(true);
     rpc("thread.info", { id: thread.id })
-      .then((i) => (setInfo(i), setFailed("")), (e: Error) => setFailed(e.message))
-      .finally(() => setLooking(false));
+      .then((i) => n === asked.current && (setInfo(i), setFailed("")), (e: Error) => n === asked.current && setFailed(e.message))
+      .finally(() => n === asked.current && setLooking(false));
   };
   // When it shows, and when a turn starts or ends.
   useEffect(() => {
@@ -157,7 +161,7 @@ function ContextCard({ info, doing, running, onCompact }: { info: SessionInfo; d
       <div className="lc-cx-head">
         <b>Context</b>
         {doing && (
-          <span className="lc-cx-doing l-shimmer" key={doing}>
+          <span className="lc-cx-doing l-shimmer">
             {doing}
           </span>
         )}
@@ -169,7 +173,7 @@ function ContextCard({ info, doing, running, onCompact }: { info: SessionInfo; d
       <div className="lc-cx-bar" role="img" aria-label={`${share}% of the context used${ctx.compactAt ? `; it compacts at ${compact(ctx.compactAt)}` : ""}`}>
         <div className="lc-cx-ticks" data-hl={hl !== null || undefined}>
           {sources.map((s, i) => (
-            <i key={`${s.group}:${s.name}`} data-g={s.group} data-on={hl === i || undefined} style={{ width: pct(s.tokens) }} />
+            <i key={`${i}:${s.group}:${s.name}`} data-g={s.group} data-on={hl === i || undefined} style={{ width: pct(s.tokens) }} />
           ))}
         </div>
         {ctx.compactAt && ctx.autoCompact !== false && ctx.compactAt < ctx.max && <span className="lc-cx-mark" style={{ left: pct(ctx.compactAt) }} aria-hidden />}
@@ -177,7 +181,8 @@ function ContextCard({ info, doing, running, onCompact }: { info: SessionInfo; d
       {ctx.measured || ctx.sources?.length ? (
         <div className="lc-cx-chips" onMouseLeave={() => setHl(null)}>
           {chips.map((s, i) => (
-            <Tooltip key={`${s.group}:${s.name}`} content={tip(s)}>
+            // Two files can share a name and a kind (a CLAUDE.md at the root and in a package).
+            <Tooltip key={`${i}:${s.group}:${s.name}`} content={tip(s)}>
               <button type="button" className="lc-cx-chip l-focus" onMouseEnter={() => setHl(i)} onFocus={() => setHl(i)} onBlur={() => setHl(null)}>
                 <i data-g={s.group} aria-hidden />
                 <span className="lc-cx-name">{s.name}</span>

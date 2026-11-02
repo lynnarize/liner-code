@@ -206,11 +206,12 @@
   margin: auto;
   padding: 24px 24px 56px;
 }
+/* No white behind the design: the frame is the design's own page, so its edges (rounded, or a
+   sub-pixel off) meet the canvas with nothing showing between. */
 .lc-dz-board {
   position: relative;
   overflow: hidden;
   border-radius: 10px;
-  background: #fff;
   box-shadow:
     0 0 0 1px var(--l-line),
     0 22px 56px -22px oklch(0.15 0.02 265 / 0.45);
@@ -347,7 +348,6 @@
   position: relative;
   flex: none;
   overflow: hidden;
-  background: #fff;
   animation: l-blur-in 320ms var(--l-ease-out) backwards;
 }
 .lc-dz-thumb-f {
@@ -398,12 +398,12 @@
   border-radius: 50%;
   background: currentColor;
 }
-/* In the chat: wider than the text (to 880), centred on it, the design with nothing round it. */
+/* In the chat: wider than the text (to 880), centred on it, the design with nothing round it. In
+   whole pixels, width and place, so the scaled design's edges land on the pixel grid. */
 .lc-dz-inline {
-  position: relative;
-  left: 50%;
-  width: min(880px, calc(100cqi - var(--lc-lane, 0px) - 48px));
-  translate: -50% 0;
+  --w: round(down, min(880px, calc(100cqi - var(--lc-lane, 0px) - 48px)), 1px);
+  width: var(--w);
+  margin-left: round(down, calc((100% - var(--w)) / 2), 1px);
 }
 .lc-dz-in-band {
   display: flex;
@@ -414,7 +414,6 @@
   flex: none;
   overflow: hidden;
   border-radius: 14px;
-  background: #fff;
   box-shadow: 0 22px 54px -30px oklch(0.15 0.02 265 / 0.55);
 }
 .lc-dz-inline:not([data-size="desktop"]) .lc-dz-in-board {

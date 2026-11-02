@@ -6,7 +6,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EngineEvent, Item, Thread } from "../../contracts/src/index.ts";
@@ -154,4 +154,110 @@ test("undo won't overwrite a later edit unless forced, and never under another s
   assert.equal(done.reverted, true);
   assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), "one\n");
   assert.equal(await git(dir, "show", `${done.redo}:a.txt`), "your edit after it\n", "the undo can be taken back");
+});
+
+test("a fork keeps its own snapshots, design versions and attachments: deleting the session it came from breaks none of them", async () => {
+  const { dir, home, store, call } = await setup();
+  const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo" });
+  const from = (await capture(dir, `${t.id}/1-before`))!;
+  writeFileSync(join(dir, "a.txt"), "two\n");
+  const to = (await capture(dir, `${t.id}/1-after`))!;
+  const files = await changes(dir, from, to);
+  const pic = join(home, "attachments", t.id, "shot.png");
+  mkdirSync(join(home, "attachments", t.id), { recursive: true });
+  writeFileSync(pic, "png");
+  mkdirSync(join(home, "designs", t.id, "d1"), { recursive: true });
+  writeFileSync(join(home, "designs", t.id, "d1", "v1.html"), "<p>v1</p>");
+  store.putItem(t.id, { kind: "user", id: "u", turn: 1, at: 1, text: "look", files: [pic] });
+  store.putItem(t.id, { kind: "checkpoint", id: "c", turn: 1, at: 1, files, from, to });
+  store.patchThread(t.id, { turns: 1 });
+
+  const fork = await call<Thread>("thread.create", { projectId: "p", forkOf: t.id });
+  await call("thread.remove", { id: t.id });
+  await git(dir, "reflog", "expire", "--expire=now", "--all");
+  await git(dir, "gc", "-q", "--prune=now");
+  await git(dir, "cat-file", "-e", to);
+  await git(dir, "cat-file", "-e", from);
+  assert.ok(existsSync(join(home, "designs", fork.id, "d1", "v1.html")), "its design versions");
+  const sent = store.timeline(fork.id).find((x) => x.kind === "user");
+  assert.ok(sent?.kind === "user" && sent.files?.[0] && existsSync(sent.files[0]), "its attachment, in its own folder");
+  assert.ok(!existsSync(join(home, "designs", t.id)) && !existsSync(join(home, "attachments", t.id)), "the deleted session's own copies go");
+});
+
+test("a new worktree being set up counts as work: going back waits, and deleting it waits for the setup", async () => {
+  const { store, call } = await setup();
+  store.putProject({ ...store.project("p"), setup: "sleep 1" });
+  const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true });
+  store.putItem(t.id, { kind: "user", id: "u", turn: 1, at: 1, text: "hi" });
+  await assert.rejects(call("thread.rewind", { threadId: t.id, itemId: "u" }), /still being set up/);
+  const root = rootOf(t);
+  await call("thread.remove", { id: t.id });
+  assert.ok(!existsSync(root), "removed once its setup was done, not from under it");
+});
+
+test("removing a project takes its sessions' logs, snapshots, designs and worktrees with it, and leaves its folder", async () => {
+  const { dir, home, store, call } = await setup();
+  const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true });
+  await capture(dir, `${t.id}/1-before`);
+  mkdirSync(join(home, "designs", t.id), { recursive: true });
+  store.putItem(t.id, { kind: "notice", id: "n", turn: 0, at: 1, text: "hello" });
+  await call("project.remove", { id: "p" });
+  assert.equal((await git(dir, "for-each-ref", "refs/liner")).trim(), "");
+  assert.ok(!existsSync(join(home, "threads", `${t.id}.jsonl`)));
+  assert.ok(!existsSync(join(home, "designs", t.id)));
+  assert.ok(!existsSync(rootOf(t)));
+  assert.ok(existsSync(join(dir, "a.txt")), "the project's own folder stays");
+});
+
+test("keeping one of a comparison stops the others where they are and puts them away", async () => {
+  const { providers } = await import("../src/runtime.ts");
+  const { store, runtime, call } = await setup();
+  const saved = providers.demo;
+  // The other one is still at work, until it's stopped.
+  providers.demo = { ...saved, open: () => ({ turn: (_t, _s, signal) => new Promise<void>((r) => signal.addEventListener("abort", () => r())), close() {} }) };
+  try {
+    const a = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true });
+    const b = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true });
+    const base = (await git(rootOf(a), "rev-parse", "HEAD")).trim();
+    for (const t of [a, b]) store.patchThread(t.id, { compare: { id: "cmp", base } as Thread["compare"] });
+    writeFileSync(join(rootOf(a), "a.txt"), "kept\n");
+    void runtime.send(b.id, "keep going");
+    for (let i = 0; i < 100 && !runtime.isRunning(b.id); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(runtime.isRunning(b.id));
+    await call("compare.keep", { threadId: a.id });
+    await runtime.idle(b.id, 2000);
+    assert.equal(runtime.isRunning(b.id), false, "stopped");
+    assert.equal(store.thread(b.id).archived, true);
+  } finally {
+    providers.demo = saved;
+  }
+});
+
+test("comparing models: each one starts once its new worktree is set up, not while the setup still runs", async () => {
+  const { providers } = await import("../src/runtime.ts");
+  const { store, call } = await setup();
+  store.putProject({ ...store.project("p"), setup: "sleep 0.4 && touch ready" });
+  const saved = providers.demo;
+  const found: boolean[] = [];
+  providers.demo = { ...saved, open: (o) => ({ turn: async () => void found.push(existsSync(join(o.cwd, "ready"))), close() {} }) };
+  try {
+    await call<Thread[]>("compare.start", { projectId: "p", text: "go", models: ["demo", "demo"] });
+    for (let i = 0; i < 300 && found.length < 2; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(found, [true, true]);
+  } finally {
+    providers.demo = saved;
+  }
+});
+
+test("a fork made before forks copied their attachments keeps reading them: deleting the session it came from leaves them", async () => {
+  const { home, store, call } = await setup();
+  const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo" });
+  const pic = join(home, "attachments", t.id, "shot.png");
+  mkdirSync(join(home, "attachments", t.id), { recursive: true });
+  writeFileSync(pic, "png");
+  // As forks were made then: the parent's items, its attachment paths as they were.
+  store.putThread({ ...store.thread(t.id), id: "th_oldfork", forkOf: t.id });
+  store.putItem("th_oldfork", { kind: "user", id: "u", turn: 1, at: 1, text: "look", files: [pic] });
+  await call("thread.remove", { id: t.id });
+  assert.ok(existsSync(pic), "the old fork's attachment stays");
 });

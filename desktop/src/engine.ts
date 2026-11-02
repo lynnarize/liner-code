@@ -48,6 +48,7 @@ export class Engine {
       // process's starting environment with `ps eww`, the agents the engine starts included.
       env: { ...env, ELECTRON_RUN_AS_NODE: "1", LINER_PATH: env.PATH, LINER_SECRETS: "stdin" },
       stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
     });
     this.child = child;
     child.stdin.write(`${JSON.stringify({ token: this.token, keys })}\n`);
@@ -84,10 +85,29 @@ export class Engine {
     });
   }
 
-  stop() {
+  /**
+    Stops the engine: its stdin closes, and it saves and exits. On Windows there's no SIGTERM to
+    send (kill() ends it at once, before it has saved) and quitting the app takes it down with it,
+    so this waits for it to go by itself, three seconds at most; the app waits on that.
+  */
+  stop(): Promise<void> {
     this.stopping = true;
-    this.child?.stdin?.end();
-    this.child?.kill("SIGTERM");
+    const child = this.child;
+    child?.stdin?.end();
+    if (process.platform !== "win32" || !child || child.exitCode !== null || child.signalCode !== null) {
+      child?.kill("SIGTERM");
+      return Promise.resolve();
+    }
+    return new Promise((done) => {
+      const timer = setTimeout(() => {
+        child.kill();
+        done();
+      }, 3000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        done();
+      });
+    });
   }
 }
 
@@ -127,7 +147,7 @@ const pathFrom = (sh: string, flags: string[], timeout: number) =>
 /** The user's shell's PATH, which an app opened from the Dock doesn't get, plus where tools often land. */
 export async function loginEnvironment(): Promise<NodeJS.ProcessEnv> {
   const env = { ...process.env };
-  if (process.platform === "win32") return env;
+  if (process.platform === "win32") return windowsEnvironment(env);
   const sh = process.env.SHELL || "/bin/zsh";
   // Interactive as well as login: nvm, Volta, pnpm, mise and asdf go on PATH in .zshrc, which a
   // login shell alone doesn't read. A shell whose .zshrc stalls still gets its login PATH.
@@ -138,6 +158,27 @@ export async function loginEnvironment(): Promise<NodeJS.ProcessEnv> {
     .map((p) => (p.startsWith("/") ? p : join(home, p)))
     .filter((p) => !parts.includes(p) && existsSync(p));
   env.PATH = [...parts, ...extra].join(":");
+  return env;
+}
+
+/**
+  On Windows an app from the Start menu has your PATH already; it comes as "Path", which a copy of
+  the environment keeps (and LINER_PATH reads as PATH), so it's put under one spelling, PATH, with
+  the folders agent tools install to that aren't on it yet (T3 Code: packages/shared/src/shell.ts
+  resolveKnownWindowsCliDirs).
+*/
+function windowsEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  let path = "";
+  for (const k of Object.keys(env))
+    if (k.toUpperCase() === "PATH") {
+      path ||= env[k] ?? "";
+      delete env[k];
+    }
+  const parts = path.split(";").filter(Boolean);
+  const has = new Set(parts.map((p) => p.replace(/[\\/]+$/, "").toLowerCase()));
+  const { APPDATA: roaming, LOCALAPPDATA: local, USERPROFILE: home = homedir() } = env;
+  const extra = [roaming && join(roaming, "npm"), local && join(local, "Volta", "bin"), local && join(local, "pnpm"), join(home, ".local", "bin"), join(home, ".bun", "bin"), join(home, "scoop", "shims"), local && join(local, "Microsoft", "WinGet", "Links")].filter((p): p is string => Boolean(p) && !has.has(p!.toLowerCase()) && existsSync(p!));
+  env.PATH = [...parts, ...extra].join(";");
   return env;
 }
 

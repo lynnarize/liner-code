@@ -35,6 +35,18 @@ const HIGH = [
   /\bkubectl\s+delete\b|\bterraform\s+(apply|destroy)\b/,
   />\s*\/dev\/(sd|disk)/,
 ];
+// On Windows, agents' commands are PowerShell's or cmd.exe's as often as bash's: their ways to delete
+// a tree or a disk, to run a script straight from the web, and to run as administrator.
+if (process.platform === "win32")
+  HIGH.push(
+    /\b(?:Remove-Item|ri|rm|rmdir|rd|del|erase)\b(?=[^;&|\n]*\s-r(?:ecurse)?\b)(?=[^;&|\n]*\s-fo(?:rce)?\b)/i,
+    /\b(?:rd|rmdir)\b[^;&|\n]*\s\/s\b/i,
+    /\b(?:del|erase)\b[^;&|\n]*\s\/s\b/i,
+    /\bformat\s+[a-z]:/i,
+    /\b(?:Format-Volume|Clear-Disk|Remove-Partition)\b/i,
+    /\b(?:iwr|irm|curl|wget|Invoke-WebRequest|Invoke-RestMethod)\b[^|]*\|\s*(?:iex|Invoke-Expression)\b/i,
+    /-Verb\s+RunAs\b/i,
+  );
 const MEDIUM = [/\bgit\s+(push|commit|merge|rebase|tag)\b/, /\bgit\s+branch\b[^;&|\n]*\s(?:-d|--delete)\b/, /\b(npm|pnpm|yarn|bun)\s+(i|install|add|remove)\b/, /\bpip\s+install\b/, /\bbrew\s+install\b/, /\bmv\b|\bcp\s+-r\b/, /\bgh\s+pr\s+(create|merge)\b/, /\bdocker\s+(rm|rmi|system\s+prune)\b/, /\bcurl\b.*-X\s*(POST|PUT|DELETE|PATCH)/i];
 
 export function commandRisk(command: string): Risk {

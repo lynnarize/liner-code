@@ -7,7 +7,7 @@
 */
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { PR_TEST_TOOL, type Item, type ProviderInfo, type AgentProfile } from "@contracts";
+import { PR_TEST_TOOL, type Item, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { isCheckpoint, rpc, threadOf, useEngine, useItems, useItemsWhere } from "./engine";
 import { I, ModelMark, Rays } from "./icons";
@@ -16,11 +16,12 @@ import { DesignCard } from "./Design";
 import { PrChatCard } from "./Pr";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Dialog } from "@liner/components/dialog/dialog";
-import { agentOf, clock, duration, isModelAgent, markOf, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
+import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
 import { Badge, Disc, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
 import { toast } from "@liner/components/toast/toast";
 import { Boundary } from "./Boundary";
 import { bridge } from "./bridge";
+import * as os from "./os";
 import "./timeline.css";
 
 type Tool = Extract<Item, { kind: "tool" }>;
@@ -73,7 +74,7 @@ function asked(said: Ask[]): ReactNode[] {
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
 type Review = Extract<Item, { kind: "review" }>;
 /** What a turn's trail holds, in order: its tool calls, its thinking, what the agent says between steps, and asks waiting on you. */
-type Entry = { kind: "tool"; it: Tool } | { kind: "thought"; it: Extract<Item, { kind: "reasoning" }> } | { kind: "say"; it: Extract<Item, { kind: "text" }> } | { kind: "ask"; it: Ask };
+type Entry = { kind: "tool"; it: Tool } | { kind: "thought"; it: Extract<Item, { kind: "reasoning" }> } | { kind: "ask"; it: Ask };
 
 const CARD_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show_page", "liner.show_page"]);
 /**
@@ -133,20 +134,29 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewing, on
   const grow = useSteady(onGrow);
   return (
     <div className="lc-tl">
-      {turns.map(({ turn, items: list }) => (
+      {turns.map(({ turn, n, items: list }) => (
         // One turn that can't show says so in its place; the rest of the thread stays (T3 Code's RenderErrorBoundary).
         <Boundary key={turn} label="This turn" quiet>
-          <Turn threadId={threadId} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} />
+          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} />
         </Boundary>
       ))}
     </div>
   );
 }
 
-const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onReview, reviewing, onGrow }: { threadId: string; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
-  const marker = items.find((x) => x.kind === "turn");
-  const running = marker?.kind === "turn" && marker.status === "running";
-  const who = whoOf(marker, agents, providers);
+const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
+  // Your turn, and any parts that carried it on (a build, a refine, a fix): one turn, one foot, and
+  // a head for each model's part, so who did what reads in order.
+  const marks = items.filter((x): x is Mark => x.kind === "turn");
+  const marker = marks[0];
+  const running = marks.some((m) => m.status === "running");
+  const parts = sectionsOf(marks);
+  const cps = items.filter((x): x is Checkpoint => x.kind === "checkpoint");
+  const lastCp = cps[cps.length - 1];
+  // The changes of the whole turn, as one: each file once, the lines added up; Review opens them all.
+  // Every part undone, it says what was undone rather than "0 files".
+  const undone = cps.every((c) => c.reverted);
+  const shownCp = cps.length > 1 && lastCp ? { ...lastCp, files: mergeFiles((undone ? cps : cps.filter((c) => !c.reverted)).flatMap((c) => c.files)), reverted: undone } : lastCp;
   // `id` is the item a block stands for, when its key isn't one (a trail, a plan's draft).
   const blocks: { key: string; id?: string; node: ReactNode }[] = [];
   const asks = useMemo(() => foldedAsks(items), [items]);
@@ -157,33 +167,44 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
   const prAsk = items.find((x): x is Extract<Item, { kind: "approval" }> => x.kind === "approval" && x.tool === PR_TEST_TOOL && x.state === "asking");
   const escalation = (it: Item) => it.kind === "tool" && it.toolKind === "task" && /^Opus\b/.test(it.title);
   const designed = items.some((x) => x.kind === "design");
-  const inTrail = (it: Item) => (it.kind === "tool" && it.tool !== PR_TEST_TOOL && !isCard(it, designed) && !escalation(it)) || (it.kind === "approval" && it.tool !== PR_TEST_TOOL && !folded.has(it.id));
-  // The trail runs to the turn's last step: thinking and what's said before it are part of the work; after it, the answer.
-  const lastStep = items.findLastIndex(inTrail);
   const cp = items.find((x): x is Checkpoint => x.kind === "checkpoint");
   const review = items.findLast((x): x is Review => x.kind === "review");
   // A plan still being written (a lead's <plan>, or Claude Code's plan mode filling in its call) is one quiet line until its card comes.
   const unplanned = (i: number) => running && !items.slice(i + 1).some((x) => x.kind === "proposal");
+  // Which part of the turn an item is in: the planner's words read as a plan, the builder's as they are.
+  let at: Mark | undefined;
+  // The steps between two things said, and the thinking between them: one folded row (Claude Code's
+  // and T3 Code's work groups). The last one while the turn works is live: its row says the step under way.
   let run: Entry[] = [];
-  const flush = () => {
+  // A row is keyed by the item that started it, even thinking that ended too short to keep a line:
+  // while it streamed it was the row's first entry, so the row keeps its key when it drops out.
+  let lead: string | undefined;
+  const flush = (live = false) => {
+    const first = lead;
+    lead = undefined;
     if (!run.length) return;
     const entries = run;
     run = [];
-    // Thinking or a remark with no step beside it (before a plan card, say) isn't a trail of its own.
-    if (!entries.some((e) => e.kind === "tool" || e.kind === "ask")) {
-      for (const e of entries)
-        if (e.kind === "thought") blocks.push({ key: e.it.id, node: <Thought it={e.it} /> });
-        else if (e.kind === "say") blocks.push({ key: e.it.id, node: <StreamedMarkdown className="lc-md" text={untag(e.it.text)} streaming={e.it.streaming} animate={fresh(e.it.id)} onGrow={onGrow} /> });
+    const key = first ?? entries[0].it.id;
+    // Thinking with no step beside it (before a reply, say) is a row of its own. It takes the key
+    // the trail it starts will have, so when a step joins it the row stays and doesn't come in again.
+    if (!entries.some((e) => e.kind !== "thought")) {
+      for (const [j, e] of entries.entries()) if (e.kind === "thought") blocks.push({ key: `t${j === 0 ? key : e.it.id}`, id: j === 0 ? key : e.it.id, node: <Thought it={e.it} /> });
       return;
     }
-    blocks.push({ key: `t${entries[0].it.id}`, id: entries[0].it.id, node: <Trail threadId={threadId} entries={entries} asks={asks} cp={cp} live={running} who={who} onReview={onReview} /> });
+    // Its own part's checkpoint (a build after the plan keeps its own), for its lines and its diffs.
+    const partCp = cps.find((c) => c.turn === entries[0].it.turn) ?? cp;
+    blocks.push({ key: `t${key}`, id: key, node: <Trail threadId={threadId} entries={entries} asks={asks} cp={partCp} live={live} who={whoOf(at ?? marker, agents, providers)} onReview={onReview} /> });
   };
   for (const [i, it] of items.entries()) {
     if ((it.kind === "tool" || it.kind === "approval") && it.tool === PR_TEST_TOOL) continue;
     // A lead's reply that was all plan keeps nothing once its card has it.
     if (it.kind === "text" && !it.streaming && !it.text.trim()) continue;
     // Thinking too short to show leaves no row, so the steps either side stay one.
-    if (it.kind === "reasoning" && !shown(it)) continue;
+    if (it.kind === "reasoning" && !shown(it)) {
+      if (!run.length) lead ??= it.id;
+      continue;
+    }
     // Answered, it's a word on its step's result, and the steps either side stay one trail.
     if (it.kind === "approval" && folded.has(it.id)) continue;
     // Asking you and handing over a plan show as their own cards, not as steps too.
@@ -201,16 +222,20 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
       continue;
     }
     if (it.kind === "tool") run.push({ kind: "tool", it });
-    else if (it.kind === "approval") run.push({ kind: "ask", it });
-    else if (it.kind === "reasoning" && i < lastStep) run.push({ kind: "thought", it });
-    else if (it.kind === "text" && i < lastStep) run.push({ kind: "say", it });
+    else if (it.kind === "reasoning") run.push({ kind: "thought", it });
+    // Asking you never folds away: it stands on its own until you answer.
+    else if (it.kind === "approval" && it.state !== "asking") run.push({ kind: "ask", it });
     else {
       flush();
-      if (it.kind === "user") blocks.push({ key: it.id, node: <You threadId={threadId} it={it} fresh={fresh(it.id)} onReview={onReview} /> });
-      else if (it.kind === "turn") blocks.push({ key: it.id, node: <TurnHead it={it} items={items} agents={agents} providers={providers} /> });
-      else if (it.kind === "reasoning") blocks.push({ key: it.id, node: <Thought it={it} /> });
+      if (it.kind === "approval") blocks.push({ key: it.id, node: <Approval threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> });
+      else if (it.kind === "user") blocks.push({ key: it.id, node: <You threadId={threadId} it={it} fresh={fresh(it.id)} onReview={onReview} /> });
+      else if (it.kind === "turn") {
+        at = it;
+        const part = parts.get(it.id);
+        if (part) blocks.push({ key: it.id, node: <TurnHead it={it} marks={part} n={it === marker ? n : undefined} items={items} agents={agents} providers={providers} /> });
+      }
       else if (it.kind === "text") {
-        const planning = marker?.kind === "turn" && marker.planning;
+        const planning = Boolean((at ?? marker)?.planning);
         const draft = planning && unplanned(i) ? draftOf(it.text) : null;
         // A lead's tag still arriving ("<pl") isn't shown: the words before it stay as they were when the plan starts.
         if (!draft) blocks.push({ key: it.id, node: <StreamedMarkdown className="lc-md" text={planning && it.streaming ? untag(it.text).replace(/<\/?[a-z]*$/i, "") : untag(it.text)} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
@@ -227,10 +252,12 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
       else if (it.kind === "page") blocks.push({ key: it.id, node: <PageCard threadId={threadId} it={it} /> });
       else if (it.kind === "design") blocks.push({ key: it.id, node: <DesignCard threadId={threadId} it={it} /> });
       else if (it.kind === "pr") blocks.push({ key: it.id, node: <PrChatCard threadId={threadId} it={it} fresh={fresh(it.id)} run={prRun} ask={prAsk && ((w) => <Approval key={prAsk.id} threadId={threadId} it={prAsk} who={w} />)} /> });
-      else if (it.kind === "question") blocks.push({ key: it.id, node: <QuestionCard threadId={threadId} it={it} who={who} /> });
-      else if (it.kind === "proposal") blocks.push({ key: it.id, node: <Proposal threadId={threadId} it={it} who={who} /> });
+      else if (it.kind === "question") blocks.push({ key: it.id, node: <QuestionCard threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> });
+      else if (it.kind === "proposal") blocks.push({ key: it.id, node: <Proposal threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> });
       // The turn's last line: what changed, and the Reviewer's verdict on it, side by side.
-      else if (it.kind === "checkpoint") blocks.push({ key: it.id, node: <TurnFoot cp={it} review={review} providers={providers} onReview={onReview} reviewing={reviewing} /> });
+      else if (it.kind === "checkpoint") {
+        if (it === lastCp) blocks.push({ key: it.id, node: <TurnFoot cp={shownCp} all={cps.length > 1} review={review} providers={providers} onReview={onReview} reviewing={reviewing} /> });
+      }
       else if (it.kind === "review" && !cp && it === review) blocks.push({ key: it.id, node: <TurnFoot review={it} providers={providers} onReview={onReview} reviewing={reviewing} /> });
       else if (it.kind === "limit") blocks.push({ key: it.id, node: <LimitCard threadId={threadId} it={it} /> });
       else if (it.kind === "error")
@@ -245,7 +272,7 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
       else if (it.kind === "notice") blocks.push({ key: it.id, node: <p className="lc-notice">{it.text}</p> });
     }
   }
-  flush();
+  flush(running);
   return (
     <section className="lc-turn" data-running={running || undefined}>
       {blocks.map((b) => (
@@ -260,27 +287,56 @@ const Turn = memo(function Turn({ threadId, items, agents, providers, seen, onRe
 
 const whoOf = (marker: Item | undefined, agents: AgentProfile[], providers: ProviderInfo[]) => (marker?.kind === "turn" ? agentOf(marker.agent, agents, providers).name : "The agent");
 
-/** Who worked, on what model, and how long: "Forge ◑ Sonnet 5.5 · Turn 2 · worked for 3m 43s". */
-function TurnHead({ it, items, agents, providers }: { it: Extract<Item, { kind: "turn" }>; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] }) {
+type Mark = Extract<Item, { kind: "turn" }>;
+
+/** A turn's parts by model, each under the id of its first: a part on another model starts a head of its own; one on the same model (its fix) carries on under it. */
+function sectionsOf(marks: Mark[]) {
+  const out = new Map<string, Mark[]>();
+  let now: Mark[] | undefined;
+  for (const m of marks) {
+    if (now && now[0].model === m.model && Boolean(now[0].planning) === Boolean(m.planning)) now.push(m);
+    else out.set(m.id, (now = [m]));
+  }
+  return out;
+}
+
+/** What a part that carried the turn on does as it works, and did once it's done. */
+const PART_WORDS: Record<TurnPart, [string, string]> = {
+  build: ["building", "built it in"],
+  refine: ["finishing it", "finished it in"],
+  repair: ["repairing it", "repaired it in"],
+  fix: ["fixing it", "fixed it in"],
+  revise: ["revising it", "revised it in"],
+  takeover: ["taking it on", "took it on in"],
+};
+
+/**
+  Who did a part of the turn, on what model, and how long: "Forge ◑ Sonnet 5.5 · 46s", "Opus 5.5 ·
+  planned in 41s". The first part's head carries the turn's number; a model that carried it on
+  (built the plan, finished the draft) has a head of its own that says what it did. What it's
+  doing right now is the live row under it; while it works, its disc pulses.
+*/
+function TurnHead({ it, marks, n, items, agents, providers }: { it: Mark; marks: Mark[]; n?: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] }) {
   const a = agentOf(it.agent, agents, providers);
+  // The part's state is its last mark's: working while any of them works.
+  const end = marks[marks.length - 1];
+  const status = marks.some((m) => m.status === "running") ? "running" : end.status;
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    if (it.status !== "running") return;
+    if (status !== "running") return;
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
-  }, [it.status]);
-  const last = [...items].reverse().find((x): x is Tool => x.kind === "tool" && x.status === "running");
-  const thinking = items.some((x) => x.kind === "reasoning" && x.streaming);
+  }, [status]);
+  const why = marks.flatMap((m) => (m.why ? [m.why] : [])).join(" ");
   const asking = items.some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
-  const drafting = it.planning && items.some((x) => x.kind === "text" && x.streaming && /<plan\b/.test(x.text));
-  const doing = asking ? "is waiting for you" : last ? verb(last) : drafting ? "is writing the plan" : thinking ? "is thinking" : "is working";
-  const took = it.status === "running" ? (now - it.at) / 1000 : it.seconds;
-  // A lead's turn that ended in a plan "planned"; one that only answered "worked", like any other.
+  // A planner that ended in a plan "planned"; one that only answered worked, like any other.
   const planned = it.planning && items.some((x) => x.kind === "proposal");
+  const [doing, did] = it.part ? PART_WORDS[it.part] : it.planning ? (planned ? ["planning", "planned in"] : ["thinking it through", ""]) : ["working", ""];
+  const took = status === "running" ? (now - it.at) / 1000 : end.seconds === undefined ? undefined : (end.at - it.at) / 1000 + end.seconds;
   // A model on its own is named after the model, so its mark sits on the disc instead of a tag.
   const alone = isModelAgent(it.agent);
   return (
-    <div className="lc-head" data-running={it.status === "running" || undefined}>
+    <div className="lc-head" data-running={status === "running" || undefined} data-part={n === undefined || undefined} title={why || undefined}>
       {alone ? (
         <span className="lc-disc lc-disc-model" style={{ width: 22, height: 22 }} aria-hidden>
           <ModelMark kind={markOf(it.model)} size={13} />
@@ -290,18 +346,25 @@ function TurnHead({ it, items, agents, providers }: { it: Extract<Item, { kind: 
       )}
       <b>{a.name}</b>
       {!alone && <ModelTag kind={markOf(it.model)} label={modelLabel(it.model, providers)} />}
-      {it.status === "running" ? (
-        <span className="lc-head-live l-shimmer" key={doing}>
-          {doing}
-        </span>
-      ) : (
-        <span className="lc-head-meta">
-          · {took === undefined ? (it.status === "stopped" ? "stopped" : it.status === "error" ? "stopped with a problem" : planned ? "planned" : "done") : `${it.status === "stopped" ? "stopped after " : it.status === "error" ? "stopped with a problem after " : planned ? "planned in " : ""}${duration(took)}`}
-        </span>
-      )}
+      <span className="lc-head-meta">
+        ·{" "}
+        {status === "running"
+          ? asking
+            ? "waiting for you"
+            : doing
+          : took === undefined
+            ? status === "stopped"
+              ? "stopped"
+              : status === "error"
+                ? "stopped with a problem"
+                : did
+                  ? did.replace(/ in$/, "")
+                  : "done"
+            : `${status === "stopped" ? "stopped after " : status === "error" ? "stopped with a problem after " : did ? `${did} ` : ""}${duration(took)}`}
+      </span>
       <span className="lc-grow" />
-      {it.status === "running" && <span className="lc-head-clock lc-mono">{duration(took)}</span>}
-      <span className="lc-head-meta">Turn {it.turn}</span>
+      {status === "running" && <span className="lc-head-clock lc-mono">{duration(took)}</span>}
+      {n !== undefined && <span className="lc-head-meta">Turn {n}</span>}
     </div>
   );
 }
@@ -318,8 +381,30 @@ function verb(t: Tool) {
   return `is using ${t.tool}`;
 }
 
+/**
+  A live line whose words change as the work moves on ("Reading a.ts…", then "Editing b.ts…"). The new
+  words unblur into place while the light passing through them keeps going: it runs on a masked copy
+  that stays mounted, not on the words (T3 Code's ActivityShimmerOverlay, apps/web/src/components/chat/TimelineRowParts.tsx).
+*/
+function LiveLine({ text, className }: { text: string; className?: string }) {
+  return (
+    <span className={className ? `lc-live ${className}` : "lc-live"}>
+      <span className="lc-live-t" key={text}>
+        {text}
+      </span>
+      <span className="lc-live-light" aria-hidden>
+        <span className="lc-live-light-in">
+          <span className="lc-live-t" key={text}>
+            {text}
+          </span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
 /** Thinking under 3 seconds isn't worth a line once it's done; nor is a row for it, which would leave a gap. */
-const shown = (it: Extract<Item, { kind: "reasoning" }>) => Boolean(it.text.trim()) && (it.streaming || (it.seconds ?? 0) >= 3);
+const shown =(it: Extract<Item, { kind: "reasoning" }>) => Boolean(it.text.trim()) && (it.streaming || (it.seconds ?? 0) >= 3);
 
 /** Thinking: a quiet fold that says how long it took, marked like the trail: a dot, then the words and the chevron. On the trail its dot sits on the rail. */
 function Thought({ it }: { it: Extract<Item, { kind: "reasoning" }> }) {
@@ -328,9 +413,8 @@ function Thought({ it }: { it: Extract<Item, { kind: "reasoning" }> }) {
   return (
     <div className="lc-thought" data-open={open || undefined} data-live={it.streaming || undefined}>
       <button type="button" className="lc-thought-h l-focus" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className="lc-thought-dot" aria-hidden />
-        <span className={it.streaming ? "l-shimmer" : undefined}>{it.streaming ? "Thinking" : `Thought ${duration(it.seconds)}`}</span>
-        <Chev className="lc-thought-chev" />
+        <span className={it.streaming ? "l-shimmer" : undefined}>{it.streaming ? "Thinking…" : `Thought for ${duration(it.seconds)}`}</span>
+        <Chev className="lc-row-chev" />
       </button>
       <div className="lc-fold">
         <div>
@@ -351,10 +435,9 @@ function PlanDraft({ text, title }: { text?: string; title?: string }) {
   return (
     <div className="lc-thought" data-open={open || undefined} data-live>
       <button type="button" className="lc-thought-h l-focus" aria-expanded={text ? open : undefined} disabled={!text} onClick={() => setOpen((o) => !o)}>
-        <span className="lc-thought-dot" aria-hidden />
-        <span className="l-shimmer">{title ? `Generating the plan: ${title}` : "Generating the plan"}</span>
+        <span className="l-shimmer">{title ? `Writing the plan: ${title}` : "Writing the plan…"}</span>
         {steps > 0 && <span className="l-num">· {plural(steps, "step")} so far</span>}
-        {text && <Chev className="lc-thought-chev" />}
+        {text && <Chev className="lc-row-chev" />}
       </button>
       {text && (
         <div className="lc-fold">
@@ -520,15 +603,16 @@ function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
   folds by itself to one line that keeps the highlights; it opens again with a press.
 */
 function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId: string; entries: Entry[]; asks: Map<string, Ask>; cp?: Checkpoint; live: boolean; who: string; onReview: (checkpointId: string, path?: string) => void }) {
-  const [open, setOpen] = useState<boolean | null>(null);
+  // Folded, while it works too: its row says what it did, or the step under way; it opens for the steps.
+  const [isOpen, setOpen] = useState(false);
   const [rows, setRows] = useState<string[]>([]);
-  const isOpen = open ?? live;
+  // A running step's clock ticks only where it's seen.
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    if (!live) return;
+    if (!live || !isOpen) return;
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
-  }, [live]);
+  }, [live, isOpen]);
   // Steps in the order they came, with thinking, what was said and asks between them.
   const list = useMemo(() => {
     const out: Row[] = [];
@@ -549,54 +633,57 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
   }, [entries, cp]);
   const steps = list.filter((r): r is { kind: "step"; step: TrailStep } => r.kind === "step").map((r) => r.step);
   const failed = steps.filter((s) => s.state === "failed").length;
-  // From its first step to its last, since calls run side by side and some wait on you.
-  const secs = steps.length ? (Math.max(...steps.map((s) => s.at + s.seconds * 1000)) - Math.min(...steps.map((s) => s.at))) / 1000 : 0;
-  // Folded, the line keeps what it changed, what it ran and whether it checked its work.
+  // Folded, the row keeps what it changed, ran, read and looked up, and whether it checked its work.
   const tools = steps.flatMap((s) => s.tools);
   const paths = [...new Set(tools.filter((t) => (t.toolKind === "edit" || t.toolKind === "write") && t.path).map((t) => t.path!))];
   const edited = [...new Set(paths.map(nameOf))];
   const ran = tools.filter((t) => t.toolKind === "exec").length;
+  const read = new Set(tools.filter((t) => t.toolKind === "read").map((t) => t.path ?? t.id)).size;
+  const searched = tools.some((t) => t.toolKind === "search");
+  const web = tools.some((t) => t.toolKind === "web" || t.toolKind === "fetch");
   const checked = tools.some((t) => BROWSER.test(t.tool));
   // The lines of the files it names; what its commands changed besides shows on the turn's last line.
   const mine = cp?.files.filter((f) => paths.some((p) => p === f.path || p.endsWith(`/${f.path}`))) ?? [];
   const lines = mine.length ? sumLines(mine) : null;
-  const parts: ReactNode[] = [
-    edited.length > 0 && (
-      <span key="e">
-        {edited.length <= 2 ? `Edited ${edited.join(" and ")}` : `Edited ${edited.length} files`}
-        {lines && (
-          <>
-            {" "}
-            <Lines {...lines} />
-          </>
-        )}
-      </span>
-    ),
-    ran > 0 && <span key="r">{`${edited.length ? "ran" : "Ran"} ${plural(ran, "command")}`}</span>,
-    checked && <span key="b">{edited.length || ran ? "checked" : "Checked"} the Browser</span>,
-    !edited.length && !ran && !checked && <span key="s">{plural(steps.length, "step")}</span>,
-  ].filter(Boolean);
+  const said = [
+    edited.length > 0 && (edited.length <= 2 ? `edited ${edited.join(" and ")}` : `edited ${edited.length} files`),
+    ran > 0 && `ran ${plural(ran, "command")}`,
+    read > 0 && `read ${plural(read, "file")}`,
+    searched && "searched the code",
+    web && "read the web",
+    checked && "checked the Browser",
+  ].filter((x): x is string => Boolean(x));
+  if (!said.length) said.push(plural(steps.length, "step"));
+  // Working: the step under way, as the head would say it ("Editing index.html…").
+  const current = tools.findLast((t) => t.status === "running");
+  const thinking = entries.some((e) => e.kind === "thought" && e.it.streaming);
+  const doing = current ? verb(current).replace(/^is /, "") : thinking ? "thinking" : "working";
   return (
     <div className="lc-trail" data-open={isOpen || undefined} data-live={live || undefined}>
       <button type="button" className="lc-trail-sum l-focus" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}>
-        <span className="lc-trail-mark" data-state={live ? "running" : failed ? "failed" : "done"} aria-hidden />
         {live ? (
-          <span className="l-shimmer">
-            {who} is working · {plural(steps.length, "step")} so far
-          </span>
+          <>
+            <LiveLine className="lc-trail-parts" text={`${doing[0].toUpperCase()}${doing.slice(1)}…`} />
+            <span className="lc-quiet l-num">{plural(steps.length, "step")}</span>
+          </>
         ) : (
           <span className="lc-trail-parts">
-            {parts.map((p, i) => (
-              <span key={i}>
-                {i > 0 && " · "}
-                {p}
+            {said.map((p, i) => (
+              <span key={p}>
+                {i > 0 && ", "}
+                {i === 0 ? `${p[0].toUpperCase()}${p.slice(1)}` : p}
+                {i === 0 && edited.length > 0 && lines && (
+                  <>
+                    {" "}
+                    <Lines {...lines} />
+                  </>
+                )}
               </span>
             ))}
           </span>
         )}
-        {failed > 0 && <Badge tone="danger">{failed} failed</Badge>}
-        {!live && secs > 0 && <span className="lc-quiet l-num">{duration(secs)}</span>}
-        <Chev className="lc-trail-chev" />
+        {failed > 0 && <span className="lc-trail-failed">· {failed} failed</span>}
+        <Chev className="lc-row-chev" />
       </button>
       <div className="lc-trail-fold" inert={!isOpen || undefined}>
         <ol className="lc-trail-list">
@@ -605,12 +692,6 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
               return (
                 <li key={r.it.id} className="lc-trail-note">
                   <Thought it={r.it} />
-                </li>
-              );
-            if (r.kind === "say")
-              return (
-                <li key={r.it.id} className="lc-trail-say">
-                  {clip(untag(draftOf(r.it.text)?.before ?? r.it.text).replace(/\s+/g, " ").trim(), 400)}
                 </li>
               );
             if (r.kind === "ask")
@@ -742,7 +823,7 @@ function Approval({ threadId, it, who }: { threadId: string; it: Extract<Item, {
         fields={(details ? it.fields : []).map((f) => ({
           label: f.label,
           // A command is shown whole: what runs is what you read.
-          value: f.label === "Command" || f.label === "File" ? <code className="lc-ask-cmd">{f.value.replace(/^\/Users\/[^/]+/, "~")}</code> : f.value.replace(/^\/Users\/[^/]+/, "~"),
+          value: f.label === "Command" || f.label === "File" ? <code className="lc-ask-cmd">{os.tilde(f.value)}</code> : os.tilde(f.value),
         }))}
         approveLabel={it.risk === "high" ? (/push/i.test(it.title) ? "Hold to push" : "Hold to allow") : shell ? "Run it" : "Allow"}
         denyLabel="Not this"
@@ -800,6 +881,16 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
       </div>
     );
   const q = it.questions[at];
+  // Asked with no question in it (Codex can send none): Skip is all there is, and it lets the turn go on.
+  if (!q)
+    return (
+      <div className="lc-answered">
+        <span>{who} is waiting on a question it didn't say.</span>
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void rpc("question.answer", { threadId, itemId: it.id }).catch(fail)}>
+          Skip
+        </button>
+      </div>
+    );
   const OTHER = "Something else";
   const chosen = picks[q.question];
   const last = at === it.questions.length - 1;
@@ -879,7 +970,6 @@ const paceOf = () =>
 
 const RUN_MODES = [
   { id: "helpers", label: "Its model, with cheap helpers", note: "Explorers and the test runner on Haiku" },
-  { id: "escalate", label: "Sonnet, Opus when stuck", note: "Lowest cost on routine work" },
   { id: "single", label: "Its model alone", note: "No subagents" },
 ] as const;
 
@@ -914,7 +1004,8 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
   const providers = useEngine((s) => s.providers);
   const [note, setNote] = useState("");
   const coder = agentOf(thread?.agent, agents, providers);
-  const team = [coder, ...(thread?.helpers ?? []).map((h) => agentOf(h, agents, providers))];
+  // Steps an older plan handed to someone else still show who; new plans are all the builder's.
+  const team = [coder];
   const names = team.map((a) => a.name);
   const parsed = useMemo(() => stepsOf(it.plan).map((s, i) => ({ ...s, id: `s${i}`, text: unfiled(ownerOf(s.text, names).text), who: ownerOf(s.text, names).who })), [it.plan, names.join()]);
   const [edit, setEdit] = useState<Step[] | null>(null);
@@ -932,8 +1023,9 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
     };
   }, []);
   const n = Math.max(1, steps.length);
-  const claude = onClaude(coder.model);
-  const mode = RUN_MODES.find((m) => m.id === (coder.runMode ?? "helpers")) ?? RUN_MODES[0];
+  // How the builder runs is an agent's own setting; a bare model in Claude Code always brings its helpers.
+  const claude = onClaude(coder.model) && !coder.id.startsWith("@");
+  const mode = RUN_MODES.find((m) => m.id === (coder.runMode === "single" ? "single" : "helpers")) ?? RUN_MODES[0];
   const setMode = (runMode: (typeof RUN_MODES)[number]["id"]) => void rpc("agents.save", { agents: agents.map((a) => (a.id === coder.id ? { ...a, runMode } : a)) }).catch(fail);
   const answer = (approve: boolean) => rpc("proposal.answer", { threadId, itemId: it.id, approve, note: approve ? undefined : note.trim(), plan: approve && edit ? planOf(it.title, edit, coder.name) : undefined }).catch(fail);
   const move = (i: number, d: number) => setEdit((e) => {
@@ -943,6 +1035,19 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
     [list[i], list[j]] = [list[j], list[i]];
     return list;
   });
+  // A plan nobody had to approve (a hard job, planned first and built straight on): a quiet line that opens to the plan.
+  if (it.auto)
+    return (
+      <details className="lc-planned">
+        <summary className="l-focus">
+          <span>
+            <b>Planned first</b> · {it.title} · {plural(steps.length || 1, "step")}
+          </span>
+          <Chev className="lc-row-chev" />
+        </summary>
+        <StreamedMarkdown className="lc-md lc-planned-md" text={it.plan} animate={false} />
+      </details>
+    );
   if (it.state !== "asking" && it.state !== "expired")
     return (
       <div className="lc-answered" data-state={it.state === "approved" ? "approved" : "denied"}>
@@ -1032,9 +1137,9 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
         )}
         {/* Who builds it and on what, and what it should cost, on one line. */}
         <div className="lc-plan-meta">
-          <span>{coder.name} builds it on</span>
+          <span>{coder.id.startsWith("@") ? "Built by" : `${coder.name} builds it on`}</span>
           {claude ? (
-            <Pop label={`How ${coder.name} runs`} width={290} triggerClass="lc-btn lc-plan-modeb" trigger={<>{mode.id === "helpers" ? `${modelLabel(thread?.model ?? coder.model, providers)}, with helpers` : mode.id === "escalate" ? "Sonnet, Opus when stuck" : `${modelLabel(thread?.model ?? coder.model, providers)} alone`}<I.chevD size={11} /></>}>
+            <Pop label={`How ${coder.name} runs`} width={290} triggerClass="lc-btn lc-plan-modeb" trigger={<>{mode.id === "helpers" ? `${modelLabel(thread?.model ?? coder.model, providers)}, with helpers` : `${modelLabel(thread?.model ?? coder.model, providers)} alone`}<I.chevD size={11} /></>}>
               {(close) => (
                 <>
                   {RUN_MODES.map((m) => (
@@ -1044,7 +1149,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
               )}
             </Pop>
           ) : (
-            <b>{modelLabel(thread?.model ?? coder.model, providers)}</b>
+            <b>{modelLabel(thread?.model ?? coder.model, providers)}{onClaude(coder.model) ? ", with helpers" : ""}</b>
           )}
           {est && (
             <span className="l-num" title="From what your turns cost over the last 30 days">
@@ -1136,7 +1241,9 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
   const field = useRef<HTMLTextAreaElement>(null);
   const later = cps.filter((x) => x.turn >= it.turn && !x.reverted);
   // The files show above the words, so the line that tells the agent where they are doesn't show again.
-  const said = it.files?.length ? it.text.replace(/\n*I attached: [^\n]*$/, "") : it.text;
+  const typed = it.files?.length ? it.text.replace(/\n*I attached: [^\n]*$/, "") : it.text;
+  // A design comment shows only your words; edited, it keeps what it's about.
+  const { said, rest, title, part } = designPart(typed);
   const files = new Set(later.flatMap((c) => c.files.map((f) => f.path))).size;
   const committed = later.find((c) => c.committed);
   useEffect(() => {
@@ -1154,7 +1261,7 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
     setBusy(true);
     try {
       const r = await rpc("thread.rewind", { threadId, itemId: it.id, files: revertFiles, force });
-      await rpc("thread.send", { id: threadId, text });
+      await rpc("thread.send", { id: threadId, text: text + rest });
       toast(`Went back to turn ${r.turn}`, { description: revertFiles && r.files ? `${plural(r.files, "file")} back as they were` : "The files stay as they are" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -1209,15 +1316,23 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
           {it.anchor.file.split("/").pop()}, {it.anchor.endLine && it.anchor.endLine !== it.anchor.line ? `lines ${it.anchor.line}–${it.anchor.endLine}` : `line ${it.anchor.line}`}
         </button>
       )}
+      {part && (
+        <span className="lc-you-anchor lc-you-part" title={`About ${part} in “${title}”`}>
+          <I.comment size={11} />
+          <span>
+            {part} · {title}
+          </span>
+        </span>
+      )}
       {it.files && it.files.length > 0 && <Attachments files={it.files} />}
       {said && <p>{said}</p>}
       {!it.steer && it.turn > 0 && (
         <span className="lc-you-more">
-          <button type="button" className="lc-you-btn l-focus" disabled={running} title={running ? "Stop the turn to edit from here" : "Edit this message and go back to it"} onClick={() => setEdit(it.text)}>
+          <button type="button" className="lc-you-btn l-focus" disabled={running} title={running ? "Stop the turn to edit from here" : "Edit this message and go back to it"} onClick={() => setEdit(part ? said : it.text)}>
             <I.edit size={12} />
             Edit from here
           </button>
-          <button type="button" className="lc-you-btn l-focus" title="Copy" aria-label="Copy the message" onClick={() => void navigator.clipboard?.writeText(it.text).then(() => toast("Copied"))}>
+          <button type="button" className="lc-you-btn l-focus" title="Copy" aria-label="Copy the message" onClick={() => void navigator.clipboard?.writeText(part ? said : it.text).then(() => toast("Copied"))}>
             <I.copy size={12} />
           </button>
         </span>
@@ -1270,7 +1385,7 @@ function Attachments({ files }: { files: string[] }) {
         PICTURE.test(f) ? (
           <Thumb key={f} path={f} onOpen={() => setOpen(f)} />
         ) : (
-          <button key={f} type="button" className="lc-you-chip l-focus" title={`${attachedName(f)}: show in Finder`} onClick={() => bridge.reveal(f)}>
+          <button key={f} type="button" className="lc-you-chip l-focus" title={`${attachedName(f)}: show in ${os.fileManager}`} onClick={() => bridge.reveal(f)}>
             <I.file size={12} />
             <span>{attachedName(f)}</span>
           </button>
@@ -1323,7 +1438,7 @@ function Picture({ path, all, onPath, onClose }: { path: string; all: string[]; 
       actions={
         <>
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => bridge.reveal(path)}>
-            Show in Finder
+            Show in {os.fileManager}
           </button>
           <span className="lc-grow" />
           <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={onClose}>
@@ -1363,10 +1478,11 @@ function Escalation({ it, providers }: { it: Tool; providers: ProviderInfo[] }) 
 }
 
 /**
-  A turn's last line: what it changed (Review opens the diff) and the Reviewer's verdict, side by
-  side. Its findings open under the line; blockers open by themselves, notes wait for a press.
+  The turn's last line: what changed (all its parts' changes as one, when `all`; Review opens the
+  diff) and the Reviewer's verdict, side by side. Its findings open under the line; blockers open
+  by themselves, notes wait for a press.
 */
-function TurnFoot({ cp, review, providers, onReview, reviewing }: { cp?: Checkpoint; review?: Review; providers: ProviderInfo[]; onReview: (checkpointId: string, path?: string) => void; reviewing?: { id: string; path?: string } | null }) {
+function TurnFoot({ cp, all, review, providers, onReview, reviewing }: { cp?: Checkpoint; all?: boolean; review?: Review; providers: ProviderInfo[]; onReview: (checkpointId: string, path?: string) => void; reviewing?: { id: string; path?: string } | null }) {
   const blocked = review?.status === "blocked";
   const [open, setOpen] = useState(blocked);
   useEffect(() => {
@@ -1389,7 +1505,7 @@ function TurnFoot({ cp, review, providers, onReview, reviewing }: { cp?: Checkpo
               Committed {cp.committed}
             </span>
           ) : (
-            <button type="button" className="lc-foot-chip l-focus" aria-current={here || undefined} onClick={() => onReview(cp.id, cp.files[0]?.path)}>
+            <button type="button" className="lc-foot-chip l-focus" aria-current={here || undefined} onClick={() => onReview(all ? "all" : cp.id, cp.files[0]?.path)}>
               {plural(cp.files.length, "file")} <Lines {...sumLines(cp.files)} />
               <span className="lc-quiet">{here ? "In the panel" : "Review ›"}</span>
             </button>

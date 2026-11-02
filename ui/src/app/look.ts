@@ -37,10 +37,20 @@ export const readLook = (): Look => {
   return { ...LOOK_DEFAULT, ...rest, v: 3 };
 };
 
+// The colours last put on the page, so a change of theme or accent can land in one frame.
+let painted = "";
+
 /** Puts a look on the page (and on the window, in the shell). */
 export function applyLook(l: Look) {
   const h = document.documentElement;
   const dark = l.theme === "dark" || (l.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  // A new theme or accent changes every colour at once. With each control's own fade it crossed
+  // the window in a hundred fades out of step, a flicker; it lands in one frame instead, with
+  // transitions held while the new colours are worked out (T3 Code: .no-transitions, index.css).
+  const colours = [dark, l.custom, l.accent, l.accentColor, l.action, l.actionColor].join("|");
+  const still = painted !== "" && colours !== painted;
+  painted = colours;
+  if (still) h.dataset.still = "";
   const own = l.custom ? readThemes().find((t) => t.id === l.custom) : undefined;
   h.dataset.theme = own ? own.base : dark ? "dark" : "light";
   h.dataset.accent = l.accent === "own" ? "blue" : l.accent;
@@ -62,6 +72,10 @@ export function applyLook(l: Look) {
   } else {
     h.style.removeProperty("--lc-act");
     h.style.removeProperty("--lc-act-ink");
+  }
+  if (still) {
+    void h.offsetHeight;
+    delete h.dataset.still;
   }
   bridge.setAppearance(own ? own.base : l.theme);
   bridge.setMaterial("solid");

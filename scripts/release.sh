@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds a Liner Code release for GitHub: the app zipped the way its updater wants it, the zip's
-# SHA-256 beside it (the updater won't put in a download it can't check), and a disk image for a
-# first install.
-#   npm run release                      build/release/Liner-Code-<version>-mac-<arch>.zip, .sha256 and .dmg
+# SHA-256 beside it (the updater won't put in a download it can't check), a disk image for a
+# first install, and the Windows build zipped (scripts/build-win.sh).
+#   npm run release                      build/release/Liner-Code-<version>-mac-<arch>.zip, .sha256 and .dmg,
+#                                        and Liner-Code-<version>-win-x64.zip and .sha256
 #   npm run release -- 0.2.0             sets package.json's version first
 #   npm run release -- 0.2.0 --publish   …then publishes them with gh as the release v0.2.0
 #   LINER_RELEASE_TITLE, LINER_RELEASE_NOTES (a file) name the release and say what's in it
@@ -37,6 +38,7 @@ ARCH="$([[ "$(uname -m)" == "arm64" ]] && echo arm64 || echo x64)"
 OUT="$ROOT/build/release"
 ZIP="$OUT/Liner-Code-$VERSION-mac-$ARCH.zip"
 DMG="$OUT/Liner-Code-$VERSION-mac-$ARCH.dmg"
+WIN="$OUT/Liner-Code-$VERSION-win-x64.zip"
 
 # The same Developer ID the build signs with signs the disk image (none: both ad hoc).
 if [[ -z "${LINER_SIGN_IDENTITY:-}" ]]; then
@@ -80,17 +82,22 @@ rm -rf "$IMG" "$RW" "$ROOT/build/dmg-bg"
 if [[ -n "${LINER_SIGN_IDENTITY:-}" ]]; then codesign --sign "$LINER_SIGN_IDENTITY" "$DMG"; fi
 ( cd "$OUT" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256" )
 
+echo "→ Building for Windows"
+bash scripts/build-win.sh x64 >/dev/null
+
 echo "✓ $ZIP ($(du -h "$ZIP" | cut -f1))"
 echo "  $(cut -d' ' -f1 "$ZIP.sha256")"
 echo "✓ $DMG ($(du -h "$DMG" | cut -f1))"
+echo "✓ $WIN ($(du -h "$WIN" | cut -f1))"
+echo "  $(cut -d' ' -f1 "$WIN.sha256")"
 
 if [[ "$PUBLISH" == 1 ]]; then
   echo "→ Publishing v$VERSION"
   TITLE="${LINER_RELEASE_TITLE:-Liner Code $VERSION}"
   if [[ -n "${LINER_RELEASE_NOTES:-}" ]]; then NOTES=(--notes-file "$LINER_RELEASE_NOTES"); else NOTES=(--generate-notes); fi
-  gh release create "v$VERSION" "$DMG" "$DMG.sha256" "$ZIP" "$ZIP.sha256" --repo "$REPO" --title "$TITLE" "${NOTES[@]}"
+  gh release create "v$VERSION" "$DMG" "$DMG.sha256" "$ZIP" "$ZIP.sha256" "$WIN" "$WIN.sha256" --repo "$REPO" --title "$TITLE" "${NOTES[@]}"
 else
   echo
   echo "To publish it:"
-  echo "  gh release create v$VERSION \"$DMG\" \"$DMG.sha256\" \"$ZIP\" \"$ZIP.sha256\" --repo $REPO --title \"Liner Code $VERSION\" --generate-notes"
+  echo "  gh release create v$VERSION \"$DMG\" \"$DMG.sha256\" \"$ZIP\" \"$ZIP.sha256\" \"$WIN\" \"$WIN.sha256\" --repo $REPO --title \"Liner Code $VERSION\" --generate-notes"
 fi

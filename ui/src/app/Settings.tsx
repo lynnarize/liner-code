@@ -8,8 +8,8 @@
   returns to the sessions.
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
-import { ACCOUNT_HOME, ENDPOINT_TOOL, endpointKey, updateModes } from "@contracts";
+import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Mode, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
+import { ACCOUNT_HOME, castOf, ENDPOINT_TOOL, endpointKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
@@ -25,12 +25,13 @@ import { Backdrop, ownChanged, useBackgroundUrl } from "./Backdrop";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
-import { ACCESS_LEVELS, accessOf, agentOf, ago, markOf, modelLabel, plural, providerLabel, setupLine, setupOf, setupsOf, since } from "./model";
+import { ACCESS_LEVELS, accessOf, agentOf, ago, markOf, modelLabel, plural, providerLabel, since } from "./model";
 import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
+import * as os from "./os";
 import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Look, type TrayGlass } from "./look";
 import "./settings.css";
 
@@ -56,13 +57,13 @@ export type SettingsPage = "general" | "appearance" | "notifications" | "keyboar
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "How new sessions start, and what Enter does while an agent works.", words: "work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
   { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the glass, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid tray rail composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat" },
-  { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback" },
+  { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
-  { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: "The agent tools on this Mac, how they sign in, and the keys they bill to.", words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai" },
-  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "The ways to work side by side, a small task to test them for real, and your own setups, wired job by job.", words: "agentic way work style lead coder team model setup stage hand-off handoff context crew writer reviewer explorer test runner opus sonnet deepseek wiring wired compare cost test warning" },
+  { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai voucher promo code redeem" },
+  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Solo, Plan then build, or Auto; your frontier and cheaper models; check or refine each change; and how each mode went in your sessions.", words: "agentic mode solo plan build auto routed lead planner coder builder model frontier cheaper dual astra opus sonnet luna deepseek glm kimi qwen chinese opencode go hermes check refine reviewer judge critic compare cost" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
-  { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "What a new session may do without asking, and what always asks.", words: "permission access read only asks first edits full reviewer destructive guard rm force push" },
-  { id: "projects", label: "Projects", icon: <I.folder />, group: "Work", blurb: "The folders agents work in, who each one starts with, and how a new worktree is set up.", words: "project folder repository add remove finder setup install worktree" },
+  { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "What a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
+  { id: "projects", label: "Projects", icon: <I.folder />, group: "Work", blurb: "The folders agents work in, who each one starts with, and how a new worktree is set up.", words: "project folder repository add remove finder explorer setup install worktree" },
   { id: "git", label: "Git and worktrees", icon: <I.branch />, group: "Work", blurb: "Branches, worktrees, and the snapshot Liner Code keeps of every turn.", words: "git branch prefix worktree snapshot checkpoint undo refs" },
   { id: "archive", label: "Archive", icon: <I.box />, group: "System", blurb: "Sessions you put away. Bring one back, or delete it for good.", words: "archived sessions restore delete" },
   { id: "updates", label: "Updates", icon: <I.download />, group: "System", blurb: "New versions of Liner Code, and of the agent tools it drives.", words: "update upgrade version release new download install restart github cli claude codex opencode hermes grok auto automatic" },
@@ -179,13 +180,14 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
       save({ worktrees: false });
       localStorage.setItem("lc:enter", "queue");
     },
-    appearance: () => setLookPart(LOOK_DEFAULT),
+    // The parts LOOK_DEFAULT has no word for (your own theme, colours and picture) go too, or they'd stay on.
+    appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined }),
     notifications: () => {
       save({ notify: true, badge: true });
       feedback.setEnabled(false);
     },
-    agentic: () => save({ reviewRounds: 2 }),
-    safety: () => save({ defaultAccess: "ask", guardDestructive: true }),
+    agentic: () => save({ dual: false, after: "check", reviewRounds: 2, reviewSmall: false, route: { level: "high" } }),
+    safety: () => save({ defaultAccess: "auto", guardDestructive: true }),
     git: () => save({ branchPrefix: "liner/" }),
   };
   const reset = restore[page];
@@ -471,7 +473,7 @@ const NONE: never[] = [];
 /** Tools with a driver that hasn't been run against the real tool yet. */
 const UNTRIED = new Set(["cursor", "grok"]);
 const save = (patch: Partial<EngineSettings>) => void rpc("settings.save", patch).catch(fail);
-const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+const tilde = os.tilde;
 
 /** A small accent tag beside something that just arrived. */
 const New = () => <span className="lc-st-new">New</span>;
@@ -517,31 +519,29 @@ function Field({ title, note, children, below, lead, off }: { title: ReactNode; 
 
 function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () => void }) {
   const s = useEngine((x) => x.settings);
-  const agents = useEngine((x) => x.agents);
   const [enter, setEnter] = useState(() => (localStorage.getItem("lc:enter") as "queue" | "steer") ?? "queue");
-  const lead = agents.find((a) => /lead/i.test(a.role));
-  const coder = agents.find((a) => a.specialty === "coder") ?? agents.find((a) => a.id !== "demo" && a !== lead);
   const providers = useEngine((x) => x.providers);
-  const setups = setupsOf(s, agents);
-  const current = s.workStyle === "team" ? `setup:${setupOf(s, agents)?.id ?? ""}` : s.workStyle;
+  // Who'd do what, from your two models.
+  const cast = castOf(providers, { dual: s.dual, picks: s.picks });
+  const label = (ref?: string) => (ref ? modelLabel(ref, providers) : "");
   return (
     <>
       <Group title="New sessions" note="What Home starts with. Each session can still change it.">
-        <Field title="Who you talk to" below>
+        <Field title="How they work" below>
           <RadioCards
-            label="Who you talk to"
+            label="How they work"
             columns={3}
-            value={current}
-            onValueChange={(v) => save(v.startsWith("setup:") ? { workStyle: "team", setup: v.slice(6) } : { workStyle: v as EngineSettings["workStyle"] })}
+            value={s.mode}
+            onValueChange={(v) => save({ mode: v as Mode })}
             options={[
-              { value: "model", title: "Just a model", description: "One model answers, and edits as you allow.", icon: <I.sparkle size={16} /> },
-              { value: "lead", title: "A lead and a coder", description: `${lead?.name ?? "The lead"} answers and plans changes; ${coder?.name ?? "the coder"} builds what you approve.`, icon: <I.agents size={16} /> },
-              ...setups.map((x) => ({ value: `setup:${x.id}`, title: x.name, description: `${setupLine(x, agents, providers)}.`, icon: <I.flow size={16} /> })),
+              { value: "solo", title: "Solo", description: `One model does it all, as you allow${cast ? `: ${label(cast.everyday)}` : ""}.`, icon: <I.sparkle size={16} /> },
+              { value: "plan", title: "Plan, then build", description: cast ? `${label(cast.strong)} plans, you approve, ${label(cast.everyday)} builds.` : "A stronger model plans, you approve, a cheaper one builds.", icon: <I.flow size={16} /> },
+              { value: "auto", title: "Auto", description: cast ? `Each message gets the least work: ${label(cast.everyday)} for most, ${label(cast.strong)} for hard jobs.` : "Each message gets the least work likely to do it well.", icon: <I.branchIf size={16} /> },
             ]}
           />
           <span className="lc-st-more">
             <button type="button" className="lc-st-link l-focus" onClick={() => go("agentic")}>
-              {s.workStyle === "team" ? "Edit your setups" : "How each one works, side by side"}
+              Which models, and how each mode works
               <I.chevR size={12} />
             </button>
           </span>
@@ -566,7 +566,7 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
         </Field>
       </Group>
       <Group title="While an agent works">
-        <Field title="Enter" note="What Enter does with a message you write while a turn runs. ⌘Enter does the other.">
+        <Field title="Enter" note={`What Enter does with a message you write while a turn runs. ${os.mod}Enter does the other.`}>
           <Segmented
             size="sm"
             value={enter}
@@ -581,8 +581,8 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
             aria-label="What Enter does"
           />
         </Field>
-        <Field title="Keep the Mac awake" note="No idle sleep while a session or a routine run works, so a long run isn't cut off. The display still sleeps.">
-          <NamedSwitch name="Keep the Mac awake" checked={s.keepAwake !== false} onCheckedChange={(keepAwake) => save({ keepAwake })} />
+        <Field title={`Keep the ${os.machine} awake`} note="No idle sleep while a session or a routine run works, so a long run isn't cut off. The display still sleeps.">
+          <NamedSwitch name={`Keep the ${os.machine} awake`} checked={s.keepAwake !== false} onCheckedChange={(keepAwake) => save({ keepAwake })} />
         </Field>
       </Group>
       <Group title="Settle sessions on their own" note="Settling is yours: a session stays in its project until you settle it from its row (D), and settled ones fold away under Settled, still searchable. These rules can do it for you; they're off unless you turn them on.">
@@ -623,7 +623,7 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
         <Field title="Carry on when the limit resets" note="A session that waits for its tool's usage to reset goes on by itself a minute after it does, when the tool said when. Off unless you turn it on.">
           <NamedSwitch name="Carry on when the limit resets" checked={s.resumeAtReset ?? false} onCheckedChange={(resumeAtReset) => save({ resumeAtReset })} />
         </Field>
-        <Field title="Carry on after a restart" note="A turn cut off when Liner Code quit or the Mac restarted goes on by itself when it opens again, up to three times in five minutes. A turn you stopped stays stopped.">
+        <Field title="Carry on after a restart" note={`A turn cut off when Liner Code quit or the ${os.machine} restarted goes on by itself when it opens again, up to three times in five minutes. A turn you stopped stays stopped.`}>
           <NamedSwitch name="Carry on after a restart" checked={s.continueAfterRestart ?? true} onCheckedChange={(continueAfterRestart) => save({ continueAfterRestart })} />
         </Field>
       </Group>
@@ -666,7 +666,7 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
         </Field>
       </Group>
       <Group title="First run">
-        <Field title="Run the setup again" note="Find the agent tools on this Mac, add projects, and choose how you work.">
+        <Field title="Run the setup again" note={`Find the agent tools on ${os.here}, add projects, and choose how you work.`}>
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (save({ onboarded: false }), onSetup())}>
             Start setup
           </button>
@@ -722,7 +722,7 @@ function Preview({ look }: { look: Look }) {
 const MODES: { value: Look["theme"]; title: string; note: string }[] = [
   { value: "light", title: "Light", note: "One light ground" },
   { value: "dark", title: "Dark", note: "One dark ground" },
-  { value: "system", title: "Match the system", note: "Follows macOS, day and night" },
+  { value: "system", title: "Match the system", note: `Follows ${os.windows ? "Windows" : "macOS"}, day and night` },
 ];
 
 /** Choices as cards: a small picture, the name, a line; the picked one ringed and ticked. */
@@ -1150,11 +1150,11 @@ function Notifications({ sound }: { sound: boolean }) {
         <Field title="Tell me when a session needs me" note="A notification when an agent waits for you, finishes, or runs into a problem.">
           <NamedSwitch name="Tell me when a session needs me" checked={s.notify} onCheckedChange={(notify) => save({ notify })} />
         </Field>
-        <Field title="Count them on the Dock" note="The Dock icon shows how many sessions need you.">
-          <NamedSwitch name="Count them on the Dock" checked={s.badge} onCheckedChange={(badge) => save({ badge })} />
+        <Field title={os.windows ? "Mark them on the taskbar" : "Count them on the Dock"} note={os.windows ? "A red dot on the taskbar button while sessions need you; its tooltip counts them." : "The Dock icon shows how many sessions need you."}>
+          <NamedSwitch name={os.windows ? "Mark them on the taskbar" : "Count them on the Dock"} checked={s.badge} onCheckedChange={(badge) => save({ badge })} />
         </Field>
-        <Field title="Show them in the menu bar" note="A ring in the menu bar counts what works and what needs you; its menu opens a session, or allows a request waiting in one.">
-          <NamedSwitch name="Show them in the menu bar" checked={s.menuBar !== false} onCheckedChange={(menuBar) => save({ menuBar })} />
+        <Field title={os.windows ? "Show them in the notification area" : "Show them in the menu bar"} note={os.windows ? "A ring in the notification area, its tooltip counting what works and what needs you; its menu opens a session, or allows a request waiting in one." : "A ring in the menu bar counts what works and what needs you; its menu opens a session, or allows a request waiting in one."}>
+          <NamedSwitch name={os.windows ? "Show them in the notification area" : "Show them in the menu bar"} checked={s.menuBar !== false} onCheckedChange={(menuBar) => save({ menuBar })} />
         </Field>
       </Group>
       <Group title="In Liner Code">
@@ -1186,10 +1186,10 @@ function Keyboard() {
       if (e.key === "Escape") return setRecording(null);
       const spec = specOf(e);
       if (!spec) return;
-      if (!/^(mod|ctrl|alt)\+/.test(spec) && !/^f\d+$/.test(spec)) return toast("Use ⌘, ⌃ or ⌥ with it", { description: "A key on its own would fire while you type." });
+      if (!/^(mod|ctrl|alt)\+/.test(spec) && !/^f\d+$/.test(spec)) return toast(os.macKeys ? "Use ⌘, ⌃ or ⌥ with it" : "Use Ctrl or Alt with it", { description: "A key on its own would fire while you type." });
       const clash = COMMANDS.find((c) => c.id !== recording && bindingsOf(c.id).some((b) => b.key === spec));
       put([...mine.filter((b) => b.command !== recording && b.command !== `-${recording}`), { key: spec, command: recording }]);
-      if (clash) toast(`${glyphs(spec).join("")} is also ${clash.label.split(":")[0].toLowerCase()}`, { description: "The first in the list wins. Change one of them, or narrow it with when." });
+      if (clash) toast(`${os.keys(spec)} is also ${clash.label.split(":")[0].toLowerCase()}`, { description: "The first in the list wins. Change one of them, or narrow it with when." });
       setRecording(null);
     };
     window.addEventListener("keydown", onKey, true);
@@ -1282,7 +1282,7 @@ function Models() {
       await rpc("keys.set", { provider: id, key });
       setKeyFor(null);
       setKeyVal("");
-      toast.success(key ? "Key saved in the keychain" : "Key removed");
+      toast.success(key ? `Key saved in ${os.keyStore()}` : "Key removed");
     } catch (e) {
       fail(e);
     }
@@ -1296,7 +1296,7 @@ function Models() {
   return (
     <>
       <Group
-        title="Agent tools on this Mac"
+        title={`Agent tools on ${os.here}`}
         note="Liner Code drives the tools you already have, with your own sign-ins."
         end={
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={looking} onClick={lookAgain}>
@@ -1359,7 +1359,7 @@ function Models() {
       <AddedAgents />
       <Endpoints />
       <CustomModels />
-      <Group title="Billing and keys" note="Keys stay in the login keychain. The engine only holds them in memory.">
+      <Group title="Billing and keys" note={`Keys stay in ${os.keyStore("the login keychain")}. The engine only holds them in memory.`}>
         <Field title="Claude Code bills to" note={keys.includes("anthropic") ? "Your plan through Claude Code's own sign-in, or the Anthropic key you added" : "Anthropic asks apps built on its Agent SDK to use an API key: add one below"}>
           <Segmented
             size="sm"
@@ -1395,8 +1395,58 @@ function Models() {
             )}
           </Field>
         ))}
+        <Voucher />
       </Group>
     </>
+  );
+}
+
+/* A voucher from Liner Code's site: while it's good, its one model is in the picker, under Promo. */
+function Voucher() {
+  const on = useEngine((x) => x.settings.voucher) ?? false;
+  const tool = useEngine((x) => x.providers.find((p) => p.id === `${ENDPOINT_TOOL[VOUCHER.protocol]}.${VOUCHER.id}`));
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const redeem = async (c: string | null) => {
+    setBusy(true);
+    try {
+      // The site checks the code first; only a good one is kept, like a key.
+      await rpc("voucher.redeem", { code: c });
+      await bridge.keychainSet(`key:${endpointKey(VOUCHER.id)}`, c);
+      setOpen(false);
+      setCode("");
+      if (c) toast.success("Voucher redeemed", { description: "DeepSeek V4.1 Flash is in the model picker, under Promo." });
+      else toast("Voucher removed");
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const note = !on ? "A code for a model on the house" : tool && !tool.available ? "DeepSeek V4.1 Flash runs through OpenCode: install it above to use it" : "DeepSeek V4.1 Flash, under Promo in the model picker. Its 5-hour and weekly limits show with your others.";
+  return (
+    <Field title="Voucher" note={note}>
+      {open ? (
+        <span className="lc-keyin">
+          <span className="lc-keyin-f">
+            <I.lock size={12} />
+            <input autoFocus value={code} disabled={busy} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => (e.key === "Enter" && code.trim() ? void redeem(code.trim()) : e.key === "Escape" && setOpen(false))} placeholder="Type the code" aria-label="Voucher" autoComplete="off" spellCheck={false} />
+          </span>
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={busy || !code.trim()} onClick={() => void redeem(code.trim())}>
+            Redeem
+          </button>
+        </span>
+      ) : on ? (
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={busy} onClick={() => void redeem(null)}>
+          Remove
+        </button>
+      ) : (
+        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setOpen(true)}>
+          Redeem
+        </button>
+      )}
+    </Field>
   );
 }
 
@@ -1599,7 +1649,7 @@ function Endpoints() {
           </span>
         </ProviderRow>
       ))}
-      {!adding && !endpoints.length && <p className="lc-st-none lc-quiet">None yet. A DeepSeek or Kimi key, OpenRouter, or a model running on this Mac in LM Studio or Ollama.</p>}
+      {!adding && !endpoints.length && <p className="lc-st-none lc-quiet">None yet. A DeepSeek or Kimi key, OpenRouter, or a model running on {os.here} in LM Studio or Ollama.</p>}
     </Group>
   );
 }
@@ -1686,7 +1736,7 @@ function EndpointForm({ taken, onDone }: { taken: Endpoint[]; onDone: () => void
         </label>
         <label className="lc-st-form-w">
           <span>
-            Key {known?.local ? "(none needed)" : "(none for one on this Mac)"}
+            Key {known?.local ? "(none needed)" : `(none for one on ${os.here})`}
             {known?.keys && (
               <>
                 {" · "}
@@ -1702,7 +1752,7 @@ function EndpointForm({ taken, onDone }: { taken: Endpoint[]; onDone: () => void
               </>
             )}
           </span>
-          <input className="lc-input lc-mono" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={known?.local ? "None needed" : "Kept in the keychain"} autoComplete="off" />
+          <input className="lc-input lc-mono" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={known?.local ? "None needed" : `Kept in ${os.keyStore()}`} autoComplete="off" />
         </label>
         <label className="lc-st-form-w">
           <span>Models, one a line</span>
@@ -1718,7 +1768,7 @@ function EndpointForm({ taken, onDone }: { taken: Endpoint[]; onDone: () => void
           </div>
         )}
       </div>
-      <p className="lc-quiet lc-st-form-n">{clash ? `There's already an endpoint called ${label.trim()}.` : "Its key goes to the keychain, and only to the tool's process when a session runs on it."}</p>
+      <p className="lc-quiet lc-st-form-n">{clash ? `There's already an endpoint called ${label.trim()}.` : `Its key goes to ${os.keyStore()}, and only to the tool's process when a session runs on it.`}</p>
       <div className="lc-st-form-f">
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={!url.trim() || busy !== null} onClick={() => void find()}>
           {busy === "find" ? "Asking it" : "Find its models"}
@@ -1808,11 +1858,11 @@ function Registry({ onDone }: { onDone: () => void }) {
             {a.added ? (
               <span className="lc-quiet lc-reg-tag">Added</span>
             ) : !a.runnable ? (
-              <span className="lc-quiet lc-reg-tag" title={a.how === "uvx" ? "Install uv (brew install uv) to run it" : a.how === "npx" ? "Install Node.js to run it" : "There's no build for this Mac"}>
-                {a.how === "binary" ? "Not for this Mac" : `Needs ${a.how}`}
+              <span className="lc-quiet lc-reg-tag" title={a.how === "uvx" ? `Install uv (${os.windows ? "winget install astral-sh.uv" : "brew install uv"}) to run it` : a.how === "npx" ? "Install Node.js to run it" : `There's no build for ${os.here}`}>
+                {a.how === "binary" ? `Not for ${os.here}` : `Needs ${a.how}`}
               </span>
             ) : (
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy !== null} title={a.how === "binary" ? "Downloads it for this Mac and checks it" : `Runs through ${a.how}`} onClick={() => void add({ registryId: a.id })}>
+              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy !== null} title={a.how === "binary" ? `Downloads it for ${os.here} and checks it` : `Runs through ${a.how}`} onClick={() => void add({ registryId: a.id })}>
                 {busy === a.id ? (a.how === "binary" ? "Downloading" : "Adding") : "Add"}
               </button>
             )}
@@ -2008,7 +2058,7 @@ function Projects() {
                 <Select options={options} value={p.agent ?? ""} onValueChange={(agent) => void rpc("project.update", { id: p.id, agent }).catch(fail)} placeholder="Starts with" />
               </span>
               {isNative() && (
-                <button type="button" className="lc-ib l-focus" aria-label={`Show ${p.name} in Finder`} title="Show in Finder" onClick={() => bridge.reveal(p.path)}>
+                <button type="button" className="lc-ib l-focus" aria-label={`Show ${p.name} in ${os.fileManager}`} title={`Show in ${os.fileManager}`} onClick={() => bridge.reveal(p.path)}>
                   <I.folder size={14} />
                 </button>
               )}
@@ -2208,10 +2258,10 @@ function ScriptKey({ value, name, others, onChange }: { value?: string; name: st
       if (e.key === "Escape") return setRecording(false);
       const spec = specOf(e);
       if (!spec) return;
-      if (!/^(mod|ctrl|alt)\+/.test(spec)) return toast("Use ⌘, ⌃ or ⌥ with it", { description: "A key on its own would fire while you type." });
+      if (!/^(mod|ctrl|alt)\+/.test(spec)) return toast(os.macKeys ? "Use ⌘, ⌃ or ⌥ with it" : "Use Ctrl or Alt with it", { description: "A key on its own would fire while you type." });
       const taken = commandOn(spec);
-      if (others.includes(spec)) return toast(`${glyphs(spec).join("")} already runs another script here`);
-      if (taken) toast(`${glyphs(spec).join("")} is also ${taken.label.split(":")[0].toLowerCase()}`, { description: "In a session the script wins. Change one of them in Keyboard." });
+      if (others.includes(spec)) return toast(`${os.keys(spec)} already runs another script here`);
+      if (taken) toast(`${os.keys(spec)} is also ${taken.label.split(":")[0].toLowerCase()}`, { description: "In a session the script wins. Change one of them in Keyboard." });
       onChange(spec);
       setRecording(false);
     };
@@ -2354,7 +2404,7 @@ function Archive() {
       <div className="lc-st-empty">
         <I.box size={20} />
         <b>Nothing archived</b>
-        <span>Archive a session from the command menu (⌘K) to put it away without deleting it.</span>
+        <span>Archive a session from the command menu ({os.mod}K) to put it away without deleting it.</span>
       </div>
     );
   return (
@@ -2450,7 +2500,7 @@ function UpdatesPlace() {
         <Field title="Updates" note={toolMode === "auto" ? "Runs a tool's updater as soon as a new version is out and nothing is working on it." : toolMode === "notify" ? "Tells you on Home when a tool has a new version, and you update it." : "Doesn't look for new versions. Look now still does."}>
           <Segmented size="sm" value={toolMode} onValueChange={(v) => save({ updateTools: v as UpdateMode })} options={UPDATE_MODES} aria-label="The agent tools' updates" />
         </Field>
-        {u.tools.length ? u.tools.map((t) => <ToolRow key={t.id} t={t} />) : <Field title="No agent tools yet" note={u.checkedAt ? "None of Claude Code, Codex, OpenCode, Hermes or Grok Build is on this Mac. Install one in Models." : "They show here after the first look."} />}
+        {u.tools.length ? u.tools.map((t) => <ToolRow key={t.id} t={t} />) : <Field title="No agent tools yet" note={u.checkedAt ? `None of Claude Code, Codex, OpenCode, Hermes or Grok Build is on ${os.here}. Install one in Models.` : "They show here after the first look."} />}
       </Group>
     </>
   );
@@ -2579,10 +2629,12 @@ function Data({ onSetup }: { onSetup: () => void }) {
         .catch(() => {}),
     [],
   );
-  const log = userHome ? `${userHome}/Library/Logs/Liner Code/engine.log` : null;
+  // Where the shell writes it (desktop/src/engine.ts): the Mac's Logs folder, else (Windows, or a test home) the data folder's logs.
+  const sep = home.includes("\\") ? "\\" : "/";
+  const log = !userHome ? null : isMac && home === `${userHome}/.liner-code` ? `${userHome}/Library/Logs/Liner Code/engine.log` : [home, "logs", "engine.log"].join(sep);
   return (
     <>
-      <Group title="On this Mac">
+      <Group title={`On ${os.here}`}>
         <Field
           title="Sessions, projects and settings"
           note={
@@ -2593,18 +2645,18 @@ function Data({ onSetup }: { onSetup: () => void }) {
         >
           {isNative() && (
             <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.reveal(home)}>
-              Show in Finder
+              Show in {os.fileManager}
             </button>
           )}
         </Field>
         <Field title="Engine log" note={log ? <span className="lc-mono">{tilde(log)}</span> : "What the engine did, for when something goes wrong"}>
           {isNative() && log && (
             <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.reveal(log)}>
-              Show in Finder
+              Show in {os.fileManager}
             </button>
           )}
         </Field>
-        <Field title="API keys" note="In the login keychain, under “Liner Code”. Never written to the data folder." />
+        <Field title="API keys" note={os.windows ? "In Windows' encrypted storage, sealed to your Windows sign-in. Never written to the data folder." : "In the login keychain, under “Liner Code”. Never written to the data folder."} />
       </Group>
       <Group title="About">
         <Field title={`Liner Code ${version}`} note="Your models, your code. Built from Liner UI.">

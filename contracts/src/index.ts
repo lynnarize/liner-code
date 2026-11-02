@@ -116,6 +116,14 @@ export type EndpointProtocol = "anthropic" | "responses" | "chat";
 export type Endpoint = { id: string; label: string; url: string; protocol: EndpointProtocol; models: string[] };
 export const ENDPOINT_TOOL: Record<EndpointProtocol, BuiltinProvider> = { anthropic: "claude", responses: "codex", chat: "opencode" };
 export const endpointKey = (id: string) => `endpoint.${id}`;
+/**
+  The voucher: a code from Liner Code's site that runs one model, DeepSeek V4.1 Flash, on the site's
+  plan (its five hours and its week), through OpenCode. An endpoint Settings doesn't list, named
+  only "Promo"; the code is its key, kept like an endpoint's, and the site checks it on each call.
+*/
+export const VOUCHER: Endpoint = { id: "voucher", label: "Promo", url: "https://linerui.sorafel.com/api/code/v1", protocol: "chat", models: ["deepseek-v4.1-flash"] };
+/** What a design's page gets in a frame of Liner Code's (the Design surface, the chat): no scrollbar of its own down its edge; it still scrolls. */
+export const DESIGN_FRAME_STYLE = "<style>html{scrollbar-width:none!important}</style>";
 /** An agent in the ACP registry, and how Liner Code would run it here. */
 export type RegistryAgent = {
   id: string;
@@ -134,7 +142,11 @@ export type RegistryAgent = {
 export type AgentGlyph = "sun" | "leaf" | "moon" | "pen" | "shapes" | "code" | "scope" | "lens" | "spark";
 export type Specialty = "designer" | "coder" | "debugger" | "researcher" | "writer" | "custom";
 
-/** An agent you open threads with. `model` is "<provider>:<model id>", like "claude:claude-opus-5-5". */
+/**
+  An agent you made: a model with instructions of its own (its soul, a prompt, skills, context
+  files). Optional: sessions run on a bare model ("@claude:claude-opus-5-5") unless you pick one.
+  `model` is "<provider>:<model id>", like "claude:claude-opus-5-5".
+*/
 export type AgentProfile = {
   id: string;
   name: string;
@@ -158,112 +170,216 @@ export type AgentProfile = {
   access?: Access;
   /**
     How it runs (Claude Code only): "helpers" keeps its model and sends reading and tests to
-    cheap subagents; "escalate" runs on Sonnet and asks Opus only for the hard parts; "single"
-    is the model alone.
+    cheap subagents; "single" is the model alone.
   */
   runMode?: RunMode;
-  /** Its subagents: the Explorer and Test runner's models, and who reviews its work (null: nobody). */
-  subagents?: { explorer?: string; tests?: string; reviewer?: string | null };
+  /** Its subagents' models: the Explorer's and the Test runner's. */
+  subagents?: { explorer?: string; tests?: string };
 };
-export type RunMode = "helpers" | "escalate" | "single";
-
-/** Your own team before setups (read once, to make your first setup from it). */
-export type TeamPlan = { lead: string | null; writer: string; crew: string[] };
-
-/** One stage of the writing in a setup: who writes (an agent's id, or "@<provider>:<model>" for a model on its own) and what its part is. */
-export type Stage = { who: string; job: string };
+/** Older saves may say "escalate", which runs as "helpers" now. */
+export type RunMode = "helpers" | "single";
 
 /**
-  A way of working you set up and named (Settings › Agentic features). `lead` takes your message
-  and plans (null: straight to the first stage). `stages` write in order: the first builds, each
-  next one takes the change on with its own job. `crew` are agents the lead may give a plan step
-  to. `checks` is who reads the whole change ("auto": another model family than the last stage's;
-  null: nobody) and how many rounds it may send back.
+  How a session works. In all three, one model writes at a time.
+  solo: one model (or one of your agents) does it all.
+  plan: a stronger model reads and plans, you approve, a cheaper one builds; talk and questions
+  skip the planner and go to the builder.
+  auto: each message gets the least work likely to do it well, from one model alone up to a judge
+  or critics (RouteLevel, route.ts).
 */
-export type Setup = { id: string; name: string; lead: string | null; stages: Stage[]; crew: string[]; checks: { by: string | null; rounds: number } };
+export type Mode = "solo" | "plan" | "auto";
+export const MODES: { id: Mode; label: string; note: string }[] = [
+  { id: "solo", label: "Solo", note: "One model does it all, as you allow" },
+  { id: "plan", label: "Plan, then build", note: "A stronger model plans, you approve, a cheaper one builds" },
+  { id: "auto", label: "Auto", note: "Each message gets the least work likely to do it well" },
+];
 
 /**
-  Your setups as they stand: the saved ones, minus agents that are gone. Before you saved any
-  (or when none still works), your old team or your coder alone is the first, "My team".
+  Your two models, and everything else follows from them. `frontier` plans, takes the hard jobs
+  and refines; `cheaper` builds, answers and does the everyday work (and Solo starts on it). With
+  Dual frontier on, `second`, a frontier model from another maker, builds in the cheaper one's
+  place. `checker` reads changes, when you'd rather pick it. Any model a tool here runs, Chinese
+  ones through OpenCode, Hermes or an API endpoint too; unset is automatic (castOf).
 */
-export function setupsOf(settings: Pick<Settings, "setups" | "team" | "reviewRounds">, agents: AgentProfile[]): Setup[] {
-  const real = agents.filter((a) => a.id !== "demo");
-  const ok = (id?: string | null): id is string => Boolean(id && (id.startsWith("@") || real.some((a) => a.id === id)));
-  const clean = (s: Setup): Setup | null => {
-    const stages = s.stages.filter((x) => ok(x.who));
-    if (!stages.length) return null;
-    const lead = ok(s.lead) && s.lead !== stages[0].who ? s.lead : null;
-    const crew = lead ? [...new Set(s.crew)].filter((id) => !id.startsWith("@") && ok(id) && !stages.some((x) => x.who === id) && id !== lead) : [];
-    return { ...s, lead, stages, crew, checks: { by: s.checks?.by === undefined ? "auto" : s.checks.by, rounds: Math.min(3, Math.max(1, s.checks?.rounds ?? 2)) } };
-  };
-  // With none left that still work (their agents are gone), your coder alone comes back as "My team".
-  const saved = (settings.setups ?? []).map(clean).filter((s): s is Setup => Boolean(s));
-  if (saved.length) return saved;
-  const writer = ok(settings.team?.writer) ? settings.team.writer : (real.find((a) => a.specialty === "coder") ?? real[0])?.id;
-  if (!writer) return [];
-  const first = clean({ id: "mine", name: "My team", lead: settings.team?.lead ?? null, stages: [{ who: writer, job: "" }], crew: settings.team?.crew ?? [], checks: { by: "auto", rounds: settings.reviewRounds ?? 2 } });
-  return first ? [first] : [];
+export type ModelPicks = { frontier?: string; cheaper?: string; second?: string; checker?: string };
+
+/** What a turn that carries on yours does (see the turn item's `part`). */
+export type TurnPart = "build" | "refine" | "repair" | "fix" | "revise" | "takeover";
+
+/**
+  What happens to the writer's change before it's yours. check: another maker reads it and sends
+  back what must be fixed. refine: the frontier model takes the cheaper one's draft on and finishes
+  it (a Chinese model builds the first pass, Opus fine-tunes it); when the frontier model wrote it,
+  it's checked instead. off: it's yours as it is. Auto has its own judge and critics.
+*/
+export type After = "check" | "refine" | "off";
+export const AFTER: { id: After; label: string; note: string }[] = [
+  { id: "check", label: "Check", note: "Another maker reads it and sends back what must be fixed" },
+  { id: "refine", label: "Refine", note: "The frontier model takes the cheaper one's draft on and finishes it" },
+  { id: "off", label: "Off", note: "Yours as it is" },
+];
+
+/**
+  Who made a model, from its name first ("deepseek-v4-pro" through Claude Code's endpoint is
+  DeepSeek's, "nous:openai/gpt-6-astra" through Hermes is OpenAI's), else from the tool it runs
+  in. A check reads best from another maker than the writer's, so the two don't share blind spots.
+*/
+export type Maker = "anthropic" | "openai" | "google" | "xai" | "deepseek" | "zhipu" | "moonshot" | "qwen" | "minimax" | "xiaomi" | "other";
+const MAKERS: [Maker, RegExp][] = [
+  ["deepseek", /deepseek/i],
+  ["zhipu", /glm|z-ai|zhipu/i],
+  ["moonshot", /kimi|moonshot/i],
+  ["qwen", /qwen|qwq/i],
+  ["minimax", /minimax/i],
+  ["xiaomi", /mimo/i],
+  ["google", /gemini|gemma/i],
+  ["xai", /grok/i],
+  ["anthropic", /claude|opus|sonnet|haiku|fable/i],
+  ["openai", /gpt|openai|astra|\bsol\b|luna|terra|\bo[1-9]\b|codex/i],
+];
+export function makerOf(ref: string): Maker {
+  const { provider, model } = splitModel(ref);
+  for (const [maker, re] of MAKERS) if (re.test(model)) return maker;
+  const tool = familyOf(provider);
+  return tool === "claude" ? "anthropic" : tool === "codex" ? "openai" : tool === "grok" ? "xai" : "other";
 }
 
-/** The setup new sessions start with under "My team": the one you picked, or your first. */
-export const setupOf = (settings: Pick<Settings, "setups" | "team" | "reviewRounds" | "setup">, agents: AgentProfile[], id = settings.setup) => {
-  const all = setupsOf(settings, agents);
-  return all.find((s) => s.id === id) ?? all[0];
-};
+/**
+  Each maker's strongest models (frontier) and its quicker, cheaper ones (everyday), by name, best
+  first, so the parts fill from whatever you have: Claude Code or Codex, or only OpenCode, Hermes,
+  Gemini or an API endpoint. The makers are in the order they're picked: for frontier work Claude,
+  GPT, Gemini, Grok, then DeepSeek, Kimi, Qwen, GLM and MiniMax; for everyday work GPT, Claude,
+  Gemini, then DeepSeek, GLM, Qwen, Kimi, MiniMax and Grok.
+*/
+const FRONTIER: [Maker, RegExp[]][] = [
+  ["anthropic", [/opus/i, /fable/i]],
+  ["openai", [/astra(?!.*(pro|fast|flex))/i, /astra(?!.*pro)/i, /sol(?!.*pro)/i, /sol/i, /gpt-[\d.]+$/i]],
+  ["google", [/gemini.*ultra/i, /gemini.*pro/i]],
+  ["xai", [/grok-[\d.]+(?!.*(fast|mini|code))/i]],
+  ["deepseek", [/deepseek.*pro/i, /deepseek-[vr][\d.]+(?!.*(flash|lite|mini))/i]],
+  ["moonshot", [/kimi.*pro/i, /kimi-k[\d.]+(?!.*(flash|turbo|code|mini))/i]],
+  ["qwen", [/qwen.*max/i]],
+  ["zhipu", [/glm-[\d.]+(?!.*(flash|air|lite))/i]],
+  ["minimax", [/minimax-m[\d.]+(?!.*(flash|lite|mini))/i]],
+];
+const EVERYDAY: [Maker, RegExp[]][] = [
+  ["openai", [/luna(?!.*pro)/i, /terra/i, /luna/i]],
+  ["anthropic", [/sonnet/i]],
+  ["google", [/gemini.*flash(?!.*lite)/i]],
+  ["deepseek", [/deepseek.*flash/i]],
+  ["zhipu", [/glm.*(flash|air)/i]],
+  ["qwen", [/qwen.*(plus|flash)/i]],
+  ["moonshot", [/kimi.*(turbo|flash|code)/i]],
+  ["minimax", [/minimax.*(flash|lite)/i]],
+  ["xai", [/grok.*(fast|mini)/i]],
+];
+/** The tool a maker's models run best in: Claude Code for Claude, Codex for GPT. Others that list them come after. */
+const HOME: Partial<Record<Maker, BuiltinProvider>> = { anthropic: "claude", openai: "codex" };
+
+const readyOf = (providers: ProviderInfo[]) => providers.filter((p) => p.available && p.adapter && p.id !== "demo" && p.models.length);
+
+/** A maker's frontier or everyday model from what's ready, in its own tool when that lists one. */
+function bestOf(ready: ProviderInfo[], maker: Maker, kind: "frontier" | "everyday") {
+  const order = [...ready].sort((a, b) => Number(familyOf(b.id) === HOME[maker]) - Number(familyOf(a.id) === HOME[maker]));
+  for (const re of (kind === "frontier" ? FRONTIER : EVERYDAY).find(([m]) => m === maker)?.[1] ?? [])
+    for (const p of order) for (const m of p.models) if (!m.legacy && re.test(m.id) && makerOf(`${p.id}:${m.id}`) === maker) return `${p.id}:${m.id}`;
+  return undefined;
+}
+
+/** The first maker in `makers` with a model of that kind ready, and that model. */
+function firstOf(ready: ProviderInfo[], kind: "frontier" | "everyday", not?: Maker) {
+  for (const [maker] of kind === "frontier" ? FRONTIER : EVERYDAY) {
+    if (maker === not) continue;
+    const ref = bestOf(ready, maker, kind);
+    if (ref) return ref;
+  }
+  return undefined;
+}
+
+/** A model whose tool is ready, or nothing (a pick whose tool went away falls back to automatic). */
+const readyRef = (ready: ProviderInfo[], ref?: string) => (ref && ready.some((p) => p.id === splitModel(ref).provider) ? ref : undefined);
 
 /**
-  Routed (after GitHub Copilot's Fusion): for each message, the least work likely to do it well.
-  single: one model does it. cascade: the everyday model does it and a judge from another family
-  reads the change; it passes, or goes with the judge's findings to the strong model to repair,
-  and the judge reads the repair once. critique: the strong model does it, critics from other
-  families read it side by side, and it revises once with what they found. The level is how far
-  it may go: standard keeps to one model a message (the strong one for hard jobs), high adds the
-  cascade for medium jobs and a critic for hard ones, max checks everything and brings two
+  Your frontier model and, for Dual frontier, the second one: your picks while their tools are
+  ready, else automatic. The frontier is the first maker's in order (Opus, else GPT Astra or Sol,
+  Gemini Pro, DeepSeek V4 Pro…); the second is the best frontier model of another maker (GPT Astra
+  next to Opus). `second` is unset while no other maker has one ready.
+*/
+export function frontiersOf(providers: ProviderInfo[], picks: ModelPicks = {}): { frontier?: string; second?: string } {
+  const ready = readyOf(providers);
+  const frontier = readyRef(ready, picks.frontier) ?? firstOf(ready, "frontier");
+  const mine = readyRef(ready, picks.second);
+  const second = mine && mine !== frontier ? mine : frontier ? firstOf(ready, "frontier", makerOf(frontier)) : undefined;
+  return { frontier, second };
+}
+
+/**
+  Who does what, each "<provider>:<model>". In Plan, `strong` plans and `everyday` builds; in Auto
+  `everyday` takes most messages, `strong` the hard ones and repairs, `judge` passes a medium job or
+  hands it up, and `critics` read the hard ones. Refine is `strong` taking `everyday`'s draft on.
+*/
+export type RouteCast = { everyday: string; strong: string; judge: string; critics: string[]; checker?: string };
+
+/**
+  The cast from your two picks (ModelPicks) and what's ready, from any makers (FRONTIER,
+  EVERYDAY). `strong` is your frontier model (automatic: Opus, else GPT Astra or Sol, Gemini Pro,
+  DeepSeek V4 Pro…) and `everyday` your cheaper one (automatic: GPT Luna, else Sonnet, Gemini
+  Flash, DeepSeek Flash…), or with `dual` the second frontier model when one is ready. The judge
+  is your checker, else another maker than the everyday model's; the critics are other makers
+  than the strong model's. `checker` is the checker you picked, while its tool is ready.
+*/
+export function castOf(providers: ProviderInfo[], o: { dual?: boolean; picks?: ModelPicks } = {}): RouteCast | null {
+  const ready = readyOf(providers);
+  if (!ready.length) return null;
+  const picks = o.picks ?? {};
+  const first = `${ready[0].id}:${(ready[0].models.find((m) => m.isDefault) ?? ready[0].models[0]).id}`;
+  // The best of another maker than this model's: its frontier model, else its everyday one.
+  const other = (ref: string) => firstOf(ready, "frontier", makerOf(ref)) ?? firstOf(ready, "everyday", makerOf(ref));
+  const cheaper = readyRef(ready, picks.cheaper) ?? firstOf(ready, "everyday") ?? first;
+  const { frontier, second } = frontiersOf(providers, picks);
+  const strong = frontier ?? cheaper;
+  const everyday = o.dual && second ? second : cheaper;
+  const mine = readyRef(ready, picks.checker);
+  const judge = mine && mine !== everyday ? mine : makerOf(strong) !== makerOf(everyday) ? strong : (other(everyday) ?? strong);
+  // Reads from outside the strong model's maker where there is one: its best, and the everyday model when that's another.
+  const outside = other(strong);
+  const also = makerOf(everyday) !== makerOf(strong) ? everyday : undefined;
+  const critics = outside ? [...new Set([outside, also ?? outside])] : [everyday];
+  return { everyday, strong, judge, critics, ...(mine ? { checker: mine } : {}) };
+}
+
+/**
+  Who checks a writer's change (After: Check): the checker you picked, unless it wrote the change
+  itself; else from the cast, another maker than the writer's, so the two don't share blind spots;
+  else any other model in it; null when there's none.
+*/
+export function checkerOf(writer: string, cast: RouteCast | null): string | null {
+  if (!cast) return null;
+  if (cast.checker && cast.checker !== writer) return cast.checker;
+  const pool = [cast.judge, cast.strong, ...cast.critics, cast.everyday];
+  return pool.find((r) => makerOf(r) !== makerOf(writer)) ?? pool.find((r) => r !== writer) ?? null;
+}
+
+/**
+  Auto's levels. single: one model does it. cascade: the everyday model does it and a judge from
+  another maker reads the change; it passes, or goes with the judge's findings to the strong model
+  to repair, and the judge reads the repair once. critique: the strong model does it, critics from
+  other makers read it side by side, and it revises once with what they found. The level is how
+  far it may go: standard keeps to one model a message (the strong one for hard jobs), high adds
+  the cascade for medium jobs and a critic for hard ones, max checks everything and brings two
   critics to the hardest.
 */
 export type RouteLevel = "standard" | "high" | "max";
 export type RoutePattern = "single" | "cascade" | "critique";
 /** How big a job a message looks: light (talk, a small change), medium, heavy. */
 export type RouteWeight = "light" | "medium" | "heavy";
-/** Who does what in a routed session, each "<provider>:<model>". */
-export type RouteCast = { everyday: string; strong: string; judge: string; critics: string[] };
-/** A routed session: its level and cast, the model writing now (`root`), and what the last message got. */
+/** An Auto session: its level and cast, the model writing now (`root`), and what the last message got. */
 export type ThreadRoute = { level: RouteLevel; cast: RouteCast; root: string; last?: { at: number; weight: RouteWeight; pattern: RoutePattern; escalated?: boolean } };
 export const ROUTE_LEVELS: { id: RouteLevel; label: string; note: string }[] = [
   { id: "standard", label: "Standard", note: "One model a message: the everyday one, the strong one for hard jobs" },
   { id: "high", label: "High", note: "Medium jobs get a judge that passes them or hands them up; hard ones a critic" },
   { id: "max", label: "Max", note: "Everything is checked; the hardest jobs get two critics" },
 ];
-
-/**
-  The cast from what's ready, paired the way Fusion pairs them: a quick model for everyday work
-  (GPT Luna, else Sonnet), the strongest of another family for hard jobs and repairs (Opus, else
-  GPT Sol), a judge from another family than the everyday model's, and critics from families
-  other than the strong model's. `mine` (Settings) replaces any of them.
-*/
-export function castOf(providers: ProviderInfo[], mine: Partial<RouteCast> = {}): RouteCast | null {
-  const ready = providers.filter((p) => p.available && p.adapter && p.id !== "demo" && p.models.length);
-  if (!ready.length) return null;
-  const pick = (family: string, ...want: RegExp[]) => {
-    for (const re of want) for (const p of ready) if (familyOf(p.id) === family) for (const m of p.models) if (!m.legacy && re.test(m.id)) return `${p.id}:${m.id}`;
-    return undefined;
-  };
-  const first = `${ready[0].id}:${(ready[0].models.find((m) => m.isDefault) ?? ready[0].models[0]).id}`;
-  const best = (family: string) => (family === "claude" ? pick("claude", /opus/i, /sonnet/i) : family === "codex" ? pick("codex", /sol(?!.*pro)/i, /sol/i, /luna/i) : undefined);
-  // Your picks count while their tool is ready; one that isn't falls back to the automatic choice.
-  const ok = (ref?: string) => (ref && ready.some((p) => p.id === splitModel(ref).provider) ? ref : undefined);
-  const everyday = ok(mine.everyday) ?? pick("codex", /luna(?!.*pro)/i) ?? pick("claude", /sonnet/i) ?? first;
-  const strong = ok(mine.strong) ?? best("claude") ?? best("codex") ?? everyday;
-  const family = (ref: string) => familyOf(splitModel(ref).provider);
-  const other = (ref: string) => (family(ref) === "claude" ? best("codex") : best("claude"));
-  const judge = ok(mine.judge) ?? (family(strong) !== family(everyday) ? strong : (other(everyday) ?? strong));
-  // Reads from outside the strong model's family where there is one: its best, and the everyday model when that's another one.
-  const outside = other(strong);
-  const second = family(everyday) !== family(strong) ? everyday : undefined;
-  const yours = (mine.critics ?? []).filter((c) => ok(c));
-  const critics = yours.length ? [...new Set(yours)] : outside ? [...new Set([outside, second ?? outside])] : [everyday];
-  return { everyday, strong, judge, critics };
-}
 
 export type Project = {
   id: string;
@@ -301,12 +417,16 @@ export type Thread = {
   id: string;
   projectId: string;
   title: string;
-  /** Who works on it. In a lead-and-coder session this is the coder. */
+  /** Who writes: a bare model ("@claude:claude-sonnet-5-5") or one of your agents. In Plan mode, the builder. */
   agent: string;
-  /** In a lead-and-coder session, the agent who plans first; you approve, then `agent` builds. */
+  /** Plan mode: the model (or agent) that reads and plans first; you approve, then `agent` builds. */
   lead?: string;
-  /** Who took the last turn: the lead while it plans and its plan waits on you, then the coder. */
+  /** Who took the last turn: the planner while it plans and its plan waits on you, then the builder. */
   turnBy?: string;
+  /** Dual frontier: a second frontier model builds in the cheaper one's place (ModelPicks). */
+  dual?: boolean;
+  /** What happens to each change before it's yours (After); unset, it follows Settings. */
+  after?: After;
   /**
     When the tool's prompt cache for this thread likely runs out (Claude Code: an hour after the
     last turn on a subscription, five minutes with an API key). Past it, a long thread is read again
@@ -330,8 +450,6 @@ export type Thread = {
   unread?: boolean;
   /** Messages you wrote while it worked, sent in order when the turn ends. */
   queue?: QueuedMessage[];
-  /** Agents the lead may hand steps to, besides the coder. */
-  helpers?: string[];
   /** The Reviewer's last word on this session's changes. */
   verdict?: { state: "checking" | "verified" | "blocked"; note?: string; round: number };
   /** Your own sidebar group. */
@@ -344,20 +462,11 @@ export type Thread = {
   pr?: { number: number; url: string; state: string };
   /** A routine's run. */
   routine?: { id: string; run: string };
-  /**
-    One way's run in a cost test (Settings › Agentic features): the same small task in each way,
-    with nobody watching, so its plan is approved as it stands and commands are declined.
-    `finished` is when its last turn (and the Reviewer) ended; `failed` says why it stopped short.
-  */
+  /** A run of the cost test there used to be, which stays out of your lists. */
   trial?: { id: string; way: string; at: number; finished?: number; failed?: string };
-  /**
-    Started from one of your setups: its name, the stages that write in turn (the first is
-    `agent`), and who checks the whole change and for how many rounds.
-  */
-  setup?: { id: string; name: string };
-  stages?: Stage[];
+  /** From the setups there used to be: who read the change (null: nobody) and how many rounds it could send back. */
   checks?: { by: string | null; rounds: number };
-  /** Routed: each message gets its own pattern and models (see ThreadRoute); `agent` is the everyday model. */
+  /** Auto mode: each message gets its own pattern and models (see ThreadRoute); `agent` is the everyday model. */
   route?: ThreadRoute;
   /**
     Runs in a worktree of its own, on this branch. `path` is where it works; for a project inside
@@ -372,8 +481,10 @@ export type Thread = {
   goal?: { text: string; status: "active" | "met" | "stopped"; turns: number; max: number };
   /** The provider's own session id, for resume. */
   providerSession?: string;
-  /** The lead's own provider session, in a lead-and-coder session. */
+  /** The planner's own provider session, in Plan mode. */
   leadSession?: string;
+  /** The provider sessions of others who write here besides `agent` (the frontier model refining), by who they are. */
+  sessions?: Record<string, string>;
   /** A fork's first turn: the parent's provider session it continues from. */
   forkSession?: string;
   /**
@@ -411,10 +522,18 @@ export type Item =
       /** Who worked this turn and on what, for the line above its work. */
       agent: string;
       model: string;
-      /** A lead's turn, which ends in a plan rather than in edits. */
+      /** A planner's turn, which ends in a plan rather than in edits. */
       planning?: boolean;
       status: "running" | "done" | "stopped" | "error";
       seconds?: number;
+      /**
+        A turn that carries on the one you started, by another model or the same one: building the
+        plan, finishing a draft, repairing or fixing what a check found, revising after critics,
+        taking over. It shows as part of your turn, not a turn of its own.
+      */
+      part?: TurnPart;
+      /** Why this turn went to whom (Auto's choice, a plan for a hard job), said when you ask, not on the timeline. */
+      why?: string;
     })
   | (Base & {
       kind: "user";
@@ -433,6 +552,8 @@ export type Item =
       findings: Finding[];
       summary?: string;
       seconds?: number;
+      /** Its findings went to a model working on the change (a fix, a repair, your next message): not sent again. */
+      heard?: boolean;
     })
   | (Base & { kind: "text"; text: string; streaming: boolean })
   | (Base & { kind: "reasoning"; text: string; streaming: boolean; seconds?: number })
@@ -477,7 +598,8 @@ export type Item =
       reviewer?: string;
     })
   | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string> })
-  | (Base & { kind: "proposal"; title: string; plan: string; state: "asking" | "approved" | "changed" | "expired"; note?: string })
+  /** A plan to approve. `auto`: one nobody asked to see, for a hard job, handed straight on to be built. */
+  | (Base & { kind: "proposal"; title: string; plan: string; state: "asking" | "approved" | "changed" | "expired"; note?: string; auto?: boolean })
   | (Base & {
       kind: "checkpoint";
       files: FileChange[];
@@ -510,13 +632,18 @@ export type FileDiff = { path: string; before?: string; after?: string; from?: s
 export type Settings = {
   /** You've been through the first run. */
   onboarded: boolean;
-  /** Just a model, a lead and a coder, or your own team. */
-  workStyle: "model" | "lead" | "team";
-  /** Before setups: who did what under "My team". Read once to make your first setup. */
-  team?: TeamPlan;
-  /** Ways of working you set up and named; `setup` is the one new sessions start with when `workStyle` is "team". */
-  setups?: Setup[];
-  setup?: string;
+  /** How new sessions work: Solo, Plan then build, or Auto. Each session can change it. */
+  mode: Mode;
+  /** Your frontier and cheaper models (automatic while unset), and Dual frontier, for new sessions. */
+  picks?: ModelPicks;
+  dual?: boolean;
+  /** What happens to each change before it's yours (Check unless set). */
+  after?: After;
+  /**
+    Plan, then build: hold each plan for your OK before it's built. Off, the planner plans only the
+    hard jobs and hands the plan straight on; a message that asks for a plan still waits for you.
+  */
+  approvePlans?: boolean;
   /** How many times the Reviewer sends blocking findings back before it's yours (default 2). */
   reviewRounds?: number;
   /** The Reviewer reads small changes too (SMALL_CHANGE lines or fewer, or only docs), which it otherwise lets through. */
@@ -529,8 +656,8 @@ export type Settings = {
   resumeAtReset?: boolean;
   /** A session Liner Code stopped mid-turn (it quit or crashed) carries on by itself when it starts again (on unless turned off). */
   continueAfterRestart?: boolean;
-  /** Routed sessions: the level new ones start at (high unless set), and models of your own in place of the cast's. */
-  route?: { level?: RouteLevel; cast?: Partial<RouteCast> };
+  /** Auto: the level new sessions start at (high unless set). */
+  route?: { level?: RouteLevel };
   /** Claude Code bills to your Claude plan, or to the Anthropic key you added. */
   claudeBilling: "plan" | "key";
   /** Settle sessions that wait on nothing from you after this many days (0: never, the default). */
@@ -562,6 +689,8 @@ export type Settings = {
   settleOnRoutine?: boolean;
   /** 2 once settling became yours to do: the old defaults that settled sessions by themselves were switched off once. */
   settleVersion?: number;
+  /** 2 once permissions came down to Auto, Manual, Reviewer decides and Full access (`fourLevels`). */
+  accessVersion?: number;
   /** Where new worktrees go (default: the Liner Code home's worktrees folder). */
   worktreeRoot?: string;
   /** Keep each project's default-branch checkout pulled (fast-forward only, when it's clean). */
@@ -576,6 +705,8 @@ export type Settings = {
   customModels?: CustomModel[];
   /** API endpoints you added, each run through the tool that speaks its protocol. */
   endpoints?: Endpoint[];
+  /** A voucher was redeemed: its model (VOUCHER) is in the picker. */
+  voucher?: boolean;
   /** Your shortcuts, the way VS Code writes keybindings.json: keys for a command in place of its own, "-command" to take its keys away. */
   keybindings?: KeyBinding[];
   /** Liner Code's own releases: downloaded and put in when you quit or restart ("auto", the default), only told about, or not looked for. */
@@ -814,34 +945,31 @@ export type UsageSummary = {
   byModel: { model: string; provider: ProviderId; tokens: number; cacheShare: number; costUsd: number }[];
 };
 /**
-  How each way of working went in your own sessions, sorted by how each session ran: a model on
-  its own ("model"), a lead and a coder ("lead"), or one of your setups (its id; sessions from
-  before setups count as your first, "mine"). A changed turn is kept when you didn't undo it.
+  How each mode went in your own sessions, sorted by how each session ran: Solo, Plan then build,
+  or Auto. A changed turn is kept when you didn't undo it.
 */
-export type WayStats = { way: string; sessions: number; turns: number; changed: number; kept: number; costUsd: number; seconds: number; reviewed: number; firstPass: number };
-
-/** The cost test's project (two short files) and its one small task, the same for every way. */
-export const TRIAL = {
-  files: {
-    "math.js": "export function add(a, b) {\n  return a + b;\n}\n",
-    "README.md": "# Math\n\nSmall helpers.\n\n- `add(a, b)`: adds two numbers.\n",
-  } as Record<string, string>,
-  task: "Add a `multiply(a, b)` function to math.js, next to `add`, and list it in README.md the way `add` is listed. Keep it small, and don't run any commands.",
-};
+export type WayStats = { way: Mode; sessions: number; turns: number; changed: number; kept: number; costUsd: number; seconds: number; reviewed: number; firstPass: number };
 
 /** A slash command the tool (or Liner Code) understands, and a skill it can use. */
 export type CommandInfo = { name: string; description: string; hint?: string; source: "tool" | "liner" };
 export type SkillInfo = { name: string; description: string; path?: string };
 /** One commit as a list shows it: its short sha, its subject, when, and its added and removed lines. */
 export type GitCommit = { sha: string; subject: string; at: number; added?: number; removed?: number };
-export type LimitWindow = { label: string; usedPercent: number; resetsAt?: number };
-export type ToolLimits = { provider: ProviderId; label: string; plan?: string; windows: LimitWindow[]; detail?: string; at: number };
+/** One of a plan's usage windows: which it is (the 5-hour one, the week, the month), how long it runs, how much is used. */
+export type LimitWindow = { label: string; usedPercent: number; resetsAt?: number; kind?: "session" | "weekly" | "monthly"; minutes?: number };
+/**
+  A tool's plan windows, as the tool (or the API behind it) reports them. `models`: the windows
+  count only for its models whose id starts so ("opencode-go": OpenCode Go's, not OpenCode Zen's).
+*/
+export type ToolLimits = { provider: ProviderId; label: string; plan?: string; windows: LimitWindow[]; detail?: string; at: number; models?: string };
 export type FoundRepo = { path: string; name: string; branch?: string; lastCommitAt?: number; added: boolean; remote?: string };
 /** A repository on GitHub you can reach, and the project it already is here, if any. */
 export type GitHubRepo = { fullName: string; description?: string; private: boolean; url: string; pushedAt?: number; projectId?: string };
 
 export type Snapshot = {
   version: string;
+  /** The number of the last event the engine sent when this was taken (EngineEvent's `seq`). */
+  seq?: number;
   /** Which API keys are set (by provider), never the keys themselves. */
   keys: string[];
   home: string;
@@ -854,6 +982,8 @@ export type Snapshot = {
   routines: Routine[];
   runs: RoutineRun[];
   updates: Updates;
+  /** Each tool's plan windows, as last asked. */
+  limits?: ToolLimits[];
 };
 
 /** Engine → app, over the event stream. */
@@ -881,6 +1011,8 @@ export type EngineEvent =
   | { type: "devlog"; udid: string; lines: string[] }
   | { type: "settled"; threadId: string; reason: string }
   | { type: "updates"; updates: Updates }
+  /** Every tool's plan windows, after one was asked again (a turn on it ended, you pressed Look again). */
+  | { type: "limits"; tools: ToolLimits[] }
   /** An agent uses the session's Browser; the app answers with agent.browser.reply. */
   | { type: "agent.browser"; id: string; threadId: string; op: AgentBrowserOp; args: Record<string, unknown> }
   /** A design's file changed on disk (the agent is editing it): a Design surface showing it draws it again. */
@@ -913,9 +1045,14 @@ export type Rpc = {
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
-  "thread.create": [{ projectId: string; agent?: string; lead?: string; setup?: string; route?: RouteLevel; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string }, Thread];
-  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string; effort?: Effort; agent?: string; lead?: string | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; helpers?: string[]; setup?: string | null; route?: RouteLevel | null; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
+  "thread.create": [{ projectId: string; agent?: string; lead?: string; route?: RouteLevel; dual?: boolean; after?: After; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string }, Thread];
+  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string; effort?: Effort; agent?: string; lead?: string | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; route?: RouteLevel | null; dual?: boolean; after?: After | null; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
+  /**
+    A thread's timeline, with the number of the last event sent when it was read: events for it with
+    a higher number came after it (T3 Code: client-runtime state/threads.ts, snapshotSequence).
+  */
+  "thread.load": [{ id: string }, { items: Item[]; seq: number }];
   /** Agents outside Liner Code: whether they may in, and the commands that add its MCP server to Claude Code and Codex. */
   "outside.info": [Record<string, never>, { on: boolean; claude: string; codex: string }];
   /** What agents remember about a project (memory_add), oldest first; add, and forget by place. */
@@ -990,14 +1127,15 @@ export type Rpc = {
   "github.repos": [Record<string, never>, { gh: "ready" | "missing" | "signed-out"; detail?: string; login?: string; repos: GitHubRepo[] }];
   "usage.summary": [{ days?: number; projectId?: string }, UsageSummary];
   "ways.compare": [{ days?: number }, WayStats[]];
-  "ways.trial": [{ ways: string[] }, Thread[]];
   /** Each signed-in plan's windows: how much is used and when it resets. */
-  "usage.limits": [Record<string, never>, { tools: ToolLimits[] }];
+  "usage.limits": [{ fresh?: boolean }, { tools: ToolLimits[] }];
   /** What `/` and `$` offer in the composer, for the tool an agent runs on in a project. */
   "agent.commands": [{ projectId: string; agent: string; threadId?: string }, { commands: CommandInfo[]; skills: SkillInfo[] }];
   /** The skill.md files an agent can be given: yours (Claude Code's and Codex's skills folders) and, with a project, its own. */
   "skills.list": [{ projectId?: string }, { yours: SkillInfo[]; project: SkillInfo[] }];
   "keys.set": [{ provider: string; key: string | null }, string[]];
+  /** Checks a voucher with Liner Code's site and, when it's good, turns its model on (VOUCHER); the code is kept as its key. Off with { code: null }. */
+  "voucher.redeem": [{ code: string | null }, Settings];
   "machine.info": [Record<string, never>, { name: string; user: string; home: string }];
   "agents.save": [{ agents: AgentProfile[] }, AgentProfile[]];
   "settings.save": [Partial<Settings>, Settings];

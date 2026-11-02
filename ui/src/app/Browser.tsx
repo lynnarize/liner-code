@@ -20,6 +20,7 @@ import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { SurfaceNote } from "./Surfaces";
 import { PanelHead, Pop } from "./ui";
+import * as os from "./os";
 
 type Log = { level: string; text: string; at: number };
 type Picked = { selector: string; path: string; text: string; html: string; rect: { x: number; y: number; w: number; h: number } };
@@ -100,7 +101,8 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       return null;
     }
   });
-  const [proxy, setProxy] = useState<string | null>(null);
+  // The address the page is served from, with the place it was asked for: another server's isn't shown at this one's path.
+  const [served, setServed] = useState<{ at: string | number; url: string } | null>(null);
   const [address, setAddress] = useState("");
   const [width, setWidth] = useState<Width>("desktop");
   const [offline, setOffline] = useState(false);
@@ -123,8 +125,10 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   // The agent at the wheel: the page's answers it waits on, and the loads it waits for.
   const answers = useRef(new Map<string, (r: { ok: boolean; value?: unknown; error?: string }) => void>());
   const loads = useRef(new Set<() => void>());
-  const now = useRef({ target, logs, proxy });
-  now.current = { target, logs, proxy };
+  const where = target ? (target.port ?? `files:${thread.id}`) : null;
+  const proxy = served && served.at === where ? served.url : null;
+  const now = useRef({ target, logs, proxy, hidden });
+  now.current = { target, logs, proxy, hidden };
   const [driving, setDriving] = useState(0);
 
   /** What could open: the servers on the Mac (the session's first) and the folder's HTML pages. */
@@ -165,14 +169,13 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     void look().then(({ p, f }) => setTarget((t) => pick(p, f, t)));
   }, [thread.id, thread.status]);
 
-  const where = target ? (target.port ?? `files:${thread.id}`) : null;
   useEffect(() => {
     if (!target) return;
     localStorage.setItem(key, JSON.stringify(target));
     setAddress(shown(target));
     let live = true;
     void (target.port === null ? rpc("browser.files", { threadId: thread.id }) : rpc("browser.proxy", { port: target.port }))
-      .then((r) => live && setProxy(r.url))
+      .then((r) => live && setServed({ at: where!, url: r.url }))
       .catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
     return () => {
       live = false;
@@ -243,13 +246,13 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       if (!args.yours) setDriving(Date.now());
       if (op === "open") {
         const a = parseAddress(String(args.url ?? ""));
-        if (!a || "external" in a) throw new Error("Only pages on this Mac: localhost:<port>/<path>, a port, or an HTML file in this session's folder.");
+        if (!a || "external" in a) throw new Error(`Only pages on ${os.here}: localhost:<port>/<path>, a port, or an HTML file in this session's folder.`);
         // Asked afresh: the engine may have restarted since, with a new proxy for the port.
         const { url, path } = "file" in a ? await rpc("browser.files", { threadId: thread.id, path: a.file }) : { ...(await rpc("browser.proxy", { port: a.port })), path: a.path };
         const wait = loaded(15000);
         setPicked(null);
         setLogs([]);
-        setProxy(url);
+        setServed({ at: "file" in a ? `files:${thread.id}` : a.port, url });
         setTarget({ port: "file" in a ? null : a.port, path });
         setNonce((n) => n + 1);
         await wait;
@@ -282,8 +285,9 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         const f = frame.current?.getBoundingClientRect();
         if (!f) throw new Error("No page is open in the Browser.");
         // Out of sight, the page is drawn again in a window of the shell's own, at the same address and size.
-        const { proxy: base, target: at } = now.current;
-        if (hidden) return bridge.shotUrl(base && at ? `${base}${at.path}` : frame.current!.src, Math.round(f.width), Math.round(f.height));
+        // Read now, not when the agent first reached it: the panel's other tabs cover a Browser that's still laid out.
+        const { proxy: base, target: at, hidden: away } = now.current;
+        if (away) return bridge.shotUrl(base && at ? `${base}${at.path}` : frame.current!.src, Math.round(f.width), Math.round(f.height));
         return bridge.snapshot({ x: f.left, y: f.top, width: f.width, height: f.height });
       }
       throw new Error(`The Browser can't ${op}.`);
@@ -313,7 +317,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     if (!a) return toast("Type a port, a local address or a page", { description: "Like 5173, localhost:3000/settings, or index.html" });
     if ("external" in a) {
       bridge.openExternal(a.external);
-      return toast("Opened in your browser", { description: "Only pages on this Mac open beside the session." });
+      return toast("Opened in your browser", { description: `Only pages on ${os.here} open beside the session.` });
     }
     let next: Target;
     try {
@@ -334,7 +338,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     try {
       await rpc("ports.stop", { threadId: thread.id, port: own.port });
       toast(`Stopped localhost:${own.port}`, { description: own.process });
-      setProxy(null);
+      setServed(null);
       const { p, f } = await look();
       setTarget(pick(p, f, null));
     } catch (e) {
@@ -357,15 +361,28 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const errors = logs.filter((l) => l.level === "error").length;
   const src = useMemo(() => (proxy && target ? `${proxy}${target.path}` : null), [proxy, where, nonce]);
   const w = WIDTH[width];
+  // A phone or tablet wider than the panel is drawn smaller, 12px in from the stage's edges all
+  // round, so it never runs under them; the page still lays out at the device's own width.
+  const [room, setRoom] = useState(0);
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setRoom(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [target !== null]);
+  const fit = w && room > 24 ? Math.min(1, (room - 24) / w) : 1;
+  // What a page pixel is drawn at: its zoom, times the fit.
+  const scale = zoom * fit;
 
-  // Where the ask card sits: under the element, inside the stage. The page's pixels are drawn at its zoom.
+  // Where the ask card sits: under the element, inside the stage. The page's pixels are drawn at its scale.
   const card = useMemo(() => {
     if (!picked || !frame.current || !stage.current) return null;
     const f = frame.current.getBoundingClientRect();
     const s = stage.current.getBoundingClientRect();
-    const left = Math.max(8, Math.min(f.left - s.left + picked.rect.x * zoom, s.width - 328));
-    const below = f.top - s.top + (picked.rect.y + picked.rect.h) * zoom + 8;
-    const top = below + 150 > s.height ? Math.max(8, f.top - s.top + picked.rect.y * zoom - 158) : below;
+    const left = Math.max(8, Math.min(f.left - s.left + picked.rect.x * scale, s.width - 328));
+    const below = f.top - s.top + (picked.rect.y + picked.rect.h) * scale + 8;
+    const top = below + 150 > s.height ? Math.max(8, f.top - s.top + picked.rect.y * scale - 158) : below;
     return { left, top };
   }, [picked]);
   // The agent's pointer, from page pixels to the stage's, past its scroll.
@@ -374,8 +391,8 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     if (!pointer || !frame.current || !st) return null;
     const f = frame.current.getBoundingClientRect();
     const s = st.getBoundingClientRect();
-    return { left: f.left - s.left + st.scrollLeft + pointer.x * zoom, top: f.top - s.top + st.scrollTop + pointer.y * zoom };
-  }, [pointer, zoom]);
+    return { left: f.left - s.left + st.scrollLeft + pointer.x * scale, top: f.top - s.top + st.scrollTop + pointer.y * scale };
+  }, [pointer, scale]);
 
   if (!target) {
     // Servers elsewhere on the Mac are offered, the ones that serve a page first, never opened by themselves.
@@ -395,8 +412,8 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               </span>
             )}
             {others.length > 0 && (
-              <span className="lc-br-ports" aria-label="Other servers on this Mac">
-                <span className="lc-quiet">Elsewhere on this Mac</span>
+              <span className="lc-br-ports" aria-label={`Other servers on ${os.here}`}>
+                <span className="lc-quiet">Elsewhere on {os.here}</span>
                 {others.slice(0, 6).map((p) => (
                   <button key={p.port} type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setTarget({ port: p.port, path: "/" })}>
                     <span className="lc-mono">:{p.port}</span>
@@ -532,7 +549,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         {src ? (
           // Zoomed as a browser zooms: the frame lays out 1/zoom as wide and tall as the box it's
           // shown in, then is drawn at zoom, so the page reflows rather than only growing.
-          <div className="lc-br-zoom" style={w ? { width: w } : undefined}>
+          <div className="lc-br-zoom" style={w ? { width: w * fit } : undefined}>
             <iframe
               // Opened again at the same address (an agent checking its edit), it loads afresh.
               key={`${src}#${nonce}`}
@@ -542,7 +559,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               title="Page preview"
               onLoad={onLoad}
               // A frame's color-scheme is what the page inside reads as prefers-color-scheme.
-              style={{ width: `${100 / zoom}%`, height: `${100 / zoom}%`, transform: zoom === 1 ? undefined : `scale(${zoom})`, colorScheme: scheme === "system" ? undefined : scheme }}
+              style={{ width: `${100 / scale}%`, height: `${100 / scale}%`, transform: scale === 1 ? undefined : `scale(${scale})`, colorScheme: scheme === "system" ? undefined : scheme }}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
             />
           </div>

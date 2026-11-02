@@ -1,12 +1,11 @@
 /*
   The Reviewer and the subagents, as text and rules: what the Reviewer is asked, how its
   findings are read back, what the coder is told when a finding blocks, and which subagents a
-  Claude Code agent brings for each run mode. A routed session's judge and critics read the
-  same way; what the strong model is told to repair, and what a writer is told after a critique,
+  Claude Code writer brings. An Auto session's judge and critics read the same way; what the strong model is told to repair, and what a writer is told after a critique,
   are here too, and the one line Reviewer decides asks about each step. The runtime does the running.
 */
 import type { AgentProfile, Finding, ProviderInfo, Risk, RunMode } from "../../contracts/src/index.ts";
-import { familyOf, splitModel } from "../../contracts/src/index.ts";
+import { makerOf, splitModel } from "../../contracts/src/index.ts";
 
 /** What the Reviewer checks, the same every time, so its calls are comparable. */
 export const CRITERIA = [
@@ -33,16 +32,31 @@ export function reviewPrompt(ask: string, diff: string, round: number, as: "revi
     .join("\n\n");
 }
 
-/** The Reviewer's verdict and findings, read from its <findings> block (or a bare JSON object). */
+/**
+  The Reviewer's verdict and findings, read from its <findings> block (or a bare JSON object). The
+  last block that reads counts: a model that echoes the format first, or wraps its JSON in a code
+  fence, still gives its verdict, and "FAIL" fails.
+*/
 export function parseFindings(text: string): { verdict: "pass" | "fail"; summary?: string; findings: Finding[] } | null {
-  const m = /<findings>([\s\S]*?)<\/findings>/.exec(text) ?? /(\{[\s\S]*"verdict"[\s\S]*\})\s*$/.exec(text.trim());
-  if (!m) return null;
+  const blocks = [...text.matchAll(/<findings>([\s\S]*?)<\/findings>/g)].map((m) => m[1]);
+  const trimmed = text.trim();
+  // No block: a bare JSON object at the end, from whichever "{" starts one that reads.
+  if (!blocks.length && trimmed.endsWith("}")) for (let i = trimmed.indexOf("{"); i >= 0; i = trimmed.indexOf("{", i + 1)) blocks.unshift(trimmed.slice(i));
+  for (const block of blocks.reverse()) {
+    const read = readFindings(block.trim().replace(/^```\w*\s*/, "").replace(/\s*```$/, ""));
+    if (read) return read;
+  }
+  return null;
+}
+
+function readFindings(json: string) {
   try {
-    const v = JSON.parse(m[1].trim()) as { verdict?: string; summary?: string; findings?: Partial<Finding>[] };
-    const findings: Finding[] = (v.findings ?? [])
+    const v = JSON.parse(json) as { verdict?: string; summary?: string; findings?: Partial<Finding>[] };
+    if (!v || typeof v !== "object" || (typeof v.verdict !== "string" && !Array.isArray(v.findings))) return null;
+    const findings: Finding[] = (Array.isArray(v.findings) ? v.findings : [])
       .filter((f) => f && typeof f.file === "string" && typeof f.note === "string")
-      .map((f) => ({ file: f.file!.replace(/^\.?\//, ""), line: typeof f.line === "number" ? f.line : undefined, endLine: typeof f.endLine === "number" ? f.endLine : undefined, severity: f.severity === "blocking" ? "blocking" : "note", note: f.note! }));
-    const verdict = v.verdict === "fail" || findings.some((f) => f.severity === "blocking") ? "fail" : "pass";
+      .map((f) => ({ file: f.file!.replace(/^\.?\//, ""), line: typeof f.line === "number" ? f.line : undefined, endLine: typeof f.endLine === "number" ? f.endLine : undefined, severity: String(f.severity).toLowerCase() === "blocking" ? "blocking" : "note", note: f.note! }));
+    const verdict: "pass" | "fail" = String(v.verdict ?? "").toLowerCase() === "fail" || findings.some((f) => f.severity === "blocking") ? "fail" : "pass";
     return { verdict, summary: v.summary, findings };
   } catch {
     return null;
@@ -61,6 +75,16 @@ const mustFixFirst = (findings: Finding[]) => [...findings].sort((a, b) => (a.se
 export function repairPrompt(judge: string, writer: string, findings: Finding[]) {
   const lines = mustFixFirst(findings).map((f) => `- ${f.severity === "blocking" ? "" : "(a note) "}${f.file}${f.line ? `:${f.line}${f.endLine && f.endLine !== f.line ? `-${f.endLine}` : ""}` : ""}: ${f.note}`);
   return `${writer} just made a change for the request above, and a judge (${judge}) didn't pass it:\n${lines.join("\n")}\n\nYou're the stronger model, brought in to repair it. Read the change as it is in the files. Keep what's right and fix what the judge found; if the approach itself is wrong, redo it. Run the tests that cover it, then say in a line or two what you changed.`;
+}
+
+/** What the frontier model is told when it refines the cheaper one's change (After a change: Refine). */
+export function refinePrompt(writer: string, ask: string, diff: string) {
+  return [
+    `${writer} just made a first pass at this ask. You're the stronger model, brought in to finish it.`,
+    `What the user asked for:\n<ask>\n${ask.slice(0, 4000)}\n</ask>`,
+    `The change so far (a unified diff):\n<diff>\n${diff}\n</diff>`,
+    "Work on the files as they are now. Keep what works and don't redo it. Fix what's wrong or missing: bugs, edge cases, errors that aren't handled, anything that doesn't do what was asked. Then tighten it so it reads like the code around it. Run the tests that cover it, then say in a line or two what you changed.",
+  ].join("\n\n");
 }
 
 /** What a cascade's judge reads when the quicker model changed no files: the ask and its answer. */
@@ -86,28 +110,10 @@ export function critiquePrompt(critics: string[], findings: Finding[]) {
   return `${critics.join(" and ")} read your change side by side. What they found:\n${lines.join("\n")}\n\nRevise your change once with this. Fix what must be fixed; take a note only where it makes the change better, and where you're sure a finding is wrong, leave it and say why. Run the tests that cover it, then say in a line or two what you changed.`;
 }
 
-/**
-  Who reviews an agent's work, as "<provider>:<model>". "auto" picks another model family than
-  the agent's when one is ready (Codex reviewing Claude, Claude reviewing the rest), so the two
-  don't share blind spots.
-*/
-export function reviewerFor(agent: AgentProfile, providers: ProviderInfo[]): string | null {
-  // null is "Nobody", a choice; only an unset reviewer falls back to the default.
-  const set = agent.subagents?.reviewer;
-  const want = set === null ? null : (set ?? (agent.specialty === "coder" ? "auto" : null));
-  if (!want) return null;
-  if (want !== "auto") return want;
-  const family = familyOf(splitModel(agent.model).provider);
-  const ready = (id: string) => providers.find((p) => p.id === id && p.available && p.adapter && p.models.length);
-  const other = family === "claude" ? (ready("codex") ?? ready("opencode")) : ready("claude");
-  if (other) return `${other.id}:${other.id === "claude" ? "claude-opus-5-5" : other.models[0].id}`;
-  return ready("claude") ? "claude:claude-opus-5-5" : null;
-}
-
-/** The Reviewer's quickest model, for deciding one step at a time: Haiku for Claude, a mini for the others. */
+/** The Reviewer's quickest model, for deciding one step at a time: Haiku for Claude, a mini for the others, from the same maker in a tool that runs many. */
 export function quickOf(ref: string, providers: ProviderInfo[]) {
   const { provider } = splitModel(ref);
-  const quick = providers.find((p) => p.id === provider)?.models.find((m) => !m.legacy && /haiku|mini|flash|fast/i.test(m.id));
+  const quick = providers.find((p) => p.id === provider)?.models.find((m) => !m.legacy && /haiku|mini|flash|fast/i.test(m.id) && makerOf(`${provider}:${m.id}`) === makerOf(ref));
   return quick ? `${provider}:${quick.id}` : ref;
 }
 
@@ -144,13 +150,13 @@ export function parseStep(text: string): { allow: boolean; reason: string } | nu
 
 export type SubagentDef = { description: string; prompt: string; tools?: string[]; model?: string };
 
-/** The run mode an agent uses when it doesn't say: coders bring helpers, the rest run alone. */
-export const runModeOf = (agent: AgentProfile): RunMode => agent.runMode ?? (agent.specialty === "coder" || agent.specialty === "debugger" ? "helpers" : "single");
+/** The run mode a writer uses: helpers unless its agent says it runs alone ("escalate", from before, runs with helpers). */
+export const runModeOf = (agent: AgentProfile): RunMode => (agent.runMode === "single" ? "single" : "helpers");
 
 /**
-  The subagents a Claude Code agent brings, and the model its own loop runs on.
-  helpers: its own model, with an Explorer and a Test runner on Haiku that only read and run tests.
-  escalate: Sonnet runs the loop and asks Opus to plan only when a change is hard.
+  The subagents a Claude Code writer brings (an agent or a bare model), and the model its own loop
+  runs on: its own, with an Explorer and a Test runner on Haiku that only read and run tests, so
+  long reads and test output stay out of its context.
 */
 export function claudeTeam(agent: AgentProfile, model: string): { model: string; agents: Record<string, SubagentDef> } {
   const mode = runModeOf(agent);
@@ -170,33 +176,13 @@ export function claudeTeam(agent: AgentProfile, model: string): { model: string;
       model: small(agent.subagents?.tests),
     },
   };
-  if (mode === "escalate") {
-    agents["opus-planner"] = {
-      description: "Ask Opus: plans a hard change for you. Use it to plan a change across several areas of the code, after tests fail twice, or when the Reviewer rejects your work twice. It only reads and returns a plan.",
-      prompt: "You are Opus, asked to plan a hard change. Read what you need, then return a short, ordered plan: the steps, the files each touches, and how to check it. Don't edit anything.",
-      tools: ["Read", "Grep", "Glob", "LS"],
-      model: "claude-opus-5-5",
-    };
-    return { model: "claude-sonnet-5-5", agents };
-  }
   return { model, agents };
 }
 
-/** "explorer" → "Explorer", "test-runner" → "Test runner", "opus-planner" → "Opus". */
+/** "explorer" → "Explorer", "test-runner" → "Test runner"; "opus-planner" from older sessions → "Opus". */
 export function subagentName(type: string) {
   if (type === "opus-planner") return "Opus";
   if (type === "test-runner") return "Test runner";
   if (type === "general-purpose") return "Subagent";
   return type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, " ");
-}
-
-/** Plan steps handed to someone other than the coder: "… — @Herald" or "… (Herald)". */
-export function assignments(plan: string, names: string[]) {
-  const out = new Map<string, string[]>();
-  for (const line of plan.split("\n")) {
-    if (!/^\s*(\d+[.)]|[-*•])\s+/.test(line)) continue;
-    const who = names.find((n) => new RegExp(`(@${n}\\b|\\(${n}\\)|—\\s*${n}\\s*$)`, "i").test(line));
-    if (who) out.set(who, [...(out.get(who) ?? []), line.trim()]);
-  }
-  return out;
 }

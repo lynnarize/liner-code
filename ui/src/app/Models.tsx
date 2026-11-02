@@ -1,8 +1,11 @@
 /*
   Picking a model and how hard it thinks. The models are the ones each tool on this Mac said it
-  runs, not a list kept in the app: a rail of tools (and the models you starred), a search
+  runs, not a list kept in the app: a rail of tools (and the models you starred, and in the
+  composer your agents), a search
   across all of them, each tool's current models first with its older ones folded under them,
-  and ⌘1 to ⌘9 for the first nine. The effort menu offers the levels the chosen model takes,
+  and ⌘1 to ⌘9 for the first nine. A tool that runs models from several sources (Hermes's Nous
+  Portal and OpenCode Go, an OpenCode with OpenRouter) shows its sources first, then a source's
+  models, so a long list is two short steps instead of one long scroll. The effort menu offers the levels the chosen model takes,
   with the tool's own default marked.
 */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
@@ -11,8 +14,9 @@ import { familyOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
-import { allModels, effortName, effortsFor, EXTRA_EFFORTS, markOf, type ModelChoice } from "./model";
+import { allModels, effortName, effortsFor, EXTRA_EFFORTS, markOf, sourceMarkOf, type ModelChoice } from "./model";
 import { ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
+import * as os from "./os";
 import "./models.css";
 
 const INITIALS: Record<string, string> = { claude: "C", codex: "X", opencode: "O", hermes: "H", demo: "D", cursor: "Cu", grok: "G" };
@@ -30,19 +34,45 @@ type Props = {
   autoFocus?: boolean;
   /** A line under the list, like how to compare. */
   foot?: ReactNode;
+  /** A tab of its own at the foot of the rail, its body shown in place of the models: your agents. `open` opens on it. */
+  extra?: { id: string; label: string; icon: ReactNode; open?: boolean; body: ReactNode };
+  /** Told which tab is open: "fav", a tool's id, or the extra tab's. */
+  onTab?: (id: string) => void;
 };
 
-type Line = { kind: "row"; m: ModelChoice; sub: string } | { kind: "head"; text: string } | { kind: "fold"; provider: string; n: number; open: boolean };
+type Line = { kind: "row"; m: ModelChoice; sub: string } | { kind: "head"; text: string } | { kind: "fold"; provider: string; n: number; open: boolean } | { kind: "source"; name: string; n: number; refs: string[] } | { kind: "back"; tool: string; name: string };
 
-export function ModelPicker({ value, also = [], onPick, only, height = 320, autoFocus, foot }: Props) {
+/** A tool with two sources or more shows them first (OpenCode's Zen and Go); one with a source and models of no source does past this many. */
+const SOURCES_FROM = 14;
+/** A source's name from a model id's prefix ("opencode-go/kimi-k3" → "OpenCode Go"), when the tool didn't name it. */
+const SOURCE_NAMES: Record<string, string> = { opencode: "OpenCode Zen", "opencode-go": "OpenCode Go", openrouter: "OpenRouter", deepseek: "DeepSeek", moonshotai: "Moonshot", zai: "Z.ai", "z-ai": "Z.ai", google: "Google", anthropic: "Anthropic", openai: "OpenAI", xai: "xAI", groq: "Groq", ollama: "Ollama", lmstudio: "LM Studio" };
+/** Where a model comes from inside its tool: the source the tool reported (Nous Portal, OpenCode Go), else its id's prefix. */
+function sourceOf(m: ModelChoice) {
+  // OpenCode names its own catalogue after itself ("OpenCode/Big Pickle"): that's OpenCode Zen, beside OpenCode Go.
+  if (m.group) return m.group === "OpenCode" ? "OpenCode Zen" : m.group;
+  const id = m.ref.slice(m.ref.indexOf(":") + 1);
+  const at = id.indexOf("/");
+  if (at < 1) return "";
+  const key = id.slice(0, at).toLowerCase();
+  return SOURCE_NAMES[key] ?? key.replace(/(^|[-_])(\w)/g, (_, sep: string, c: string) => `${sep ? " " : ""}${c.toUpperCase()}`);
+}
+
+export function ModelPicker({ value, also = [], onPick, only, height = 320, autoFocus, foot, extra, onTab }: Props) {
   const providers = useEngine((s) => s.providers);
   const favs = useEngine((s) => s.settings.favoriteModels) ?? [];
   const showDemo = useEngine((s) => s.settings.showDemo === true);
   const tools = useMemo(() => providers.filter((p) => p.available && p.adapter && p.models.length && (showDemo || p.id !== "demo") && (!only || only(p))), [providers, only, showDemo]);
   const models = useMemo(() => allModels(tools), [tools]);
   const start = value ? value.slice(0, value.indexOf(":")) : undefined;
-  const [rail, setRail] = useState<string>(() => (favs.length && !value ? "fav" : (tools.find((p) => p.id === start)?.id ?? tools[0]?.id ?? "fav")));
+  const [rail, setRail] = useState<string>(() => (extra?.open ? extra.id : favs.length && !value ? "fav" : (tools.find((p) => p.id === start)?.id ?? tools[0]?.id ?? "fav")));
+  const onExtra = extra !== undefined && rail === extra.id;
+  useEffect(() => onTab?.(rail), [rail]);
   const [query, setQuery] = useState("");
+  // The source open in a tool with several: the picked model's, else none yet (the sources show).
+  const [source, setSource] = useState<string | null>(() => {
+    const m = value ? models.find((x) => x.ref === value) : undefined;
+    return m ? sourceOf(m) : null;
+  });
   const [older, setOlder] = useState<Set<string>>(() => new Set(value && models.find((m) => m.ref === value)?.legacy ? [start ?? ""] : []));
   const [hl, setHl] = useState(0);
   const field = useRef<HTMLInputElement>(null);
@@ -59,14 +89,24 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
       return hit.map((m) => ({ kind: "row", m, sub: [m.provider, m.group].filter(Boolean).join(" · ") }));
     }
     if (rail === "fav") return favs.flatMap((ref) => models.filter((m) => m.ref === ref)).map((m) => ({ kind: "row", m, sub: [m.provider, m.group].filter(Boolean).join(" · ") }));
-    const mine = models.filter((m) => m.providerId === rail);
+    const all = models.filter((m) => m.providerId === rail);
+    // The biggest sources first; models no source claims come last, as Other.
+    const count = (name: string) => all.filter((m) => !m.legacy && sourceOf(m) === name).length;
+    const sources = [...new Set(all.filter((m) => !m.legacy).map(sourceOf))].sort((x, y) => Number(!x) - Number(!y) || count(y) - count(x));
+    const stepped = sources.length > 1 && (sources.filter(Boolean).length > 1 || all.length > SOURCES_FROM);
+    if (stepped && (source === null || !sources.includes(source)))
+      return sources.map((name): Line => {
+        const of = all.filter((m) => sourceOf(m) === name && !m.legacy);
+        return { kind: "source", name, n: of.length, refs: of.map((m) => m.ref) };
+      });
+    const mine = stepped ? all.filter((m) => sourceOf(m) === source) : all;
     const now = mine.filter((m) => !m.legacy);
     const old = mine.filter((m) => m.legacy);
-    const out: Line[] = [];
+    const out: Line[] = stepped ? [{ kind: "back", tool: toolOf(rail)?.label ?? rail, name: source || "Other" }] : [];
     // A tool that reports models from several places (Hermes's providers) gets a heading for each.
     let group: string | undefined;
     for (const m of [...now].sort((a, b) => (a.group ?? "").localeCompare(b.group ?? "") || 0)) {
-      if (m.group && m.group !== group) out.push({ kind: "head", text: m.group });
+      if (!stepped && m.group && m.group !== group) out.push({ kind: "head", text: sourceOf(m) });
       group = m.group;
       out.push({ kind: "row", m, sub: m.description });
     }
@@ -76,9 +116,9 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
       if (open) for (const m of old) out.push({ kind: "row", m, sub: m.description });
     }
     return out;
-  }, [models, rail, query, favs.join(), older]);
+  }, [models, rail, query, favs.join(), older, source]);
   const rows = lines.flatMap((l) => (l.kind === "row" ? [l.m] : []));
-  useEffect(() => setHl(Math.max(0, rows.findIndex((m) => m.ref === value))), [rail, query]);
+  useEffect(() => setHl(Math.max(0, rows.findIndex((m) => m.ref === value))), [rail, query, source]);
   useEffect(() => {
     list.current?.querySelector<HTMLElement>("[data-hl]")?.scrollIntoView({ block: "nearest" });
   }, [hl]);
@@ -100,6 +140,8 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
       e.preventDefault();
       setHl((h) => Math.max(0, Math.min(rows.length - 1, h + (e.key === "ArrowDown" ? 1 : -1))));
     } else if (e.key === "Enter" && rows[hl]) {
+      // On a button in the list (another row, a star, a fold, a source) Enter presses that one, not the lit row.
+      if (e.target instanceof Element && e.target.closest(".lc-mp-list button")) return;
       e.preventDefault();
       onPick(rows[hl].ref, { shiftKey: e.shiftKey });
     }
@@ -115,55 +157,109 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
         </button>
         <span className="lc-mp-sep" aria-hidden />
         {tools.map((p) => (
-          <button key={p.id} type="button" role="tab" className="lc-mp-tool l-focus" aria-selected={rail === p.id && !query} title={`${p.label}${p.modelsFrom === "cli" ? `, ${p.models.length} models it reported` : ""}`} onClick={() => (setRail(p.id), setQuery(""))}>
+          <button key={p.id} type="button" role="tab" className="lc-mp-tool l-focus" aria-selected={rail === p.id && !query} title={`${p.label}${p.modelsFrom === "cli" ? `, ${p.models.length} models it reported` : ""}`} onClick={() => {
+              setRail(p.id);
+              setQuery("");
+              // Into this tool at the picked model's source, if it's this tool's; else at its sources.
+              const picked = models.find((m) => m.ref === value && m.providerId === p.id);
+              setSource(picked ? sourceOf(picked) : null);
+            }}>
             {/* Each tool by its maker's mark; an added agent nobody's list knows keeps its initial. */}
             {markOf(`${p.id}:`) === "other" ? <span className="lc-mp-ini">{INITIALS[familyOf(p.id)] ?? p.label[0]}</span> : <ModelMark kind={markOf(`${p.id}:`)} size={15} />}
             {p.account && <span className="lc-mp-acct">{p.account[0].toUpperCase()}</span>}
           </button>
         ))}
+        {extra && (
+          <>
+            <span className="lc-mp-sep" aria-hidden />
+            <button type="button" role="tab" className="lc-mp-tool l-focus" aria-selected={onExtra} title={extra.label} onClick={() => (setRail(extra.id), setQuery(""))}>
+              {extra.icon}
+            </button>
+          </>
+        )}
       </div>
       <div className="lc-mp-main">
-        <div className="lc-mp-find">
-          <I.search size={13} />
-          <input ref={field} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={rail === "fav" || query ? "Find a model" : `Find a model in ${toolOf(rail)?.label ?? "all tools"}`} aria-label="Find a model" spellCheck={false} />
-          {rail !== "fav" && !query && toolOf(rail)?.modelsFrom === "cli" && <span className="lc-mp-src" title="Asked of the tool itself">{toolOf(rail)?.models.length}</span>}
-        </div>
-        <div ref={list} className="lc-mp-list" role="listbox" aria-label="Models">
-          {lines.length === 0 && <p className="lc-quiet lc-mp-none">{query ? "No model matches that." : rail === "fav" ? "Star a model and it waits here, in every picker." : "This tool reported no models."}</p>}
-          {lines.map((l, i) => {
-            if (l.kind === "head") return <div key={`h${i}`} className="lc-mp-head">{l.text}</div>;
-            if (l.kind === "fold")
-              return (
-                <button key={`f${i}`} type="button" className="lc-mp-fold l-focus" aria-expanded={l.open} onClick={() => setOlder((o) => (o.has(l.provider) ? new Set([...o].filter((x) => x !== l.provider)) : new Set(o).add(l.provider)))}>
-                  <span>
-                    <b>Older models</b>
-                    <small>{l.n} still run</small>
-                  </span>
-                  <I.chevR size={12} />
-                </button>
-              );
-            const k = n++;
-            const on = l.m.ref === value;
-            const fav = favs.includes(l.m.ref);
-            return (
-              <div key={l.m.ref} className="lc-mp-row" data-on={on || undefined} data-also={also.includes(l.m.ref) || undefined} data-hl={k === hl || undefined} onMouseEnter={() => setHl(k)}>
-                <button type="button" role="option" aria-selected={on} className="lc-mp-pick l-focus" onClick={(e) => onPick(l.m.ref, { shiftKey: e.shiftKey })} title={l.m.description || undefined}>
-                  <span className="lc-mp-t">
-                    <b>
-                      <ModelTag kind={markOf(l.m.ref)} label={l.m.label} size={12} />
-                      {l.m.isDefault && <span className="lc-mp-def">Default</span>}
-                    </b>
-                    {l.sub && <small>{l.sub}</small>}
-                  </span>
-                  {k < 9 && <kbd className="lc-kbd lc-mp-key">⌘{k + 1}</kbd>}
-                </button>
-                <button type="button" className="lc-mp-star l-focus" data-on={fav || undefined} aria-label={fav ? `Unstar ${l.m.label}` : `Star ${l.m.label}`} aria-pressed={fav} onClick={() => star(l.m.ref)}>
-                  <I.star size={13} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        {onExtra ? (
+          <>
+            {/* Where the search sits on a tool's tab, the tab's name, so the rows below don't jump. */}
+            <div className="lc-mp-xhead">{extra.label}</div>
+            <div className="lc-mp-list">{extra.body}</div>
+          </>
+        ) : (
+          <>
+            <div className="lc-mp-find">
+              <I.search size={13} />
+              <input ref={field} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={rail === "fav" || query ? "Find a model" : `Find a model in ${toolOf(rail)?.label ?? "all tools"}`} aria-label="Find a model" spellCheck={false} />
+              {rail !== "fav" && !query && toolOf(rail)?.modelsFrom === "cli" && <span className="lc-mp-src" title="Asked of the tool itself">{toolOf(rail)?.models.length}</span>}
+            </div>
+            <div ref={list} className="lc-mp-list" role="listbox" aria-label="Models">
+              {lines.length === 0 && <p className="lc-quiet lc-mp-none">{query ? "No model matches that." : rail === "fav" ? "Star a model and it waits here, in every picker." : "This tool reported no models."}</p>}
+              {lines.map((l, i) => {
+                if (l.kind === "head") return <div key={`h${i}`} className="lc-mp-head">{l.text}</div>;
+                if (l.kind === "source")
+                  return (
+                    <button key={`s${l.name}`} type="button" className="lc-mp-source l-focus" data-on={(value && l.refs.includes(value)) || undefined} onClick={() => setSource(l.name)}>
+                      {/* The source's own logo (Nous Portal, OpenCode Go), else a plain mark. */}
+                      <span className="lc-mp-srcmark">
+                        <ModelMark kind={sourceMarkOf(l.name)} size={15} />
+                      </span>
+                      <span className="lc-mp-t">
+                        <b>{l.name || "Other"}</b>
+                        <small>{l.n === 1 ? "1 model" : `${l.n} models`}</small>
+                      </span>
+                      {/* Whose models it runs, as marks. */}
+                      <span className="lc-mp-marks">
+                        {[...new Set(l.refs.map(markOf))].slice(0, 5).map((k) => (
+                          <ModelMark key={k} kind={k} size={12} />
+                        ))}
+                      </span>
+                      <I.chevR size={12} />
+                    </button>
+                  );
+                if (l.kind === "back")
+                  return (
+                    <button key="back" type="button" className="lc-mp-back l-focus" onClick={() => setSource(null)}>
+                      <I.chevL size={12} />
+                      <ModelMark kind={sourceMarkOf(l.name)} size={12} />
+                      <span>
+                        {l.tool} <b>{l.name}</b>
+                      </span>
+                    </button>
+                  );
+                if (l.kind === "fold")
+                  return (
+                    <button key={`f${i}`} type="button" className="lc-mp-fold l-focus" aria-expanded={l.open} onClick={() => setOlder((o) => (o.has(l.provider) ? new Set([...o].filter((x) => x !== l.provider)) : new Set(o).add(l.provider)))}>
+                      <span>
+                        <b>Older models</b>
+                        <small>{l.n} still run</small>
+                      </span>
+                      <I.chevR size={12} />
+                    </button>
+                  );
+                const k = n++;
+                const on = l.m.ref === value;
+                const fav = favs.includes(l.m.ref);
+                return (
+                  <div key={l.m.ref} className="lc-mp-row" data-on={on || undefined} data-also={also.includes(l.m.ref) || undefined} data-hl={k === hl || undefined} onMouseEnter={() => setHl(k)}>
+                    <button type="button" role="option" aria-selected={on} className="lc-mp-pick l-focus" onClick={(e) => onPick(l.m.ref, { shiftKey: e.shiftKey })} title={l.m.description || undefined}>
+                      <span className="lc-mp-t">
+                        <b>
+                          <ModelTag kind={markOf(l.m.ref)} label={l.m.label} size={12} />
+                          {l.m.isDefault && <span className="lc-mp-def">Default</span>}
+                        </b>
+                        {l.sub && <small>{l.sub}</small>}
+                      </span>
+                      {k < 9 && <kbd className="lc-kbd lc-mp-key">{os.mod}{k + 1}</kbd>}
+                    </button>
+                    <button type="button" className="lc-mp-star l-focus" data-on={fav || undefined} aria-label={fav ? `Unstar ${l.m.label}` : `Star ${l.m.label}`} aria-pressed={fav} onClick={() => star(l.m.ref)}>
+                      <I.star size={13} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
         {foot && <div className="lc-mp-foot">{foot}</div>}
       </div>
     </div>

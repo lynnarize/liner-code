@@ -1,6 +1,6 @@
 # Liner Code
 
-A desktop agent harness for macOS, on Electron. It drives the coding agents already on your
+A desktop agent harness for macOS and Windows, on Electron. It drives the coding agents already on your
 machine (Claude Code, Codex CLI, OpenCode, Hermes) with your own sign-ins, and shows their work
 as GUI instead of a log: plans you approve, questions you answer, requests that wait as cards,
 a diff for every turn that you can undo or commit or question line by line, a Reviewer from
@@ -25,6 +25,12 @@ System Settings › Privacy & Security, press **Open Anyway** beside Liner Code,
 Terminal: `xattr -dr com.apple.quarantine "/Applications/Liner Code.app"`.) After that it updates
 itself from this repository's releases.
 
+**On Windows** (x64, new in 0.1.9): download `Liner-Code-<version>-win-x64.zip`, unzip it anywhere
+and open `Liner Code.exe`; it puts itself in the Start menu. It isn't signed yet, so SmartScreen
+asks the first time: **More info › Run anyway**. It doesn't update itself yet, so download the next
+zip, and its Terminal is PowerShell, without full-screen programs for now. Building it from a Mac:
+`npm run win`.
+
 You need at least one coding tool installed and signed in: [Claude Code](https://code.claude.com),
 [Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai) or
 [Hermes](https://github.com/nousresearch/hermes-agent). Git and the Terminal need Apple's command
@@ -47,10 +53,10 @@ Found something? **Help › Report a Problem…** makes a zip with the log and v
   the tools' versions on npm, it fetches the Agent Client Protocol registry when you look for
   agents to add, and reaches GitHub through your `gh` sign-in for pull requests and routines
   (which look every 5 minutes while one is on). Hermes's own update check runs a `git fetch`.
-- **The Reviewer is another model family.** A coder's turns are read by another family by default:
-  Codex or OpenCode for Claude, Claude for the rest. So with Claude Code and Codex both here, a
-  Claude coder's diffs also go to OpenAI through Codex, billed to that account. Set the Reviewer
-  to Nobody, or one of the same family, in the agent's settings.
+- **Changes are checked by another maker.** Each change in Solo and Plan is read by another maker's
+  model by default: GPT for Claude's work, Claude for the rest. So with Claude Code and Codex both
+  here, diffs Claude writes also go to OpenAI through Codex, billed to that account. Set After each
+  change to Refine or Off in Settings › Agentic features, or for one session from its composer.
 - **Everything else is on this Mac**: sessions, snapshots and settings in `~/.liner-code` (see
   Where things live).
 
@@ -75,60 +81,83 @@ on Electron's own Node, so it needs no Node installed; building it needs Node 24
 command line tools (for the Mac addon and the icon).
 
 The first launch plays the intro, then three steps: connect models (it finds the CLIs you have),
-add projects (it finds your Git repositories), and how you'll work (just a model, a lead and a
-coder, or your own team). The **Demo**, a scripted agent with its own **Sample project**, runs
+add projects (it finds your Git repositories), and how you'll work (Solo, Plan then build, or
+Auto). The **Demo**, a scripted agent with its own **Sample project**, runs
 every flow with no account at all. It's hidden: tap your name at the foot of the sidebar six times
 to show it (and six more to hide it again).
 
 ## How agents share the work
 
-A session can be one model, or a small team: a **lead** that plans, a **coder** that builds,
-**helpers** the lead hands steps to, and a **Reviewer** from another model family that reads every
-change before it's yours (`engine/src/runtime.ts`, `review.ts`).
+A session works in one of three **modes**, and in all three one model writes at a time
+(`engine/src/runtime.ts`, `route.ts`, `review.ts`). Agents are optional: every part is a bare
+model unless you pick one of your agents, which you make when a model should carry instructions
+of its own (a soul.md, a prompt, skills, context files).
 
 ```
- ┌─ Session ─────────────────────────────────────────────────────────────────┐
- │                                                                           │
- │  You ──► Lead (reads only, never edits)                                   │
- │            │  talk or a question → it answers itself, nothing else runs   │
- │            │  a change → ends its reply with a <plan>                     │
- │            ▼                                                              │
- │  ┌─ Plan card ──────────────────────────────┐                             │
- │  │ 1. Add the route          engine/api.ts  │                             │
- │  │ 2. Wire the button        ui/Session.tsx │                             │
- │  │ 3. Write the docs         — @Herald      │ ◄─ a step for a helper      │
- │  │              [ Approve ]  [ Change it ]  │                             │
- │  └──────────────────────────────────────────┘                             │
- │            ▼                                                              │
- │  Coder builds every step without a name ──► Helper builds its "@" steps   │
- │            ▼                                                              │
- │  Reviewer (another family: Codex reads Claude, Claude reads the rest)     │
- │     pass ──► the diff is yours          blocking ──► back to the coder,   │
- │                                         up to 2 rounds (3 at most), then  │
- │                                         it's yours to decide              │
- └───────────────────────────────────────────────────────────────────────────┘
+ Solo             You ──► one model (or one of your agents) ──► check or refine ──► yours
+
+ Plan, then build You ──► a hard job? ──► Planner (reads only) ──► plan ──► Builder builds it
+                    │                        (waits for your OK only if you asked)      │
+                    └──► anything else ──► Builder, at once                             │
+                                         check (another maker) or refine (frontier) ──► yours
+
+ Auto             You ──► weigh the message ──► single · cascade · critique (below)
 ```
 
-**Inside a Claude Code coder**, its run mode decides who it can delegate to:
+**Plan, then build.** Most messages go straight to the builder, so work starts at once. A hard
+job (weighed from its words, on this Mac) goes to the planner first, which reads and ends its reply
+with a plan, and the builder builds it straight after, in the same turn. A plan waits for your OK
+only when you ask for one ("plan it first") or turn on Approve plans first. The
+two keep sessions of their own, and each turn starts with what the other said since its last
+one, so neither works from a conversation that moved on.
 
-```
- helpers (coders and debuggers)        escalate                      single
- ┌──────────────────────────────┐      ┌──────────────────────────┐  ┌──────────────┐
- │ Coder, on its own model      │      │ Coder, on Sonnet         │  │ Coder alone  │
- │  ├─ Explorer      (Haiku)    │      │  ├─ Explorer   (Haiku)   │  └──────────────┘
- │  │   reads, greps, maps      │      │  ├─ Test runner (Haiku)  │
- │  └─ Test runner   (Haiku)    │      │  └─ Opus planner (Opus)  │
- │      runs tests, reports     │      │      only for a hard     │
- │      the first useful line   │      │      change, or after 2  │
- └──────────────────────────────┘      │      failed tries; reads │
-                                       │      and returns a plan  │
-                                       └──────────────────────────┘
-```
+**Hand-offs you don't see.** A plan built, a draft refined, a fix after a check: each carries your
+turn on rather than starting one of its own, so the timeline shows one turn with one footer for
+all its changes, and the other models only as small marks on its head (point at them to see who
+did what, and why). Nothing on the timeline announces a switch; "done" is said once, when
+everything your message set off is done.
 
-**A routed session** (`engine/src/route.ts`) has no fixed team: each message is scored from its
-own words (reasoning, writing code, debugging, tools, how far it reaches) and weighed light,
-medium or heavy. That happens on this Mac with no model call, so routing costs nothing. The
-first rule that fits picks the pattern:
+**Which models.** You pick two, and everything else follows from them:
+
+| | Frontier | Cheaper |
+| --- | --- | --- |
+| Plan, then build | plans | builds, answers questions |
+| Auto | hard jobs, repairs | most messages |
+| Solo | | starts on it |
+| After each change | refines (Refine) | |
+
+Each starts on Automatic, which says what it lands on: for frontier, Opus, else GPT Astra or Sol,
+Gemini Pro, Grok, DeepSeek V4 Pro, Kimi K3, Qwen Max, GLM or MiniMax; for cheaper, GPT Luna, else
+Sonnet, Gemini Flash, DeepSeek Flash, GLM Flash or Qwen Flash. Models are told apart by who made
+them, from their names, so GPT Astra counts as OpenAI's whether it runs in Codex, Hermes or an API
+endpoint, and each maker's models come from its own tool first (Claude Code for Claude, Codex for
+GPT). Any model a tool here runs can be picked, Chinese ones through OpenCode, Hermes or an
+endpoint included, and none of it needs a Claude or ChatGPT subscription: with only OpenCode Go,
+DeepSeek Flash builds, DeepSeek V4 Pro plans and Kimi checks. The picker goes tool, then source
+(Hermes's Nous Portal or OpenCode Go), then model, so a tool with a hundred models is two short
+lists. **Dual frontier** puts a second frontier model from another maker in the cheaper one's
+place (GPT Astra building next to Opus), for the hardest work.
+
+**After each change.** In Solo and Plan, a change goes one of three ways before it's yours:
+
+- **Check** (the default): another maker reads it against five fixed criteria; blocking findings
+  go back to the writer, up to 2 rounds (3 at most), then it's yours.
+- **Refine**: the frontier model takes the cheaper one's draft on and finishes it, in a session of
+  its own: a Chinese model builds the first pass, Opus fine-tunes it. When the frontier model
+  wrote the change itself, it's checked instead.
+- **Off**: yours as it is.
+
+A few lines, or docs alone, go through as they are unless you turn that on. Auto has its own
+judge and critics.
+
+**Inside Claude Code**, a writer (an agent or a bare model) brings two helpers on Haiku: an
+Explorer that reads, greps and maps the code, and a Test runner that runs the tests and reports
+the first useful line. One of your agents can run alone instead.
+
+**Auto** (`engine/src/route.ts`) has no fixed team: each message is scored from its own words
+(reasoning, writing code, debugging, tools, how far it reaches) and weighed light, medium or
+heavy. That happens on this Mac with no model call, so it costs nothing. The first rule that fits
+picks the pattern:
 
 ```
  message ─► score its words ─► light / medium / heavy ─► rule ─► pattern
@@ -151,32 +180,31 @@ first rule that fits picks the pattern:
 | Max | cascade | critique, 1 critic | critique, 2 critics |
 
 Questions go to the everyday model at every level (the strong one for a hard question on High
-and Max). The cast comes from what's installed: a quick everyday model (GPT Luna, else Sonnet),
-the strongest of another family for hard jobs (Opus, else GPT Sol), and judges and critics from
-outside the writer's family. Settings can replace any of them.
+and Max).
 
 ### What keeps the cost down
 
-- **The expensive model works only when the job needs it.** The everyday model takes light and
-  medium jobs; the strong one comes in for heavy jobs, or to repair what the judge failed.
+- **The expensive model works only when the job needs it.** In Plan it only reads and plans; in
+  Auto the everyday model takes light and medium jobs and the strong one comes in for heavy jobs,
+  or to repair what the judge failed.
+- **Questions skip the planner.** A greeting or a question in Plan goes to the builder, so the
+  frontier model isn't paid to say hello.
 - **A judge reads instead of rewriting.** In a cascade the judge only reads the diff (or, when
   nothing changed, the answer) and passes it; the strong model writes only when it fails.
 - **Haiku does the reading.** Explorer and Test runner keep long file reads and test output out
-  of the coder's context, so the coder's model never pays for them. In escalate mode the loop
-  runs on Sonnet and Opus is asked for a plan only when a change is hard.
-- **The lead only reads and plans.** Talk and questions end with its answer; nothing builds
-  until you approve a plan, so a misread ask costs one reply, not a whole build.
+  of the writer's context, so the writer's model never pays for them.
 - **Warm caches are kept.** A follow-up within five minutes of the last turn stays with the model
   already working, so it reads its prompt cache instead of the whole thread at full price. The
   composer shows when Claude's cache for the session is likely to run out.
 - **Small things go to the quickest model.** Commit messages, pull request text and Reviewer
   decides (ALLOW or ASK for one step) run on Haiku or a mini model, not the session's own.
-- **Reviews have a limit.** At most 2 fix rounds by default (3 at most); after that it's yours.
+- **Checks have a limit.** At most 2 fix rounds by default (3 at most); after that it's yours.
 - **A spending cap.** Settings › General › Spending can stop a session at a dollar amount; your
   next message is the go-ahead for another cap's worth. (Claude Code reports cost; other tools
   can't be held to it.)
 - **You can see it all.** Every turn's tokens, cache reads and cost, by agent and model, go to
-  `~/.liner-code/usage.jsonl`, and the Usage page adds them up.
+  `~/.liner-code/usage.jsonl`, the Usage page adds them up, and Settings › Agentic features
+  compares the modes in your own sessions.
 
 ## Designs
 
@@ -210,7 +238,7 @@ model from an API endpoint (see API endpoints below):
   and as tall as it is (up to 2400 px), at its own pixels, with the errors it logged, so the agent
   can fix what's off before it says it's done.
 - **No way into the app.** A version is drawn on its own with no origin; the live file comes from
-  the session folder's own address on 127.0.0.1. A lead (which never edits) draws a design by
+  the session folder's own address on 127.0.0.1. A planner (which never edits) draws a design by
   handing over the page; asking for it to be built is a change it plans like any other.
 
 ## What's in it
@@ -221,7 +249,7 @@ engine/                    the local backend (Node, TypeScript run directly, one
   src/main.ts              starts the server; prints LINER_READY {"port":…} for the shell
   src/server.ts            127.0.0.1 only: GET /events (NDJSON stream), POST /rpc, the built app
   src/api.ts               one handler per command
-  src/runtime.ts           runs turns: lead → plan → coder and helpers, approvals, questions, queue and steer, the Reviewer loop
+  src/runtime.ts           runs turns: Solo, Plan (planner → plan → builder), Auto; approvals, questions, queue and steer, check or refine
   src/review.ts            the Reviewer's prompt and findings, who reviews whom, Claude run modes and subagents
   src/route.ts             routed sessions: each message scored and given one model, a cascade with a judge, or a critique
   src/routines.ts          routines: triggers, AI steps, the code gate, actions, test runs
@@ -236,7 +264,7 @@ engine/                    the local backend (Node, TypeScript run directly, one
   src/providers/claude.ts  Claude Code through the Claude Agent SDK (canUseTool, resume, fork)
   src/providers/codex.ts   Codex through `codex app-server` (`codex exec --json` for an older Codex), models from its own catalog
   src/providers/acp.ts     any Agent Client Protocol agent: Hermes, OpenCode, Cursor and Grok Build (those two in beta), the ACP registry
-  src/providers/demo.ts    a scripted lead and coder, and the sample project it edits
+  src/providers/demo.ts    a scripted planner and builder, and the sample project it edits
   src/providers/endpoint.ts  an API endpoint as a tool: Claude Code, Codex or OpenCode pointed at it, by protocol
 ui/                        the app (React 19 + Vite), built from Liner UI
   src/liner/               the Liner UI library, copied in (npm run sync-liner refreshes it)
@@ -306,7 +334,7 @@ npm run release -- 0.2.0 --publish   # …and creates the release v0.2.0 with gh
 
 | Provider | How | Approvals | Resume | Notes |
 | --- | --- | --- | --- | --- |
-| Claude Code | Claude Agent SDK, your installed `claude` | yes, all five access levels | yes, and real forks | plans with ExitPlanMode, asks with AskUserQuestion |
+| Claude Code | Claude Agent SDK, your installed `claude` | yes, every access level | yes, and real forks | plans with ExitPlanMode, asks with AskUserQuestion |
 | Codex CLI | `codex app-server` | yes: commands, edits and MCP tools (an older Codex's `exec` maps access to its sandbox) | yes | models come from `codex debug models` |
 | OpenCode | ACP over stdio | yes | when the agent can | any model OpenCode is set up with |
 | Hermes | ACP over stdio | yes | yes | depends on Hermes's own provider being up |

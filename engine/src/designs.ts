@@ -10,7 +10,7 @@
   design adds it to the repository's info/exclude, so a design never shows as a change to commit.
   Ideas from Kun's Design mode (github.com/KunAgent/Kun, docs/DESIGN_MODE.md); no code from it.
 */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DesignInfo, DesignSize, Item } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
@@ -46,7 +46,7 @@ export function slugOf(title: string) {
 
 /** A design's file as a path in the session's folder ("a/b.html"). Outside the folder, or not HTML, throws. */
 export function designPath(root: string, asked: string) {
-  const file = asked.trim().replace(/^file:\/\//i, "").replace(/[?#].*$/, "");
+  const file = asked.trim().replace(/^file:\/\/(?:\/(?=[a-z]:))?/i, "").replace(/[?#].*$/, "");
   const rel = relative(root, isAbsolute(file) ? file : resolve(root, file));
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("A design's file must be inside this session's folder.");
   if (!/\.html?$/i.test(rel)) throw new Error("A design is an HTML file: give a path that ends in .html.");
@@ -66,7 +66,8 @@ export function designsOf(items: Item[]) {
   return [...latest.values()].sort((a, b) => b.at - a.at).map(({ item }) => ({ item, versions: count.get(item.design) ?? 1 }));
 }
 
-type Show = { title?: string; path?: string; html?: string; design?: string; size?: DesignSize; note?: string };
+/** back: a version you put back (restore), which goes to its design's own file, wherever in the session's folder that is. */
+type Show = { title?: string; path?: string; html?: string; design?: string; size?: DesignSize; note?: string; back?: boolean };
 
 export class Designs {
   private store: Store;
@@ -128,7 +129,17 @@ export class Designs {
     if (a.html !== undefined) {
       if (!a.html.trim()) throw new Error("The design is empty.");
       if (a.html.length > MAX) throw new Error("That design is too large; keep it under 2 MB, with big pictures as files beside it.");
+      // A page passed as html is written only among the designs. Any other file is the agent's to edit with
+      // its own tools, which ask first where the session asks: a planner or a side chat, which only read, or
+      // a session on Manual, can't overwrite the project's files through here. A link out of that folder isn't followed.
+      // A version you put back goes to its own design's file, wherever in the folder that is.
+      const among = `${path}`.startsWith(`${DESIGN_DIR}/`);
+      if (!among && !a.back) throw new Error(`${path} isn't among the designs (${DESIGN_DIR}/). Edit it yourself and call design_show with its path, without html, or leave path out to draw a new one.`);
       mkdirSync(dirname(abs), { recursive: true });
+      const real = realpathSync(dirname(abs));
+      const inside = relative(among ? join(realpathSync(root), DESIGN_DIR) : realpathSync(root), real);
+      // A link in the file's place isn't written through, even one to a file that isn't there yet.
+      if (inside.startsWith("..") || isAbsolute(inside) || lstatSync(abs, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${path} leads out of ${among ? `${DESIGN_DIR}/` : "this session's folder"}, so it isn't written.`);
       writeFileSync(abs, a.html);
     }
     if (!existsSync(abs)) throw new Error(`There's no ${path} yet. Write the design there first, or pass the whole page as html.`);
@@ -187,7 +198,7 @@ export class Designs {
     const latest = this.latest(threadId, design);
     const html = latest ? this.version(threadId, design, version) : null;
     if (!latest || html === null) throw new Error("That version isn't kept any more.");
-    return this.show(threadId, { design, html, note: `Back to version ${version}` }).item;
+    return this.show(threadId, { design, html, note: `Back to version ${version}`, back: true }).item;
   }
 
   /** A session's designs, newest first, with the version you had built of each. */

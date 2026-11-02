@@ -12,6 +12,7 @@ import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { diffRows, segment, type Row } from "@liner/pro/code-diff/diff";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
+import { prefersReducedMotion } from "@liner/lib/spring";
 import { CommitButton } from "./Commit";
 import { is } from "./keymap";
 import { rpc, useEngine } from "./engine";
@@ -92,6 +93,23 @@ function writeViewed(all: Record<string, number>) {
 }
 
 /** Which turn's changes to show: one turn, all of them, or the branch against main. */
+/** How many changed files you've looked at. In a narrow panel it says "2/5 viewed", then drops its bar, so it never wraps. */
+export function Viewed({ seen, total }: { seen: number; total: number }) {
+  return (
+    <span className="lc-viewed">
+      <span className="lc-viewed-bar" aria-hidden>
+        <i style={{ width: `${total ? (seen / total) * 100 : 0}%` }} />
+      </span>
+      <span className="lc-viewed-long">
+        {seen} of {plural(total, "file")} viewed
+      </span>
+      <span className="lc-viewed-short">
+        {seen}/{total} viewed
+      </span>
+    </span>
+  );
+}
+
 export function TurnPicker({ cps, pick, turns, onPick }: { cps: Checkpoint[]; pick: string; turns: number; onPick: (id: string) => void }) {
   const cp = cps.find((c) => c.id === pick);
   return (
@@ -213,7 +231,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
   // The file pressed elsewhere scrolls into view.
   useEffect(() => {
     if (!diff || !focus?.path) return;
-    box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(focus.path)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+    box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(focus.path)}"]`)?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     setViewed(focus.path, true);
   }, [diff, focus?.path]);
 
@@ -222,7 +240,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
     const n = (i + changes.length) % changes.length;
     setAt(n);
     const c = changes[n];
-    box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(c.path)}"] [data-change="${c.change}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(c.path)}"] [data-change="${c.change}"]`)?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -507,12 +525,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
             )}
           </div>
           <div className="lc-panel-foot">
-            <span className="lc-viewed">
-              <span className="lc-viewed-bar" aria-hidden>
-                <i style={{ width: `${files.length ? (seen / files.length) * 100 : 0}%` }} />
-              </span>
-              {seen} of {plural(files.length, "file")} viewed
-            </span>
+            <Viewed seen={seen} total={files.length} />
             <span className="lc-quiet lc-rv-hint">Press a line number to ask about it; shift for a range</span>
             <span className="lc-grow" />
             {cp && !cp.reverted && !cp.committed && (

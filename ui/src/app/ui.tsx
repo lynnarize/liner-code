@@ -6,9 +6,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { createPortal } from "react-dom";
 import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
-import type { AgentProfile, Thread } from "@contracts";
+import type { AgentProfile, LimitWindow, Thread, ToolLimits } from "@contracts";
 import { Glyph, I, ModelMark, Rays, type MarkKind } from "./icons";
-import { compact } from "./model";
+import { clock, compact } from "./model";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 
@@ -221,9 +221,9 @@ export const PanelHead = ({ children, end }: { children: ReactNode; end?: ReactN
 );
 export const Sep = () => <span className="lc-sep" role="separator" />;
 
-/** An agent's disc: leads are filled, the rest are outlined. */
+/** An agent's disc: a planner's is filled (when the caller says so), the rest are outlined. */
 export function Disc({ agent, size = 22, lead }: { agent: Pick<AgentProfile, "glyph" | "role" | "name">; size?: number; lead?: boolean }) {
-  const filled = lead ?? /lead/i.test(agent.role);
+  const filled = Boolean(lead);
   return (
     <span className="lc-disc" data-filled={filled || undefined} style={{ width: size, height: size }} aria-hidden>
       <Glyph glyph={agent.glyph} size={Math.round(size * 0.56)} />
@@ -319,6 +319,96 @@ export function ContextMeter({ used, max, running, onCompact }: { used: number; 
             ) : (
               <Row title="Compact" note="Sums up what came before, so the window has room again" onPick={() => (close(), onCompact())} />
             ))}
+        </div>
+      )}
+    </Pop>
+  );
+}
+
+/** "2h 14m", "3d 4h", "12m": how long until `ms` from now. */
+const until = (ms: number) => {
+  const m = Math.max(1, Math.round(ms / 60_000));
+  const d = Math.floor(m / 1440);
+  const h = Math.floor((m % 1440) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m}m`;
+};
+
+/**
+  One plan window: how much is used, a mark where an even pace through the window would be, and
+  when it resets. A window whose reset time has passed is shown empty until the tool is asked again.
+*/
+export function LimitRow({ w, label, now }: { w: LimitWindow; label: string; now: number }) {
+  const reset = w.resetsAt !== undefined && w.resetsAt <= now;
+  const used = reset ? 0 : Math.max(0, Math.min(100, w.usedPercent));
+  const pace = !reset && w.minutes && w.resetsAt ? Math.max(0, Math.min(1, 1 - (w.resetsAt - now) / (w.minutes * 60_000))) : null;
+  return (
+    <div className="lc-limits-w" data-high={used >= 80 || undefined}>
+      <span className="lc-limits-l">
+        <span>{w.label}</span>
+        <span className="lc-mono">{Math.round(used)}%</span>
+      </span>
+      <span className="lc-limits-bar" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(used)} aria-label={`${label}, ${w.label}`}>
+        <i style={{ width: `${used}%` }} />
+        {pace !== null && <b style={{ left: `${pace * 100}%` }} title="An even pace through the window would be here" aria-hidden />}
+      </span>
+      {w.resetsAt !== undefined && <small className="lc-quiet">{reset ? `Reset at ${clock(w.resetsAt, now)}` : `Resets in ${until(w.resetsAt - now)}, ${clock(w.resetsAt, now)}`}</small>}
+    </div>
+  );
+}
+
+/** A tool's 5-hour and weekly windows, the two that stop a session: the first of each kind, or the first two. */
+const pairOf = (t: ToolLimits) => {
+  const short = t.windows.find((w) => w.kind === "session");
+  const week = t.windows.find((w) => w.kind === "weekly");
+  return short || week ? [short, week].filter((w): w is LimitWindow => Boolean(w)) : t.windows.slice(0, 2);
+};
+
+/**
+  The plan's windows beside the context ring: a bar each for the 5-hour window and the week (T3
+  Code: thread details' usage limits), with the busier one's share. It opens every window of the
+  tools this session runs on, each with when it resets.
+*/
+export function LimitMeter({ tools }: { tools: ToolLimits[] }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const pair = pairOf(tools[0]);
+  const shown = pair.map((w) => (w.resetsAt !== undefined && w.resetsAt <= now ? 0 : Math.max(0, Math.min(100, w.usedPercent))));
+  const top = Math.max(...shown);
+  const said = pair.map((w, i) => `${w.label} ${Math.round(shown[i])}% used`).join(", ");
+  return (
+    <Pop
+      label={`${tools[0].label} plan: ${said}`}
+      side="top"
+      align="center"
+      width={290}
+      triggerClass="lc-seg-b lc-ring-b"
+      trigger={
+        <span className="lc-lim" data-warn={top >= 80 || undefined}>
+          <span className="lc-lim-bars" aria-hidden>
+            {shown.map((v, i) => (
+              <span key={pair[i].label}>
+                <i style={{ width: `${v}%` }} />
+              </span>
+            ))}
+          </span>
+          {Math.round(top)}%
+        </span>
+      }
+    >
+      {() => (
+        <div className="lc-limm">
+          {tools.map((t) => (
+            <div key={t.provider} className="lc-limm-tool">
+              <PanelHead end={t.plan && t.plan[0].toUpperCase() + t.plan.slice(1)}>{t.label}</PanelHead>
+              {t.windows.map((w) => (
+                <LimitRow key={w.label} w={w} label={t.label} now={now} />
+              ))}
+            </div>
+          ))}
+          <p className="lc-pop-foot">From the tool itself, asked {clock(Math.min(...tools.map((t) => t.at)), now)}</p>
         </div>
       )}
     </Pop>

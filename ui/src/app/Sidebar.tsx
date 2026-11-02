@@ -8,7 +8,7 @@
   badge (two letters on a colour of its own). A row is two lines: its title, then who works on
   which model and where it stands. Pointing at a row shows Pin, Snooze and Settle (P, S and D
   from the keyboard); resting on it brings a card beside the sidebar with the rest of its story.
-  One white plate glides to the open session.
+  One white plate marks the open session.
   Below them, the team and the models they run on, a section that folds to its header.
   ⌘-click picks rows and ⇧-click a run of them; with more than one picked, a bar settles, snoozes,
   archives or moves them all at once. Esc lets them go.
@@ -21,8 +21,8 @@ import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
 import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, plural, since, statusLine, type Bucket } from "./model";
 import { ContextMenu, Disc, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
-import { glyphs, shortcutOf } from "./keymap";
-import { TextMorph } from "@liner/components/text-morph/text-morph";
+import { shortcutOf } from "./keymap";
+import * as os from "./os";
 import { toast } from "@liner/components/toast/toast";
 
 type Props = {
@@ -42,7 +42,7 @@ type Props = {
 /** A command's keys for a tip, like " (⌘B)". */
 const key = (id: string) => {
   const k = shortcutOf(id);
-  return k ? ` (${k.join("")})` : "";
+  return k ? ` (${os.keys(k)})` : "";
 };
 
 const NAME: Record<Bucket, string> = { pinned: "Pinned", needs: "Needs you", working: "Working", open: "Open", snoozed: "Snoozed", settled: "Settled" };
@@ -485,7 +485,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           </span>
           {n > 0 && n <= 9 && (
             <span className="lc-sbc-open">
-              <kbd>{glyphs(`mod+${n}`).join("")}</kbd> open
+              <kbd>{os.keys(`mod+${n}`)}</kbd> open
             </span>
           )}
         </p>
@@ -553,42 +553,45 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           onKeyDown={(e) => (e.key === "Enter" ? (clearPicked(), onOpen(t.id)) : rowKeys(e, t))}
           onDoubleClick={(e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && setRenaming(t.id)}
         >
-          <span className="lc-sb-mk">
-            <StatusMark t={t} bucket={bucket} brand={markOf(ref)} />
-          </span>
-          <span className="lc-sb-t">
-            <span className="lc-sb-h">
-              {renaming === t.id ? (
-                <input
-                  className="lc-sb-rename"
-                  defaultValue={t.title}
-                  autoFocus
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                    if (e.key === "Escape") setRenaming(null);
-                    e.stopPropagation();
-                  }}
-                  onBlur={(e) => {
-                    const v = e.target.value.trim();
-                    if (v && v !== t.title) void rpc("thread.update", { id: t.id, title: v });
-                    setRenaming(null);
-                  }}
-                />
-              ) : (
-                <b>{t.title}</b>
-              )}
-              <span className="lc-sb-time">{ago(t.updatedAt, now)}</span>
+          {/* The small line on top (T3 Code's card row, sidebar/SidebarThreadRow.tsx): the project
+              where it isn't said already, who works and where it stands, and the time. */}
+          <span className="lc-sb-s">
+            {!inProject && (
+              <>
+                <ProjectBadge id={project?.id ?? ""} name={project?.name ?? "No project"} small />
+                <span className="lc-sb-pj">{project?.name ?? "No project"}</span>
+                <span className="lc-sb-dot">·</span>
+              </>
+            )}
+            {/* Keyed on its words, so a new state fades in (and only then). */}
+            <span className="lc-sb-st" data-tone={tone}>
+              <span key={line.text}>{line.text}</span>
             </span>
-            <span className="lc-sb-s" data-tone={tone}>
-              {!inProject && (
-                <span className="lc-sb-pj">
-                  <ProjectBadge id={project?.id ?? ""} name={project?.name ?? "No project"} small />
-                  {project?.name ?? "No project"} ·{" "}
-                </span>
-              )}
-              {/* The line morphs from one state to the next: shared letters slide, the rest come into focus. */}
-              <TextMorph>{line.text}</TextMorph>
+            <span className="lc-sb-time">{ago(t.updatedAt, now)}</span>
+          </span>
+          <span className="lc-sb-h">
+            {renaming === t.id ? (
+              <input
+                className="lc-sb-rename"
+                defaultValue={t.title}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") setRenaming(null);
+                  e.stopPropagation();
+                }}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== t.title) void rpc("thread.update", { id: t.id, title: v });
+                  setRenaming(null);
+                }}
+              />
+            ) : (
+              <b>{t.title}</b>
+            )}
+            <span className="lc-sb-mk">
+              <StatusMark t={t} bucket={bucket} brand={markOf(ref)} />
             </span>
           </span>
         </div>
@@ -916,7 +919,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
 
       {/* Along the foot, your places as icons: settings, routines, the team, usage, and you at the end. */}
       <div className="lc-sb-foot">
-        <button type="button" className="lc-ib l-focus" aria-label="Settings" title="Settings (⌘,)" onClick={onSettings}>
+        <button type="button" className="lc-ib l-focus" aria-label="Settings" title={`Settings (${os.mod},)`} onClick={onSettings}>
           <I.settings size={16} />
         </button>
         <button type="button" className="lc-ib lc-sb-fi l-focus" aria-label={`Routines${routinesNote ? `, ${routinesNote}` : ""}`} aria-pressed={routinesOn} title={`Routines${routinesNote ? ` · ${routinesNote}` : ""}`} onClick={onRoutines}>
@@ -970,7 +973,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
 /** Saves a session as Markdown in Downloads, and says where with a way to show it. */
 export function exportSession(threadId: string) {
   void rpc("thread.export", { id: threadId }).then(
-    ({ path }) => toast.success("Saved as Markdown", { description: path.replace(/^\/Users\/[^/]+/, "~"), action: { label: "Show", onClick: () => bridge.reveal(path) } }),
+    ({ path }) => toast.success("Saved as Markdown", { description: os.tilde(path), action: { label: "Show", onClick: () => bridge.reveal(path) } }),
     (e: Error) => toast.error(e.message),
   );
 }
@@ -995,13 +998,14 @@ function onIt(t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) {
 
 /*
   A project's badge: two letters on a colour of its own, picked from its id so it stays the same.
-  Eight muted hues at one lightness, so white letters read on each, in light and in dark.
+  The id is hashed (FNV-1a: ids share their first letters, which bunched a plain hash onto a few
+  hues) onto the clear arc of the wheel, from green round through blue, violet, pink and red to
+  orange, past the yellows and limes that go muddy this deep; white letters read on all of it.
 */
-const HUES = [250, 290, 330, 15, 55, 85, 150, 195];
 function hueOf(id: string) {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0;
-  return HUES[Math.abs(h) % HUES.length];
+  let h = 0x811c9dc5;
+  for (const c of id) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
+  return Math.round((145 + (((h >>> 0) % 1000) / 1000) * 265) % 360);
 }
 /** "Liner Code" → LC, "my-app" → MA, "Firefly" → FI. */
 function badgeLetters(name: string) {

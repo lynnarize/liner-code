@@ -9,12 +9,13 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ProviderId, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
-import { jsonLines, spawn, versionOf, which } from "../exec.ts";
+import { jsonLines, killTree, spawn, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
 import { imageType, readUpTo } from "./attachments.ts";
+import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
 import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
 
 type Json = Record<string, unknown>;
@@ -26,7 +27,8 @@ const KIND: Record<string, ToolKind> = { read: "read", edit: "edit", delete: "ed
 class AcpSession implements ProviderSession {
   private child: ChildProcessWithoutNullStreams | null = null;
   private seq = 1;
-  private pending = new Map<number | string, { resolve: (v: Json) => void; reject: (e: Error) => void }>();
+  /** Each request with the process it went to: one that ends fails only its own, never the next one's. */
+  private pending = new Map<number | string, { resolve: (v: Json) => void; reject: (e: Error) => void; child: ChildProcessWithoutNullStreams | null }>();
   private session: string | undefined;
   private booting: Promise<void> | null = null;
   /** The session it was to load and couldn't (or can't load any): said once, so the runtime sends the conversation so far. */
@@ -39,6 +41,8 @@ class AcpSession implements ProviderSession {
   private canLoad = false;
   /** The session's cost as the agent last said it; unknown until it says, in a session loaded from before. */
   private spent: number | null = 0;
+  /** The agent's own modes: its plan-like one Read only puts it in, and the one it works in otherwise. */
+  private modes: { read?: string; work?: string } = {};
   private stderr = "";
   private o: OpenOptions;
   private cmd: string[];
@@ -53,8 +57,12 @@ class AcpSession implements ProviderSession {
   }
   private request(method: string, params: Json): Promise<Json> {
     const id = this.seq++;
+    const child = this.child;
+    // No process to ask (it ended while starting, or between turns): an answer would never come, and the
+    // start or the turn waiting on it would hang for good (as codex-server.ts does).
+    if (!child || !child.stdin.writable) return Promise.reject(new Error(this.stderr.trim().split("\n").slice(-3).join("\n") || `${this.cmd[0]} isn't running.`));
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, child });
       this.send({ id, method, params });
     });
   }
@@ -63,15 +71,22 @@ class AcpSession implements ProviderSession {
     const [bin, ...args] = this.cmd;
     const path = which(bin, this.o.env);
     if (!path) throw new Error(`${bin} isn't installed.`);
-    const child = spawn(path, args, { cwd: this.o.cwd, env: this.o.env, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    // A process group of its own, so stopping it stops what it started too: an npx or uvx launcher's agent, its
+    // commands (T3 Code: AcpSessionRuntime.ts spawns with ownDetachedProcessGroup).
+    const child = spawn(path, args, { cwd: this.o.cwd, env: this.o.env, stdio: ["pipe", "pipe", "pipe"], detached: true }) as ChildProcessWithoutNullStreams;
     this.child = child;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d: string) => (this.stderr = (this.stderr + d).slice(-4000)));
     jsonLines(child.stdout, (v) => void this.onMessage(v as Msg));
     child.on("close", (code) => {
       const err = new Error(this.stderr.trim().split("\n").slice(-3).join("\n") || `${bin} exited with ${code}.`);
-      for (const p of this.pending.values()) p.reject(err);
-      this.pending.clear();
+      // A process stopped after Stop's wait can end once the next turn has started another: only what was
+      // asked of this one fails (T3 Code: AcpSessionRuntime.ts keeps each process's requests its own).
+      for (const [id, p] of this.pending)
+        if (p.child === child) {
+          this.pending.delete(id);
+          p.reject(err);
+        }
       if (this.child !== child && this.child) return;
       this.child = null;
       this.booting = null;
@@ -85,31 +100,40 @@ class AcpSession implements ProviderSession {
       const caps = init.agentCapabilities as Json | undefined;
       this.canLoad = Boolean(caps?.loadSession);
       this.images = Boolean((caps?.promptCapabilities as Json | undefined)?.image);
+      let s: Json | null = null;
       if (this.o.resume && this.canLoad) {
-        try {
-          await this.request("session/load", { sessionId: this.o.resume, cwd: this.o.cwd, mcpServers: this.mcpServers() });
+        s = await this.request("session/load", { sessionId: this.o.resume, cwd: this.o.cwd, mcpServers: this.mcpServers() }).catch(() => null);
+        if (s) {
           this.session = this.o.resume;
           this.spent = null;
-          return;
-        } catch {
-          // The agent forgot it; start fresh below.
+          // A session it loads already holds its instructions, from the turn that first sent them.
+          this.soulSent = true;
         }
       }
-      // A session it can't load (or an agent that loads none) starts knowing nothing: the runtime is told,
-      // not left to think it resumed (T3 Code: ProviderTurnStartService.ts, its resume fallback).
-      if (this.o.resume) this.lost = this.o.resume;
-      const s = await this.request("session/new", { cwd: this.o.cwd, mcpServers: this.mcpServers() });
-      this.session = String(s.sessionId);
-      // Started again after its process ended, it loads this session rather than the one it opened with.
-      this.o.resume = this.session;
-      this.spent = 0;
+      if (!s) {
+        // A session it can't load (or an agent that loads none) starts knowing nothing: the runtime is told,
+        // not left to think it resumed (T3 Code: ProviderTurnStartService.ts, its resume fallback).
+        if (this.o.resume) this.lost = this.o.resume;
+        s = await this.request("session/new", { cwd: this.o.cwd, mcpServers: this.mcpServers() });
+        this.session = String(s.sessionId);
+        // Started again after its process ended, it loads this session rather than the one it opened with.
+        this.o.resume = this.session;
+        this.spent = 0;
+      }
+      // A loaded session gets the model and the mode too: a model you switched to reopens the session to
+      // load it, on the model it had (T3 Code: provider-acp adapter.ts sets the model after start or load).
       // A model picked in Liner Code, through whichever way this agent takes one.
-      const pick = acpModelRequest(s, this.session, this.o.model);
+      const pick = acpModelRequest(s, this.session!, this.o.model);
       if (pick) await this.request(pick.method, pick.params).catch(() => this.sink?.notice(`${this.cmd[0]} didn't switch to ${this.o.model}; it runs on its own default.`));
-      // Read only maps onto a plan-like mode where the agent offers one.
+      // Read only maps onto a plan-like mode where the agent offers one. The mode it works in otherwise is kept to
+      // go back to, and a session loaded in the plan-like mode goes back to it (T3 Code: provider-acp adapter.ts,
+      // nativeBuildConfigurationBySessionId).
       const modes = ((s.modes as Json | undefined)?.availableModes as { id: string }[] | undefined) ?? [];
-      const want = this.o.access === "read" || this.o.planning ? modes.find((m) => /plan|read|ask/i.test(m.id)) : undefined;
-      if (want) await this.request("session/set_mode", { sessionId: this.session, modeId: want.id }).catch(() => {});
+      const now = (s.modes as Json | undefined)?.currentModeId;
+      const read = modes.find((m) => /plan|read|ask/i.test(m.id))?.id;
+      this.modes = { read, work: typeof now === "string" && now !== read ? now : modes.find((m) => m.id !== read)?.id };
+      const want = this.o.access === "read" || this.o.planning ? read : read && now === read ? this.modes.work : undefined;
+      if (want) await this.request("session/set_mode", { sessionId: this.session, modeId: want }).catch(() => {});
     })();
   }
 
@@ -172,11 +196,15 @@ class AcpSession implements ProviderSession {
       const free = this.o.access === "full" || ((this.o.access === "edits" || this.o.access === "auto" || this.o.access === "review") && kindNow === "edit");
       if (free && !(this.o.guard && isDestructive(command))) return { outcome: { outcome: "selected", optionId: pick(true) } };
       const sink = this.sink;
-      if (!sink || !this.signal) return { outcome: { outcome: "cancelled" } };
+      const signal = this.signal;
+      if (!sink || !signal) return { outcome: { outcome: "cancelled" } };
       const kind = KIND[call.kind ?? ""] ?? "other";
       const fields = [command && { label: "Command", value: command }, call.locations?.[0] && { label: "File", value: this.rel(call.locations[0].path) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
       const rule = kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : call.kind;
-      const a = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: call.title ?? "Use a tool", risk: kind === "exec" ? commandRisk(command) : "low", fields, rule }, this.signal).catch(() => ({ allow: false }));
+      const a = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: call.title ?? "Use a tool", risk: kind === "exec" ? commandRisk(command) : "low", fields, rule }, signal).catch(() => ({ allow: false }));
+      // Stopped while it asked: a request open when the prompt is cancelled is answered "cancelled", as ACP
+      // asks, not as a no (T3 Code: provider-acp adapter.ts).
+      if (signal.aborted) return { outcome: { outcome: "cancelled" } };
       const id = pick(a.allow);
       return id ? { outcome: { outcome: "selected", optionId: id } } : { outcome: { outcome: "cancelled" } };
     }
@@ -232,7 +260,12 @@ class AcpSession implements ProviderSession {
 
   async turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
     if (!this.child) this.boot();
-    await this.booting;
+    // Stop reaches an agent that's still starting too: one that never answers would hold the turn for good.
+    const stopped = new Promise<void>((r) => (signal.aborted ? r() : signal.addEventListener("abort", () => r(), { once: true })));
+    await Promise.race([this.booting, stopped]);
+    // Stopped while the agent was starting: nothing was asked of it yet. A session it couldn't load is said
+    // on the next turn instead, so that one still gets the conversation so far.
+    if (signal.aborted) return;
     if (!this.session) throw new Error("The agent didn't open a session.");
     sink.session(this.session);
     if (this.lost) {
@@ -242,8 +275,6 @@ class AcpSession implements ProviderSession {
       this.soulSent = false;
       throw new ResumeFailed(`${this.cmd[0]} couldn't load its session ${lost}.`);
     }
-    // Stopped while the agent was starting: nothing was asked of it yet.
-    if (signal.aborted) return;
     this.sink = sink;
     this.signal = signal;
     // An agent that hasn't finished cancelling 15 seconds after Stop is stopped itself, and the turn
@@ -285,14 +316,20 @@ class AcpSession implements ProviderSession {
 
   async update(o: Pick<OpenOptions, "model" | "effort" | "access">) {
     const reopen = o.model !== this.o.model;
+    // Into Read only or out of it: the agent's own mode goes with it, or it would go on planning (or editing) as it was.
+    const mode = this.o.planning || (o.access === "read") === (this.o.access === "read") ? undefined : o.access === "read" ? this.modes.read : this.modes.work;
     Object.assign(this.o, o);
+    // Not waited on: it reaches the agent before the next prompt all the same, and one slow to answer doesn't hold that turn.
+    if (mode && !reopen && this.child && this.session) void this.request("session/set_mode", { sessionId: this.session, modeId: mode }).catch(() => {});
     return !reopen;
   }
 
   close() {
-    this.child?.stdin.end();
-    this.child?.kill();
+    const child = this.child;
     this.child = null;
+    if (!child) return;
+    child.stdin.end();
+    killTree(child);
   }
 }
 
@@ -330,8 +367,24 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
   };
 }
 
-export const hermes = acpProvider("hermes", { label: "Hermes", cmd: ["hermes", "acp"], install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash", login: "hermes model" });
-export const opencode = acpProvider("opencode", { label: "OpenCode", cmd: ["opencode", "acp"], install: "npm install -g opencode-ai, then opencode auth login", login: "opencode auth login" });
+export const hermes: Provider = {
+  ...acpProvider("hermes", { label: "Hermes", cmd: ["hermes", "acp"], install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash", login: "hermes model" }),
+  // OpenCode Go's windows, when Hermes has a Go key: they count for its opencode-go models only.
+  async limits(env) {
+    const key = hermesGoKey(env);
+    const windows = key ? await goUsage([key]) : null;
+    return windows && { plan: "OpenCode Go", windows, models: "opencode-go" };
+  },
+};
+export const opencode: Provider = {
+  ...acpProvider("opencode", { label: "OpenCode", cmd: ["opencode", "acp"], install: "npm install -g opencode-ai && opencode auth login", login: "opencode auth login" }),
+  // OpenCode Go's windows, when it signed in with a Go key; Zen and the rest have none to show.
+  async limits(env) {
+    const keys = goKeys(env);
+    const windows = keys.length ? await goUsage(keys) : null;
+    return windows && { plan: "Go", windows, models: "opencode-go" };
+  },
+};
 export const cursor = acpProvider("cursor", { label: "Cursor", cmd: ["cursor-agent", "acp"], install: "curl https://cursor.com/install -fsS | bash", login: "cursor-agent login" });
 // Grok Build asks before each step the same way; Liner Code answers from the session's access.
 export const grok = acpProvider("grok", { label: "Grok Build", cmd: ["grok", "agent", "stdio"], install: "npm install -g @xai-official/grok", login: "grok login" });

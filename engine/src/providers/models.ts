@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { CommandInfo, EffortInfo, ModelInfo, SkillInfo } from "../../../contracts/src/index.ts";
-import { jsonLines, spawn, which } from "../exec.ts";
+import { jsonLines, killTree, spawn, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 
 const LEVELS: Record<string, { label: string; description: string }> = {
@@ -51,7 +51,8 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
   const path = which(cmd[0], env);
   if (!path) return [];
   mkdirSync(scratch, { recursive: true });
-  const child = spawn(path, cmd.slice(1), { cwd: scratch, env, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+  // In a process group of its own, so a launcher's agent (npx, uvx) goes when the probe ends.
+  const child = spawn(path, cmd.slice(1), { cwd: scratch, env, stdio: ["pipe", "pipe", "pipe"], detached: true }) as ChildProcessWithoutNullStreams;
   const waiting = new Map<number, (m: Json) => void>();
   let seq = 0;
   jsonLines(child.stdout, (v) => {
@@ -68,7 +69,8 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
       waiting.set(id, resolve);
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
-  const timeout = new Promise<null>((r) => setTimeout(() => r(null), 45000));
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<null>((r) => (timer = setTimeout(() => r(null), 45000)));
   try {
     const s = await Promise.race([
       (async () => {
@@ -92,7 +94,8 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
     const now = out.find((m) => m.isDefault);
     return [{ id: "default", label: `${label} default`, description: now ? `What ${label} is set to: ${now.label}` : `The model ${label} is set up with` }, ...out.map((m) => ({ ...m, isDefault: undefined }))];
   } finally {
-    child.kill();
+    clearTimeout(timer);
+    killTree(child);
   }
 }
 
@@ -100,7 +103,8 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
 export function acpModelRequest(session: Json, sessionId: string, model: string): { method: string; params: Json } | null {
   if (!model || model === "default") return null;
   const option = ((session.configOptions as Json[] | undefined) ?? []).find((c) => c.category === "model" || c.id === "model");
-  if (option) return { method: "session/set_config_option", params: { sessionId, configId: option.id, value: model } };
+  if (option) return option.currentValue === model ? null : { method: "session/set_config_option", params: { sessionId, configId: option.id, value: model } };
+  if ((session.models as Json | undefined)?.currentModelId === model) return null;
   if (session.models) return { method: "session/set_model", params: { sessionId, modelId: model } };
   return null;
 }
@@ -143,7 +147,7 @@ export function skillAt(file: string): SkillInfo | null {
 export async function acpCommands(cmd: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<CommandInfo[]> {
   const path = which(cmd[0], env);
   if (!path) return [];
-  const child = spawn(path, cmd.slice(1), { cwd, env, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+  const child = spawn(path, cmd.slice(1), { cwd, env, stdio: ["pipe", "pipe", "pipe"], detached: true }) as ChildProcessWithoutNullStreams;
   const waiting = new Map<number, (m: Json) => void>();
   let seq = 0;
   let found: CommandInfo[] | null = null;
@@ -168,17 +172,20 @@ export async function acpCommands(cmd: string[], env: NodeJS.ProcessEnv, cwd: st
       waiting.set(id, resolve);
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
+  const timers: NodeJS.Timeout[] = [];
+  const after = (ms: number) => new Promise((r) => timers.push(setTimeout(r, ms)));
   try {
     await Promise.race([
       (async () => {
         await request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION } });
         await request("session/new", { cwd, mcpServers: [] });
-        await Promise.race([arrived, new Promise((r) => setTimeout(r, 2500))]);
+        await Promise.race([arrived, after(2500)]);
       })(),
-      new Promise((r) => setTimeout(r, 30000)),
+      after(30000),
     ]);
     return found ?? [];
   } finally {
-    child.kill();
+    for (const t of timers) clearTimeout(t);
+    killTree(child);
   }
 }

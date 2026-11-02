@@ -6,7 +6,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -201,4 +201,36 @@ test("design_show: any agent's call keeps a version and gets back the app's pict
   const r2 = await quiet.call("t", "design_show", { title: "Pricing", html: page("plans, cheaper") });
   assert.match(r2.content[0].type === "text" ? r2.content[0].text : "", /version 2[\s\S]*No picture of it: its folder isn't served/);
   assert.equal((await quiet.call("t", "design_show", { title: "Pricing", size: "watch" })).isError, true);
+});
+
+test("designs: a page passed as html is written only among the designs, never over a project file or through a link out", () => {
+  const { root, designs } = setup();
+  writeFileSync(join(root, "index.html"), page("the real app"));
+  assert.throws(() => designs.show("t", { title: "x", path: "index.html", html: page("over it") }), /isn't among the designs/);
+  assert.match(readFileSync(join(root, "index.html"), "utf8"), /the real app/, "the project's page is as it was");
+  // Showing a file the agent wrote itself, by its path, still works.
+  assert.equal(designs.show("t", { path: "index.html" }).item.path, "index.html");
+  // A designs folder that links elsewhere isn't written through.
+  const away = mkdtempSync(join(tmpdir(), "lc-design-away-"));
+  const linked = setup();
+  mkdirSync(join(linked.root, ".liner"), { recursive: true });
+  symlinkSync(away, join(linked.root, ".liner", "designs"));
+  assert.throws(() => linked.designs.show("t", { title: "Card", html: page("x") }), /leads out of/);
+  assert.equal(readdirSync(away).length, 0);
+});
+
+test("designs: a link in a design's place isn't written through, even to a file not there yet; a version you put back goes to its own file", () => {
+  const { root, designs } = setup();
+  const away = mkdtempSync(join(tmpdir(), "lc-design-away-"));
+  mkdirSync(join(root, ".liner", "designs"), { recursive: true });
+  symlinkSync(join(away, "planted.html"), join(root, ".liner", "designs", "card.html"));
+  assert.throws(() => designs.show("t", { path: ".liner/designs/card.html", html: page("x") }), /leads out of/);
+  assert.equal(existsSync(join(away, "planted.html")), false);
+  // A design the agent wrote outside the designs folder: restoring a version of it is yours to do.
+  writeFileSync(join(root, "home.html"), page("v1"));
+  const d = designs.show("t", { path: "home.html" }).item;
+  writeFileSync(join(root, "home.html"), page("v2"));
+  designs.show("t", { path: "home.html" });
+  assert.equal(designs.restore("t", d.design, 1).version, 3);
+  assert.equal(readFileSync(join(root, "home.html"), "utf8"), page("v1"));
 });

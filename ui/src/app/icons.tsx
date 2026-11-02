@@ -79,6 +79,7 @@ export const I = {
   keyboard: (p: P) => <S {...p}><rect x="1.75" y="3.75" width="12.5" height="8.5" rx="1.75" /><path d="M4.5 6.5h.01M6.83 6.5h.01M9.17 6.5h.01M11.5 6.5h.01M5.5 9.5h5" /></S>,
   chip: (p: P) => <S {...p}><rect x="4" y="4" width="8" height="8" rx="1.5" /><path d="M6.5 1.75V4M9.5 1.75V4M6.5 12v2.25M9.5 12v2.25M1.75 6.5H4M1.75 9.5H4M12 6.5h2.25M12 9.5h2.25" /></S>,
   shield: (p: P) => <S {...p}><path d="M8 13.75s4.75-1.9 4.75-6.15V3.9L8 2.25 3.25 3.9v3.7C3.25 11.85 8 13.75 8 13.75Z" /><path d="m6 7.9 1.4 1.4 2.6-2.8" /></S>,
+  shieldOff: (p: P) => <S {...p}><path d="M12.75 7.6V3.9L8 2.25 5.6 3.08M3.25 4.6v3c0 4.25 4.75 6.15 4.75 6.15s1.7-.68 3.05-2.05M2.25 2.25l11.5 11.5" /></S>,
   box: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="3.25" rx="1" /><path d="M3.25 6v6.25a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V6M6.5 8.75h3" /></S>,
   drive: (p: P) => <S {...p}><ellipse cx="8" cy="4" rx="5.25" ry="1.75" /><path d="M2.75 4v8c0 .97 2.35 1.75 5.25 1.75s5.25-.78 5.25-1.75V4M2.75 8c0 .97 2.35 1.75 5.25 1.75S13.25 8.97 13.25 8" /></S>,
   back: (p: P) => <S {...p}><path d="M7 3.75 2.75 8 7 12.25M3 8h10.25" /></S>,
@@ -145,15 +146,26 @@ export function Glyph({ glyph, size = 13 }: { glyph: AgentGlyph; size?: number }
   }
 }
 
-/** Whose model it is: a tile in the current ink with the maker's letters cut out of it. A model nobody's list knows gets a diamond. */
+/** Whose model it is, or which tool runs it: its logo in the current ink. A model nobody's list knows gets a diamond. */
 export type MarkKind = Brand | "other" | "demo";
 export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }) {
   const cut = useId();
+  if (kind !== "demo" && kind !== "other" && BRANDS[kind].paths.length)
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="lc-mark" data-brand={kind} fill="currentColor" fillRule="evenodd">
+        {BRANDS[kind].paths.map((d, i) => (
+          <path key={i} d={d} />
+        ))}
+      </svg>
+    );
   if (kind === "demo") return <S size={size} w={1.3}><path d="M8 3.9 9 7l3.1 1L9 9l-1 3.1L7 9 3.9 8 7 7Z" /></S>;
+  // A source or tool with no logo of its own: three asterisks, "some other".
   if (kind === "other")
     return (
-      <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden className="lc-mark">
-        <path d="M8 2.5 13.5 8 8 13.5 2.5 8Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden className="lc-mark" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round">
+        {[2.6, 8, 13.4].map((x) => (
+          <path key={x} d={`M${x} 5.6v4.8M${x - 2.08} 6.8l4.16 2.4M${x - 2.08} 9.2l4.16-2.4`} />
+        ))}
       </svg>
     );
   const { letters } = BRANDS[kind];

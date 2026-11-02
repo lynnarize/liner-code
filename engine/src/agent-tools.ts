@@ -28,7 +28,7 @@ export function linerTitle(tool: string, input: unknown): string {
   const s = (v: unknown) => String(v ?? "").slice(0, 60);
   switch (tool) {
     case "browser_open":
-      return `Open ${s(a.url)} in the Browser`;
+      return `Open ${s(urlOf(raw))} in the Browser`;
     case "browser_read":
       return "Read the page in the Browser";
     case "browser_click": {
@@ -66,6 +66,9 @@ const NOT_HERE = /isn't open in Liner Code/;
 
 const text = (t: string): McpResult => ({ content: [{ type: "text", text: t }] });
 const fail = (t: string): McpResult => ({ content: [{ type: "text", text: t }], isError: true });
+
+/** The page browser_open was asked for: url, or the name a model guessed for it (target, like the other browser tools, or path, file…). */
+const urlOf = (args: Record<string, unknown>) => String(args.url ?? args.target ?? args.path ?? args.file ?? args.page ?? args.href ?? "").trim();
 
 /** What to click or type into, under whichever name the model gave it. */
 function targetOf(a: Record<string, unknown>) {
@@ -217,7 +220,8 @@ export class AgentTools {
     try {
       switch (tool) {
         case "browser_open": {
-          const url = String(args.url ?? "");
+          const url = urlOf(args);
+          if (!url) return fail("Say which page, as url: localhost:5173/settings, a port, or an HTML file in this folder (index.html).");
           try {
             return text(described(await this.browser<PageRead>(threadId, "open", { url })));
           } catch (e) {

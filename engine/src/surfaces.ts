@@ -9,6 +9,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Device, LocalServer, PrInfo } from "../../contracts/src/index.ts";
 import { run, THREAD_ENV, which } from "./exec.ts";
 import { uid, type Store } from "./store.ts";
+import { endShell, winShell } from "./winterm.ts";
 
 /* ---------- Files ---------- */
 
@@ -16,7 +17,7 @@ import { uid, type Store } from "./store.ts";
 export function readFile(root: string, path: string) {
   const abs = resolve(root, path);
   const rel = relative(root, abs);
-  if (rel.startsWith("..")) throw new Error("That file is outside the project.");
+  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("That file is outside the project.");
   if (!existsSync(abs)) throw new Error("That file isn't there any more.");
   const size = statSync(abs).size;
   if (size > 2_000_000) return { text: "", size, binary: true };
@@ -195,6 +196,8 @@ type Term = {
   ctl: NodeJS.WritableStream | null;
   backlog: Backlog;
   exited?: number;
+  /** On Windows, what you type goes through winterm.ts's line editing rather than straight to the shell. */
+  input?: (data: string) => void;
 };
 
 /**
@@ -213,15 +216,19 @@ export class Terminals {
   }
 
   open(cwd: string, cols: number, rows: number, command?: string, threadId?: string, title?: string) {
-    const python = which("python3", this.env) ?? "/usr/bin/python3";
     const id = uid("tm");
-    const child = spawn(python, ["-I", "-c", PTY, String(Math.max(20, cols)), String(Math.max(5, rows))], {
-      cwd,
-      env: { ...this.env, TERM: "xterm-256color", COLORTERM: "truecolor", LINER_CODE: "1", ...(threadId ? { [THREAD_ENV]: threadId } : {}) },
-      stdio: ["pipe", "pipe", "pipe", "pipe"],
-    }) as unknown as ChildProcessWithoutNullStreams;
-    const ctl = (child as unknown as { stdio: NodeJS.WritableStream[] }).stdio[3];
-    const t: Term = { id, threadId, title: title?.trim() || (command ? command : "Shell"), command, cwd, at: Date.now(), child, ctl, backlog: new Backlog() };
+    const env = { ...this.env, TERM: "xterm-256color", COLORTERM: "truecolor", LINER_CODE: "1", ...(threadId ? { [THREAD_ENV]: threadId } : {}) };
+    // Windows has no pty a script can open: PowerShell on pipes, with the line editing done here.
+    const win = process.platform === "win32" ? winShell(cwd, cols, env, (s) => push(s)) : null;
+    const child =
+      win?.child ??
+      (spawn(which("python3", this.env) ?? "/usr/bin/python3", ["-I", "-c", PTY, String(Math.max(20, cols)), String(Math.max(5, rows))], {
+        cwd,
+        env,
+        stdio: ["pipe", "pipe", "pipe", "pipe"],
+      }) as unknown as ChildProcessWithoutNullStreams);
+    const ctl = win ? null : (child as unknown as { stdio: NodeJS.WritableStream[] }).stdio[3];
+    const t: Term = { id, threadId, title: title?.trim() || (command ? command : "Shell"), command, cwd, at: Date.now(), child, ctl, backlog: new Backlog(), input: win?.input };
     this.terms.set(id, t);
     // Output goes out in small batches, so a noisy command doesn't send an event per byte. Each
     // batch goes into the backlog as it goes out, with where it starts, so the two always agree.
@@ -235,16 +242,14 @@ export class Terminals {
       this.store.emit({ type: "term", id, data: pending, at });
       pending = "";
     };
+    const push = (d: string) => {
+      pending += d;
+      timer ??= setTimeout(flush, 16);
+    };
     child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (d: string) => {
-      pending += d;
-      timer ??= setTimeout(flush, 16);
-    });
+    child.stdout.on("data", (d: string) => push(win ? win.output(d) : d));
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (d: string) => {
-      pending += d;
-      timer ??= setTimeout(flush, 16);
-    });
+    child.stderr.on("data", (d: string) => push(win ? win.output(d) : d));
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
       flush();
@@ -253,8 +258,9 @@ export class Terminals {
       if (this.terms.get(id) === t) t.exited = code ?? 0;
       this.store.emit({ type: "term.exit", id, code: code ?? 0 });
     });
-    // A script to run: typed into the shell once it's up, so it stays after the command ends.
-    if (command) setTimeout(() => this.terms.get(id)?.child?.stdin.write(`${command}\r`), 350);
+    // A script to run: typed into the shell once it's up, so it stays after the command ends
+    // (through write, so on Windows it's echoed and sent as a line like anything you type).
+    if (command) setTimeout(() => this.write(id, `${command}\r`), 350);
     return { id, cwd };
   }
 
@@ -273,7 +279,9 @@ export class Terminals {
   }
 
   write(id: string, data: string) {
-    this.terms.get(id)?.child?.stdin.write(data);
+    const t = this.terms.get(id);
+    if (t?.child && t.input) t.input(data);
+    else t?.child?.stdin.write(data);
   }
   resize(id: string, cols: number, rows: number) {
     this.terms.get(id)?.ctl?.write(`${cols} ${rows}\n`);
@@ -287,6 +295,8 @@ export class Terminals {
     if (!t) return;
     this.terms.delete(id);
     if (!t.child) return;
+    // Windows has no SIGHUP (kill would throw): the shell's tree goes with taskkill.
+    if (process.platform === "win32") return endShell(t.child);
     t.child.stdin.end();
     t.child.kill("SIGHUP");
   }
@@ -304,7 +314,7 @@ export class Terminals {
 export type GhState = "ready" | "missing" | "signed-out" | "no-remote";
 
 export async function ghState(cwd: string, env: NodeJS.ProcessEnv): Promise<{ state: GhState; detail?: string }> {
-  if (!which("gh", env)) return { state: "missing", detail: "The GitHub CLI isn't installed. brew install gh, then gh auth login." };
+  if (!which("gh", env)) return { state: "missing", detail: `The GitHub CLI isn't installed. ${process.platform === "win32" ? "winget install --id GitHub.cli" : "brew install gh"}, then gh auth login.` };
   const remote = await run("git", ["remote", "get-url", "origin"], { cwd, env });
   if (remote.code !== 0) return { state: "no-remote", detail: "This project has no origin remote on GitHub." };
   const auth = await run("gh", ["auth", "status"], { cwd, env, timeout: 15000 });
@@ -413,6 +423,30 @@ export function parseListeners(out: string) {
   return ports;
 }
 
+/**
+  The same on Windows, from `netstat -ano -p TCP` and `-p TCPv6`: a socket whose foreign address is
+  0.0.0.0:0 or [::]:0 listens (read so, not by its State, which Windows says in your language).
+  `names` is pid → process name, from tasklist.
+*/
+export function parseNetstat(out: string, names: Map<number, string>) {
+  const ports = new Map<number, { pid: number; process: string }>();
+  for (const line of out.split(/\r?\n/)) {
+    const m = /^\s*TCP\s+\S*:(\d+)\s+(?:0\.0\.0\.0:0|\[::\]:0)\s+\S+\s+(\d+)\s*$/i.exec(line);
+    if (m && !ports.has(Number(m[1]))) ports.set(Number(m[1]), { pid: Number(m[2]), process: (names.get(Number(m[2])) ?? "").replace(/\.exe$/i, "") });
+  }
+  return ports;
+}
+
+async function windowsListeners(env: NodeJS.ProcessEnv) {
+  const [v4, v6, tasks] = await Promise.all([run("netstat", ["-ano", "-p", "TCP"], { env, timeout: 8000 }), run("netstat", ["-ano", "-p", "TCPv6"], { env, timeout: 8000 }), run("tasklist", ["/FO", "CSV", "/NH"], { env, timeout: 8000 })]);
+  const names = new Map<number, string>();
+  for (const line of tasks.stdout.split(/\r?\n/)) {
+    const m = /^"([^"]*)","(\d+)"/.exec(line);
+    if (m) names.set(Number(m[2]), m[1]);
+  }
+  return parseNetstat(`${v4.stdout}\n${v6.stdout}`, names);
+}
+
 /** pid → the session named in its environment, from macOS `ps -E`, which prints it after the command. */
 export function parseThreads(out: string) {
   const threads = new Map<number, string>();
@@ -460,11 +494,13 @@ export async function listeningPorts(env: NodeJS.ProcessEnv, mine?: { threadId: 
 
 /** listeningPorts, with each server's pid. */
 async function scan(env: NodeJS.ProcessEnv, mine?: { threadId: string; folders: string[] }): Promise<(LocalServer & { pid: number })[]> {
-  const r = await run("lsof", ["+c", "0", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcn"], { env, timeout: 8000 });
+  // Windows has no lsof or `ps -E`: netstat and tasklist say what listens, and nothing says whose it is.
+  const win = process.platform === "win32";
+  const listeners = win ? await windowsListeners(env) : parseListeners((await run("lsof", ["+c", "0", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcn"], { env, timeout: 8000 })).stdout);
   const skip = /^(rapportd|ControlCe|ControlCenter|sharingd|AirPlay|figma_age|Dropbox|Spotify|Adobe|com\.docke|postgres|mysqld|redis-ser|mongod|ollama|LM Studio)/i;
-  const found = [...parseListeners(r.stdout)].filter(([port, l]) => port >= 1024 && l.pid !== process.pid && !skip.test(l.process));
+  const found = [...listeners].filter(([port, l]) => port >= 1024 && l.pid !== process.pid && !skip.test(l.process));
   const pids = [...new Set(found.map(([, l]) => l.pid))].join(",");
-  const [threads, cwds] = mine && pids
+  const [threads, cwds] = mine && pids && !win
     ? await Promise.all([
         run("ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids], { env, timeout: 5000 }).then((x) => parseThreads(x.stdout)),
         run("lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids], { env, timeout: 5000 }).then((x) => parseCwds(x.stdout)),
@@ -545,7 +581,7 @@ export async function stopServers(env: NodeJS.ProcessEnv, mine: { threadId: stri
   "/games/snake.html?level=2", or the file's full path (file:// too). Outside the folder throws.
 */
 export function pagePath(root: string, asked: string) {
-  const [, file, rest] = /^([^?#]*)(.*)$/s.exec(asked.trim().replace(/^file:\/\//i, "")) ?? ["", "", ""];
+  const [, file, rest] = /^([^?#]*)(.*)$/s.exec(asked.trim().replace(/^file:\/\/(?:\/(?=[a-z]:))?/i, "")) ?? ["", "", ""];
   const full = isAbsolute(file) && (file.startsWith(`${root}/`) || file === root || existsSync(file));
   const rel = relative(root, full ? file : resolve(root, file.replace(/^\/+/, "")));
   if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("That file is outside this session's folder.");
@@ -574,7 +610,7 @@ export function htmlPages(root: string, limit = 24) {
       }
       if (st.isDirectory()) {
         if (depth < 3) walk(abs, depth + 1);
-      } else if (/\.html?$/i.test(n)) out.push(relative(root, abs));
+      } else if (/\.html?$/i.test(n)) out.push(relative(root, abs).split(sep).join("/"));
     }
   };
   walk(root, 0);

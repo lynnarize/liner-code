@@ -30,6 +30,7 @@ import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
 import { matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
+import * as os from "./os";
 
 type View = { kind: "home"; projectId?: string } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string };
 
@@ -354,7 +355,7 @@ export function App() {
         },
         {
           id: "reveal",
-          label: "Show the project in Finder",
+          label: `Show the project in ${os.fileManager}`,
           group: "This session",
           onSelect: () => {
             const p = projects.find((x) => x.id === current.projectId);
@@ -418,7 +419,7 @@ export function App() {
         <Suspense fallback={null}>
           <Setup onDone={() => setView({ kind: "home" })} />
         </Suspense>
-        <Toaster />
+        <Toaster className="lc-toaster" />
       </>
     );
 
@@ -479,7 +480,7 @@ export function App() {
       )}
       <CommandMenu open={menu} onOpenChange={setMenu} items={commands} hotkey={null} placeholder="Search sessions, projects and commands" />
       <AgentDialog open={agentDialog.open} agent={agentDialog.agent} onClose={() => setAgentDialog({ open: false })} />
-      <Toaster />
+      <Toaster className="lc-toaster" />
     </div>
   );
 }

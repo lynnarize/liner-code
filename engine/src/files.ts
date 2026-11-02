@@ -3,7 +3,7 @@
   (tracked plus new, minus ignored); elsewhere a shallow walk that skips the usual heavy folders.
 */
 import { readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import type { FileChange, TreeEntry } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
 import { numstat } from "./checkpoints.ts";
@@ -33,7 +33,7 @@ export async function listFiles(root: string, limit = 20000): Promise<string[]> 
         continue;
       }
       if (st.isDirectory()) walk(abs, depth + 1);
-      else out.push(relative(root, abs));
+      else out.push(relative(root, abs).split(sep).join("/"));
       if (out.length >= limit) return;
     }
   };

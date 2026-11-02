@@ -10,9 +10,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { SDKResultMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { Item, PlanEntry, ProviderInfo, Thread } from "../../contracts/src/index.ts";
+import type { Item, PlanEntry, ProviderInfo, Thread, Usage } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { providers, Runtime } from "../src/runtime.ts";
 import { applyTaskTool, claude, resultError, sdk, signedOut, withFiles, type TaskList } from "../src/providers/claude.ts";
@@ -631,8 +631,31 @@ switch (m.method) {
     break;
   case "thread/start": send({ id: m.id, result: { thread: { id: "new-thread" } } }); break;
   case "turn/start":
-    send({ id: m.id, result: { turn: { id: "turn-1" } } });
-    if (mode !== "hold") setTimeout(() => send({ method: "turn/completed", params: { turn: { status: "completed" } } }), 10);
+    if (mode !== "late") send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    if (mode === "child") {
+      // A subagent's thread streams on the same connection, ends its own turn and reports its own totals;
+      // Codex compacts mid-turn; then the parent says its piece and ends.
+      const u = (threadId, input) => send({ method: "thread/tokenUsage/updated", params: { threadId, tokenUsage: { total: { inputTokens: input, cachedInputTokens: 0, outputTokens: 10 }, last: { inputTokens: 50, totalTokens: input }, modelContextWindow: 400000 } } });
+      setTimeout(() => u("new-thread", 100000), 5);
+      setTimeout(() => send({ method: "item/agentMessage/delta", params: { threadId: "child", itemId: "c1", delta: "child words " } }), 10);
+      setTimeout(() => u("child", 5000), 15);
+      setTimeout(() => send({ method: "turn/completed", params: { threadId: "child", turn: { id: "child-turn", status: "completed" } } }), 20);
+      setTimeout(() => send({ method: "thread/compacted", params: { threadId: "new-thread", turnId: "turn-1" } }), 25);
+      setTimeout(() => u("new-thread", 101000), 30);
+      setTimeout(() => send({ method: "item/agentMessage/delta", params: { threadId: "new-thread", itemId: "p1", delta: "parent words" } }), 35);
+      setTimeout(() => send({ method: "turn/completed", params: { threadId: "new-thread", turn: { id: "turn-1", status: "completed" } } }), 40);
+    } else if (mode === "late") {
+      // The first turn is stopped; its interrupted end only comes once the next turn has begun.
+      const first = fs.readFileSync(process.env.FAKE_LOG, "utf8").split("turn/start").length === 2;
+      send({ id: m.id, result: { turn: { id: first ? "late-1" : "late-2" } } });
+      if (!first) {
+        setTimeout(() => send({ method: "turn/completed", params: { threadId: "new-thread", turn: { id: "late-1", status: "interrupted" } } }), 5);
+        setTimeout(() => send({ method: "item/agentMessage/delta", params: { threadId: "new-thread", itemId: "p2", delta: "second answer" } }), 30);
+        setTimeout(() => send({ method: "turn/completed", params: { threadId: "new-thread", turn: { id: "late-2", status: "completed" } } }), 40);
+      }
+      break;
+    }
+    if (mode !== "hold" && mode !== "child") setTimeout(() => send({ method: "turn/completed", params: { turn: { status: "completed" } } }), 10);
     break;
   case "turn/steer": send({ id: m.id, error: { code: -1, message: "no active turn to steer" } }); break;
   default: if (m.id !== undefined) send({ id: m.id, result: {} });
@@ -682,12 +705,74 @@ test("codex: a steer Codex turns down says so, so the runtime can send it next",
   s.close();
 });
 
+test("codex: a subagent's thread and a mid-turn compaction don't end the turn or write into it; each thread's totals count once", async () => {
+  const { CodexServerSession } = await import("../src/providers/codex-server.ts");
+  const fake = script("codex", CODEX);
+  const s = new CodexServerSession(opts({ env: { ...process.env, LINER_BIN_CODEX: fake.file, FAKE_LOG: fake.log, FAKE_MODE: "child" } }));
+  const { r, sink } = recorder();
+  const used: Partial<Usage>[] = [];
+  sink.usage = (u) => void used.push(u);
+  await s.turn("work", sink, new AbortController().signal);
+  s.close();
+  assert.equal(r.text, "parent words", "the turn lasts to its own end, and only its own words are in it");
+  // Parent 100k (nothing to count from yet: its last request), the child's 5k on its own, then the parent's 1k more.
+  assert.deepEqual(used.map((u) => u.inputTokens), [50, 50, 1000]);
+  assert.deepEqual(used.map((u) => u.contextTokens), [100000, undefined, 101000], "a subagent's context isn't this conversation's");
+});
+
+test("codex: a stopped turn's late end doesn't end the turn after it", async () => {
+  const { CodexServerSession } = await import("../src/providers/codex-server.ts");
+  const fake = script("codex", CODEX);
+  const s = new CodexServerSession(opts({ env: { ...process.env, LINER_BIN_CODEX: fake.file, FAKE_LOG: fake.log, FAKE_MODE: "late" } }));
+  const stop = new AbortController();
+  const first = s.turn("one", recorder().sink, stop.signal);
+  await until(() => fake.read().some((m) => m.method === "turn/start"), "the first turn starts");
+  await tick(20);
+  stop.abort();
+  await first;
+  const { r, sink } = recorder();
+  await s.turn("two", sink, new AbortController().signal);
+  s.close();
+  assert.equal(r.text, "second answer");
+});
+
+test("codex: a request with no process to answer it fails at once; the process before ending late leaves the next one alone", async () => {
+  const { CodexServer } = await import("../src/providers/codex-server.ts");
+  const fake = script("codex", CODEX);
+  const srv = new CodexServer({ ...process.env, LINER_BIN_CODEX: fake.file, FAKE_LOG: fake.log }, "/tmp");
+  await srv.ready();
+  srv.close();
+  await assert.rejects(srv.request("thread/start", {}), /isn't running/);
+  // Started again at once, while the first is still ending: its end fails nothing of the new one's.
+  await srv.ready();
+  await tick(100);
+  assert.ok(await srv.request("thread/start", {}));
+  srv.close();
+});
+
 const ACP = `
+if (m.id === 900 && !m.method) send({ id: global.prompt, result: { stopReason: "cancelled" } });
 switch (m.method) {
   case "initialize": send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: true } } } }); break;
-  case "session/load": send({ id: m.id, error: { code: -32002, message: "session not found" } }); break;
+  case "session/load":
+    if (mode === "loads" || mode === "hang1") send({ id: m.id, result: { models: { currentModelId: "old-model", availableModels: [] } } });
+    else send({ id: m.id, error: { code: -32002, message: "session not found" } });
+    break;
   case "session/new": send({ id: m.id, result: { sessionId: "s-new" } }); break;
-  case "session/prompt": if (mode !== "hang") send({ id: m.id, result: { stopReason: "end_turn" } }); break;
+  case "session/prompt":
+    if (mode === "ask") {
+      global.prompt = m.id;
+      send({ jsonrpc: "2.0", id: 900, method: "session/request_permission", params: { sessionId: m.params.sessionId, toolCall: { toolCallId: "c1", kind: "execute", title: "Run make", rawInput: { command: "make" } }, options: [{ optionId: "yes", kind: "allow_once" }, { optionId: "no", kind: "reject_once" }] } });
+      break;
+    }
+    if (mode === "tree" && !global.kid) {
+      global.kid = require("child_process").spawn("sleep", ["60"], { stdio: "ignore" });
+      fs.writeFileSync(process.env.FAKE_LOG + ".pid", String(global.kid.pid));
+    }
+    // hang1: only the first prompt, in the first process, hangs.
+    if (mode === "hang" || (mode === "hang1" && fs.readFileSync(process.env.FAKE_LOG, "utf8").split("session/prompt").length === 2)) break;
+    send({ id: m.id, result: { stopReason: "end_turn" } });
+    break;
   default: if (m.id !== undefined) send({ id: m.id, result: {} });
 }`;
 
@@ -728,4 +813,141 @@ test("acp: Stop ends the turn when the agent doesn't finish cancelling, and its 
   } finally {
     setCancelMs(15_000);
   }
+});
+
+test("acp: a session loaded to change its model gets that model", async () => {
+  const { acpProvider } = await import("../src/providers/acp.ts");
+  const fake = script("agent", ACP);
+  const p = acpProvider("acp.fake" as ProviderInfo["id"], { label: "Fake", cmd: [fake.file], login: "" });
+  const s = p.open(opts({ resume: "s-old", model: "new-model", env: { ...process.env, FAKE_LOG: fake.log, FAKE_MODE: "loads" } }));
+  await s.turn("hi", recorder().sink, new AbortController().signal);
+  s.close();
+  const sent = fake.read();
+  assert.ok(!sent.some((m) => m.method === "session/new"), "the session itself goes on");
+  assert.deepEqual(sent.find((m) => m.method === "session/set_model")?.params, { sessionId: "s-old", modelId: "new-model" });
+});
+
+test("acp: the process Stop gave up on ending late doesn't fail the next turn's start", async () => {
+  const { acpProvider, setCancelMs } = await import("../src/providers/acp.ts");
+  const fake = script("agent", ACP);
+  setCancelMs(50);
+  try {
+    const p = acpProvider("acp.fake" as ProviderInfo["id"], { label: "Fake", cmd: [fake.file], login: "" });
+    const s = p.open(opts({ env: { ...process.env, FAKE_LOG: fake.log, FAKE_MODE: "hang1" } }));
+    const stop = new AbortController();
+    const first = s.turn("work", recorder().sink, stop.signal);
+    await until(() => fake.read().some((m) => m.method === "session/prompt"), "the prompt went");
+    stop.abort();
+    await first;
+    // At once, as a queued message would: a new process starts while the old one is still going.
+    const { r, sink } = recorder();
+    await s.turn("next", sink, new AbortController().signal);
+    s.close();
+    assert.deepEqual(r.errors, []);
+    assert.equal(fake.read().filter((m) => m.method === "session/prompt").length, 2);
+  } finally {
+    setCancelMs(15_000);
+  }
+});
+
+test("claude: the context window is the main model's, not a subagent's; a resumed query's first turn keeps its cost when it counted from nothing", async () => {
+  const { made, restore } = standIn();
+  const mu = (input: number, output: number, cost: number, window: number) => ({ inputTokens: input, outputTokens: output, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, webSearchRequests: 0, costUSD: cost, contextWindow: window, maxOutputTokens: 1 });
+  try {
+    const s = claude.open(opts({ resume: "old" }));
+    const used: Partial<Usage>[] = [];
+    const { sink } = recorder();
+    sink.usage = (u) => void used.push(u);
+    const turn = s.turn("hi", sink, new AbortController().signal);
+    await until(() => made[0]?.sent.length === 1, "your message went");
+    const q = made[0];
+    q.emit({ type: "assistant", parent_tool_use_id: null, uuid: "a", session_id: "s", message: { id: "m1", model: "claude-sonnet-5-5", content: [{ type: "text", text: "hi" }] } });
+    // Sonnet answers on a 200k window; an Opus subagent with 1M ran too. This process counted from nothing.
+    q.emit(result({ user_message_uuids: [q.sent[0].uuid], usage: { input_tokens: 500, output_tokens: 40 }, total_cost_usd: 9.99, modelUsage: { "claude-sonnet-5-5": mu(500, 40, 0.02, 200000), "claude-opus-5-5": mu(3000, 100, 0.1, 1000000) } }));
+    await turn;
+    // A resumed query that carried totals over from before: no match, so no cost is guessed.
+    const t2 = s.turn("again", sink, new AbortController().signal);
+    await until(() => q.sent.length === 2, "the second message went");
+    q.emit(result({ user_message_uuids: [q.sent[1].uuid], usage: { input_tokens: 10, output_tokens: 1 }, total_cost_usd: 10.04, modelUsage: { "claude-sonnet-5-5": mu(510, 41, 0.03, 200000), "claude-opus-5-5": mu(3000, 100, 0.1, 1000000) } }));
+    await t2;
+    s.close();
+    assert.equal(used.at(-2)?.contextWindow, 200000);
+    assert.equal(used.at(-2)?.costUsd?.toFixed(2), "0.12", "the models' own costs, not a total carried over");
+    assert.equal(used.at(-1)?.costUsd?.toFixed(2), "0.05", "after that, what the total grew by");
+  } finally {
+    restore();
+  }
+});
+
+test("codex exec: a thread it can't resume is a failed resume, the next turn starts a new one; cached input counts once; images go with -i", async () => {
+  const { codex } = await import("../src/providers/codex.ts");
+  const dir = mkdtempSync(join(tmpdir(), "lc-codex-exec-"));
+  const log = join(dir, "args.jsonl");
+  writeFileSync(
+    join(dir, "codex"),
+    `#!/usr/bin/env node
+const fs = require("fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
+if (args.includes("resume")) { process.stderr.write("Error: thread/resume failed: no rollout found for thread t-old\\n"); process.exit(1); }
+const out = (e) => process.stdout.write(JSON.stringify(e) + "\\n");
+out({ type: "thread.started", thread_id: "t-new" });
+out({ type: "item.completed", item: { id: "i1", type: "agent_message", text: "Done." } });
+out({ type: "turn.completed", usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 5 } });
+`,
+    { mode: 0o755 },
+  );
+  const png = join(dir, "shot.png");
+  writeFileSync(png, Buffer.from("89504e470d0a1a0a", "hex"));
+  const s = codex.open(opts({ resume: "t-old", env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin` } }));
+  const { r, sink } = recorder();
+  const used: Partial<Usage>[] = [];
+  sink.usage = (u) => void used.push(u);
+  await assert.rejects(s.turn("hi", sink, new AbortController().signal), (e) => e instanceof ResumeFailed);
+  await s.turn("hi again", sink, new AbortController().signal, [png]);
+  s.close();
+  const calls = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as string[]);
+  assert.ok(!calls[1].includes("resume"), "a new thread, not the lost one again");
+  assert.deepEqual(calls[1].slice(calls[1].indexOf("-i"), calls[1].indexOf("-i") + 2), ["-i", png]);
+  assert.equal(r.text, "Done.");
+  assert.deepEqual(used.at(-1), { inputTokens: 60, cacheReadTokens: 40, outputTokens: 5 });
+});
+
+test("acp: Stop while it asks answers cancelled; a loaded session isn't sent its instructions again; closing stops what the agent started", async () => {
+  const { acpProvider } = await import("../src/providers/acp.ts");
+  const fake = script("agent", ACP);
+  const p = acpProvider("acp.fake" as ProviderInfo["id"], { label: "Fake", cmd: [fake.file], login: "" });
+
+  const asking = p.open(opts({ access: "ask", env: { ...process.env, FAKE_LOG: fake.log, FAKE_MODE: "ask" } }));
+  const { sink } = recorder();
+  const stop = new AbortController();
+  sink.approve = (_req, signal) => new Promise((_, no) => signal.addEventListener("abort", () => no(new Error("stopped"))));
+  const turn = asking.turn("make it", sink, stop.signal);
+  await until(() => fake.read().some((m) => m.method === "session/prompt"), "it asked");
+  await tick(30);
+  stop.abort();
+  await turn;
+  asking.close();
+  const answer = fake.read().find((m) => m.id === 900 && !m.method) as { result?: { outcome?: { outcome?: string } } } | undefined;
+  assert.equal(answer?.result?.outcome?.outcome, "cancelled");
+
+  writeFileSync(fake.log, "");
+  const loaded = p.open(opts({ resume: "s-old", soul: "YOUR INSTRUCTIONS", env: { ...process.env, FAKE_LOG: fake.log, FAKE_MODE: "loads" } }));
+  await loaded.turn("hi", recorder().sink, new AbortController().signal);
+  loaded.close();
+  const prompt = fake.read().find((m) => m.method === "session/prompt")?.params?.prompt as { text?: string }[];
+  assert.equal(prompt[0].text, "hi");
+
+  const tree = p.open(opts({ env: { ...process.env, FAKE_LOG: fake.log, FAKE_MODE: "tree" } }));
+  await tree.turn("go", recorder().sink, new AbortController().signal);
+  const kid = Number(readFileSync(`${fake.log}.pid`, "utf8"));
+  tree.close();
+  await until(() => {
+    try {
+      process.kill(kid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  }, "the agent's own process is gone too");
 });

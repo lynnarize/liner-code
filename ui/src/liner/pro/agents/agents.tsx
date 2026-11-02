@@ -117,32 +117,58 @@ export const AddGlyph = () => (
   </span>
 );
 
+// How fast the follow closes the gap: 63% of it each TAU ms, which is 16% a frame at 60Hz.
+const STICK_TAU = 96;
+// How long after a press inside the scroller what grows is taken as its doing.
+const STICK_PRESS_MS = 600;
+
 /**
- * Keeps a scroller pinned to the bottom while content grows, on a soft lerp.
+ * Keeps a scroller pinned to the bottom while content grows, on a soft ease.
  * Scrolling up releases it; `jump` brings it back.
+ *
+ * It eases by time, not by frame, so it comes up as fast at 120Hz as at 60Hz. When the end
+ * moves for layout's sake it lands in the same frame instead: the text re-wrapping because the
+ * column changed width (a sidebar or a panel on its way), the box itself resizing, or what
+ * grows just after a press inside it (a fold opened). Eased there, it chased an end that moved
+ * every frame and the last lines shook, or a fold opened down out of sight before the view
+ * caught up.
  */
 export function useStickToBottom() {
   const ref = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
   const raf = useRef(0);
+  const pressed = useRef(-Infinity);
   const [away, setAway] = useState(false);
+
+  const land = useCallback(() => {
+    const el = ref.current;
+    if (!el || !stuck.current) return;
+    cancelAnimationFrame(raf.current);
+    raf.current = 0;
+    el.scrollTop = el.scrollHeight - el.clientHeight;
+  }, []);
 
   const follow = useCallback(() => {
     const el = ref.current;
     if (!el || !stuck.current) return;
-    cancelAnimationFrame(raf.current);
-    if (prefersReducedMotion()) {
-      el.scrollTop = el.scrollHeight;
-      return;
-    }
-    const step = () => {
+    if (prefersReducedMotion()) return land();
+    // Already on its way: it reads the end again every frame.
+    if (raf.current) return;
+    let last = performance.now();
+    const step = (now: number) => {
+      raf.current = 0;
+      if (!stuck.current) return;
       const target = el.scrollHeight - el.clientHeight;
       const d = target - el.scrollTop;
-      if (!stuck.current) return;
-      if (Math.abs(d) < 1) return;
+      if (Math.abs(d) < 1) {
+        el.scrollTop = target;
+        return;
+      }
+      const dt = Math.min(64, Math.max(0, now - last));
+      last = now;
       const from = el.scrollTop;
-      el.scrollTop += d * 0.16;
+      el.scrollTop = from + d * (1 - Math.exp(-dt / STICK_TAU));
       // Content a fraction of a pixel taller than the box, or a step under one device pixel,
       // leaves scrollTop where it was. Land and stop, or this asks for a layout every frame forever.
       if (el.scrollTop === from) {
@@ -152,18 +178,34 @@ export function useStickToBottom() {
       raf.current = requestAnimationFrame(step);
     };
     raf.current = requestAnimationFrame(step);
-  }, []);
+  }, [land]);
 
   useLayoutEffect(() => {
+    const el = ref.current;
     const c = contentRef.current;
-    if (!c) return;
-    const ro = new ResizeObserver(follow);
+    if (!el || !c) return;
+    const sizes = new Map<Element, { w: number; h: number }>();
+    const ro = new ResizeObserver((entries) => {
+      let reflow = false;
+      for (const e of entries) {
+        const { width: w, height: h } = e.contentRect;
+        const was = sizes.get(e.target);
+        sizes.set(e.target, { w, h });
+        if (!was) continue;
+        // The box resized, or the text took a new width: the end moved for layout's sake.
+        if (e.target === el ? w !== was.w || h !== was.h : w !== was.w) reflow = true;
+      }
+      if (reflow || performance.now() - pressed.current < STICK_PRESS_MS) land();
+      else follow();
+    });
     ro.observe(c);
+    ro.observe(el);
     return () => {
       ro.disconnect();
       cancelAnimationFrame(raf.current);
+      raf.current = 0;
     };
-  }, [follow]);
+  }, [follow, land]);
 
   useEffect(() => {
     const el = ref.current;
@@ -172,7 +214,14 @@ export function useStickToBottom() {
       if (e.deltaY < 0) {
         stuck.current = false;
         cancelAnimationFrame(raf.current);
+        raf.current = 0;
       }
+    };
+    const onTouch = () => {
+      stuck.current = false;
+    };
+    const onPress = () => {
+      pressed.current = performance.now();
     };
     const onScroll = () => {
       const d = el.scrollHeight - el.clientHeight - el.scrollTop;
@@ -180,21 +229,25 @@ export function useStickToBottom() {
       setAway(d > 80 && !stuck.current);
     };
     el.addEventListener("wheel", onWheel, { passive: true });
-    el.addEventListener("touchmove", () => (stuck.current = false), { passive: true });
+    el.addEventListener("touchmove", onTouch, { passive: true });
     el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("click", onPress, { capture: true, passive: true });
+    el.addEventListener("keydown", onPress, { capture: true, passive: true });
     return () => {
       el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouch);
       el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("click", onPress, { capture: true });
+      el.removeEventListener("keydown", onPress, { capture: true });
     };
   }, []);
 
+  // Back to the end on the follow's own ease, so the two never pull against each other.
   const jump = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
     stuck.current = true;
     setAway(false);
-    el.scrollTo({ top: el.scrollHeight, behavior: prefersReducedMotion() ? "auto" : "smooth" });
-  }, []);
+    follow();
+  }, [follow]);
 
   const stick = useCallback(() => {
     stuck.current = true;

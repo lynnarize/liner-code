@@ -22,6 +22,7 @@ import type { RunSettings } from "./Composer";
 import { getState, loadItems, onStream, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { accessOf, agentOf, ago, clock, compact, modelLabel, money, plural, since } from "./model";
+import * as os from "./os";
 import "./desk.css";
 
 type Props = {
@@ -248,13 +249,10 @@ export function Desk({ project, settings, worktree, onOpen }: Props) {
       .catch((e) => toast.error(msg(e)));
     if (open?.id === task.id) setOpen(null);
   };
-  // Handing a task over: a lead brings its coder along; anyone else works on their own.
+  // Handing a task over: whoever you give it to works on it on their own (Solo).
   const give = async (task: PlanTask, a: Agent) => {
     try {
-      const profile = agents.find((x) => x.id === a.id);
-      const coder = agents.find((x) => x.specialty === "coder" && x.id !== a.id);
-      if (profile && /lead/i.test(profile.role) && coder) await rpc("thread.update", { id: task.id, lead: a.id, agent: coder.id });
-      else await rpc("thread.update", { id: task.id, agent: a.id, lead: null });
+      await rpc("thread.update", { id: task.id, agent: a.id, lead: null });
       await rpc("thread.send", { id: task.id, text: task.title });
     } catch (e) {
       toast.error(msg(e));
@@ -263,7 +261,7 @@ export function Desk({ project, settings, worktree, onOpen }: Props) {
   const add = async (title: string) => {
     if (!project) return;
     try {
-      await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, model: settings.model, effort: settings.effort, access: settings.access, title, worktree: worktree && project.git });
+      await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, route: settings.route, dual: settings.dual, after: settings.after, model: settings.model, effort: settings.effort, access: settings.access, title, worktree: worktree && project.git });
     } catch (e) {
       toast.error(msg(e));
     }
@@ -498,7 +496,7 @@ function mergeCase(c: Ctx): Case {
   if (!remote) checks.push({ id: "checks", claim: "The checks pass", proof: "", mark: "pending" });
   else if (!pr) {
     const gh = remote.status?.gh;
-    checks.push({ id: "checks", claim: "The checks pass", proof: "", mark: "failed", fail: remote.statusError ?? remote.status?.detail ?? (gh === "missing" ? "GitHub's gh isn't installed on this Mac" : gh === "signed-out" ? "gh is signed out of GitHub" : "GitHub has no pull request for this branch") });
+    checks.push({ id: "checks", claim: "The checks pass", proof: "", mark: "failed", fail: remote.statusError ?? remote.status?.detail ?? (gh === "missing" ? `GitHub's gh isn't installed on ${os.here}` : gh === "signed-out" ? "gh is signed out of GitHub" : "GitHub has no pull request for this branch") });
   } else {
     const list = pr.checks.filter((x) => x.state !== "skipped");
     const bad = list.filter((x) => x.state === "fail");

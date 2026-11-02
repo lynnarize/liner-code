@@ -226,13 +226,17 @@
   color: var(--l-ink-3);
 }
 .l-feed-proof[data-tone="live"] {
-  background: linear-gradient(100deg, var(--l-ink-3) 35%, var(--l-ink) 50%, var(--l-ink-3) 65%) 0 0 / 250% 100%;
+  /* The foundation's .l-shimmer light (see l-shimmer-light there). */
+  --l-shimmer-band: 4.5rem;
+  background:
+    linear-gradient(to right, transparent, var(--l-ink), transparent) calc(var(--l-shimmer-band) * -1) 0 / var(--l-shimmer-band) 100% no-repeat,
+    linear-gradient(var(--l-ink-3), var(--l-ink-3));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   animation:
     l-swap-in 320ms var(--l-ease-out) backwards,
-    l-shimmer-text 1.9s linear infinite;
+    l-shimmer-light 2.2s linear infinite;
 }
 /* One pip per thing counted: ink once it matches, amber while it is missing. */
 .l-feed-pips {

@@ -4,7 +4,7 @@
   many times a second, so listeners hear about changes once per frame.
 */
 import { useSyncExternalStore } from "react";
-import type { AgentProfile, EngineEvent, Item, ProviderInfo, Project, Routine, RoutineRun, RpcMethod, RpcParams, RpcResult, Settings, SidebarGroup, Thread, Updates } from "@contracts";
+import type { AgentProfile, EngineEvent, Item, ProviderInfo, Project, Routine, RoutineRun, RpcMethod, RpcParams, RpcResult, Settings, SidebarGroup, Thread, ToolLimits, Updates } from "@contracts";
 
 declare global {
   interface Window {
@@ -32,6 +32,8 @@ export type EngineState = {
   runs: RoutineRun[];
   /** Liner Code's release and the agent tools' versions, and how their updates are going. */
   updates: Updates;
+  /** Each tool's plan windows (5-hour, weekly), as the engine last asked them. */
+  limits: ToolLimits[];
   /** Timelines of the threads that have been opened. */
   items: Record<string, Item[]>;
 };
@@ -49,12 +51,13 @@ let state: EngineState = {
   sides: [],
   agents: [],
   providers: [],
-  settings: { onboarded: true, workStyle: "model", claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "ask", worktrees: false, branchPrefix: "liner/", badge: true },
+  settings: { onboarded: true, mode: "solo", claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "ask", worktrees: false, branchPrefix: "liner/", badge: true },
   keys: [],
   groups: [],
   routines: [],
   runs: [],
   updates: { checking: false, app: { current: "", state: "idle", can: "source" }, tools: [], dismissed: {} },
+  limits: [],
   items: {},
 };
 const listeners = new Set<() => void>();
@@ -136,15 +139,33 @@ export const onStream = (fn: (e: Stream) => void) => {
   return () => void streamListeners.delete(fn);
 };
 
-function apply(e: EngineEvent) {
+/**
+  Timelines being fetched, and what came for them meanwhile. Each event is numbered (`seq`); once the
+  timeline is in, only those after the moment it was read are applied, so none is lost or applied twice
+  (T3 Code: client-runtime state/threads.ts, applyEventsLocked against snapshotSequence).
+*/
+type Numbered = EngineEvent & { seq?: number };
+const loading = new Map<string, { events: Numbered[]; done: Promise<void>; mark: object }>();
+/** Every timeline asked for, so one whose fetch failed is fetched again on reconnect. */
+const wanted = new Set<string>();
+
+function apply(e: Numbered) {
   if (e.type !== "delta") takeDeltas();
+  if ((e.type === "item" || e.type === "delta" || e.type === "timeline") && loading.has(e.threadId)) {
+    loading.get(e.threadId)!.events.push(e);
+    return;
+  }
   switch (e.type) {
     case "hello": {
       const s = e.snapshot;
-      // A reconnect starts from the snapshot; open timelines are fetched again.
-      const open = Object.keys(state.items);
-      set({ connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), items: {} });
-      for (const id of open) void loadItems(id);
+      // A reconnect starts from the snapshot; open timelines are fetched again, and show as they were meanwhile.
+      // A session that's gone takes its timeline with it, rather than being asked for again on every reconnect.
+      const there = new Set(s.threads.map((t) => t.id));
+      const open = [...new Set([...Object.keys(state.items), ...wanted])].filter((id) => there.has(id));
+      for (const id of wanted) if (!there.has(id)) wanted.delete(id);
+      const kept = Object.fromEntries(Object.entries(state.items).filter(([id]) => there.has(id)));
+      set({ items: kept, connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), limits: s.limits ?? [] });
+      for (const id of open) void loadItems(id, true).catch(() => {});
       return;
     }
     case "project":
@@ -198,6 +219,8 @@ function apply(e: EngineEvent) {
     }
     case "updates":
       return set({ updates: e.updates });
+    case "limits":
+      return set({ limits: e.tools });
     case "term":
     case "term.exit":
     case "devlog":
@@ -209,12 +232,25 @@ function apply(e: EngineEvent) {
   }
 }
 
-/** Reads the event stream, reconnecting with a short backoff when the engine restarts. */
+/** How long the event stream may say nothing, heartbeats included, before the engine counts as gone. */
+const SILENT_MS = 45_000;
+
+/** Reads the event stream, reconnecting with a short backoff when the engine restarts or stops answering. */
 async function connect() {
   let wait = 300;
   for (;;) {
+    // The engine writes at least a heartbeat every 15 seconds: three missed means it has stopped answering
+    // (frozen, or the connection is half open), so the stream is dropped and the app says it's reconnecting
+    // (T3 Code: client-runtime connection/supervisor.ts probes the same way).
+    const cut = new AbortController();
+    let quiet = 0;
+    const listen = () => {
+      clearTimeout(quiet);
+      quiet = window.setTimeout(() => cut.abort(), SILENT_MS);
+    };
+    listen();
     try {
-      const res = await fetch(`${base()}/events`, { headers: { "x-liner-token": token() } });
+      const res = await fetch(`${base()}/events`, { headers: { "x-liner-token": token() }, signal: cut.signal });
       if (!res.ok || !res.body) throw new Error(String(res.status));
       wait = 300;
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -222,6 +258,7 @@ async function connect() {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
+        listen();
         buf += value;
         let i: number;
         while ((i = buf.indexOf("\n")) >= 0) {
@@ -231,8 +268,10 @@ async function connect() {
         }
       }
     } catch (e) {
-      // the engine isn't up yet, or went away
+      // the engine isn't up yet, went away, or stopped answering
       if (import.meta.env.DEV) console.warn("[liner] event stream:", e);
+    } finally {
+      clearTimeout(quiet);
     }
     set({ connected: false });
     await new Promise((r) => setTimeout(r, wait));
@@ -255,12 +294,33 @@ export async function rpc<M extends RpcMethod>(method: M, params: RpcParams<M>):
   return body.result as RpcResult<M>;
 }
 
-export async function loadItems(threadId: string) {
-  if (!state.items[threadId]) set({ items: { ...state.items, [threadId]: [] } });
-  const items = await rpc("thread.items", { id: threadId });
-  // Text that streamed in before the answer goes in first; the answer then stands for it, as it did.
-  takeDeltas();
-  set({ items: { ...state.items, [threadId]: items } });
+/**
+  Fetches a thread's timeline. Until it's in, the thread has none in the state (a session shows no
+  "new session" screen meanwhile), and what comes for it waits. Asking again while it's fetched waits
+  for the same fetch, unless `again` (after a reconnect, when events may have been missed).
+*/
+export function loadItems(threadId: string, again = false): Promise<void> {
+  wanted.add(threadId);
+  const going = loading.get(threadId);
+  if (going && !again) return going.done;
+  const held: Numbered[] = going?.events ?? [];
+  const mark = {};
+  const done = (async () => {
+    try {
+      const { items, seq } = await rpc("thread.load", { id: threadId });
+      // A newer fetch (after a reconnect) stands instead.
+      if (loading.get(threadId)?.mark !== mark) return;
+      loading.delete(threadId);
+      takeDeltas();
+      set({ items: { ...state.items, [threadId]: items } });
+      for (const e of held) if ((e.seq ?? Infinity) > seq) apply(e);
+    } catch (err) {
+      if (loading.get(threadId)?.mark === mark) loading.delete(threadId);
+      throw err;
+    }
+  })();
+  loading.set(threadId, { events: held, done, mark });
+  return done;
 }
 
 /** Calls back on every change to the engine's state; returns the unsubscribe. */

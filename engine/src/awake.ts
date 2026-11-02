@@ -23,9 +23,9 @@ export class Awake {
   }
 
   check() {
-    const want = process.platform === "darwin" && this.store.settings.keepAwake !== false && this.busy();
+    const want = (process.platform === "darwin" || process.platform === "win32") && this.store.settings.keepAwake !== false && this.busy();
     if (want && !this.child) {
-      const child = spawn("/usr/bin/caffeinate", ["-i", "-w", String(process.pid)], { stdio: "ignore" });
+      const child = process.platform === "win32" ? stayAwake() : spawn("/usr/bin/caffeinate", ["-i", "-w", String(process.pid)], { stdio: "ignore" });
       const gone = () => {
         if (this.child === child) this.child = null;
       };
@@ -40,3 +40,13 @@ export class Awake {
     this.child = null;
   }
 }
+
+/**
+  Windows' caffeinate: PowerShell asks the system to stay awake (SetThreadExecutionState, which
+  lasts as long as the process does) and waits on its stdin, so it ends when it's stopped or when
+  the engine goes and the pipe closes.
+*/
+const AWAKE = `Add-Type -Name P -Namespace Liner -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);'
+[Liner.P]::SetThreadExecutionState(0x80000001) | Out-Null
+[Console]::In.ReadToEnd() | Out-Null`;
+const stayAwake = () => spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(AWAKE, "utf16le").toString("base64")], { stdio: ["pipe", "ignore", "ignore"], windowsHide: true });

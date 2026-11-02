@@ -12,6 +12,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server } from "node:http";
 import { connect } from "node:net";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { DESIGN_FRAME_STYLE } from "../../contracts/src/index.ts";
 
 const PROBE_PATH = "/__liner/probe.js";
 
@@ -32,9 +33,9 @@ function addressed(server: Server, host?: string) {
 */
 const fromItself = (req: IncomingMessage) => req.headers.origin === `http://${req.headers.host}`;
 
-/** A page with the probe as the first thing in its head. */
-const withProbe = (html: string) => {
-  const tag = `<script src="${PROBE_PATH}"></script>`;
+/** A page with the probe as the first thing in its head (and, for a design, the frame's style). */
+const withProbe = (html: string, extra = "") => {
+  const tag = `<script src="${PROBE_PATH}"></script>${extra}`;
   return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + tag) : tag + html;
 };
 
@@ -93,7 +94,7 @@ export class Proxies {
       if (!existsSync(abs) || !statSync(abs).isFile()) return void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note(`No ${inside || "index.html"} in this session's folder yet.`));
       const type = TYPES[extname(abs).toLowerCase()] ?? "application/octet-stream";
       const headers = { "content-type": type, "cache-control": "no-store" };
-      if (type.startsWith("text/html")) return void res.writeHead(200, headers).end(req.method === "HEAD" ? undefined : withProbe(readFileSync(abs, "utf8")));
+      if (type.startsWith("text/html")) return void res.writeHead(200, headers).end(req.method === "HEAD" ? undefined : withProbe(readFileSync(abs, "utf8"), design ? DESIGN_FRAME_STYLE : ""));
       res.writeHead(200, { ...headers, "content-length": statSync(abs).size });
       if (req.method === "HEAD") return void res.end();
       createReadStream(abs).pipe(res);

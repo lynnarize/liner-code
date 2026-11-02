@@ -7,7 +7,7 @@
 */
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import type { ImportableSession, Item, ToolKind } from "../../contracts/src/index.ts";
 import { uid } from "./store.ts";
 
@@ -70,7 +70,7 @@ export function importable(cwd: string, env: NodeJS.ProcessEnv, have: Set<string
   const dir = claudeDir(env, real(cwd));
   if (existsSync(dir)) {
     for (const { f, at } of newest(readdirSync(dir).filter((n) => n.endsWith(".jsonl")).map((n) => join(dir, n)))) {
-      const id = f.slice(f.lastIndexOf("/") + 1, -".jsonl".length);
+      const id = basename(f, ".jsonl");
       if (have.has(`claude:${id}`)) continue;
       let title = "";
       for (const o of head(f).map(parse)) {

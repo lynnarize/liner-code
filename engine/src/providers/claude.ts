@@ -21,9 +21,9 @@ import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Access, ContextPart, ContextSource, ContextUse, ModelInfo, PlanEntry, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
+import type { Access, ContextPart, ContextSource, ContextUse, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
 import { base64Size, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
-import { run, versionOf, which } from "../exec.ts";
+import { run, sdkPath, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
@@ -47,7 +47,17 @@ const sdkEffort = (e: string) => (e === "ultracode" ? "xhigh" : LEVELS.has(e) ? 
 
 const limitName = (t?: string) => (t === "five_hour" ? "5-hour limit" : t === "seven_day" ? "weekly limit" : t === "seven_day_opus" ? "weekly Opus limit" : t === "seven_day_sonnet" ? "weekly Sonnet limit" : t === "overage" ? "extra usage" : "usage limit");
 
-type RateInfo = { status?: string; rateLimitType?: unknown; resetsAt?: unknown; overageStatus?: string; isUsingOverage?: boolean; overageInUse?: boolean };
+type RateInfo = { status?: string; rateLimitType?: unknown; resetsAt?: unknown; utilization?: unknown; overageStatus?: string; isUsingOverage?: boolean; overageInUse?: boolean };
+/** The plan's windows by Claude Code's names for them. */
+const WINDOWS: Record<string, string> = { five_hour: "5-hour window", seven_day: "Weekly", seven_day_opus: "Weekly, Opus", seven_day_sonnet: "Weekly, Sonnet", seven_day_oauth_apps: "Weekly, apps" };
+const windowKind = (k: string) => (k === "five_hour" ? { kind: "session" as const, minutes: 300 } : { kind: "weekly" as const, minutes: 10080 });
+/** A window a turn's rate limit event reports (its utilization from 0 to 1), for the composer's limit bars (T3 Code reads them the same way). */
+function windowOf(info: RateInfo | undefined): LimitWindow | null {
+  const k = info?.rateLimitType;
+  if (typeof info?.utilization !== "number" || typeof k !== "string" || !WINDOWS[k] || k === "seven_day_oauth_apps") return null;
+  const at = typeof info.resetsAt === "number" && info.resetsAt > 0 ? (info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt) : undefined;
+  return { label: WINDOWS[k], usedPercent: Math.max(0, Math.min(100, info.utilization * 100)), resetsAt: at, ...windowKind(k) };
+}
 /**
   A rejected rate limit that ends the work: its words and when the window reopens. With extra usage
   on, a rejected window carries on through it, so that isn't the end (as T3 Code reads it).
@@ -214,7 +224,7 @@ async function probe<T>(env: NodeJS.ProcessEnv, scratch: string, ask: (q: Query)
   const idle = async function* (): AsyncGenerator<SDKUserMessage> {
     await new Promise((r) => abort.signal.addEventListener("abort", r));
   };
-  const q = query({ prompt: idle(), options: { cwd: scratch, pathToClaudeCodeExecutable: path, env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: ["user"], abortController: abort } });
+  const q = query({ prompt: idle(), options: { cwd: scratch, pathToClaudeCodeExecutable: sdkPath(path), env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: ["user"], abortController: abort } });
   try {
     return await Promise.race([ask(q), new Promise<never>((_, no) => setTimeout(() => no(new Error("Claude Code didn't answer in time.")), 30000))]);
   } finally {
@@ -447,6 +457,8 @@ class ClaudeSession implements ProviderSession {
     it resumed or forked a session: its first totals carry that transcript's earlier turns too.
   */
   private seen: { input: number; output: number; cache: number; cost: number } | null = null;
+  /** The model the main thread's answers come from: its context window is the conversation's, not a subagent's. */
+  private mainModel: string | null = null;
   /** Claude Code's slash commands and skills, as it last listed them. */
   commands: SlashCommand[] = [];
   /**
@@ -511,7 +523,7 @@ class ClaudeSession implements ProviderSession {
       systemPrompt: { type: "preset", preset: "claude_code", append: o.soul || undefined },
       env: { ...o.env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` },
       permissionPrompts: "host",
-      pathToClaudeCodeExecutable: this.path ?? undefined,
+      pathToClaudeCodeExecutable: sdkPath(this.path) ?? undefined,
       mcpServers: o.mcp ? { liner: { type: "stdio", command: o.mcp.command, args: o.mcp.args, env: o.mcp.env } } : undefined,
       canUseTool: async (name, input, { signal, toolUseID }) => {
         const sink = this.sink;
@@ -536,8 +548,8 @@ class ClaudeSession implements ProviderSession {
           const title = planTitle(plan);
           const answer = await sink.propose(title, plan, signal).catch((): { approve: boolean; note?: string; plan?: string } => ({ approve: false }));
           if (!answer.approve) return { behavior: "deny", message: answer.note ? `Change the plan: ${answer.note}` : "The user didn't approve the plan. Ask what to change." };
-          this.access = "edits";
-          void this.q?.setPermissionMode(MODE.edits).catch(() => {});
+          this.access = "auto";
+          void this.q?.setPermissionMode(MODE.auto).catch(() => {});
           // The plan as you left it: you may have edited its steps before approving.
           return { behavior: "allow", updatedInput: { ...input, plan: answer.plan ?? input.plan } };
         }
@@ -679,8 +691,10 @@ class ClaudeSession implements ProviderSession {
       sink.text(m.content, m.uuid);
       return;
     }
-    // The plan ran out: Claude Code says so with a rejected rate limit, and when it resets.
+    // How much of a plan window is used, and whether it ran out: Claude Code says so with a rejected rate limit, and when it resets.
     if (m.type === "rate_limit_event") {
+      const w = windowOf(m.rate_limit_info);
+      if (w) sink.window?.(w);
       const out = blocked(m.rate_limit_info);
       if (out) {
         this.limited = true;
@@ -744,6 +758,7 @@ class ClaudeSession implements ProviderSession {
         }
       }
       if (m.error === "authentication_failed") this.authFailure = signedOut(this.o.env.CLAUDE_CONFIG_DIR);
+      if (m.message.model && m.message.model !== "<synthetic>") this.mainModel = m.message.model;
       // Without a stream (or a stream that started with no counts), the message's own usage says it. Claude Code's
       // "<synthetic>" notices report none.
       const u = m.message.usage;
@@ -792,7 +807,10 @@ class ClaudeSession implements ProviderSession {
     }
     if (m.type === "result") {
       const models = Object.values(m.modelUsage ?? {});
-      const window = models.reduce((w, u) => Math.max(w, u.contextWindow ?? 0), 0);
+      // The main thread's model says how big the conversation's window is; a subagent on a bigger one doesn't
+      // (Synara: claudeTokenUsage.ts takes the largest of all, which a subagent can be).
+      const main = this.mainModel ? m.modelUsage?.[this.mainModel] : undefined;
+      const window = main?.contextWindow || models.reduce((w, u) => Math.max(w, u.contextWindow ?? 0), 0);
       // The query's totals (subagents included) less what its last result said is this turn's. A resumed
       // query's first totals also hold the transcript's earlier turns, and a /clear starts them over: then
       // the main thread's own use this turn is what there is to go on, without a cost.
@@ -805,9 +823,20 @@ class ClaudeSession implements ProviderSession {
       const base = this.seen;
       this.seen = now;
       const grew = base && now.input >= base.input && now.output >= base.output && now.cache >= base.cache && now.cost >= base.cost;
+      // The first result of a resumed query: when the main model's totals are exactly this turn's own use, the
+      // process counted from nothing (Synara: claudeResultUsage.ts, "a new/resumed process starts at zero"), and
+      // the models' own costs are this turn's. A total Claude Code carried over from before would not match.
+      const fresh =
+        !base &&
+        main !== undefined &&
+        main.outputTokens === m.usage.output_tokens &&
+        main.inputTokens + main.cacheCreationInputTokens === m.usage.input_tokens + (m.usage.cache_creation_input_tokens ?? 0) &&
+        main.cacheReadInputTokens === (m.usage.cache_read_input_tokens ?? 0);
       sink.usage({
         ...(grew
           ? { inputTokens: now.input - base.input, outputTokens: now.output - base.output, cacheReadTokens: now.cache - base.cache, costUsd: now.cost - base.cost }
+          : fresh
+          ? { inputTokens: now.input, outputTokens: now.output, cacheReadTokens: now.cache, costUsd: models.reduce((c, u) => c + (u.costUSD ?? 0), 0) }
           : { inputTokens: m.usage.input_tokens + (m.usage.cache_creation_input_tokens ?? 0), outputTokens: m.usage.output_tokens, cacheReadTokens: m.usage.cache_read_input_tokens ?? 0 }),
         contextTokens: this.ctx ? this.ctx.input + this.ctx.output : undefined,
         contextWindow: window || undefined,
@@ -1121,7 +1150,7 @@ export const claude: Provider = {
   async detect(env): Promise<ProviderInfo> {
     const path = which("claude", env);
     const base = { id: "claude" as const, label: "Claude Code", adapter: true, login: "claude auth login", models: FALLBACK, modelsFrom: "builtin" as const, supports: { approvals: true, resume: true, effort: true, plan: true } };
-    if (!path) return { ...base, available: false, detail: "Claude Code isn't installed.", install: "npm install -g @anthropic-ai/claude-code, then claude auth login" };
+    if (!path) return { ...base, available: false, detail: "Claude Code isn't installed.", install: "npm install -g @anthropic-ai/claude-code && claude auth login" };
     const [version, status] = await Promise.all([versionOf(path, env), run(path, ["auth", "status"], { env, timeout: 15000 })]);
     // Claude Code's own answer; Liner Code never sees the sign-in itself. An older claude has no `auth status`.
     let signedIn: boolean | undefined;
@@ -1140,7 +1169,7 @@ export const claude: Provider = {
     const idle = async function* (): AsyncGenerator<SDKUserMessage> {
       await new Promise((r) => abort.signal.addEventListener("abort", r));
     };
-    const q = query({ prompt: idle(), options: { cwd, pathToClaudeCodeExecutable: path, env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: ["user", "project", "local"], abortController: abort } });
+    const q = query({ prompt: idle(), options: { cwd, pathToClaudeCodeExecutable: sdkPath(path), env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: ["user", "project", "local"], abortController: abort } });
     try {
       const list = await Promise.race([q.supportedCommands(), new Promise<never>((_, no) => setTimeout(() => no(new Error("Claude Code didn't list its commands in time.")), 30000))]);
       const commands = list.filter((c) => !names.has(c.name)).map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint || undefined, source: "tool" as const }));
@@ -1155,11 +1184,16 @@ export const claude: Provider = {
     type Win = { utilization: number | null; resets_at: string | null } | null | undefined;
     const u = await probe(env, scratch, (q) => (q as unknown as { usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: (o: { skipBehaviors: boolean }) => Promise<{ subscription_type: string | null; rate_limits_available: boolean; rate_limits: Record<string, Win> | null }> }).usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?.({ skipBehaviors: true }) ?? Promise.resolve(null));
     if (!u) return null;
-    if (!u.rate_limits_available || !u.rate_limits) return { plan: u.subscription_type ?? undefined, windows: [], detail: "No plan limits: this sign-in bills by the token." };
-    const names: Record<string, string> = { five_hour: "5-hour window", seven_day: "Weekly", seven_day_opus: "Weekly, Opus", seven_day_sonnet: "Weekly, Sonnet", seven_day_oauth_apps: "Weekly, apps" };
+    if (!u.rate_limits_available) return { plan: u.subscription_type ?? undefined, windows: [], detail: "No plan limits: this sign-in bills by the token." };
+    // On a plan, Claude Code may not have fetched them yet: each turn's rate limit events fill them in.
+    if (!u.rate_limits) return { plan: u.subscription_type ?? undefined, windows: [], detail: "Claude Code didn't say yet. They show after a turn on it." };
     // The call also returns keys that aren't windows (spend, breakdowns, codenamed experiments): only the
     // five-hour and weekly windows with a number are a plan's limits.
-    const windows = Object.entries(u.rate_limits).flatMap(([k, w]) => (w && typeof w.utilization === "number" && /^(five_hour|seven_day)/.test(k) ? [{ label: names[k] ?? k.replace(/_/g, " "), usedPercent: w.utilization, resetsAt: w.resets_at ? Date.parse(w.resets_at) : undefined }] : []));
+    const windows = Object.entries(u.rate_limits).flatMap(([k, w]) =>
+      w && typeof w.utilization === "number" && /^(five_hour|seven_day)/.test(k)
+        ? [{ label: WINDOWS[k] ?? k.replace(/_/g, " "), usedPercent: w.utilization, resetsAt: w.resets_at ? Date.parse(w.resets_at) : undefined, ...windowKind(k) }]
+        : [],
+    );
     return { plan: u.subscription_type ?? undefined, windows };
   },
   open: (o) => new ClaudeSession(o),

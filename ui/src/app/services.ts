@@ -7,6 +7,7 @@
   Addresses as Kun's provider catalog (github.com/KunAgent/Kun) and each service's docs give them.
 */
 import type { EndpointProtocol } from "@contracts";
+import * as os from "./os";
 
 export type Service = { id: string; label: string; protocol: EndpointProtocol; url: string; keys?: string; local?: boolean };
 
@@ -42,4 +43,4 @@ export const SERVICES: Service[] = [
 ];
 
 /** Where each kind sits in the picker. */
-export const groupOf = (s: Service) => (s.local ? "On this Mac" : s.protocol === "anthropic" ? "Anthropic-compatible · through Claude Code" : s.protocol === "responses" ? "OpenAI Responses · through Codex" : "OpenAI-compatible · through OpenCode");
+export const groupOf = (s: Service) => (s.local ? `On ${os.here}` : s.protocol === "anthropic" ? "Anthropic-compatible · through Claude Code" : s.protocol === "responses" ? "OpenAI Responses · through Codex" : "OpenAI-compatible · through OpenCode");

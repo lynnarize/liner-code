@@ -1,25 +1,26 @@
 /*
-  The engine's pure parts: what the Reviewer's answer means, who reviews whom, how a Claude
-  agent's team is set up, when a routine fires next and what its prompt says, the Browser
+  The engine's pure parts: what the Reviewer's answer means, who checks whom, who fills the parts
+  of each pairing, how a Claude writer's helpers are set up, how settings from before modes and
+  sessions of a deleted agent carry on, when a routine fires next and what its prompt says, the Browser
   surface's proxy, and the secrets the engine keeps from what it starts. Run with `npm test -w engine`.
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
-import type { AgentProfile, ProviderInfo } from "../../contracts/src/index.ts";
-import { setupsOf, smallChange } from "../../contracts/src/index.ts";
-import { claudeTeam, parseFindings, reviewerFor, subagentName } from "../src/review.ts";
+import type { Access, AgentProfile, ProviderInfo, Thread } from "../../contracts/src/index.ts";
+import { castOf, checkerOf, emptyUsage, frontiersOf, makerOf, smallChange } from "../../contracts/src/index.ts";
+import { claudeTeam, parseFindings, quickOf, subagentName } from "../src/review.ts";
 import { contextSources } from "../src/providers/claude.ts";
 import { describeTrigger, fill, nextRun, sameSecret } from "../src/routines.ts";
 import { Proxies } from "../src/proxy.ts";
 import { compareWays, githubName } from "../src/api.ts";
 import { clean, isPrAsk } from "../src/runtime.ts";
 import { testCommand, testSummary } from "../src/prflow.ts";
-import { Store } from "../src/store.ts";
+import { defaultSettings, fourLevels, fromWorkStyle, Store } from "../src/store.ts";
 import { run, secretsFrom, takeSecrets } from "../src/exec.ts";
 import { sessionMarkdown } from "../src/export.ts";
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -37,24 +38,116 @@ test("findings: notes alone pass; garbage gives nothing", () => {
   assert.equal(parseFindings(`<findings>{"verdict":"pass","findings":[{"file":"a.ts","note":"a nit"}]}</findings>`)?.verdict, "pass");
   assert.equal(parseFindings("no tags here"), null);
   assert.equal(parseFindings("<findings>{not json</findings>"), null);
+  // The format echoed before the real block, a code fence round the JSON, a verdict in capitals, prose with a brace first.
+  const echoed = parseFindings(`I'll answer as <findings>{"verdict":"pass"|"fail"}</findings> asks.\n<findings>\n\`\`\`json\n{"verdict":"FAIL","summary":"x","findings":[{"file":"a.ts","severity":"Blocking","note":"breaks"}]}\n\`\`\`\n</findings>`);
+  assert.deepEqual([echoed?.verdict, echoed?.findings[0].severity], ["fail", "blocking"]);
+  assert.equal(parseFindings(`It uses {braces} in prose. {"verdict":"FAIL","summary":"no","findings":[]}`)?.verdict, "fail");
 });
 
-test("reviewer: another family reviews Claude, Opus reviews the others, nobody when asked", () => {
-  const all = [provider("claude", ["claude-opus-5-5"]), provider("codex", ["gpt-5.6-sol"])];
-  assert.equal(reviewerFor(agent({}), all), "codex:gpt-5.6-sol");
-  assert.equal(reviewerFor(agent({ model: "codex:gpt-5.6-sol" }), all), "claude:claude-opus-5-5");
-  assert.equal(reviewerFor(agent({ subagents: { reviewer: null } }), all), null);
-  assert.equal(reviewerFor(agent({ specialty: "writer" }), all), null);
-  assert.equal(reviewerFor(agent({ subagents: { reviewer: "claude:claude-haiku-5-5" } }), all), "claude:claude-haiku-5-5");
+test("makers: by the model's name first, so a model keeps its maker in any tool", () => {
+  assert.equal(makerOf("claude:claude-opus-5-5"), "anthropic");
+  assert.equal(makerOf("hermes:nous:openai/gpt-6-astra"), "openai");
+  assert.equal(makerOf("hermes:nous:anthropic/claude-opus-5.5"), "anthropic");
+  assert.equal(makerOf("claude.api-deepseek:deepseek-v4-pro"), "deepseek", "DeepSeek through Claude Code's endpoint is DeepSeek's");
+  assert.equal(makerOf("opencode:opencode/glm-5.3-flash-free"), "zhipu");
+  assert.equal(makerOf("opencode-go:kimi-k3"), "moonshot");
+  assert.equal(makerOf("upstage:solar-pro4"), "other", "Solar isn't GPT Sol");
+  assert.equal(makerOf("codex:default"), "openai");
 });
 
-test("claude team: helpers by default, Sonnet with an Opus planner when escalating, none alone", () => {
+test("permissions: four levels, Auto by default; the old default and the levels that went move once", () => {
+  assert.equal(defaultSettings.defaultAccess, "auto");
+  const t = (id: string, access: Access, extra: Partial<Thread> = {}): Thread => ({ id, projectId: "p", title: id, agent: "forge", status: "idle", access, turns: 0, usage: emptyUsage(), createdAt: 1, updatedAt: 1, ...extra });
+  const threads = [t("a", "edits"), t("b", "read"), t("c", "full"), t("d", "review"), t("e", "ask"), t("side", "read", { sideOf: "a" }), t("run", "read", { routine: { id: "r", run: "x" } })];
+  // Asks first was the default nobody picked: Auto now. Edits on its own is Auto, Read only Manual; side chats and routine runs still only read.
+  const moved = fourLevels({ settings: { ...defaultSettings, defaultAccess: "ask", accessVersion: undefined }, threads });
+  assert.deepEqual([moved.settings.defaultAccess, moved.settings.accessVersion], ["auto", 2]);
+  assert.deepEqual(moved.threads.map((x) => x.access), ["auto", "ask", "full", "review", "ask", "read", "read"]);
+  // A default you chose that's still offered stays.
+  assert.equal(fourLevels({ settings: { ...defaultSettings, defaultAccess: "review" }, threads: [] }).settings.defaultAccess, "review");
+  // Once, on start: a home from before moves; after that, what you pick stays.
+  const home = mkdtempSync(join(tmpdir(), "lc-levels-"));
+  writeFileSync(join(home, "state.json"), JSON.stringify({ projects: [], threads, agents: [], settings: { ...defaultSettings, defaultAccess: "ask", accessVersion: undefined }, groups: [] }));
+  const store = new Store(home);
+  assert.deepEqual([store.settings.defaultAccess, store.thread("a").access], ["auto", "auto"]);
+  store.setSettings({ defaultAccess: "ask" });
+  store.flush();
+  assert.equal(new Store(home).settings.defaultAccess, "ask");
+});
+
+test("checks: another maker than the writer's reads it, from the cast", () => {
+  const cast = { everyday: "codex:gpt-6-luna", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["codex:gpt-6-sol"] };
+  assert.equal(checkerOf("codex:gpt-6-luna", cast), "claude:claude-opus-5-5");
+  assert.equal(checkerOf("claude:claude-sonnet-5-5", cast), "codex:gpt-6-sol");
+  assert.equal(checkerOf("opencode:opencode/deepseek-v4.1-flash-free", cast), "claude:claude-opus-5-5");
+  // One maker only: another model of it, never the writer itself.
+  assert.equal(checkerOf("claude:claude-opus-5-5", { everyday: "claude:claude-sonnet-5-5", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: [] }), "claude:claude-sonnet-5-5");
+  assert.equal(checkerOf("claude:claude-opus-5-5", null), null);
+});
+
+test("checks: the checker you picked reads it, even of the writer's own maker; never the writer itself", () => {
+  const claude = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5"]);
+  const hermes = provider("hermes", ["nous:openai/gpt-6-astra"]);
+  const picks = { frontier: "claude:claude-opus-5-5", cheaper: "claude:claude-sonnet-5-5", checker: "claude:claude-opus-5-5" };
+  const cast = castOf([claude, hermes], { picks });
+  // Sonnet builds, Opus checks, as Settings says; Astra in Hermes is only for when there's no pick.
+  assert.equal(checkerOf("claude:claude-sonnet-5-5", cast), "claude:claude-opus-5-5");
+  assert.equal(checkerOf("claude:claude-sonnet-5-5", castOf([claude, hermes], { picks: { ...picks, checker: undefined } })), "hermes:nous:openai/gpt-6-astra");
+  // Opus wrote it: it doesn't check itself; another maker's model does.
+  assert.equal(checkerOf("claude:claude-opus-5-5", cast), "hermes:nous:openai/gpt-6-astra");
+  // A pick whose tool went away is automatic again.
+  assert.equal(checkerOf("claude:claude-sonnet-5-5", castOf([claude, hermes], { picks: { ...picks, checker: "codex:gpt-6-sol" } })), "hermes:nous:openai/gpt-6-astra");
+});
+
+test("your models: frontier + cheaper, dual frontier with Astra wherever it runs, your picks with Chinese models", () => {
+  const claude = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+  const codex = provider("codex", ["gpt-6-luna", "gpt-5.6-terra"]);
+  const hermes = provider("hermes", ["nous:openai/gpt-6-astra-pro", "nous:openai/gpt-6-astra", "nous:openai/gpt-6-luna", "nous:anthropic/claude-opus-5.5"]);
+  const opencode = provider("opencode", ["opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free"]);
+  const all = [claude, codex, hermes, opencode];
+  // Automatic: GPT Luna in Codex does the everyday work, Opus in Claude Code the hard jobs.
+  assert.deepEqual(castOf(all), { everyday: "codex:gpt-6-luna", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["hermes:nous:openai/gpt-6-astra", "codex:gpt-6-luna"] });
+  // Dual: your frontier model (Opus) still plans; Astra, the best of another maker (here through Hermes, not its Pro), builds.
+  assert.deepEqual(frontiersOf(all), { frontier: "claude:claude-opus-5-5", second: "hermes:nous:openai/gpt-6-astra" });
+  assert.deepEqual(castOf(all, { dual: true }), { everyday: "hermes:nous:openai/gpt-6-astra", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["hermes:nous:openai/gpt-6-astra"] });
+  // Opus building instead: pick Astra as your frontier model and Opus as the second.
+  const swapped = castOf(all, { dual: true, picks: { frontier: "hermes:nous:openai/gpt-6-astra", second: "claude:claude-opus-5-5" } })!;
+  assert.deepEqual([swapped.strong, swapped.everyday], ["hermes:nous:openai/gpt-6-astra", "claude:claude-opus-5-5"]);
+  // Dual with no other maker's frontier model ready is frontier + cheaper.
+  assert.deepEqual(castOf([claude, codex], { dual: true }), castOf([claude, codex]));
+  // Your picks: DeepSeek builds, Opus takes the hard jobs; the checker follows from them.
+  const mine = castOf(all, { picks: { cheaper: "opencode:opencode/deepseek-v4.1-flash-free" } })!;
+  assert.deepEqual([mine.everyday, mine.strong, mine.judge], ["opencode:opencode/deepseek-v4.1-flash-free", "claude:claude-opus-5-5", "claude:claude-opus-5-5"]);
+  // A pick counts while its tool is ready.
+  assert.equal(castOf([claude], { picks: { cheaper: "opencode:opencode/deepseek-v4.1-flash-free" } })!.everyday, "claude:claude-sonnet-5-5");
+  // The quick step-checker stays with the reviewer's maker in a tool that runs many.
+  assert.equal(quickOf("hermes:nous:openai/gpt-6-astra", [provider("hermes", ["nous:anthropic/claude-haiku-5.5", "nous:openai/gpt-5.4-mini"])]), "hermes:nous:openai/gpt-5.4-mini");
+});
+
+test("without Claude Code or Codex: the parts fill from any maker, Chinese models too", () => {
+  // OpenCode Go only: DeepSeek Flash builds, DeepSeek V4 Pro plans, Kimi (another maker) checks; dual has Kimi build.
+  const go = [provider("opencode", ["opencode-go:deepseek-v4-pro", "opencode-go:deepseek-v4.1-flash", "opencode-go:kimi-k3", "opencode-go:glm-5.3", "opencode-go:glm-5.3-flash", "opencode-go:qwen3.8-max", "opencode-go:qwen3.8-flash"])];
+  assert.deepEqual(castOf(go), { everyday: "opencode:opencode-go:deepseek-v4.1-flash", strong: "opencode:opencode-go:deepseek-v4-pro", judge: "opencode:opencode-go:kimi-k3", critics: ["opencode:opencode-go:kimi-k3"] });
+  assert.deepEqual([castOf(go, { dual: true })!.everyday, castOf(go, { dual: true })!.strong], ["opencode:opencode-go:kimi-k3", "opencode:opencode-go:deepseek-v4-pro"]);
+  assert.deepEqual(frontiersOf(go), { frontier: "opencode:opencode-go:deepseek-v4-pro", second: "opencode:opencode-go:kimi-k3" });
+  // Gemini alone: Flash builds, Pro plans; one maker is no dual pair.
+  const gemini = [provider("acp.gemini", ["gemini-3-pro", "gemini-3-flash"])];
+  assert.deepEqual([castOf(gemini)!.everyday, castOf(gemini)!.strong], ["acp.gemini:gemini-3-flash", "acp.gemini:gemini-3-pro"]);
+  assert.equal(frontiersOf(gemini).second, undefined);
+  // Free models only: no frontier model to plan, so Plan is Solo, but another maker still checks.
+  const free = castOf([provider("opencode", ["default", "opencode/big-pickle", "opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free"])])!;
+  assert.deepEqual([free.everyday, free.strong, checkerOf(free.everyday, free)], ["opencode:opencode/deepseek-v4.1-flash-free", "opencode:opencode/deepseek-v4.1-flash-free", "opencode:opencode/glm-5.3-flash-free"]);
+  // Flash, Turbo and Fast models are never taken as frontier ones.
+  assert.equal(frontiersOf([provider("grok", ["grok-4-fast", "grok-code-fast"])]).frontier, undefined);
+});
+
+test("claude team: helpers by default, for an agent or a bare model; none alone", () => {
   const helpers = claudeTeam(agent({ model: "claude:claude-opus-5-5" }), "claude-opus-5-5");
   assert.equal(helpers.model, "claude-opus-5-5");
   assert.ok(helpers.agents.explorer && helpers.agents["test-runner"]);
-  const esc = claudeTeam(agent({ runMode: "escalate" }), "claude-opus-5-5");
-  assert.match(esc.model, /sonnet/);
-  assert.ok(esc.agents["opus-planner"]);
+  // "escalate", from before, runs with helpers on its own model.
+  const old = claudeTeam(agent({ runMode: "escalate" as never }), "claude-sonnet-5-5");
+  assert.deepEqual([old.model, Object.keys(old.agents)], ["claude-sonnet-5-5", ["explorer", "test-runner"]]);
   assert.deepEqual(claudeTeam(agent({ runMode: "single" }), "claude-sonnet-5-5").agents, {});
   assert.equal(subagentName("opus-planner"), "Opus");
   assert.equal(subagentName("test-runner"), "Test runner");
@@ -351,14 +444,14 @@ test("settling is yours: old defaults that settled sessions by themselves are sw
   assert.equal(new Store(mkdtempSync(join(tmpdir(), "lc-home-"))).settings.settleOnMerge, false);
 });
 
-test("ways compared: sessions sorted by how they ran, undone changes not kept, demo and routines left out", () => {
+test("modes compared: sessions sorted by how they ran, undone changes not kept, demo and routines left out", () => {
   const home = mkdtempSync(join(tmpdir(), "lc-home-"));
   const now = Date.now();
   const thread = (id: string, p: Record<string, unknown>) => ({ id, projectId: "p", title: id, status: "done", access: "ask", turns: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 }, createdAt: now, updatedAt: now, ...p });
   const threads = [
     thread("alone", { agent: "@claude:claude-opus-5-5" }),
     thread("planned", { agent: "forge", lead: "helm" }),
-    thread("crew", { agent: "forge", lead: "helm", helpers: ["quill"] }),
+    thread("routed", { agent: "@codex:gpt-6-luna", route: { level: "high", cast: {}, root: "codex:gpt-6-luna" } }),
     thread("direct", { agent: "forge" }),
     thread("demo", { agent: "demo" }),
     thread("routine", { agent: "forge", routine: { id: "r", run: "x" } }),
@@ -373,30 +466,57 @@ test("ways compared: sessions sorted by how they ran, undone changes not kept, d
   log("alone", [cp("c1"), cp("c2", true)]);
   // A later line replaces an earlier one with the same id: the review ran, then passed.
   log("planned", [cp("c3"), review("r1", "running"), review("r1", "passed")]);
-  log("crew", [cp("c4"), review("r2", "blocked")]);
+  log("routed", [cp("c4"), review("r2", "blocked")]);
   log("demo", [cp("c5")]);
   const by = Object.fromEntries(compareWays(new Store(home), 30).map((w) => [w.way, w]));
-  assert.deepEqual([by.model.sessions, by.model.changed, by.model.kept, by.model.turns, by.model.costUsd, by.model.seconds], [1, 2, 1, 2, 2, 30]);
-  assert.deepEqual([by.lead.sessions, by.lead.kept, by.lead.reviewed, by.lead.firstPass, by.lead.costUsd], [1, 1, 1, 1, 3]);
-  // A lead with a crew, and your agent without a lead, from before setups count as your first setup; demo and routine runs don't count anywhere.
-  assert.deepEqual([by.mine.sessions, by.mine.changed, by.mine.reviewed, by.mine.firstPass, by.mine.costUsd], [2, 1, 1, 0, 0]);
+  // A bare model and your agent alone are both Solo; demo and routine runs don't count anywhere.
+  assert.deepEqual([by.solo.sessions, by.solo.changed, by.solo.kept, by.solo.turns, by.solo.costUsd, by.solo.seconds], [2, 2, 1, 2, 2, 30]);
+  assert.deepEqual([by.plan.sessions, by.plan.kept, by.plan.reviewed, by.plan.firstPass, by.plan.costUsd], [1, 1, 1, 1, 3]);
+  assert.deepEqual([by.auto.sessions, by.auto.changed, by.auto.reviewed, by.auto.firstPass, by.auto.costUsd], [1, 1, 1, 0, 0]);
 });
 
-test("setups: your old team becomes the first; agents that are gone drop out; models stay as stages", () => {
-  const helm = agent({ id: "helm", name: "Helm", role: "Lead", specialty: "custom" });
-  const quill = agent({ id: "quill", name: "Quill", role: "Writing", specialty: "writer" });
-  const all = [helm, agent({}), quill];
-  // Before setups: the old team, under "My team".
-  const [mine] = setupsOf({ team: { lead: "helm", writer: "forge", crew: ["quill"] }, reviewRounds: 3 }, all);
-  assert.deepEqual([mine.id, mine.name, mine.lead, mine.stages, mine.crew, mine.checks], ["mine", "My team", "helm", [{ who: "forge", job: "" }], ["quill"], { by: "auto", rounds: 3 }]);
-  // Nothing saved at all: your coder alone.
-  assert.deepEqual(setupsOf({}, all)[0].stages, [{ who: "forge", job: "" }]);
-  // A saved setup: a gone agent leaves its stage, a model on its own stays, the crew needs a lead.
-  const saved = setupsOf({ setups: [{ id: "s", name: "Build, then improve", lead: null, stages: [{ who: "@opencode:deepseek", job: "Build the core" }, { who: "gone", job: "x" }, { who: "@claude:claude-opus-5-5", job: "Improve the code" }], crew: ["quill"], checks: { by: null, rounds: 9 } }] }, all);
-  assert.deepEqual(saved[0].stages.map((x) => x.who), ["@opencode:deepseek", "@claude:claude-opus-5-5"]);
-  assert.deepEqual([saved[0].crew, saved[0].checks], [[], { by: null, rounds: 3 }]);
-  // None left that works: your coder alone comes back, so there's always a way to start.
-  assert.deepEqual(setupsOf({ setups: [{ id: "x", name: "Old", lead: null, stages: [{ who: "gone", job: "" }], crew: [], checks: { by: "auto", rounds: 2 } }] }, all).map((x) => x.id), ["mine"]);
+test("before modes: a lead and a coder is Plan, a staged setup's models are your models, and refine when it was your way", () => {
+  const staged = { id: "s", lead: null, stages: [{ who: "@opencode:opencode/deepseek-v4.1-flash-free", job: "Build the core" }, { who: "@claude:claude-opus-5-5", job: "Improve it" }] };
+  const lead = fromWorkStyle({ onboarded: true, workStyle: "lead", setups: [staged], setup: "mine", team: { lead: "helm" } });
+  assert.deepEqual([lead.mode, lead.picks, lead.after], ["plan", { cheaper: "opencode:opencode/deepseek-v4.1-flash-free", frontier: "claude:claude-opus-5-5" }, undefined]);
+  // Building, then improving, as the way you worked: Solo, and the frontier model refines each change.
+  const team = fromWorkStyle({ workStyle: "team", setups: [staged], setup: "s" });
+  assert.deepEqual([team.mode, team.after], ["solo", "refine"]);
+  assert.ok(!("setups" in lead) && !("workStyle" in lead) && !("team" in lead));
+  assert.equal(fromWorkStyle({ workStyle: "model" }).mode, "solo");
+  assert.equal(fromWorkStyle({ workStyle: "team", setups: [{ id: "x", lead: "helm", stages: [{ who: "forge", job: "" }] }], setup: "x" }).mode, "plan");
+  const routed = fromWorkStyle({ workStyle: "model", route: { level: "max", cast: { judge: "codex:gpt-6-sol", critics: [] } } });
+  assert.deepEqual([routed.picks, routed.route], [{ checker: "codex:gpt-6-sol" }, { level: "max" }]);
+  // A saved state from before modes is read that way once.
+  const home = mkdtempSync(join(tmpdir(), "lc-home-"));
+  writeFileSync(join(home, "state.json"), JSON.stringify({ settings: { onboarded: true, workStyle: "lead" } }));
+  assert.equal(new Store(home).settings.mode, "plan");
+  assert.equal(new Store(mkdtempSync(join(tmpdir(), "lc-home-"))).agents.map((a) => a.id).join(), "demo", "a fresh install has no named agents");
+});
+
+test("a deleted agent: its sessions carry on with its model, never with another agent", () => {
+  const home = mkdtempSync(join(tmpdir(), "lc-home-"));
+  const now = Date.now();
+  const thread = (id: string, p: Record<string, unknown>) => ({ id, projectId: "p", title: id, status: "done", access: "ask", turns: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 }, createdAt: now, updatedAt: 5, ...p });
+  const forge = agent({});
+  writeFileSync(
+    join(home, "state.json"),
+    JSON.stringify({ settings: { onboarded: true, mode: "plan" }, agents: [forge], projects: [{ id: "p", name: "p", path: "/p", agent: "helm", git: false, createdAt: now }], threads: [thread("a", { agent: "forge", lead: "helm", turnBy: "helm", leadSession: "claude:s1" }), thread("b", { agent: "quill", lead: "leader" }), thread("c", { agent: "forge", lead: "gone" })] }),
+  );
+  new Store(home);
+  const turn = (agentId: string, model: string) => JSON.stringify({ kind: "turn", id: `t-${agentId}`, turn: 1, at: now, agent: agentId, model, planning: false, status: "done" });
+  writeFileSync(join(home, "threads", "a.jsonl"), turn("helm", "claude:claude-opus-5-5") + "\n");
+  writeFileSync(join(home, "threads", "b.jsonl"), turn("leader", "hermes:anthropic:claude-fable-5.1") + "\n");
+  const store = new Store(home);
+  // Before it's repaired, a gone agent is the stand-in model, not your first agent.
+  assert.equal(store.agent("helm").model, store.standIn);
+  store.repairAgents(new Map([["quill", "codex:gpt-6-luna"]]), "claude:claude-sonnet-5-5");
+  const [a, b, c] = store.threads;
+  assert.deepEqual([a.agent, a.lead, a.turnBy, a.leadSession, a.updatedAt], ["forge", "@claude:claude-opus-5-5", "@claude:claude-opus-5-5", "claude:s1", 5]);
+  assert.deepEqual([b.agent, b.lead], ["@codex:gpt-6-luna", "@hermes:anthropic:claude-fable-5.1"]);
+  // A planner with nothing to go on leaves the session in Solo.
+  assert.deepEqual([c.agent, c.lead], ["forge", undefined]);
+  assert.equal(store.projects[0].agent, undefined);
 });
 
 test("reviewer: a few lines or docs alone are small; code past the line, or a binary, isn't", () => {
@@ -555,4 +675,105 @@ test("context: Claude Code's sources add up to what it uses, the conversation's 
   assert.equal(by["MCP tools"], undefined, "tools waiting outside the window aren't in it");
   // In the bar's order: the tool's own first, then the project's, then the conversation.
   assert.deepEqual([...new Set(s.map((x) => x.group))].slice(0, 3), ["setup", "project", "talk"]);
+});
+
+test("events: numbered; what's sent while the snapshot is taken comes after it, never lost, never twice", async () => {
+  const { startServer } = await import("../src/server.ts");
+  const store = new Store(mkdtempSync(join(tmpdir(), "lc-events-")));
+  const notice = (body: string) => store.emit({ type: "notify", threadId: "t", kind: "done", title: "x", body });
+  const server = await startServer({
+    store,
+    api: { call: async () => null, ready: Promise.resolve() },
+    // Something happens while the snapshot is being taken: before it's read, and after.
+    snapshot: async () => {
+      notice("in the snapshot");
+      const snap = { seq: store.seq } as never;
+      await new Promise((r) => setTimeout(r, 10));
+      notice("after the snapshot");
+      return snap;
+    },
+    token: "t",
+    port: 0,
+  });
+  const lines: { type: string; seq?: number; body?: string }[] = [];
+  const res = await fetch(`http://127.0.0.1:${server.port}/events`, { headers: { "x-liner-token": "t" } });
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  const more = async () => {
+    const { value } = await reader.read();
+    buf += value ?? "";
+    for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+      if (buf.slice(0, i).trim()) lines.push(JSON.parse(buf.slice(0, i)));
+      buf = buf.slice(i + 1);
+    }
+  };
+  try {
+    while (!lines.some((l) => l.body === "after the snapshot")) await more();
+    notice("later");
+    while (!lines.some((l) => l.body === "later")) await more();
+    assert.deepEqual(lines.map((l) => l.body ?? l.type), ["hello", "after the snapshot", "later"]);
+    assert.ok(lines[2].seq! > lines[1].seq!);
+  } finally {
+    await reader.cancel();
+    server.close();
+  }
+});
+
+test("routines: a routines.json cut short gives way to the last good copy; the engine still starts", async () => {
+  const { Routines } = await import("../src/routines.ts");
+  const home = mkdtempSync(join(tmpdir(), "lc-routines-"));
+  const store = new Store(home);
+  writeFileSync(join(home, "routines.json"), '{"routines":[{"id":"r1"');
+  assert.doesNotThrow(() => new Routines(store, {} as never, process.env));
+  writeFileSync(join(home, "routines.json.bak"), JSON.stringify({ routines: [{ id: "r0" }], runs: [] }));
+  writeFileSync(join(home, "routines.json"), "");
+  assert.deepEqual(new Routines(store, {} as never, process.env).routines.map((r) => r.id), ["r0"]);
+});
+
+test("routines: a merge takes only the commit the run read, never past the day's limit even side by side; a trigger changed to GitHub starts from what's open", async () => {
+  const { Routines } = await import("../src/routines.ts");
+  const home = mkdtempSync(join(tmpdir(), "lc-routines-"));
+  const bin = mkdtempSync(join(tmpdir(), "lc-gh-"));
+  const log = join(bin, "gh.log");
+  // A gh that takes its time merging, and says what it was asked.
+  writeFileSync(join(bin, "gh"), `#!/bin/sh\necho "$@" >> ${log}\nsleep 0.2\n`, { mode: 0o755 });
+  const store = new Store(home);
+  const routines = new Routines(store, {} as never, { PATH: `${bin}:/usr/bin:/bin` });
+  const r = routines.put({ name: "r", on: true, projectId: "p", trigger: { kind: "schedule", every: "day" }, steps: [], runsGo: "own", pauseAfter: 0, limits: { mergesPerDay: 1, tokensPerRun: 0 } });
+  const act = (n: number, head?: string) => (routines as unknown as { act: (...a: unknown[]) => Promise<boolean> }).act({ kind: "action", action: "merge" }, { subject: { kind: "pr", number: n }, head }, "", bin, "t", r, { steps: [] });
+  await assert.rejects(act(1), /didn't say which commit/);
+  const both = await Promise.allSettled([act(2, "abc123"), act(3, "def456")]);
+  assert.deepEqual(both.map((x) => x.status).sort(), ["fulfilled", "rejected"], "one merges, the other is past the limit");
+  assert.match(readFileSync(log, "utf8"), /pr merge \d --squash --match-head-commit (abc123|def456)/);
+
+  const polled: boolean[] = [];
+  (routines as unknown as { poll: (r: unknown, quiet?: boolean) => Promise<void> }).poll = async (_r, quiet) => void polled.push(Boolean(quiet));
+  routines.put({ ...r, trigger: { kind: "github", event: "pr.opened" } });
+  assert.deepEqual(polled, [true], "a quiet first look, so what's already open doesn't fire");
+});
+
+test("context meter: another model, or going back, leaves no window or count from before", async () => {
+  const { createApi } = await import("../src/api.ts");
+  const { Runtime } = await import("../src/runtime.ts");
+  const store = new Store(mkdtempSync(join(tmpdir(), "lc-ctx-")));
+  store.putProject({ id: "p", name: "p", path: mkdtempSync(join(tmpdir(), "lc-ctx-p-")), git: false, createdAt: 1 });
+  store.putThread({ id: "t", projectId: "p", title: "x", agent: "forge", model: "claude:claude-opus-5-5", status: "idle", access: "auto", turns: 1, usage: { ...emptyUsage(), contextTokens: 900000, contextWindow: 1000000 }, createdAt: 1, updatedAt: 1 });
+  store.putItem("t", { kind: "user", id: "u", turn: 1, at: 1, text: "hi" });
+  const api = createApi(store, new Runtime(store, { PATH: "/usr/bin:/bin" }), { PATH: "/usr/bin:/bin" }, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+  await api.call("thread.update", { id: "t", model: "claude:claude-sonnet-5-5" });
+  assert.deepEqual([store.thread("t").usage.contextTokens, store.thread("t").usage.contextWindow], [900000, undefined]);
+  await api.call("thread.rewind", { threadId: "t", itemId: "u" });
+  assert.equal(store.thread("t").usage.contextTokens, undefined);
+});
+
+test("going back: every part's own session starts fresh, the refiner's too, so none resumes the turns that came off", async () => {
+  const { createApi } = await import("../src/api.ts");
+  const { Runtime } = await import("../src/runtime.ts");
+  const store = new Store(mkdtempSync(join(tmpdir(), "lc-back-")));
+  store.putProject({ id: "p", name: "p", path: mkdtempSync(join(tmpdir(), "lc-back-p-")), git: false, createdAt: 1 });
+  store.putThread({ id: "t", projectId: "p", title: "x", agent: "@codex:gpt-6-luna", status: "idle", access: "auto", turns: 1, usage: emptyUsage(), providerSession: "codex:a", sessions: { "@claude:claude-opus-5-5": "claude:b" }, createdAt: 1, updatedAt: 1 });
+  store.putItem("t", { kind: "user", id: "u", turn: 1, at: 1, text: "hi" });
+  const api = createApi(store, new Runtime(store, { PATH: "/usr/bin:/bin" }), { PATH: "/usr/bin:/bin" }, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+  await api.call("thread.rewind", { threadId: "t", itemId: "u" });
+  assert.deepEqual([store.thread("t").providerSession, store.thread("t").sessions], [undefined, undefined]);
 });

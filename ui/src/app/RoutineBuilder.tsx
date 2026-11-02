@@ -13,6 +13,7 @@ import { agentOf, modelLabel, plural, since } from "./model";
 import { ACTION, DAYS, triggerText } from "./Routines";
 import { Badge, Pop } from "./ui";
 import { ProjectChooser } from "./Projects";
+import * as os from "./os";
 
 const sel = (id: string, label: string, value: string, options: { value: string; label: string; hint?: string }[], hint?: string): WorkflowField => ({ type: "select", id, label, value, options, hint });
 const choice = (id: string, label: string, value: string, options: { value: string; label: string }[]): WorkflowField => ({ type: "choice", id, label, value, options });
@@ -99,8 +100,8 @@ function actionStep(a: Extract<RoutineStep, { kind: "action" }>, id = uidOf(a.ac
   if (a.action === "label") fields.push(text("arg", "Label", a.arg ?? "", "merged-by-routine"));
   if (a.action === "close") fields.push(text("arg", "Reason the author sees", a.arg ?? "", "Duplicate of #120"));
   if (a.action === "notify") fields.push(text("arg", "What it says", a.arg ?? "", "Triage finished"));
-  const summary = a.action === "merge" ? "once every check passes" : a.action === "inbox" ? "in Needs you, with the audit" : a.action === "comment" ? "on the pull request or issue" : a.action === "notify" ? "a notification on this Mac" : "{arg}";
-  return { id, kind: a.action === "inbox" ? "person" : "action", type: a.action, label: a.action === "inbox" ? "Ask · You" : a.action === "notify" ? "Action · This Mac" : "Action · GitHub", title: ACTION[a.action], summary, glyph: ACTION_GLYPH[a.action], fields };
+  const summary = a.action === "merge" ? "once every check passes" : a.action === "inbox" ? "in Needs you, with the audit" : a.action === "comment" ? "on the pull request or issue" : a.action === "notify" ? `a notification on ${os.here}` : "{arg}";
+  return { id, kind: a.action === "inbox" ? "person" : "action", type: a.action, label: a.action === "inbox" ? "Ask · You" : a.action === "notify" ? `Action · ${os.Here}` : "Action · GitHub", title: ACTION[a.action], summary, glyph: ACTION_GLYPH[a.action], fields };
 }
 
 type Draft = Omit<Routine, "id" | "createdAt" | "failures"> & { id?: string };
@@ -191,7 +192,7 @@ function templates(c: Ctx): WorkflowTemplate[] {
     act("label", "Like merged-by-routine"),
     act("close", "With a reason the author sees"),
     act("inbox", "In Needs you, with the audit", "You"),
-    act("notify", "A notification on this Mac", "You"),
+    act("notify", `A notification on ${os.here}`, "You"),
   ];
 }
 
@@ -230,15 +231,17 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
   testNo.current = testOn;
 
   // Changes save a moment after you stop.
+  const timer = useRef(0);
   const persist = async (d: Draft) => {
     if (!d.projectId) throw new Error("Add a project first: routines run in one.");
+    // A save now carries every edit so far: one still waiting would put back the draft it was made from (Turn on undone).
+    window.clearTimeout(timer.current);
     const r = await rpc("routine.save", { routine: { ...d, id: idRef.current } });
     idRef.current = r.id;
     setDraft(r);
     setSavedAt(Date.now());
     return r;
   };
-  const timer = useRef(0);
   const change = (next: WorkflowStep[]) => {
     // A trigger that changed kind gets the settings for its kind.
     const t0 = steps.find((s) => s.type === "trigger");
@@ -395,7 +398,7 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void navigator.clipboard?.writeText(hook).then(() => toast("Copied the URL"))}>
             Copy
           </button>
-          <span className="lc-quiet">This Mac only, until remote access. The prompt can quote {"{{body.…}}"}.</span>
+          <span className="lc-quiet">{os.Here} only, until remote access. The prompt can quote {"{{body.…}}"}.</span>
         </div>
       )}
       <div className="lc-rb-canvas">

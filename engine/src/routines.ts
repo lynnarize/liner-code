@@ -7,7 +7,6 @@
   GitHub triggers poll the GitHub CLI every few minutes, so they work without a public URL.
   Webhooks listen on the engine's own address (this Mac only) until remote access exists.
 */
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Item, Routine, RoutineRun, RoutineStep, RunStep, Thread, Trigger } from "../../contracts/src/index.ts";
@@ -15,10 +14,11 @@ import { emptyUsage, splitModel } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
 import { parseFindings, reviewPrompt } from "./review.ts";
 import type { Runtime } from "./runtime.ts";
-import { uid, type Store } from "./store.ts";
+import { loadState, uid, writeAtomic, type Store } from "./store.ts";
 
 type Subject = NonNullable<RoutineRun["subject"]>;
-type Context = { subject?: Subject; body?: unknown; headers?: Record<string, string>; diff?: string; files?: string[]; additions?: number; deletions?: number };
+/** head: the commit the run read, so a merge takes that one and not a later push nobody read. */
+type Context = { subject?: Subject; body?: unknown; headers?: Record<string, string>; diff?: string; files?: string[]; additions?: number; deletions?: number; head?: string };
 
 const TICK = 30_000;
 const POLL = 5 * 60_000;
@@ -73,6 +73,8 @@ export class Routines {
   private seen = new Map<string, Set<number>>();
   private polled = new Map<string, number>();
   private aborts = new Map<string, AbortController>();
+  /** Merges started today, by routine and day. */
+  private merges = new Map<string, number>();
   private timer: NodeJS.Timeout | null = null;
 
   /** A run is going. */
@@ -87,13 +89,11 @@ export class Routines {
     this.store = store;
     this.runtime = runtime;
     this.env = env;
-    const file = join(store.home, "routines.json");
-    if (existsSync(file)) {
-      const saved = JSON.parse(readFileSync(file, "utf8")) as { routines?: Routine[]; runs?: RoutineRun[]; seen?: Record<string, number[]> };
-      this.list = saved.routines ?? [];
-      this.runs = (saved.runs ?? []).map((r) => (r.status === "running" ? { ...r, status: "failed", outcome: "The engine stopped during this run." } : r));
-      for (const [k, v] of Object.entries(saved.seen ?? {})) this.seen.set(k, new Set(v));
-    }
+    // Read the way state.json is: one cut short by a power cut is set aside for the last good copy, so the engine still starts.
+    const saved = loadState<{ routines: Routine[]; runs: RoutineRun[]; seen: Record<string, number[]> }>(join(store.home, "routines.json"));
+    this.list = saved.routines ?? [];
+    this.runs = (saved.runs ?? []).map((r) => (r.status === "running" ? { ...r, status: "failed", outcome: "The engine stopped during this run." } : r));
+    for (const [k, v] of Object.entries(saved.seen ?? {})) this.seen.set(k, new Set(v));
   }
 
   get routines() {
@@ -115,8 +115,7 @@ export class Routines {
   private save() {
     const file = join(this.store.home, "routines.json");
     const seen = Object.fromEntries([...this.seen].map(([k, v]) => [k, [...v].slice(-500)]));
-    writeFileSync(`${file}.tmp`, JSON.stringify({ routines: this.list, runs: this.runs.slice(-300), seen }, null, 2));
-    renameSync(`${file}.tmp`, file);
+    writeAtomic(file, JSON.stringify({ routines: this.list, runs: this.runs.slice(-300), seen }, null, 2), { backup: true });
   }
 
   put(input: Omit<Routine, "id" | "createdAt" | "failures"> & { id?: string }) {
@@ -124,8 +123,9 @@ export class Routines {
     const trigger: Trigger = input.trigger.kind === "webhook" && !input.trigger.secret ? { kind: "webhook", secret: randomBytes(12).toString("hex") } : input.trigger;
     const r: Routine = { ...input, trigger, id: prev?.id ?? uid("rt"), createdAt: prev?.createdAt ?? Date.now(), failures: prev?.failures ?? 0, nextRun: nextRun(trigger) };
     this.list = prev ? this.list.map((x) => (x.id === r.id ? r : x)) : [...this.list, r];
-    // A new GitHub trigger starts from what's open now, not from everything ever opened.
-    if (!prev && r.trigger.kind === "github") void this.poll(r, true);
+    // A new GitHub trigger starts from what's open now, not from everything ever opened: a routine
+    // changed to one, or to watch something else, too.
+    if (r.trigger.kind === "github" && (!prev || JSON.stringify(prev.trigger) !== JSON.stringify(r.trigger))) void this.poll(r, true);
     this.save();
     this.store.emit({ type: "routine", routine: r });
     return r;
@@ -253,12 +253,13 @@ export class Routines {
       const s = step(`GitHub · ${ctx.subject.author ?? "Someone"} opened #${ctx.subject.number}`);
       const [diff, view] = await Promise.all([
         run("gh", ["pr", "diff", String(ctx.subject.number)], { cwd, env: this.env, timeout: 60000 }),
-        run("gh", ["pr", "view", String(ctx.subject.number), "--json", "files,additions,deletions,body"], { cwd, env: this.env, timeout: 30000 }),
+        run("gh", ["pr", "view", String(ctx.subject.number), "--json", "files,additions,deletions,body,headRefOid"], { cwd, env: this.env, timeout: 30000 }),
       ]);
       ctx.diff = diff.stdout;
       try {
-        const v = JSON.parse(view.stdout) as { files?: { path: string }[]; additions?: number; deletions?: number };
+        const v = JSON.parse(view.stdout) as { files?: { path: string }[]; additions?: number; deletions?: number; headRefOid?: string };
         ctx.files = (v.files ?? []).map((f) => f.path);
+        ctx.head = v.headRefOid;
         ctx.additions = v.additions;
         ctx.deletions = v.deletions;
       } catch {
@@ -284,7 +285,7 @@ export class Routines {
       try {
         if (st.role === "work" && rec.test) end(s, "skipped", "A test doesn't edit anything");
         else if (st.role === "work") {
-          this.store.patchThread(thread.id, { agent: st.agent, access: "edits" });
+          this.store.patchThread(thread.id, { agent: st.agent, access: "auto" });
           // Unattended only while its own step runs: what you send in this session later asks you as usual.
           await this.runtime.unattendedTurn(thread.id, () => this.runtime.send(thread.id, prompt));
           const t = this.store.thread(thread.id);
@@ -441,9 +442,19 @@ export class Routines {
     if (a.action === "merge") {
       if (!n || ctx.subject?.kind !== "pr") return false;
       const today = new Date().toDateString();
-      const merged = this.runs.filter((x) => x.routineId === r.id && x.status === "merged" && new Date(x.at).toDateString() === today).length;
+      // Counted when a merge starts, not when its run ends: two runs side by side can't both slip under the limit.
+      const key = `${r.id}:${today}`;
+      const merged = Math.max(this.runs.filter((x) => x.routineId === r.id && x.status === "merged" && new Date(x.at).toDateString() === today).length, this.merges.get(key) ?? 0);
       if (merged >= r.limits.mergesPerDay) throw new Error(`Already merged ${merged} today, the most this routine may`);
-      await gh(["pr", "merge", String(n), "--squash"]);
+      if (!ctx.head) throw new Error("GitHub didn't say which commit was read, so it isn't merged");
+      this.merges.set(key, merged + 1);
+      try {
+        // Only the commit that was read: one pushed during the run makes the merge fail instead.
+        await gh(["pr", "merge", String(n), "--squash", "--match-head-commit", ctx.head]);
+      } catch (e) {
+        this.merges.set(key, (this.merges.get(key) ?? 1) - 1);
+        throw e;
+      }
       return true;
     }
     if (a.action === "comment") {

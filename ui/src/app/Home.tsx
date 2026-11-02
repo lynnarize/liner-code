@@ -15,10 +15,11 @@ import { DeskPresence } from "./Desk";
 import { DeskStage } from "./DeskStage";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { ago, setupOf } from "./model";
+import { ago, startOf } from "./model";
 import { PanelHead, Pop, Row, Sep, Kbd } from "./ui";
 import { ProjectChooser } from "./Projects";
 import { HomeUpdates } from "./Updates";
+import * as os from "./os";
 
 type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (threadId: string) => void; onCompare: (compareId: string) => void; sidebar: boolean; onSidebar: () => void; onNewAgent: () => void };
 
@@ -26,28 +27,25 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   const projects = useEngine((s) => s.projects);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const workStyle = useEngine((s) => s.settings.workStyle);
+  const mode = useEngine((s) => s.settings.mode);
   const engineSettings = useEngine((s) => s.settings);
   const access = useEngine((s) => s.settings.defaultAccess);
   const worktrees = useEngine((s) => s.settings.worktrees);
   const project = projects.find((p) => p.id === projectId) ?? projects[0];
 
-  // Who a new session starts with: the project's agent, the team, or the first ready model.
+  // What's ready, as a key that changes only when a tool or its models come or go, so your picks here aren't reset by a refresh.
+  const readyKey = providers.map((p) => `${p.id}:${p.available && p.adapter ? p.models.length : 0}`).join();
+  // Who a new session starts with: the project's own agent, else your mode with your two models.
   const initial = useMemo((): RunSettings => {
-    if (project?.agent === "demo") return { agent: "demo", lead: workStyle === "lead" ? "demo" : undefined, effort: "low", access };
-    const firstModel = providers.find((p) => p.available && p.adapter && p.id !== "demo");
-    const lead = agents.find((a) => /lead/i.test(a.role));
-    const coder = agents.find((a) => a.specialty === "coder" && a.id !== "demo") ?? agents.find((a) => a.id !== "demo");
-    // A project set to start with one agent (Settings → Projects): a lead brings its coder along.
+    if (project?.agent === "demo") return { agent: "demo", lead: mode === "plan" ? "demo" : undefined, effort: "low", access };
+    // A project set to start with one of your agents (Settings › Projects): that agent, on its own.
     const own = agents.find((a) => a.id === project?.agent);
-    if (own && /lead/i.test(own.role) && coder) return { agent: coder.id, lead: own.id, effort: "medium", access };
     if (own) return { agent: own.id, effort: own.effort, access };
-    if (workStyle === "lead" && lead && coder) return { agent: coder.id, lead: lead.id, effort: "medium", access };
-    // One of your setups: the engine takes who works on it from the setup when the session starts.
-    const mine = workStyle === "team" ? setupOf(engineSettings, agents) : undefined;
-    if (mine) return { setup: mine.id, agent: mine.stages[0].who, lead: mine.lead ?? undefined, helpers: mine.crew.length ? mine.crew : undefined, effort: mine.lead ? "medium" : (agents.find((a) => a.id === mine.stages[0].who)?.effort ?? "medium"), access };
-    return { agent: firstModel ? `@${firstModel.id}:${firstModel.models[0]?.id ?? "default"}` : (coder?.id ?? "demo"), effort: "medium", access };
-  }, [project?.id, project?.agent, workStyle, engineSettings.setups, engineSettings.setup, access, agents.length, providers.length]);
+    const firstModel = providers.find((p) => p.available && p.adapter && p.id !== "demo");
+    const start = startOf(mode, engineSettings, providers);
+    if (start) return { ...start, effort: "medium", access };
+    return { agent: firstModel ? `@${firstModel.id}:${firstModel.models[0]?.id ?? "default"}` : "demo", effort: "medium", access };
+  }, [project?.id, project?.agent, mode, engineSettings.picks, engineSettings.dual, engineSettings.route?.level, access, agents.length, readyKey]);
   const [settings, setSettings] = useState<RunSettings>(initial);
   const [worktree, setWorktree] = useState(worktrees);
   const [compare, setCompare] = useState<string[]>([]);
@@ -95,8 +93,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         if (made[0]?.compare) onCompare(made[0].compare.id);
         return;
       }
-      const t = await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, setup: settings.setup, route: settings.route, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
-      if (settings.lead && !settings.setup && settings.helpers?.length) await rpc("thread.update", { id: t.id, helpers: settings.helpers });
+      const t = await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, route: settings.route, dual: settings.dual, after: settings.after, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
       if (quietly) {
         setInWorktree(undefined);
@@ -160,7 +157,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
       ) : (
         <div className="lc-noproj">
           <h2 className="lc-ask-h">Add a project to start</h2>
-          <p className="lc-quiet">A project is a folder on this Mac. Agents work inside it, and every turn is kept so you can undo it.</p>
+          <p className="lc-quiet">A project is a folder on {os.here}. Agents work inside it, and every turn is kept so you can undo it.</p>
           <div className="lc-noproj-acts">
             <button type="button" className="lc-btn" data-kind="primary" onClick={() => void bridge.pickFolder().then(add)}>
               <I.folder size={14} />
@@ -237,8 +234,8 @@ const KEYS = [
   ["@", "A file"],
   ["/", "A command"],
   ["$", "A skill"],
-  ["⌘Enter", "Start it in the background"],
-  ["⌘K", "Everything else"],
+  [`${os.mod}Enter`, "Start it in the background"],
+  [`${os.mod}K`, "Everything else"],
 ] as const;
 
 function Keys() {

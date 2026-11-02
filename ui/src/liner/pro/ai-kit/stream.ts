@@ -22,7 +22,9 @@ export type RevealState = {
 };
 
 const TICK = 34;
-const SETTLE = 240;
+// The last chunk must finish coming into focus (.l-chunk's 620ms in ai-kit.css) before its span
+// is dropped for plain text, or its words jump from 70% to full ink as the reply ends.
+const SETTLE = 660;
 
 /** End offsets of whole words (a word plus its trailing whitespace). */
 function wordEnds(text: string, from: number) {

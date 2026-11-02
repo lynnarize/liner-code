@@ -13,11 +13,12 @@ import { rpc } from "./engine";
 import { I } from "./icons";
 import { plural } from "./model";
 import { Lines, Pop, Sep } from "./ui";
+import * as os from "./os";
 
 type More = "mac" | "editor" | "script" | "branch" | "commit" | null;
 type Editor = RpcResult<"apps.editors">[number];
 
-const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+const tilde = os.tilde;
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 const saved = (key: string) => {
   try {
@@ -36,7 +37,7 @@ const keep = (key: string, value: string) => {
 const THEN: { id: Then; title: string; note: string }[] = [
   { id: "push", title: "Commit & push", note: "To its branch on GitHub" },
   { id: "pr", title: "Commit & open a PR", note: "The PR card, in the chat" },
-  { id: "commit", title: "Commit", note: "Only here, on this Mac" },
+  { id: "commit", title: "Commit", note: `Only here, on ${os.here}` },
 ];
 
 export function EnvMenu({ thread, project, files, lines, onChanges }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void }) {
@@ -158,10 +159,10 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
     <div className="lc-envp">
       <Line
         icon={<I.laptop size={14} />}
-        title={window.__LINER__?.machine ?? "This Mac"}
+        title={window.__LINER__?.machine ?? os.Here}
         note={<span className="lc-mono">{tilde(cwd)}</span>}
         side={
-          <button type="button" className="lc-env-b l-focus" aria-label="Show in Finder" title="Show in Finder" onClick={() => (close(), bridge.openIn(cwd, "finder"))}>
+          <button type="button" className="lc-env-b l-focus" aria-label={`Show in ${os.fileManager}`} title={`Show in ${os.fileManager}`} onClick={() => (close(), bridge.openIn(cwd, "finder"))}>
             <I.folder size={13} />
           </button>
         }

@@ -173,12 +173,14 @@
   }
 }
 
-/* The panel under the session instead of beside it. */
+/* The panel under the session instead of beside it: the body's same two tracks each way
+   (app.css), with the panel in the second row, so moving it there and back glides. */
 .lc-session[data-dock="bottom"] .lc-body {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(160px, 1fr) minmax(220px, 44%);
+  grid-template-columns: minmax(0px, 1fr) 0px;
+  grid-template-rows: minmax(160px, 1fr) max(220px, 44%);
 }
 .lc-session[data-dock="bottom"] .lc-panel {
+  grid-area: 2 / 1;
   box-shadow: inset 0 1px 0 var(--l-line);
   animation-name: lc-panel-up;
 }
@@ -373,9 +375,6 @@
   font-size: 13px;
   font-weight: 600;
 }
-.lc-cx-doing {
-  color: var(--l-ink-3);
-}
 .lc-cx-bar {
   position: relative;
   margin: 12px 0 12px;
@@ -520,6 +519,9 @@
   margin: 4px 0 2px;
   font-size: 12.5px;
   line-height: 1.45;
+}
+/* A colour of its own would paint over the shimmer's light while it waits. */
+.lc-sinfo-note:not(.l-shimmer) {
   color: var(--l-ink-3);
 }
 
@@ -2305,6 +2307,17 @@
   color: var(--l-accent-text);
   cursor: pointer;
 }
+/* The part of a design a comment is about: said, not a link. */
+.lc-you-part {
+  max-width: 100%;
+  cursor: default;
+}
+.lc-you-part > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .lc-esc {
   display: grid;
   gap: 2px;
@@ -2351,6 +2364,10 @@
   flex: none;
   align-items: center;
   font-size: 12.5px;
+}
+/* "Reviewing" gives way to the verdict by unblurring into it, as a replaced label does. */
+.lc-verdict > :not(.l-shimmer) {
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
 }
 
 /* The plan card: who builds it and what it should cost, a fold for long plans, and step editing. */
@@ -2450,6 +2467,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+/* Dual frontier with one of its models missing: its title says what's needed. */
+.lc-team-help .lc-mchip:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .lc-team-note {
   margin: 0;
@@ -2727,6 +2749,10 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 480px;
 }
+/* Skipping paints only inside the turn's own box: a design shown in the chat, wider than the text, would be cut to it. */
+.lc-turn:has(.lc-dz-inline) {
+  content-visibility: visible;
+}
 
 /* A message you sent: its actions under it, and editing it in place. */
 .lc-you-more {
@@ -2873,6 +2899,7 @@
   color: var(--l-ink-2);
 }
 .lc-limits-bar {
+  position: relative;
   height: 6px;
   overflow: hidden;
   border-radius: 3px;
@@ -2887,6 +2914,16 @@
 }
 .lc-limits-w[data-high] .lc-limits-bar i {
   background: var(--l-warn);
+}
+/* Where an even pace through the window would be. */
+.lc-limits-bar b {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  translate: -1px 0;
+  background: var(--l-ink-2);
+  opacity: 0.45;
 }
 .lc-limits-w small {
   font-size: 11.5px;
@@ -4152,8 +4189,9 @@
 
 
 /* ---------- The trail: a turn's work, compact ---------- */
-/* One line that says what the turn did; open, a rail of steps, each a line and its result under
-   it. Open and moving while the turn runs, folded to the line when it ends. */
+/* The steps between two things a model said: one grey row that says what they did (or, while they
+   run, the step under way), folded while the turn works too; open, a rail of steps, each a line
+   and its result under it. */
 .lc-trail {
   display: grid;
   min-width: 0;
@@ -4162,24 +4200,32 @@
   display: inline-flex;
   align-items: center;
   justify-self: start;
-  gap: 8px;
-  max-width: 100%;
-  min-height: 30px;
-  padding: 0 8px 0 4px;
+  gap: 6px;
+  max-width: calc(100% + 6px);
+  min-height: 28px;
+  margin-left: -6px;
+  padding: 0 6px;
   border: 0;
   border-radius: 9px;
   background: none;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
   font: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 160ms ease;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
   .lc-trail-sum:hover {
     background: var(--l-wash);
+    color: var(--l-ink-2);
   }
+}
+.lc-trail-failed {
+  flex: none;
+  color: var(--l-danger-text);
 }
 .lc-trail-parts {
   min-width: 0;
@@ -4187,20 +4233,54 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-trail-mark {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  margin: 0 3px;
-  border-radius: 999px;
-  background: var(--l-ok);
+/* A live line (LiveLine): the words in the row's grey, and over them a copy in full ink seen only
+   through a band, which sweeps from wholly before the words to wholly past them as .l-shimmer's
+   light does. The band's layer moves one way while the copy in it moves back, so the copy stays
+   over the words; changing them swaps both copies and leaves the sweep running. */
+.lc-live {
+  --lc-band: 4.5rem;
+  position: relative;
+  display: block;
 }
-.lc-trail-mark[data-state="failed"] {
-  background: var(--l-danger);
+.lc-live-t {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
 }
-.lc-trail-mark[data-state="running"] {
-  background: var(--l-accent);
-  animation: lc-pulse 1.6s var(--l-ease-out) infinite;
+.lc-live-light {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--lc-band) * -1);
+  width: calc(100% + var(--lc-band));
+  -webkit-mask: linear-gradient(to right, transparent, #000 50%, transparent) 0 0 / var(--lc-band) 100% no-repeat;
+  mask: linear-gradient(to right, transparent, #000 50%, transparent) 0 0 / var(--lc-band) 100% no-repeat;
+  pointer-events: none;
+  user-select: none;
+  animation: lc-live-sweep 2.2s linear infinite;
+}
+.lc-live-light-in {
+  display: block;
+  padding-left: var(--lc-band);
+  color: var(--l-ink);
+  animation: lc-live-hold 2.2s linear infinite;
+}
+@keyframes lc-live-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes lc-live-hold {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-live-light {
+    display: none;
+  }
 }
 .lc-trail-chev {
   flex: none;
@@ -4209,8 +4289,18 @@
   color: var(--l-ink-4);
   transition: rotate 320ms var(--l-spring-smooth);
 }
-.lc-trail[data-open] .lc-trail-chev {
-  rotate: 180deg;
+/* A folded row's chevron, after its words: it points at them shut and turns down open. */
+.lc-row-chev {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--l-ink-4);
+  rotate: -90deg;
+  transition: rotate 320ms var(--l-spring-smooth);
+}
+[aria-expanded="true"] > .lc-row-chev,
+[open] > summary > .lc-row-chev {
+  rotate: 0deg;
 }
 /* Folding: the steps' height eases away when the turn ends, and back when you open them. */
 .lc-trail-fold {
@@ -4254,7 +4344,6 @@
 }
 .lc-tstep,
 .lc-trail-note,
-.lc-trail-say,
 .lc-trail-ask {
   position: relative;
   min-width: 0;
@@ -4294,7 +4383,20 @@
 }
 .lc-tstep[data-state="running"] .lc-tstep-dot {
   background: var(--l-accent);
-  animation: lc-pulse 1.6s var(--l-ease-out) infinite;
+  animation: lc-pulse-dot 1.6s var(--l-ease-out) infinite;
+}
+/* lc-pulse, with the paper ring kept under it: the ring is what cuts the rail around the dot. */
+@keyframes lc-pulse-dot {
+  0% {
+    box-shadow:
+      0 0 0 3px var(--lc-paper),
+      0 0 0 3px color-mix(in oklab, var(--l-accent) 45%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 3px var(--lc-paper),
+      0 0 0 9px transparent;
+  }
 }
 .lc-tstep-verb {
   flex: none;
@@ -4356,22 +4458,13 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.lc-trail-say {
-  color: var(--l-ink-3);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-/* On the trail, thinking lines up with the steps: its dot on the rail, its words at their verbs. */
+
+/* Thinking between steps, on their rail: its row lines up with their verbs. */
 .lc-trail-note .lc-thought-h {
   min-height: 20px;
-  padding: 0 6px 0 0;
-}
-.lc-trail-note .lc-thought-dot {
-  position: absolute;
-  top: 6.5px;
-  left: calc(-18px + 0.75px - 3.5px);
-  margin: 0;
-  box-shadow: 0 0 0 3px var(--lc-paper);
+  margin-left: 0;
+  padding: 0;
+  font-size: 13px;
 }
 .lc-trail-note .lc-thought-t {
   margin: 2px 0;
@@ -4503,20 +4596,24 @@
     transform: translateY(260%);
   }
 }
+/* Work that ends says so by moving, not in one frame: the shimmering line that said what was under
+   way unblurs into what it did (the trail's summary, "Thought for 9s", the Reviewer's verdict).
+   Only in blocks that came in while you watched; history sits still. */
+.lc-blk[data-fresh] :is(.lc-trail:not([data-live]) > .lc-trail-sum > .lc-trail-parts, .lc-thought:not([data-live]) > .lc-thought-h > span:first-child, .lc-foot-chip > b:not(.l-shimmer)) {
+  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+}
 @media (prefers-reduced-motion: reduce) {
   .lc-trail-fold,
   .lc-trail-chev,
-  .lc-thought-chev,
+  .lc-row-chev,
   .lc-foot-chev {
     transition: none;
   }
   .lc-trail[data-live] .lc-trail-list::before,
-  .lc-trail-mark[data-state="running"],
   .lc-tstep[data-state="running"] .lc-tstep-dot,
-  .lc-thought[data-live] .lc-thought-dot,
+  .lc-head[data-running] > .lc-disc,
   .lc-tstep,
   .lc-trail-note,
-  .lc-trail-say,
   .lc-trail-ask,
   .lc-foot-findings {
     animation: none;
@@ -4524,7 +4621,13 @@
 }
 
 /* ---------- Browser: the zoom box, the More menu, the agent's pointer ---------- */
-/* The box takes the frame's old place and size; the frame inside lays out at 1/zoom and is scaled. */
+/*
+  The box takes the frame's old place and size; the frame inside lays out at 1/zoom and is scaled.
+  Nothing white sits under the page's edge: where its rounded corners are smoothed, what's beneath
+  shows through, and a white backing showed as a pale arc round a dark page. The white a page
+  without a background of its own needs is a layer 1px in from the edge, and the box's hairline is
+  drawn over the page, not under it, so it runs even all the way round the corners.
+*/
 .lc-br-zoom {
   position: relative;
   flex: none;
@@ -4532,16 +4635,32 @@
   height: 100%;
   overflow: hidden;
   border-radius: 14px;
-  background: #fff;
   transition: width 420ms var(--l-spring-smooth);
+}
+.lc-br-zoom::before,
+.lc-br-zoom::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+.lc-br-zoom::before {
+  inset: 1px;
+  border-radius: 13px;
+  background: #fff;
+}
+.lc-br-zoom::after {
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--l-line);
 }
 .lc-br-stage[data-width="tablet"] .lc-br-zoom,
 .lc-br-stage[data-width="phone"] .lc-br-zoom {
   height: calc(100% - 24px);
   margin: 12px 0;
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 6px 20px -8px var(--l-drop);
+  box-shadow: 0 6px 20px -8px var(--l-drop);
+}
+.lc-br-stage:is([data-width="tablet"], [data-width="phone"]) .lc-br-zoom::after {
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
 }
 .lc-br-stage .lc-br-zoom > .lc-br-frame {
   position: absolute;
@@ -4549,6 +4668,7 @@
   left: 0;
   margin: 0;
   border-radius: 0;
+  background: none;
   box-shadow: none;
   transform-origin: 0 0;
   transition: none;

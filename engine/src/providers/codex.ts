@@ -3,15 +3,16 @@
   thread, later ones resume it by id. Exec mode can't stop to ask, so access becomes Codex's
   sandbox instead: read only, write inside the project, or full access.
 */
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, PlanEntry, ProviderInfo } from "../../../contracts/src/index.ts";
 import { linerTitle } from "../agent-tools.ts";
-import { jsonLines, run, spawn, versionOf, which, withCodexPath } from "../exec.ts";
+import { jsonLines, killTree, run, spawn, versionOf, which, withCodexPath } from "../exec.ts";
 import { codexAsk, CodexServerSession, isLimit, reasoning, toml } from "./codex-server.ts";
+import { imageType } from "./attachments.ts";
 import { effortOf, skillsIn } from "./models.ts";
-import type { OpenOptions, Provider, ProviderSession, TurnSink } from "./types.ts";
+import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
 
 let appServer = false;
 
@@ -66,13 +67,15 @@ function configuredModel(env: NodeJS.ProcessEnv) {
 
 class CodexSession implements ProviderSession {
   private thread: string | undefined;
+  /** The turn's process, so closing the session stops it. */
+  private child: ReturnType<typeof spawn> | null = null;
   private o: OpenOptions;
   constructor(o: OpenOptions) {
     this.o = o;
     this.thread = o.resume;
   }
 
-  turn(text: string, sink: TurnSink, signal: AbortSignal) {
+  turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
     const o = this.o;
     const bin = which("codex", o.env);
     if (!bin) return Promise.reject(new Error("Codex isn't installed."));
@@ -85,10 +88,16 @@ class CodexSession implements ProviderSession {
     // app server gets them.
     if (o.mcp) common.push("-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`);
     for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
+    // Your images go to the model as they are (exec and exec resume both take -i); every file is named in the text either way.
+    for (const f of files) if (imageType(f) && existsSync(f)) common.push("-i", f);
     const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {
       const child = spawn(bin, args, { cwd: o.cwd, env: withCodexPath(bin, o.env), stdio: ["pipe", "pipe", "pipe"] });
+      this.child = child;
       let err = "";
+      const resuming = this.thread;
+      /** Codex said anything of the turn itself: the thread was there. */
+      let begun = false;
       const started = new Map<string, number>();
       // Codex repeats a failure as an item, an event and a turn failure; it's said once.
       const said = new Set<string>();
@@ -137,13 +146,16 @@ class CodexSession implements ProviderSession {
       };
       jsonLines(child.stdout, (v) => {
         const e = v as { type: string; thread_id?: string; item?: CodexItem; usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number }; error?: { message?: string }; message?: string };
+        if (e.type !== "error" && e.type !== "turn.failed") begun = true;
         if (e.type === "thread.started" && e.thread_id) {
           this.thread = e.thread_id;
           sink.session(e.thread_id);
         } else if (e.item && (e.type === "item.started" || e.type === "item.updated" || e.type === "item.completed")) {
           onItem(e.item, e.type.slice(5) as "started" | "updated" | "completed");
         } else if (e.type === "turn.completed" && e.usage) {
-          sink.usage({ inputTokens: e.usage.input_tokens ?? 0, cacheReadTokens: e.usage.cached_input_tokens ?? 0, outputTokens: e.usage.output_tokens ?? 0 });
+          // Codex's input count holds the cached part too, which is counted on its own (as codex-server.ts does).
+          const cached = e.usage.cached_input_tokens ?? 0;
+          sink.usage({ inputTokens: Math.max(0, (e.usage.input_tokens ?? 0) - cached), cacheReadTokens: cached, outputTokens: e.usage.output_tokens ?? 0 });
         } else if (e.type === "turn.failed") {
           const m = e.error?.message ?? "Codex stopped with an error.";
           once(isLimit({ message: readable(m) }) ? (x) => sink.limited(x) : sink.error, m);
@@ -151,11 +163,20 @@ class CodexSession implements ProviderSession {
           once(sink.error, e.message);
         }
       });
-      const stop = () => child.kill("SIGINT");
+      // Windows has no SIGINT for it: killTree ends Codex and the commands it started.
+      const stop = () => (process.platform === "win32" ? killTree(child) : child.kill("SIGINT"));
       signal.addEventListener("abort", stop, { once: true });
       child.on("error", (e) => reject(e));
       child.on("close", (code) => {
         signal.removeEventListener("abort", stop);
+        if (this.child === child) this.child = null;
+        // The thread it was to resume is gone: said as a failed resume, so the runtime starts a new one with
+        // the conversation so far rather than trying the lost one again for good (Synara: codexAppServerManager.ts,
+        // RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS).
+        if (resuming && !begun && !signal.aborted && code !== 0 && LOST.test(`${err}\n${[...said].join("\n")}`)) {
+          this.thread = undefined;
+          return reject(new ResumeFailed(`Codex couldn't resume its thread ${resuming}.`));
+        }
         if (code === 0 || signal.aborted || said.size) resolve();
         else reject(new Error(err.trim().split("\n").slice(-3).join("\n") || `Codex exited with ${code}.`));
       });
@@ -166,8 +187,15 @@ class CodexSession implements ProviderSession {
     Object.assign(this.o, o);
     return true;
   }
-  close() {}
+  close() {
+    if (process.platform === "win32" && this.child) killTree(this.child);
+    else this.child?.kill("SIGINT");
+    this.child = null;
+  }
 }
+
+/** What Codex says when the thread it was to resume isn't there (Synara's list). */
+const LOST = /not found|no rollout found|missing thread|no such thread|unknown thread|does not exist/i;
 
 const short = (s: unknown, n = 80) => {
   const t = String(s ?? "").replace(/\s+/g, " ").trim();
@@ -180,7 +208,7 @@ export const codex: Provider = {
     const path = which("codex", env);
     const configured = configuredModel(env);
     const base = { id: "codex" as const, label: "Codex CLI", adapter: true, login: "codex login", supports: { approvals: false, resume: true, effort: true, plan: true } };
-    if (!path) return { ...base, models: [], available: false, detail: "Codex isn't installed.", install: "npm install -g @openai/codex, then codex login" };
+    if (!path) return { ...base, models: [], available: false, detail: "Codex isn't installed.", install: "npm install -g @openai/codex && codex login" };
     const [version, listed, server, status] = await Promise.all([versionOf(path, env), catalog(path, env), run(path, ["app-server", "--help"], { env, timeout: 15000 }), run(path, ["login", "status"], { env, timeout: 15000 })]);
     // "Logged in using ChatGPT" / "Not logged in"; an OpenAI key in the environment works too.
     const answer = `${status.stdout}${status.stderr}`;
@@ -212,8 +240,9 @@ export const codex: Provider = {
     const r = await codexAsk<{ rateLimits?: Snapshot; rateLimitsByLimitId?: Record<string, Snapshot | undefined> | null }>(env, scratch, "account/rateLimits/read", {});
     const snaps = Object.values(r.rateLimitsByLimitId ?? {}).filter((x): x is Snapshot => Boolean(x));
     const all = snaps.length ? snaps : r.rateLimits ? [r.rateLimits] : [];
-    const window = (w: Window | null | undefined, name: string) => (w ? [{ label: name, usedPercent: w.usedPercent, resetsAt: w.resetsAt ? w.resetsAt * 1000 : undefined }] : []);
-    const span = (mins: number | null | undefined, fallback: string) => (!mins ? fallback : mins <= 300 ? `${Math.round(mins / 60)}-hour window` : mins >= 10000 ? "Weekly" : `${Math.round(mins / 1440)}-day window`);
+    const kindOf = (mins: number | null | undefined) => (!mins ? {} : { minutes: mins, ...(mins <= 300 ? { kind: "session" as const } : mins >= 40000 ? { kind: "monthly" as const } : mins >= 10000 ? { kind: "weekly" as const } : {}) });
+    const window = (w: Window | null | undefined, name: string) => (w ? [{ label: name, usedPercent: w.usedPercent, resetsAt: w.resetsAt ? w.resetsAt * 1000 : undefined, ...kindOf(w.windowDurationMins) }] : []);
+    const span = (mins: number | null | undefined, fallback: string) => (!mins ? fallback : mins <= 300 ? `${Math.round(mins / 60)}-hour window` : mins >= 40000 ? "Monthly" : mins >= 10000 ? "Weekly" : `${Math.round(mins / 1440)}-day window`);
     return {
       plan: all[0]?.planType ?? undefined,
       windows: all.flatMap((sn) => [...window(sn.primary, `${sn.limitName ? `${sn.limitName}, ` : ""}${span(sn.primary?.windowDurationMins, "Short window")}`), ...window(sn.secondary, `${sn.limitName ? `${sn.limitName}, ` : ""}${span(sn.secondary?.windowDurationMins, "Long window")}`)]),

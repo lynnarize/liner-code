@@ -106,6 +106,8 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
     if (key) save(thread.id, { key, message: m, by });
   };
   const commit = async () => {
+    // ⌘Enter asks too, so it holds to what the button does: no files picked is nothing to commit, not all of them.
+    if (busy || writing || !message.trim() || count === 0) return;
     // Commit and push plays out in the thread, as a card that grows from the chip and folds back.
     if (then === "push") {
       onDone();

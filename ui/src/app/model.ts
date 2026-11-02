@@ -2,19 +2,24 @@
   What the screens work out from the engine's state: who an agent is, what a model is called,
   which bucket a session sits in, and the one line under its title.
 */
-import type { Access, AgentProfile, EffortInfo, Item, ModelInfo, ProviderInfo, Setup, Thread } from "@contracts";
-import { familyOf, splitModel } from "@contracts";
+import type { Access, AgentProfile, EffortInfo, FileChange, Item, Mode, ModelInfo, ProviderInfo, RouteLevel, Settings, Thread } from "@contracts";
+import { castOf, familyOf, splitModel } from "@contracts";
 import type { MarkKind } from "./icons";
 
-export const ACCESS_LEVELS: { id: Access; label: string; short: string; note: string }[] = [
-  { id: "read", label: "Read only", short: "Read only", note: "Reads and answers. Changes nothing." },
-  { id: "ask", label: "Asks first", short: "Asks before edits", note: "Asks before every command and edit." },
-  { id: "edits", label: "Edits on its own", short: "Edits on its own", note: "Edits files, asks before commands." },
-  { id: "auto", label: "Auto", short: "Auto", note: "The tool's own auto mode lets routine steps through and asks you about the rest." },
-  { id: "review", label: "Reviewer decides", short: "Reviewer decides", note: "Your Reviewer, another model family, allows routine commands and hands you the rest." },
-  { id: "full", label: "Full access", short: "Full access", note: "Acts, then tells you. Commands that can't be undone still ask." },
+type Level = { id: Access; label: string; short: string; note: string };
+/** The permissions you pick from: Auto (the default), Manual, Reviewer decides, and Full access last, apart. */
+export const ACCESS_LEVELS: Level[] = [
+  { id: "auto", label: "Auto", short: "Auto", note: "Lets routine steps through, asks about the rest." },
+  { id: "ask", label: "Manual", short: "Manual", note: "Always asks before making changes." },
+  { id: "review", label: "Reviewer decides", short: "Reviewer decides", note: "Another model approves routine steps for you." },
+  { id: "full", label: "Full access", short: "Full access", note: "Acts without asking. Commands that can't be undone still ask." },
 ];
-export const accessOf = (a: Access) => ACCESS_LEVELS.find((x) => x.id === a) ?? ACCESS_LEVELS[1];
+/** Levels Liner sets itself: a side chat or a routine's run only reads. */
+const OWN_LEVELS: Level[] = [
+  { id: "read", label: "Read only", short: "Read only", note: "Reads and answers. Changes nothing." },
+  { id: "edits", label: "Edits on its own", short: "Edits on its own", note: "Edits files, asks before commands." },
+];
+export const accessOf = (a: Access) => ACCESS_LEVELS.find((x) => x.id === a) ?? OWN_LEVELS.find((x) => x.id === a) ?? ACCESS_LEVELS[0];
 
 /** For a tool that doesn't say which levels a model takes. */
 export const EFFORTS: EffortInfo[] = [
@@ -74,10 +79,46 @@ const MAKERS: [RegExp, MarkKind][] = [
   [/kimi|moonshot/, "kimi"],
   [/glm|zhipu|z-?ai\//, "glm"],
   [/minimax|abab/, "minimax"],
+  [/mimo|xiaomi/, "mimo"],
+  [/nemotron|nvidia/, "nvidia"],
   [/hermes|nous/, "hermes"],
 ];
-/** Each tool's own models, when the name doesn't say whose they are ("auto", "default"). */
-const TOOL_MARK: Partial<Record<ReturnType<typeof familyOf>, MarkKind>> = { claude: "claude", codex: "openai", grok: "grok", cursor: "cursor", opencode: "opencode", hermes: "hermes", demo: "demo" };
+/** Each tool's own logo, for its place on the rail and for a model it runs whose name doesn't say whose it is ("auto", "default"). */
+const TOOL_MARK: Partial<Record<ReturnType<typeof familyOf>, MarkKind>> = { claude: "claudecode", codex: "codex", grok: "grok", cursor: "cursor", opencode: "opencode", hermes: "hermes", demo: "demo" };
+/** Where a tool's models come from (Hermes's Nous Portal, OpenCode Go, an endpoint's service), by its name. */
+const SOURCES: [RegExp, MarkKind][] = [
+  [/nous/, "hermes"],
+  // OpenCode's two services each have a mark of their own; Zen is OpenCode's own catalogue ("opencode/…").
+  [/opencode[\s_-]?go/, "opencodego"],
+  [/opencode/, "opencodezen"],
+  [/openrouter/, "openrouter"],
+  [/ollama/, "ollama"],
+  [/anthropic|claude/, "claude"],
+  [/openai|chatgpt/, "openai"],
+  [/google|gemini|vertex/, "gemini"],
+  [/deepseek/, "deepseek"],
+  [/moonshot|kimi/, "kimi"],
+  [/z\.?ai|zhipu|bigmodel/, "glm"],
+  [/qwen|alibaba|dashscope|bailian/, "qwen"],
+  [/minimax/, "minimax"],
+  [/mistral/, "mistral"],
+  [/x\.?ai|grok/, "grok"],
+  [/nvidia/, "nvidia"],
+];
+/**
+  A comment on a design tells the agent which part it's about (Design.tsx). What shows is only your
+  words (`said`), and the part; `rest` is what goes to the agent after them.
+*/
+export function designPart(text: string): { said: string; rest: string; title?: string; part?: string } {
+  const m = /\n\nThat's about this part of the design “([^”]*)” \(`[^`]*`\): `([^`]*)`[\s\S]*$/.exec(text);
+  return m ? { said: text.slice(0, m.index), rest: text.slice(m.index), title: m[1], part: m[2] } : { said: text, rest: "" };
+}
+
+/** A source's logo from its name, or "other" when it's none of the ones known. */
+export function sourceMarkOf(name: string): MarkKind {
+  const n = name.toLowerCase();
+  return SOURCES.find(([re]) => re.test(n))?.[1] ?? "other";
+}
 
 export function markOf(ref: string): MarkKind {
   const { provider, model } = splitModel(ref);
@@ -87,8 +128,8 @@ export function markOf(ref: string): MarkKind {
   for (const [re, kind] of MAKERS) if (re.test(name)) return kind;
   // An ACP agent you added says whose it is in its id ("acp.gemini").
   if (family === "acp") for (const [re, kind] of MAKERS) if (re.test(provider.slice(4))) return kind;
-  // An API endpoint's model isn't the tool's it runs through ("claude.api-deepseek").
-  if (/\.api-/.test(provider)) return "other";
+  // An API endpoint isn't the tool it runs through: its service's logo, by its name ("claude.api-deepseek", "codex.api-openrouter").
+  if (/\.api-/.test(provider)) return sourceMarkOf(provider.slice(provider.indexOf(".api-") + 5));
   return TOOL_MARK[family] ?? "other";
 }
 
@@ -97,30 +138,38 @@ export function providerLabel(ref: string, providers: ProviderInfo[]) {
   return providers.find((x) => x.id === provider)?.label ?? provider;
 }
 
-/** An agent by id. "@claude:claude-opus-5-5" is a model on its own, named after the model. */
+/**
+  An agent by id. "@claude:claude-opus-5-5" is a model on its own, named after the model. One that's
+  gone (the engine points its sessions at its model) shows as removed, never as another of yours.
+*/
 export function agentOf(id: string | undefined, agents: AgentProfile[], providers: ProviderInfo[]): AgentProfile {
   if (id?.startsWith("@")) {
     const ref = id.slice(1);
     return { id, name: modelLabel(ref, providers), role: providerLabel(ref, providers), glyph: "spark", specialty: "custom", model: ref, effort: "medium", soul: "" };
   }
-  return agents.find((a) => a.id === id) ?? agents[0] ?? { id: "demo", name: "Demo", role: "", glyph: "spark", specialty: "custom", model: "demo:demo", effort: "low", soul: "" };
+  const found = agents.find((a) => a.id === id);
+  if (found) return found;
+  if (id && id !== "demo") return { id, name: "A removed agent", role: "", glyph: "spark", specialty: "custom", model: "", effort: "medium", soul: "" };
+  return agents[0] ?? { id: "demo", name: "Demo", role: "", glyph: "spark", specialty: "custom", model: "demo:demo", effort: "low", soul: "" };
 }
 export const isModelAgent = (id?: string) => Boolean(id?.startsWith("@"));
 
-/** Your setups as they stand (shared with the engine, which starts sessions from them the same way). */
-export { setupOf, setupsOf } from "@contracts";
+/** How a session (or a new one) runs, from who's in it: a route is Auto, a planner is Plan, the rest Solo. */
+export const modeOf = (s: { lead?: string; route?: unknown }): Mode => (s.route ? "auto" : s.lead ? "plan" : "solo");
 
-/** A setup in one line, by what it does: "Helm plans · DeepSeek builds, then Opus 5.5 takes it on · checked". */
-export function setupLine(s: Setup, agents: AgentProfile[], providers: ProviderInfo[]) {
-  const name = (id: string) => agentOf(id, agents, providers).name;
-  return [
-    s.lead ? `${name(s.lead)} plans` : "",
-    s.stages.map((st, i) => `${name(st.who)} ${i === 0 ? (s.stages.length > 1 || s.lead ? "builds" : "straight to the code") : "takes it on"}`).join(", then "),
-    s.crew.length ? `${plural(s.crew.length, "more agent")} on call` : "",
-    s.checks.by === null ? "unchecked" : "checked",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+/**
+  Who a new session in a mode starts with, from your two models: Solo on the cheaper one (or with
+  Dual frontier the second frontier one), Plan with the frontier model planning and the other
+  building, Auto at your level. Plan with one model in both parts would share its session, so
+  that's Solo. Null with no model ready.
+*/
+export function startOf(mode: Mode, settings: Pick<Settings, "picks" | "dual" | "route">, providers: ProviderInfo[], dual = settings.dual ?? false): { agent: string; lead?: string; route?: RouteLevel; dual: boolean } | null {
+  const cast = castOf(providers, { dual, picks: settings.picks });
+  if (!cast) return null;
+  const agent = `@${cast.everyday}`;
+  if (mode === "auto") return { agent, lead: undefined, route: settings.route?.level ?? "high", dual };
+  if (mode === "plan" && cast.strong !== cast.everyday) return { agent, lead: `@${cast.strong}`, route: undefined, dual };
+  return { agent, lead: undefined, route: undefined, dual };
 }
 
 /** The model a thread's agent runs on. */
@@ -213,9 +262,11 @@ export const money = (n: number) => (n >= 100 ? `$${n.toFixed(0)}` : `$${n.toFix
 export const compact = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : `${n}`);
 
 /**
-  A thread's timeline, split into turns, in one pass. Given the turns it made last time, a turn
-  none of whose items changed keeps its very list, so its view can skip redrawing while another
-  turn streams (T3 Code's useTimelineRows keeps its rows the same way).
+  A thread's timeline, split into turns, in one pass. A turn that carries on the one before it
+  (building its plan, finishing its draft, fixing what a check found: the turn item's `part`)
+  joins it, so a hand-off reads as one turn; `n` counts the turns you see. Given the turns it made
+  last time, a turn none of whose items changed keeps its very list, so its view can skip
+  redrawing while another turn streams (T3 Code's useTimelineRows keeps its rows the same way).
 */
 export function turnsOf(items: Item[], before?: Map<number, Item[]>) {
   const map = new Map<number, Item[]>();
@@ -224,12 +275,27 @@ export function turnsOf(items: Item[], before?: Map<number, Item[]>) {
     if (list) list.push(it);
     else map.set(it.turn, [it]);
   }
-  return [...map.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([turn, list]) => {
-      const was = before?.get(turn);
-      return { turn, items: was && was.length === list.length && was.every((x, i) => x === list[i]) ? was : list };
-    });
+  const shown: { turn: number; n: number; items: Item[] }[] = [];
+  for (const [turn, list] of [...map.entries()].sort((a, b) => a[0] - b[0])) {
+    const mark = list.find((x) => x.kind === "turn");
+    const prev = shown[shown.length - 1];
+    if (prev && mark?.kind === "turn" && mark.part) prev.items = [...prev.items, ...list];
+    else shown.push({ turn, n: shown.length + 1, items: list });
+  }
+  return shown.map((g) => {
+    const was = before?.get(g.turn);
+    return { ...g, items: was && was.length === g.items.length && was.every((x, i) => x === g.items[i]) ? was : g.items };
+  });
+}
+
+/** Files a turn and the turns that carried it on changed, as one list: each file once, its lines added up. */
+export function mergeFiles(files: FileChange[]): FileChange[] {
+  const by = new Map<string, FileChange>();
+  for (const f of files) {
+    const had = by.get(f.path);
+    by.set(f.path, had ? { ...had, added: had.added + f.added, removed: had.removed + f.removed } : f);
+  }
+  return [...by.values()];
 }
 
 /** Files changed across a thread's turns, by turn. */

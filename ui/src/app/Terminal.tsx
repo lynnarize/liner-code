@@ -257,9 +257,9 @@ function TermPane({ thread, pane, visible, onRestart }: { thread: Thread; pane: 
       });
     });
     ro.observe(el);
-    // The theme follows light and dark.
+    // The theme follows light and dark, and your own theme and accent, which go on the root's style (look.ts).
     const mo = new MutationObserver(() => (t.options.theme = themeNow()));
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent"] });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent", "style"] });
     // Letting go of the view leaves the shell running; closing its tab is what ends it.
     return () => {
       live = false;

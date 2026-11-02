@@ -11,8 +11,9 @@
   only, under a name of its own.
 */
 import type { Endpoint, EndpointProtocol, ModelInfo, ProviderId } from "../../../contracts/src/index.ts";
-import { ENDPOINT_TOOL } from "../../../contracts/src/index.ts";
+import { ENDPOINT_TOOL, VOUCHER } from "../../../contracts/src/index.ts";
 import type { OpenOptions, Provider } from "./types.ts";
+import { goUsage, isGo } from "./opencode-go.ts";
 
 /** The variable a tool reads the endpoint's key from (Codex's env_key, OpenCode's {env:…}). */
 export const KEY_VAR = "LINER_ENDPOINT_KEY";
@@ -22,6 +23,8 @@ const VIA: Record<EndpointProtocol, string> = { anthropic: "Claude Code", respon
 export const hostOf = (url: string) => URL.parse(url.trim())?.host ?? url.trim();
 /** A name the tool takes for the endpoint (Codex's model_provider, OpenCode's provider id): letters, digits and _. */
 const nameOf = (e: Endpoint) => `liner_${e.id.replace(/[^a-zA-Z0-9]/g, "_")}`;
+/** The voucher's endpoint (Liner Code's site), not one you added. */
+const isVoucher = (e: Endpoint) => e.id === VOUCHER.id && e.url === VOUCHER.url;
 const local = (url: string) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url.trim());
 
 /**
@@ -92,7 +95,7 @@ export async function endpointModels(url: string, protocol: EndpointProtocol, ke
 /** The endpoint `e`, through `base` (the tool for its protocol). `key` is read when a session opens, so a key saved later counts. */
 export function endpointProvider(base: Provider, e: Endpoint, key: () => string | undefined): Provider {
   const id = `${ENDPOINT_TOOL[e.protocol]}.${e.id}` as ProviderId;
-  const models = (): ModelInfo[] => e.models.map((m, i) => ({ id: m, label: m, description: `${e.label}, through ${VIA[e.protocol]}`, ...(i === 0 ? { isDefault: true } : {}) }));
+  const models = (): ModelInfo[] => e.models.map((m, i) => ({ id: m, label: isVoucher(e) ? "DeepSeek V4.1 Flash" : m, description: `${e.label}, through ${VIA[e.protocol]}`, ...(i === 0 ? { isDefault: true } : {}) }));
   return {
     id,
     async detect(env) {
@@ -114,12 +117,26 @@ export function endpointProvider(base: Provider, e: Endpoint, key: () => string 
       };
     },
     commands: base.commands,
+    // OpenCode Go added as an endpoint shows its plan's windows, read with the endpoint's key; the
+    // voucher's, its five hours and its week, come from Liner Code's site with the voucher.
+    ...((isGo(e.url) || isVoucher(e)) && {
+      async limits() {
+        const k = key();
+        const windows = k ? await goUsage([k], isVoucher(e) ? `${VOUCHER.url}/usage` : undefined) : null;
+        return windows && { plan: isVoucher(e) ? "Promo" : "Go", windows };
+      },
+    }),
     open: (o: OpenOptions) => {
       const model = o.model && o.model !== "default" ? o.model : (e.models[0] ?? "");
       const x = endpointOptions(e, model, key(), o.env);
       // Claude Code's subagents name Claude models; here they run on the endpoint's.
       const subagents = o.subagents && Object.fromEntries(Object.entries(o.subagents).map(([n, a]) => [n, { ...a, model: undefined }]));
-      return base.open({ ...o, env: x.env, model: x.model, subagents, config: { ...o.config, ...x.config } });
+      const s = base.open({ ...o, env: x.env, model: x.model, subagents, config: { ...o.config, ...x.config } });
+      // Another model reopens the session: the endpoint's model is set in its environment and config, not
+      // only in the tool, and OpenCode knows it by a name of its own. Effort and access change in place.
+      const update = s.update?.bind(s);
+      s.update = async (u) => (u.model === o.model && update ? update({ ...u, model: x.model }) : false);
+      return s;
     },
   };
 }

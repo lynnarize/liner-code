@@ -5,12 +5,12 @@
   keys kept encrypted, Terminal and Finder. The page asks for these over one IPC channel
   ("liner") with the same methods it sent the Swift shell; preload.ts is its side of it.
 */
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, screen, session, shell, systemPreferences, type MenuItemConstructorOptions, type Rectangle } from "electron";
-import { execFile } from "node:child_process";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, session, shell, systemPreferences, type MenuItemConstructorOptions, type NativeImage, type Rectangle } from "electron";
+import { exec, execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, delimiter, join, normalize } from "node:path";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
 import { mac, type Frame, type Rect } from "./mac";
@@ -22,12 +22,34 @@ app.setName("Liner Code");
 app.setPath("userData", process.env.LINER_HOME ? join(process.env.LINER_HOME, "shell") : join(app.getPath("appData"), "Liner Code"));
 
 const isMac = process.platform === "darwin";
+const isWin = process.platform === "win32";
+// Windows shows notifications, and groups the taskbar button, by this id; a Start menu shortcut
+// has to carry the same one for a notification to show at all (startMenu puts it there).
+if (isWin) app.setAppUserModelId("app.liner.code");
+
+/**
+  The zip has no installer, so the app puts its own Start menu shortcut in, with its id, and points
+  it at wherever this copy now is (a moved folder moves it).
+*/
+function startMenu() {
+  if (!isWin || !app.isPackaged) return;
+  const lnk = join(app.getPath("appData"), "Microsoft", "Windows", "Start Menu", "Programs", "Liner Code.lnk");
+  try {
+    shell.writeShortcutLink(lnk, existsSync(lnk) ? "replace" : "create", { target: process.execPath, appUserModelId: "app.liner.code", description: "Liner Code" });
+  } catch {
+    // no shortcut: everything but notifications still works
+  }
+}
 // The Web Inspector and the page's reload are for building Liner Code, not for using it.
 const inspect = process.env.LINER_INSPECT === "1";
 // While developing: the Vite server, and an engine you run yourself (npm run dev).
 const devUrl = process.env.LINER_UI_URL;
 
-if (!app.requestSingleInstanceLock()) app.quit();
+// A second copy hands over to the first (second-instance shows its window) and starts nothing of its own:
+// quit() isn't at once, and on Windows, where nothing else stops a second launch, it could still open
+// a window and a second engine.
+const firstCopy = app.requestSingleInstanceLock();
+if (!firstCopy) app.quit();
 
 let win: BrowserWindow | null = null;
 let quitting = false;
@@ -154,7 +176,9 @@ function createWindow() {
     // With the addon the page is transparent (the window behind it stays opaque, in the system's
     // window colour): Vibrancy here only serves that, and the addon hides Electron's full-window view.
     backgroundColor: mac ? "#00000000" : windowColor(),
-    ...(isMac ? { titleBarStyle: "hidden" as const, trafficLightPosition: LIGHTS, vibrancy: mac ? ("sidebar" as const) : undefined } : {}),
+    // Elsewhere the system's own frame and title bar (the page leaves no room for window buttons
+    // over its top right), its menu bar shown while Alt is held; the keys work either way.
+    ...(isMac ? { titleBarStyle: "hidden" as const, trafficLightPosition: LIGHTS, vibrancy: mac ? ("sidebar" as const) : undefined } : { autoHideMenuBar: true }),
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, devTools: inspect },
   });
   if (prefs.maximized) win.maximize();
@@ -180,7 +204,16 @@ function createWindow() {
 
   // Closing the window keeps the app (and its sessions) running; the Dock icon brings it back.
   win.on("close", (e) => {
-    if (quitting || !isMac || !win) return;
+    if (quitting || !win) return;
+    // Elsewhere closing the window quits, so it asks first while sessions work, as quitting does:
+    // asked after the window has gone, Cancel would leave the app running with no window.
+    if (!isMac) {
+      if (statusItem.running() > 0) {
+        e.preventDefault();
+        if (!asking) void askToQuit(statusItem.running());
+      }
+      return;
+    }
     e.preventDefault();
     if (win.isFullScreen()) {
       win.once("leave-full-screen", () => win?.hide());
@@ -253,6 +286,8 @@ async function fail(message: string) {
 // ---------- The bridge ----------
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
+// The page joins paths with / (C:\proj/src/a.ts on Windows), which Explorer doesn't always take.
+const local = (p: string) => (isWin && p ? normalize(p) : p);
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const rectOf = (p: Record<string, unknown>): Rect => ({ x: num(p.x), y: num(p.y), width: num(p.width), height: num(p.height) });
 const frameOf = (p: Record<string, unknown>): Frame => {
@@ -341,16 +376,18 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
     case "badge": {
       const n = num(p.count);
       if (isMac) app.dock?.setBadge(n > 0 ? String(n) : "");
+      // Windows has no count on a taskbar button: a dot over its icon, and the count in its tooltip.
+      else if (isWin) win.setOverlayIcon(n > 0 ? redDot() : null, n > 0 ? `${n} need${n === 1 ? "s" : ""} you` : "");
       else app.setBadgeCount(n);
       return;
     }
     case "status":
       return statusItem.set(p as unknown as TrayStatus);
     case "reveal":
-      if (str(p.path)) shell.showItemInFolder(str(p.path));
+      if (str(p.path)) shell.showItemInFolder(local(str(p.path)));
       return;
     case "openIn":
-      return openIn(str(p.path), str(p.app));
+      return openIn(local(str(p.path)), str(p.app));
     case "runInTerminal":
       return runInTerminal(str(p.command));
     case "openExternal":
@@ -416,6 +453,20 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
   }
 }
 
+/** The taskbar button's badge on Windows: a 16 px red dot (premultiplied BGRA), drawn once. */
+let dot: NativeImage | undefined;
+function redDot() {
+  if (dot) return dot;
+  const size = 16;
+  const buf = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const a = Math.max(0, Math.min(1, 7.5 - Math.hypot(x + 0.5 - 8, y + 0.5 - 8)));
+      buf.set([Math.round(0x3b * a), Math.round(0x30 * a), Math.round(0xff * a), Math.round(255 * a)], (y * size + x) * 4);
+    }
+  return (dot = nativeImage.createFromBitmap(buf, { width: size, height: size }));
+}
+
 // Kept until clicked or closed, or a collected notification loses its click.
 const notes = new Set<Notification>();
 function notify(title: string, body: string, thread?: string) {
@@ -445,9 +496,19 @@ async function openIn(path: string, where: string) {
   if (!path) return;
   if (isMac && where === "terminal" && (await opens(["-a", "Terminal", path]))) return;
   if (isMac && where === "editor") for (const id of EDITORS) if (await opens(["-b", id, path])) return;
+  // On Windows: Windows Terminal in the folder, else a Command Prompt there (Explorer would only show it).
+  if (isWin && where === "terminal" && ((await started("wt.exe", ["-d", path])) || (await started(process.env.ComSpec || "cmd.exe", ["/c", "start", "", "/d", path, "cmd.exe"], true)))) return;
   const err = await shell.openPath(path);
   if (err) throw new Error(err);
 }
+
+/** Starts a program that carries on by itself; false when it couldn't. */
+const started = (cmd: string, args: string[], hide = false) =>
+  new Promise<boolean>((resolve) => {
+    const c = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: hide });
+    c.on("error", () => resolve(false));
+    c.on("spawn", () => (c.unref(), resolve(true)));
+  });
 
 /**
   Sign-in commands run in Terminal, where the tool can ask for what it needs. A .command file
@@ -455,6 +516,15 @@ async function openIn(path: string, where: string) {
 */
 async function runInTerminal(command: string) {
   if (!command) return;
+  // On Windows a .cmd file opens in a console window the same way, and waits for a key at the end.
+  if (isWin) {
+    const file = join(tmpdir(), `liner-${randomBytes(4).toString("hex")}.cmd`);
+    const said = command.replace(/"/g, "").replace(/%/g, "%%").replace(/[\^&|<>()]/g, "^$&");
+    writeFileSync(file, `@echo off\r\ntitle Liner Code\r\necho Liner Code runs: ${said}\r\necho.\r\n${command}\r\necho.\r\necho Done. You can close this window and go back to Liner Code.\r\npause >nul\r\n`);
+    const err = await shell.openPath(file);
+    if (err) throw new Error(err);
+    return;
+  }
   const file = join(tmpdir(), `liner-${randomBytes(4).toString("hex")}.command`);
   const said = command.replace(/'/g, "");
   writeFileSync(file, `#!/bin/zsh -l\nclear\necho '\\033[1mLiner Code\\033[0m runs: ${said}'\necho\n${command}\necho\necho 'Done. You can close this window and go back to Liner Code.'\n`, { mode: 0o755 });
@@ -499,7 +569,7 @@ function buildMenu() {
     ...(isMac
       ? [{ label: "Liner Code", submenu: [{ role: "about", label: "About Liner Code" }, { label: "Check for Updates…", click: () => send("updates") }, { type: "separator" }, settings, { type: "separator" }, { role: "hide", label: "Hide Liner Code" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit", label: "Quit Liner Code" }] } satisfies MenuItemConstructorOptions]
       : []),
-    { label: "File", submenu: [item("New Session", "new", "mod+n"), item("Add a Project…", "open-project", "mod+o"), { type: "separator" }, ...(isMac ? [] : [settings, { type: "separator" } as const]), { role: isMac ? "close" : "quit", label: isMac ? "Close Window" : "Quit" }] },
+    { label: "File", submenu: [item("New Session", "new", "mod+n"), item("Add a Project…", "open-project", "mod+o"), { type: "separator" }, ...(isMac ? [] : [settings, { type: "separator" } as const]), { role: isMac ? "close" : "quit", label: isMac ? "Close Window" : isWin ? "Exit" : "Quit" }] },
     { label: "Edit", submenu: [{ role: "undo" }, { role: "redo" }, { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" }] },
     {
       label: "View",
@@ -547,12 +617,18 @@ const REPORT_TOOLS = ["claude", "codex", "opencode", "hermes", "cursor-agent", "
 
 /** Each tool's version as it says it, for the report: "codex: codex-cli 0.165.0 (~/.local/bin/codex)". */
 async function toolVersions(env: NodeJS.ProcessEnv) {
-  const dirs = (env.PATH ?? "").split(":").filter(Boolean);
+  const dirs = (env.PATH ?? "").split(delimiter).filter(Boolean);
+  // On Windows a tool is a .exe, or an npm .cmd shim, which Node only starts through a shell.
+  const names = (bin: string) => (isWin ? [".exe", ".cmd", ".bat"].map((x) => bin + x) : [bin]);
   return Promise.all(
     REPORT_TOOLS.map(async (bin) => {
-      const path = dirs.map((d) => join(d, bin)).find((p) => existsSync(p));
+      const path = dirs.flatMap((d) => names(bin).map((n) => join(d, n))).find((p) => existsSync(p));
       if (!path) return `${bin}: not on PATH`;
-      const said = await new Promise<string>((done) => execFile(path, ["--version"], { env, timeout: 10_000, encoding: "utf8" }, (_e, out, err) => done(`${out || err || ""}`.trim().split("\n")[0])));
+      const said = await new Promise<string>((done) => {
+        const answer = (_e: Error | null, out: string, err: string) => done(`${out || err || ""}`.trim().split("\n")[0]);
+        if (isWin && /\.(cmd|bat)$/i.test(path)) exec(`"${path}" --version`, { env, timeout: 10_000, encoding: "utf8", windowsHide: true }, answer);
+        else execFile(path, ["--version"], { env, timeout: 10_000, encoding: "utf8", windowsHide: true }, answer);
+      });
       return `${bin}: ${said || "no answer"} (${path.replace(homedir(), "~")})`;
     }),
   );
@@ -578,10 +654,12 @@ async function reportProblem() {
   if (existsSync(logFile)) copyFileSync(logFile, join(dir, "engine.log"));
   if (existsSync(previousLogFile)) copyFileSync(previousLogFile, join(dir, "engine.previous.log"));
   const zip = join(app.getPath("downloads"), `${basename(dir)}.zip`);
-  await new Promise<void>((done, fail) => execFile("ditto", ["-c", "-k", "--keepParent", dir, zip], (e) => (e ? fail(e) : done())));
+  // Windows 10 and later have bsdtar in System32, which writes a zip for a .zip name (-a).
+  const [zipper, zipArgs] = isWin ? [join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe"), ["-a", "-c", "-f", zip, "-C", tmpdir(), basename(dir)]] : ["ditto", ["-c", "-k", "--keepParent", dir, zip]];
+  await new Promise<void>((done, fail) => execFile(zipper, zipArgs, { windowsHide: true }, (e) => (e ? fail(e) : done())));
   shell.showItemInFolder(zip);
   const repo = releasesRepo();
-  if (repo) void shell.openExternal(`https://github.com/${repo}/issues/new?template=bug.yml&version=${encodeURIComponent(app.getVersion())}&macos=${encodeURIComponent(process.getSystemVersion())}`);
+  if (repo) void shell.openExternal(`https://github.com/${repo}/issues/new?template=bug.yml&version=${encodeURIComponent(app.getVersion())}${isMac ? `&macos=${encodeURIComponent(process.getSystemVersion())}` : ""}`);
 }
 
 // ---------- Launch ----------
@@ -622,6 +700,8 @@ async function askToQuit(n: number) {
   }
 }
 
+/** On Windows: the engine has saved and stopped, so quitting can go on. */
+let engineGone = false;
 app.on("before-quit", (e) => {
   if (!quitting && statusItem.running() > 0) {
     e.preventDefault();
@@ -629,7 +709,16 @@ app.on("before-quit", (e) => {
     return;
   }
   quitting = true;
-  engine.stop();
+  // Windows takes the engine down with the app, mid-save: the app waits for it to finish first.
+  if (isWin && !engineGone) {
+    e.preventDefault();
+    void engine.stop().then(() => {
+      engineGone = true;
+      app.quit();
+    });
+    return;
+  }
+  void engine.stop();
   // A downloaded update goes in as the app quits, so the next launch is the new one.
   if (!updating && staged(engine.home)) updating = installUpdate(engine.home, false);
 });
@@ -641,10 +730,12 @@ nativeTheme.on("updated", () => {
 });
 
 void app.whenReady().then(async () => {
+  if (!firstCopy) return;
   loadPrefs();
   material = prefs.material ?? "solid";
   guardPermissions();
   buildMenu();
+  startMenu();
   createWindow();
   mac?.quietWritingBadge();
   const who = await whoami();

@@ -13,8 +13,12 @@ import type { OpenOptions, Provider, ProviderSession, TurnSink } from "./types.t
 
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => (clearTimeout(t), reject(new Error("stopped"))), { once: true });
+    // A signal that's already aborted never fires again (Stop while it asked you): stopped now, not after the rest of the script.
+    if (signal.aborted) return reject(new Error("stopped"));
+    const stop = () => (clearTimeout(t), reject(new Error("stopped")));
+    // Each wait lets go of the signal when it's over: a long reply would otherwise leave hundreds on it.
+    const t = setTimeout(() => (signal.removeEventListener("abort", stop), resolve()), ms);
+    signal.addEventListener("abort", stop, { once: true });
   });
 
 /** Writes text out a few words at a time, the way a model streams it. */
@@ -222,12 +226,13 @@ class DemoSession implements ProviderSession {
           : "\n\nI made the change but didn't run the tests, since you said no. Run `npm test` when you're ready.",
       signal,
     );
-    sink.usage({ inputTokens: 1800 + n * 420, outputTokens: 260, cacheReadTokens: 1200 * n, costUsd: 0, contextTokens: 6200 + n * 900, contextWindow: 200000 }, true);
+    // Each turn's own use: what one turn of the work reads and writes (not running totals, which the work and design turns counted differently).
+    sink.usage({ inputTokens: 1800 + n * 420, outputTokens: 260, cacheReadTokens: 1200 * n, costUsd: 0, contextTokens: 6200 + n * 900, contextWindow: 200000 });
   }
-  /** A lead's turn: talk is answered; a change gets a look, one question, and a plan to approve. */
+  /** A planner's turn: talk is answered; a change gets a look, one question, and a plan to approve. */
   private async plan(text: string, sink: TurnSink, signal: AbortSignal, t: string) {
     if (!/\b(fix|add|change|make|build|update|remove|delete|rename|refactor|move|write|implement|handle|show|support)\b/i.test(text)) {
-      await stream((d) => sink.text(d, `${t}-a`), "Hi, Demo here. I'm a scripted lead, so I can't really chat, but I answer like a real one: talk gets a reply, and a change gets a plan. Ask me to fix the tide time after midnight to see the plan.", signal);
+      await stream((d) => sink.text(d, `${t}-a`), "Hi, Demo here. I'm a scripted planner, so I can't really chat, but I answer like a real one: talk gets a reply, and a change gets a plan. Ask me to fix the tide time after midnight to see the plan.", signal);
       sink.usage({ inputTokens: 300, outputTokens: 60, cacheReadTokens: 0, costUsd: 0, contextTokens: 1400, contextWindow: 200000 }, false);
       return;
     }
@@ -254,15 +259,15 @@ class DemoSession implements ProviderSession {
     ).catch(() => null);
     const pick = answers ? Object.values(answers)[0] : "Tomorrow's first high tide";
     await stream((d) => sink.text(d, `${t}-a`), `Times are compared as strings, so after the last high tide it returns nothing. You picked: ${pick}. Here's the plan for the coder.\n\n`, signal);
-    // Handed over the way a real lead does it, in <plan> tags the turn turns into a card when it ends.
+    // Handed over the way a real planner does it, in <plan> tags the turn turns into a card when it ends.
     await stream(
       (d) => sink.text(d, `${t}-a`),
       `<plan title="Wrap round to tomorrow's first high tide">\n1. Fall back to the first high tide of the list when none is left today — src/tides.js\n2. Mark it as tomorrow so the label can say so — src/tides.js\n3. Add a test for a time after the last high tide — src/tides.test.js\n4. Run npm test\n</plan>`,
       signal,
       90,
     );
-    // A real lead often says a word after the plan too; it reads below the card.
-    await stream((d) => sink.text(d, `${t}-a`), "\n\nIt's a small change in one file plus a test. Approve it and the coder starts, or tell me what to change.", signal);
+    // A real planner often says a word after the plan too; it reads below the card.
+    await stream((d) => sink.text(d, `${t}-a`), "\n\nIt's a small change in one file plus a test. Approve it and the builder starts, or tell me what to change.", signal);
     sink.usage({ inputTokens: 900, outputTokens: 180, cacheReadTokens: 400, costUsd: 0, contextTokens: 4100, contextWindow: 200000 }, false);
   }
 
@@ -307,7 +312,7 @@ class DemoSession implements ProviderSession {
           : `Done: ${note ? note.toLowerCase() : "the change you asked for"}. It's version ${version || round + 1} now; the earlier ones stay in the Versions menu if you'd like one back.`,
       signal,
     );
-    sink.usage({ inputTokens: 2400 + round * 600, outputTokens: 1900, cacheReadTokens: 1500 * round, costUsd: 0, contextTokens: 7800 + round * 2100, contextWindow: 200000 }, true);
+    sink.usage({ inputTokens: 2400 + round * 600, outputTokens: 1900, cacheReadTokens: 1500 * round, costUsd: 0, contextTokens: 7800 + round * 2100, contextWindow: 200000 });
   }
 
   close() {}

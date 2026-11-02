@@ -60,9 +60,10 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
     setStage("creating");
     void run("create");
   };
+  // `start` can come later (a PR opened from the chat while the panel shows none): seen is true already then.
   useEffect(() => {
     if (start && seen) begin();
-  }, [seen]);
+  }, [seen, start]);
 
   const merged = stage === "merged";
   const busy = BUSY.includes(stage) && !paused;

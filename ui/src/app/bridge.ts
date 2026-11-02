@@ -18,6 +18,12 @@ const shell = () => window.linerShell;
 const webkit = () => window.webkit?.messageHandlers?.liner;
 export const isNative = () => Boolean(shell() || webkit());
 
+/**
+  Installs the GitHub CLI and signs it in, in a terminal: Homebrew on a Mac, winget on Windows,
+  where the new gh isn't on that console's PATH yet, so it's run from where winget puts it.
+*/
+export const ghInstall = () => (shell()?.platform === "win32" ? 'winget install --id GitHub.cli -e && "%ProgramFiles%\\GitHub CLI\\gh.exe" auth login' : "brew install gh && gh auth login");
+
 let seq = 1;
 const waiting = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 window.__linerReply = (id, ok, value) => {

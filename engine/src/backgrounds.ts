@@ -72,7 +72,14 @@ export class Backgrounds {
   /** To a JPEG, made smaller when it's bigger than `max` on its long side (never larger). */
   private async convert(from: string, to: string, max: number) {
     mkdirSync(this.dir, { recursive: true });
-    const size = await run("sips", ["-g", "pixelWidth", "-g", "pixelHeight", from], { timeout: 15000 });
+    // Windows has no sips: PowerShell's System.Drawing does the same (no HEIC), the paths passed in its environment.
+    if (process.platform === "win32") {
+      const ps = `Add-Type -AssemblyName System.Drawing; $s = [Drawing.Image]::FromFile($env:LINER_FROM); $k = [Math]::Min(1, ${max} / [Math]::Max($s.Width, $s.Height)); $b = New-Object Drawing.Bitmap ([int]($s.Width * $k)), ([int]($s.Height * $k)); $g = [Drawing.Graphics]::FromImage($b); $g.InterpolationMode = 'HighQualityBicubic'; $g.DrawImage($s, 0, 0, $b.Width, $b.Height); $c = [Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }; $p = New-Object Drawing.Imaging.EncoderParameters 1; $p.Param[0] = New-Object Drawing.Imaging.EncoderParameter ([Drawing.Imaging.Encoder]::Quality), 84L; $b.Save($env:LINER_TO, $c, $p); $s.Dispose()`;
+      const r = await run("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps], { env: { ...process.env, LINER_FROM: from, LINER_TO: to }, timeout: 30000 });
+      if (r.code !== 0 || !existsSync(to)) throw new Error("Liner Code couldn't read that picture. Try a JPEG or PNG.");
+      return;
+    }
+    const size = await run("sips",["-g", "pixelWidth", "-g", "pixelHeight", from], { timeout: 15000 });
     const long = Math.max(...[...size.stdout.matchAll(/pixel(?:Width|Height): (\d+)/g)].map((m) => Number(m[1])), 0);
     const r = await run("sips", ["-s", "format", "jpeg", "-s", "formatOptions", "84", ...(long > max ? ["-Z", String(max)] : []), from, "--out", to], { timeout: 30000 });
     if (r.code !== 0 || !existsSync(to)) throw new Error("Liner Code couldn't read that picture. Try a JPEG, PNG or HEIC.");

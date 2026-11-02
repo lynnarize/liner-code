@@ -4,14 +4,14 @@
   show their tokens with no cost.
 */
 import { useEffect, useState } from "react";
-import type { ToolLimits, UsageSummary } from "@contracts";
+import type { UsageSummary } from "@contracts";
 import { BarChart } from "@liner/components/bar-chart/bar-chart";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { agentOf, clock, compact, markOf, modelLabel, money } from "./model";
-import { ModelTag } from "./ui";
+import { agentOf, compact, markOf, modelLabel, money } from "./model";
+import { LimitRow, ModelTag } from "./ui";
 
 export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () => void }) {
   const [days, setDays] = useState<"7" | "30" | "month">("month");
@@ -241,18 +241,24 @@ function Budget({ spent, budget, editing, onEdit }: { spent: number | null; budg
 
 /** Each plan's windows, as the tool reports them: how much is used, and when it resets. */
 function Limits() {
-  const [tools, setTools] = useState<ToolLimits[] | null>(null);
+  const tools = useEngine((s) => s.limits);
+  const [asking, setAsking] = useState(true);
   const [again, setAgain] = useState(0);
+  const [now, setNow] = useState(Date.now);
   useEffect(() => {
     let live = true;
-    setTools(null);
-    void rpc("usage.limits", {})
-      .then((r) => live && setTools(r.tools))
-      .catch(() => live && setTools([]));
+    setAsking(true);
+    void rpc("usage.limits", { fresh: again > 0 })
+      .catch(() => {})
+      .finally(() => live && (setAsking(false), setNow(Date.now())));
     return () => {
       live = false;
     };
   }, [again]);
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
   return (
     <section className="lc-frame lc-limits">
       <div className="lc-fcard">
@@ -260,14 +266,14 @@ function Limits() {
           <b>Limits</b>
           <span className="lc-quiet">What each plan has left, from the tool itself</span>
           <span className="lc-grow" />
-          <button type="button" className="lc-ib l-focus" aria-label="Look again" title="Look again" onClick={() => setAgain((n) => n + 1)}>
+          <button type="button" className="lc-ib l-focus" aria-label="Look again" title="Look again" disabled={asking} onClick={() => setAgain((n) => n + 1)}>
             <I.refresh size={14} />
           </button>
         </div>
-        {tools === null ? (
+        {tools.length === 0 && asking ? (
           <p className="l-shimmer lc-limits-none">Asking each tool</p>
         ) : tools.length === 0 ? (
-          <p className="lc-quiet lc-limits-none">No signed-in tool reports plan limits.</p>
+          <p className="lc-quiet lc-limits-none">No signed-in tool reports plan limits. Claude Code and Codex on a plan do, and OpenCode Go, in OpenCode or added as an API endpoint.</p>
         ) : (
           <div className="lc-limits-grid">
             {tools.map((t) => (
@@ -277,16 +283,7 @@ function Limits() {
                   {t.plan && <span className="lc-mp-def">{t.plan[0].toUpperCase() + t.plan.slice(1)}</span>}
                 </div>
                 {t.windows.map((w) => (
-                  <div key={w.label} className="lc-limits-w" data-high={w.usedPercent >= 80 || undefined}>
-                    <span className="lc-limits-l">
-                      <span>{w.label}</span>
-                      <span className="lc-mono">{Math.round(w.usedPercent)}%</span>
-                    </span>
-                    <span className="lc-limits-bar" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(w.usedPercent)} aria-label={`${t.label}, ${w.label}`}>
-                      <i style={{ width: `${Math.min(100, w.usedPercent)}%` }} />
-                    </span>
-                    {w.resetsAt && <small className="lc-quiet">Resets {clock(w.resetsAt)}</small>}
-                  </div>
+                  <LimitRow key={w.label} w={w} label={t.label} now={now} />
                 ))}
                 {!t.windows.length && <small className="lc-quiet">{t.detail ?? "It didn't report any windows."}</small>}
               </div>

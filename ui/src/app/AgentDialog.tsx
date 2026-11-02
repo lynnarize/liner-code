@@ -1,6 +1,6 @@
 /*
   New agent (or editing one), in two columns. The agent: what it's good at (its name, model,
-  effort and what it may change fill in from that), how it runs and its subagents. What it knows:
+  effort and what it may change fill in from that), how it runs and its helpers. What it knows:
   its soul.md, a prompt added to every turn, the skills it reads when a task calls for one, and
   files read at the start of each session. The foot says how it will show in the team.
 */
@@ -13,6 +13,7 @@ import { Glyph, I, ModelMark } from "./icons";
 import { allModels, effortsFor, markOf, modelLabel, onClaude, plural } from "./model";
 import { EffortPick, ModelPicker } from "./Models";
 import { PanelHead, Pop, Row, Sep } from "./ui";
+import * as os from "./os";
 
 type Preset = { id: Specialty; label: string; note: string; glyph: AgentGlyph; name: string; role: string; effort: Effort; access: Access; prefer: string[]; soul: (n: string) => string };
 
@@ -36,6 +37,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
   const providers = useEngine((s) => s.providers);
   const models = useMemo(() => allModels(providers), [providers]);
   const ref = useRef<HTMLDialogElement>(null);
+  // A press that started inside: a selection dragged out past the frame ends on the dialog, and isn't a click outside.
+  const pressedOutside = useRef(false);
   const [spec, setSpec] = useState<Specialty>("coder");
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
@@ -45,7 +48,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
   const [soul, setSoul] = useState("");
   const [touched, setTouched] = useState(false);
   const [runMode, setRunMode] = useState<RunMode>("helpers");
-  const [subs, setSubs] = useState<{ explorer?: string; tests?: string; reviewer?: string | null }>({});
+  const [subs, setSubs] = useState<{ explorer?: string; tests?: string }>({});
   const [prompt, setPrompt] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
@@ -61,8 +64,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     setModel(agent?.model ?? pickModel(p));
     setAccess(agent?.access ?? p.access);
     setSoul(agent?.soul ?? p.soul(p.name));
-    setRunMode(agent?.runMode ?? "helpers");
-    setSubs(agent?.subagents ?? {});
+    setRunMode(agent?.runMode === "single" ? "single" : "helpers");
+    setSubs({ explorer: agent?.subagents?.explorer, tests: agent?.subagents?.tests });
     setPrompt(agent?.prompt ?? "");
     setSkills(agent?.skills ?? []);
     setContextFiles(agent?.contextFiles ?? []);
@@ -98,9 +101,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
   const claude = onClaude(model);
   const small = models.filter((m) => m.ref.startsWith("claude:"));
   const haiku = small.find((m) => m.ref.includes("haiku"))?.ref;
-  const subPick = (key: "explorer" | "tests" | "reviewer", label: string, note: string, list: typeof models, fallback?: string) => {
-    const v = subs[key];
-    const current = v === null ? "none" : (v ?? (key === "reviewer" ? (spec === "coder" ? "auto" : "none") : (fallback ?? "")));
+  const subPick = (key: "explorer" | "tests", label: string, note: string, list: typeof models, fallback?: string) => {
+    const current = subs[key] ?? fallback ?? "";
     return (
       <label className="lc-subrow">
         <span>
@@ -111,10 +113,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
           className="lc-subsel"
           value={current}
           aria-label={`${label} runs on`}
-          onChange={(e) => setSubs((s) => ({ ...s, [key]: e.target.value === "none" ? null : e.target.value }))}
+          onChange={(e) => setSubs((s) => ({ ...s, [key]: e.target.value }))}
         >
-          {key === "reviewer" && <option value="none">Nobody</option>}
-          {key === "reviewer" && <option value="auto">Another family</option>}
           {list.map((m) => (
             <option key={m.ref} value={m.ref}>
               {m.label}
@@ -132,7 +132,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     const id = agent?.id ?? (n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `agent-${Date.now().toString(36)}`);
     if (!agent && agents.some((a) => a.id === id)) return toast.error(`There's already an agent called ${n}.`);
     const knows = { prompt: prompt.trim() || undefined, skills: skills.length ? skills : undefined, contextFiles: contextFiles.length ? contextFiles : undefined };
-    const next: AgentProfile = { id, name: n, role: role.trim() || preset.role, glyph, specialty: spec, model, effort, access, soul, ...knows, ...(claude ? { runMode, subagents: subs } : { subagents: { reviewer: subs.reviewer } }) };
+    const next: AgentProfile = { id, name: n, role: role.trim() || preset.role, glyph, specialty: spec, model, effort, access, soul, ...knows, ...(claude ? { runMode, subagents: subs } : {}) };
     try {
       await rpc("agents.save", { agents: agent ? agents.map((a) => (a.id === agent.id ? next : a)) : [...agents, next] });
       toast.success(agent ? `${n} is updated` : `${n} joined the team`);
@@ -148,16 +148,16 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     onClose();
   };
 
-  const efforts = effortsFor(model, providers).list;
+  // A level the model doesn't take shows as its default, which is what will run (as EffortPick shows it).
+  const { list: efforts, fallback: modelDefault } = effortsFor(model, providers);
   const RUNS = [
     { id: "helpers", t: "With cheap helpers", n: "Explorers and the test runner do the reading, so its context stays on the work" },
-    { id: "escalate", t: "Sonnet, asks Opus when stuck", n: "Lowest cost on routine work; Opus plans the hard parts" },
     { id: "single", t: `${modelLabel(model, providers)} alone`, n: "No subagents" },
   ] as const;
   const summary = [modelLabel(model, providers), MAY.find((m) => m.id === access)?.label, skills.length ? plural(skills.length, "skill") : "", contextFiles.length ? plural(contextFiles.length, "file") : ""].filter(Boolean).join(" · ");
 
   return (
-    <dialog ref={ref} className="lc-sheet lc-ad" aria-labelledby="lc-agent-t" onCancel={(e) => (e.preventDefault(), onClose())} onClick={(e) => e.target === ref.current && onClose()}>
+    <dialog ref={ref} className="lc-sheet lc-ad" aria-labelledby="lc-agent-t" onCancel={(e) => (e.preventDefault(), onClose())} onPointerDown={(e) => (pressedOutside.current = e.target === ref.current)} onClick={(e) => e.target === ref.current && pressedOutside.current && onClose()}>
       <div className="lc-sheet-frame lc-ad-frame">
         <div className="lc-sheet-head lc-ad-head">
           <span>
@@ -199,7 +199,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
               <div className="lc-ad-f">
                 <span className="lc-ad-l">Effort</span>
                 {efforts.length > 0 && efforts.length <= 3 ? (
-                  <Segmented full size="sm" value={efforts.some((e) => e.id === effort) ? effort : efforts[0].id} onValueChange={(v) => setEffort(v as Effort)} options={efforts.map((e) => ({ value: e.id, label: e.label }))} aria-label="Effort" />
+                  <Segmented full size="sm" value={efforts.some((e) => e.id === effort) ? effort : (efforts.find((e) => e.id === modelDefault) ?? efforts[0]).id} onValueChange={(v) => setEffort(v as Effort)} options={efforts.map((e) => ({ value: e.id, label: e.label }))} aria-label="Effort" />
                 ) : (
                   <EffortPick modelRef={model} value={effort} onChange={(v) => setEffort(v as Effort)} triggerClass="lc-ad-dd" icon={false} />
                 )}
@@ -257,14 +257,15 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
                 )}
               </div>
             </div>
-            <div className="lc-ad-f">
-              <span className="lc-ad-l">Subagents</span>
-              <div className="lc-subs">
-                {claude && runMode !== "single" && subPick("explorer", "Explorer", "Reads and searches the code", small, haiku)}
-                {claude && runMode !== "single" && subPick("tests", "Test runner", "Runs the tests, reads failures", small, haiku)}
-                {subPick("reviewer", "Reviewer", "Reads the diff before you do", models)}
+            {claude && runMode !== "single" && (
+              <div className="lc-ad-f">
+                <span className="lc-ad-l">Helpers</span>
+                <div className="lc-subs">
+                  {subPick("explorer", "Explorer", "Reads and searches the code", small, haiku)}
+                  {subPick("tests", "Test runner", "Runs the tests, reads failures", small, haiku)}
+                </div>
               </div>
-            </div>
+            )}
             <div className="lc-ad-f">
               <span className="lc-ad-l">May change things</span>
               <Segmented full size="sm" value={access} onValueChange={setAccess} options={MAY.map((m) => ({ value: m.id, label: m.label }))} aria-label="May change things" />
@@ -309,7 +310,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
                 Skills<span className="lc-ad-new">New</span>
                 <small>skill.md files it reads when a task calls for one</small>
               </span>
-              <Paths list={skills} onChange={setSkills} kind="skill" />
+              {/* The dialog stays mounted: each opening asks for the skills again (one added since, another project). */}
+              <Paths key={open ? "open" : "shut"} list={skills} onChange={setSkills} kind="skill" />
             </div>
             <div className="lc-ad-f">
               <span className="lc-ad-l">
@@ -348,7 +350,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
 
 /** Where a path is read: an absolute or ~ path is the same everywhere; a relative one is in each project. */
 const isOwn = (p: string) => p.startsWith("/") || p.startsWith("~/");
-const shortPath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+const shortPath = os.tilde;
 /** A skill's description to its first sentence, for a list. */
 const brief = (d: string) => {
   const first = d.split(/(?<=\.)\s/)[0] ?? d;

@@ -43,7 +43,8 @@
 }
 .l-slide__text {
   background: linear-gradient(100deg, var(--l-ink-3) 38%, var(--l-ink) 50%, var(--l-ink-3) 62%);
-  background-size: 260% 100%;
+  /* 250%: the tile l-shimmer-text travels exactly once per loop. */
+  background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

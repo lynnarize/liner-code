@@ -333,6 +333,16 @@ export async function undo(cwd: string, name: string, turns: Undo[], force = fal
   return now;
 }
 
+/**
+  Holds snapshots another thread took, under this thread's own name: a fork's copied checkpoints then
+  outlive the session they came from, whose refs go when it's deleted (T3 Code: orchestration-v2/
+  CheckpointService.ts keeps refs by checkpoint scope, not by the thread that took them).
+*/
+export async function keep(cwd: string, name: string, commits: string[]) {
+  let n = 0;
+  for (const c of new Set(commits)) await git(cwd, ["update-ref", `refs/liner/${name}/kept-${n++}`, c]);
+}
+
 /** Drops a thread's snapshots once the thread is gone. */
 export async function forget(cwd: string, prefix: string) {
   const r = await git(cwd, ["for-each-ref", "--format=%(refname)", `refs/liner/${prefix}`]);

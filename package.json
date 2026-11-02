@@ -25,6 +25,7 @@
     "app:dev": "node desktop/build.ts && LINER_UI_URL=http://localhost:5179 electron desktop",
     "mac": "bash scripts/build-mac.sh",
     "mac:swift": "bash scripts/build-mac-swift.sh",
+    "win": "bash scripts/build-win.sh",
     "release": "bash scripts/release.sh",
     "sync-liner": "bash scripts/sync-liner.sh",
     "test": "npm test -w engine"

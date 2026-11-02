@@ -5,7 +5,7 @@
   a session that waits on a request, Allow, the same as the card in the session. The page sends
   the sessions; the requests are asked of the engine when the menu opens, so they're current.
 */
-import { Menu, nativeImage, Tray, type MenuItemConstructorOptions, type NativeImage } from "electron";
+import { Menu, nativeImage, nativeTheme, Tray, type MenuItemConstructorOptions, type NativeImage } from "electron";
 
 type Session = { id: string; title: string };
 /** `running`: every session with a turn going, routines' included, which quitting would stop. */
@@ -13,11 +13,15 @@ export type TrayStatus = { show: boolean; working: Session[]; needs: (Session & 
 type Ask = { kind: string; id: string; title?: string; state?: string };
 type Hooks = { open: (threadId?: string) => void; quit: () => void; rpc: (method: string, params: Record<string, unknown>) => Promise<unknown> };
 
-/** A 16-point template image, drawn at 2x: a ring, with a gap or a dot in it. */
+/**
+  A 16-point template image, drawn at 2x: a ring, with a gap or a dot in it. Windows has no
+  template images, so there it's white on a dark taskbar and black on a light one.
+*/
 function glyph(kind: "quiet" | "working" | "needs"): NativeImage {
   const size = 32;
   const c = size / 2;
   const buf = Buffer.alloc(size * size * 4);
+  const ink = process.platform === "win32" && nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ? 255 : 0;
   for (let y = 0; y < size; y++)
     for (let x = 0; x < size; x++) {
       const dx = x + 0.5 - c;
@@ -27,6 +31,8 @@ function glyph(kind: "quiet" | "working" | "needs"): NativeImage {
       // Working: a gap at the top right, as if the ring turns.
       if (kind === "working" && dx > 0 && dy < 0 && Math.atan2(-dy, dx) > 0.35 && Math.atan2(-dy, dx) < 1.25) a = 0;
       if (kind === "needs") a = Math.max(a, Math.max(0, Math.min(1, 4.5 - d)));
+      // Premultiplied: the colour is scaled by how much shows.
+      if (ink) buf.fill(Math.round(a * ink), (y * size + x) * 4, (y * size + x) * 4 + 3);
       buf[(y * size + x) * 4 + 3] = Math.round(a * 255);
     }
   const img = nativeImage.createFromBitmap(buf, { width: size, height: size, scaleFactor: 2 });
@@ -38,7 +44,8 @@ export class StatusItem {
   private tray: Tray | null = null;
   private status: TrayStatus = { show: false, working: [], needs: [] };
   private readonly hooks: Hooks;
-  private readonly glyphs = { quiet: glyph("quiet"), working: glyph("working"), needs: glyph("needs") };
+  private themed = false;
+  private glyphs: Record<"quiet" | "working" | "needs", NativeImage> | null = null;
 
   constructor(hooks: Hooks) {
     this.hooks = hooks;
@@ -51,15 +58,27 @@ export class StatusItem {
       this.tray = null;
       return;
     }
+    // Drawn once the app is up (on Windows in the taskbar's colours, again when they change).
+    const draw = () => (this.glyphs = { quiet: glyph("quiet"), working: glyph("working"), needs: glyph("needs") });
+    const glyphs = this.glyphs ?? draw();
     if (!this.tray) {
-      this.tray = new Tray(this.glyphs.quiet);
+      this.tray = new Tray(glyphs.quiet);
       this.tray.setToolTip("Liner Code");
+      if (process.platform === "win32" && !this.themed) {
+        this.themed = true;
+        nativeTheme.on("updated", () => {
+          draw();
+          if (this.tray) this.set(this.status);
+        });
+      }
       this.tray.on("click", () => void this.pop());
       this.tray.on("right-click", () => void this.pop());
     }
     const kind = s.needs.length ? "needs" : s.working.length ? "working" : "quiet";
-    this.tray.setImage(this.glyphs[kind]);
+    this.tray.setImage(glyphs[kind]);
     this.tray.setTitle(kind === "needs" ? String(s.needs.length) : kind === "working" ? String(s.working.length) : "", { fontType: "monospacedDigit" });
+    // Windows shows no title beside the icon: the counts go in its tooltip.
+    if (process.platform === "win32") this.tray.setToolTip(["Liner Code", s.working.length && `${s.working.length} working`, s.needs.length && `${s.needs.length} ${s.needs.length === 1 ? "needs" : "need"} you`].filter(Boolean).join(" · "));
   }
 
   /** How many sessions have a turn going, as the page last said: quitting asks first while any do. */

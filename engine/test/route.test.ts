@@ -8,11 +8,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ProviderId, ProviderInfo, Thread, ThreadRoute } from "../../contracts/src/index.ts";
+import type { Item, ProviderId, ProviderInfo, Thread, ThreadRoute } from "../../contracts/src/index.ts";
 import { castOf, emptyUsage } from "../../contracts/src/index.ts";
 import { decide, hintOf, scoreAsk, weightOf, WARM_MS } from "../src/route.ts";
 import { critiquePrompt, repairPrompt, reviewPrompt } from "../src/review.ts";
-import { providers, Runtime } from "../src/runtime.ts";
+import { providers, reviewerWord, Runtime } from "../src/runtime.ts";
 import type { OpenOptions, Provider } from "../src/providers/types.ts";
 import { Store } from "../src/store.ts";
 import { run } from "../src/exec.ts";
@@ -78,7 +78,7 @@ test("cast: Luna for everyday work, Opus for hard jobs and repairs, judges and c
   // A Codex without Sol (a ChatGPT sign-in): Luna is its best, and reads once, not twice.
   assert.deepEqual(castOf([both[0], info("codex", ["gpt-6-luna", "gpt-5.6-terra"])])?.critics, ["codex:gpt-6-luna"]);
   // Your own picks win; nothing ready, no cast.
-  assert.equal(castOf(both, { strong: "codex:gpt-6-sol-pro" })?.strong, "codex:gpt-6-sol-pro");
+  assert.equal(castOf(both, { picks: { frontier: "codex:gpt-6-sol-pro" } })?.strong, "codex:gpt-6-sol-pro");
   assert.equal(castOf([]), null);
   assert.equal(castOf([{ ...both[0], available: false }]), null);
 });
@@ -159,7 +159,11 @@ test("runtime: a cascade the judge won't pass goes to Opus to repair, and the ju
     assert.match(calls[1].text, /a stronger model repairs it/);
     assert.match(calls[2].text, /^You're taking over this conversation[\s\S]*didn't pass it:[\s\S]*drops the error/);
     const items = store.timeline("t");
-    assert.match(items.find((x) => x.kind === "notice")?.kind === "notice" ? (items.find((x) => x.kind === "notice") as { text: string }).text : "", /^Routed: a medium job\. gpt-6-luna does it, then claude-opus-5-5 judges/);
+    // Why it went that way is the turn's own, said when you ask; no line on the timeline, and the repair is part of your turn.
+    assert.ok(!items.some((x) => x.kind === "notice"));
+    const marks = items.filter((x) => x.kind === "turn") as { why?: string; part?: string }[];
+    assert.match(marks[0].why ?? "", /^A medium job\. gpt-6-luna does it, then claude-opus-5-5 judges/);
+    assert.deepEqual(marks.map((m) => m.part), [undefined, "repair"]);
     assert.deepEqual(items.flatMap((x) => (x.kind === "review" ? [`${x.round}:${x.status}`] : [])), ["1:blocked", "2:passed"]);
     const t = store.thread("t");
     assert.deepEqual([t.verdict?.state, t.route?.root, t.route?.last?.escalated, t.status], ["verified", cast.strong, true, "done"]);
@@ -276,4 +280,167 @@ test("risk: reading commands, in a login shell or piped, are reads; anything tha
   const { readsOnly } = await import("../src/risk.ts");
   for (const c of ["/bin/zsh -lc pwd", "/bin/zsh -lc 'cat math.js'", "sed -n '1,40p' README.md", "rg -n add src | head -20", "cd app && ls -la", "git diff --stat"]) assert.equal(readsOnly(c), true, c);
   for (const c of ["sed -i '' 's/a/b/' x", "cat a > b", "npm test", "find . -delete", "echo $(rm -rf x)", "git commit -m x", "node -e 1"]) assert.equal(readsOnly(c), false, c);
+});
+
+test("reviewer: notes on a change it passed reach the writer with your next message, once", async () => {
+  const calls: Call[] = [];
+  const noted = `<findings>{"verdict":"pass","summary":"no real bugs","findings":[{"file":"index.html","line":353,"severity":"note","note":"The firefly drops 17px when a run starts."},{"file":"index.html","line":747,"severity":"note","note":"Tapping Best starts a game."}]}</findings>`;
+  const restore = fakeTools(calls, (_, n) => (n === 1 ? noted : pass));
+  try {
+    const { store, runtime } = await session("high");
+    store.patchThread("t", { route: undefined, agent: "@claude:claude-sonnet-5-5", after: "check" });
+    await runtime.send("t", "redesign the start menu");
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["claude-sonnet-5-5 writes", "gpt-6-sol reads"]);
+    // Passed: nothing goes back to Sonnet on its own; the notes wait for what you say next.
+    const from = calls.length;
+    await runtime.send("t", "fix the notes");
+    const sent = calls[from];
+    assert.equal(sent.model, "claude-sonnet-5-5");
+    assert.match(sent.text, /^The Reviewer \(gpt-6-sol\) read the last change and passed it, with these notes \(no real bugs\):\n- \(a note\) index\.html:353: The firefly drops 17px[\s\S]*index\.html:747: Tapping Best starts a game\.\n\nfix the notes$/);
+    // Heard once: the fix's own check passed clean, so the next message goes as it is.
+    const next = calls.length;
+    await runtime.send("t", "thanks");
+    assert.equal(calls[next].text, "thanks");
+  } finally {
+    restore();
+  }
+});
+
+test("reviewer: what's still there after the last round reaches the writer with your next message; what it fixed doesn't", async () => {
+  const calls: Call[] = [];
+  const restore = fakeTools(calls, (_, n) => fail(n === 1 ? "the score never resets" : "the pipes keep moving"));
+  try {
+    const { store, runtime } = await session("high");
+    store.patchThread("t", { route: undefined, agent: "@claude:claude-sonnet-5-5", after: "check", checks: { by: "auto", rounds: 2 } });
+    await runtime.send("t", "add a home button");
+    // Round 1's blocker went to Sonnet to fix; round 2's is left for you.
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["claude-sonnet-5-5 writes", "gpt-6-sol reads", "claude-sonnet-5-5 writes", "gpt-6-sol reads"]);
+    assert.match(calls[2].text, /the score never resets/);
+    assert.equal(store.thread("t").status, "waiting");
+    const from = calls.length;
+    await runtime.send("t", "fix it");
+    assert.match(calls[from].text, /^The Reviewer \(gpt-6-sol\) read the last change and didn't pass it, and these are still there after 2 rounds \(not yet\):\n- x\.ts:1: the pipes keep moving\n\nfix it$/);
+  } finally {
+    restore();
+  }
+});
+
+test("reviewer: notes on the last change that no model heard yet go with your next message, even after a turn that changed nothing", () => {
+  const at = Date.now();
+  const items: Item[] = [
+    { kind: "checkpoint", id: "c1", turn: 1, at, files: [{ path: "index.html", status: "modified", added: 268, removed: 12 }], from: "a", to: "b" },
+    { kind: "review", id: "r1", turn: 1, at: at + 1, reviewer: "claude:claude-opus-5-5", round: 1, status: "passed", summary: "no real bugs", findings: [{ file: "index.html", line: 353, severity: "note", note: "The firefly jumps when a run starts." }] },
+    // Your "fix the three notes" before Liner passed notes on: a question back, no change.
+    { kind: "turn", id: "t2", turn: 2, at: at + 2, agent: "@claude:claude-sonnet-5-5", model: "claude:claude-sonnet-5-5", status: "done" },
+  ];
+  const word = reviewerWord(items, (ref) => (ref.endsWith("opus-5-5") ? "Opus 5.5" : ref));
+  assert.match(word?.text ?? "", /^The Reviewer \(Opus 5\.5\) read the last change and passed it, with these notes \(no real bugs\):\n- \(a note\) index\.html:353: The firefly jumps/);
+  assert.deepEqual(word?.reviews.map((r) => r.id), ["r1"]);
+  // Heard, or about a change since undone: nothing to say.
+  assert.equal(reviewerWord(items.map((x) => (x.kind === "review" ? { ...x, heard: true } : x)), String), null);
+  assert.equal(reviewerWord(items.map((x) => (x.kind === "checkpoint" ? { ...x, reverted: true } : x)), String), null);
+});
+
+test("refine: the cheaper model's draft goes to the frontier one to finish, each in a session of its own", async () => {
+  const calls: Call[] = [];
+  const restore = fakeTools(calls, () => pass);
+  try {
+    const { store, runtime } = await session("high");
+    store.patchThread("t", { route: undefined, agent: "@codex:gpt-6-luna", after: "refine" });
+    await runtime.send("t", "add a dark mode toggle to settings");
+    // Luna drafts, Opus finishes it: no reads, the refining is the check.
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-luna writes", "claude-opus-5-5 writes"]);
+    assert.match(calls[1].text, /gpt-6-luna just made a first pass at this ask[\s\S]*add a dark mode toggle[\s\S]*<diff>[\s\S]*gpt-6-luna\.ts/);
+    // Each keeps its own session, so neither resumes into the other's.
+    const t = store.thread("t");
+    assert.deepEqual([t.providerSession, t.sessions?.["@claude:claude-opus-5-5"]], ["codex:codex-gpt-6-luna", "claude:claude-claude-opus-5-5"]);
+    // Opus's turn is part of yours, quietly: no line on the timeline, the reason on the turn.
+    assert.ok(!store.timeline("t").some((x) => x.kind === "notice"));
+    const refined = store.timeline("t").findLast((x) => x.kind === "turn") as { part?: string; why?: string };
+    assert.deepEqual([refined.part, refined.why], ["refine", "gpt-6-luna drafted it, claude-opus-5-5 finished it."]);
+    // Next time, Luna is told what Opus did since its last turn.
+    let from = calls.length;
+    const since = () => calls.slice(from);
+    await runtime.send("t", "make it follow the system setting too");
+    assert.deepEqual(since().map((c) => c.model), ["gpt-6-luna", "claude-opus-5-5"]);
+    assert.match(since()[0].text, /^Since your last turn, this conversation went on with another model:[\s\S]*Done\.[\s\S]*make it follow the system setting too$/);
+    // The frontier model writing itself has nobody stronger to refine it: it's checked instead.
+    from = calls.length;
+    store.patchThread("t", { agent: "@claude:claude-opus-5-5" });
+    await runtime.send("t", "add a test for it");
+    assert.deepEqual(since().map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["claude-opus-5-5 writes", "gpt-6-sol reads"]);
+    // Off: yours as it is.
+    from = calls.length;
+    store.patchThread("t", { after: "off" });
+    await runtime.send("t", "and a changelog line");
+    assert.deepEqual(since().map((c) => c.model), ["claude-opus-5-5"]);
+  } finally {
+    restore();
+  }
+});
+
+test("runtime: Stop on a routed turn that changed nothing ends it there; the judge never reads", async () => {
+  const calls: Call[] = [];
+  const restore = fakeTools(calls, () => pass);
+  const codex = providers.codex;
+  let runtime: Runtime | undefined;
+  // Luna answers, then you press Stop before its turn has ended.
+  providers.codex = { ...codex, open: (o) => ({ ...codex.open(o), turn: async (text, sink) => (calls.push({ provider: "codex", model: o.model, read: o.access === "read", text }), sink.text("Looking…"), runtime!.stop("t")) }) };
+  try {
+    const s = await session("high");
+    runtime = s.runtime;
+    await runtime.send("t", "run the tests and tell me what fails");
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-luna writes"]);
+    assert.ok(!s.store.timeline("t").some((x) => x.kind === "review"), "no judge's read on the timeline");
+  } finally {
+    restore();
+  }
+});
+
+test("usage: a turn logs its own use once; a read beside it (a step's Reviewer) is logged on its own", async () => {
+  const calls: Call[] = [];
+  const restore = fakeTools(calls, () => pass);
+  const codex = providers.codex;
+  let runtime: Runtime | undefined;
+  // Mid-turn, a quick read by another model (what Reviewer decides does for a step).
+  providers.codex = { ...codex, open: (o) => ({ ...codex.open(o), turn: async (_text, sink, signal) => (sink.usage({ inputTokens: 1000, outputTokens: 50, costUsd: 0.5 }), await runtime!.quiet("t", "claude:claude-haiku-5-5", o.cwd, "read this step", signal), sink.text("Done.")) }) };
+  try {
+    const s = await session("off" as ThreadRoute["level"]);
+    runtime = s.runtime;
+    s.store.patchThread("t", { route: undefined, model: "codex:gpt-6-luna" });
+    await runtime.send("t", "what does this do?");
+    const log = s.store.usage(0);
+    assert.deepEqual(log.map((r) => [r.agent, r.inputTokens, r.costUsd]), [["reviewer", 100, 0.01], [`@${cast.everyday}`, 1000, 0.5]]);
+    // The thread counts both, once each.
+    assert.equal(s.store.thread("t").usage.inputTokens, 1100);
+  } finally {
+    restore();
+  }
+});
+
+test("a fork while the judge reads the last change takes that turn along: it has ended, only the read goes on", async () => {
+  const calls: Call[] = [];
+  const restore = fakeTools(calls, () => pass);
+  const claude = providers.claude;
+  let release = () => {};
+  let reading = false;
+  // The judge's read waits until it's let go.
+  providers.claude = { ...claude, open: (o) => (o.access === "read" ? { ...claude.open(o), turn: async (text, sink, signal) => ((reading = true), await new Promise<void>((r) => (release = r)), claude.open(o).turn(text, sink, signal)) } : claude.open(o)) };
+  try {
+    const { store, runtime } = await session("high");
+    const { createApi } = await import("../src/api.ts");
+    const api = createApi(store, runtime, process.env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+    const working = runtime.send("t", "add a dark mode toggle to settings");
+    for (let i = 0; i < 400 && !reading; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(reading && runtime.isRunning("t"), "the judge reads");
+    const fork = (await api.call("thread.create", { projectId: "p", forkOf: "t" })) as Thread;
+    assert.equal(fork.turns, 1);
+    assert.ok(store.timeline(fork.id).some((x) => x.kind === "checkpoint" && x.turn === 1), "the turn that ended comes along, its change too");
+    assert.equal(fork.forkSession, store.thread("t").providerSession);
+    release();
+    await working;
+  } finally {
+    providers.claude = claude;
+    restore();
+  }
 });

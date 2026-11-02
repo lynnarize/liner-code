@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { Endpoint, ProviderInfo } from "../../contracts/src/index.ts";
+import { endpointKey, VOUCHER } from "../../contracts/src/index.ts";
 import { toml } from "../src/providers/codex-server.ts";
 import { endpointModels, endpointOptions, endpointProvider, hostOf, KEY_VAR } from "../src/providers/endpoint.ts";
 import type { OpenOptions, Provider, ProviderSession } from "../src/providers/types.ts";
@@ -119,4 +120,41 @@ test("tools note: a model is told Liner Code's tools by the names its tool offer
   assert.match(toolsNote(linerName("claude")), /mcp__liner__browser_read, mcp__liner__browser_click/);
   assert.match(toolsNote(linerName("opencode")), /^- liner_design_show shows/m);
   assert.match(toolsNote(linerName("codex")), /^- design_show shows/m, "Codex lists them under the server's name");
+});
+
+test("endpoints: another model reopens the session (its model is in the environment); effort changes in place, by the tool's name for the model", async () => {
+  const asked: Pick<OpenOptions, "model" | "effort" | "access">[] = [];
+  const session = (): ProviderSession => ({ turn: async () => {}, update: async (u) => (asked.push(u), true), close() {} });
+  const base: Provider = { id: "opencode", detect: async () => ({}) as ProviderInfo, open: () => session() };
+  const p = endpointProvider(base, ep("chat"), () => "sk");
+  const s = p.open({ cwd: "/p", model: "ex-small", effort: "medium", access: "edits", soul: "", guard: false, env: {} });
+  assert.equal(await s.update!({ model: "ex-large", effort: "medium", access: "edits" }), false, "another model: reopened");
+  assert.equal(await s.update!({ model: "ex-small", effort: "high", access: "edits" }), true);
+  assert.deepEqual(asked, [{ model: "liner_api_ex/ex-small", effort: "high", access: "edits" }]);
+});
+
+test("endpoints: a redeemed voucher is a tool Settings doesn't list, its one model Flash on Liner Code's site, the voucher its key, its windows the site's", async (t) => {
+  const keys = new Map([[endpointKey(VOUCHER.id), "v-test"]]);
+  syncProviders({ ...defaultSettings, voucher: true }, keys);
+  const p = providers[`opencode.${VOUCHER.id}`];
+  assert.ok(p, "on with the setting");
+  const c = endpointOptions(VOUCHER, "deepseek-v4.1-flash", "v-test", env);
+  assert.equal(c.model, "liner_voucher/deepseek-v4.1-flash");
+  assert.deepEqual(JSON.parse(String(c.env.OPENCODE_CONFIG_CONTENT)).provider.liner_voucher.options, { baseURL: "https://linerui.sorafel.com/api/code/v1", apiKey: `{env:${KEY_VAR}}` });
+  assert.equal(c.env[KEY_VAR], "v-test");
+
+  const real = globalThis.fetch;
+  t.after(() => void (globalThis.fetch = real));
+  const asked: string[] = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    asked.push(`${url} ${new Headers(init?.headers).get("authorization")}`);
+    return Response.json({ usage: { rolling: { percent: 30, resetsAt: "2026-11-02T06:00:00.000Z" }, weekly: { percent: 8 } } });
+  }) as typeof fetch;
+  const l = await p.limits!({ PATH: "/usr/bin" }, "");
+  assert.deepEqual(asked, ["https://linerui.sorafel.com/api/code/v1/usage Bearer v-test"]);
+  assert.equal(l?.plan, "Promo");
+  assert.deepEqual(l?.windows.map((w) => [w.kind, w.usedPercent]), [["session", 30], ["weekly", 8]]);
+
+  syncProviders(defaultSettings, keys);
+  assert.equal(providers[`opencode.${VOUCHER.id}`], undefined, "off without it");
 });

@@ -1,12 +1,12 @@
 /*
-  Settings › Agentic features: the ways as one list, the side-by-side table, the test as a row of
-  columns, and a setup as the steps its work runs through, top to bottom. Quiet by default: rows
+  Settings › Agentic features: the modes as a list, your two models and Dual frontier, what
+  happens after each change, and the side-by-side table. Quiet by default: rows
   on hairlines, controls that read as words until you reach for them. Prefix lc-ag-.
 */
 .lc-st-col[data-wide] {
   max-width: 1060px;
 }
-/* General's way into this page, under Who you talk to. */
+/* General's way into this page, under How they work. */
 .lc-st-more {
   display: flex;
   justify-content: flex-end;
@@ -23,28 +23,6 @@
 }
 .lc-ag-part > header > :not(span) {
   flex: none;
-}
-.lc-ag-newbtn {
-  gap: 5px;
-  white-space: nowrap;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  color: var(--l-ink-2);
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-ag-newbtn[data-open] {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-ag-newbtn:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
 }
 
 /* Every model picker on the page reads as words ("Automatic GPT-6-Luna ⌄"), with no plate until you reach for it. */
@@ -77,16 +55,12 @@
 .lc-ag-who b {
   font-weight: 500;
 }
-.lc-ag-who .lc-quiet,
-.lc-ag-nobody-t {
+.lc-ag-who .lc-quiet {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lc-ag-nobody-t {
-  color: var(--l-ink-2);
-}
 
-/* ------------------------------------ The ways ------------------------------------ */
+/* ------------------------------------ The choices ------------------------------------ */
 
 /*
   A row: the radio and name (with its tag) on the left, who it puts to work on the right, and a
@@ -100,6 +74,14 @@
   row-gap: 3px;
   padding: 14px 0;
   cursor: pointer;
+}
+/* A choice that can't be made yet (Dual frontier with one of its models missing): it says why, quietly. */
+.lc-ag-way[data-off] {
+  cursor: default;
+}
+.lc-ag-way[data-off] .lc-ag-way-h,
+.lc-ag-way[data-off] .lc-ag-radio {
+  opacity: 0.5;
 }
 .lc-ag-way-h {
   display: flex;
@@ -168,28 +150,6 @@
 .lc-ag-way[data-end] .lc-ag-way-line {
   grid-column: 2;
 }
-.lc-ag-editlink {
-  grid-column: 3;
-  align-self: start;
-  justify-self: end;
-  margin-right: -4px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  font-size: 12.5px;
-  line-height: 18px;
-  color: var(--l-accent-text);
-  white-space: nowrap;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .lc-ag-editlink:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-}
 /* What the picked way is like, in three columns in a soft well. */
 .lc-ag-way-more {
   display: grid;
@@ -203,6 +163,10 @@
   cursor: default;
   animation: l-unblur 260ms var(--l-ease-out) backwards;
 }
+/* A fourth line (Auto's level) runs the width of the well, under the three. */
+.lc-ag-way-more > div:nth-child(4) {
+  grid-column: 1 / -1;
+}
 .lc-ag-way-more dt {
   font-size: 11.5px;
   color: var(--l-ink-3);
@@ -212,19 +176,6 @@
   font-size: 12.5px;
   line-height: 18px;
   color: var(--l-ink-2);
-}
-.lc-ag-stagelist {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding-left: 16px;
-}
-.lc-ag-stagelist b {
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.lc-ag-warnword {
-  color: var(--l-warn-text);
 }
 @container lc-ag (max-width: 640px) {
   .lc-ag-way {
@@ -278,7 +229,7 @@
   color: var(--l-ink-4);
 }
 
-/* ------------------------------------ Routed ------------------------------------ */
+/* ------------------------------------ The parts ------------------------------------ */
 
 .lc-ag-routed .lc-st-row {
   min-height: 0;
@@ -336,7 +287,7 @@
 .lc-ag-table tbody tr[data-end] > * {
   padding-bottom: 12px;
 }
-/* The way you start with is a faint band down its column, its name in the accent. */
+/* The mode you start with is a faint band down its column, its name in the accent. */
 .lc-ag-table [data-on] {
   background: color-mix(in oklab, var(--l-accent) 7%, transparent);
 }
@@ -355,42 +306,6 @@
   width: auto;
   padding: 0;
   color: var(--l-ink);
-}
-.lc-ag-subtoggle {
-  position: sticky;
-  left: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100cqi;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-weight: 500;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-}
-.lc-ag-subtoggle > svg {
-  flex: none;
-  color: var(--l-ink-3);
-  transition: rotate 260ms var(--l-spring-smooth);
-}
-.lc-ag-subtoggle[aria-expanded="true"] > svg {
-  rotate: 90deg;
-}
-.lc-ag-subtoggle small {
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--l-ink-3);
-}
-.lc-ag-subtoggle .lc-ag-show {
-  margin-left: auto;
-  font-weight: 400;
-  color: var(--l-accent-text);
 }
 .lc-ag-num {
   font-variant-numeric: tabular-nums;
@@ -419,278 +334,7 @@
   color: var(--l-ink-3);
 }
 
-/* ---------------------------------- The cost test ---------------------------------- */
-
-.lc-ag-trial {
-  padding: 16px 18px;
-}
-.lc-ag-task-l {
-  font-size: 11.5px;
-  color: var(--l-ink-3);
-}
-.lc-ag-task p {
-  margin: 4px 0 0;
-  font-size: 13.5px;
-  line-height: 20px;
-  color: var(--l-ink);
-}
-.lc-ag-task p code {
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: var(--l-wash-2);
-  font-size: 12px;
-}
-.lc-ag-files {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-ag-file {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-}
-.lc-ag-file code {
-  font-size: 12px;
-  color: var(--l-ink-2);
-}
-
-/*
-  The ways as one row of columns, hairlines between them. Each column draws its line on its left
-  and top, and the row clips the ones that fall outside it, so wrapping onto a second row needs
-  nothing more.
-*/
-.lc-ag-results {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  margin: 16px -14px 0;
-  overflow: hidden;
-}
-.lc-ag-results::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 14px;
-  left: 14px;
-  height: 1px;
-  background: var(--l-line);
-}
-@container lc-ag (max-width: 640px) {
-  .lc-ag-results {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-.lc-ag-res {
-  display: grid;
-  align-content: start;
-  gap: 2px;
-  min-width: 0;
-  padding: 16px 14px 4px;
-  box-shadow:
-    -1px 0 0 var(--l-line),
-    0 -1px 0 var(--l-line);
-}
-.lc-ag-res-h {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.lc-ag-res-h input {
-  flex: none;
-  margin: 0;
-  accent-color: var(--l-accent);
-}
-.lc-ag-res-h .lc-quiet {
-  font-size: 11.5px;
-  font-weight: 400;
-}
-label.lc-ag-res-h {
-  cursor: pointer;
-}
-label.lc-ag-res-h:has(input:disabled) {
-  cursor: default;
-}
-label.lc-ag-res-h:has(input:disabled:not(:checked)) {
-  color: var(--l-ink-3);
-}
-.lc-ag-res-cost {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  margin-top: 6px;
-}
-.lc-ag-res-cost > b {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.lc-ag-none {
-  font-weight: 500;
-  color: var(--l-ink-4);
-}
-.lc-ag-res-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--l-ink-3);
-}
-.lc-ag-res-line .lc-ag-ok {
-  color: var(--l-ok-text);
-}
-.lc-ag-flag {
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 11px;
-  line-height: 17px;
-  white-space: nowrap;
-}
-.lc-ag-flag[data-tone="ok"] {
-  background: color-mix(in oklab, var(--l-ok) 14%, transparent);
-  color: var(--l-ok-text);
-}
-.lc-ag-flag[data-tone="accent"] {
-  background: var(--l-accent-soft);
-  color: var(--l-accent-text);
-}
-.lc-ag-flag[data-tone="warn"] {
-  background: color-mix(in oklab, var(--l-warn) 16%, transparent);
-  color: var(--l-warn-text);
-}
-.lc-ag-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--l-accent-text);
-}
-.lc-ag-more {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  color: var(--l-ink-4);
-  cursor: pointer;
-  transition:
-    rotate 260ms var(--l-spring-smooth),
-    background 160ms ease;
-}
-.lc-ag-more[aria-expanded="true"] {
-  rotate: 180deg;
-}
-@media (hover: hover) {
-  .lc-ag-more:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
-.lc-ag-detail {
-  display: grid;
-  gap: 10px;
-  margin: 10px 0 6px;
-  animation: l-unblur 260ms var(--l-ease-out) backwards;
-}
-.lc-ag-detail .lc-ag-chain {
-  gap: 4px;
-  font-size: 12px;
-}
-.lc-ag-stats {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
-  gap: 6px 14px;
-  margin: 0;
-  padding-top: 10px;
-  box-shadow: 0 -1px 0 var(--l-line);
-  font-size: 12.5px;
-}
-.lc-ag-stats dt {
-  color: var(--l-ink-3);
-}
-.lc-ag-stats dd {
-  justify-self: end;
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.lc-ag-why {
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--l-warn-text);
-}
-.lc-ag-aside {
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--l-ink-3);
-}
-.lc-ag-open {
-  display: inline-flex;
-  justify-self: start;
-  align-items: center;
-  gap: 3px;
-  margin-left: -6px;
-  padding: 3px 6px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--l-ink);
-  cursor: pointer;
-}
-.lc-ag-open svg {
-  color: var(--l-ink-4);
-}
-@media (hover: hover) {
-  .lc-ag-open:hover {
-    background: var(--l-wash-2);
-  }
-}
-/* What it ran as and what the next run should cost, on one line with the buttons. */
-.lc-ag-trialfoot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 8px;
-  margin-top: 14px;
-  padding-top: 12px;
-  box-shadow: inset 0 1px 0 var(--l-line);
-}
-.lc-ag-trialfoot p {
-  flex: 1 1 400px;
-  margin: 0 8px 0 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--l-ink-3);
-}
-/* When the words take the whole line, the buttons go under them on the right. */
-.lc-ag-trialfoot p + .lc-btn {
-  margin-left: auto;
-}
 @media (prefers-reduced-motion: reduce) {
-  .lc-ag-more,
-  .lc-ag-subtoggle > svg,
-  .lc-ag-detail,
   .lc-ag-way-more,
   .lc-ag-radio {
     transition: none;
@@ -698,429 +342,7 @@ label.lc-ag-res-h:has(input:disabled:not(:checked)) {
   }
 }
 
-/* ------------------------------------ Setups ------------------------------------ */
-
-.lc-ag-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 0 4px;
-}
-.lc-ag-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-ag-tab[aria-selected="true"] {
-  background: var(--lc-plate);
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-ag-tab:not([aria-selected="true"]):hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink-2);
-  }
-}
-.lc-ag-inuse {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--l-ok);
-}
-.lc-ag-wirecard {
-  padding: 0 18px 16px;
-  container: lc-ag-wire / inline-size;
-}
-.lc-ag-wirehead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  box-sizing: border-box;
-  min-height: 54px;
-  padding: 8px 0;
-  box-shadow: inset 0 -1px 0 var(--l-line);
-}
-.lc-ag-wirehead .lc-ib:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.lc-ag-name {
-  min-width: 0;
-  width: 15ch;
-  max-width: 260px;
-  height: 30px;
-  margin: 0 0 0 -8px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  outline: none;
-  background: none;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--l-ink);
-  field-sizing: content;
-  transition: box-shadow 140ms ease;
-}
-@media (hover: hover) {
-  .lc-ag-name:hover {
-    box-shadow: inset 0 0 0 1px var(--l-line);
-  }
-}
-.lc-ag-name:focus {
-  box-shadow:
-    0 0 0 1.5px var(--l-accent),
-    0 0 0 4px var(--l-accent-soft);
-}
-.lc-ag-count {
-  font-size: 12.5px;
-}
-
-/*
-  The steps, in the order the work runs, on one thin line. Each step draws its own piece of the
-  line, the first from its node down and the last only to its node, so it runs node to node
-  whatever each step holds.
-*/
-.lc-ag-steps {
-  display: grid;
-  margin: 0;
-  padding: 4px 0 0;
-  list-style: none;
-}
-.lc-ag-job {
-  position: relative;
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  column-gap: 14px;
-  padding: 12px 0;
-}
-.lc-ag-job::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 11.5px;
-  width: 1px;
-  background: var(--l-line-2);
-}
-.lc-ag-job:first-child::before {
-  top: 24px;
-}
-.lc-ag-job:last-child::before {
-  bottom: auto;
-  height: 24px;
-}
-.lc-ag-job[data-add] {
-  padding: 6px 0 10px;
-}
-.lc-ag-node {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  box-sizing: border-box;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--lc-plate);
-  color: var(--l-ink-2);
-}
-.lc-ag-node[data-agent] {
-  background: none;
-}
-.lc-ag-job[data-off] .lc-ag-node {
-  background: var(--lc-well);
-  color: var(--l-ink-4);
-}
-.lc-ag-job[data-add] .lc-ag-node {
-  border: 1px dashed var(--l-ink-4);
-  background: var(--lc-card);
-  color: var(--l-ink-3);
-}
-.lc-ag-job-t {
-  display: grid;
-  justify-items: start;
-  align-content: start;
-  gap: 2px;
-  min-width: 0;
-  padding-top: 2px;
-}
-.lc-ag-job-t > b {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  font-size: 13.5px;
-  font-weight: 500;
-}
-.lc-ag-job-t > p {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 18px;
-  color: var(--l-ink-3);
-}
-.lc-ag-job[data-off] .lc-ag-job-t > b {
-  color: var(--l-ink-2);
-}
-.lc-ag-job[data-add] .lc-ag-job-t {
-  padding-top: 3px;
-}
-.lc-ag-job-c {
-  display: flex;
-  align-self: start;
-  align-items: center;
-  gap: 2px;
-}
-/* The node already shows whose mark it is, so the picker beside it says only the name. */
-.lc-ag-job-c .lc-mpop .lc-model > svg:first-child {
-  display: none;
-}
-@container lc-ag-wire (max-width: 560px) {
-  .lc-ag-job {
-    grid-template-columns: 24px minmax(0, 1fr);
-  }
-  .lc-ag-job-c {
-    grid-column: 2;
-    margin: 6px 0 0 -8px;
-  }
-}
-.lc-ag-step {
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--l-wash-2);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 18px;
-  color: var(--l-ink-2);
-}
-/* What comes back to the last stage, as a small tag on the step that sends it. */
-.lc-ag-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 7px 0 6px;
-  border-radius: 999px;
-  background: var(--l-accent-soft);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 18px;
-  color: var(--l-accent-text);
-}
-.lc-ag-sees {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-ag-bars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 1.5px;
-  height: 10px;
-}
-.lc-ag-bars i {
-  width: 2px;
-  background: var(--l-line-2);
-}
-.lc-ag-bars i:nth-child(1) {
-  height: 4px;
-}
-.lc-ag-bars i:nth-child(2) {
-  height: 6px;
-}
-.lc-ag-bars i:nth-child(3) {
-  height: 8px;
-}
-.lc-ag-bars i:nth-child(4) {
-  height: 10px;
-}
-.lc-ag-bars i[data-on] {
-  background: var(--l-ink-2);
-}
-
-/* Its job: the parts as chips, a field for your own words, and phrases to start from. */
-.lc-ag-jobf {
-  display: flex;
-  flex-wrap: wrap;
-  justify-self: stretch;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-}
-.lc-ag-jobl {
-  margin-right: 2px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-ag-jobchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 24px;
-  padding: 0 3px 0 9px;
-  border-radius: 999px;
-  background: var(--lc-plate);
-  font-size: 12px;
-  color: var(--l-ink);
-  animation: l-swap-in 220ms var(--l-ease-out) backwards;
-}
-.lc-ag-jobchip button {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  color: var(--l-ink-4);
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .lc-ag-jobchip button:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
-.lc-ag-jobin {
-  min-width: 70px;
-  max-width: 100%;
-  height: 24px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 6px;
-  outline: none;
-  background: none;
-  font: inherit;
-  font-size: 12px;
-  color: var(--l-ink);
-  field-sizing: content;
-}
-.lc-ag-jobin::placeholder {
-  color: var(--l-ink-4);
-}
-.lc-ag-jobin:focus {
-  background: var(--l-wash);
-  box-shadow: inset 0 -1.5px 0 var(--l-accent);
-}
-.lc-ag-phrase,
-.lc-ag-crewchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 9px 0 7px;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
-  font-size: 12px;
-  color: var(--l-ink-3);
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-ag-phrase svg,
-.lc-ag-crewchip svg {
-  flex: none;
-}
-@media (hover: hover) {
-  .lc-ag-phrase:hover,
-  .lc-ag-crewchip:not([data-on]):hover {
-    background: var(--l-wash);
-    color: var(--l-ink);
-  }
-}
-.lc-ag-crewchip {
-  color: var(--l-ink-2);
-}
-.lc-ag-crewchip[data-on] {
-  background: var(--l-accent-soft);
-  box-shadow: none;
-  color: var(--l-accent-text);
-}
-
-/* The crew, picked where you approve the plan that hands them steps. */
-.lc-ag-crewf {
-  display: grid;
-  justify-self: stretch;
-  gap: 6px;
-  margin-top: 8px;
-}
-.lc-ag-crew {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.lc-ag-crew-l {
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-ag-crewnote {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 6px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-ag-crewnote .lc-ag-sees {
-  margin-top: 0;
-}
-
-/* The writer's helpers sit under it, on a thin line of their own. */
-.lc-ag-helpers {
-  display: grid;
-  justify-self: stretch;
-  gap: 2px;
-  margin-top: 8px;
-  padding-left: 12px;
-  box-shadow: inset 1px 0 0 var(--l-line-2);
-}
-.lc-ag-helper {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 3px 0;
-}
-.lc-ag-helper-t {
-  display: grid;
-  flex: 1;
-  gap: 1px;
-  min-width: 160px;
-}
-.lc-ag-helper-t b {
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.lc-ag-helper-t small {
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--l-ink-3);
-}
-.lc-ag-helper .lc-ag-sees {
-  margin-top: 0;
-}
-
-/* The Reviewer's rounds and the small-changes switch, on a line under its words. */
+/* Auto's level, and a note on what it does, on a line under its words. */
 .lc-ag-revc {
   display: flex;
   flex-wrap: wrap;
@@ -1128,101 +350,7 @@ label.lc-ag-res-h:has(input:disabled:not(:checked)) {
   gap: 8px;
   margin-top: 8px;
 }
-.lc-ag-revc .lc-ag-small {
-  margin-left: 6px;
-}
 .lc-ag-unit {
   font-size: 12px;
 }
-.lc-ag-small {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--l-ink-3);
-  cursor: pointer;
-}
-.lc-ag-small input {
-  margin: 0;
-  accent-color: var(--l-accent);
-}
-.lc-ag-handon {
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  font: inherit;
-  font-weight: 500;
-  color: var(--l-ink-2);
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .lc-ag-handon:hover {
-    color: var(--l-ink);
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-}
 
-/* The snapshot is one quiet line; what to watch for, a soft note under it. */
-.lc-ag-snap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 0;
-  padding-top: 12px;
-  box-shadow: inset 0 1px 0 var(--l-line);
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--l-ink-3);
-}
-.lc-ag-snap svg {
-  flex: none;
-}
-.lc-ag-watch {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: color-mix(in oklab, var(--l-warn) 7%, transparent);
-}
-.lc-ag-watch[data-tone="ok"] {
-  background: color-mix(in oklab, var(--l-ok) 7%, transparent);
-}
-.lc-ag-watch-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: -2px;
-  font-size: 11.5px;
-  color: var(--l-ink-3);
-}
-.lc-ag-watch-h .lc-badge {
-  height: 18px;
-  font-size: 11px;
-}
-.lc-ag-note {
-  display: grid;
-  grid-template-columns: 15px minmax(0, 1fr);
-  gap: 10px;
-  font-size: 12.5px;
-  line-height: 18px;
-  color: var(--l-ink-3);
-}
-.lc-ag-note > svg {
-  margin-top: 1px;
-  color: var(--l-warn-text);
-}
-.lc-ag-note[data-tone="ok"] > svg {
-  color: var(--l-ok-text);
-}
-.lc-ag-note b {
-  display: block;
-  margin-bottom: 2px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.lc-ag-note[data-tone="warn"] b {
-  color: var(--l-warn-text);
-}

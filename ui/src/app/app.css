@@ -25,6 +25,12 @@
   --lc-act: oklch(0.6 0.215 27);
   --lc-act-ink: #fff;
 }
+/* While a new theme or accent goes on (look.ts), for one style pass. */
+html[data-still] *,
+html[data-still] *::before,
+html[data-still] *::after {
+  transition: none !important;
+}
 html[data-action="accent"] {
   --lc-act: var(--l-accent);
   --lc-act-ink: var(--l-accent-ink, #fff);
@@ -208,12 +214,14 @@ pre {
   white sheet a gap in from the window's edges, as before but with no glass round it. The side
   panel is a column inside the paper with nothing drawn round it.
 */
+/* With the sidebar away its column keeps the window's gap, so the paper's edge rides the one
+   animated track and never steps by the gap when the sidebar starts to go or come. */
 .lc-app {
   --lc-gap: 6px;
   --lc-paper-r: 18px;
   position: relative;
   display: grid;
-  grid-template-columns: 0px minmax(0, 1fr);
+  grid-template-columns: var(--lc-gap) minmax(0, 1fr);
   height: 100%;
   box-sizing: border-box;
   padding: var(--lc-gap) var(--lc-gap) var(--lc-gap) 0;
@@ -226,15 +234,23 @@ html[data-native="mac"] .lc-app {
 .lc-app[data-sidebar] {
   grid-template-columns: var(--lc-side) minmax(0, 1fr);
 }
+/* The sidebar keeps its width while its column opens and shuts, held to the paper's edge: it
+   slides under the window's edge rather than squeezing, so no name re-truncates on the way. */
 .lc-side {
+  display: flex;
+  justify-content: flex-end;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   transition: opacity 320ms var(--l-ease-out);
 }
+.lc-side > .lc-sb {
+  flex: none;
+  width: var(--lc-side);
+}
 .lc-app:not([data-sidebar]) .lc-side {
   opacity: 0;
-  transition-duration: 180ms;
+  transition-duration: 260ms;
 }
 .lc-paper {
   position: relative;
@@ -248,9 +264,6 @@ html[data-native="mac"] .lc-app {
   box-shadow:
     0 0 0 1px var(--lc-hair),
     0 1px 2px oklch(0.3 0.04 265 / 0.05);
-}
-.lc-app:not([data-sidebar]) .lc-paper {
-  margin-left: var(--lc-gap);
 }
 /* The picture behind the session (Settings, Appearance): blurred, under a wash of the ground so
    the work reads. It's still, so it costs the graphics card nothing once drawn. The sidebar
@@ -313,6 +326,9 @@ html[data-shell="electron"] body > :not(#root) {
   by the window's gap so its centre sits on theirs; the bar keeps its height. In full screen the
   lights are hidden (their x is 0), so the cap is 0 and the row stays put.
 */
+html[data-native="mac"] .lc-top {
+  transition: padding 520ms var(--l-spring-smooth);
+}
 html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
   --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 26px)), min(8px, var(--lc-lights-x, 70px)));
   padding-top: calc(8px - var(--lc-up));
@@ -1107,11 +1123,8 @@ html[data-native="mac"] .lc-sb-head {
   background: var(--lc-plate);
   box-shadow: none;
   pointer-events: none;
-  transition:
-    transform 460ms var(--l-spring-smooth),
-    width 300ms var(--l-ease-out),
-    height 300ms var(--l-ease-out),
-    opacity 200ms ease;
+  /* It's on the open session as you get there: no glide or spring between rows, only a fade in and out. */
+  transition: opacity 160ms ease;
 }
 .lc-sb-sec {
   display: flex;
@@ -1157,7 +1170,7 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-row {
   position: relative;
   border-radius: 12px;
-  animation: lc-row-in 380ms var(--l-ease-enter) backwards;
+  animation: lc-row-in 180ms ease-out backwards;
 }
 /*
   A project's header: its badge, its name, and how many of its sessions need you. It folds its
@@ -1210,7 +1223,11 @@ html[data-native="mac"] .lc-sb-head {
     color: var(--l-ink);
   }
 }
-/* The badge: two letters on the project's own hue (set on it as --lc-pjb-h). */
+/*
+  The badge: two letters on the project's own hue (set on it as --lc-pjb-h), lit from the top
+  left like an app icon: the hue a step lighter there, deeper and richer at the foot, with a
+  hairline of light round its edge.
+*/
 .lc-pjb {
   display: grid;
   flex: none;
@@ -1218,30 +1235,28 @@ html[data-native="mac"] .lc-sb-head {
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  background: oklch(0.6 0.085 var(--lc-pjb-h, 250));
+  background: linear-gradient(150deg, oklch(0.72 0.15 calc(var(--lc-pjb-h, 250) + 8)), oklch(0.55 0.19 calc(var(--lc-pjb-h, 250) - 8)));
+  box-shadow:
+    inset 0 0 0 0.5px oklch(1 0 0 / 0.14),
+    inset 0 1px 0 oklch(1 0 0 / 0.22);
   font-size: 8.5px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.02em;
-  color: oklch(0.99 0.005 var(--lc-pjb-h, 250));
-}
-[data-theme="dark"] .lc-pjb {
-  background: oklch(0.58 0.08 var(--lc-pjb-h, 250));
+  color: #fff;
+  text-shadow: 0 0.5px 1px oklch(0.25 0.06 var(--lc-pjb-h, 250) / 0.4);
 }
 .lc-pjb[data-none] {
   background: var(--l-ink-4);
+  box-shadow: none;
   color: var(--l-surface);
+  text-shadow: none;
 }
 .lc-pjb[data-small] {
-  display: inline-grid;
   width: 14px;
   height: 14px;
-  margin-right: 5px;
   border-radius: 4px;
   font-size: 6.5px;
-  vertical-align: middle;
-  position: relative;
-  top: -1px;
 }
 .lc-sb-plab > .lc-sb-pneeds {
   margin-left: auto;
@@ -1261,10 +1276,10 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-plab:focus-within > .lc-sb-add {
   opacity: 1;
 }
-/* A session's forks: a toggle on its row, and the forks under it on a line. */
+/* A session's forks: a toggle on its title's line, before its mark, and the forks under it on a line. */
 .lc-sb-forks {
   position: absolute;
-  right: 6px;
+  right: 32px;
   bottom: 6px;
   display: flex;
   align-items: center;
@@ -1293,17 +1308,17 @@ html[data-native="mac"] .lc-sb-head {
     color: var(--l-ink);
   }
 }
-.lc-sb-row[data-forks] .lc-sb-s {
-  padding-right: 44px;
+.lc-sb-row[data-forks] .lc-sb-h > b {
+  margin-right: 40px;
 }
 .lc-sb-kids {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  /* The line runs down from the parent's mark, at the middle of its 18px column. */
-  margin-left: 16.5px;
-  padding-left: 8.5px;
+  /* The line runs down from under the parent's first letter. */
+  margin-left: 10px;
+  padding-left: 8px;
 }
 .lc-sb-kids::before {
   content: "";
@@ -1315,24 +1330,23 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 1px;
   background: var(--l-line-2);
 }
+/* A row that comes fades in where it stands; it doesn't rise into place. */
 @keyframes lc-row-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
   }
 }
 /*
-  A session row, two lines: its mark in a column of its own, the title and how long ago on the
-  right; then who, on what model, and where it stands. Under its project's header that's all;
-  elsewhere the second line starts with the project. On hover the time gives its place to pin,
-  snooze and settle. A finished or settled session's title steps back a shade.
+  A session row, two lines, after T3 Code's card row: on top, small, the project (where its
+  header doesn't say it already), who works and where it stands, and how long ago; under it the
+  title, whole, with the session's mark at its end. On hover the time gives its place to pin,
+  snooze and settle, on the small line, so the title keeps its room. A finished or settled
+  session's title steps back a shade.
 */
 .lc-sb-pick {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: start;
-  column-gap: 8px;
-  padding: 7px 8px;
+  gap: 1px;
+  padding: 5px 10px;
   border-radius: 12px;
   outline: none;
   cursor: pointer;
@@ -1342,16 +1356,35 @@ html[data-native="mac"] .lc-sb-head {
     background: var(--l-wash-2);
   }
 }
-/* The mark sits on the title's line. */
+.lc-sb-s {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-sb-dot {
+  flex: none;
+  color: var(--l-ink-4);
+}
+/* What it stands at takes what room is left, and ends in an ellipsis. */
+.lc-sb-st {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The mark ends the title's line. */
 .lc-sb-mk {
   display: grid;
+  flex: none;
   place-items: center;
+  width: 16px;
   height: 20px;
-}
-.lc-sb-t {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
 }
 .lc-sb-h {
   display: flex;
@@ -1375,21 +1408,27 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-sb-time {
   flex: none;
+  margin-left: auto;
   font-size: 11.5px;
   color: var(--l-ink-4);
   font-variant-numeric: tabular-nums;
 }
-/* While the actions show, the title stops short of them and the time steps out. */
-.lc-sb-row:is(:hover, :focus-within) .lc-sb-h,
-.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h {
-  padding-right: 70px;
+/* While the actions show, the small line stops short of them and the time steps out. */
+.lc-sb-row:is(:hover, :focus-within) .lc-sb-s,
+.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-s {
+  padding-right: 62px;
 }
 .lc-sb-row:is(:hover, :focus-within) .lc-sb-time,
 .lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-time {
   display: none;
 }
+/* A long project name gives way before what the session is doing does. */
 .lc-sb-pj {
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
   color: var(--l-ink-2);
+  text-overflow: ellipsis;
 }
 .lc-sb-rename {
   flex: 1;
@@ -1406,29 +1445,20 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 13.5px;
   font-weight: 500;
 }
-.lc-sb-s {
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* A new state fades in over the old one's place: no letters sliding or popping. */
+.lc-sb-st > span {
+  animation: lc-row-in 160ms ease-out backwards;
 }
-/* The morphing words run inline, so a line too long for the row ends in an ellipsis, letter by
-   letter, rather than losing all of them at once. */
-.lc-sb-s .l-morphtext {
-  display: inline;
-}
-.lc-sb-s[data-tone="warn"] {
+.lc-sb-st[data-tone="warn"] {
   color: var(--l-warn-text);
 }
-.lc-sb-s[data-tone="danger"] {
+.lc-sb-st[data-tone="danger"] {
   color: var(--l-danger-text);
 }
-/* On the title's line, where the time was. They fade in, and go at once, as the time comes back. */
+/* On the small line, where the time was. They fade in, and go at once, as the time comes back. */
 .lc-sb-acts {
   position: absolute;
-  top: 6px;
+  top: 2px;
   right: 6px;
   display: flex;
   gap: 1px;
@@ -1667,16 +1697,16 @@ html[data-native="mac"] .lc-sb-head {
 .lc-mk[data-s="run"] {
   color: var(--l-accent);
 }
-.lc-mk[data-s="run"][data-brand="claude"] {
+.lc-mk[data-s="run"]:is([data-brand="claude"], [data-brand="claudecode"]) {
   color: oklch(0.67 0.13 41);
 }
-.lc-mk[data-s="run"][data-brand="openai"] {
+.lc-mk[data-s="run"]:is([data-brand="openai"], [data-brand="codex"]) {
   color: oklch(0.64 0.11 170);
 }
 .lc-mk[data-s="run"]:is([data-brand="gemini"], [data-brand="deepseek"], [data-brand="meta"], [data-brand="glm"]) {
   color: oklch(0.62 0.15 260);
 }
-.lc-mk[data-s="run"]:is([data-brand="qwen"], [data-brand="kimi"]) {
+.lc-mk[data-s="run"]:is([data-brand="qwen"], [data-brand="kimi"], [data-brand="minimax"]) {
   color: oklch(0.6 0.15 295);
 }
 .lc-mk[data-s="run"][data-brand="mistral"] {
@@ -1979,17 +2009,34 @@ html[data-native="mac"] .lc-sb-head {
 }
 
 /* ---------- Session ---------- */
+/*
+  Every layout of the body is the same two tracks each way, a flexible thread and a sized panel
+  (beside it, or under it: surfaces.css), so each change between them glides: one written as
+  `0px minmax(0, 1fr)`, or with one track fewer, can't be blended with these and jumped in one
+  frame half way through. Shutting is quicker than opening.
+*/
 .lc-body {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) 0px;
+  grid-template-columns: minmax(0px, 1fr) 0px;
+  grid-template-rows: minmax(0px, 1fr) 0px;
   min-height: 0;
-  transition: grid-template-columns 520ms var(--l-spring-smooth);
+  transition:
+    grid-template-columns 400ms var(--l-spring-smooth),
+    grid-template-rows 400ms var(--l-spring-smooth);
 }
 /* The panel: as wide as you dragged it, else about a third of the paper; the thread keeps 420px
    (Surfaces.tsx, THREAD_MIN), so its composer keeps its controls. */
 .lc-session[data-panel] .lc-body {
   grid-template-columns: minmax(420px, 1fr) min(var(--lc-panel-w, clamp(340px, 36%, 520px)), calc(100% - 420px));
+  transition-duration: 520ms;
+}
+/* Beside the thread the panel is laid out at the width it opens to, from its first frame: its
+   column uncovers it from the paper's edge, so nothing in it re-wraps on the way in or out (the
+   session and the body are one width, so 100cqw is the body's 100%). */
+.lc-session:not([data-wide], [data-dock="bottom"]) .lc-body > .lc-panel {
+  justify-self: start;
+  width: max(100%, min(var(--lc-panel-w, clamp(340px, 36cqw, 520px)), calc(100cqw - 420px)));
 }
 /* The panel keeps its cell, so the grip on its edge can share it. The grip stays on the panel's
    side of the edge: the thread's overlay scrollbar runs down the other side, and a pointer held
@@ -2043,7 +2090,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 @container lc-session (max-width: 700px) {
   .lc-session[data-panel] .lc-body {
-    grid-template-columns: 0px minmax(0, 1fr);
+    grid-template-columns: minmax(0px, 0fr) 100%;
   }
   .lc-grip {
     display: none;
@@ -2054,7 +2101,7 @@ html[data-native="mac"] .lc-sb-head {
   }
 }
 .lc-session[data-wide] .lc-body {
-  grid-template-columns: 0px minmax(0, 1fr);
+  grid-template-columns: minmax(0px, 0fr) 100%;
 }
 .lc-session[data-wide] .lc-thread {
   opacity: 0;
@@ -2085,9 +2132,14 @@ html[data-native="mac"] .lc-sb-head {
 .lc-session[data-beside] .lc-thread {
   --lc-lane: 0px;
 }
+/* The lane opens and shuts with the panel's column, instead of in one step as it starts. */
 .lc-stage > .lc-scroll {
   box-sizing: border-box;
   padding-right: var(--lc-lane);
+  transition: padding-right 400ms var(--l-spring-smooth);
+}
+.lc-session[data-beside] .lc-stage > .lc-scroll {
+  transition-duration: 520ms;
 }
 .lc-scroll {
   flex: 1;
@@ -2118,11 +2170,14 @@ html[data-native="mac"] .lc-sb-head {
 .lc-rail {
   position: absolute;
   z-index: 6;
-  /* Centred on what you can see of the conversation, above the composer. */
+  /* Centred on what you can see of the conversation, above the composer, 14px in from the edge.
+     It is placed by its centre, and its groups sit about that centre too: as it travels to the
+     panel and back (Rail.tsx) its size changes and nothing in it slides off its course. */
   top: calc((100% - var(--lc-dock-h, 0px)) / 2);
-  right: 14px;
+  left: calc(100% - 14px - 22px);
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
   width: 44px;
   box-sizing: border-box;
@@ -2132,11 +2187,85 @@ html[data-native="mac"] .lc-sb-head {
   box-shadow: var(--lc-tray-rim);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
-  translate: 0 -50%;
+  translate: -50% -50%;
   animation: lc-rail-in 520ms var(--l-spring-smooth) 120ms backwards;
 }
+/* While the panel is beside the thread the tray is at its foot instead (below); this one waits. */
 .lc-rail[hidden] {
   display: none;
+}
+/*
+  At the foot of the panel: lying down, a size smaller, centred in the lane the panel keeps for it
+  (--lc-plane), on the panel's centre however wide you drag it. Placed by its centre, as above.
+*/
+.lc-session {
+  --lc-plane: 54px;
+}
+.lc-body {
+  position: relative;
+}
+.lc-rail[data-dock] {
+  top: calc(100% - var(--lc-plane) / 2);
+  left: calc(100% - min(var(--lc-panel-w, clamp(340px, 36%, 520px)), calc(100% - 420px)) / 2);
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  width: auto;
+  height: 40px;
+  padding: 0 4px;
+  border-radius: 20px;
+  animation-name: lc-dock-in;
+  animation-duration: 420ms;
+  animation-delay: 0ms;
+}
+@container lc-session (max-width: 700px) {
+  .lc-rail[data-dock] {
+    left: 50%;
+  }
+}
+.lc-rail[data-dock] .lc-rail-seg {
+  flex-direction: row;
+}
+.lc-rail[data-dock] .lc-rail-seg + .lc-rail-seg::before {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+}
+.lc-rail[data-dock] .lc-rail-b {
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+}
+.lc-rail[data-dock] .lc-rail-b::before {
+  inset: 1px;
+  border-radius: 10px;
+}
+.lc-rail[data-dock] .lc-rail-count {
+  top: 1px;
+  right: 0;
+}
+/* Its panel shutting, the tray at the edge travels home from it: this one is already gone. */
+.lc-rail[data-leaving] {
+  visibility: hidden;
+}
+@keyframes lc-dock-in {
+  from {
+    opacity: 0;
+    translate: -50% calc(-50% + 8px);
+  }
+}
+/* What the panel holds stops above the tray's lane: the side chat's composer sits on it. */
+.lc-panel[data-tray] {
+  box-sizing: border-box;
+  padding-bottom: var(--lc-plane);
+}
+.lc-panel[data-tray] .lc-surface[hidden] {
+  bottom: var(--lc-plane);
+}
+/* With the panel shut (or shutting) the thread is over it, so the tray travelling home from the
+   panel's foot passes over the panel as it fades, not under it. */
+.lc-session:not([data-panel]) .lc-thread {
+  z-index: 1;
 }
 html[data-tray="solid"] .lc-rail {
   backdrop-filter: none;
@@ -2145,7 +2274,7 @@ html[data-tray="solid"] .lc-rail {
 @keyframes lc-rail-in {
   from {
     opacity: 0;
-    translate: 10px -50%;
+    translate: calc(-50% + 10px) -50%;
   }
 }
 .lc-rail-seg {
@@ -2224,8 +2353,7 @@ html[data-tray="solid"] .lc-rail {
   cursor: default;
 }
 /* Commit and push: the arrow in ink, the files waiting in a badge on its corner, in the action colour. */
-.lc-rail-b.lc-rail-ship,
-.lc-tb.lc-tb-ship {
+.lc-rail-b.lc-rail-ship {
   position: relative;
   color: var(--l-ink);
 }
@@ -2246,10 +2374,6 @@ html[data-tray="solid"] .lc-rail {
   line-height: 15px;
   text-align: center;
   animation: lc-count-in 320ms var(--l-ease-enter) backwards;
-}
-.lc-tb-ship .lc-rail-count {
-  top: 1px;
-  right: 0;
 }
 @keyframes lc-count-in {
   from {
@@ -2274,6 +2398,7 @@ html[data-tray="solid"] .lc-rail {
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-rail,
+  .lc-rail[data-dock],
   .lc-rail-b,
   .lc-rail-b::before,
   .lc-rail-count {
@@ -2308,6 +2433,10 @@ html[data-tray="solid"] .lc-rail {
   bottom: 0;
   left: 0;
   pointer-events: none;
+  transition: right 400ms var(--l-spring-smooth);
+}
+.lc-session[data-beside] .lc-dock {
+  transition-duration: 520ms;
 }
 .lc-dock > * {
   pointer-events: auto;
@@ -2409,16 +2538,131 @@ html[data-tray="solid"] .lc-rail {
 .lc-head b {
   font-weight: 600;
 }
+/* A model that carried the turn on starts its part with a little room above its head. */
+.lc-head[data-part] {
+  margin-top: 14px;
+}
+/* While a model's part runs, its disc pulses: what it's doing is the live row under it. */
+.lc-head[data-running] > .lc-disc {
+  animation: lc-pulse 1.6s var(--l-ease-out) infinite;
+}
+/* A plan built straight on: a grey row like the steps', open for the plan. */
+.lc-planned {
+  display: grid;
+}
+.lc-planned > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  max-width: calc(100% + 6px);
+  min-height: 28px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border-radius: 9px;
+  list-style: none;
+  color: var(--l-ink-3);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+.lc-planned > summary::-webkit-details-marker {
+  display: none;
+}
+.lc-planned b {
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-planned > summary:hover {
+    background: var(--l-wash);
+    color: var(--l-ink-2);
+  }
+}
+.lc-planned-md {
+  margin: 6px 0 4px 4px;
+  padding-left: 14px;
+  box-shadow: inset 1.5px 0 0 var(--l-line);
+  font-size: 13.5px;
+}
+/* Plan and Auto in the session's header: their models' marks, then the mode's name. */
+.lc-chain-marks {
+  display: inline-flex;
+  gap: 4px;
+  color: var(--l-ink-2);
+}
+/* Permissions: a heading, then each level a row (its name, what it does, a tick when it's on,
+   its number), and Full access last, a plain row you enable. */
+.lc-perm {
+  display: grid;
+  gap: 2px;
+  padding: 8px 6px 6px;
+}
+.lc-perm-h {
+  margin: 0 10px 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-perm-r {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-perm-r:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-perm-r > svg {
+  flex: none;
+  color: var(--l-accent);
+}
+.lc-perm-t {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.lc-perm-t b {
+  font-size: 14px;
+  font-weight: 500;
+}
+.lc-perm-t small {
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+.lc-perm-k {
+  flex: none;
+  width: 14px;
+  font: inherit;
+  font-size: 13px;
+  text-align: right;
+  color: var(--l-ink-3);
+}
+.lc-perm-full {
+  margin-top: 2px;
+}
+.lc-perm-on {
+  flex: none;
+  font-size: 13.5px;
+  color: var(--l-ink-2);
+}
 .lc-head-meta {
   color: var(--l-ink-3);
   white-space: nowrap;
-}
-.lc-head-live {
-  color: var(--l-ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  animation: l-swap-in 300ms var(--l-ease-out) backwards;
 }
 .lc-head-clock {
   margin-left: auto;
@@ -2501,51 +2745,34 @@ html[data-tray="solid"] .lc-rail {
   overflow: clip;
   overflow-clip-margin: var(--lc-ring);
 }
-/* Thinking, marked like the trail's line: a dot, the words, then a chevron that turns as it opens. */
+/* Thinking: a grey row like the steps', "Thought for 9s", its chevron after the words. */
 .lc-thought-h {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 8px 0 4px;
+  gap: 6px;
+  min-height: 28px;
+  margin-left: -6px;
+  padding: 0 6px;
   border: 0;
   border-radius: 9px;
   background: none;
-  font-size: 13px;
+  font: inherit;
+  font-size: 13.5px;
   color: var(--l-ink-3);
   cursor: pointer;
-  transition: color 160ms ease;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
   .lc-thought-h:hover {
+    background: var(--l-wash);
     color: var(--l-ink-2);
   }
 }
-.lc-thought-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  margin: 0 3px;
-  border-radius: 999px;
-  background: var(--l-ink-4);
-}
-.lc-thought[data-live] .lc-thought-dot {
-  background: var(--l-accent);
-  animation: lc-pulse 1.6s var(--l-ease-out) infinite;
-}
-.lc-thought-chev {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  color: var(--l-ink-4);
-  transition: rotate 320ms var(--l-spring-smooth);
-}
-.lc-thought[data-open] .lc-thought-chev {
-  rotate: 180deg;
-}
-/* What it thought, on a rail from the dot, as the trail's steps hang off theirs. */
+/* What it thought, on a rail, as the steps hang off theirs. */
 .lc-thought-t {
-  margin: 2px 0 4px 10px;
+  margin: 2px 0 4px 4px;
   padding-left: 18px;
   box-shadow: inset 1.5px 0 0 var(--l-line);
   font-size: 13px;
@@ -2584,10 +2811,13 @@ html[data-tray="solid"] .lc-rail {
 .lc-todo .lc-fcard {
   padding: 12px 14px;
 }
-/* In the chat and the panel, a card is a soft tint with no edge drawn round it: one sheet. */
+/* In the chat and the panel, a card is a soft tint with no edge drawn round it: one sheet. The
+   tint is dark's card in both themes: light's card is the paper's white, so without its ring it
+   would vanish and leave only its padding, an indent with nothing round it. */
 .lc-tl .lc-fcard,
 .lc-tl .lc-prc,
 .lc-panel :is(.lc-sinfo-card, .lc-files-view, .lc-linked-card, .lc-rt-card, .lc-rv-file, .lc-rv-thread, .lc-limits-tool, .lc-sc-compose) {
+  background: color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper));
   box-shadow: none;
 }
 .lc-todo-h {
@@ -3764,6 +3994,16 @@ html[data-composer="clear"] .lc-dock .lc-card {
     transform: translateX(14px);
   }
 }
+/* Shut: it fades as its column closes over it, quicker than it came (Session.tsx keeps it). */
+.lc-panel[data-leaving] {
+  pointer-events: none;
+  animation: lc-panel-out 220ms var(--l-ease-out) forwards;
+}
+@keyframes lc-panel-out {
+  to {
+    opacity: 0;
+  }
+}
 .lc-panel-top {
   display: flex;
   flex: none;
@@ -3781,7 +4021,11 @@ html[data-composer="clear"] .lc-dock .lc-card {
     color: var(--l-ink);
   }
 }
-/* With the panel over the whole paper and no sidebar, its bar starts after the traffic lights. */
+/* With the panel over the whole paper and no sidebar, its bar starts after the traffic lights,
+   moving there with the panel's column. */
+html[data-native="mac"] .lc-panel-top {
+  transition: padding 520ms var(--l-spring-smooth);
+}
 html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide] .lc-panel-top {
   padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
 }
@@ -3852,6 +4096,24 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide] .lc-p
   gap: 10px;
   font-size: 13px;
   color: var(--l-ink-2);
+  white-space: nowrap;
+}
+/* Beside Undo and Commit in a narrow panel the count shortens, then its bar goes, rather than wrap. */
+.lc-viewed-short {
+  display: none;
+}
+@container (max-width: 460px) {
+  .lc-viewed-long {
+    display: none;
+  }
+  .lc-viewed-short {
+    display: inline;
+  }
+}
+@container (max-width: 400px) {
+  .lc-viewed-bar {
+    display: none;
+  }
 }
 .lc-viewed-bar {
   width: 56px;
@@ -4076,12 +4338,14 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide] .lc-p
 }
 
 /* ---------- Setup ---------- */
+/* First launch fits the window: the page never scrolls. Spacing gives way to a short window, and past
+   that only a step's body scrolls, under its title and above its buttons. */
 .lc-setup {
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
   background: var(--l-bg);
 }
 html[data-native="mac"] .lc-setup {
@@ -4254,20 +4518,39 @@ html[data-native="mac"] .lc-setup-top {
   display: flex;
   flex: 1;
   justify-content: center;
-  padding: 36px 24px 48px;
+  min-height: 0;
+  padding: clamp(12px, 3.6vh, 36px) 24px clamp(14px, 3.6vh, 40px);
 }
 .lc-step {
-  display: grid;
-  align-content: start;
-  gap: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 2vh, 18px);
   width: min(900px, 100%);
+  min-height: 0;
+}
+.lc-step > * {
+  flex: none;
 }
 .lc-step-narrow {
   width: min(760px, 100%);
-  padding-top: 40px;
+  padding-top: clamp(0px, 4vh - 12px, 40px);
+}
+.lc-step-body {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: inherit;
+  min-height: 0;
+  margin: -6px -10px;
+  padding: 6px 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.lc-step-body > * {
+  flex: none;
 }
 .lc-step h1 {
-  margin: 10px 0 0;
+  margin: 0;
   font-family: var(--l-font-display);
   font-size: 34px;
   font-weight: 600;
@@ -4442,7 +4725,7 @@ html[data-native="mac"] .lc-setup-top {
 }
 .lc-prj {
   display: grid;
-  max-height: 46vh;
+  max-height: max(160px, 100vh - 420px);
   overflow: auto;
 }
 .lc-prj-row {
@@ -5608,6 +5891,10 @@ html[data-native="mac"] .lc-setup-top {
 @media (prefers-reduced-motion: reduce) {
   .lc-app,
   .lc-body,
+  .lc-stage > .lc-scroll,
+  .lc-dock,
+  .lc-top,
+  .lc-panel-top,
   .lc-fold,
   .lc-sb-plate,
   .lc-lockup {
@@ -6583,6 +6870,95 @@ html[data-native="mac"] .lc-setup-top {
   font-variant-numeric: tabular-nums;
   color: var(--l-ink-3);
 }
+/* The plan's windows beside the ring: two short bars, the 5-hour one over the week's. */
+.lc-lim {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-3);
+}
+.lc-lim[data-warn] {
+  color: var(--l-warn-text);
+}
+.lc-lim-bars {
+  display: grid;
+  gap: 2px;
+}
+.lc-lim-bars > span {
+  display: block;
+  width: 16px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in oklab, currentColor 18%, transparent);
+}
+.lc-lim-bars i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  transition: width 700ms var(--l-spring-smooth);
+}
+.lc-limm {
+  display: grid;
+  gap: 10px;
+}
+.lc-limm-tool {
+  display: grid;
+  gap: 8px;
+}
+.lc-limm .lc-limits-w {
+  margin: 0 9px;
+}
+.lc-limm .lc-pop-foot {
+  margin-top: -2px;
+}
+
+/* ---------- Toasts: at the top right, under the title bar, out of the composer's way ---------- */
+/* Liner's toaster stacks up from the bottom; here it hangs from the top, the older ones peeking below. */
+.l-toaster.lc-toaster {
+  top: 64px;
+  right: 16px;
+  bottom: auto;
+  left: auto;
+  translate: none;
+}
+.l-toaster.lc-toaster .l-toast {
+  top: 0;
+  bottom: auto;
+  transform-origin: 50% 100%;
+  transform: translateY(calc(var(--i) * 10px)) scale(calc(1 - var(--i) * 0.05));
+}
+/* Up here they sit over the pages' white cards, so each keeps an edge of its own. */
+.l-toaster.lc-toaster .l-toast__body {
+  box-shadow: var(--lc-card-ring), 0 10px 30px -8px rgb(0 0 0 / 0.22);
+}
+.l-toaster.lc-toaster .l-toast:not([data-mounted]) {
+  transform: translateY(-40%) scale(0.96);
+}
+.l-toaster.lc-toaster .l-toast::after {
+  top: 100%;
+  bottom: auto;
+}
+.l-toaster.lc-toaster[data-expanded] .l-toast {
+  transform: translateY(var(--y)) scale(1);
+}
+.l-toaster.lc-toaster .l-toast[data-swiping] {
+  transform: translate(var(--sx), calc(var(--sy) + var(--i) * 10px)) scale(calc(1 - var(--i) * 0.05));
+}
+.l-toaster.lc-toaster[data-expanded] .l-toast[data-swiping] {
+  transform: translate(var(--sx), calc(var(--sy) + var(--y)));
+}
+.l-toaster.lc-toaster .l-toast[data-removing="auto"] {
+  transform: translateY(calc(var(--i) * 10px - 30%)) scale(0.96);
+}
+.l-toaster.lc-toaster .l-toast[data-removing="down"] {
+  transform: translate(var(--sx), -120%);
+}
 
 /* ---------- Sidebar: rows picked together, and the bar that acts on them ---------- */
 .lc-sb .lc-sb-row[data-picked] {
@@ -6616,6 +6992,7 @@ html[data-native="mac"] .lc-setup-top {
     animation: none;
   }
   .lc-ctxm-bar > i,
+  .lc-lim-bars i,
   .lc-queued-now {
     transition: none;
   }

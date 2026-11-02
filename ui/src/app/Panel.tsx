@@ -8,6 +8,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff, Item, Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
+import { prefersReducedMotion } from "@liner/lib/spring";
 import { Boundary } from "./Boundary";
 import { CommitButton } from "./Commit";
 import { rpc, useEngine } from "./engine";
@@ -19,7 +20,7 @@ import { DesignSurface } from "./Design";
 import { DeviceSurface } from "./Device";
 import { FilesSurface } from "./Files";
 import { LinkedSurface, PrSurface } from "./Pr";
-import { Review, TurnPicker } from "./Review";
+import { Review, TurnPicker, Viewed } from "./Review";
 import { RoutinesList, RunDetail } from "./Routines";
 import { SideChat } from "./SideChat";
 import { openTab, PanelTabs, SurfacePicker, surfaceOf, type PanelState, type Tab } from "./Surfaces";
@@ -38,6 +39,8 @@ export function Panel({
   agentName,
   onOpenSession,
   onRoutine,
+  leaving,
+  tray,
 }: {
   thread: Thread;
   items: Item[];
@@ -48,6 +51,10 @@ export function Panel({
   agentName: string;
   onOpenSession: (id: string, tab?: Tab) => void;
   onRoutine: (id?: string) => void;
+  /** Shut, and on its way out: it stays as it was while its column closes, and takes no clicks. */
+  leaving?: boolean;
+  /** The session tray lies at its foot (Session.tsx): it keeps a lane there that nothing runs under. */
+  tray?: boolean;
 }) {
   const runs = useEngine((s) => s.runs);
   const label = (t: Tab) => {
@@ -83,7 +90,7 @@ export function Panel({
         </Suspense>
       );
     if (t === "side") return <SideChat thread={thread} visible={visible} />;
-    if (t === "browser") return <BrowserSurface thread={thread} agentName={agentName} />;
+    if (t === "browser") return <BrowserSurface thread={thread} agentName={agentName} hidden={!visible} />;
     if (t === "design") return <DesignSurface thread={thread} items={items} agentName={agentName} visible={visible} />;
     if (t === "files") return <FilesSurface thread={thread} items={items} onShowChanges={(id, path) => (onFocus({ id, path }), open("changes"))} />;
     if (t === "pr") return <PrSurface thread={thread} agentName={agentName} visible={visible} />;
@@ -95,7 +102,7 @@ export function Panel({
   };
 
   return (
-    <aside className="lc-panel" aria-label="Surfaces" data-wide-review={wideReview || undefined}>
+    <aside className="lc-panel" aria-label="Surfaces" data-wide-review={wideReview || undefined} data-leaving={leaving || undefined} data-tray={tray || undefined} inert={leaving || undefined}>
       {!wideReview && <PanelTabs state={state} onState={onState} label={label} />}
       {state.picking && <SurfacePicker thread={thread} items={items} agentName={agentName} onOpen={(s) => open(s)} />}
       {state.tabs.map((t) =>
@@ -142,7 +149,7 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
     if (!diff || !focus?.path) return;
     const i = diff.findIndex((f) => f.path === focus.path);
     const el = box.current?.querySelectorAll<HTMLElement>(".l-cdiff__file")[i];
-    el?.scrollIntoView({ block: "start", behavior: "smooth" });
+    el?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     setViewed((v) => new Set(v).add(focus.path!));
   }, [diff, focus?.path]);
 
@@ -185,12 +192,7 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
         )}
       </div>
       <div className="lc-panel-foot">
-        <span className="lc-viewed">
-          <span className="lc-viewed-bar" aria-hidden>
-            <i style={{ width: `${files.length ? (seen / files.length) * 100 : 0}%` }} />
-          </span>
-          {seen} of {plural(files.length, "file")} viewed
-        </span>
+        <Viewed seen={seen} total={files.length} />
         <span className="lc-grow" />
         {cp && !cp.reverted && !cp.committed && (
           <button type="button" className="lc-btn" data-kind="ghost" disabled={busy !== null || thread.status === "running"} onClick={() => void undo()}>
@@ -223,6 +225,20 @@ function Agents({ thread, items }: { thread: Thread; items: Item[] }) {
     return undefined;
   };
   const u = thread.usage;
+  // No cost reported: say who pays, as the engine bills it (runtime.ts gives Claude Code the Anthropic
+  // key when it bills to the key, and Codex the OpenAI key whenever one is saved).
+  const settings = useEngine((s) => s.settings);
+  const keys = useEngine((s) => s.keys);
+  const ran = [...new Set([...turns.map((t) => t.model), thread.model ?? coder.model].filter(Boolean).map((m) => m!.replace(/^@/, "").split(":")[0]))];
+  const payer = (id: string) => {
+    if (id === "demo") return "Nothing: a scripted run";
+    const p = providers.find((x) => x.id === id);
+    if (p?.endpoint) return `Billed by ${p.label}`;
+    if (id === "claude" && settings.claudeBilling === "key" && keys.includes("anthropic")) return "Billed to your Anthropic key";
+    if (id === "codex" && keys.includes("openai")) return "Billed to your OpenAI key";
+    return "Included in your plan";
+  };
+  const unpriced = [...new Set(ran.map(payer))].join("; ") || "Included in your plan";
   return (
     <div className="lc-agents-panel">
       <PanelHead>In this session</PanelHead>
@@ -237,7 +253,7 @@ function Agents({ thread, items }: { thread: Thread; items: Item[] }) {
             <Disc agent={a} size={30} lead={isLead || undefined} />
             <span className="lc-agent-card-t">
               <b>
-                {a.name} <span className="lc-quiet">{isLead ? "Lead" : a.role || "Agent"}</span>
+                {a.name} <span className="lc-quiet">{isLead ? "Plans" : a.role || "Agent"}</span>
               </b>
               <small>
                 {mine.length === 0
@@ -323,7 +339,7 @@ function Agents({ thread, items }: { thread: Thread; items: Item[] }) {
         </div>
         <div>
           <dt>Cost</dt>
-          <dd>{u.costUsd ? <Num as="money" value={u.costUsd} /> : "Included in your plan"}</dd>
+          <dd>{u.costUsd ? <Num as="money" value={u.costUsd} /> : unpriced}</dd>
         </div>
         {u.contextWindow ? (
           <div>

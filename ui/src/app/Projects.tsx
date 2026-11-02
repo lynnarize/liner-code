@@ -7,11 +7,12 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { FoundRepo, GitHubRepo, Project } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
-import { bridge } from "./bridge";
+import { bridge, ghInstall } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { since } from "./model";
 import { Row, Sep } from "./ui";
+import * as os from "./os";
 import "./models.css";
 
 type Tab = "here" | "mac" | "github";
@@ -20,7 +21,7 @@ type GitHub = { gh: "ready" | "missing" | "signed-out"; detail?: string; login?:
 // Scanning and asking GitHub take a moment, so the answers are kept while the app is open.
 let found: Promise<FoundRepo[]> | null = null;
 let github: Promise<GitHub> | null = null;
-const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+const tilde = os.tilde;
 
 export function ProjectChooser({ value, onPick, need, extra }: { value?: string; onPick: (p: Project) => void; need?: "github"; extra?: ReactNode }) {
   const projects = useEngine((s) => s.projects);
@@ -74,7 +75,7 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
         onValueChange={setTab}
         options={[
           { value: "here", label: "Projects" },
-          { value: "mac", label: "On this Mac" },
+          { value: "mac", label: `On ${os.here}` },
           { value: "github", label: "GitHub" },
         ]}
         aria-label="Where to choose from"
@@ -89,7 +90,7 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
             {here.map((p) => (
               <Row key={p.id} title={p.name} note={[p.remote ?? tilde(p.path), noRemote(p.remote) ? "no GitHub remote" : ""].filter(Boolean).join(" · ")} on={p.id === value} icon={<I.folder size={13} />} onPick={() => onPick(p)} />
             ))}
-            {here.length === 0 && <p className="lc-quiet lc-mp-none">{q ? "No project matches that." : "No projects yet. Find one on this Mac or on GitHub."}</p>}
+            {here.length === 0 && <p className="lc-quiet lc-mp-none">{q ? "No project matches that." : `No projects yet. Find one on ${os.here} or on GitHub.`}</p>}
           </>
         )}
         {tab === "mac" &&
@@ -116,7 +117,7 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
                 })}
               {mac.length === 0 && <p className="lc-quiet lc-mp-none">No Git repositories in the usual folders.</p>}
               <Sep />
-              <Row title="Choose a folder…" note="Any folder on this Mac" icon={<I.plus size={13} />} disabled={busy !== null} onPick={() =>
+              <Row title="Choose a folder…" note={`Any folder on ${os.here}`} icon={<I.plus size={13} />} disabled={busy !== null} onPick={() =>
                   void bridge.pickFolder().then((path) => {
                     if (path) void add(path, () => rpc("project.add", { path }));
                   })
@@ -131,7 +132,7 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
             <div className="lc-pc-note">
               <b>Connecting GitHub needs the GitHub CLI</b>
               <p>Liner Code reads your repositories through it, signed in as you, and keeps no token of its own.</p>
-              <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal("brew install gh && gh auth login")}>
+              <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal(ghInstall())}>
                 Install it in Terminal
               </button>
             </div>

@@ -43,13 +43,17 @@ export const COMMANDS: Command[] = [
   { id: "stash", label: "Put the draft aside, or bring it back", group: "Writing a message", keys: ["mod+s"], when: "composer" },
 ];
 
+const mac = typeof navigator === "undefined" || /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+/** ⌘ on a Mac, Ctrl elsewhere, for the keys below. */
+const MOD = mac ? "⌘" : "Ctrl";
+
 /** Keys that are the app's behaviour rather than commands: shown, not changed. */
 export const FIXED: { group: string; label: string; keys: string[] }[] = [
-  { group: "Anywhere", label: "Open the first to ninth session in the sidebar", keys: ["⌘", "1–9"] },
+  { group: "Anywhere", label: "Open the first to ninth session in the sidebar", keys: [MOD, "1–9"] },
   { group: "Writing a message", label: "Send, or queue it while the agent works", keys: ["Enter"] },
-  { group: "Writing a message", label: "Steer the running turn", keys: ["⌘", "Enter"] },
-  { group: "Writing a message", label: "On Home: start it in the background", keys: ["⌘", "Enter"] },
-  { group: "Writing a message", label: "A new line", keys: ["⇧", "Enter"] },
+  { group: "Writing a message", label: "Steer the running turn", keys: [MOD, "Enter"] },
+  { group: "Writing a message", label: "On Home: start it in the background", keys: [MOD, "Enter"] },
+  { group: "Writing a message", label: "A new line", keys: [mac ? "⇧" : "Shift", "Enter"] },
   { group: "Writing a message", label: "Your last messages", keys: ["↑", "↓"] },
   { group: "Writing a message", label: "Point at a file, a command, a skill", keys: ["@", "/", "$"] },
   { group: "In the sessions list", label: "Move between sessions", keys: ["↑", "↓"] },
@@ -58,7 +62,6 @@ export const FIXED: { group: string; label: string; keys: string[] }[] = [
   { group: "In Settings", label: "Back to sessions", keys: ["Esc"] },
 ];
 
-const mac = typeof navigator === "undefined" || /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 let mine: KeyBinding[] = [];
 const listeners = new Set<() => void>();
 
@@ -167,7 +170,9 @@ export function glyphs(spec: string): string[] {
   const c = parse(spec);
   if (!c) return [spec];
   const key = c.key === " " ? "Space" : c.key === "enter" ? "Enter" : c.key === "escape" ? "Esc" : ARROWS[c.key] ? ARROWS[c.key] : c.key.length === 1 ? c.key.toUpperCase() : c.key.charAt(0).toUpperCase() + c.key.slice(1);
-  return [c.ctrl && (mac ? "⌃" : "Ctrl"), c.alt && (mac ? "⌥" : "Alt"), c.shift && "⇧", c.mod && (mac ? "⌘" : "Ctrl"), key].filter(Boolean) as string[];
+  // Elsewhere in the order Windows writes them: Ctrl, Alt, Shift.
+  if (!mac) return [(c.mod || c.ctrl) && "Ctrl", c.alt && "Alt", c.shift && "Shift", key].filter(Boolean) as string[];
+  return [c.ctrl && "⌃", c.alt && "⌥", c.shift && "⇧", c.mod && "⌘", key].filter(Boolean) as string[];
 }
 export const shortcutOf = (id: string) => {
   const b = bindingsOf(id)[0];

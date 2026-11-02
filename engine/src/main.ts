@@ -20,7 +20,7 @@ import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
-import { firstLine, linkHelpers, secretsFrom, takeSecrets } from "./exec.ts";
+import { firstLine, linkHelpers, secretsFrom, takeSecrets, withPath } from "./exec.ts";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -50,7 +50,7 @@ delete process.env.LINER_SECRETS;
 const store = new Store();
 // The shell passes your login shell's PATH; without it, a Dock-launched app can't find agents.
 // Helpers agents take for granted (ripgrep) go first on the PATH of everything the engine runs.
-const env: NodeJS.ProcessEnv = linkHelpers(join(store.home, "bin"), { ...process.env, PATH: process.env.LINER_PATH || process.env.PATH }).env;
+const env: NodeJS.ProcessEnv = linkHelpers(join(store.home, "bin"), withPath(process.env, process.env.LINER_PATH || process.env.PATH)).env;
 const tools = new AgentTools(store, env);
 const runtime = new Runtime(store, env, tools);
 // Keys the shell read from the keychain, handed over once at launch and kept in memory only.
@@ -114,6 +114,7 @@ const quit = () => {
   proxies.closeAll();
   logs.stopAll();
   runtime.shutdown();
+  store.keepStreaming();
   store.flush();
   server.close();
   process.exit(0);

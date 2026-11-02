@@ -27,9 +27,15 @@ type Outside = Surface;
 export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside }) {
   const { store, api, token } = o;
   const clients = new Set<ServerResponse>();
+  /** Clients whose snapshot is being taken: what's sent meanwhile waits, numbered, until it's written. */
+  const waiting = new Map<ServerResponse, { seq: number; line: string }[]>();
   store.on((e: EngineEvent) => {
-    const line = `${JSON.stringify(e)}\n`;
-    for (const res of clients) res.write(line);
+    const line = `${JSON.stringify({ ...e, seq: store.seq })}\n`;
+    for (const res of clients) {
+      const held = waiting.get(res);
+      if (held) held.push({ seq: store.seq, line });
+      else res.write(line);
+    }
   });
 
   const authed = (req: IncomingMessage) => {
@@ -58,13 +64,19 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       }
       if (url.pathname === "/events") {
         res.writeHead(200, { "content-type": "application/x-ndjson", "cache-control": "no-store", "x-accel-buffering": "no" });
-        res.write(`${JSON.stringify({ type: "hello", snapshot: await o.snapshot() })}\n`);
+        // Listening before the snapshot is taken, so nothing sent while it's taken is lost; what it already holds isn't sent twice.
         clients.add(res);
+        waiting.set(res, []);
+        const snapshot = await o.snapshot();
+        res.write(`${JSON.stringify({ type: "hello", snapshot })}\n`);
+        for (const x of waiting.get(res) ?? []) if (x.seq > (snapshot.seq ?? 0)) res.write(x.line);
+        waiting.delete(res);
         // A heartbeat keeps the stream open and lets the app notice a dead engine.
         const beat = setInterval(() => res.write("\n"), 15000);
         req.on("close", () => {
           clearInterval(beat);
           clients.delete(res);
+          waiting.delete(res);
         });
         return;
       }

@@ -169,8 +169,8 @@ async function download(build: Build, dir: string, env: NodeJS.ProcessEnv) {
   const name = build.archive.split("?")[0].split("/").pop() || "agent.tar.gz";
   const archive = join(dir, `.${name}`);
   writeFileSync(archive, data);
-  // The system tar unpacks .tar.gz, .tar.bz2 and .zip alike.
-  const x = await run("/usr/bin/tar", ["-xf", archive, "-C", dir], { env, timeout: 5 * 60_000 });
+  // The system tar unpacks .tar.gz, .tar.bz2 and .zip alike (Windows 10 and later have one too, in System32).
+  const x = await run(process.platform === "win32" ? join(env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "/usr/bin/tar", ["-xf", archive, "-C", dir], { env, timeout: 5 * 60_000 });
   rmSync(archive, { force: true });
   if (x.code !== 0) throw new Error(`Couldn't unpack it: ${(x.stderr || x.stdout).trim().slice(0, 200)}`);
 }

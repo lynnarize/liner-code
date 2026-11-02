@@ -15,20 +15,21 @@ import type { PrAgent, PrCheck, PrCommit, PrConflict, PrEvent, PrStage } from "@
 import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { Segmented } from "@liner/components/segmented/segmented";
-import { bridge } from "./bridge";
+import { bridge, ghInstall } from "./bridge";
 import { getState, isCheckpoint, rpc, subscribe, useEngine, useItemsWhere } from "./engine";
 import { I, Rays } from "./icons";
 import { agentOf, checkpointsOf, duration, plural, sumLines } from "./model";
 import { PrCard } from "./PrCard";
 import { prLine, SurfaceNote } from "./Surfaces";
 import { Badge, Lines } from "./ui";
+import * as os from "./os";
 
 type Gh = "ready" | "missing" | "signed-out" | "no-remote";
 
 function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry: () => void }) {
   if (gh === "missing")
     return (
-      <SurfaceNote icon={<I.pr size={20} />} title="Pull requests need the GitHub CLI" action={<button type="button" className="lc-btn" data-kind="plain" onClick={() => bridge.runInTerminal("brew install gh && gh auth login")}>Install it in Terminal</button>}>
+      <SurfaceNote icon={<I.pr size={20} />} title="Pull requests need the GitHub CLI" action={<button type="button" className="lc-btn" data-kind="plain" onClick={() => bridge.runInTerminal(ghInstall())}>Install it in Terminal</button>}>
         Liner Code reads and opens pull requests through <span className="lc-code">gh</span>, signed in as you.
       </SurfaceNote>
     );
@@ -62,8 +63,10 @@ const stateBadge = (pr: PrInfo) =>
   pr.state === "MERGED" ? <Badge tone="accent">Merged</Badge> : pr.state === "CLOSED" ? <Badge tone="neutral">Closed</Badge> : pr.isDraft ? <Badge tone="neutral">Draft</Badge> : <Badge tone="ok">Open</Badge>;
 
 const CHECK: Record<PrInfo["checks"][number]["state"], PrCheck["state"]> = { pass: "passed", fail: "failed", pending: "running", skipped: "passed" };
+// Stopped already (Stop pressed while a step was being asked): its abort has been and gone, so it ends here.
 const pause = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(new DOMException("Stopped", "AbortError"));
     const t = window.setTimeout(resolve, ms);
     signal.addEventListener("abort", () => (window.clearTimeout(t), reject(new DOMException("Stopped", "AbortError"))), { once: true });
   });
@@ -89,6 +92,7 @@ function localCheck() {
 
 const untilStopped = <T,>(p: Promise<T>, signal: AbortSignal) =>
   new Promise<T>((resolve, reject) => {
+    if (signal.aborted) return reject(new DOMException("Stopped", "AbortError"));
     signal.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError")), { once: true });
     p.then(resolve, reject);
   });
@@ -99,7 +103,7 @@ const untilStopped = <T,>(p: Promise<T>, signal: AbortSignal) =>
   and the card says why. Leaving the card doesn't stop them: opening it again waits for that run.
 */
 async function testFirst(o: { threadId: string; itemId: string; agentName: string }, emit: Emit, signal: AbortSignal, set: (c: PrCheck | null) => void) {
-  const label = "On this Mac";
+  const label = `On ${os.here}`;
   let said = "";
   const say = (text: string) => text !== said && (emit({ type: "status", text }), (said = text));
   say("Finding the project's tests");
@@ -116,7 +120,7 @@ async function testFirst(o: { threadId: string; itemId: string; agentName: strin
       say(`Waiting for you to allow ${ask.title.replace(/^Run /, "")}`);
     } else if (run?.kind === "tool") {
       set({ id: "local", label, state: "running" });
-      say(`Running ${run.input ?? "the tests"} on this Mac`);
+      say(`Running ${run.input ?? "the tests"} on ${os.here}`);
     }
   };
   const stop = subscribe(follow);
@@ -126,13 +130,13 @@ async function testFirst(o: { threadId: string; itemId: string; agentName: strin
     const detail = r.command ? `${r.command} · ${r.summary}${r.seconds ? ` · ${duration(r.seconds)}` : ""}` : undefined;
     if (r.state === "passed") {
       set({ id: "local", label, state: "passed", result: r.summary, detail });
-      say(`${r.command} passed on this Mac`);
+      say(`${r.command} passed on ${os.here}`);
       return true;
     }
     if (r.state === "failed") {
       // The tile is narrow: what failed; the note says the rest.
       set({ id: "local", label, state: "failed", result: r.summary.split(",")[0], detail });
-      emit({ type: "message", text: `\`${r.command}\` failed on this Mac: ${r.summary}. Nothing was pushed. ${o.agentName} can fix it; then open it again.` });
+      emit({ type: "message", text: `\`${r.command}\` failed on ${os.here}: ${r.summary}. Nothing was pushed. ${o.agentName} can fix it; then open it again.` });
       emit({ type: "status", text: "" });
       emit({ type: "stage", stage: "idle" });
       return false;
@@ -144,7 +148,7 @@ async function testFirst(o: { threadId: string; itemId: string; agentName: strin
       emit({ type: "stage", stage: "idle" });
       return false;
     }
-    say(r.summary === "You said no" ? `You said no to ${r.command}, so it goes up untested` : "No tests to run on this Mac");
+    say(r.summary === "You said no" ? `You said no to ${r.command}, so it goes up untested` : `No tests to run on ${os.here}`);
     return true;
   } finally {
     stop();
@@ -183,7 +187,8 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
       }
       number = pr.number;
       emit({ type: "pr", number: pr.number, url: pr.url });
-      emit({ type: "checks", checks: pr.checks.map((c) => ({ id: c.name, label: c.name, state: CHECK[c.state], result: c.state === "skipped" ? "Skipped" : undefined })) });
+      // Two runs can share a name (one workflow on push and on pull_request): each keeps a row of its own.
+      emit({ type: "checks", checks: pr.checks.map((c, i) => ({ id: `${i}:${c.name}`, label: c.name, state: CHECK[c.state], result: c.state === "skipped" ? "Skipped" : undefined })) });
       if (pr.state === "MERGED") {
         say(`Merged into \`${pr.base}\`.`);
         emit({ type: "status", text: `Merged into ${pr.base}` });
@@ -253,6 +258,8 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
           title = d.title;
           body = body || d.body;
         }
+        // Stop pressed while the text was written: nothing is pushed.
+        if (signal.aborted) throw new DOMException("Stopped", "AbortError");
         emit({ type: "status", text: `Pushing ${pic.branch} and opening it` });
         await rpc("pr.create", { threadId, title, body, draft: f?.draft ?? false });
         o.onChange();
@@ -262,6 +269,7 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
     }),
     resolve: guarded("conflicts", async (emit, signal) => {
       const pic = last ?? (await rpc("pr.picture", { threadId }));
+      if (signal.aborted) throw new DOMException("Stopped", "AbortError");
       emit({ type: "stage", stage: "resolving" });
       emit({ type: "status", text: `Asking ${o.agentName} to bring ${pic.base} in` });
       const files = [...new Set(pic.conflicts.map((k) => k.file))];
@@ -306,6 +314,9 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
   seen.current = visible;
   const fields = useRef({ title, body, draft });
   fields.current = { title, body, draft };
+  // Read when the PR opens, not when the card was made: draft on with the text left to the agent still counts.
+  const yours = useRef(editing);
+  yours.current = editing;
 
   useEffect(() => {
     let live = true;
@@ -326,7 +337,7 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
   }, [thread.id, n, visible]);
 
   // Made once per session's card, so the steps it's running survive a re-render.
-  const agent = useMemo(() => sessionPrAgent({ thread, agentName, fields: () => (editing || fields.current.title || fields.current.body ? fields.current : null), seen: () => seen.current, onChange: () => setN((x) => x + 1) }), [thread.id]);
+  const agent = useMemo(() => sessionPrAgent({ thread, agentName, fields: () => (yours.current || fields.current.title || fields.current.body ? fields.current : null), seen: () => seen.current, onChange: () => setN((x) => x + 1) }), [thread.id]);
 
   const draftIt = async () => {
     setDrafting(true);
@@ -631,7 +642,7 @@ function PrConsole({ threadId, run, agentName }: { threadId: string; run: Tool; 
         <button type="button" className="lc-prcon-h l-focus" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}>
           <I.terminal size={14} />
           <code>{run.input}</code>
-          <span className="lc-quiet">on this Mac</span>
+          <span className="lc-quiet">on {os.here}</span>
           <span className="lc-grow" />
           <span className="lc-prcon-st" key={run.status}>
             {running ? <Rays size={11} /> : run.status === "done" ? <I.check size={12} /> : <I.close size={12} />}

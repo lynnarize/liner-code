@@ -4,6 +4,7 @@
   never rewritten; the current one scrolls into view.
 */
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { prefersReducedMotion } from "@liner/lib/spring";
 import { I } from "./icons";
 import "./models.css";
 
@@ -16,7 +17,8 @@ function rangesIn(root: HTMLElement, query: string) {
   const q = query.toLowerCase();
   if (!q) return out;
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.parentElement?.closest("button, .lc-find, script, style, [hidden]") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    // Nor what's folded away (a trail's steps, a thought), which a match would scroll to and not show.
+    acceptNode: (n) => (n.parentElement?.closest("button, .lc-find, script, style, [hidden], [inert], :not([data-open], [data-open] > .lc-fcard) > .lc-fold") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   });
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
     const text = (n.textContent ?? "").toLowerCase();
@@ -67,7 +69,7 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
       if (r) reg.set("lc-find-on", new Highlight(r));
       else reg.delete("lc-find-on");
     }
-    r?.startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+    r?.startContainer.parentElement?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [at, count]);
   useEffect(() => setAt(0), [query]);
   const step = (d: number) => count && setAt((a) => (a + d + count) % count);

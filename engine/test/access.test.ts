@@ -252,12 +252,12 @@ test("reviewer: a later turn is read against every ask, the latest marked, not o
   }
 });
 
-test("routed: your picks for each role win while their tool is ready; one that isn't falls back", () => {
+test("your models: picks win while their tool is ready; one that isn't falls back", () => {
   const auto = castOf(ready)!;
-  const mine = castOf(ready, { everyday: "claude:claude-haiku-5-5", judge: "codex:gpt-6-sol", critics: ["claude:claude-sonnet-5-5", "claude:claude-sonnet-5-5"] })!;
-  assert.deepEqual(mine, { everyday: "claude:claude-haiku-5-5", strong: auto.strong, judge: "codex:gpt-6-sol", critics: ["claude:claude-sonnet-5-5"] });
-  assert.equal(castOf(ready, { everyday: "cursor:fast", critics: ["grok:x"] })!.everyday, auto.everyday, "Cursor isn't ready here");
-  assert.deepEqual(castOf(ready, { critics: ["grok:x"] })!.critics, auto.critics);
+  const mine = castOf(ready, { picks: { cheaper: "claude:claude-haiku-5-5", checker: "codex:gpt-6-sol" } })!;
+  assert.deepEqual([mine.everyday, mine.strong, mine.judge], ["claude:claude-haiku-5-5", auto.strong, "codex:gpt-6-sol"]);
+  assert.equal(castOf(ready, { picks: { cheaper: "cursor:fast", frontier: "grok:x" } })!.everyday, auto.everyday, "Cursor isn't ready here");
+  assert.equal(castOf(ready, { picks: { frontier: "grok:x" } })!.strong, auto.strong, "nor Grok");
 });
 
 test("limits: another account of the same tool carries on first, on the same model; else another family's everyday pick", () => {
@@ -331,7 +331,7 @@ test("watchdog: a turn that says nothing for a while is flagged once, and not wh
     runtime.watchQuiet(Date.now() + QUIET_MS + 120_000);
     const said = store.timeline("t").filter((x) => x.kind === "notice");
     assert.equal(said.length, 1, "once");
-    assert.match(said[0].kind === "notice" ? said[0].text : "", /^No word from Forge for [45] minutes\. It may be stuck/);
+    assert.match(said[0].kind === "notice" ? said[0].text : "", /^No word from claude-sonnet-5-5 for [45] minutes\. It may be stuck/);
     release();
     await sent;
   } finally {

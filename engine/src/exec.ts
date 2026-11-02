@@ -2,34 +2,143 @@
   Small process helpers. Apps launched from the Dock don't get your shell's PATH, so the shell
   passes it in and everything here runs with it.
 */
-import { execFile, spawn } from "node:child_process";
-import { accessSync, constants, existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { execFile, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
+import { accessSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, extname, isAbsolute, join, sep } from "node:path";
+
+const win = process.platform === "win32";
 
 /** The full path of a command on PATH, or null. */
 export function which(cmd: string, env: NodeJS.ProcessEnv = process.env): string | null {
   // A path is itself; an account that runs its own copy of a tool says where, as LINER_BIN_<TOOL>.
-  const own = cmd.includes("/") ? cmd : env[binVar(cmd)];
-  if (own) {
-    try {
-      accessSync(own, constants.X_OK);
-      return own;
-    } catch {
-      return null;
-    }
-  }
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
+  const own = (win ? /[\\/]/.test(cmd) : cmd.includes("/")) ? cmd : env[binVar(cmd)];
+  if (own) return runnable(own, env);
+  for (const dir of pathOf(env).split(delimiter)) {
     if (!dir) continue;
-    const p = join(dir, cmd);
+    const p = runnable(join(win ? dir.replace(/^"|"$/g, "") : dir, cmd), env);
+    if (p) return p;
+  }
+  return null;
+}
+
+/**
+  The file itself when it runs, else null. On Windows that's a file with one of PATHEXT's
+  extensions (npm's folder also holds a bare `claude` script for Git Bash, which Windows can't
+  start), tried in PATHEXT's order (T3 Code: packages/shared/src/shell.ts).
+*/
+function runnable(p: string, env: NodeJS.ProcessEnv): string | null {
+  if (!win) {
     try {
       accessSync(p, constants.X_OK);
       return p;
     } catch {
-      // not here
+      return null;
+    }
+  }
+  const exts = (env.PATHEXT || ".COM;.EXE;.BAT;.CMD").toLowerCase().split(";").filter((e) => [".com", ".exe", ".bat", ".cmd"].includes(e));
+  for (const c of exts.includes(extname(p).toLowerCase()) ? [p] : exts.map((e) => p + e)) {
+    try {
+      if (statSync(c).isFile()) return c;
+    } catch {
+      // not this one
     }
   }
   return null;
+}
+
+/** An environment's PATH, however it's spelt: Windows keeps it as "Path", and a copied env is case-sensitive. */
+export function pathOf(env: NodeJS.ProcessEnv): string {
+  return env.PATH ?? (win ? Object.entries(env).find(([k]) => k.toUpperCase() === "PATH")?.[1] : undefined) ?? "";
+}
+
+/** `env` with its PATH set to `path`, under one spelling: two on Windows ("Path" and "PATH") leave a child with either (T3 Code's setWindowsPath). */
+export function withPath(env: NodeJS.ProcessEnv, path: string | undefined): NodeJS.ProcessEnv {
+  const out = { ...env };
+  if (win) for (const k of Object.keys(out)) if (k.toUpperCase() === "PATH") delete out[k];
+  out.PATH = path;
+  return out;
+}
+
+/** A path relative() gave for something outside the folder it was asked from: up out of it, or (Windows) on another drive. */
+export const outside = (rel: string) => rel === ".." || rel.startsWith(`..${sep}`) || rel.startsWith("../") || isAbsolute(rel);
+
+/**
+  What an npm .cmd shim on Windows starts: the file named in its last line (a .exe, or a script
+  for Node), or null for any other .cmd. Node won't start a .cmd without a shell (CVE-2024-27980),
+  and through cmd.exe stopping it leaves the tool running; started directly it ends with the
+  engine (T3 Code: packages/shared/src/shell.ts npmShimExecutable).
+*/
+export function shimTarget(path: string): string | null {
+  if (!/\.cmd$/i.test(path)) return null;
+  try {
+    const last = readFileSync(path, "utf8").split(/\r?\n/).filter((l) => l.trim()).at(-1) ?? "";
+    const m = /"%dp0%\\([^"%]+)"\s+%\*\s*$/.exec(last) ?? /"%~dp0\\([^"%]+)"\s+%\*\s*$/.exec(last);
+    const target = m && join(dirname(path), m[1]);
+    return target && existsSync(target) ? target : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+  Claude Code's path for the Agent SDK, which starts it without a shell or a PATH search: on
+  Windows an npm shim gives way to the package's claude.exe (or cli.js, which the SDK runs with
+  Node). T3 Code: apps/server/src/provider/Drivers/ClaudeExecutable.ts.
+*/
+export function sdkPath<T extends string | null | undefined>(path: T): T {
+  if (!win || !path || !/\.(cmd|bat|ps1)$/i.test(path)) return path;
+  const pkg = join(dirname(path), "node_modules", "@anthropic-ai", "claude-code");
+  return (shimTarget(path) ?? [join(pkg, "bin", "claude.exe"), join(pkg, "cli.js")].find((p) => existsSync(p)) ?? path) as T;
+}
+
+const found = new Map<string, { path: string; at: number }>();
+
+/**
+  How to start `cmd` on Windows: its full path, or for an npm shim what the shim starts (with
+  Node for a script), or, for any other .cmd or .bat, cmd.exe with each argument quoted for it
+  (T3 Code's escapeWindowsShellArg). Elsewhere it's started as it is.
+*/
+function launch(cmd: string, args: readonly string[], env: NodeJS.ProcessEnv): { cmd: string; args: string[]; shell?: boolean } {
+  // A name found on PATH is kept for half a minute: git runs often, and each look is a stat per folder and extension.
+  // A miss isn't kept, so a tool installed a moment ago is found at once.
+  const key = `${pathOf(env)}\0${cmd}`;
+  let kept = found.get(key);
+  if (!kept || Date.now() - kept.at > 30_000) {
+    const p = which(cmd, env);
+    kept = p ? { path: p, at: Date.now() } : undefined;
+    if (kept) found.set(key, kept);
+    else found.delete(key);
+  }
+  const path = kept?.path ?? cmd;
+  if (!/\.(cmd|bat)$/i.test(path)) return { cmd: path, args: [...args] };
+  const target = shimTarget(path);
+  if (target && /\.exe$/i.test(target)) return { cmd: target, args: [...args] };
+  const node = target && /\.[cm]?js$/i.test(target) ? (existsSync(join(dirname(path), "node.exe")) ? join(dirname(path), "node.exe") : which("node", env)) : null;
+  if (target && node) return { cmd: node, args: [target, ...args] };
+  const quote = (a: string) => `"${a.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`.replace(/([()\][%!^"`<>&|;, *?])/g, "^$1");
+  return { cmd: [path, ...args].map(quote).join(" "), args: [], shell: true };
+}
+
+/**
+  child_process.spawn, made to work on Windows too: a .cmd shim starts what it names (see launch),
+  no console window flashes up, and nothing is detached (a detached child gets a console of its
+  own and outlives the engine; killTree ends the tree there instead of a process group).
+*/
+export const spawn = ((cmd: string, args?: readonly string[] | object, o?: object) => {
+  if (!win || !Array.isArray(args)) return (nodeSpawn as (...a: unknown[]) => ChildProcess)(cmd, args, o);
+  const opts = (o ?? {}) as { env?: NodeJS.ProcessEnv };
+  const l = launch(cmd, args as string[], opts.env ?? process.env);
+  return nodeSpawn(l.cmd, l.args, { ...opts, windowsHide: true, detached: false, ...(l.shell ? { shell: true } : {}) });
+}) as typeof nodeSpawn;
+
+/**
+  A command line for your shell: `$SHELL -c` (or -lc), or cmd.exe on Windows, as Node's own
+  `shell: true` runs it there (its argument passed as it is, `verbatim`).
+*/
+export function shellOf(command: string, env: NodeJS.ProcessEnv, login = false): { cmd: string; args: string[]; verbatim: boolean } {
+  if (win) return { cmd: env.ComSpec || env.COMSPEC || "cmd.exe", args: ["/d", "/s", "/c", `"${command}"`], verbatim: true };
+  return { cmd: env.SHELL || "/bin/zsh", args: [login ? "-lc" : "-c", command], verbatim: false };
 }
 
 /**
@@ -82,14 +191,15 @@ export function linkHelpers(dir: string, env: NodeJS.ProcessEnv, helpers = HELPE
         return null;
       }
     })();
-    const onPath = which(name, { ...env, PATH: (env.PATH ?? "").split(delimiter).filter((p) => p !== dir).join(delimiter) });
-    const copy = onPath ? null : places.map((p) => p.replace(/^~(?=\/)/, homedir())).find((p) => which(p, env));
+    const onPath = which(name, { ...env, PATH: pathOf(env).split(delimiter).filter((p) => p !== dir).join(delimiter) });
+    // The places are a Mac's, and a link on Windows needs admin rights or Developer Mode.
+    const copy = onPath || win ? null : places.map((p) => p.replace(/^~(?=\/)/, homedir())).find((p) => which(p, env));
     if (copy === ours) continue;
     if (ours !== null) rmSync(link, { force: true });
     if (copy) symlinkSync(copy, link);
     else if (!onPath) missing.push(name);
   }
-  return { env: { ...env, PATH: [dir, ...(env.PATH ?? "").split(delimiter).filter((p) => p && p !== dir)].join(delimiter) }, missing };
+  return { env: { ...env, PATH: [dir, ...pathOf(env).split(delimiter).filter((p) => p && p !== dir)].join(delimiter) }, missing };
 }
 
 /** "cursor-agent" → "LINER_BIN_CURSOR_AGENT". */
@@ -152,10 +262,12 @@ export function firstLine(stream: NodeJS.ReadableStream): Promise<string | null>
 
 export type RunResult = { code: number; stdout: string; stderr: string };
 
-/** Runs a command to the end and collects its output. Never throws on a non-zero exit. */
-export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; timeout?: number; maxBuffer?: number; onOutput?: (chunk: string) => void } = {}): Promise<RunResult> {
+/** Runs a command to the end and collects its output. Never throws on a non-zero exit. `verbatim`: shellOf's arguments, passed to cmd.exe as they are. */
+export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; timeout?: number; maxBuffer?: number; onOutput?: (chunk: string) => void; verbatim?: boolean } = {}): Promise<RunResult> {
+  // On Windows a .cmd shim starts what it names, and no console window flashes up (see launch).
+  const l = win && !o.verbatim ? launch(cmd, args, o.env ?? process.env) : { cmd, args, shell: false };
   return new Promise((resolve) => {
-    const child = execFile(cmd, args, { cwd: o.cwd, env: o.env ?? process.env, timeout: o.timeout ?? 30000, maxBuffer: o.maxBuffer ?? 32 * 1024 * 1024, encoding: "utf8" }, (err, stdout, stderr) => {
+    const child = execFile(l.cmd, l.args, { cwd: o.cwd, env: o.env ?? process.env, timeout: o.timeout ?? 30000, maxBuffer: o.maxBuffer ?? 32 * 1024 * 1024, encoding: "utf8", ...(win ? { windowsHide: true, windowsVerbatimArguments: Boolean(o.verbatim), ...(l.shell ? { shell: true } : {}) } : {}) }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as NodeJS.ErrnoException & { code?: unknown }).code === "number" ? ((err as unknown as { code: number }).code) : 1) : 0;
       resolve({ code, stdout: stdout ?? "", stderr: stderr ?? (err ? String(err.message) : "") });
     });
@@ -167,10 +279,28 @@ export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS
   });
 }
 
+/** Stops a process started in a group of its own, and everything in that group; the process alone if that fails. */
+export function killTree(child: { pid?: number; kill: (s?: NodeJS.Signals) => boolean }) {
+  // Windows has no process groups: taskkill ends the process and everything it started (T3 Code:
+  // AcpSessionRuntime.ts). Detached, so it finishes even when the engine is quitting.
+  if (win) {
+    if (!child.pid) return void child.kill();
+    const tk = nodeSpawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true, detached: true });
+    tk.on("error", () => child.kill());
+    return void tk.unref();
+  }
+  try {
+    if (child.pid) return void process.kill(-child.pid, "SIGTERM");
+  } catch {
+    // the group is gone already, or it isn't one
+  }
+  child.kill();
+}
+
 /** First line of `cmd --version`, or undefined. */
 export async function versionOf(path: string, env: NodeJS.ProcessEnv, args = ["--version"]) {
   const r = await run(path, args, { env, timeout: 8000 });
-  const line = (r.stdout || r.stderr).trim().split("\n")[0];
+  const line = (r.stdout || r.stderr).trim().split(/\r?\n/)[0];
   return r.code === 0 && line ? line.slice(0, 80) : undefined;
 }
 
@@ -193,5 +323,3 @@ export function jsonLines(stream: NodeJS.ReadableStream, onLine: (v: unknown) =>
     }
   });
 }
-
-export { spawn };

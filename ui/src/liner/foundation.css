@@ -576,18 +576,36 @@
 @keyframes l-spin {
   to { transform: rotate(360deg); }
 }
+/* For components that draw their own repeating gradient, 250% wide; .l-shimmer uses l-shimmer-light.
+   It travels exactly one tile (250% of the width is 166.667% in background-position terms), so the
+   loop ends where it began: one pass of light, then dark, with no snap back mid-word. */
 @keyframes l-shimmer-text {
   from { background-position: 120% 0; }
-  to { background-position: -120% 0; }
+  to { background-position: -46.667% 0; }
+}
+/* The light starts wholly before the words and ends wholly past them, so the loop has no seam:
+   a repeating gradient that travels less than its own tile snaps back mid-word every pass.
+   (T3 Code's live-tool-shine, apps/web/src/index.css.) */
+@keyframes l-shimmer-light {
+  from { background-position: calc(var(--l-shimmer-band) * -1) 0, 0 0; }
+  to { background-position: calc(100% + var(--l-shimmer-band)) 0, 0 0; }
 }
 
 /* Ongoing work: a calm light passes through the words. Remove the class when done. */
 .l-shimmer {
-  background: linear-gradient(100deg, var(--l-ink-3) 35%, var(--l-ink) 50%, var(--l-ink-3) 65%) 0 0 / 250% 100%;
+  --l-shimmer-band: 4.5rem;
+  background:
+    linear-gradient(to right, transparent, var(--l-ink), transparent) calc(var(--l-shimmer-band) * -1) 0 / var(--l-shimmer-band) 100% no-repeat,
+    linear-gradient(var(--l-ink-3), var(--l-ink-3));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: l-shimmer-text 1.9s linear infinite;
+  animation: l-shimmer-light 2.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-shimmer {
+    animation: none;
+  }
 }
 /* A label replacing another: it unblurs into place. */
 @keyframes l-swap-in {

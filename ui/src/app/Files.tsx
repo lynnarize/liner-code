@@ -123,12 +123,15 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
 
   // A file asked for from elsewhere: picked, with its line to go to. A line shows in the source,
   // without changing how you like Markdown shown.
+  // Each file asked for opens the tree again at it, its folders unfolded (the tree reads them only as it mounts).
+  const [asked, setAsked] = useState(0);
   const open = (r: { path: string; line?: number }) => {
     const p = inFolder(r.path, cwd);
     if (!p) return;
     setQuery("");
     setFilter("all");
     setSel(p);
+    setAsked((n) => n + 1);
     setGoto((g) => (r.line ? { path: p, line: r.line, n: (g?.n ?? 0) + 1 } : null));
   };
   const openRef = useRef(open);
@@ -248,7 +251,7 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
           {tree === null ? (
             <span className="l-shimmer lc-files-wait">Reading the folder</span>
           ) : nodes.length ? (
-            <TreeView key={`${filter}:${query ? "q" : ""}`} nodes={nodes} label="Files" defaultExpanded={openDirs} selected={sel} onSelect={(n) => !n.children && (setSel(n.id), setGoto(null))} />
+            <TreeView key={`${filter}:${query ? "q" : ""}:${asked}`} nodes={nodes} label="Files" defaultExpanded={openDirs} selected={sel} onSelect={(n) => !n.children && (setSel(n.id), setGoto(null))} />
           ) : (
             <p className="lc-quiet lc-files-none">{err ?? (filter === "changed" ? "No turn has changed a file yet." : query ? "No file matches that." : "This folder is empty.")}</p>
           )}

@@ -3,9 +3,11 @@
   write in the card, and the run's settings sit on the glass below. On Home the strip says where
   the session runs instead.
 
-  - Who works on this: talk to the lead (it plans, then hands off) or straight to a coder, or
-    to a model on its own, or Routed: the engine picks per message, at the level you choose.
-  - Effort and access open glass menus; access has five levels, from Read only to Full access.
+  - Who works on this: Solo (one model, or one of your agents), Plan then build (a stronger model
+    plans, a cheaper one builds), or Auto (the engine picks per message, at the level you choose);
+    Dual frontier; and what happens after each change (another maker checks it, the frontier model
+    refines it, or nothing).
+  - Effort and access open glass menus; access is Auto, Manual or Reviewer decides, with Full access last.
   - @ finds a file in the project; files come from the clip, a paste or a drop.
   - While an agent works, Enter queues the message for when the turn ends; ⌘Enter steers the
     running turn instead. Your pick becomes what Enter does. A queued message can be sent now
@@ -13,19 +15,21 @@
   - A paste of 32 KiB or more comes as a text file. Drafts outlast a restart.
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { Access, CommandInfo, SkillInfo, Effort, Project, QueuedMessage, RouteLevel, RpcResult, Thread } from "@contracts";
-import { castOf, familyOf, ROUTE_LEVELS, splitModel } from "@contracts";
+import type { Access, After, CommandInfo, SkillInfo, Effort, Mode, Project, QueuedMessage, RouteLevel, RpcResult, Thread } from "@contracts";
+import { AFTER, castOf, checkerOf, familyOf, frontiersOf, MODES, ROUTE_LEVELS, splitModel } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
 import { isPrompt, rpc, useEngine, useItemsWhere } from "./engine";
 import { I, ModelMark } from "./icons";
-import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, isModelAgent, markOf, modelLabel, plural, setupLine, setupsOf, since } from "./model";
+import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, isModelAgent, markOf, modeOf, modelLabel, plural, since, startOf } from "./model";
 import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
-import { ContextMeter, Disc, PanelHead, Pop, Row, Sep } from "./ui";
+import { ContextMeter, Disc, LimitMeter, PanelHead, Pop, Row, Sep } from "./ui";
+import * as os from "./os";
 
-export type RunSettings = { agent: string; lead?: string; model?: string; effort: Effort; access: Access; helpers?: string[]; setup?: string; route?: RouteLevel };
+/** Who works on a session and how: `lead` plans (Plan), `route` is Auto's level; `dual` and `after` unset follow Settings. */
+export type RunSettings = { agent: string; lead?: string; model?: string; effort: Effort; access: Access; route?: RouteLevel; dual?: boolean; after?: After };
 export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" };
 
 type Props = {
@@ -102,7 +106,7 @@ const branchesFor = (projectId: string) => {
 /** Where a new session works: this checkout, a new worktree, or one that's already there. */
 function WhereRows({ project, git, onOpen, worktree, inWorktree, onPick }: { project: Project; git: RpcResult<"git.branches"> | null; onOpen: () => void; worktree: boolean; inWorktree?: { path: string }; onPick: (worktree: boolean, existing?: { path: string; branch?: string }) => void }) {
   useEffect(onOpen, []);
-  const tilde = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+  const tilde = os.tilde;
   return (
     <>
       <PanelHead>Where it runs</PanelHead>
@@ -183,6 +187,8 @@ function pastedName(taken: string[]) {
 
 /** A long thread past its cache: the next message is read again at full price, so the composer offers to compact. */
 const COLD_TOKENS = 200_000;
+/** The model picker's tab for your agents (no tool has this id). */
+const AGENTS_TAB = "@agents";
 
 const toBase64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
@@ -193,8 +199,13 @@ const toBase64 = (f: File) =>
   });
 
 export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, compare = [], onCompare, stripEnd }: Props) {
-  const [git, setGit] = useState<Awaited<ReturnType<typeof branchesFor>> | null>(null);
-  const loadGit = () => void branchesFor(project.id).then(setGit);
+  // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
+  const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
+  const git = gitOf?.projectId === project.id ? gitOf.git : null;
+  const loadGit = () => {
+    const projectId = project.id;
+    void branchesFor(projectId).then((g) => setGitOf({ projectId, git: g }), () => {});
+  };
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const draftKey = thread?.id ?? "home";
@@ -221,6 +232,16 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const model = settings.model ?? coder.model;
   const shownModel = settings.lead ? talkTo.model : model;
   const lev = accessOf(settings.access);
+  // The plan windows of the tools this runs on (who you talk to first), when they report any.
+  const limits = useEngine((s) => s.limits);
+  const planOf = useMemo(
+    () =>
+      [...new Set([shownModel, model])].flatMap((ref) => {
+        const { provider, model: id } = splitModel(ref);
+        return limits.filter((l) => l.provider === provider && l.windows.length && (!l.models || id.startsWith(l.models)));
+      }).filter((l, i, all) => all.findIndex((x) => x.provider === l.provider) === i),
+    [limits, shownModel, model],
+  );
   const queue = thread?.queue ?? [];
   const usage = thread?.usage;
   // Past the window can't be: that's a total an older version saved, not how full the context is.
@@ -251,7 +272,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   // The field grows with what you write, up to eight lines, then scrolls. It measures again when
   // its width changes, or a height taken while the column was narrow (the placeholder wrapping)
   // would stay after it widens.
-  const fit = () => {
+  const fit = (glide = true) => {
     const el = field.current;
     if (!el) return;
     // Measured with the height's transition off: with it on, the height set to measure only starts
@@ -260,10 +281,18 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     el.style.transition = "none";
     el.style.height = "0px";
     const next = `${Math.min(el.scrollHeight, LINE * MAX_LINES + 20)}px`;
-    el.style.height = was;
+    if (glide) {
+      el.style.height = was;
+      void el.offsetHeight;
+      el.style.transition = "";
+      el.style.height = next;
+      return;
+    }
+    // A new width (the sidebar or the panel on its way) refits every frame: the field takes its
+    // height in that frame, as the text in it does, rather than starting a glide each time.
+    el.style.height = next;
     void el.offsetHeight;
     el.style.transition = "";
-    el.style.height = next;
   };
   useLayoutEffect(fit, [text]);
   useEffect(() => {
@@ -273,11 +302,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     const ro = new ResizeObserver(() => {
       if (el.clientWidth === width) return;
       width = el.clientWidth;
-      fit();
+      fit(false);
     });
     ro.observe(el);
     // The font arriving changes how the placeholder wraps too.
-    void document.fonts?.ready.then(fit);
+    void document.fonts?.ready.then(() => fit(false));
     return () => ro.disconnect();
   }, []);
   useEffect(() => {
@@ -532,14 +561,14 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     if (text.trim()) {
       localStorage.setItem(stashKey, JSON.stringify([{ text, at: Date.now() }, ...list].slice(0, 20)));
       setText("");
-      toast("Stashed the draft", { description: "⌘S on an empty composer brings it back." });
+      toast("Stashed the draft", { description: `${os.mod}S on an empty composer brings it back.` });
       return;
     }
     if (list.length === 1) {
       setText(list[0].text);
       localStorage.setItem(stashKey, "[]");
     } else if (list.length > 1) setStashOpen(true);
-    else toast("Nothing stashed", { description: "⌘S keeps a draft for later." });
+    else toast("Nothing stashed", { description: `${os.mod}S keeps a draft for later.` });
   };
   const unstash = (i: number) => {
     const list = readStash();
@@ -554,53 +583,121 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   useEffect(() => () => thumbs.forEach((u) => u && URL.revokeObjectURL(u)), [thumbs]);
 
   const engineSettings = useEngine((s) => s.settings);
-  const setups = useMemo(() => setupsOf(engineSettings, agents), [engineSettings, agents]);
-  const setup = settings.setup ? setups.find((x) => x.id === settings.setup) : undefined;
-  // Routed: who'd do what, from the models that are ready (and your own picks in Settings).
-  const cast = useMemo(() => castOf(providers, engineSettings.route?.cast), [providers, engineSettings.route?.cast]);
+  const way = modeOf(settings);
+  const dual = settings.dual ?? engineSettings.dual ?? false;
+  // Who'd do what in Plan and Auto: your two models (automatic where you haven't picked) from what's ready.
+  const cast = useMemo(() => castOf(providers, { dual, picks: engineSettings.picks }), [providers, dual, engineSettings.picks]);
+  const second = useMemo(() => frontiersOf(providers, engineSettings.picks).second, [providers, engineSettings.picks]);
   const routed = settings.route;
   // The Demo stays out of the list until it's shown (six taps on your name in the sidebar).
   const showDemo = engineSettings.showDemo === true;
-  const leadAgents = agents.filter((a) => /lead/i.test(a.role) && a.id !== "demo");
-  const mainCoder = agents.find((a) => a.specialty === "coder" && a.id !== "demo") ?? agents.find((a) => a.id !== "demo" && !/lead/i.test(a.role));
-  // A session started straight with one agent before setups: it keeps a row of its own while it runs that way.
-  const loner = !setup && !settings.lead && !isModelAgent(settings.agent) && settings.agent !== "demo";
+  // Agents you made, with instructions of their own; a session can run on one instead of a bare model.
+  const yours = agents.filter((a) => a.id !== "demo");
+  // They (and the demo) are the model picker's last tab; each row closes the panel once picked.
+  const agentRows = [
+    ...yours.map((a) => (close: () => void) => (
+      <WayRow
+        key={a.id}
+        on={!settings.lead && !routed && settings.agent === a.id}
+        icon={<Disc agent={a} size={16} />}
+        title={a.name}
+        note={`${modelLabel(a.model, providers)}, own instructions`}
+        onPick={() => {
+          onSettings({ route: undefined, lead: undefined, agent: a.id, model: undefined });
+          close();
+        }}
+      />
+    )),
+    ...(showDemo && agents.some((a) => a.id === "demo")
+      ? [
+          (close: () => void) => (
+            <WayRow
+              key="demo"
+              on={!routed && settings.agent === "demo"}
+              icon={<I.sparkle size={13} />}
+              title="Demo run"
+              note="a scripted run, no account"
+              onPick={() => {
+                onSettings({ route: undefined, lead: undefined, agent: "demo", model: undefined });
+                close();
+              }}
+            />
+          ),
+        ]
+      : []),
+  ];
+  // Which of the picker's tabs is open, so the column's label can say models or agents.
+  const [pickerTab, setPickerTab] = useState<string>();
+  const label = (ref: string) => modelLabel(ref, providers);
+  // After each change: this session's own word, else Settings'. Who checks is another maker than the writer's; who refines, your frontier model.
+  const after = settings.after ?? engineSettings.after ?? "check";
+  const checker = cast ? checkerOf(model, cast) : null;
+  const refiner = cast && cast.strong !== model ? cast.strong : null;
+  const afterNote = after === "off" ? "Changes are yours as they are." : after === "refine" && refiner ? `${label(refiner)} takes each change on and finishes it, the way you'd have a senior polish a first pass.` : checker ? `${label(checker)} reads each change before it's yours, and sends back what must be fixed.${after === "refine" ? " (Refining needs a stronger model than the writer.)" : ""}` : "Nobody else is ready to read changes yet.";
   /** The makers of everyone in a way, as small marks. */
   const marksOf = (ids: string[]) => [...new Set(ids.map((id) => markOf(agentOf(id, agents, providers).model)))].map((k) => <ModelMark key={k} kind={k} size={11} />);
+  /** A mode, with who's in it from your two models (and Dual frontier). Solo keeps the model it has. */
+  const pickMode = (m: Mode) => {
+    if (m === "solo") return onSettings({ lead: undefined, route: undefined });
+    const s = startOf(m, engineSettings, providers, dual);
+    if (s) onSettings({ ...s, model: undefined });
+  };
+  const pickDual = (on: boolean) => {
+    const s = startOf(way, engineSettings, providers, on);
+    // Solo keeps a model you picked yourself; otherwise who builds follows Dual frontier.
+    if (way === "solo" && !isModelAgent(settings.agent)) return onSettings({ dual: on });
+    if (s) onSettings({ ...s, route: routed ?? s.route, model: undefined });
+  };
 
   const whoChip = routed ? (
     <>
       <span className="lc-way-chip-i">
         <I.branchIf size={12} />
       </span>
-      <span className="lc-chip-name">Routed · {ROUTE_LEVELS.find((l) => l.id === routed)?.label}</span>
+      <span className="lc-chip-name">Auto · {ROUTE_LEVELS.find((l) => l.id === routed)?.label}</span>
       {cast && <span className="lc-way-marks">{marksOf([`@${cast.everyday}`, `@${cast.strong}`])}</span>}
       <I.chevD size={11} />
     </>
-  ) : setup || settings.lead ? (
-      <>
-        <span className="lc-way-chip-i">{setup ? <I.flow size={12} /> : <I.agents size={12} />}</span>
-        <span className="lc-chip-name">{setup ? setup.name : "Lead and coder"}</span>
-        <span className="lc-way-marks">{marksOf(setup ? [...(setup.lead ? [setup.lead] : []), ...setup.stages.map((st) => st.who)] : [settings.lead!, settings.agent])}</span>
-        <I.chevD size={11} />
-      </>
-    ) : (
-      <>
-        <Disc agent={talkTo} size={22} />
-        <span className="lc-chip-name" title={isModelAgent(settings.agent) || settings.agent === "demo" ? undefined : modelLabel(shownModel, providers)}>
-          {isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}
-        </span>
-        {compare.length > 0 && <span className="lc-chip-more">· {compare.length + 1} models</span>}
-        <I.chevD size={11} />
-      </>
-    );
-  const helpers = settings.helpers ?? [];
-  const helperPool = agents.filter((a) => a.id !== "demo" && a.id !== settings.lead && a.id !== settings.agent && !/lead/i.test(a.role));
+  ) : settings.lead ? (
+    <>
+      <span className="lc-way-chip-i">
+        <I.flow size={12} />
+      </span>
+      <span className="lc-chip-name">Plan, then build</span>
+      <span className="lc-way-marks">{marksOf([settings.lead, settings.agent])}</span>
+      <I.chevD size={11} />
+    </>
+  ) : (
+    <>
+      <Disc agent={talkTo} size={22} />
+      <span className="lc-chip-name" title={isModelAgent(settings.agent) || settings.agent === "demo" ? undefined : modelLabel(shownModel, providers)}>
+        {isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}
+      </span>
+      {compare.length > 0 && <span className="lc-chip-more">· {compare.length + 1} models</span>}
+      <I.chevD size={11} />
+    </>
+  );
 
-  // Who the lead can bring in, how to compare, and a new agent: under the agents, in the room the
-  // model list leaves there, so the panel is only as tall as its taller column.
+  // Dual frontier, how far Auto goes, what happens after each change, and how to compare: under the modes, in
+  // the room the model list leaves there, so the panel is only as tall as its taller column.
   const teamExtras = (close: () => void) => (
     <>
+      {cast && (
+        <div className="lc-team-help">
+          <div className="lc-team-lab">Models</div>
+          <div className="lc-team-chips">
+            <button type="button" className="lc-mchip l-focus" data-on={!dual || undefined} aria-pressed={!dual} onClick={() => pickDual(false)}>
+              Frontier + cheaper
+            </button>
+            <button type="button" className="lc-mchip l-focus" data-on={dual || undefined} aria-pressed={dual} disabled={!second} title={second ? "A second frontier model builds in the cheaper one's place" : "Needs a frontier model from another maker: add one in Settings › Models"} onClick={() => pickDual(true)}>
+              Dual frontier
+            </button>
+          </div>
+          <p className="lc-quiet lc-team-note">
+            {way === "auto" ? `${label(cast.everyday)} does most of it, ${label(cast.strong)} the hard parts and repairs, ${label(cast.judge)} judges.` : `${label(cast.strong)} plans, ${label(cast.everyday)} builds.`} Settings › Agentic features picks them.
+          </p>
+        </div>
+      )}
       {routed && cast && (
         <div className="lc-team-help">
           <div className="lc-team-lab">How far it goes</div>
@@ -611,27 +708,20 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               </button>
             ))}
           </div>
-          <p className="lc-quiet lc-team-note">
-            {ROUTE_LEVELS.find((l) => l.id === routed)?.note}. {modelLabel(cast.everyday, providers)} does most of it, {modelLabel(cast.strong, providers)} the hard parts and repairs, {modelLabel(cast.judge, providers)} judges. Settings › Agentic features picks them.
-          </p>
+          <p className="lc-quiet lc-team-note">{ROUTE_LEVELS.find((l) => l.id === routed)?.note}.</p>
         </div>
       )}
-      {settings.lead && !setup && helperPool.length > 0 && (
+      {!routed && settings.agent !== "demo" && (
         <div className="lc-team-help">
-          <div className="lc-team-lab">{talkTo.name} can bring in</div>
+          <div className="lc-team-lab">After each change</div>
           <div className="lc-team-chips">
-            {helperPool.map((a) => {
-              const on = helpers.includes(a.id);
-              return (
-                <button key={a.id} type="button" className="lc-mchip l-focus" data-on={on || undefined} aria-pressed={on} title={a.role} onClick={() => onSettings({ helpers: on ? helpers.filter((x) => x !== a.id) : [...helpers, a.id] })}>
-                  <Disc agent={a} size={16} />
-                  {a.name}
-                  <span className="lc-quiet">{modelLabel(a.model, providers)}</span>
-                </button>
-              );
-            })}
+            {AFTER.map((x) => (
+              <button key={x.id} type="button" className="lc-mchip l-focus" data-on={after === x.id || undefined} aria-pressed={after === x.id} title={x.note} onClick={() => onSettings({ after: x.id })}>
+                {x.label}
+              </button>
+            ))}
           </div>
-          <p className="lc-quiet lc-team-note">Steps in {talkTo.name}'s plan can go to them; {coder.name} still builds the rest.</p>
+          <p className="lc-quiet lc-team-note">{afterNote}</p>
         </div>
       )}
       {onCompare && (
@@ -649,7 +739,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           }}
         >
           <I.flow size={13} />
-          Set up a way of working
+          Modes and models
         </button>
         {onNewAgent && (
           <button
@@ -673,92 +763,62 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       <PanelHead end={project.name}>Who works on this</PanelHead>
       {/* Two columns side by side, as tall as the taller one, so the panel opens where it's asked. */}
       <div className="lc-team-cols">
-        {agents.some((a) => a.id !== "demo") && (
-          <div className="lc-team-col">
-            <div className="lc-team-lab">How it works</div>
-            {/* The ways by what they do, with who's in them underneath: a lead with its coder, your setups, the demo. */}
-            {leadAgents.map((l) => (
-              <WayRow
-                key={l.id}
-                on={!setup && settings.lead === l.id}
-                icon={<I.agents size={13} />}
-                title={leadAgents.length > 1 ? `Lead and coder, with ${l.name}` : "Lead and coder"}
-                note={`${l.name} plans, ${(mainCoder ?? coder).name} builds`}
-                marks={marksOf([l.id, (mainCoder ?? coder).id])}
-                onPick={() => {
-                  onSettings({ setup: undefined, route: undefined, lead: l.id, agent: mainCoder?.id ?? settings.agent, model: undefined });
-                  close();
-                }}
-              />
-            ))}
-            {setups.map((x) => (
-              <WayRow
-                key={x.id}
-                on={!routed && settings.setup === x.id}
-                icon={<I.flow size={13} />}
-                title={x.name}
-                note={setupLine(x, agents, providers)}
-                marks={marksOf([...(x.lead ? [x.lead] : []), ...x.stages.map((st) => st.who)])}
-                onPick={() => {
-                  onSettings({ setup: x.id, route: undefined, agent: x.stages[0].who, lead: x.lead ?? undefined, helpers: x.crew, model: undefined });
-                  close();
-                }}
-              />
-            ))}
-            {cast && (
-              <WayRow
-                on={Boolean(routed)}
-                icon={<I.branchIf size={13} />}
-                title="Routed"
-                note={`picked per message: ${modelLabel(cast.everyday, providers)} alone, checked, or ${modelLabel(cast.strong, providers)} with critics`}
-                marks={marksOf([`@${cast.everyday}`, `@${cast.strong}`, `@${cast.judge}`, ...cast.critics.map((c) => `@${c}`)])}
-                onPick={() => {
-                  onSettings({ route: routed ?? engineSettings.route?.level ?? "high", setup: undefined, lead: undefined, helpers: undefined, agent: `@${cast.everyday}`, model: undefined });
-                  close();
-                }}
-              />
-            )}
-            {loner && <WayRow on icon={<I.edit size={13} />} title={`Straight to ${coder.name}`} note="an agent on its own, from before setups" marks={marksOf([coder.id])} onPick={close} />}
-            {showDemo && agents.some((a) => a.id === "demo") && (
-              <WayRow
-                on={!setup && !routed && !settings.lead && settings.agent === "demo"}
-                icon={<I.sparkle size={13} />}
-                title="Demo run"
-                note="a scripted run, no account"
-                onPick={() => {
-                  onSettings({ setup: undefined, route: undefined, lead: undefined, agent: "demo", model: undefined });
-                  close();
-                }}
-              />
-            )}
-            <div className="lc-team-extras">{teamExtras(close)}</div>
-          </div>
-        )}
         <div className="lc-team-col">
-          <div className="lc-team-lab">Or just a model</div>
-          {/* The models each tool said it runs: a rail of tools, a search, ⌘1 to ⌘9. */}
+          <div className="lc-team-lab">How it works</div>
+          {/* The three modes, with who's in each underneath. Your agents are a tab of the model picker. */}
+          {MODES.map((m) => {
+            const on = way === m.id && settings.agent !== "demo" && (m.id !== "solo" || isModelAgent(settings.agent));
+            const note = m.id === "solo" ? `${isModelAgent(settings.agent) ? modelLabel(model, providers) : cast ? label(cast.everyday) : "a model"} alone${way === "solo" && after === "refine" && refiner ? `, ${label(refiner)} refines` : way === "solo" && after === "check" && checker ? `, ${label(checker)} checks` : ""}` : !cast ? "No model is ready yet" : m.id === "plan" ? `${label(cast.strong)} plans, ${label(cast.everyday)} builds` : `${label(cast.everyday)} for most, ${label(cast.strong)} for hard jobs`;
+            const marks = m.id === "solo" ? marksOf([isModelAgent(settings.agent) ? settings.agent : `@${cast?.everyday ?? model}`]) : cast ? marksOf([`@${cast.strong}`, `@${cast.everyday}`]) : undefined;
+            return (
+              <WayRow
+                key={m.id}
+                on={on}
+                icon={m.id === "solo" ? <I.sparkle size={13} /> : m.id === "plan" ? <I.flow size={13} /> : <I.branchIf size={13} />}
+                title={m.label}
+                note={note}
+                marks={marks}
+                onPick={() => {
+                  if (m.id === "solo" && !isModelAgent(settings.agent) && cast) onSettings({ lead: undefined, route: undefined, agent: `@${cast.everyday}`, model: undefined });
+                  else pickMode(m.id);
+                  close();
+                }}
+              />
+            );
+          })}
+          <div className="lc-team-extras">{teamExtras(close)}</div>
+        </div>
+        <div className="lc-team-col">
+          <div className="lc-team-lab">{pickerTab === AGENTS_TAB ? "Or one of your agents" : way === "solo" ? "The model" : "Or just a model"}</div>
+          {/* The models each tool said it runs: a rail of tools, a search, ⌘1 to ⌘9; your agents (and
+              the demo) on a tab of their own at the rail's foot, open when the session runs on one. */}
           <ModelPicker
-            value={isModelAgent(settings.agent) && !settings.lead && !settings.setup && !routed ? settings.agent.slice(1) : undefined}
+            value={isModelAgent(settings.agent) && !settings.lead && !routed ? settings.agent.slice(1) : undefined}
             also={compare.map((c) => c.slice(1))}
             autoFocus={false}
             height={330}
+            onTab={setPickerTab}
+            extra={
+              agentRows.length
+                ? { id: AGENTS_TAB, label: "Your agents", icon: <I.agents size={15} />, open: !settings.lead && !routed && !isModelAgent(settings.agent), body: agentRows.map((r) => r(close)) }
+                : undefined
+            }
             onPick={(ref, how) => {
               const id = `@${ref}`;
-              const on = isModelAgent(settings.agent) && !settings.lead && !settings.setup && !routed && settings.agent === id;
+              const on = isModelAgent(settings.agent) && !settings.lead && !routed && settings.agent === id;
               // Shift-click gives the same ask to this model too, to compare and keep one.
               if (how.shiftKey && onCompare) {
                 if (on) return;
                 onCompare(compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id].slice(0, 3));
                 return;
               }
-              onSettings({ setup: undefined, route: undefined, lead: undefined, agent: id, model: undefined });
+              onSettings({ route: undefined, lead: undefined, agent: id, model: undefined });
               onCompare?.(compare.filter((x) => x !== id));
               close();
             }}
           />
         </div>
       </div>
-      {!agents.some((a) => a.id !== "demo") && teamExtras(close)}
     </div>
   );
 
@@ -766,31 +826,61 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   // On Home they open downward, off the heading, and scroll in what room there is rather than flip.
   // Both trays hold their choices in one light bar, each drawn small beside its word.
   const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} triggerClass="lc-seg-b lc-effort" hideEmpty />;
+  // Permissions as a short list (Claude Code's own): Auto, Manual and Reviewer decides, each a
+  // number away while it's open, and Full access last, a row of its own that you enable.
+  const LevelIcon = ACCESS_ICONS[settings.access] ?? I.sparkle;
+  const picks = ACCESS_LEVELS.filter((l) => l.id !== "full");
+  const full = ACCESS_LEVELS.find((l) => l.id === "full")!;
   const accessPick = (
     <Pop
-      label={`Access: ${lev.label}. Change it`}
+      label={`Permissions: ${lev.label}. Change them`}
       side={variant === "home" ? "bottom" : "top"}
       keep={variant === "home"}
       align="end"
-      width={320}
+      width={340}
       triggerClass="lc-seg-b lc-access"
       trigger={
         <>
-          <I.lock size={14} />
+          <LevelIcon size={14} />
           <span className="lc-ctl-label">{lev.short}</span>
           <I.chevD size={11} />
         </>
       }
     >
-      {(close) => (
-        <>
-          <PanelHead>What {settings.lead ? coder.name : isModelAgent(settings.agent) ? "it" : coder.name} may do in this session</PanelHead>
-          {ACCESS_LEVELS.map((l) => (
-            <Row key={l.id} title={l.label} note={l.note} on={settings.access === l.id} onPick={() => (onSettings({ access: l.id }), close())} />
-          ))}
-          <div className="lc-pop-foot">Read only also makes the agent plan first: you approve before anything changes.</div>
-        </>
-      )}
+      {(close) => {
+        const pick = (access: Access) => (onSettings({ access }), close());
+        return (
+          <div
+            className="lc-perm"
+            role="radiogroup"
+            aria-label="Permissions"
+            onKeyDown={(e) => {
+              const l = picks[Number(e.key) - 1];
+              if (!l || e.metaKey || e.ctrlKey || e.altKey) return;
+              e.preventDefault();
+              pick(l.id);
+            }}
+          >
+            <div className="lc-perm-h">Permissions</div>
+            {picks.map((l, i) => (
+              <button key={l.id} type="button" role="radio" aria-checked={settings.access === l.id} className="lc-perm-r l-focus" onClick={() => pick(l.id)}>
+                <span className="lc-perm-t">
+                  <b>{l.label}</b>
+                  <small>{l.note}</small>
+                </span>
+                {settings.access === l.id && <I.check size={16} />}
+                <kbd className="lc-perm-k">{i + 1}</kbd>
+              </button>
+            ))}
+            <button type="button" role="radio" aria-checked={settings.access === "full"} className="lc-perm-r lc-perm-full l-focus" title={full.note} onClick={() => pick("full")}>
+              <span className="lc-perm-t">
+                <b>{full.label}</b>
+              </span>
+              {settings.access === "full" ? <I.check size={16} /> : <span className="lc-perm-on">Enable</span>}
+            </button>
+          </div>
+        );
+      }}
     </Pop>
   );
 
@@ -811,7 +901,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           trigger={
             <>
               <I.keyboard size={14} />
-              <span className="lc-note-long">{mode === "queue" ? "Enter queues · ⌘Enter steers" : "Enter steers"}</span>
+              <span className="lc-note-long">{mode === "queue" ? `Enter queues · ${os.mod}Enter steers` : "Enter steers"}</span>
               <span className="lc-note-short">{mode === "queue" ? "Enter queues" : "Enter steers"}</span>
             </>
           }
@@ -819,8 +909,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           {(close) => (
             <>
               <Row title="Queue it" note="Sent when this turn ends. You can still edit it." on={mode === "queue"} end={<kbd className="lc-kbd">Enter</kbd>} onPick={() => (setMode("queue"), close())} />
-              <Row title="Steer now" note="Read at its next step, without stopping." on={mode === "steer"} end={<kbd className="lc-kbd">⌘ Enter</kbd>} onPick={() => (setMode("steer"), close())} />
-              <div className="lc-pop-foot">Your pick becomes what Enter does. ⌘⇧Enter sends the first queued message now.</div>
+              <Row title="Steer now" note="Read at its next step, without stopping." on={mode === "steer"} end={<kbd className="lc-kbd">{os.keys("mod+enter", " ")}</kbd>} onPick={() => (setMode("steer"), close())} />
+              <div className="lc-pop-foot">Your pick becomes what Enter does. {os.mod}{os.shift}Enter sends the first queued message now.</div>
             </>
           )}
         </Pop>
@@ -872,12 +962,12 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               <span className="lc-queued-handle" aria-hidden>
                 <I.drag size={13} />
               </span>
-              <span className="lc-queued-t">{q.text}</span>
+              <span className="lc-queued-t">{designPart(q.text).said}</span>
               {editing?.id === q.id && <span className="lc-queued-tag">Editing</span>}
               <button
                 type="button"
                 className="lc-queued-now l-focus"
-                title={`${busy ? "Steer it into this turn now" : "Send it now"}${i === 0 ? " (⌘⇧Enter)" : ""}`}
+                title={`${busy ? "Steer it into this turn now" : "Send it now"}${i === 0 ? ` (${os.mod}${os.shift}Enter)` : ""}`}
                 onClick={() => sendNow(q)}
               >
                 Send now
@@ -1087,6 +1177,12 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 <ContextMeter used={usage.contextTokens} max={usage.contextWindow} running={busy} onCompact={canCompact ? compactNow : undefined} />
               </>
             )}
+            {planOf.length > 0 && (
+              <>
+                <span className="lc-seg-div" aria-hidden />
+                <LimitMeter tools={planOf} />
+              </>
+            )}
             <span className="lc-seg-div" aria-hidden />
             {accessPick}
           </span>
@@ -1135,7 +1231,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           ) : (
             <span className="lc-strip-note">
               <I.folder size={13} />
-              {project.path.replace(/^\/Users\/[^/]+/, "~")}
+              {os.tilde(project.path)}
             </span>
           )}
           {worktree && !inWorktree && project.git && !compare.length ? (
@@ -1186,3 +1282,6 @@ function WayRow({ on, icon, title, note, marks, onPick }: { on: boolean; icon: R
 }
 
 export const Hints = ({ children }: { children?: ReactNode }) => <div className="lc-hints">{children}</div>;
+
+/** Each access level's icon, in the permissions picker and on its chip. */
+const ACCESS_ICONS: Record<Access, (p: { size?: number }) => ReactNode> = { read: I.eye, ask: I.lock, edits: I.edit, auto: I.sparkle, review: I.shield, full: I.shieldOff };

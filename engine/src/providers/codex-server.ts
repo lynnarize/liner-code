@@ -12,7 +12,7 @@
 */
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Access, PlanEntry, Question } from "../../../contracts/src/index.ts";
-import { jsonLines, spawn, which, withCodexPath } from "../exec.ts";
+import { jsonLines, killTree, spawn, which, withCodexPath } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
@@ -75,8 +75,9 @@ export const isLimit = (e: { codexErrorInfo?: unknown; message?: string }) => e.
 export async function codexAsk<T>(env: NodeJS.ProcessEnv, cwd: string, method: string, params: Json, timeout = 20000): Promise<T> {
   const c = new CodexServer(env, cwd);
   try {
-    await c.ready();
-    return (await Promise.race([c.request(method, params), new Promise<never>((_, no) => setTimeout(() => no(new Error("Codex didn't answer in time.")), timeout))])) as T;
+    // Its start counts against the time too: an app server that never answers would hold the ask (and the
+    // engine's one ask for limits at a time) and its process for good.
+    return (await Promise.race([c.ready().then(() => c.request(method, params)), new Promise<never>((_, no) => setTimeout(() => no(new Error("Codex didn't answer in time.")), timeout))])) as T;
   } finally {
     c.close();
   }
@@ -92,10 +93,11 @@ export const toml = (v: unknown): string =>
         .join(", ")} }`
     : JSON.stringify(v);
 
-class CodexServer {
+export class CodexServer {
   child: ChildProcessWithoutNullStreams | null = null;
   private seq = 1;
-  private pending = new Map<number | string, { resolve: (v: Json) => void; reject: (e: Error) => void }>();
+  /** Each request with the process it went to: one that ends fails only its own. */
+  private pending = new Map<number | string, { resolve: (v: Json) => void; reject: (e: Error) => void; child: ChildProcessWithoutNullStreams }>();
   private booting: Promise<void> | null = null;
   private stderr = "";
   onNotify: (method: string, params: Json) => void = () => {};
@@ -125,9 +127,14 @@ class CodexServer {
     jsonLines(child.stdout, (v) => void this.onMessage(v as Msg));
     child.on("close", (code) => {
       const err = new Error(this.stderr.trim().split("\n").slice(-3).join("\n") || `Codex's app server exited with ${code}.`);
-      for (const p of this.pending.values()) p.reject(err);
-      this.pending.clear();
-      if (this.child === child) this.onExit(err.message);
+      for (const [id, p] of this.pending)
+        if (p.child === child) {
+          this.pending.delete(id);
+          p.reject(err);
+        }
+      // A process closed earlier (Stop, an update) ending now leaves the one that replaced it alone.
+      if (this.child !== child) return;
+      this.onExit(err.message);
       this.child = null;
       this.booting = null;
     });
@@ -143,8 +150,12 @@ class CodexServer {
   }
   request(method: string, params: Json): Promise<Json> {
     const id = this.seq++;
+    const child = this.child;
+    // No process to ask, or one that's going: an answer would never come (Synara: codexAppServerManager.ts,
+    // "a child that stopped draining stdin must never hold" the session).
+    if (!child || !child.stdin.writable) return Promise.reject(new Error("Codex's app server isn't running."));
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, child });
       this.write({ id, method, params });
     });
   }
@@ -173,7 +184,11 @@ class CodexServer {
   close() {
     const c = this.child;
     this.child = null;
-    c?.kill();
+    // Asked again after this, it starts a process of its own rather than standing on this one's start.
+    this.booting = null;
+    // On Windows, with the commands it started (they leave its job by themselves).
+    if (c && process.platform === "win32") killTree(c);
+    else c?.kill();
   }
 }
 
@@ -189,10 +204,17 @@ export class CodexServerSession implements ProviderSession {
   /** A running command's output so far, by item; it reaches the row a few times a second. */
   private outputs = new Map<string, { text: string; title: string; input: string; timer?: NodeJS.Timeout }>();
   private changes = new Map<string, string[]>();
-  /** Codex's running totals at its last report, to count each step from; none yet in this process. */
-  private counted: { input: number; cached: number; output: number } | null = null;
+  /**
+    Codex's running totals at its last report, by thread (a subagent's thread reports its own), to count
+    each step from; none yet in this process (T3 Code: CodexAdapterV2.ts, usageStateForThread).
+  */
+  private counted = new Map<string, { input: number; cached: number; output: number }>();
+  /** Turns you stopped: their late turn/completed ends nothing (T3 Code: CodexAdapterV2.ts, activeTurns). */
+  private stale = new Set<string>();
   /** This turn's failure, said once when the turn ends (Codex sends it as an error, then again with the turn). */
   private failure: { message?: string; codexErrorInfo?: unknown } | null = null;
+  /** The thread it was to resume and couldn't: said once, on a turn that goes on, so the runtime sends the conversation so far. */
+  private lost: string | undefined;
   private o: OpenOptions;
 
   constructor(o: OpenOptions) {
@@ -203,7 +225,8 @@ export class CodexServerSession implements ProviderSession {
     this.server.onRequest = (method, params) => this.onRequest(method, params);
     this.server.onExit = (message) => {
       this.opened = false;
-      if (this.sink) this.sink.error(message);
+      // Said here for a turn under way; one still opening fails with the same words itself, which would say them twice.
+      if (this.sink && this.done) this.sink.error(message);
       this.done?.();
     };
   }
@@ -218,7 +241,6 @@ export class CodexServerSession implements ProviderSession {
     const config = mcp || this.o.config ? { ...mcp, ...this.o.config } : null;
     const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: this.o.model && this.o.model !== "default" ? this.o.model : null, developerInstructions: this.o.soul || null, config };
     let r: Json | null = null;
-    let lost: string | undefined;
     if (this.thread) {
       // Only the thread's settings: its turns are already on the timeline (T3 Code: CodexAdapterV2.ts, resumeThread).
       const threadId = this.thread;
@@ -227,14 +249,12 @@ export class CodexServerSession implements ProviderSession {
         // An archived thread resumes once it's unarchived.
         /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(e.message) ? this.server.request("thread/unarchive", { threadId }).then(resume).catch(() => null) : null,
       );
-      if (!r) lost = threadId;
+      if (!r) this.lost = threadId;
     }
     if (!r) r = await this.server.request("thread/start", common);
     this.thread = String((r.thread as Json).id);
     this.sink?.session(this.thread);
     this.opened = true;
-    // A thread Codex can't resume isn't swapped for a new one in silence: the runtime sends the new one the conversation so far.
-    if (lost) throw new ResumeFailed(`Codex couldn't resume its thread ${lost}.`);
   }
 
   async turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
@@ -243,7 +263,10 @@ export class CodexServerSession implements ProviderSession {
     this.streamed.clear();
     this.failure = null;
     const stop = () => {
-      if (this.thread && this.turnId) void this.server.request("turn/interrupt", { threadId: this.thread, turnId: this.turnId }).catch(() => {});
+      if (this.thread && this.turnId) {
+        this.stale.add(this.turnId);
+        void this.server.request("turn/interrupt", { threadId: this.thread, turnId: this.turnId }).catch(() => {});
+      }
       this.done?.();
     };
     try {
@@ -252,6 +275,13 @@ export class CodexServerSession implements ProviderSession {
       sink.session(this.thread);
       // Stopped while Codex was starting: nothing was asked of it yet.
       if (signal.aborted) return;
+      // A thread Codex can't resume isn't swapped for a new one in silence: the runtime sends the new one the
+      // conversation so far. Said here rather than as it opens, so a Stop while it started doesn't lose it.
+      if (this.lost) {
+        const lost = this.lost;
+        this.lost = undefined;
+        throw new ResumeFailed(`Codex couldn't resume its thread ${lost}.`);
+      }
       const p = POLICY[this.o.planning ? "read" : this.o.access];
       const effort = this.o.effort && !/^ultra(code|think)$/.test(this.o.effort) ? this.o.effort : null;
       const finished = new Promise<void>((resolve) => {
@@ -313,6 +343,10 @@ export class CodexServerSession implements ProviderSession {
     const sink = this.sink;
     if (!sink) return;
     const item = p.item as Json | undefined;
+    // Another thread on this connection (a subagent Codex started) is at work: it counts its tokens,
+    // but its words, steps and turn ends aren't this turn's (T3 Code: CodexAdapterV2.ts keeps them apart by thread).
+    const other = typeof p.threadId === "string" && Boolean(this.thread) && p.threadId !== this.thread;
+    if (other && method !== "thread/tokenUsage/updated") return void sink.heard?.();
     switch (method) {
       case "item/agentMessage/delta":
         this.streamed.add(String(p.itemId));
@@ -351,13 +385,16 @@ export class CodexServerSession implements ProviderSession {
         // by since the last report. With none to count from yet, or totals that went back, it's the newest
         // response's own use (as T3 Code counts it).
         const now = { input: t.inputTokens ?? 0, cached: t.cachedInputTokens ?? 0, output: t.outputTokens ?? 0 };
-        const base = this.counted;
-        this.counted = now;
+        const key = String(p.threadId ?? this.thread ?? "");
+        const base = this.counted.get(key);
+        this.counted.set(key, now);
         const step =
           base && now.input >= base.input && now.cached >= base.cached && now.output >= base.output
             ? { input: now.input - base.input, cached: now.cached - base.cached, output: now.output - base.output }
             : { input: last.inputTokens ?? 0, cached: last.cachedInputTokens ?? 0, output: last.outputTokens ?? 0 };
-        sink.usage({ inputTokens: step.input - step.cached, cacheReadTokens: step.cached, outputTokens: step.output, contextTokens: last.totalTokens ?? last.inputTokens, contextWindow: u?.modelContextWindow ?? undefined });
+        // A subagent's context is its own, not how full this conversation is.
+        const context = other ? {} : { contextTokens: last.totalTokens ?? last.inputTokens, contextWindow: u?.modelContextWindow ?? undefined };
+        sink.usage({ inputTokens: step.input - step.cached, cacheReadTokens: step.cached, outputTokens: step.output, ...context });
         return;
       }
       case "error": {
@@ -368,7 +405,9 @@ export class CodexServerSession implements ProviderSession {
         return;
       }
       case "turn/completed": {
-        const turn = p.turn as { status?: string; error?: { message?: string; codexErrorInfo?: unknown } | null } | undefined;
+        const turn = p.turn as { id?: string; status?: string; error?: { message?: string; codexErrorInfo?: unknown } | null } | undefined;
+        // A turn you stopped ending late, or one that isn't this one: the turn running now goes on.
+        if (turn?.id && (this.stale.delete(turn.id) || (this.turnId && turn.id !== this.turnId))) return;
         const failed = turn?.status === "interrupted" ? null : ((turn?.status === "failed" ? turn.error : null) ?? this.failure);
         this.failure = null;
         if (failed) {
@@ -378,8 +417,11 @@ export class CodexServerSession implements ProviderSession {
         this.done?.();
         return;
       }
-      // A compaction asked for with /compact: done whether or not it ran as a turn of its own.
+      // A compaction asked for with /compact: done whether or not it ran as a turn of its own. One Codex
+      // makes by itself mid-turn ends nothing, and its contextCompaction item says so (Synara:
+      // codexAppServerManager.ts settles on it only when no turn is active).
       case "thread/compacted":
+        if (this.turnId) return;
         sink.notice("Codex compacted the conversation.");
         this.done?.();
         return;

@@ -3,17 +3,17 @@
   background and reports through events; handlers answer as soon as the command is accepted.
 */
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, setupOf, setupsOf, splitModel, TRIAL } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, Effort, FileChange, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderInfo, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
+import { castOf, endpointKey, splitModel, VOUCHER } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderId, ProviderInfo, Mode, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
-import { branchOf, capture, changes, diffFiles, forget, isRepo, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
+import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
 import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
 import { saveToDownloads, sessionMarkdown } from "./export.ts";
 import { importable, transcript } from "./imports.ts";
-import { run, which } from "./exec.ts";
+import { outside, run, shellOf, which } from "./exec.ts";
 import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
 import { findFiles, gitStatus, tree } from "./files.ts";
@@ -33,6 +33,22 @@ import { factsOf, forget as forgetFact, remember, searchSessions } from "./memor
 import { Updater } from "./updates.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
+
+/**
+  An item copied into a fork or a side chat, under an id of its own and settled: what the session is
+  in the middle of (a reply streaming, a step running, a card asking) goes on there, not in the copy,
+  which would otherwise show it running or asking for good. A fork of a session at rest keeps a plan
+  or question that waits for you (`keepAsks`): answering it there carries the fork on.
+*/
+export function settledCopy(it: Item, keepAsks = false): Item {
+  const copy = { ...it, id: uid("it") } as Item;
+  if ((copy.kind === "text" || copy.kind === "reasoning") && copy.streaming) copy.streaming = false;
+  if (copy.kind === "tool" && copy.status === "running") copy.status = "failed";
+  if (copy.kind === "turn" && copy.status === "running") copy.status = "stopped";
+  if (copy.kind === "review" && copy.status === "running") copy.status = "error";
+  if ((copy.kind === "approval" || (!keepAsks && (copy.kind === "question" || copy.kind === "proposal"))) && copy.state === "asking") copy.state = "expired";
+  return copy;
+}
 
 const git = (cwd: string, args: string[]) => run("git", args, { cwd, timeout: 120000 });
 
@@ -147,6 +163,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   const shown = () => detected.map(withCustom);
   const publish = () => {
     runtime.providerInfo = shown();
+    // An agent that's gone stands in as the everyday model, never as another of your agents.
+    store.standIn = castOf(runtime.providerInfo, { picks: store.settings.picks })?.everyday ?? store.standIn;
     store.emit({ type: "providers", providers: runtime.providerInfo });
   };
 
@@ -162,7 +180,6 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     // first run
   }
   const asking = new Set<string>();
-  let limitsCache: { at: number; tools: ToolLimits[] } | null = null;
   const commandsCache = new Map<string, { at: number; commands: CommandInfo[]; skills: SkillInfo[] }>();
   /** When each project's base branch was last fetched, for the pull request card. */
   const fetched = new Map<string, number>();
@@ -200,7 +217,51 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     for (const d of detected) void askModels(d.id, force);
     return detected;
   };
+  // Each tool's plan windows, asked of the tool: once its tools are found, again after a turn on
+  // it (fifteen seconds apart at most: Claude Code's answer starts it), and when you press Look
+  // again. A minute's answer is reused otherwise. The app is sent them as they come.
+  const limits = new Map<ProviderId, ToolLimits>();
+  const askingLimits = new Map<ProviderId, Promise<void>>();
+  const limited = () => detected.filter((d) => d.available && d.adapter && providers[d.id]?.limits).map((d) => d.id);
+  const askLimits = (id: ProviderId, fresh = false): Promise<void> => {
+    const d = detected.find((x) => x.id === id);
+    const had = limits.get(id);
+    if (!d?.available || !d.adapter || !providers[id]?.limits) {
+      if (limits.delete(id)) store.emit({ type: "limits", tools: [...limits.values()] });
+      return Promise.resolve();
+    }
+    if (had && Date.now() - had.at < (fresh ? 15_000 : 60_000)) return Promise.resolve();
+    const going = askingLimits.get(id);
+    if (going) return going;
+    const ask = (async () => {
+      try {
+        const r = await providers[id].limits!(env, join(store.home, "probe"));
+        // A tool with nothing to say this time (Claude Code before it has fetched them) keeps the windows its turns reported.
+        const kept = r && !r.windows.length && had?.windows.length && had.plan === r.plan ? { windows: had.windows, detail: undefined } : {};
+        if (r) limits.set(id, { provider: id, label: d.label, at: Date.now(), ...r, ...kept });
+        else limits.delete(id);
+      } catch (e) {
+        // A tool that didn't answer this time keeps what it said last; one that never did says why.
+        if (had?.windows.length) limits.set(id, { ...had, at: Date.now() - 45_000 });
+        else limits.set(id, { provider: id, label: d.label, at: Date.now(), windows: [], detail: e instanceof Error ? e.message : String(e) });
+      }
+      store.emit({ type: "limits", tools: [...limits.values()] });
+    })().finally(() => askingLimits.delete(id));
+    askingLimits.set(id, ask);
+    return ask;
+  };
+  store.onUsage = (r) => void askLimits(r.provider, true);
+  const ORDER = { session: 0, weekly: 1, monthly: 2 };
+  store.onWindow = (id, w) => {
+    const had = limits.get(id);
+    const windows = [...(had?.windows ?? []).filter((x) => x.label !== w.label), w].sort((a, b) => (ORDER[a.kind!] ?? 3) - (ORDER[b.kind!] ?? 3));
+    limits.set(id, { provider: id, label: detected.find((x) => x.id === id)?.label ?? id, ...had, windows, detail: undefined, at: Date.now() });
+    store.emit({ type: "limits", tools: [...limits.values()] });
+  };
   const ready = detect();
+  void ready.then(() => limited().forEach((id) => void askLimits(id)));
+  // Sessions that name an agent deleted before this was handled carry on with the model it ran on.
+  void ready.then(() => store.repairAgents(new Map(), store.standIn));
   // Liner Code's releases and the tools' own updaters; a tool that was updated is found again.
   const updates = new Updater(store, env, runtime, () => void detect());
   const keyList = () => [...runtime.keys.keys()];
@@ -215,6 +276,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   // A new worktree has none of the checkout's installed packages; the project's setup command
   // runs there before the first turn, and says how it went on the timeline.
   const setups = new Map<string, Promise<void>>();
+  /**
+    Work in flight in a session: a turn, or its new worktree still being set up (up to 15 minutes),
+    which a rewind, an undo, a commit or a branch switch mustn't pull files out from under (T3 Code:
+    orchestration-v2/CommandPolicy.ts counts a run that is still "preparing" as active).
+  */
+  const working = (id: string) => runtime.isRunning(id) || setups.has(id);
+  const SETTING_UP = "Its new worktree is still being set up. Wait for that to finish.";
   const asksOf = (threadId: string) => store.timeline(threadId).flatMap((x) => (x.kind === "user" && !x.text.startsWith("/") ? [x.text] : x.kind === "proposal" && x.state === "approved" ? [`(approved plan) ${x.title}`] : [])).slice(-6);
   const worktreeRoot = () => (store.settings.worktreeRoot?.trim() ? store.settings.worktreeRoot.trim().replace(/^~(?=\/|$)/, homedir()) : join(store.home, "worktrees"));
   const setUp = async (threadId: string, cwd: string, command: string) => {
@@ -222,7 +290,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const t0 = Date.now();
     note(`Setting up the worktree: ${command}`);
     try {
-      const r = await run(env.SHELL || "/bin/zsh", ["-lc", command], { cwd, env, timeout: 15 * 60_000 });
+      const sh = shellOf(command, env, true);
+      const r = await run(sh.cmd, sh.args, { cwd, env, timeout: 15 * 60_000, verbatim: sh.verbatim });
       const secs = Math.round((Date.now() - t0) / 1000);
       note(r.code === 0 ? `Set up in ${secs}s.` : `The setup command failed (${r.code}) after ${secs}s: ${(r.stderr || r.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300)}. The session carries on without it.`);
     } catch (e) {
@@ -276,7 +345,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return back;
   };
 
-  const snapshot = (): Snapshot => ({ version: updates.state.app.current, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state });
+  const snapshot = (): Snapshot => ({ version: updates.state.app.current, seq: store.seq, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state, limits: [...limits.values()] });
 
   /** Mentioned files and attachments, said in words the agent can act on. */
   /**
@@ -311,25 +380,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return store.putProject({ id: uid("pr"), name: name ?? basename(abs), path: abs, agent, git: isGit, ...info, createdAt: Date.now() });
   };
 
-  /** What a session takes on from one of your setups: who it talks to, the stages that write, the crew and the checks. null lets it go. */
-  const setupFields = (id: string | null): Partial<Thread> => {
-    if (id === null) return { setup: undefined, stages: undefined, checks: undefined, helpers: undefined };
-    const s = setupOf(store.settings, store.agents, id);
-    if (!s) throw new Error("Make a setup in Settings, Agentic features first.");
-    return { setup: { id: s.id, name: s.name }, agent: s.stages[0].who, lead: s.lead ?? undefined, helpers: s.crew.length ? s.crew : undefined, stages: s.stages, checks: s.checks, model: undefined };
-  };
-
   /**
-    What a session takes on to be routed at a level: the cast from what's ready (and your own
-    picks in Settings), starting on the everyday model. A routed session already keeps its cast
-    and the model working now. null lets it go, and the model working now carries on alone.
+    What a session takes on to run in Auto at a level: the cast from your models and what's ready
+    (with Dual frontier, the session's own when it says), starting on the everyday model. An Auto
+    session keeps its cast and the model working now, unless Dual frontier changes. null lets it
+    go, and the model working now carries on alone.
   */
-  const routeFields = (level: RouteLevel | null, now?: Thread): Partial<Thread> => {
+  const routeFields = (level: RouteLevel | null, now?: Thread, dual?: boolean): Partial<Thread> => {
     if (level === null) return now?.route ? { route: undefined, agent: `@${now.route.root}`, model: undefined } : {};
-    if (now?.route) return { route: { ...now.route, level } };
-    const cast = castOf(shown(), store.settings.route?.cast);
-    if (!cast) throw new Error("Routing needs a model ready: connect one in Settings, Models.");
-    return { route: { level, cast, root: cast.everyday }, agent: `@${cast.everyday}`, model: undefined, lead: undefined, ...setupFields(null) };
+    if (now?.route && (dual === undefined || dual === Boolean(now.dual))) return { route: { ...now.route, level } };
+    const on = dual ?? store.settings.dual ?? false;
+    const cast = castOf(shown(), { dual: on, picks: store.settings.picks });
+    if (!cast) throw new Error("Auto needs a model ready: connect one in Settings, Models.");
+    return { route: { level, cast, root: cast.everyday }, agent: `@${cast.everyday}`, model: undefined, lead: undefined, leadSession: undefined, dual: on };
   };
 
   /** A folder that's a Git repository with one commit of these files, made once. */
@@ -343,28 +406,44 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     await run("git", ["commit", "-q", "-m", message], { cwd: dir, env: who });
   };
 
+  const backgrounds = new Backgrounds(store.home);
+
   /**
-    One way of a cost test, start to end, with nobody watching: the task, then the lead's plan
-    approved as it stands and built (the coder, its Reviewer, the crew), then marked finished.
+    A session going for good, and all it kept: its turn stopped and wound down, its snapshots, its
+    worktree when nothing in it would be lost, its log, its design versions and its attachments. A
+    fork holds its own copies of those (thread.create), so it loses nothing. Returns why a worktree stayed.
   */
-  const runTrial = async (threadId: string) => {
-    let failed: string | undefined;
-    try {
-      await runtime.send(threadId, TRIAL.task);
-      const plan = [...store.timeline(threadId)].reverse().find((x) => x.kind === "proposal" && x.state === "asking");
-      if (plan) await runtime.approvePlan(threadId, plan.id);
-      const t = store.thread(threadId);
-      if (store.timeline(threadId).some((x) => x.kind === "turn" && x.status === "stopped")) failed = "You stopped it.";
-      else if (t.status === "limited") failed = t.limit?.message ?? "It hit a usage limit.";
-      else if (t.status === "error") failed = "It ran into a problem. Open it to see what happened.";
-    } catch (e) {
-      failed = e instanceof Error ? e.message : String(e);
+  const dropThread = async (id: string) => {
+    const t = store.thread(id);
+    leftBehind(id);
+    for (const s of store.threads.filter((x) => x.sideOf === id)) dropSide(s.id);
+    runtime.closeThread(id);
+    // A turn that was running winds down first: its last snapshot and items land before they're forgotten,
+    // and its tool is out of the worktree before that goes (T3 Code: ThreadDeletion.ts cancels the run as part of the delete).
+    await runtime.idle(id);
+    // A worktree still being set up finishes first, so it isn't taken out from under its setup command.
+    await setups.get(id)?.catch(() => {});
+    const project = store.project(t.projectId);
+    await forget(project.path, id).catch(() => {});
+    // Its worktree goes too, never forced: it stays while another session works there or it holds
+    // changes, and one Liner Code didn't make is yours (T3 Code's storageCleanup.ts).
+    let kept: string | null = null;
+    const root = t.worktree ? (t.worktree.root ?? t.worktree.path) : "";
+    if (t.worktree) {
+      const others = store.threads.filter((o) => o.id !== id && o.sideOf !== id && o.worktree && (o.worktree.root ?? o.worktree.path) === root);
+      if (others.length) kept = others.length === 1 ? `"${others[0].title}" works there too` : `${others.length} other sessions work there`;
+      else if (madeHere(t.worktree)) kept = await removeWorktree(project.path, root).catch((e) => String(e?.message ?? e));
     }
-    const t = store.thread(threadId);
-    if (t.trial) store.patchThread(threadId, { trial: { ...t.trial, finished: Date.now(), ...(failed ? { failed } : {}) } });
+    store.removeThread(id);
+    // A fork made before forks kept copies of their own still reads its attachments from here: those stay.
+    const sent = join(store.home, "attachments", id);
+    const lent = store.threads.some((o) => o.forkOf && !o.sideOf && store.peek(o.id, ["user"]).some((x) => x.kind === "user" && x.files?.some((f) => f.startsWith(`${sent}${sep}`))));
+    for (const dir of lent ? ["designs"] : ["designs", "attachments"]) rmSync(join(store.home, dir, id), { recursive: true, force: true });
+    store.emit({ type: "thread", thread: { ...t, archived: true } });
+    if (kept) store.emit({ type: "notify", threadId: id, kind: "done", title: "Kept its worktree", body: `${root} stays: ${kept}. Its branch ${t.worktree!.branch} stays too.` });
+    return kept;
   };
 
-  const backgrounds = new Backgrounds(store.home);
   const handlers: Handlers = {
     "state.get": async () => {
       await ready;
@@ -419,25 +498,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         return own;
       }
     },
-    "usage.limits": async () => {
-      // Each tool's plan windows, asked of the tool. A minute's answer is reused.
-      if (limitsCache && Date.now() - limitsCache.at < 60_000) return { tools: limitsCache.tools };
-      const tools = (
-        await Promise.all(
-          detected
-            .filter((d) => d.available && d.adapter && providers[d.id]?.limits)
-            .map(async (d): Promise<ToolLimits | null> => {
-              try {
-                const r = await providers[d.id].limits!(env, join(store.home, "probe"));
-                return r ? { provider: d.id, label: d.label, at: Date.now(), ...r } : null;
-              } catch (e) {
-                return { provider: d.id, label: d.label, at: Date.now(), windows: [], detail: e instanceof Error ? e.message : String(e) };
-              }
-            }),
-        )
-      ).filter((x): x is ToolLimits => Boolean(x));
-      limitsCache = { at: Date.now(), tools };
-      return { tools };
+    "usage.limits": async ({ fresh }) => {
+      await Promise.all(limited().map((id) => askLimits(id, fresh)));
+      return { tools: [...limits.values()] };
     },
     "machine.info": () => {
       const u = userInfo();
@@ -516,14 +579,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       let removed = 0;
       let kept = 0;
       const reasons: { path: string; reason: string }[] = [];
-      const base = `${realOf(worktreeRoot())}/`;
+      const base = `${realOf(worktreeRoot())}${sep}`;
       for (const p of store.projects.filter((x) => x.git && (!projectId || x.id === projectId))) {
         const r = await git(p.path, ["worktree", "list", "--porcelain"]);
         const paths = r.stdout.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9));
         for (const path of paths) {
           if (!realOf(path).startsWith(base)) continue;
           const users = store.threads.filter((t) => t.worktree && realOf(t.worktree.root ?? t.worktree.path) === realOf(path));
-          if (users.some((t) => !t.archived || runtime.isRunning(t.id))) {
+          if (users.some((t) => !t.archived || working(t.id))) {
             kept++;
             continue;
           }
@@ -539,11 +602,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       }
       return { removed, kept, reasons };
     },
-    "project.remove": ({ id }) => {
-      for (const t of store.threads.filter((x) => x.projectId === id)) {
-        runtime.closeThread(t.id);
-        x.terms.closeThread?.(t.id);
-      }
+    "project.remove": async ({ id }) => {
+      // Each of its sessions goes as one deleted by itself would (its side chats with it), so its logs,
+      // snapshots, designs and the worktrees Liner made don't stay behind. Its folder, and what you keep
+      // about it in memory, are yours and stay.
+      const sessions = store.threads.filter((x) => x.projectId === id && !x.sideOf);
+      for (const t of sessions) x.terms.closeThread?.(t.id);
+      for (const t of sessions) await dropThread(t.id).catch((e) => console.error("[project.remove]", e));
+      for (const t of store.threads.filter((x) => x.projectId === id)) await dropThread(t.id).catch(() => {});
       store.removeProject(id);
       return null;
     },
@@ -595,12 +661,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, lead, setup, route, title, forkOf, id, access, effort, model, worktree, base, inWorktree }) => {
+    "thread.create": async ({ projectId, agent, lead, route, dual, after, title, forkOf, id, access, effort, model, worktree, base, inWorktree }) => {
       const project = store.project(projectId);
       const parent = forkOf ? store.thread(forkOf) : undefined;
       const who = agent ?? parent?.agent ?? project.agent ?? defaultAgent();
       const now = Date.now();
+      // An id the app picked (a side chat or a comparison it names ahead) names files too: one of its own, never another's.
+      if (id !== undefined && (!/^[\w-]{1,64}$/.test(id) || store.threads.some((t) => t.id === id))) throw new Error("That session id can't be used.");
       const tid = id ?? uid("th");
+      // Auto decides who works on it; a fork keeps its parent's route. Asked first: a session Auto can't
+      // cast (no model ready) goes no further, so no worktree or branch is left behind for it.
+      const routed = route ? routeFields(route, undefined, dual) : parent?.route ? { route: parent.route } : {};
       let tree: Thread["worktree"];
       let notice: string | undefined;
       if (inWorktree && project.git) {
@@ -637,48 +708,82 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           if (steps.length || mods) setups.set(tid, prep().finally(() => setups.delete(tid)));
         }
       }
+      // A model, or an agent you have; one that's gone (a project's, an outside agent's guess) is the everyday model.
+      const known = (id?: string) => Boolean(id && (id.startsWith("@") || store.agents.some((a) => a.id === id)));
+      const writer = known(who) ? who : defaultAgent();
+      // A planner that is also the builder would share its session: that's Solo. The Demo plays both.
+      const planner = lead ?? parent?.lead;
+      // A fork of a session at work branches from its last turn that ended, not from one half done
+      // (T3 Code: ThreadForkService.ts forks from the last stable run), and gets the conversation as text.
+      // Half done is its last turn still running, by that turn's own status: one the Reviewer reads now has ended.
+      const live = parent ? runtime.isRunning(parent.id) && store.timeline(parent.id).some((x) => x.kind === "turn" && x.turn === parent.turns && x.status === "running") : false;
       const t: Thread = {
         id: tid,
         projectId,
         title: title ?? parent?.title ?? "New session",
-        agent: who.startsWith("@") || store.agents.some((a) => a.id === who) ? who : defaultAgent(),
-        lead: lead ?? parent?.lead,
+        agent: writer,
+        lead: known(planner) && (planner !== writer || writer === "demo") ? planner : undefined,
+        dual: dual ?? parent?.dual,
+        after: after ?? parent?.after,
+        checks: parent?.checks,
         status: "idle",
-        access: access ?? parent?.access ?? "ask",
+        access: access ?? parent?.access ?? store.settings.defaultAccess,
         model: model ?? parent?.model,
         effort: effort ?? parent?.effort,
         forkOf,
-        forkSession: parent ? (parent.providerSession ?? "") : undefined,
+        forkSession: parent ? (live ? "" : (parent.providerSession ?? "")) : undefined,
         worktree: tree ?? parent?.worktree,
-        turns: parent?.turns ?? 0,
+        turns: parent ? parent.turns - (live ? 1 : 0) : 0,
         usage: emptyUsage(),
         createdAt: now,
         updatedAt: now,
-        // A setup or a route decides who works on it; a fork keeps its parent's.
-        ...(setup ? setupFields(setup) : parent?.setup ? { setup: parent.setup, stages: parent.stages, checks: parent.checks, helpers: parent.helpers } : {}),
-        ...(route ? routeFields(route) : parent?.route ? { route: parent.route } : {}),
+        ...routed,
       };
       store.putThread(t);
       if (notice) store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: now, text: notice });
       // A fork starts with its parent's timeline, so you can see where it branched.
-      if (parent) for (const it of store.timeline(parent.id)) store.putItem(t.id, { ...it, id: uid("it") });
+      if (parent) {
+        // Your attachments come along under the fork's own folder, so they outlive the session they were sent in.
+        const sent = join(store.home, "attachments", parent.id);
+        const mine = join(store.home, "attachments", t.id);
+        const had = existsSync(sent);
+        if (had) cpSync(sent, mine, { recursive: true });
+        const moved = (f: string) => (had && f.startsWith(`${sent}${sep}`) ? join(mine, f.slice(sent.length + 1)) : f);
+        for (const it of store.timeline(parent.id)) {
+          if (live && it.turn >= parent.turns) continue;
+          const copy = settledCopy(it, !live);
+          store.putItem(t.id, copy.kind === "user" && copy.files ? { ...copy, files: copy.files.map(moved) } : copy);
+        }
+        // Its own hold on what it copied: deleting the session it came from leaves its diffs, undo and design versions whole.
+        const commits = store.timeline(t.id).flatMap((x) => (x.kind === "checkpoint" ? [x.from, x.to, x.redo].filter((c): c is string => Boolean(c)) : []));
+        if (commits.length) await keep(t.worktree?.path ?? project.path, t.id, commits).catch(() => {});
+        const versions = join(store.home, "designs", parent.id);
+        if (existsSync(versions)) cpSync(versions, join(store.home, "designs", t.id), { recursive: true });
+      }
       return t;
     },
-    "thread.update": ({ id, setup, route, ...patch }) => {
+    "thread.update": ({ id, route, dual, ...patch }) => {
       // null clears a field; undefined leaves it.
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : v]));
       const t = store.thread(id);
       if (patch.archived && !t.archived) leftBehind(id);
       // Opened again: a worktree a clean-up took is put back.
       if (patch.archived === false && t.archived) void ensureWorktree(id).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "Its worktree didn't come back", body: String(e?.message ?? e) }));
-      // A setup or a route brings who works on it; letting one go comes before whoever you picked instead.
-      if (route) return store.patchThread(id, { ...clean, ...routeFields(route, t) });
-      // Picking someone else to work on it ends routing.
-      const unroute = route === null || (t.route && (setup || (clean.agent && clean.agent !== t.agent)));
-      const off = { ...(unroute ? routeFields(null, t) : {}), ...(setup === null ? setupFields(null) : {}) };
-      return store.patchThread(id, setup ? { ...off, ...clean, ...setupFields(setup) } : { ...off, ...clean });
+      // Auto brings who works on it; letting it go comes before whoever you picked instead.
+      if (route) return store.patchThread(id, { ...clean, ...routeFields(route, t, dual) });
+      // Picking someone else to work on it, or a planner, ends Auto.
+      const unroute = route === null || (t.route && ((clean.agent && clean.agent !== t.agent) || clean.lead));
+      const off = unroute ? routeFields(null, t) : {};
+      const next = { ...off, ...clean, ...(dual !== undefined ? { dual } : {}) };
+      // A planner that is also the builder would share its session: that's Solo.
+      const writer = next.agent ?? t.agent;
+      if ("lead" in next && next.lead === writer && writer !== "demo") next.lead = undefined;
+      // Another model: the last one's context window says nothing about this one's, until its first turn reports.
+      const moved = (clean.model !== undefined && clean.model !== t.model) || (clean.agent !== undefined && clean.agent !== t.agent);
+      return store.patchThread(id, moved ? { ...next, usage: { ...t.usage, contextWindow: undefined } } : next);
     },
-    "thread.items": ({ id }) => store.timeline(id),
+    "thread.items": ({ id }) => store.timeline(store.thread(id).id),
+    "thread.load": ({ id }) => ({ items: store.timeline(store.thread(id).id), seq: store.seq }),
     "thread.export": async ({ id }) => {
       const cwd = cwdOf(id);
       const md = await sessionMarkdown(store, id, async (from, to) => (await git(cwd, ["diff", "--relative", ...PATCH, "-M", from, to])).stdout);
@@ -713,7 +818,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const electron = Boolean(process.versions.electron);
       const home = store.home === join(homedir(), ".liner-code") ? [] : [`LINER_HOME=${store.home}`];
       const vars = [...(electron ? ["ELECTRON_RUN_AS_NODE=1"] : []), ...home];
-      const q = (v: string) => (/^[\w./:=-]+$/.test(v) ? v : `'${v.replace(/'/g, "'\\''")}'`);
+      // Quoted for the shell you'd paste it in: on Windows, double quotes, which cmd.exe and PowerShell both take.
+      const q = (v: string) => (process.platform === "win32" ? (/^[\w.\\/:=-]+$/.test(v) ? v : `"${v}"`) : /^[\w./:=-]+$/.test(v) ? v : `'${v.replace(/'/g, "'\\''")}'`);
       const argv = [process.execPath, script].map(q).join(" ");
       return {
         on: store.settings.outside === true,
@@ -756,12 +862,12 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         .catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
       return null;
     },
-    "thread.queue": ({ id, queue }) => store.patchThread(id, { queue }),
+    "thread.queue": ({ id, queue }) => runtime.setQueue(id, queue),
     "thread.rewind": async ({ threadId, itemId, files, force }) => {
       // Edit from here: the conversation goes back to just before this message.
       const it = store.item(threadId, itemId);
       if (it.kind !== "user") throw new Error("Only a message you sent can be edited.");
-      if (runtime.isRunning(threadId)) throw new Error("Stop the session before going back.");
+      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Stop the session before going back.");
       const from = it.turn;
       const later = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && x.turn >= from && !x.reverted ? [x] : []));
       let undone = 0;
@@ -780,7 +886,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       store.truncate(threadId, from);
       // The tools' own sessions remember the turns that came off, so the next turn starts fresh
       // and gets the conversation that's left as text.
-      store.patchThread(threadId, { turns: from - 1, status: "idle", providerSession: undefined, leadSession: undefined, forkSession: undefined, queue: [], verdict: undefined, toReview: runtime.toReview(threadId), unread: false, done: false });
+      // Taken back to before a turn, the conversation starts again: how full the old one was no longer holds.
+      store.patchThread(threadId, { usage: { ...store.thread(threadId).usage, contextTokens: undefined, contextWindow: undefined }, turns: from - 1, status: "idle", providerSession: undefined, leadSession: undefined, sessions: undefined, forkSession: undefined, queue: [], verdict: undefined, toReview: runtime.toReview(threadId), unread: false, done: false });
       return { turn: from, files: undone };
     },
     "thread.stop": ({ id }) => {
@@ -820,28 +927,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         updatedAt: now,
       });
       // The session's timeline comes along (out of sight), so a tool that can't branch it gets it as text.
-      for (const it of store.timeline(id)) store.putItem(t.id, { ...it, id: uid("it") });
+      for (const it of store.timeline(id)) store.putItem(t.id, settledCopy(it));
       return t;
     },
     "thread.remove": async ({ id }) => {
-      const t = store.thread(id);
-      leftBehind(id);
-      for (const s of store.threads.filter((x) => x.sideOf === id)) dropSide(s.id);
-      runtime.closeThread(id);
-      const project = store.project(t.projectId);
-      await forget(project.path, id).catch(() => {});
-      // Its worktree goes too, never forced: it stays while another session works there or it holds
-      // changes, and one Liner Code didn't make is yours (T3 Code's storageCleanup.ts).
-      let kept: string | null = null;
-      const root = t.worktree ? (t.worktree.root ?? t.worktree.path) : "";
-      if (t.worktree) {
-        const others = store.threads.filter((o) => o.id !== id && o.sideOf !== id && o.worktree && (o.worktree.root ?? o.worktree.path) === root);
-        if (others.length) kept = others.length === 1 ? `"${others[0].title}" works there too` : `${others.length} other sessions work there`;
-        else if (madeHere(t.worktree)) kept = await removeWorktree(project.path, root).catch((e) => String(e?.message ?? e));
-      }
-      store.removeThread(id);
-      store.emit({ type: "thread", thread: { ...t, archived: true } });
-      if (kept) store.emit({ type: "notify", threadId: id, kind: "done", title: "Kept its worktree", body: `${root} stays: ${kept}. Its branch ${t.worktree!.branch} stays too.` });
+      const kept = await dropThread(id);
       return kept ? { kept } : null;
     },
 
@@ -859,7 +949,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "review.run": ({ threadId }) => {
       const t = store.thread(threadId);
-      if (runtime.isRunning(threadId)) throw new Error("Wait for the turn to finish.");
+      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish.");
       void runtime.review(threadId, t.turns, 1);
       return null;
     },
@@ -888,7 +978,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "checkpoint.revert": async ({ threadId, itemId, force }) => {
       const it = store.item(threadId, itemId);
       if (it.kind !== "checkpoint" || !it.from) throw new Error("That turn has no snapshot to go back to.");
-      if (runtime.isRunning(threadId)) throw new Error("Stop the session before undoing a turn.");
+      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Stop the session before undoing a turn.");
       if (it.committed) throw new Error("Those changes are committed. Revert the commit instead.");
       const other = busyBeside(threadId);
       if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before undoing a turn.`);
@@ -900,7 +990,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return next;
     },
     "git.push": async ({ threadId }) => {
-      if (runtime.isRunning(threadId)) throw new Error("Wait for the turn to finish before pushing.");
+      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish before pushing.");
       const cwd = cwdOf(threadId);
       const branch = store.thread(threadId).worktree?.branch ?? (await branchOf(cwd));
       if (!branch) throw new Error("This session isn't on a branch.");
@@ -944,7 +1034,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "git.switch": async ({ threadId, branch, create }) => {
       const t = store.thread(threadId);
-      if (runtime.isRunning(threadId)) throw new Error("Wait for the turn to finish before switching branches.");
+      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish before switching branches.");
       if (t.worktree) throw new Error(`This session works in a worktree of its own, on ${t.worktree.branch}.`);
       const other = busyBeside(threadId);
       if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before switching branches.`);
@@ -965,7 +1055,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "apps.open": async ({ path, app }) => (await openWith(path, app), null),
     "git.commit": async ({ threadId, message, paths: only }) => {
       const t = store.thread(threadId);
-      if (runtime.isRunning(threadId)) throw new Error("Wait for the turn to finish before committing.");
+      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish before committing.");
       const cwd = cwdOf(threadId);
       const open = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? [x] : []));
       // Some of the files, when you picked: a rename takes its old path along.
@@ -1009,9 +1099,31 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (provider.startsWith("endpoint.")) void detect();
       return keyList();
     },
+    "voucher.redeem": async ({ code }) => {
+      const k = code?.trim();
+      if (k) {
+        // Liner Code's site says whether it's one of its vouchers: the code is all that's sent.
+        const r = await fetch(`${VOUCHER.url}/usage`, { headers: { authorization: `Bearer ${k}` }, signal: AbortSignal.timeout(8000), redirect: "error" }).catch(() => null);
+        if (!r) throw new Error("Liner Code's site didn't answer. Try again in a minute.");
+        if (r.status === 401 || r.status === 403) throw new Error("That voucher isn't valid.");
+        if (!r.ok) throw new Error(`Liner Code's site answered ${r.status}. Try again in a minute.`);
+        runtime.keys.set(endpointKey(VOUCHER.id), k);
+      } else runtime.keys.delete(endpointKey(VOUCHER.id));
+      store.emit({ type: "keys", keys: keyList() });
+      const settings = store.setSettings({ voucher: Boolean(k) });
+      syncProviders(settings, runtime.keys);
+      void detect();
+      return settings;
+    },
     "endpoint.models": ({ url, protocol, key }) => endpointModels(url, protocol, key),
 
-    "agents.save": ({ agents }) => store.setAgents(agents),
+    "agents.save": ({ agents }) => {
+      // Sessions of an agent you removed carry on with the model it ran on.
+      const gone = new Map(store.agents.filter((a) => !agents.some((b) => b.id === a.id)).map((a) => [a.id, a.model]));
+      const saved = store.setAgents(agents);
+      if (gone.size) store.repairAgents(gone, store.standIn);
+      return saved;
+    },
     "skills.list": ({ projectId }) => {
       const env = process.env;
       const file = (x: SkillInfo) => ({ ...x, path: join(x.path!, "SKILL.md") });
@@ -1049,7 +1161,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (!existsSync(abs)) throw new Error("That file isn't there any more.");
       const real = realpathSync(abs);
       const rel = relative(root, real);
-      if (!rel || rel === ".." || rel.startsWith("../") || resolve(root, rel) !== real) throw new Error("That file is outside the session's folder.");
+      if (!rel || outside(rel) || resolve(root, rel) !== real) throw new Error("That file is outside the session's folder.");
       const st = statSync(real);
       if (!st.isFile()) throw new Error("That isn't a file.");
       if (st.size > 10 * 1024 * 1024) throw new Error("That file is over 10 MB, too big to preview.");
@@ -1063,12 +1175,12 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const abs = resolve(dir, path);
       // Outside the folder is refused before anything is looked up, so it says nothing about other files.
       const asked = relative(dir, abs);
-      if (!asked || asked === ".." || asked.startsWith("../")) throw new Error("That file isn't an attachment.");
+      if (!asked || outside(asked)) throw new Error("That file isn't an attachment.");
       if (!existsSync(dir) || !existsSync(abs)) throw new Error("That attachment isn't there any more.");
       const root = realpathSync(dir);
       const real = realpathSync(abs);
       const rel = relative(root, real);
-      if (!rel || rel === ".." || rel.startsWith("../") || resolve(root, rel) !== real) throw new Error("That file isn't an attachment.");
+      if (!rel || outside(rel) || resolve(root, rel) !== real) throw new Error("That file isn't an attachment.");
       const st = statSync(real);
       if (!st.isFile()) throw new Error("That isn't a file.");
       if (st.size > 20 * 1024 * 1024) throw new Error("That attachment is over 20 MB, too big to show.");
@@ -1087,37 +1199,6 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dir, "Scratch");
     },
 
-    "ways.trial": async ({ ways }) => {
-      // The cost test's own project: two short files, so every way starts from the same small context.
-      const dir = join(store.home, "Cost test");
-      await seedRepo(dir, TRIAL.files, "Cost test");
-      const project = await addProject(dir, "Cost test");
-      const agents = store.agents.filter((a) => a.id !== "demo");
-      const lead = agents.find((a) => /lead/i.test(a.role));
-      const coder = agents.find((a) => a.specialty === "coder") ?? agents.find((a) => a !== lead);
-      const first = detected.find((p) => p.available && p.adapter && p.id !== "demo" && p.models.length);
-      const setups = setupsOf(store.settings, store.agents);
-      // Who each way puts to work, the way Home starts it: a model alone, the lead and its coder, or one of your setups.
-      const cast = (way: string): { agent: string; lead?: string; setup?: string; route?: RouteLevel; effort: Effort; name: string } | null => {
-        if (way === "model") return first ? { agent: `@${first.id}:${first.models[0].id}`, effort: "medium", name: "Just a model" } : null;
-        if (way === "routed") return first ? { agent: `@${first.id}:${first.models[0].id}`, route: store.settings.route?.level ?? "high", effort: "medium", name: "Routed" } : null;
-        if (way === "lead") return lead && coder ? { agent: coder.id, lead: lead.id, effort: "medium", name: "A lead and a coder" } : null;
-        const s = setups.find((x) => x.id === way);
-        return s ? { agent: s.stages[0].who, setup: s.id, effort: s.lead ? "medium" : store.agent(s.stages[0].who).effort, name: s.name } : null;
-      };
-      const id = uid("tri");
-      const made: Thread[] = [];
-      for (const way of ways) {
-        const c = cast(way);
-        if (!c) continue;
-        const t = await handlers["thread.create"]({ projectId: project.id, agent: c.agent, lead: c.lead, setup: c.setup, route: c.route, effort: c.effort, access: "edits", worktree: true, title: `Cost test · ${c.name}` });
-        made.push(store.patchThread(t.id, { trial: { id, way, at: Date.now() } }));
-      }
-      if (!made.length) throw new Error("Nothing to test yet: get a model ready in Models, or make agents in Team.");
-      for (const t of made) void runTrial(t.id);
-      return made;
-    },
-
     "compare.start": async ({ projectId, text, files, models, effort, access }) => {
       const project = store.project(projectId);
       if (!project.git || (await git(project.path, ["rev-parse", "--verify", "-q", "HEAD"])).code !== 0) throw new Error("Comparing models needs a Git project with at least one commit: each one works in a worktree of its own.");
@@ -1134,7 +1215,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       }
       for (const t of made) {
         const c = withContext(t, text, files);
-        void runtime.send(t.id, c.text, "queue", undefined, c.files).catch(() => {});
+        // Each starts once its new worktree is set up, as a message sent there would (thread.send).
+        void (setups.get(t.id) ?? Promise.resolve()).then(() => runtime.send(t.id, c.text, "queue", undefined, c.files)).catch(() => {});
       }
       return made;
     },
@@ -1150,8 +1232,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const top = (await git(project.path, ["rev-parse", "--show-toplevel"])).stdout.trim() || project.path;
       const applied = await run("git", ["apply", "--3way", "--whitespace=nowarn", "-"], { cwd: top, input: patch, env });
       if (applied.code !== 0) throw new Error(applied.stderr.trim().split("\n").pop() || "The changes didn't apply to this checkout.");
-      // The others are put away; their worktrees stay until you delete them.
-      for (const o of store.threads.filter((x) => x.compare?.id === t.compare!.id && x.id !== t.id)) store.patchThread(o.id, { archived: true });
+      // The others are put away, as archiving each would: a turn still running stops, and their shells
+      // and servers go. Their worktrees stay until you delete them.
+      for (const o of store.threads.filter((x) => x.compare?.id === t.compare!.id && x.id !== t.id)) {
+        runtime.stop(o.id);
+        leftBehind(o.id);
+        store.patchThread(o.id, { archived: true });
+      }
       store.patchThread(t.id, { done: true, unread: false });
       return { files };
     },
@@ -1267,11 +1354,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "agent.browser.reply": ({ id, ok, value, error }) => (x.tools?.reply(id, ok, value, error), null),
 
-    "design.list": ({ threadId }) => designs().list(threadId),
-    "design.read": async ({ threadId, design, version }) => ({ ...designs().read(threadId, design, version), url: await x.proxies.files(cwdOf(threadId)) }),
-    "design.save": ({ threadId, title, html, design, size }) => designs().show(threadId, { title, html, design, size }).item,
-    "design.restore": ({ threadId, design, version }) => designs().restore(threadId, design, version),
-    "design.built": ({ threadId, design, version }) => designs().built(threadId, design, version),
+    "design.list": ({ threadId }) => designs(threadId).list(threadId),
+    "design.read": async ({ threadId, design, version }) => ({ ...designs(threadId).read(threadId, design, version), url: await x.proxies.files(cwdOf(threadId)) }),
+    "design.save": ({ threadId, title, html, design, size }) => designs(threadId).show(threadId, { title, html, design, size }).item,
+    "design.restore": ({ threadId, design, version }) => designs(threadId).restore(threadId, design, version),
+    "design.built": ({ threadId, design, version }) => designs(threadId).built(threadId, design, version),
     "design.watch": ({ threadId, on }) => (x.designs?.watch(threadId, on), null),
 
     "device.list": () => devices(env),
@@ -1309,7 +1396,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const t = store.thread(threadId);
     return t.worktree?.path ?? store.project(t.projectId).path;
   }
-  function designs() {
+  /** The designs, for a session that's there: an id from the app is never a path of its own (designs/<id>/…). */
+  function designs(threadId: string) {
+    store.thread(threadId);
     if (!x.designs) throw new Error("Designs aren't available here.");
     return x.designs;
   }
@@ -1321,22 +1410,20 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   function busyBeside(threadId: string) {
     const inside = (a: string, b: string) => {
       const r = relative(a, b);
-      return r === "" || (r !== ".." && !r.startsWith("../") && !isAbsolute(r));
+      return r === "" || !outside(r);
     };
     const cwd = realOf(cwdOf(threadId));
     return store.threads.find((o) => {
-      if (o.id === threadId || o.sideOf || !runtime.isRunning(o.id)) return false;
+      if (o.id === threadId || o.sideOf || !working(o.id)) return false;
       const there = realOf(cwdOf(o.id));
       return inside(cwd, there) || inside(there, cwd);
     });
   }
   function defaultAgent() {
-    // Just a model: the first model that's ready. Otherwise the team's coder.
-    if (store.settings.workStyle === "model") {
-      const p = detected.find((x) => x.available && x.adapter && x.id !== "demo");
-      return p ? `@${p.id}:${p.models[0]?.id ?? "default"}` : "demo";
-    }
-    return store.agents.find((a) => a.specialty === "coder")?.id ?? store.agents[0]?.id ?? "demo";
+    // A bare model: your cheaper one, else the first that's ready.
+    const cast = castOf(shown(), { picks: store.settings.picks });
+    const p = detected.find((x) => x.available && x.adapter && x.id !== "demo");
+    return cast ? `@${cast.everyday}` : p ? `@${p.id}:${p.models[0]?.id ?? "default"}` : "demo";
   }
 
   return {
@@ -1392,17 +1479,16 @@ function summarize(store: Store, days: number, projectId?: string): UsageSummary
 }
 
 /**
-  How each way of working went in your own sessions over `days`: sessions sorted by how they ran
+  How each mode went in your own sessions over `days`: sessions sorted by how they ran
   (see WayStats), with their turns, cost and time from the usage log, the changed turns you kept,
   and how often the Reviewer passed a change the first time. Demo, routine and cost-test sessions don't count.
 */
 export function compareWays(store: Store, days: number): WayStats[] {
   const from = Date.now() - days * 86400000;
   const out = new Map<string, WayStats>();
-  const of = (way: string) => out.get(way) ?? out.set(way, { way, sessions: 0, turns: 0, changed: 0, kept: 0, costUsd: 0, seconds: 0, reviewed: 0, firstPass: 0 }).get(way)!;
-  for (const way of ["model", "lead", ...setupsOf(store.settings, store.agents).map((x) => x.id)]) of(way);
-  // A setup's sessions under its id, routed ones as "routed"; a lead with a crew, or your agent with no lead, from before setups count as your first, "mine".
-  const wayOf = (t: Thread) => (t.route ? "routed" : t.setup ? t.setup.id : t.agent.startsWith("@") ? "model" : t.lead && !t.helpers?.length ? "lead" : "mine");
+  const of = (way: Mode) => out.get(way) ?? out.set(way, { way, sessions: 0, turns: 0, changed: 0, kept: 0, costUsd: 0, seconds: 0, reviewed: 0, firstPass: 0 }).get(way)!;
+  for (const way of ["solo", "plan", "auto"] as const) of(way);
+  const wayOf = (t: Thread): Mode => (t.route ? "auto" : t.lead ? "plan" : "solo");
   const threads = new Map(store.threads.filter((t) => t.agent !== "demo" && t.lead !== "demo" && !t.routine && !t.trial && t.updatedAt >= from).map((t) => [t.id, t]));
   for (const r of store.usage(from)) {
     const t = threads.get(r.threadId);

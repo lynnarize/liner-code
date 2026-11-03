@@ -16,6 +16,7 @@ import { emptyUsage, panelDocument, panelPolicy } from "../../contracts/src/inde
 import { accessWords, Addons, checkManifest, readDraft, readPanelFiles, widerAccess } from "../src/addons.ts";
 import { AgentTools, type AddonHost } from "../src/agent-tools.ts";
 import { panelCall, PANEL_METHODS, readable, refusal, type PanelEnv } from "../src/panels.ts";
+import { Offers } from "../src/offers.ts";
 import { Store } from "../src/store.ts";
 import * as dock from "../../ui/src/app/dock.ts";
 
@@ -404,4 +405,100 @@ test("dock: a preview becomes its add-on in place, and a kept layout is read bac
   assert.equal(dock.readDock({ panes: [{ tabs: ["a"], tab: "a" }, { tabs: ["b"], tab: "b" }, { tabs: ["c"], tab: "c" }] }), null, "three panes isn't a dock");
   assert.equal(dock.readDock("nonsense"), null);
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: [], tab: "x" }, { tabs: ["a", "a", 3], tab: "zz" }], at: 9 }), { open: true, full: false, panes: [{ tabs: ["a"], tab: "a" }], at: 0 }, "empty panes, repeats and junk go");
+});
+
+/* ---------- "Make it an app" ---------- */
+
+function offering(o: { access?: Thread["access"] } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "lc-offer-root-"));
+  const dir = home();
+  const store = new Store(dir);
+  store.putProject({ id: "p", name: "Sample project", path: root, git: false, createdAt: 1 });
+  store.putThread({ id: "t", projectId: "p", title: "Release steps", agent: "forge", status: "done", access: o.access ?? "edits", turns: 1, usage: emptyUsage(), createdAt: 1, updatedAt: 1 });
+  const addons = new Addons(dir);
+  const sent: { id: string; text: string }[] = [];
+  const stopped: string[] = [];
+  let turn = 1;
+  const offers = new Offers({
+    store,
+    addons,
+    createThread: async (p) => {
+      const t: Thread = { id: `child${store.threads.length}`, projectId: p.projectId, title: p.title, agent: p.agent, status: "idle", access: p.access, turns: 0, usage: emptyUsage(), createdAt: 2, updatedAt: 2 };
+      store.putThread(t);
+      return t;
+    },
+    send: async (id, text) => void sent.push({ id, text }),
+    stop: (id) => void stopped.push(id),
+    cwdOf: () => root,
+    whoIs: () => "Opus 5.5",
+    readOnly: (id) => store.thread(id).access === "read",
+    turnOf: () => turn,
+  });
+  const card = () => store.timeline("t").filter((x): x is Extract<Item, { kind: "offer" }> => x.kind === "offer").at(-1)!;
+  /** The background session writes what the brief asked for, and its turn runs and ends. */
+  const make = (m: PanelManifest, child: string) => {
+    const d = join(root, ".liner", "addons", m.id);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "addon.json"), JSON.stringify(m));
+    writeFileSync(join(d, "index.html"), "<p>ok</p>");
+    store.patchThread(child, { status: "running" });
+    store.patchThread(child, { status: "done" });
+  };
+  return { store, addons, offers, sent, stopped, card, make, next: () => turn++ };
+}
+const OFFER = { name: "Release checklist", brief: "The steps before each release, ticked off as you go and kept for next time.", place: "page", access: { storage: 64 }, initialContent: ["Bump the version", "Tag and push"] };
+
+test("offer: one card a turn, a newer one replaces one not taken, and what it touches is checked", () => {
+  const x = offering();
+  assert.match(x.offers.offer("t", OFFER), /^offered: a card for Release checklist/);
+  assert.deepEqual([x.card().state, x.card().place, x.card().access, x.card().seed], ["proposed", "page", { storage: 64 }, ["Bump the version", "Tag and push"]]);
+  assert.throws(() => x.offers.offer("t", OFFER), /one a turn/);
+  const first = x.card().id;
+  x.next();
+  x.offers.offer("t", { ...OFFER, name: "Checklist" });
+  assert.equal((x.store.item("t", first) as Extract<Item, { kind: "offer" }>).state, "replaced");
+  assert.throws(() => x.offers.offer("t", { ...OFFER, access: { files: "project" } }), /A page \(place "page"\) has no session/);
+  assert.throws(() => x.offers.offer("t", { ...OFFER, place: "float" }), /place is "dock"/);
+  assert.throws(() => x.offers.offer("t", { ...OFFER, brief: "short" }), /brief says what it does/);
+  x.store.setSettings({ addonOffers: "never" });
+  assert.throws(() => x.offers.offer("t", OFFER), /may never offer/);
+});
+
+test("offer: Create makes it in a background session with a brief, and adds what it made when that turn ends", async () => {
+  const x = offering();
+  x.offers.offer("t", OFFER);
+  await x.offers.answer("t", x.card().id, "create");
+  const c = x.card();
+  assert.deepEqual([c.state, c.addon, x.sent.length], ["creating", "release-checklist", 1]);
+  assert.match(x.sent[0].text, /called “Release checklist”, with the id release-checklist/);
+  assert.match(x.sent[0].text, /Bump the version/);
+  assert.match(x.sent[0].text, /don't call addon_install/);
+  assert.equal(x.store.thread(c.child!).title, "Make Release checklist");
+  x.make({ apiVersion: 1, id: "release-checklist", kind: "panel", name: "Release checklist", place: "page", entry: "index.html", access: { storage: 64 } }, c.child!);
+  assert.deepEqual([x.card().state, x.card().version], ["installed", 1]);
+  assert.equal(x.addons.get("release-checklist")?.by.threadId, c.child, "made by the background session");
+  await x.offers.answer("t", c.id, "undo");
+  assert.equal(x.card().state, "removed");
+  assert.ok(x.addons.get("release-checklist")?.removed, "removed, its files kept");
+  await x.offers.answer("t", c.id, "restore");
+  assert.equal(x.card().state, "installed");
+  await x.offers.answer("t", c.id, "keep");
+  assert.equal(x.card().state, "kept");
+});
+
+test("offer: one that asks for more than the card said isn't added, Cancel stops it, and a read-only session can't", async () => {
+  const x = offering();
+  x.offers.offer("t", OFFER);
+  await x.offers.answer("t", x.card().id, "create");
+  x.make({ apiVersion: 1, id: "release-checklist", kind: "panel", name: "Release checklist", place: "page", entry: "index.html", access: { storage: 64, network: "evil.example" } }, x.card().child!);
+  assert.equal(x.card().state, "failed");
+  assert.match(x.card().error ?? "", /asks for more than the card said \(reach evil\.example/);
+  assert.equal(x.addons.get("release-checklist"), undefined);
+  await x.offers.answer("t", x.card().id, "create");
+  assert.equal(x.card().state, "creating", "a failed one can be made again");
+  await x.offers.answer("t", x.card().id, "cancel");
+  assert.deepEqual([x.card().state, x.stopped.length], ["cancelled", 1]);
+  await assert.rejects(x.offers.answer("t", x.card().id, "create", undefined, "x".repeat(1001)), /up to 1,000 characters/);
+  const ro = offering({ access: "read" });
+  assert.throws(() => ro.offers.offer("t", OFFER), /only reads/);
 });

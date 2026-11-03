@@ -545,12 +545,13 @@ export class AgentTools {
       const errors = rep ? rep.errors.map((e) => (e.stack ? `${e.message}\n${e.stack.split("\n").slice(0, 4).join("\n")}` : e.message)) : (look.errors ?? []);
       const drew = rep?.ready ? `Drew ${rep.ready.elements} elements at ${size.width} × ${size.height}${rep.ready.height > size.height ? `, ${rep.ready.height} px tall (it scrolls)` : ""}` : `Drew it at ${size.width} × ${size.height}`;
       const said = errors.length ? `${errors.length === 1 ? "1 error" : `${errors.length} errors`}` : "no console errors";
-      const words = `${drew}, ${said}${rep?.blocked.length ? `, ${rep.blocked.length} blocked` : ""}`;
+      const hosts = [...new Set(rep?.blocked ?? [])];
+      const words = `${drew}, ${said}${hosts.length ? `, ${hosts.length === 1 ? `a request to ${hosts[0]}` : `requests to ${hosts.length} hosts`} blocked` : ""}`;
       this.checked.set(`${threadId}:${manifest.id}`, { sum: sumOf(files!), words });
       const parts = [
         `${words}.`,
         errors.length ? `Errors:\n${errors.slice(0, 10).join("\n\n")}` : "",
-        rep?.blocked.length ? `The content policy blocked: ${[...new Set(rep.blocked)].join(", ")}. A panel reaches no address but the one host in access.network; scripts, styles and pictures go in its own files.` : "",
+        hosts.length ? `The content policy blocked: ${hosts.join(", ")}. A panel reaches no address but the one host in access.network; scripts, styles and pictures go in its own files.` : "",
         c.refused.length ? `The bridge refused: ${[...new Set(c.refused)].join("; ")}` : "",
         "The picture is how it draws in the window. Fix what's off and check again before you call addon_install.",
       ].filter(Boolean);

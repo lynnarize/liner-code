@@ -303,3 +303,37 @@ export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass 
     </Pop>
   );
 }
+
+/**
+  An app's page of its own, from the left sidebar's Apps: it takes the conversation's place, with a
+  way back to where you were (DeepSeek Harness's main-area page, reached from its sidebar entry).
+*/
+export function AppPage({ id, back, onBack, sidebar, onSidebar }: { id: string; back: string; onBack: () => void; sidebar: boolean; onSidebar: () => void }) {
+  const info = useEngine((s) => s.addons.find((a) => a.id === id && a.panel));
+  const Icon = appIcon(info?.panel?.icon);
+  return (
+    <div className="lc-apppage">
+      <header className="lc-top" data-drag>
+        {!sidebar && (
+          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
+            <I.sidebar size={16} />
+          </button>
+        )}
+        <button type="button" className="lc-apppage-back l-focus" onClick={onBack}>
+          <I.back size={13} />
+          <span>{back}</span>
+        </button>
+        <span className="lc-quiet" aria-hidden>
+          /
+        </span>
+        <span className="lc-apppage-name">
+          <Icon size={14} />
+          <h1 className="lc-title">{info?.name ?? "An app"}</h1>
+        </span>
+      </header>
+      <div className="lc-apppage-body">
+        <AddonView addon={id} agentName={info?.by.agent ?? "the agent"} />
+      </div>
+    </div>
+  );
+}

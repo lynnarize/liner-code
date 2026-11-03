@@ -27,13 +27,14 @@ const Compare = lazy(() => import("./Compare").then((m) => ({ default: m.Compare
 import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
 import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
+import { AppPage } from "./Addon";
 import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
 import { matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 import * as os from "./os";
 
-type View = { kind: "home"; projectId?: string } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string };
+type View = { kind: "home"; projectId?: string } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
 
 const readView = (): View => {
   try {
@@ -435,7 +436,7 @@ export function App() {
       ) : (
         <>
           <div className="lc-side" inert={!sidebar || undefined}>
-            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => setMenu(true)} onHide={() => setSidebar(false)} />
+            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => setMenu(true)} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} />
           </div>
           <main className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
@@ -452,6 +453,15 @@ export function App() {
               <Compare id={view.id} sidebar={sidebar} onSidebar={() => setSidebar(true)} onOpen={(id) => openSession(id)} onDone={(id) => openSession(id)} />
             ) : view.kind === "usage" ? (
               <Usage sidebar={sidebar} onSidebar={() => setSidebar(true)} />
+            ) : view.kind === "app" ? (
+              <AppPage
+                key={view.id}
+                id={view.id}
+                back={view.back?.kind === "session" ? (threads.find((t) => t.id === (view.back as { id: string }).id)?.title ?? "Back") : view.back?.kind === "usage" ? "Usage" : view.back?.kind === "routines" ? "Routines" : "Home"}
+                onBack={() => setView(view.back ?? { kind: "home" })}
+                sidebar={sidebar}
+                onSidebar={() => setSidebar(true)}
+              />
             ) : (
               <Home
                 projectId={view.kind === "home" ? (view.projectId ?? lastProject) : undefined}

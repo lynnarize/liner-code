@@ -23,7 +23,7 @@ import { glyphs, is, matches } from "./keymap";
 import { readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
 import { closeTab, closeWhere, openTab, paneOf, replaceTab, toggleTab, type DockState } from "./dock";
-import { isPanelAsk } from "./Addon";
+import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, TopBar } from "./TopBar";
 import { Timeline } from "./Timeline";
 import { Badge, Disc, Kbd, ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
@@ -49,6 +49,8 @@ const PANEL_EXIT_MS = 400;
   useTimelinePositionRestore.ts, timelineScrollAnchoring.ts).
 */
 const places = new Map<string, { top: number; atEnd: boolean }>();
+/** Which view of each session was up: Chat, or an app's tab beside it. */
+const views = new Map<string, string>();
 
 /**
   The session reads only the parts of the timeline it shows (its checkpoints, your messages, its
@@ -187,10 +189,24 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   // ⌘K's "Open Browser" and the like reach this session's dock.
   useEffect(() => onOpenSurface(thread.id, (tab) => setDock((d) => openTab(d, tab))), [thread.id]);
 
-  // A panel an agent asks to add comes up in the dock as a preview; once added it's the add-on
-  // itself in the same place, and a no (or a turn that ended) takes the preview away.
+  // A panel an agent asks to add comes up in the dock as a preview; once added, a dock panel is
+  // itself in the same place (a tab or a page has its own), and a no (or a turn that ended) takes
+  // the preview away.
   const panelAsks = useItemsWhere(thread.id, isPanelAsk) as Extract<Item, { kind: "approval" }>[];
   const addons = useEngine((s) => s.addons);
+  // Apps placed as a tab beside Chat (DeepSeek Harness's session tab): each mounts the first time
+  // you pick it and keeps running while you're back on Chat.
+  const tabApps = appsFor(addons, thread.projectId).filter((a) => a.panel?.place === "tab");
+  const [view, setViewState] = useState(() => views.get(thread.id) ?? "chat");
+  const [seenViews, setSeenViews] = useState(() => new Set([view]));
+  const setView = (v: string) => {
+    views.set(thread.id, v);
+    setViewState(v);
+    setSeenViews((s) => (s.has(v) ? s : new Set(s).add(v)));
+  };
+  useEffect(() => {
+    if (view !== "chat" && !tabApps.some((a) => a.id === view)) setView("chat");
+  }, [view, tabApps.map((a) => a.id).join()]);
   const opened = useRef(new Set<string>());
   useEffect(() => {
     // Each preview comes up once by itself; closed, it stays closed (its card opens it again).
@@ -202,7 +218,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
         const tab = `preview:${a.id}`;
         if (a.state === "asking") {
           if (fresh.includes(tab) && paneOf(next, tab) < 0) next = openTab(next, tab);
-        } else if (paneOf(next, tab) >= 0) next = a.state === "approved" && a.addon ? replaceTab(next, tab, `app:${a.addon.id}`) : closeTab(next, tab);
+        } else if (paneOf(next, tab) >= 0) next = a.state === "approved" && a.addon?.kind === "panel" && a.addon.place === "dock" ? replaceTab(next, tab, `app:${a.addon.id}`) : closeTab(next, tab);
       }
       // An add-on you removed takes its tabs with it; one only off stays, to say so.
       next = closeWhere(next, (t) => t.startsWith("app:") && Boolean(addons.find((x) => x.id === t.slice(4))?.removed));
@@ -394,6 +410,16 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             {thread.title}
           </h1>
         )}
+        {tabApps.length > 0 && (
+          <div className="lc-views" role="tablist" aria-label="Session views">
+            {[{ id: "chat", name: "Chat", Icon: I.comment }, ...tabApps.map((a) => ({ id: a.id, name: a.name, Icon: appIcon(a.panel?.icon) }))].map((v) => (
+              <button key={v.id} type="button" role="tab" className="lc-view-b l-focus" aria-selected={view === v.id} onClick={() => setView(v.id)}>
+                <v.Icon size={13} />
+                {v.name}
+              </button>
+            ))}
+          </div>
+        )}
         <button type="button" className="lc-chain l-focus" aria-label="Who works on this session" title={wayNote || undefined} onClick={() => toggle("agents")}>
           {way !== "solo" ? (
             <>
@@ -440,7 +466,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       </header>
       <div ref={body} className="lc-body">
         <section ref={threadRef} className="lc-thread" aria-label="Session">
-          <div className="lc-stage">
+          <div className="lc-stage" hidden={view !== "chat"}>
             <div ref={scroller} className="lc-scroll">
               <div ref={contentRef} className="lc-scroll-in">
                 {empty ? (
@@ -475,7 +501,14 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               Cite in composer
             </button>
           )}
-          <div ref={foot} className="lc-dock">
+          {tabApps.map((a) =>
+            seenViews.has(a.id) ? (
+              <div key={a.id} className="lc-apptab" role="tabpanel" aria-label={a.name} hidden={view !== a.id}>
+                <AddonView addon={a.id} thread={thread} agentName={(lead ?? coder).name} visible={view === a.id} />
+              </div>
+            ) : null,
+          )}
+          <div ref={foot} className="lc-dock" hidden={view !== "chat"}>
             {away && (
               <button type="button" className="lc-jump l-glass l-focus" onClick={jump}>
                 <I.chevD size={13} />

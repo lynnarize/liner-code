@@ -366,3 +366,115 @@
     opacity: 0.55;
   }
 }
+
+/* ---------- A session's tabs: Chat, and the apps placed beside it ---------- */
+.lc-views {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--l-wash);
+}
+.lc-view-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-view-b[aria-selected="true"] {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 0.5px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-stage[hidden],
+.lc-dock[hidden],
+.lc-apptab[hidden] {
+  display: none;
+}
+.lc-apptab {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ---------- An app's page of its own ---------- */
+.lc-apppage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  animation: lc-paper-in 420ms var(--l-ease-enter) backwards;
+}
+.lc-apppage-back {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-apppage-back > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .lc-apppage-back:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+.lc-apppage-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.lc-apppage-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ---------- Apps in the left sidebar ---------- */
+.lc-sb-apps {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0 6px;
+}
+.lc-sb-apps > .lc-sb-nav > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sb-apps > .lc-sb-nav[data-on] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+  font-weight: 600;
+}

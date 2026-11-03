@@ -1,0 +1,208 @@
+/* Notes: a header, a library on the left, the desk with its toolbar and page, and a footer under each. */
+html, body { height: 100%; }
+body {
+  display: grid;
+  grid-template: auto minmax(0, 1fr) auto / 300px minmax(0, 1fr);
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--ink);
+  font: 13.5px/1.55 var(--font);
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+[hidden] { display: none !important; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.grow { flex: 1; }
+:focus-visible { outline: 2px solid color-mix(in oklch, var(--accent) 70%, transparent); outline-offset: 1px; }
+
+/* The header: its name, how many, and New note. */
+.top {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 12px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; flex: 1; align-items: center; gap: 9px; min-width: 0; }
+.brand h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.count { color: var(--ink-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px 0 11px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 500;
+}
+.new:hover { background: color-mix(in oklch, var(--ink) 86%, var(--surface)); }
+
+/* The library: search, then each note with its title, a line of it, and when it changed. */
+.library {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 10px;
+  border-right: 1px solid var(--line);
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--ink) 4%, transparent);
+  color: var(--ink-3);
+}
+.search:focus-within { box-shadow: inset 0 0 0 1px var(--line); }
+.search input { flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--ink); }
+.search input::placeholder { color: var(--ink-3); }
+.list { display: grid; gap: 2px; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.list button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+}
+.list button:hover { background: color-mix(in oklch, var(--ink) 4%, transparent); }
+.list button[aria-current="true"] { background: color-mix(in oklch, var(--ink) 7%, transparent); }
+.list b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.list small { overflow: hidden; color: var(--ink-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.list mark { border-radius: 3px; background: color-mix(in oklch, var(--accent) 22%, transparent); color: inherit; }
+.none { margin: 6px 12px; color: var(--ink-3); font-size: 13px; }
+
+/* The desk: the toolbar, then the page on a quieter ground. */
+.desk { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
+.tools {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.tools button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-2);
+}
+.tools button:hover { background: color-mix(in oklch, var(--ink) 5%, transparent); color: var(--ink); }
+.tools button[aria-pressed="true"] { background: color-mix(in oklch, var(--ink) 8%, transparent); box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); }
+.glyph { font-size: 15px; line-height: 1; }
+.glyph.serif { font-family: Georgia, "Iowan Old Style", serif; }
+.sep { width: 1px; height: 20px; margin: 0 6px; background: var(--line); }
+.pick select {
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.pick select:hover { background: color-mix(in oklch, var(--ink) 5%, transparent); }
+.tools .delete { display: inline-flex; gap: 6px; color: var(--ink-3); }
+.tools .delete[data-sure] { background: color-mix(in oklch, oklch(0.6 0.2 25) 14%, transparent); color: oklch(0.55 0.2 25); }
+
+.scroll { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 18px 24px 48px; }
+/* A ruler in inches over the sheet, as wide as it. */
+.ruler {
+  width: min(816px, 100%);
+  height: 18px;
+  margin: 0 auto 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 96px) 0 0 / 100% 100%,
+    repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 12px) 0 11px / 100% 7px no-repeat;
+  background-color: var(--surface);
+}
+/* The sheet: 8.5 inches wide, one-inch margins, as long as the writing. */
+.page {
+  box-sizing: border-box;
+  width: min(816px, 100%);
+  min-height: 1056px;
+  margin: 0 auto;
+  padding: 72px 88px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.7;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+.page.serif { font-family: "Iowan Old Style", Charter, Georgia, serif; }
+.page.sans { font-family: var(--font); }
+.page.mono { font-family: var(--font-mono); font-size: 14.5px; }
+.page:empty::before { content: attr(data-placeholder); color: var(--ink-3); pointer-events: none; }
+.page h1 { margin: 0.4em 0 0.3em; font-size: 2em; line-height: 1.2; }
+.page h2 { margin: 0.6em 0 0.3em; font-size: 1.5em; line-height: 1.25; }
+.page h3 { margin: 0.6em 0 0.2em; font-size: 1.2em; }
+.page p, .page div { margin: 0 0 0.6em; }
+.page blockquote { margin: 0.6em 0; padding: 0.1em 0 0.1em 1em; border-left: 3px solid var(--line); color: var(--ink-2); }
+.page ul, .page ol { margin: 0 0 0.6em; padding-left: 1.6em; }
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-2);
+}
+.empty > svg { width: 28px; height: 28px; color: var(--ink-3); }
+.empty b { color: var(--ink); font-size: 15px; }
+.empty p { max-width: 36ch; margin: 0 0 6px; }
+
+/* Under the library and the desk: how many notes, words and characters, and whether it's saved. */
+.foot-lib, .foot-desk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.foot-lib { border-right: 1px solid var(--line); }
+.foot-desk i { margin: 0 4px; font-style: normal; }
+.saved { display: inline-flex; align-items: center; gap: 6px; }
+.saved::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.saved[data-state="saved"]::before { background: oklch(0.68 0.15 150); }
+.saved[data-state="saving"]::before { background: oklch(0.78 0.14 75); }
+.saved[data-state="error"] { color: oklch(0.55 0.2 25); }
+.saved[data-state="error"]::before { background: currentColor; }
+
+/* Narrow: the library goes above the desk. */
+@media (max-width: 720px) {
+  body { grid-template: auto auto minmax(0, 1fr) auto / minmax(0, 1fr); }
+  .library { max-height: 32vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .foot-lib { display: none; }
+  .page { padding: 40px 28px; min-height: 0; }
+}

@@ -4,6 +4,7 @@
 */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentProfile, RoutineRun, SessionMode } from "@contracts";
+import { CREATE_ADDON_ASK } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
 import { Toaster, toast } from "@liner/components/toast/toast";
 import { AgentDialog } from "./AgentDialog";
@@ -30,14 +31,13 @@ import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
 import { AppPage } from "./Addon";
 import { AddonsPage } from "./AddonsPage";
-import { startCreator } from "./Modes";
 import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
 import { matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 import * as os from "./os";
 
-type View = { kind: "home"; projectId?: string; mode?: SessionMode } | { kind: "addons" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
+type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
 
 const readView = (): View => {
   try {
@@ -194,6 +194,18 @@ export function App() {
   const editRoutine = (id?: string, projectId?: string) => setView({ kind: "routine", id, projectId: projectId ?? (current?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
   const newSession = (projectId?: string) => {
     setView({ kind: "home", projectId: projectId ?? (current?.projectId || lastProject) });
+  };
+  // Create your add-on (the sidebar's Add-ons menu, the Add-ons page): a new task in Creator mode, in the
+  // project New session would pick (Scratch when there's none), with DeepSeek Harness's ask written in the
+  // box and not sent, so you go on to say what it should be.
+  const createAddon = async () => {
+    try {
+      const have = (id?: string) => (id && projects.some((p) => p.id === id) ? id : undefined);
+      const projectId = have(current?.projectId) ?? have(lastProject) ?? projects.find((p) => p.agent !== "demo")?.id ?? (await rpc("project.scratch", {})).id;
+      setView({ kind: "home", projectId, mode: "creator", prompt: { text: CREATE_ADDON_ASK, at: Date.now() } });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
   };
 
   /** The sessions as the sidebar shows them, top to bottom: ⌘1 to ⌘9 and "next that needs you" go by it. */
@@ -453,7 +465,7 @@ export function App() {
       ) : (
         <>
           <div className="lc-side" inert={!sidebar || undefined}>
-            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => setMenu(true)} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} />
+            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => setMenu(true)} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} />
           </div>
           <main className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
@@ -471,7 +483,7 @@ export function App() {
             ) : view.kind === "usage" ? (
               <Usage sidebar={sidebar} onSidebar={() => setSidebar(true)} />
             ) : view.kind === "addons" ? (
-              <AddonsPage sidebar={sidebar} onSidebar={() => setSidebar(true)} onMake={() => (projects.length ? setView({ kind: "home", projectId: lastProject, mode: "creator" }) : void startCreator({}))} />
+              <AddonsPage sidebar={sidebar} onSidebar={() => setSidebar(true)} onMake={() => void createAddon()} />
             ) : view.kind === "app" ? (
               <AppPage
                 key={view.id}
@@ -495,6 +507,7 @@ export function App() {
                 }}
                 onCompare={(id) => setView({ kind: "compare", id })}
                 startMode={view.kind === "home" ? view.mode : undefined}
+                startPrompt={view.kind === "home" ? view.prompt : undefined}
                 sidebar={sidebar}
                 onSidebar={() => setSidebar(true)}
                 onNewAgent={() => setAgentDialog({ open: true })}

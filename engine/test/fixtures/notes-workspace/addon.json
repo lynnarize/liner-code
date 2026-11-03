@@ -1,0 +1,12 @@
+{
+  "apiVersion": 1,
+  "id": "notes-workspace",
+  "kind": "panel",
+  "name": "Notes",
+  "description": "A full-page notes workspace: a notes library with search, and a page to write on with a complete formatting toolbar.",
+  "summary": "A notes workspace with a page to write on, a library to search, and every note saved on this device.",
+  "place": "page",
+  "entry": "index.html",
+  "icon": "notes",
+  "access": { "storage": 1024 }
+}

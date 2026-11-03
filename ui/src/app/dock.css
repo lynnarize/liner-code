@@ -468,15 +468,55 @@
   gap: 1px;
   padding: 2px 0 6px;
 }
-.lc-sb-apps > .lc-sb-nav > span {
+.lc-sb-apps .lc-sb-nav > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-sb-apps > .lc-sb-nav[data-on] {
+.lc-sb-apps .lc-sb-nav[data-on] {
   background: var(--l-wash-2);
   color: var(--l-ink);
   font-weight: 600;
+}
+
+/* Add-ons' menu, under the entry and as wide as it: Browse add-ons, and Create your add-on. */
+.lc-sb-more-pop > .lc-sb-nav[data-open]:not([data-on]) {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lc-sb-more {
+  display: grid;
+  gap: 1px;
+}
+.lc-sb-more > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-sb-more > button > svg {
+  flex: none;
+  color: var(--l-ink-2);
+}
+.lc-sb-more > button:focus-visible,
+.lc-sb-more > button:focus {
+  outline: none;
+  background: var(--lc-well);
+}
+@media (hover: hover) {
+  .lc-sb-more > button:hover {
+    background: var(--lc-well);
+  }
 }
 
 /* ---------- "Make it an app": the offer at a turn's end ---------- */

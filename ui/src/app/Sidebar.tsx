@@ -44,6 +44,8 @@ type Props = {
   /** The Add-ons page: everything your agents made for Liner Code (DeepSeek Harness's Plugins entry). */
   onAddons?: () => void;
   addonsOn?: boolean;
+  /** A new task in Creator mode, its ask for an add-on with a sidebar entry written and not sent. */
+  onCreateAddon?: () => void;
 };
 
 /** A command's keys for a tip, like " (⌘B)". */
@@ -94,7 +96,7 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn }: Props) {
+export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onCreateAddon }: Props) {
   const pages = useEngine((s) => s.addons).filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
   const threads = useEngine((s) => s.threads);
   const groups = useEngine((s) => s.groups);
@@ -770,11 +772,37 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
       {/* Apps with a page of their own, above the projects: each opens in place of the conversation (DeepSeek Harness's sidebar entry). */}
       {(onAddons || (pages.length > 0 && onApp)) && (
         <section className="lc-sb-apps" aria-label="Apps">
+          {/* Add-ons opens a menu under it, as DeepSeek Harness's More does: browse what you have, or create one. */}
           {onAddons && (
-            <button type="button" className="lc-sb-nav l-focus" aria-current={addonsOn ? "page" : undefined} data-on={addonsOn || undefined} onClick={onAddons}>
-              <I.blocks size={14} />
-              <span>Add-ons</span>
-            </button>
+            <Pop
+              label="Add-ons"
+              menu
+              width="trigger"
+              className="lc-sb-more-pop"
+              triggerClass="lc-sb-nav"
+              triggerAttrs={{ "aria-current": addonsOn ? "page" : undefined, "data-on": addonsOn || undefined }}
+              trigger={
+                <>
+                  <I.blocks size={14} />
+                  <span>Add-ons</span>
+                </>
+              }
+            >
+              {(close) => (
+                <div className="lc-sb-more">
+                  <button type="button" role="menuitem" className="l-focus" onClick={() => (close(), onAddons())}>
+                    <I.blocks size={15} />
+                    Browse add-ons
+                  </button>
+                  {onCreateAddon && (
+                    <button type="button" role="menuitem" className="l-focus" onClick={() => (close(), onCreateAddon())}>
+                      <I.plus size={15} />
+                      Create your add-on
+                    </button>
+                  )}
+                </div>
+              )}
+            </Pop>
           )}
           {pages.length > 0 && onApp && <div className="lc-sb-lab">Apps</div>}
           {onApp && pages.map((a) => {

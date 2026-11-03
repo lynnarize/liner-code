@@ -569,6 +569,8 @@ export type SessionMode = "standard" | "creator" | `agent:${string}`;
   preset guide, ui-agent-preset/guide-locales.ts, its words for Liner Code).
 */
 export type ModeGuide = { id: "standard" | "creator"; name: string; blurb: string; intro: string; details: { h: string; p: string }[]; examples: { h: string; ask: string; expect: string }[] };
+/** What Create your add-on writes in a new Creator task's box, not sent (DeepSeek Harness's own ask, ui-entry-customization). */
+export const CREATE_ADDON_ASK = "Create a Liner Code add-on with a left sidebar entry.";
 export const BUILTIN_MODES: ModeGuide[] = [
   {
     id: "standard",

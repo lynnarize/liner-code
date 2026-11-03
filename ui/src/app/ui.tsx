@@ -15,7 +15,7 @@ import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 type Side = "top" | "bottom";
 const EDGE = 10;
 const GAP = 6;
-type Place = { side: Side | "left"; top: number; left: number; max?: number; ready: boolean };
+type Place = { side: Side | "left"; top: number; left: number; max?: number; w?: number; ready: boolean };
 
 /** The least room a panel that keeps its side needs there, before it gives up and flips. */
 const KEEP_MIN = 260;
@@ -27,7 +27,7 @@ const KEEP_MIN = 260;
   One that `keep`s its side stays there while it has a fair room, and fits itself to it. One
   `beside` its trigger opens to its left, level with it, while there's room there.
 */
-function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number, keep: boolean, beside = false) {
+function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number | "trigger", keep: boolean, beside = false) {
   const [at, setAt] = useState<Place>({ side: prefer, top: -9999, left: -9999, ready: false });
   useLayoutEffect(() => {
     if (!open) return setAt((a) => ({ ...a, ready: false }));
@@ -51,18 +51,18 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       const side: Side = (keep && room(prefer) >= Math.min(h, KEEP_MIN)) || h <= room(prefer) ? prefer : h <= room(flip) ? flip : below >= above ? "bottom" : "top";
       const max = h > room(side) ? Math.max(120, Math.floor(room(side))) : undefined;
       const tall = Math.min(h, max ?? h);
-      const w = Math.min(width, vw - EDGE * 2);
+      const w = Math.min(width === "trigger" ? r.width : width, vw - EDGE * 2);
       // Beside, to the left (the session tray's menus): level with the trigger's top, kept on screen.
       if (beside && r.left - GAP - w >= EDGE) {
         const fit = Math.min(h, vh - EDGE * 2);
         const top = Math.max(EDGE, Math.min(r.top, vh - EDGE - fit));
-        setAt({ side: "left", top: Math.round(top), left: Math.round(r.left - GAP * 2 - w), max: h > fit ? fit : undefined, ready: true });
+        setAt({ side: "left", top: Math.round(top), left: Math.round(r.left - GAP * 2 - w), max: h > fit ? fit : undefined, w, ready: true });
         return;
       }
       let left = align === "end" ? r.right - w : align === "center" ? r.left + r.width / 2 - w / 2 : r.left;
       left = Math.max(EDGE, Math.min(left, vw - EDGE - w));
       const top = side === "bottom" ? r.bottom + GAP : r.top - GAP - tall;
-      setAt({ side, top: Math.round(top), left: Math.round(left), max, ready: true });
+      setAt({ side, top: Math.round(top), left: Math.round(left), max, w, ready: true });
     };
     place();
     window.addEventListener("resize", place);
@@ -96,6 +96,8 @@ export function Pop({
   triggerClass,
   disabled,
   keep = false,
+  menu = false,
+  triggerAttrs,
 }: {
   trigger: ReactNode;
   label: string;
@@ -103,12 +105,17 @@ export function Pop({
   align?: "start" | "end" | "center";
   /** "left" opens beside the trigger, as the session tray's menus do. */
   side?: "top" | "bottom" | "left";
-  width?: number;
+  /** Its width, or the trigger's own ("trigger"), as a menu under a sidebar entry. */
+  width?: number | "trigger";
   className?: string;
   triggerClass?: string;
   disabled?: boolean;
   /** Stay on `side` while there's fair room, fitting to it, rather than flip to where it all fits. */
   keep?: boolean;
+  /** A menu of actions rather than a panel: its rows are menu items, and the arrow keys move between them. */
+  menu?: boolean;
+  /** More for the trigger itself: the page it stands for being open (aria-current), a state its look reads. */
+  triggerAttrs?: Record<string, string | boolean | undefined>;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -128,7 +135,7 @@ export function Pop({
   }, [open, at.ready]);
   return (
     <div ref={wrap} className={cx("lc-pop", className)}>
-      <button ref={btn} type="button" className={cx("lc-pick l-focus", triggerClass)} aria-haspopup="dialog" aria-expanded={open} aria-label={label} disabled={disabled} data-open={open || undefined} onClick={() => setOpen((o) => !o)}>
+      <button ref={btn} type="button" {...triggerAttrs} className={cx("lc-pick l-focus", triggerClass)} aria-haspopup={menu ? "menu" : "dialog"} aria-expanded={open} aria-label={label} disabled={disabled} data-open={open || undefined} onClick={() => setOpen((o) => !o)}>
         {trigger}
       </button>
       {open &&
@@ -139,14 +146,22 @@ export function Pop({
             data-side={at.side}
             data-align={align}
             data-ready={at.ready || undefined}
-            role="dialog"
+            role={menu ? "menu" : "dialog"}
             aria-label={label}
             // Placed here, not by Liner's anchored rules: those (bottom, translate) would fight the fixed layer.
-            style={{ width: Math.min(width, document.documentElement.clientWidth - EDGE * 2), maxHeight: at.max, top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none" }}
+            style={{ width: width === "trigger" ? at.w : Math.min(width, document.documentElement.clientWidth - EDGE * 2), maxHeight: at.max, top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none" }}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 e.preventDefault();
                 close();
+              }
+              // A menu's rows, by the arrow keys, Home and End, round from the last to the first.
+              if (menu && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+                const rows = [...(panel.current?.querySelectorAll<HTMLElement>("[role='menuitem']:not(:disabled)") ?? [])];
+                const i = rows.indexOf(document.activeElement as HTMLElement);
+                const to = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+                rows[to]?.focus();
+                e.preventDefault();
               }
             }}
           >

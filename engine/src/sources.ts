@@ -10,6 +10,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AddonAsk, AddonManifest } from "../../contracts/src/index.ts";
 import { ADDON_DIR, checkManifest, readPanelFiles, reachOf, type Addons, type PanelFiles } from "./addons.ts";
 import { run } from "./exec.ts";
@@ -101,7 +102,14 @@ export class Sources {
       const rel = relative(clone, dir);
       if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("That folder is outside the repository.");
     } else {
-      const path = s.replace(/^file:\/\//i, "").replace(/^~(?=\/)/, process.env.HOME ?? "~");
+      // A file:// address (spaces as %20) is its path; ~ is your home folder.
+      let path = s.replace(/^~(?=\/)/, process.env.HOME ?? "~");
+      if (/^file:\/\//i.test(path))
+        try {
+          path = fileURLToPath(path);
+        } catch {
+          throw new Error("That file:// address isn't a folder on this Mac.");
+        }
       if (!isAbsolute(path)) throw new Error("That isn't a GitHub address or a folder: paste github.com/owner/repo, or choose a folder.");
       if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error("There's no folder there.");
       dir = path;

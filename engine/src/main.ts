@@ -18,6 +18,7 @@ import { DeviceLogs, Terminals } from "./surfaces.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
+import { Addons } from "./addons.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
 import { firstLine, linkHelpers, secretsFrom, takeSecrets, withPath } from "./exec.ts";
@@ -53,6 +54,11 @@ const store = new Store();
 const env: NodeJS.ProcessEnv = linkHelpers(join(store.home, "bin"), withPath(process.env, process.env.LINER_PATH || process.env.PATH)).env;
 const tools = new AgentTools(store, env);
 const runtime = new Runtime(store, env, tools);
+// Your add-ons: kept beside the engine's state, handed to each session's tool by the runtime, asked for through the agent tools.
+const addons = new Addons(store.home);
+runtime.addons = addons;
+tools.addons = addons;
+tools.host = runtime;
 // Keys the shell read from the keychain, handed over once at launch and kept in memory only.
 for (const [k, v] of Object.entries(secrets.keys)) if (v) runtime.keys.set(k, v);
 const terms = new Terminals(store, env);

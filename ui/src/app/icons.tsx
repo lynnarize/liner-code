@@ -46,6 +46,8 @@ export const I = {
       <rect x="3" y="3" width="10" height="10" rx="2.2" fill="currentColor" />
     </svg>
   ),
+  plug: (p: P) => <S {...p}><path d="M6 2.25v3M10 2.25v3M4 5.25h8v2a4 4 0 0 1-8 0ZM8 11.25v2.5" /></S>,
+  blocks: (p: P) => <S {...p}><path d="M2.75 2.75h4.5v4.5h-4.5ZM2.75 8.75h4.5v4.5h-4.5ZM8.75 8.75h4.5v4.5h-4.5ZM11 2.1l3 3-3 3-3-3Z" /></S>,
   lock: (p: P) => <S {...p}><rect x="3.25" y="7" width="9.5" height="6.25" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></S>,
   effort: (p: P) => <S {...p}><path d="M2.75 11.5a5.25 5.25 0 1 1 10.5 0" /><path d="m8 11.5 2.5-3" /></S>,
   laptop: (p: P) => <S {...p}><path d="M3.25 10.25v-6a1 1 0 0 1 1-1h7.5a1 1 0 0 1 1 1v6M1.75 12.75h12.5" /></S>,

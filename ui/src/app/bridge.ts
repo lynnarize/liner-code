@@ -96,6 +96,14 @@ export const bridge = {
     if (isNative()) return void call("openExternal", { url }).catch(() => {});
     window.open(url, "_blank", "noopener");
   },
+  /** Quits and opens Liner Code again (Start without add-ons). False where the shell can't, and nothing happens. */
+  async relaunch() {
+    if (!isNative()) return false;
+    return call("relaunch", {}).then(
+      () => true,
+      () => false,
+    );
+  },
   /** Keeps a key in the keychain; the engine gets it in memory only. */
   async keychainSet(account: string, key: string | null) {
     if (isNative()) await call("keychainSet", { account, key });

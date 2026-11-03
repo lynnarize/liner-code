@@ -227,3 +227,94 @@
     transition: none;
   }
 }
+
+/* An add-on's install card (add-ons, phase 1): Liner's approval card at full size, as the mockup draws
+   it, with a segmented Where and a password field for each key; answered, a receipt line with Undo. */
+.lc-addon .l-appr__fields div {
+  align-items: center;
+}
+.lc-addon .l-appr__fields dd {
+  overflow: visible;
+  white-space: normal;
+}
+.lc-addon .l-appr__fields div:has(.lc-addon-key, .lc-addon-json) {
+  align-items: start;
+}
+.lc-addon .l-appr__fields div:has(.lc-addon-key) dt {
+  padding-top: 6px;
+}
+.lc-addon-mono {
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.lc-addon-wrap {
+  overflow-wrap: anywhere;
+}
+.lc-addon-key {
+  display: grid;
+  gap: 6px;
+}
+.lc-addon-key input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  outline: none;
+  background: var(--l-field-fill);
+  box-shadow: inset 0 0 0 1px var(--l-line-strong);
+  color: var(--l-ink);
+  font: 13px var(--l-font-mono);
+  transition: box-shadow 180ms var(--l-ease-out);
+}
+.lc-addon-key input:focus {
+  box-shadow:
+    inset 0 0 0 1px var(--l-ink),
+    0 0 0 4px var(--l-wash);
+}
+.lc-addon-key input::placeholder {
+  color: var(--l-ink-3);
+  font-family: var(--l-font-body);
+}
+.lc-addon-key small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--l-ink-3);
+  font-size: 12px;
+}
+.lc-addon-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-addon-json {
+  margin: 0;
+  max-height: 16lh;
+}
+.lc-addon-receipt > span {
+  flex: 1;
+  min-width: 0;
+}
+.lc-answered-act {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 30%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lc-answered-act:hover {
+  color: var(--l-ink);
+  text-decoration-color: currentColor;
+}

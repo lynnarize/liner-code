@@ -4,7 +4,7 @@
   many times a second, so listeners hear about changes once per frame.
 */
 import { useSyncExternalStore } from "react";
-import type { AgentProfile, EngineEvent, Item, ProviderInfo, Project, Routine, RoutineRun, RpcMethod, RpcParams, RpcResult, Settings, SidebarGroup, Thread, ToolLimits, Updates } from "@contracts";
+import type { AddonInfo, AgentProfile, EngineEvent, Item, ProviderInfo, Project, Routine, RoutineRun, RpcMethod, RpcParams, RpcResult, Settings, SidebarGroup, Thread, ToolLimits, Updates } from "@contracts";
 
 declare global {
   interface Window {
@@ -34,6 +34,9 @@ export type EngineState = {
   updates: Updates;
   /** Each tool's plan windows (5-hour, weekly), as the engine last asked them. */
   limits: ToolLimits[];
+  /** Your add-ons, and whether this run started without them. */
+  addons: AddonInfo[];
+  addonsOff: boolean;
   /** Timelines of the threads that have been opened. */
   items: Record<string, Item[]>;
 };
@@ -58,6 +61,8 @@ let state: EngineState = {
   runs: [],
   updates: { checking: false, app: { current: "", state: "idle", can: "source" }, tools: [], dismissed: {} },
   limits: [],
+  addons: [],
+  addonsOff: false,
   items: {},
 };
 const listeners = new Set<() => void>();
@@ -164,7 +169,7 @@ function apply(e: Numbered) {
       const open = [...new Set([...Object.keys(state.items), ...wanted])].filter((id) => there.has(id));
       for (const id of wanted) if (!there.has(id)) wanted.delete(id);
       const kept = Object.fromEntries(Object.entries(state.items).filter(([id]) => there.has(id)));
-      set({ items: kept, connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), limits: s.limits ?? [] });
+      set({ items: kept, connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), limits: s.limits ?? [], addons: s.addons ?? [], addonsOff: s.addonsOff ?? false });
       for (const id of open) void loadItems(id, true).catch(() => {});
       return;
     }
@@ -221,6 +226,8 @@ function apply(e: Numbered) {
       return set({ updates: e.updates });
     case "limits":
       return set({ limits: e.tools });
+    case "addons":
+      return set({ addons: e.addons, addonsOff: e.off });
     case "term":
     case "term.exit":
     case "devlog":

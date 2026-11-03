@@ -18,6 +18,7 @@ import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { dataUrl, imageType } from "./attachments.ts";
 import { ResumeFailed, type OpenOptions, type ProviderSession, type TurnSink } from "./types.ts";
+import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
 type Msg = { id?: number | string; method?: string; params?: Json; result?: Json; error?: { code?: number; message: string } };
@@ -81,6 +82,27 @@ export async function codexAsk<T>(env: NodeJS.ProcessEnv, cwd: string, method: s
   } finally {
     c.close();
   }
+}
+
+/**
+  How long Codex waits on a call to Liner Code's tools (60 seconds unless told): an add-on's install
+  card waits for you, and you may take a while (T3 Code: CodexAdapterV2.ts sets tool_timeout_sec on its own server too).
+*/
+const LINER_WAIT_SEC = 1800;
+
+/**
+  Liner Code's own server and the connections you added, as Codex's config takes MCP servers. They
+  go with the thread (thread/start, thread/resume) over stdin, never on the app server's command line.
+*/
+export function codexMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = []): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (o.mcp) Object.assign(out, { "mcp_servers.liner.command": o.mcp.command, "mcp_servers.liner.args": o.mcp.args, "mcp_servers.liner.env": o.mcp.env, "mcp_servers.liner.tool_timeout_sec": LINER_WAIT_SEC });
+  for (const c of connections) {
+    const at = `mcp_servers.${c.name}`;
+    if (c.http) Object.assign(out, { [`${at}.url`]: c.http.url }, Object.keys(c.http.headers).length ? { [`${at}.http_headers`]: c.http.headers } : {});
+    else if (c.stdio) Object.assign(out, { [`${at}.command`]: c.stdio.command, [`${at}.args`]: c.stdio.args, [`${at}.env`]: c.stdio.env });
+  }
+  return out;
 }
 
 /** The process and its JSON-RPC plumbing. */
@@ -235,10 +257,10 @@ export class CodexServerSession implements ProviderSession {
     await this.server.ready();
     if (this.opened) return;
     const p = POLICY[this.o.planning ? "read" : this.o.access];
-    // Liner Code's own tools, as config overrides the way `codex -c` takes them.
-    const mcp = this.o.mcp ? { "mcp_servers.liner.command": this.o.mcp.command, "mcp_servers.liner.args": this.o.mcp.args, "mcp_servers.liner.env": this.o.mcp.env } : null;
+    // Liner Code's own tools and your connections, as config overrides the way `codex -c` takes them.
+    const mcp = codexMcp(this.o, this.o.connections);
     // An API endpoint's model provider, when this Codex runs one.
-    const config = mcp || this.o.config ? { ...mcp, ...this.o.config } : null;
+    const config = Object.keys(mcp).length || this.o.config ? { ...mcp, ...this.o.config } : null;
     const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: this.o.model && this.o.model !== "default" ? this.o.model : null, developerInstructions: this.o.soul || null, config };
     let r: Json | null = null;
     if (this.thread) {
@@ -318,6 +340,20 @@ export class CodexServerSession implements ProviderSession {
       for (const out of this.outputs.values()) clearTimeout(out.timer);
       this.outputs.clear();
     }
+  }
+
+  /**
+    Codex takes a thread's MCP servers as it starts or resumes. Its config/mcpServer/reload rebuilds
+    from config.toml, which Liner Code never writes, and keeps what a thread started with as it was;
+    and a thread/resume with new settings is ignored while the thread is loaded. So a thread under
+    way gets new connections by being reopened for its next turn, resuming where it was (T3 Code
+    sends its servers on thread/start and thread/resume the same way: CodexAdapterV2.ts). One not
+    started yet just takes them.
+  */
+  async connect(connections: Connection[]) {
+    if (this.opened) return false;
+    this.o.connections = connections;
+    return true;
   }
 
   /** True once Codex took it; false when it couldn't (the turn ended first, say), and the runtime sends it next. */

@@ -86,6 +86,7 @@ class CodexSession implements ProviderSession {
     if (o.soul) common.push("-c", `developer_instructions=${JSON.stringify(o.soul)}`);
     // Liner Code's own tools (the Browser, designs) and an API endpoint's model provider, as the
     // app server gets them.
+    // Your connections don't come this way: settings go on `codex exec`'s command line, where their keys could be read. The app server takes them.
     if (o.mcp) common.push("-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`);
     for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
     // Your images go to the model as they are (exec and exec resume both take -i); every file is named in the text either way.

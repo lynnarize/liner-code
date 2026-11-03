@@ -97,9 +97,19 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
         const { tool, args } = (await body(req)) as { tool?: string; args?: Record<string, unknown> };
         const work = take(String(req.headers[outside ? "x-liner-outside" : "x-liner-surface"] ?? ""), String(tool ?? ""), args ?? {});
         if (!work) return void res.writeHead(401).end("Unauthorized");
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, result: await work }));
+        // A call can wait on you (an add-on's install card) for minutes: the answer starts at once and a
+        // space goes every 20 seconds, which JSON reads past, so the caller's fetch doesn't give up on it.
+        res.writeHead(200, { "content-type": "application/json" });
+        res.flushHeaders();
+        const beat = setInterval(() => res.write(" "), 20_000);
+        const done = (b: unknown) => (clearInterval(beat), res.end(JSON.stringify(b)));
+        await work.then(
+          (result) => done({ ok: true, result }),
+          (e: unknown) => done({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+        );
       } catch (e) {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        if (!res.headersSent) res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
       }
       return;
     }

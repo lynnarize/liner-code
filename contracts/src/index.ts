@@ -515,6 +515,68 @@ export type DesignSize = "desktop" | "tablet" | "phone";
 /** A design of a session, as the Design surface lists it: its latest version, and the version you had built, if you did. */
 export type DesignInfo = { design: string; title: string; path: string; size: DesignSize; versions: number; built?: { version: number; at: number } };
 
+/*
+  Add-ons: what an agent makes for Liner Code, added only on your OK. Phase 1 has one kind, a
+  connection: an MCP server that every agent tool gets (Claude Code, Codex, OpenCode, Hermes). An
+  agent writes its manifest in the session's folder (.liner/addons/<id>/addon.json) and asks with
+  addon_install; you add it on a card, and each install is kept as a version in
+  ~/.liner-code/addons/<id>/v<n>/. Nothing an agent writes runs inside Liner Code: each tool starts
+  the server itself.
+*/
+/** How a connection's server is reached: a command on this Mac (stdio), or an address (streamable HTTP). */
+export type AddonServer = { stdio: { command: string; args?: string[]; env?: Record<string, string> } } | { http: { url: string; headers?: Record<string, string> } };
+/** A key a connection needs, named only: you type it on the install card, and it's sealed in the keychain. */
+export type AddonSecret = { name: string; label: string };
+/** An add-on's manifest, version 1. A secret is never written in: `${NAME}` in env or a header stands for it. */
+export type AddonManifest = { apiVersion: 1; id: string; kind: "connection"; name: string; description?: string; server: AddonServer; secrets?: AddonSecret[] };
+/** An add-on you have, as Settings lists it. */
+export type AddonInfo = {
+  id: string;
+  kind: "connection";
+  name: string;
+  description?: string;
+  /** The version in use, and every one kept. */
+  version: number;
+  versions: number[];
+  enabled: boolean;
+  /** When you removed it: it stays on disk, off, until you restore it. */
+  removed?: number;
+  /** The one project it's for; every project when unset. */
+  project?: string;
+  /** Who added it, from which session, and when. */
+  by: { agent: string; threadId?: string; title?: string; at: number };
+  transport: "stdio" | "http";
+  /** What it reaches: its address, or the command it runs. */
+  reaches: string;
+  secrets: AddonSecret[];
+};
+/** Where a connection's key is kept: the keychain account (`key:` before it) and the engine's name for it. */
+export const addonKey = (id: string, secret: string) => `addon.${id}.${secret}`;
+/** An agent asking to add a connection: what the install card shows, and once added, as which version and where. */
+export type AddonAsk = {
+  id: string;
+  name: string;
+  description?: string;
+  transport: "stdio" | "http";
+  /** Its address, or the command line it runs. */
+  server: string;
+  /** The variables a command gets, by name only (its keys among them), so you OK exactly what it's given. */
+  env?: string[];
+  /** The agent tools on this Mac it reaches ("Claude Code", "Codex"…). */
+  reaches: string[];
+  /** The draft it was read from, in the session's folder. */
+  path: string;
+  secrets: AddonSecret[];
+  /** The session's project, which the card offers beside every project. */
+  project: { id: string; name: string };
+  /** The manifest as checked, for Details. */
+  manifest: string;
+  /** The version you have now, when this one would replace it. */
+  replaces?: number;
+  scope?: "all" | "project";
+  version?: number;
+};
+
 type Base = { id: string; turn: number; at: number };
 export type Item =
   | (Base & {
@@ -596,6 +658,8 @@ export type Item =
       toolId?: string;
       /** The Reviewer's model, when it decided instead of you (Reviewer decides). */
       reviewer?: string;
+      /** An add-on to add (addon_install): the install card, then its receipt. */
+      addon?: AddonAsk;
     })
   | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string> })
   /** A plan to approve. `auto`: one nobody asked to see, for a hard job, handed straight on to be built. */
@@ -715,6 +779,8 @@ export type Settings = {
   updateTools?: UpdateMode;
   /** The Demo (Demo run, its model, the sample project): hidden until you tap your name in the sidebar six times. */
   showDemo?: boolean;
+  /** Agents may offer add-ons, each on a card for your OK ("ask", the default), or never. A read-only session never can. */
+  addonOffers?: "ask" | "never";
 };
 
 export type UpdateMode = "auto" | "notify" | "off";
@@ -984,6 +1050,9 @@ export type Snapshot = {
   updates: Updates;
   /** Each tool's plan windows, as last asked. */
   limits?: ToolLimits[];
+  /** Your add-ons, and whether this run started without them (Settings › Add-ons, Start without add-ons). */
+  addons?: AddonInfo[];
+  addonsOff?: boolean;
 };
 
 /** Engine → app, over the event stream. */
@@ -1016,7 +1085,9 @@ export type EngineEvent =
   /** An agent uses the session's Browser; the app answers with agent.browser.reply. */
   | { type: "agent.browser"; id: string; threadId: string; op: AgentBrowserOp; args: Record<string, unknown> }
   /** A design's file changed on disk (the agent is editing it): a Design surface showing it draws it again. */
-  | { type: "design.changed"; threadId: string; design: string; at: number };
+  | { type: "design.changed"; threadId: string; design: string; at: number }
+  /** An add-on was added, switched, moved to another version, removed or restored. */
+  | { type: "addons"; addons: AddonInfo[]; off: boolean };
 
 /** `shot` isn't the Browser's: the app draws a page of this Mac out of sight and answers with its picture (a design's, for its agent). */
 export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot" | "shot";
@@ -1072,7 +1143,16 @@ export type Rpc = {
   /** The session's side chat, started now if it has none; `fresh` starts it again from where the session is. */
   "thread.side": [{ id: string; fresh?: boolean }, Thread];
   "thread.stop": [{ id: string }, null];
-  "approval.answer": [{ threadId: string; itemId: string; allow: boolean; reason?: string; always?: boolean }, null];
+  /** `scope`, for an add-on's install card: every project, or only the session's. */
+  "approval.answer": [{ threadId: string; itemId: string; allow: boolean; reason?: string; always?: boolean; scope?: "all" | "project" }, null];
+  /** Switches an add-on on or off, moves it to a kept version, removes it (it stays on disk) or restores it. */
+  "addons.update": [{ id: string; enabled?: boolean; version?: number; removed?: boolean }, AddonInfo[]];
+  /** A connection you add by hand: its manifest, checked as an agent's would be. Its keys go to the keychain first, as on the card. */
+  "addons.add": [{ manifest: string; project?: string }, AddonInfo[]];
+  /** An add-on's manifest as kept (the version in use unless `version`), and its folder. */
+  "addons.read": [{ id: string; version?: number }, { manifest: string; dir: string }];
+  /** Start without add-ons: none from now on, nor when Liner Code next starts. The start after that brings them back. */
+  "addons.off": [Record<string, never>, null];
   "question.answer": [{ threadId: string; itemId: string; answers?: Record<string, string> }, null];
   "proposal.answer": [{ threadId: string; itemId: string; approve: boolean; note?: string; plan?: string }, null];
   "review.run": [{ threadId: string }, null];

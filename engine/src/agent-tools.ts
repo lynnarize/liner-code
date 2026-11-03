@@ -8,11 +8,16 @@
   each call comes back here with the session's own key. A key reaches that one session's
   surfaces and nothing else, so an agent that reads it from its environment can't drive the
   rest of the engine (approve its own requests, say).
+
+  Add-ons go through here too (addons.ts): liner_inspect tells an agent what a connection is and
+  what's installed, and addon_install and addon_remove put a card on the timeline and wait for you.
 */
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import type { AgentBrowserOp } from "../../contracts/src/index.ts";
-import { DESIGN_FRAME, sizeOf, type DesignItem, type Designs } from "./designs.ts";
+import type { AgentBrowserOp, AddonInfo, Item, ProviderInfo, Risk } from "../../contracts/src/index.ts";
+import { addonKey } from "../../contracts/src/index.ts";
+import { ADDON_GUIDE, readDraft, type Addons } from "./addons.ts";
+import { DESIGN_FRAME, keepOutOfGit, sizeOf, type DesignItem, type Designs } from "./designs.ts";
 import { run } from "./exec.ts";
 import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
 import { remember, searchSessions } from "./memory.ts";
@@ -56,6 +61,12 @@ export function linerTitle(tool: string, input: unknown): string {
       return `Remember: ${s(a.fact)}`;
     case "sessions_search":
       return `Search earlier sessions for “${s(a.query)}”`;
+    case "liner_inspect":
+      return "Read Liner Code's add-on guide";
+    case "addon_install":
+      return `Ask to add ${s(a.id ?? a.path) || "an add-on"}`;
+    case "addon_remove":
+      return `Ask to remove ${s(a.id) || "an add-on"}`;
     default:
       return `Liner Code · ${tool}`;
   }
@@ -126,6 +137,30 @@ function described(r: PageRead) {
   return `${r.port ? `localhost:${r.port}${r.url}` : r.url.slice(1) || "index.html"} · ${r.title || "untitled"}\n\n${r.text || "(no text)"}\n\nControls:\n${controls}${canvases}${errors}`;
 }
 
+/**
+  What the add-on tools need of the runtime, which is made after these tools (main.ts): its keys,
+  the tools it found, the install card's wait, and the sessions it hands connections to.
+*/
+export type AddonHost = {
+  keys: Map<string, string>;
+  providerInfo: ProviderInfo[];
+  askLiner(threadId: string, ask: { tool: string; title: string; description?: string; risk: Risk; fields: { label: string; value: string }[]; addon?: Extract<Item, { kind: "approval" }>["addon"] }): { id: string; answer: Promise<{ allow: boolean; reason?: string; scope?: "all" | "project" }> };
+  relink(): Promise<Map<string, "now" | "next">>;
+  readOnly(threadId: string): boolean;
+  whoIs(threadId: string): string;
+  toolOf(threadId: string): { label: string; family: string };
+};
+
+/** The agent tools a connection reaches, by family, and whether each takes one in mid-session. */
+const REACHED: { family: string; label: string; now: boolean }[] = [
+  { family: "claude", label: "Claude Code", now: true },
+  { family: "codex", label: "Codex", now: false },
+  { family: "opencode", label: "OpenCode", now: false },
+  { family: "hermes", label: "Hermes", now: false },
+];
+/** The tool for Liner Code's own requests (an install card), on the timeline. */
+export const ADDON_TOOL = "liner.addon";
+
 export class AgentTools {
   private keys = new Map<string, string>();
   private waiting = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; late?: NodeJS.Timeout }>();
@@ -141,6 +176,9 @@ export class AgentTools {
   designs?: Designs;
   /** Where a session folder's files are served (proxy.ts), for drawing a design to look at. */
   filesUrl: (root: string) => Promise<string> = async () => "";
+  /** Your add-ons, and the runtime they're handed to sessions through. */
+  addons?: Addons;
+  host?: AddonHost;
 
   constructor(store: Store, env: NodeJS.ProcessEnv) {
     this.store = store;
@@ -295,12 +333,132 @@ export class AgentTools {
             return text(`${said}\n\n(No picture of it: ${e instanceof Error ? e.message : String(e)})`);
           }
         }
+        case "liner_inspect":
+          return text(this.inspect(threadId));
+        case "addon_install":
+          return await this.install(threadId, args);
+        case "addon_remove":
+          return await this.remove(threadId, args);
         default:
           return fail(`Liner Code has no tool called ${tool}.`);
       }
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  /** The agent tools on this Mac a connection reaches, by name. */
+  private reached() {
+    const info = this.host?.providerInfo ?? [];
+    return REACHED.filter((r) => info.some((p) => p.id === r.family && p.available));
+  }
+
+  /** Why this session's agent can't add an add-on now, if it can't. */
+  private refusal(threadId: string) {
+    if (!this.addons || !this.host) return "Add-ons aren't available in this session.";
+    if (this.store.settings.addonOffers === "never") return "The person turned this off: in Settings › Add-ons, agents may never offer add-ons. Nothing was added. They can still add one by hand there.";
+    if (this.host.readOnly(threadId)) return "This session only reads (Read only, a side chat, or a planner's turn), so it can't add or remove an add-on. Say what you'd add; the person can ask for it in a session that makes changes.";
+    return null;
+  }
+
+  private where(a: { project?: string }, threadId: string) {
+    if (!a.project) return "every project";
+    const p = this.store.projects.find((x) => x.id === a.project);
+    return a.project === this.store.thread(threadId).projectId ? `${p?.name ?? "this project"} only (this project)` : `${p?.name ?? "another project"} only`;
+  }
+
+  /** liner_inspect: the guide, what's installed, which tools are here, and what this session may do. */
+  private inspect(threadId: string) {
+    const list: AddonInfo[] = this.addons?.list() ?? [];
+    const keys = this.host?.keys;
+    const installed = list.length
+      ? list
+          .map((x) => {
+            const state = x.removed ? "removed (the person can restore it)" : x.enabled ? "on" : "off";
+            const kept = x.versions.length > 1 ? ` (kept: ${x.versions.map((v) => `v${v}`).join(", ")})` : "";
+            const secrets = x.secrets.length ? ` · keys: ${x.secrets.map((k) => `${k.name} ${keys?.has(addonKey(x.id, k.name)) ? "set" : "not set"}`).join(", ")}` : "";
+            return `- ${x.id}: ${x.name} · v${x.version}${kept} · ${state} · ${this.where(x, threadId)} · ${x.transport} ${x.reaches}${secrets}`;
+          })
+          .join("\n")
+      : "None yet.";
+    const info = this.host?.providerInfo ?? [];
+    const tools = REACHED.map((r) => {
+      const p = info.find((x) => x.id === r.family);
+      return `- ${r.label}${p?.version ? ` ${p.version}` : ""}: ${p?.available ? (r.now ? "installed; takes a new connection mid-session" : "installed; takes a new connection from its next turn") : "not installed here"}`;
+    }).join("\n");
+    const mine = this.host?.toolOf(threadId);
+    const no = this.refusal(threadId);
+    const off = this.addons?.off ? "\nLiner Code was started without add-ons this time, so none reach any tool until it starts again." : "";
+    return `${ADDON_GUIDE}\n\nInstalled add-ons\n${installed}${off}\n\nAgent tools on this Mac\n${tools}\n\nThis session\nIt runs on ${mine?.label ?? "an agent tool"}. ${no ? `It can't add one now: ${no}` : "It may ask to add one with addon_install."}`;
+  }
+
+  /** addon_install: checks the draft, asks on a card, and adds it if the person says yes. */
+  private async install(threadId: string, args: Record<string, unknown>): Promise<McpResult> {
+    const no = this.refusal(threadId);
+    if (no) return fail(no);
+    const addons = this.addons!;
+    const host = this.host!;
+    const t = this.store.thread(threadId);
+    const project = this.store.project(t.projectId);
+    const root = this.cwdOf(threadId) ?? t.worktree?.path ?? project.path;
+    const { path, manifest } = readDraft(root, String(args.id ?? args.path ?? args.draft ?? ""));
+    void keepOutOfGit(root);
+    const have = addons.get(manifest.id);
+    const next = addons.wouldBe(manifest);
+    if (have && have.enabled && !have.removed && next.version === have.version) return text(`applied: ${manifest.name} is already added as v${have.version}, for ${this.where(have, threadId)}, exactly as this draft says. Nothing to ask.`);
+    const reached = this.reached();
+    const ask = addons.askOf(manifest, path, { id: project.id, name: project.name }, reached.map((r) => r.label));
+    const { id, answer } = host.askLiner(threadId, {
+      tool: ADDON_TOOL,
+      title: `Add ${manifest.name}`,
+      risk: "medium",
+      fields: [
+        { label: "Server", value: ask.server },
+        { label: "Reaches", value: reached.map((r) => r.label).join(", ") || "Every agent tool" },
+      ],
+      addon: ask,
+    });
+    const r = await answer;
+    if (!r.allow) {
+      const it = this.store.item(threadId, id);
+      if (it.kind === "approval" && it.state === "expired") return text(`denied: the turn ended before the person answered, so ${manifest.name} wasn't added. The draft stays at ${path}.`);
+      return text(`denied: the person said no to adding ${manifest.name}${r.reason ? `, and said: “${r.reason}”` : ""}. Nothing was added. The draft stays at ${path}; don't ask again unless they do.`);
+    }
+    const scope = r.scope ?? ask.scope ?? "all";
+    const version = addons.install(manifest, { project: scope === "project" ? project.id : undefined, by: { agent: host.whoIs(threadId), threadId, title: t.title, at: Date.now() } });
+    const it = this.store.item(threadId, id);
+    if (it.kind === "approval" && it.addon) this.store.putItem(threadId, { ...it, addon: { ...it.addon, scope, version } });
+    const where = scope === "project" ? `${project.name} only` : "every project";
+    const missing = (manifest.secrets ?? []).filter((k) => !host.keys.has(addonKey(manifest.id, k.name))).map((k) => k.name);
+    const keyNote = missing.length ? ` The person left ${missing.join(", ")} empty, so calls that need ${missing.length === 1 ? "it" : "them"} may fail until they add ${missing.length === 1 ? "it" : "them"} in Settings › Add-ons.` : manifest.secrets?.length ? " Its keys are sealed in the keychain; you never see them." : "";
+    const now = (await host.relink()).get(threadId) === "now";
+    const mine = host.toolOf(threadId);
+    if (now) return text(`applied: ${manifest.name} (v${version}) is added for ${where}, and its tools are in this session now${mine.family === "claude" ? ` as mcp__${manifest.id}__<tool>` : ""}. Every other agent tool gets it too.${keyNote}`);
+    return text(`saved, starts in the next turn: ${manifest.name} (v${version}) is added for ${where}, but its tools can't reach this session yet. ${mine.label} takes in new MCP servers only when its session starts, so they arrive when the person's next message starts the next turn (the session picks up where it is). Tell the person that, and finish what you can without it now.${keyNote}`);
+  }
+
+  /** addon_remove: asks on a card, and removes it (on disk still, so it can be restored) if the person says yes. */
+  private async remove(threadId: string, args: Record<string, unknown>): Promise<McpResult> {
+    const no = this.refusal(threadId);
+    if (no) return fail(no);
+    const id = String(args.id ?? "").trim();
+    const have = this.addons!.get(id);
+    if (!have || have.removed) return fail(`There's no add-on ${id ? `called ${id}` : "by that id"} to remove. liner_inspect lists them.`);
+    const { answer } = this.host!.askLiner(threadId, {
+      tool: ADDON_TOOL,
+      title: `Remove ${have.name}`,
+      description: `Takes ${have.name} away from every agent tool. It stays in the add-ons, so it can be restored in Settings › Add-ons.`,
+      risk: "low",
+      fields: [
+        { label: "Server", value: have.reaches },
+        { label: "Where", value: this.where(have, threadId) },
+      ],
+    });
+    const r = await answer;
+    if (!r.allow) return text(`denied: the person said no to removing ${have.name}${r.reason ? `, and said: “${r.reason}”` : ""}. It stays.`);
+    this.addons!.update(id, { removed: true });
+    const now = (await this.host!.relink()).get(threadId) === "now";
+    return text(`removed: ${have.name} is gone from every agent tool${now ? ", this session included" : "; this session lets go of it from its next turn"}. The person can restore it in Settings › Add-ons.`);
   }
 
   /** A design drawn out of sight at its size, by the app: its picture, console errors and full height. */

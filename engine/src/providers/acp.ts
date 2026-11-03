@@ -17,6 +17,7 @@ import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
 import { imageType, readUpTo } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
 import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
+import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
 type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Json; result?: Json; error?: { code: number; message: string } };
@@ -35,6 +36,8 @@ class AcpSession implements ProviderSession {
   private lost: string | undefined;
   /** The agent takes images in a prompt (its promptCapabilities say so). */
   private images = false;
+  /** The agent takes MCP servers by address too (its mcpCapabilities say http), not only commands. */
+  private http = false;
   private sink: TurnSink | null = null;
   private signal: AbortSignal | null = null;
   private calls = new Map<string, ToolCall>();
@@ -100,6 +103,7 @@ class AcpSession implements ProviderSession {
       const caps = init.agentCapabilities as Json | undefined;
       this.canLoad = Boolean(caps?.loadSession);
       this.images = Boolean((caps?.promptCapabilities as Json | undefined)?.image);
+      this.http = Boolean((caps?.mcpCapabilities as Json | undefined)?.http);
       let s: Json | null = null;
       if (this.o.resume && this.canLoad) {
         s = await this.request("session/load", { sessionId: this.o.resume, cwd: this.o.cwd, mcpServers: this.mcpServers() }).catch(() => null);
@@ -137,10 +141,20 @@ class AcpSession implements ProviderSession {
     })();
   }
 
-  /** Liner Code's own tools, as the stdio MCP server ACP takes. */
+  /** Liner Code's own tools and your connections, as ACP takes MCP servers. */
   private mcpServers() {
-    const m = this.o.mcp;
-    return m ? [{ name: "liner", command: m.command, args: m.args, env: Object.entries(m.env).map(([name, value]) => ({ name, value })) }] : [];
+    return acpMcp(this.o, this.o.connections, this.http);
+  }
+
+  /**
+    ACP gives a session its MCP servers as it starts or loads (session/new, session/load) and has no
+    way to add one after: a session under way gets new connections by being reopened for its next
+    turn, loading where it was. One not started yet just takes them.
+  */
+  async connect(connections: Connection[]) {
+    if (this.child) return false;
+    this.o.connections = connections;
+    return true;
   }
 
   private async onMessage(m: Msg) {
@@ -331,6 +345,20 @@ class AcpSession implements ProviderSession {
     child.stdin.end();
     killTree(child);
   }
+}
+
+/**
+  `liner` and the connections as ACP's session/new takes them: a command with its environment, or an
+  address with its headers, which only an agent whose mcpCapabilities say http takes.
+*/
+type AcpMcp = { name: string; command: string; args: string[]; env: { name: string; value: string }[] } | { type: "http"; name: string; url: string; headers: { name: string; value: string }[] };
+export function acpMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = [], http = false): AcpMcp[] {
+  const pairs = (r: Record<string, string>) => Object.entries(r).map(([name, value]) => ({ name, value }));
+  const m = o.mcp;
+  return [
+    ...(m ? [{ name: "liner", command: m.command, args: m.args, env: pairs(m.env) }] : []),
+    ...connections.flatMap((c): AcpMcp[] => (c.stdio ? [{ name: c.name, command: c.stdio.command, args: c.stdio.args, env: pairs(c.stdio.env) }] : c.http && http ? [{ type: "http", name: c.name, url: c.http.url, headers: pairs(c.http.headers) }] : [])),
+  ];
 }
 
 /** How long Stop waits for an ACP agent to finish cancelling before its process is stopped. */

@@ -69,6 +69,29 @@ export function designsOf(items: Item[]) {
 /** back: a version you put back (restore), which goes to its design's own file, wherever in the session's folder that is. */
 type Show = { title?: string; path?: string; html?: string; design?: string; size?: DesignSize; note?: string; back?: boolean };
 
+/** Folders whose repository already keeps .liner/ out. */
+const excluded = new Set<string>();
+
+/**
+  Adds .liner/ to the repository's info/exclude (shared by its worktrees), once: designs and add-on
+  drafts are the session's, not the project's files. Not a repository: nothing to do.
+*/
+export async function keepOutOfGit(root: string) {
+  if (excluded.has(root)) return;
+  excluded.add(root);
+  const r = await run("git", ["rev-parse", "--git-common-dir"], { cwd: root, timeout: 10000 });
+  if (r.code !== 0 || !r.stdout.trim()) return;
+  const file = join(resolve(root, r.stdout.trim()), "info", "exclude");
+  try {
+    const have = existsSync(file) ? readFileSync(file, "utf8") : "";
+    if (/^\/?\.liner\/?\s*$/m.test(have)) return;
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, `${have && !have.endsWith("\n") ? "\n" : ""}# Liner Code's drafts (designs, add-ons)\n.liner/\n`);
+  } catch {
+    // A repository we can't write to: its drafts show as new files, and that's all.
+  }
+}
+
 export class Designs {
   private store: Store;
   /** The folder a thread works in. */
@@ -76,7 +99,6 @@ export class Designs {
   /** The turn a thread is on. */
   turnOf: (threadId: string) => number = () => 0;
   /** Folders whose .liner/ is already out of git. */
-  private excluded = new Set<string>();
   /** Threads with a Design surface open, how many, and the folders watched for each. */
   private watching = new Map<string, { n: number; dirs: Map<string, FSWatcher>; timers: Map<string, NodeJS.Timeout> }>();
 
@@ -146,7 +168,7 @@ export class Designs {
     if (statSync(abs).size > MAX) throw new Error(`${path} is over 2 MB; keep a design to one page, with big pictures as files beside it.`);
     const html = readFileSync(abs, "utf8");
     if (!html.trim()) throw new Error(`${path} is empty.`);
-    void this.keepOutOfGit(root);
+    void keepOutOfGit(root);
 
     const size = a.size ?? prev?.size ?? "desktop";
     if (prev && prev.size === size && prev.title === title && this.version(threadId, prev.design, prev.version) === html) return { item: prev, fresh: false };
@@ -223,26 +245,6 @@ export class Designs {
     mkdirSync(this.dir(threadId, design), { recursive: true });
     writeFileSync(join(this.dir(threadId, design), "meta.json"), JSON.stringify({ ...this.meta(threadId, design), built: { version, at: Date.now() } }));
     return this.list(threadId);
-  }
-
-  /**
-    Adds .liner/ to the repository's info/exclude (shared by its worktrees), once: designs are the
-    session's drafts, not the project's files. Not a repository: nothing to do.
-  */
-  private async keepOutOfGit(root: string) {
-    if (this.excluded.has(root)) return;
-    this.excluded.add(root);
-    const r = await run("git", ["rev-parse", "--git-common-dir"], { cwd: root, timeout: 10000 });
-    if (r.code !== 0 || !r.stdout.trim()) return;
-    const file = join(resolve(root, r.stdout.trim()), "info", "exclude");
-    try {
-      const have = existsSync(file) ? readFileSync(file, "utf8") : "";
-      if (/^\/?\.liner\/?\s*$/m.test(have)) return;
-      mkdirSync(dirname(file), { recursive: true });
-      appendFileSync(file, `${have && !have.endsWith("\n") ? "\n" : ""}# Liner Code's designs (its Design surface)\n.liner/\n`);
-    } catch {
-      // A repository we can't write to: its designs show as new files, and that's all.
-    }
   }
 
   /** A Design surface opened (or closed) for a thread: its designs' folders are watched while one is open. */

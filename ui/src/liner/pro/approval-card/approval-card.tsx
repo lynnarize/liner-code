@@ -20,6 +20,8 @@ export type ApprovalCardProps = {
   title: string;
   /** Who is asking, by name. */
   agent?: string;
+  /** The line above the title, in place of "<agent> asks to": "Opus 5.5 asks to add a connection". */
+  ask?: string;
   description?: string;
   icon?: ReactNode;
   /** High risk approves with a hold instead of a press. */
@@ -28,6 +30,11 @@ export type ApprovalCardProps = {
   fields?: ApprovalField[];
   approveLabel?: string;
   denyLabel?: string;
+  /** Approving waits on something still to fill in (a key); `approveHint` says what. */
+  approveDisabled?: boolean;
+  approveHint?: string;
+  /** Beside the buttons, on the left: a Details toggle, a path. */
+  aside?: ReactNode;
   onApprove?: () => Promise<void> | void;
   /** Receives what to do instead, possibly empty. */
   onDeny?: (reason: string) => Promise<void> | void;
@@ -47,6 +54,10 @@ export function ApprovalCard({
   fields = [],
   approveLabel,
   denyLabel = "Not now",
+  ask,
+  approveDisabled,
+  approveHint,
+  aside,
   onApprove,
   onDeny,
   approvedText = "Approved. It's on its way.",
@@ -117,7 +128,7 @@ export function ApprovalCard({
                   </span>
                 )}
                 <div className="l-appr__titles">
-                  <span>{agent ? `${agent} asks to` : "Asks to"}</span>
+                  <span>{ask ?? (agent ? `${agent} asks to` : "Asks to")}</span>
                   <b>{title}</b>
                 </div>
                 {risk && (
@@ -154,6 +165,7 @@ export function ApprovalCard({
                 </label>
               )}
               <div className="l-appr__actions">
+                {aside && !asking && <div className="l-appr__aside">{aside}</div>}
                 {asking ? (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => setState("asking")} disabled={state === "denying"}>
@@ -173,7 +185,7 @@ export function ApprovalCard({
                         {approveLabel ?? "Hold to approve"}
                       </HoldToConfirm>
                     ) : (
-                      <Button size="sm" loading={state === "approving"} onClick={approve}>
+                      <Button size="sm" loading={state === "approving"} onClick={approve} disabled={approveDisabled} title={approveDisabled ? approveHint : undefined}>
                         {approveLabel ?? "Approve"}
                       </Button>
                     )}

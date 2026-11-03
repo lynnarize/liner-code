@@ -395,6 +395,12 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       return;
     case "keychainSet":
       return keys.set(str(p.account), str(p.key) || null);
+    case "relaunch":
+      // Start without add-ons: the engine left its mark for the next start, and this is that start.
+      quitting = true;
+      app.relaunch();
+      setImmediate(() => app.quit());
+      return;
     case "setMaterial": {
       const m = str(p.material);
       material = m === "vibrancy" || m === "solid" ? m : "glass";

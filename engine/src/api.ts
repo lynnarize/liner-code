@@ -30,6 +30,7 @@ import type { Proxies } from "./proxy.ts";
 import type { AgentTools } from "./agent-tools.ts";
 import type { Designs } from "./designs.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
+import { checkManifest } from "./addons.ts";
 import { Updater } from "./updates.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
@@ -345,7 +346,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return back;
   };
 
-  const snapshot = (): Snapshot => ({ version: updates.state.app.current, seq: store.seq, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state, limits: [...limits.values()] });
+  const snapshot = (): Snapshot => ({ version: updates.state.app.current, seq: store.seq, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state, limits: [...limits.values()], addons: runtime.addons?.list() ?? [], addonsOff: runtime.addons?.off ?? false });
+
+  // Each change to your add-ons reaches the app; the sessions get theirs from the runtime (relink).
+  if (runtime.addons) runtime.addons.onChange = (addons) => store.emit({ type: "addons", addons, off: runtime.addons?.off ?? false });
+  const addons = () => {
+    if (!runtime.addons) throw new Error("Add-ons aren't available here.");
+    return runtime.addons;
+  };
 
   /** Mentioned files and attachments, said in words the agent can act on. */
   /**
@@ -935,8 +943,36 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return kept ? { kept } : null;
     },
 
-    "approval.answer": ({ threadId, itemId, allow, reason, always }) => {
-      runtime.answer(threadId, itemId, allow, reason, always);
+    "approval.answer": ({ threadId, itemId, allow, reason, always, scope }) => {
+      runtime.answer(threadId, itemId, allow, reason, always, scope);
+      return null;
+    },
+    "addons.update": ({ id, enabled, version, removed }) => {
+      const list = addons().update(id, { enabled, version, removed });
+      void runtime.relink();
+      return list;
+    },
+    "addons.add": ({ manifest, project }) => {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(manifest);
+      } catch (e) {
+        throw new Error(`That isn't JSON: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      const m = checkManifest(raw);
+      if (project) store.project(project);
+      addons().install(m, { project, by: { agent: "You", at: Date.now() } });
+      void runtime.relink();
+      return addons().list();
+    },
+    "addons.read": ({ id, version }) => {
+      const m = addons().manifest(id, version);
+      if (!m) throw new Error("There's no such add-on, or no such version of it.");
+      return { manifest: JSON.stringify(m, null, 2), dir: join(addons().dir, id) };
+    },
+    "addons.off": () => {
+      addons().turnOff();
+      void runtime.relink();
       return null;
     },
     "question.answer": ({ threadId, itemId, answers }) => {
@@ -1097,6 +1133,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       store.emit({ type: "keys", keys: keyList() });
       // An endpoint's key decides whether it's ready.
       if (provider.startsWith("endpoint.")) void detect();
+      // A connection's key reaches the sessions that have it.
+      if (provider.startsWith("addon.") && runtime.addons?.get(provider.split(".")[1])?.enabled) void runtime.relink();
       return keyList();
     },
     "voucher.redeem": async ({ code }) => {

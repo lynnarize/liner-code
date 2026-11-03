@@ -114,6 +114,14 @@
   justify-content: flex-end;
   gap: 6px;
 }
+/* What sits left of the buttons (Details, a path) takes the room they leave. */
+.l-appr__aside {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 /* The hold sits at the size of the buttons beside it and fills with ink, not red. */
 .l-appr__actions .l-hold {
   --h-h: var(--l-h-sm);

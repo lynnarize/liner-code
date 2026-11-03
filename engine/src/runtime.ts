@@ -29,6 +29,7 @@ import { endpointProvider } from "./providers/endpoint.ts";
 import { ResumeFailed, type Provider, type ProviderSession, type TurnSink, type ToolUpdate, type WakeTurn } from "./providers/types.ts";
 import { attachNote } from "./providers/attachments.ts";
 import type { AgentTools } from "./agent-tools.ts";
+import { fingerprint, type Addons, type Connection } from "./addons.ts";
 import { briefOf } from "./agents.ts";
 import { memoryNote } from "./memory.ts";
 import { commandRisk, readsOnly, ruleFor } from "./risk.ts";
@@ -53,11 +54,18 @@ export function syncProviders(s: Settings, keys?: Map<string, string>) {
   if (s.voucher && providers[tool]) providers[`${tool}.${VOUCHER.id}`] = endpointProvider(providers[tool], VOUCHER, () => keys?.get(endpointKey(VOUCHER.id)));
 }
 
-type Live = { session: ProviderSession; provider: ProviderId; key: string };
+/** links: a fingerprint of the connections the session was given, so a change reaches it. */
+type Live = { session: ProviderSession; provider: ProviderId; key: string; links: string };
 /** Who a live session is in a thread. A planner's is its own even when the same model also refines, so it never edits. */
 const liveKeyOf = (threadId: string, agentId: string, planning: boolean) => `${threadId}:${agentId}${planning ? "#plan" : ""}`;
-/** heard: when its tool last said anything (text, a step, tokens). quiet: the watchdog said so already. */
-type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean };
+/**
+  heard: when its tool last said anything (text, a step, tokens). quiet: the watchdog said so already.
+  agentId and planning: who works it, and whether only to plan. liner: install cards its agent asked
+  for through Liner Code's tools, which expire with the turn like the tool's own requests.
+*/
+type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean; agentId?: string; planning?: boolean; liner?: Set<string> };
+/** An answer to a request; `scope` is where an add-on goes, from its install card. */
+type Answer = { allow: boolean; reason?: string; scope?: "all" | "project" };
 /** How long a turn may say nothing before the watchdog says so: longer while one of its commands runs (a build, the tests). */
 export const QUIET_MS = 4 * 60_000;
 export const QUIET_STEP_MS = 12 * 60_000;
@@ -85,7 +93,7 @@ export class Runtime {
   private live = new Map<string, Live>();
   private turns = new Map<string, Turn>();
   private watchdog: NodeJS.Timeout;
-  private approvals = new Map<string, Waiter<{ allow: boolean; reason?: string }>>();
+  private approvals = new Map<string, Waiter<Answer>>();
   private questions = new Map<string, Waiter<Record<string, string> | null>>();
   private proposals = new Map<string, Waiter<{ approve: boolean; note?: string; plan?: string }>>();
   /** "Don't ask again for … this session", per thread. */
@@ -109,6 +117,8 @@ export class Runtime {
   keys = new Map<string, string>();
   /** What's installed, kept up to date by the API, for choosing a Reviewer. */
   providerInfo: ProviderInfo[] = [];
+  /** Your add-ons: the connections each session's tool gets beside Liner Code's own server. */
+  addons?: Addons;
   private store: Store;
   private env: NodeJS.ProcessEnv;
 
@@ -285,7 +295,18 @@ export class Runtime {
     const team = familyOf(r.provider) === "claude" && !planning && !t.sideOf ? claudeTeam(r.agent, r.model) : { model: r.model, agents: {} };
     const liveKey = liveKeyOf(t.id, agentId, planning);
     const key = `${r.provider}|${team.model}|${r.effort}|${access}|${planning}|${Object.keys(team.agents).join(",")}`;
-    const cur = this.live.get(liveKey);
+    const connections = this.connectionsOf(t);
+    const links = fingerprint(connections);
+    let cur = this.live.get(liveKey);
+    // Connections changed since it opened: taken in place where the tool can, else it reopens below and resumes.
+    if (cur && cur.links !== links) {
+      if (await cur.session.connect?.(connections).catch(() => false)) cur.links = links;
+      else {
+        cur.session.close();
+        this.live.delete(liveKey);
+        cur = undefined;
+      }
+    }
     if (cur && cur.key === key) return { session: cur.session, fresh: false, switched: false };
     if (cur && cur.provider === r.provider && cur.session.update && !planning) {
       // Same provider, new settings: change them in place where the provider can.
@@ -323,12 +344,94 @@ export class Runtime {
       env: { ...this.envFor(r.provider), [THREAD_ENV]: t.id },
       // The session's Browser and Device, and pages shown in it, as tools.
       mcp: this.tools?.serverFor(t.id) ?? undefined,
+      connections,
       // A turn it begins by itself (a background task finished) shows as a turn of its own.
       wake: (w) => (this.live.get(liveKey)?.session === session ? this.wake(t.id, agentId, planning, w) : w.cancel()),
     });
-    this.live.set(liveKey, { session, provider: r.provider, key });
+    this.live.set(liveKey, { session, provider: r.provider, key, links });
     // A saved session from another tool can't carry over: the new one gets the conversation as text.
     return { session, fresh: !resume && !forking, switched: Boolean(saved) && !saved.startsWith(`${r.provider}:`) };
+  }
+
+  /** The connections a thread's tool gets: your add-ons for its project. A side chat or a planner gets them too; they only read. */
+  private connectionsOf(t: Thread): Connection[] {
+    return this.addons?.connections(t.projectId, this.keys) ?? [];
+  }
+
+  /**
+    Your add-ons changed: each open session gets its connections now where its tool takes them in
+    place (Claude Code), and is reopened otherwise: at once when it's idle, for its next turn when it's
+    working. Says, for each thread, whether they're there now or from its next turn: for the session
+    working its turn, when there is one.
+  */
+  async relink(): Promise<Map<string, "now" | "next">> {
+    const out = new Map<string, "now" | "next">();
+    for (const [key, l] of [...this.live]) {
+      const threadId = key.slice(0, key.indexOf(":"));
+      const t = this.store.threads.find((x) => x.id === threadId);
+      if (!t) continue;
+      const connections = this.connectionsOf(t);
+      const links = fingerprint(connections);
+      let now = l.links === links;
+      if (!now && (await l.session.connect?.(connections).catch(() => false))) {
+        l.links = links;
+        now = true;
+      }
+      // Reopened for the next turn, resuming where it was; one working now is left to finish.
+      if (!now && !this.turns.has(threadId)) {
+        l.session.close();
+        this.live.delete(key);
+      }
+      if (this.turns.get(threadId)?.session === l.session || !out.has(threadId)) out.set(threadId, now ? "now" : "next");
+    }
+    return out;
+  }
+
+  /** A thread that may only read right now: Read only, a side chat, or a planner's turn. Its agent can't add add-ons. */
+  readOnly(threadId: string) {
+    const t = this.store.thread(threadId);
+    return t.access === "read" || Boolean(t.sideOf) || Boolean(this.turns.get(threadId)?.planning);
+  }
+
+  /** The tool a thread's turn runs on now (or would next), by its label and family ("Claude Code", "claude"). */
+  toolOf(threadId: string) {
+    const t = this.store.thread(threadId);
+    const { provider } = this.resolve(t, this.turns.get(threadId)?.agentId ?? t.agent);
+    return { label: this.providerInfo.find((p) => p.id === provider)?.label ?? provider, family: familyOf(provider) };
+  }
+
+  /** Who works a thread's turn now, or last did, by name ("Opus 5.5"). */
+  whoIs(threadId: string) {
+    const t = this.store.thread(threadId);
+    return this.nameOf(t, this.turns.get(threadId)?.agentId ?? t.turnBy ?? t.agent);
+  }
+
+  /**
+    A request an agent makes through Liner Code's own tools (an add-on's install card): on the
+    timeline like its tool's requests, held until you answer, and expired when its turn ends or stops.
+  */
+  askLiner(threadId: string, ask: { tool: string; title: string; description?: string; risk: Risk; fields: { label: string; value: string }[]; addon?: Extract<Item, { kind: "approval" }>["addon"] }): { id: string; answer: Promise<Answer> } {
+    const store = this.store;
+    const t = store.thread(threadId);
+    const turn = this.turns.get(threadId);
+    const id = uid("it");
+    store.putItem(threadId, { kind: "approval", id, turn: turn?.turn ?? t.turns, at: Date.now(), ...ask, state: "asking" });
+    store.patchThread(threadId, { status: "waiting" });
+    store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.whoIs(threadId)} needs you`, body: ask.title });
+    const answer = new Promise<Answer>((resolve) => {
+      const gone = () => {
+        if (!this.approvals.delete(id)) return;
+        const it = store.item(threadId, id);
+        if (it.kind === "approval" && it.state === "asking") store.putItem(threadId, { ...it, state: "expired" });
+        resolve({ allow: false, reason: "The turn ended before the person answered." });
+      };
+      this.approvals.set(id, { resolve, reject: gone });
+      if (!turn) return;
+      (turn.liner ??= new Set()).add(id);
+      if (turn.abort.signal.aborted) gone();
+      else turn.abort.signal.addEventListener("abort", gone, { once: true });
+    });
+    return { id, answer: answer.finally(() => this.settleWaiting(threadId)) };
   }
 
   /** Only Claude Code can branch a session in place, on the same account; other forks get the conversation as text. */
@@ -629,7 +732,7 @@ export class Runtime {
     const cwd = t.worktree?.path ?? project.path;
     const turn = t.turns + 1;
     const abort = new AbortController();
-    const live: Turn = { abort, started: Date.now(), turn };
+    const live: Turn = { abort, started: Date.now(), turn, agentId, planning };
     this.turns.set(threadId, live);
     const title = t.title === "New session" || t.title === "New thread" ? titleFrom(text) : t.title;
     t = store.patchThread(threadId, { status: "running", turns: turn, title, archived: false, done: false, snoozedUntil: undefined, turnBy: agentId });
@@ -707,6 +810,8 @@ export class Runtime {
       }
     } finally {
       sink.end();
+      // An install card its agent stopped waiting on (the turn ended) expires like the tool's own requests.
+      for (const id of live.liner ?? []) this.approvals.get(id)?.reject(new Error("The turn ended."));
       this.turns.delete(threadId);
     }
     // The session was deleted while the turn wound down: nothing of it is written back.
@@ -1062,7 +1167,7 @@ export class Runtime {
     this.stop(threadId);
   }
 
-  answer(threadId: string, itemId: string, allow: boolean, reason?: string, always?: boolean) {
+  answer(threadId: string, itemId: string, allow: boolean, reason?: string, always?: boolean, scope?: "all" | "project") {
     const item = this.store.item(threadId, itemId);
     if (item.kind !== "approval") throw new Error("That isn't a request.");
     const waiter = this.approvals.get(itemId);
@@ -1072,9 +1177,9 @@ export class Runtime {
     }
     this.approvals.delete(itemId);
     if (allow && always && item.rule) this.rules.set(threadId, new Set([...(this.rules.get(threadId) ?? []), item.rule]));
-    this.store.putItem(threadId, { ...item, state: allow ? "approved" : "denied", reason });
+    this.store.putItem(threadId, { ...item, state: allow ? "approved" : "denied", reason, ...(item.addon && scope ? { addon: { ...item.addon, scope } } : {}) });
     this.settleWaiting(threadId);
-    waiter.resolve({ allow, reason });
+    waiter.resolve({ allow, reason, scope });
   }
 
   answerQuestion(threadId: string, itemId: string, answers?: Record<string, string>) {

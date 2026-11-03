@@ -5,6 +5,7 @@
   Codex exec, say) simply never calls that part of the sink.
 */
 import type { Access, CommandInfo, ContextUse, Effort, LimitWindow, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
+import type { Connection } from "../addons.ts";
 
 export type ToolUpdate = {
   /** The provider's id for the call, so later updates find it. */
@@ -102,6 +103,8 @@ export type OpenOptions = {
   env: NodeJS.ProcessEnv;
   /** Liner Code's own tools for this session (its Browser, the Simulator, pages), as an MCP server on stdio. */
   mcp?: { command: string; args: string[]; env: Record<string, string> };
+  /** The connections you added (add-ons), beside `liner`, their keys filled in: never written to disk or a command line. */
+  connections?: Connection[];
   /** Settings for the tool itself, the way Codex takes them with -c ("model_provider"): an API endpoint's, for one. */
   config?: Record<string, unknown>;
   /** The tool started a turn by itself; the runtime puts it on the timeline. */
@@ -119,6 +122,11 @@ export interface ProviderSession {
   steer?(text: string, files?: string[]): boolean | Promise<boolean>;
   /** Settings changed between turns. Return false to be reopened instead. */
   update?(o: Pick<OpenOptions, "model" | "effort" | "access">): Promise<boolean>;
+  /**
+    The connections changed: take them in now, even mid-turn, where the tool can. A session without
+    this (or that answers false) is reopened for its next turn, resuming where it was.
+  */
+  connect?(connections: Connection[]): Promise<boolean>;
   /** What fills the context now, by the tool's own count; null when it can't say. */
   context?(): Promise<ContextUse | null>;
   close(): void;

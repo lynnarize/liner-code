@@ -101,6 +101,23 @@ const TOOLS: ToolDef[] = [
       required: ["title"],
     },
   },
+  {
+    name: "liner_inspect",
+    description:
+      "Reads Liner Code's add-on guide: what a connection is (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes), the manifest to write for one, the add-ons installed, and the agent tools on this Mac. Call it before you add a connection, when the person asks to connect a service (Linear, Sentry, a database) through MCP. Changes nothing.",
+    inputSchema: none,
+  },
+  {
+    name: "addon_install",
+    description:
+      "Asks the person to add a connection you drafted at .liner/addons/<id>/addon.json in this folder (liner_inspect has the manifest's shape). They see a card, type any key it needs, and say yes or no; this waits for them. Returns applied (its tools are here now), saved, starts in the next turn (they arrive with the next turn), or denied (don't ask again unless they do). Never put a key in the manifest: name it in secrets.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The draft's id, for .liner/addons/<id>/addon.json; or its path in this folder" } }, required: ["id"] },
+  },
+  {
+    name: "addon_remove",
+    description: "Asks the person to remove an add-on (liner_inspect lists them). It stays on disk, so they can restore it. Waits for their answer.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The add-on's id" } }, required: ["id"] },
+  },
 ];
 
 const url = process.env.LINER_SURFACE_URL ?? "";
@@ -109,13 +126,22 @@ type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Rec
 
 const send = (m: Record<string, unknown>) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);
 
-async function call(name: string, args: unknown) {
+/**
+  A call that waits for the person (an install card) says so every 20 seconds, when its tool asked
+  for progress: one that resets its wait on progress (the MCP SDK's resetTimeoutOnProgress) then
+  doesn't give up after a minute.
+*/
+async function call(name: string, args: unknown, progress?: string | number) {
+  let n = 0;
+  const beat = progress === undefined ? undefined : setInterval(() => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: progress, progress: ++n, message: "Waiting for the person to answer" } })}\n`), 20_000);
   try {
     const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": key }, body: JSON.stringify({ tool: name, args: args ?? {} }) });
     const b = (await r.json()) as { ok: boolean; result?: unknown; error?: string };
     return b.ok ? b.result : { content: [{ type: "text", text: b.error ?? "Liner Code didn't answer." }], isError: true };
   } catch {
     return { content: [{ type: "text", text: "Liner Code isn't running, so its tools aren't there." }], isError: true };
+  } finally {
+    clearInterval(beat);
   }
 }
 
@@ -134,11 +160,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         protocolVersion: String(m.params?.protocolVersion ?? "2025-06-18"),
         capabilities: { tools: {} },
         serverInfo: { name: "liner", title: "Liner Code", version: VERSION },
-        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design.",
+        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design. To connect a service through MCP for every agent tool, read liner_inspect, then ask with addon_install.",
       },
     });
   } else if (m.method === "tools/list") send({ id: m.id, result: { tools: TOOLS } });
-  else if (m.method === "tools/call") void call(String(m.params?.name ?? ""), m.params?.arguments).then((result) => send({ id: m.id, result }));
+  else if (m.method === "tools/call") {
+    const token = (m.params?._meta as { progressToken?: string | number } | undefined)?.progressToken;
+    void call(String(m.params?.name ?? ""), m.params?.arguments, token).then((result) => send({ id: m.id, result }));
+  }
   else if (m.method === "ping") send({ id: m.id, result: {} });
   else send({ id: m.id, error: { code: -32601, message: `No method ${m.method}` } });
 });

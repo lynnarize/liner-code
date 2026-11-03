@@ -469,6 +469,13 @@ export type Thread = {
   /** Auto mode: each message gets its own pattern and models (see ThreadRoute); `agent` is the everyday model. */
   route?: ThreadRoute;
   /**
+    How the agent works in it, fixed for the session's life (DeepSeek Harness's agent presets):
+    unset is Standard; "creator" is Creator mode, which adds to Liner Code itself (its connections,
+    panels and apps) through conversation; "agent:<id>" is a custom mode, one of your named agents'
+    instructions laid over whichever model the session runs.
+  */
+  mode?: SessionMode;
+  /**
     Runs in a worktree of its own, on this branch. `path` is where it works; for a project inside
     a bigger repository that is the project's folder within the worktree, whose top is `root`.
     `made`: Liner Code made it for this session (or the one it was forked from), so it may put it
@@ -515,6 +522,167 @@ export type Risk = "low" | "medium" | "high";
 export type DesignSize = "desktop" | "tablet" | "phone";
 /** A design of a session, as the Design surface lists it: its latest version, and the version you had built, if you did. */
 export type DesignInfo = { design: string; title: string; path: string; size: DesignSize; versions: number; built?: { version: number; at: number } };
+
+/*
+  Add-ons: what an agent makes for Liner Code, added only on your OK. Two kinds. A connection is an
+  MCP server that every agent tool gets (Claude Code, Codex, OpenCode, Hermes): settings, and each
+  tool starts the server itself. A panel is a small page of the agent's own (HTML, scripts,
+  styles) that opens in the right dock, as a tab beside Chat, or as a page of its own from the
+  left sidebar; it runs in a sealed frame in the window and touches only what its manifest lists.
+  An agent writes its manifest in the session's folder (.liner/addons/<id>/addon.json, a panel's
+  files beside it) and asks with addon_install; you add it on a card, and each install is kept as
+  a version in ~/.liner-code/addons/<id>/v<n>/. Nothing an agent writes runs in the engine.
+*/
+/** How a connection's server is reached: a command on this Mac (stdio), or an address (streamable HTTP). */
+export type AddonServer = { stdio: { command: string; args?: string[]; env?: Record<string, string> } } | { http: { url: string; headers?: Record<string, string> } };
+/** A key a connection needs, named only: you type it on the install card, and it's sealed in the keychain. */
+export type AddonSecret = { name: string; label: string };
+/** A connection's manifest, version 1. A secret is never written in: `${NAME}` in env or a header stands for it. */
+export type ConnectionManifest = { apiVersion: 1; id: string; kind: "connection"; name: string; description?: string; summary?: string; server: AddonServer; secrets?: AddonSecret[] };
+/**
+  What a panel may touch: each is nothing unless its manifest says so, and the install card says
+  every one. The panel's bridge (apiVersion 1) refuses whatever isn't here.
+*/
+export type PanelAccess = {
+  /** The files of the session's project folder (its worktree, in one), to read. */
+  files?: "project";
+  /** Sessions: the one it's open beside ("this": its title, changes and commands), or every session's titles and changes ("all"). */
+  sessions?: "this" | "all";
+  /** It may put text in the composer, for you to send. */
+  composer?: boolean;
+  /** Its own storage, up to this many KB (1024 at most). */
+  storage?: number;
+  /** The one host it may reach, over https ("api.github.com"). No network when unset. */
+  network?: string;
+};
+/** Where a panel opens: the right dock beside a session, a tab beside Chat, or a page of its own from the left sidebar. */
+export type PanelPlace = "dock" | "tab" | "page";
+export const PANEL_ICONS = ["app", "blocks", "list", "notes", "chart", "check", "clock", "globe", "flask", "star", "bolt", "inbox"] as const;
+export type PanelIcon = (typeof PANEL_ICONS)[number];
+/** A panel's manifest, version 1. `entry` is its HTML file, beside the manifest. */
+export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; summary?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess };
+export type AddonManifest = ConnectionManifest | PanelManifest;
+/** A session's mode: Standard ("standard", or unset), Creator mode ("creator"), or a custom one (`agent:<id>`, one of your named agents' instructions). */
+export type SessionMode = "standard" | "creator" | `agent:${string}`;
+/**
+  The modes Liner Code comes with, as Settings › Modes and the new-session picker show them, with
+  their guide: an intro, Mode details, and How to use with example tasks (DeepSeek Harness's
+  preset guide, ui-agent-preset/guide-locales.ts, its words for Liner Code).
+*/
+export type ModeGuide = { id: "standard" | "creator"; name: string; blurb: string; intro: string; details: { h: string; p: string }[]; examples: { h: string; ask: string; expect: string }[] };
+export const BUILTIN_MODES: ModeGuide[] = [
+  {
+    id: "standard",
+    name: "Standard",
+    blurb: "Work with code, files and information. Right for most tasks, with search, editing, terminal commands and Liner Code's own tools as needed.",
+    intro: "Choose Standard mode for a new task. Describe what you want done, point to the files that matter, and say how to check the result.",
+    details: [
+      { h: "How it works", p: "The agent calls its tools directly to read and edit files, search, and run terminal commands, with Liner Code's own beside them: the Browser, the Design surface, pages in the chat, memory and earlier sessions. Solo, Plan or Auto in the composer still decides who works on it." },
+      { h: "When to choose it", p: "Start here for everyday coding, file work and research. It can still offer to make an app at the end of a turn, on a card you answer." },
+    ],
+    examples: [
+      { h: "Fix a bug", ask: "Find out why submitting the search form twice makes the results disappear. Fix it and run the relevant tests. Explain the cause and what changed.", expect: "A change, the tests it ran, and the cause in a few lines." },
+      { h: "Sort out project notes", ask: "Read the Markdown notes in this project. Sum up the decisions we agreed and the open questions, with links to the files they're in.", expect: "A summary you can check against the notes it links to." },
+    ],
+  },
+  {
+    id: "creator",
+    name: "Creator mode",
+    blurb: "Customize Liner Code through conversation. Let the agent make connections, panels and apps that add features or UI, or combine tools and prompts to make your own mode.",
+    intro: "Choose Creator mode for a new task. Describe what you want, where it should appear, and how you'll check it.",
+    details: [
+      { h: "What you can create", p: "Creator mode has everything in Standard, plus a guide to Liner Code's add-ons that the agent reads a part at a time: what it can make, the panel bridge, the places an app can open, the manifest, the theme's tokens, a starter for each kind, how to check its work, and what's installed now." },
+      { h: "Add-ons and modes", p: "An add-on adds to Liner Code: a connection every agent tool gets, a panel in the right dock, an app as a tab beside Chat or a page of its own from the left sidebar. A mode is a set of instructions for whichever model a session runs, which you pick when you start one." },
+      { h: "How the result takes effect", p: "Ask it to add and check what it makes, not only to write the files. Nothing goes in without your yes on its card, and it gets only the access it lists. A panel or an app opens at once; a connection reaches agent tools now or from their next turn. A new mode is picked when you start a session. Its folder is the project you picked, or Scratch." },
+    ],
+    examples: [
+      { h: "Add a page", ask: "Make a notes app with a left sidebar entry that opens a full-page editor. Keep my notes between sessions. Add it, and check that the page opens.", expect: "An app under Apps in the left sidebar, its page working, and what it checked." },
+      { h: "Add a panel", ask: "Make a panel beside my sessions that lists the TODOs in this project, so I can send one to you. Check it, then ask me to add it.", expect: "A panel in the right dock, tried live as a preview before you add it." },
+      { h: "Make my own mode", ask: "Make a “Code review” mode: prioritise likely bugs and missing tests, cite files and lines, and ask before changing anything. Save it as a mode I can pick.", expect: "A mode you pick when you start a session. Its instructions guide the model; Safety still decides what it may do." },
+    ],
+  },
+];
+export const modeName = (mode: SessionMode | undefined, agents: { id: string; name: string }[]) => (!mode || mode === "standard" ? "Standard" : mode === "creator" ? "Creator mode" : (agents.find((a) => `agent:${a.id}` === mode)?.name ?? "A custom mode"));
+
+/** Where an offer to make an app stands: offered, being made and added, settled, or replaced by a newer offer. */
+export type OfferState = "proposed" | "creating" | "installing" | "installed" | "kept" | "removed" | "dismissed" | "cancelled" | "failed" | "replaced";
+/** A panel as Settings and the dock know it. */
+export type PanelInfo = { place: PanelPlace; access: PanelAccess; icon?: PanelIcon; entry: string };
+/** An add-on you have, as Settings lists it. */
+export type AddonInfo = {
+  id: string;
+  kind: "connection" | "panel";
+  name: string;
+  description?: string;
+  /** One plain sentence of what it does for you, for the Add-ons page (summaryOf has the fallback). */
+  summary?: string;
+  /** The version in use, and every one kept. */
+  version: number;
+  versions: number[];
+  enabled: boolean;
+  /** When you removed it: it stays on disk, off, until you restore it. */
+  removed?: number;
+  /** The one project it's for; every project when unset. */
+  project?: string;
+  /** Who added it, from which session, and when; `from`, the GitHub address or folder you added it from yourself. */
+  by: { agent: string; threadId?: string; title?: string; from?: string; at: number };
+  /** A connection's way in: a command (stdio) or an address (http). */
+  transport?: "stdio" | "http";
+  /** What it reaches: its address, or the command it runs; a panel's access, in words. */
+  reaches: string;
+  secrets: AddonSecret[];
+  /** A panel's place, access, icon and entry file. */
+  panel?: PanelInfo;
+  /** Each kept version's date, by version. */
+  dates?: Record<number, number>;
+};
+/** Where a connection's key is kept: the keychain account (`key:` before it) and the engine's name for it. */
+export const addonKey = (id: string, secret: string) => `addon.${id}.${secret}`;
+/**
+  What an add-on does for you, in one plain sentence, as the Add-ons page lists it: its own summary,
+  else one from its kind and place. Never a server, a manifest or an access level.
+*/
+export function summaryOf(a: Pick<AddonInfo, "kind" | "name" | "summary" | "panel">) {
+  if (a.summary?.trim()) return a.summary.trim();
+  if (a.kind === "connection") return `Lets your agents work with ${a.name}.`;
+  if (a.panel?.place === "page") return "A page of its own, opened from the sidebar.";
+  if (a.panel?.place === "tab") return "A tab beside Chat in your sessions.";
+  return "A panel beside your sessions, in the right dock.";
+}
+/** An agent asking to add an add-on: what the install card shows, and once added, as which version and where. */
+export type AddonAsk = ConnectionAsk | PanelAsk;
+type AskBase = {
+  id: string;
+  name: string;
+  description?: string;
+  /** The draft it was read from, in the session's folder. */
+  path: string;
+  /** The session's project, which the card offers beside every project. */
+  project: { id: string; name: string };
+  /** The manifest as checked, for Details. */
+  manifest: string;
+  /** The version you have now, when this one would replace it. */
+  replaces?: number;
+  scope?: "all" | "project";
+  version?: number;
+};
+/**
+  A panel's card: what it may touch, its files, what addon_check saw of it, and against the version
+  in use, what it asks for that that one didn't (`wider`). One that asks for nothing more is put in
+  without a card (`same`), and its line says so.
+*/
+export type PanelAsk = AskBase & { kind: "panel"; place: PanelPlace; access: PanelAccess; icon?: PanelIcon; entry: string; files: { path: string; size: number }[]; checked?: string; wider?: string[]; same?: boolean; next: number };
+export type ConnectionAsk = AskBase & {
+  kind?: "connection";
+  transport: "stdio" | "http";
+  /** Its address, or the command line it runs. */
+  server: string;
+  /** The variables a command gets, by name only (its keys among them), so you OK exactly what it's given. */
+  env?: string[];
+  /** The agent tools on this Mac it reaches ("Claude Code", "Codex"…). */
+  reaches: string[];
+  secrets: AddonSecret[];
+};
 
 type Base = { id: string; turn: number; at: number };
 export type Item =
@@ -597,6 +765,31 @@ export type Item =
       toolId?: string;
       /** The Reviewer's model, when it decided instead of you (Reviewer decides). */
       reviewer?: string;
+      /** An add-on to add (addon_install): the install card, then its receipt. */
+      addon?: AddonAsk;
+    })
+  /**
+    An agent's offer, at the end of its turn, to make something as an app in Liner Code (DeepSeek
+    Harness's creation card): what it would be, where it would go, what it would touch. Create makes
+    it in a background session (`child`) and adds it as `addon`; Undo removes it and Restore brings
+    it back. A newer offer in the session replaces one not yet started.
+  */
+  | (Base & {
+      kind: "offer";
+      name: string;
+      brief: string;
+      place: PanelPlace;
+      access: PanelAccess;
+      /** What it starts with, in the person's own items. */
+      seed?: string[];
+      state: OfferState;
+      /** Write your own: where the person wants it, in their words. */
+      custom?: string;
+      child?: string;
+      addon?: string;
+      version?: number;
+      /** Why it didn't make it, said to the person. */
+      error?: string;
     })
   | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string> })
   /** A plan to approve. `auto`: one nobody asked to see, for a hard job, handed straight on to be built. */
@@ -716,6 +909,12 @@ export type Settings = {
   updateTools?: UpdateMode;
   /** The Demo (Demo run, its model, the sample project): hidden until you tap your name in the sidebar six times. */
   showDemo?: boolean;
+  /** Agents may offer add-ons, each on a card for your OK ("ask", the default), or never. A read-only session never can. */
+  addonOffers?: "ask" | "never";
+  /** Panels that reach the internet may ask, held like a push ("ask", the default), or never. */
+  addonNetwork?: "ask" | "never";
+  /** The mode a new session starts in, unless you pick another (Settings › Modes): Standard when unset. */
+  defaultMode?: SessionMode;
 };
 
 export type UpdateMode = "auto" | "notify" | "off";
@@ -986,6 +1185,9 @@ export type Snapshot = {
   updates: Updates;
   /** Each tool's plan windows, as last asked. */
   limits?: ToolLimits[];
+  /** Your add-ons, and whether this run started without them (Settings › Add-ons, Start without add-ons). */
+  addons?: AddonInfo[];
+  addonsOff?: boolean;
 };
 
 /** Engine → app, over the event stream. */
@@ -1020,7 +1222,9 @@ export type EngineEvent =
   /** An agent uses the session's Browser; the app answers with agent.browser.reply. */
   | { type: "agent.browser"; id: string; threadId: string; op: AgentBrowserOp; args: Record<string, unknown> }
   /** A design's file changed on disk (the agent is editing it): a Design surface showing it draws it again. */
-  | { type: "design.changed"; threadId: string; design: string; at: number };
+  | { type: "design.changed"; threadId: string; design: string; at: number }
+  /** An add-on was added, switched, moved to another version, removed or restored. */
+  | { type: "addons"; addons: AddonInfo[]; off: boolean };
 
 /** `shot` isn't the Browser's: the app draws a page of this Mac out of sight and answers with its picture (a design's, for its agent). */
 export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot" | "shot";
@@ -1049,7 +1253,7 @@ export type Rpc = {
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
-  "thread.create": [{ projectId: string; agent?: string; lead?: string; route?: RouteLevel; dual?: boolean; after?: After; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string }, Thread];
+  "thread.create": [{ projectId: string; agent?: string; lead?: string; route?: RouteLevel; dual?: boolean; after?: After; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode }, Thread];
   "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string; effort?: Effort; agent?: string; lead?: string | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; route?: RouteLevel | null; dual?: boolean; after?: After | null; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
   /**
@@ -1076,7 +1280,42 @@ export type Rpc = {
   /** The session's side chat, started now if it has none; `fresh` starts it again from where the session is. */
   "thread.side": [{ id: string; fresh?: boolean }, Thread];
   "thread.stop": [{ id: string }, null];
-  "approval.answer": [{ threadId: string; itemId: string; allow: boolean; reason?: string; always?: boolean }, null];
+  /** `scope`, for an add-on's install card: every project, or only the session's. */
+  "approval.answer": [{ threadId: string; itemId: string; allow: boolean; reason?: string; always?: boolean; scope?: "all" | "project" }, null];
+  /** Switches an add-on on or off, moves it to a kept version, removes it (it stays on disk) or restores it. */
+  "addons.update": [{ id: string; enabled?: boolean; version?: number; removed?: boolean; project?: string | null }, AddonInfo[]];
+  /** A connection you add by hand: its manifest, checked as an agent's would be. Its keys go to the keychain first, as on the card. */
+  "addons.add": [{ manifest: string; project?: string }, AddonInfo[]];
+  /** A panel's files to draw: one in use (or a kept `version`), or the draft on a card that's up (`threadId`, `itemId`), for its preview. */
+  "addons.files": [{ id: string; version?: number } | { threadId: string; itemId: string }, { id: string; name: string; place: PanelPlace; entry: string; access: PanelAccess; files: Record<string, string>; version?: number }];
+  /**
+    A panel's bridge call, passed on by the window for the frame that made it: the panel by id, the
+    session it's beside (none on a page), or the card it's a preview on. The engine answers only
+    what that panel's access allows.
+  */
+  "panel.call": [{ addon: string; threadId?: string; preview?: string; method: string; args?: unknown; apiVersion?: number }, unknown];
+  /**
+    An answer on a "Make it an app" card: Create (where to add it, or in your own words), Not now,
+    Cancel while it's being made, and once added Keep, Undo (it's removed, its files kept) or Restore.
+  */
+  "offer.answer": [{ threadId: string; itemId: string; act: "create" | "dismiss" | "cancel" | "keep" | "undo" | "restore"; place?: PanelPlace; custom?: string }, null];
+  /**
+    An add-on someone else made, from a GitHub address (cloned, shallow, into a staging folder) or a
+    folder on this Mac: checked as an agent's draft is, and shown on the same card. Nothing is added
+    until addons.adopt; addons.drop lets it go.
+  */
+  "addons.source": [{ source: string }, { token: string; from: string; ask: AddonAsk }];
+  "addons.adopt": [{ token: string }, AddonInfo[]];
+  "addons.drop": [{ token: string }, null];
+  /** Your add-ons as they are now, read again (the Add-ons page's refresh). */
+  "addons.list": [Record<string, never>, AddonInfo[]];
+  /** An add-on's manifest as kept (the version in use unless `version`), and its folder. */
+  "addons.read": [{ id: string; version?: number }, { manifest: string; dir: string }];
+  /**
+    Start without add-ons: none from now on. With `next` (the app is about to open again) the next
+    start has none either, and the one after brings them back; without, they're back at the next start.
+  */
+  "addons.off": [{ next?: boolean }, null];
   "question.answer": [{ threadId: string; itemId: string; answers?: Record<string, string> }, null];
   "proposal.answer": [{ threadId: string; itemId: string; approve: boolean; note?: string; plan?: string }, null];
   "review.run": [{ threadId: string }, null];
@@ -1242,3 +1481,4 @@ export function newerVersion(a?: string, b?: string) {
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
   return false;
 }
+export * from "./panel.ts";

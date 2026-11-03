@@ -1,21 +1,24 @@
 /*
-  Surfaces beside a session. The panel holds them as tabs: Diff and Agents, and whatever else
-  you open from the + (Browser, Design, Terminal, Files, Pull request, Linked pull requests,
-  Device, Routines). Each key opens its surface from the picker. Tabs keep their state while you
-  switch, so a terminal keeps running and a page stays loaded. The panel sits beside the
-  session, fills the window, or docks under the thread.
+  Surfaces beside a session. The right dock holds them as tabs (dock.ts has its rules, Panel.tsx
+  draws it): Diff and Agents, Browser, Design, Terminal, Files, Pull request, Linked pull requests,
+  Device, Routines, a routine's run, and the add-on panels you have. Each has a key (⌘⇧ and its
+  letter) and a button in the session's top-right row, or a place in its ⋯ menu; the New tab guide
+  (the + on a pane's strip) lists them all. Tabs keep their state while you switch, so a terminal
+  keeps running and a page stays loaded, and each session keeps its own dock.
 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { Item, Thread } from "@contracts";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import type { AddonInfo, Item, Thread } from "@contracts";
+import { emptyDock, readDock, type DockState, type DockTab } from "./dock";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { checkpointsOf, plural, sumLines } from "./model";
+import { appIcon, appsFor } from "./Addon";
 import { Kbd, Lines } from "./ui";
 import "./surfaces.css";
 
 export type SurfaceId = "session" | "side" | "changes" | "agents" | "files" | "terminal" | "browser" | "design" | "pr" | "linked" | "device" | "routines";
-/** A tab: a surface, or one routine run (`run:<id>`). */
-export type Tab = SurfaceId | `run:${string}`;
+/** A tab: a surface, the New tab guide, one routine run (`run:<id>`), a panel (`app:<id>`) or the preview of one on its card (`preview:<item>`). */
+export type Tab = DockTab;
 
 export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { size?: number }) => ReactNode }[] = [
   { id: "session", label: "Session", key: "I", icon: I.details },
@@ -31,17 +34,37 @@ export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { 
   { id: "routines", label: "Routines", key: "R", icon: I.routines },
   { id: "agents", label: "Agents", key: "A", icon: I.agents },
 ];
+
 export const surfaceOf = (id: Tab) => SURFACES.find((s) => s.id === id);
-const short = (id: Tab) => (id === "linked" ? "Linked" : id.startsWith("run:") ? "Run" : (surfaceOf(id)?.label ?? id));
 
-export type PanelState = { open: boolean; tabs: Tab[]; tab: Tab; wide: boolean; dock: "side" | "bottom"; picking: boolean };
-/** A session's panel opens on Session (where it runs, what fills its context) until you pick another surface. */
-export const initialPanel = (): PanelState => ({ open: false, tabs: ["session", "agents", "changes"], tab: "session", wide: false, dock: "side", picking: false });
-
-/** Each session keeps its own panel while the app is open. */
-const kept = new Map<string, PanelState>();
-export const keptPanel = (threadId: string) => kept.get(threadId) ?? initialPanel();
-export const keepPanel = (threadId: string, p: PanelState) => void kept.set(threadId, p);
+/*
+  Each session's dock, while the app runs and after: kept in this window's storage by session, and
+  read back only if it still makes sense (dock.ts, readDock). The Browser and the Terminal bring
+  their own pages and shells back; the dock only says which tabs were open where.
+*/
+const docks = new Map<string, DockState>();
+const DOCK_KEY = (threadId: string) => `lc:dock:${threadId}`;
+export function keptDock(threadId: string): DockState {
+  const have = docks.get(threadId);
+  if (have) return have;
+  try {
+    const read = readDock(JSON.parse(localStorage.getItem(DOCK_KEY(threadId)) || "null"));
+    if (read) return read;
+  } catch {
+    // none kept, or not readable: a fresh one
+  }
+  return emptyDock();
+}
+export function keepDock(threadId: string, d: DockState) {
+  docks.set(threadId, d);
+  try {
+    // Previews are of a card that's gone when the app next opens.
+    const lasting = { ...d, panes: d.panes.map((p) => ({ tabs: p.tabs.filter((t) => !t.startsWith("preview:")), tab: p.tab })) };
+    localStorage.setItem(DOCK_KEY(threadId), JSON.stringify(lasting));
+  } catch {
+    // Full or blocked: it lasts while the app is open.
+  }
+}
 
 /*
   The panel's width beside the session, the same in every session: about a third of the paper
@@ -122,92 +145,16 @@ export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HT
   );
 }
 
-/** Opens a tab (adding it when it isn't there yet) and shows the panel. */
-export const openTab = (p: PanelState, tab: Tab): PanelState => ({ ...p, open: true, picking: false, tab, tabs: p.tabs.includes(tab) ? p.tabs : [...p.tabs, tab] });
-export const closeTab = (p: PanelState, tab: Tab): PanelState => {
-  const tabs = p.tabs.filter((t) => t !== tab);
-  if (!tabs.length) return { ...p, tabs, open: false, wide: false, picking: false };
-  const i = p.tabs.indexOf(tab);
-  return { ...p, tabs, tab: p.tab === tab ? tabs[Math.max(0, i - 1)] : p.tab };
-};
-
-/** The strip on top of the panel: its tabs, the + that opens a surface, and how the panel sits. */
-export function PanelTabs({ state, onState, label }: { state: PanelState; onState: (p: PanelState) => void; label: (t: Tab) => string }) {
-  // One white plate glides to the open tab (Liner's rule: one highlight moves between targets).
-  const row = useRef<HTMLDivElement>(null);
-  const [plate, setPlate] = useState<{ x: number; w: number; moved: boolean } | null>(null);
-  const on = state.picking ? null : state.tab;
-  useLayoutEffect(() => {
-    const el = row.current;
-    if (!el) return;
-    const place = () => {
-      const tab = el.querySelector<HTMLElement>(".lc-stab[data-on]");
-      setPlate((p) => (tab ? { x: tab.offsetLeft, w: tab.offsetWidth, moved: Boolean(p) } : null));
-    };
-    place();
-    const ro = new ResizeObserver(place);
-    for (const t of el.querySelectorAll(".lc-stab")) ro.observe(t);
-    return () => ro.disconnect();
-  }, [on, state.tabs.join()]);
-  return (
-    <div className="lc-panel-top lc-stabs" role="tablist" aria-label="Surfaces" data-drag>
-      <div ref={row} className="lc-stabs-row" data-plate={plate ? "" : undefined}>
-        {plate && <span className="lc-stab-plate" data-moved={plate.moved || undefined} style={{ transform: `translateX(${plate.x}px)`, width: plate.w }} aria-hidden />}
-        {state.tabs.map((t) => {
-          const s = surfaceOf(t);
-          const Icon = s?.icon ?? I.routines;
-          const on = !state.picking && state.tab === t;
-          return (
-            <span key={t} className="lc-stab" data-on={on || undefined}>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={on}
-                aria-label={label(t)}
-                className="lc-stab-b l-focus"
-                onClick={() => onState({ ...state, tab: t, picking: false })}
-                // A tab down to its icon has no close of its own: a middle click closes it, as in a browser.
-                onAuxClick={(e) => e.button === 1 && (e.preventDefault(), onState(closeTab(state, t)))}
-                title={on ? label(t) : `${label(t)} · middle-click to close`}
-              >
-                <Icon size={13} />
-                <span>{short(t) === "Run" ? label(t) : short(t)}</span>
-              </button>
-              <button type="button" className="lc-stab-x l-focus" aria-label={`Close ${label(t)}`} onClick={() => onState(closeTab(state, t))}>
-                <I.close size={10} />
-              </button>
-            </span>
-          );
-        })}
-      </div>
-      <button type="button" className="lc-ib l-focus" aria-label="Open a surface" aria-pressed={state.picking} title="Open a surface" onClick={() => onState({ ...state, picking: !state.picking })}>
-        <I.plus size={14} />
-      </button>
-      <span className="lc-grow" />
-      <button type="button" className="lc-ib l-focus" aria-label={state.wide ? "Back beside the session" : "Fill the window"} title={state.wide ? "Back beside the session" : "Fill the window"} aria-pressed={state.wide} onClick={() => onState({ ...state, wide: !state.wide, dock: "side" })}>
-        <I.expand size={15} />
-      </button>
-      <button
-        type="button"
-        className="lc-ib l-focus"
-        aria-label={state.dock === "bottom" ? "Dock beside the session" : "Dock under the session"}
-        title={state.dock === "bottom" ? "Dock beside the session" : "Dock under the session"}
-        aria-pressed={state.dock === "bottom"}
-        onClick={() => onState({ ...state, dock: state.dock === "bottom" ? "side" : "bottom", wide: false })}
-      >
-        {state.dock === "bottom" ? <I.panel size={15} /> : <I.bottom size={15} />}
-      </button>
-      <button type="button" className="lc-ib l-focus" aria-label="Close the panel" onClick={() => onState({ ...state, open: false, wide: false, picking: false })}>
-        <I.close size={14} />
-      </button>
-    </div>
-  );
-}
-
-/** "Open a surface": every surface with what it holds right now, and its key. */
-export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Thread; items: Item[]; agentName: string; onOpen: (s: SurfaceId) => void }) {
+/**
+  The New tab guide, a pane's +: every built-in surface with what it holds right now and its key,
+  then the panels you have, then Make one…, which asks the agent for one (DeepSeek Harness's guide
+  page, ui-sidebar-right). Picking one puts it in this pane in the guide's place.
+*/
+export function Guide({ thread, items, agentName, panes, onOpen, onMake }: { thread: Thread; items: Item[]; agentName: string; panes: number; onOpen: (t: Tab) => void; onMake: () => void }) {
   const routines = useEngine((s) => s.routines);
   const runs = useEngine((s) => s.runs);
+  const addons = useEngine((s) => s.addons);
+  const projects = useEngine((s) => s.projects);
   const [ports, setPorts] = useState<{ port: number; owner: "session" | "project" | null; web: boolean }[] | null>(null);
   const [pr, setPr] = useState<string | null>(null);
   const [linked, setLinked] = useState<string | null>(null);
@@ -251,6 +198,8 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
   const waits = runs.filter((r) => r.status === "handed" && !r.test).length;
   const dev = ports?.find((p) => p.owner && p.web);
   const designs = new Set(items.filter((x) => x.kind === "design").map((x) => (x.kind === "design" ? x.design : ""))).size;
+  const apps = appsFor(addons, thread.projectId);
+  const scopeOf = (a: AddonInfo) => (a.panel?.place === "page" ? "A page of its own" : a.project ? (projects.find((p) => p.id === a.project)?.name ?? "One project") : "Every project");
 
   const note: Record<SurfaceId, ReactNode> = {
     browser: ports === null ? "Looking for a dev server" : dev ? `localhost:${dev.port}` : "Its dev server, or its HTML pages",
@@ -277,6 +226,7 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
     <div
       ref={box}
       className="lc-spick"
+      data-panes={panes}
       tabIndex={-1}
       onKeyDown={(e) => {
         if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement).tagName === "INPUT") return;
@@ -287,11 +237,12 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
         }
       }}
     >
-      <h2>Open a surface</h2>
-      <p>Beside {agentName}'s session. Press its key, or pick one.</p>
+      <h2>Open in this pane</h2>
+      <p>Built in, and the apps you've made. Press a surface's key, or pick one.</p>
+      <span className="lc-spick-k">Built in</span>
       <div className="lc-spick-grid">
         {SURFACES.map((s, i) => (
-          <button key={s.id} type="button" className="lc-spick-b l-focus" style={{ animationDelay: `${i * 22}ms` }} onClick={() => onOpen(s.id)}>
+          <button key={s.id} type="button" className="lc-spick-b l-focus" style={{ animationDelay: `${i * 18}ms` }} onClick={() => onOpen(s.id)}>
             <span className="lc-spick-i">
               <s.icon size={15} />
             </span>
@@ -303,7 +254,32 @@ export function SurfacePicker({ thread, items, agentName, onOpen }: { thread: Th
           </button>
         ))}
       </div>
-      <p className="lc-spick-foot">Surfaces open as tabs up top. Dock the panel under the session from the strip.</p>
+      <span className="lc-spick-k">Your apps</span>
+      <div className="lc-spick-grid">
+        {apps.map((a, i) => {
+          const Icon = appIcon(a.panel?.icon);
+          return (
+            <button key={a.id} type="button" className="lc-spick-b l-focus" style={{ animationDelay: `${(SURFACES.length + i) * 18}ms` }} onClick={() => onOpen(`app:${a.id}`)}>
+              <span className="lc-spick-i">
+                <Icon size={15} />
+              </span>
+              <span className="lc-spick-t">
+                <b>{a.name}</b>
+                <small>{scopeOf(a)}</small>
+              </span>
+            </button>
+          );
+        })}
+        <button type="button" className="lc-spick-b l-focus" data-make style={{ animationDelay: `${(SURFACES.length + apps.length) * 18}ms` }} onClick={onMake}>
+          <span className="lc-spick-i">
+            <I.plus size={15} />
+          </span>
+          <span className="lc-spick-t">
+            <b>Make one…</b>
+            <small>Say what you'd like, and {agentName} makes it</small>
+          </span>
+        </button>
+      </div>
     </div>
   );
 }

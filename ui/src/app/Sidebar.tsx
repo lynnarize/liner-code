@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import type { AgentProfile, ProviderInfo, Thread } from "@contracts";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
+import { appIcon } from "./Addon";
 import { I, ModelMark } from "./icons";
 import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, plural, since, statusLine, type Bucket } from "./model";
 import { ContextMenu, Disc, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
@@ -37,6 +38,12 @@ type Props = {
   routinesOn: boolean;
   onSearch: () => void;
   onHide: () => void;
+  /** An app's page of its own (an add-on panel placed "page"), and the one on screen. */
+  onApp?: (id: string) => void;
+  appOn?: string | null;
+  /** The Add-ons page: everything your agents made for Liner Code (DeepSeek Harness's Plugins entry). */
+  onAddons?: () => void;
+  addonsOn?: boolean;
 };
 
 /** A command's keys for a tip, like " (⌘B)". */
@@ -87,7 +94,8 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide }: Props) {
+export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn }: Props) {
+  const pages = useEngine((s) => s.addons).filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
   const threads = useEngine((s) => s.threads);
   const groups = useEngine((s) => s.groups);
   const routines = useEngine((s) => s.routines);
@@ -762,6 +770,27 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         </form>
       )}
 
+      {/* Apps with a page of their own, above the projects: each opens in place of the conversation (DeepSeek Harness's sidebar entry). */}
+      {(onAddons || (pages.length > 0 && onApp)) && (
+        <section className="lc-sb-apps" aria-label="Apps">
+          {onAddons && (
+            <button type="button" className="lc-sb-nav l-focus" aria-current={addonsOn ? "page" : undefined} data-on={addonsOn || undefined} onClick={onAddons}>
+              <I.blocks size={14} />
+              <span>Add-ons</span>
+            </button>
+          )}
+          {pages.length > 0 && onApp && <div className="lc-sb-lab">Apps</div>}
+          {onApp && pages.map((a) => {
+            const Icon = appIcon(a.panel?.icon);
+            return (
+              <button key={a.id} type="button" className="lc-sb-nav l-focus" aria-current={appOn === a.id ? "page" : undefined} data-on={appOn === a.id || undefined} onClick={() => onApp(a.id)}>
+                <Icon size={14} />
+                <span>{a.name}</span>
+              </button>
+            );
+          })}
+        </section>
+      )}
       <div ref={scroller} className="lc-sb-scroll" data-up={edges.up || undefined} data-down={edges.down || undefined}>
         <div className="lc-sb-inner">
           <span className="lc-sb-plate" aria-hidden style={plate ? { transform: `translate(${plate.x}px, ${plate.y}px)`, width: plate.w, height: plate.h, opacity: 1 } : { opacity: 0 }} />

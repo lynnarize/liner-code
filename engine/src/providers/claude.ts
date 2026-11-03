@@ -16,7 +16,7 @@
   question, even "hello". It runs in the default mode with the editing tools taken away, answers
   talk directly, and wraps a plan in <plan> tags when you ask for a change (see the runtime).
 */
-import { query, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKResultMessage, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import { query, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKResultMessage, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -30,6 +30,7 @@ import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { subagentName } from "../review.ts";
 import { effortOf, skillsIn, ULTRACODE, ULTRATHINK } from "./models.ts";
 import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
+import type { Connection } from "../addons.ts";
 
 /** The SDK's query(), held here so tests can stand in a Claude Code of their own. */
 export const sdk = { query };
@@ -44,6 +45,14 @@ const FALLBACK: ModelInfo[] = [
 const LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
 /** What the SDK takes for one of our effort names: ultracode is extra high plus workflows; ultrathink is a word in the prompt. */
 const sdkEffort = (e: string) => (e === "ultracode" ? "xhigh" : LEVELS.has(e) ? (e as "low") : undefined);
+
+/** Liner Code's own server and the connections you added, as Claude Code takes MCP servers. */
+export function claudeMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = []): Record<string, McpServerConfig> {
+  const out: Record<string, McpServerConfig> = {};
+  if (o.mcp) out.liner = { type: "stdio", command: o.mcp.command, args: o.mcp.args, env: o.mcp.env };
+  for (const c of connections) out[c.name] = c.http ? { type: "http", url: c.http.url, headers: c.http.headers } : { type: "stdio", command: c.stdio!.command, args: c.stdio!.args, env: c.stdio!.env };
+  return out;
+}
 
 const limitName = (t?: string) => (t === "five_hour" ? "5-hour limit" : t === "seven_day" ? "weekly limit" : t === "seven_day_opus" ? "weekly Opus limit" : t === "seven_day_sonnet" ? "weekly Sonnet limit" : t === "overage" ? "extra usage" : "usage limit");
 
@@ -508,6 +517,8 @@ class ClaudeSession implements ProviderSession {
   private compactKey: string | null = null;
   /** Why the sign-in failed, said when the turn ends. */
   private authFailure: string | undefined;
+  /** The connections being handed to Claude Code, waited on before a turn's message goes so their tools are there for it. */
+  private linking: Promise<string[]> | null = null;
 
   constructor(o: OpenOptions) {
     this.o = o;
@@ -537,7 +548,7 @@ class ClaudeSession implements ProviderSession {
       env: { ...o.env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` },
       permissionPrompts: "host",
       pathToClaudeCodeExecutable: sdkPath(this.path) ?? undefined,
-      mcpServers: o.mcp ? { liner: { type: "stdio", command: o.mcp.command, args: o.mcp.args, env: o.mcp.env } } : undefined,
+      mcpServers: o.mcp ? claudeMcp(o) : undefined,
       canUseTool: async (name, input, { signal, toolUseID }) => {
         const sink = this.sink;
         if (!sink) return { behavior: "deny", message: "The turn has ended." };
@@ -596,6 +607,38 @@ class ClaudeSession implements ProviderSession {
     this.seen = o.resume ? null : { input: 0, output: 0, cache: 0, cost: 0 };
     this.q = sdk.query({ prompt: this.inbox, options });
     void this.pump(this.q);
+    // The connections go over stdin rather than on the command line with `liner`, where any program
+    // on this Mac could read their keys: the SDK writes `mcpServers` as --mcp-config (T3 Code:
+    // ClaudeAdapterV2.ts hands its servers over with setMcpServers once query() returns, for the same reason).
+    if (o.connections?.length) this.linking = this.link(this.q);
+  }
+
+  /** Hands Claude Code `liner` and the connections; what didn't connect, by name and why. */
+  private async link(q: Query) {
+    const r = await q.setMcpServers(claudeMcp(this.o, this.o.connections));
+    return Object.entries(r.errors).map(([name, why]) => `${name}: ${why}`);
+  }
+
+  /**
+    The connections changed: Claude Code takes them in place, mid-turn too, and their tools are
+    there from its next step. One too old to (no setMcpServers) is reopened for the next turn.
+  */
+  async connect(connections: Connection[]) {
+    this.o.connections = connections;
+    const q = this.q;
+    if (!q) return true;
+    // A turn that starts meanwhile waits for it too.
+    const linking = this.link(q);
+    this.linking = linking;
+    try {
+      const errors = await linking;
+      if (errors.length) this.sink?.notice(`Didn't connect ${errors.join("; ")}`);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (this.linking === linking) this.linking = null;
+    }
   }
 
   private async pump(q: Query) {
@@ -1018,6 +1061,14 @@ class ClaudeSession implements ProviderSession {
 
   async turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
     if (!this.q && this.o.resume) await this.resume(signal);
+    if (!this.q) this.start();
+    // The connections' tools are there for this message; a server slow to start doesn't hold it past a while.
+    const linking = this.linking;
+    this.linking = null;
+    if (linking) {
+      const errors = await Promise.race([linking.catch((e: Error) => [`connections: ${e.message}`]), new Promise<string[]>((r) => setTimeout(() => r([]), 30_000)), new Promise<string[]>((r) => signal.addEventListener("abort", () => r([]), { once: true }))]);
+      if (errors.length) sink.notice(`Didn't connect ${errors.join("; ")}`);
+    }
     return this.drive(sink, signal, false, () => {
       this.sent = new Set([this.inbox.push(this.message(text, files))]);
     });

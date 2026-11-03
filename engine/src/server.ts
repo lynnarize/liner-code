@@ -23,8 +23,10 @@ type Api = { call(method: string, params: unknown): Promise<unknown>; ready: Pro
 type Hooks = (id: string, key: string, body: unknown, headers: Record<string, string>) => boolean;
 type Surface = (key: string, tool: string, args: Record<string, unknown>) => Promise<unknown> | null;
 type Outside = Surface;
+/** A panel being checked out of sight (agent-tools.ts): its page, its bridge's calls, its report, and word once it has settled. */
+type Check = { page(token: string): string | null; call(token: string, body: Record<string, unknown>): Promise<unknown>; report(token: string, body: unknown): void; settle(token: string): Promise<void> };
 
-export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside }) {
+export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; check?: Check }) {
   const { store, api, token } = o;
   const clients = new Set<ServerResponse>();
   /** Clients whose snapshot is being taken: what's sent meanwhile waits, numbered, until it's written. */
@@ -107,13 +109,50 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
         const { tool, args } = (await body(req)) as { tool?: string; args?: Record<string, unknown> };
         const work = take(String(req.headers[outside ? "x-liner-outside" : "x-liner-surface"] ?? ""), String(tool ?? ""), args ?? {});
         if (!work) return void res.writeHead(401).end("Unauthorized");
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, result: await work }));
+        // A call can wait on you (an add-on's install card) for minutes: the answer starts at once and a
+        // space goes every 20 seconds, which JSON reads past, so the caller's fetch doesn't give up on it.
+        res.writeHead(200, { "content-type": "application/json" });
+        res.flushHeaders();
+        const beat = setInterval(() => res.write(" "), 20_000);
+        const done = (b: unknown) => (clearInterval(beat), res.end(JSON.stringify(b)));
+        await work.then(
+          (result) => done({ ok: true, result }),
+          (e: unknown) => done({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+        );
       } catch (e) {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        if (!res.headersSent) res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
       }
       return;
     }
     // A routine's webhook: its own secret in the URL stands in for the app's token.
+    // A panel drawn for its agent to look at (addon_check): the token is its own, made for that one check.
+    const check = /^\/addon-check\/([a-f0-9]{36})(?:\/(call|report|settle))?$/.exec(url.pathname);
+    if (check && o.check) {
+      const [, tok, part] = check;
+      try {
+        if (!part && req.method === "GET") {
+          const page = o.check.page(tok);
+          if (!page) return void res.writeHead(404).end();
+          return void res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; font-src data:; connect-src 'self'; frame-src 'self' about:; child-src about:" }).end(page);
+        }
+        if (part === "settle" && req.method === "GET") {
+          await o.check.settle(tok);
+          return void res.writeHead(200, { "content-type": "image/gif", "cache-control": "no-store" }).end(Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64"));
+        }
+        if (part === "call" && req.method === "POST") {
+          const r = await o.check.call(tok, (await body(req)) as Record<string, unknown>);
+          return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(r));
+        }
+        if (part === "report" && req.method === "POST") {
+          o.check.report(tok, await body(req));
+          return void res.writeHead(204).end();
+        }
+      } catch (e) {
+        return void res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+      }
+      return void res.writeHead(405).end();
+    }
     const hook = /^\/hooks\/r\/([\w-]+)$/.exec(url.pathname);
     if (hook && req.method === "POST" && o.hooks) {
       let payload: unknown = {};

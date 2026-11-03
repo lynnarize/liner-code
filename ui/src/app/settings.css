@@ -423,3 +423,54 @@ html[data-native="mac"] .lc-st-side {
     transition: none;
   }
 }
+
+/* Settings › Add-ons: a connection's version menu, a removed one's line under them, a run without any, and adding one by hand. */
+.lc-pick.lc-st-ver {
+  gap: 3px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-2);
+  font-size: 12px;
+}
+.lc-pick.lc-st-ver:disabled {
+  opacity: 1;
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-pick.lc-st-ver:not(:disabled):hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-st-removed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  box-shadow: inset 0 1px 0 var(--l-line);
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+}
+.lc-st-removed > span {
+  flex: 1;
+  min-width: 0;
+}
+.lc-st-banner {
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+  font-size: 13px;
+}
+.lc-st-addhand textarea.lc-input {
+  min-height: 200px;
+}
+.lc-st-push {
+  min-width: 200px;
+  margin-right: auto;
+}
+.lc-st-keys {
+  padding: 12px;
+}

@@ -1,0 +1,553 @@
+/*
+  Liner Code · the Add-ons page (DeepSeek Harness's Plugins page): a plain list of what you've added,
+  each a tile, a name, a sentence and a switch; its details in a panel from the right; and the
+  dialog that adds one from GitHub or a folder, then shows its card.
+*/
+.lc-ao-page {
+  position: relative;
+}
+.lc-ao-page > .lc-top {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+}
+.lc-ao-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.lc-ao-col {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 48px 40px 60px;
+}
+.lc-ao-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.lc-ao-head > div {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+}
+.lc-ao-head h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--l-ink);
+}
+.lc-ao-head p {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--l-ink-3);
+}
+.lc-ao-info {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: help;
+}
+.lc-ao-ghost {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-ao-ghost[data-busy] svg {
+  animation: lc-ao-spin 700ms linear infinite;
+}
+@keyframes lc-ao-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (hover: hover) {
+  .lc-ao-ghost:hover,
+  .lc-ao-info:hover {
+    background: var(--lc-well);
+    color: var(--l-ink);
+  }
+}
+/* "+ Add add-on" and, past a hairline, the other ways to add one. */
+.lc-ao-split {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  border-radius: 11px;
+  background: var(--lc-ctl);
+  color: var(--lc-ctl-ink);
+}
+.lc-ao-split > button,
+.lc-ao-split-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: inherit;
+  cursor: pointer;
+}
+.lc-ao-split-more {
+  justify-content: center;
+  width: 34px;
+  padding: 0;
+  box-shadow: inset 1px 0 0 color-mix(in oklab, var(--lc-ctl-ink) 16%, transparent);
+}
+@media (hover: hover) {
+  .lc-ao-split > button:hover,
+  .lc-ao-split-more:hover {
+    background: var(--lc-ctl-hover);
+  }
+}
+.lc-ao-split-more[data-open] {
+  background: var(--lc-ctl-hover);
+}
+.lc-ao-ways {
+  display: flex;
+  flex-direction: column;
+}
+.lc-ao-ways > button {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.lc-ao-ways > button > svg {
+  margin-top: 2px;
+  color: var(--l-ink-2);
+}
+.lc-ao-ways > button > span {
+  display: grid;
+  gap: 1px;
+}
+.lc-ao-ways b {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.lc-ao-ways small {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+@media (hover: hover) {
+  .lc-ao-ways > button:hover {
+    background: var(--lc-well);
+  }
+}
+.lc-ao-banner {
+  margin: -12px 0 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--l-wash);
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+
+/* ---------- The list ---------- */
+.lc-ao-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lc-ao-list h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-ao-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px 10px 8px;
+  border-radius: 16px;
+  transition: background 160ms ease;
+}
+@media (hover: hover) {
+  .lc-ao-row:not([data-removed]):hover {
+    background: color-mix(in oklab, var(--l-ink) 3.5%, transparent);
+  }
+}
+.lc-ao-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+button.lc-ao-open {
+  cursor: pointer;
+}
+.lc-ao-open > span:last-child {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+.lc-ao-open b {
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-ao-open small {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--l-ink-3);
+}
+.lc-ao-row[data-removed] .lc-ao-tile {
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+/* A white tile holding the add-on's coloured mark. */
+.lc-ao-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 15px;
+  background: var(--lc-paper);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--l-ink) 10%, transparent),
+    0 1px 2px var(--l-drop);
+}
+.lc-ao-tile > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+}
+.lc-ao-empty {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  background: var(--lc-well);
+}
+.lc-ao-empty b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.lc-ao-empty p {
+  max-width: 56ch;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+}
+.lc-ao-empty > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* ---------- Details, from the right ---------- */
+.lc-ao-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--l-ink) 12%, transparent);
+  animation: lc-ao-fade 200ms ease backwards;
+}
+[data-theme="dark"] .lc-ao-sheet {
+  background: oklch(0 0 0 / 0.35);
+}
+.lc-ao-sheet > aside {
+  display: flex;
+  flex-direction: column;
+  width: min(440px, 100%);
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: 18px;
+  background: var(--lc-paper);
+  box-shadow: -20px 0 48px -24px oklch(0.3 0.04 265 / 0.35);
+  animation: lc-ao-in 420ms var(--l-spring-smooth, ease-out) backwards;
+}
+@keyframes lc-ao-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes lc-ao-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-ao-sheet,
+  .lc-ao-sheet > aside {
+    animation: none;
+  }
+}
+.lc-ao-sheet header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 18px 16px 22px;
+}
+.lc-ao-sheet header .lc-ao-tile {
+  border-radius: 14px;
+}
+.lc-ao-sheet header > div {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.lc-ao-sheet header b {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-ao-sheet header span {
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-ao-sheet-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 22px 20px;
+}
+.lc-ao-sheet-body > p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--l-ink-2);
+}
+.lc-ao-sheet dl {
+  display: grid;
+  margin: 0;
+  font-size: 13.5px;
+}
+.lc-ao-sheet dl > div {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  box-shadow: inset 0 1px 0 var(--lc-hair);
+}
+.lc-ao-sheet dt {
+  color: var(--l-ink-3);
+}
+.lc-ao-sheet dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--l-ink);
+}
+.lc-ao-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--l-line-2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lc-ao-link:hover {
+  text-decoration-color: currentColor;
+}
+.lc-ao-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lc-ao-files {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--lc-well);
+  font-size: 12.5px;
+}
+.lc-ao-files ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-ao-files li {
+  display: flex;
+  gap: 8px;
+}
+.lc-ao-files small {
+  color: var(--l-ink-3);
+}
+.lc-ao-sheet footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px;
+  box-shadow: inset 0 1px 0 var(--lc-hair);
+}
+.lc-ao-sheet footer > .lc-quiet {
+  flex: 1;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.lc-ao-remove {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-danger-text);
+  cursor: pointer;
+}
+.lc-btn.lc-ao-remove {
+  color: var(--l-danger-text);
+}
+@media (hover: hover) {
+  .lc-ao-remove:hover {
+    background: color-mix(in oklab, var(--l-danger) 9%, transparent);
+  }
+}
+
+/* ---------- From GitHub or a folder ---------- */
+.lc-ao-add {
+  --w: 560px;
+}
+.lc-ao-from {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+}
+.lc-ao-from > p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 22px;
+  color: var(--l-ink);
+}
+.lc-ao-from > .lc-input {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 14.5px;
+}
+.lc-ao-from > .lc-input:focus {
+  box-shadow: inset 0 0 0 1.5px var(--l-accent);
+}
+.lc-ao-from > p.lc-ao-why {
+  margin: -8px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--l-danger-text);
+}
+.lc-ao-from-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lc-ao-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-ao-quiet:hover {
+  color: var(--l-ink);
+}
+.lc-ao-quiet[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+.lc-ao-from > p.lc-ao-about {
+  margin: -6px 0 0;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--l-ink-2);
+}
+.lc-ao-trust {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--l-warn) 10%, transparent);
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--l-warn-text);
+}
+.lc-ao-trust > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--l-warn);
+}
+.lc-btn.lc-ao-go {
+  justify-content: center;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.lc-btn.lc-ao-go:disabled {
+  opacity: 1;
+  background: color-mix(in oklab, var(--l-ink) 28%, var(--lc-paper));
+  color: var(--lc-paper);
+}
+.lc-ao-make {
+  align-self: center;
+}
+.lc-ao-card {
+  text-align: left;
+}

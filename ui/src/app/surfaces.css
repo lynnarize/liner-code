@@ -173,23 +173,6 @@
   }
 }
 
-/* The panel under the session instead of beside it: the body's same two tracks each way
-   (app.css), with the panel in the second row, so moving it there and back glides. */
-.lc-session[data-dock="bottom"] .lc-body {
-  grid-template-columns: minmax(0px, 1fr) 0px;
-  grid-template-rows: minmax(160px, 1fr) max(220px, 44%);
-}
-.lc-session[data-dock="bottom"] .lc-panel {
-  grid-area: 2 / 1;
-  box-shadow: inset 0 1px 0 var(--l-line);
-  animation-name: lc-panel-up;
-}
-@keyframes lc-panel-up {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-}
 .lc-panel[data-wide-review] {
   box-shadow: none;
 }

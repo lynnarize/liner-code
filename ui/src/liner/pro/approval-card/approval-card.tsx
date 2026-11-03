@@ -20,17 +20,28 @@ export type ApprovalCardProps = {
   title: string;
   /** Who is asking, by name. */
   agent?: string;
+  /** The line above the title, in place of "<agent> asks to": "Opus 5.5 asks to add a connection". */
+  ask?: string;
   description?: string;
   icon?: ReactNode;
   /** High risk approves with a hold instead of a press. */
   risk?: "low" | "medium" | "high";
+  /** Approve with a hold whatever the risk, or never (`false`); unset, high risk holds. */
+  hold?: boolean;
   /** Exactly what will happen: where, when, to whom. */
   fields?: ApprovalField[];
   approveLabel?: string;
   denyLabel?: string;
+  /** Approving waits on something still to fill in (a key); `approveHint` says what. */
+  approveDisabled?: boolean;
+  approveHint?: string;
+  /** Beside the buttons, on the left: a Details toggle, a path. */
+  aside?: ReactNode;
   onApprove?: () => Promise<void> | void;
   /** Receives what to do instead, possibly empty. */
   onDeny?: (reason: string) => Promise<void> | void;
+  /** Ask what to do instead before denying (unset), or deny at once (`false`) when there's no one to tell. */
+  explain?: boolean;
   approvedText?: string;
   deniedText?: string;
   className?: string;
@@ -44,11 +55,17 @@ export function ApprovalCard({
   description,
   icon,
   risk,
+  hold: holdTo,
   fields = [],
   approveLabel,
   denyLabel = "Not now",
+  ask,
+  approveDisabled,
+  approveHint,
+  aside,
   onApprove,
   onDeny,
+  explain = true,
   approvedText = "Approved. It's on its way.",
   deniedText = "Sent back with your note.",
   className,
@@ -89,8 +106,8 @@ export function ApprovalCard({
     }
   };
   const settled = state === "approved" || state === "denied";
-  const asking = state === "explaining" || state === "denying";
-  const hold = risk === "high";
+  const asking = explain && (state === "explaining" || state === "denying");
+  const hold = holdTo ?? risk === "high";
 
   return (
     <section className={cx("l-appr l-frame", className)} data-state={state} aria-label={`${agent ?? "An agent"} asks to ${title.toLowerCase()}`}>
@@ -117,7 +134,7 @@ export function ApprovalCard({
                   </span>
                 )}
                 <div className="l-appr__titles">
-                  <span>{agent ? `${agent} asks to` : "Asks to"}</span>
+                  <span>{ask ?? (agent ? `${agent} asks to` : "Asks to")}</span>
                   <b>{title}</b>
                 </div>
                 {risk && (
@@ -154,6 +171,7 @@ export function ApprovalCard({
                 </label>
               )}
               <div className="l-appr__actions">
+                {aside && !asking && <div className="l-appr__aside">{aside}</div>}
                 {asking ? (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => setState("asking")} disabled={state === "denying"}>
@@ -165,7 +183,7 @@ export function ApprovalCard({
                   </>
                 ) : (
                   <>
-                    <Button size="sm" variant="ghost" onClick={() => setState("explaining")} disabled={state === "approving"}>
+                    <Button size="sm" variant="ghost" onClick={explain ? () => setState("explaining") : deny} loading={state === "denying"} disabled={state === "approving"}>
                       {denyLabel}
                     </Button>
                     {hold ? (
@@ -173,7 +191,7 @@ export function ApprovalCard({
                         {approveLabel ?? "Hold to approve"}
                       </HoldToConfirm>
                     ) : (
-                      <Button size="sm" loading={state === "approving"} onClick={approve}>
+                      <Button size="sm" loading={state === "approving"} onClick={approve} disabled={approveDisabled} title={approveDisabled ? approveHint : undefined}>
                         {approveLabel ?? "Approve"}
                       </Button>
                     )}

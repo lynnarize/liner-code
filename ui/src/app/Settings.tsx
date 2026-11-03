@@ -8,8 +8,8 @@
   returns to the sessions.
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { Access, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Mode, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
-import { ACCOUNT_HOME, castOf, ENDPOINT_TOOL, endpointKey, updateModes, VOUCHER } from "@contracts";
+import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Mode, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
+import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
@@ -26,13 +26,15 @@ import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, agentOf, ago, markOf, modelLabel, plural, providerLabel, since } from "./model";
-import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop } from "./ui";
+import { appIcon, dayOf } from "./Addon";
+import { ModesPlace } from "./Modes";
+import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop, Row } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
-import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Look, type TrayGlass } from "./look";
+import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Glass, type Look } from "./look";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -44,25 +46,27 @@ const ACCENTS = [
   { id: "orange", color: "oklch(0.68 0.17 50)" },
   { id: "rose", color: "oklch(0.62 0.2 12)" },
 ];
-/** The main buttons' colours (look.ts): red, the accent you picked, or the tray's ink. */
+/** The main buttons' colours (look.ts): red, the accent you picked, or ink. */
 const ACTIONS: { id: ActionColour; label: string; color: string }[] = [
   { id: "red", label: "Red", color: "oklch(0.6 0.215 27)" },
   { id: "accent", label: "The accent", color: "var(--l-accent)" },
-  { id: "ink", label: "Ink, like the tray", color: "var(--lc-ctl)" },
+  { id: "ink", label: "Ink", color: "var(--lc-ctl)" },
 ];
 
-export type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "team" | "safety" | "projects" | "git" | "archive" | "updates" | "data";
+export type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "modes" | "team" | "safety" | "addons" | "projects" | "git" | "archive" | "updates" | "data";
 
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "How new sessions start, and what Enter does while an agent works.", words: "work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the glass, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid tray rail composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai voucher promo code redeem" },
   { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Solo, Plan then build, or Auto; your frontier and cheaper models; check or refine each change; and how each mode went in your sessions.", words: "agentic mode solo plan build auto routed lead planner coder builder model frontier cheaper dual astra opus sonnet luna deepseek glm kimi qwen chinese opencode go hermes check refine reviewer judge critic compare cost" },
+  { id: "modes", label: "Modes", icon: <I.idea />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Creator mode to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
   { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "What a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
+  { id: "addons", label: "Add-ons", icon: <I.blocks />, group: "Agents", blurb: "Connections, panels and apps your agents made for Liner Code. Each one asked first, keeps its versions, and turns off here.", words: "addon addons add-on add-ons connection connections panel panels app apps mcp server servers plugin extension linear sentry version restore remove safe mode start without" },
   { id: "projects", label: "Projects", icon: <I.folder />, group: "Work", blurb: "The folders agents work in, who each one starts with, and how a new worktree is set up.", words: "project folder repository add remove finder explorer setup install worktree" },
   { id: "git", label: "Git and worktrees", icon: <I.branch />, group: "Work", blurb: "Branches, worktrees, and the snapshot Liner Code keeps of every turn.", words: "git branch prefix worktree snapshot checkpoint undo refs" },
   { id: "archive", label: "Archive", icon: <I.box />, group: "System", blurb: "Sessions you put away. Bring one back, or delete it for good.", words: "archived sessions restore delete" },
@@ -320,8 +324,10 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
             {page === "keyboard" && <Keyboard />}
             {page === "models" && <Models />}
             {page === "agentic" && <Agentic onOpen={onOpen} />}
+            {page === "modes" && <ModesPlace onAgent={onAgent} onClose={onClose} />}
             {page === "team" && <Team onAgent={onAgent} />}
             {page === "safety" && <Safety />}
+            {page === "addons" && <AddonsPlace />}
             {page === "projects" && <Projects />}
             {page === "git" && <Git />}
             {page === "archive" && <Archive />}
@@ -680,7 +686,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
 
 /* --------------------------------- Appearance --------------------------------- */
 
-/** The window in miniature, in the look you're choosing: one ground, the session tray, the composer. */
+/** The window in miniature, in the look you're choosing: one ground, a card, the composer. */
 function Preview({ look }: { look: Look }) {
   const bg = useBackgroundUrl(look.background);
   const vars = bg ? ({ "--lc-pv-bg": `url("${bg}")`, "--lc-pv-blur": `${Math.round((look.bgBlur ?? 28) * 0.3)}px`, "--lc-pv-show": String(look.bgShow ?? 0.45) } as CSSProperties) : undefined;
@@ -688,7 +694,7 @@ function Preview({ look }: { look: Look }) {
   const accent = look.accent === "own" ? "your own colour" : look.accent;
   return (
     <div className="lc-st-preview" aria-hidden>
-      <div className="lc-pv-win" data-tray={look.tray} style={vars}>
+      <div className="lc-pv-win" style={vars}>
         <div className="lc-pv-side">
           <span className="lc-pv-lights">
             <i />
@@ -710,12 +716,11 @@ function Preview({ look }: { look: Look }) {
             <span className="lc-pv-line" style={{ width: "40%" }} />
             <span className="lc-pv-btn" />
           </span>
-          <span className="lc-pv-tray" />
           <span className="lc-pv-comp" />
         </div>
       </div>
       <span className="lc-pv-cap">
-        {mode} · {accent} · {bg ? "a picture behind the session" : `${look.tray} tray`}
+        {mode} · {accent} · {bg ? "a picture behind the session" : `${look.composer} composer`}
       </span>
     </div>
   );
@@ -828,7 +833,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Main buttons" note="The most important button wherever it is: Send, Commit and push in the session tray, a card's main button.">
+      <Group title="Main buttons" note="The most important button wherever it is: Send, Commit, a card's main button.">
         <Field title="Colour">
           <span className="lc-swatches" role="radiogroup" aria-label="Main buttons">
             {ACTIONS.map((a) => (
@@ -847,20 +852,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Glass" note="The session tray and the composer let the thread show through. Everything else sits on one solid ground.">
-        <Field title="Session tray" note="How much of the thread shows through the tray.">
-          <Segmented
-            size="sm"
-            value={look.tray}
-            onValueChange={(tray) => set({ tray: tray as TrayGlass })}
-            options={[
-              { value: "clear", label: "Clear" },
-              { value: "tinted", label: "Tinted" },
-              { value: "solid", label: "Solid" },
-            ]}
-            aria-label="Session tray glass"
-          />
-        </Field>
+      <Group title="Glass" note="The composer lets the thread show through. Everything else sits on one solid ground.">
         <Field
           title={
             <>
@@ -873,7 +865,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           <Segmented
             size="sm"
             value={look.composer}
-            onValueChange={(composer) => set({ composer: composer as TrayGlass })}
+            onValueChange={(composer) => set({ composer: composer as Glass })}
             options={[
               { value: "clear", label: "Clear" },
               { value: "tinted", label: "Tinted" },
@@ -2009,6 +2001,258 @@ function Safety() {
       </Group>
       <Outside />
     </>
+  );
+}
+
+/* ---------------------------------- Add-ons ---------------------------------- */
+
+/**
+  Add-ons, phase 1: connections, the MCP servers agents asked to add (engine/src/addons.ts). A row
+  each, with its versions and a switch; a removed one waits under them to come back. Then who may
+  offer one, a start without any, and where they're kept.
+*/
+export function AddonsPlace() {
+  const addons = useEngine((x) => x.addons);
+  const off = useEngine((x) => x.addonsOff);
+  const offers = useEngine((x) => x.settings.addonOffers ?? "ask");
+  const network = useEngine((x) => x.settings.addonNetwork ?? "ask");
+  const projects = useEngine((x) => x.projects);
+  const keys = useEngine((x) => x.keys);
+  const home = useEngine((x) => x.home);
+  // A restart stops turns where they are, so it waits for the sessions at work.
+  const working = useEngine((x) => x.threads.filter((t) => t.status === "running").length);
+  const [adding, setAdding] = useState(false);
+  const update = (id: string, p: { enabled?: boolean; version?: number; removed?: boolean }) => void rpc("addons.update", { id, ...p }).catch(fail);
+  const shown = addons.filter((a) => !a.removed && !a.panel);
+  const removed = addons.filter((a) => a.removed && !a.panel);
+  const panels = addons.filter((a) => !a.removed && a.panel);
+  const gone = addons.filter((a) => a.removed && a.panel);
+  const versions = (a: AddonInfo) => (
+    <Pop label={`Versions of ${a.name}`} align="end" width={220} triggerClass="lc-st-ver lc-mono" disabled={a.versions.length < 2} trigger={<>v{a.version}{a.versions.length > 1 && <I.chevD size={11} />}</>}>
+      {(close) => [...a.versions].reverse().map((v) => <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ") || undefined} on={v === a.version} onPick={() => (update(a.id, { version: v }), close())} />)}
+    </Pop>
+  );
+  const where = (a: AddonInfo) => (a.project ? `${projects.find((p) => p.id === a.project)?.name ?? "One project"} only` : "Every project");
+  const keyed = (a: AddonInfo) => (!a.secrets.length ? null : a.secrets.every((k) => keys.includes(addonKey(a.id, k.name))) ? `${a.secrets.length === 1 ? "key" : "keys"} in the keychain` : "a key is missing");
+  // The app opens again without them; a window that can't (the browser preview) turns them off until the engine next starts.
+  const restart = async () => {
+    try {
+      await rpc("addons.off", { next: isNative() });
+      if (!(await bridge.relaunch())) toast("Add-ons are off", { description: "No tool gets them until Liner Code next starts." });
+    } catch (e) {
+      fail(e);
+    }
+  };
+  return (
+    <>
+      {off && <p className="lc-st-banner">Add-ons are off until Liner Code starts again: none reach any tool.</p>}
+      <Group
+        title="Connections"
+        note="MCP servers that every agent tool gets: Claude Code, Codex, OpenCode and Hermes."
+        end={
+          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
+            <I.plus size={13} />
+            Add one by hand
+          </button>
+        }
+      >
+        {adding && <AddByHand onDone={() => setAdding(false)} />}
+        {shown.map((a) => (
+          <Field
+            key={a.id}
+            lead={
+              <span className="lc-st-mark">
+                <I.plug size={15} />
+              </span>
+            }
+            title={a.name}
+            note={[where(a), keyed(a), `added by ${a.by.agent}${a.by.title ? ` in “${a.by.title}”` : ""}, ${since(a.by.at)}`].filter(Boolean).join(" · ")}
+          >
+            {a.secrets.length > 0 && <AddonKeys a={a} />}
+            {versions(a)}
+            <NamedSwitch name={`${a.name} for every agent tool`} checked={a.enabled} onCheckedChange={(enabled) => update(a.id, { enabled })} />
+          </Field>
+        ))}
+        {!shown.length && !adding && <p className="lc-st-none lc-quiet">None yet. Ask an agent to connect a service (“Connect Linear's MCP server”), and it asks you on a card in the session first.</p>}
+        {removed.map((a) => (
+          <div key={a.id} className="lc-st-removed">
+            <I.box size={13} />
+            <span>
+              Removed: {a.name}, {since(a.removed!)}. Its files are kept.
+            </span>
+            <button type="button" className="lc-answered-act l-focus" onClick={() => update(a.id, { removed: false })}>
+              Restore
+            </button>
+          </div>
+        ))}
+      </Group>
+      <Group title="Panels" note="Surfaces beside the session, tabs beside Chat and pages of their own. Each runs in a sealed frame, with only what it asked for.">
+        {panels.map((a) => {
+          const Icon = appIcon(a.panel?.icon);
+          return (
+            <Field
+              key={a.id}
+              lead={
+                <span className="lc-st-mark">
+                  <Icon size={15} />
+                </span>
+              }
+              title={a.name}
+              note={[a.panel?.place === "page" ? "A page of its own" : where(a).replace(/ only$/, ""), a.reaches, `made by ${a.by.agent}${a.by.title ? ` in “${a.by.title}”` : ""}`].filter(Boolean).join(" · ")}
+            >
+              {versions(a)}
+              <NamedSwitch name={a.name} checked={a.enabled} onCheckedChange={(enabled) => update(a.id, { enabled })} />
+            </Field>
+          );
+        })}
+        {!panels.length && <p className="lc-st-none lc-quiet">None yet. Ask an agent for one (“Make me a panel that lists the TODOs”), and it shows it to you, live, before you add it.</p>}
+        {gone.map((a) => (
+          <div key={a.id} className="lc-st-removed">
+            <I.box size={13} />
+            <span>
+              Removed: {a.name}, {since(a.removed!)}. Its files are kept.
+            </span>
+            <button type="button" className="lc-answered-act l-focus" onClick={() => update(a.id, { removed: false })}>
+              Restore
+            </button>
+          </div>
+        ))}
+      </Group>
+      <Group title="Who may add one" note="An agent never adds one on its own: it asks in the session, with what it can touch.">
+        <Field title="Agents may offer add-ons" note="In a read-only session they can't, whatever this says.">
+          <Segmented size="sm" value={offers} onValueChange={(v) => save({ addonOffers: v })} options={[{ value: "ask" as const, label: "They ask" }, { value: "never" as const, label: "Never" }]} aria-label="Agents may offer add-ons" />
+        </Field>
+        <Field title="Panels that reach the internet" note="Held like a push: you hold the button, and each names its one address.">
+          <Segmented size="sm" value={network} onValueChange={(v) => save({ addonNetwork: v })} options={[{ value: "ask" as const, label: "They ask" }, { value: "never" as const, label: "Never" }]} aria-label="Panels that reach the internet" />
+        </Field>
+        <Field title="Start without add-ons" note={working ? `Waits for ${plural(working, "working session")} to finish: a restart would stop them.` : "If one gets in the way, open Liner Code once with all of them off."}>
+          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={working > 0} onClick={() => void restart()}>
+            Restart without them
+          </button>
+        </Field>
+        <Field title="Where they live" note={<span className="lc-mono">{tilde(`${home}/addons`)}, version by version</span>}>
+          {isNative() && (
+            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.reveal(`${home}/addons`)}>
+              Show in {os.fileManager}
+            </button>
+          )}
+        </Field>
+      </Group>
+    </>
+  );
+}
+
+/** A connection's keys, typed again (one missing, or a new one): sealed in the keychain and handed to the engine, as on its card. */
+function AddonKeys({ a }: { a: AddonInfo }) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const keep = async (close: () => void) => {
+    try {
+      for (const k of a.secrets) {
+        const v = values[k.name]?.trim();
+        if (!v) continue;
+        await bridge.keychainSet(`key:${addonKey(a.id, k.name)}`, v);
+        await rpc("keys.set", { provider: addonKey(a.id, k.name), key: v });
+      }
+      setValues({});
+      toast.success(`Saved in ${os.keyStore()}`);
+      close();
+    } catch (e) {
+      fail(e);
+    }
+  };
+  return (
+    <Pop label={`Keys for ${a.name}`} align="end" width={320} triggerClass="lc-st-ver" trigger={a.secrets.length === 1 ? "Key" : "Keys"}>
+      {(close) => (
+        <div className="lc-st-form lc-st-keys">
+          <div className="lc-st-form-g">
+            {a.secrets.map((k) => (
+              <label key={k.name} className="lc-st-form-w">
+                <span>{k.label}</span>
+                <input className="lc-input lc-mono" type="password" autoComplete="off" placeholder={k.name} value={values[k.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))} />
+              </label>
+            ))}
+          </div>
+          <div className="lc-st-form-f">
+            <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!Object.values(values).some((v) => v.trim())} onClick={() => void keep(close)}>
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+    </Pop>
+  );
+}
+
+/**
+  A connection you add yourself: its manifest, checked as an agent's would be, and a field for each
+  key it names. The keys go to the keychain and the engine first, as on the install card.
+*/
+export function AddByHand({ onDone }: { onDone: () => void }) {
+  const projects = useEngine((x) => x.projects);
+  const [text, setText] = useState("");
+  const [project, setProject] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const parsed = useMemo(() => {
+    try {
+      const m = JSON.parse(text) as { id?: unknown; secrets?: { name?: unknown; label?: unknown }[] };
+      return { id: String(m.id ?? ""), secrets: Array.isArray(m.secrets) ? m.secrets.map((k) => ({ name: String(k.name ?? ""), label: String(k.label ?? k.name ?? "") })).filter((k) => k.name) : [] };
+    } catch {
+      return null;
+    }
+  }, [text]);
+  const add = async () => {
+    if (!parsed) return;
+    setBusy(true);
+    try {
+      for (const k of parsed.secrets) {
+        const v = values[k.name]?.trim();
+        if (!v) continue;
+        await bridge.keychainSet(`key:${addonKey(parsed.id, k.name)}`, v);
+        await rpc("keys.set", { provider: addonKey(parsed.id, k.name), key: v });
+      }
+      await rpc("addons.add", { manifest: text, project: project || undefined });
+      toast.success("Added for every agent tool");
+      onDone();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="lc-st-form lc-st-addhand">
+      <textarea
+        className="lc-input lc-mono lc-rules-t"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        spellCheck={false}
+        aria-label="The connection's manifest"
+        autoFocus
+        placeholder={'{\n  "apiVersion": 1,\n  "id": "linear",\n  "kind": "connection",\n  "name": "Linear",\n  "server": { "http": { "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer ${LINEAR_API_KEY}" } } },\n  "secrets": [{ "name": "LINEAR_API_KEY", "label": "Linear key" }]\n}'}
+      />
+      {Boolean(parsed?.secrets.length) && (
+        <div className="lc-st-form-g">
+          {parsed!.secrets.map((k) => (
+            <label key={k.name}>
+              <span>{k.label}</span>
+              <input className="lc-input lc-mono" type="password" autoComplete="off" value={values[k.name] ?? ""} placeholder={k.name} onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))} />
+            </label>
+          ))}
+        </div>
+      )}
+      <div className="lc-st-form-f">
+        <span className="lc-st-push">
+          <Select options={[{ value: "", label: "Every project" }, ...projects.map((p) => ({ value: p.id, label: `${p.name} only` }))]} value={project} onValueChange={setProject} placeholder="Where" />
+        </span>
+        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={onDone}>
+          Cancel
+        </button>
+        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={busy || !parsed} onClick={() => void add()}>
+          {busy ? "Adding" : "Add it"}
+        </button>
+      </div>
+    </div>
   );
 }
 

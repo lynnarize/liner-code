@@ -54,6 +54,8 @@ type Props = {
   /** Home: more models given the same ask, to compare and keep one ("@provider:model"). */
   compare?: string[];
   onCompare?: (refs: string[]) => void;
+  /** Home: how the session works (its mode), after where it runs, past a thin divider. */
+  stripMid?: ReactNode;
   /** Home: what else starts from here, at the far end of the strip under the box. */
   stripEnd?: ReactNode;
 };
@@ -198,7 +200,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, compare = [], onCompare, stripEnd }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, compare = [], onCompare, stripMid, stripEnd }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -1263,6 +1265,12 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 <span className="lc-mono">{inWorktree?.branch ?? project.branch}</span>
               </span>
             )
+          )}
+          {stripMid && (
+            <>
+              <span className="lc-strip-div" aria-hidden />
+              {stripMid}
+            </>
           )}
           <span className="lc-grow" />
           {stripEnd}

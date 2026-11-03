@@ -30,6 +30,10 @@ import type { Proxies } from "./proxy.ts";
 import type { AgentTools } from "./agent-tools.ts";
 import type { Designs } from "./designs.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
+import { checkManifest } from "./addons.ts";
+import { refusal, type PanelMethod, type PanelWhere } from "./panels.ts";
+import type { Offers } from "./offers.ts";
+import type { Sources } from "./sources.ts";
 import { Updater } from "./updates.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
@@ -148,7 +152,7 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void } };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void }; offers?: Offers; sources?: Sources };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings, runtime.keys);
@@ -359,7 +363,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return back;
   };
 
-  const snapshot = (): Snapshot => ({ version: updates.state.app.current, seq: store.seq, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state, limits: [...limits.values()] });
+  const snapshot = (): Snapshot => ({ version: updates.state.app.current, seq: store.seq, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state, limits: [...limits.values()], addons: runtime.addons?.list() ?? [], addonsOff: runtime.addons?.off ?? false });
+
+  // Each change to your add-ons reaches the app; the sessions get theirs from the runtime (relink).
+  if (runtime.addons) runtime.addons.onChange = (addons) => store.emit({ type: "addons", addons, off: runtime.addons?.off ?? false });
+  const addons = () => {
+    if (!runtime.addons) throw new Error("Add-ons aren't available here.");
+    return runtime.addons;
+  };
 
   /** Mentioned files and attachments, said in words the agent can act on. */
   /**
@@ -680,8 +691,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, lead, route, dual, after, title, forkOf, id, access, effort, model, worktree, base, inWorktree }) => {
+    "thread.create": async ({ projectId, agent, lead, route, dual, after, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode }) => {
       const project = store.project(projectId);
+      // A mode is set once, as the session starts; a custom one is one of your named agents.
+      if (mode !== undefined && mode !== "standard" && mode !== "creator" && !(mode.startsWith("agent:") && store.agents.some((a) => `agent:${a.id}` === mode))) throw new Error("There's no mode by that name.");
       const parent = forkOf ? store.thread(forkOf) : undefined;
       const who = agent ?? parent?.agent ?? project.agent ?? defaultAgent();
       const now = Date.now();
@@ -752,6 +765,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         forkOf,
         forkSession: parent ? (live ? "" : (parent.providerSession ?? "")) : undefined,
         worktree: tree ?? parent?.worktree,
+        // A fork keeps its parent's mode, as it keeps its conversation.
+        ...((mode && mode !== "standard") || parent?.mode ? { mode: mode && mode !== "standard" ? mode : parent?.mode } : {}),
         turns: parent ? parent.turns - (live ? 1 : 0) : 0,
         usage: emptyUsage(),
         createdAt: now,
@@ -954,8 +969,98 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return kept ? { kept } : null;
     },
 
-    "approval.answer": ({ threadId, itemId, allow, reason, always }) => {
-      runtime.answer(threadId, itemId, allow, reason, always);
+    "approval.answer": ({ threadId, itemId, allow, reason, always, scope }) => {
+      runtime.answer(threadId, itemId, allow, reason, always, scope);
+      return null;
+    },
+    "addons.update": ({ id, enabled, version, removed, project }) => {
+      if (project) store.project(project);
+      const list = addons().update(id, { enabled, version, removed, project });
+      void runtime.relink();
+      return list;
+    },
+    "addons.add": ({ manifest, project }) => {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(manifest);
+      } catch (e) {
+        throw new Error(`That isn't JSON: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      const m = checkManifest(raw);
+      if (m.kind === "panel") throw new Error("A panel comes with its files: ask an agent for one, and it shows you a card.");
+      if (project) store.project(project);
+      addons().install(m, { project, by: { agent: "You", at: Date.now() } });
+      void runtime.relink();
+      return addons().list();
+    },
+    "addons.read": ({ id, version }) => {
+      const m = addons().manifest(id, version);
+      if (!m) throw new Error("There's no such add-on, or no such version of it.");
+      return { manifest: JSON.stringify(m, null, 2), dir: join(addons().dir, id) };
+    },
+    "addons.files": (p) => {
+      // A panel whose card is up: the draft exactly as it was asked about.
+      if ("itemId" in p) {
+        const d = x.tools?.pending.get(p.itemId);
+        if (!d || d.threadId !== p.threadId) throw new Error("That panel isn't waiting on a card any more.");
+        return { id: d.manifest.id, name: d.manifest.name, place: d.manifest.place, entry: d.manifest.entry, access: d.manifest.access, files: d.files };
+      }
+      const a = addons();
+      const m = a.manifest(p.id, p.version);
+      const files = a.files(p.id, p.version);
+      if (!m || m.kind !== "panel" || !files) throw new Error("There's no such panel, or no such version of it.");
+      return { id: m.id, name: m.name, place: m.place, entry: m.entry, access: m.access, files, version: p.version ?? a.get(p.id)?.version };
+    },
+    "panel.call": async ({ addon, threadId, preview, method, args, apiVersion }) => {
+      // Whatever the frame says, its access is read here: the panel in use, or the draft on its card.
+      let where: PanelWhere;
+      let storage: { all(): Record<string, unknown>; put(k: string, v: unknown): void };
+      let quota = 0;
+      if (preview) {
+        const d = x.tools?.pending.get(preview);
+        if (!d || d.threadId !== threadId || d.manifest.id !== addon) throw new Error("That preview is over.");
+        where = { access: d.manifest.access, place: d.manifest.place, threadId: d.manifest.place === "page" ? undefined : threadId };
+        // A preview plays with storage that's gone when its card is.
+        storage = { all: () => d.storage, put: (k, v) => (v === undefined ? delete d.storage[k] : (d.storage[k] = v)) };
+        quota = d.manifest.access.storage ?? 0;
+      } else {
+        const project = threadId ? store.thread(threadId).projectId : undefined;
+        const m = addons().panel(addon, project);
+        if (!m) throw new Error("That panel is off, removed, or not for this project.");
+        where = { access: m.access, place: m.place, threadId: m.place === "page" ? undefined : threadId };
+        const a = addons();
+        storage = { all: () => a.storage(addon), put: (k, v) => a.store(addon, k, v, m.access.storage ?? 0) };
+        quota = m.access.storage ?? 0;
+      }
+      const no = refusal(where, method, apiVersion);
+      if (no) throw new Error(no);
+      if (!x.tools) throw new Error("Panels aren't available here.");
+      return x.tools.panelCall(where, method as PanelMethod, (args ?? {}) as Record<string, unknown>, storage, quota);
+    },
+    "addons.source": async ({ source }) => {
+      if (!x.sources) throw new Error("Adding from GitHub or a folder isn't available here.");
+      return x.sources.open(source);
+    },
+    "addons.adopt": async ({ token }) => {
+      if (!x.sources) throw new Error("Adding from GitHub or a folder isn't available here.");
+      x.sources.adopt(token);
+      void runtime.relink();
+      return addons().list();
+    },
+    "addons.drop": ({ token }) => (x.sources?.drop(token), null),
+    "addons.list": () => {
+      const list = addons().list();
+      store.emit({ type: "addons", addons: list, off: addons().off });
+      return list;
+    },
+    "offer.answer": async ({ threadId, itemId, act, place, custom }) => {
+      if (!x.offers) throw new Error("Offers aren't available here.");
+      await x.offers.answer(threadId, itemId, act, place, custom);
+      return null;
+    },
+    "addons.off": ({ next }) => {
+      addons().turnOff(Boolean(next));
+      void runtime.relink();
       return null;
     },
     "question.answer": ({ threadId, itemId, answers }) => {
@@ -1116,6 +1221,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       store.emit({ type: "keys", keys: keyList() });
       // An endpoint's key decides whether it's ready.
       if (provider.startsWith("endpoint.")) void detect();
+      // A connection's key reaches the sessions that have it.
+      if (provider.startsWith("addon.") && runtime.addons?.get(provider.split(".")[1])?.enabled) void runtime.relink();
       return keyList();
     },
     "voucher.redeem": async ({ code }) => {

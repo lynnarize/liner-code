@@ -18,6 +18,10 @@ import { DeviceLogs, Terminals } from "./surfaces.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
+import { Addons } from "./addons.ts";
+import { Offers } from "./offers.ts";
+import { Sources } from "./sources.ts";
+import type { Thread } from "../../contracts/src/index.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
 import { firstLine, linkHelpers, secretsFrom, takeSecrets, withPath } from "./exec.ts";
@@ -53,6 +57,11 @@ const store = new Store();
 const env: NodeJS.ProcessEnv = linkHelpers(join(store.home, "bin"), withPath(process.env, process.env.LINER_PATH || process.env.PATH)).env;
 const tools = new AgentTools(store, env);
 const runtime = new Runtime(store, env, tools);
+// Your add-ons: kept beside the engine's state, handed to each session's tool by the runtime, asked for through the agent tools.
+const addons = new Addons(store.home);
+runtime.addons = addons;
+tools.addons = addons;
+tools.host = runtime;
 // Keys the shell read from the keychain, handed over once at launch and kept in memory only.
 for (const [k, v] of Object.entries(secrets.keys)) if (v) runtime.keys.set(k, v);
 const terms = new Terminals(store, env);
@@ -68,7 +77,26 @@ designs.turnOf = (id) => tools.turnOf(id);
 tools.designs = designs;
 tools.filesUrl = (root) => proxies.files(root);
 const outside: { now?: Outside } = {};
-const api = createApi(store, runtime, env, { routines, terms, logs, proxies, tools, designs, outside: { apply: () => outside.now?.apply() } });
+const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, outside: { apply: () => outside.now?.apply() } };
+const api = createApi(store, runtime, env, extras);
+// "Make it an app": the card's Create starts a session of its own, through the same door the app uses.
+const offers = new Offers({
+  store,
+  addons,
+  createThread: (p) => api.call("thread.create", p) as Promise<Thread>,
+  send: (id, text) => runtime.send(id, text),
+  stop: (id) => runtime.stop(id),
+  cwdOf: (id) => tools.cwdOf(id) ?? store.thread(id).worktree?.path ?? store.project(store.thread(id).projectId).path,
+  whoIs: (id) => runtime.whoIs(id),
+  readOnly: (id) => runtime.readOnly(id),
+  turnOf: (id) => tools.turnOf(id),
+});
+extras.offers = offers;
+// Add-ons someone else made, from GitHub or a folder: staged, checked, and added only on the card's yes.
+const sources = new Sources(addons, env);
+sources.network = () => store.settings.addonNetwork ?? "ask";
+extras.sources = sources;
+tools.offers = offers;
 outside.now = new Outside(store, api);
 
 // In dev the token is written where the Vite dev server can read it; the shell passes its own.
@@ -88,6 +116,7 @@ const server = await startServer({
     return threadId ? tools.call(threadId, tool, args) : null;
   },
   outside: (key, tool, args) => (outside.now?.allows(key) ? outside.now.call(tool, args) : null),
+  check: { page: (t) => tools.checkPage(t), call: (t, b) => tools.checkCall(t, b), report: (t, b) => tools.checkReport(t, b as never), settle: (t) => tools.checkSettle(t) },
 });
 tools.url = `http://127.0.0.1:${server.port}`;
 outside.now.url = tools.url;

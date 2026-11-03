@@ -35,6 +35,21 @@ export const I = {
   chevU: (p: P) => <S {...p}><path d="M4.25 9.75 8 6l3.75 3.75" /></S>,
   sidebar: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M6.25 2.75v10.5" /></S>,
   panel: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /></S>,
+  /** The dock beside the session: a frame with its right part ruled off. */
+  dock: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /><path d="M11.75 5.75h.01" /></S>,
+  split: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M8 2.75v10.5" /></S>,
+  shrink: (p: P) => <S {...p}><path d="M2.75 9.25h4v4M13.25 6.75h-4v-4M9.25 6.75l4-4M6.75 9.25l-4 4" /></S>,
+  /** The New tab guide: four tiles. */
+  guide: (p: P) => <S {...p}><rect x="2.75" y="2.75" width="4" height="4" rx="1" /><rect x="9.25" y="2.75" width="4" height="4" rx="1" /><rect x="2.75" y="9.25" width="4" height="4" rx="1" /><rect x="9.25" y="9.25" width="4" height="4" rx="1" /></S>,
+  /** A small app: a window with its title bar. */
+  app: (p: P) => <S {...p}><rect x="2.25" y="3.25" width="11.5" height="9.5" rx="1.75" /><path d="M2.25 6.25h11.5M4.6 4.75h.01M6.35 4.75h.01" /></S>,
+  list: (p: P) => <S {...p}><path d="M6.25 4.25h7M6.25 8h7M6.25 11.75h7M3 4.25h.01M3 8h.01M3 11.75h.01" /></S>,
+  notes: (p: P) => <S {...p}><rect x="3.75" y="2.25" width="8.5" height="11.5" rx="1.25" /><path d="M6 5.5h4M6 8h4M6 10.5h2" /></S>,
+  flask: (p: P) => <S {...p}><path d="M6.25 2.25h3.5M6.75 2.25v4L3.4 12.1a1 1 0 0 0 .87 1.4h7.46a1 1 0 0 0 .87-1.4L9.25 6.25v-4M4.9 9.5h6.2" /></S>,
+  /** A page that takes the whole paper. */
+  page: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 5.75h11.5" /></S>,
+  /** A tab beside Chat. */
+  tab: (p: P) => <S {...p}><path d="M2.25 13.25V5a1 1 0 0 1 1-1h3.5l1.25 1.75h5a1 1 0 0 1 1 1v6.5Z" /></S>,
   bottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 9.5h11.5" /></S>,
   agents: (p: P) => <S {...p}><circle cx="6" cy="5.5" r="2.25" /><path d="M2.25 13a3.75 3.75 0 0 1 7.5 0M10.25 3.35a2.25 2.25 0 0 1 0 4.3M11.6 9.65A3.75 3.75 0 0 1 13.75 13" /></S>,
   changes: (p: P) => <S {...p}><path d="M8 2.75v7M4.5 6.25h7M4.5 13h7" /></S>,
@@ -46,6 +61,8 @@ export const I = {
       <rect x="3" y="3" width="10" height="10" rx="2.2" fill="currentColor" />
     </svg>
   ),
+  plug: (p: P) => <S {...p}><path d="M6 2.25v3M10 2.25v3M4 5.25h8v2a4 4 0 0 1-8 0ZM8 11.25v2.5" /></S>,
+  blocks: (p: P) => <S {...p}><path d="M2.75 2.75h4.5v4.5h-4.5ZM2.75 8.75h4.5v4.5h-4.5ZM8.75 8.75h4.5v4.5h-4.5ZM11 2.1l3 3-3 3-3-3Z" /></S>,
   lock: (p: P) => <S {...p}><rect x="3.25" y="7" width="9.5" height="6.25" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></S>,
   effort: (p: P) => <S {...p}><path d="M2.75 11.5a5.25 5.25 0 1 1 10.5 0" /><path d="m8 11.5 2.5-3" /></S>,
   laptop: (p: P) => <S {...p}><path d="M3.25 10.25v-6a1 1 0 0 1 1-1h7.5a1 1 0 0 1 1 1v6M1.75 12.75h12.5" /></S>,
@@ -66,6 +83,8 @@ export const I = {
   undo: (p: P) => <S {...p}><path d="M5.75 3.75 3 6.5l2.75 2.75M3 6.5h6.75a3.25 3.25 0 0 1 0 6.5H7.25" /></S>,
   commit: (p: P) => <S {...p}><circle cx="8" cy="8" r="2.5" /><path d="M1.75 8h3.75M10.5 8h3.75" /></S>,
   drag: (p: P) => <S {...p} w={2}><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" /></S>,
+  info: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.75" /><path d="M8 7.4v3.6M8 5.15v.1" /></S>,
+  layers: (p: P) => <S {...p}><path d="M8 2.25 13.75 5.5 8 8.75 2.25 5.5ZM2.25 9.25 8 12.5l5.75-3.25" /></S>,
   sparkle: (p: P) => <S {...p}><path d="M8 2.25Q9.3 6.7 13.75 8 9.3 9.3 8 13.75 6.7 9.3 2.25 8 6.7 6.7 8 2.25Z" /></S>,
   refresh: (p: P) => <S {...p}><path d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71" /><path d="M12.25 1.9v2.75H9.5" /></S>,
   copy: (p: P) => <S {...p}><rect x="5.5" y="5.5" width="7.75" height="7.75" rx="1.5" /><path d="M10.5 5.5V4.25a1.5 1.5 0 0 0-1.5-1.5H4.25a1.5 1.5 0 0 0-1.5 1.5V9a1.5 1.5 0 0 0 1.5 1.5H5.5" /></S>,

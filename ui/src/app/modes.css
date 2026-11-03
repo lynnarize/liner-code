@@ -1,0 +1,292 @@
+/*
+  Liner Code · Modes: the picker under Home's composer, the chip beside a session's title,
+  and Settings › Modes' cards (DeepSeek Harness's agent presets).
+*/
+:root,
+[data-theme="light"] {
+  --lc-creator-ink: oklch(0.5 0.17 292);
+  --lc-creator-fill: oklch(0.6 0.19 292 / 0.12);
+}
+[data-theme="dark"] {
+  --lc-creator-ink: oklch(0.86 0.07 292);
+  --lc-creator-fill: oklch(0.32 0.04 292 / 0.6);
+}
+/* With Creator mode picked, the strip's mode button takes a soft purple fill and ink. */
+.lc-strip .lc-pb.lc-mode-creator,
+.lc-strip .lc-pb.lc-mode-creator > svg:last-child {
+  color: var(--lc-creator-ink);
+}
+.lc-strip .lc-pb.lc-mode-creator {
+  height: 26px;
+  background: var(--lc-creator-fill);
+}
+@media (hover: hover) {
+  .lc-strip .lc-pb.lc-mode-creator:hover {
+    background: color-mix(in oklab, var(--lc-creator-fill), var(--lc-creator-ink) 8%);
+  }
+}
+/* Under the modes, the way to Settings › Modes: a plain line, in from the ticks. */
+.lc-mode-more {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 34px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-mode-more:hover {
+    background: var(--lc-well);
+  }
+}
+.lc-mode-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--l-wash);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-mode-chip > svg {
+  color: var(--l-ink-3);
+}
+
+/* ---------- Settings › Modes ---------- */
+.lc-modes {
+  display: grid;
+  gap: 10px;
+}
+.lc-modes-k {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--l-ink-3);
+}
+.lc-modes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+.lc-mode-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 16px;
+  background: var(--l-surface);
+  box-shadow: var(--lc-card-ring);
+}
+/* The new task default is filled grey; the rest are white. */
+.lc-mode-card[data-default] {
+  background: var(--l-wash);
+}
+.lc-mode-card > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px 16px 0;
+}
+.lc-mode-card > header > b {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-mode-badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-mode-badge[data-on] {
+  background: var(--l-ink);
+  box-shadow: none;
+  color: var(--l-surface);
+}
+.lc-mode-card > header > code {
+  margin-left: auto;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-mode-card > p {
+  flex: 1;
+  margin: 10px 16px 14px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--l-ink-2);
+}
+.lc-mode-more {
+  margin: -4px 16px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--l-wash);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--l-ink-2);
+}
+.lc-mode-more ul {
+  margin: 0;
+  padding-left: 16px;
+}
+.lc-mode-card > footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 46px;
+  padding: 0 12px 0 16px;
+  box-shadow: inset 0 1px 0 var(--l-line);
+}
+.lc-mode-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-mode-link[aria-expanded="true"],
+.lc-mode-link:hover {
+  color: var(--l-ink);
+}
+.lc-mode-link {
+  white-space: nowrap;
+}
+/* Set as new task default: the document icon at the card's foot, its words in a tooltip. */
+.lc-mode-set {
+  color: var(--l-ink-3);
+}
+.lc-mode-set[aria-pressed="true"] {
+  color: var(--l-ink);
+  cursor: default;
+}
+.lc-modes-make {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  border: 1.5px dashed var(--l-line-2);
+  border-radius: 16px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-modes-make:hover {
+  border-color: var(--l-ink-3);
+  color: var(--l-ink);
+}
+
+/* A mode's guide: Mode details, or How to use with tasks to copy (DeepSeek Harness's preset guide). */
+.lc-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin: 6px 0 18px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--l-wash);
+}
+.lc-mode-tabs > button {
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-mode-tabs > button[aria-selected="true"] {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 0.5px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-mode-guide-body {
+  display: grid;
+  gap: 26px;
+  max-height: min(62vh, 560px);
+  overflow: auto;
+  padding-bottom: 4px;
+  text-align: left;
+}
+.lc-mode-guide-body h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.lc-mode-guide-body p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--l-ink);
+}
+.lc-mode-guide-body blockquote {
+  margin: 0;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: var(--l-wash);
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--l-ink);
+}
+.lc-mode-guide-body .lc-mode-expect {
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: var(--l-ink-3);
+}
+.lc-mode-example {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-mode-example > [data-say="copy"],
+.lc-mode-example:is(:hover, :focus-visible, [data-copied]) > [data-say="idle"] {
+  display: none;
+}
+.lc-mode-example:is(:hover, :focus-visible, [data-copied]) > [data-say="copy"] {
+  display: inline;
+}
+.lc-mode-example:hover {
+  color: var(--l-ink);
+}

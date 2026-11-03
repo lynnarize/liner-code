@@ -6,7 +6,7 @@
 import { createInterface } from "node:readline";
 import { VERSION } from "./version.ts";
 
-type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[] }>; required?: string[] };
+type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>; required?: string[] };
 type ToolDef = { name: string; description: string; inputSchema: Schema };
 
 const none: Schema = { type: "object", properties: {} };
@@ -101,6 +101,61 @@ const TOOLS: ToolDef[] = [
       required: ["title"],
     },
   },
+  {
+    name: "liner_inspect",
+    description:
+      "Reads Liner Code's add-on guide: connections (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes) and panels (a small page of your own that opens in Liner Code, in the right dock, as a tab beside Chat, or as a page from the left sidebar), the manifests to write, the add-ons installed, and the agent tools on this Mac. Call it before you make either: when the person asks to connect a service through MCP, or for a panel, view or small app inside Liner Code. With a topic it reads one part in depth: panels, places, manifest, bridge, theme, starters, verify, installed (with manifests and file paths), connections, or catalogue. Changes nothing.",
+    inputSchema: { type: "object", properties: { topic: { type: "string", description: "One part of the guide, in depth; leave it out for the whole short guide", enum: ["catalogue", "connections", "panels", "manifest", "places", "bridge", "theme", "starters", "verify", "installed"] } } },
+  },
+  {
+    name: "addon_check",
+    description:
+      "Draws a panel you drafted at .liner/addons/<id>/ out of sight, in the same sealed frame and at the same size as in Liner Code, with this session's real data. Returns a picture, what it drew, its console errors, and anything the bridge or the content policy refused. Call it before addon_install, and again after each fix.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The draft's id, for .liner/addons/<id>/addon.json; or its path in this folder" } }, required: ["id"] },
+  },
+  {
+    name: "addon_offer",
+    description:
+      "Offers the person a card at the end of your answer: make something as an app in Liner Code, in the background, where they choose. Answer first, then offer at most one, when they asked for an interface, or your answer has a clear use they'll come back to (a record they keep, results they'll explore again); not for a one-off answer, a static table, or a change to their own project. Pick the place: \"dock\" to watch or edit beside this conversation, \"tab\" for this session's live output or interaction, \"page\" for something global they keep across projects. access is what it may touch, as a panel's manifest says it (liner_inspect); ask for the least it needs. Don't make it yourself.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "What it's called, a few words" },
+        brief: { type: "string", description: "What it does, what it reads and what it keeps, so a session that can't read this one can make it" },
+        place: { type: "string", description: "Where it goes", enum: ["dock", "tab", "page"] },
+        access: { type: "object", description: 'As a panel manifest\'s access: files ("project"), sessions ("this" or "all"), composer (true), storage (KB), network (one host)' },
+        initialContent: { type: "array", items: { type: "string" }, description: "What it starts with, in the person's own items, when they gave some" },
+      },
+      required: ["name", "brief", "place"],
+    },
+  },
+  {
+    name: "mode_add",
+    description:
+      "Asks the person to add a custom mode you worked out with them: a name, a line on what it's for, and the instructions a model gets in it (plus any skills and context files, by path). It's one of their named agents, laid over whichever model a session runs; they pick it when they start a session. They see a card and say yes or no; this waits for them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "What the mode is called, a word or two" },
+        description: { type: "string", description: "One line on what it's for" },
+        instructions: { type: "string", description: "What a model is told in this mode" },
+        skills: { type: "array", items: { type: "string" }, description: "skill.md files it may read, by path" },
+        contextFiles: { type: "array", items: { type: "string" }, description: "Files read at the start of each session, by path" },
+      },
+      required: ["name", "instructions"],
+    },
+  },
+  {
+    name: "addon_install",
+    description:
+      "Asks the person to add a connection or a panel you drafted at .liner/addons/<id>/addon.json in this folder (liner_inspect has the manifests' shapes). They see a card (and a panel live, as a preview) and say yes or no; this waits for them. Returns applied, saved, starts in the next turn (a connection: its tools arrive with the next turn), or denied (don't ask again unless they do). A changed panel that asks for nothing more than the version in use goes in without a card. Never put a key in a manifest: name it in secrets.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The draft's id, for .liner/addons/<id>/addon.json; or its path in this folder" } }, required: ["id"] },
+  },
+  {
+    name: "addon_remove",
+    description: "Asks the person to remove an add-on (liner_inspect lists them). It stays on disk, so they can restore it. Waits for their answer.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The add-on's id" } }, required: ["id"] },
+  },
 ];
 
 const url = process.env.LINER_SURFACE_URL ?? "";
@@ -109,13 +164,22 @@ type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Rec
 
 const send = (m: Record<string, unknown>) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);
 
-async function call(name: string, args: unknown) {
+/**
+  A call that waits for the person (an install card) says so every 20 seconds, when its tool asked
+  for progress: one that resets its wait on progress (the MCP SDK's resetTimeoutOnProgress) then
+  doesn't give up after a minute.
+*/
+async function call(name: string, args: unknown, progress?: string | number) {
+  let n = 0;
+  const beat = progress === undefined ? undefined : setInterval(() => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: progress, progress: ++n, message: "Waiting for the person to answer" } })}\n`), 20_000);
   try {
     const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": key }, body: JSON.stringify({ tool: name, args: args ?? {} }) });
     const b = (await r.json()) as { ok: boolean; result?: unknown; error?: string };
     return b.ok ? b.result : { content: [{ type: "text", text: b.error ?? "Liner Code didn't answer." }], isError: true };
   } catch {
     return { content: [{ type: "text", text: "Liner Code isn't running, so its tools aren't there." }], isError: true };
+  } finally {
+    clearInterval(beat);
   }
 }
 
@@ -134,11 +198,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         protocolVersion: String(m.params?.protocolVersion ?? "2025-06-18"),
         capabilities: { tools: {} },
         serverInfo: { name: "liner", title: "Liner Code", version: VERSION },
-        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design.",
+        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design. To connect a service through MCP for every agent tool, or to make a panel or small app inside Liner Code, read liner_inspect, then ask with addon_install.",
       },
     });
   } else if (m.method === "tools/list") send({ id: m.id, result: { tools: TOOLS } });
-  else if (m.method === "tools/call") void call(String(m.params?.name ?? ""), m.params?.arguments).then((result) => send({ id: m.id, result }));
+  else if (m.method === "tools/call") {
+    const token = (m.params?._meta as { progressToken?: string | number } | undefined)?.progressToken;
+    void call(String(m.params?.name ?? ""), m.params?.arguments, token).then((result) => send({ id: m.id, result }));
+  }
   else if (m.method === "ping") send({ id: m.id, result: {} });
   else send({ id: m.id, error: { code: -32601, message: `No method ${m.method}` } });
 });

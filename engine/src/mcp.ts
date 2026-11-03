@@ -104,8 +104,8 @@ const TOOLS: ToolDef[] = [
   {
     name: "liner_inspect",
     description:
-      "Reads Liner Code's add-on guide: connections (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes) and panels (a small page of your own that opens in Liner Code, in the right dock, as a tab beside Chat, or as a page from the left sidebar), the manifests to write, the add-ons installed, and the agent tools on this Mac. Call it before you make either: when the person asks to connect a service through MCP, or for a panel, view or small app inside Liner Code. Changes nothing.",
-    inputSchema: none,
+      "Reads Liner Code's add-on guide: connections (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes) and panels (a small page of your own that opens in Liner Code, in the right dock, as a tab beside Chat, or as a page from the left sidebar), the manifests to write, the add-ons installed, and the agent tools on this Mac. Call it before you make either: when the person asks to connect a service through MCP, or for a panel, view or small app inside Liner Code. With a topic it reads one part in depth: panels, places, manifest, bridge, theme, starters, verify, installed (with manifests and file paths), connections, or catalogue. Changes nothing.",
+    inputSchema: { type: "object", properties: { topic: { type: "string", description: "One part of the guide, in depth; leave it out for the whole short guide", enum: ["catalogue", "connections", "panels", "manifest", "places", "bridge", "theme", "starters", "verify", "installed"] } } },
   },
   {
     name: "addon_check",
@@ -127,6 +127,22 @@ const TOOLS: ToolDef[] = [
         initialContent: { type: "array", items: { type: "string" }, description: "What it starts with, in the person's own items, when they gave some" },
       },
       required: ["name", "brief", "place"],
+    },
+  },
+  {
+    name: "mode_add",
+    description:
+      "Asks the person to add a custom mode you worked out with them: a name, a line on what it's for, and the instructions a model gets in it (plus any skills and context files, by path). It's one of their named agents, laid over whichever model a session runs; they pick it when they start a session. They see a card and say yes or no; this waits for them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "What the mode is called, a word or two" },
+        description: { type: "string", description: "One line on what it's for" },
+        instructions: { type: "string", description: "What a model is told in this mode" },
+        skills: { type: "array", items: { type: "string" }, description: "skill.md files it may read, by path" },
+        contextFiles: { type: "array", items: { type: "string" }, description: "Files read at the start of each session, by path" },
+      },
+      required: ["name", "instructions"],
     },
   },
   {

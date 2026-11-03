@@ -19,7 +19,8 @@ import { fileURLToPath } from "node:url";
 import type { AgentBrowserOp, AddonInfo, Item, PanelManifest, PanelPlace, ProviderInfo, Risk, Thread } from "../../contracts/src/index.ts";
 import { addonKey, panelDocument } from "../../contracts/src/index.ts";
 import { accessWords, ADDON_GUIDE, readDraft, sizeWords, type Addons, type PanelFiles } from "./addons.ts";
-import { panelCall, refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
+import { CHECK_THEME, panelCall, refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
+import { topicText, TOPICS, type Topic } from "./creator.ts";
 import type { Offers } from "./offers.ts";
 import { DESIGN_FRAME, keepOutOfGit, sizeOf, type DesignItem, type Designs } from "./designs.ts";
 import { run } from "./exec.ts";
@@ -75,6 +76,8 @@ export function linerTitle(tool: string, input: unknown): string {
       return `Check the panel ${s(a.id ?? a.path)}`.trim();
     case "addon_offer":
       return `Offer to make ${s(a.name) || "an app"}`;
+    case "mode_add":
+      return `Ask to add the mode ${s(a.name) || ""}`.trim();
     default:
       return `Liner Code · ${tool}`;
   }
@@ -171,8 +174,6 @@ export const ADDON_TOOL = "liner.addon";
 
 /** The size a panel is drawn at to check it, by where it opens: the dock's width, a tab's, a page's. */
 export const CHECK_SIZE: Record<PanelPlace, { width: number; height: number }> = { dock: { width: 428, height: 780 }, tab: { width: 900, height: 720 }, page: { width: 1100, height: 800 } };
-/** The colours a panel is checked in: the app's light theme, as the frame's variables. */
-export const CHECK_THEME = { "--bg": "#f9f9fb", "--surface": "#ffffff", "--ink": "#1f2024", "--ink-2": "#46484f", "--ink-3": "#6b6e76", "--line": "rgba(30, 33, 45, 0.11)", "--accent": "#3a6df0", "--font": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-mono": "'Geist Mono', ui-monospace, monospace" };
 
 /** A panel being checked out of sight: its draft, the storage it plays with, what it said and was refused. */
 type Check = {
@@ -368,13 +369,15 @@ export class AgentTools {
           }
         }
         case "liner_inspect":
-          return text(this.inspect(threadId));
+          return args.topic === undefined || args.topic === "" ? text(this.inspect(threadId)) : this.topic(threadId, String(args.topic));
         case "addon_install":
           return await this.install(threadId, args);
         case "addon_remove":
           return await this.remove(threadId, args);
         case "addon_check":
           return await this.check(threadId, args);
+        case "mode_add":
+          return await this.addMode(threadId, args);
         case "addon_offer":
           if (!this.offers) return fail("Offers aren't available in this session.");
           return text(this.offers.offer(threadId, args));
@@ -407,6 +410,15 @@ export class AgentTools {
   }
 
   /** liner_inspect: the guide, what's installed, which tools are here, and what this session may do. */
+  /** One part of the creator's guide (creator.ts), for any session that asks; a Creator session is told they're there. */
+  private topic(threadId: string, asked: string): McpResult {
+    const topic = asked.trim().toLowerCase() as Topic;
+    if (!(TOPICS as readonly string[]).includes(topic)) return fail(`There's no topic "${asked}". The topics are ${TOPICS.join(", ")}.`);
+    const family = this.host?.toolOf(threadId).family;
+    const n = (tool: string) => (family === "claude" ? `mcp__liner__${tool}` : family === "opencode" ? `liner_${tool}` : tool);
+    return text(topicText(topic, { addons: this.addons, draftRoot: this.cwdOf(threadId), n }));
+  }
+
   private inspect(threadId: string) {
     const list: AddonInfo[] = this.addons?.list() ?? [];
     const keys = this.host?.keys;
@@ -636,6 +648,43 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
       },
     };
     return panelCall(env, where, method, args);
+  }
+
+  /**
+    mode_add: a custom mode, made with the person in a Creator session. It's one of their named
+    agents (instructions, skills and context files) and runs on whichever model a session picks:
+    named agents are only ever a way to give a model instructions. Asked on a card, like an add-on.
+  */
+  private async addMode(threadId: string, args: Record<string, unknown>): Promise<McpResult> {
+    const no = this.refusal(threadId);
+    if (no) return fail(no);
+    const name = String(args.name ?? "").trim();
+    const description = String(args.description ?? "").trim();
+    const instructions = String(args.instructions ?? "").trim();
+    const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim().length > 0 && x.length < 500).map((x) => x.trim()).slice(0, 20) : []);
+    const skills = list(args.skills);
+    const contextFiles = list(args.contextFiles);
+    if (!name || name.length > 40) return fail("name is what the mode is called, up to 40 characters.");
+    if (!instructions || instructions.length > 20_000) return fail("instructions are what the model is told in this mode, up to 20,000 characters.");
+    if (this.store.agents.some((a) => a.name.toLowerCase() === name.toLowerCase())) return fail(`There's already a mode or agent called ${name}: pick another name.`);
+    const t = this.store.thread(threadId);
+    const { answer } = this.host!.askLiner(threadId, {
+      tool: ADDON_TOOL,
+      title: `Add the mode ${name}`,
+      description: `${description ? `${description} ` : ""}It's a set of instructions for whichever model a session runs: pick it when you start one. It sits with your agents in Settings › Team, where you can change it.`,
+      risk: "low",
+      fields: [
+        { label: "Instructions", value: instructions.length > 600 ? `${instructions.slice(0, 600)}…` : instructions },
+        ...(skills.length ? [{ label: "Skills", value: skills.join(", ") }] : []),
+        ...(contextFiles.length ? [{ label: "Context", value: contextFiles.join(", ") }] : []),
+      ],
+    });
+    const r = await answer;
+    if (!r.allow) return text(`denied: the person said no to the mode ${name}${r.reason ? `, and said: “${r.reason}”` : ""}. Nothing was added.`);
+    const id = `mode-${uid("a").slice(-8)}`;
+    const model = t.model ?? (t.agent.startsWith("@") ? t.agent.slice(1) : (this.store.agents.find((a) => a.id === t.agent)?.model ?? t.agent));
+    this.store.setAgents([...this.store.agents, { id, name, role: description || "A mode", glyph: "spark", specialty: "custom", model, effort: t.effort ?? "medium", soul: instructions, ...(skills.length ? { skills } : {}), ...(contextFiles.length ? { contextFiles } : {}) }]);
+    return text(`applied: the mode ${name} is added (agent:${id}). The person picks it beside the project when they start a session, and can set it as the new-session default in Settings › Modes. It gives a model these instructions; it doesn't choose the model.`);
   }
 
   /** addon_remove: asks on a card, and removes it (on disk still, so it can be restored) if the person says yes. */

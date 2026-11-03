@@ -7,7 +7,7 @@
   new: Liner Code's own update and the agent tools'.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ImportableSession, Project } from "@contracts";
+import type { ImportableSession, Project, SessionMode } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
@@ -18,12 +18,13 @@ import { I } from "./icons";
 import { ago, startOf } from "./model";
 import { PanelHead, Pop, Row, Sep, Kbd } from "./ui";
 import { ProjectChooser } from "./Projects";
+import { ModePick } from "./Modes";
 import { HomeUpdates } from "./Updates";
 import * as os from "./os";
 
-type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (threadId: string) => void; onCompare: (compareId: string) => void; sidebar: boolean; onSidebar: () => void; onNewAgent: () => void };
+type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (threadId: string) => void; onCompare: (compareId: string) => void; sidebar: boolean; onSidebar: () => void; onNewAgent: () => void; startMode?: SessionMode };
 
-export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSidebar, onNewAgent }: Props) {
+export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSidebar, onNewAgent, startMode }: Props) {
   const projects = useEngine((s) => s.projects);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
@@ -47,6 +48,12 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     return { agent: firstModel ? `@${firstModel.id}:${firstModel.models[0]?.id ?? "default"}` : "demo", effort: "medium", access };
   }, [project?.id, project?.agent, mode, engineSettings.picks, engineSettings.dual, engineSettings.route?.level, access, agents.length, readyKey]);
   const [settings, setSettings] = useState<RunSettings>(initial);
+  // The session's mode, fixed once it starts: your default, unless you pick another here.
+  const defaultMode = useEngine((s) => s.settings.defaultMode ?? "standard");
+  const [sessionMode, setSessionMode] = useState<SessionMode>(startMode ?? defaultMode);
+  useEffect(() => setSessionMode(startMode ?? defaultMode), [startMode, defaultMode]);
+  // A custom mode whose agent you since removed starts as Standard.
+  const mode_ = !sessionMode.startsWith("agent:") || agents.some((a) => `agent:${a.id}` === sessionMode) ? sessionMode : "standard";
   const [worktree, setWorktree] = useState(worktrees);
   const [compare, setCompare] = useState<string[]>([]);
   const [base, setBase] = useState<string | undefined>();
@@ -93,7 +100,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         if (made[0]?.compare) onCompare(made[0].compare.id);
         return;
       }
-      const t = await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, route: settings.route, dual: settings.dual, after: settings.after, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
+      const t = await rpc("thread.create", { projectId: project.id, mode: mode_, agent: settings.agent, lead: settings.lead, route: settings.route, dual: settings.dual, after: settings.after, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
       if (quietly) {
         setInWorktree(undefined);
@@ -113,7 +120,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         <>
           <h2 className="lc-ask-h">
             What should we build in{" "}
-            <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />?
+            <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />, in <ModePick value={mode_} onPick={setSessionMode} />?
           </h2>
           <div
             className="lc-home-compose"

@@ -27,6 +27,7 @@ import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, agentOf, ago, markOf, modelLabel, plural, providerLabel, since } from "./model";
 import { appIcon, dayOf } from "./Addon";
+import { ModesPlace } from "./Modes";
 import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop, Row } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
@@ -52,7 +53,7 @@ const ACTIONS: { id: ActionColour; label: string; color: string }[] = [
   { id: "ink", label: "Ink", color: "var(--lc-ctl)" },
 ];
 
-export type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "team" | "safety" | "addons" | "projects" | "git" | "archive" | "updates" | "data";
+export type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "modes" | "team" | "safety" | "addons" | "projects" | "git" | "archive" | "updates" | "data";
 
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
@@ -62,9 +63,10 @@ const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string;
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai voucher promo code redeem" },
   { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Solo, Plan then build, or Auto; your frontier and cheaper models; check or refine each change; and how each mode went in your sessions.", words: "agentic mode solo plan build auto routed lead planner coder builder model frontier cheaper dual astra opus sonnet luna deepseek glm kimi qwen chinese opencode go hermes check refine reviewer judge critic compare cost" },
+  { id: "modes", label: "Modes", icon: <I.idea />, group: "Agents", blurb: "How the agent works in a session. Standard for everyday tasks, or Creator mode to add to Liner Code through conversation. Picked when a session starts.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
   { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "What a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
-  { id: "addons", label: "Add-ons", icon: <I.blocks />, group: "Agents", blurb: "Connections your agents made for Liner Code. Each one asked first, keeps its versions, and turns off here.", words: "addon addons add-on add-ons connection connections mcp server servers plugin extension linear sentry version restore remove safe mode start without" },
+  { id: "addons", label: "Add-ons", icon: <I.blocks />, group: "Agents", blurb: "Connections, panels and apps your agents made for Liner Code. Each one asked first, keeps its versions, and turns off here.", words: "addon addons add-on add-ons connection connections panel panels app apps mcp server servers plugin extension linear sentry version restore remove safe mode start without" },
   { id: "projects", label: "Projects", icon: <I.folder />, group: "Work", blurb: "The folders agents work in, who each one starts with, and how a new worktree is set up.", words: "project folder repository add remove finder explorer setup install worktree" },
   { id: "git", label: "Git and worktrees", icon: <I.branch />, group: "Work", blurb: "Branches, worktrees, and the snapshot Liner Code keeps of every turn.", words: "git branch prefix worktree snapshot checkpoint undo refs" },
   { id: "archive", label: "Archive", icon: <I.box />, group: "System", blurb: "Sessions you put away. Bring one back, or delete it for good.", words: "archived sessions restore delete" },
@@ -319,6 +321,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
             {page === "keyboard" && <Keyboard />}
             {page === "models" && <Models />}
             {page === "agentic" && <Agentic onOpen={onOpen} />}
+            {page === "modes" && <ModesPlace onAgent={onAgent} onClose={onClose} />}
             {page === "team" && <Team onAgent={onAgent} />}
             {page === "safety" && <Safety />}
             {page === "addons" && <AddonsPlace />}
@@ -2002,7 +2005,7 @@ function Safety() {
   each, with its versions and a switch; a removed one waits under them to come back. Then who may
   offer one, a start without any, and where they're kept.
 */
-function AddonsPlace() {
+export function AddonsPlace() {
   const addons = useEngine((x) => x.addons);
   const off = useEngine((x) => x.addonsOff);
   const offers = useEngine((x) => x.settings.addonOffers ?? "ask");

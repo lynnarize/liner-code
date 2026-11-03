@@ -14,6 +14,9 @@ import { PANEL_API } from "../../contracts/src/index.ts";
 import { listFiles } from "./files.ts";
 import { readFile } from "./surfaces.ts";
 
+/** The colours a panel is checked in: the app's light theme, as the frame's variables. */
+export const CHECK_THEME = { "--bg": "#f9f9fb", "--surface": "#ffffff", "--ink": "#1f2024", "--ink-2": "#46484f", "--ink-3": "#6b6e76", "--line": "rgba(30, 33, 45, 0.11)", "--accent": "#3a6df0", "--font": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-mono": "'Geist Mono', ui-monospace, monospace" };
+
 /** Every call a frame can make (apiVersion 1), and the access each needs. */
 export const PANEL_METHODS = ["context", "files.list", "files.read", "files.search", "session.info", "session.commands", "sessions.list", "composer.put", "storage.get", "storage.set", "storage.remove", "storage.keys"] as const;
 export type PanelMethod = (typeof PANEL_METHODS)[number];

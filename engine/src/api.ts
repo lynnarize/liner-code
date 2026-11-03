@@ -671,8 +671,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, lead, route, dual, after, title, forkOf, id, access, effort, model, worktree, base, inWorktree }) => {
+    "thread.create": async ({ projectId, agent, lead, route, dual, after, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode }) => {
       const project = store.project(projectId);
+      // A mode is set once, as the session starts; a custom one is one of your named agents.
+      if (mode !== undefined && mode !== "standard" && mode !== "creator" && !(mode.startsWith("agent:") && store.agents.some((a) => `agent:${a.id}` === mode))) throw new Error("There's no mode by that name.");
       const parent = forkOf ? store.thread(forkOf) : undefined;
       const who = agent ?? parent?.agent ?? project.agent ?? defaultAgent();
       const now = Date.now();
@@ -743,6 +745,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         forkOf,
         forkSession: parent ? (live ? "" : (parent.providerSession ?? "")) : undefined,
         worktree: tree ?? parent?.worktree,
+        // A fork keeps its parent's mode, as it keeps its conversation.
+        ...((mode && mode !== "standard") || parent?.mode ? { mode: mode && mode !== "standard" ? mode : parent?.mode } : {}),
         turns: parent ? parent.turns - (live ? 1 : 0) : 0,
         usage: emptyUsage(),
         createdAt: now,

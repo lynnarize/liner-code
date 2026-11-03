@@ -31,6 +31,7 @@ import { attachNote } from "./providers/attachments.ts";
 import type { AgentTools } from "./agent-tools.ts";
 import { fingerprint, type Addons, type Connection } from "./addons.ts";
 import { briefOf } from "./agents.ts";
+import { modeNote } from "./creator.ts";
 import { memoryNote } from "./memory.ts";
 import { commandRisk, readsOnly, ruleFor } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
@@ -332,6 +333,7 @@ export class Runtime {
       soul: [
         planning ? [briefOf(r.agent, cwd), planRules(this.nameOf(t, t.agent), linerName(familyOf(r.provider)))].filter(Boolean).join("\n\n") : t.sideOf ? [briefOf(r.agent, cwd), SIDE_RULES].filter(Boolean).join("\n\n") : briefOf(r.agent, cwd),
         this.tools ? toolsNote(linerName(familyOf(r.provider))) : "",
+        modeNote(t, this.store.agents, cwd, linerName(familyOf(r.provider)), Boolean(this.tools)),
         memoryNote(this.store.home, t.projectId),
       ]
         .filter(Boolean)

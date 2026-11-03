@@ -469,6 +469,13 @@ export type Thread = {
   /** Auto mode: each message gets its own pattern and models (see ThreadRoute); `agent` is the everyday model. */
   route?: ThreadRoute;
   /**
+    How the agent works in it, fixed for the session's life (DeepSeek Harness's agent presets):
+    unset is Standard; "creator" is Creator mode, which adds to Liner Code itself (its connections,
+    panels and apps) through conversation; "agent:<id>" is a custom mode, one of your named agents'
+    instructions laid over whichever model the session runs.
+  */
+  mode?: SessionMode;
+  /**
     Runs in a worktree of its own, on this branch. `path` is where it works; for a project inside
     a bigger repository that is the project's folder within the worktree, whose top is `root`.
     `made`: Liner Code made it for this session (or the one it was forked from), so it may put it
@@ -554,6 +561,48 @@ export type PanelIcon = (typeof PANEL_ICONS)[number];
 /** A panel's manifest, version 1. `entry` is its HTML file, beside the manifest. */
 export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess };
 export type AddonManifest = ConnectionManifest | PanelManifest;
+/** A session's mode: Standard ("standard", or unset), Creator mode ("creator"), or a custom one (`agent:<id>`, one of your named agents' instructions). */
+export type SessionMode = "standard" | "creator" | `agent:${string}`;
+/**
+  The modes Liner Code comes with, as Settings › Modes and the new-session picker show them, with
+  their guide: an intro, Mode details, and How to use with example tasks (DeepSeek Harness's
+  preset guide, ui-agent-preset/guide-locales.ts, its words for Liner Code).
+*/
+export type ModeGuide = { id: "standard" | "creator"; name: string; blurb: string; intro: string; details: { h: string; p: string }[]; examples: { h: string; ask: string; expect: string }[] };
+export const BUILTIN_MODES: ModeGuide[] = [
+  {
+    id: "standard",
+    name: "Standard",
+    blurb: "Work with code, files and information. Right for most tasks, with search, editing, terminal commands and Liner Code's own tools as needed.",
+    intro: "Choose Standard when you start a new task. Say what you want done, point to the files that matter, and say how to check the result.",
+    details: [
+      { h: "How it works", p: "The agent calls its tools directly to read and edit files, search, and run terminal commands, with Liner Code's own beside them: the Browser, the Design surface, pages in the chat, memory and earlier sessions. Solo, Plan or Auto in the composer still decides who works on it." },
+      { h: "When to choose it", p: "Start here for everyday coding, file work and research. It can still offer to make an app at the end of a turn, on a card you answer." },
+    ],
+    examples: [
+      { h: "Fix a bug", ask: "Find out why submitting the search form twice makes the results disappear. Fix it and run the relevant tests. Explain the cause and what changed.", expect: "A change, the tests it ran, and the cause in a few lines." },
+      { h: "Sort out project notes", ask: "Read the Markdown notes in this project. Sum up the decisions we agreed and the open questions, with links to the files they're in.", expect: "A summary you can check against the notes it links to." },
+    ],
+  },
+  {
+    id: "creator",
+    name: "Creator mode",
+    blurb: "Change Liner Code through conversation. Let the agent add features or UI, or put tools and instructions together into a mode of your own.",
+    intro: "Choose Creator mode when you start a new task. Say what you want, where it should appear, and how you'll check it.",
+    details: [
+      { h: "What you can make", p: "Creator mode has everything in Standard, plus a guide to Liner Code's add-ons that the agent reads a part at a time: what it can make, the panel bridge, the places an app can open, the manifest, the theme's tokens, a starter for each kind, how to check its work, and what's installed now." },
+      { h: "Add-ons and modes", p: "An add-on adds to Liner Code: a connection every agent tool gets, a panel in the right dock, an app as a tab beside Chat or a page of its own from the left sidebar. A mode is a set of instructions for whichever model a session runs, which you pick when you start one." },
+      { h: "How the result takes effect", p: "Ask it to add and check what it makes, not only to write the files. Nothing goes in without your yes on its card, and it gets only the access it lists. A panel or an app opens at once; a connection reaches agent tools now or from their next turn. A new mode is picked when you start a session. Its folder is the project you picked, or Scratch." },
+    ],
+    examples: [
+      { h: "Add a page", ask: "Make a notes app with a left sidebar entry that opens a full-page editor. Keep my notes between sessions. Add it, and check that the page opens.", expect: "An app under Apps in the left sidebar, its page working, and what it checked." },
+      { h: "Add a panel", ask: "Make a panel beside my sessions that lists the TODOs in this project, so I can send one to you. Check it, then ask me to add it.", expect: "A panel in the right dock, tried live as a preview before you add it." },
+      { h: "Make my own mode", ask: "Make a “Code review” mode: prioritise likely bugs and missing tests, cite files and lines, and ask before changing anything. Save it as a mode I can pick.", expect: "A mode you pick when you start a session. Its instructions guide the model; Safety still decides what it may do." },
+    ],
+  },
+];
+export const modeName = (mode: SessionMode | undefined, agents: { id: string; name: string }[]) => (!mode || mode === "standard" ? "Standard" : mode === "creator" ? "Creator mode" : (agents.find((a) => `agent:${a.id}` === mode)?.name ?? "A custom mode"));
+
 /** Where an offer to make an app stands: offered, being made and added, settled, or replaced by a newer offer. */
 export type OfferState = "proposed" | "creating" | "installing" | "installed" | "kept" | "removed" | "dismissed" | "cancelled" | "failed" | "replaced";
 /** A panel as Settings and the dock know it. */
@@ -850,6 +899,8 @@ export type Settings = {
   addonOffers?: "ask" | "never";
   /** Panels that reach the internet may ask, held like a push ("ask", the default), or never. */
   addonNetwork?: "ask" | "never";
+  /** The mode a new session starts in, unless you pick another (Settings › Modes): Standard when unset. */
+  defaultMode?: SessionMode;
 };
 
 export type UpdateMode = "auto" | "notify" | "off";
@@ -1185,7 +1236,7 @@ export type Rpc = {
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
-  "thread.create": [{ projectId: string; agent?: string; lead?: string; route?: RouteLevel; dual?: boolean; after?: After; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string }, Thread];
+  "thread.create": [{ projectId: string; agent?: string; lead?: string; route?: RouteLevel; dual?: boolean; after?: After; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode }, Thread];
   "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string; effort?: Effort; agent?: string; lead?: string | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; route?: RouteLevel | null; dual?: boolean; after?: After | null; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
   /**

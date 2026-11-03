@@ -25,6 +25,7 @@ import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type
 import { closeTab, closeWhere, openTab, paneOf, replaceTab, toggleTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, TopBar } from "./TopBar";
+import { ModeChip } from "./Modes";
 import { Timeline } from "./Timeline";
 import { Badge, Disc, Kbd, ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
@@ -422,6 +423,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             {thread.title}
           </h1>
         )}
+        <ModeChip thread={thread} />
         {tabApps.length > 0 && (
           <div className="lc-views" role="tablist" aria-label="Session views">
             {[{ id: "chat", name: "Chat", Icon: I.comment }, ...tabApps.map((a) => ({ id: a.id, name: a.name, Icon: appIcon(a.panel?.icon) }))].map((v) => (

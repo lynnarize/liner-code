@@ -1,5 +1,5 @@
 /*
-  How the app looks: the theme, the accent, the glass (the session tray's and the composer's),
+  How the app looks: the theme, the accent, the composer's glass,
   where designs open, and the backdrop, kept in this browser's storage and put on the page (and
   the window) at launch, before Settings is ever opened.
 */
@@ -9,21 +9,20 @@ import { clearTheme, inkOn, readThemes, varsOf } from "./themes";
 
 /**
   `custom`: one of your themes, by id. `accentColor`: your own accent, when `accent` is "own".
-  `tray`: how much of the thread shows through the session tray, and `composer` through the
-  composer: the two glass surfaces.
+  `composer`: how much of the thread shows through the composer, the one glass surface left.
   `designs`: where a design or an HTML page an agent shows opens: in the panel beside the chat,
   or wide in the chat itself. `designsAuto`: beside the chat, whether the panel comes up on its own.
   `action`: the colour of the most important buttons (Send, Commit and push, a card's main button):
-  red, the accent, the tray's ink, or `actionColor` when it's "own".
+  red, the accent, ink, or `actionColor` when it's "own".
   `background`: the picture behind the session ("apple:<name>", "own", or none), with how much it's
   blurred (px) and how much of it shows through (0 to 1).
 */
-export type TrayGlass = "clear" | "tinted" | "solid";
+export type Glass = "clear" | "tinted" | "solid";
 export type ActionColour = "red" | "accent" | "ink" | "own";
 export type DesignsWhere = "panel" | "chat";
-export type Look = { theme: "light" | "dark" | "system"; accent: string; tray: TrayGlass; composer: TrayGlass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
+export type Look = { theme: "light" | "dark" | "system"; accent: string; composer: Glass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
 export const LOOK_KEY = "liner-code:look";
-export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", tray: "tinted", composer: "tinted", designs: "panel", designsAuto: true, action: "red" };
+export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", composer: "tinted", designs: "panel", designsAuto: true, action: "red" };
 export const readLook = (): Look => {
   let saved: Partial<Look> & { v?: number } = {};
   try {
@@ -32,8 +31,9 @@ export const readLook = (): Look => {
     // storage is off: the defaults
   }
   // Before 0.1.4 the whole window was glass, with a material behind it and Clear to Tinted; one
-  // ground replaced them, and only the session tray keeps glass.
-  const { glass: _glass, material: _material, ...rest } = saved as Partial<Look> & { glass?: string; material?: string };
+  // ground replaced them. The session tray's glass went with the tray, for the top-right row
+  // (TopBar.tsx). What's left of either in a saved look is dropped here.
+  const { glass: _glass, material: _material, tray: _tray, ...rest } = saved as Partial<Look> & { glass?: string; material?: string; tray?: string };
   return { ...LOOK_DEFAULT, ...rest, v: 3 };
 };
 
@@ -61,7 +61,6 @@ export function applyLook(l: Look) {
     h.style.setProperty("--l-accent", l.accentColor);
     h.style.setProperty("--l-accent-ink", inkOn(l.accentColor));
   }
-  h.dataset.tray = l.tray;
   h.dataset.composer = l.composer;
   // The main buttons' colour: red by default (app.css); your own goes on the page, with ink that reads on it.
   const action = l.action === "own" && !l.actionColor ? "red" : l.action;

@@ -1,9 +1,9 @@
 /*
   Liner Code, seamless. The window, the sidebar, the session and the side panel are one ground:
   no frame, rim, gap or line between them. Space, tone and type tell them apart. Glass is left
-  on one tray, the session tray, which keeps a lane of its own and never covers text; what it
-  holds is solid. The composer is one solid text box with its controls inside, in a tray of
-  their own. Menus, popovers, ⌘K and toasts are solid. Your picture sits behind the session.
+  on the composer alone: one solid text box with its controls inside, in a tray of their own
+  that the thread shows through. Menus, popovers, ⌘K and toasts are solid. Your picture sits
+  behind the session.
   Motion follows Liner: state never overshoots, exits are faster than entrances, text and
   cards arrive by coming into focus, and reduced motion keeps only the fades.
 */
@@ -70,9 +70,6 @@ html[data-action="ink"] {
   --lc-hair: color-mix(in oklab, var(--l-ink) 8%, transparent);
   --lc-lift: 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 14px 36px -16px oklch(0.3 0.04 265 / 0.24);
   --lc-float-shadow: 0 0 0 0.5px oklch(0.3 0.04 265 / 0.08), 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 20px 48px -18px oklch(0.3 0.04 265 / 0.3), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
-  /* The session tray's glass: blur 24, saturate 160%, a lit hairline rim. */
-  --lc-tray: oklch(0.945 0.004 265 / 0.62);
-  --lc-tray-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.95), inset 0 1px 0 oklch(1 0 0 / 0.9), 0 0 0 0.5px oklch(0.25 0.02 265 / 0.1), 0 14px 36px -14px oklch(0.3 0.04 265 / 0.28), 0 2px 6px -2px oklch(0.3 0.04 265 / 0.1);
 }
 [data-theme="dark"] {
   --lc-well: color-mix(in oklab, var(--l-ink) 5%, var(--lc-paper));
@@ -89,18 +86,6 @@ html[data-action="ink"] {
   --lc-bar-tile: color-mix(in oklab, var(--l-ink) 16%, var(--lc-paper));
   --lc-lift: 0 1px 2px oklch(0 0 0 / 0.4), 0 18px 44px -16px oklch(0 0 0 / 0.75);
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
-  --lc-tray: oklch(0.32 0.007 265 / 0.55);
-  --lc-tray-rim: inset 0 0 0 0.5px oklch(1 0 0 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 0.5px oklch(0 0 0 / 0.6), 0 16px 40px -12px oklch(0 0 0 / 0.6);
-}
-/* Session tray › Glass. Clear shows more of the thread; Solid draws none. */
-html[data-tray="clear"] {
-  --lc-tray: oklch(0.945 0.004 265 / 0.38);
-}
-html[data-tray="clear"][data-theme="dark"] {
-  --lc-tray: oklch(0.32 0.007 265 / 0.32);
-}
-html[data-tray="solid"] {
-  --lc-tray: var(--lc-plate);
 }
 /*
   Everything Liner floats (popovers, menus, ⌘K, toasts, tooltips' panels) is a solid float
@@ -5347,7 +5332,7 @@ html[data-native="mac"] .lc-setup-top {
   box-shadow: inset 0 0 0 1px var(--lc-hair);
 }
 
-/* The window in miniature, on a white card: one ground, the tray in its lane, the composer. */
+/* The window in miniature, on a white card: one ground, a card, the composer. */
 .lc-st-preview {
   display: grid;
   justify-items: center;
@@ -5458,33 +5443,9 @@ html[data-native="mac"] .lc-setup-top {
   border-radius: 5px;
   background: var(--lc-act);
 }
-.lc-pv-tray {
-  position: absolute;
-  top: 50px;
-  right: 9px;
-  width: 14px;
-  height: 64px;
-  border-radius: 7px;
-  background: var(--lc-tray);
-  box-shadow: inset 0 0 0 0.5px oklch(1 0 0 / 0.7);
-}
-.lc-pv-win[data-tray="clear"] .lc-pv-tray {
-  background: oklch(0.945 0.004 265 / 0.38);
-}
-.lc-pv-win[data-tray="solid"] .lc-pv-tray {
-  background: var(--lc-plate);
-  box-shadow: none;
-}
-.lc-pv-tray::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 5px;
-  background: var(--lc-ctl);
-}
 .lc-pv-comp {
   position: absolute;
-  right: 40px;
+  right: 18px;
   bottom: 10px;
   left: 18px;
   height: 22px;

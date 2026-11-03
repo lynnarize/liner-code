@@ -33,7 +33,7 @@ import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./theme
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
-import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Look, type TrayGlass } from "./look";
+import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Glass, type Look } from "./look";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -45,11 +45,11 @@ const ACCENTS = [
   { id: "orange", color: "oklch(0.68 0.17 50)" },
   { id: "rose", color: "oklch(0.62 0.2 12)" },
 ];
-/** The main buttons' colours (look.ts): red, the accent you picked, or the tray's ink. */
+/** The main buttons' colours (look.ts): red, the accent you picked, or ink. */
 const ACTIONS: { id: ActionColour; label: string; color: string }[] = [
   { id: "red", label: "Red", color: "oklch(0.6 0.215 27)" },
   { id: "accent", label: "The accent", color: "var(--l-accent)" },
-  { id: "ink", label: "Ink, like the tray", color: "var(--lc-ctl)" },
+  { id: "ink", label: "Ink", color: "var(--lc-ctl)" },
 ];
 
 export type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "team" | "safety" | "addons" | "projects" | "git" | "archive" | "updates" | "data";
@@ -57,7 +57,7 @@ export type SettingsPage = "general" | "appearance" | "notifications" | "keyboar
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "How new sessions start, and what Enter does while an agent works.", words: "work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the glass, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid tray rail composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai voucher promo code redeem" },
@@ -681,7 +681,7 @@ function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () =
 
 /* --------------------------------- Appearance --------------------------------- */
 
-/** The window in miniature, in the look you're choosing: one ground, the session tray, the composer. */
+/** The window in miniature, in the look you're choosing: one ground, a card, the composer. */
 function Preview({ look }: { look: Look }) {
   const bg = useBackgroundUrl(look.background);
   const vars = bg ? ({ "--lc-pv-bg": `url("${bg}")`, "--lc-pv-blur": `${Math.round((look.bgBlur ?? 28) * 0.3)}px`, "--lc-pv-show": String(look.bgShow ?? 0.45) } as CSSProperties) : undefined;
@@ -689,7 +689,7 @@ function Preview({ look }: { look: Look }) {
   const accent = look.accent === "own" ? "your own colour" : look.accent;
   return (
     <div className="lc-st-preview" aria-hidden>
-      <div className="lc-pv-win" data-tray={look.tray} style={vars}>
+      <div className="lc-pv-win" style={vars}>
         <div className="lc-pv-side">
           <span className="lc-pv-lights">
             <i />
@@ -711,12 +711,11 @@ function Preview({ look }: { look: Look }) {
             <span className="lc-pv-line" style={{ width: "40%" }} />
             <span className="lc-pv-btn" />
           </span>
-          <span className="lc-pv-tray" />
           <span className="lc-pv-comp" />
         </div>
       </div>
       <span className="lc-pv-cap">
-        {mode} · {accent} · {bg ? "a picture behind the session" : `${look.tray} tray`}
+        {mode} · {accent} · {bg ? "a picture behind the session" : `${look.composer} composer`}
       </span>
     </div>
   );
@@ -829,7 +828,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Main buttons" note="The most important button wherever it is: Send, Commit and push in the session tray, a card's main button.">
+      <Group title="Main buttons" note="The most important button wherever it is: Send, Commit, a card's main button.">
         <Field title="Colour">
           <span className="lc-swatches" role="radiogroup" aria-label="Main buttons">
             {ACTIONS.map((a) => (
@@ -848,20 +847,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Glass" note="The session tray and the composer let the thread show through. Everything else sits on one solid ground.">
-        <Field title="Session tray" note="How much of the thread shows through the tray.">
-          <Segmented
-            size="sm"
-            value={look.tray}
-            onValueChange={(tray) => set({ tray: tray as TrayGlass })}
-            options={[
-              { value: "clear", label: "Clear" },
-              { value: "tinted", label: "Tinted" },
-              { value: "solid", label: "Solid" },
-            ]}
-            aria-label="Session tray glass"
-          />
-        </Field>
+      <Group title="Glass" note="The composer lets the thread show through. Everything else sits on one solid ground.">
         <Field
           title={
             <>
@@ -874,7 +860,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           <Segmented
             size="sm"
             value={look.composer}
-            onValueChange={(composer) => set({ composer: composer as TrayGlass })}
+            onValueChange={(composer) => set({ composer: composer as Glass })}
             options={[
               { value: "clear", label: "Clear" },
               { value: "tinted", label: "Tinted" },

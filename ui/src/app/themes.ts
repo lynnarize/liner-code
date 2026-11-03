@@ -35,6 +35,8 @@ export function saveThemes(list: Theme[]) {
 const isColor = (v: unknown): v is string => typeof v === "string" && /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
 /** "#rrggbbaa" loses its alpha: a theme's surfaces are drawn opaque here. */
 const solid = (v: string) => (v.length === 9 ? v.slice(0, 7) : v.length === 5 ? v.slice(0, 4) : v);
+/** The same, for a colour a theme may leave out. */
+const opt = (v?: string) => (v ? solid(v) : undefined);
 
 /** A VS Code theme's JSON as a theme here, or what's missing. */
 export function fromVSCode(text: string, fileName = ""): { theme?: Theme; error?: string } {
@@ -49,7 +51,7 @@ export function fromVSCode(text: string, fileName = ""): { theme?: Theme; error?
     return { error: "That isn't a theme's JSON. In VS Code: Developer: Generate Color Theme From Current Settings, then save the file." };
   }
   const c = v.colors ?? {};
-  const pick = (...keys: string[]) => keys.map((k) => c[k]).find(isColor) as string | undefined;
+  const pick = (...keys: string[]) => (keys.map((k) => c[k]).find(isColor) as string | undefined)?.trim();
   const surface = pick("editor.background");
   const ink = pick("editor.foreground", "foreground");
   if (!surface || !ink) return { error: "The theme has no editor colours (editor.background and editor.foreground)." };
@@ -68,9 +70,9 @@ export function fromVSCode(text: string, fileName = ""): { theme?: Theme; error?
         surface: solid(surface),
         ink: solid(ink),
         accent: solid(accent),
-        ok: pick("terminal.ansiGreen", "gitDecoration.addedResourceForeground"),
-        warn: pick("editorWarning.foreground", "terminal.ansiYellow"),
-        danger: pick("errorForeground", "editorError.foreground", "terminal.ansiRed"),
+        ok: opt(pick("terminal.ansiGreen", "gitDecoration.addedResourceForeground")),
+        warn: opt(pick("editorWarning.foreground", "terminal.ansiYellow")),
+        danger: opt(pick("errorForeground", "editorError.foreground", "terminal.ansiRed")),
       },
     },
   };

@@ -92,6 +92,8 @@ export type OpenOptions = {
   fork?: boolean;
   /** Turn on the destructive-command guard even in Full access. */
   guard: boolean;
+  /** A one-off read (a review, a judge, a commit message): the tool keeps no transcript of it. */
+  ephemeral?: boolean;
   /** This turn is a lead's plan: read only, ending in a plan to approve rather than in edits. */
   planning?: boolean;
   /** A side chat beside a session: read only, and it answers rather than plans. */

@@ -204,10 +204,12 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
     return () => void takers.delete(take);
   }, [thread.id]);
 
-  // The folder's server, once; the designs' files are watched while this is open.
+  // The folder's server, once; the designs' files are watched while this is open. Both are asked again
+  // after a reconnect: a restarted engine serves from a new port and watches nothing.
   const any = designs.length > 0;
+  const connected = useEngine((s) => s.connected);
   useEffect(() => {
-    if (!any) return;
+    if (!any || !connected) return;
     let live = true;
     void rpc("browser.files", { threadId: thread.id })
       .then((r) => live && setBase(r.url))
@@ -217,7 +219,7 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
       live = false;
       void rpc("design.watch", { threadId: thread.id, on: false }).catch(() => {});
     };
-  }, [thread.id, any]);
+  }, [thread.id, any, connected]);
   // Which version of each you had built: asked again when a version comes.
   const versions = designs.reduce((n, x) => n + x.versions.length, 0);
   useEffect(() => {

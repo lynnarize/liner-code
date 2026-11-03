@@ -177,8 +177,8 @@ export function App() {
     setView({ kind: "home", projectId: projectId ?? (current?.projectId || lastProject) });
   };
 
-  /** The sessions as the sidebar shows them, top to bottom: ⌘1 to ⌘9 and "next that needs you" go by it. */
-  const sidebarOrder = () => [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].map((r) => r.dataset.row ?? "");
+  /** The sessions as the sidebar shows them, top to bottom: ⌘1 to ⌘9 and "next that needs you" go by it. A closed shelf's rows are still in the DOM (for its closing fold) but don't count; a hidden sidebar's do. */
+  const sidebarOrder = () => [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].filter((r) => !r.closest(".lc-fold[inert]")).map((r) => r.dataset.row ?? "");
   // The next session that waits on you, down the sidebar from the one that's open, round to the top.
   const nextNeeds = () => {
     const order = sidebarOrder();
@@ -212,7 +212,7 @@ export function App() {
     }
     else if (name === "sidebar") setSidebar((s) => !s);
     else if (name === "usage") setView({ kind: "usage" });
-    else if (name === "open-project") void bridge.pickFolder().then((p) => (p ? rpc("project.add", { path: p }).then((x) => setView({ kind: "home", projectId: x.id })) : undefined));
+    else if (name === "open-project") void bridge.pickFolder().then((p) => (p ? rpc("project.add", { path: p }).then((x) => setView({ kind: "home", projectId: x.id })) : undefined)).catch((e: Error) => toast.error(e.message));
     else if (name === "next-needs") nextNeeds();
     else if (name === "focus.next") moveFocus(1);
     else if (name === "focus.prev") moveFocus(-1);
@@ -229,9 +229,9 @@ export function App() {
         e.preventDefault();
         return runRef.current(name);
       }
-      // ⌘1 to ⌘9 open the sessions down the sidebar, unless a dialog (⌘K) has the keyboard.
+      // ⌘1 to ⌘9 open the sessions down the sidebar, unless something inside (a model picker's ⌘1–9) took the press or a dialog (⌘K) has the keyboard.
       const n = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((k) => matches(e, `mod+${k}`));
-      if (!n || document.querySelector("dialog[open]")) return;
+      if (!n || e.defaultPrevented || document.querySelector("dialog[open]")) return;
       e.preventDefault();
       const id = sidebarOrder()[n - 1];
       if (id) runRef.current(`open:${id}`);

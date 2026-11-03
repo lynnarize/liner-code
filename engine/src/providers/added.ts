@@ -22,9 +22,13 @@ import type { Provider } from "./types.ts";
 const HOME_VAR = ACCOUNT_HOME;
 const BIN: Partial<Record<BuiltinProvider, string>> = { claude: "claude", codex: "codex", hermes: "hermes", opencode: "opencode", cursor: "cursor-agent", grok: "grok" };
 
-const expand = (p: string) => resolve(p.trim().replace(/^~(?=\/|$)/, homedir()));
+const win = process.platform === "win32";
+const expand = (p: string) => resolve(p.trim().replace(/^~(?=[\\/]|$)/, homedir()));
 const tilde = (p: string) => (p.startsWith(homedir()) ? `~${p.slice(homedir().length)}` : p);
-const quote = (v: string) => (/^[\w./:@~-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`);
+// Quoted for the shell the sign-in runs in: cmd.exe on Windows (double quotes, and %% because it runs from a .cmd file), else zsh.
+const quote = (v: string) => (/^[\w./:@~-]+$/.test(v) || (win && /^[\w.\\/:@~-]+$/.test(v)) ? v : win ? `"${v.replace(/"/g, "").replace(/%/g, "%%")}"` : `'${v.replace(/'/g, `'\\''`)}'`);
+// cmd.exe has no `VAR=value cmd` form: each variable is set first, for the rest of the line.
+const assign = (k: string, v: string) => (win ? `set "${k}=${v.replace(/"/g, "").replace(/%/g, "%%")}" &&` : `${k}=${quote(v)}`);
 
 /** What an account adds to its tool's environment. */
 export function accountEnv(a: ToolAccount): Record<string, string> {
@@ -45,7 +49,7 @@ export function accountProvider(base: Provider, a: ToolAccount): Provider {
   // Signing in runs the tool's own login with the account's folder and copy.
   const vars = Object.entries(extra)
     .filter(([k]) => !k.startsWith("LINER_BIN_"))
-    .map(([k, v]) => `${k}=${quote(v)}`)
+    .map(([k, v]) => assign(k, v))
     .join(" ");
   const bin = BIN[a.provider] ? extra[binVar(BIN[a.provider]!)] : undefined;
   const login = (cmd: string) => {

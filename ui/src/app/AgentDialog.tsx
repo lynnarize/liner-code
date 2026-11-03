@@ -47,6 +47,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
   const [access, setAccess] = useState<Access>("ask");
   const [soul, setSoul] = useState("");
   const [touched, setTouched] = useState(false);
+  // Shown in the footer: a toast would land under the modal dialog, out of sight.
+  const [error, setError] = useState("");
   const [runMode, setRunMode] = useState<RunMode>("helpers");
   const [subs, setSubs] = useState<{ explorer?: string; tests?: string }>({});
   const [prompt, setPrompt] = useState("");
@@ -70,6 +72,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     setSkills(agent?.skills ?? []);
     setContextFiles(agent?.contextFiles ?? []);
     setTouched(Boolean(agent));
+    setError("");
     ref.current?.showModal();
   }, [open, agent?.id]);
   useEffect(() => {
@@ -128,9 +131,9 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
 
   const save = async () => {
     const n = name.trim();
-    if (!n) return toast.error("Give it a name first.");
+    if (!n) return setError("Give it a name first.");
     const id = agent?.id ?? (n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `agent-${Date.now().toString(36)}`);
-    if (!agent && agents.some((a) => a.id === id)) return toast.error(`There's already an agent called ${n}.`);
+    if (!agent && agents.some((a) => a.id === id)) return setError(`There's already an agent called ${n}.`);
     const knows = { prompt: prompt.trim() || undefined, skills: skills.length ? skills : undefined, contextFiles: contextFiles.length ? contextFiles : undefined };
     const next: AgentProfile = { id, name: n, role: role.trim() || preset.role, glyph, specialty: spec, model, effort, access, soul, ...knows, ...(claude ? { runMode, subagents: subs } : {}) };
     try {
@@ -138,12 +141,16 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
       toast.success(agent ? `${n} is updated` : `${n} joined the team`);
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      setError(e instanceof Error ? e.message : String(e));
     }
   };
   const remove = async () => {
     if (!agent) return;
-    await rpc("agents.save", { agents: agents.filter((a) => a.id !== agent.id) });
+    try {
+      await rpc("agents.save", { agents: agents.filter((a) => a.id !== agent.id) });
+    } catch (e) {
+      return setError(e instanceof Error ? e.message : String(e));
+    }
     toast(`${agent.name} left the team`);
     onClose();
   };
@@ -192,6 +199,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
                   value={name}
                   onChange={(e) => {
                     setTouched(true);
+                    setError("");
                     setName(e.target.value);
                   }}
                 />
@@ -323,13 +331,19 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
           </div>
         </div>
         <div className="lc-sheet-foot lc-ad-foot">
-          <span className="lc-ad-sum">
-            <span className="lc-ad-disc">
-              <Glyph glyph={glyph} size={14} />
+          {error ? (
+            <span className="lc-ad-err" role="alert" title={error}>
+              {error}
             </span>
-            <b>{name || "Unnamed"}</b>
-            <span>{summary}</span>
-          </span>
+          ) : (
+            <span className="lc-ad-sum">
+              <span className="lc-ad-disc">
+                <Glyph glyph={glyph} size={14} />
+              </span>
+              <b>{name || "Unnamed"}</b>
+              <span>{summary}</span>
+            </span>
+          )}
           <span className="lc-grow" />
           {agent && (
             <button type="button" className="lc-btn" data-kind="ghost" onClick={() => void remove()}>
@@ -348,8 +362,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
   );
 }
 
-/** Where a path is read: an absolute or ~ path is the same everywhere; a relative one is in each project. */
-const isOwn = (p: string) => p.startsWith("/") || p.startsWith("~/");
+/** Where a path is read: an absolute (Windows `C:\` and `\\server` too) or ~/ path is the same everywhere; a relative one is in each project. */
+const isOwn = (p: string) => p.startsWith("/") || p.startsWith("~/") || /^[a-z]:[\\/]/i.test(p) || p.startsWith("\\\\");
 const shortPath = os.tilde;
 /** A skill's description to its first sentence, for a list. */
 const brief = (d: string) => {
@@ -358,7 +372,7 @@ const brief = (d: string) => {
 };
 /** A skill's name from its path: the folder of a SKILL.md, or the file. */
 const skillName = (p: string) => {
-  const parts = p.split("/").filter(Boolean);
+  const parts = p.split(/[\\/]/).filter(Boolean);
   const last = parts[parts.length - 1] ?? p;
   return /^skill\.md$/i.test(last) ? (parts[parts.length - 2] ?? last) : last.replace(/\.md$/i, "");
 };

@@ -203,19 +203,33 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       asking.delete(id);
     }
   };
-  const detect = async (force = false) => {
-    detected = await Promise.all(
-      Object.values(providers).map((p) =>
-        p.detect(env).catch((e): ProviderInfo => ({ id: p.id, label: p.id, available: false, adapter: false, login: "", detail: String(e), models: [], supports: { approvals: false, resume: false, effort: false, plan: false } })),
-      ),
-    );
-    detected = detected.map((d) => {
-      const had = listed[d.id];
-      return had && d.modelsFrom !== "cli" && had.version === d.version ? { ...d, models: had.models, modelsFrom: "cli", modelsAt: had.at } : d;
-    });
-    publish();
-    for (const d of detected) void askModels(d.id, force);
-    return detected;
+  // Overlapping looks (a key and its endpoint saved together, an agent added then removed) can
+  // finish out of order: only the newest one's answer counts, and an older one waits for it.
+  let detectGen = 0;
+  let detecting: Promise<ProviderInfo[]> | undefined;
+  let forcing = false;
+  const detect = (force = false): Promise<ProviderInfo[]> => {
+    const gen = ++detectGen;
+    forcing ||= force;
+    const run = (async () => {
+      const found = await Promise.all(
+        Object.values(providers).map((p) =>
+          p.detect(env).catch((e): ProviderInfo => ({ id: p.id, label: p.id, available: false, adapter: false, login: "", detail: String(e), models: [], supports: { approvals: false, resume: false, effort: false, plan: false } })),
+        ),
+      );
+      if (gen !== detectGen) return detecting!;
+      const forced = forcing;
+      forcing = false;
+      detected = found.map((d) => {
+        const had = listed[d.id];
+        return had && d.modelsFrom !== "cli" && had.version === d.version ? { ...d, models: had.models, modelsFrom: "cli", modelsAt: had.at } : d;
+      });
+      publish();
+      for (const d of detected) void askModels(d.id, forced);
+      return detected;
+    })();
+    detecting = run;
+    return run;
   };
   // Each tool's plan windows, asked of the tool: once its tools are found, again after a turn on
   // it (fifteen seconds apart at most: Claude Code's answer starts it), and when you press Look
@@ -267,10 +281,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   const keyList = () => [...runtime.keys.keys()];
   // A side chat works in its session's own folder, so letting it go never touches the worktree.
   const dropSide = (id: string) => {
-    const t = store.thread(id);
+    store.thread(id);
     runtime.closeThread(id);
     store.removeThread(id);
-    store.emit({ type: "thread", thread: { ...t, archived: true } });
+    store.emit({ type: "thread.removed", id });
   };
 
   // A new worktree has none of the checkout's installed packages; the project's setup command
@@ -439,7 +453,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const sent = join(store.home, "attachments", id);
     const lent = store.threads.some((o) => o.forkOf && !o.sideOf && store.peek(o.id, ["user"]).some((x) => x.kind === "user" && x.files?.some((f) => f.startsWith(`${sent}${sep}`))));
     for (const dir of lent ? ["designs"] : ["designs", "attachments"]) rmSync(join(store.home, dir, id), { recursive: true, force: true });
-    store.emit({ type: "thread", thread: { ...t, archived: true } });
+    store.emit({ type: "thread.removed", id });
     if (kept) store.emit({ type: "notify", threadId: id, kind: "done", title: "Kept its worktree", body: `${root} stays: ${kept}. Its branch ${t.worktree!.branch} stays too.` });
     return kept;
   };
@@ -512,7 +526,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(resolve(path.replace(/^~(?=\/|$)/, homedir())), undefined, agent);
     },
     // An empty agent clears it: new sessions there start with whoever Home would pick.
-    "sessions.importable": ({ projectId }) => importable(store.project(projectId).path, env, new Set(store.threads.flatMap((t) => (t.providerSession ? [t.providerSession] : [])))),
+    "sessions.importable": ({ projectId }) => importable(store.project(projectId).path, env, new Set(store.threads.flatMap((t) => [t.providerSession, t.leadSession, ...Object.values(t.sessions ?? {})].filter((s): s is string => Boolean(s))))),
     "sessions.import": async ({ projectId, tool, id }) => {
       const project = store.project(projectId);
       const taken = store.threads.find((t) => t.providerSession === `${tool}:${id}`);
@@ -557,11 +571,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // Worktrees other than the checkout itself, with the session that made each, if any.
       const worktrees: { path: string; branch?: string; threadId?: string }[] = [];
       let cur2: { path?: string; branch?: string } = {};
+      // Real paths on both sides, as worktrees.clean does; one deleted by hand is still listed (prunable) and skipped.
+      const here = realOf(cwd);
       for (const line of [...trees.stdout.split("\n"), ""]) {
         if (line.startsWith("worktree ")) cur2 = { path: line.slice(9) };
         else if (line.startsWith("branch ")) cur2.branch = line.slice(7).replace(/^refs\/heads\//, "");
         else if (!line && cur2.path) {
-          if (realpathSync(cur2.path) !== realpathSync(cwd) && existsSync(cur2.path)) worktrees.push({ path: cur2.path, branch: cur2.branch, threadId: store.threads.find((t) => t.worktree && (t.worktree.root ?? t.worktree.path) === cur2.path && !t.archived)?.id });
+          const real = existsSync(cur2.path) ? realOf(cur2.path) : undefined;
+          if (real && real !== here) worktrees.push({ path: cur2.path, branch: cur2.branch, threadId: store.threads.find((t) => t.worktree && !t.archived && realOf(t.worktree.root ?? t.worktree.path) === real)?.id });
           cur2 = {};
         }
       }
@@ -610,6 +627,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       for (const t of sessions) x.terms.closeThread?.(t.id);
       for (const t of sessions) await dropThread(t.id).catch((e) => console.error("[project.remove]", e));
       for (const t of store.threads.filter((x) => x.projectId === id)) await dropThread(t.id).catch(() => {});
+      // Its routines go with it: they'd only fail on every schedule, with no project to run in.
+      for (const r of x.routines.routines.filter((r) => r.projectId === id)) x.routines.remove(r.id);
       store.removeProject(id);
       return null;
     },
@@ -829,7 +848,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "memory.list": ({ projectId }) => factsOf(store.home, store.project(projectId).id),
     "memory.add": ({ projectId, fact }) => remember(store.home, store.project(projectId).id, fact).facts,
-    "memory.forget": ({ projectId, index }) => forgetFact(store.home, store.project(projectId).id, index),
+    "memory.forget": ({ projectId, fact }) => forgetFact(store.home, store.project(projectId).id, fact),
     "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query),
     "thread.carryOn": async ({ id, model }) => (await ensureWorktree(id), await runtime.carryOn(id, model), null),
     "thread.send": ({ id, text, files, mode, anchor }) => {
@@ -1062,7 +1081,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const picked = (f: FileChange) => !only?.length || only.includes(f.path);
       // Paths in the project's folder, as git reads them from here (an older checkpoint's from the repository's top).
       const prefix = await prefixOf(cwd);
-      const paths = [...new Set(open.flatMap((x) => x.files.filter(picked).flatMap((f) => [f.path, ...(f.from ? [f.from] : [])])))].map((p) => local(p, prefix));
+      const paths = [...new Set(open.flatMap((x) => x.files.filter(picked).flatMap((f) => [f.path, ...(f.from ? [f.from] : [])].map((p) => local(p, prefix, f.rel)))))];
       if (!paths.length) throw new Error("Nothing to commit.");
       const add = await git(cwd, ["add", "-A", "--", ...literal(paths)]);
       if (add.code !== 0) throw new Error(add.stderr.trim() || "git add failed.");
@@ -1151,7 +1170,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "updates.tool": ({ id }) => updates.updateTool(id),
     "updates.dismiss": ({ key }) => updates.dismiss(key),
 
-    "fs.files": ({ projectId, query, limit }) => findFiles(store.project(projectId).path, query, limit),
+    "fs.files": ({ projectId, threadId, query, limit }) => findFiles(threadId ? cwdOf(threadId) : store.project(projectId).path, query, limit),
     "fs.tree": ({ projectId, threadId }) => tree(threadId ? cwdOf(threadId) : store.project(projectId).path),
     "fs.read": ({ threadId, path }) => readFile(cwdOf(threadId), path),
     "files.raw": ({ threadId, path }) => {
@@ -1284,7 +1303,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const cwd = cwdOf(threadId);
       const open = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? [x] : []));
       const prefix = await prefixOf(cwd);
-      const paths = [...new Set(open.flatMap((x) => x.files.map((f) => local(f.path, prefix))))];
+      const paths = [...new Set(open.flatMap((x) => x.files.map((f) => local(f.path, prefix, f.rel))))];
       if (!paths.length) throw new Error("Nothing to commit.");
       const diff = (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(paths)], { cwd, timeout: 30000 })).stdout || (await run("git", ["diff", "--relative", ...PATCH, "--cached", "-U2", "--", ...literal(paths)], { cwd, timeout: 30000 })).stdout;
       const by = runtime.writerFor(t);
@@ -1315,7 +1334,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const files = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted ? x.files.map((f) => `${f.path} (+${f.added} −${f.removed})`) : [])))].slice(0, 40);
       const cwd = cwdOf(threadId);
       const prefix = await prefixOf(cwd);
-      const open = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? x.files.map((f) => local(f.path, prefix)) : [])))];
+      const open = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? x.files.map((f) => local(f.path, prefix, f.rel)) : [])))];
       const diff = open.length ? (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(open)], { cwd, timeout: 30000 }).catch(() => null))?.stdout ?? "" : "";
       const by = runtime.writerFor(t);
       const out = await runtime.quiet(threadId, by, cwd, deskPrompt(t.title, asksOf(threadId), said, files, context, question.slice(0, 1000), diff), new AbortController().signal, "desk");
@@ -1437,17 +1456,27 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   };
 }
 
-const dayOf = (at: number) => new Date(at).toISOString().slice(0, 10);
+// Local calendar days: the engine runs on your machine, so its zone is yours (the app labels days the same way).
+const dayOf = (at: number) => {
+  const x = new Date(at);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+};
 
 function summarize(store: Store, days: number, projectId?: string): UsageSummary {
   const to = Date.now();
-  const from = to - days * 86400000;
+  // Whole days, today included, from midnight: 'This month' (days = today's date) starts on the 1st, not partway into last month.
+  days = Math.max(1, Math.floor(days));
+  const start = new Date(to);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (days - 1));
+  const from = start.getTime();
   const rows = store.usage(from).filter((r) => !projectId || r.projectId === projectId);
   const tokens = (r: { inputTokens: number; outputTokens: number; cacheReadTokens: number }) => r.inputTokens + r.outputTokens + r.cacheReadTokens;
   const sum = rows.reduce((s, r) => ({ cost: s.cost + r.costUsd, tokens: s.tokens + tokens(r), cache: s.cache + r.cacheReadTokens, input: s.input + r.inputTokens + r.cacheReadTokens }), { cost: 0, tokens: 0, cache: 0, input: 0 });
   const priciest = rows.reduce<(typeof rows)[number] | undefined>((m, r) => (!m || r.costUsd > m.costUsd ? r : m), undefined);
   const dayMap = new Map<string, { costUsd: number; tokens: number; turns: number }>();
-  for (let d = 0; d < days; d++) dayMap.set(dayOf(from + (d + 1) * 86400000), { costUsd: 0, tokens: 0, turns: 0 });
+  // Stepped by calendar day, so a clock change doesn't skip or repeat one; every row's day is then already in order.
+  for (let d = 0, x = new Date(from); d < days; d++, x.setDate(x.getDate() + 1)) dayMap.set(dayOf(x.getTime()), { costUsd: 0, tokens: 0, turns: 0 });
   for (const r of rows) {
     const d = dayMap.get(dayOf(r.at)) ?? { costUsd: 0, tokens: 0, turns: 0 };
     d.costUsd += r.costUsd;

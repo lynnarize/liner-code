@@ -26,7 +26,7 @@ test("memory: a fact is saved once, one line, and the newest show first to a new
   remember(home, "p", "The person wants plain HTML, no build step.");
   assert.deepEqual(factsOf(home, "p"), ["Tests run with npm test -- --run", "The person wants plain HTML, no build step."]);
   assert.match(memoryNote(home, "p"), /saved[\s\S]*\n- The person wants plain HTML, no build step\.\n- Tests run with npm test -- --run$/);
-  assert.deepEqual(forget(home, "p", 0), ["The person wants plain HTML, no build step."]);
+  assert.deepEqual(forget(home, "p", "Tests run with npm test -- --run"), ["The person wants plain HTML, no build step."]);
   assert.deepEqual(factsOf(home, "other"), [], "each project its own");
   assert.throws(() => remember(home, "p", "   "), /sentence/);
 });

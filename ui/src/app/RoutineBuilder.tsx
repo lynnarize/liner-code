@@ -32,7 +32,7 @@ function triggerStep(r: Draft, c: Ctx, id = "trigger"): WorkflowStep {
   if (t.kind === "github") fields.push(sel("event", "When", t.event, [{ value: "pr.opened", label: "A pull request opens" }, { value: "issue.opened", label: "An issue is opened" }]), toggle("outside", "Only from outside the team", Boolean(t.outside), "not from the team", "from anyone"));
   if (t.kind === "schedule") {
     fields.push(sel("every", "How often", t.every, [{ value: "hour", label: "Every hour" }, { value: "day", label: "Every day" }, { value: "weekday", label: "Weekdays" }, { value: "week", label: "Once a week" }]));
-    if (t.every !== "hour") fields.push(text("at", "At", t.at ?? "09:00", "09:00"));
+    if (t.every !== "hour") fields.push(text("at", "At", t.at ?? "09:00", "09:00", "24-hour time, like 09:00 or 17:30"));
     if (t.every === "week") fields.push(sel("day", "On", String(t.day ?? 1), DAYS.map((d, i) => ({ value: String(i), label: d }))));
   }
   fields.push(
@@ -135,7 +135,10 @@ export function fromSteps(steps: WorkflowStep[], base: Draft): Draft {
       if (start === "event") trigger = { kind: "github", event: val(s, "event", "pr.opened") as "pr.opened", outside: val(s, "outside", false) };
       else if (start === "schedule") {
         const every = val(s, "every", "day") as "day";
-        trigger = { kind: "schedule", every, at: val(s, "at", "09:00"), ...(every === ("week" as string) ? { day: Number(val(s, "day", "1")) } : {}) };
+        // "9", "9:30" or "09:30" saves as 09:30; anything else (empty, "9am") keeps the last good time, so the schedule never loses its next run.
+        const hm = /^([01]?\d|2[0-3])(?::([0-5]\d))?$/.exec(val<string>(s, "at", "09:00").trim());
+        const at = hm ? `${hm[1].padStart(2, "0")}:${hm[2] ?? "00"}` : base.trigger.kind === "schedule" ? (base.trigger.at ?? "09:00") : "09:00";
+        trigger = { kind: "schedule", every, at, ...(every === ("week" as string) ? { day: Number(val(s, "day", "1")) } : {}) };
       } else if (start === "webhook") trigger = { kind: "webhook", secret: base.trigger.kind === "webhook" ? base.trigger.secret : "" };
       else trigger = { kind: "manual" };
       next.runsGo = val(s, "runsGo", base.runsGo) as "own";

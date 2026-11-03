@@ -58,7 +58,7 @@ test("a turn's changes are read file by file, and undo puts every file back as i
 
   const files = await changes(dir, before, after);
   const by = new Map(files.map((f) => [f.path, f]));
-  assert.deepEqual({ ...by.get("keep.txt") }, { path: "keep.txt", status: "modified", added: 2, removed: 1 });
+  assert.deepEqual({ ...by.get("keep.txt") }, { path: "keep.txt", status: "modified", added: 2, removed: 1, rel: true });
   assert.equal(by.get("src/new.ts")?.status, "added");
   assert.equal(by.get("gone.txt")?.status, "deleted");
   assert.equal(by.get("new-name.txt")?.status, "renamed");
@@ -195,7 +195,7 @@ test("names git would quote or read as patterns: read, shown and undone as they 
   assert.ok(before && after);
   const files = await changes(dir, before, after);
   const by = new Map(files.map((f) => [f.path, f]));
-  assert.deepEqual({ ...by.get("café.txt") }, { path: "café.txt", status: "modified", added: 2, removed: 1 });
+  assert.deepEqual({ ...by.get("café.txt") }, { path: "café.txt", status: "modified", added: 2, removed: 1, rel: true });
   assert.equal(by.get("Screenshot 9.41.00 AM.png")?.status, "modified");
   assert.equal(by.get("*.txt")?.status, "deleted");
   assert.equal(by.get("dir é/rené.md")?.from, "dir é/naïve.md");

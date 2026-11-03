@@ -4,24 +4,30 @@
   Simulator. Each one is a few commands the engine runs for the app.
 */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Device, LocalServer, PrInfo } from "../../contracts/src/index.ts";
-import { run, THREAD_ENV, which } from "./exec.ts";
+import { outside, run, THREAD_ENV, which } from "./exec.ts";
 import { uid, type Store } from "./store.ts";
 import { endShell, winShell } from "./winterm.ts";
 
 /* ---------- Files ---------- */
 
 /** A file in the session's folder, as text; anything binary or huge says so instead. */
-export function readFile(root: string, path: string) {
+export function readFile(rootIn: string, path: string) {
+  // Links followed first, as files.raw does, so a symlink can't reach out of the session's folder.
+  const root = realpathSync(rootIn);
   const abs = resolve(root, path);
-  const rel = relative(root, abs);
-  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("That file is outside the project.");
   if (!existsSync(abs)) throw new Error("That file isn't there any more.");
-  const size = statSync(abs).size;
+  const real = realpathSync(abs);
+  const rel = relative(root, real);
+  if (!rel || outside(rel) || resolve(root, rel) !== real) throw new Error("That file is outside the project.");
+  const st = statSync(real);
+  // Not a folder, nor a device like /dev/zero that never ends.
+  if (!st.isFile()) throw new Error("That isn't a file.");
+  const size = st.size;
   if (size > 2_000_000) return { text: "", size, binary: true };
-  const buf = readFileSync(abs);
+  const buf = readFileSync(real);
   const binary = buf.subarray(0, 8000).includes(0);
   return { text: binary ? "" : buf.toString("utf8"), size, binary };
 }
@@ -72,6 +78,12 @@ while True:
                 size(int(c), int(rr))
             except Exception:
                 pass
+# Hung up before waiting: with the engine gone (killed, crashed), the shell would wait on an open tty for good.
+os.close(fd)
+try:
+    os.kill(pid, signal.SIGHUP)
+except ProcessLookupError:
+    pass
 _, status = os.waitpid(pid, 0)
 sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
 `;

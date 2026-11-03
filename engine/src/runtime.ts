@@ -79,6 +79,8 @@ type Cascade = { judge: string; strong: string };
 const ROUNDS = 2;
 /** A command that reaches outside this Mac: a push, a merge or a post, a send, a copy to another machine. */
 const OUTWARD = /\bgit\s+push\b|\bgh\s+(?:\w+\s+)?(?:merge|create|close|edit|comment|review|delete|reopen)\b|\bgh\s+api\b.*(?:-X|--method|-f\b|-F\b|--field|--input)|\b(?:curl|wget)\b.*(?:\s-d\b|--data|\s-F\b|--form|\s-T\b|--upload-file|-X\s*(?:POST|PUT|DELETE|PATCH)|--post-)|\b(?:ssh|scp|rsync|sftp|nc)\s/i;
+/** The tools that only edit files in the project, by the name each provider asks with (Claude Code's, Codex's apply_patch, ACP's "edit" kind). */
+const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit", "apply_patch", "edit"]);
 type Waiter<T> = { resolve: (v: T) => void; reject: (e: Error) => void };
 
 export class Runtime {
@@ -361,6 +363,7 @@ export class Runtime {
   private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"], files?: string[]) {
     const store = this.store;
     const t = store.thread(threadId);
+    this.settleAsks(threadId);
     // Past its spending cap: your message is the go-ahead for another cap's worth.
     const cap = store.settings.capUsd ?? 0;
     if (cap > 0 && t.usage.costUsd >= (t.spendLimit ?? cap)) {
@@ -579,6 +582,7 @@ export class Runtime {
   */
   async startGoal(threadId: string, text: string, max = 12) {
     this.store.patchThread(threadId, { goal: { text, status: "active", turns: 0, max } });
+    this.settleAsks(threadId);
     await this.goalTurn(threadId, text, true);
   }
   private async goalTurn(threadId: string, text: string, first: boolean) {
@@ -611,6 +615,11 @@ export class Runtime {
     if (g.turns >= g.max) {
       store.patchThread(threadId, { goal: { ...g, status: "stopped" } });
       note(`Stopped after ${g.max} turns without meeting the goal. Send /goal again to keep going.`);
+      return false;
+    }
+    // What you wrote while it worked goes first (when the hold ends); the goal goes on after it.
+    if ((t.queue ?? []).length) {
+      note("The goal goes on after your message.");
       return false;
     }
     void this.goalTurn(threadId, g.text, false);
@@ -980,7 +989,7 @@ export class Runtime {
   async quiet(threadId: string, ref: string, cwd: string, prompt: string, signal: AbortSignal, as = "reviewer"): Promise<string> {
     const { provider, model } = splitModel(ref);
     const p = providers[provider] ?? demo;
-    const session = p.open({ cwd, model, effort: "medium", access: "read", soul: "", guard: true, env: this.envFor(provider) });
+    const session = p.open({ cwd, model, effort: "medium", access: "read", soul: "", guard: true, ephemeral: true, env: this.envFor(provider) });
     let text = "";
     // Its own tokens and cost, apart from the thread's, so reads side by side don't count each other's.
     const own = emptyUsage();
@@ -1165,6 +1174,13 @@ export class Runtime {
     if (!still && this.turns.has(threadId)) this.store.patchThread(threadId, { status: "running" });
   }
 
+  /** You moved on with a new message: a question or planner's plan left open from an earlier turn is settled, so it doesn't hold this turn in Needs you. */
+  private settleAsks(threadId: string) {
+    const from = this.store.thread(threadId).sideFrom ?? 0;
+    for (const x of this.store.timeline(threadId))
+      if (x.turn > from && (x.kind === "question" || x.kind === "proposal") && x.state === "asking") this.store.putItem(threadId, { ...x, state: x.kind === "question" ? "skipped" : "expired" } as Item);
+  }
+
   /** Resolves once nothing is in flight in a thread (a stopped turn has wound down), or after `ms`. */
   async idle(threadId: string, ms = 10_000) {
     for (const end = Date.now() + ms; this.isRunning(threadId) && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
@@ -1214,13 +1230,22 @@ export class Runtime {
   /** A limited session carries on with another tool's model: the conversation goes over with it, then it continues where it stopped. */
   async carryOn(threadId: string, model?: string) {
     const t = this.store.thread(threadId);
-    const limit = this.store.timeline(threadId).findLast((x) => x.kind === "limit");
+    const items = this.store.timeline(threadId);
+    const limit = items.findLast((x) => x.kind === "limit");
     const to = model ?? (limit?.kind === "limit" ? limit.fallback : undefined);
     if (!to) throw new Error("No other tool is ready to carry on with.");
-    const from = this.resolve(t);
+    // The part the limit cut off: the planner, a refiner, or the writer. A refiner on the planner's model is told by its turn.
+    const who = t.turnBy ?? t.agent;
+    const last = items.findLast((x) => x.kind === "turn");
+    const planning = Boolean(t.lead) && who === t.lead && t.lead !== t.agent && (last?.kind !== "turn" || last.planning !== false);
+    const from = this.resolve(t, who);
+    // A planner moves to the other model itself, a refiner hands over to it, and the writer's own model changes only when it was cut off.
+    const moved = planning ? { lead: `@${to}` } : who !== t.agent ? {} : t.route ? { route: { ...t.route, root: to } } : { model: to };
     // On another model the limit no longer holds the session, so the message below can go (straight away, or when the limited turn's hold ends).
-    this.store.patchThread(threadId, { ...(t.route ? { route: { ...t.route, root: to } } : { model: to }), ...(t.status === "limited" ? { status: "idle" as const, limit: undefined } : {}) });
+    this.store.patchThread(threadId, { ...moved, ...(t.status === "limited" ? { status: "idle" as const, limit: undefined } : {}) });
     this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `${this.labelOf(`${from.provider}:${from.model}`)} is out of usage, so ${this.labelOf(to)} carries on with the conversation so far.` });
+    if (planning) return this.turn(threadId, CONTINUE, `@${to}`, true);
+    if (who !== t.agent) return this.turn(threadId, CONTINUE, `@${to}`, false, { review: false, part: "refine" });
     await this.send(threadId, CONTINUE);
   }
 
@@ -1243,7 +1268,11 @@ export class Runtime {
       const tool = this.providerInfo.find((p) => p.id === t.limit?.provider)?.label ?? t.limit?.provider ?? "The tool";
       this.store.patchThread(t.id, { status: "idle", limit: undefined });
       this.store.putItem(t.id, { kind: "notice", id: uid("it"), turn: t.turns, at: now, text: `${tool}'s usage window reopened, so this session carries on by itself.` });
-      void this.send(t.id, CONTINUE).catch(() => {});
+      // The part the limit cut off carries on: the planner or a refiner in its own turn, the writer with your message as usual.
+      const who = t.turnBy ?? t.agent;
+      const last = this.store.timeline(t.id).findLast((x) => x.kind === "turn");
+      const planning = Boolean(t.lead) && who === t.lead && t.lead !== t.agent && (last?.kind !== "turn" || last.planning !== false);
+      void (who === t.agent && !planning ? this.send(t.id, CONTINUE) : this.turn(t.id, CONTINUE, who, planning, { review: false })).catch(() => {});
     }
   }
 
@@ -1304,6 +1333,8 @@ export class Runtime {
   shutdown() {
     clearInterval(this.watchdog);
     for (const id of this.turns.keys()) this.stop(id);
+    // A pull request's test suite runs outside any turn, in a process group of its own.
+    for (const s of this.prStops.values()) s.abort();
     for (const l of this.live.values()) l.session.close();
   }
 
@@ -1437,13 +1468,13 @@ export class Runtime {
         // (Codex reads files with commands), anything else is declined.
         if (store.thread(threadId).trial) {
           const command = req.fields.find((f) => f.label === "Command")?.value ?? req.title.replace(/^Run /, "");
-          return Promise.resolve(/edit|write|patch|filechange|notebook/i.test(req.tool) || readsOnly(command) ? { allow: true } : { allow: false, reason: "This is a short cost test: read and edit the files without running anything." });
+          return Promise.resolve(EDIT_TOOLS.has(req.tool) || readsOnly(command) ? { allow: true } : { allow: false, reason: "This is a short cost test: read and edit the files without running anything." });
         }
         const toolId = req.key ? tools.get(req.key)?.id : undefined;
         const access = store.thread(threadId).access;
         const command = req.fields.find((f) => f.label === "Command")?.value;
         // Auto: the tool's own auto mode lets through what it can; of what it hands over, reading and editing go ahead.
-        if (access === "auto" && req.risk !== "high" && (command === undefined ? /edit|write|patch/i.test(req.tool) : readsOnly(command))) return Promise.resolve({ allow: true });
+        if (access === "auto" && req.risk !== "high" && (command === undefined ? EDIT_TOOLS.has(req.tool) : readsOnly(command))) return Promise.resolve({ allow: true });
         const ask = (note?: string) => {
           // Stopped while the Reviewer read the step: nothing to ask about.
           if (sig.aborted || signal.aborted) return Promise.resolve({ allow: false });

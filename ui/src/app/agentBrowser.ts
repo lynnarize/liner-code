@@ -66,7 +66,11 @@ const top = (threadId: string) => handlers.get(threadId)?.at(-1);
 function handlerFor(threadId: string, wait: number) {
   const have = top(threadId);
   if (have) {
-    if (hidden.has(threadId)) hidden.set(threadId, Date.now());
+    // The session's own Browser came up over the hidden one: the hidden copy goes, rather than run on out of sight.
+    if (hidden.has(threadId)) {
+      if ((handlers.get(threadId)?.length ?? 0) > 1) (hidden.delete(threadId), changed());
+      else hidden.set(threadId, Date.now());
+    }
     return Promise.resolve(have);
   }
   const open = openers.get(threadId);

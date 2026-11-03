@@ -14,7 +14,12 @@ import { imageType } from "./attachments.ts";
 import { effortOf, skillsIn } from "./models.ts";
 import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
 
-let appServer = false;
+/**
+  Whether each Codex binary has the app server, by its path: every Codex account and endpoint detects at
+  once, and one on an older binary (or a probe that timed out) doesn't decide it for the rest.
+*/
+const appServers = new Map<string, boolean>();
+const appServerFor = (env: NodeJS.ProcessEnv) => appServers.get(which("codex", env) ?? "") ?? false;
 
 const SANDBOX: Record<Access, string> = { read: "read-only", ask: "workspace-write", edits: "workspace-write", auto: "workspace-write", review: "workspace-write", full: "danger-full-access" };
 
@@ -90,7 +95,7 @@ class CodexSession implements ProviderSession {
     for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
     // Your images go to the model as they are (exec and exec resume both take -i); every file is named in the text either way.
     for (const f of files) if (imageType(f) && existsSync(f)) common.push("-i", f);
-    const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, "-C", o.cwd, "-"];
+    const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, ...(o.ephemeral ? ["--ephemeral"] : []), "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {
       const child = spawn(bin, args, { cwd: o.cwd, env: withCodexPath(bin, o.env), stdio: ["pipe", "pipe", "pipe"] });
       this.child = child;
@@ -214,7 +219,9 @@ export const codex: Provider = {
     const answer = `${status.stdout}${status.stderr}`;
     const signedIn = /logged in/i.test(answer) ? status.code === 0 && !/not logged in/i.test(answer) : env.OPENAI_API_KEY ? true : undefined;
     // A Codex with the app server can stop and ask; an older one runs through exec, which can't.
-    appServer = server.code === 0;
+    // Once a binary has shown it, a later probe that failed (timed out under load, say) doesn't take it away.
+    if (server.code === 0 || !appServers.has(path)) appServers.set(path, server.code === 0);
+    const appServer = appServers.get(path) === true;
     // The models that reason get detailed summaries asked for on each turn.
     for (const m of listed) if (m.supported_reasoning_levels?.length) reasoning.add(m.slug);
     const models: ModelInfo[] = listed.map((m) => ({ id: m.slug, label: m.display_name ?? m.slug, description: m.description ?? "", efforts: (m.supported_reasoning_levels ?? []).map((e) => effortOf(e.effort, e.description)), defaultEffort: m.default_reasoning_level }));
@@ -227,15 +234,15 @@ export const codex: Provider = {
     const said = appServer ? detail.replace(" Runs in Codex's sandbox; it can't stop to ask.", " Asks before it acts, through its app server.") : detail;
     return { ...base, supports: { ...base.supports, approvals: appServer }, models, modelsFrom: listed.length ? ("cli" as const) : ("builtin" as const), modelsAt: Date.now(), available: true, version, signedIn, detail: signedIn === false ? "Not signed in: run codex login, or add an OpenAI key" : said };
   },
-  open: (o) => (appServer ? new CodexServerSession(o) : new CodexSession(o)),
+  open: (o) => (appServerFor(o.env) ? new CodexServerSession(o) : new CodexSession(o)),
   async commands(env, cwd) {
-    if (!appServer) return { commands: [], skills: skillsIn([join(env.CODEX_HOME || join(homedir(), ".codex"), "skills"), join(cwd, ".codex", "skills")]) };
+    if (!appServerFor(env)) return { commands: [], skills: skillsIn([join(env.CODEX_HOME || join(homedir(), ".codex"), "skills"), join(cwd, ".codex", "skills")]) };
     const r = await codexAsk<{ data?: { skills?: { name: string; description: string; shortDescription?: string; path: string; enabled: boolean }[] }[] }>(env, cwd, "skills/list", { cwds: [cwd] });
     const skills = (r.data ?? []).flatMap((d) => d.skills ?? []).filter((x) => x.enabled).map((x) => ({ name: x.name, description: x.shortDescription || x.description, path: x.path }));
     return { commands: [], skills };
   },
   async limits(env, scratch) {
-    if (!appServer) return null;
+    if (!appServerFor(env)) return null;
     mkdirSync(scratch, { recursive: true });
     const r = await codexAsk<{ rateLimits?: Snapshot; rateLimitsByLimitId?: Record<string, Snapshot | undefined> | null }>(env, scratch, "account/rateLimits/read", {});
     const snaps = Object.values(r.rateLimitsByLimitId ?? {}).filter((x): x is Snapshot => Boolean(x));

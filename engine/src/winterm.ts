@@ -39,7 +39,8 @@ export function winShell(cwd: string, cols: number, env: NodeJS.ProcessEnv, echo
   const interrupt = () => {
     const pid = child.pid;
     if (!pid) return;
-    const find = `$n = 0; Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | ForEach-Object { taskkill /pid $_.ProcessId /T /F | Out-Null; $n++ }; $n`;
+    // Not its console host (windowsHide still gives it one, as its child): that's no job, and killing it leaves no prompt.
+    const find = `$n = 0; Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid} AND Name<>'conhost.exe' AND Name<>'OpenConsole.exe'" | ForEach-Object { taskkill /pid $_.ProcessId /T /F | Out-Null; $n++ }; $n`;
     const k = spawn(ps, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", find], { env, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
     let said = "";
     k.stdout.on("data", (d: Buffer) => (said += d.toString()));

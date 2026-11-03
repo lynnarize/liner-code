@@ -43,8 +43,11 @@ const parse = (line: string): Json | null => {
     return null;
   }
 };
-/** Words you wrote, not the tool's own wrappers (<command-name>, <environment_context>, caveats). */
-const yours = (text: string) => Boolean(text.trim()) && !/^\s*(<[a-z_-]+>|Caveat:)/i.test(text);
+/** Words you wrote, not the tool's own wrappers (<command-name>, <environment_context>, caveats, Codex's AGENTS.md, interrupt markers). */
+const yours = (text: string) => Boolean(text.trim()) && !/^\s*(<[a-z_-]+>|Caveat:|# AGENTS\.md instructions for |\[Request interrupted by user)/i.test(text);
+/** Liner Code's own one-off reads (a review, a judge, a commit message, a Desk answer), from before they stopped leaving transcripts. */
+const linerOwn = (text: string) =>
+  /^(You review a change another agent|You check another agent's work|You decide, for a person,|What was asked in the session:|Write the (commit message for these changes|pull request for this branch)|Someone is deciding on a coding session's work)/.test(text.trim());
 const titleOf = (text: string) => {
   const line = text.trim().split("\n")[0];
   return line.length > 70 ? `${line.slice(0, 69).trimEnd()}…` : line;
@@ -73,10 +76,13 @@ export function importable(cwd: string, env: NodeJS.ProcessEnv, have: Set<string
       const id = basename(f, ".jsonl");
       if (have.has(`claude:${id}`)) continue;
       let title = "";
+      let first = "";
       for (const o of head(f).map(parse)) {
         if (o?.type === "custom-title" && typeof o.customTitle === "string") title = o.customTitle;
-        if (!title && o?.type === "user" && !o.isSidechain && !o.isMeta && yours(claudeText(o.message as Json))) title = titleOf(claudeText(o.message as Json));
+        if (!first && o?.type === "user" && !o.isSidechain && !o.isMeta && !o.isCompactSummary && yours(claudeText(o.message as Json))) first = claudeText(o.message as Json);
       }
+      if (linerOwn(first)) continue;
+      title ||= first && titleOf(first);
       if (title) out.push({ tool: "claude", id, title, at });
     }
   }
@@ -90,7 +96,7 @@ export function importable(cwd: string, env: NodeJS.ProcessEnv, have: Set<string
       const id = typeof meta?.id === "string" ? meta.id : "";
       if (!id || typeof meta?.cwd !== "string" || real(meta.cwd) !== here || have.has(`codex:${id}`)) continue;
       const first = lines.find((o) => (o?.payload as Json | undefined)?.type === "message" && (o?.payload as Json).role === "user" && yours(codexText(o!.payload as Json)));
-      if (first) out.push({ tool: "codex", id, title: titleOf(codexText(first.payload as Json)), at });
+      if (first && !linerOwn(codexText(first.payload as Json))) out.push({ tool: "codex", id, title: titleOf(codexText(first.payload as Json)), at });
     }
   }
   return out.sort((a, b) => b.at - a.at);
@@ -128,6 +134,8 @@ function claudeTool(name: string, input: Json, cwd: string): { title: string; ki
 
 /** A session's timeline as Liner Code keeps one, with how many turns it had and its model. */
 export function transcript(tool: "claude" | "codex", id: string, cwd: string, env: NodeJS.ProcessEnv) {
+  // A plain session id only: it names a file, and an empty one would match any rollout.
+  if (!/^[\w-]{1,128}$/.test(id)) throw new Error("That session isn't there any more.");
   let file = "";
   if (tool === "claude") file = join(claudeDir(env, real(cwd)), `${id}.jsonl`);
   else {
@@ -160,7 +168,7 @@ export function transcript(tool: "claude" | "codex", id: string, cwd: string, en
     if (!started && typeof o.timestamp === "string") started = Date.parse(o.timestamp) || 0;
     if (tool === "claude") {
       if (o.type === "custom-title" && typeof o.customTitle === "string") title = o.customTitle;
-      if (o.isSidechain || o.isMeta) continue;
+      if (o.isSidechain || o.isMeta || o.isCompactSummary || o.isVisibleInTranscriptOnly) continue;
       const m = o.message as Json | undefined;
       if (o.type === "user") {
         const text = claudeText(m);

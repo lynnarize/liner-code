@@ -103,6 +103,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   });
   // The address the page is served from, with the place it was asked for: another server's isn't shown at this one's path.
   const [served, setServed] = useState<{ at: string | number; url: string } | null>(null);
+  const connected = useEngine((s) => s.connected);
   const [address, setAddress] = useState("");
   const [width, setWidth] = useState<Width>("desktop");
   const [offline, setOffline] = useState(false);
@@ -173,6 +174,8 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     if (!target) return;
     localStorage.setItem(key, JSON.stringify(target));
     setAddress(shown(target));
+    // Asked again after a reconnect: a restarted engine serves from new ports.
+    if (!connected) return;
     let live = true;
     void (target.port === null ? rpc("browser.files", { threadId: thread.id }) : rpc("browser.proxy", { port: target.port }))
       .then((r) => live && setServed({ at: where!, url: r.url }))
@@ -180,7 +183,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     return () => {
       live = false;
     };
-  }, [where]);
+  }, [where, connected]);
 
   // What the page says: console lines, where it went, what you picked.
   useEffect(() => {

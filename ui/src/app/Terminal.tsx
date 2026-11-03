@@ -79,6 +79,19 @@ function start(threadId: string, pane: Pane, cols: number, rows: number) {
 const end = (id?: string) => {
   if (id) void rpc("term.close", { id }).catch(() => {});
 };
+/** The engine's list is the truth: tabs whose shells it no longer has go, ones it has that aren't shown come back. */
+const reconcile = (k: Tabs, list: { id: string; title: string; command?: string }[] | null, extra: Pane[] = []): Tabs => {
+  let panes = k.panes;
+  if (list) {
+    const ids = new Set(list.map((x) => x.id));
+    panes = panes.filter((p) => !p.id || ids.has(p.id));
+    for (const x of list) if (!panes.some((p) => p.id === x.id)) panes = [...panes, { key: x.id, title: x.title, command: x.command, id: x.id, gen: 1 }];
+  }
+  panes = [...panes, ...extra];
+  if (!panes.length) panes = [shellPane()];
+  const on = extra.at(-1)?.key ?? (panes.some((p) => p.key === k.on) ? k.on : panes[panes.length - 1].key);
+  return { panes, on };
+};
 const idOf = (pane: Pane): Promise<string | undefined> => (pane.id ? Promise.resolve(pane.id) : (opening.get(pane.key)?.catch(() => undefined) ?? Promise.resolve(undefined)));
 
 /* ---------- Links ---------- */
@@ -355,24 +368,24 @@ export function TerminalSurface({ thread, visible }: { thread: Thread; visible: 
     void rpc("term.list", { threadId: thread.id })
       .catch(() => null)
       .then((list) => {
-        put(thread.id, (k) => {
-          let panes = k.panes;
-          if (list) {
-            const ids = new Set(list.map((x) => x.id));
-            panes = panes.filter((p) => !p.id || ids.has(p.id));
-            for (const x of list) if (!panes.some((p) => p.id === x.id)) panes = [...panes, { key: x.id, title: x.title, command: x.command, id: x.id, gen: 1 }];
-          }
-          panes = [...panes, ...scripts];
-          if (!panes.length) panes = [shellPane()];
-          const on = scripts.at(-1)?.key ?? (panes.some((p) => p.key === k.on) ? k.on : panes[panes.length - 1].key);
-          return { panes, on };
-        });
+        put(thread.id, (k) => reconcile(k, list, scripts));
         if (live) setReady(true);
       });
     return () => {
       live = false;
     };
   }, [thread.id]);
+  // A restarted engine has none of the old shells and sends no exit for them: on reconnecting, the list is asked again.
+  const connected = useEngine((s) => s.connected);
+  const wasOn = useRef(connected);
+  useEffect(() => {
+    const back = connected && !wasOn.current;
+    wasOn.current = connected;
+    if (!back) return;
+    void rpc("term.list", { threadId: thread.id })
+      .then((list) => put(thread.id, (k) => reconcile(k, list)))
+      .catch(() => {});
+  }, [connected, thread.id]);
   useEffect(
     () =>
       onScript(thread.id, (x) => {

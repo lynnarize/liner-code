@@ -10,6 +10,13 @@ import { readsOnly, ruleFor } from "../src/risk.ts";
 
 test("reads: what only reads still does, piped, chained or quoted", () => {
   for (const c of ["ls -la", "git status && git diff", "rg foo src | head", "cat a.txt", "sed -n '1,20p' file", "sed -n '/<script>/,/<\\/script>/p' index.html", "sed -n 's/version: \\(.*\\)/\\1/p' a.yml", "rg -o 'foo.*' src", "tree -L 2 src", "git log --oneline -n 5", "find . -name '*.ts'", "bash -lc 'ls src'"]) assert.equal(readsOnly(c), true, c);
+  for (const c of [`cat "$HOME/a b"`, `sed -n '1,20p' "src/a b.ts"`, `rg -n "foo\\.bar" src`, `ls 'a"b'`, `echo "it's"`, "git log | head", "/bin/zsh -lc 'cat math.js'", "find . -type f -name '*.md'"]) assert.equal(readsOnly(c), true, c);
+});
+
+test("reads: quotes pair the way the shell pairs them, so none can hide a command", () => {
+  for (const c of [`echo \\'; touch pwned; echo \\'`, `echo "it's"; touch pwned; echo "'"`, `echo "$x'"; touch pwned; echo "'"`, `echo "a`, `echo 'a`, `echo "\`touch pwned\`"`, `echo "$(touch pwned)"`, `ls a\\;touch pwned`]) assert.equal(readsOnly(c), false, c);
+  // A comment hides a quote, an outer shell's quotes can end mid-script, $'…' escapes a quote, and zsh runs code from ( ).
+  for (const c of ["echo x #'\ntouch pwned\n#'", `bash -c 'echo a'"; touch pwned; echo "'b'`, `bash -c "echo '$(touch pwned)'"`, `echo $'\\'' ; touch pwned ; echo "'"`, "cat =(touch pwned)", "ls *(e:'touch pwned':)", "echo ${(e):-'$(touch pwned)'}", `echo "\${(e):-\\$(touch pwned)}"`]) assert.equal(readsOnly(c), false, JSON.stringify(c));
 });
 
 test("reads: a lone & or a new line starts another command, which has to read too", () => {
@@ -18,6 +25,7 @@ test("reads: a lone & or a new line starts another command, which has to read to
 
 test("reads: a reader's flags that run a command or write a file don't read", () => {
   for (const c of ["rg --pre ./x.sh foo", "rg --pre=./x.sh foo src", "sed -n '1w out.txt' in.txt", "sed -n 'w out.txt' in.txt", "sed -n '/a/W out' in", "sed -n '1e rm -r src' in", "sed -n 's/a/b/w out.txt' in", "sed -n 's/a/b/e' in", "sed -n -e 'p' -e '1w out' in", "sed -n -f script.sed in", "tree -o out.txt", "file -C -m magic", "git diff --output=patch.diff", "git log --output out.txt", "find . -fls out.txt", "sed '1,20p' file"]) assert.equal(readsOnly(c), false, c);
+  for (const c of ["find . '-delete'", `find . "-delete"`, `find . "-exec" rm {} +`, "find . -execdir rm {} ;", "find . -fprint0 out", "find . -del'ete'", "rg --hostname-bin=touch --hyperlink-format=default x", "rg --hostname-bin ./x.sh foo"]) assert.equal(readsOnly(c), false, c);
 });
 
 test("rules: a compound command, a shell or a wrapper gets no rule to allow", () => {
@@ -31,6 +39,14 @@ test("rules: a compound command, a shell or a wrapper gets no rule to allow", ()
   assert.equal(ruleFor("git status"), "git status");
   assert.equal(ruleFor(`cd "/Users/me/app" && npm test`), "npm test");
   assert.equal(ruleFor("ls -la src"), "ls");
+});
+
+test("rules: a leading variable or a program by another path doesn't pass for the plain command", () => {
+  for (const c of ["PATH=/tmp/x git status", "GIT_EXTERNAL_DIFF=./x.sh git diff", "NODE_OPTIONS='--require ./p.js' npm test", `cd app && CI=1 npm test`]) assert.equal(ruleFor(c), undefined, c);
+  assert.equal(ruleFor("./git status"), "./git status");
+  assert.equal(ruleFor("/tmp/evil/npm test"), "/tmp/evil/npm test");
+  assert.equal(ruleFor("/usr/bin/git status"), "/usr/bin/git status");
+  assert.equal(ruleFor("/bin/bash -c 'ls'"), undefined);
 });
 
 test("reviewer decides: the call is the last line that starts with ALLOW or ASK", () => {

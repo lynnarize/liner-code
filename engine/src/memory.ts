@@ -41,9 +41,9 @@ export function remember(home: string, projectId: string, fact: string): { added
   return { added: true, facts: next };
 }
 
-/** Takes facts out by their place in the list. */
-export function forget(home: string, projectId: string, index: number): string[] {
-  const facts = factsOf(home, projectId).filter((_, i) => i !== index);
+/** Takes a fact out by its text, so a list that changed since it was shown can't lose the wrong one. */
+export function forget(home: string, projectId: string, fact: string): string[] {
+  const facts = factsOf(home, projectId).filter((x) => x !== fact);
   save(home, projectId, facts);
   return facts;
 }

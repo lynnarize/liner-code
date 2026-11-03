@@ -20,10 +20,10 @@ import { query, type Options, type PermissionMode, type Query, type SDKControlGe
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import type { Access, ContextPart, ContextSource, ContextUse, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
 import { base64Size, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
-import { run, sdkPath, versionOf, which } from "../exec.ts";
+import { outside, run, sdkPath, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
@@ -367,7 +367,13 @@ const short = (s: unknown, n = 80) => {
 
 /** A tool call, in words. */
 function titleOf(name: string, input: Record<string, unknown>, cwd: string): { title: string; path?: string } {
-  const rel = (p: unknown) => (typeof p === "string" ? (p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : p) : "");
+  // Inside the project it reads as git does ("src/a.ts", on Windows too); anywhere else, as given.
+  const rel = (p: unknown) => {
+    if (typeof p !== "string") return "";
+    if (!isAbsolute(p)) return p;
+    const r = relative(cwd, p);
+    return r && !outside(r) ? r.split(sep).join("/") : p;
+  };
   switch (name) {
     case "Bash":
       return { title: short(input.description || input.command) };
@@ -440,6 +446,11 @@ class ClaudeSession implements ProviderSession {
   private fail: ((e: Error) => void) | null = null;
   private blocks = new Map<number, { kind: "text" | "thinking" | "tool"; key: string }>();
   private tools = new Map<string, { name: string; input: Record<string, unknown> }>();
+  /** Main-thread messages whose text came as a stream; one that didn't (Claude Code's non-streaming fallback) is shown whole from its assistant message. */
+  private streamed = new Set<string>();
+  private streamId: string | null = null;
+  /** Whether this turn showed any answer text, so a result whose words never came another way still shows them. */
+  private said = false;
   private access: Access;
   private o: OpenOptions;
   private path: string | null;
@@ -519,6 +530,8 @@ class ClaudeSession implements ProviderSession {
       agents: o.subagents && Object.keys(o.subagents).length ? o.subagents : undefined,
       resume: o.resume,
       forkSession: o.fork || undefined,
+      // A one-off read leaves no transcript to turn up in Bring in.
+      persistSession: o.ephemeral ? false : undefined,
       settingSources: ["user", "project", "local"],
       systemPrompt: { type: "preset", preset: "claude_code", append: o.soul || undefined },
       env: { ...o.env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` },
@@ -688,6 +701,7 @@ class ClaudeSession implements ProviderSession {
     }
     // What a local slash command (/usage, /context) prints: no model writes it, so it never streams.
     if (m.type === "system" && m.subtype === "local_command_output") {
+      this.said = true;
       sink.text(m.content, m.uuid);
       return;
     }
@@ -717,6 +731,7 @@ class ClaudeSession implements ProviderSession {
       if (ev.type === "message_start") {
         this.retryKey = null;
         this.blocks.clear();
+        this.streamId = ev.message.id;
         const u = ev.message.usage;
         if (u) {
           this.ctx = { id: ev.message.id, input: promptTokens(u), output: u.output_tokens ?? 0 };
@@ -741,8 +756,11 @@ class ClaudeSession implements ProviderSession {
       } else if (ev.type === "content_block_delta") {
         const blk = this.blocks.get(ev.index);
         if (!blk) return;
-        if (ev.delta.type === "text_delta") sink.text(ev.delta.text, blk.key);
-        else if (ev.delta.type === "thinking_delta") sink.reasoning(ev.delta.thinking, blk.key);
+        if ((ev.delta.type === "text_delta" || ev.delta.type === "thinking_delta") && this.streamId) this.streamed.add(this.streamId);
+        if (ev.delta.type === "text_delta") {
+          this.said = true;
+          sink.text(ev.delta.text, blk.key);
+        } else if (ev.delta.type === "thinking_delta") sink.reasoning(ev.delta.thinking, blk.key);
       }
       return;
     }
@@ -759,6 +777,14 @@ class ClaudeSession implements ProviderSession {
       }
       if (m.error === "authentication_failed") this.authFailure = signedOut(this.o.env.CLAUDE_CONFIG_DIR);
       if (m.message.model && m.message.model !== "<synthetic>") this.mainModel = m.message.model;
+      // Claude Code's non-streaming fallback sends the answer whole, with no deltas (T3 Code: ClaudeAdapterV2.ts, emitAssistantTextArtifacts).
+      if (m.message.model !== "<synthetic>" && !this.streamed.has(m.message.id))
+        m.message.content.forEach((b, i) => {
+          if (b.type === "text" && b.text) {
+            this.said = true;
+            sink.text(b.text, `${m.uuid}:${i}`);
+          } else if (b.type === "thinking" && b.thinking) sink.reasoning(b.thinking, `${m.uuid}:t${i}`);
+        });
       // Without a stream (or a stream that started with no counts), the message's own usage says it. Claude Code's
       // "<synthetic>" notices report none.
       const u = m.message.usage;
@@ -802,6 +828,8 @@ class ClaudeSession implements ProviderSession {
             sink.plan([...next.values()]);
           }
         }
+        // Its input has served (title, task list); the entry stays so a late task_notification still knows the row.
+        call.input = {};
       }
       return;
     }
@@ -858,6 +886,11 @@ class ClaudeSession implements ProviderSession {
       if (said && !this.limited) {
         if (/usage limit|rate limit|limit reached|hit your limit/i.test(said)) sink.limited(said);
         else sink.error(said);
+      }
+      // An answer no message carried (T3 Code: ClaudeAdapterV2.ts, its result fallbackText).
+      if (!said && !this.said && m.subtype === "success" && m.result.trim()) {
+        this.said = true;
+        sink.text(m.result, m.uuid);
       }
       this.limited = false;
       this.authFailure = undefined;
@@ -1026,6 +1059,7 @@ class ClaudeSession implements ProviderSession {
     this.signal = signal;
     this.woke = woke;
     this.draining = false;
+    this.said = false;
     // Only this turn's messages are waited on; a steer an earlier turn never answered isn't.
     this.sent = new Set();
     // Your turn takes in what Claude Code had to say about work you stopped.
@@ -1067,6 +1101,8 @@ class ClaudeSession implements ProviderSession {
       clearTimeout(late);
       signal.removeEventListener("abort", stop);
       for (const id of [...this.tails.keys()]) this.untail(id);
+      this.streamed.clear();
+      this.streamId = null;
       this.sink = null;
       this.signal = null;
       this.woke = false;

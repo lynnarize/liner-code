@@ -70,8 +70,11 @@ export async function prefixOf(cwd: string) {
   return r.code === 0 ? r.stdout.trim() : "";
 }
 
-/** A path from the repository's top (a checkpoint saved before paths were the project's own) made the project's own. */
-export const local = (path: string, prefix: string) => (prefix && path.startsWith(prefix) ? path.slice(prefix.length) : path);
+/**
+  A path from the repository's top (a checkpoint saved before paths were the project's own) made the
+  project's own. rel: it already is, so a folder inside named like the project's (mysite/mysite/) stays.
+*/
+export const local = (path: string, prefix: string, rel?: boolean) => (!rel && prefix && path.startsWith(prefix) ? path.slice(prefix.length) : path);
 
 export async function branchOf(cwd: string) {
   const r = await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -196,7 +199,7 @@ export async function changes(cwd: string, from: string, to: string, o: { turn?:
     if (!path) continue;
     const [added, removed] = counts.get(path) ?? [0, 0];
     const status = code === "A" || code === "C" ? "added" : code === "D" ? "deleted" : code === "R" ? "renamed" : "modified";
-    out.push({ path, status, added, removed, ...(code === "R" ? { from: was } : {}) });
+    out.push({ path, status, added, removed, rel: true, ...(code === "R" ? { from: was } : {}) });
   }
   // T3 Code's checkpointing/Diffs.ts isGitImport: a file neither of whose paths the turn wrote came in with HEAD.
   return authored ? out.filter((f) => authored.has(f.path) || (f.from !== undefined && authored.has(f.from))) : out;
@@ -252,8 +255,8 @@ export async function diffFiles(cwd: string, from: string, to: string, files: Fi
     files.slice(0, 60).map(async (f) => ({
       path: f.path,
       from: f.from,
-      before: f.status === "added" ? undefined : await show(cwd, from, local(f.from ?? f.path, prefix)),
-      after: f.status === "deleted" ? undefined : await show(cwd, to, local(f.path, prefix)),
+      before: f.status === "added" ? undefined : await show(cwd, from, local(f.from ?? f.path, prefix, f.rel)),
+      after: f.status === "deleted" ? undefined : await show(cwd, to, local(f.path, prefix, f.rel)),
     })),
   );
 }
@@ -271,8 +274,8 @@ export async function restore(cwd: string, from: string, files: FileChange[]) {
     const back = new Set<string>();
     const drop: string[] = [];
     for (const f of files) {
-      if (f.status === "added" || f.status === "renamed") drop.push(local(f.path, prefix));
-      if (f.status !== "added") back.add(local(f.from ?? f.path, prefix));
+      if (f.status === "added" || f.status === "renamed") drop.push(local(f.path, prefix, f.rel));
+      if (f.status !== "added") back.add(local(f.from ?? f.path, prefix, f.rel));
     }
     // Checked out first, so a failure leaves the turn's new files where they are. Through a
     // throwaway index, so your staging area is never touched.
@@ -299,7 +302,7 @@ export async function edited(cwd: string, now: string, turns: Undo[]): Promise<s
   const seen = new Set<string>();
   const out = new Set<string>();
   for (const t of turns) {
-    const paths = [...new Set(t.files.flatMap((f) => [f.path, ...(f.from ? [f.from] : [])]).map((p) => local(p, prefix)))].filter((p) => !seen.has(p));
+    const paths = [...new Set(t.files.flatMap((f) => [f.path, ...(f.from ? [f.from] : [])].map((p) => local(p, prefix, f.rel))))].filter((p) => !seen.has(p));
     for (const p of paths) seen.add(p);
     if (!t.to || !paths.length) continue;
     const r = await git(cwd, ["diff", "--name-only", "-z", "--no-renames", "--relative", "--no-ext-diff", t.to, now, "--", ...literal(paths)]);

@@ -25,7 +25,10 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
 
   useEffect(() => {
     let live = true;
-    void rpc("usage.summary", { days: n }).then((d) => live && setData(d));
+    // Whole local days from midnight, so 'This month' (n = today's date) starts on the 1st.
+    rpc("usage.summary", { days: n })
+      .then((d) => live && setData(d))
+      .catch(() => live && setData(null));
     return () => {
       live = false;
     };

@@ -65,7 +65,8 @@ function input(text: string, files: string[] = []) {
     const url = dataUrl(f);
     return url ? [{ type: "image", url }] : [];
   });
-  return [{ type: "text", text, text_elements: [] }, ...images];
+  // A lone surrogate (half an emoji, from a cut) makes Codex drop the whole line and never answer (T3 Code: CodexAdapterV2.ts).
+  return [{ type: "text", text: text.toWellFormed(), text_elements: [] }, ...images];
 }
 
 /** A Codex failure is a usage limit when Codex says so, by code or in words. */
@@ -215,6 +216,10 @@ export class CodexServerSession implements ProviderSession {
   private failure: { message?: string; codexErrorInfo?: unknown } | null = null;
   /** The thread it was to resume and couldn't: said once, on a turn that goes on, so the runtime sends the conversation so far. */
   private lost: string | undefined;
+  /** The thread opening, while it does. */
+  private opening: Promise<void> | null = null;
+  /** The turn's start is still waiting on Codex: if Codex exits now, that request fails with the same words, which are said once, by the throw. */
+  private starting = false;
   private o: OpenOptions;
 
   constructor(o: OpenOptions) {
@@ -226,7 +231,7 @@ export class CodexServerSession implements ProviderSession {
     this.server.onExit = (message) => {
       this.opened = false;
       // Said here for a turn under way; one still opening fails with the same words itself, which would say them twice.
-      if (this.sink && this.done) this.sink.error(message);
+      if (this.sink && this.done && !this.starting) this.sink.error(message);
       this.done?.();
     };
   }
@@ -251,7 +256,7 @@ export class CodexServerSession implements ProviderSession {
       );
       if (!r) this.lost = threadId;
     }
-    if (!r) r = await this.server.request("thread/start", common);
+    if (!r) r = await this.server.request("thread/start", { ...common, ephemeral: this.o.ephemeral || null });
     this.thread = String((r.thread as Json).id);
     this.sink?.session(this.thread);
     this.opened = true;
@@ -269,12 +274,15 @@ export class CodexServerSession implements ProviderSession {
       }
       this.done?.();
     };
+    // Stop ends the turn while Codex is still starting or hasn't answered its start, which may never come (as acp.ts does).
+    const aborted = new Promise<null>((r) => (signal.aborted ? r(null) : signal.addEventListener("abort", () => r(null), { once: true })));
     try {
-      await this.open();
-      if (!this.thread) throw new Error("Codex didn't start a thread.");
-      sink.session(this.thread);
+      // One opening at a time: a turn sent after a Stop mid-open stands on it rather than starting a second thread.
+      await Promise.race([(this.opening ??= this.open().finally(() => (this.opening = null))), aborted]);
       // Stopped while Codex was starting: nothing was asked of it yet.
       if (signal.aborted) return;
+      if (!this.thread) throw new Error("Codex didn't start a thread.");
+      sink.session(this.thread);
       // A thread Codex can't resume isn't swapped for a new one in silence: the runtime sends the new one the
       // conversation so far. Said here rather than as it opens, so a Stop while it started doesn't lose it.
       if (this.lost) {
@@ -287,22 +295,39 @@ export class CodexServerSession implements ProviderSession {
       const finished = new Promise<void>((resolve) => {
         this.done = resolve;
       });
-      // `/compact` is the Codex CLI's own command, not words for the model: app-server compacts on request.
-      if (text.trim() === "/compact") await this.server.request("thread/compact/start", { threadId: this.thread });
-      else {
-        const model = this.o.model && this.o.model !== "default" ? this.o.model : null;
-        const r = await this.server.request("turn/start", {
-          threadId: this.thread,
-          input: input(text, files),
-          // The catalog can default summaries to none; ask for them on every turn of a model that reasons (T3 Code: CodexAdapterV2.ts).
-          ...(!model || !reasoning.size || reasoning.has(model) ? { summary: "detailed" } : {}),
-          cwd: this.o.cwd,
-          approvalPolicy: p.approval,
-          sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
-          model: this.o.model && this.o.model !== "default" ? this.o.model : null,
-          effort,
-        });
-        this.turnId = String((r.turn as Json | undefined)?.id ?? "");
+      this.starting = true;
+      try {
+        // `/compact` is the Codex CLI's own command, not words for the model: app-server compacts on request.
+        if (text.trim() === "/compact") {
+          if (!(await Promise.race([this.server.request("thread/compact/start", { threadId: this.thread }), aborted]))) return;
+        } else {
+          const model = this.o.model && this.o.model !== "default" ? this.o.model : null;
+          const start = this.server.request("turn/start", {
+            threadId: this.thread,
+            input: input(text, files),
+            // The catalog can default summaries to none; ask for them on every turn of a model that reasons (T3 Code: CodexAdapterV2.ts).
+            ...(!model || !reasoning.size || reasoning.has(model) ? { summary: "detailed" } : {}),
+            cwd: this.o.cwd,
+            approvalPolicy: p.approval,
+            sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
+            model: this.o.model && this.o.model !== "default" ? this.o.model : null,
+            effort,
+          });
+          const r = await Promise.race([start, aborted]);
+          // Stopped before Codex answered: a turn it starts after all is stopped as soon as it says which, and what it sends is dropped.
+          if (!r) {
+            const threadId = this.thread;
+            void start.then((x) => {
+              const turnId = String((x.turn as Json | undefined)?.id ?? "");
+              this.stale.add(turnId);
+              return this.server.request("turn/interrupt", { threadId, turnId });
+            }).catch(() => {});
+            return;
+          }
+          this.turnId = String((r.turn as Json | undefined)?.id ?? "");
+        }
+      } finally {
+        this.starting = false;
       }
       signal.addEventListener("abort", stop, { once: true });
       // Stopped while the turn was starting: the signal won't say so again.
@@ -340,6 +365,10 @@ export class CodexServerSession implements ProviderSession {
   }
 
   private onNotify(method: string, p: Json) {
+    // A turn you stopped: its late items and deltas aren't the next turn's, and its end is forgotten even between turns
+    // (T3 Code: CodexAdapterV2.ts, interruptingNativeTurns). Its tokens still count.
+    if (method === "turn/completed" && this.stale.delete(String((p.turn as Json | undefined)?.id))) return;
+    if (typeof p.turnId === "string" && this.stale.has(p.turnId) && method !== "thread/tokenUsage/updated") return;
     const sink = this.sink;
     if (!sink) return;
     const item = p.item as Json | undefined;
@@ -479,7 +508,14 @@ export class CodexServerSession implements ProviderSession {
   private async onRequest(method: string, p: Json): Promise<Json> {
     const sink = this.sink;
     const signal = this.signal;
-    if (!sink || !signal) return method.includes("Approval") || method.includes("requestApproval") ? { decision: "decline" } : {};
+    // No turn to ask in (a subagent still at work after the turn ended): refused, in the shape each method takes.
+    if (!sink || !signal) {
+      if (method === "item/permissions/requestApproval") return { permissions: {}, scope: "turn" };
+      if (method === "execCommandApproval" || method === "applyPatchApproval") return { decision: "abort" };
+      if (method === "item/tool/requestUserInput") return { answers: {} };
+      if (method === "mcpServer/elicitation/request") return { action: "decline", content: null, _meta: null };
+      return method.includes("requestApproval") ? { decision: "decline" } : {};
+    }
     if (method === "item/commandExecution/requestApproval" || method === "execCommandApproval") {
       const command = unwrap(Array.isArray(p.command) ? (p.command as string[]).join(" ") : String(p.command ?? ""));
       const fields = [{ label: "Command", value: command }];
@@ -499,7 +535,13 @@ export class CodexServerSession implements ProviderSession {
       const answers = await sink.ask(questions, signal);
       return { answers: Object.fromEntries(qs.map((q) => [q.id, { answers: answers?.[q.question] ? [answers[q.question]] : [] }])) };
     }
-    if (method === "item/permissions/requestApproval") return { decision: "decline" };
+    if (method === "item/permissions/requestApproval") {
+      // More access for the rest of the turn: granted as asked, or nothing (T3 Code: CodexAdapterV2.ts, permissionsResponseFromDecision).
+      const want = (p.permissions ?? {}) as { network?: { enabled?: boolean | null } | null; fileSystem?: { read?: string[] | null; write?: string[] | null } | null };
+      const fields = [...(want.network?.enabled ? [{ label: "Network", value: "Access the network" }] : []), ...(want.fileSystem?.write ?? []).map((x) => ({ label: "Write access to", value: x })), ...(want.fileSystem?.read ?? []).map((x) => ({ label: "Read access to", value: x }))];
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "permissions", title: "Grant Codex more access", description: (p.reason as string | undefined) ?? undefined, risk: "medium", fields }, signal);
+      return a.allow ? { permissions: p.permissions ?? {}, scope: "turn" } : { permissions: {}, scope: "turn" };
+    }
     if (method === "mcpServer/elicitation/request") {
       const meta = (p._meta ?? {}) as { codex_approval_kind?: string; tool_params_display?: { display_name?: string; name: string; value: unknown }[] };
       // Liner Code's own tools only reach this session's Browser, the Simulator and its timeline.

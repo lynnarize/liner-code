@@ -28,7 +28,9 @@ export class Engine {
   private child?: ChildProcess;
   private restarts: number[] = [];
   private stopping = false;
+  private retry?: NodeJS.Timeout;
   private log?: WriteStream;
+  private keys: Record<string, string> = {};
 
   start(paths: Paths, env: NodeJS.ProcessEnv, keys: Record<string, string>) {
     mkdirSync(logDir, { recursive: true });
@@ -38,10 +40,17 @@ export class Engine {
       // the first launch
     }
     this.log = createWriteStream(logFile, { flags: "w" });
-    this.launch(paths, env, keys);
+    this.keys = { ...keys };
+    this.launch(paths, env);
   }
 
-  private launch(paths: Paths, env: NodeJS.ProcessEnv, keys: Record<string, string>) {
+  /** A key saved or removed since launch, so an engine that comes back after a crash has it as it is now. */
+  setKey(provider: string, value: string | null) {
+    if (value) this.keys[provider] = value;
+    else delete this.keys[provider];
+  }
+
+  private launch(paths: Paths, env: NodeJS.ProcessEnv) {
     const child = spawn(process.execPath, [paths.engine, "--port", String(this.port), "--ui", paths.ui], {
       cwd: dirname(paths.engine),
       // The token and keys go over stdin, not the environment: anything running as you can read a
@@ -51,7 +60,7 @@ export class Engine {
       windowsHide: true,
     });
     this.child = child;
-    child.stdin.write(`${JSON.stringify({ token: this.token, keys })}\n`);
+    child.stdin.write(`${JSON.stringify({ token: this.token, keys: this.keys })}\n`);
     let buffer = "";
     child.stdout.on("data", (data: Buffer) => {
       this.log?.write(data);
@@ -81,7 +90,10 @@ export class Engine {
         this.onFail?.(`The engine keeps stopping (exit ${code ?? signal}). Its log is in ${logFile.replace(homedir(), "~")}.`);
         return;
       }
-      setTimeout(() => this.launch(paths, env, keys), 800);
+      // A quit inside the wait doesn't bring one back.
+      this.retry = setTimeout(() => {
+        if (!this.stopping) this.launch(paths, env);
+      }, 800);
     });
   }
 
@@ -92,6 +104,7 @@ export class Engine {
   */
   stop(): Promise<void> {
     this.stopping = true;
+    clearTimeout(this.retry);
     const child = this.child;
     child?.stdin?.end();
     if (process.platform !== "win32" || !child || child.exitCode !== null || child.signalCode !== null) {
@@ -115,17 +128,30 @@ const run = (cmd: string, args: string[], timeout = 5000) =>
   new Promise<string>((resolve) => execFile(cmd, args, { timeout, encoding: "utf8" }, (err, out) => resolve(err ? "" : out.trim())));
 
 /**
-  The PATH a shell prints between marks (an interactive one may greet you first), or "". It runs in
-  a session of its own with nothing on stdin, so it never reaches for a terminal or waits on a
-  question; whatever it hasn't said in `timeout` ms is left.
+  What an app opened from the Dock doesn't get from your shell rc files: PATH, and the CA, SSH-agent
+  and locale variables a corporate proxy, 1Password's agent or a UTF-8 tool needs (T3 Code:
+  DesktopShellEnvironment.ts LOGIN_SHELL_ENV_NAMES).
 */
-const pathFrom = (sh: string, flags: string[], timeout: number) =>
-  new Promise<string>((resolve) => {
-    const child = spawn(sh, [...flags, 'printf "__LINER_PATH__%s__LINER_PATH__" "$PATH"'], { detached: true, stdio: ["ignore", "pipe", "ignore"] });
+const SHELL_NAMES = ["PATH", "LANG", "LC_ALL", "LC_CTYPE", "SSH_AUTH_SOCK", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "HOMEBREW_PREFIX", "JAVA_HOME", "__MISE_DIFF"];
+
+/**
+  The SHELL_NAMES a shell prints between marks (an interactive one may greet you first), the empty
+  ones left out. It runs in a session of its own with nothing on stdin, so it never reaches for a
+  terminal or waits on a question; whatever it hasn't said in `timeout` ms is left.
+*/
+const shellEnv = (sh: string, flags: string[], timeout: number) =>
+  new Promise<Record<string, string>>((resolve) => {
+    const child = spawn(sh, [...flags, `printf "__LINER_ENV__"; printf "%s\\0" ${SHELL_NAMES.map((n) => `"${n}=$${n}"`).join(" ")}; printf "__LINER_ENV__"`], { detached: true, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     const done = () => {
       clearTimeout(timer);
-      resolve(/__LINER_PATH__(.*?)__LINER_PATH__/s.exec(out)?.[1]?.trim() ?? "");
+      const vars: Record<string, string> = {};
+      for (const entry of /__LINER_ENV__(.*?)__LINER_ENV__/s.exec(out)?.[1]?.split("\0") ?? []) {
+        const eq = entry.indexOf("=");
+        const value = eq > 0 ? entry.slice(eq + 1).trim() : "";
+        if (value) vars[entry.slice(0, eq)] = value;
+      }
+      resolve(vars);
     };
     const timer = setTimeout(() => {
       try {
@@ -138,20 +164,30 @@ const pathFrom = (sh: string, flags: string[], timeout: number) =>
     child.stdout.on("data", (d: Buffer) => {
       out += d.toString("utf8");
       // Said: something it left running may hold stdout open, so this doesn't wait for the close.
-      if (out.split("__LINER_PATH__").length > 2) done();
+      if (out.split("__LINER_ENV__").length > 2) done();
     });
     child.on("error", done);
     child.on("close", done);
   });
 
-/** The user's shell's PATH, which an app opened from the Dock doesn't get, plus where tools often land. */
+/**
+  The user's shell's PATH, CA, SSH-agent and locale variables, which an app opened from the Dock
+  doesn't get, plus where tools often land.
+*/
 export async function loginEnvironment(): Promise<NodeJS.ProcessEnv> {
   const env = { ...process.env };
   if (process.platform === "win32") return windowsEnvironment(env);
   const sh = process.env.SHELL || "/bin/zsh";
   // Interactive as well as login: nvm, Volta, pnpm, mise and asdf go on PATH in .zshrc, which a
   // login shell alone doesn't read. A shell whose .zshrc stalls still gets its login PATH.
-  const path = (await pathFrom(sh, ["-i", "-l", "-c"], 8000)) || (await pathFrom(sh, ["-l", "-c"], 5000)) || process.env.PATH || "/usr/bin:/bin";
+  const first = await shellEnv(sh, ["-i", "-l", "-c"], 8000);
+  const shell = first.PATH ? first : await shellEnv(sh, ["-l", "-c"], 5000);
+  // The shell starts from this environment, so a value it doesn't change comes back the same; one it
+  // sets (1Password's SSH_AUTH_SOCK over launchd's) wins.
+  for (const n of SHELL_NAMES) if (n !== "PATH" && shell[n]) env[n] = shell[n];
+  // Terminal sets LANG itself, not the rc files: without one, tools would run in the C locale.
+  if (!env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LC_CTYPE = "en_US.UTF-8";
+  const path = shell.PATH || process.env.PATH || "/usr/bin:/bin";
   const parts = path.split(":");
   const home = homedir();
   const extra = ["/opt/homebrew/bin", "/usr/local/bin", ".local/bin", ".bun/bin", ".volta/bin", "Library/pnpm", ".local/share/mise/shims", ".asdf/shims"]

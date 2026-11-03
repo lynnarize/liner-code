@@ -4,10 +4,11 @@
   it, and Clear to Tinted says how much of it comes through. The picture you chose in Settings,
   Appearance is the paper's alone, blurred under a white wash so the work stays easy to read; the
   sidebar never shows it. Pictures come from the engine as JPEGs and are kept as blob URLs for the
-  life of the page.
+  life of the page; a picture of your own you replace is let go. A fetch that fails isn't kept, so
+  it's asked again once the engine is back.
 */
 import { useEffect, useState, type CSSProperties } from "react";
-import { rpc } from "./engine";
+import { rpc, useEngine } from "./engine";
 import { readLook, type Look } from "./look";
 
 const urls = new Map<string, Promise<string | null>>();
@@ -21,12 +22,16 @@ const toBlobUrl = (data: string, type: string) => {
 /** A picture's URL, fetched once per side (a dynamic wallpaper has a day and a night one). */
 export function backgroundUrl(id: string, dark: boolean) {
   const key = id === "own" ? `own:${ownVersion}` : `${id}:${dark ? "dark" : "light"}`;
-  if (!urls.has(key)) urls.set(key, rpc("background.image", { id, dark }).then((r) => (r ? toBlobUrl(r.data, r.type) : null)).catch(() => null));
+  if (!urls.has(key)) urls.set(key, rpc("background.image", { id, dark }).then((r) => (r ? toBlobUrl(r.data, r.type) : null)).catch(() => (urls.delete(key), null)));
   return urls.get(key)!;
 }
 
 /** Your own picture changed: the next read fetches it again. */
 export function ownChanged() {
+  // The old one is never read again: its blob goes with it.
+  const old = urls.get(`own:${ownVersion}`);
+  urls.delete(`own:${ownVersion}`);
+  void old?.then((u) => u && URL.revokeObjectURL(u));
   ownVersion++;
   window.dispatchEvent(new Event("lc:bg-own"));
 }
@@ -36,6 +41,8 @@ export function useBackgroundUrl(id?: string) {
   // The theme the page is in now; the look changing re-renders whoever reads it.
   const dark = useLook() && document.documentElement.dataset.theme === "dark";
   const [v, setV] = useState(ownVersion);
+  // Back from a reconnect: a picture whose fetch failed meanwhile is asked for again (a kept one is a free re-read).
+  const connected = useEngine((s) => s.connected);
   useEffect(() => {
     const on = () => setV(ownVersion);
     window.addEventListener("lc:bg-own", on);
@@ -48,7 +55,7 @@ export function useBackgroundUrl(id?: string) {
     return () => {
       live = false;
     };
-  }, [id, v, dark]);
+  }, [id, v, dark, connected]);
   return url;
 }
 

@@ -67,17 +67,27 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
         // Listening before the snapshot is taken, so nothing sent while it's taken is lost; what it already holds isn't sent twice.
         clients.add(res);
         waiting.set(res, []);
-        const snapshot = await o.snapshot();
+        // Dropped on close from the start: an app that leaves while the snapshot is taken (a reload while the tools are found) isn't kept.
+        let beat: NodeJS.Timeout | undefined;
+        const drop = () => {
+          clearInterval(beat);
+          clients.delete(res);
+          waiting.delete(res);
+        };
+        res.on("close", drop);
+        let snapshot: Snapshot;
+        try {
+          snapshot = await o.snapshot();
+        } catch {
+          drop();
+          return void res.end();
+        }
+        if (res.destroyed) return drop();
         res.write(`${JSON.stringify({ type: "hello", snapshot })}\n`);
         for (const x of waiting.get(res) ?? []) if (x.seq > (snapshot.seq ?? 0)) res.write(x.line);
         waiting.delete(res);
         // A heartbeat keeps the stream open and lets the app notice a dead engine.
-        const beat = setInterval(() => res.write("\n"), 15000);
-        req.on("close", () => {
-          clearInterval(beat);
-          clients.delete(res);
-          waiting.delete(res);
-        });
+        beat = setInterval(() => res.write("\n"), 15000);
         return;
       }
       try {
@@ -122,7 +132,14 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
     }
     // The app itself.
     if (o.ui && existsSync(o.ui)) {
-      const rel = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
+      let path: string;
+      try {
+        path = decodeURIComponent(url.pathname);
+      } catch {
+        // A broken %-escape: answered, not left hanging.
+        return void res.writeHead(400).end("Bad request");
+      }
+      const rel = normalize(path).replace(/^(\.\.[/\\])+/, "");
       let file = join(o.ui, rel);
       if (!file.startsWith(o.ui) || !existsSync(file) || statSync(file).isDirectory()) file = join(o.ui, "index.html");
       const type = TYPES[extname(file)] ?? "application/octet-stream";

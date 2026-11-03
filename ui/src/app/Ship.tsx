@@ -52,9 +52,11 @@ const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
   Commits the session's changes (or, with no message, only pushes) and pushes, showing it in the
-  thread as it goes. A failure folds the card into a chip that says so.
+  thread as it goes. A failure folds the card into a chip that says so. Says whether the commit
+  landed, so a message is only let go once it's in git (a push that fails after still counts).
 */
-export async function ship(thread: Thread, commit: { message: string; paths?: string[]; files: number; added: number; removed: number } | null) {
+export async function ship(thread: Thread, commit: { message: string; paths?: string[]; files: number; added: number; removed: number } | null): Promise<boolean> {
+  let committed = false;
   const id = thread.id;
   const subject = commit?.message.split("\n")[0] ?? "";
   put(id, { stage: 0, files: commit?.files ?? 0, subject, added: commit?.added ?? 0, removed: commit?.removed ?? 0, commits: [] });
@@ -72,6 +74,7 @@ export async function ship(thread: Thread, commit: { message: string; paths?: st
     if (was) patch(id, { branch: was.branch, remote: was.remote, commits: was.commits, base: was.base, ahead: was.ahead });
     if (commit) {
       const r = await rpc("git.commit", { threadId: id, message: commit.message.trim() || undefined, paths: commit.paths });
+      committed = true;
       patch(id, { fresh: r.sha, files: r.files });
       await holdFrom(start, 1100);
       start = performance.now();
@@ -88,6 +91,7 @@ export async function ship(thread: Thread, commit: { message: string; paths?: st
   } catch (e) {
     fail(e);
   }
+  return committed;
 }
 
 /** Puts the card away: it fades, then goes. */

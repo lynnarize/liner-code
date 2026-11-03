@@ -35,12 +35,22 @@ test("risk: commands that throw away changes, stashes or unmerged branches are h
     "git branch --delete --force feature",
     "git branch -d -f feature",
     "cd app && git checkout -- .",
+    "rm -rf src",
+    "rm -r -f src",
+    "rm --recursive --force src",
+    "rm -f -R src",
+    "rm --force -r src",
+    "rm -r --force src",
+    "rm -rfv src",
+    "rm --rec --f src",
+    "find . '-delete'",
+    `find . "-exec" rm {} +`,
   ])
     assert.equal(commandRisk(c), "high", c);
 });
 
 test("risk: their careful forms aren't high", () => {
-  for (const c of ["git restore --staged src/a.ts", "git restore -S a.ts", "git switch main", "git switch -c feature", "git checkout -b feature", "git checkout main", "git stash", "git stash pop", "find . -name '*.ts'", "git worktree remove ../wt", "git worktree list", "git status && git checkout main"]) assert.notEqual(commandRisk(c), "high", c);
+  for (const c of ["git restore --staged src/a.ts", "git restore -S a.ts", "git switch main", "git switch -c feature", "git checkout -b feature", "git checkout main", "git stash", "git stash pop", "find . -name '*.ts'", "git worktree remove ../wt", "git worktree list", "git status && git checkout main", "rm -r src", "rm -f a.txt", "rm -rv src; echo -f", "rm -r src && touch -f x"]) assert.notEqual(commandRisk(c), "high", c);
   // A merged branch's delete asks, but isn't one that loses work.
   assert.equal(commandRisk("git branch -d feature"), "medium");
 });

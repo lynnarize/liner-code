@@ -328,16 +328,21 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
 
   // @ looks up files as you type; / and $ filter the tool's commands and skills.
   useEffect(() => {
-    if (!mention) return;
+    if (!mention) {
+      setFound([]);
+      return;
+    }
+    // Rows from another kind of mention (files under a new / or $) never carry over.
+    setFound((f) => (f[0] && f[0].kind !== mention.kind ? [] : f));
     let live = true;
     const q = mention.query.toLowerCase();
     const rank = (name: string) => (name.toLowerCase().startsWith(q) ? 0 : 1);
     if (mention.kind === "@")
-      void rpc("fs.files", { projectId: project.id, query: mention.query, limit: 8 }).then((r) => {
+      void rpc("fs.files", { projectId: project.id, threadId: thread?.id, query: mention.query, limit: 8 }).then((r) => {
         if (!live) return;
         setFound(r.map((f) => ({ key: f.path, insert: `@${f.path}`, label: f.path, kind: "@" })));
         setHl(0);
-      });
+      }, () => live && setFound([]));
     else if (tools) {
       const list =
         mention.kind === "/"
@@ -349,7 +354,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     return () => {
       live = false;
     };
-  }, [mention, project.id, tools]);
+  }, [mention, project.id, thread?.id, tools]);
 
   const onType = (v: string, caret: number) => {
     setText(v);
@@ -1105,7 +1110,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               return;
             }
             // ↑ recalls only when the caret is on the first line, so editing a long draft still moves up.
-            if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !mention && sent.length && (!text || recall.current >= 0) && !(e.key === "ArrowUp" && !text && queue.length)) {
+            // ⌥↑/⌥↓ pass through to the session's prompt navigation.
+            if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.altKey && !mention && sent.length && (!text || recall.current >= 0) && !(e.key === "ArrowUp" && !text && queue.length)) {
               const el = e.currentTarget;
               const firstLine = !el.value.slice(0, el.selectionStart).includes("\n");
               if (e.key === "ArrowUp" && firstLine && recall.current < sent.length - 1) {
@@ -1125,7 +1131,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               e.preventDefault();
               void send(busy && (e.metaKey || e.ctrlKey) ? "steer" : busy ? mode : "queue");
             } else if (e.key === "Escape" && busy) onStop?.();
-            else if (e.key === "ArrowUp" && !text && queue.length) {
+            else if (e.key === "ArrowUp" && !e.altKey && !text && queue.length) {
               // The last queued message, to edit where it is.
               e.preventDefault();
               editQueued(queue[queue.length - 1]);

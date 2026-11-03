@@ -5,7 +5,9 @@
 import type { Risk, ToolKind } from "../../contracts/src/index.ts";
 
 const HIGH = [
-  /\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\b/i,
+  // rm recursive and forced, however its flags are written: -rf, -r -f, -Rfv, --recursive --force,
+  // and the --rec --f that GNU rm takes for them.
+  /\brm\b(?=[^;&|\n]*\s(?:-[a-zA-Z]*[rR][a-zA-Z]*|--r[a-z]*)\b)(?=[^;&|\n]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--f[a-z]*)\b)/,
   /\brm\s+-[a-z]*r\b.*\s(\/|~|\$HOME|\.\.?)(\s|$)/i,
   /\bgit\s+push\b.*(--force|-f\b|--force-with-lease)/i,
   /\bgit\s+reset\s+--hard\b/i,
@@ -23,8 +25,8 @@ const HIGH = [
   /\bgit\s+stash\s+(?:clear|drop)\b/,
   /\bgit\s+switch\b[^;&|\n]*\s(?:--discard-changes|-f|--force)\b/,
   /\bgit\s+worktree\s+remove\b[^;&|\n]*\s(?:--force|-f)\b/,
-  /\bfind\b[^;&|\n]*\s-delete\b/,
-  /\bfind\b[^;&|\n]*\s-exec(?:dir)?\s+rm\b/,
+  /\bfind\b[^;&|\n]*\s['"]?-delete\b/,
+  /\bfind\b[^;&|\n]*\s['"]?-exec(?:dir)?['"]?\s+['"]?rm\b/,
   /\bsudo\b/,
   /\bmkfs\b|\bdd\s+if=/,
   /\bchmod\s+-R\s+777\b/,
@@ -61,25 +63,32 @@ export function commandRisk(command: string): Risk {
   in-place edits, and the flags that make a reader write a file or run a command never count.
 */
 export function readsOnly(command: string) {
-  const c = command.trim().replace(/^(?:\/bin\/)?(?:ba|z)?sh\s+-l?c\s+(["']?)([\s\S]*)\1$/, "$2").trim();
+  // Unwrapped only when the outer shell hands the script over as written: one quoted string with no
+  // quote of its kind inside it, and in double quotes no backslash, $ or backtick it would expand first.
+  const c = command.trim().replace(/^(?:\/bin\/)?(?:ba|z)?sh\s+-l?c\s+(?:'([^']*)'|"([^"\\$`]*)"|([^'"\\]*))$/, (_, a?: string, b?: string, d?: string) => a ?? b ?? d ?? "").trim();
   // What's quoted is an argument (a path with spaces, a sed pattern with < in it), never a redirect or a pipe.
   // Double quotes still expand $( ) and backticks, so those stay visible. The quoted text is kept
-  // aside, so a sed script in it can still be read.
+  // aside, so a sed script in it can still be read. Quotes pair left to right the way the shell
+  // pairs them, and a quote left unpaired or escaped, or a backslash outside quotes, never counts
+  // as a read: it could hide a ; that the shell sees. Neither does a # that starts a comment (the
+  // shell skips a quote after it) or $'…' (where a backslash escapes a quote). A bare ( or ) never
+  // counts either, nor ${( in double quotes: zsh runs code from =(…), a glob's *(e:…:) and ${(e)…}.
   const quoted: string[] = [];
   const aside = (m: string) => `\u0000${quoted.push(m.slice(1, -1)) - 1}\u0000`;
-  const bare = c.replace(/'[^']*'/g, aside).replace(/"[^"$`]*"/g, aside);
-  if (!bare || /[<>`]|\$\(/.test(bare)) return false;
+  const bare = c.replace(/'[^']*'|"(?:[^"$`\\]|\\[\s\S]|\$(?!\(|\{\())*"/g, aside);
+  if (!bare || /[<>`'"\\()]|\$\u0000|(?:^|[\s;&|])#/.test(bare)) return false;
   // A lone & and a new line start another command as surely as ; does.
   return bare.split(/&&|\|\||;|\||&|[\r\n]/).every((part) => {
     const p = part.trim().replace(/^cd\s+\S+$/, "pwd");
     const words = p.split(/\s+/).map((w) => w.replace(/\u0000(\d+)\u0000/g, (_, i: string) => quoted[Number(i)]));
     if (/^(pwd|ls|cat|head|tail|wc|nl|grep|stat|echo)\b/.test(p)) return true;
-    // rg --pre runs a command on every file; tree -o, file -C and git --output write one.
-    if (/^rg\b/.test(p)) return !words.some((w) => /^--pre(=|$)/.test(w));
+    // rg --pre and --hostname-bin run a command; tree -o, file -C and git --output write a file.
+    if (/^rg\b/.test(p)) return !words.some((w) => /^--(pre|hostname-bin)(=|$)/.test(w));
     if (/^tree\b/.test(p)) return !words.some((w) => /^-[^-]*o/.test(w));
     if (/^file\b/.test(p)) return !words.some((w) => /^-[^-]*C|^--compile$/.test(w));
     if (/^sed\b/.test(p)) return sedReads(words);
-    if (/^find\b/.test(p)) return !/-(delete|exec|execdir|ok|fprint|fls)/.test(p);
+    // Read off the words with their quotes put back, so a quoted '-delete' is seen too.
+    if (/^find\b/.test(p)) return !words.some((w) => /^-(delete|exec|ok|fprint|fls)/.test(w));
     if (/^git\s+branch\b/.test(p)) return branchLists(words.slice(2));
     return /^git\s+(status|diff|log|show|ls-files|rev-parse)\b/.test(p) && !words.some((w) => /^--output(=|$)/.test(w));
   });
@@ -180,15 +189,17 @@ const WRAPPERS = /^(sh|bash|zsh|fish|dash|ksh|env|xargs|eval|exec|command|builti
   program (and subcommand, for git, npm and the like), after any leading `cd <dir> &&`. A
   compound command (&&, &, ;, |, a new line, redirects, substitutions) gets none, and neither
   does a shell or a wrapper that runs whatever follows it, so a rule can never carry something
-  else along with it.
+  else along with it. Nor does one that starts by setting a variable (PATH, NODE_OPTIONS,
+  GIT_EXTERNAL_DIFF can change what runs), and the program is matched as written, so `./git` or
+  `/tmp/x/npm` never passes for the `git` or `npm` a rule names.
 */
 export function ruleFor(command: string): string | undefined {
-  let c = command.trim().replace(/^(?:cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*)+/, "");
-  c = c.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+)+/, "");
+  const c = command.trim().replace(/^(?:cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*)+/, "");
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(c)) return undefined;
   if (!c || /[&;|<>`\r\n]|\$\(/.test(c)) return undefined;
   const words = c.split(/\s+/);
-  const program = words[0].split("/").pop() ?? words[0];
-  if (WRAPPERS.test(program)) return undefined;
-  const sub = SUB.test(program) && words[1] && !words[1].startsWith("-") ? words[1] : "";
-  return sub ? `${program} ${sub}` : program;
+  const name = words[0].split("/").pop() ?? words[0];
+  if (WRAPPERS.test(name)) return undefined;
+  const sub = SUB.test(name) && words[1] && !words[1].startsWith("-") ? words[1] : "";
+  return sub ? `${words[0]} ${sub}` : words[0];
 }

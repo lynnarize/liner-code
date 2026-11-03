@@ -39,7 +39,10 @@ export function nextRun(t: Trigger, from = Date.now()): number | undefined {
     d.setHours(d.getHours() + 1);
     return d.getTime();
   }
-  const [h, m] = (t.at ?? "09:00").split(":").map(Number);
+  // "9", "9:30", "09:30"; anything else is 09:00, so a typo can't leave the schedule with no next run.
+  const hm = /^(\d{1,2})(?::(\d{2}))?$/.exec((t.at ?? "").trim());
+  const h = hm ? Math.min(23, Number(hm[1])) : 9;
+  const m = hm?.[2] ? Math.min(59, Number(hm[2])) : 0;
   const next = new Date(from);
   next.setHours(h, m, 0, 0);
   if (next.getTime() <= from) next.setDate(next.getDate() + 1);
@@ -125,7 +128,11 @@ export class Routines {
     this.list = prev ? this.list.map((x) => (x.id === r.id ? r : x)) : [...this.list, r];
     // A new GitHub trigger starts from what's open now, not from everything ever opened: a routine
     // changed to one, or to watch something else, too.
-    if (r.trigger.kind === "github" && (!prev || JSON.stringify(prev.trigger) !== JSON.stringify(r.trigger))) void this.poll(r, true);
+    if (r.trigger.kind === "github" && (!prev || JSON.stringify(prev.trigger) !== JSON.stringify(r.trigger))) {
+      // The old baseline goes too: if this look fails, the next one that works only notes what's open.
+      this.seen.delete(r.id);
+      void this.poll(r, true);
+    }
     this.save();
     this.store.emit({ type: "routine", routine: r });
     return r;
@@ -152,16 +159,28 @@ export class Routines {
   private async poll(r: Routine, quiet = false) {
     if (r.trigger.kind !== "github") return;
     this.polled.set(r.id, Date.now());
-    const cwd = this.store.project(r.projectId).path;
+    // Its project was removed: nothing to look at.
+    const p = this.store.projects.find((x) => x.id === r.projectId);
+    if (!p) return;
+    const cwd = p.path;
     const kind = r.trigger.event === "pr.opened" ? "pr" : "issue";
     const res = await run("gh", [kind, "list", "--state", "open", "--limit", "20", "--json", "number,title,author,url,authorAssociation"], { cwd, env: this.env, timeout: 30000 });
     if (res.code !== 0) return;
-    const items = JSON.parse(res.stdout) as { number: number; title: string; url: string; author?: { login: string }; authorAssociation?: string }[];
+    let items: { number: number; title: string; url: string; author?: { login: string }; authorAssociation?: string }[];
+    try {
+      items = JSON.parse(res.stdout);
+    } catch {
+      return;
+    }
+    // Never looked successfully yet (the baseline failed, or the trigger just changed): only note what's open.
+    if (!this.seen.has(r.id)) quiet = true;
     const seen = this.seen.get(r.id) ?? new Set<number>();
+    // Numbers only go up, so anything opened since the last look is above all of them; an older one unseen just slid into gh's 20 newest as newer ones closed.
+    const mark = Math.max(0, ...seen);
     for (const it of items.sort((a, b) => a.number - b.number)) {
       if (seen.has(it.number)) continue;
       seen.add(it.number);
-      if (quiet) continue;
+      if (quiet || it.number < mark) continue;
       const outside = !["OWNER", "MEMBER", "COLLABORATOR"].includes((it.authorAssociation ?? "").toUpperCase());
       if (r.trigger.outside && !outside) continue;
       const who = it.author?.login ?? "Someone";
@@ -221,11 +240,21 @@ export class Routines {
     if (!r) throw new Error("That routine is gone.");
     const runRec: RoutineRun = { id: uid("rn"), routineId: id, at: Date.now(), cause, status: "running", steps: [], subject: ctx.subject, ...(test ? { test: true } : {}) };
     this.putRun(runRec);
-    void this.execute(r, runRec, ctx).catch((e) => {
-      runRec.status = "failed";
-      runRec.outcome = e instanceof Error ? e.message : String(e);
-      this.putRun(runRec);
-    });
+    void this.execute(r, runRec, ctx)
+      .catch((e) => {
+        // A step it was in stops spinning, and the failure counts toward pausing it, as one inside a step would.
+        const why = e instanceof Error ? e.message : String(e);
+        for (const s of runRec.steps) if (s.status === "running") Object.assign(s, { status: "failed", detail: why, seconds: (Date.now() - s.at) / 1000 });
+        runRec.status = "failed";
+        runRec.outcome = why;
+        this.putRun(runRec);
+        if (test) return;
+        const cur = this.list.find((x) => x.id === id);
+        if (!cur) return;
+        const failures = cur.failures + 1;
+        this.patch(id, { lastRun: runRec.at, failures, ...(cur.pauseAfter && failures >= cur.pauseAfter ? { on: false } : {}) });
+      })
+      .finally(() => this.aborts.delete(runRec.id));
     return runRec;
   }
 
@@ -273,6 +302,19 @@ export class Routines {
     rec.threadId = thread.id;
     this.putRun(rec);
 
+    // Its token limit (the builder's "Tokens a run, at most"): counted from where the session stood, stopped once past it.
+    // The listener goes once the run ends, however it ends (fire()'s catch saves the run too).
+    const tokensOf = (u = emptyUsage()) => u.inputTokens + u.outputTokens + u.cacheReadTokens;
+    const base = tokensOf(this.store.thread(thread.id).usage);
+    let over = false;
+    const off = this.store.on((e) => {
+      if (rec.status !== "running") return void off();
+      if (over || !r.limits.tokensPerRun || e.type !== "thread" || e.thread.id !== thread.id || tokensOf(e.thread.usage) - base <= r.limits.tokensPerRun) return;
+      over = true;
+      abort.abort();
+      this.runtime.stop(thread.id);
+    });
+
     let verdict: "pass" | "fail" | undefined;
     let notes = "";
     for (const st of r.steps) {
@@ -285,9 +327,19 @@ export class Routines {
       try {
         if (st.role === "work" && rec.test) end(s, "skipped", "A test doesn't edit anything");
         else if (st.role === "work") {
+          // Its session is busy (another run's work, or you chatting): send would only queue it, and the gate would act on nothing.
+          if (this.runtime.isRunning(thread.id)) {
+            end(s, "failed", "Its session was busy with another turn");
+            continue;
+          }
+          const before = this.store.thread(thread.id).access;
           this.store.patchThread(thread.id, { agent: st.agent, access: "auto" });
           // Unattended only while its own step runs: what you send in this session later asks you as usual.
-          await this.runtime.unattendedTurn(thread.id, () => this.runtime.send(thread.id, prompt));
+          try {
+            await this.runtime.unattendedTurn(thread.id, () => this.runtime.send(thread.id, prompt));
+          } finally {
+            this.store.patchThread(thread.id, { access: before });
+          }
           const t = this.store.thread(thread.id);
           end(s, t.status === "error" ? "failed" : "done", t.status === "error" ? "The agent ran into a problem" : `${t.toReview ?? 0} files changed`);
         } else {
@@ -304,6 +356,7 @@ export class Routines {
       } catch (e) {
         end(s, "failed", e instanceof Error ? e.message : String(e));
       }
+      if (over) end(s, "failed", "Over its token limit");
     }
 
     // The gate: code, not a model, decides.
@@ -339,15 +392,16 @@ export class Routines {
     }
 
     this.aborts.delete(rec.id);
+    off();
     const t = this.store.thread(thread.id);
     rec.status = abort.signal.aborted ? "failed" : outcome;
-    rec.outcome = abort.signal.aborted ? "You stopped this run." : rec.status === "merged" ? "Merged on its own" : rec.status === "handed" ? "Waits for you" : rec.status === "failed" ? "Something failed" : "Done";
+    rec.outcome = over ? "Over its token limit" : abort.signal.aborted ? "You stopped this run." : rec.status === "merged" ? "Merged on its own" : rec.status === "handed" ? "Waits for you" : rec.status === "failed" ? "Something failed" : "Done";
     rec.seconds = (Date.now() - started) / 1000;
     const u = t.usage ?? emptyUsage();
     rec.tokens = u.inputTokens + u.outputTokens + u.cacheReadTokens;
     this.putRun(rec);
     if (rec.test) {
-      rec.outcome = abort.signal.aborted ? "You stopped this test." : passed ? "Would have taken the pass path" : `Would have taken Otherwise${rec.rules?.find((x) => !x.ok) ? `: ${rec.rules.find((x) => !x.ok)!.label.toLowerCase()} failed` : ""}`;
+      rec.outcome = over ? "Over its token limit" : abort.signal.aborted ? "You stopped this test." : passed ? "Would have taken the pass path" : `Would have taken Otherwise${rec.rules?.find((x) => !x.ok) ? `: ${rec.rules.find((x) => !x.ok)!.label.toLowerCase()} failed` : ""}`;
       this.putRun(rec);
       return;
     }

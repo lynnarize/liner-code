@@ -164,6 +164,14 @@ const isLocal = (url: string) => {
     return false;
   }
 };
+/** The app's own page: the engine's origin, or the dev server's (LINER_UI_URL). */
+const ours = (url: string) => {
+  try {
+    return !!appOrigin && new URL(url).origin === appOrigin;
+  } catch {
+    return false;
+  }
+};
 
 function createWindow() {
   const bounds = visibleBounds(prefs.bounds);
@@ -228,8 +236,14 @@ function createWindow() {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
+  // The window itself never leaves the app's origin (a localhost link dropped on it would get the
+  // token and the bridge); the frames it shows pages in stay on this machine. loadURL isn't asked.
   wc.on("will-frame-navigate", (e) => {
-    if (isLocal(e.url)) return;
+    if (e.isMainFrame ? ours(e.url) : isLocal(e.url)) return;
+    // A page's own embeds (a dev app's Stripe or YouTube frame, a design's map) load where they
+    // are; only the app's page and the frames it shows pages in stay here, their links opening outside.
+    const parent = e.frame?.parent;
+    if (!e.isMainFrame && parent && parent.frameTreeNodeId !== wc.mainFrame.frameTreeNodeId) return;
     e.preventDefault();
     if (/^(https?|mailto):/i.test(e.url)) void shell.openExternal(e.url);
   });
@@ -301,7 +315,7 @@ ipcMain.on("liner:boot", (e) => {
 
 ipcMain.handle("liner", async (e, method: unknown, params: unknown) => {
   // Only the app's own page: never a page in the Browser surface's frame.
-  if (!win || e.sender !== win.webContents || e.senderFrame !== win.webContents.mainFrame) return { ok: false, value: "Not the app's page." };
+  if (!win || e.sender !== win.webContents || e.senderFrame !== win.webContents.mainFrame || !ours(e.senderFrame?.url ?? "")) return { ok: false, value: "Not the app's page." };
   try {
     return { ok: true, value: (await handle(str(method), (params ?? {}) as Record<string, unknown>)) ?? null };
   } catch (err) {
@@ -314,22 +328,37 @@ ipcMain.handle("liner", async (e, method: unknown, params: unknown) => {
   its session isn't on screen. No Node, no new windows, nowhere but this Mac; gone once captured.
 */
 async function shoot(url: string, width: number, height: number) {
-  const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, disableDialogs: true } });
   w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   w.webContents.on("will-navigate", (e, to) => {
     if (!isLocal(to)) e.preventDefault();
   });
   try {
-    await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error("The page took too long to load.")), 15000))]);
-    // Its first frames, fonts and images.
-    await new Promise((r) => setTimeout(r, 800));
-    const img = await w.webContents.capturePage();
-    if (img.isEmpty()) throw new Error("The page didn't draw.");
-    return img.toPNG().toString("base64");
+    // One deadline over all of it: a page that loops after it loads never answers, and the window would stay.
+    return await Promise.race([
+      (async () => {
+        await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error("The page took too long to load.")), 15000))]);
+        // Its first frames, fonts and images.
+        await new Promise((r) => setTimeout(r, 800));
+        const img = await w.webContents.capturePage();
+        if (img.isEmpty()) throw new Error("The page didn't draw.");
+        return img.toPNG().toString("base64");
+      })(),
+      stuck(w),
+    ]);
   } finally {
     w.destroy();
   }
 }
+
+/** Rejects after 25 s (under the engine's 30), crashing a renderer stuck in a loop on the way. */
+const stuck = (w: BrowserWindow) =>
+  new Promise<never>((_, no) =>
+    setTimeout(() => {
+      if (!w.isDestroyed() && !w.webContents.isDestroyed()) w.webContents.forcefullyCrashRenderer();
+      no(new Error("The page stopped answering."));
+    }, 25000),
+  );
 
 /**
   A design drawn out of sight, for its agent to look at: the page at its width, as tall as it is
@@ -337,7 +366,7 @@ async function shoot(url: string, width: number, height: number) {
   in a headless Chrome).
 */
 async function look(url: string, width: number, height: number) {
-  const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, disableDialogs: true } });
   const errors: string[] = [];
   w.webContents.on("console-message", (e) => {
     if (e.level === "error" && errors.length < 20) errors.push(`${e.message}${e.lineNumber ? ` (line ${e.lineNumber})` : ""}`);
@@ -347,18 +376,23 @@ async function look(url: string, width: number, height: number) {
     if (!isLocal(to)) e.preventDefault();
   });
   try {
-    await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error("The page took too long to load.")), 15000))]);
-    await new Promise((r) => setTimeout(r, 600));
-    const tall = Number(await w.webContents.executeJavaScript("Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0))").catch(() => 0)) || height;
-    if (tall > height) {
-      w.setContentSize(width, Math.min(2400, tall));
-      await new Promise((r) => setTimeout(r, 400));
-    }
-    const img = await w.webContents.capturePage();
-    if (img.isEmpty()) throw new Error("The page didn't draw.");
-    // At the design's own pixels: a Retina capture is twice as wide, and costs the model four times as much to look at.
-    const shot = img.getSize().width > width ? img.resize({ width, quality: "good" }) : img;
-    return { png: shot.toPNG().toString("base64"), errors, height: tall };
+    return await Promise.race([
+      (async () => {
+        await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error("The page took too long to load.")), 15000))]);
+        await new Promise((r) => setTimeout(r, 600));
+        const tall = Number(await w.webContents.executeJavaScript("Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0))").catch(() => 0)) || height;
+        if (tall > height) {
+          w.setContentSize(width, Math.min(2400, tall));
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        const img = await w.webContents.capturePage();
+        if (img.isEmpty()) throw new Error("The page didn't draw.");
+        // At the design's own pixels: a Retina capture is twice as wide, and costs the model four times as much to look at.
+        const shot = img.getSize().width > width ? img.resize({ width, quality: "good" }) : img;
+        return { png: shot.toPNG().toString("base64"), errors, height: tall };
+      })(),
+      stuck(w),
+    ]);
   } finally {
     w.destroy();
   }
@@ -393,8 +427,14 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
     case "openExternal":
       if (/^(https?|mailto):/i.test(str(p.url))) await shell.openExternal(str(p.url));
       return;
-    case "keychainSet":
-      return keys.set(str(p.account), str(p.key) || null);
+    case "keychainSet": {
+      const account = str(p.account);
+      const value = str(p.key) || null;
+      keys.set(account, value);
+      // So an engine that comes back after a crash has the keys as they are now, not as at launch.
+      engine.setKey(account.replace(/^key:/, ""), value);
+      return;
+    }
     case "setMaterial": {
       const m = str(p.material);
       material = m === "vibrancy" || m === "solid" ? m : "glass";
@@ -520,7 +560,9 @@ async function runInTerminal(command: string) {
   if (isWin) {
     const file = join(tmpdir(), `liner-${randomBytes(4).toString("hex")}.cmd`);
     const said = command.replace(/"/g, "").replace(/%/g, "%%").replace(/[\^&|<>()]/g, "^$&");
-    writeFileSync(file, `@echo off\r\ntitle Liner Code\r\necho Liner Code runs: ${said}\r\necho.\r\n${command}\r\necho.\r\necho Done. You can close this window and go back to Liner Code.\r\npause >nul\r\n`);
+    // In a cmd of its own: an npm shim (npm.cmd, codex.cmd) run bare from a batch file never hands
+    // control back, and the window would close before Done and the pause.
+    writeFileSync(file, `@echo off\r\ntitle Liner Code\r\necho Liner Code runs: ${said}\r\necho.\r\ncmd /d /s /c "${command}"\r\necho.\r\necho Done. You can close this window and go back to Liner Code.\r\npause >nul\r\n`);
     const err = await shell.openPath(file);
     if (err) throw new Error(err);
     return;
@@ -769,6 +811,7 @@ void app.whenReady().then(async () => {
   engine.port = prefs.port ?? 0;
   // A packaged app says which version it is and where it sits, so the engine can tell whether it can update in place.
   const bundle = bundlePath();
-  const self = bundle ? { LINER_APP_VERSION: app.getVersion(), LINER_APP_BUNDLE: bundle } : {};
+  // A packaged app with no .app to swap (Windows) still says it isn't a copy run from source.
+  const self = bundle ? { LINER_APP_VERSION: app.getVersion(), LINER_APP_BUNDLE: bundle } : app.isPackaged ? { LINER_APP_VERSION: app.getVersion(), LINER_APP_PACKAGED: "1" } : {};
   engine.start(paths, { ...env, ...self, LINER_USER_NAME: who.user, LINER_MACHINE: who.machine }, own);
 });

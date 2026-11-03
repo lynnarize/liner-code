@@ -256,11 +256,12 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   const dropTo = async (id: string, target: string) => {
     const t = threads.find((x) => x.id === id);
     if (!t) return;
-    if (target === "pinned") return act(t, "pin");
-    if (target === "settled") return act(t, "settle");
-    if (target === "snoozed") return act(t, "snooze", snoozeTimes()[0].at);
-    if (target === "ungroup") return moveTo(t, null);
-    if (target.startsWith("group:")) return moveTo(t, target.slice(6));
+    // A drop puts it there: one already there stays (act() toggles, a drag doesn't).
+    if (target === "pinned") return t.pinned ? undefined : act(t, "pin");
+    if (target === "settled") return place(t) === "settled" ? undefined : act(t, "settle");
+    if (target === "snoozed") return place(t) === "snoozed" ? undefined : act(t, "snooze", snoozeTimes()[0].at);
+    if (target === "ungroup") return t.group ? moveTo(t, null) : undefined;
+    if (target.startsWith("group:")) return t.group === target.slice(6) ? undefined : moveTo(t, target.slice(6));
   };
   const drop = (target: string) => ({
     onDragOver: (e: React.DragEvent) => {
@@ -430,7 +431,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     const ctx = u?.contextTokens && u.contextWindow ? Math.round((u.contextTokens / u.contextWindow) * 100) : null;
     const last = [`Last move ${agoLong(t.updatedAt, now)}`, ctx !== null ? `${ctx}% of context` : "", u?.costUsd ? money(u.costUsd) : ""].filter(Boolean).join(" · ");
     // ⌘1 to ⌘9 go down the sidebar as it shows (App's sidebarOrder).
-    const n = [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].findIndex((r) => r.dataset.row === t.id) + 1;
+    const n = [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].filter((r) => !r.closest(".lc-fold[inert]")).findIndex((r) => r.dataset.row === t.id) + 1;
     return (
       <>
         <p className="lc-sbc-title">{t.title}</p>
@@ -577,9 +578,11 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
                 autoFocus
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
+                  e.stopPropagation();
+                  // The Enter that confirms an IME composition is not the end of the rename.
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                   if (e.key === "Escape") setRenaming(null);
-                  e.stopPropagation();
                 }}
                 onBlur={(e) => {
                   const v = e.target.value.trim();

@@ -301,8 +301,15 @@ class AcpSession implements ProviderSession {
       }) : [];
       const r = await Promise.race([this.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: said }, ...images] }), gaveUp]);
       if (!r) return;
-      const usage = r.usage as { inputTokens?: number; outputTokens?: number; cachedReadTokens?: number } | undefined;
-      if (usage) sink.usage({ inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0, cacheReadTokens: usage.cachedReadTokens ?? 0 });
+      const usage = r.usage as { totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number | null; cachedReadTokens?: number | null } | undefined;
+      if (usage) {
+        // ACP leaves open whether inputTokens counts cache reads: most agents do, OpenCode doesn't (Kun: acp-event-mapper.ts, applyPromptResult).
+        // Liner's input is the uncached part, so reads come off it unless the numbers show they were never in it.
+        const input = usage.inputTokens ?? 0, output = usage.outputTokens ?? 0, reads = usage.cachedReadTokens ?? 0;
+        const total = usage.totalTokens ?? input + output;
+        const excludes = reads > input || total >= input + output + (usage.thoughtTokens ?? 0) + reads;
+        sink.usage({ inputTokens: excludes ? input : Math.max(0, input - reads), outputTokens: output, cacheReadTokens: reads });
+      }
       if (r.stopReason === "refusal") sink.notice("The agent declined this one.");
       if (r.stopReason === "max_tokens") sink.notice("The agent ran out of room in this turn.");
     } finally {

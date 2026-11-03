@@ -11,6 +11,8 @@ const EVERY = 60_000;
 
 export class Watch {
   private timer: NodeJS.Timeout | null = null;
+  /** A tick still waiting on gh when the next minute comes, so two never follow the same pull request at once. */
+  private ticking = false;
   /** Comments and reviews on a pull request when its session was snoozed until someone replies. */
   private baseline = new Map<string, number>();
   private store: Store;
@@ -57,18 +59,26 @@ export class Watch {
   }
 
   async tick() {
-    const s = this.store.settings;
-    const now = Date.now();
-    void this.pull().catch(() => {});
-    for (const t of this.store.threads) {
-      if (t.archived) continue;
-      try {
-        // Nothing has happened for days and nothing waits on you: it settles into Done.
-        if (s.settleDays > 0 && !t.done && !t.pinned && t.status === "done" && !t.toReview && !t.unread && now - t.updatedAt > s.settleDays * 86400000) this.settle(t, `Nothing happened for ${s.settleDays} days`);
-        if (t.pr && t.pr.state === "OPEN" && (s.settleOnMerge || t.wake)) await this.followPr(t);
-      } catch {
-        // gh is offline or the project moved; try again next minute
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      const s = this.store.settings;
+      const now = Date.now();
+      void this.pull().catch(() => {});
+      for (const t of this.store.threads) {
+        // No longer snoozed until someone replies (undone, switched to checks): the next such snooze counts from then.
+        if (t.wake?.kind !== "reply") this.baseline.delete(t.id);
+        if (t.archived) continue;
+        try {
+          // Nothing has happened for days and nothing waits on you: it settles into Done.
+          if (s.settleDays > 0 && !t.done && !t.pinned && t.status === "done" && !t.toReview && !t.unread && now - t.updatedAt > s.settleDays * 86400000) this.settle(t, `Nothing happened for ${s.settleDays} days`);
+          if (t.pr && t.pr.state === "OPEN" && (s.settleOnMerge || t.wake)) await this.followPr(t);
+        } catch {
+          // gh is offline or the project moved; try again next minute
+        }
       }
+    } finally {
+      this.ticking = false;
     }
   }
 

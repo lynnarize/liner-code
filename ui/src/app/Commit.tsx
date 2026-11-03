@@ -111,9 +111,9 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
     // Commit and push plays out in the thread, as a card that grows from the chip and folds back.
     if (then === "push") {
       onDone();
-      save(thread.id, null);
       const lines = (open.length ? chosen : []).reduce((n, f) => ({ added: n.added + f.added, removed: n.removed + f.removed }), { added: 0, removed: 0 });
-      await ship(thread, { message, paths: left.size ? chosen.map((f) => f.path) : undefined, files: count, ...lines });
+      // The message stays kept until the commit lands, so a failed one (a hook, signing) doesn't lose your edits.
+      if (await ship(thread, { message, paths: left.size ? chosen.map((f) => f.path) : undefined, files: count, ...lines })) save(thread.id, null);
       return;
     }
     setBusy(true);

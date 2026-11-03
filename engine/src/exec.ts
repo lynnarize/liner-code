@@ -195,9 +195,14 @@ export function linkHelpers(dir: string, env: NodeJS.ProcessEnv, helpers = HELPE
     // The places are a Mac's, and a link on Windows needs admin rights or Developer Mode.
     const copy = onPath || win ? null : places.map((p) => p.replace(/^~(?=\/)/, homedir())).find((p) => which(p, env));
     if (copy === ours) continue;
-    if (ours !== null) rmSync(link, { force: true });
-    if (copy) symlinkSync(copy, link);
-    else if (!onPath) missing.push(name);
+    try {
+      if (ours !== null) rmSync(link, { force: true });
+      if (copy) symlinkSync(copy, link);
+      else if (!onPath) missing.push(name);
+    } catch {
+      // Another engine linked it first, or something not ours sits at the link: leave it.
+      if (!onPath && !existsSync(link)) missing.push(name);
+    }
   }
   return { env: { ...env, PATH: [dir, ...pathOf(env).split(delimiter).filter((p) => p && p !== dir)].join(delimiter) }, missing };
 }

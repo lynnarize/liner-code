@@ -123,7 +123,8 @@ export class Outside {
         }
         case "liner_wait": {
           const t = this.thread(args.session);
-          const until = Date.now() + Math.min(600, Math.max(1, Number(args.seconds) || 120)) * 1000;
+          // Under 300 seconds: the outside fetch gives up when no headers come back by then (undici's headersTimeout).
+          const until = Date.now() + Math.min(240, Math.max(1, Number(args.seconds) || 120)) * 1000;
           while (Date.now() < until && this.thread(t.id).status === "running") await new Promise((r) => setTimeout(r, 1000));
           return text(readout(this.thread(t.id), this.store.timeline(t.id), 1));
         }

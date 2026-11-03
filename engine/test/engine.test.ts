@@ -392,7 +392,7 @@ test("rules: don't ask again covers one plain command, never a compound one", as
   const { ruleFor } = await import("../src/risk.ts");
   assert.equal(ruleFor("npm test"), "npm test");
   assert.equal(ruleFor(`cd "/Users/me/app" && npm test -- --watch=false`), "npm test");
-  assert.equal(ruleFor("CI=1 pnpm lint"), "pnpm lint");
+  assert.equal(ruleFor("CI=1 pnpm lint"), undefined);
   assert.equal(ruleFor("ls -la src"), "ls");
   assert.equal(ruleFor("git add x && rm -rf ~"), undefined);
   assert.equal(ruleFor("cat a | sh"), undefined);

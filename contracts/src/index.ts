@@ -507,7 +507,8 @@ export type QueuedMessage = { id: string; text: string; at: number; files?: stri
 export type Question = { question: string; header?: string; options: { label: string; description?: string; suggested?: boolean }[]; multiSelect?: boolean };
 
 export type ToolKind = "read" | "edit" | "write" | "exec" | "search" | "fetch" | "think" | "task" | "web" | "other";
-export type FileChange = { path: string; status: "added" | "modified" | "deleted" | "renamed"; added: number; removed: number; from?: string };
+/** rel: the paths are already the project's own (every change written since they were), so none is stripped of its folder again. */
+export type FileChange = { path: string; status: "added" | "modified" | "deleted" | "renamed"; added: number; removed: number; from?: string; rel?: true };
 export type PlanEntry = { title: string; status: "pending" | "in_progress" | "completed" };
 export type Risk = "low" | "medium" | "high";
 /** What a design is drawn for: the frame the Design surface shows it in, and its picture's size. */
@@ -806,9 +807,10 @@ export type AppUpdate = {
   /**
     Whether this copy can put a new one in its own place: "install"; "source" runs from the repo
     (pull and build instead); "readonly" sits in a folder you can't write to; "translocated" runs
-    from where macOS put a downloaded app that wasn't moved to Applications.
+    from where macOS put a downloaded app that wasn't moved to Applications; "manual" is a packaged
+    app that can't swap itself yet (Windows), so the new one comes from the release page.
   */
-  can: "install" | "source" | "readonly" | "translocated";
+  can: "install" | "source" | "readonly" | "translocated" | "manual";
   error?: string;
   /** "failed" because this version downloaded but couldn't take this copy's place: it comes from the release page, by hand. */
   stuck?: boolean;
@@ -992,6 +994,8 @@ export type EngineEvent =
   | { type: "project"; project: Project }
   | { type: "project.removed"; id: string }
   | { type: "thread"; thread: Thread }
+  /** A session deleted for good, or a side chat let go; an archived session comes as "thread". */
+  | { type: "thread.removed"; id: string }
   | { type: "item"; threadId: string; item: Item }
   | { type: "delta"; threadId: string; itemId: string; text: string }
   /** A thread's whole timeline, after a rewind took turns off it. */
@@ -1058,7 +1062,7 @@ export type Rpc = {
   /** What agents remember about a project (memory_add), oldest first; add, and forget by place. */
   "memory.list": [{ projectId: string }, string[]];
   "memory.add": [{ projectId: string; fact: string }, string[]];
-  "memory.forget": [{ projectId: string; index: number }, string[]];
+  "memory.forget": [{ projectId: string; fact: string }, string[]];
   /** A project's earlier sessions, searched: your messages and the agents' answers. */
   "sessions.search": [{ projectId: string; query: string }, { threadId: string; title: string; at: number; who: "you" | "agent"; snippet: string }[]];
   /** A limited session carries on with another tool's model (`model`, else the one its limit card offers). */
@@ -1139,7 +1143,7 @@ export type Rpc = {
   "machine.info": [Record<string, never>, { name: string; user: string; home: string }];
   "agents.save": [{ agents: AgentProfile[] }, AgentProfile[]];
   "settings.save": [Partial<Settings>, Settings];
-  "fs.files": [{ projectId: string; query?: string; limit?: number }, { path: string; size: number }[]];
+  "fs.files": [{ projectId: string; threadId?: string; query?: string; limit?: number }, { path: string; size: number }[]];
   "fs.tree": [{ projectId: string; threadId?: string }, TreeEntry[]];
   "fs.read": [{ threadId: string; path: string }, { text: string; size: number; binary: boolean }];
   /** A file's bytes (base64) for the Files preview, an image say: up to 10 MB, only inside the session's folder. */

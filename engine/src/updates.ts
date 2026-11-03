@@ -210,7 +210,7 @@ export class Updater {
       current: env.LINER_APP_VERSION || pkg.version || "0.0.0",
       repo: repoName(env.LINER_UPDATE_REPO) ?? repoName(pkg.liner?.releases) ?? repoName(pkg.repository),
       state: "idle",
-      can: !bundle || process.platform !== "darwin" ? "source" : bundle.includes("/AppTranslocation/") ? "translocated" : writable(dirname(bundle)) && writable(bundle) ? "install" : "readonly",
+      can: !bundle ? (env.LINER_APP_PACKAGED ? "manual" : "source") : process.platform !== "darwin" ? "source" : bundle.includes("/AppTranslocation/") ? "translocated" : writable(dirname(bundle)) && writable(bundle) ? "install" : "readonly",
     };
     try {
       const s = JSON.parse(readFileSync(join(this.dir, "state.json"), "utf8")) as { dismissed?: Record<string, string>; checkedAt?: number; stuck?: Updater["stuck"] };
@@ -375,7 +375,7 @@ export class Updater {
         stuck: stuck || undefined,
         error: stuck ? this.stuckError() : undefined,
       };
-      if (fresh && !staged && !stuck && !pickAsset(r.assets)) this.app.error = "This release has no download for this Mac yet.";
+      if (fresh && !staged && !stuck && this.app.can === "install" && !pickAsset(r.assets)) this.app.error = "This release has no download for this Mac yet.";
     } catch (e) {
       const status = (e as { status?: number }).status;
       this.app = { ...this.app, state: this.app.state === "ready" ? "ready" : "failed", stuck: undefined, error: status === 404 ? `No published release in ${this.app.repo} yet.` : `Couldn't reach GitHub: ${(e as Error).message}` };
@@ -400,7 +400,7 @@ export class Updater {
   }
 
   download(): Promise<Updates> {
-    if (this.app.can !== "install") return Promise.reject(new Error(this.app.can === "source" ? "This copy runs from source: pull and build it instead." : "Move Liner Code to Applications to update it in place."));
+    if (this.app.can !== "install") return Promise.reject(new Error(this.app.can === "source" ? "This copy runs from source: pull and build it instead." : this.app.can === "manual" ? "This copy doesn't update itself yet: download the new one from the release page." : "Move Liner Code to Applications to update it in place."));
     if (this.app.state === "ready") return Promise.resolve(this.state);
     this.downloading ??= this.fetchApp().finally(() => {
       this.downloading = null;
@@ -517,6 +517,7 @@ export class Updater {
   // ---------- The agent tools ----------
 
   private async checkTools() {
+    const since = Date.now();
     const found = await Promise.all(
       TOOLS.map(async (spec): Promise<ToolUpdate | null> => {
         const path = which(spec.bin, this.env);
@@ -547,7 +548,11 @@ export class Updater {
         return { ...base, latest, state: fresh ? (this.wanted.has(spec.id) ? "waiting" : "available") : "current" };
       }),
     );
-    this.tools = found.filter((t): t is ToolUpdate => Boolean(t));
+    // An update that began (or ran) while this looked keeps its own entry: runUpdate is still writing to it.
+    this.tools = found.filter((t): t is ToolUpdate => Boolean(t)).map((f) => {
+      const live = this.tools.find((t) => t.id === f.id);
+      return live && (live.state === "updating" || (live.at ?? 0) >= since) ? live : f;
+    });
   }
 
   /** Asks for a tool's update (every tool with one, without an id); it runs once nothing works on it. */

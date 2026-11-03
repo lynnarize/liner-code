@@ -497,6 +497,10 @@
   background-color: var(--l-warn);
   color: var(--l-ink);
 }
+/* Dark's amber is bright, so the current match takes dark ink there. */
+[data-theme="dark"] ::highlight(lc-find-on) {
+  color: var(--l-on-ink);
+}
 .lc-rv-main {
   position: relative;
 }

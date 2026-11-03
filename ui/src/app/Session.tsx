@@ -148,6 +148,34 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       el.removeEventListener("wheel", stop);
     };
   }, [count > 0]);
+  // Scrolling up by the keyboard (F6 puts it on the thread) or by dragging the scrollbar lets go too, not only the wheel.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
+      if (e.key === "PageUp" || e.key === "ArrowUp" || e.key === "Home" || (e.key === " " && e.shiftKey && e.target === el)) letGo(el);
+    };
+    // A press on the scroller itself (its scrollbar) that then moves it up.
+    let held = false;
+    let top = 0;
+    const onDown = (e: PointerEvent) => ((held = e.target === el), (top = el.scrollTop));
+    const onUp = () => (held = false);
+    const onScroll = () => {
+      if (held && el.scrollTop < top - 1) (letGo(el), (held = false));
+      top = el.scrollTop;
+    };
+    el.addEventListener("keydown", onKey, { capture: true });
+    el.addEventListener("pointerdown", onDown, { passive: true });
+    window.addEventListener("pointerup", onUp, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("keydown", onKey, { capture: true });
+      el.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointerup", onUp);
+      el.removeEventListener("scroll", onScroll);
+    };
+  }, []);
   // Remembered as you scroll, so it's there whenever the session closes.
   useEffect(() => {
     const el = scroller.current;
@@ -159,8 +187,14 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     el.addEventListener("scroll", keep, { passive: true });
     return () => el.removeEventListener("scroll", keep);
   }, [thread.id]);
+  // Read only once you're looking: in the background it stays in Needs you, like the notification says.
   useEffect(() => {
-    if (thread.unread) void rpc("thread.update", { id: thread.id, unread: false });
+    const clear = () => {
+      if (thread.unread && document.hasFocus()) void rpc("thread.update", { id: thread.id, unread: false });
+    };
+    clear();
+    window.addEventListener("focus", clear);
+    return () => window.removeEventListener("focus", clear);
   }, [thread.id, thread.unread]);
 
   const lead = thread.lead ? agentOf(thread.lead, agents, providers) : undefined;
@@ -226,8 +260,24 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
         const r = sel.getRangeAt(0).getBoundingClientRect();
         setCite({ text, x: r.left + r.width / 2, y: r.top });
       });
+    // The button sits where the selection was; once the timeline moves or the selection goes, it's in the wrong place.
+    // Only a scroll that moves the selection: a terminal or a panel printing beside it leaves it be.
+    const onScroll = (e: Event) => {
+      const at = window.getSelection()?.anchorNode;
+      if (!at || (e.target instanceof Node && e.target.contains(at))) setCite(null);
+    };
+    const onSel = () => {
+      if (window.getSelection()?.isCollapsed ?? true) setCite(null);
+    };
     document.addEventListener("mouseup", onUp);
-    return () => document.removeEventListener("mouseup", onUp);
+    // In capture, as the thread's own scroller's scroll doesn't bubble.
+    document.addEventListener("scroll", onScroll, true);
+    document.addEventListener("selectionchange", onSel);
+    return () => {
+      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("selectionchange", onSel);
+    };
   }, []);
 
   // A project script with keys of its own runs from them, in a Terminal tab of its own.
@@ -359,7 +409,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                 defaultValue={thread.title}
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur();
                   if (e.key === "Escape") setRenaming(false);
                 }}
                 onBlur={(e) => {

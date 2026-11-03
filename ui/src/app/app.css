@@ -2089,13 +2089,14 @@ html[data-native="mac"] .lc-sb-head {
   container: lc-session / inline-size;
 }
 @container lc-session (max-width: 700px) {
-  .lc-session[data-panel] .lc-body {
+  .lc-session[data-panel]:not([data-dock="bottom"]) .lc-body {
     grid-template-columns: minmax(0px, 0fr) 100%;
   }
   .lc-grip {
     display: none;
   }
-  .lc-session[data-panel] .lc-thread {
+  /* Docked under the session the thread keeps its own row, so only the beside layout hides it. */
+  .lc-session[data-panel]:not([data-dock="bottom"]) .lc-thread {
     opacity: 0;
     pointer-events: none;
   }
@@ -2177,9 +2178,14 @@ html[data-native="mac"] .lc-sb-head {
   left: calc(100% - 14px - 22px);
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: safe center;
   gap: 2px;
   width: 44px;
+  /* A short window, or a panel docked under the session: it stays clear of the header and the
+     composer, and scrolls rather than rising over them. */
+  max-height: calc(100% - var(--lc-dock-h, 0px) - 16px);
+  overflow-y: auto;
+  scrollbar-width: none;
   box-sizing: border-box;
   padding: 4px;
   border-radius: 22px;
@@ -2212,6 +2218,8 @@ html[data-native="mac"] .lc-sb-head {
   gap: 2px;
   width: auto;
   height: 40px;
+  max-height: none;
+  overflow: visible;
   padding: 0 4px;
   border-radius: 20px;
   animation-name: lc-dock-in;
@@ -2819,6 +2827,13 @@ html[data-tray="solid"] .lc-rail {
 .lc-panel :is(.lc-sinfo-card, .lc-files-view, .lc-linked-card, .lc-rt-card, .lc-rv-file, .lc-rv-thread, .lc-limits-tool, .lc-sc-compose) {
   background: color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper));
   box-shadow: none;
+}
+/* The sticky bits on a panel card take its tint, or they show as a strip of paper. */
+.lc-panel .lc-files-view .lc-cl-n {
+  background: color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper));
+}
+.lc-panel .lc-rv-fh {
+  background: color-mix(in oklab, color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper)) 92%, transparent);
 }
 .lc-todo-h {
   display: flex;
@@ -3637,6 +3652,13 @@ html[data-composer="clear"] .lc-dock .lc-card {
   border-radius: 14px;
   animation: l-pop-up 200ms var(--l-ease-enter) backwards;
 }
+/* On Home the composer sits in a scrolling area that would clip a list above it: it opens downward, like Home's menus. */
+.lc-composer[data-variant="home"] .lc-mention {
+  top: calc(100% + 6px);
+  bottom: auto;
+  max-height: min(420px, 50vh);
+  animation-name: l-pop-in;
+}
 .lc-mention-row {
   display: flex;
   align-items: center;
@@ -3910,7 +3932,7 @@ html[data-composer="clear"] .lc-dock .lc-card {
   flex: 1;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: 22px;
   min-height: 0;
   padding: 24px 24px 12vh;
@@ -4030,7 +4052,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide] .lc-p
   padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
 }
 @container lc-session (max-width: 700px) {
-  html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel] .lc-panel-top {
+  html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel]:not([data-dock="bottom"]) .lc-panel-top {
     padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
   }
 }
@@ -5214,6 +5236,14 @@ html[data-native="mac"] .lc-setup-top {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.lc-ad-err {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--l-danger-text);
+}
 .lc-ad-disc {
   display: grid;
   flex: none;
@@ -5718,8 +5748,9 @@ html[data-native="mac"] .lc-setup-top {
   background: var(--lc-tray);
   box-shadow: inset 0 0 0 0.5px oklch(1 0 0 / 0.7);
 }
-.lc-pv-win[data-tray="clear"] .lc-pv-tray {
-  background: oklch(0.945 0.004 265 / 0.38);
+/* --lc-tray already follows Glass and the theme; dark's rim is the real tray's faint hairline. */
+[data-theme="dark"] .lc-pv-tray {
+  box-shadow: inset 0 0 0 0.5px oklch(1 0 0 / 0.12);
 }
 .lc-pv-win[data-tray="solid"] .lc-pv-tray {
   background: var(--lc-plate);
@@ -5885,6 +5916,16 @@ html[data-native="mac"] .lc-setup-top {
   .lc-cli,
   .lc-rcs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* The tools' dividers follow the two columns: odd ones start a row, the third starts the second. */
+  .lc-cli > div:nth-child(2n + 1) {
+    border-left: 0;
+  }
+  .lc-cli > div:nth-child(2n) {
+    border-left: 1px solid var(--l-line);
+  }
+  .lc-cli > div:nth-child(3) {
+    box-shadow: 0 -1px 0 var(--l-line);
   }
 }
 

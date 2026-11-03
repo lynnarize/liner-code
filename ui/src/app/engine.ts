@@ -148,9 +148,12 @@ type Numbered = EngineEvent & { seq?: number };
 const loading = new Map<string, { events: Numbered[]; done: Promise<void>; mark: object }>();
 /** Every timeline asked for, so one whose fetch failed is fetched again on reconnect. */
 const wanted = new Set<string>();
+/** Where each fetched timeline was read: an event numbered at or before it is already in it, however late it comes. */
+const cursor = new Map<string, number>();
 
 function apply(e: Numbered) {
   if (e.type !== "delta") takeDeltas();
+  if ((e.type === "item" || e.type === "delta" || e.type === "timeline") && (e.seq ?? Infinity) <= (cursor.get(e.threadId) ?? -1)) return;
   if ((e.type === "item" || e.type === "delta" || e.type === "timeline") && loading.has(e.threadId)) {
     loading.get(e.threadId)!.events.push(e);
     return;
@@ -164,6 +167,8 @@ function apply(e: Numbered) {
       const open = [...new Set([...Object.keys(state.items), ...wanted])].filter((id) => there.has(id));
       for (const id of wanted) if (!there.has(id)) wanted.delete(id);
       const kept = Object.fromEntries(Object.entries(state.items).filter(([id]) => there.has(id)));
+      // A restarted engine numbers its events from 0 again; each open timeline gets a fresh cursor when it's fetched again below.
+      cursor.clear();
       set({ items: kept, connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), limits: s.limits ?? [] });
       for (const id of open) void loadItems(id, true).catch(() => {});
       return;
@@ -173,12 +178,21 @@ function apply(e: Numbered) {
     case "project.removed":
       return set({ projects: state.projects.filter((p) => p.id !== e.id), threads: state.threads.filter((t) => t.projectId !== e.id), sides: state.sides.filter((t) => t.projectId !== e.id) });
     case "thread":
-      // A side chat that's let go comes as archived; it isn't kept like an archived session.
+      // A side chat comes out of the session list if it was ever there.
       if (e.thread.sideOf) {
-        const sides = e.thread.archived ? state.sides.filter((t) => t.id !== e.thread.id) : upsert(state.sides, e.thread);
+        const sides = upsert(state.sides, e.thread);
         return set(state.threads.some((t) => t.id === e.thread.id) ? { sides, threads: state.threads.filter((t) => t.id !== e.thread.id) } : { sides });
       }
-      return set({ threads: e.thread.archived && !state.threads.some((t) => t.id === e.thread.id && !t.archived) ? state.threads.filter((t) => t.id !== e.thread.id) : upsert(state.threads, e.thread) });
+      return set({ threads: upsert(state.threads, e.thread) });
+    case "thread.removed": {
+      // A session deleted for good (or a side chat let go) goes, with its timeline; an archived one comes as "thread".
+      wanted.delete(e.id);
+      loading.delete(e.id);
+      cursor.delete(e.id);
+      deltas.delete(e.id);
+      const { [e.id]: _gone, ...items } = state.items;
+      return set({ threads: state.threads.filter((t) => t.id !== e.id), sides: state.sides.filter((t) => t.id !== e.id && t.sideOf !== e.id), items });
+    }
     case "item": {
       if (e.item.kind === "design") for (const fn of streamListeners) fn(e);
       const list = state.items[e.threadId];
@@ -272,6 +286,8 @@ async function connect() {
       if (import.meta.env.DEV) console.warn("[liner] event stream:", e);
     } finally {
       clearTimeout(quiet);
+      // Closed on every way out, a listener that threw included, so the engine doesn't keep writing into it.
+      cut.abort();
     }
     set({ connected: false });
     await new Promise((r) => setTimeout(r, wait));
@@ -311,6 +327,7 @@ export function loadItems(threadId: string, again = false): Promise<void> {
       // A newer fetch (after a reconnect) stands instead.
       if (loading.get(threadId)?.mark !== mark) return;
       loading.delete(threadId);
+      cursor.set(threadId, seq);
       takeDeltas();
       set({ items: { ...state.items, [threadId]: items } });
       for (const e of held) if ((e.seq ?? Infinity) > seq) apply(e);

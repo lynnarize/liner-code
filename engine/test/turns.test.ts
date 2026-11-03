@@ -181,6 +181,26 @@ test("a question left from an ended turn, skipped: the session isn't left in Nee
   }
 });
 
+test("a question left from an ended turn, and you send something else: it's put back, and the new turn ends done, not in Needs you", async () => {
+  const { seen, restore } = fake(async (text, sink, signal) => {
+    if (text !== "build it") return;
+    void sink.ask([{ question: "Which database?", options: [{ label: "SQLite" }] }], signal).catch(() => {});
+    await tick(20);
+  });
+  try {
+    const { store, runtime } = session({ access: "ask" });
+    await runtime.send("t", "build it");
+    assert.equal(store.thread("t").status, "waiting");
+    await runtime.send("t", "never mind, add a README");
+    await until(() => seen.texts.length === 2 && !runtime.isRunning("t"), "the new message goes as a turn");
+    const q = store.timeline("t").find((x) => x.kind === "question");
+    assert.equal(q?.kind === "question" && q.state, "skipped");
+    assert.equal(store.thread("t").status, "done");
+  } finally {
+    restore();
+  }
+});
+
 test("routines: its own step runs unattended, never what leaves this Mac; afterwards the session asks again", async () => {
   const answers: Record<string, boolean> = {};
   const { restore } = fake(async (_text, sink, signal) => {

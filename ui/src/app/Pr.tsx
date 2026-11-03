@@ -337,7 +337,7 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
   }, [thread.id, n, visible]);
 
   // Made once per session's card, so the steps it's running survive a re-render.
-  const agent = useMemo(() => sessionPrAgent({ thread, agentName, fields: () => (yours.current || fields.current.title || fields.current.body ? fields.current : null), seen: () => seen.current, onChange: () => setN((x) => x + 1) }), [thread.id]);
+  const agent = useMemo(() => sessionPrAgent({ thread, agentName, fields: () => (yours.current || fields.current.title || fields.current.body || fields.current.draft ? fields.current : null), seen: () => seen.current, onChange: () => setN((x) => x + 1) }), [thread.id]);
 
   const draftIt = async () => {
     setDrafting(true);

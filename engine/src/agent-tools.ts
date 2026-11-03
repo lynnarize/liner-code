@@ -211,7 +211,8 @@ export class AgentTools {
       return `${path.slice(1)} · ${pageText(readFile(root, path.slice(1)).text)}\n\n(Read from the file; the session isn't open in Liner Code, so its scripts didn't run, and clicking and typing need it open.)`;
     }
     if (!m) throw new Error("Only pages on this Mac: localhost:<port>/<path>, or an HTML file in this session's folder.");
-    const r = await fetch(`http://127.0.0.1:${m[1]}${m[2] || "/"}`, { signal: AbortSignal.timeout(10000) });
+    // localhost, as servesPage() reads it: Node tries ::1 and 127.0.0.1, and Vite on a Mac listens on ::1 alone.
+    const r = await fetch(`http://localhost:${m[1]}${m[2] || "/"}`, { signal: AbortSignal.timeout(10000) });
     return `localhost:${m[1]}${m[2] || "/"} answered ${r.status} · ${pageText(await r.text())}\n\n(Read from the server; the session isn't open in Liner Code, so clicking and typing need it open.)`;
   }
 

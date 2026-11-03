@@ -68,11 +68,12 @@ final class Engine {
         p.currentDirectoryURL = engine.deletingLastPathComponent()
         var e = ProcessInfo.processInfo.environment
         for (k, v) in env { e[k] = v }
-        e["LINER_TOKEN"] = token
+        // The token and keys go over stdin, not the environment: anything running as you can read a
+        // process's starting environment with `ps eww`, the agents the engine starts included.
+        e["LINER_SECRETS"] = "stdin"
         e["LINER_PATH"] = env["PATH"]
         e["LINER_USER_NAME"] = NSFullUserName()
         e["LINER_MACHINE"] = Host.current().localizedName ?? "This Mac"
-        if let data = try? JSONSerialization.data(withJSONObject: keys), let json = String(data: data, encoding: .utf8) { e["LINER_KEYS"] = json }
         p.environment = e
 
         let input = Pipe()
@@ -123,6 +124,10 @@ final class Engine {
         do {
             try p.run()
             process = p
+            // The engine's first line on stdin: {"token":…,"keys":{…}}. The pipe stays open (closing it stops the engine).
+            if let data = try? JSONSerialization.data(withJSONObject: ["token": token, "keys": keys] as [String: Any]) {
+                try? input.fileHandleForWriting.write(contentsOf: data + Data("\n".utf8))
+            }
         } catch {
             onFail?("The engine didn't start: \(error.localizedDescription)")
         }

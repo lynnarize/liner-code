@@ -77,6 +77,8 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
   const [query, setQuery] = useState("");
   const [look, setLook] = useState<Look>(readLook);
   const [sound, setSound] = useState(feedback.enabled);
+  // Held here, not in General, so Restore defaults shows the Enter it puts back.
+  const [enter, setEnter] = useState(() => (localStorage.getItem("lc:enter") as "queue" | "steer") ?? "queue");
   const scroller = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
   const nav = useRef<HTMLElement>(null);
@@ -178,6 +180,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
   const restore: Partial<Record<SettingsPage, () => void>> = {
     general: () => {
       save({ worktrees: false });
+      setEnter("queue");
       localStorage.setItem("lc:enter", "queue");
     },
     // The parts LOOK_DEFAULT has no word for (your own theme, colours and picture) go too, or they'd stay on.
@@ -311,7 +314,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
               <h1>{place.label}</h1>
               <p>{place.blurb}</p>
             </div>
-            {page === "general" && <General go={setPage} onSetup={onClose} />}
+            {page === "general" && <General go={setPage} onSetup={onClose} enter={enter} setEnter={setEnter} />}
             {page === "appearance" && <Appearance look={look} set={setLookPart} />}
             {page === "notifications" && <Notifications sound={sound} />}
             {page === "keyboard" && <Keyboard />}
@@ -517,9 +520,8 @@ function Field({ title, note, children, below, lead, off }: { title: ReactNode; 
 
 /* ---------------------------------- General ---------------------------------- */
 
-function General({ go, onSetup }: { go: (p: SettingsPage) => void; onSetup: () => void }) {
+function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => void; onSetup: () => void; enter: "queue" | "steer"; setEnter: (v: "queue" | "steer") => void }) {
   const s = useEngine((x) => x.settings);
-  const [enter, setEnter] = useState(() => (localStorage.getItem("lc:enter") as "queue" | "steer") ?? "queue");
   const providers = useEngine((x) => x.providers);
   // Who'd do what, from your two models.
   const cast = castOf(providers, { dual: s.dual, picks: s.picks });
@@ -988,6 +990,10 @@ function Themes({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) 
   const [pasted, setPasted] = useState("");
   const file = useRef<HTMLInputElement>(null);
   const keep = (next: Theme[]) => (saveThemes(next), setList(next));
+  // While one of your themes is on, the page's colours are its: Liner's chip names its own axes so it shows what Use gives.
+  // Your own accent is already on the page, over the theme's, so the chip takes it from there.
+  const dark = look.theme === "dark" || (look.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const liner = look.custom ? { theme: dark ? "dark" : "light", accent: look.accent === "own" ? (look.accentColor ? undefined : "blue") : look.accent } : undefined;
   const take = (text: string, name?: string) => {
     const r = fromVSCode(text, name);
     if (!r.theme) return void toast.error(r.error ?? "That theme didn't read.");
@@ -1022,7 +1028,7 @@ function Themes({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) 
         </span>
       }
     >
-      <ThemeRow name="Liner" note="Light, dark and the accent above" colors={null} on={!look.custom} onUse={() => set({ custom: undefined })} />
+      <ThemeRow name="Liner" note="Light, dark and the accent above" colors={null} liner={liner} on={!look.custom} onUse={() => set({ custom: undefined })} />
       {list.map((t) => (
         <ThemeRow
           key={t.id}
@@ -1105,11 +1111,11 @@ function Themes({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) 
   );
 }
 
-function ThemeRow({ name, note, colors, on, onUse, onEdit, onRemove }: { name: string; note: string; colors: Theme["colors"] | null; on: boolean; onUse: () => void; onEdit?: () => void; onRemove?: () => void }) {
+function ThemeRow({ name, note, colors, liner, on, onUse, onEdit, onRemove }: { name: string; note: string; colors: Theme["colors"] | null; liner?: { theme: string; accent?: string }; on: boolean; onUse: () => void; onEdit?: () => void; onRemove?: () => void }) {
   return (
     <Field
       lead={
-        <span className="lc-th-chip" aria-hidden style={colors ? { background: colors.bg } : undefined}>
+        <span className="lc-th-chip" aria-hidden data-theme={liner?.theme} data-accent={liner?.accent} style={colors ? { background: colors.bg } : undefined}>
           <span style={colors ? { background: colors.surface, color: colors.ink } : undefined}>Aa</span>
           <i style={colors ? { background: colors.accent } : undefined} />
         </span>
@@ -2131,7 +2137,7 @@ function MemoryEditor({ project }: { project: Project }) {
         {facts.map((f, i) => (
           <div key={`${i}:${f}`} className="lc-mem-row">
             <span>{f}</span>
-            <button type="button" className="lc-ib l-focus" aria-label={`Forget: ${f}`} title="Forget it" onClick={() => void rpc("memory.forget", { projectId: project.id, index: i }).then(setFacts).catch(fail)}>
+            <button type="button" className="lc-ib l-focus" aria-label={`Forget: ${f}`} title="Forget it" onClick={() => void rpc("memory.forget", { projectId: project.id, fact: f }).then(setFacts).catch(fail)}>
               <I.close size={12} />
             </button>
           </div>
@@ -2398,6 +2404,8 @@ function Archive() {
   const projects = useEngine((x) => x.projects);
   const agents = useEngine((x) => x.agents);
   const providers = useEngine((x) => x.providers);
+  // Deleting can't be undone, so it asks first, the way Projects › Remove does.
+  const [sure, setSure] = useState<string | null>(null);
   const list = threads.filter((t) => t.archived).sort((a, b) => b.updatedAt - a.updatedAt);
   if (!list.length)
     return (
@@ -2424,8 +2432,21 @@ function Archive() {
           >
             Restore
           </button>
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void rpc("thread.remove", { id: t.id }).catch(fail)}>
-            Delete
+          <button
+            type="button"
+            className="lc-btn"
+            data-kind={sure === t.id ? "danger" : "ghost"}
+            data-size="sm"
+            onBlur={() => setSure(null)}
+            onClick={() => {
+              if (sure !== t.id) return setSure(t.id);
+              setSure(null);
+              void rpc("thread.remove", { id: t.id })
+                .then((r) => toast(`Deleted ${t.title}`, r?.kept ? { description: `Its worktree is kept: ${r.kept}` } : undefined))
+                .catch(fail);
+            }}
+          >
+            {sure === t.id ? "Delete for good" : "Delete"}
           </button>
         </Field>
       ))}
@@ -2563,7 +2584,7 @@ function AppRow({ a }: { a: AppUpdate }) {
         </button>
       );
     } else {
-      note = a.can === "source" ? `${a.latest} is out. This copy runs from source: pull and build it to update.` : a.can === "translocated" ? `${a.latest} is out. Move Liner Code to Applications first, so it can update itself.` : `${a.latest} is out. Liner Code can't write to its folder, so get it from the release page.`;
+      note = a.can === "source" ? `${a.latest} is out. This copy runs from source: pull and build it to update.` : a.can === "manual" ? `${a.latest} is out. Download the new one from the release page.` : a.can === "translocated" ? `${a.latest} is out. Move Liner Code to Applications first, so it can update itself.` : `${a.latest} is out. Liner Code can't write to its folder, so get it from the release page.`;
       control = page;
     }
   } else if (a.state === "idle" && a.repo) note = "Hasn't looked yet";

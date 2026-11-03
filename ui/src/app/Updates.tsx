@@ -55,6 +55,7 @@ export function appNotice(a: AppUpdate, native = isNative()): Notice | null {
   if (a.state === "failed") return { ...base, title: `${v} didn't download`, body: a.error, action: a.can === "install" ? { label: "Try again", onClick: updates.download } : page };
   const news = firstNote(a.notes);
   if (a.can === "source") return { ...base, title: `${v} is out`, body: `${news ? `${news} ` : ""}This copy runs from source: pull and build it to update.`, action: page };
+  if (a.can === "manual") return { ...base, title: `${v} is out`, body: `${news ? `${news} ` : ""}This copy doesn't update itself yet: download the new one from its release page.`, action: page };
   if (a.can === "translocated") return { ...base, title: `${v} is out`, body: "Move Liner Code to Applications first, so it can update itself.", action: page };
   if (a.can === "readonly") return { ...base, title: `${v} is out`, body: "Liner Code can't write to the folder it's in, so get this one from its release page.", action: page };
   return { ...base, title: `${v} is out`, body: news ?? `You have ${a.current}.`, action: { label: `Download${a.size ? `, ${sizeOf(a.size)}` : ""}`, onClick: updates.download } };

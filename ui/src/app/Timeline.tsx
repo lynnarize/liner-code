@@ -370,7 +370,7 @@ function TurnHead({ it, marks, n, items, agents, providers }: { it: Mark; marks:
 }
 
 function verb(t: Tool) {
-  const p = t.path ? t.path.split("/").pop() : undefined;
+  const p = t.path ? nameOf(t.path) : undefined;
   if (t.tool === "ExitPlanMode") return "is writing the plan";
   if (t.toolKind === "edit" || t.toolKind === "write") return `is editing ${p ?? "a file"}`;
   if (t.toolKind === "read") return `is reading ${p ?? "a file"}`;
@@ -576,7 +576,7 @@ function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
       return { ...base, verb: "Searched", target: t.title.replace(/^Search(?:ed)?(?: the code)?(?: for)?\s*/i, "") || undefined, result: t.output !== undefined ? (hits ? plural(hits, "match", "matches") : "nothing found") : undefined };
     }
     if (writes(t)) {
-      const f = t.path ? cp?.files.find((x) => x.path === t.path || t.path!.endsWith(`/${x.path}`)) : undefined;
+      const f = t.path ? cp?.files.find((x) => slashed(t.path!) === x.path || slashed(t.path!).endsWith(`/${x.path}`)) : undefined;
       // An edit that didn't apply (its text wasn't found) is usually tried again in the same group.
       const missed = g.length > 1 ? g.filter((x) => x.status === "failed").length : 0;
       return {
@@ -643,7 +643,7 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
   const web = tools.some((t) => t.toolKind === "web" || t.toolKind === "fetch");
   const checked = tools.some((t) => BROWSER.test(t.tool));
   // The lines of the files it names; what its commands changed besides shows on the turn's last line.
-  const mine = cp?.files.filter((f) => paths.some((p) => p === f.path || p.endsWith(`/${f.path}`))) ?? [];
+  const mine = cp?.files.filter((f) => paths.some((p) => slashed(p) === f.path || slashed(p).endsWith(`/${f.path}`))) ?? [];
   const lines = mine.length ? sumLines(mine) : null;
   const said = [
     edited.length > 0 && (edited.length <= 2 ? `edited ${edited.join(" and ")}` : `edited ${edited.length} files`),
@@ -1162,7 +1162,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
           <p className="lc-notice">This plan was waiting when the session stopped. Ask again to get a fresh one.</p>
         ) : (
           <>
-            <input className="lc-input" placeholder={`Or tell ${who} what to change`} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && note.trim() && void answer(false)} />
+            <input className="lc-input" placeholder={`Or tell ${who} what to change`} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && note.trim() && void answer(false)} />
             <div className="lc-ask-foot">
               <span className="lc-quiet">{edit ? "Your edits go to the plan as you approve it" : "Nothing runs until you approve"}</span>
               <span className="lc-grow" />
@@ -1187,7 +1187,9 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
 }
 const compactN = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${Math.round(n)}`);
 
-const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+const nameOf = (p: string) => p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) + 1);
+/** A path with Windows' separators turned to git's. */
+const slashed = (p: string) => p.replace(/\\/g, "/");
 
 /** The tool's plan ran out mid-turn. It says which window and when it reopens; Resume carries on. */
 function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kind: "limit" }> }) {
@@ -1287,7 +1289,7 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape") setEdit(null);
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void go(false);
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) void go(false);
           }}
         />
         <div className="lc-you-acts">

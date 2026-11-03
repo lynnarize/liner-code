@@ -132,7 +132,7 @@ export function skillsIn(roots: string[]): SkillInfo[] {
 export function skillAt(file: string): SkillInfo | null {
   if (!existsSync(file)) return null;
   try {
-    const head = /^---\n([\s\S]*?)\n---/.exec(readFileSync(file, "utf8"))?.[1] ?? "";
+    const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(readFileSync(file, "utf8").replace(/^﻿/, ""))?.[1] ?? "";
     const stem = basename(file).toLowerCase() === "skill.md" ? basename(dirname(file)) : basename(file).replace(/\.md$/i, "");
     const name = /^name:\s*(.+)$/m.exec(head)?.[1]?.trim().replace(/^["']|["']$/g, "") || stem;
     const description = /^description:\s*(.+)$/m.exec(head)?.[1]?.trim().replace(/^["']|["']$/g, "") ?? "";

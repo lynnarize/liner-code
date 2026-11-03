@@ -45,7 +45,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     const start = startOf(mode, engineSettings, providers);
     if (start) return { ...start, effort: "medium", access };
     return { agent: firstModel ? `@${firstModel.id}:${firstModel.models[0]?.id ?? "default"}` : "demo", effort: "medium", access };
-  }, [project?.id, project?.agent, mode, engineSettings.picks, engineSettings.dual, engineSettings.route?.level, access, agents.length, readyKey]);
+  }, [project?.id, project?.agent, mode, JSON.stringify(engineSettings.picks ?? {}), engineSettings.dual, engineSettings.route?.level, access, agents.length, readyKey]);
   const [settings, setSettings] = useState<RunSettings>(initial);
   const [worktree, setWorktree] = useState(worktrees);
   const [compare, setCompare] = useState<string[]>([]);

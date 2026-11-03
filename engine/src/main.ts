@@ -19,6 +19,8 @@ import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
 import { Addons } from "./addons.ts";
+import { Offers } from "./offers.ts";
+import type { Thread } from "../../contracts/src/index.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
 import { firstLine, linkHelpers, secretsFrom, takeSecrets, withPath } from "./exec.ts";
@@ -74,7 +76,22 @@ designs.turnOf = (id) => tools.turnOf(id);
 tools.designs = designs;
 tools.filesUrl = (root) => proxies.files(root);
 const outside: { now?: Outside } = {};
-const api = createApi(store, runtime, env, { routines, terms, logs, proxies, tools, designs, outside: { apply: () => outside.now?.apply() } });
+const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, outside: { apply: () => outside.now?.apply() } };
+const api = createApi(store, runtime, env, extras);
+// "Make it an app": the card's Create starts a session of its own, through the same door the app uses.
+const offers = new Offers({
+  store,
+  addons,
+  createThread: (p) => api.call("thread.create", p) as Promise<Thread>,
+  send: (id, text) => runtime.send(id, text),
+  stop: (id) => runtime.stop(id),
+  cwdOf: (id) => tools.cwdOf(id) ?? store.thread(id).worktree?.path ?? store.project(store.thread(id).projectId).path,
+  whoIs: (id) => runtime.whoIs(id),
+  readOnly: (id) => runtime.readOnly(id),
+  turnOf: (id) => tools.turnOf(id),
+});
+extras.offers = offers;
+tools.offers = offers;
 outside.now = new Outside(store, api);
 
 // In dev the token is written where the Vite dev server can read it; the shell passes its own.

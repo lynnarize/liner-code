@@ -478,3 +478,263 @@
   color: var(--l-ink);
   font-weight: 600;
 }
+
+/* ---------- "Make it an app": the offer at a turn's end ---------- */
+.lc-offer {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0;
+  padding: 14px 16px 16px;
+  border-radius: 18px;
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+  animation: l-blur-in 360ms var(--l-ease-out) backwards;
+}
+.lc-offer-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-offer-head > svg {
+  color: var(--l-accent);
+}
+.lc-offer-head > .lc-quiet {
+  margin-left: auto;
+  font-weight: 400;
+}
+.lc-offer-what {
+  display: grid;
+  gap: 3px;
+}
+.lc-offer-what b {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.lc-offer-what p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--l-ink-2);
+}
+.lc-offer-ask {
+  display: grid;
+  gap: 12px;
+}
+.lc-offer-seed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+  font-size: 13px;
+}
+.lc-offer-seed ul {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--l-ink-2);
+}
+.lc-offer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--l-line-2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lc-offer-places {
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.lc-offer-places > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+.lc-offer-place {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 140ms ease;
+}
+.lc-offer-place > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-offer-place > small {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-offer-place[aria-checked="true"] {
+  box-shadow: 0 0 0 1.5px var(--l-ink);
+}
+.lc-offer-custom {
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.lc-offer-custom textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  outline: none;
+  background: var(--l-surface);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  font: 13px/1.5 var(--l-font-body);
+  color: var(--l-ink);
+  resize: vertical;
+}
+.lc-offer-custom textarea:focus {
+  box-shadow: inset 0 0 0 1.5px var(--l-accent);
+}
+.lc-offer-touch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--l-wash);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--l-ink-2);
+}
+.lc-offer-touch > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--l-ink-3);
+}
+.lc-offer-acts,
+.lc-offer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lc-offer-row > b {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.lc-offer-info {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--l-ink-3);
+}
+.lc-offer-work {
+  display: grid;
+  gap: 10px;
+}
+.lc-offer-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+}
+.lc-offer-bar > div {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--l-ink);
+  transition: width 600ms var(--l-spring-smooth);
+}
+.lc-offer-steps {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-offer-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lc-offer-steps li > svg {
+  color: var(--l-line-2);
+}
+.lc-offer-steps li[data-now] {
+  color: var(--l-ink);
+}
+.lc-offer-steps li[data-now] > svg {
+  color: var(--l-ink);
+}
+.lc-offer-steps li[data-done] > svg {
+  color: oklch(0.6 0.15 152);
+}
+.lc-offer-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.lc-offer-done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.lc-offer-tick {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+}
+.lc-offer-done[data-good] .lc-offer-tick {
+  background: oklch(0.6 0.15 152 / 0.16);
+  color: oklch(0.42 0.12 152);
+}
+.lc-offer-said {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 200px;
+}
+.lc-offer-said b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.lc-offer-said span {
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-offer-two {
+  display: inline-flex;
+  gap: 6px;
+}
+.lc-offer[data-state="replaced"],
+.lc-offer[data-state="dismissed"] {
+  opacity: 0.75;
+}

@@ -32,6 +32,7 @@ import type { Designs } from "./designs.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
 import { checkManifest } from "./addons.ts";
 import { refusal, type PanelMethod, type PanelWhere } from "./panels.ts";
+import type { Offers } from "./offers.ts";
 import { Updater } from "./updates.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
@@ -150,7 +151,7 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void } };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void }; offers?: Offers };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings, runtime.keys);
@@ -1011,6 +1012,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (no) throw new Error(no);
       if (!x.tools) throw new Error("Panels aren't available here.");
       return x.tools.panelCall(where, method as PanelMethod, (args ?? {}) as Record<string, unknown>, storage, quota);
+    },
+    "offer.answer": async ({ threadId, itemId, act, place, custom }) => {
+      if (!x.offers) throw new Error("Offers aren't available here.");
+      await x.offers.answer(threadId, itemId, act, place, custom);
+      return null;
     },
     "addons.off": ({ next }) => {
       addons().turnOff(Boolean(next));

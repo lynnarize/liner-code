@@ -186,6 +186,18 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     });
   }, [thread.id]);
 
+  // "Open it" on an app made from an offer: in the dock, or as a tab beside Chat (a page is App.tsx's).
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ id: string; place: string; threadId?: string }>).detail;
+      if (d.threadId && d.threadId !== thread.id) return;
+      if (d.place === "tab") setView(d.id);
+      else if (d.place === "dock") setDock((x) => openTab(x, `app:${d.id}`));
+    };
+    window.addEventListener("lc:open-app", on);
+    return () => window.removeEventListener("lc:open-app", on);
+  }, [thread.id]);
+
   // ⌘K's "Open Browser" and the like reach this session's dock.
   useEffect(() => onOpenSurface(thread.id, (tab) => setDock((d) => openTab(d, tab))), [thread.id]);
 

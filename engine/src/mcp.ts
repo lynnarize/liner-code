@@ -6,7 +6,7 @@
 import { createInterface } from "node:readline";
 import { VERSION } from "./version.ts";
 
-type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[] }>; required?: string[] };
+type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>; required?: string[] };
 type ToolDef = { name: string; description: string; inputSchema: Schema };
 
 const none: Schema = { type: "object", properties: {} };
@@ -112,6 +112,22 @@ const TOOLS: ToolDef[] = [
     description:
       "Draws a panel you drafted at .liner/addons/<id>/ out of sight, in the same sealed frame and at the same size as in Liner Code, with this session's real data. Returns a picture, what it drew, its console errors, and anything the bridge or the content policy refused. Call it before addon_install, and again after each fix.",
     inputSchema: { type: "object", properties: { id: { type: "string", description: "The draft's id, for .liner/addons/<id>/addon.json; or its path in this folder" } }, required: ["id"] },
+  },
+  {
+    name: "addon_offer",
+    description:
+      "Offers the person a card at the end of your answer: make something as an app in Liner Code, in the background, where they choose. Answer first, then offer at most one, when they asked for an interface, or your answer has a clear use they'll come back to (a record they keep, results they'll explore again); not for a one-off answer, a static table, or a change to their own project. Pick the place: \"dock\" to watch or edit beside this conversation, \"tab\" for this session's live output or interaction, \"page\" for something global they keep across projects. access is what it may touch, as a panel's manifest says it (liner_inspect); ask for the least it needs. Don't make it yourself.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "What it's called, a few words" },
+        brief: { type: "string", description: "What it does, what it reads and what it keeps, so a session that can't read this one can make it" },
+        place: { type: "string", description: "Where it goes", enum: ["dock", "tab", "page"] },
+        access: { type: "object", description: 'As a panel manifest\'s access: files ("project"), sessions ("this" or "all"), composer (true), storage (KB), network (one host)' },
+        initialContent: { type: "array", items: { type: "string" }, description: "What it starts with, in the person's own items, when they gave some" },
+      },
+      required: ["name", "brief", "place"],
+    },
   },
   {
     name: "addon_install",

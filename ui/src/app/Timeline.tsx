@@ -8,7 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { addonKey, PR_TEST_TOOL, type ConnectionAsk, type Item, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
-import { appIcon } from "./Addon";
+import { appIcon, OfferCard } from "./Addon";
 import { toComposer } from "./Find";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { isCheckpoint, rpc, threadOf, useEngine, useItems, useItemsWhere } from "./engine";
@@ -199,6 +199,7 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
     const partCp = cps.find((c) => c.turn === entries[0].it.turn) ?? cp;
     blocks.push({ key: `t${key}`, id: key, node: <Trail threadId={threadId} entries={entries} asks={asks} cp={partCp} live={live} who={whoOf(at ?? marker, agents, providers)} onReview={onReview} /> });
   };
+  const offers: Extract<Item, { kind: "offer" }>[] = [];
   for (const [i, it] of items.entries()) {
     if ((it.kind === "tool" || it.kind === "approval") && it.tool === PR_TEST_TOOL) continue;
     // A lead's reply that was all plan keeps nothing once its card has it.
@@ -273,9 +274,12 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
           ),
         });
       else if (it.kind === "notice") blocks.push({ key: it.id, node: <p className="lc-notice">{it.text}</p> });
+      else if (it.kind === "offer") offers.push(it);
     }
   }
   flush(running);
+  // An offer to make an app shows once its turn has ended, after the answer (DeepSeek Harness's card).
+  if (!running) for (const o of offers) blocks.push({ key: o.id, node: <OfferCard threadId={threadId} it={o} who={whoOf(at ?? marker, agents, providers)} /> });
   return (
     <section className="lc-turn" data-running={running || undefined}>
       {blocks.map((b) => (

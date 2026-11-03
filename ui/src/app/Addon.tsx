@@ -337,3 +337,225 @@ export function AppPage({ id, back, onBack, sidebar, onSidebar }: { id: string; 
     </div>
   );
 }
+/* ---------- "Make it an app": the offer at the end of a turn ---------- */
+
+/** Opens an app where it lives: in the dock or beside Chat in a session, or its page (App.tsx and Session.tsx listen). */
+export const openApp = (d: { id: string; place: PanelPlace; threadId?: string }) => window.dispatchEvent(new CustomEvent("lc:open-app", { detail: d }));
+export const openSession = (id: string) => window.dispatchEvent(new CustomEvent("lc:open-session", { detail: { id } }));
+
+type Offer = Extract<Item, { kind: "offer" }>;
+const PLACES: { id: PanelPlace | "custom"; label: string; hint: string; icon: (p: { size?: number }) => ReactNode }[] = [
+  { id: "dock", label: "Right panel", hint: "View alongside this conversation", icon: I.dock },
+  { id: "tab", label: "Session tab", hint: "Open beside Chat", icon: I.tab },
+  { id: "page", label: "Global page", hint: "Open from the left sidebar", icon: I.page },
+  { id: "custom", label: "Write your own", hint: "Describe where you want it", icon: I.edit },
+];
+const WHERE: Record<PanelPlace, string> = { dock: "in the right panel, beside your sessions", tab: "a tab beside Chat in this project's sessions", page: "under Apps, in the left sidebar" };
+
+/** What it will touch, as one sentence: "It will read your sessions' titles and changes, keep its entries, and have no network." */
+export function willTouch(a: PanelAsk["access"], place: PanelPlace) {
+  const does = [
+    a.files && "read this project's files",
+    a.sessions === "this" && (place === "tab" ? "read this session" : "read the session it's beside"),
+    a.sessions === "all" && "read your sessions' titles and changes",
+    a.composer && "put text in the composer for you",
+    a.storage ? `keep its entries (up to ${kb(a.storage)})` : "",
+  ].filter(Boolean) as string[];
+  const net = a.network ? `reach ${a.network} and nothing else` : "have no network";
+  return `It will ${does.length ? `${does.join(", ")}, and ` : ""}${net}.`;
+}
+
+/**
+  The card an agent offers at the end of its turn (DeepSeek Harness's creation card, its words):
+  what it would make, Add to (the right panel, a session tab, a global page, or where you write),
+  what it will touch; Create makes it in a background session, then Installing, Installed, and
+  Keep or Undo; Undo keeps its files, so Restore brings it back.
+*/
+export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; who: string }) {
+  const [place, setPlace] = useState<PanelPlace | "custom">(it.custom ? "custom" : it.place);
+  const [custom, setCustom] = useState(it.custom ?? "");
+  const [seed, setSeed] = useState(false);
+  const [info, setInfo] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const child = useEngine((s) => (it.child ? s.items[it.child] : undefined));
+  const act = async (a: "create" | "dismiss" | "cancel" | "keep" | "undo" | "restore") => {
+    setBusy(true);
+    try {
+      await rpc("offer.answer", { threadId, itemId: it.id, act: a, ...(a === "create" ? (place === "custom" ? { custom: custom.trim() } : { place }) : {}) });
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const working = it.state === "creating" || it.state === "installing";
+  // How far the background session is, from what it's done so far.
+  const tools = (child ?? []).filter((x): x is Extract<Item, { kind: "tool" }> => x.kind === "tool");
+  const wrote = tools.filter((x) => x.toolKind === "write" || x.toolKind === "edit").length;
+  const read = tools.some((x) => /add-on guide/.test(x.title));
+  const checked = tools.some((x) => /^Check the panel/.test(x.title) && x.status === "done");
+  const steps = [
+    { text: "Read the add-on guide", done: read, now: !read && it.state === "creating" },
+    { text: wrote ? `${it.state === "creating" && !checked ? "Writing" : "Wrote"} ${wrote} ${wrote === 1 ? "file" : "files"}${it.state === "creating" && !checked ? "…" : ""}` : "Write its files", done: wrote > 0 && (checked || it.state !== "creating"), now: read && it.state === "creating" && !checked },
+    { text: "Checked it in a sealed frame", done: checked, now: false },
+    { text: it.state === "installing" ? "Installing…" : "Install", done: false, now: it.state === "installing" },
+  ];
+  const where = WHERE[it.place];
+  const settled: Partial<Record<Offer["state"], { title: string; note: string; good?: boolean }>> = {
+    installed: { title: "Installed", note: `${it.name} is ${where}. Keep it, or undo.`, good: true },
+    kept: { title: "Kept", note: `${it.name} is ${where}.`, good: true },
+    removed: { title: "Removed", note: `Undo keeps its files in .liner/addons/${it.addon}, so Restore brings it back.` },
+    dismissed: { title: "Not now", note: "Nothing was made. Ask again whenever you like." },
+    cancelled: { title: "Cancelled", note: "Nothing was installed." },
+    failed: { title: "Didn't make it", note: it.error ?? "Making it failed. Try again." },
+    replaced: { title: "Replaced", note: "A newer offer took its place." },
+  };
+  const done = settled[it.state];
+  return (
+    <section className="lc-offer" aria-label="Make it an app" data-state={it.state}>
+      <div className="lc-offer-head">
+        <I.sparkle size={13} />
+        <span>Make it an app</span>
+        <span className="lc-quiet">You can remove it any time</span>
+      </div>
+      <div className="lc-offer-what">
+        <b>{it.name}</b>
+        <p>{it.brief}</p>
+      </div>
+      {it.state === "proposed" && (
+        <div className="lc-offer-ask">
+          {it.seed && it.seed.length > 0 && (
+            <div className="lc-offer-seed">
+              <span className="lc-quiet">Starts with</span>
+              <span>{it.seed.length === 1 ? "one item you gave" : `the ${it.seed.length} items you gave`}</span>
+              <button type="button" className="lc-offer-link l-focus" aria-expanded={seed} onClick={() => setSeed((s) => !s)}>
+                {seed ? "Fold it" : "See all"}
+              </button>
+              {seed && (
+                <ul>
+                  {it.seed.map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          <div className="lc-offer-places" role="radiogroup" aria-label="Add to">
+            <span className="lc-quiet">Add to</span>
+            <div>
+              {PLACES.map((p) => (
+                <button key={p.id} type="button" role="radio" aria-checked={place === p.id} className="lc-offer-place l-focus" onClick={() => setPlace(p.id)}>
+                  <span>
+                    <p.icon size={13} />
+                    {p.label}
+                  </span>
+                  <small>{p.hint}</small>
+                </button>
+              ))}
+            </div>
+            {place === "custom" && (
+              <label className="lc-offer-custom">
+                Where should it appear?
+                <textarea rows={2} maxLength={1000} value={custom} placeholder="For example, a left sidebar entry that opens a full-page calendar" onChange={(e) => setCustom(e.target.value)} />
+              </label>
+            )}
+          </div>
+          <div className="lc-offer-touch">
+            <I.shield size={13} />
+            <span>{willTouch(it.access, place === "custom" ? it.place : place)}</span>
+          </div>
+          <div className="lc-offer-acts">
+            <button type="button" className="lc-offer-link l-focus" aria-expanded={info} onClick={() => setInfo((s) => !s)}>
+              {info ? <I.chevD size={11} /> : <I.chevR size={11} />}
+              How making it works, and token use
+            </button>
+            <span className="lc-grow" />
+            <button type="button" className="lc-btn" data-kind="ghost" disabled={busy} onClick={() => void act("dismiss")}>
+              Not now
+            </button>
+            <button type="button" className="lc-btn" disabled={busy || (place === "custom" && !custom.trim())} onClick={() => void act("create")}>
+              {busy ? "Starting…" : "Create"}
+            </button>
+          </div>
+          {info && (
+            <ul className="lc-offer-info">
+              <li>{who} makes it in the background, as a new app you can remove at any time.</li>
+              <li>Making it can take a while and use a lot of tokens.</li>
+              <li>Press Create and keep chatting here.</li>
+            </ul>
+          )}
+        </div>
+      )}
+      {working && (
+        <div className="lc-offer-work">
+          <div className="lc-offer-bar">
+            <div style={{ width: it.state === "installing" ? "88%" : `${20 + Math.min(3, Number(read) + Number(wrote > 0) + Number(checked)) * 18}%` }} />
+          </div>
+          <div className="lc-offer-row">
+            <b>{it.state === "installing" ? "Installing…" : "Making it in the background"}</b>
+            {it.state === "creating" && (
+              <button type="button" className="lc-btn" data-kind="ghost" disabled={busy} onClick={() => void act("cancel")}>
+                Cancel
+              </button>
+            )}
+          </div>
+          <ul className="lc-offer-steps">
+            {steps.map((s) => (
+              <li key={s.text} data-done={s.done || undefined} data-now={s.now || undefined}>
+                {s.done ? <I.check size={12} /> : <I.dot size={12} />}
+                {s.text}
+              </li>
+            ))}
+          </ul>
+          <span className="lc-quiet lc-offer-note">
+            {who} is making it in the background. You can keep chatting here.
+            {it.child && (
+              <button type="button" className="lc-offer-link l-focus" onClick={() => openSession(it.child!)}>
+                Watch it
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {done && (
+        <div className="lc-offer-done" role="status" data-good={done.good || undefined}>
+          <span className="lc-offer-tick">{done.good ? <I.check size={14} /> : it.state === "removed" ? <I.undo size={14} /> : <I.close size={14} />}</span>
+          <span className="lc-offer-said">
+            <b>{done.title}</b>
+            <span>{done.note}</span>
+          </span>
+          {done.good && it.addon && (
+            <button type="button" className="lc-offer-link l-focus" onClick={() => openApp({ id: it.addon!, place: it.place, threadId })}>
+              Open it
+            </button>
+          )}
+          {it.state === "installed" && (
+            <span className="lc-offer-two">
+              <button type="button" className="lc-btn" data-kind="ghost" disabled={busy} onClick={() => void act("undo")}>
+                Undo
+              </button>
+              <button type="button" className="lc-btn" disabled={busy} onClick={() => void act("keep")}>
+                Keep
+              </button>
+            </span>
+          )}
+          {it.state === "kept" && (
+            <button type="button" className="lc-btn" data-kind="ghost" disabled={busy} onClick={() => void act("undo")}>
+              Remove
+            </button>
+          )}
+          {it.state === "removed" && (
+            <button type="button" className="lc-btn" disabled={busy} onClick={() => void act("restore")}>
+              {busy ? "Restoring…" : "Restore"}
+            </button>
+          )}
+          {(it.state === "cancelled" || it.state === "failed") && (
+            <button type="button" className="lc-btn" disabled={busy} onClick={() => void act("create")}>
+              Create again
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

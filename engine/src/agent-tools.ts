@@ -20,6 +20,7 @@ import type { AgentBrowserOp, AddonInfo, Item, PanelManifest, PanelPlace, Provid
 import { addonKey, panelDocument } from "../../contracts/src/index.ts";
 import { accessWords, ADDON_GUIDE, readDraft, sizeWords, type Addons, type PanelFiles } from "./addons.ts";
 import { panelCall, refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
+import type { Offers } from "./offers.ts";
 import { DESIGN_FRAME, keepOutOfGit, sizeOf, type DesignItem, type Designs } from "./designs.ts";
 import { run } from "./exec.ts";
 import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
@@ -72,6 +73,8 @@ export function linerTitle(tool: string, input: unknown): string {
       return `Ask to remove ${s(a.id) || "an add-on"}`;
     case "addon_check":
       return `Check the panel ${s(a.id ?? a.path)}`.trim();
+    case "addon_offer":
+      return `Offer to make ${s(a.name) || "an app"}`;
     default:
       return `Liner Code · ${tool}`;
   }
@@ -202,6 +205,8 @@ export class AgentTools {
   /** Your add-ons, and the runtime they're handed to sessions through. */
   addons?: Addons;
   host?: AddonHost;
+  /** "Make it an app" cards, and the background sessions that make them. */
+  offers?: Offers;
   /** Panels whose card is up: the draft exactly as asked about, which the preview draws and Add it installs. */
   readonly pending = new Map<string, { threadId: string; manifest: PanelManifest; files: PanelFiles; storage: Record<string, unknown> }>();
   /** Panels being drawn out of sight for addon_check, by their one-time token. */
@@ -370,6 +375,9 @@ export class AgentTools {
           return await this.remove(threadId, args);
         case "addon_check":
           return await this.check(threadId, args);
+        case "addon_offer":
+          if (!this.offers) return fail("Offers aren't available in this session.");
+          return text(this.offers.offer(threadId, args));
         default:
           return fail(`Liner Code has no tool called ${tool}.`);
       }

@@ -173,6 +173,20 @@ export function App() {
     if (tab) keepDock(id, openTab(keptDock(id), tab));
     setView({ kind: "session", id });
   };
+  // An app made from an offer, opened on its page, and the session that made it ("Watch it").
+  useEffect(() => {
+    const app = (e: Event) => {
+      const d = (e as CustomEvent<{ id: string; place: string }>).detail;
+      if (d.place === "page") setView((v) => ({ kind: "app", id: d.id, back: v.kind === "app" ? v.back : v }));
+    };
+    const session = (e: Event) => setView({ kind: "session", id: (e as CustomEvent<{ id: string }>).detail.id });
+    window.addEventListener("lc:open-app", app);
+    window.addEventListener("lc:open-session", session);
+    return () => {
+      window.removeEventListener("lc:open-app", app);
+      window.removeEventListener("lc:open-session", session);
+    };
+  }, []);
   const openRun = (run: RoutineRun) => (run.threadId ? openSession(run.threadId, `run:${run.id}`) : setView({ kind: "routines" }));
   const editRoutine = (id?: string, projectId?: string) => setView({ kind: "routine", id, projectId: projectId ?? (current?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
   const newSession = (projectId?: string) => {

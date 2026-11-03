@@ -554,6 +554,8 @@ export type PanelIcon = (typeof PANEL_ICONS)[number];
 /** A panel's manifest, version 1. `entry` is its HTML file, beside the manifest. */
 export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess };
 export type AddonManifest = ConnectionManifest | PanelManifest;
+/** Where an offer to make an app stands: offered, being made and added, settled, or replaced by a newer offer. */
+export type OfferState = "proposed" | "creating" | "installing" | "installed" | "kept" | "removed" | "dismissed" | "cancelled" | "failed" | "replaced";
 /** A panel as Settings and the dock know it. */
 export type PanelInfo = { place: PanelPlace; access: PanelAccess; icon?: PanelIcon; entry: string };
 /** An add-on you have, as Settings lists it. */
@@ -702,6 +704,29 @@ export type Item =
       reviewer?: string;
       /** An add-on to add (addon_install): the install card, then its receipt. */
       addon?: AddonAsk;
+    })
+  /**
+    An agent's offer, at the end of its turn, to make something as an app in Liner Code (DeepSeek
+    Harness's creation card): what it would be, where it would go, what it would touch. Create makes
+    it in a background session (`child`) and adds it as `addon`; Undo removes it and Restore brings
+    it back. A newer offer in the session replaces one not yet started.
+  */
+  | (Base & {
+      kind: "offer";
+      name: string;
+      brief: string;
+      place: PanelPlace;
+      access: PanelAccess;
+      /** What it starts with, in the person's own items. */
+      seed?: string[];
+      state: OfferState;
+      /** Write your own: where the person wants it, in their words. */
+      custom?: string;
+      child?: string;
+      addon?: string;
+      version?: number;
+      /** Why it didn't make it, said to the person. */
+      error?: string;
     })
   | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string> })
   /** A plan to approve. `auto`: one nobody asked to see, for a hard job, handed straight on to be built. */
@@ -1201,6 +1226,11 @@ export type Rpc = {
     what that panel's access allows.
   */
   "panel.call": [{ addon: string; threadId?: string; preview?: string; method: string; args?: unknown; apiVersion?: number }, unknown];
+  /**
+    An answer on a "Make it an app" card: Create (where to add it, or in your own words), Not now,
+    Cancel while it's being made, and once added Keep, Undo (it's removed, its files kept) or Restore.
+  */
+  "offer.answer": [{ threadId: string; itemId: string; act: "create" | "dismiss" | "cancel" | "keep" | "undo" | "restore"; place?: PanelPlace; custom?: string }, null];
   /** An add-on's manifest as kept (the version in use unless `version`), and its folder. */
   "addons.read": [{ id: string; version?: number }, { manifest: string; dir: string }];
   /**

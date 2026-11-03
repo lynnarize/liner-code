@@ -104,13 +104,19 @@ const TOOLS: ToolDef[] = [
   {
     name: "liner_inspect",
     description:
-      "Reads Liner Code's add-on guide: what a connection is (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes), the manifest to write for one, the add-ons installed, and the agent tools on this Mac. Call it before you add a connection, when the person asks to connect a service (Linear, Sentry, a database) through MCP. Changes nothing.",
+      "Reads Liner Code's add-on guide: connections (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes) and panels (a small page of your own that opens in Liner Code, in the right dock, as a tab beside Chat, or as a page from the left sidebar), the manifests to write, the add-ons installed, and the agent tools on this Mac. Call it before you make either: when the person asks to connect a service through MCP, or for a panel, view or small app inside Liner Code. Changes nothing.",
     inputSchema: none,
+  },
+  {
+    name: "addon_check",
+    description:
+      "Draws a panel you drafted at .liner/addons/<id>/ out of sight, in the same sealed frame and at the same size as in Liner Code, with this session's real data. Returns a picture, what it drew, its console errors, and anything the bridge or the content policy refused. Call it before addon_install, and again after each fix.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The draft's id, for .liner/addons/<id>/addon.json; or its path in this folder" } }, required: ["id"] },
   },
   {
     name: "addon_install",
     description:
-      "Asks the person to add a connection you drafted at .liner/addons/<id>/addon.json in this folder (liner_inspect has the manifest's shape). They see a card, type any key it needs, and say yes or no; this waits for them. Returns applied (its tools are here now), saved, starts in the next turn (they arrive with the next turn), or denied (don't ask again unless they do). Never put a key in the manifest: name it in secrets.",
+      "Asks the person to add a connection or a panel you drafted at .liner/addons/<id>/addon.json in this folder (liner_inspect has the manifests' shapes). They see a card (and a panel live, as a preview) and say yes or no; this waits for them. Returns applied, saved, starts in the next turn (a connection: its tools arrive with the next turn), or denied (don't ask again unless they do). A changed panel that asks for nothing more than the version in use goes in without a card. Never put a key in a manifest: name it in secrets.",
     inputSchema: { type: "object", properties: { id: { type: "string", description: "The draft's id, for .liner/addons/<id>/addon.json; or its path in this folder" } }, required: ["id"] },
   },
   {
@@ -160,7 +166,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         protocolVersion: String(m.params?.protocolVersion ?? "2025-06-18"),
         capabilities: { tools: {} },
         serverInfo: { name: "liner", title: "Liner Code", version: VERSION },
-        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design. To connect a service through MCP for every agent tool, read liner_inspect, then ask with addon_install.",
+        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design. To connect a service through MCP for every agent tool, or to make a panel or small app inside Liner Code, read liner_inspect, then ask with addon_install.",
       },
     });
   } else if (m.method === "tools/list") send({ id: m.id, result: { tools: TOOLS } });

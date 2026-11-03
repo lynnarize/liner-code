@@ -1,51 +1,68 @@
 /*
-  The panel beside the session: its surfaces as tabs (see Surfaces.tsx). Diff and Agents live here.
+  The right dock beside the session: one or two panes side by side, each a strip of tabs over the
+  surface that's up (dock.ts has the rules; DeepSeek Harness's ui-dockkit and ui-sidebar-right
+  were the model). A chip moves to the other pane by dragging it there, or from its menu; dropped
+  on the right half of a lone pane it splits it. A pane's + opens the New tab guide in it. The
+  last pane's strip ends with the full-canvas switch and the hide button, and the full canvas on
+  Diff is the full-width Review.
+  Every surface you open is mounted once and kept while it's open in either pane, placed into its
+  pane's column, so moving it never reloads a page or restarts a shell.
   Changes is the diff, kept by turn: the turn picker sits in the diff's strip, the file you
   pressed in the thread scrolls into view, and the foot says how many files you've looked at,
   with Undo for the turn and Commit for everything that's left.
   Agents says who worked in this session, on what, and how much of the budget they used.
 */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { FileDiff, Item, Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { prefersReducedMotion } from "@liner/lib/spring";
+import { toast } from "@liner/components/toast/toast";
+import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { Boundary } from "./Boundary";
 import { CommitButton } from "./Commit";
+import { canSplit, closeOthers, closeTab, GUIDE, hideDock, moveTab, openTab, pickTab, split, toggleFull, type DockState } from "./dock";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, plural } from "./model";
-import { Disc, ModelTag, Num, PanelHead } from "./ui";
+import { ContextMenu, Disc, ModelTag, Num, PanelHead, Pop, Row, Sep } from "./ui";
+import { AddonView, appIcon, isPanelAsk } from "./Addon";
 import { BrowserSurface } from "./Browser";
 import { DesignSurface } from "./Design";
 import { DeviceSurface } from "./Device";
 import { FilesSurface } from "./Files";
+import { toComposer } from "./Find";
 import { LinkedSurface, PrSurface } from "./Pr";
 import { Review, TurnPicker, Viewed } from "./Review";
 import { RoutinesList, RunDetail } from "./Routines";
+import { ship } from "./Ship";
 import { SideChat } from "./SideChat";
-import { openTab, PanelTabs, SurfacePicker, surfaceOf, type PanelState, type Tab } from "./Surfaces";
+import { Guide, surfaceOf, type Tab } from "./Surfaces";
 import { undoTurn } from "./undo";
+import "./dock.css";
 // The terminal brings xterm.js; it loads the first time you open one.
 const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
 const SessionSurface = lazy(() => import("./SessionInfo").then((m) => ({ default: m.SessionSurface })));
 
+/** A chip on its way between panes. */
+const DRAG = "application/x-liner-tab";
+const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
+
 export function Panel({
   thread,
   items,
-  state,
-  onState,
+  dock,
+  onDock,
   focus,
   onFocus,
   agentName,
   onOpenSession,
   onRoutine,
   leaving,
-  tray,
 }: {
   thread: Thread;
   items: Item[];
-  state: PanelState;
-  onState: (p: PanelState) => void;
+  dock: DockState;
+  onDock: (d: DockState) => void;
   focus: { id: string; path?: string } | null;
   onFocus: (f: { id: string; path?: string } | null) => void;
   agentName: string;
@@ -53,29 +70,44 @@ export function Panel({
   onRoutine: (id?: string) => void;
   /** Shut, and on its way out: it stays as it was while its column closes, and takes no clicks. */
   leaving?: boolean;
-  /** The session tray lies at its foot (Session.tsx): it keeps a lane there that nothing runs under. */
-  tray?: boolean;
 }) {
   const runs = useEngine((s) => s.runs);
-  const label = (t: Tab) => {
+  const addons = useEngine((s) => s.addons);
+  const asks = useMemo(() => items.filter(isPanelAsk) as Extract<Item, { kind: "approval" }>[], [items]);
+  /** A tab's name and icon: a surface's, a run's, an add-on's, or a preview's. */
+  const meta = (t: Tab) => {
+    if (t === GUIDE) return { label: "New tab", icon: I.guide };
     if (t.startsWith("run:")) {
       const r = runs.find((x) => x.id === t.slice(4));
-      return r?.subject ? `Run on #${r.subject.number}` : "A run";
+      return { label: r?.subject ? `Run on #${r.subject.number}` : "A run", icon: I.routines };
     }
-    return surfaceOf(t)?.label ?? t;
+    if (t.startsWith("app:")) {
+      const a = addons.find((x) => x.id === t.slice(4));
+      return { label: a?.name ?? "An add-on", icon: appIcon(a?.panel?.icon), app: true };
+    }
+    if (t.startsWith("preview:")) {
+      const a = asks.find((x) => x.id === t.slice(8))?.addon;
+      return { label: a?.name ?? "A preview", icon: appIcon(a?.kind === "panel" ? a.icon : undefined), preview: true };
+    }
+    const s = surfaceOf(t);
+    return { label: s?.label ?? t, short: t === "linked" ? "Linked" : undefined, icon: s?.icon ?? I.routines };
   };
-  // Only surfaces you've opened mount; once mounted they stay, so a shell or a page keeps going.
-  const [mounted, setMounted] = useState<Set<Tab>>(() => new Set([state.tab]));
+  // Only surfaces you've opened mount; once mounted they stay while they're open in either pane.
+  const shown = dock.panes.map((p) => p.tab);
+  const all = [...new Set(dock.panes.flatMap((p) => p.tabs))].filter((t) => t !== GUIDE);
+  const [mounted, setMounted] = useState<Set<Tab>>(() => new Set(shown));
   useEffect(() => {
-    if (!state.picking) setMounted((m) => (m.has(state.tab) ? m : new Set(m).add(state.tab)));
-  }, [state.tab, state.picking]);
-  useEffect(() => setMounted((m) => new Set([...m].filter((t) => state.tabs.includes(t)))), [state.tabs.join()]);
-  const open = (t: Tab) => onState(openTab(state, t));
-  const wideReview = state.wide && state.tab === "changes" && !state.picking;
+    setMounted((m) => (shown.every((t) => m.has(t)) ? m : new Set([...m, ...shown])));
+  }, [shown.join()]);
+  useEffect(() => setMounted((m) => new Set([...m].filter((t) => all.includes(t)))), [all.join()]);
+  const [dragging, setDragging] = useState<Tab | null>(null);
+  const [drop, setDrop] = useState<{ pane: number; split?: boolean } | null>(null);
+  const open = (t: Tab, pane?: number) => onDock(openTab(dock, t, pane));
+  const wideReview = dock.full && dock.panes.length === 1 && dock.panes[0].tab === "changes";
+  const make = () => toComposer(thread.id, "Make me a panel that ");
 
-  const body = (t: Tab) => {
-    const visible = !state.picking && state.tab === t;
-    if (t === "changes") return wideReview ? <Review thread={thread} items={items} focus={focus} onFocus={onFocus} onBack={() => onState({ ...state, wide: false })} /> : <Changes thread={thread} items={items} focus={focus} onFocus={onFocus} />;
+  const body = (t: Tab, visible: boolean) => {
+    if (t === "changes") return wideReview ? <Review thread={thread} items={items} focus={focus} onFocus={onFocus} onBack={() => onDock({ ...dock, full: false })} /> : <Changes thread={thread} items={items} focus={focus} onFocus={onFocus} />;
     if (t === "agents") return <Agents thread={thread} items={items} />;
     if (t === "session")
       return (
@@ -98,28 +130,260 @@ export function Panel({
     if (t === "device") return <DeviceSurface thread={thread} agentName={agentName} visible={visible} />;
     if (t === "routines") return <RoutinesList projectId={thread.projectId} compact onNew={() => onRoutine()} onEdit={(id) => onRoutine(id)} onRun={(r) => open(`run:${r.id}`)} />;
     if (t.startsWith("run:")) return <RunDetail runId={t.slice(4)} onOpenSession={(id) => (id === thread.id ? undefined : onOpenSession(id, t))} />;
+    if (t.startsWith("app:")) return <AddonView addon={t.slice(4)} thread={thread} agentName={agentName} visible={visible} />;
+    if (t.startsWith("preview:")) {
+      const a = asks.find((x) => x.id === t.slice(8))?.addon;
+      return <AddonView addon={a?.id ?? ""} preview={t.slice(8)} thread={thread} agentName={agentName} visible={visible} />;
+    }
     return null;
   };
 
+  const dropOn = (e: DragEvent, pane: number, index?: number, splitIt?: boolean) => {
+    const t = e.dataTransfer.getData(DRAG) || dragging;
+    setDrop(null);
+    setDragging(null);
+    if (!t) return;
+    e.preventDefault();
+    onDock(splitIt ? moveTab(dock, t, dock.panes.length) : moveTab(dock, t, pane, index));
+  };
+  const allow = (e: DragEvent) => {
+    if (!dragging && !e.dataTransfer.types.includes(DRAG)) return false;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    return true;
+  };
+
   return (
-    <aside className="lc-panel" aria-label="Surfaces" data-wide-review={wideReview || undefined} data-leaving={leaving || undefined} data-tray={tray || undefined} inert={leaving || undefined}>
-      {!wideReview && <PanelTabs state={state} onState={onState} label={label} />}
-      {state.picking && <SurfacePicker thread={thread} items={items} agentName={agentName} onOpen={(s) => open(s)} />}
-      {state.tabs.map((t) =>
-        mounted.has(t) ? (
-          <div key={t} className="lc-surface" hidden={state.picking || state.tab !== t} role="tabpanel" aria-label={label(t)}>
-            {/* One surface that breaks says so in its own tab; the others and the session go on. */}
-            <Boundary label={label(t)} quiet>
-              {body(t)}
-            </Boundary>
+    <aside
+      className="lc-panel lc-dockpanes"
+      aria-label="Dock"
+      style={{ "--panes": dock.panes.length } as CSSProperties}
+      data-wide-review={wideReview || undefined}
+      data-leaving={leaving || undefined}
+      data-dragging={dragging ? true : undefined}
+      inert={leaving || undefined}
+    >
+      {!wideReview &&
+        dock.panes.map((_, i) => (
+          <Strip
+            key={i}
+            i={i}
+            dock={dock}
+            onDock={onDock}
+            meta={meta}
+            last={i === dock.panes.length - 1}
+            dropping={drop?.pane === i && !drop.split}
+            onDragTab={(t) => setDragging(t)}
+            onDragEnd={() => (setDragging(null), setDrop(null))}
+            onDragOver={(e) => allow(e) && setDrop({ pane: i })}
+            onDrop={(e, index) => dropOn(e, i, index)}
+            style={{ gridColumn: i + 1 }}
+            label={`Pane ${i + 1}`}
+          />
+        ))}
+      {dock.panes.map((p, i) =>
+        p.tab === GUIDE ? (
+          <div key={`guide:${i}`} className="lc-surface" role="tabpanel" aria-label="New tab" data-pane={i} style={{ gridColumn: i + 1, gridRow: 2 }}>
+            <Guide thread={thread} items={items} agentName={agentName} panes={dock.panes.length} onOpen={(t) => open(t, i)} onMake={make} />
           </div>
         ) : null,
       )}
+      {all.map((t) => {
+        if (!mounted.has(t)) return null;
+        const i = dock.panes.findIndex((p) => p.tabs.includes(t));
+        const visible = i >= 0 && dock.panes[i].tab === t;
+        return (
+          <div key={t} className="lc-surface" hidden={!visible} role="tabpanel" aria-label={meta(t).label} data-pane={Math.max(0, i)} style={{ gridColumn: Math.max(0, i) + 1, gridRow: wideReview ? "1 / span 2" : 2 }} onPointerDown={() => i !== dock.at && onDock({ ...dock, at: i })}>
+            {/* One surface that breaks says so in its own tab; the others and the session go on. */}
+            <Boundary label={meta(t).label} quiet>
+              {body(t, visible && dock.open)}
+            </Boundary>
+          </div>
+        );
+      })}
+      {/* While a chip is dragged, each pane's body takes the drop (a page or a terminal under it would swallow it). */}
+      {dragging &&
+        dock.panes.map((_, i) => (
+          <div key={`drop:${i}`} className="lc-dropzone" style={{ gridColumn: i + 1, gridRow: 2 }} data-on={drop?.pane === i || undefined} data-split={(drop?.pane === i && drop.split) || undefined}>
+            <div
+              className="lc-dropzone-l"
+              onDragOver={(e) => allow(e) && setDrop({ pane: i })}
+              onDragLeave={() => setDrop(null)}
+              onDrop={(e) => dropOn(e, i)}
+            />
+            <div
+              className="lc-dropzone-r"
+              onDragOver={(e) => allow(e) && setDrop(canSplit(dock) && dock.panes[i].tabs.length > 1 && i === dock.panes.length - 1 ? { pane: i, split: true } : { pane: i })}
+              onDragLeave={() => setDrop(null)}
+              onDrop={(e) => dropOn(e, i, undefined, canSplit(dock) && dock.panes[i].tabs.length > 1 && i === dock.panes.length - 1)}
+            />
+          </div>
+        ))}
     </aside>
   );
 }
 
+/** One pane's strip: its chips (one up, the rest a press away), its +, its split, and in the last pane the full canvas and hide. */
+function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, onDragOver, onDrop, style, label }: {
+  i: number;
+  dock: DockState;
+  onDock: (d: DockState) => void;
+  meta: (t: Tab) => { label: string; short?: string; icon: (p: { size?: number }) => React.ReactNode; preview?: boolean };
+  last: boolean;
+  dropping: boolean;
+  onDragTab: (t: Tab) => void;
+  onDragEnd: () => void;
+  onDragOver: (e: DragEvent) => void;
+  onDrop: (e: DragEvent, index?: number) => void;
+  style: CSSProperties;
+  label: string;
+}) {
+  const p = dock.panes[i];
+  const row = useRef<HTMLDivElement>(null);
+  const [plate, setPlate] = useState<{ x: number; w: number; moved: boolean } | null>(null);
+  const [menu, setMenu] = useState<{ t: Tab; x: number; y: number } | null>(null);
+  // One white plate glides to the tab that's up (Liner's rule: one highlight moves between targets).
+  useLayoutEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    const place = () => {
+      const tab = el.querySelector<HTMLElement>(".lc-stab[data-on]");
+      setPlate((was) => (tab ? { x: tab.offsetLeft, w: tab.offsetWidth, moved: Boolean(was) } : null));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    for (const t of el.querySelectorAll(".lc-stab")) ro.observe(t);
+    return () => ro.disconnect();
+  }, [p.tab, p.tabs.join()]);
+  // Manual activation, as WAI-ARIA tabs: the arrows, Home and End move between chips; Enter or Space picks one.
+  const onKey = (e: ReactKeyboardEvent) => {
+    const chips = [...(row.current?.querySelectorAll<HTMLButtonElement>(".lc-stab-b") ?? [])];
+    const k = chips.indexOf(document.activeElement as HTMLButtonElement);
+    if (k < 0) return;
+    const to = e.key === "ArrowRight" ? (k + 1) % chips.length : e.key === "ArrowLeft" ? (k - 1 + chips.length) % chips.length : e.key === "Home" ? 0 : e.key === "End" ? chips.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    chips[to].focus();
+  };
+  const two = dock.panes.length > 1;
+  return (
+    <div className="lc-panel-top lc-stabs" role="presentation" style={style} data-pane={i} data-drag data-drop={dropping || undefined} onDragOver={onDragOver} onDrop={(e) => onDrop(e)}>
+      <div ref={row} className="lc-stabs-row" role="tablist" aria-label={label} data-plate={plate ? "" : undefined} onKeyDown={onKey}>
+        {plate && <span className="lc-stab-plate" data-moved={plate.moved || undefined} style={{ transform: `translateX(${plate.x}px)`, width: plate.w }} aria-hidden />}
+        {p.tabs.map((t, k) => {
+          const m = meta(t);
+          const Icon = m.icon;
+          const on = p.tab === t;
+          // The guide standing as the dock's only tab has no close (DeepSeek's sole-tab rule).
+          const closable = !(t === GUIDE && dock.panes.length === 1 && p.tabs.length === 1);
+          return (
+            <span
+              key={t}
+              className="lc-stab"
+              data-on={on || undefined}
+              data-preview={m.preview || undefined}
+              onDragOver={onDragOver}
+              onDrop={(e) => {
+                e.stopPropagation();
+                onDrop(e, k);
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={on}
+                tabIndex={on ? 0 : -1}
+                aria-label={m.label}
+                className="lc-stab-b l-focus"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(DRAG, t);
+                  e.dataTransfer.effectAllowed = "move";
+                  onDragTab(t);
+                }}
+                onDragEnd={onDragEnd}
+                onClick={() => onDock(pickTab(dock, i, t))}
+                // A tab down to its icon has no close of its own: a middle click closes it, as in a browser.
+                onAuxClick={(e) => closable && e.button === 1 && (e.preventDefault(), onDock(closeTab(dock, t)))}
+                onContextMenu={(e) => (e.preventDefault(), setMenu({ t, x: e.clientX, y: e.clientY }))}
+                title={on ? m.label : `${m.label} · drag to the other pane · middle-click to close`}
+              >
+                <Icon size={13} />
+                <span>{m.short ?? m.label}</span>
+                {m.preview && <small className="lc-stab-tag">Preview</small>}
+              </button>
+              {closable && (
+                <button type="button" className="lc-stab-x l-focus" tabIndex={on ? 0 : -1} aria-label={`Close ${m.label}`} onClick={() => onDock(closeTab(dock, t))}>
+                  <I.close size={10} />
+                </button>
+              )}
+            </span>
+          );
+        })}
+      </div>
+      {!p.tabs.includes(GUIDE) && (
+        <Tooltip content="New tab">
+          <button type="button" className="lc-ib l-focus" aria-label="New tab" onClick={() => onDock(openTab(dock, GUIDE, i))}>
+            <I.plus size={14} />
+          </button>
+        </Tooltip>
+      )}
+      <span className="lc-grow" data-drag />
+      <Tooltip content={two ? "Two panes at most" : "Split into two panes"}>
+        <button type="button" className="lc-ib l-focus" aria-label={two ? "Two panes at most" : "Split into two panes"} aria-disabled={two || undefined} onClick={() => !two && onDock(split(dock, i))}>
+          <I.split size={15} />
+        </button>
+      </Tooltip>
+      {last && (
+        <>
+          <Tooltip content={dock.full ? "Leave the full canvas" : "Open in the full canvas"}>
+            <button type="button" className="lc-ib l-focus" aria-label={dock.full ? "Leave the full canvas" : "Open in the full canvas"} aria-pressed={dock.full} onClick={() => onDock(toggleFull(dock))}>
+              {dock.full ? <I.shrink size={15} /> : <I.expand size={15} />}
+            </button>
+          </Tooltip>
+          <Tooltip content="Hide the dock">
+            <button type="button" className="lc-ib l-focus" aria-label="Hide the dock" onClick={() => onDock(hideDock(dock))}>
+              <I.dock size={15} />
+            </button>
+          </Tooltip>
+        </>
+      )}
+      <ContextMenu at={menu} label={menu ? `${meta(menu.t).label}, its tab` : "A tab"} onClose={() => setMenu(null)}>
+        {(close) =>
+          menu && (
+            <>
+              {two ? (
+                <Row title={i === 0 ? "Move to the right pane" : "Move to the left pane"} icon={<I.split size={13} />} onPick={() => (close(), onDock(moveTab(dock, menu.t, i === 0 ? 1 : 0)))} />
+              ) : (
+                <Row title="Split it into a pane of its own" icon={<I.split size={13} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(moveTab(dock, menu.t, 1)))} />
+              )}
+              <Sep />
+              <Row title="Close" icon={<I.close size={13} />} onPick={() => (close(), onDock(closeTab(dock, menu.t)))} />
+              <Row title="Close the others" icon={<I.close size={13} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(closeOthers(dock, menu.t)))} />
+            </>
+          )
+        }
+      </ContextMenu>
+    </div>
+  );
+}
+
+/** With nothing to commit, the diff's foot still pushes the branch or opens a pull request. */
+function PushButton({ thread, branch }: { thread: Thread; branch?: string }) {
+  return (
+    <Pop label="Push or open a pull request" side="top" align="end" width={280} triggerClass="lc-btn" disabled={thread.status === "running"} trigger={<><I.push size={14} />Push</>}>
+      {(close) => (
+        <div className="lc-ship-menu">
+          <PanelHead>Nothing to commit</PanelHead>
+          <Row title={`Push ${branch ?? "this branch"}`} note="To its branch on GitHub" icon={<I.push size={13} />} onPick={() => (close(), void ship(thread, null))} />
+          <Row title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={13} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail))} />
+        </div>
+      )}
+    </Pop>
+  );
+}
 function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Item[]; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void }) {
+  const branch = useEngine((s) => thread.worktree?.branch ?? s.projects.find((p) => p.id === thread.projectId)?.branch);
   const cps = useMemo(() => checkpointsOf(items), [items]);
   const pick = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : (cps[cps.length - 1]?.id ?? null);
   const cp = cps.find((c) => c.id === pick);
@@ -200,7 +464,7 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
             Undo turn {cp.turn}
           </button>
         )}
-        {openFiles > 0 && <CommitButton thread={thread} files={openFiles} disabled={busy !== null || thread.status === "running"} />}
+        {openFiles > 0 ? <CommitButton thread={thread} files={openFiles} disabled={busy !== null || thread.status === "running"} /> : <PushButton thread={thread} branch={branch} />}
       </div>
     </div>
   );

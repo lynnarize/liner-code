@@ -1,5 +1,5 @@
 /*
-  Add-ons, phase 1: connections. A connection is an MCP server that every agent tool gets beside
+  Add-ons. Phase 1: connections. A connection is an MCP server that every agent tool gets beside
   Liner Code's own `liner` server: Claude Code, Codex, OpenCode and Hermes. An agent writes its
   manifest as a draft in the session's folder (.liner/addons/<id>/addon.json, kept out of git like
   designs) and asks with addon_install; you add it on the install card. The manifest is checked
@@ -11,14 +11,20 @@
   in the keychain like an API key in Settings › Models, and it reaches the server only when its
   tool starts it: never the transcript, the agent's tool result or a log.
 
+  Phase 2: panels. A panel is a small page of the agent's own (its HTML, scripts and styles beside
+  the manifest) that opens in the right dock, as a tab beside Chat, or as a page from the left
+  sidebar. It runs in a sealed frame in the window (contracts/src/panel.ts), never here, and its
+  manifest says what it may touch (`access`), which its bridge holds it to (panels.ts). Its files
+  are kept with each version; its storage, one per add-on, outlives versions and removal.
+
   An agent drafting a plugin and a manager installing it behind your OK is DeepSeek Harness's
   Creator mode (github.com/deepseek-ai/deepseek-harness, MIT); the shape and the code are our own.
 */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { AddonAsk, AddonInfo, AddonManifest, AddonSecret } from "../../contracts/src/index.ts";
-import { addonKey } from "../../contracts/src/index.ts";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { AddonAsk, AddonInfo, AddonManifest, AddonSecret, ConnectionAsk, ConnectionManifest, PanelAccess, PanelManifest } from "../../contracts/src/index.ts";
+import { addonKey, PANEL_ICONS } from "../../contracts/src/index.ts";
 import { writeAtomic } from "./store.ts";
 
 /** Where an agent writes a draft, in the session's folder. */
@@ -68,12 +74,13 @@ export function checkManifest(raw: unknown): AddonManifest {
 
   const m = obj(raw, "The manifest");
   if (!m) throw new Error(said(bad));
+  if (m.kind === "panel") return checkPanel(m, bad, { obj, only, text });
   only(m, "", ["apiVersion", "id", "kind", "name", "description", "server", "secrets"]);
   if (m.apiVersion !== 1) bad.push("apiVersion must be 1.");
   const id = text(m.id, "id", 40);
   if (id !== undefined && !ADDON_ID.test(id)) bad.push("id must be 2 to 40 characters of a–z, 0–9 and -, starting with a letter and not ending with -.");
   if (id !== undefined && /^liner/.test(id)) bad.push("id can't start with liner: that's Liner Code's own server.");
-  if (m.kind !== "connection") bad.push('kind must be "connection": that\'s the one kind of add-on so far.');
+  if (m.kind !== "connection") bad.push('kind must be "connection" (an MCP server) or "panel" (a page of your own in Liner Code).');
   const name = text(m.name, "name", 60);
   const description = m.description === undefined ? undefined : text(m.description, "description", 300);
 
@@ -108,7 +115,7 @@ export function checkManifest(raw: unknown): AddonManifest {
     else if (named && SECRETISH.test(named) && rest && !PLAIN.test(rest) && !/^(?:Bearer|Basic|Token)$/i.test(rest)) bad.push(`${at}: its name says it holds a secret, so its value must come from one. Name it in secrets and write \${NAME}.`);
   };
 
-  let server: AddonManifest["server"] | undefined;
+  let server: ConnectionManifest["server"] | undefined;
   const s = obj(m.server, "server");
   if (s) {
     only(s, "server", ["stdio", "http"]);
@@ -200,14 +207,158 @@ export function checkManifest(raw: unknown): AddonManifest {
 
 const said = (bad: string[]) => (bad.length === 1 ? `The manifest isn't right: ${bad[0]}` : `The manifest isn't right:\n${bad.map((b) => `- ${b}`).join("\n")}`);
 
+type Checks = {
+  obj: (v: unknown, at: string) => Record<string, unknown> | null;
+  only: (o: Record<string, unknown>, at: string, keys: string[]) => void;
+  text: (v: unknown, at: string, max: number) => string | undefined;
+};
+/** A host a panel may reach: a name with a dot in it, no scheme, port, path or wildcard. */
+const HOST = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+/** An entry file: a name of its own folder's, ending .html. */
+const ENTRY = /^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*\/)?[A-Za-z0-9_-][A-Za-z0-9._-]*\.html?$/;
+/** The most storage a panel may keep, in KB. */
+export const STORAGE_MAX = 1024;
+
+/** A panel's manifest: where it opens, its entry file, and what it may touch, each checked. */
+function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks): PanelManifest {
+  c.only(m, "", ["apiVersion", "id", "kind", "name", "description", "place", "entry", "icon", "access"]);
+  if (m.apiVersion !== 1) bad.push("apiVersion must be 1.");
+  const id = c.text(m.id, "id", 40);
+  if (id !== undefined && !ADDON_ID.test(id)) bad.push("id must be 2 to 40 characters of a–z, 0–9 and -, starting with a letter and not ending with -.");
+  if (id !== undefined && /^liner/.test(id)) bad.push("id can't start with liner.");
+  const name = c.text(m.name, "name", 60);
+  const description = m.description === undefined ? undefined : c.text(m.description, "description", 300);
+  const place = m.place;
+  if (place !== "dock" && place !== "tab" && place !== "page") bad.push('place must be "dock" (the right dock, beside a session), "tab" (a tab beside Chat) or "page" (a page of its own, from the left sidebar).');
+  const entry = m.entry === undefined ? "index.html" : c.text(m.entry, "entry", 120);
+  if (entry !== undefined && !ENTRY.test(entry)) bad.push("entry must be an .html file beside the manifest (index.html), or one folder down.");
+  const icon = m.icon;
+  if (icon !== undefined && !(PANEL_ICONS as readonly unknown[]).includes(icon)) bad.push(`icon must be one of ${PANEL_ICONS.join(", ")}.`);
+  const access: PanelAccess = {};
+  const a = m.access === undefined ? {} : c.obj(m.access, "access");
+  if (a) {
+    c.only(a, "access", ["files", "sessions", "composer", "storage", "network"]);
+    if (a.files !== undefined) {
+      if (a.files !== "project") bad.push('access.files must be "project" (the session\'s project folder, to read), or left out.');
+      else access.files = "project";
+    }
+    if (a.sessions !== undefined) {
+      if (a.sessions !== "this" && a.sessions !== "all") bad.push('access.sessions must be "this" (the session it\'s beside) or "all" (every session\'s titles and changes), or left out.');
+      else access.sessions = a.sessions;
+    }
+    if (a.composer !== undefined) {
+      if (typeof a.composer !== "boolean") bad.push("access.composer must be true or false.");
+      else if (a.composer) access.composer = true;
+    }
+    if (a.storage !== undefined) {
+      if (typeof a.storage !== "number" || !Number.isInteger(a.storage) || a.storage < 0 || a.storage > STORAGE_MAX) bad.push(`access.storage is how many KB it keeps: a whole number up to ${STORAGE_MAX}.`);
+      else if (a.storage > 0) access.storage = a.storage;
+    }
+    if (a.network !== undefined) {
+      const h = typeof a.network === "string" ? a.network.trim().toLowerCase() : "";
+      if (!HOST.test(h)) bad.push('access.network is the one host it reaches over https, like "api.github.com": no https://, port, path or *.');
+      else if (/(?:^|\.)(?:localhost|local|internal|lan|home|arpa)$/.test(h)) bad.push("access.network must be a host on the internet, not on this Mac or its network.");
+      else access.network = h;
+    }
+  }
+  // A page has no session beside it, so nothing of one to read or write to.
+  if (place === "page" && (access.files || access.sessions === "this" || access.composer)) bad.push('A page (place "page") has no session beside it: access.files, sessions "this" and composer are for "dock" and "tab". It may read every session (sessions "all").');
+  if (bad.length) throw new Error(said(bad));
+  return { apiVersion: 1, id: id!, kind: "panel", name: name!, ...(description ? { description } : {}), place: place as PanelManifest["place"], entry: entry!, ...(icon ? { icon: icon as PanelManifest["icon"] } : {}), access };
+}
+
 /** What a connection reaches, in words: its address, or the command it runs. */
-export const reachOf = (m: AddonManifest) => ("http" in m.server ? m.server.http.url : [m.server.stdio.command, ...(m.server.stdio.args ?? [])].join(" "));
+export const reachOf = (m: ConnectionManifest) => ("http" in m.server ? m.server.http.url : [m.server.stdio.command, ...(m.server.stdio.args ?? [])].join(" "));
+
+/** A panel's files: what it may hold, and how much. */
+const PANEL_TYPES = /\.(?:html?|m?js|css|json|svg|png|jpe?g|gif|webp|txt|md)$/i;
+const BINARY = /\.(?:png|jpe?g|gif|webp)$/i;
+export const PANEL_FILES = 40;
+export const PANEL_FILE_MAX = 512_000;
+export const PANEL_TOTAL_MAX = 2_000_000;
+/** A panel's files by path, as the frame takes them: text as it is, pictures in base64. */
+export type PanelFiles = Record<string, string>;
+
+/**
+  The files in a panel's folder beside its manifest, read for its frame: no links, nothing hidden,
+  only the kinds a page is made of, 40 at most and 2 MB in all. Every problem is said at once.
+*/
+export function readPanelFiles(dir: string, entry: string): PanelFiles {
+  const files: PanelFiles = {};
+  const bad: string[] = [];
+  let total = 0;
+  const walk = (at: string, depth: number) => {
+    for (const name of readdirSync(at).sort()) {
+      const abs = join(at, name);
+      const rel = relative(dir, abs).split(sep).join("/");
+      if (rel === "addon.json") continue;
+      if (name.startsWith(".")) continue;
+      const st = lstatSync(abs);
+      if (st.isSymbolicLink()) {
+        bad.push(`${rel} is a link; a panel's files must be its own.`);
+        continue;
+      }
+      if (st.isDirectory()) {
+        if (depth >= 2) bad.push(`${rel} is too deep: two folders down at most.`);
+        else walk(abs, depth + 1);
+        continue;
+      }
+      if (!PANEL_TYPES.test(name)) {
+        bad.push(`${rel} isn't a kind of file a panel holds (html, js, css, json, svg, png, jpg, gif, webp, txt, md).`);
+        continue;
+      }
+      if (st.size > PANEL_FILE_MAX) bad.push(`${rel} is over ${PANEL_FILE_MAX / 1000} KB.`);
+      total += st.size;
+      if (Object.keys(files).length >= PANEL_FILES) {
+        bad.push(`It has more than ${PANEL_FILES} files.`);
+        return;
+      }
+      const buf = readFileSync(abs);
+      files[rel] = BINARY.test(name) ? buf.toString("base64") : buf.toString("utf8");
+    }
+  };
+  walk(dir, 0);
+  if (total > PANEL_TOTAL_MAX) bad.push(`Its files come to over ${PANEL_TOTAL_MAX / 1_000_000} MB.`);
+  if (files[entry] === undefined) bad.push(`There's no ${entry} beside the manifest: that's the page it opens on (entry).`);
+  if (bad.length) throw new Error(bad.length === 1 ? `The panel's files aren't right: ${bad[0]}` : `The panel's files aren't right:\n${bad.map((b) => `- ${b}`).join("\n")}`);
+  return files;
+}
+
+/** What a panel may touch, in words, for its strip and Settings: "reads this project's files · no network". */
+export function accessWords(a: PanelAccess, place?: PanelManifest["place"]) {
+  const out: string[] = [];
+  if (a.files) out.push("reads this project's files");
+  if (a.sessions === "this") out.push(place === "tab" ? "reads this session" : "reads the session it's beside");
+  if (a.sessions === "all") out.push("reads your sessions' titles and changes");
+  if (a.composer) out.push("can put text in the composer");
+  if (a.storage) out.push(`keeps its own storage, up to ${sizeWords(a.storage)}`);
+  out.push(a.network ? `reaches ${a.network}` : "no network");
+  return out.join(" · ");
+}
+export const sizeWords = (kb: number) => (kb >= 1024 && kb % 1024 === 0 ? `${kb / 1024} MB` : `${kb} KB`);
+
+/**
+  What a version asks to touch that the one before didn't, in words: nothing (an empty list) lets
+  it in without asking again. Reading more sessions, more storage or another host all count.
+*/
+export function widerAccess(was: PanelAccess, now: PanelAccess): string[] {
+  const out: string[] = [];
+  if (now.files && !was.files) out.push("Read the project's files");
+  const rank = { undefined: 0, this: 1, all: 2 } as Record<string, number>;
+  if (rank[String(now.sessions)] > rank[String(was.sessions)]) out.push(now.sessions === "all" ? "Read every session's titles and changes" : "Read the session it's beside");
+  if (now.composer && !was.composer) out.push("Put text in the composer");
+  if ((now.storage ?? 0) > (was.storage ?? 0)) out.push(was.storage ? `Keep more in its storage: up to ${sizeWords(now.storage!)}, not ${sizeWords(was.storage)}` : `Keep its own storage, up to ${sizeWords(now.storage!)}`);
+  if (now.network && now.network !== was.network) out.push(was.network ? `Reach ${now.network} instead of ${was.network}` : `Reach ${now.network} over the internet`);
+  return out;
+}
+
+const hashOf = (files: PanelFiles) => createHash("sha256").update(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)))).digest("hex");
 
 /**
   A draft in the session's folder, by id (.liner/addons/<id>/addon.json) or path (the file, or its
   folder), checked. One outside the folder, a link included, isn't read.
 */
-export function readDraft(root: string, asked: string): { path: string; manifest: AddonManifest } {
+export function readDraft(root: string, asked: string): { path: string; manifest: AddonManifest; files?: PanelFiles } {
   const a = asked.trim().replace(/^file:\/\//i, "");
   if (!a) throw new Error("Say which draft: its id (for .liner/addons/<id>/addon.json) or its path in this folder.");
   let file = ADDON_ID.test(a) ? join(root, ADDON_DIR, a, "addon.json") : resolve(root, a);
@@ -226,11 +377,12 @@ export function readDraft(root: string, asked: string): { path: string; manifest
   }
   const manifest = checkManifest(raw);
   if (ADDON_ID.test(a) && manifest.id !== a) throw new Error(`The draft at ${rel} says its id is ${manifest.id}, not ${a}.`);
-  return { path: rel.split(sep).join("/"), manifest };
+  if (manifest.kind !== "panel") return { path: rel.split(sep).join("/"), manifest };
+  return { path: rel.split(sep).join("/"), manifest, files: readPanelFiles(dirname(file), manifest.entry) };
 }
 
-/** The same manifest, the same text: key order doesn't make a new version. */
-const canon = (m: AddonManifest) => JSON.stringify(m, (_k, v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v));
+/** The same manifest, the same text: key order doesn't make a new version. A panel's files count too. */
+const canon = (m: AddonManifest, files?: PanelFiles) => JSON.stringify(m, (_k, v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v)) + (files ? hashOf(files) : "");
 
 type Entry = { version: number; enabled: boolean; project?: string; removed?: number; by: AddonInfo["by"]; versions: { v: number; at: number }[] };
 type Index = { v: 1; addons: Record<string, Entry> };
@@ -288,49 +440,103 @@ export class Addons {
     return this.list().find((a) => a.id === id);
   }
 
+  /** A kept version's files, for a panel (the version in use without `version`). */
+  files(id: string, version?: number): PanelFiles | null {
+    const v = version ?? this.index.addons[id]?.version;
+    const m = v ? this.manifest(id, v) : null;
+    if (!m || m.kind !== "panel") return null;
+    const dir = join(this.dir, id, `v${v}`, "files");
+    try {
+      return readPanelFiles(dir, m.entry);
+    } catch {
+      return null;
+    }
+  }
+
+  /** A panel that may run now: on, not removed, and for this project (any, without one). */
+  panel(id: string, projectId?: string): PanelManifest | null {
+    const e = this.index.addons[id];
+    if (this.off || !e || !e.enabled || e.removed) return null;
+    if (e.project && projectId && e.project !== projectId) return null;
+    const m = this.manifest(id);
+    return m?.kind === "panel" ? m : null;
+  }
+
+  /* A panel's own storage: one JSON file per add-on, kept through its versions and its removal. */
+  private storeFile = (id: string) => join(this.dir, id, "storage.json");
+  storage(id: string): Record<string, unknown> {
+    if (!ADDON_ID.test(id)) return {};
+    try {
+      const v = JSON.parse(readFileSync(this.storeFile(id), "utf8")) as unknown;
+      return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  /** Puts (or with `undefined`, takes away) one key, within its quota in KB. */
+  store(id: string, key: string, value: unknown, quota: number) {
+    if (!ADDON_ID.test(id)) throw new Error("There's no add-on by that id.");
+    const all = this.storage(id);
+    if (value === undefined) delete all[key];
+    else all[key] = value;
+    const text = JSON.stringify(all);
+    const size = Buffer.byteLength(text);
+    if (value !== undefined && size > quota * 1024) throw new Error(`That would make its storage ${Math.ceil(size / 1024)} KB, over the ${sizeWords(quota)} it asked for.`);
+    mkdirSync(join(this.dir, id), { recursive: true });
+    writeAtomic(this.storeFile(id), text);
+  }
+
   list(): AddonInfo[] {
     const out: AddonInfo[] = [];
     for (const [id, e] of Object.entries(this.index.addons)) {
       const m = this.manifest(id);
       if (!m) continue;
-      out.push({
+      const base = {
         id,
-        kind: m.kind,
         name: m.name,
         ...(m.description ? { description: m.description } : {}),
         version: e.version,
         versions: e.versions.map((x) => x.v).sort((a, b) => a - b),
+        dates: Object.fromEntries(e.versions.map((x) => [x.v, x.at])),
         enabled: e.enabled,
         ...(e.removed ? { removed: e.removed } : {}),
         ...(e.project ? { project: e.project } : {}),
         by: e.by,
-        transport: "http" in m.server ? "http" : "stdio",
-        reaches: reachOf(m),
-        secrets: m.secrets ?? [],
-      });
+      };
+      if (m.kind === "panel") out.push({ ...base, kind: "panel", reaches: accessWords(m.access, m.place), secrets: [], panel: { place: m.place, access: m.access, entry: m.entry, ...(m.icon ? { icon: m.icon } : {}) } });
+      else out.push({ ...base, kind: "connection", transport: "http" in m.server ? "http" : "stdio", reaches: reachOf(m), secrets: m.secrets ?? [] });
     }
     return out.sort((a, b) => a.by.at - b.by.at);
   }
 
   /** The version this manifest would be, and the one in use it would replace (none when it's the same). */
-  wouldBe(m: AddonManifest): { version: number; replaces?: number } {
+  wouldBe(m: AddonManifest, files?: PanelFiles): { version: number; replaces?: number } {
     const e = this.index.addons[m.id];
     if (!e) return { version: 1 };
     const same = e.versions.find((x) => {
       const kept = this.manifest(m.id, x.v);
-      return kept && canon(kept) === canon(m);
+      return kept && canon(kept, kept.kind === "panel" ? (this.files(m.id, x.v) ?? undefined) : undefined) === canon(m, files);
     });
     if (same) return { version: same.v, ...(same.v !== e.version ? { replaces: e.version } : {}) };
     return { version: Math.max(...e.versions.map((x) => x.v)) + 1, replaces: e.version };
   }
 
-  /** Adds it, as a new version unless one kept is the same, on and in use. */
-  install(m: AddonManifest, o: { project?: string; by: AddonInfo["by"] }) {
-    const { version } = this.wouldBe(m);
+  /** Adds it, as a new version unless one kept is the same, on and in use. A panel brings its files. */
+  install(m: AddonManifest, o: { project?: string; by: AddonInfo["by"] }, files?: PanelFiles) {
     const e = this.index.addons[m.id];
+    if (e && this.manifest(m.id)?.kind !== m.kind) throw new Error(`${m.id} is already the id of a ${m.kind === "panel" ? "connection" : "panel"}: give this one an id of its own.`);
+    if (m.kind === "panel" && !files) throw new Error("A panel needs its files.");
+    const { version } = this.wouldBe(m, files);
     if (!e?.versions.some((x) => x.v === version)) {
       const dir = join(this.dir, m.id, `v${version}`);
+      rmSync(dir, { recursive: true, force: true });
       mkdirSync(dir, { recursive: true });
+      if (m.kind === "panel")
+        for (const [path, content] of Object.entries(files!)) {
+          const abs = join(dir, "files", path);
+          mkdirSync(dirname(abs), { recursive: true });
+          writeFileSync(abs, BINARY.test(path) ? Buffer.from(content, "base64") : content);
+        }
       writeAtomic(join(dir, "addon.json"), `${JSON.stringify(m, null, 2)}\n`);
     }
     const versions = e ? [...e.versions.filter((x) => x.v !== version), { v: version, at: Date.now() }] : [{ v: version, at: Date.now() }];
@@ -339,9 +545,14 @@ export class Addons {
     return version;
   }
 
-  update(id: string, p: { enabled?: boolean; version?: number; removed?: boolean }) {
+  update(id: string, p: { enabled?: boolean; version?: number; removed?: boolean; project?: string | null }) {
     const e = this.index.addons[id];
     if (!e) throw new Error("There's no add-on by that id.");
+    // Every project (null), or only one.
+    if (p.project !== undefined) {
+      if (p.project === null) delete e.project;
+      else e.project = p.project;
+    }
     if (p.version !== undefined) {
       if (!e.versions.some((x) => x.v === p.version) || !this.manifest(id, p.version)) throw new Error(`There's no version ${p.version} of it.`);
       e.version = p.version;
@@ -364,7 +575,7 @@ export class Addons {
     for (const [id, e] of Object.entries(this.index.addons)) {
       if (!e.enabled || e.removed || (e.project && e.project !== projectId)) continue;
       const m = this.manifest(id);
-      if (!m) continue;
+      if (!m || m.kind !== "connection") continue;
       const fill = (v: string) => {
         let missing = false;
         const out = v.replace(REF, (_, n: string) => keys.get(addonKey(id, n)) ?? ((missing = true), ""));
@@ -381,8 +592,38 @@ export class Addons {
     return out;
   }
 
+  /**
+    A panel's card: what it may touch, its files, and against the version in use (not one removed),
+    what it asks for that that one didn't.
+  */
+  panelAsk(m: PanelManifest, path: string, project: { id: string; name: string }, files: PanelFiles): Extract<AddonAsk, { kind: "panel" }> {
+    const { version: next, replaces } = this.wouldBe(m, files);
+    const had = this.index.addons[m.id];
+    const was = had && !had.removed ? this.manifest(m.id) : null;
+    const wider = was?.kind === "panel" ? widerAccess(was.access, m.access) : undefined;
+    return {
+      kind: "panel",
+      next,
+      id: m.id,
+      name: m.name,
+      ...(m.description ? { description: m.description } : {}),
+      place: m.place,
+      access: m.access,
+      ...(m.icon ? { icon: m.icon } : {}),
+      entry: m.entry,
+      files: Object.entries(files).map(([p, c]) => ({ path: p, size: BINARY.test(p) ? Math.floor((c.length * 3) / 4) : Buffer.byteLength(c) })),
+      path,
+      project,
+      manifest: JSON.stringify(m, null, 2),
+      ...(replaces && !had?.removed ? { replaces } : {}),
+      ...(wider ? { wider } : {}),
+      // A page belongs to no project; a panel is offered for this one first, unless it was for every one before.
+      scope: m.place === "page" ? "all" : had && !had.project ? "all" : "project",
+    };
+  }
+
   /** What the install card shows for a manifest read from `path`, in the session's project, reaching the tools named. */
-  askOf(m: AddonManifest, path: string, project: { id: string; name: string }, reaches: string[]): AddonAsk {
+  askOf(m: ConnectionManifest, path: string, project: { id: string; name: string }, reaches: string[]): ConnectionAsk {
     const { replaces } = this.wouldBe(m);
     const had = this.index.addons[m.id];
     return {
@@ -408,44 +649,45 @@ export class Addons {
 export const fingerprint = (c: Connection[]) => (c.length ? createHash("sha256").update(JSON.stringify(c)).digest("hex").slice(0, 16) : "");
 
 /** What liner_inspect tells an agent about add-ons, well under 8k characters. */
-export const ADDON_GUIDE = `Liner Code add-ons, phase 1: connections
+export const ADDON_GUIDE = `Liner Code add-ons: connections and panels
 
-A connection is an MCP server Liner Code hands to every agent tool it runs (Claude Code, Codex, OpenCode and Hermes), next to its own liner server. It's settings, not code: each tool starts the server itself, and nothing runs inside Liner Code. Make one when the person wants their agents to reach a service (Linear, Sentry, a database) through MCP, instead of adding it to one tool's own config.
+Two kinds, each added only when the person says yes on a card in the session, and each kept version by version.
+- A connection is an MCP server Liner Code hands to every agent tool it runs (Claude Code, Codex, OpenCode and Hermes), next to its own liner server. Settings, not code: each tool starts the server itself.
+- A panel is a small page of your own in Liner Code: in the right dock beside a session, as a tab beside Chat, or a page of its own from the left sidebar. It runs in a sealed frame with only what its manifest lists.
 
-How to add one
+Connections
 1. Find the service's MCP server: a hosted address (streamable HTTP), or a command that runs it on this Mac (npx, uvx, a program). Prefer the service's own.
-2. Write the manifest to .liner/addons/<id>/addon.json in this session's folder. It stays out of git.
-3. Call addon_install with the id. The person sees a card with what it reaches, types any key it needs, and picks every project or only this one. You get back one of:
-   - applied: its tools are in this session now;
-   - saved, starts in the next turn: this session's tool picks it up when the next turn starts, so say so;
-   - denied: they said no. Don't ask again unless they do.
-4. To change one, edit the draft and call addon_install again: a changed manifest is a new version, and asks again. addon_remove takes one away (the person can restore it in Settings › Add-ons).
-
-The manifest, version 1. Only these keys:
-{
-  "apiVersion": 1,
-  "id": "linear",
-  "kind": "connection",
-  "name": "Linear",
-  "description": "Issues and projects in Linear",
+2. Write .liner/addons/<id>/addon.json in this session's folder (it stays out of git):
+{ "apiVersion": 1, "id": "linear", "kind": "connection", "name": "Linear", "description": "Issues in Linear",
   "server": { "http": { "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer \${LINEAR_API_KEY}" } } },
-  "secrets": [{ "name": "LINEAR_API_KEY", "label": "Linear key" }]
-}
-- id: 2 to 40 of a-z, 0-9 and -, starting with a letter. It names the MCP server in every tool (Claude Code calls its tools mcp__<id>__<tool>).
-- name: what the person reads on the card. description: optional, one sentence.
-- server: one of
-  { "http": { "url": "https://...", "headers": { ... } } }   a hosted server (https, or http on localhost)
-  { "stdio": { "command": "npx", "args": ["-y", "@sentry/mcp-server"], "env": { "SENTRY_HOST": "sentry.io" } } }   a server this Mac runs
-  command is one program; its arguments go in args. No shell runs it, so pipes and && don't work.
-- secrets: optional, the keys it needs, each { "name": "A_NAME", "label": "what the person reads" }.
+  "secrets": [{ "name": "LINEAR_API_KEY", "label": "Linear key" }] }
+   server is { "http": { "url", "headers" } } (https, or http on localhost) or { "stdio": { "command": "npx", "args": [...], "env": {...} } }. command is one program; no shell runs it.
+3. Call addon_install with the id. It returns applied (its tools are here now), saved, starts in the next turn (say so), or denied (don't ask again unless they do).
+Keys: never write one in a manifest, not even one pasted in the chat. Name it in secrets; \${NAME} in a header or env value stands for it; a stdio server also gets each secret in its environment by name. args can't carry a secret, nor an address. A variable, header or flag named like a key, token, secret, password or auth must take its value from a secret. A server that signs in through a browser (OAuth) can't be a connection yet.
 
-Keys
-- Never write a key, token or password in the manifest, not even one the person pasted in the chat. Name it in secrets: they type it on the card, it's sealed in this Mac's keychain, and you never see it.
-- In a header or an env value, \${NAME} stands for a secret. A stdio server also gets each secret in its environment under its own name, so a server that reads LINEAR_API_KEY needs only the secret.
-- args can't carry a secret (anything on this Mac can read a command line): use env.
-- A variable, header or flag whose name says key, token, secret, password or auth must take its value from a secret.
-- No key in an address: send it in a header.
+Panels
+1. Write .liner/addons/<id>/addon.json and the panel's files beside it: index.html, and any .js, .css, .json, .svg or pictures it links by a relative path (40 files, 2 MB at most). No CDN: it can't reach one, so what it needs goes in its own files.
+{ "apiVersion": 1, "id": "todos", "kind": "panel", "name": "TODOs", "description": "The TODOs in this project, to hand to the agent",
+  "place": "dock", "entry": "index.html", "icon": "list", "access": { "files": "project", "composer": true } }
+   place: "dock" (beside a session: a viewer, an editor, something to watch while chatting), "tab" (a tab beside Chat: a session's live output or interaction), "page" (global, from the left sidebar: a record kept across projects).
+   icon: app, blocks, list, notes, chart, check, clock, globe, flask, star, bolt or inbox.
+   access, each left out unless the panel needs it:
+   - files: "project": read this project's files.
+   - sessions: "this" (the session it's beside: title, changes, commands) or "all" (every session's titles and changes).
+   - composer: true: put text in the composer, for the person to send.
+   - storage: how many KB of storage of its own (1024 at most), kept across versions.
+   - network: one host, like "api.github.com", over https. The person holds a button to allow it; ask for it only if the panel can't work without it.
+   A page has no session beside it: only sessions "all", storage and network.
+2. Call addon_check with the id: it draws the panel out of sight at its size, with this project's real data, and returns a picture, its errors and anything it was refused. Fix what's off, and check again.
+3. Call addon_install with the id. The person sees it live in the dock, with a card saying what it touches. A changed panel that asks for nothing more than the version in use goes in without a card; one that asks for more asks again. Every version is kept, and the person can go back.
+In the frame, window.liner is its only way in. Every call returns a promise, and one its access doesn't allow is refused:
+- liner.files.list(dir?) → paths; liner.files.read(path) → { text, size }; liner.files.search(["TODO", "FIXME"], { ignoreCase: false }) → [{ path, line, text }] (plain words, not patterns)
+- liner.session.info() → { title, status, branch, project, changes: [{ path, added, removed }] }; liner.session.commands() → [{ title, status, output, at }]
+- liner.sessions.list() → [{ id, title, project, status, updatedAt, files, added, removed }]
+- liner.composer.put(text)
+- liner.storage.get(key), .set(key, value), .remove(key), .keys()
+- liner.on("session", fn) when the session moves on; liner.on("theme", fn) when the colours change.
+Draw with the app's colours so it follows light and dark: var(--bg), var(--surface), var(--ink), var(--ink-2), var(--ink-3), var(--line), var(--accent), var(--font), var(--font-mono). Keep it quiet: no shadows or gradients of its own, 13 to 14 px text. An empty state when there's nothing to show; an error said in words when a call fails.
 
-Limits
-- A server that signs in through a browser (OAuth) can't be set up as a connection yet. Say so, and offer the service's API key if it has one.
-- A read-only session can't add one, and the person may have turned add-ons off in Settings › Add-ons.`;
+Either kind
+To change one, edit its draft and call addon_install again. addon_remove takes one away; the person can restore it in Settings › Add-ons. A read-only session can't add or remove one, and the person may have turned agent add-ons off.`;

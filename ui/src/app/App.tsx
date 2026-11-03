@@ -24,8 +24,9 @@ const Setup = lazy(() => import("./Setup").then((m) => ({ default: m.Setup })));
 const Usage = lazy(() => import("./Usage").then((m) => ({ default: m.Usage })));
 const RoutinesPage = lazy(() => import("./Routines").then((m) => ({ default: m.RoutinesPage })));
 const Compare = lazy(() => import("./Compare").then((m) => ({ default: m.Compare })));
-import { keepPanel, keptPanel, openTab, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
-import { openSurface } from "./Rail";
+import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
+import { openTab } from "./dock";
+import { openSurface } from "./TopBar";
 import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
@@ -168,7 +169,7 @@ export function App() {
   }, []);
 
   const openSession = (id: string, tab?: Tab) => {
-    if (tab) keepPanel(id, openTab(keptPanel(id), tab));
+    if (tab) keepDock(id, openTab(keptDock(id), tab));
     setView({ kind: "session", id });
   };
   const openRun = (run: RoutineRun) => (run.threadId ? openSession(run.threadId, `run:${run.id}`) : setView({ kind: "routines" }));

@@ -9,14 +9,17 @@
   surfaces and nothing else, so an agent that reads it from its environment can't drive the
   rest of the engine (approve its own requests, say).
 
-  Add-ons go through here too (addons.ts): liner_inspect tells an agent what a connection is and
-  what's installed, and addon_install and addon_remove put a card on the timeline and wait for you.
+  Add-ons go through here too (addons.ts): liner_inspect tells an agent what connections and panels
+  are and what's installed, addon_check draws a panel out of sight for its agent to look at, and
+  addon_install and addon_remove put a card on the timeline and wait for you. A panel's calls from
+  its frame come here as well (panelCall), checked against its access (panels.ts).
 */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import type { AgentBrowserOp, AddonInfo, Item, ProviderInfo, Risk } from "../../contracts/src/index.ts";
-import { addonKey } from "../../contracts/src/index.ts";
-import { ADDON_GUIDE, readDraft, type Addons } from "./addons.ts";
+import type { AgentBrowserOp, AddonInfo, Item, PanelManifest, PanelPlace, ProviderInfo, Risk, Thread } from "../../contracts/src/index.ts";
+import { addonKey, panelDocument } from "../../contracts/src/index.ts";
+import { accessWords, ADDON_GUIDE, readDraft, sizeWords, type Addons, type PanelFiles } from "./addons.ts";
+import { panelCall, refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
 import { DESIGN_FRAME, keepOutOfGit, sizeOf, type DesignItem, type Designs } from "./designs.ts";
 import { run } from "./exec.ts";
 import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
@@ -67,6 +70,8 @@ export function linerTitle(tool: string, input: unknown): string {
       return `Ask to add ${s(a.id ?? a.path) || "an add-on"}`;
     case "addon_remove":
       return `Ask to remove ${s(a.id) || "an add-on"}`;
+    case "addon_check":
+      return `Check the panel ${s(a.id ?? a.path)}`.trim();
     default:
       return `Liner Code · ${tool}`;
   }
@@ -161,6 +166,24 @@ const REACHED: { family: string; label: string; now: boolean }[] = [
 /** The tool for Liner Code's own requests (an install card), on the timeline. */
 export const ADDON_TOOL = "liner.addon";
 
+/** The size a panel is drawn at to check it, by where it opens: the dock's width, a tab's, a page's. */
+export const CHECK_SIZE: Record<PanelPlace, { width: number; height: number }> = { dock: { width: 428, height: 780 }, tab: { width: 900, height: 720 }, page: { width: 1100, height: 800 } };
+/** The colours a panel is checked in: the app's light theme, as the frame's variables. */
+export const CHECK_THEME = { "--bg": "#f9f9fb", "--surface": "#ffffff", "--ink": "#1f2024", "--ink-2": "#46484f", "--ink-3": "#6b6e76", "--line": "rgba(30, 33, 45, 0.11)", "--accent": "#3a6df0", "--font": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-mono": "'Geist Mono', ui-monospace, monospace" };
+
+/** A panel being checked out of sight: its draft, the storage it plays with, what it said and was refused. */
+type Check = {
+  threadId: string;
+  manifest: PanelManifest;
+  files: PanelFiles;
+  storage: Record<string, unknown>;
+  report?: { errors: { message: string; stack?: string }[]; blocked: string[]; ready?: { elements: number; width: number; height: number } };
+  refused: string[];
+  busy: number;
+  last: number;
+};
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 export class AgentTools {
   private keys = new Map<string, string>();
   private waiting = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; late?: NodeJS.Timeout }>();
@@ -179,6 +202,12 @@ export class AgentTools {
   /** Your add-ons, and the runtime they're handed to sessions through. */
   addons?: Addons;
   host?: AddonHost;
+  /** Panels whose card is up: the draft exactly as asked about, which the preview draws and Add it installs. */
+  readonly pending = new Map<string, { threadId: string; manifest: PanelManifest; files: PanelFiles; storage: Record<string, unknown> }>();
+  /** Panels being drawn out of sight for addon_check, by their one-time token. */
+  private checks = new Map<string, Check>();
+  /** What the last check of each draft saw, for its card (by session and id, with the files it saw). */
+  private checked = new Map<string, { sum: string; words: string }>();
 
   constructor(store: Store, env: NodeJS.ProcessEnv) {
     this.store = store;
@@ -339,6 +368,8 @@ export class AgentTools {
           return await this.install(threadId, args);
         case "addon_remove":
           return await this.remove(threadId, args);
+        case "addon_check":
+          return await this.check(threadId, args);
         default:
           return fail(`Liner Code has no tool called ${tool}.`);
       }
@@ -377,7 +408,8 @@ export class AgentTools {
             const state = x.removed ? "removed (the person can restore it)" : x.enabled ? "on" : "off";
             const kept = x.versions.length > 1 ? ` (kept: ${x.versions.map((v) => `v${v}`).join(", ")})` : "";
             const secrets = x.secrets.length ? ` · keys: ${x.secrets.map((k) => `${k.name} ${keys?.has(addonKey(x.id, k.name)) ? "set" : "not set"}`).join(", ")}` : "";
-            return `- ${x.id}: ${x.name} · v${x.version}${kept} · ${state} · ${this.where(x, threadId)} · ${x.transport} ${x.reaches}${secrets}`;
+            if (x.panel) return `- ${x.id}: ${x.name} · panel (${x.panel.place}) · v${x.version}${kept} · ${state} · ${x.panel.place === "page" ? "a page of its own" : this.where(x, threadId)} · ${x.reaches}`;
+            return `- ${x.id}: ${x.name} · connection · v${x.version}${kept} · ${state} · ${this.where(x, threadId)} · ${x.transport} ${x.reaches}${secrets}`;
           })
           .join("\n")
       : "None yet.";
@@ -401,9 +433,11 @@ export class AgentTools {
     const t = this.store.thread(threadId);
     const project = this.store.project(t.projectId);
     const root = this.cwdOf(threadId) ?? t.worktree?.path ?? project.path;
-    const { path, manifest } = readDraft(root, String(args.id ?? args.path ?? args.draft ?? ""));
+    const { path, manifest, files } = readDraft(root, String(args.id ?? args.path ?? args.draft ?? ""));
     void keepOutOfGit(root);
+    if (manifest.kind === "panel") return this.installPanel(threadId, t, { id: project.id, name: project.name }, path, manifest, files!);
     const have = addons.get(manifest.id);
+    if (have?.kind === "panel") return fail(`${manifest.id} is already a panel's id: give the connection an id of its own.`);
     const next = addons.wouldBe(manifest);
     if (have && have.enabled && !have.removed && next.version === have.version) return text(`applied: ${manifest.name} is already added as v${have.version}, for ${this.where(have, threadId)}, exactly as this draft says. Nothing to ask.`);
     const reached = this.reached();
@@ -437,6 +471,164 @@ export class AgentTools {
     return text(`saved, starts in the next turn: ${manifest.name} (v${version}) is added for ${where}, but its tools can't reach this session yet. ${mine.label} takes in new MCP servers only when its session starts, so they arrive when the person's next message starts the next turn (the session picks up where it is). Tell the person that, and finish what you can without it now.${keyNote}`);
   }
 
+  /**
+    addon_install for a panel. One the same as the version in use is said to be in already; one that
+    asks for nothing more than it goes in without a card, and a line on the timeline says so; any
+    other shows its card, with the draft live in the dock as a preview, and waits for the person.
+  */
+  private async installPanel(threadId: string, t: Thread, project: { id: string; name: string }, path: string, m: PanelManifest, files: PanelFiles): Promise<McpResult> {
+    const addons = this.addons!;
+    const host = this.host!;
+    const have = addons.get(m.id);
+    if (have && have.kind !== "panel") return fail(`${m.id} is already a connection's id: give the panel an id of its own.`);
+    const next = addons.wouldBe(m, files);
+    const live = have && have.enabled && !have.removed;
+    if (live && next.version === have.version) return text(`applied: ${m.name} is already in as v${have.version}, exactly as this draft is. Nothing to ask.`);
+    if (m.access.network && this.store.settings.addonNetwork === "never") return fail(`The person set panels never to reach the internet (Settings › Add-ons), so ${m.name} can't have access.network. Make it work without: whatever it needs from elsewhere goes in its own files. Nothing was added.`);
+    const ask = addons.panelAsk(m, path, project, files);
+    const seen = this.checked.get(`${threadId}:${m.id}`);
+    if (seen && seen.sum === sumOf(files)) ask.checked = seen.words;
+    const by = { agent: host.whoIs(threadId), threadId, title: t.title, at: Date.now() };
+    // Nothing more than the version in use: in, without asking again, and its line says so.
+    if (live && ask.wider && ask.wider.length === 0) {
+      const version = addons.install(m, { project: have.project, by: have.by }, files);
+      this.store.putItem(threadId, { kind: "approval", id: uid("it"), turn: this.turnOf(threadId), at: Date.now(), tool: ADDON_TOOL, title: `Update ${m.name}`, risk: "low", fields: [], state: "approved", addon: { ...ask, same: true, version, replaces: have.version, scope: have.project ? "project" : "all" } });
+      return text(`applied: ${m.name} is v${version} now. It asks for nothing more than v${have.version} did, so it went in without a card; the person sees a line saying so, with a way back to v${have.version}. It shows wherever it was open.`);
+    }
+    const fields = [{ label: "Touches", value: accessWords(m.access, m.place) }];
+    const { id, answer } = host.askLiner(threadId, { tool: ADDON_TOOL, title: `Add ${m.name}`, risk: m.access.network ? "high" : "medium", fields, addon: ask });
+    this.pending.set(id, { threadId, manifest: m, files, storage: {} });
+    let r: Awaited<typeof answer>;
+    try {
+      r = await answer;
+    } finally {
+      this.pending.delete(id);
+    }
+    if (!r.allow) {
+      const it = this.store.item(threadId, id);
+      if (it.kind === "approval" && it.state === "expired") return text(`denied: the turn ended before the person answered, so ${m.name} wasn't added. The draft stays at ${path}.`);
+      return text(`denied: the person said no to ${m.name}${r.reason ? `, and said: “${r.reason}”` : ""}. Nothing was added. The draft stays at ${path}; don't ask again unless they do.`);
+    }
+    const scope = m.place === "page" ? "all" : (r.scope ?? ask.scope ?? "project");
+    const version = addons.install(m, { project: scope === "project" ? project.id : undefined, by }, files);
+    const it = this.store.item(threadId, id);
+    if (it.kind === "approval" && it.addon) this.store.putItem(threadId, { ...it, addon: { ...it.addon, scope, version } });
+    const where = m.place === "page" ? "under Apps in the left sidebar" : m.place === "tab" ? `as a tab beside Chat, in ${scope === "project" ? `${project.name}'s sessions` : "every session"}` : `in the right dock, in ${scope === "project" ? `${project.name}'s sessions` : "every session"}`;
+    return text(`applied: ${m.name} (v${version}) is added ${where}. To change it, edit the draft and call addon_install again: a version that asks for nothing more goes in without a card.`);
+  }
+
+  /**
+    addon_check: the draft drawn out of sight, in a sealed frame like the window's, at its place's
+    size and with this session's real data. It answers with a picture, what it drew, its errors,
+    and anything the bridge or the content policy refused.
+  */
+  private async check(threadId: string, args: Record<string, unknown>): Promise<McpResult> {
+    const t = this.store.thread(threadId);
+    const root = this.cwdOf(threadId) ?? t.worktree?.path ?? this.store.project(t.projectId).path;
+    const { manifest, files } = readDraft(root, String(args.id ?? args.path ?? args.draft ?? ""));
+    if (manifest.kind !== "panel") return fail("addon_check draws a panel; a connection has nothing to draw. Ask for it with addon_install.");
+    const size = CHECK_SIZE[manifest.place];
+    const token = randomBytes(18).toString("hex");
+    const c: Check = { threadId, manifest, files: files!, storage: {}, refused: [], busy: 0, last: Date.now() };
+    this.checks.set(token, c);
+    try {
+      const look = await this.browser<{ png: string; errors?: string[]; height?: number }>(threadId, "shot", { url: `${this.url}/addon-check/${token}`, ...size }, 45000);
+      const rep = c.report;
+      const errors = rep ? rep.errors.map((e) => (e.stack ? `${e.message}\n${e.stack.split("\n").slice(0, 4).join("\n")}` : e.message)) : (look.errors ?? []);
+      const drew = rep?.ready ? `Drew ${rep.ready.elements} elements at ${size.width} × ${size.height}${rep.ready.height > size.height ? `, ${rep.ready.height} px tall (it scrolls)` : ""}` : `Drew it at ${size.width} × ${size.height}`;
+      const said = errors.length ? `${errors.length === 1 ? "1 error" : `${errors.length} errors`}` : "no console errors";
+      const words = `${drew}, ${said}${rep?.blocked.length ? `, ${rep.blocked.length} blocked` : ""}`;
+      this.checked.set(`${threadId}:${manifest.id}`, { sum: sumOf(files!), words });
+      const parts = [
+        `${words}.`,
+        errors.length ? `Errors:\n${errors.slice(0, 10).join("\n\n")}` : "",
+        rep?.blocked.length ? `The content policy blocked: ${[...new Set(rep.blocked)].join(", ")}. A panel reaches no address but the one host in access.network; scripts, styles and pictures go in its own files.` : "",
+        c.refused.length ? `The bridge refused: ${[...new Set(c.refused)].join("; ")}` : "",
+        "The picture is how it draws in the window. Fix what's off and check again before you call addon_install.",
+      ].filter(Boolean);
+      return { content: [{ type: "text", text: parts.join("\n\n") }, { type: "image", data: look.png, mimeType: "image/png" }] };
+    } finally {
+      setTimeout(() => this.checks.delete(token), 5000);
+    }
+  }
+
+  /** The page a check draws: the sealed frame, and a host that answers it the way the window would. */
+  checkPage(token: string): string | null {
+    const c = this.checks.get(token);
+    if (!c) return null;
+    const doc = panelDocument({ files: c.files, entry: c.manifest.entry, access: c.manifest.access, theme: CHECK_THEME, place: c.manifest.place });
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(c.manifest.name)}</title><style>html,body{margin:0;height:100%;background:${CHECK_THEME["--surface"]}}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe sandbox="allow-scripts" title="${esc(c.manifest.name)}" srcdoc="${esc(doc)}"></iframe><script>(()=>{const f=document.querySelector("iframe");const at=location.pathname;const rep={errors:[],blocked:[]};
+const send=()=>fetch(at+"/report",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(rep)}).catch(()=>{});
+addEventListener("message",async(e)=>{if(e.source!==f.contentWindow)return;const d=e.data;if(!d||d.liner!==1)return;
+if(d.kind==="error"){rep.errors.push({message:String(d.message),stack:d.stack});console.error("[panel] "+d.message);send();return}
+if(d.kind==="blocked"){rep.blocked.push(d.host||d.directive);send();return}
+if(d.kind==="ready"){rep.ready={elements:d.elements,width:d.width,height:d.height};send();return}
+if(typeof d.id!=="number")return;
+const r=await fetch(at+"/call",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({method:d.method,args:d.args})}).then((x)=>x.json()).catch((x)=>({ok:false,error:String(x)}));
+f.contentWindow.postMessage(r.ok?{liner:1,id:d.id,ok:true,value:r.value}:{liner:1,id:d.id,ok:false,error:r.error},"*")});
+const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";document.body.appendChild(img)})()</script></body></html>`;
+  }
+
+  /** A call from a frame being checked, answered as the window's bridge would. */
+  async checkCall(token: string, body: { method?: unknown; args?: unknown }) {
+    const c = this.checks.get(token);
+    if (!c) return { ok: false, error: "That check is over." };
+    const method = String(body.method ?? "");
+    const where: PanelWhere = { access: c.manifest.access, place: c.manifest.place, threadId: c.manifest.place === "page" ? undefined : c.threadId };
+    const no = refusal(where, method);
+    if (no) {
+      c.refused.push(`${method}: ${no}`);
+      return { ok: false, error: no };
+    }
+    c.busy++;
+    try {
+      const value = await this.panelCall(where, method as PanelMethod, (body.args ?? {}) as Record<string, unknown>, { all: () => c.storage, put: (k, v) => (v === undefined ? delete c.storage[k] : (c.storage[k] = v)) }, c.manifest.access.storage ?? 0);
+      // A check never writes to the composer: it says what it would have put there.
+      return { ok: true, value };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      c.busy--;
+      c.last = Date.now();
+    }
+  }
+
+  checkReport(token: string, body: Check["report"]) {
+    const c = this.checks.get(token);
+    if (c && body && Array.isArray(body.errors) && Array.isArray(body.blocked)) c.report = { errors: body.errors.slice(0, 20), blocked: body.blocked.slice(0, 20).map(String), ...(body.ready ? { ready: body.ready } : {}) };
+  }
+
+  /** Answers once the frame has drawn and its calls have gone quiet (6 s at most), so the picture is of it settled. */
+  async checkSettle(token: string) {
+    const start = Date.now();
+    for (;;) {
+      const c = this.checks.get(token);
+      if (!c || Date.now() - start > 6000) return;
+      if (c.report?.ready && c.busy === 0 && Date.now() - c.last > 400) return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+
+  /** The engine's half of a panel's bridge: the session's folder and timeline, every session, and its storage within its quota. */
+  async panelCall(where: PanelWhere, method: PanelMethod, args: Record<string, unknown>, storage: { all(): Record<string, unknown>; put(key: string, value: unknown): void }, quota: number) {
+    const env: PanelEnv = {
+      cwdOf: (id) => this.cwdOf(id) ?? this.store.thread(id).worktree?.path ?? this.store.project(this.store.thread(id).projectId).path,
+      thread: (id) => this.store.thread(id),
+      threads: () => this.store.threads,
+      timeline: (id) => this.store.timeline(id),
+      projectName: (id) => this.store.projects.find((p) => p.id === id)?.name ?? "",
+      branchOf: (id) => this.store.thread(id).worktree?.branch ?? this.store.projects.find((p) => p.id === this.store.thread(id).projectId)?.branch,
+      storage: {
+        all: storage.all,
+        put: (k, v) => {
+          if (v !== undefined && Buffer.byteLength(JSON.stringify({ ...storage.all(), [k]: v })) > quota * 1024) throw new Error(`That would take its storage over the ${sizeWords(quota)} it asked for.`);
+          storage.put(k, v);
+        },
+      },
+    };
+    return panelCall(env, where, method, args);
+  }
+
   /** addon_remove: asks on a card, and removes it (on disk still, so it can be restored) if the person says yes. */
   private async remove(threadId: string, args: Record<string, unknown>): Promise<McpResult> {
     const no = this.refusal(threadId);
@@ -447,11 +639,11 @@ export class AgentTools {
     const { answer } = this.host!.askLiner(threadId, {
       tool: ADDON_TOOL,
       title: `Remove ${have.name}`,
-      description: `Takes ${have.name} away from every agent tool. It stays in the add-ons, so it can be restored in Settings › Add-ons.`,
+      description: have.panel ? `Takes ${have.name} out of Liner Code. Its files, versions and storage are kept, so it can be restored in Settings › Add-ons.` : `Takes ${have.name} away from every agent tool. It stays in the add-ons, so it can be restored in Settings › Add-ons.`,
       risk: "low",
       fields: [
-        { label: "Server", value: have.reaches },
-        { label: "Where", value: this.where(have, threadId) },
+        { label: have.panel ? "Touches" : "Server", value: have.reaches },
+        { label: "Where", value: have.panel?.place === "page" ? "A page of its own" : this.where(have, threadId) },
       ],
     });
     const r = await answer;
@@ -478,3 +670,6 @@ export class AgentTools {
     return on.udid;
   }
 }
+
+/** A fingerprint of a panel's files, to know a check saw these ones. */
+const sumOf = (files: PanelFiles) => createHash("sha256").update(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)))).digest("hex").slice(0, 16);

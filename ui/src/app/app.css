@@ -1972,14 +1972,14 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 11.5px;
   color: var(--l-ink-3);
 }
-/* The session's bar heads the thread's own column: narrow, it keeps the title and drops who works on it
-   to its discs, then the branch. */
-@container lc-thread (max-width: 720px) {
+/* The session's bar spans the paper, over the thread and the dock: narrow, it keeps the title and
+   drops who works on it to its discs, then the branch. */
+@container lc-session (max-width: 900px) {
   .lc-top .lc-branch {
     display: none;
   }
 }
-@container lc-thread (max-width: 620px) {
+@container lc-session (max-width: 780px) {
   .lc-chain {
     gap: 2px;
     font-size: 0;
@@ -2034,14 +2034,14 @@ html[data-native="mac"] .lc-sb-head {
 /* Beside the thread the panel is laid out at the width it opens to, from its first frame: its
    column uncovers it from the paper's edge, so nothing in it re-wraps on the way in or out (the
    session and the body are one width, so 100cqw is the body's 100%). */
-.lc-session:not([data-wide], [data-dock="bottom"]) .lc-body > .lc-panel {
+.lc-session:not([data-wide]) .lc-body > .lc-panel {
   justify-self: start;
   width: max(100%, min(var(--lc-panel-w, clamp(340px, 36cqw, 520px)), calc(100cqw - 420px)));
 }
 /* The panel keeps its cell, so the grip on its edge can share it. The grip stays on the panel's
    side of the edge: the thread's overlay scrollbar runs down the other side, and a pointer held
    on it while dragging left that scrollbar stuck open, wide and with its track. */
-.lc-session:not([data-dock="bottom"]) .lc-body > .lc-panel {
+.lc-session .lc-body > .lc-panel {
   grid-area: 1 / 2;
 }
 .lc-grip {
@@ -2123,23 +2123,8 @@ html[data-native="mac"] .lc-sb-head {
   flex-direction: column;
   min-height: 0;
 }
-/* The session tray keeps a lane of its own at the thread's right edge (14 + 44 + 14): the text
-   and the composer stop short of it, so nothing you read ever passes under the glass. */
 .lc-thread {
-  --lc-lane: 72px;
   container: lc-thread / inline-size;
-}
-.lc-session[data-beside] .lc-thread {
-  --lc-lane: 0px;
-}
-/* The lane opens and shuts with the panel's column, instead of in one step as it starts. */
-.lc-stage > .lc-scroll {
-  box-sizing: border-box;
-  padding-right: var(--lc-lane);
-  transition: padding-right 400ms var(--l-spring-smooth);
-}
-.lc-session[data-beside] .lc-stage > .lc-scroll {
-  transition-duration: 520ms;
 }
 .lc-scroll {
   flex: 1;
@@ -2161,227 +2146,6 @@ html[data-native="mac"] .lc-sb-head {
   }
 }
 
-/*
-  The session tray: one quiet glass column at the thread's right edge, 44 wide. Its groups (the
-  panel; the surfaces; shipping) are parted by short hairlines, not drawn as segments. The open
-  item's icon rests on a soft tile; the files waiting to be committed show as a badge on the arrow.
-  While the panel is open beside the thread, the tray steps aside (Rail.tsx).
-*/
-.lc-rail {
-  position: absolute;
-  z-index: 6;
-  /* Centred on what you can see of the conversation, above the composer, 14px in from the edge.
-     It is placed by its centre, and its groups sit about that centre too: as it travels to the
-     panel and back (Rail.tsx) its size changes and nothing in it slides off its course. */
-  top: calc((100% - var(--lc-dock-h, 0px)) / 2);
-  left: calc(100% - 14px - 22px);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  width: 44px;
-  box-sizing: border-box;
-  padding: 4px;
-  border-radius: 22px;
-  background: var(--lc-tray);
-  box-shadow: var(--lc-tray-rim);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  translate: -50% -50%;
-  animation: lc-rail-in 520ms var(--l-spring-smooth) 120ms backwards;
-}
-/* While the panel is beside the thread the tray is at its foot instead (below); this one waits. */
-.lc-rail[hidden] {
-  display: none;
-}
-/*
-  At the foot of the panel: lying down, a size smaller, centred in the lane the panel keeps for it
-  (--lc-plane), on the panel's centre however wide you drag it. Placed by its centre, as above.
-*/
-.lc-session {
-  --lc-plane: 54px;
-}
-.lc-body {
-  position: relative;
-}
-.lc-rail[data-dock] {
-  top: calc(100% - var(--lc-plane) / 2);
-  left: calc(100% - min(var(--lc-panel-w, clamp(340px, 36%, 520px)), calc(100% - 420px)) / 2);
-  flex-direction: row;
-  align-items: center;
-  gap: 2px;
-  width: auto;
-  height: 40px;
-  padding: 0 4px;
-  border-radius: 20px;
-  animation-name: lc-dock-in;
-  animation-duration: 420ms;
-  animation-delay: 0ms;
-}
-@container lc-session (max-width: 700px) {
-  .lc-rail[data-dock] {
-    left: 50%;
-  }
-}
-.lc-rail[data-dock] .lc-rail-seg {
-  flex-direction: row;
-}
-.lc-rail[data-dock] .lc-rail-seg + .lc-rail-seg::before {
-  width: 1px;
-  height: 14px;
-  margin: 0 4px;
-}
-.lc-rail[data-dock] .lc-rail-b {
-  width: 32px;
-  height: 32px;
-  border-radius: 11px;
-}
-.lc-rail[data-dock] .lc-rail-b::before {
-  inset: 1px;
-  border-radius: 10px;
-}
-.lc-rail[data-dock] .lc-rail-count {
-  top: 1px;
-  right: 0;
-}
-/* Its panel shutting, the tray at the edge travels home from it: this one is already gone. */
-.lc-rail[data-leaving] {
-  visibility: hidden;
-}
-@keyframes lc-dock-in {
-  from {
-    opacity: 0;
-    translate: -50% calc(-50% + 8px);
-  }
-}
-/* What the panel holds stops above the tray's lane: the side chat's composer sits on it. */
-.lc-panel[data-tray] {
-  box-sizing: border-box;
-  padding-bottom: var(--lc-plane);
-}
-.lc-panel[data-tray] .lc-surface[hidden] {
-  bottom: var(--lc-plane);
-}
-/* With the panel shut (or shutting) the thread is over it, so the tray travelling home from the
-   panel's foot passes over the panel as it fades, not under it. */
-.lc-session:not([data-panel]) .lc-thread {
-  z-index: 1;
-}
-html[data-tray="solid"] .lc-rail {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-@keyframes lc-rail-in {
-  from {
-    opacity: 0;
-    translate: calc(-50% + 10px) -50%;
-  }
-}
-.lc-rail-seg {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  color: var(--l-ink-2);
-}
-.lc-rail-seg + .lc-rail-seg::before {
-  content: "";
-  width: 14px;
-  height: 1px;
-  margin: 4px 0;
-  background: var(--l-line-2);
-}
-.lc-rail-pop {
-  display: grid;
-}
-.lc-rail-b {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: 12px;
-  background: none;
-  color: var(--l-ink-3);
-  isolation: isolate;
-  cursor: pointer;
-  transition:
-    color 160ms ease,
-    opacity 200ms ease;
-}
-.lc-rail-seg[data-solo] .lc-rail-b {
-  color: var(--l-ink-2);
-}
-/* The tile: soft and round. Faint on hover, a wash when open; it never overshoots. */
-.lc-rail-b::before {
-  content: "";
-  position: absolute;
-  inset: 1px 2px;
-  z-index: -1;
-  border-radius: 11px;
-  background: var(--l-wash-2);
-  opacity: 0;
-  scale: 0.85;
-  transition:
-    opacity var(--l-dur-fast) ease,
-    scale 320ms var(--l-spring-smooth),
-    background 160ms ease;
-}
-@media (hover: hover) {
-  .lc-rail-b:not(:disabled):hover {
-    color: var(--l-ink);
-  }
-  .lc-rail-b:not(:disabled):hover::before {
-    opacity: 1;
-    scale: 1;
-  }
-}
-.lc-rail-b[aria-pressed="true"],
-.lc-rail-b[data-open] {
-  color: var(--l-ink);
-}
-.lc-rail-b[aria-pressed="true"]::before,
-.lc-rail-b[data-open]::before {
-  opacity: 1;
-  scale: 1;
-  background: var(--l-wash-3, var(--l-wash-2));
-}
-.lc-rail-b:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-/* Commit and push: the arrow in ink, the files waiting in a badge on its corner, in the action colour. */
-.lc-rail-b.lc-rail-ship {
-  position: relative;
-  color: var(--l-ink);
-}
-.lc-rail-count {
-  position: absolute;
-  top: 3px;
-  right: 2px;
-  min-width: 15px;
-  height: 15px;
-  box-sizing: border-box;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--lc-act);
-  color: var(--lc-act-ink);
-  font-size: 9.5px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  line-height: 15px;
-  text-align: center;
-  animation: lc-count-in 320ms var(--l-ease-enter) backwards;
-}
-@keyframes lc-count-in {
-  from {
-    opacity: 0;
-    filter: blur(3px);
-    scale: 0.8;
-  }
-}
 /* A tooltip is a solid ink pill, with the item's keys. */
 .l-tip.l-glass {
   border-radius: 999px;
@@ -2395,16 +2159,6 @@ html[data-tray="solid"] .lc-rail {
 }
 .l-tip.l-glass::after {
   content: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .lc-rail,
-  .lc-rail[data-dock],
-  .lc-rail-b,
-  .lc-rail-b::before,
-  .lc-rail-count {
-    animation: none;
-    transition: none;
-  }
 }
 /* One measure for the conversation: the text, the cards and the composer's frame share their edges. */
 .lc-thread > * {
@@ -2429,14 +2183,10 @@ html[data-tray="solid"] .lc-rail {
 .lc-dock {
   position: absolute;
   z-index: 5;
-  right: var(--lc-lane, 0px);
+  right: 0;
   bottom: 0;
   left: 0;
   pointer-events: none;
-  transition: right 400ms var(--l-spring-smooth);
-}
-.lc-session[data-beside] .lc-dock {
-  transition-duration: 520ms;
 }
 .lc-dock > * {
   pointer-events: auto;

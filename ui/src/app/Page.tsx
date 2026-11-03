@@ -25,7 +25,8 @@ const VARS: [string, string][] = [
   ["--font", "--l-font-body"],
   ["--font-mono", "--l-font-mono"],
 ];
-const theme = () => Object.fromEntries(VARS.map(([k, from]) => [k, cssVar(from)]));
+/** The app's colours and fonts as a page's (or a panel's) CSS variables. */
+export const theme = () => Object.fromEntries(VARS.map(([k, from]) => [k, cssVar(from)]));
 
 /** The page as the frame loads it: the theme first, then what the agent wrote, then a line that reports its height. */
 function documentOf(id: string, html: string, vars: Record<string, string>) {

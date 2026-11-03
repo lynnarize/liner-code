@@ -35,6 +35,21 @@ export const I = {
   chevU: (p: P) => <S {...p}><path d="M4.25 9.75 8 6l3.75 3.75" /></S>,
   sidebar: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M6.25 2.75v10.5" /></S>,
   panel: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /></S>,
+  /** The dock beside the session: a frame with its right part ruled off. */
+  dock: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /><path d="M11.75 5.75h.01" /></S>,
+  split: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M8 2.75v10.5" /></S>,
+  shrink: (p: P) => <S {...p}><path d="M2.75 9.25h4v4M13.25 6.75h-4v-4M9.25 6.75l4-4M6.75 9.25l-4 4" /></S>,
+  /** The New tab guide: four tiles. */
+  guide: (p: P) => <S {...p}><rect x="2.75" y="2.75" width="4" height="4" rx="1" /><rect x="9.25" y="2.75" width="4" height="4" rx="1" /><rect x="2.75" y="9.25" width="4" height="4" rx="1" /><rect x="9.25" y="9.25" width="4" height="4" rx="1" /></S>,
+  /** A small app: a window with its title bar. */
+  app: (p: P) => <S {...p}><rect x="2.25" y="3.25" width="11.5" height="9.5" rx="1.75" /><path d="M2.25 6.25h11.5M4.6 4.75h.01M6.35 4.75h.01" /></S>,
+  list: (p: P) => <S {...p}><path d="M6.25 4.25h7M6.25 8h7M6.25 11.75h7M3 4.25h.01M3 8h.01M3 11.75h.01" /></S>,
+  notes: (p: P) => <S {...p}><rect x="3.75" y="2.25" width="8.5" height="11.5" rx="1.25" /><path d="M6 5.5h4M6 8h4M6 10.5h2" /></S>,
+  flask: (p: P) => <S {...p}><path d="M6.25 2.25h3.5M6.75 2.25v4L3.4 12.1a1 1 0 0 0 .87 1.4h7.46a1 1 0 0 0 .87-1.4L9.25 6.25v-4M4.9 9.5h6.2" /></S>,
+  /** A page that takes the whole paper. */
+  page: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 5.75h11.5" /></S>,
+  /** A tab beside Chat. */
+  tab: (p: P) => <S {...p}><path d="M2.25 13.25V5a1 1 0 0 1 1-1h3.5l1.25 1.75h5a1 1 0 0 1 1 1v6.5Z" /></S>,
   bottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 9.5h11.5" /></S>,
   agents: (p: P) => <S {...p}><circle cx="6" cy="5.5" r="2.25" /><path d="M2.25 13a3.75 3.75 0 0 1 7.5 0M10.25 3.35a2.25 2.25 0 0 1 0 4.3M11.6 9.65A3.75 3.75 0 0 1 13.75 13" /></S>,
   changes: (p: P) => <S {...p}><path d="M8 2.75v7M4.5 6.25h7M4.5 13h7" /></S>,

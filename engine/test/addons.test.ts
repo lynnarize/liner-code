@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AddonManifest, Item, Thread } from "../../contracts/src/index.ts";
+import type { ConnectionAsk, ConnectionManifest as AddonManifest, Item, Thread } from "../../contracts/src/index.ts";
 import { addonKey, emptyUsage } from "../../contracts/src/index.ts";
 import { Addons, checkManifest, readDraft, type Connection } from "../src/addons.ts";
 import { AgentTools, type AddonHost } from "../src/agent-tools.ts";
@@ -52,7 +52,7 @@ test("addons: a manifest passes as written, and only with the keys it knows", ()
   assert.match(wrong({ ...linear(), runs: "rm -rf /" }), /runs isn't a key/);
   assert.match(wrong(withServer({ http: { url: "https://x.dev/mcp", timeout: 5 } }, [])), /server\.http\.timeout isn't a key/);
   assert.match(wrong({ ...linear(), apiVersion: 2 }), /apiVersion must be 1/);
-  assert.match(wrong({ ...linear(), kind: "panel" }), /kind must be "connection"/);
+  assert.match(wrong({ ...linear(), kind: "widget" }), /kind must be "connection" \(an MCP server\) or "panel"/);
   assert.match(wrong(withServer({ stdio: { command: "npx" }, http: { url: "https://x.dev" } })), /one of stdio/);
   assert.match(wrong([]), /must be an object/);
   // Every problem at once, so an agent fixes them in one go.
@@ -341,14 +341,15 @@ test("addon_install: a yes on the card adds it where you said, and says whether 
   assert.match(said(r), /^applied: Ping \(v1\) is added for every project, and its tools are in this session now as mcp__ping__<tool>/);
   const card = now.asked[0];
   assert.equal(card.title, "Add Ping");
-  assert.deepEqual([card.addon?.reaches, card.addon?.secrets.map((s) => s.name), card.addon?.env, card.addon?.path], [["Claude Code", "Codex"], ["PING_KEY"], ["PING_MODE", "PING_KEY"], ".liner/addons/ping/addon.json"]);
+  const ask = card.addon as ConnectionAsk | undefined;
+  assert.deepEqual([ask?.reaches, ask?.secrets.map((s) => s.name), ask?.env, ask?.path], [["Claude Code", "Codex"], ["PING_KEY"], ["PING_MODE", "PING_KEY"], ".liner/addons/ping/addon.json"]);
   const item = now.store.timeline("t").find((x) => x.kind === "approval") as Extract<Item, { kind: "approval" }>;
   assert.deepEqual([item.addon?.version, item.addon?.scope], [1, "all"]);
   assert.deepEqual([now.addons.get("ping")?.by.agent, now.addons.get("ping")?.project], ["Opus 5.5", undefined]);
   // The key reached the engine, and nothing the agent or the transcript holds.
   const everything = JSON.stringify(now.store.timeline("t")) + said(r) + said(await now.tools.call("t", "liner_inspect", {}));
   assert.ok(!everything.includes("pk-very-secret"));
-  assert.match(said(await now.tools.call("t", "liner_inspect", {})), /- ping: Ping · v1 · on · every project · stdio .* · keys: PING_KEY set/);
+  assert.match(said(await now.tools.call("t", "liner_inspect", {})), /- ping: Ping · connection · v1 · on · every project · stdio .* · keys: PING_KEY set/);
   // Asked again with the same draft: already there, no card.
   assert.match(said(await now.tools.call("t", "addon_install", { id: "ping" })), /already added as v1/);
   assert.equal(now.asked.length, 1);

@@ -7,7 +7,9 @@
 */
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { addonKey, PR_TEST_TOOL, type Item, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
+import { addonKey, PR_TEST_TOOL, type ConnectionAsk, type Item, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
+import { appIcon } from "./Addon";
+import { toComposer } from "./Find";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { isCheckpoint, rpc, threadOf, useEngine, useItems, useItemsWhere } from "./engine";
 import { I, ModelMark, Rays } from "./icons";
@@ -228,7 +230,7 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
     else if (it.kind === "approval" && it.state !== "asking" && !it.addon) run.push({ kind: "ask", it });
     else {
       flush();
-      if (it.kind === "approval") blocks.push({ key: it.id, node: it.addon ? <AddonCard threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> : <Approval threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> });
+      if (it.kind === "approval") blocks.push({ key: it.id, node: it.addon?.kind === "panel" ? <PanelAddonCard threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> : it.addon ? <AddonCard threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> : <Approval threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> });
       else if (it.kind === "user") blocks.push({ key: it.id, node: <You threadId={threadId} it={it} fresh={fresh(it.id)} onReview={onReview} /> });
       else if (it.kind === "turn") {
         at = it;
@@ -865,7 +867,7 @@ const andList = (xs: string[]) => (xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0
   line: Undo removes the connection (its file stays), and Restore brings it back.
 */
 function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: string }) {
-  const a = it.addon!;
+  const a = it.addon as ConnectionAsk;
   const keys = useEngine((x) => x.keys);
   const have = useEngine((x) => x.addons.find((d) => d.id === a.id));
   const [scope, setScope] = useState<"all" | "project">(a.scope ?? "all");
@@ -986,6 +988,136 @@ function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: stri
         approveLabel="Add it"
         approveDisabled={missing.length > 0}
         approveHint={missing.length ? `Type the ${missing[0].label} first` : undefined}
+        denyLabel="Not this"
+        onApprove={() => answer(true)}
+        onDeny={(reason) => answer(false, reason)}
+        approvedText="Added"
+        deniedText={`Sent back to ${who}`}
+      />
+    </div>
+  );
+}
+
+const PLACE = { dock: "the right dock", tab: "a tab beside Chat", page: "a page of its own" } as const;
+const kbWords = (n: number) => (n >= 1024 && n % 1024 === 0 ? `${n / 1024} MB` : `${n} KB`);
+
+/**
+  A panel an agent asks to add: what it reads, what it can do, what it keeps, its network, where
+  it shows, and what addon_check saw, while the panel itself runs on the right as a preview. One
+  that reaches the internet names its one host and is held to allow, like a push. A new version
+  that wants more than the one in use says what, and asks again. Afterwards a line stays: added,
+  updated without asking (same access), said no to, or removed, each with its way back.
+*/
+function PanelAddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: string }) {
+  const a = it.addon as PanelAsk;
+  const have = useEngine((x) => x.addons.find((d) => d.id === a.id));
+  const [scope, setScope] = useState<"all" | "project">(a.scope ?? "project");
+  const [files, setFiles] = useState(false);
+  const answer = async (allow: boolean, reason?: string) => {
+    try {
+      await rpc("approval.answer", { threadId, itemId: it.id, allow, reason: allow ? undefined : reason?.trim() || undefined, scope: a.place === "page" ? "all" : scope });
+    } catch (e) {
+      fail(e);
+      throw e;
+    }
+  };
+  const set = (p: { removed?: boolean; version?: number }) => void rpc("addons.update", { id: a.id, ...p }).catch(fail);
+  if (it.state !== "asking") {
+    const where = a.place === "page" ? "a page" : (a.scope ?? scope) === "project" ? a.project.name : "every project";
+    const gone = it.state === "approved" && have?.removed;
+    const back = a.same && a.replaces && have && !have.removed ? (have.version === a.version ? { to: a.replaces, label: `Back to v${a.replaces}` } : have.version === a.replaces ? { to: a.version!, label: `Forward to v${a.version}` } : null) : null;
+    return (
+      <div className="lc-answered lc-addon-receipt" data-state={gone ? "denied" : it.state} data-same={a.same || undefined} role="status">
+        {it.state === "approved" && !gone ? a.same ? <I.push size={13} /> : <I.check size={13} /> : <I.close size={13} />}
+        <span>
+          {it.state === "expired" ? (
+            <>
+              No longer waiting: add <b>{a.name}</b>
+            </>
+          ) : it.state === "denied" ? (
+            <>
+              You said no to <b>{a.name}</b>
+              {it.reason && <span className="lc-quiet"> · “{it.reason}”</span>}
+            </>
+          ) : gone ? (
+            <>
+              You removed <b>{a.name}</b> · its files are kept
+            </>
+          ) : a.same ? (
+            <>
+              {who} updated <b>{a.name}</b> to v{a.version} · same access, so it didn't ask
+            </>
+          ) : (
+            <>
+              You let {who} {a.replaces ? "update" : "add"} <b>{a.name}</b> · {a.place === "dock" ? "a panel" : "an app"} · {where}
+              {a.version ? ` · v${a.version}` : ""}
+            </>
+          )}
+        </span>
+        {back && (
+          <button type="button" className="lc-answered-act l-focus" onClick={() => set({ version: back.to })}>
+            {back.label}
+          </button>
+        )}
+        {it.state === "approved" && have && !a.same && (
+          <button type="button" className="lc-answered-act l-focus" onClick={() => set({ removed: !gone })}>
+            {gone ? "Restore" : "Undo"}
+          </button>
+        )}
+        {it.state === "denied" && (
+          <button type="button" className="lc-answered-act l-focus" onClick={() => toComposer(threadId, `Ask me again to add ${a.name}.`)}>
+            Ask again
+          </button>
+        )}
+      </div>
+    );
+  }
+  const net = a.access.network;
+  const reads = [a.access.files && "Files in this project", a.access.sessions === "this" && (a.place === "tab" ? "This session: its title, changes and commands" : "The session it's beside: its title, changes and commands"), a.access.sessions === "all" && "Your sessions' titles and changes, in every project"].filter(Boolean).join(" · ") || "Nothing";
+  const Icon = net ? I.globe : appIcon(a.icon);
+  const fields = [
+    ...(net ? [{ label: "Network", value: <code className="lc-addon-mono">{net}</code> }] : []),
+    { label: "Reads", value: <span className="lc-addon-wrap">{reads}</span> },
+    { label: "Can do", value: a.access.composer ? "Put text in the composer, for you to send" : "Nothing but show itself" },
+    { label: "Keeps", value: a.access.storage ? `Its own storage, up to ${kbWords(a.access.storage)}` : "Nothing" },
+    ...(net ? [] : [{ label: "Network", value: "None" }]),
+    ...(a.replaces ? [{ label: "Replaces", value: `v${a.replaces}, which stays kept` }] : []),
+    ...(a.place === "page"
+      ? [{ label: "Where", value: "Under Apps, in the left sidebar" }]
+      : [{ label: "Where", value: <Segmented size="sm" value={scope} onValueChange={(v) => setScope(v)} options={[{ value: "project" as const, label: a.project.name }, { value: "all" as const, label: "Every project" }]} aria-label="Where it shows" /> }]),
+    { label: "Checked", value: a.checked ?? <span className="lc-quiet">Not checked yet</span> },
+    ...(files
+      ? [
+          { label: "Files", value: <span className="lc-addon-files">{a.files.map((f) => <span key={f.path}><code>{f.path}</code> <small>{f.size < 1000 ? `${f.size} B` : `${Math.round(f.size / 1000)} KB`}</small></span>)}</span> },
+          { label: "Manifest", value: <pre className="lc-ask-cmd lc-addon-json">{a.manifest}</pre> },
+        ]
+      : []),
+  ];
+  const wider = a.wider?.length ? a.wider : null;
+  const title = a.place === "page" ? `${a.name}, a page of its own` : a.place === "tab" ? `${a.name}, a tab beside Chat` : `${a.name}, beside ${scope === "project" ? `every session in ${a.project.name}` : "your sessions"}`;
+  return (
+    <div className="lc-addon" data-kind="panel" data-net={net ? true : undefined}>
+      <ApprovalCard
+        title={title}
+        ask={wider ? `${a.name} v${a.next} wants more than v${a.replaces} had` : `${who} asks to add ${a.place === "dock" ? "a panel" : "an app"}${net ? " that reaches the internet" : ""}`}
+        agent={who}
+        icon={<Icon size={16} />}
+        description={
+          wider
+            ? `It would ${wider.map((w) => w.charAt(0).toLowerCase() + w.slice(1)).join(", and ")}, so it asks again. v${a.replaces} stays until you say.`
+            : net
+              ? `Whatever it reads could leave this Mac through ${net}. It can reach that one, and no other.`
+              : `It runs in a sealed frame ${a.place === "page" ? "of its own" : "beside the session"}, never in Liner Code's engine, and gets only what it lists below. The preview in ${PLACE.dock} is the real thing.`
+        }
+        fields={fields}
+        hold={Boolean(net)}
+        aside={
+          <button type="button" className="lc-appr-more l-focus" aria-expanded={files} onClick={() => setFiles((d) => !d)}>
+            <I.chevR size={11} />
+            {files ? "Less" : `Its ${plural(a.files.length, "file")}`}
+          </button>
+        }
+        approveLabel={net ? "Hold to allow" : "Add it"}
         denyLabel="Not this"
         onApprove={() => answer(true)}
         onDeny={(reason) => answer(false, reason)}

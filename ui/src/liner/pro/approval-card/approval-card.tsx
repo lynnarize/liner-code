@@ -26,6 +26,8 @@ export type ApprovalCardProps = {
   icon?: ReactNode;
   /** High risk approves with a hold instead of a press. */
   risk?: "low" | "medium" | "high";
+  /** Approve with a hold whatever the risk, or never (`false`); unset, high risk holds. */
+  hold?: boolean;
   /** Exactly what will happen: where, when, to whom. */
   fields?: ApprovalField[];
   approveLabel?: string;
@@ -51,6 +53,7 @@ export function ApprovalCard({
   description,
   icon,
   risk,
+  hold: holdTo,
   fields = [],
   approveLabel,
   denyLabel = "Not now",
@@ -101,7 +104,7 @@ export function ApprovalCard({
   };
   const settled = state === "approved" || state === "denied";
   const asking = state === "explaining" || state === "denying";
-  const hold = risk === "high";
+  const hold = holdTo ?? risk === "high";
 
   return (
     <section className={cx("l-appr l-frame", className)} data-state={state} aria-label={`${agent ?? "An agent"} asks to ${title.toLowerCase()}`}>

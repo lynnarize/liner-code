@@ -31,6 +31,7 @@ import type { AgentTools } from "./agent-tools.ts";
 import type { Designs } from "./designs.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
 import { checkManifest } from "./addons.ts";
+import { refusal, type PanelMethod, type PanelWhere } from "./panels.ts";
 import { Updater } from "./updates.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
@@ -947,8 +948,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       runtime.answer(threadId, itemId, allow, reason, always, scope);
       return null;
     },
-    "addons.update": ({ id, enabled, version, removed }) => {
-      const list = addons().update(id, { enabled, version, removed });
+    "addons.update": ({ id, enabled, version, removed, project }) => {
+      if (project) store.project(project);
+      const list = addons().update(id, { enabled, version, removed, project });
       void runtime.relink();
       return list;
     },
@@ -960,6 +962,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         throw new Error(`That isn't JSON: ${e instanceof Error ? e.message : String(e)}`);
       }
       const m = checkManifest(raw);
+      if (m.kind === "panel") throw new Error("A panel comes with its files: ask an agent for one, and it shows you a card.");
       if (project) store.project(project);
       addons().install(m, { project, by: { agent: "You", at: Date.now() } });
       void runtime.relink();
@@ -969,6 +972,45 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const m = addons().manifest(id, version);
       if (!m) throw new Error("There's no such add-on, or no such version of it.");
       return { manifest: JSON.stringify(m, null, 2), dir: join(addons().dir, id) };
+    },
+    "addons.files": (p) => {
+      // A panel whose card is up: the draft exactly as it was asked about.
+      if ("itemId" in p) {
+        const d = x.tools?.pending.get(p.itemId);
+        if (!d || d.threadId !== p.threadId) throw new Error("That panel isn't waiting on a card any more.");
+        return { id: d.manifest.id, name: d.manifest.name, place: d.manifest.place, entry: d.manifest.entry, access: d.manifest.access, files: d.files };
+      }
+      const a = addons();
+      const m = a.manifest(p.id, p.version);
+      const files = a.files(p.id, p.version);
+      if (!m || m.kind !== "panel" || !files) throw new Error("There's no such panel, or no such version of it.");
+      return { id: m.id, name: m.name, place: m.place, entry: m.entry, access: m.access, files, version: p.version ?? a.get(p.id)?.version };
+    },
+    "panel.call": async ({ addon, threadId, preview, method, args, apiVersion }) => {
+      // Whatever the frame says, its access is read here: the panel in use, or the draft on its card.
+      let where: PanelWhere;
+      let storage: { all(): Record<string, unknown>; put(k: string, v: unknown): void };
+      let quota = 0;
+      if (preview) {
+        const d = x.tools?.pending.get(preview);
+        if (!d || d.threadId !== threadId || d.manifest.id !== addon) throw new Error("That preview is over.");
+        where = { access: d.manifest.access, place: d.manifest.place, threadId: d.manifest.place === "page" ? undefined : threadId };
+        // A preview plays with storage that's gone when its card is.
+        storage = { all: () => d.storage, put: (k, v) => (v === undefined ? delete d.storage[k] : (d.storage[k] = v)) };
+        quota = d.manifest.access.storage ?? 0;
+      } else {
+        const project = threadId ? store.thread(threadId).projectId : undefined;
+        const m = addons().panel(addon, project);
+        if (!m) throw new Error("That panel is off, removed, or not for this project.");
+        where = { access: m.access, place: m.place, threadId: m.place === "page" ? undefined : threadId };
+        const a = addons();
+        storage = { all: () => a.storage(addon), put: (k, v) => a.store(addon, k, v, m.access.storage ?? 0) };
+        quota = m.access.storage ?? 0;
+      }
+      const no = refusal(where, method, apiVersion);
+      if (no) throw new Error(no);
+      if (!x.tools) throw new Error("Panels aren't available here.");
+      return x.tools.panelCall(where, method as PanelMethod, (args ?? {}) as Record<string, unknown>, storage, quota);
     },
     "addons.off": ({ next }) => {
       addons().turnOff(Boolean(next));

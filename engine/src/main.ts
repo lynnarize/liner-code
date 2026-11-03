@@ -94,6 +94,7 @@ const server = await startServer({
     return threadId ? tools.call(threadId, tool, args) : null;
   },
   outside: (key, tool, args) => (outside.now?.allows(key) ? outside.now.call(tool, args) : null),
+  check: { page: (t) => tools.checkPage(t), call: (t, b) => tools.checkCall(t, b), report: (t, b) => tools.checkReport(t, b as never), settle: (t) => tools.checkSettle(t) },
 });
 tools.url = `http://127.0.0.1:${server.port}`;
 outside.now.url = tools.url;

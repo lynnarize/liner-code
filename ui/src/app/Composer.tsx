@@ -51,6 +51,8 @@ type Props = {
   inWorktree?: { path: string; branch?: string };
   onInWorktree?: (w: { path: string; branch?: string } | undefined) => void;
   autoFocus?: boolean;
+  /** Home: text a new task starts with (Create your add-on), put in the box and not sent; `at` tells one ask from the next. */
+  seed?: { text: string; at: number };
   /** Home: more models given the same ask, to compare and keep one ("@provider:model"). */
   compare?: string[];
   onCompare?: (refs: string[]) => void;
@@ -200,7 +202,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, compare = [], onCompare, stripMid, stripEnd }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripMid, stripEnd }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -523,6 +525,22 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     return () => clearTimeout(t);
   }, [cacheUntil]);
   const cold = variant === "session" && !busy && canCompact && cacheUntil !== undefined && coldSeen !== cacheUntil && Date.now() > cacheUntil && (usage?.contextTokens ?? 0) > COLD_TOKENS;
+
+  // Text a new task starts with: an empty box takes it, else it follows what's there as a paragraph of
+  // its own (DeepSeek Harness's whenDraftExists "append"), once. It isn't sent: the caret waits at its end.
+  const caretToEnd = useRef(false);
+  useEffect(() => {
+    if (!seed) return;
+    caretToEnd.current = true;
+    setText((cur) => (!cur.trim() ? seed.text : cur.includes(seed.text) ? cur : `${cur.trimEnd()}\n\n${seed.text}`));
+  }, [seed?.at]);
+  useEffect(() => {
+    const el = field.current;
+    if (!caretToEnd.current || !el) return;
+    caretToEnd.current = false;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [text, seed?.at]);
 
   // Text sent here from elsewhere (a quote, a terminal excerpt) lands at the caret.
   useEffect(() => {

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Notes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <span class="brand"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.25 2.25h5l3 3v8.5h-8zM9.25 2.25v3h3M6 8.25h4M6 10.75h4"/></svg><h1>Notes</h1><span id="count" class="count">0</span></span>
+  <button id="new" class="new" type="button" title="New note (⌥⌘N)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.25v9.5M3.25 8h9.5"/></svg>New note</button>
+</header>
+
+<aside class="library" aria-label="Notes library">
+  <label class="search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7.25" cy="7.25" r="4.25"/><path d="m10.5 10.5 3 3"/></svg><input id="search" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off"></label>
+  <ul id="list" class="list" aria-label="Notes"></ul>
+  <p id="none" class="none" hidden></p>
+</aside>
+
+<main class="desk">
+  <div class="tools" role="toolbar" aria-label="Formatting">
+    <button type="button" data-cmd="undo" aria-label="Undo" title="Undo (⌘Z)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.25H10a3.25 3.25 0 0 1 0 6.5H6.5M7.5 2.75 5 5.25l2.5 2.5"/></svg></button>
+    <button type="button" data-cmd="redo" aria-label="Redo" title="Redo (⇧⌘Z)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 5.25H6a3.25 3.25 0 0 0 0 6.5h3.5M8.5 2.75l2.5 2.5-2.5 2.5"/></svg></button>
+    <span class="sep" aria-hidden="true"></span>
+    <label class="pick" title="Paragraph style (⌥⌘0 to ⌥⌘3)"><span class="vh">Paragraph style</span><select id="block" aria-label="Paragraph style">
+      <option value="p">Normal text</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="blockquote">Quote</option>
+    </select></label>
+    <label class="pick"><span class="vh">Font</span><select id="font" aria-label="Font">
+      <option value="serif">Serif</option><option value="sans">Sans</option><option value="mono">Mono</option>
+    </select></label>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" data-cmd="bold" aria-label="Bold" title="Bold (⌘B)" aria-pressed="false"><b class="glyph">B</b></button>
+    <button type="button" data-cmd="italic" aria-label="Italic" title="Italic (⌘I)" aria-pressed="false"><i class="glyph serif">I</i></button>
+    <button type="button" data-cmd="underline" aria-label="Underline" title="Underline (⌘U)" aria-pressed="false"><u class="glyph">U</u></button>
+    <button type="button" data-cmd="strikeThrough" aria-label="Strikethrough" title="Strikethrough (⇧⌘X)" aria-pressed="false"><s class="glyph">S</s></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" data-cmd="insertUnorderedList" aria-label="Bulleted list" title="Bulleted list (⇧⌘8)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.25h6.75M6.5 8h6.75M6.5 11.75h6.75"/><circle cx="3.5" cy="4.25" r=".6"/><circle cx="3.5" cy="8" r=".6"/><circle cx="3.5" cy="11.75" r=".6"/></svg></button>
+    <button type="button" data-cmd="insertOrderedList" aria-label="Numbered list" title="Numbered list (⇧⌘7)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.25h6.75M6.5 8h6.75M6.5 11.75h6.75M2.75 3.25l.9-.5v3M2.6 7.3c.2-.4.6-.6 1-.6.5 0 .9.3.9.8 0 .7-1.9 1.4-1.9 2.2h1.9"/></svg></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" data-cmd="justifyLeft" aria-label="Align left" title="Align left (⇧⌘L)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.75 4h10.5M2.75 7h6.5M2.75 10h10.5M2.75 13h6.5"/></svg></button>
+    <button type="button" data-cmd="justifyCenter" aria-label="Align centre" title="Align centre (⇧⌘E)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.75 4h10.5M4.75 7h6.5M2.75 10h10.5M4.75 13h6.5"/></svg></button>
+    <button type="button" data-cmd="justifyRight" aria-label="Align right" title="Align right (⇧⌘R)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.75 4h10.5M6.75 7h6.5M2.75 10h10.5M6.75 13h6.5"/></svg></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" data-cmd="removeFormat" aria-label="Clear formatting" title="Clear formatting (⌥⌘\)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m8.6 3.1 4.3 4.3-5.4 5.4H4.6L2.9 11.1a1 1 0 0 1 0-1.4zM5.8 5.9l4.3 4.3M8.5 12.8h4.75"/></svg></button>
+    <span class="grow"></span>
+    <button type="button" id="delete" class="delete" aria-label="Delete this note" title="Delete this note"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 4.5h9.5M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.25h5.8l.6-8.25"/></svg><span id="delete-say"></span></button>
+  </div>
+  <div id="scroll" class="scroll">
+    <div class="ruler" aria-hidden="true"></div>
+    <article id="page" class="page serif" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Note" data-placeholder="Start writing…"></article>
+    <div id="empty" class="empty" hidden>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.25 2.25h5l3 3v8.5h-8zM9.25 2.25v3h3M6 8.25h4M6 10.75h4"/></svg>
+      <b id="empty-title">No notes yet</b>
+      <p id="empty-say">Notes you write here are kept on this device, in Liner Code.</p>
+      <button id="empty-new" class="new" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.25v9.5M3.25 8h9.5"/></svg>New note</button>
+    </div>
+  </div>
+</main>
+
+<footer class="foot-lib"><span id="lib-say">No notes · Saved on this device</span></footer>
+<footer class="foot-desk"><span id="stats">0 words <i>•</i> 0 characters</span><span class="grow"></span><span id="saved" class="saved" data-state="saved" role="status" aria-live="polite">Saved</span></footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

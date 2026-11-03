@@ -6,12 +6,12 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentProfile, Item, PanelManifest } from "../../contracts/src/index.ts";
-import { BUILTIN_MODES, emptyUsage, modeName } from "../../contracts/src/index.ts";
-import { Addons } from "../src/addons.ts";
+import { BUILTIN_MODES, CREATE_ADDON_ASK, emptyUsage, modeName } from "../../contracts/src/index.ts";
+import { Addons, STORAGE_MAX } from "../src/addons.ts";
 import { AgentTools, type AddonHost } from "../src/agent-tools.ts";
 import { creatorNote, modeNote, topicText, TOPICS } from "../src/creator.ts";
 import { Store } from "../src/store.ts";
@@ -80,6 +80,27 @@ test("liner_inspect: each topic of the guide, read on its own, and what's instal
   assert.equal(bad.isError, true);
   assert.match(said(bad), /There's no topic "plugins"\. The topics are catalogue, connections/);
   assert.match(said(await tools.call("t", "liner_inspect", {})), /^Liner Code add-ons: connections and panels/, "without a topic, the short guide as in Standard");
+});
+
+test("Create your add-on: its ask means a page, and a page app is held to the full version", () => {
+  // The sidebar's Create your add-on writes DeepSeek Harness's ask; the guide reads a left sidebar entry as a page.
+  assert.equal(CREATE_ADDON_ASK, "Create a Liner Code add-on with a left sidebar entry.");
+  const note = creatorNote(n);
+  assert.match(note, /An ask for a left sidebar entry, a page, a full-page app or a workspace is a page \(place "page"\), never the right dock/);
+  assert.match(note, /full version of what was asked, not a demo/);
+  assert.match(note, /"apps" the bar a full-page app meets/);
+  assert.ok(note.length < 3500, `still a short catalogue (${note.length})`);
+  const read = (t: (typeof TOPICS)[number]) => topicText(t, { addons: undefined, draftRoot: null, n });
+  assert.match(read("places"), /"a left sidebar entry", "a page", "full page", "its own page" or "like Word" .* all mean "page", which takes the whole centre column/);
+  // The bar, as screenshot 10's notes app meets it: library with search and New, a whole toolbar, empty states,
+  // autosave with a status, counts, keys, both themes, room for the work, and the line for the Add-ons list.
+  const apps = read("apps");
+  for (const w of ["search", "New note", "undo and redo", "bold, italic, underline, strikethrough", "bulleted and numbered lists", "Empty states", '"Saved"', "words and characters", "⌘B", "⌥⌘N for New", "leave them alone: ⌘N", "[hidden] { display: none !important; }", 'liner.on("theme")', `${STORAGE_MAX} KB`, "A summary sentence"]) assert.ok(apps.includes(w), `the apps bar names ${w}`);
+  assert.match(read("starters"), new RegExp(`"place": "page", "icon": "notes", "access": \\{ "storage": ${STORAGE_MAX} \\}`));
+  assert.match(read("starters"), /grid-template: auto 1fr auto \/ 260px 1fr/);
+  // The MCP server (its own small process) lists the topics by hand: it keeps up with the guide's.
+  const enumOf = /enum: \[("catalogue"[^\]]*)\]/.exec(readFileSync(new URL("../src/mcp.ts", import.meta.url), "utf8"))?.[1];
+  assert.deepEqual(JSON.parse(`[${enumOf}]`), [...TOPICS]);
 });
 
 /** AgentTools with a host that answers mode_add's card. */

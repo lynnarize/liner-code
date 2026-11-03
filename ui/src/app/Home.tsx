@@ -22,9 +22,9 @@ import { ModePick } from "./Modes";
 import { HomeUpdates } from "./Updates";
 import * as os from "./os";
 
-type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (threadId: string) => void; onCompare: (compareId: string) => void; sidebar: boolean; onSidebar: () => void; onNewAgent: () => void; startMode?: SessionMode };
+type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (threadId: string) => void; onCompare: (compareId: string) => void; sidebar: boolean; onSidebar: () => void; onNewAgent: () => void; startMode?: SessionMode; startPrompt?: { text: string; at: number } };
 
-export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSidebar, onNewAgent, startMode }: Props) {
+export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSidebar, onNewAgent, startMode, startPrompt }: Props) {
   const projects = useEngine((s) => s.projects);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
@@ -147,6 +147,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               compare={project.git && mode_ === "standard" ? compare : undefined}
               onCompare={project.git && mode_ === "standard" ? setCompare : undefined}
               autoFocus
+              seed={startPrompt}
               stripMid={<ModePick value={mode_} onPick={setSessionMode} />}
               stripEnd={
                 <>

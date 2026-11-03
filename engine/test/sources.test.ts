@@ -12,7 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConnectionAsk, PanelAsk, PanelManifest } from "../../contracts/src/index.ts";
 import { summaryOf } from "../../contracts/src/index.ts";
-import { Addons, checkManifest } from "../src/addons.ts";
+import { panelDocument } from "../../contracts/src/panel.ts";
+import { Addons, checkManifest, STORAGE_MAX } from "../src/addons.ts";
+import { CHECK_THEME } from "../src/panels.ts";
 import { findAddon, githubOf, Sources } from "../src/sources.ts";
 
 const pomodoro = (extra: Partial<PanelManifest> = {}): PanelManifest => ({ apiVersion: 1, id: "pomodoro", kind: "panel", name: "Pomodoro", summary: "A focus timer beside your sessions.", place: "dock", entry: "index.html", icon: "clock", access: { storage: 8 }, ...extra });
@@ -154,4 +156,25 @@ test("from a folder: a card never answered goes after half an hour", async () =>
   assert.throws(() => sources.adopt(old.token), /gone/);
   sources.adopt(fresh.token);
   assert.equal(addons.get("fresh")?.version, 1, "one younger stays");
+});
+
+test("a full app on a page: Notes at the bar the guide sets, from a folder, built into its sealed frame", async () => {
+  // test/fixtures/notes-workspace: the notes app Create your add-on was tried with (a library with search
+  // and New, a whole toolbar, a page on a ruler, autosave with a Saved status, counts), as an agent wrote it.
+  const addons = new Addons(mkdtempSync(join(tmpdir(), "lc-src-home-")));
+  const sources = new Sources(addons, process.env);
+  // As a file:// address, the way a folder dragged in or pasted from Finder can come: spaces are %20 in it.
+  const { token, ask } = await sources.open(new URL("./fixtures/notes-workspace", import.meta.url).href);
+  const a = ask as PanelAsk;
+  assert.deepEqual([a.name, a.place, a.access, a.files.map((f) => f.path).sort()], ["Notes", "page", { storage: STORAGE_MAX }, ["app.js", "index.html", "style.css"]]);
+  sources.adopt(token);
+  const got = addons.get("notes-workspace")!;
+  assert.equal(summaryOf(got), "A notes workspace with a page to write on, a library to search, and every note saved on this device.");
+  const doc = panelDocument({ files: addons.files("notes-workspace")!, entry: "index.html", access: got.panel!.access, theme: CHECK_THEME, place: "page" });
+  // The policy and the bridge first; its module script and stylesheet inlined; nothing fetched from anywhere.
+  assert.ok(doc.indexOf("Content-Security-Policy") < doc.indexOf("parent.postMessage") && doc.indexOf("parent.postMessage") < doc.indexOf('id="page"'));
+  assert.match(doc, /<script type="module">[^]*await liner\.storage\.get\("notes"\)[^]*\/\/# sourceURL=app\.js<\/script>/);
+  assert.match(doc, /<style>\/\* Notes: a header, a library/);
+  assert.doesNotMatch(doc, /\bsrc="app\.js"|href="style\.css"/);
+  for (const part of ['id="search"', 'id="new"', 'data-cmd="undo"', 'data-cmd="redo"', 'id="block"', 'id="font"', 'data-cmd="strikeThrough"', 'data-cmd="insertOrderedList"', 'data-cmd="justifyCenter"', 'data-cmd="removeFormat"', 'class="ruler"', 'contenteditable="true"', 'id="saved"', 'id="stats"']) assert.ok(doc.includes(part), part);
 });

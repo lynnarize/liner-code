@@ -6,8 +6,9 @@
 
   The guide comes a little at a time. The session starts knowing the short catalogue below (what it
   can make, the order to work in, what to report); the rest it reads when it needs it, as
-  liner_inspect topics: the panel bridge's calls, the places, the manifest, the theme's tokens, a
-  starter for each kind, how to check its work, and what's installed now with manifests and files.
+  liner_inspect topics: the panel bridge's calls, the places, the manifest, the theme's tokens, the
+  bar a full-page app meets, a starter for each kind, how to check its work, and what's installed
+  now with manifests and files.
 */
 import { join } from "node:path";
 import type { AddonInfo, AgentProfile, Thread } from "../../contracts/src/index.ts";
@@ -17,7 +18,7 @@ import { briefOf } from "./agents.ts";
 import { CHECK_THEME } from "./panels.ts";
 
 /** The topics liner_inspect reads, each a part of the creator's guide. */
-export const TOPICS = ["catalogue", "connections", "panels", "manifest", "places", "bridge", "theme", "starters", "verify", "installed"] as const;
+export const TOPICS = ["catalogue", "connections", "panels", "manifest", "places", "apps", "bridge", "theme", "starters", "verify", "installed"] as const;
 export type Topic = (typeof TOPICS)[number];
 
 /**
@@ -32,19 +33,19 @@ export function creatorNote(n: (tool: string) => string) {
     "This session adds to Liner Code itself: the person describes something they'd like in the app they're using, and you make it as an add-on. What you can make:",
     "- a connection: an MCP server every agent tool in Liner Code gets (Linear, Sentry, a database);",
     "- a panel: a small page of your own in the right dock, beside a session (a viewer, an editor, something to watch while chatting);",
-    "- an app: a panel as a tab beside Chat in a session (its live output or interaction), or as a page of its own opened from Apps in the left sidebar (something global, kept across projects). A visual request that names no other place means an add-on in Liner Code, not an HTML file;",
+    "- an app: a panel as a tab beside Chat in a session (its live output or interaction), or as a page of its own opened from Apps in the left sidebar (something global, kept across projects). An ask for a left sidebar entry, a page, a full-page app or a workspace is a page (place \"page\"), never the right dock. A visual request that names no other place means an add-on in Liner Code, not an HTML file;",
     `- a mode: instructions (with skills and context files) for whichever model a session runs, which the person picks when they start one. Work it out with them, then ask with ${n("mode_add")}.`,
     "",
-    `Knowledge, in this order: ${n("liner_inspect")} with a topic reads one part of the guide ("panels" step by step, "places" which place fits, "manifest" every key, "bridge" each window.liner call and the access it needs, "theme" the tokens, "starters" a copyable start for each kind, "verify" how to check it, "installed" what's there now with manifests and file paths, "connections"); then the files of an installed add-on that "installed" names. Read only the topics this task needs.`,
+    `Knowledge, in this order: ${n("liner_inspect")} with a topic reads one part of the guide ("panels" step by step, "places" which place fits, "apps" the bar a full-page app meets, "manifest" every key, "bridge" each window.liner call and the access it needs, "theme" the tokens, "starters" a copyable start for each kind, "verify" how to check it, "installed" what's there now with manifests and file paths, "connections"); then the files of an installed add-on that "installed" names. Read only the topics this task needs.`,
     "",
     "When the person asks you to design or review, report what you'd do or what you found: write and install nothing unless they ask.",
     "",
     "Otherwise, deliver a working add-on first:",
     "1. Keep a short to-do list with your plan or to-do tool: Liner Code shows it as a card the person follows. Close it when you're done.",
-    `2. Make a small first version in ${ADDON_DIR}/<id>/ in this folder, with the least access it needs and sensible looks. No preview pages, mock-ups or variants first: the add-on itself is the preview.`,
+    `2. Make it in ${ADDON_DIR}/<id>/ in this folder, with the least access it needs. Make the full version of what was asked, not a demo: an app on a page meets the "apps" bar (its library, toolbar, empty states, autosave with a Saved status). No preview pages, mock-ups or variants first: the add-on itself is the preview.`,
     `3. ${n("addon_check")} it: it draws it out of sight at its real size, with real data, and returns a picture, errors and anything refused. Fix what it shows.`,
     `4. ${n("addon_install")} it. The person sees it live and answers its card: nothing goes in without that. The result says whether it's live.`,
-    "5. Fix what's wrong in the same add-on, a version at a time (the same access goes in without a card). Stop when what was asked works: no speculative extras.",
+    "5. Fix what's wrong in the same add-on, a version at a time (the same access goes in without a card). Stop when what was asked works fully: no extras beyond it.",
     "",
     `Finish with where it opens, what you checked and what you couldn't, and what's saved (the draft in ${ADDON_DIR}/<id>/) against what's live (added or not, which version). You add to Liner Code only through these tools: never edit Liner Code's own files or settings.`,
   ].join("\n");
@@ -109,7 +110,21 @@ const PLACES = `Places: which one fits
 - "dock": the right dock, beside a session, a tab among Liner Code's own surfaces (Browser, Terminal, Files…). For something to look at or edit while the conversation goes on: a viewer, an editor, a live log to watch. It knows the session it's beside.
 - "tab": a tab beside Chat in each session of its project. For a session's own output or interaction, in place of the conversation while it's up: test runs, a task board. It knows its session.
 - "page": a page of its own, opened from Apps at the top of the left sidebar, in the conversation's place, with a way back. For something global, kept across projects: notes, a log, a checklist. It has no session beside it.
-Default by scope first: global goes on a page; tied to a session, watched while chatting goes in the dock, the session's own output or interaction goes in a tab. When the person names a place, use theirs. The person can open any of them in the dock too.`;
+Default by scope first: global goes on a page; tied to a session, watched while chatting goes in the dock, the session's own output or interaction goes in a tab. When the person names a place, use theirs: "a left sidebar entry", "a page", "full page", "its own page" or "like Word" (a workspace to write or work in) all mean "page", which takes the whole centre column, never a small panel. The person can open any of them in the dock too.`;
+
+const APPS = `Apps on a page: the full version, not a demo
+A page fills the centre column where the conversation was, so it's held to what a real app of its kind does. For a notes app, say: (Read "starters" for the shell.)
+- Layout: the whole height and width of the page (html, body at 100%, no small centred card): a header with its name, a count and its main action ("New note"); a library down the left with search and its items, each with a date; the work area beside it; a footer.
+- The work area is complete for its kind. A writing app has a toolbar: undo and redo, paragraph style (Normal, Heading 1, Heading 2, Quote), font, bold, italic, underline, strikethrough, bulleted and numbered lists, alignment, clear formatting; and a page to write on (a white sheet on a quieter ground, a ruler if it fits). contenteditable with document.execCommand works in the frame, undo and redo included.
+- Empty states: no items yet (with its New), nothing matching the search, nothing selected.
+- It keeps the person's work by itself: save to liner.storage a moment after typing stops (and before switching items), with a visible status ("Saving…", "Saved", or the error), and the item's own changed date. Load it all when it opens; it opens where the person left off.
+- Counts where they fit, in the footer: "3 notes · Saved on this device", words and characters.
+- Keyboard: ⌘B, ⌘I, ⌘U, ⌘Z and ⇧⌘Z in the editor, ⌥⌘N for New, Escape out of search, and every control a real button with a label. Liner Code's menu keys reach it even from inside the frame, so leave them alone: ⌘N, ⌘O, ⌘K, ⌘, (comma), ⌘\, ⇧⌘U, ⌥⌘↓ and F6.
+- Light and dark from the theme's tokens ("theme"), following liner.on("theme"); the page sheet stays light only if the theme is light.
+- Storage that fits its work: a notes app asks for ${STORAGE_MAX} KB (the most there is), something that keeps a few settings asks for 16. Say in the summary what it keeps.
+- A summary sentence for the Add-ons list, written always.
+In the frame: no alert, confirm or prompt (it's sandboxed), so ask twice in place ("Delete? Click again"); a native select works; a CSS display on an element beats its hidden attribute, so add [hidden] { display: none !important; }; and take titles and counts from the HTML, not innerText, which runs lines together until the frame is laid out.
+Check it on its page size with addon_check ("verify"), then add sample content of your own to try it, and remove that before it's installed.`;
 
 function bridge() {
   return `window.liner: the panel bridge, apiVersion 1
@@ -164,12 +179,20 @@ liner.files.search(["TODO"]).then((hits) => {
 A session tab (${ADDON_DIR}/tests/addon.json; its page draws liner.session.commands() and redraws on liner.on("session", …)):
 { "apiVersion": 1, "id": "tests", "kind": "panel", "name": "Tests", "summary": "Shows the test runs in your session as they happen.", "place": "tab", "icon": "flask", "access": { "sessions": "this" } }
 
-A global page (${ADDON_DIR}/notes/addon.json; keeps its data in storage):
-{ "apiVersion": 1, "id": "notes", "kind": "panel", "name": "Notes", "summary": "A full-page notes workspace, with a page to write on and a notes library.", "place": "page", "icon": "notes", "access": { "storage": 1024 } }
-<script>
-const notes = (await liner.storage.get("notes")) ?? [];   // in a module script, or inside an async function
-await liner.storage.set("notes", notes);                   // the whole value, as JSON
-</script>`;
+A global page, a full app (${ADDON_DIR}/notes/addon.json, index.html, app.js, style.css; "apps" says what it has):
+{ "apiVersion": 1, "id": "notes", "kind": "panel", "name": "Notes", "summary": "A full-page notes workspace, with a page to write on and a notes library.", "place": "page", "icon": "notes", "access": { "storage": ${STORAGE_MAX} } }
+<body><header><b>Notes</b> <span id="count"></span><button id="new">New note</button></header>
+<aside><input id="search" type="search" placeholder="Search notes"><ul id="list"></ul></aside>
+<main><div id="tools" role="toolbar"></div><article id="page" contenteditable="true"></article></main>
+<footer><span id="stats"></span><span id="saved">Saved</span></footer><script type="module" src="app.js"></script></body>
+html, body { height: 100%; } body { display: grid; grid-template: auto 1fr auto / 260px 1fr; }
+header, footer { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
+// app.js: everything in one value, saved a moment after the last change.
+let notes = (await liner.storage.get("notes")) ?? [], timer;
+const save = () => { saved.textContent = "Saving…"; clearTimeout(timer); timer = setTimeout(async () => {
+  try { await liner.storage.set("notes", notes); saved.textContent = "Saved"; } catch (e) { saved.textContent = e.message; } }, 600); };
+page.addEventListener("input", () => { current.html = page.innerHTML; current.at = Date.now(); save(); });
+// toolbar: button.onmousedown = (e) => e.preventDefault(); onclick = () => document.execCommand("bold") (or "formatBlock", "h1")`;
 
 const VERIFY = `Verify, then report saved against live
 1. addon_check with the id: it draws the draft in the same sealed frame and at the same size as in Liner Code (dock 428 × 780, tab 900 × 720, page 1100 × 800), with this session's real data and storage that's thrown away. It returns a picture, how many elements it drew, its errors with file and line, what the content policy blocked, and what the bridge refused.
@@ -206,6 +229,8 @@ export function topicText(topic: Topic, o: { addons?: Addons; draftRoot: string 
       return manifest();
     case "places":
       return PLACES;
+    case "apps":
+      return APPS;
     case "bridge":
       return bridge();
     case "theme":

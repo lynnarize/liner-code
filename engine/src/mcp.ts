@@ -104,8 +104,8 @@ const TOOLS: ToolDef[] = [
   {
     name: "liner_inspect",
     description:
-      "Reads Liner Code's add-on guide: connections (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes) and panels (a small page of your own that opens in Liner Code, in the right dock, as a tab beside Chat, or as a page from the left sidebar), the manifests to write, the add-ons installed, and the agent tools on this Mac. Call it before you make either: when the person asks to connect a service through MCP, or for a panel, view or small app inside Liner Code. With a topic it reads one part in depth: panels, places, manifest, bridge, theme, starters, verify, installed (with manifests and file paths), connections, or catalogue. Changes nothing.",
-    inputSchema: { type: "object", properties: { topic: { type: "string", description: "One part of the guide, in depth; leave it out for the whole short guide", enum: ["catalogue", "connections", "panels", "manifest", "places", "bridge", "theme", "starters", "verify", "installed"] } } },
+      "Reads Liner Code's add-on guide: connections (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes) and panels (a small page of your own that opens in Liner Code, in the right dock, as a tab beside Chat, or as a page from the left sidebar), the manifests to write, the add-ons installed, and the agent tools on this Mac. Call it before you make either: when the person asks to connect a service through MCP, or for a panel, view or small app inside Liner Code. With a topic it reads one part in depth: panels, places, apps (the bar a full-page app meets), manifest, bridge, theme, starters, verify, installed (with manifests and file paths), connections, or catalogue. Changes nothing.",
+    inputSchema: { type: "object", properties: { topic: { type: "string", description: "One part of the guide, in depth; leave it out for the whole short guide", enum: ["catalogue", "connections", "panels", "manifest", "places", "apps", "bridge", "theme", "starters", "verify", "installed"] } } },
   },
   {
     name: "addon_check",

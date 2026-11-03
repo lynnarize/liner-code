@@ -56,11 +56,12 @@
   flex-direction: column;
   min-width: 0;
   border-radius: 16px;
-  background: var(--lc-card);
+  background: var(--l-surface);
   box-shadow: var(--lc-card-ring);
 }
+/* The new task default is filled grey; the rest are white. */
 .lc-mode-card[data-default] {
-  box-shadow: 0 0 0 1.5px var(--l-ink);
+  background: var(--l-wash);
 }
 .lc-mode-card > header {
   display: flex;
@@ -137,25 +138,16 @@
 .lc-mode-link:hover {
   color: var(--l-ink);
 }
-/* Set as new task default floats over the card you point at, or reach with the keyboard, as DeepSeek's does. */
-.lc-mode-card {
-  position: relative;
-}
 .lc-mode-link {
   white-space: nowrap;
 }
+/* Set as new task default: the document icon at the card's foot, its words in a tooltip. */
 .lc-mode-set {
-  position: absolute;
-  top: 44px;
-  right: 12px;
-  box-shadow: var(--lc-float-shadow);
-  transition: opacity 140ms ease;
+  color: var(--l-ink-3);
 }
-@media (hover: hover) {
-  .lc-mode-card:not(:hover, :focus-within) .lc-mode-set {
-    opacity: 0;
-    pointer-events: none;
-  }
+.lc-mode-set[aria-pressed="true"] {
+  color: var(--l-ink);
+  cursor: default;
 }
 .lc-modes-make {
   display: flex;
@@ -196,44 +188,94 @@
   line-height: 1.55;
 }
 
-/* A mode's guide: Mode details, or How to use with tasks to copy. */
+/* A mode's guide: Mode details, or How to use with tasks to copy (DeepSeek Harness's preset guide). */
 .lc-mode-tabs {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 2px;
-  margin: 4px 0 14px;
-  padding: 2px;
-  border-radius: 10px;
+  margin: 6px 0 18px;
+  padding: 3px;
+  border-radius: 12px;
   background: var(--l-wash);
+}
+.lc-mode-tabs > button {
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-mode-tabs > button[aria-selected="true"] {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 0.5px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+  font-weight: 600;
+  color: var(--l-ink);
 }
 .lc-mode-guide-body {
   display: grid;
-  gap: 16px;
-  max-height: min(60vh, 520px);
+  gap: 26px;
+  max-height: min(62vh, 560px);
   overflow: auto;
+  padding-bottom: 4px;
   text-align: left;
 }
 .lc-mode-guide-body h3 {
-  margin: 0 0 4px;
-  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .lc-mode-guide-body p {
   margin: 0;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--l-ink-2);
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--l-ink);
 }
 .lc-mode-guide-body blockquote {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin: 0 0 6px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  margin: 0;
+  padding: 14px 18px;
+  border-radius: 14px;
   background: var(--l-wash);
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--l-ink);
 }
-.lc-mode-guide-body blockquote > span {
-  flex: 1;
+.lc-mode-guide-body .lc-mode-expect {
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: var(--l-ink-3);
+}
+.lc-mode-example {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-wash);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-mode-example > [data-say="copy"],
+.lc-mode-example:is(:hover, :focus-visible, [data-copied]) > [data-say="idle"] {
+  display: none;
+}
+.lc-mode-example:is(:hover, :focus-visible, [data-copied]) > [data-say="copy"] {
+  display: inline;
+}
+.lc-mode-example:hover {
+  color: var(--l-ink);
 }

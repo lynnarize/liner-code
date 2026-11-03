@@ -574,7 +574,7 @@ export const BUILTIN_MODES: ModeGuide[] = [
     id: "standard",
     name: "Standard",
     blurb: "Work with code, files and information. Right for most tasks, with search, editing, terminal commands and Liner Code's own tools as needed.",
-    intro: "Choose Standard when you start a new task. Say what you want done, point to the files that matter, and say how to check the result.",
+    intro: "Choose Standard mode for a new task. Describe what you want done, point to the files that matter, and say how to check the result.",
     details: [
       { h: "How it works", p: "The agent calls its tools directly to read and edit files, search, and run terminal commands, with Liner Code's own beside them: the Browser, the Design surface, pages in the chat, memory and earlier sessions. Solo, Plan or Auto in the composer still decides who works on it." },
       { h: "When to choose it", p: "Start here for everyday coding, file work and research. It can still offer to make an app at the end of a turn, on a card you answer." },
@@ -587,10 +587,10 @@ export const BUILTIN_MODES: ModeGuide[] = [
   {
     id: "creator",
     name: "Creator mode",
-    blurb: "Change Liner Code through conversation. Let the agent add features or UI, or put tools and instructions together into a mode of your own.",
-    intro: "Choose Creator mode when you start a new task. Say what you want, where it should appear, and how you'll check it.",
+    blurb: "Customize Liner Code through conversation. Let the agent make connections, panels and apps that add features or UI, or combine tools and prompts to make your own mode.",
+    intro: "Choose Creator mode for a new task. Describe what you want, where it should appear, and how you'll check it.",
     details: [
-      { h: "What you can make", p: "Creator mode has everything in Standard, plus a guide to Liner Code's add-ons that the agent reads a part at a time: what it can make, the panel bridge, the places an app can open, the manifest, the theme's tokens, a starter for each kind, how to check its work, and what's installed now." },
+      { h: "What you can create", p: "Creator mode has everything in Standard, plus a guide to Liner Code's add-ons that the agent reads a part at a time: what it can make, the panel bridge, the places an app can open, the manifest, the theme's tokens, a starter for each kind, how to check its work, and what's installed now." },
       { h: "Add-ons and modes", p: "An add-on adds to Liner Code: a connection every agent tool gets, a panel in the right dock, an app as a tab beside Chat or a page of its own from the left sidebar. A mode is a set of instructions for whichever model a session runs, which you pick when you start one." },
       { h: "How the result takes effect", p: "Ask it to add and check what it makes, not only to write the files. Nothing goes in without your yes on its card, and it gets only the access it lists. A panel or an app opens at once; a connection reaches agent tools now or from their next turn. A new mode is picked when you start a session. Its folder is the project you picked, or Scratch." },
     ],

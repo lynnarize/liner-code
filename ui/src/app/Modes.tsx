@@ -12,6 +12,7 @@ import { useState, type ReactNode } from "react";
 import type { AgentProfile, SessionMode, Thread } from "@contracts";
 import { BUILTIN_MODES, modeName } from "@contracts";
 import { Dialog } from "@liner/components/dialog/dialog";
+import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { toast } from "@liner/components/toast/toast";
 import { openSession } from "./Addon";
 import { getState, rpc, useEngine } from "./engine";
@@ -95,10 +96,10 @@ function GuideDialog({ name, guide, tab, onTab, onClose }: { name: string; guide
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()} title={name} description={guide.intro} size="lg" className="lc-mode-guide">
       <div className="lc-mode-tabs" role="tablist" aria-label="Guide sections">
-        <button type="button" role="tab" aria-selected={tab === "details"} className="lc-view-b l-focus" onClick={() => onTab("details")}>
+        <button type="button" role="tab" aria-selected={tab === "details"} className="l-focus" onClick={() => onTab("details")}>
           Mode details
         </button>
-        <button type="button" role="tab" aria-selected={tab === "how"} className="lc-view-b l-focus" onClick={() => onTab("how")}>
+        <button type="button" role="tab" aria-selected={tab === "how"} className="l-focus" onClick={() => onTab("how")}>
           How to use
         </button>
       </div>
@@ -112,12 +113,14 @@ function GuideDialog({ name, guide, tab, onTab, onClose }: { name: string; guide
             ))
           : guide.examples.map((x) => (
               <section key={x.h}>
-                <h3>{x.h}</h3>
-                <blockquote>
-                  <span>{x.ask}</span>
+                <h3>
+                  {x.h}
+                  {/* The example's chip copies it: "Example task", Copy while you point at it, then Copied. */}
                   <button
                     type="button"
-                    className="lc-mode-link l-focus"
+                    className="lc-mode-example l-focus"
+                    aria-label={`Copy the example task: ${x.h}`}
+                    data-copied={copied === x.h || undefined}
                     onClick={() =>
                       void navigator.clipboard
                         .writeText(x.ask)
@@ -125,10 +128,13 @@ function GuideDialog({ name, guide, tab, onTab, onClose }: { name: string; guide
                         .catch(() => toast.error("Couldn't copy it"))
                     }
                   >
-                    {copied === x.h ? "Copied" : "Copy"}
+                    <I.notes size={12} />
+                    <span data-say="idle">Example task</span>
+                    <span data-say="copy">{copied === x.h ? "Copied" : "Copy"}</span>
                   </button>
-                </blockquote>
-                <p className="lc-quiet">Expect: {x.expect}</p>
+                </h3>
+                <blockquote>{x.ask}</blockquote>
+                <p className="lc-mode-expect">Expected output: {x.expect.charAt(0).toLowerCase() + x.expect.slice(1)}</p>
               </section>
             ))}
       </div>
@@ -136,7 +142,11 @@ function GuideDialog({ name, guide, tab, onTab, onClose }: { name: string; guide
   );
 }
 
-/** One mode's card: its name, badge and id, what it's for; Mode details and How to use open its guide; Set as new task default. */
+/**
+  One mode's card: its name, badge and id, what it's for; Mode details and How to use open its guide;
+  the document icon at its foot sets it as the new task default (its tooltip says so). The default
+  card is filled grey, with the badge in ink.
+*/
 function ModeCard({ id, name, badge, blurb, guide, isDefault, onDefault, end }: { id: string; name: string; badge: string; blurb: string; guide: Guide; isDefault: boolean; onDefault: () => void; end?: ReactNode }) {
   const [open, setOpen] = useState<"details" | "how" | null>(null);
   return (
@@ -156,13 +166,13 @@ function ModeCard({ id, name, badge, blurb, guide, isDefault, onDefault, end }: 
         <button type="button" className="lc-mode-link l-focus" onClick={() => setOpen("how")}>
           How to use
         </button>
-        <span className="lc-grow" />
         {end}
-        {!isDefault && (
-          <button type="button" className="lc-btn lc-mode-set" data-kind="plain" data-size="sm" onClick={onDefault}>
-            Set as new task default
+        <span className="lc-grow" />
+        <Tooltip content={isDefault ? "The new task default" : "Set as new task default"}>
+          <button type="button" className="lc-ib l-focus lc-mode-set" aria-label={isDefault ? `${name} is the new task default` : `Set ${name} as new task default`} aria-pressed={isDefault} onClick={() => !isDefault && onDefault()}>
+            <I.notes size={14} />
           </button>
-        )}
+        </Tooltip>
       </footer>
       {open && <GuideDialog name={name} guide={guide} tab={open} onTab={setOpen} onClose={() => setOpen(null)} />}
     </article>
@@ -177,10 +187,10 @@ export function ModesPlace({ onAgent, onClose }: { onAgent: (agent?: AgentProfil
   const mine = customs(agents);
   return (
     <div className="lc-modes">
-      <span className="lc-modes-k">Built in</span>
+      <span className="lc-modes-k">Built-in</span>
       <div className="lc-modes-grid">
         {BUILTIN_MODES.map((m) => (
-          <ModeCard key={m.id} id={m.id} name={m.name} badge="Built in" blurb={m.blurb} guide={m} isDefault={current === m.id} onDefault={() => setDefault(m.id)} />
+          <ModeCard key={m.id} id={m.id} name={m.name} badge="Built-in" blurb={m.blurb} guide={m} isDefault={current === m.id} onDefault={() => setDefault(m.id)} />
         ))}
       </div>
       <span className="lc-modes-k">Custom</span>

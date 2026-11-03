@@ -26,6 +26,7 @@ import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, agentOf, ago, markOf, modelLabel, plural, providerLabel, since } from "./model";
+import { appIcon, dayOf } from "./Addon";
 import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop, Row } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
@@ -2019,6 +2020,7 @@ function AddonsPlace() {
   const addons = useEngine((x) => x.addons);
   const off = useEngine((x) => x.addonsOff);
   const offers = useEngine((x) => x.settings.addonOffers ?? "ask");
+  const network = useEngine((x) => x.settings.addonNetwork ?? "ask");
   const projects = useEngine((x) => x.projects);
   const keys = useEngine((x) => x.keys);
   const home = useEngine((x) => x.home);
@@ -2026,8 +2028,15 @@ function AddonsPlace() {
   const working = useEngine((x) => x.threads.filter((t) => t.status === "running").length);
   const [adding, setAdding] = useState(false);
   const update = (id: string, p: { enabled?: boolean; version?: number; removed?: boolean }) => void rpc("addons.update", { id, ...p }).catch(fail);
-  const shown = addons.filter((a) => !a.removed);
-  const removed = addons.filter((a) => a.removed);
+  const shown = addons.filter((a) => !a.removed && !a.panel);
+  const removed = addons.filter((a) => a.removed && !a.panel);
+  const panels = addons.filter((a) => !a.removed && a.panel);
+  const gone = addons.filter((a) => a.removed && a.panel);
+  const versions = (a: AddonInfo) => (
+    <Pop label={`Versions of ${a.name}`} align="end" width={220} triggerClass="lc-st-ver lc-mono" disabled={a.versions.length < 2} trigger={<>v{a.version}{a.versions.length > 1 && <I.chevD size={11} />}</>}>
+      {(close) => [...a.versions].reverse().map((v) => <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ") || undefined} on={v === a.version} onPick={() => (update(a.id, { version: v }), close())} />)}
+    </Pop>
+  );
   const where = (a: AddonInfo) => (a.project ? `${projects.find((p) => p.id === a.project)?.name ?? "One project"} only` : "Every project");
   const keyed = (a: AddonInfo) => (!a.secrets.length ? null : a.secrets.every((k) => keys.includes(addonKey(a.id, k.name))) ? `${a.secrets.length === 1 ? "key" : "keys"} in the keychain` : "a key is missing");
   // The app opens again without them; a window that can't (the browser preview) turns them off until the engine next starts.
@@ -2065,9 +2074,7 @@ function AddonsPlace() {
             note={[where(a), keyed(a), `added by ${a.by.agent}${a.by.title ? ` in “${a.by.title}”` : ""}, ${since(a.by.at)}`].filter(Boolean).join(" · ")}
           >
             {a.secrets.length > 0 && <AddonKeys a={a} />}
-            <Pop label={`Versions of ${a.name}`} align="end" width={220} triggerClass="lc-st-ver lc-mono" disabled={a.versions.length < 2} trigger={<>v{a.version}{a.versions.length > 1 && <I.chevD size={11} />}</>}>
-              {(close) => [...a.versions].reverse().map((v) => <Row key={v} title={`v${v}`} note={v === a.version ? "In use" : undefined} on={v === a.version} onPick={() => (update(a.id, { version: v }), close())} />)}
-            </Pop>
+            {versions(a)}
             <NamedSwitch name={`${a.name} for every agent tool`} checked={a.enabled} onCheckedChange={(enabled) => update(a.id, { enabled })} />
           </Field>
         ))}
@@ -2084,9 +2091,44 @@ function AddonsPlace() {
           </div>
         ))}
       </Group>
-      <Group title="Who may add one" note="An agent never adds one on its own: it asks in the session, with what it reaches.">
+      <Group title="Panels" note="Surfaces beside the session, tabs beside Chat and pages of their own. Each runs in a sealed frame, with only what it asked for.">
+        {panels.map((a) => {
+          const Icon = appIcon(a.panel?.icon);
+          return (
+            <Field
+              key={a.id}
+              lead={
+                <span className="lc-st-mark">
+                  <Icon size={15} />
+                </span>
+              }
+              title={a.name}
+              note={[a.panel?.place === "page" ? "A page of its own" : where(a).replace(/ only$/, ""), a.reaches, `made by ${a.by.agent}${a.by.title ? ` in “${a.by.title}”` : ""}`].filter(Boolean).join(" · ")}
+            >
+              {versions(a)}
+              <NamedSwitch name={a.name} checked={a.enabled} onCheckedChange={(enabled) => update(a.id, { enabled })} />
+            </Field>
+          );
+        })}
+        {!panels.length && <p className="lc-st-none lc-quiet">None yet. Ask an agent for one (“Make me a panel that lists the TODOs”), and it shows it to you, live, before you add it.</p>}
+        {gone.map((a) => (
+          <div key={a.id} className="lc-st-removed">
+            <I.box size={13} />
+            <span>
+              Removed: {a.name}, {since(a.removed!)}. Its files are kept.
+            </span>
+            <button type="button" className="lc-answered-act l-focus" onClick={() => update(a.id, { removed: false })}>
+              Restore
+            </button>
+          </div>
+        ))}
+      </Group>
+      <Group title="Who may add one" note="An agent never adds one on its own: it asks in the session, with what it can touch.">
         <Field title="Agents may offer add-ons" note="In a read-only session they can't, whatever this says.">
           <Segmented size="sm" value={offers} onValueChange={(v) => save({ addonOffers: v })} options={[{ value: "ask" as const, label: "They ask" }, { value: "never" as const, label: "Never" }]} aria-label="Agents may offer add-ons" />
+        </Field>
+        <Field title="Panels that reach the internet" note="Held like a push: you hold the button, and each names its one address.">
+          <Segmented size="sm" value={network} onValueChange={(v) => save({ addonNetwork: v })} options={[{ value: "ask" as const, label: "They ask" }, { value: "never" as const, label: "Never" }]} aria-label="Panels that reach the internet" />
         </Field>
         <Field title="Start without add-ons" note={working ? `Waits for ${plural(working, "working session")} to finish: a restart would stop them.` : "If one gets in the way, open Liner Code once with all of them off."}>
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={working > 0} onClick={() => void restart()}>

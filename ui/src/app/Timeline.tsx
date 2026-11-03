@@ -1024,7 +1024,8 @@ function PanelAddonCard({ threadId, it, who }: { threadId: string; it: Ask; who:
   const set = (p: { removed?: boolean; version?: number }) => void rpc("addons.update", { id: a.id, ...p }).catch(fail);
   if (it.state !== "asking") {
     const where = a.place === "page" ? "a page" : (a.scope ?? scope) === "project" ? a.project.name : "every project";
-    const gone = it.state === "approved" && have?.removed;
+    // An update's line stays what it was; the add-on's own line says it was removed, with Restore.
+    const gone = it.state === "approved" && have?.removed && !a.same;
     const back = a.same && a.replaces && have && !have.removed ? (have.version === a.version ? { to: a.replaces, label: `Back to v${a.replaces}` } : have.version === a.replaces ? { to: a.version!, label: `Forward to v${a.version}` } : null) : null;
     return (
       <div className="lc-answered lc-addon-receipt" data-state={gone ? "denied" : it.state} data-same={a.same || undefined} role="status">

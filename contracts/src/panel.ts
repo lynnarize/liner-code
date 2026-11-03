@@ -109,7 +109,8 @@ export function panelDocument(o: { files: Record<string, string>; entry: string;
       const src = attr(` ${a}`, "src");
       const p = src === null ? null : local(src);
       if (src === null) return whole;
-      return p && o.files[p] !== undefined ? `<script${a.replace(ATTR("src"), "")}>${scriptText(o.files[p])}</script>` : "<!-- a script from elsewhere, left out -->";
+      // Named after its file, so an error's stack says app.js:48 rather than about:srcdoc.
+      return p && o.files[p] !== undefined ? `<script${a.replace(ATTR("src"), "")}>${scriptText(o.files[p])}\n//# sourceURL=${p.replace(/[^\w./-]/g, "")}</script>` : "<!-- a script from elsewhere, left out -->";
     })
     .replace(/<link\b[^>]*>/gi, (tag) => {
       const rel = (attr(tag, "rel") ?? "").toLowerCase();

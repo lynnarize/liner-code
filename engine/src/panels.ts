@@ -119,7 +119,8 @@ export async function panelCall(env: PanelEnv, w: PanelWhere, method: PanelMetho
       const out: { path: string; line: number; text: string }[] = [];
       let read = 0;
       for (const p of await listFiles(root(), 20000)) {
-        if (hidden(p) || out.length >= limit || read > 20_000_000) break;
+        if (out.length >= limit || read > 20_000_000) break;
+        if (hidden(p)) continue;
         let size = 0;
         try {
           size = statSync(resolve(root(), p)).size;

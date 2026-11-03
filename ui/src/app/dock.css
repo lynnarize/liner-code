@@ -98,9 +98,11 @@
   grid-row: 1;
   min-width: 0;
 }
+/* Each pane is what a surface's own narrow layouts measure, not the whole dock. */
 .lc-dockpanes > .lc-surface {
   min-width: 0;
   min-height: 0;
+  container-type: inline-size;
 }
 /* A tab that isn't up stays laid out in its own pane, out of sight. */
 .lc-dockpanes > .lc-surface[hidden] {
@@ -157,11 +159,24 @@
 }
 
 /* Two panes side by side: the dock half as wide again, the thread still keeping its 420px. */
-.lc-session[data-panel][data-panes="2"] .lc-body {
+.lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body {
   grid-template-columns: minmax(420px, 1fr) min(calc(var(--lc-panel-w, clamp(340px, 36%, 520px)) * 1.6), calc(100% - 420px));
 }
 .lc-session[data-panes="2"]:not([data-wide]) .lc-body > .lc-panel {
   width: max(100%, min(calc(var(--lc-panel-w, clamp(340px, 36cqw, 520px)) * 1.6), calc(100cqw - 420px)));
+}
+/* Narrower, two panes beside the thread would each be too thin: they take over the paper, as one does at 700px. */
+@container lc-session (max-width: 860px) {
+  .lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body {
+    grid-template-columns: minmax(0px, 0fr) 100%;
+  }
+  .lc-session[data-panes="2"] .lc-thread {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .lc-session[data-panes="2"] .lc-grip {
+    display: none;
+  }
 }
 
 /* ---------- The New tab guide ---------- */
@@ -175,9 +190,6 @@
 }
 .lc-spick > h2 + p + .lc-spick-k {
   margin-top: 0;
-}
-.lc-spick[data-panes="2"] .lc-spick-grid {
-  grid-template-columns: minmax(0, 1fr);
 }
 .lc-spick-b[data-make] {
   background: none;
@@ -199,7 +211,6 @@
   min-height: 0;
   border: 0;
   background: var(--l-surface);
-  color-scheme: normal;
 }
 .lc-addon-frame[hidden] {
   display: none;
@@ -276,10 +287,12 @@
 .lc-addon-blocked > svg {
   flex: none;
   margin-top: 2px;
-  color: oklch(0.55 0.13 60);
+  color: var(--l-warn-text);
 }
 .lc-addon-blocked > span {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .lc-addon-blocked b {
   font-family: var(--l-font-mono);
@@ -305,7 +318,7 @@
   height: 32px;
   border-radius: 999px;
   background: oklch(0.6 0.2 25 / 0.12);
-  color: oklch(0.52 0.18 25);
+  color: var(--l-danger-text);
 }
 .lc-addon-crash h2 {
   margin: 0;
@@ -380,6 +393,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 160px;
   height: 26px;
   padding: 0 10px;
   border: 0;
@@ -390,6 +405,12 @@
   font-weight: 500;
   color: var(--l-ink-3);
   cursor: pointer;
+}
+/* A long app name ends in an ellipsis rather than pushing the bar's buttons off the paper. */
+.lc-view-b > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-view-b[aria-selected="true"] {
   background: var(--l-surface);
@@ -713,8 +734,8 @@
   color: var(--l-ink-3);
 }
 .lc-offer-done[data-good] .lc-offer-tick {
-  background: oklch(0.6 0.15 152 / 0.16);
-  color: oklch(0.42 0.12 152);
+  background: color-mix(in oklab, var(--l-ok) 16%, transparent);
+  color: var(--l-ok-text);
 }
 .lc-offer-said {
   display: grid;

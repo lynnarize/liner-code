@@ -549,10 +549,12 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
     );
   }
   const c = a as ConnectionAsk;
-  const kept = (name: string) => keys.includes(addonKey(c.id, name));
+  // A key kept for the server it pointed at before isn't sent to a new one: it's typed again.
+  const kept = (name: string) => !c.moved && keys.includes(addonKey(c.id, name));
   const missing = c.secrets.filter((k) => !values[k.name]?.trim() && !kept(k.name));
   const fields = [
     { label: "Server", value: <code className="lc-addon-mono">{os.tilde(c.server)}</code> },
+    ...(c.moved ? [{ label: "Was", value: <code className="lc-addon-mono">{os.tilde(c.moved)}</code> }] : []),
     ...(c.replaces ? [{ label: "Replaces", value: `v${c.replaces}, which stays kept` }] : []),
     { label: "Reaches", value: c.reaches.length ? andList(c.reaches) : "Every agent tool" },
     { label: "Where", value: "Every project" },
@@ -560,7 +562,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
       label: k.label,
       value: (
         <span className="lc-addon-key">
-          <input type="password" autoComplete="off" spellCheck={false} aria-label={k.label} placeholder={kept(k.name) ? "Kept from before · type to replace" : k.name} value={values[k.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))} />
+          <input type="password" autoComplete="off" spellCheck={false} aria-label={k.label} placeholder={kept(k.name) ? "Kept from before · type to replace" : c.moved && keys.includes(addonKey(c.id, k.name)) ? "Type it again for the new server" : k.name} value={values[k.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))} />
           <small>
             <I.lock size={12} />
             {isNative() ? "Sealed in this Mac's keychain, and never put in a chat." : "Kept in Liner Code's memory until it quits, and never put in a chat."}

@@ -459,8 +459,10 @@ export class AgentTools {
     if (manifest.kind === "panel") return this.installPanel(threadId, t, { id: project.id, name: project.name }, path, manifest, files!);
     const have = addons.get(manifest.id);
     if (have?.kind === "panel") return fail(`${manifest.id} is already a panel's id: give the connection an id of its own.`);
+    if (have?.by.from) return fail(`${manifest.id} is the id of an add-on the person added from ${have.by.from}; its keys stay with that id. Give yours an id of its own.`);
     const next = addons.wouldBe(manifest);
-    if (have && have.enabled && !have.removed && next.version === have.version) return text(`applied: ${manifest.name} is already added as v${have.version}, for ${this.where(have, threadId)}, exactly as this draft says. Nothing to ask.`);
+    // Set to another project, it isn't here: that asks, as a new one would.
+    if (have && have.enabled && !have.removed && next.version === have.version && (!have.project || have.project === project.id)) return text(`applied: ${manifest.name} is already added as v${have.version}, for ${this.where(have, threadId)}, exactly as this draft says. Nothing to ask.`);
     const reached = this.reached();
     const ask = addons.askOf(manifest, path, { id: project.id, name: project.name }, reached.map((r) => r.label));
     const { id, answer } = host.askLiner(threadId, {
@@ -502,16 +504,19 @@ export class AgentTools {
     const host = this.host!;
     const have = addons.get(m.id);
     if (have && have.kind !== "panel") return fail(`${m.id} is already a connection's id: give the panel an id of its own.`);
+    if (have?.by.from) return fail(`${m.id} is the id of an add-on the person added from ${have.by.from}; its storage stays with that id. Give yours an id of its own.`);
     const next = addons.wouldBe(m, files);
     const live = have && have.enabled && !have.removed;
-    if (live && next.version === have.version) return text(`applied: ${m.name} is already in as v${have.version}, exactly as this draft is. Nothing to ask.`);
+    // Set to another project, it doesn't show here: that asks, as a new one would.
+    const here = !have?.project || have.project === project.id;
+    if (live && here && next.version === have.version) return text(`applied: ${m.name} is already in as v${have.version}, exactly as this draft is. Nothing to ask.`);
     if (m.access.network && this.store.settings.addonNetwork === "never") return fail(`The person set panels never to reach the internet (Settings › Add-ons), so ${m.name} can't have access.network. Make it work without: whatever it needs from elsewhere goes in its own files. Nothing was added.`);
     const ask = addons.panelAsk(m, path, project, files);
     const seen = this.checked.get(`${threadId}:${m.id}`);
     if (seen && seen.sum === sumOf(files)) ask.checked = seen.words;
     const by = { agent: host.whoIs(threadId), threadId, title: t.title, at: Date.now() };
     // Nothing more than the version in use: in, without asking again, and its line says so.
-    if (live && ask.wider && ask.wider.length === 0) {
+    if (live && here && ask.wider && ask.wider.length === 0) {
       const version = addons.install(m, { project: have.project, by: have.by }, files);
       this.store.putItem(threadId, { kind: "approval", id: uid("it"), turn: this.turnOf(threadId), at: Date.now(), tool: ADDON_TOOL, title: `Update ${m.name}`, risk: "low", fields: [], state: "approved", addon: { ...ask, same: true, version, replaces: have.version, scope: have.project ? "project" : "all" } });
       return text(`applied: ${m.name} is v${version} now. It asks for nothing more than v${have.version} did, so it went in without a card; the person sees a line saying so, with a way back to v${have.version}. It shows wherever it was open.`);
@@ -558,13 +563,17 @@ export class AgentTools {
       const errors = rep ? rep.errors.map((e) => (e.stack ? `${e.message}\n${e.stack.split("\n").slice(0, 4).join("\n")}` : e.message)) : (look.errors ?? []);
       const drew = rep?.ready ? `Drew ${rep.ready.elements} elements at ${size.width} × ${size.height}${rep.ready.height > size.height ? `, ${rep.ready.height} px tall (it scrolls)` : ""}` : `Drew it at ${size.width} × ${size.height}`;
       const said = errors.length ? `${errors.length === 1 ? "1 error" : `${errors.length} errors`}` : "no console errors";
-      const hosts = [...new Set(rep?.blocked ?? [])];
+      // A check runs without its own host (only the person's hold on the card gives it), so reaching that one isn't a fault.
+      const net = manifest.access.network;
+      const held = !!net && (rep?.blocked ?? []).some((h) => h.includes(net));
+      const hosts = [...new Set(rep?.blocked ?? [])].filter((h) => !net || !h.includes(net));
       const words = `${drew}, ${said}${hosts.length ? `, ${hosts.length === 1 ? `a request to ${hosts[0]}` : `requests to ${hosts.length} hosts`} blocked` : ""}`;
       this.checked.set(`${threadId}:${manifest.id}`, { sum: sumOf(files!), words });
       const parts = [
         `${words}.`,
         errors.length ? `Errors:\n${errors.slice(0, 10).join("\n\n")}` : "",
         hosts.length ? `The content policy blocked: ${hosts.join(", ")}. A panel reaches no address but the one host in access.network; scripts, styles and pictures go in its own files.` : "",
+        held ? `Requests to ${net} were held: a check runs without the network, which only the person's hold on the install card gives. Make it draw sensibly while that host doesn't answer.` : "",
         c.refused.length ? `The bridge refused: ${[...new Set(c.refused)].join("; ")}` : "",
         "The picture is how it draws in the window. Fix what's off and check again before you call addon_install.",
       ].filter(Boolean);
@@ -578,7 +587,8 @@ export class AgentTools {
   checkPage(token: string): string | null {
     const c = this.checks.get(token);
     if (!c) return null;
-    const doc = panelDocument({ files: c.files, entry: c.manifest.entry, access: c.manifest.access, theme: CHECK_THEME, place: c.manifest.place });
+    // Without its host: nobody has held to allow it yet, and the check runs with this session's real files.
+    const doc = panelDocument({ files: c.files, entry: c.manifest.entry, access: { ...c.manifest.access, network: undefined }, theme: CHECK_THEME, place: c.manifest.place });
     return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(c.manifest.name)}</title><style>html,body{margin:0;height:100%;background:${CHECK_THEME["--surface"]}}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe sandbox="allow-scripts" title="${esc(c.manifest.name)}" srcdoc="${esc(doc)}"></iframe><script>(()=>{const f=document.querySelector("iframe");const at=location.pathname;const rep={errors:[],blocked:[]};
 const send=()=>fetch(at+"/report",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(rep)}).catch(()=>{});
 addEventListener("message",async(e)=>{if(e.source!==f.contentWindow)return;const d=e.data;if(!d||d.liner!==1)return;
@@ -657,7 +667,8 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
     named agents are only ever a way to give a model instructions. Asked on a card, like an add-on.
   */
   private async addMode(threadId: string, args: Record<string, unknown>): Promise<McpResult> {
-    const no = this.refusal(threadId);
+    // A mode isn't an add-on: Settings › Add-ons' "never offer" doesn't reach it, only a session that reads.
+    const no = !this.host ? "Modes aren't available in this session." : this.host.readOnly(threadId) ? "This session only reads (Read only, a side chat, or a planner's turn), so it can't add a mode. Say what you'd add; the person can ask for it in a session that makes changes." : null;
     if (no) return fail(no);
     const name = String(args.name ?? "").trim();
     const description = String(args.description ?? "").trim();
@@ -675,7 +686,8 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
       description: `${description ? `${description} ` : ""}It's a set of instructions for whichever model a session runs: pick it when you start one. It sits with your agents in Settings › Team, where you can change it.`,
       risk: "low",
       fields: [
-        { label: "Instructions", value: instructions.length > 600 ? `${instructions.slice(0, 600)}…` : instructions },
+        // Whole: every session in this mode is told all of it, so all of it is what the person reads (the card scrolls it).
+        { label: "Instructions", value: instructions },
         ...(skills.length ? [{ label: "Skills", value: skills.join(", ") }] : []),
         ...(contextFiles.length ? [{ label: "Context", value: contextFiles.join(", ") }] : []),
       ],

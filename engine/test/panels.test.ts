@@ -8,6 +8,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,6 +82,15 @@ test("bridge: a panel reads the project's files, never a hidden one, one outside
   assert.throws(() => readable(root, "src/link.txt"), /link to outside/);
   assert.throws(() => readable(root, ""), /Say which file/);
   assert.throws(() => readable(root, 7), /Say which file/);
+  // Where a link really goes counts: notes.txt -> .env is .env.
+  writeFileSync(join(root, ".env"), "SECRET=1");
+  symlinkSync(".env", join(root, "notes.txt"));
+  assert.throws(() => readable(root, "notes.txt"), /link to a hidden one/);
+  // A hidden folder above the project (~/.work/app) isn't the project's own.
+  const above = join(mkdtempSync(join(tmpdir(), "lc-panel-above-")), ".work", "app");
+  mkdirSync(above, { recursive: true });
+  writeFileSync(join(above, "a.txt"), "x");
+  assert.equal(readable(above, "a.txt"), "a.txt");
 });
 
 test("bridge: search takes plain words, and storage holds to its quota", async () => {
@@ -88,6 +98,7 @@ test("bridge: search takes plain words, and storage holds to its quota", async (
   mkdirSync(join(root, "src"));
   writeFileSync(join(root, "src", "a.js"), "one\n// TODO: two\n// FIXME: three\n");
   writeFileSync(join(root, ".env"), "TODO=leak");
+  symlinkSync("../.env", join(root, "src", "env.txt"));
   const kept: Record<string, unknown> = {};
   const env: PanelEnv = {
     cwdOf: () => root,
@@ -107,7 +118,7 @@ test("bridge: search takes plain words, and storage holds to its quota", async (
   };
   const where = { access: { files: "project" as const, storage: 1 }, place: "dock" as const, threadId: "t" };
   const hits = (await panelCall(env, where, "files.search", { pattern: ["TODO", "FIXME"] })) as { path: string; line: number }[];
-  assert.deepEqual(hits.map((h) => `${h.path}:${h.line}`), ["src/a.js:2", "src/a.js:3"], "found in the project, never in .env");
+  assert.deepEqual(hits.map((h) => `${h.path}:${h.line}`), ["src/a.js:2", "src/a.js:3"], "found in the project, never in .env, nor through a link to it");
   // A pattern is a word: nothing a panel writes runs in the engine, a regular expression included.
   assert.deepEqual(await panelCall(env, where, "files.search", { pattern: "(a+)+$" }), []);
   await assert.rejects(panelCall(env, where, "files.search", {}), /Say what to look for/);
@@ -173,6 +184,35 @@ test("panel files: its own page's kinds only, no links, nothing hidden, within t
   assert.throws(() => readPanelFiles(dir3, "index.html"), /over 512 KB/);
 });
 
+test("panel files: a pipe is never read, beside the page or as the manifest", { skip: process.platform === "win32" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "lc-panel-root-"));
+  const d = join(root, ".liner", "addons", "todos");
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, "addon.json"), JSON.stringify(todos()));
+  writeFileSync(join(d, "index.html"), "<p>hi</p>");
+  // Reading one would wait for a writer that never comes, and the engine with it.
+  execFileSync("mkfifo", [join(d, "app.js")]);
+  assert.throws(() => readDraft(root, "todos"), /app\.js isn't a plain file/);
+  const m = join(root, ".liner", "addons", "pipe");
+  mkdirSync(m);
+  execFileSync("mkfifo", [join(m, "addon.json")]);
+  assert.throws(() => readDraft(root, "pipe"), /addon\.json isn't a plain file/);
+});
+
+test("panel files: loose, as from a repository, other kinds and deeper folders are left out, not refused", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lc-panel-files-"));
+  writeFileSync(join(dir, "index.html"), "<p>hi</p>");
+  writeFileSync(join(dir, "LICENSE"), "MIT");
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "src", "main.ts"), "export {}");
+  mkdirSync(join(dir, "a", "b", "c"), { recursive: true });
+  writeFileSync(join(dir, "a", "b", "c", "deep.html"), "x");
+  assert.throws(() => readPanelFiles(dir, "index.html"), /LICENSE isn't a kind of file[\s\S]*a\/b\/c is too deep[\s\S]*main\.ts isn't/);
+  assert.deepEqual(Object.keys(readPanelFiles(dir, "index.html", true)), ["index.html"]);
+  writeFileSync(join(dir, "big.js"), "x".repeat(600_000));
+  assert.throws(() => readPanelFiles(dir, "index.html", true), /big\.js is over 512 KB/, "too big is still said");
+});
+
 test("panel draft: read with its files from the session's folder", () => {
   const root = mkdtempSync(join(tmpdir(), "lc-panel-root-"));
   mkdirSync(join(root, ".liner", "addons", "todos"), { recursive: true });
@@ -222,6 +262,19 @@ test("versions: what counts as asking for more", () => {
   assert.deepEqual(widerAccess({}, { network: "api.github.com" }), ["Reach api.github.com over the internet"]);
   assert.deepEqual(widerAccess({ network: "api.github.com" }, { network: "evil.example" }), ["Reach evil.example instead of api.github.com"], "another host is more, not the same");
   assert.equal(accessWords({ sessions: "all", storage: 1024, network: "api.github.com" }), "reads your sessions' titles and changes · keeps its own storage, up to 1 MB · reaches api.github.com");
+});
+
+test("versions: a panel's card offers this project only when it was for this one", () => {
+  const a = new Addons(home());
+  const alpha = { id: "alpha", name: "Alpha" };
+  const beta = { id: "beta", name: "Beta" };
+  assert.equal(a.panelAsk(todos(), "x", alpha, FILES).scope, "project", "a new one, this project first");
+  assert.equal(a.panelAsk(todos({}, { place: "page" }), "x", alpha, FILES).scope, "all", "a page belongs to none");
+  a.install(todos(), { project: "alpha", by: { agent: "x", at: 1 } }, FILES);
+  assert.equal(a.panelAsk(todos(), "x", alpha, { ...FILES, "app.js": "// v2" }).scope, "project");
+  assert.equal(a.panelAsk(todos(), "x", beta, { ...FILES, "app.js": "// v2" }).scope, "all", "never quietly moved from Alpha to Beta");
+  a.update("todos", { project: null });
+  assert.equal(a.panelAsk(todos(), "x", alpha, { ...FILES, "app.js": "// v2" }).scope, "all");
 });
 
 test("storage: one per add-on, kept through its versions, within its quota", () => {
@@ -501,4 +554,19 @@ test("offer: one that asks for more than the card said isn't added, Cancel stops
   await assert.rejects(x.offers.answer("t", x.card().id, "create", undefined, "x".repeat(1001)), /up to 1,000 characters/);
   const ro = offering({ access: "read" });
   assert.throws(() => ro.offers.offer("t", OFFER), /only reads/);
+});
+
+test("offer: Never in Settings keeps an app that reaches the internet out, offered or made after the setting changed", async () => {
+  const net = { ...OFFER, access: { storage: 64, network: "api.example.com" } };
+  const never = offering();
+  never.store.setSettings({ addonNetwork: "never" });
+  assert.throws(() => never.offers.offer("t", net), /never to reach the internet/);
+  const x = offering();
+  x.offers.offer("t", net);
+  await x.offers.answer("t", x.card().id, "create");
+  x.store.setSettings({ addonNetwork: "never" });
+  x.make({ apiVersion: 1, id: "release-checklist", kind: "panel", name: "Release checklist", place: "page", entry: "index.html", access: { storage: 64, network: "api.example.com" } }, x.card().child!);
+  assert.equal(x.card().state, "failed");
+  assert.match(x.card().error ?? "", /may never reach the internet/);
+  assert.equal(x.addons.get("release-checklist"), undefined);
 });

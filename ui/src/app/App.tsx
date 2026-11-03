@@ -476,7 +476,7 @@ export function App() {
               <AppPage
                 key={view.id}
                 id={view.id}
-                back={view.back?.kind === "session" ? (threads.find((t) => t.id === (view.back as { id: string }).id)?.title ?? "Back") : view.back?.kind === "usage" ? "Usage" : view.back?.kind === "routines" ? "Routines" : "Home"}
+                back={view.back?.kind === "session" ? (threads.find((t) => t.id === (view.back as { id: string }).id)?.title ?? "Back") : view.back?.kind === "usage" ? "Usage" : view.back?.kind === "routines" ? "Routines" : view.back?.kind === "addons" ? "Add-ons" : "Home"}
                 onBack={() => setView(view.back ?? { kind: "home" })}
                 sidebar={sidebar}
                 onSidebar={() => setSidebar(true)}

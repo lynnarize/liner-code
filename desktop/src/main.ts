@@ -164,6 +164,8 @@ const isLocal = (url: string) => {
     return false;
   }
 };
+/** A srcdoc frame sending itself anywhere but a new srcdoc of its own. */
+const sealed = (e: { url: string; frame?: { url: string } | null }) => e.frame?.url === "about:srcdoc" && e.url.split("#")[0] !== "about:srcdoc";
 /** The app's own page: the engine's origin, or the dev server's (LINER_UI_URL). */
 const ours = (url: string) => {
   try {
@@ -239,6 +241,10 @@ function createWindow() {
   // The window itself never leaves the app's origin (a localhost link dropped on it would get the
   // token and the bridge); the frames it shows pages in stay on this machine. loadURL isn't asked.
   wc.on("will-frame-navigate", (e) => {
+    // A sealed srcdoc frame (an add-on's panel, an agent's page, a design's version) never leaves its
+    // document: not in place, and not out to your browser, where what it read would leave with it.
+    // Its links come to the window as a message instead (Page.tsx).
+    if (!e.isMainFrame && sealed(e)) return e.preventDefault();
     if (e.isMainFrame ? ours(e.url) : isLocal(e.url)) return;
     // A page's own embeds (a dev app's Stripe or YouTube frame, a design's map) load where they
     // are; only the app's page and the frames it shows pages in stay here, their links opening outside.
@@ -330,8 +336,9 @@ ipcMain.handle("liner", async (e, method: unknown, params: unknown) => {
 async function shoot(url: string, width: number, height: number) {
   const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, disableDialogs: true } });
   w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  w.webContents.on("will-navigate", (e, to) => {
-    if (!isLocal(to)) e.preventDefault();
+  // The page stays on this Mac, and a sealed frame in it (an add-on being checked, with real files) stays put.
+  w.webContents.on("will-frame-navigate", (e) => {
+    if (e.isMainFrame ? !isLocal(e.url) : sealed(e)) e.preventDefault();
   });
   try {
     // One deadline over all of it: a page that loops after it loads never answers, and the window would stay.
@@ -372,8 +379,9 @@ async function look(url: string, width: number, height: number) {
     if (e.level === "error" && errors.length < 20) errors.push(`${e.message}${e.lineNumber ? ` (line ${e.lineNumber})` : ""}`);
   });
   w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  w.webContents.on("will-navigate", (e, to) => {
-    if (!isLocal(to)) e.preventDefault();
+  // The page stays on this Mac, and a sealed frame in it (an add-on being checked, with real files) stays put.
+  w.webContents.on("will-frame-navigate", (e) => {
+    if (e.isMainFrame ? !isLocal(e.url) : sealed(e)) e.preventDefault();
   });
   try {
     return await Promise.race([

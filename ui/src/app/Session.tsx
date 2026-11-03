@@ -17,7 +17,7 @@ import { ShipCard } from "./Ship";
 import { I, ModelMark } from "./icons";
 import { agentOf, checkpointsOf, isModelAgent, markOf, modeOf, modelLabel, sumLines } from "./model";
 import { Panel } from "./Panel";
-import { FindBar, toComposer } from "./Find";
+import { FindBar, onComposerInsert, toComposer } from "./Find";
 import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
 import { readLook } from "./look";
@@ -52,6 +52,8 @@ const PANEL_EXIT_MS = 400;
 const places = new Map<string, { top: number; atEnd: boolean }>();
 /** Which view of each session was up: Chat, or an app's tab beside it. */
 const views = new Map<string, string>();
+/** The install previews that have come up by themselves once, while the app runs. */
+const openedPreviews = new Set<string>();
 
 /**
   The session reads only the parts of the timeline it shows (its checkpoints, your messages, its
@@ -235,6 +237,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
 
   // ⌘K's "Open Browser" and the like reach this session's dock.
   useEffect(() => onOpenSurface(thread.id, (tab) => setDock((d) => openTab(d, tab))), [thread.id]);
+  // Something put in the composer from an app's tab ("Ask … to fix it", composer.put): back to Chat, where it is.
+  useEffect(() => onComposerInsert(thread.id, () => setView("chat")), [thread.id]);
 
   // A panel an agent asks to add comes up in the dock as a preview; once added, a dock panel is
   // itself in the same place (a tab or a page has its own), and a no (or a turn that ended) takes
@@ -254,11 +258,10 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   useEffect(() => {
     if (view !== "chat" && !tabApps.some((a) => a.id === view)) setView("chat");
   }, [view, tabApps.map((a) => a.id).join()]);
-  const opened = useRef(new Set<string>());
   useEffect(() => {
-    // Each preview comes up once by itself; closed, it stays closed (its card opens it again).
-    const fresh = panelAsks.filter((a) => a.state === "asking" && !opened.current.has(`preview:${a.id}`)).map((a) => `preview:${a.id}`);
-    for (const t of fresh) opened.current.add(t);
+    // Each preview comes up once by itself; closed, it stays closed (its card opens it again), even after you've been to another session.
+    const fresh = panelAsks.filter((a) => a.state === "asking" && !openedPreviews.has(`preview:${a.id}`)).map((a) => `preview:${a.id}`);
+    for (const t of fresh) openedPreviews.add(t);
     setDock((d) => {
       let next = d;
       for (const a of panelAsks) {
@@ -296,12 +299,14 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     const onKey = (e: KeyboardEvent) => {
       if (!is(e, "find")) return;
       if (dock.open && dock.full && dock.panes.length === 1 && dock.panes[0].tab === "changes") return;
+      // On an app's tab the chat is hidden: there's nothing of it to find.
+      if (view !== "chat") return;
       e.preventDefault();
       setFinding((n) => n + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dock]);
+  }, [dock, view]);
 
   // Select part of an answer and Cite puts it in the composer as a quote.
   const [cite, setCite] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -479,7 +484,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             {[{ id: "chat", name: "Chat", Icon: I.comment }, ...tabApps.map((a) => ({ id: a.id, name: a.name, Icon: appIcon(a.panel?.icon) }))].map((v) => (
               <button key={v.id} type="button" role="tab" className="lc-view-b l-focus" aria-selected={view === v.id} onClick={() => setView(v.id)}>
                 <v.Icon size={13} />
-                {v.name}
+                <span>{v.name}</span>
               </button>
             ))}
           </div>

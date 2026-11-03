@@ -373,10 +373,10 @@ export class CodexServerSession implements ProviderSession {
     and a thread/resume with new settings is ignored while the thread is loaded. So a thread under
     way gets new connections by being reopened for its next turn, resuming where it was (T3 Code
     sends its servers on thread/start and thread/resume the same way: CodexAdapterV2.ts). One not
-    started yet just takes them.
+    started yet just takes them; one still opening has already sent the old ones, so it's reopened too.
   */
   async connect(connections: Connection[]) {
-    if (this.opened) return false;
+    if (this.opened || this.opening) return false;
     this.o.connections = connections;
     return true;
   }

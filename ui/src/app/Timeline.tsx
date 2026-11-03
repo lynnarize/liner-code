@@ -829,8 +829,8 @@ function Approval({ threadId, it, who }: { threadId: string; it: Extract<Item, {
         risk={it.risk}
         fields={(details ? it.fields : []).map((f) => ({
           label: f.label,
-          // A command is shown whole: what runs is what you read.
-          value: f.label === "Command" || f.label === "File" ? <code className="lc-ask-cmd">{os.tilde(f.value)}</code> : os.tilde(f.value),
+          // A command is shown whole: what runs is what you read. So are a mode's instructions, which every session in it is told.
+          value: f.label === "Command" || f.label === "File" || f.label === "Instructions" ? <code className="lc-ask-cmd">{os.tilde(f.value)}</code> : os.tilde(f.value),
         }))}
         approveLabel={it.risk === "high" ? (/push/i.test(it.title) ? "Hold to push" : "Hold to allow") : shell ? "Run it" : "Allow"}
         denyLabel="Not this"
@@ -877,7 +877,8 @@ function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: stri
   const [scope, setScope] = useState<"all" | "project">(a.scope ?? "all");
   const [values, setValues] = useState<Record<string, string>>({});
   const [details, setDetails] = useState(false);
-  const kept = (name: string) => keys.includes(addonKey(a.id, name));
+  // A key kept for the server it pointed at before isn't sent to a new one: it's typed again.
+  const kept = (name: string) => !a.moved && keys.includes(addonKey(a.id, name));
   const missing = a.secrets.filter((k) => !values[k.name]?.trim() && !kept(k.name));
   const answer = async (allow: boolean, reason?: string) => {
     try {
@@ -935,6 +936,7 @@ function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: stri
   const what = a.transport === "http" ? "reaches" : "starts";
   const fields = [
     { label: "Server", value: <code className="lc-addon-mono">{os.tilde(a.server)}</code> },
+    ...(a.moved ? [{ label: "Was", value: <code className="lc-addon-mono">{os.tilde(a.moved)}</code> }] : []),
     ...(a.replaces ? [{ label: "Replaces", value: `v${a.replaces}, which stays kept` }] : []),
     { label: "Reaches", value: a.reaches.length ? andList(a.reaches) : "Every agent tool" },
     {
@@ -950,7 +952,7 @@ function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: stri
             autoComplete="off"
             spellCheck={false}
             aria-label={k.label}
-            placeholder={kept(k.name) ? "Kept from before · type to replace" : k.name}
+            placeholder={kept(k.name) ? "Kept from before · type to replace" : a.moved && keys.includes(addonKey(a.id, k.name)) ? "Type it again for the new server" : k.name}
             value={values[k.name] ?? ""}
             onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))}
           />

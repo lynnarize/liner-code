@@ -25,7 +25,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSy
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AddonAsk, AddonInfo, AddonManifest, AddonSecret, ConnectionAsk, ConnectionManifest, PanelAccess, PanelManifest } from "../../contracts/src/index.ts";
 import { addonKey, PANEL_ICONS } from "../../contracts/src/index.ts";
-import { writeAtomic } from "./store.ts";
+import { loadState, writeAtomic } from "./store.ts";
 
 /** Where an agent writes a draft, in the session's folder. */
 export const ADDON_DIR = ".liner/addons";
@@ -284,8 +284,10 @@ export type PanelFiles = Record<string, string>;
 /**
   The files in a panel's folder beside its manifest, read for its frame: no links, nothing hidden,
   only the kinds a page is made of, 40 at most and 2 MB in all. Every problem is said at once.
+  `loose`, for a folder from outside (a repository with its LICENSE and sources beside the page):
+  files of other kinds and folders too deep are left out rather than said.
 */
-export function readPanelFiles(dir: string, entry: string): PanelFiles {
+export function readPanelFiles(dir: string, entry: string, loose = false): PanelFiles {
   const files: PanelFiles = {};
   const bad: string[] = [];
   let total = 0;
@@ -301,15 +303,23 @@ export function readPanelFiles(dir: string, entry: string): PanelFiles {
         continue;
       }
       if (st.isDirectory()) {
-        if (depth >= 2) bad.push(`${rel} is too deep: two folders down at most.`);
-        else walk(abs, depth + 1);
+        if (depth < 2) walk(abs, depth + 1);
+        else if (!loose) bad.push(`${rel} is too deep: two folders down at most.`);
+        continue;
+      }
+      // A pipe or a device would hang the read: only plain files.
+      if (!st.isFile()) {
+        bad.push(`${rel} isn't a plain file.`);
         continue;
       }
       if (!PANEL_TYPES.test(name)) {
-        bad.push(`${rel} isn't a kind of file a panel holds (html, js, css, json, svg, png, jpg, gif, webp, txt, md).`);
+        if (!loose) bad.push(`${rel} isn't a kind of file a panel holds (html, js, css, json, svg, png, jpg, gif, webp, txt, md).`);
         continue;
       }
-      if (st.size > PANEL_FILE_MAX) bad.push(`${rel} is over ${PANEL_FILE_MAX / 1000} KB.`);
+      if (st.size > PANEL_FILE_MAX) {
+        bad.push(`${rel} is over ${PANEL_FILE_MAX / 1000} KB.`);
+        continue;
+      }
       total += st.size;
       if (Object.keys(files).length >= PANEL_FILES) {
         bad.push(`It has more than ${PANEL_FILES} files.`);
@@ -370,6 +380,7 @@ export function readDraft(root: string, asked: string): { path: string; manifest
   if (!existsSync(file)) throw new Error(`There's no ${rel.split(sep).join("/")}. Write the manifest there first (liner_inspect has its shape).`);
   const real = relative(realpathSync(root), realpathSync(file));
   if (real.startsWith("..") || isAbsolute(real)) throw new Error("That draft is a link to outside this session's folder.");
+  if (!statSync(file).isFile()) throw new Error(`${rel} isn't a plain file.`);
   if (statSync(file).size > 64_000) throw new Error("That draft is over 64 KB; a manifest is a few lines.");
   let raw: unknown;
   try {
@@ -393,19 +404,17 @@ export class Addons {
   readonly dir: string;
   /** This run started without add-ons (Settings › Add-ons): none reach any tool until Liner Code starts again. */
   off = false;
-  private index: Index = { v: 1, addons: {} };
+  /** By id, with no prototype: an add-on called constructor is just an add-on. */
+  private index: Index = { v: 1, addons: Object.create(null) };
   /** Told after every change, with the list as it is now. */
   onChange: (list: AddonInfo[]) => void = () => {};
 
   constructor(home: string) {
     this.dir = join(home, "addons");
     mkdirSync(this.dir, { recursive: true });
-    try {
-      const read = JSON.parse(readFileSync(join(this.dir, "index.json"), "utf8")) as Index;
-      if (read && typeof read.addons === "object") this.index = { v: 1, addons: read.addons };
-    } catch {
-      // none yet
-    }
+    // One that doesn't read is moved aside and its .bak read instead, so a save can't put it over the good copy.
+    const read = loadState<Index>(join(this.dir, "index.json"));
+    if (read.addons && typeof read.addons === "object" && !Array.isArray(read.addons)) this.index = { v: 1, addons: Object.assign(Object.create(null), read.addons) };
     // Start without add-ons holds for one start: its mark goes as it's read.
     const once = join(this.dir, "off-once");
     if (existsSync(once)) {
@@ -515,13 +524,15 @@ export class Addons {
   /** The version this manifest would be, and the one in use it would replace (none when it's the same). */
   wouldBe(m: AddonManifest, files?: PanelFiles): { version: number; replaces?: number } {
     const e = this.index.addons[m.id];
-    if (!e) return { version: 1 };
-    const same = e.versions.find((x) => {
+    const same = e?.versions.find((x) => {
       const kept = this.manifest(m.id, x.v);
       return kept && canon(kept, kept.kind === "panel" ? (this.files(m.id, x.v) ?? undefined) : undefined) === canon(m, files);
     });
-    if (same) return { version: same.v, ...(same.v !== e.version ? { replaces: e.version } : {}) };
-    return { version: Math.max(...e.versions.map((x) => x.v)) + 1, replaces: e.version };
+    if (e && same) return { version: same.v, ...(same.v !== e.version ? { replaces: e.version } : {}) };
+    // A version's folder already on disk (kept by an index that didn't read, say) is never written over.
+    let v = e ? Math.max(...e.versions.map((x) => x.v)) + 1 : 1;
+    while (existsSync(join(this.dir, m.id, `v${v}`))) v++;
+    return e ? { version: v, replaces: e.version } : { version: v };
   }
 
   /** Adds it, as a new version unless one kept is the same, on and in use. A panel brings its files. */
@@ -543,7 +554,8 @@ export class Addons {
       writeAtomic(join(dir, "addon.json"), `${JSON.stringify(m, null, 2)}\n`);
     }
     const versions = e ? [...e.versions.filter((x) => x.v !== version), { v: version, at: Date.now() }] : [{ v: version, at: Date.now() }];
-    this.index.addons[m.id] = { version, enabled: true, ...(o.project ? { project: o.project } : {}), by: e?.by ?? o.by, versions };
+    // Who first added it stays, unless this one comes from somewhere else.
+    this.index.addons[m.id] = { version, enabled: true, ...(o.project ? { project: o.project } : {}), by: e && e.by.from === o.by.from ? e.by : o.by, versions };
     this.save();
     return version;
   }
@@ -620,8 +632,8 @@ export class Addons {
       manifest: JSON.stringify(m, null, 2),
       ...(replaces && !had?.removed ? { replaces } : {}),
       ...(wider ? { wider } : {}),
-      // A page belongs to no project; a panel is offered for this one first, unless it was for every one before.
-      scope: m.place === "page" ? "all" : had && !had.project ? "all" : "project",
+      // A page belongs to no project; a panel is offered for this one first, unless it was for every one, or another one, before.
+      scope: m.place === "page" || (had && had.project !== project.id) ? "all" : "project",
     };
   }
 
@@ -629,6 +641,8 @@ export class Addons {
   askOf(m: ConnectionManifest, path: string, project: { id: string; name: string }, reaches: string[]): ConnectionAsk {
     const { replaces } = this.wouldBe(m);
     const had = this.index.addons[m.id];
+    // Its keys are kept by id: one pointing somewhere new has them typed again rather than sent there.
+    const was = had ? this.manifest(m.id) : null;
     return {
       id: m.id,
       name: m.name,
@@ -642,8 +656,9 @@ export class Addons {
       project,
       manifest: JSON.stringify(m, null, 2),
       ...(replaces && !had?.removed ? { replaces } : {}),
-      // The card offers where it was the last time, else every project.
-      scope: had?.project ? "project" : "all",
+      ...(was?.kind === "connection" && reachOf(was) !== reachOf(m) ? { moved: reachOf(was) } : {}),
+      // The card offers this project only when it was for this one; for another, or every one, every project.
+      scope: had?.project === project.id ? "project" : "all",
     };
   }
 }

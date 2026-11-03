@@ -1003,7 +1003,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if ("itemId" in p) {
         const d = x.tools?.pending.get(p.itemId);
         if (!d || d.threadId !== p.threadId) throw new Error("That panel isn't waiting on a card any more.");
-        return { id: d.manifest.id, name: d.manifest.name, place: d.manifest.place, entry: d.manifest.entry, access: d.manifest.access, files: d.files };
+        if (addons().off) throw new Error("Add-ons are off until Liner Code starts again.");
+        // The network is the card's hold to give: until then the preview runs without it.
+        const { network: _held, ...access } = d.manifest.access;
+        return { id: d.manifest.id, name: d.manifest.name, place: d.manifest.place, entry: d.manifest.entry, access, files: d.files };
       }
       const a = addons();
       const m = a.manifest(p.id, p.version);
@@ -1019,7 +1022,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (preview) {
         const d = x.tools?.pending.get(preview);
         if (!d || d.threadId !== threadId || d.manifest.id !== addon) throw new Error("That preview is over.");
-        where = { access: d.manifest.access, place: d.manifest.place, threadId: d.manifest.place === "page" ? undefined : threadId };
+        if (addons().off) throw new Error("Add-ons are off until Liner Code starts again.");
+        where = { access: { ...d.manifest.access, network: undefined }, place: d.manifest.place, threadId: d.manifest.place === "page" ? undefined : threadId };
         // A preview plays with storage that's gone when its card is.
         storage = { all: () => d.storage, put: (k, v) => (v === undefined ? delete d.storage[k] : (d.storage[k] = v)) };
         quota = d.manifest.access.storage ?? 0;

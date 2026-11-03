@@ -131,3 +131,12 @@ test("mode_add: a custom mode is a named agent's instructions, added only on the
   assert.equal(ro.asked.length, 0);
   assert.equal((await yes.tools.call("t", "mode_add", { name: "Y" })).isError, true, "it needs instructions");
 });
+
+test("mode_add: the card carries every word of the instructions, and add-ons set to never offer don't stop a mode", async () => {
+  const x = rig(true);
+  x.store.setSettings({ addonOffers: "never" });
+  const long = `${"Read before you edit. ".repeat(60)}And never push.`;
+  const r = await x.tools.call("t", "mode_add", { name: "Careful", instructions: long });
+  assert.match(r.content.map((c) => ("text" in c ? c.text : "")).join(""), /^applied: the mode Careful/);
+  assert.equal(x.asked[0].fields?.find((f) => f.label === "Instructions")?.value, long, "what's approved is what's saved");
+});

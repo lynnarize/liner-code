@@ -134,19 +134,6 @@
   line-height: 1.55;
   color: var(--l-ink-2);
 }
-.lc-mode-more {
-  margin: -4px 16px 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--l-wash);
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--l-ink-2);
-}
-.lc-mode-more ul {
-  margin: 0;
-  padding-left: 16px;
-}
 .lc-mode-card > footer {
   display: flex;
   align-items: center;

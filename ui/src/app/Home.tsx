@@ -94,7 +94,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     const quietly = background.current;
     background.current = false;
     try {
-      if (compare.length) {
+      if (compare.length && mode_ === "standard") {
         const made = await rpc("compare.start", { projectId: project.id, text: m.text, files: m.files, models: [settings.lead ?? settings.agent, ...compare], effort: settings.effort, access: settings.access });
         setCompare([]);
         if (made[0]?.compare) onCompare(made[0].compare.id);
@@ -143,8 +143,9 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               onBase={setBase}
               inWorktree={inWorktree}
               onInWorktree={setInWorktree}
-              compare={project.git ? compare : undefined}
-              onCompare={project.git ? setCompare : undefined}
+              // Comparing models starts Standard sessions, so it's offered only in Standard.
+              compare={project.git && mode_ === "standard" ? compare : undefined}
+              onCompare={project.git && mode_ === "standard" ? setCompare : undefined}
               autoFocus
               stripMid={<ModePick value={mode_} onPick={setSessionMode} />}
               stripEnd={

@@ -15,9 +15,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AddonInfo, Item, PanelAsk, PanelIcon, PanelPlace, Thread } from "@contracts";
 import { panelDocument, PANEL_API } from "@contracts";
+import { HoldToConfirm } from "@liner/components/hold-to-confirm/hold-to-confirm";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
-import { rpc, useEngine, useItemsWhere } from "./engine";
+import { getState, loadItems, rpc, useEngine, useItemsWhere } from "./engine";
 import { toComposer } from "./Find";
 import { I } from "./icons";
 import { theme } from "./Page";
@@ -378,6 +379,10 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
   const [info, setInfo] = useState(false);
   const [busy, setBusy] = useState(false);
   const child = useEngine((s) => (it.child ? s.items[it.child] : undefined));
+  // The background session's timeline, fetched so its steps come in here while you keep chatting.
+  useEffect(() => {
+    if (it.child && (it.state === "creating" || it.state === "installing") && !getState().items[it.child]) void loadItems(it.child).catch(() => {});
+  }, [it.child, it.state]);
   const act = async (a: "create" | "dismiss" | "cancel" | "keep" | "undo" | "restore") => {
     setBusy(true);
     try {
@@ -473,9 +478,16 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
             <button type="button" className="lc-btn" data-kind="ghost" disabled={busy} onClick={() => void act("dismiss")}>
               Not now
             </button>
-            <button type="button" className="lc-btn" disabled={busy || (place === "custom" && !custom.trim())} onClick={() => void act("create")}>
-              {busy ? "Starting…" : "Create"}
-            </button>
+            {/* Reaching the internet is held to allow, as on an install card. */}
+            {it.access.network && !busy && !(place === "custom" && !custom.trim()) ? (
+              <HoldToConfirm duration={900} resetAfter={1200} onConfirm={() => void act("create")} hintLabel="Keep holding" doneLabel="Starting…">
+                Hold to create
+              </HoldToConfirm>
+            ) : (
+              <button type="button" className="lc-btn" disabled={busy || (place === "custom" && !custom.trim())} onClick={() => void act("create")}>
+                {busy ? "Starting…" : "Create"}
+              </button>
+            )}
           </div>
           {info && (
             <ul className="lc-offer-info">
@@ -549,11 +561,16 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
               {busy ? "Restoring…" : "Restore"}
             </button>
           )}
-          {(it.state === "cancelled" || it.state === "failed") && (
-            <button type="button" className="lc-btn" disabled={busy} onClick={() => void act("create")}>
-              Create again
-            </button>
-          )}
+          {(it.state === "cancelled" || it.state === "failed") &&
+            (it.access.network && !busy ? (
+              <HoldToConfirm duration={900} resetAfter={1200} onConfirm={() => void act("create")} hintLabel="Keep holding" doneLabel="Starting…">
+                Hold to create again
+              </HoldToConfirm>
+            ) : (
+              <button type="button" className="lc-btn" disabled={busy} onClick={() => void act("create")}>
+                Create again
+              </button>
+            ))}
         </div>
       )}
     </section>

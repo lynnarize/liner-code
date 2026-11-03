@@ -1958,13 +1958,14 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-3);
 }
 /* The session's bar spans the paper, over the thread and the dock: narrow, it keeps the title and
-   drops who works on it to its discs, then the branch. */
-@container lc-session (max-width: 900px) {
+   drops the branch, then who works on it to its discs and the mode to its icon, then those discs
+   and the lines changed (⋯ still has Agents), so the buttons on the right keep their room. */
+@container lc-session (max-width: 1100px) {
   .lc-top .lc-branch {
     display: none;
   }
 }
-@container lc-session (max-width: 780px) {
+@container lc-session (max-width: 1000px) {
   .lc-chain {
     gap: 2px;
     font-size: 0;
@@ -1979,6 +1980,19 @@ html[data-native="mac"] .lc-sb-head {
   .lc-tb-changes > svg,
   .lc-tb-changes .lc-lines {
     font-size: 11.5px;
+  }
+  .lc-top .lc-mode-chip {
+    gap: 0;
+    font-size: 0;
+  }
+}
+@container lc-session (max-width: 780px) {
+  .lc-top {
+    gap: 6px;
+  }
+  .lc-top .lc-chain,
+  .lc-tb-changes .lc-lines {
+    display: none;
   }
 }
 .lc-crumb {
@@ -3774,19 +3788,6 @@ html[data-composer="clear"] .lc-dock .lc-card {
 @media (hover: hover) {
   .lc-panel-top .lc-ib:hover {
     color: var(--l-ink);
-  }
-}
-/* With the panel over the whole paper and no sidebar, its bar starts after the traffic lights,
-   moving there with the panel's column. */
-html[data-native="mac"] .lc-panel-top {
-  transition: padding 520ms var(--l-spring-smooth);
-}
-html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide] .lc-panel-top {
-  padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
-}
-@container lc-session (max-width: 700px) {
-  html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel] .lc-panel-top {
-    padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
   }
 }
 /* Beside the thread, one sheet split by a hairline: the panel's header sits on the session's line. */

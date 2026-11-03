@@ -8,6 +8,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Item } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
+import { bridge } from "./bridge";
 import { openInDesign } from "./Design";
 import { rpc } from "./engine";
 import { I } from "./icons";
@@ -34,7 +35,7 @@ function documentOf(id: string, html: string, vars: Record<string, string>) {
     .map(([k, v]) => `${k}:${v || "initial"}`)
     .join(";");
   const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:"><style>:root{${root};color-scheme:light dark}html,body{margin:0}body{padding:16px 18px;background:var(--surface);color:var(--ink);font:13.5px/1.55 var(--font),system-ui,sans-serif}table{border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left}th{font-weight:500;color:var(--ink-2)}code,pre{font-family:var(--font-mono),ui-monospace,monospace}</style>`;
-  const tail = `<script>(()=>{const id=${JSON.stringify(id)};let last=0;const say=()=>{const b=document.body;const h=Math.ceil(b?b.getBoundingClientRect().height+parseFloat(getComputedStyle(b).marginTop)+parseFloat(getComputedStyle(b).marginBottom):document.documentElement.scrollHeight);if(h!==last){last=h;parent.postMessage({__linerPage:id,h},"*")}};new ResizeObserver(say).observe(document.body||document.documentElement);addEventListener("load",say);say();addEventListener("message",(e)=>{if(e.source!==parent||!e.data)return;if(e.data.__linerPing){last=0;say()}if(e.data.__linerTheme)for(const[k,v]of Object.entries(e.data.__linerTheme))document.documentElement.style.setProperty(k,v)})})()</script>`;
+  const tail = `<script>(()=>{const id=${JSON.stringify(id)};let last=0;const say=()=>{const b=document.body;const h=Math.ceil(b?b.getBoundingClientRect().height+parseFloat(getComputedStyle(b).marginTop)+parseFloat(getComputedStyle(b).marginBottom):document.documentElement.scrollHeight);if(h!==last){last=h;parent.postMessage({__linerPage:id,h},"*")}};new ResizeObserver(say).observe(document.body||document.documentElement);addEventListener("load",say);say();addEventListener("click",(e)=>{const a=e.target&&e.target.closest&&e.target.closest("a[href]");if(a&&/^(https?|mailto):/i.test(a.href)){e.preventDefault();parent.postMessage({__linerPage:id,open:a.href},"*")}});addEventListener("message",(e)=>{if(e.source!==parent||!e.data)return;if(e.data.__linerPing){last=0;say()}if(e.data.__linerTheme)for(const[k,v]of Object.entries(e.data.__linerTheme))document.documentElement.style.setProperty(k,v)})})()</script>`;
   const whole = /<html[\s>]/i.test(html);
   if (!whole) return `<!doctype html><html><head>${head}</head><body>${html}${tail}</body></html>`;
   const withHead = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => `${m}${head}`) : html.replace(/<html[^>]*>/i, (m) => `${m}<head>${head}</head>`);
@@ -50,6 +51,8 @@ export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item,
   useLayoutEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow || e.data?.__linerPage !== it.id) return;
+      // A link in the page: the frame can't leave its document (the shell holds it), so it opens in your browser from here.
+      if (typeof e.data.open === "string") return void (/^(https?|mailto):/i.test(e.data.open) && bridge.openExternal(e.data.open));
       setHeight(Math.max(60, Number(e.data.h) || 0));
     };
     window.addEventListener("message", onMsg);

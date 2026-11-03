@@ -93,6 +93,7 @@ export class Offers {
     // What it touches, checked as a panel's manifest is.
     const m = checkManifest({ apiVersion: 1, id: "offer", kind: "panel", name, place, access: args.access ?? {} });
     const access = (m as { access: PanelAccess }).access;
+    if (access.network && store.settings.addonNetwork === "never") throw new Error("The person set panels never to reach the internet (Settings › Add-ons): offer it without access.network.");
     const seed = Array.isArray(args.initialContent) ? args.initialContent.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim().slice(0, 300)).slice(0, 40) : undefined;
     const turn = this.h.turnOf(threadId);
     const items = store.timeline(threadId);
@@ -169,6 +170,8 @@ export class Offers {
       if (!it.custom && manifest.place !== it.place) throw new Error(`It made it for ${manifest.place === "page" ? "a page" : manifest.place === "tab" ? "a tab" : "the dock"}, not where you said.`);
       const more = widerAccess(it.access, manifest.access);
       if (more.length) throw new Error(`It asks for more than the card said (${more.join("; ").toLowerCase()}), so it wasn't added.`);
+      // The setting may have changed while it was being made.
+      if (manifest.access.network && store.settings.addonNetwork === "never") throw new Error(`It reaches ${manifest.access.network}, and panels may never reach the internet (Settings › Add-ons).`);
       const version = this.h.addons.install(manifest, { by: { agent: this.h.whoIs(t.id), threadId: t.id, title: t.title, at: Date.now() } }, files);
       store.putItem(m.threadId, { ...(store.item(m.threadId, m.itemId) as Offer), state: "installed", version, place: manifest.place, error: undefined });
     } catch (e) {

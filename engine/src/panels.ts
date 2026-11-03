@@ -65,6 +65,8 @@ export function readable(root: string, path: unknown): string {
   if (existsSync(abs)) {
     const real = relative(realpathSync(root), realpathSync(abs));
     if (real.startsWith("..") || isAbsolute(real)) throw new Error("That file is a link to outside the project.");
+    // Where it really is counts too: notes.txt -> .env is .env. Counted from the project, so a folder above it (~/.work) doesn't.
+    if (real.split(sep).some((p) => p.startsWith("."))) throw new Error("That file is a link to a hidden one (.env, .git), which isn't a panel's to read.");
   }
   return rel.split(sep).join("/");
 }
@@ -123,7 +125,12 @@ export async function panelCall(env: PanelEnv, w: PanelWhere, method: PanelMetho
       let read = 0;
       for (const p of await listFiles(root(), 20000)) {
         if (out.length >= limit || read > 20_000_000) break;
-        if (hidden(p)) continue;
+        // What files.read would refuse (hidden, or a link to one or out), search skips.
+        try {
+          readable(root(), p);
+        } catch {
+          continue;
+        }
         let size = 0;
         try {
           size = statSync(resolve(root(), p)).size;

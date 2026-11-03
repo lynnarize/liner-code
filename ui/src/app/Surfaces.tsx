@@ -90,9 +90,14 @@ export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HT
   // wherever on the grip you took it), and the width it last asked for.
   const start = useRef<{ x: number; w: number } | null>(null);
   const last = useRef<number | null>(null);
-  const fit = (w: number) => Math.round(Math.max(PANE_MIN, Math.min(w, (body.current?.clientWidth ?? w + THREAD_MIN) - THREAD_MIN)));
+  // Two panes show the dock 1.6 times the kept width (dock.css), so the edge works in kept widths.
+  const k = () => (body.current?.closest<HTMLElement>(".lc-session")?.dataset.panes === "2" ? 1.6 : 1);
+  const fit = (w: number) => Math.round(Math.max(PANE_MIN, Math.min(w, ((body.current?.clientWidth ?? w * k() + THREAD_MIN) - THREAD_MIN) / k())));
   // The width as it shows: a kept one can be more than this window leaves room for.
-  const shown = () => body.current?.querySelector<HTMLElement>(":scope > .lc-panel")?.offsetWidth ?? width ?? PANE_MIN;
+  const shown = () => {
+    const el = body.current?.querySelector<HTMLElement>(":scope > .lc-panel");
+    return el ? el.offsetWidth / k() : (width ?? PANE_MIN);
+  };
   const keep = (w: number | null) => {
     onWidth(w);
     try {
@@ -129,7 +134,7 @@ export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HT
       }}
       onPointerMove={(e) => {
         if (start.current === null) return;
-        last.current = fit(start.current.w + start.current.x - e.clientX);
+        last.current = fit(start.current.w + (start.current.x - e.clientX) / k());
         onWidth(last.current);
       }}
       onPointerUp={end}
@@ -139,7 +144,7 @@ export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HT
         const step = e.key === "ArrowLeft" ? 24 : e.key === "ArrowRight" ? -24 : 0;
         if (!step) return;
         e.preventDefault();
-        keep(fit(shown() + step));
+        keep(fit(shown() + step / k()));
       }}
     />
   );

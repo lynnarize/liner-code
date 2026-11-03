@@ -677,6 +677,8 @@ export type ConnectionAsk = AskBase & {
   transport: "stdio" | "http";
   /** Its address, or the command line it runs. */
   server: string;
+  /** Where the version you have points, when this one points elsewhere: a key kept for that one is typed again, not sent here. */
+  moved?: string;
   /** The variables a command gets, by name only (its keys among them), so you OK exactly what it's given. */
   env?: string[];
   /** The agent tools on this Mac it reaches ("Claude Code", "Codex"…). */

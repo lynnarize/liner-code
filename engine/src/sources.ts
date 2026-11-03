@@ -42,6 +42,7 @@ export function findAddon(dir: string): string {
 export function readSource(dir: string): { manifest: AddonManifest; files?: PanelFiles } {
   const file = join(dir, "addon.json");
   if (lstatSync(file).isSymbolicLink()) throw new Error("Its addon.json is a link; an add-on's files must be its own.");
+  if (!statSync(file).isFile()) throw new Error("Its addon.json isn't a plain file.");
   if (statSync(file).size > 64_000) throw new Error("Its addon.json is over 64 KB; a manifest is a few lines.");
   let raw: unknown;
   try {
@@ -50,7 +51,8 @@ export function readSource(dir: string): { manifest: AddonManifest; files?: Pane
     throw new Error(`Its addon.json isn't JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
   const manifest = checkManifest(raw);
-  return manifest.kind === "panel" ? { manifest, files: readPanelFiles(dir, manifest.entry) } : { manifest };
+  // Loose: a repository's LICENSE, sources and deeper folders beside the page are left out, not refused.
+  return manifest.kind === "panel" ? { manifest, files: readPanelFiles(dir, manifest.entry, true) } : { manifest };
 }
 
 type Staged = { manifest: AddonManifest; files?: PanelFiles; from: string; dir?: string; at: number };
@@ -76,6 +78,8 @@ export class Sources {
     Nothing is added yet: `adopt` does that, on the person's yes.
   */
   async open(source: string): Promise<{ token: string; from: string; ask: AddonAsk }> {
+    // A card never answered (the dialog closed while it was fetched) goes after half an hour.
+    for (const [k, v] of this.staged) if (Date.now() - v.at > 30 * 60_000) this.drop(k);
     const s = source.trim();
     if (!s) throw new Error("Paste a GitHub address, or choose a folder.");
     const gh = githubOf(s);
@@ -113,6 +117,11 @@ export class Sources {
       if (manifest.kind === "panel" && manifest.access.network && this.network() === "never") throw new Error(`It reaches ${manifest.access.network}, and panels may never reach the internet (Settings › Add-ons).`);
       const have = this.addons.get(manifest.id);
       if (have && have.kind !== manifest.kind) throw new Error(`You already have a ${have.kind} called ${manifest.id}; this one is a ${manifest.kind} with the same id.`);
+      // Keys and storage are kept by id, removed or not: another source's add-on never takes them over.
+      if (have && have.by.from?.toLowerCase() !== from.toLowerCase()) {
+        const who = have.by.from ? `from ${have.by.from}` : have.by.agent === "You" ? "that you added" : `made by ${have.by.agent}`;
+        throw new Error(`You already have an add-on called ${manifest.id}${have.removed ? " (removed, but kept)" : ""}, ${who}; its keys and storage stay with that id. This one is from ${from}.`);
+      }
       this.staged.set(token, { manifest, files, from, dir: clone, at: Date.now() });
       const shown = { id: "", name: "Every project" };
       const path = clone ? relative(clone, at).split(sep).join("/") || "." : at;

@@ -471,6 +471,6 @@ html[data-native="mac"] .lc-st-side {
   min-width: 200px;
   margin-right: auto;
 }
-.lc-st-keys {
+.lc-st-form.lc-st-keys {
   padding: 12px;
 }

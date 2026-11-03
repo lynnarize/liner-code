@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.2.0 (alpha), 2026-11-03
+
+**Update from 0.1.9 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or
+download the new DMG; on Windows, download the new zip. **New: add-ons**, things your agents make
+for Liner Code itself, and **Creator mode** to make them.
+
+### New
+
+- **Add-ons:** ask an agent for a connection, a panel or an app, and it makes one for Liner Code.
+  A card shows what it can touch before it's added, and nothing is added until you say yes.
+- **Connections:** an MCP server from a prompt. The agent drafts it, you add it on the card with
+  its key, which goes to the keychain, and every agent gets it next to Liner Code's own tools.
+- **Panels and apps:** the agent's own page, run in a sealed frame that reaches Liner Code only
+  through what its card allowed: your files, your sessions, the composer, its own storage, or an
+  address on the internet, which you hold to allow. One opens in the right dock, as a tab beside
+  Chat, or as a page of its own from the left sidebar.
+- **Create your add-on:** Add-ons in the sidebar opens a menu with Browse add-ons and Create your
+  add-on, which starts a task in Creator mode with "Create a Liner Code add-on with a left sidebar
+  entry." in the box. Say what it should be, like a notes app for long writing, and the agent
+  builds the full app on a page of its own, not a demo.
+- **Make it an app:** at the end of a turn an agent can offer to turn what it did into an app.
+  Pick where it goes and Create: it's made in the background and added if it touches no more than
+  the card said. Then Keep or Undo, and Restore.
+- **Creator mode:** each session now has a mode, picked under the box on Home beside where it runs
+  and kept for the session: Standard, Creator mode, or one of your own. Creator mode is Standard
+  plus a guide to add-ons and a closer look at Liner Code, never more trust. A Creator session
+  shows a chip beside its title, and the agent can save a mode of yours on a card.
+- **Settings › Modes:** the built-in modes and yours as cards, each with its details, how to use
+  it with example tasks, Set as new task default, and Let the agent help me make one.
+- **The Add-ons page:** what you've added, each with one sentence and a switch. A row opens its
+  details: where it shows, what it can touch, its version and the way back, who made it, and
+  Remove, which keeps its files. **Add add-on** adds one from GitHub or a folder, through the same
+  card. Settings › Add-ons keeps the detailed view.
+- Every version of an add-on is kept. An update that touches no more than before goes in without
+  asking; one that touches more asks again.
+
+### Changed
+
+- **One row at the top right** of a session takes the place of the floating tray and the panel's
+  bottom row: Changes, the surfaces (Browser, Design, Terminal and the rest, with their ⌘⇧ keys),
+  pinned apps, a ⋯ menu and the dock button.
+- **The right panel is a dock** of one or two panes, with tabs you can move, a + tab that lists
+  what can open there, and a full-canvas switch. Each session keeps its own.
+- Home's heading is "What should we build in …?" again; the mode picker sits under the box.
+- Settings › Appearance › Glass keeps only the composer: the tray it also styled is gone.
+
+### Fixed
+
+- A writing command could pass as a read in approvals through quoting, comments, `bash -c` or zsh
+  expansions. A "don't ask again" rule covered env prefixes and `./git`; split or long `rm` flags
+  weren't counted as destructive; Auto waved through MCP tools named like edits.
+- A routine's work step on a busy session let the gate and merge run anyway. A failed first poll,
+  or older pull requests coming into the window, fired runs; a bad schedule time wasn't caught; a
+  run's token limit wasn't kept, and a run that threw wasn't counted or cleaned up.
+- An old unanswered question held every later turn in Needs you. Messages queued during a /goal
+  waited for its end instead of going between its turns. Deleted and archived sessions were mixed
+  up, and streamed text showed twice after a reload.
+- The window could leave the app's own address, and embeds opened elsewhere instead of in place.
+  A key saved after launch didn't reach a restarted engine, a capture window could hang, and
+  Windows consoles closed too soon.
+- ⌘1–⌘9 fired from inside pickers, and Enter in an input method sent early. Archive's Delete
+  didn't ask twice. A docked panel hid a narrow session, and in dark mode find, gutters and theme
+  chips were hard to read.
+
 ## 0.1.9 (alpha), 2026-11-02
 
 **Update from 0.1.8 if you have it.** Liner Code does it by itself (Restart to update), or

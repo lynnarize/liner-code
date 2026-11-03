@@ -265,10 +265,10 @@ export class Addons {
     this.onChange(this.list());
   }
 
-  /** No add-ons from now on, nor when Liner Code next starts. */
-  turnOff() {
+  /** No add-ons from now on; with `next`, nor when Liner Code next starts (it's about to open again). */
+  turnOff(next = false) {
     this.off = true;
-    writeFileSync(join(this.dir, "off-once"), `${new Date().toISOString()}\n`);
+    if (next) writeFileSync(join(this.dir, "off-once"), `${new Date().toISOString()}\n`);
     this.onChange(this.list());
   }
 

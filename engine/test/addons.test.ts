@@ -145,7 +145,7 @@ test("addons: a session gets the connections for its project, its keys filled in
   assert.deepEqual(a.connections("p2", keys), []);
   // Start without add-ons: none this run, nor the next start; the one after brings them back.
   a.update("linear", { enabled: true });
-  a.turnOff();
+  a.turnOff(true);
   assert.deepEqual(a.connections("p1", keys), []);
   const next = new Addons(dir);
   assert.equal(next.off, true);
@@ -393,4 +393,13 @@ test("addon_remove: asks, then removes it where it can be restored", async () =>
   assert.ok(x.addons.get("ping")?.removed);
   assert.equal(x.addons.connections("p", new Map()).length, 0);
   assert.match(said(await x.tools.call("t", "addon_remove", { id: "ping" })), /no add-on called ping/);
+});
+
+test("addons: off for this run only, when the app isn't opening again", () => {
+  const dir = home();
+  const a = new Addons(dir);
+  a.install(ping(), { by: { agent: "You", at: 1 } });
+  a.turnOff();
+  assert.deepEqual(a.connections("p", new Map()), []);
+  assert.equal(new Addons(dir).off, false, "the next start brings them back");
 });

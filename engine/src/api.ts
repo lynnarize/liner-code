@@ -970,8 +970,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (!m) throw new Error("There's no such add-on, or no such version of it.");
       return { manifest: JSON.stringify(m, null, 2), dir: join(addons().dir, id) };
     },
-    "addons.off": () => {
-      addons().turnOff();
+    "addons.off": ({ next }) => {
+      addons().turnOff(Boolean(next));
       void runtime.relink();
       return null;
     },

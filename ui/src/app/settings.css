@@ -464,10 +464,13 @@ html[data-native="mac"] .lc-st-side {
   color: var(--l-ink-2);
   font-size: 13px;
 }
-.lc-st-addhand .lc-rules-t {
-  height: 200px;
+.lc-st-addhand textarea.lc-input {
+  min-height: 200px;
 }
 .lc-st-push {
   min-width: 200px;
   margin-right: auto;
+}
+.lc-st-keys {
+  padding: 12px;
 }

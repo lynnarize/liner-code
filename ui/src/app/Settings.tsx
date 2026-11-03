@@ -2022,15 +2022,18 @@ function AddonsPlace() {
   const projects = useEngine((x) => x.projects);
   const keys = useEngine((x) => x.keys);
   const home = useEngine((x) => x.home);
+  // A restart stops turns where they are, so it waits for the sessions at work.
+  const working = useEngine((x) => x.threads.filter((t) => t.status === "running").length);
   const [adding, setAdding] = useState(false);
   const update = (id: string, p: { enabled?: boolean; version?: number; removed?: boolean }) => void rpc("addons.update", { id, ...p }).catch(fail);
   const shown = addons.filter((a) => !a.removed);
   const removed = addons.filter((a) => a.removed);
   const where = (a: AddonInfo) => (a.project ? `${projects.find((p) => p.id === a.project)?.name ?? "One project"} only` : "Every project");
   const keyed = (a: AddonInfo) => (!a.secrets.length ? null : a.secrets.every((k) => keys.includes(addonKey(a.id, k.name))) ? `${a.secrets.length === 1 ? "key" : "keys"} in the keychain` : "a key is missing");
+  // The app opens again without them; a window that can't (the browser preview) turns them off until the engine next starts.
   const restart = async () => {
     try {
-      await rpc("addons.off", {});
+      await rpc("addons.off", { next: isNative() });
       if (!(await bridge.relaunch())) toast("Add-ons are off", { description: "No tool gets them until Liner Code next starts." });
     } catch (e) {
       fail(e);
@@ -2038,7 +2041,7 @@ function AddonsPlace() {
   };
   return (
     <>
-      {off && <p className="lc-st-banner">Liner Code started without add-ons this time: none reach any tool until it starts again.</p>}
+      {off && <p className="lc-st-banner">Add-ons are off until Liner Code starts again: none reach any tool.</p>}
       <Group
         title="Connections"
         note="MCP servers that every agent tool gets: Claude Code, Codex, OpenCode and Hermes."
@@ -2061,6 +2064,7 @@ function AddonsPlace() {
             title={a.name}
             note={[where(a), keyed(a), `added by ${a.by.agent}${a.by.title ? ` in “${a.by.title}”` : ""}, ${since(a.by.at)}`].filter(Boolean).join(" · ")}
           >
+            {a.secrets.length > 0 && <AddonKeys a={a} />}
             <Pop label={`Versions of ${a.name}`} align="end" width={220} triggerClass="lc-st-ver lc-mono" disabled={a.versions.length < 2} trigger={<>v{a.version}{a.versions.length > 1 && <I.chevD size={11} />}</>}>
               {(close) => [...a.versions].reverse().map((v) => <Row key={v} title={`v${v}`} note={v === a.version ? "In use" : undefined} on={v === a.version} onPick={() => (update(a.id, { version: v }), close())} />)}
             </Pop>
@@ -2084,8 +2088,8 @@ function AddonsPlace() {
         <Field title="Agents may offer add-ons" note="In a read-only session they can't, whatever this says.">
           <Segmented size="sm" value={offers} onValueChange={(v) => save({ addonOffers: v })} options={[{ value: "ask" as const, label: "They ask" }, { value: "never" as const, label: "Never" }]} aria-label="Agents may offer add-ons" />
         </Field>
-        <Field title="Start without add-ons" note="If one gets in the way, open Liner Code once with all of them off.">
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void restart()}>
+        <Field title="Start without add-ons" note={working ? `Waits for ${plural(working, "working session")} to finish: a restart would stop them.` : "If one gets in the way, open Liner Code once with all of them off."}>
+          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={working > 0} onClick={() => void restart()}>
             Restart without them
           </button>
         </Field>
@@ -2098,6 +2102,47 @@ function AddonsPlace() {
         </Field>
       </Group>
     </>
+  );
+}
+
+/** A connection's keys, typed again (one missing, or a new one): sealed in the keychain and handed to the engine, as on its card. */
+function AddonKeys({ a }: { a: AddonInfo }) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const keep = async (close: () => void) => {
+    try {
+      for (const k of a.secrets) {
+        const v = values[k.name]?.trim();
+        if (!v) continue;
+        await bridge.keychainSet(`key:${addonKey(a.id, k.name)}`, v);
+        await rpc("keys.set", { provider: addonKey(a.id, k.name), key: v });
+      }
+      setValues({});
+      toast.success(`Saved in ${os.keyStore()}`);
+      close();
+    } catch (e) {
+      fail(e);
+    }
+  };
+  return (
+    <Pop label={`Keys for ${a.name}`} align="end" width={320} triggerClass="lc-st-ver" trigger={a.secrets.length === 1 ? "Key" : "Keys"}>
+      {(close) => (
+        <div className="lc-st-form lc-st-keys">
+          <div className="lc-st-form-g">
+            {a.secrets.map((k) => (
+              <label key={k.name} className="lc-st-form-w">
+                <span>{k.label}</span>
+                <input className="lc-input lc-mono" type="password" autoComplete="off" placeholder={k.name} value={values[k.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))} />
+              </label>
+            ))}
+          </div>
+          <div className="lc-st-form-f">
+            <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!Object.values(values).some((v) => v.trim())} onClick={() => void keep(close)}>
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+    </Pop>
   );
 }
 

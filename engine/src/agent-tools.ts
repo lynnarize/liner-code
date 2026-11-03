@@ -430,7 +430,7 @@ export class AgentTools {
     if (it.kind === "approval" && it.addon) this.store.putItem(threadId, { ...it, addon: { ...it.addon, scope, version } });
     const where = scope === "project" ? `${project.name} only` : "every project";
     const missing = (manifest.secrets ?? []).filter((k) => !host.keys.has(addonKey(manifest.id, k.name))).map((k) => k.name);
-    const keyNote = missing.length ? ` The person left ${missing.join(", ")} empty, so calls that need ${missing.length === 1 ? "it" : "them"} may fail until they add ${missing.length === 1 ? "it" : "them"} in Settings › Add-ons.` : manifest.secrets?.length ? " Its keys are sealed in the keychain; you never see them." : "";
+    const keyNote = missing.length ? ` The person left ${missing.join(", ")} empty, so calls that need ${missing.length === 1 ? "it" : "them"} may fail until they add ${missing.length === 1 ? "it" : "them"} in Settings › Add-ons.` : manifest.secrets?.length ? " The person typed its keys on the card; you never see them." : "";
     const now = (await host.relink()).get(threadId) === "now";
     const mine = host.toolOf(threadId);
     if (now) return text(`applied: ${manifest.name} (v${version}) is added for ${where}, and its tools are in this session now${mine.family === "claude" ? ` as mcp__${manifest.id}__<tool>` : ""}. Every other agent tool gets it too.${keyNote}`);

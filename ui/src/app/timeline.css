@@ -230,17 +230,17 @@
 
 /* An add-on's install card (add-ons, phase 1): Liner's approval card at full size, as the mockup draws
    it, with a segmented Where and a password field for each key; answered, a receipt line with Undo. */
-.lc-addon .l-appr__fields div {
+.lc-addon .l-appr__fields > div {
   align-items: center;
 }
 .lc-addon .l-appr__fields dd {
   overflow: visible;
   white-space: normal;
 }
-.lc-addon .l-appr__fields div:has(.lc-addon-key, .lc-addon-json) {
+.lc-addon .l-appr__fields > div:has(.lc-addon-key, .lc-addon-json) {
   align-items: start;
 }
-.lc-addon .l-appr__fields div:has(.lc-addon-key) dt {
+.lc-addon .l-appr__fields > div:has(.lc-addon-key) dt {
   padding-top: 6px;
 }
 .lc-addon-mono {

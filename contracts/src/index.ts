@@ -1151,8 +1151,11 @@ export type Rpc = {
   "addons.add": [{ manifest: string; project?: string }, AddonInfo[]];
   /** An add-on's manifest as kept (the version in use unless `version`), and its folder. */
   "addons.read": [{ id: string; version?: number }, { manifest: string; dir: string }];
-  /** Start without add-ons: none from now on, nor when Liner Code next starts. The start after that brings them back. */
-  "addons.off": [Record<string, never>, null];
+  /**
+    Start without add-ons: none from now on. With `next` (the app is about to open again) the next
+    start has none either, and the one after brings them back; without, they're back at the next start.
+  */
+  "addons.off": [{ next?: boolean }, null];
   "question.answer": [{ threadId: string; itemId: string; answers?: Record<string, string> }, null];
   "proposal.answer": [{ threadId: string; itemId: string; approve: boolean; note?: string; plan?: string }, null];
   "review.run": [{ threadId: string }, null];

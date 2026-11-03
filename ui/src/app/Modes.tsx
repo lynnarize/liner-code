@@ -5,8 +5,8 @@
   is one of your named agents, laid over whichever model the session runs: named agents are only ever
   a way to give a model instructions.
 
-  Here: the picker beside the project on Home, the chip beside a session's title, Settings › Modes,
-  the Add-ons page the left sidebar opens, and the one way into a Creator session from anywhere.
+  Here: the picker under Home's composer, the chip beside a session's title, Settings › Modes,
+  and the one way into a Creator session from anywhere.
 */
 import { useState, type ReactNode } from "react";
 import type { AgentProfile, SessionMode, Thread } from "@contracts";
@@ -18,7 +18,7 @@ import { openSession } from "./Addon";
 import { getState, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { startOf } from "./model";
-import { PanelHead, Pop, Row, Sep } from "./ui";
+import { Pop, Row, Sep } from "./ui";
 import "./modes.css";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -45,30 +45,39 @@ export async function startCreator(o: { projectId?: string; text?: string; title
   }
 }
 
-/** The mode a new session starts in, beside the project on Home: Standard, Creator mode, or one of yours. */
+/**
+  The mode a new session starts in, in the strip under Home's composer, after where it runs:
+  Standard, Creator mode, or one of yours, and the way to Settings › Modes. Creator mode tints it.
+*/
 export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: SessionMode) => void }) {
   const agents = useEngine((s) => s.agents);
-  const Icon = iconOf(value);
   const name = modeName(value, agents);
+  const label = value === "standard" ? "Standard mode" : value === "creator" ? name : `${name} mode`;
   return (
-    <Pop label={`Mode: ${name}. Change it`} align="center" width={320} triggerClass="lc-proj lc-mode-pick" trigger={<span><Icon size={14} />{value === "standard" ? "Standard mode" : value === "creator" ? name : `${name} mode`}</span>}>
+    <Pop
+      label={`Mode: ${name}. Change it`}
+      width={300}
+      triggerClass={`lc-pb lc-mode-pick${value === "creator" ? " lc-mode-creator" : ""}`}
+      trigger={
+        <>
+          <I.layers size={13} />
+          <span className="lc-strip-word">{label}</span>
+          <I.chevD size={11} />
+        </>
+      }
+    >
       {(close) => (
-        <div className="lc-mode-menu">
-          <PanelHead>Mode</PanelHead>
-          {BUILTIN_MODES.map((m) => {
-            const MIcon = ICON[m.id];
-            return <Row key={m.id} title={m.name} note={m.id === "creator" ? "Add to Liner Code through conversation" : "Code, files and information"} icon={<MIcon size={13} />} on={value === m.id} onPick={() => (onPick(m.id), close())} />;
-          })}
-          {customs(agents).length > 0 && (
-            <>
-              <Sep />
-              <PanelHead>Yours</PanelHead>
-              {customs(agents).map((a) => (
-                <Row key={a.id} title={a.name} note={a.role} icon={<I.agents size={13} />} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), close())} />
-              ))}
-            </>
-          )}
-          <p className="lc-quiet lc-pop-note">A session keeps its mode for its whole life. Solo, Plan or Auto still decide who works on it.</p>
+        <div className="lc-mode-menu" role="menu" aria-label="Mode">
+          {BUILTIN_MODES.map((m) => (
+            <Row key={m.id} title={m.name} note={m.id === "creator" ? "Add connections, panels and apps to Liner Code" : "Everyday work on your code"} on={value === m.id} onPick={() => (onPick(m.id), close())} />
+          ))}
+          {customs(agents).map((a) => (
+            <Row key={a.id} title={a.name} note={a.role} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), close())} />
+          ))}
+          <Sep />
+          <button type="button" className="lc-mode-more l-focus" onClick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "modes" })))}>
+            Modes in Settings…
+          </button>
         </div>
       )}
     </Pop>
@@ -233,40 +242,6 @@ export function ModesPlace({ onAgent, onClose }: { onAgent: (agent?: AgentProfil
         <I.plus size={14} />
         Let the agent help me make one
       </button>
-    </div>
-  );
-}
-
-/**
-  Add-ons, from the left sidebar (DeepSeek Harness's Plugins page): what your agents made for
-  Liner Code, each with its switch, and a way to make another in Creator mode. The list is Settings ›
-  Add-ons' own.
-*/
-export function AddonsPage({ sidebar, onSidebar, onMake, place }: { sidebar: boolean; onSidebar: () => void; onMake: () => void; place: ReactNode }) {
-  return (
-    <div className="lc-apppage lc-addons-page">
-      <header className="lc-top" data-drag>
-        {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
-        )}
-        <span className="lc-apppage-name">
-          <I.blocks size={14} />
-          <h1 className="lc-title">Add-ons</h1>
-        </span>
-        <span className="lc-grow" data-drag />
-        <button type="button" className="lc-btn" data-size="sm" onClick={onMake}>
-          <I.plus size={13} />
-          Make one in Creator mode
-        </button>
-      </header>
-      <div className="lc-addons-scroll">
-        <div className="lc-addons-col">
-          <p className="lc-quiet lc-addons-lede">What your agents made for Liner Code: connections every agent tool gets, panels beside your sessions, and apps. Each one asked first, keeps its versions, and turns off here.</p>
-          {place}
-        </div>
-      </div>
     </div>
   );
 }

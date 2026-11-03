@@ -3303,6 +3303,12 @@ html[data-composer="clear"] .lc-dock .lc-card {
   color: var(--l-ink-3);
   white-space: nowrap;
 }
+.lc-strip-div {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: color-mix(in oklab, var(--l-ink) 14%, transparent);
+}
 .lc-pb-keys > svg:last-child {
   color: var(--l-ink-3);
 }

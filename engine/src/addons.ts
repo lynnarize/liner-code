@@ -75,7 +75,7 @@ export function checkManifest(raw: unknown): AddonManifest {
   const m = obj(raw, "The manifest");
   if (!m) throw new Error(said(bad));
   if (m.kind === "panel") return checkPanel(m, bad, { obj, only, text });
-  only(m, "", ["apiVersion", "id", "kind", "name", "description", "server", "secrets"]);
+  only(m, "", ["apiVersion", "id", "kind", "name", "description", "summary", "server", "secrets"]);
   if (m.apiVersion !== 1) bad.push("apiVersion must be 1.");
   const id = text(m.id, "id", 40);
   if (id !== undefined && !ADDON_ID.test(id)) bad.push("id must be 2 to 40 characters of a–z, 0–9 and -, starting with a letter and not ending with -.");
@@ -83,6 +83,7 @@ export function checkManifest(raw: unknown): AddonManifest {
   if (m.kind !== "connection") bad.push('kind must be "connection" (an MCP server) or "panel" (a page of your own in Liner Code).');
   const name = text(m.name, "name", 60);
   const description = m.description === undefined ? undefined : text(m.description, "description", 300);
+  const summary = m.summary === undefined ? undefined : text(m.summary, "summary", 140);
 
   // The secrets first: the server's values may name them.
   const secrets: AddonSecret[] = [];
@@ -202,7 +203,7 @@ export function checkManifest(raw: unknown): AddonManifest {
   // A stdio server gets each secret in its environment under its own name; an address has only its headers to take one.
   if (server && "http" in server) for (const n of declared) if (!used.has(n)) bad.push(`secrets has ${n}, which no header uses: put \${${n}} in one, like "Authorization": "Bearer \${${n}}".`);
   if (bad.length) throw new Error(said(bad));
-  return { apiVersion: 1, id: id!, kind: "connection", name: name!, ...(description ? { description } : {}), server: server!, ...(secrets.length ? { secrets } : {}) };
+  return { apiVersion: 1, id: id!, kind: "connection", name: name!, ...(description ? { description } : {}), ...(summary ? { summary } : {}), server: server!, ...(secrets.length ? { secrets } : {}) };
 }
 
 const said = (bad: string[]) => (bad.length === 1 ? `The manifest isn't right: ${bad[0]}` : `The manifest isn't right:\n${bad.map((b) => `- ${b}`).join("\n")}`);
@@ -221,13 +222,14 @@ export const STORAGE_MAX = 1024;
 
 /** A panel's manifest: where it opens, its entry file, and what it may touch, each checked. */
 function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks): PanelManifest {
-  c.only(m, "", ["apiVersion", "id", "kind", "name", "description", "place", "entry", "icon", "access"]);
+  c.only(m, "", ["apiVersion", "id", "kind", "name", "description", "summary", "place", "entry", "icon", "access"]);
   if (m.apiVersion !== 1) bad.push("apiVersion must be 1.");
   const id = c.text(m.id, "id", 40);
   if (id !== undefined && !ADDON_ID.test(id)) bad.push("id must be 2 to 40 characters of a–z, 0–9 and -, starting with a letter and not ending with -.");
   if (id !== undefined && /^liner/.test(id)) bad.push("id can't start with liner.");
   const name = c.text(m.name, "name", 60);
   const description = m.description === undefined ? undefined : c.text(m.description, "description", 300);
+  const summary = m.summary === undefined ? undefined : c.text(m.summary, "summary", 140);
   const place = m.place;
   if (place !== "dock" && place !== "tab" && place !== "page") bad.push('place must be "dock" (the right dock, beside a session), "tab" (a tab beside Chat) or "page" (a page of its own, from the left sidebar).');
   const entry = m.entry === undefined ? "index.html" : c.text(m.entry, "entry", 120);
@@ -264,7 +266,7 @@ function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks): Panel
   // A page has no session beside it, so nothing of one to read or write to.
   if (place === "page" && (access.files || access.sessions === "this" || access.composer)) bad.push('A page (place "page") has no session beside it: access.files, sessions "this" and composer are for "dock" and "tab". It may read every session (sessions "all").');
   if (bad.length) throw new Error(said(bad));
-  return { apiVersion: 1, id: id!, kind: "panel", name: name!, ...(description ? { description } : {}), place: place as PanelManifest["place"], entry: entry!, ...(icon ? { icon: icon as PanelManifest["icon"] } : {}), access };
+  return { apiVersion: 1, id: id!, kind: "panel", name: name!, ...(description ? { description } : {}), ...(summary ? { summary } : {}), place: place as PanelManifest["place"], entry: entry!, ...(icon ? { icon: icon as PanelManifest["icon"] } : {}), access };
 }
 
 /** What a connection reaches, in words: its address, or the command it runs. */
@@ -495,6 +497,7 @@ export class Addons {
         id,
         name: m.name,
         ...(m.description ? { description: m.description } : {}),
+        ...(m.summary ? { summary: m.summary } : {}),
         version: e.version,
         versions: e.versions.map((x) => x.v).sort((a, b) => a - b),
         dates: Object.fromEntries(e.versions.map((x) => [x.v, x.at])),
@@ -658,7 +661,7 @@ Two kinds, each added only when the person says yes on a card in the session, an
 Connections
 1. Find the service's MCP server: a hosted address (streamable HTTP), or a command that runs it on this Mac (npx, uvx, a program). Prefer the service's own.
 2. Write .liner/addons/<id>/addon.json in this session's folder (it stays out of git):
-{ "apiVersion": 1, "id": "linear", "kind": "connection", "name": "Linear", "description": "Issues in Linear",
+{ "apiVersion": 1, "id": "linear", "kind": "connection", "name": "Linear", "description": "Issues in Linear", "summary": "Lets your agents read and update your Linear issues.",
   "server": { "http": { "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer \${LINEAR_API_KEY}" } } },
   "secrets": [{ "name": "LINEAR_API_KEY", "label": "Linear key" }] }
    server is { "http": { "url", "headers" } } (https, or http on localhost) or { "stdio": { "command": "npx", "args": [...], "env": {...} } }. command is one program; no shell runs it.
@@ -667,8 +670,9 @@ Keys: never write one in a manifest, not even one pasted in the chat. Name it in
 
 Panels
 1. Write .liner/addons/<id>/addon.json and the panel's files beside it: index.html, and any .js, .css, .json, .svg or pictures it links by a relative path (40 files, 2 MB at most). No CDN: it can't reach one, so what it needs goes in its own files.
-{ "apiVersion": 1, "id": "todos", "kind": "panel", "name": "TODOs", "description": "The TODOs in this project, to hand to the agent",
+{ "apiVersion": 1, "id": "todos", "kind": "panel", "name": "TODOs", "description": "The TODOs in this project, to hand to the agent", "summary": "Lists the TODOs in your project beside the session, so you can hand one to the agent.",
   "place": "dock", "entry": "index.html", "icon": "list", "access": { "files": "project", "composer": true } }
+   summary: always write it: one plain sentence of what it does for the person, as the Add-ons page lists it ("Lets your agents read your Linear issues."). No MCP, manifest, version or access words.
    place: "dock" (beside a session: a viewer, an editor, something to watch while chatting), "tab" (a tab beside Chat: a session's live output or interaction), "page" (global, from the left sidebar: a record kept across projects).
    icon: app, blocks, list, notes, chart, check, clock, globe, flask, star, bolt or inbox.
    access, each left out unless the panel needs it:

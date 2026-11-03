@@ -20,6 +20,7 @@ import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
 import { Addons } from "./addons.ts";
 import { Offers } from "./offers.ts";
+import { Sources } from "./sources.ts";
 import type { Thread } from "../../contracts/src/index.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
@@ -91,6 +92,10 @@ const offers = new Offers({
   turnOf: (id) => tools.turnOf(id),
 });
 extras.offers = offers;
+// Add-ons someone else made, from GitHub or a folder: staged, checked, and added only on the card's yes.
+const sources = new Sources(addons, env);
+sources.network = () => store.settings.addonNetwork ?? "ask";
+extras.sources = sources;
 tools.offers = offers;
 outside.now = new Outside(store, api);
 

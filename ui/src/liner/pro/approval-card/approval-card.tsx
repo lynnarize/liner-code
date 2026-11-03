@@ -40,6 +40,8 @@ export type ApprovalCardProps = {
   onApprove?: () => Promise<void> | void;
   /** Receives what to do instead, possibly empty. */
   onDeny?: (reason: string) => Promise<void> | void;
+  /** Ask what to do instead before denying (unset), or deny at once (`false`) when there's no one to tell. */
+  explain?: boolean;
   approvedText?: string;
   deniedText?: string;
   className?: string;
@@ -63,6 +65,7 @@ export function ApprovalCard({
   aside,
   onApprove,
   onDeny,
+  explain = true,
   approvedText = "Approved. It's on its way.",
   deniedText = "Sent back with your note.",
   className,
@@ -103,7 +106,7 @@ export function ApprovalCard({
     }
   };
   const settled = state === "approved" || state === "denied";
-  const asking = state === "explaining" || state === "denying";
+  const asking = explain && (state === "explaining" || state === "denying");
   const hold = holdTo ?? risk === "high";
 
   return (
@@ -180,7 +183,7 @@ export function ApprovalCard({
                   </>
                 ) : (
                   <>
-                    <Button size="sm" variant="ghost" onClick={() => setState("explaining")} disabled={state === "approving"}>
+                    <Button size="sm" variant="ghost" onClick={explain ? () => setState("explaining") : deny} loading={state === "denying"} disabled={state === "approving"}>
                       {denyLabel}
                     </Button>
                     {hold ? (

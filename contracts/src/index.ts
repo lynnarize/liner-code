@@ -537,7 +537,7 @@ export type AddonServer = { stdio: { command: string; args?: string[]; env?: Rec
 /** A key a connection needs, named only: you type it on the install card, and it's sealed in the keychain. */
 export type AddonSecret = { name: string; label: string };
 /** A connection's manifest, version 1. A secret is never written in: `${NAME}` in env or a header stands for it. */
-export type ConnectionManifest = { apiVersion: 1; id: string; kind: "connection"; name: string; description?: string; server: AddonServer; secrets?: AddonSecret[] };
+export type ConnectionManifest = { apiVersion: 1; id: string; kind: "connection"; name: string; description?: string; summary?: string; server: AddonServer; secrets?: AddonSecret[] };
 /**
   What a panel may touch: each is nothing unless its manifest says so, and the install card says
   every one. The panel's bridge (apiVersion 1) refuses whatever isn't here.
@@ -559,7 +559,7 @@ export type PanelPlace = "dock" | "tab" | "page";
 export const PANEL_ICONS = ["app", "blocks", "list", "notes", "chart", "check", "clock", "globe", "flask", "star", "bolt", "inbox"] as const;
 export type PanelIcon = (typeof PANEL_ICONS)[number];
 /** A panel's manifest, version 1. `entry` is its HTML file, beside the manifest. */
-export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess };
+export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; summary?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess };
 export type AddonManifest = ConnectionManifest | PanelManifest;
 /** A session's mode: Standard ("standard", or unset), Creator mode ("creator"), or a custom one (`agent:<id>`, one of your named agents' instructions). */
 export type SessionMode = "standard" | "creator" | `agent:${string}`;
@@ -613,6 +613,8 @@ export type AddonInfo = {
   kind: "connection" | "panel";
   name: string;
   description?: string;
+  /** One plain sentence of what it does for you, for the Add-ons page (summaryOf has the fallback). */
+  summary?: string;
   /** The version in use, and every one kept. */
   version: number;
   versions: number[];
@@ -621,8 +623,8 @@ export type AddonInfo = {
   removed?: number;
   /** The one project it's for; every project when unset. */
   project?: string;
-  /** Who added it, from which session, and when. */
-  by: { agent: string; threadId?: string; title?: string; at: number };
+  /** Who added it, from which session, and when; `from`, the GitHub address or folder you added it from yourself. */
+  by: { agent: string; threadId?: string; title?: string; from?: string; at: number };
   /** A connection's way in: a command (stdio) or an address (http). */
   transport?: "stdio" | "http";
   /** What it reaches: its address, or the command it runs; a panel's access, in words. */
@@ -635,6 +637,17 @@ export type AddonInfo = {
 };
 /** Where a connection's key is kept: the keychain account (`key:` before it) and the engine's name for it. */
 export const addonKey = (id: string, secret: string) => `addon.${id}.${secret}`;
+/**
+  What an add-on does for you, in one plain sentence, as the Add-ons page lists it: its own summary,
+  else one from its kind and place. Never a server, a manifest or an access level.
+*/
+export function summaryOf(a: Pick<AddonInfo, "kind" | "name" | "summary" | "panel">) {
+  if (a.summary?.trim()) return a.summary.trim();
+  if (a.kind === "connection") return `Lets your agents work with ${a.name}.`;
+  if (a.panel?.place === "page") return "A page of its own, opened from the sidebar.";
+  if (a.panel?.place === "tab") return "A tab beside Chat in your sessions.";
+  return "A panel beside your sessions, in the right dock.";
+}
 /** An agent asking to add an add-on: what the install card shows, and once added, as which version and where. */
 export type AddonAsk = ConnectionAsk | PanelAsk;
 type AskBase = {
@@ -1282,6 +1295,16 @@ export type Rpc = {
     Cancel while it's being made, and once added Keep, Undo (it's removed, its files kept) or Restore.
   */
   "offer.answer": [{ threadId: string; itemId: string; act: "create" | "dismiss" | "cancel" | "keep" | "undo" | "restore"; place?: PanelPlace; custom?: string }, null];
+  /**
+    An add-on someone else made, from a GitHub address (cloned, shallow, into a staging folder) or a
+    folder on this Mac: checked as an agent's draft is, and shown on the same card. Nothing is added
+    until addons.adopt; addons.drop lets it go.
+  */
+  "addons.source": [{ source: string }, { token: string; from: string; ask: AddonAsk }];
+  "addons.adopt": [{ token: string }, AddonInfo[]];
+  "addons.drop": [{ token: string }, null];
+  /** Your add-ons as they are now, read again (the Add-ons page's refresh). */
+  "addons.list": [Record<string, never>, AddonInfo[]];
   /** An add-on's manifest as kept (the version in use unless `version`), and its folder. */
   "addons.read": [{ id: string; version?: number }, { manifest: string; dir: string }];
   /**

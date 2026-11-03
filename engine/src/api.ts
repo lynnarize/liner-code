@@ -33,6 +33,7 @@ import { factsOf, forget as forgetFact, remember, searchSessions } from "./memor
 import { checkManifest } from "./addons.ts";
 import { refusal, type PanelMethod, type PanelWhere } from "./panels.ts";
 import type { Offers } from "./offers.ts";
+import type { Sources } from "./sources.ts";
 import { Updater } from "./updates.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
@@ -151,7 +152,7 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void }; offers?: Offers };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void }; offers?: Offers; sources?: Sources };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings, runtime.keys);
@@ -1016,6 +1017,22 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (no) throw new Error(no);
       if (!x.tools) throw new Error("Panels aren't available here.");
       return x.tools.panelCall(where, method as PanelMethod, (args ?? {}) as Record<string, unknown>, storage, quota);
+    },
+    "addons.source": async ({ source }) => {
+      if (!x.sources) throw new Error("Adding from GitHub or a folder isn't available here.");
+      return x.sources.open(source);
+    },
+    "addons.adopt": async ({ token }) => {
+      if (!x.sources) throw new Error("Adding from GitHub or a folder isn't available here.");
+      x.sources.adopt(token);
+      void runtime.relink();
+      return addons().list();
+    },
+    "addons.drop": ({ token }) => (x.sources?.drop(token), null),
+    "addons.list": () => {
+      const list = addons().list();
+      store.emit({ type: "addons", addons: list, off: addons().off });
+      return list;
     },
     "offer.answer": async ({ threadId, itemId, act, place, custom }) => {
       if (!x.offers) throw new Error("Offers aren't available here.");

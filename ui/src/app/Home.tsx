@@ -1,10 +1,10 @@
 /*
   Home: start a session. One question, the project it's about, and the composer with who works
   on it, how hard they think and what they may do. Under it, one line: this checkout or a new
-  worktree and the branch, and at its far end a scratch folder, a session to carry on from Claude
-  Code or Codex, and what the box takes. Behind it, two scrolls down, the Desk: every open
-  session on one line, and the case for each decision that waits on you. In the corner, what's
-  new: Liner Code's own update and the agent tools'.
+  worktree and the branch, the mode the session works in, and at its far end a scratch folder,
+  a session to carry on from Claude Code or Codex, and what the box takes. Behind it, two
+  scrolls down, the Desk: every open session on one line, and the case for each decision that
+  waits on you. In the corner, what's new: Liner Code's own update and the agent tools'.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ImportableSession, Project, SessionMode } from "@contracts";
@@ -120,7 +120,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         <>
           <h2 className="lc-ask-h">
             What should we build in{" "}
-            <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />, in <ModePick value={mode_} onPick={setSessionMode} />?
+            <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />?
           </h2>
           <div
             className="lc-home-compose"
@@ -136,7 +136,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               onSettings={(p) => setSettings((s) => ({ ...s, ...p }))}
               onSend={start}
               onNewAgent={onNewAgent}
-              placeholder="Ask for a change, paste an error, or drop in a screenshot"
+              placeholder={mode_ === "creator" ? "Say what to add to Liner Code: a connection, a panel or an app" : "Ask for a change, paste an error, or drop in a screenshot"}
               worktree={worktree}
               onWorktree={setWorktree}
               base={base}
@@ -146,6 +146,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               compare={project.git ? compare : undefined}
               onCompare={project.git ? setCompare : undefined}
               autoFocus
+              stripMid={<ModePick value={mode_} onPick={setSessionMode} />}
               stripEnd={
                 <>
                   {project.name !== "Scratch" && (

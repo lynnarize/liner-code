@@ -89,6 +89,7 @@ function manifest() {
   "kind": "panel",
   "name": "Notes",                 up to 60 characters
   "description": "…",             optional, up to 300
+  "summary": "…",                  write it always: one plain sentence of what it does for the person, up to 140, as the Add-ons page lists it ("A full-page notes workspace with a page to write on."); no MCP, manifest, version or access words
   "place": "page",                 "dock", "tab" or "page" ("places")
   "entry": "index.html",           optional, index.html when left out: an .html file beside it, or one folder down
   "icon": "notes",                 optional: ${PANEL_ICONS.join(", ")}
@@ -140,12 +141,12 @@ Its body starts with no margin, the surface behind it, ink on it, 13.5px/1.55 in
 const STARTERS = `Starters: copy one and change it
 
 A connection (${ADDON_DIR}/linear/addon.json):
-{ "apiVersion": 1, "id": "linear", "kind": "connection", "name": "Linear", "description": "Issues in Linear",
+{ "apiVersion": 1, "id": "linear", "kind": "connection", "name": "Linear", "description": "Issues in Linear", "summary": "Lets your agents read and update your Linear issues.",
   "server": { "http": { "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer \${LINEAR_API_KEY}" } } },
   "secrets": [{ "name": "LINEAR_API_KEY", "label": "Linear key" }] }
 
 A dock panel (${ADDON_DIR}/todos/addon.json, index.html):
-{ "apiVersion": 1, "id": "todos", "kind": "panel", "name": "TODOs", "place": "dock", "icon": "list", "access": { "files": "project", "composer": true } }
+{ "apiVersion": 1, "id": "todos", "kind": "panel", "name": "TODOs", "summary": "Lists the TODOs in your project beside the session, so you can hand one to the agent.", "place": "dock", "icon": "list", "access": { "files": "project", "composer": true } }
 <!doctype html><html><head><style>
 body { padding: 14px; } li { list-style: none; padding: 8px 10px; border-radius: 10px; }
 li:hover { background: color-mix(in oklch, var(--ink) 5%, transparent); } small { color: var(--ink-3); font-family: var(--font-mono); }
@@ -161,10 +162,10 @@ liner.files.search(["TODO"]).then((hits) => {
 </script></body></html>
 
 A session tab (${ADDON_DIR}/tests/addon.json; its page draws liner.session.commands() and redraws on liner.on("session", …)):
-{ "apiVersion": 1, "id": "tests", "kind": "panel", "name": "Tests", "place": "tab", "icon": "flask", "access": { "sessions": "this" } }
+{ "apiVersion": 1, "id": "tests", "kind": "panel", "name": "Tests", "summary": "Shows the test runs in your session as they happen.", "place": "tab", "icon": "flask", "access": { "sessions": "this" } }
 
 A global page (${ADDON_DIR}/notes/addon.json; keeps its data in storage):
-{ "apiVersion": 1, "id": "notes", "kind": "panel", "name": "Notes", "place": "page", "icon": "notes", "access": { "storage": 1024 } }
+{ "apiVersion": 1, "id": "notes", "kind": "panel", "name": "Notes", "summary": "A full-page notes workspace, with a page to write on and a notes library.", "place": "page", "icon": "notes", "access": { "storage": 1024 } }
 <script>
 const notes = (await liner.storage.get("notes")) ?? [];   // in a module script, or inside an async function
 await liner.storage.set("notes", notes);                   // the whole value, as JSON

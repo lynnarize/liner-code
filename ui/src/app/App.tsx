@@ -21,7 +21,6 @@ const RoutineBuilder = lazy(() => import("./RoutineBuilder").then((m) => ({ defa
 // Screens you open now and then load when you first do, so launch has less to read.
 const Settings = lazy(() => import("./Settings").then((m) => ({ default: m.Settings })));
 // The Add-ons page shows Settings › Add-ons' own list.
-const AddonsPlace = lazy(() => import("./Settings").then((m) => ({ default: m.AddonsPlace })));
 const Setup = lazy(() => import("./Setup").then((m) => ({ default: m.Setup })));
 const Usage = lazy(() => import("./Usage").then((m) => ({ default: m.Usage })));
 const RoutinesPage = lazy(() => import("./Routines").then((m) => ({ default: m.RoutinesPage })));
@@ -30,7 +29,8 @@ import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfac
 import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
 import { AppPage } from "./Addon";
-import { AddonsPage, startCreator } from "./Modes";
+import { AddonsPage } from "./AddonsPage";
+import { startCreator } from "./Modes";
 import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
@@ -471,7 +471,7 @@ export function App() {
             ) : view.kind === "usage" ? (
               <Usage sidebar={sidebar} onSidebar={() => setSidebar(true)} />
             ) : view.kind === "addons" ? (
-              <AddonsPage sidebar={sidebar} onSidebar={() => setSidebar(true)} onMake={() => (projects.length ? setView({ kind: "home", projectId: lastProject, mode: "creator" }) : void startCreator({}))} place={<AddonsPlace />} />
+              <AddonsPage sidebar={sidebar} onSidebar={() => setSidebar(true)} onMake={() => (projects.length ? setView({ kind: "home", projectId: lastProject, mode: "creator" }) : void startCreator({}))} />
             ) : view.kind === "app" ? (
               <AppPage
                 key={view.id}

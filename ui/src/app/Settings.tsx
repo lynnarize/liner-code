@@ -2181,7 +2181,7 @@ function AddonKeys({ a }: { a: AddonInfo }) {
   A connection you add yourself: its manifest, checked as an agent's would be, and a field for each
   key it names. The keys go to the keychain and the engine first, as on the install card.
 */
-function AddByHand({ onDone }: { onDone: () => void }) {
+export function AddByHand({ onDone }: { onDone: () => void }) {
   const projects = useEngine((x) => x.projects);
   const [text, setText] = useState("");
   const [project, setProject] = useState("");

@@ -1,6 +1,6 @@
 /*
-  Creator mode: a session that adds to Liner Code itself, through conversation (DeepSeek Harness's
-  Creator mode, its `cordis` preset). It's Standard plus a guide and deeper reading, never more
+  Workshop (once Creator mode): a session that adds to Liner Code itself, through conversation
+  (DeepSeek Harness's Creator mode, its `cordis` preset). It's Standard plus a guide and deeper reading, never more
   trust: what it makes still goes in only on a card you answer, sealed in its frame with the access
   it lists (addons.ts, panels.ts).
 
@@ -8,8 +8,11 @@
   can make, the order to work in, what to report); the rest it reads when it needs it, as
   liner_inspect topics: the panel bridge's calls, the places, the manifest, the theme's tokens, the
   bar a full-page app meets, a starter for each kind, how to check its work, and what's installed
-  now with manifests and files.
+  now with manifests and files. And "design": Liner 2.0, Liner Code's own look as a skill
+  (skills/liner-2/SKILL.md), which every panel and page is drawn to, so it sits in the app as if
+  it were the app's own.
 */
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AddonInfo, AgentProfile, Thread } from "../../contracts/src/index.ts";
 import { PANEL_ICONS } from "../../contracts/src/index.ts";
@@ -18,17 +21,23 @@ import { briefOf } from "./agents.ts";
 import { CHECK_THEME } from "./panels.ts";
 
 /** The topics liner_inspect reads, each a part of the creator's guide. */
-export const TOPICS = ["catalogue", "connections", "panels", "manifest", "places", "apps", "bridge", "theme", "starters", "verify", "installed"] as const;
+export const TOPICS = ["catalogue", "connections", "panels", "manifest", "places", "apps", "bridge", "theme", "design", "starters", "verify", "installed"] as const;
 export type Topic = (typeof TOPICS)[number];
 
+/** Liner 2.0, Liner Code's own look, as a skill: a SKILL.md beside the engine's source, shipped with it. */
+export const LINER_2 = join(import.meta.dirname, "skills", "liner-2", "SKILL.md");
+let liner2: string | undefined;
+/** The skill as the agent reads it: its body, after the front matter that only names it. */
+export const liner2Skill = () => (liner2 ??= readFileSync(LINER_2, "utf8").replace(/^---\n[\s\S]*?\n---\n+/, "").trim());
+
 /**
-  What a Creator session is told from its first turn: the catalogue, the order to work in, and where
+  What a Workshop session is told from its first turn: the catalogue, the order to work in, and where
   the rest is. Kept short, as DeepSeek Harness keeps creator text out of every turn: the procedure
   is its cordis-plugin-development skill's, the detail is read a part at a time.
 */
 export function creatorNote(n: (tool: string) => string) {
   return [
-    "## Creator mode",
+    "## Workshop",
     "",
     "This session adds to Liner Code itself: the person describes something they'd like in the app they're using, and you make it as an add-on. What you can make:",
     "- a connection: an MCP server every agent tool in Liner Code gets (Linear, Sentry, a database);",
@@ -36,13 +45,13 @@ export function creatorNote(n: (tool: string) => string) {
     "- an app: a panel as a tab beside Chat in a session (its live output or interaction), or as a page of its own opened from Apps in the left sidebar (something global, kept across projects). An ask for a left sidebar entry, a page, a full-page app or a workspace is a page (place \"page\"), never the right dock. A visual request that names no other place means an add-on in Liner Code, not an HTML file;",
     `- a mode: instructions (with skills and context files) for whichever model a session runs, which the person picks when they start one. Work it out with them, then ask with ${n("mode_add")}.`,
     "",
-    `Knowledge, in this order: ${n("liner_inspect")} with a topic reads one part of the guide ("panels" step by step, "places" which place fits, "apps" the bar a full-page app meets, "manifest" every key, "bridge" each window.liner call and the access it needs, "theme" the tokens, "starters" a copyable start for each kind, "verify" how to check it, "installed" what's there now with manifests and file paths, "connections"); then the files of an installed add-on that "installed" names. Read only the topics this task needs.`,
+    `Knowledge, in this order: ${n("liner_inspect")} with a topic reads one part of the guide ("panels" step by step, "places" which place fits, "apps" the bar a full-page app meets, "manifest" every key, "bridge" each window.liner call and the access it needs, "theme" the tokens, "design" Liner 2.0, the app's own look, "starters" a copyable start for each kind, "verify" how to check it, "installed" what's there now with manifests and file paths, "connections"); then the files of an installed add-on that "installed" names. Read only the topics this task needs.`,
     "",
     "When the person asks you to design or review, report what you'd do or what you found: write and install nothing unless they ask.",
     "",
     "Otherwise, deliver a working add-on first:",
     "1. Keep a short to-do list with your plan or to-do tool: Liner Code shows it as a card the person follows. Close it when you're done.",
-    `2. Make it in ${ADDON_DIR}/<id>/ in this folder, with the least access it needs. Make the full version of what was asked, not a demo: an app on a page meets the "apps" bar (its library, toolbar, empty states, autosave with a Saved status). No preview pages, mock-ups or variants first: the add-on itself is the preview.`,
+    `2. Read "design" before any HTML or CSS: a panel or page is drawn in Liner 2.0, Liner Code's own look, so it reads as part of the app. Make it in ${ADDON_DIR}/<id>/ in this folder, with the least access it needs. Make the full version of what was asked, not a demo: an app on a page meets the "apps" bar (its library, toolbar, empty states, autosave with a Saved status). No preview pages, mock-ups or variants first: the add-on itself is the preview.`,
     `3. ${n("addon_check")} it: it draws it out of sight at its real size, with real data, and returns a picture, errors and anything refused. Fix what it shows.`,
     `4. ${n("addon_install")} it. The person sees it live and answers its card: nothing goes in without that. The result says whether it's live.`,
     "5. Fix what's wrong in the same add-on, a version at a time (the same access goes in without a card). Stop when what was asked works fully: no extras beyond it.",
@@ -52,7 +61,7 @@ export function creatorNote(n: (tool: string) => string) {
 }
 
 /**
-  What a session's mode adds to what its agent is told (Thread.mode): Creator mode's guide (only
+  What a session's mode adds to what its agent is told (Thread.mode): Workshop's guide (only
   where Liner Code's tools come with it), or a custom mode's instructions, skills and context, one of
   your named agents' laid over whichever model the session runs. Standard adds nothing. Set once, so
   the prompt stays the same turn to turn.
@@ -148,9 +157,9 @@ function theme() {
   return `The theme's tokens
 The frame gets the app's colours and fonts as CSS variables on :root, and follows light and dark while it's open. Draw with these, never fixed colours:
 ${Object.entries(CHECK_THEME)
-  .map(([k, v]) => `- var(${k})  ${({ "--bg": "the window's ground", "--surface": "the panel's own ground (its body is this already)", "--ink": "text", "--ink-2": "quieter text", "--ink-3": "quietest text: labels, counts", "--line": "hairlines and borders", "--accent": "the one accent: what's on, links", "--font": "the app's type", "--font-mono": "code and paths" } as Record<string, string>)[k] ?? ""} (light: ${v})`)
+  .map(([k, v]) => `- var(${k})  ${({ "--bg": "the window's ground", "--surface": "the panel's own ground (its body is this already)", "--well": "a card, a field, a hover", "--plate": "the picked row, a control that's open", "--ink": "text", "--ink-2": "quieter text", "--ink-3": "quiet text: labels, counts", "--ink-4": "placeholders, empty-state icons", "--hair": "a hairline, a card's ring", "--line": "a line that must read more", "--accent": "the one accent: focus, what's on, links", "--act": "the main button (one per view), as Send", "--act-ink": "text on --act", "--ok": "done, passing", "--warn": "needs a look", "--danger": "failed, removing", "--font": "the app's type", "--font-display": "headings and big numbers", "--font-mono": "code and paths" } as Record<string, string>)[k] ?? ""} (light: ${v})`)
   .join("\n")}
-Its body starts with no margin, the surface behind it, ink on it, 13.5px/1.55 in the app's type. For a tint, mix: color-mix(in oklch, var(--ink) 6%, transparent). Keep it quiet like the rest of the app: no shadows or gradients of its own, 13 to 14 px text, 8 to 14 px corners, an empty state when there's nothing to show.`;
+Its body starts with no margin, the surface behind it, ink on it, 13.5px/1.55 in the app's type. For a tint, mix: color-mix(in oklch, var(--ink) 6%, transparent). How to use them, part by part, is "design" (Liner 2.0).`;
 }
 
 const STARTERS = `Starters: copy one and change it
@@ -235,6 +244,8 @@ export function topicText(topic: Topic, o: { addons?: Addons; draftRoot: string 
       return bridge();
     case "theme":
       return theme();
+    case "design":
+      return liner2Skill();
     case "starters":
       return STARTERS;
     case "verify":

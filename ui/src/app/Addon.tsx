@@ -21,7 +21,7 @@ import { bridge } from "./bridge";
 import { getState, loadItems, rpc, useEngine, useItemsWhere } from "./engine";
 import { toComposer } from "./Find";
 import { I } from "./icons";
-import { theme } from "./Page";
+import { THEME_ATTRS, theme } from "./Page";
 import { PanelHead, Pop, Row, Sep } from "./ui";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -170,7 +170,7 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
     window.addEventListener("message", onMsg);
     // Light and dark, and the accent, follow the app without reloading the panel.
     const mo = new MutationObserver(() => post({ event: "theme", data: theme() }));
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent", "style"] });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: THEME_ATTRS });
     return () => {
       window.removeEventListener("message", onMsg);
       mo.disconnect();

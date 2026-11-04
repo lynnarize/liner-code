@@ -56,10 +56,12 @@ type Props = {
   /** Home: more models given the same ask, to compare and keep one ("@provider:model"). */
   compare?: string[];
   onCompare?: (refs: string[]) => void;
-  /** Home: how the session works (its mode), after where it runs, past a thin divider. */
-  stripMid?: ReactNode;
-  /** Home: what else starts from here, at the far end of the strip under the box. */
+  /** Home: how the session works (its mode), at the strip's right end, under the box's edge. */
   stripEnd?: ReactNode;
+  /** Home: the other ways to start, which aren't settings of this task: a quiet line under the strip. */
+  stripUnder?: ReactNode;
+  /** Home: the box's text as it changes, so an add-on ask can switch the task's mode. */
+  onText?: (text: string) => void;
 };
 
 /*
@@ -202,7 +204,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripMid, stripEnd }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -525,6 +527,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     return () => clearTimeout(t);
   }, [cacheUntil]);
   const cold = variant === "session" && !busy && canCompact && cacheUntil !== undefined && coldSeen !== cacheUntil && Date.now() > cacheUntil && (usage?.contextTokens ?? 0) > COLD_TOKENS;
+
+  useEffect(() => onText?.(text), [text]);
 
   // Text a new task starts with: an empty box takes it, else it follows what's there as a paragraph of
   // its own (DeepSeek Harness's whenDraftExists "append"), once. It isn't sent: the caret waits at its end.
@@ -1224,75 +1228,76 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         <input ref={clip} type="file" multiple hidden onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />
       </div>
 
+      {/*
+        Home's strip holds only how this task runs: where on the left (the branch gives way first),
+        the mode at the right edge, both inside the box's width. Starting another way is the line under it.
+      */}
       {variant === "home" ? (
-        <div className="lc-strip">
-          {project.git ? (
-            <Pop
-              label="Where it runs"
-              width={300}
-              triggerClass="lc-pb"
-              trigger={
-                <>
-                  <I.folder size={13} />
-                  {compare.length ? `${compare.length + 1} new worktrees` : inWorktree ? `The ${inWorktree.branch ?? "other"} worktree` : worktree ? "A new worktree" : "This checkout"}
-                  <I.chevD size={11} />
-                </>
-              }
-            >
-              {(close) => (
-                <WhereRows
-                  project={project}
-                  git={git}
-                  onOpen={loadGit}
-                  worktree={Boolean(worktree)}
-                  inWorktree={inWorktree}
-                  onPick={(w, existing) => {
-                    onWorktree?.(w);
-                    onInWorktree?.(existing);
-                    close();
-                  }}
-                />
-              )}
-            </Pop>
-          ) : (
-            <span className="lc-strip-note">
-              <I.folder size={13} />
-              {os.tilde(project.path)}
-            </span>
-          )}
-          {worktree && !inWorktree && project.git && !compare.length ? (
-            // A new worktree starts from a branch you pick: this one by default.
-            <Pop
-              label="The branch it starts from"
-              width={300}
-              triggerClass="lc-pb"
-              trigger={
-                <>
-                  from <I.branch size={13} />
-                  <span className="lc-mono">{base ?? project.branch ?? "HEAD"}</span>
-                  <I.chevD size={11} />
-                </>
-              }
-            >
-              {(close) => <BaseRows git={git} onOpen={loadGit} current={base ?? project.branch} onPick={(b) => (onBase?.(b), close())} />}
-            </Pop>
-          ) : (
-            (inWorktree?.branch ?? project.branch) && (
+        <>
+          <div className="lc-strip">
+            {project.git ? (
+              <Pop
+                label="Where it runs"
+                width={300}
+                triggerClass="lc-pb"
+                trigger={
+                  <>
+                    <I.folder size={13} />
+                    <span className="lc-strip-cap">{compare.length ? `${compare.length + 1} new worktrees` : inWorktree ? `The ${inWorktree.branch ?? "other"} worktree` : worktree ? "A new worktree" : "This checkout"}</span>
+                    <I.chevD size={11} />
+                  </>
+                }
+              >
+                {(close) => (
+                  <WhereRows
+                    project={project}
+                    git={git}
+                    onOpen={loadGit}
+                    worktree={Boolean(worktree)}
+                    inWorktree={inWorktree}
+                    onPick={(w, existing) => {
+                      onWorktree?.(w);
+                      onInWorktree?.(existing);
+                      close();
+                    }}
+                  />
+                )}
+              </Pop>
+            ) : (
               <span className="lc-strip-note">
-                on <I.branch size={13} />
-                <span className="lc-mono">{inWorktree?.branch ?? project.branch}</span>
+                <I.folder size={13} />
+                <span className="lc-strip-cap">{os.tilde(project.path)}</span>
               </span>
-            )
-          )}
-          {stripMid && (
-            <>
-              <span className="lc-strip-div" aria-hidden />
-              {stripMid}
-            </>
-          )}
-          <span className="lc-grow" />
-          {stripEnd}
-        </div>
+            )}
+            {worktree && !inWorktree && project.git && !compare.length ? (
+              // A new worktree starts from a branch you pick: this one by default.
+              <Pop
+                label="The branch it starts from"
+                width={300}
+                triggerClass="lc-pb"
+                trigger={
+                  <>
+                    from <I.branch size={13} />
+                    <span className="lc-mono lc-strip-cap">{base ?? project.branch ?? "HEAD"}</span>
+                    <I.chevD size={11} />
+                  </>
+                }
+              >
+                {(close) => <BaseRows git={git} onOpen={loadGit} current={base ?? project.branch} onPick={(b) => (onBase?.(b), close())} />}
+              </Pop>
+            ) : (
+              (inWorktree?.branch ?? project.branch) && (
+                <span className="lc-strip-note">
+                  on <I.branch size={13} />
+                  <span className="lc-mono lc-strip-cap">{inWorktree?.branch ?? project.branch}</span>
+                </span>
+              )
+            )}
+            <span className="lc-grow" />
+            {stripEnd}
+          </div>
+          {stripUnder && <div className="lc-strip-under">{stripUnder}</div>}
+        </>
       ) : null}
     </div>
   );

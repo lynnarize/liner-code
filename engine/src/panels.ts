@@ -15,7 +15,7 @@ import { listFiles } from "./files.ts";
 import { readFile } from "./surfaces.ts";
 
 /** The colours a panel is checked in: the app's light theme, as the frame's variables. */
-export const CHECK_THEME = { "--bg": "#f9f9fb", "--surface": "#ffffff", "--ink": "#1f2024", "--ink-2": "#46484f", "--ink-3": "#6b6e76", "--line": "rgba(30, 33, 45, 0.11)", "--accent": "#3a6df0", "--font": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-mono": "'Geist Mono', ui-monospace, monospace" };
+export const CHECK_THEME = { "--bg": "#f9f9fb", "--surface": "#ffffff", "--well": "#f4f4f5", "--plate": "#ececee", "--ink": "#1f2024", "--ink-2": "#46484f", "--ink-3": "#6b6e76", "--ink-4": "#8b8e95", "--hair": "rgba(31, 32, 36, 0.08)", "--line": "rgba(30, 33, 45, 0.11)", "--accent": "#3a6df0", "--act": "oklch(0.6 0.215 27)", "--act-ink": "#ffffff", "--ok": "oklch(0.6 0.15 152)", "--warn": "oklch(0.7 0.15 65)", "--danger": "oklch(0.6 0.21 25)", "--font": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-display": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-mono": "'Geist Mono', ui-monospace, monospace" };
 
 /** Every call a frame can make (apiVersion 1), and the access each needs. */
 export const PANEL_METHODS = ["context", "files.list", "files.read", "files.search", "session.info", "session.commands", "sessions.list", "composer.put", "storage.get", "storage.set", "storage.remove", "storage.keys"] as const;

@@ -1,13 +1,15 @@
 /*
   Home: start a session. One question, the project it's about, and the composer with who works
-  on it, how hard they think and what they may do. Under it, one line: this checkout or a new
-  worktree and the branch, the mode the session works in, and at its far end a scratch folder,
-  a session to carry on from Claude Code or Codex, and what the box takes. Behind it, two
-  scrolls down, the Desk: every open session on one line, and the case for each decision that
-  waits on you. In the corner, what's new: Liner Code's own update and the agent tools'.
+  on it, how hard they think and what they may do. Under it, one line of how it runs: this
+  checkout or a new worktree and the branch on the left, the mode (Standard, Workshop, yours) at
+  the right edge. Under that, quietly, the other ways to start: a scratch folder, a session to
+  carry on from Claude Code or Codex, and what the box takes. Behind it, two scrolls down, the
+  Desk: every open session on one line, and the case for each decision that waits on you. In the
+  corner, what's new: Liner Code's own update and the agent tools'.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ImportableSession, Project, SessionMode } from "@contracts";
+import { asksForAddon, modeName } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
@@ -51,9 +53,50 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   // The session's mode, fixed once it starts: your default, unless you pick another here.
   const defaultMode = useEngine((s) => s.settings.defaultMode ?? "standard");
   const [sessionMode, setSessionMode] = useState<SessionMode>(startMode ?? defaultMode);
-  useEffect(() => setSessionMode(startMode ?? defaultMode), [startMode, defaultMode]);
   // A custom mode whose agent you since removed starts as Standard.
   const mode_ = !sessionMode.startsWith("agent:") || agents.some((a) => `agent:${a.id}` === sessionMode) ? sessionMode : "standard";
+  /*
+    An add-on ask switches a Standard task to Workshop as it's typed, so the agent gets the
+    add-on guide and Liner 2.0 (asksForAddon), with a toast to keep Standard; it switches back if the
+    ask stops being one. Once you pick a mode yourself, that's yours for this draft; an empty box
+    starts a new one.
+  */
+  const auto = useRef<"switched" | "yours" | null>(null);
+  const modeNow = useRef(mode_);
+  modeNow.current = mode_;
+  useEffect(() => {
+    setSessionMode(startMode ?? defaultMode);
+    auto.current = startMode ? "yours" : null;
+  }, [startMode, defaultMode]);
+  const textTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(textTimer.current), []);
+  const pick = (m: SessionMode) => {
+    auto.current = "yours";
+    setSessionMode(m);
+  };
+  const onText = (text: string) => {
+    clearTimeout(textTimer.current);
+    if (!text.trim()) {
+      if (auto.current === "switched") setSessionMode("standard");
+      auto.current = null;
+      return;
+    }
+    textTimer.current = setTimeout(() => {
+      const wants = asksForAddon(text);
+      if (wants && auto.current === null && modeNow.current === "standard") {
+        auto.current = "switched";
+        setSessionMode("creator");
+        toast(`Switched to ${modeName("creator", agents)}`, {
+          description: "This reads as an add-on for Liner Code, so the agent gets the add-on guide and draws in Liner 2.0.",
+          action: { label: "Keep Standard", onClick: () => pick("standard") },
+          duration: 6000,
+        });
+      } else if (!wants && auto.current === "switched") {
+        auto.current = null;
+        setSessionMode("standard");
+      }
+    }, 450);
+  };
   const [worktree, setWorktree] = useState(worktrees);
   const [compare, setCompare] = useState<string[]>([]);
   const [base, setBase] = useState<string | undefined>();
@@ -93,14 +136,16 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     if (!project) return;
     const quietly = background.current;
     background.current = false;
+    // Sent before the switch above caught up with the typing: an add-on ask still starts in Workshop.
+    const asMode = auto.current === null && mode_ === "standard" && asksForAddon(m.text) ? "creator" : mode_;
     try {
-      if (compare.length && mode_ === "standard") {
+      if (compare.length && asMode === "standard") {
         const made = await rpc("compare.start", { projectId: project.id, text: m.text, files: m.files, models: [settings.lead ?? settings.agent, ...compare], effort: settings.effort, access: settings.access });
         setCompare([]);
         if (made[0]?.compare) onCompare(made[0].compare.id);
         return;
       }
-      const t = await rpc("thread.create", { projectId: project.id, mode: mode_, agent: settings.agent, lead: settings.lead, route: settings.route, dual: settings.dual, after: settings.after, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
+      const t = await rpc("thread.create", { projectId: project.id, mode: asMode, agent: settings.agent, lead: settings.lead, route: settings.route, dual: settings.dual, after: settings.after, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
       if (quietly) {
         setInWorktree(undefined);
@@ -148,16 +193,22 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               onCompare={project.git && mode_ === "standard" ? setCompare : undefined}
               autoFocus
               seed={startPrompt}
-              stripMid={<ModePick value={mode_} onPick={setSessionMode} />}
-              stripEnd={
+              onText={onText}
+              stripEnd={<ModePick value={mode_} onPick={pick} />}
+              stripUnder={
                 <>
+                  <span>Or</span>
                   {project.name !== "Scratch" && (
-                    <button type="button" className="lc-pb l-focus" title="Start without a project, in a scratch folder" onClick={() => void scratch()}>
-                      <I.folder size={13} />
-                      <span className="lc-strip-word">Scratch folder</span>
-                    </button>
+                    <>
+                      <button type="button" className="lc-under-b l-focus" onClick={() => void scratch()}>
+                        <I.folderPlus size={13} />
+                        start in a scratch folder
+                      </button>
+                      <span aria-hidden>·</span>
+                    </>
                   )}
                   <CarryOn project={project} onOpen={onStarted} />
+                  <span aria-hidden>·</span>
                   <Keys />
                 </>
               }
@@ -224,13 +275,15 @@ function CarryOn({ project, onOpen }: { project: Project; onOpen: (threadId: str
   return (
     <Pop
       label="Carry on a session from Claude Code or Codex"
-      align="end"
+      align="center"
       width={440}
-      triggerClass="lc-pb"
+      triggerClass="lc-under-b"
       trigger={
         <>
           <I.rotate size={13} />
-          <span className="lc-strip-word">Carry on a session</span>
+          <span>
+            carry on a session<span className="lc-under-long"> from Claude Code or Codex</span>
+          </span>
         </>
       }
     >
@@ -239,7 +292,7 @@ function CarryOn({ project, onOpen }: { project: Project; onOpen: (threadId: str
   );
 }
 
-/** What the box takes, kept behind one key-shaped button instead of a row of hints under it. */
+/** What the box takes, kept behind one quiet "keys" button at the end of the line under the strip. */
 const KEYS = [
   ["@", "A file"],
   ["/", "A command"],
@@ -250,7 +303,18 @@ const KEYS = [
 
 function Keys() {
   return (
-    <Pop label="What the box takes" align="end" width={280} triggerClass="lc-pb lc-pb-keys" trigger={<I.keyboard size={15} />}>
+    <Pop
+      label="What the box takes"
+      align="center"
+      width={280}
+      triggerClass="lc-under-b"
+      trigger={
+        <>
+          <I.keyboard size={14} />
+          keys
+        </>
+      }
+    >
       {() => (
         <>
           <PanelHead>In the box</PanelHead>

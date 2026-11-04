@@ -44,7 +44,7 @@ type Props = {
   /** The Add-ons page: everything your agents made for Liner Code (DeepSeek Harness's Plugins entry). */
   onAddons?: () => void;
   addonsOn?: boolean;
-  /** A new task in Creator mode, its ask for an add-on with a sidebar entry written and not sent. */
+  /** A new task in Workshop, its ask for an add-on with a sidebar entry written and not sent. */
   onCreateAddon?: () => void;
 };
 

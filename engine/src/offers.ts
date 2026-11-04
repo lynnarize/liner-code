@@ -8,9 +8,10 @@
 
   DeepSeek Harness's creation recommendations (packages/experimental/creation-recommendations,
   MIT) are the flow and the words; ours makes a panel (addons.ts) rather than a plugin, and the
-  child is an ordinary session you can open and watch.
+  child is an ordinary session you can open and watch, in Workshop, so it has the guide and
+  draws in Liner 2.0 (creator.ts).
 */
-import type { Item, PanelAccess, PanelPlace, Thread } from "../../contracts/src/index.ts";
+import type { Item, PanelAccess, PanelPlace, SessionMode, Thread } from "../../contracts/src/index.ts";
 import { accessWords, ADDON_ID, checkManifest, readDraft, widerAccess, type Addons } from "./addons.ts";
 import { uid, type Store } from "./store.ts";
 
@@ -20,7 +21,7 @@ const PLACES: Record<PanelPlace, string> = { dock: "the right dock, beside the s
 export type OfferHost = {
   store: Store;
   addons: Addons;
-  createThread(p: { projectId: string; agent: string; model?: string; title: string; access: Thread["access"] }): Promise<Thread>;
+  createThread(p: { projectId: string; agent: string; model?: string; title: string; access: Thread["access"]; mode?: SessionMode }): Promise<Thread>;
   send(threadId: string, text: string): Promise<void>;
   stop(threadId: string): void;
   cwdOf(threadId: string): string;
@@ -51,7 +52,7 @@ export function idFor(name: string, taken: (id: string) => boolean) {
 export function briefOf(o: Offer, id: string) {
   const where = o.custom ? `where the person asked for it, in their words: “${o.custom}”. Pick the place in the manifest that does that (dock, tab or page); if none can, say so and make nothing` : `in ${PLACES[o.place]} (manifest place "${o.place}")`;
   return [
-    `Make an app for Liner Code: a panel called “${o.name}”, with the id ${id}. Read liner_inspect first: it says how a panel is written.`,
+    `Make an app for Liner Code: a panel called “${o.name}”, with the id ${id}. Read liner_inspect first: it says how a panel is written. Then read its "design" topic, Liner 2.0, and draw the panel in it, so it looks like part of Liner Code.`,
     "",
     `What it does: ${o.brief}`,
     "",
@@ -143,7 +144,8 @@ export class Offers {
     const parent = store.thread(threadId);
     const id = it.addon ?? idFor(it.name, (x) => Boolean(this.h.addons.get(x)));
     const o: Offer = { ...it, place: place ?? it.place, ...(words ? { custom: words } : { custom: undefined }), addon: id };
-    const child = await this.h.createThread({ projectId: parent.projectId, agent: parent.agent, model: parent.model, title: `Make ${it.name}`, access: parent.access === "read" ? "edits" : parent.access });
+    // Making an add-on is Workshop's work, whatever mode the session that offered it is in: its guide and Liner 2.0 come with it.
+    const child = await this.h.createThread({ projectId: parent.projectId, agent: parent.agent, model: parent.model, title: `Make ${it.name}`, access: parent.access === "read" ? "edits" : parent.access, mode: "creator" });
     this.making.set(child.id, { threadId, itemId: it.id, id, started: false });
     store.putItem(threadId, { ...o, state: "creating", child: child.id, error: undefined });
     await this.h.send(child.id, briefOf(o, id));

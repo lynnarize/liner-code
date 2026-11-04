@@ -11,7 +11,7 @@
   --lc-creator-ink: oklch(0.86 0.07 292);
   --lc-creator-fill: oklch(0.32 0.04 292 / 0.6);
 }
-/* With Creator mode picked, the strip's mode button takes a soft purple fill and ink. */
+/* With Workshop picked, the strip's mode button takes a soft purple fill and ink. */
 .lc-strip .lc-pb.lc-mode-creator,
 .lc-strip .lc-pb.lc-mode-creator > svg:last-child {
   color: var(--lc-creator-ink);

@@ -1,8 +1,8 @@
 /*
-  Creator mode and the other modes. A session's mode is set as it starts and kept (a fork keeps its
-  parent's); Creator mode adds its short guide to what the agent is told, a custom mode its named
-  agent's instructions, Standard nothing; liner_inspect reads the guide's deeper parts by topic; and
-  mode_add makes a custom mode only on the person's yes. Run with `npm test -w engine`.
+  Workshop (once Creator mode) and the other modes. A session's mode is set as it starts and kept (a
+  fork keeps its parent's); Workshop adds its short guide to what the agent is told, a custom mode
+  its named agent's instructions, Standard nothing; liner_inspect reads the guide's deeper parts by
+  topic; and mode_add makes a custom mode only on the person's yes. Run with `npm test -w engine`.
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,10 +10,12 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentProfile, Item, PanelManifest } from "../../contracts/src/index.ts";
-import { BUILTIN_MODES, CREATE_ADDON_ASK, emptyUsage, modeName } from "../../contracts/src/index.ts";
+import { asksForAddon, BUILTIN_MODES, CREATE_ADDON_ASK, emptyUsage, modeName } from "../../contracts/src/index.ts";
 import { Addons, STORAGE_MAX } from "../src/addons.ts";
 import { AgentTools, type AddonHost } from "../src/agent-tools.ts";
-import { creatorNote, modeNote, topicText, TOPICS } from "../src/creator.ts";
+import { creatorNote, LINER_2, modeNote, topicText, TOPICS } from "../src/creator.ts";
+import { ADDON_GUIDE } from "../src/addons.ts";
+import { CHECK_THEME } from "../src/panels.ts";
 import { Store } from "../src/store.ts";
 
 const reviewer: AgentProfile = { id: "rev", name: "Code review", role: "Bugs and missing tests first", glyph: "lens", specialty: "custom", model: "claude:claude-sonnet-5-5", effort: "medium", soul: "Prioritise likely bugs. Cite files and lines." };
@@ -36,10 +38,10 @@ test("modes: a session's mode is set as it starts, kept by a fork, and only one 
   assert.equal((await call<{ mode?: string }>("thread.create", { projectId: "p", forkOf: creator.id })).mode, "creator", "a fork keeps its parent's mode");
 });
 
-test("modes: Creator mode adds its guide, a custom one its instructions, Standard nothing", () => {
+test("modes: Workshop adds its guide, a custom one its instructions, Standard nothing", () => {
   const cwd = mkdtempSync(join(tmpdir(), "lc-mode-cwd-"));
   const note = modeNote({ mode: "creator", agent: "@claude:x" }, [], cwd, n, true);
-  assert.match(note, /^## Creator mode/);
+  assert.match(note, /^## Workshop\n/);
   assert.match(note, /mcp__liner__addon_check/);
   assert.match(note, /mcp__liner__liner_inspect with a topic/);
   assert.match(note, /design or review, report/);
@@ -50,7 +52,8 @@ test("modes: Creator mode adds its guide, a custom one its instructions, Standar
   assert.equal(modeNote({ mode: "agent:rev", agent: "rev" }, [reviewer], cwd, n, true), "", "its own agent brings its brief already");
   assert.equal(modeNote({ mode: "agent:gone", agent: "@claude:x" }, [reviewer], cwd, n, true), "");
   assert.deepEqual(BUILTIN_MODES.map((m) => m.id), ["standard", "creator"]);
-  assert.deepEqual([modeName(undefined, []), modeName("creator", []), modeName("agent:rev", [reviewer])], ["Standard", "Creator mode", "Code review"]);
+  assert.deepEqual(BUILTIN_MODES.map((m) => m.name), ["Standard", "Workshop"], "renamed in words only: its id stays creator");
+  assert.deepEqual([modeName(undefined, []), modeName("creator", []), modeName("agent:rev", [reviewer])], ["Standard", "Workshop", "Code review"]);
 });
 
 test("liner_inspect: each topic of the guide, read on its own, and what's installed with its manifest and files", async () => {
@@ -160,4 +163,30 @@ test("mode_add: the card carries every word of the instructions, and add-ons set
   const r = await x.tools.call("t", "mode_add", { name: "Careful", instructions: long });
   assert.match(r.content.map((c) => ("text" in c ? c.text : "")).join(""), /^applied: the mode Careful/);
   assert.equal(x.asked[0].fields?.find((f) => f.label === "Instructions")?.value, long, "what's approved is what's saved");
+});
+
+test("Liner 2.0: a SKILL.md beside the engine's source, read as the guide's design topic, before any HTML or CSS", () => {
+  // A real skill: front matter naming it, shipped with the engine's source (build-mac.sh copies engine/src whole).
+  const file = readFileSync(LINER_2, "utf8");
+  assert.match(file, /^---\nname: liner-2\ndescription: Liner 2\.0, Liner Code's own look/);
+  assert.ok(LINER_2.includes(join("engine", "src", "skills", "liner-2", "SKILL.md")));
+  const design = topicText("design", { addons: undefined, draftRoot: null, n });
+  assert.match(design, /^# Liner 2\.0\n/, "the body, without the front matter");
+  assert.ok(design.length < 8192, `under the pruner's head (${design.length})`);
+  // Every token the skill names, a frame gets (and addon_check draws with).
+  for (const k of new Set(design.match(/--[a-z][a-z0-9-]*(?=[`)])/g))) assert.ok(k in CHECK_THEME, `the frame has ${k}`);
+  for (const k of ["--well", "--plate", "--ink-4", "--hair", "--act", "--act-ink", "--ok", "--warn", "--danger", "--font-display"]) assert.ok(design.includes(`\`${k}\``), `the skill says how to use ${k}`);
+  // Workshop reads it before drawing; a Standard session's short guide points to it too.
+  const note = creatorNote(n);
+  assert.match(note, /2\. Read "design" before any HTML or CSS: a panel or page is drawn in Liner 2\.0/);
+  assert.ok(note.length < 3500, `still a short catalogue (${note.length})`);
+  assert.match(ADDON_GUIDE, /Draw it in Liner 2\.0, Liner Code's own look.*liner_inspect with the topic "design"/);
+  assert.match(topicText("theme", { addons: undefined, draftRoot: null, n }), /var\(--act\)  the main button/);
+});
+
+test("an add-on ask: Home switches a Standard task to Workshop for one, and not for work on the feature or another program's add-ons", () => {
+  for (const ask of [CREATE_ADDON_ASK, "make me an add-on that tracks my todos", "buatkan add-on untuk catatan", "I want a Liner addon for Linear", "Add a panel to Liner Code that lists my TODOs", "create a page in Liner with a left sidebar entry for notes", "the add-on I asked for yesterday doesn't open", "bikin plugin buat liner code", "Can you build a Liner Code connection to Sentry?"])
+    assert.ok(asksForAddon(ask), ask);
+  for (const ask of ["", "Fix the flaky login test", "fix the add-ons page layout", "Fix my Firefox add-on's manifest", "make the add-on install card smaller", "add a settings panel to my app", "build a VS Code plugin", "Make Liner Code's add-ons page faster", "In Liner Code, the sidebar entry for Apps is misaligned, fix it", "make a wordpress add-on for bookings", "the add-ons are slow"])
+    assert.ok(!asksForAddon(ask), ask);
 });

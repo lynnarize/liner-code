@@ -470,7 +470,7 @@ export type Thread = {
   route?: ThreadRoute;
   /**
     How the agent works in it, fixed for the session's life (DeepSeek Harness's agent presets):
-    unset is Standard; "creator" is Creator mode, which adds to Liner Code itself (its connections,
+    unset is Standard; "creator" is Workshop, which adds to Liner Code itself (its connections,
     panels and apps) through conversation; "agent:<id>" is a custom mode, one of your named agents'
     instructions laid over whichever model the session runs.
   */
@@ -562,7 +562,7 @@ export type PanelIcon = (typeof PANEL_ICONS)[number];
 /** A panel's manifest, version 1. `entry` is its HTML file, beside the manifest. */
 export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; summary?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess };
 export type AddonManifest = ConnectionManifest | PanelManifest;
-/** A session's mode: Standard ("standard", or unset), Creator mode ("creator"), or a custom one (`agent:<id>`, one of your named agents' instructions). */
+/** A session's mode: Standard ("standard", or unset), Workshop ("creator", once called Creator mode), or a custom one (`agent:<id>`, one of your named agents' instructions). */
 export type SessionMode = "standard" | "creator" | `agent:${string}`;
 /**
   The modes Liner Code comes with, as Settings › Modes and the new-session picker show them, with
@@ -570,8 +570,35 @@ export type SessionMode = "standard" | "creator" | `agent:${string}`;
   preset guide, ui-agent-preset/guide-locales.ts, its words for Liner Code).
 */
 export type ModeGuide = { id: "standard" | "creator"; name: string; blurb: string; intro: string; details: { h: string; p: string }[]; examples: { h: string; ask: string; expect: string }[] };
-/** What Create your add-on writes in a new Creator task's box, not sent (DeepSeek Harness's own ask, ui-entry-customization). */
+/** What Create your add-on writes in a new Workshop task's box, not sent (DeepSeek Harness's own ask, ui-entry-customization). */
 export const CREATE_ADDON_ASK = "Create a Liner Code add-on with a left sidebar entry.";
+/** Words in an add-on, a page or a list of them that are about the feature, not one to make ("the add-ons page"). */
+const ABOUT_ADDONS = /^('s\b|(page|list|menu|settings|api|code|system|manifest|bridge|loader|store|engine|feature|folder|dir|directory|tests?|ui|button|section|sidebar|guide|docs?|install|installer|card|frame|offer|flow|permissions?|versions?)\b)/;
+/** Another program's add-ons, which a project of yours may be ("my Firefox add-on"). */
+const OTHERS_ADDONS = /\b(firefox|chrome|browser|edge|safari|wordpress|blender|anki|excel|word|outlook|office|google|gmail|sheets|workspace|vs ?code|figma|thunderbird|kodi|warcraft|wow|minecraft|godot|unity|unreal|home assistant|obsidian|raycast|alfred)$/;
+/**
+  Whether an ask is for an add-on to Liner Code itself, so Home switches a Standard task to Workshop
+  as it's typed: an add-on (or addon) of any kind, unless it's about the add-ons feature ("the
+  add-ons page"); or something to make in Liner Code: a panel, an app, a page, a tab, a sidebar
+  entry, a connection, a plugin, an extension, a widget, an integration. Work on a project's own
+  plugins or panels doesn't count: that names no add-on and no Liner.
+*/
+export function asksForAddon(text: string) {
+  const t = text.toLowerCase().replace(/\s+/g, " ");
+  for (const m of t.matchAll(/\badd-?ons?\b ?/g)) {
+    const after = t.slice(m.index + m[0].length);
+    const before = t.slice(0, m.index).trimEnd();
+    if (ABOUT_ADDONS.test(after) || OTHERS_ADDONS.test(before)) continue;
+    // "the add-ons" on its own is the feature; "the add-on I asked for" is one being made.
+    if (/\b(the|liner code's|liner's)$/.test(before) && m[0].trim().endsWith("s")) continue;
+    return true;
+  }
+  if (!/\bliner\b/.test(t)) return false;
+  // One to make: "a panel", "my own app", or the thing right after the verb ("bikin plugin").
+  const verb = "create|make|build|add|write|generate|design|set up|give me|i want|i'd like|i would like|i need|buat|buatkan|bikin|bikinkan|tambah|tambahkan";
+  const thing = "panel|app|page|tab|sidebar (?:entry|item|app|link)|connection|plugin|plug-in|extension|widget|integration";
+  return new RegExp(`\\b(${verb})\\b`).test(t) && new RegExp(`\\b((a|an|my|new|own|another|one|sebuah|satu)( [\\w-]+){0,2}?|${verb}) (${thing})s?\\b`).test(t);
+}
 export const BUILTIN_MODES: ModeGuide[] = [
   {
     id: "standard",
@@ -589,11 +616,11 @@ export const BUILTIN_MODES: ModeGuide[] = [
   },
   {
     id: "creator",
-    name: "Creator mode",
+    name: "Workshop",
     blurb: "Customize Liner Code through conversation. Let the agent make connections, panels and apps that add features or UI, or combine tools and prompts to make your own mode.",
-    intro: "Choose Creator mode for a new task. Describe what you want, where it should appear, and how you'll check it.",
+    intro: "Choose Workshop for a new task. Describe what you want, where it should appear, and how you'll check it.",
     details: [
-      { h: "What you can create", p: "Creator mode has everything in Standard, plus a guide to Liner Code's add-ons that the agent reads a part at a time: what it can make, the panel bridge, the places an app can open, the manifest, the theme's tokens, a starter for each kind, how to check its work, and what's installed now." },
+      { h: "What you can create", p: "Workshop has everything in Standard, plus a guide to Liner Code's add-ons that the agent reads a part at a time: what it can make, the panel bridge, the places an app can open, the manifest, the theme's tokens, a starter for each kind, how to check its work, and what's installed now." },
       { h: "Add-ons and modes", p: "An add-on adds to Liner Code: a connection every agent tool gets, a panel in the right dock, an app as a tab beside Chat or a page of its own from the left sidebar. A mode is a set of instructions for whichever model a session runs, which you pick when you start one." },
       { h: "How the result takes effect", p: "Ask it to add and check what it makes, not only to write the files. Nothing goes in without your yes on its card, and it gets only the access it lists. A panel or an app opens at once; a connection reaches agent tools now or from their next turn. A new mode is picked when you start a session. Its folder is the project you picked, or Scratch." },
     ],
@@ -604,7 +631,7 @@ export const BUILTIN_MODES: ModeGuide[] = [
     ],
   },
 ];
-export const modeName = (mode: SessionMode | undefined, agents: { id: string; name: string }[]) => (!mode || mode === "standard" ? "Standard" : mode === "creator" ? "Creator mode" : (agents.find((a) => `agent:${a.id}` === mode)?.name ?? "A custom mode"));
+export const modeName = (mode: SessionMode | undefined, agents: { id: string; name: string }[]) => (!mode || mode === "standard" ? "Standard" : mode === "creator" ? "Workshop" : (agents.find((a) => `agent:${a.id}` === mode)?.name ?? "A custom mode"));
 
 /** Where an offer to make an app stands: offered, being made and added, settled, or replaced by a newer offer. */
 export type OfferState = "proposed" | "creating" | "installing" | "installed" | "kept" | "removed" | "dismissed" | "cancelled" | "failed" | "replaced";

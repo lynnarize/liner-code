@@ -18,15 +18,27 @@ import { cssVar } from "./Surfaces";
 const VARS: [string, string][] = [
   ["--bg", "--l-bg"],
   ["--surface", "--l-surface"],
+  ["--well", "--lc-well"],
+  ["--plate", "--lc-plate"],
   ["--ink", "--l-ink"],
   ["--ink-2", "--l-ink-2"],
   ["--ink-3", "--l-ink-3"],
+  ["--ink-4", "--l-ink-4"],
+  ["--hair", "--lc-hair"],
   ["--line", "--l-line-2"],
   ["--accent", "--l-accent"],
+  ["--act", "--lc-act"],
+  ["--act-ink", "--lc-act-ink"],
+  ["--ok", "--l-ok"],
+  ["--warn", "--l-warn"],
+  ["--danger", "--l-danger"],
   ["--font", "--l-font-body"],
+  ["--font-display", "--l-font-display"],
   ["--font-mono", "--l-font-mono"],
 ];
-/** The app's colours and fonts as a page's (or a panel's) CSS variables. */
+/** The attributes on <html> that change the colours: a frame is sent the theme again when one does. */
+export const THEME_ATTRS = ["data-theme", "data-accent", "data-action", "style"];
+/** The app's colours and fonts as a page's (or a panel's) CSS variables: Liner 2.0's tokens (engine/src/skills/liner-2). */
 export const theme = () => Object.fromEntries(VARS.map(([k, from]) => [k, cssVar(from)]));
 
 /** The page as the frame loads it: the theme first, then what the agent wrote, then a line that reports its height. */
@@ -58,7 +70,7 @@ export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item,
     window.addEventListener("message", onMsg);
     // Light and dark, and the accent, follow the app without reloading the page.
     const mo = new MutationObserver(() => frame.current?.contentWindow?.postMessage({ __linerTheme: theme() }, "*"));
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent", "style"] });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: THEME_ATTRS });
     return () => {
       window.removeEventListener("message", onMsg);
       mo.disconnect();

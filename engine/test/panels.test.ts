@@ -476,7 +476,7 @@ function offering(o: { access?: Thread["access"] } = {}) {
     store,
     addons,
     createThread: async (p) => {
-      const t: Thread = { id: `child${store.threads.length}`, projectId: p.projectId, title: p.title, agent: p.agent, status: "idle", access: p.access, turns: 0, usage: emptyUsage(), createdAt: 2, updatedAt: 2 };
+      const t: Thread = { id: `child${store.threads.length}`, projectId: p.projectId, title: p.title, agent: p.agent, status: "idle", access: p.access, turns: 0, usage: emptyUsage(), createdAt: 2, updatedAt: 2, ...(p.mode && p.mode !== "standard" ? { mode: p.mode } : {}) };
       store.putThread(t);
       return t;
     },
@@ -527,6 +527,9 @@ test("offer: Create makes it in a background session with a brief, and adds what
   assert.match(x.sent[0].text, /Bump the version/);
   assert.match(x.sent[0].text, /don't call addon_install/);
   assert.equal(x.store.thread(c.child!).title, "Make Release checklist");
+  // Making an add-on is Workshop's work, whatever the session that offered it: the guide and Liner 2.0 come with it.
+  assert.equal(x.store.thread(c.child!).mode, "creator");
+  assert.match(x.sent[0].text, /read its "design" topic, Liner 2\.0/);
   x.make({ apiVersion: 1, id: "release-checklist", kind: "panel", name: "Release checklist", place: "page", entry: "index.html", access: { storage: 64 } }, c.child!);
   assert.deepEqual([x.card().state, x.card().version], ["installed", 1]);
   assert.equal(x.addons.get("release-checklist")?.by.threadId, c.child, "made by the background session");

@@ -3292,18 +3292,27 @@ html[data-composer="clear"] .lc-dock .lc-card {
   color: var(--l-ink-3);
 }
 /* When the column is narrow, the note at the end steps aside; the pickers keep their size. */
+/*
+  It never reaches past the box: each name has a cap and shortens with an ellipsis, and when the box
+  is narrow the gap goes first, then the branch's name shortens, then (narrower still) the branch.
+*/
 .lc-strip > * {
   flex-shrink: 0;
 }
-.lc-strip > .lc-grow {
+.lc-strip > .lc-grow,
+.lc-strip > .lc-strip-note {
   flex-shrink: 1;
   min-width: 0;
 }
-/* Narrower, the strip's far end keeps its icons and lets its words go; narrower still, the branch. */
-@container lc-composer (max-width: 600px) {
-  .lc-strip-word {
-    display: none;
-  }
+.lc-strip-cap {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-strip-note > .lc-strip-cap {
+  max-width: 280px;
 }
 @container lc-composer (max-width: 420px) {
   .lc-strip > .lc-strip-note {
@@ -3324,16 +3333,56 @@ html[data-composer="clear"] .lc-dock .lc-card {
   color: var(--l-ink-3);
   white-space: nowrap;
 }
-.lc-strip-div {
-  width: 1px;
-  height: 14px;
-  margin: 0 4px;
-  background: color-mix(in oklab, var(--l-ink) 14%, transparent);
+/* Under the strip, quietly: the other ways to start, which aren't settings of this task. */
+.lc-strip-under {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 2px 4px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-4);
 }
-.lc-pb-keys > svg:last-child {
+.lc-under-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
   color: var(--l-ink-3);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
 }
-/* What the box takes, behind the strip's key button: each key, and what it brings up. */
+.lc-under-b[data-open] {
+  background: var(--lc-plate);
+  color: var(--l-ink-2);
+}
+@media (hover: hover) {
+  .lc-under-b:hover {
+    background: var(--lc-well);
+    color: var(--l-ink-2);
+  }
+}
+/* Narrower, "from Claude Code or Codex" goes, so the line stays one line; narrower still, it wraps, without its dots. */
+@container lc-composer (max-width: 620px) {
+  .lc-under-long {
+    display: none;
+  }
+}
+@container lc-composer (max-width: 420px) {
+  .lc-strip-under > [aria-hidden] {
+    display: none;
+  }
+}
+/* What the box takes, behind the keys button under the strip: each key, and what it brings up. */
 .lc-box-keys {
   display: grid;
   gap: 2px;

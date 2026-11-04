@@ -411,7 +411,7 @@ export class AgentTools {
   }
 
   /** liner_inspect: the guide, what's installed, which tools are here, and what this session may do. */
-  /** One part of the creator's guide (creator.ts), for any session that asks; a Creator session is told they're there. */
+  /** One part of the creator's guide (creator.ts), for any session that asks; a Workshop session is told they're there. */
   private topic(threadId: string, asked: string): McpResult {
     const topic = asked.trim().toLowerCase() as Topic;
     if (!(TOPICS as readonly string[]).includes(topic)) return fail(`There's no topic "${asked}". The topics are ${TOPICS.join(", ")}.`);
@@ -662,7 +662,7 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
   }
 
   /**
-    mode_add: a custom mode, made with the person in a Creator session. It's one of their named
+    mode_add: a custom mode, made with the person in a Workshop session. It's one of their named
     agents (instructions, skills and context files) and runs on whichever model a session picks:
     named agents are only ever a way to give a model instructions. Asked on a card, like an add-on.
   */

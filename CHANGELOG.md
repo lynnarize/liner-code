@@ -4,7 +4,7 @@
 
 **Update from 0.1.9 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or
 download the new DMG; on Windows, download the new zip. **New: add-ons**, things your agents make
-for Liner Code itself, and **Creator mode** to make them.
+for Liner Code itself, and **Workshop** to make them.
 
 ### New
 
@@ -17,16 +17,20 @@ for Liner Code itself, and **Creator mode** to make them.
   address on the internet, which you hold to allow. One opens in the right dock, as a tab beside
   Chat, or as a page of its own from the left sidebar.
 - **Create your add-on:** Add-ons in the sidebar opens a menu with Browse add-ons and Create your
-  add-on, which starts a task in Creator mode with "Create a Liner Code add-on with a left sidebar
+  add-on, which starts a task in Workshop with "Create a Liner Code add-on with a left sidebar
   entry." in the box. Say what it should be, like a notes app for long writing, and the agent
   builds the full app on a page of its own, not a demo.
 - **Make it an app:** at the end of a turn an agent can offer to turn what it did into an app.
   Pick where it goes and Create: it's made in the background and added if it touches no more than
   the card said. Then Keep or Undo, and Restore.
-- **Creator mode:** each session now has a mode, picked under the box on Home beside where it runs
-  and kept for the session: Standard, Creator mode, or one of your own. Creator mode is Standard
-  plus a guide to add-ons and a closer look at Liner Code, never more trust. A Creator session
-  shows a chip beside its title, and the agent can save a mode of yours on a card.
+- **Workshop:** each session now has a mode, picked under the box on Home and kept for the session:
+  Standard, Workshop, or one of your own. Workshop is Standard plus a guide to add-ons and a closer
+  look at Liner Code, never more trust. Ask for an add-on in Standard and Home switches to Workshop
+  as you type (Keep Standard undoes it). A Workshop session shows a chip beside its title, and the
+  agent can save a mode of yours on a card.
+- **Liner 2.0:** what agents make for Liner Code is drawn in its own look. Every add-on is made
+  with a design skill of Liner Code's surfaces, buttons, rows and type, and gets the app's colours
+  to draw with, so a panel or a page reads as part of the app.
 - **Settings › Modes:** the built-in modes and yours as cards, each with its details, how to use
   it with example tasks, Set as new task default, and Let the agent help me make one.
 - **The Add-ons page:** what you've added, each with one sentence and a switch. A row opens its

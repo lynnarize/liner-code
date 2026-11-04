@@ -195,7 +195,7 @@ export function App() {
   const newSession = (projectId?: string) => {
     setView({ kind: "home", projectId: projectId ?? (current?.projectId || lastProject) });
   };
-  // Create your add-on (the sidebar's Add-ons menu, the Add-ons page): a new task in Creator mode, in the
+  // Create your add-on (the sidebar's Add-ons menu, the Add-ons page): a new task in Workshop, in the
   // project New session would pick (Scratch when there's none), with DeepSeek Harness's ask written in the
   // box and not sent, so you go on to say what it should be.
   const createAddon = async () => {

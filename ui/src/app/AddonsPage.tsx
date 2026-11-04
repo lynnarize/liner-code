@@ -1,7 +1,7 @@
 /*
   Add-ons, from the left sidebar (DeepSeek Harness's Plugins page): what you've added to Liner Code,
   each in a plain sentence with its switch, and the ways to add another: an agent makes it in
-  Creator mode, it comes from GitHub or a folder, or you connect a service with its key. A row opens
+  Workshop, it comes from GitHub or a folder, or you connect a service with its key. A row opens
   its details: where it shows, what it can touch, its versions, who made it, and Remove. Settings ›
   Add-ons keeps the detailed view, manifest words and all.
 
@@ -142,7 +142,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                   <div className="lc-ao-ways" role="menu" aria-label="Ways to add one">
                     {(
                       [
-                        { icon: I.sparkle, label: "Make one with an agent", note: "Describe it, and Creator mode builds it", pick: onMake },
+                        { icon: I.sparkle, label: "Make one with an agent", note: "Describe it, and Workshop builds it", pick: onMake },
                         { icon: I.link, label: "From GitHub or a folder", note: "Add one someone else made", pick: () => setAdding("source") },
                         { icon: I.plug, label: "Connect a service", note: "Linear, Sentry and others, with a key", pick: () => setAdding("connect") },
                       ] as const
@@ -178,7 +178,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
             {!shown.length && (
               <div className="lc-ao-empty">
                 <b>Nothing added yet</b>
-                <p>Say what you'd like, and an agent makes it in Creator mode: a page for your notes, a panel of TODOs, a connection to Linear. Or add one someone else made.</p>
+                <p>Say what you'd like, and an agent makes it in Workshop: a page for your notes, a panel of TODOs, a connection to Linear. Or add one someone else made.</p>
                 <span>
                   <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={onMake}>
                     <I.sparkle size={13} />
@@ -451,7 +451,7 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
           </button>
           <button type="button" className="lc-ao-quiet lc-ao-make l-focus" onClick={onMake}>
             <I.sparkle size={13} />
-            Or describe it, and an agent makes it in Creator mode
+            Or describe it, and an agent makes it in Workshop
           </button>
         </form>
       )}

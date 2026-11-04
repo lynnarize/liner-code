@@ -1,12 +1,12 @@
 /*
   Modes: how the agent works in a session, picked when it starts and fixed for its life (DeepSeek
-  Harness's agent presets). Standard is everyday work. Creator mode changes Liner Code itself through
+  Harness's agent presets). Standard is everyday work. Workshop (DeepSeek's Creator mode) changes Liner Code itself through
   conversation: the agent makes connections, panels and apps, each asked for on a card. A custom mode
   is one of your named agents, laid over whichever model the session runs: named agents are only ever
   a way to give a model instructions.
 
   Here: the picker under Home's composer, the chip beside a session's title, Settings › Modes,
-  and the one way into a Creator session from anywhere.
+  and the one way into a Workshop session from anywhere.
 */
 import { useState, type ReactNode } from "react";
 import type { AgentProfile, SessionMode, Thread } from "@contracts";
@@ -28,7 +28,7 @@ const iconOf = (mode?: SessionMode) => (mode === "creator" ? ICON.creator : mode
 const customs = (agents: AgentProfile[]) => agents.filter((a) => a.id !== "demo");
 
 /**
-  A Creator session, from anywhere (the Add-ons page, Settings › Modes): in the project you were in,
+  A Workshop session, from anywhere (the Add-ons page, Settings › Modes): in the project you were in,
   else your first one, else Scratch. With `text`, it's sent as the first message.
 */
 export async function startCreator(o: { projectId?: string; text?: string; title?: string }) {
@@ -46,13 +46,14 @@ export async function startCreator(o: { projectId?: string; text?: string; title
 }
 
 /**
-  The mode a new session starts in, in the strip under Home's composer, after where it runs:
-  Standard, Creator mode, or one of yours, and the way to Settings › Modes. Creator mode tints it.
+  The mode a new session starts in, at the right end of the strip under Home's composer:
+  Standard, Workshop, or one of yours, and the way to Settings › Modes. Workshop tints it.
 */
 export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: SessionMode) => void }) {
   const agents = useEngine((s) => s.agents);
   const name = modeName(value, agents);
-  const label = value === "standard" ? "Standard mode" : value === "creator" ? name : `${name} mode`;
+  // The name alone, as the menu says it: "Standard", "Workshop", or yours.
+  const label = name;
   return (
     <Pop
       label={`Mode: ${name}. Change it`}
@@ -61,7 +62,7 @@ export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: Se
       trigger={
         <>
           <I.layers size={13} />
-          <span className="lc-strip-word">{label}</span>
+          <span className="lc-strip-cap">{label}</span>
           <I.chevD size={11} />
         </>
       }
@@ -90,7 +91,7 @@ export function ModeChip({ thread }: { thread: Thread }) {
   if (!thread.mode || thread.mode === "standard") return null;
   const Icon = iconOf(thread.mode);
   return (
-    <span className="lc-mode-chip" title={thread.mode === "creator" ? "Creator mode: this session adds to Liner Code, each add-on on a card" : "A mode of yours: its instructions, on this session's model"}>
+    <span className="lc-mode-chip" title={thread.mode === "creator" ? "Workshop: this session adds to Liner Code, each add-on on a card" : "A mode of yours: its instructions, on this session's model"}>
       <Icon size={13} />
       {modeName(thread.mode, agents)}
     </span>

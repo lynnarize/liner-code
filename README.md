@@ -1,4 +1,43 @@
+<div align="center">
+
+<img src=".github/readme/icon.png" width="112" alt="Liner Code icon">
+
 # Liner Code
+
+**Your coding agents, with a real app around them.**
+
+Claude Code, Codex, OpenCode and Hermes on your desktop, with your own sign-ins:
+plans you approve, a diff for every turn, a check from another maker, and the work split
+so the expensive model only works when the job needs it.
+
+[![Release](https://img.shields.io/github/v/release/lynnarize/liner-code?include_prereleases&label=release&color=2f6fe4&style=flat-square)](https://github.com/lynnarize/liner-code/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/lynnarize/liner-code/total?color=1f9d55&style=flat-square)](https://github.com/lynnarize/liner-code/releases)
+[![Status](https://img.shields.io/badge/status-alpha-de8a12?style=flat-square)](CHANGELOG.md)
+[![License](https://img.shields.io/github/license/lynnarize/liner-code?color=4a4f59&style=flat-square)](LICENSE)
+<br>
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-1b1d22?logo=apple&logoColor=white&style=flat-square)](#install-the-alpha)
+[![Windows](https://img.shields.io/badge/Windows-x64-1b1d22?logo=windows&logoColor=white&style=flat-square)](#install-the-alpha)
+[![Electron](https://img.shields.io/badge/Electron-47848f?logo=electron&logoColor=white&style=flat-square)](desktop/)
+[![React 19](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white&style=flat-square)](ui/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?logo=typescript&logoColor=white&style=flat-square)](engine/)
+[![Stars](https://img.shields.io/github/stars/lynnarize/liner-code?color=e2412f&style=flat-square)](https://github.com/lynnarize/liner-code/stargazers)
+
+[![Download for macOS](https://img.shields.io/badge/Download_for_macOS-.dmg-e2412f?logo=apple&logoColor=white&style=for-the-badge)](https://github.com/lynnarize/liner-code/releases/latest)
+&nbsp;
+[![Download for Windows](https://img.shields.io/badge/Download_for_Windows-.zip-1b1d22?logo=windows&logoColor=white&style=for-the-badge)](https://github.com/lynnarize/liner-code/releases/latest)
+
+[Install](#install-the-alpha) · [Features](#features) · [How agents share the work](#how-agents-share-the-work) · [Designs](#designs) · [API endpoints](#api-endpoints) · [Run from source](#run-it-from-source) · [Changelog](CHANGELOG.md)
+
+<br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/hero-dark.jpg">
+  <img src=".github/readme/hero-light.jpg" width="100%" alt="Liner Code: a session where the planner asks a question as a card before it changes anything">
+</picture>
+
+</div>
+
+## What it is
 
 A desktop agent harness for macOS and Windows, on Electron. It drives the coding agents already on your
 machine (Claude Code, Codex CLI, OpenCode, Hermes) with your own sign-ins, and shows their work
@@ -10,6 +49,113 @@ need from you. It's built from [Liner UI](https://linerui.sorafel.com), so it ha
 white paper on one solid ground, glass only on the session tray, one accent, text that comes into
 focus, springs that never overshoot.
 
+<table>
+  <tr>
+    <td align="center"><b>Claude Code</b><br><sub>Agent SDK</sub></td>
+    <td align="center"><b>Codex CLI</b><br><sub>app server</sub></td>
+    <td align="center"><b>OpenCode</b><br><sub>ACP</sub></td>
+    <td align="center"><b>Hermes</b><br><sub>ACP</sub></td>
+    <td align="center"><b>Cursor · Grok Build</b><br><sub>ACP, beta</sub></td>
+    <td align="center"><b>API endpoints</b><br><sub>DeepSeek, Kimi, GLM, OpenRouter, Ollama…</sub></td>
+  </tr>
+</table>
+
+## Features
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <img src=".github/readme/plan.svg" width="100%" alt="Wireframe: a planner's plan with Approve and build">
+      <b>Plan, then build</b><br>
+      <sub>A hard job goes to the frontier model to plan; a cheaper one builds it in the same turn.</sub>
+    </td>
+    <td width="33%" valign="top">
+      <img src=".github/readme/diff.svg" width="100%" alt="Wireframe: a turn's diff with Undo turn and Commit">
+      <b>Every turn is a diff</b><br>
+      <sub>A git snapshot before and after each turn: undo it, commit it, or ask about a line.</sub>
+    </td>
+    <td width="33%" valign="top">
+      <img src=".github/readme/check.svg" width="100%" alt="Wireframe: the Reviewer's five criteria, one sent back">
+      <b>Checked by another maker</b><br>
+      <sub>GPT reads Claude's change (and Claude the rest) against five fixed criteria.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <img src=".github/readme/auto.svg" width="100%" alt="Wireframe: Auto scoring a message and picking critique">
+      <b>Auto routing</b><br>
+      <sub>Each message is weighed on your machine, then gets one model, a cascade or a critique.</sub>
+    </td>
+    <td width="33%" valign="top">
+      <img src=".github/readme/design.svg" width="100%" alt="Wireframe: the Design surface with a comment on a part">
+      <b>Designs beside the session</b><br>
+      <sub>Any agent draws a screen; point at a part to change it, then Build it.</sub>
+    </td>
+    <td width="33%" valign="top">
+      <img src=".github/readme/surfaces.svg" width="100%" alt="Wireframe: the surfaces tabs with the Terminal open">
+      <b>Surfaces</b><br>
+      <sub>Terminal, Browser, Design, Files, Pull request, Device and Routines, one click away.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <img src=".github/readme/desk.svg" width="100%" alt="Wireframe: the Desk, sessions grouped by what they need">
+      <b>The Desk</b><br>
+      <sub>Sessions sort themselves: back with you, out with agents, done.</sub>
+    </td>
+    <td width="33%" valign="top">
+      <img src=".github/readme/compare.svg" width="100%" alt="Wireframe: two models' answers side by side">
+      <b>Models side by side</b><br>
+      <sub>One prompt to the models you have, with what each cost, and keep the best.</sub>
+    </td>
+    <td width="33%" valign="top">
+      <img src=".github/readme/workshop.svg" width="100%" alt="Wireframe: Workshop making an add-on">
+      <b>Workshop</b><br>
+      <sub>Ask for what Liner Code doesn't have; an agent makes it as an add-on.</sub>
+    </td>
+  </tr>
+</table>
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/desk-dark.jpg">
+        <img src=".github/readme/desk-light.jpg" width="100%" alt="The Desk and a case ready to commit">
+      </picture>
+      <p align="center"><sub><b>The Desk</b>: every agent's work in one place</sub></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/plan-dark.jpg">
+        <img src=".github/readme/plan-light.jpg" width="100%" alt="A plan card with Approve and start">
+      </picture>
+      <p align="center"><sub><b>Plans</b>: approve it, then it builds</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/diff-dark.jpg">
+        <img src=".github/readme/diff-light.jpg" width="100%" alt="The diff panel with Undo turn and Commit">
+      </picture>
+      <p align="center"><sub><b>Diffs</b>: every turn, undoable</sub></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/pr-dark.jpg">
+        <img src=".github/readme/pr-light.jpg" width="100%" alt="The pull request card">
+      </picture>
+      <p align="center"><sub><b>Pull requests</b>: checks and reviews beside the session</sub></p>
+    </td>
+  </tr>
+</table>
+
+<sub>Screenshots are the real app on a sample project (0.1.2 and 0.1.5, with a scripted demo agent);
+the feature pictures above are wireframes. Both follow your system's light or dark theme.</sub>
+
 Ideas came from [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) (MIT); no code was copied from either.
 The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Design mode
@@ -17,7 +163,7 @@ The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Des
 
 ## Install the alpha
 
-Liner Code is in **alpha** (0.1.x): for Macs with Apple Silicon, tried on macOS 27, and expect
+Liner Code is in **alpha** (0.2.x): for Macs with Apple Silicon, tried on macOS 27, and expect
 rough edges. Download `Liner-Code-<version>-mac-arm64.dmg` from
 [Releases](https://github.com/lynnarize/liner-code/releases), open it and drag Liner Code to
 Applications. The alphas aren't notarized by Apple yet, so the first open is blocked: open
@@ -243,6 +389,9 @@ model from an API endpoint (see API endpoints below):
 
 ## What's in it
 
+<details>
+<summary>The repository, folder by folder</summary>
+
 ```
 contracts/src/index.ts     everything that crosses the wire: items, threads, events, RPC methods
 engine/                    the local backend (Node, TypeScript run directly, one dependency)
@@ -285,7 +434,12 @@ engine/test/               node:test tests for the engine's pure parts and the p
 docs/BACKEND.md            what the backend needs, now and later
 ```
 
+</details>
+
 ## Where things live
+
+<details>
+<summary>Every file Liner Code keeps, and where</summary>
 
 | What | Where |
 | --- | --- |
@@ -301,6 +455,8 @@ docs/BACKEND.md            what the backend needs, now and later
 | The window's frame and material | `~/Library/Application Support/Liner Code/shell.json` |
 | Engine log | `~/Library/Logs/Liner Code/engine.log`, and `engine.previous.log` from the launch before (a test home's own: `$LINER_HOME/logs`) |
 | A downloaded update, waiting to go in | `~/.liner-code/updates/` |
+
+</details>
 
 ## Updates
 

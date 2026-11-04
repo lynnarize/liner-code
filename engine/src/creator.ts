@@ -45,7 +45,9 @@ export function creatorNote(n: (tool: string) => string) {
     "- an app: a panel as a tab beside Chat in a session (its live output or interaction), or as a page of its own opened from Apps in the left sidebar (something global, kept across projects). An ask for a left sidebar entry, a page, a full-page app or a workspace is a page (place \"page\"), never the right dock. A visual request that names no other place means an add-on in Liner Code, not an HTML file;",
     `- a mode: instructions (with skills and context files) for whichever model a session runs, which the person picks when they start one. Work it out with them, then ask with ${n("mode_add")}.`,
     "",
-    `Knowledge, in this order: ${n("liner_inspect")} with a topic reads one part of the guide ("panels" step by step, "places" which place fits, "apps" the bar a full-page app meets, "manifest" every key, "bridge" each window.liner call and the access it needs, "theme" the tokens, "design" Liner 2.0, the app's own look, "starters" a copyable start for each kind, "verify" how to check it, "installed" what's there now with manifests and file paths, "connections"); then the files of an installed add-on that "installed" names. Read only the topics this task needs.`,
+    'AI inside an add-on (writing help, a summary, a chat, live edits of what it shows) is "ai": true and liner.ai.ask in its scripts, on any place, a page too: the person picks one of their models in Liner Code\'s popup. Never a prompt to copy into the chat, their API key, or the composer ("bridge").',
+    "",
+    `Knowledge, in this order: ${n("liner_inspect")} with a topic reads one part of the guide ("panels" step by step, "places" which place fits, "apps" the bar a full-page app meets, "manifest" every key, "bridge" each window.liner call and the access it needs (a model's too), "theme" the tokens, "design" Liner 2.0, the app's own look, "starters" a copyable start for each kind, "verify" how to check it, "installed" what's there now with manifests and file paths, "connections"); then the files of an installed add-on that "installed" names. Read only the topics this task needs.`,
     "",
     "When the person asks you to design or review, report what you'd do or what you found: write and install nothing unless they ask.",
     "",
@@ -108,10 +110,11 @@ function manifest() {
     "sessions": "this" | "all",    the session it's beside (title, changes, commands), or every session's titles and changes
     "composer": true,              put text in the composer, for the person to send
     "storage": 256,                KB of storage of its own, up to ${STORAGE_MAX}, kept across versions and removal
+    "ai": true,                    ask a model the person picks (liner.ai): text in, text out
     "network": "api.example.com"   one host over https; the person holds a button to allow it
   }
 }
-A page has no session beside it: only sessions "all", storage and network.
+A page has no session beside it: only sessions "all", storage, ai and network.
 Asking for more than the version in use (a new kind of access, more storage, another host) means the person is asked again.`;
 }
 
@@ -132,6 +135,7 @@ A page fills the centre column where the conversation was, so it's held to what 
 - Light and dark from the theme's tokens ("theme"), following liner.on("theme"); the page sheet stays light only if the theme is light.
 - Storage that fits its work: a notes app asks for ${STORAGE_MAX} KB (the most there is), something that keeps a few settings asks for 16. Say in the summary what it keeps.
 - A summary sentence for the Add-ons list, written always.
+- AI in it, when the person asks for any (writing help, ideas, edits of what it shows): "ai": true and liner.ai.ask ("bridge", "A model in an app"), on the page itself. Not a prompt to copy into the chat, not a key of the person's, not the composer.
 In the frame: no alert, confirm or prompt (it's sandboxed), so ask twice in place ("Delete? Click again"); a native select works; a CSS display on an element beats its hidden attribute, so add [hidden] { display: none !important; }; and take titles and counts from the HTML, not innerText, which runs lines together until the frame is laid out.
 Check it on its page size with addon_check ("verify"), then add sample content of your own to try it, and remove that before it's installed.`;
 
@@ -147,10 +151,22 @@ Every call returns a promise:
 - liner.sessions.list() → [{ id, title, project, status, updatedAt, files, added, removed }]   access.sessions "all"
 - liner.composer.put(text)                                         access.composer; lands in the composer for the person to send; not on a page
 - liner.storage.get(key), .set(key, value), .remove(key), .keys()  access.storage; JSON values, within its quota
+- liner.ai.ask(prompt, { system, onText }) → { text, model }       access.ai; see "A model in an app" below
+- liner.ai.model() → { name } or null; liner.ai.pick() → { name } or null   access.ai
 - liner.call("context") → { apiVersion, place, access }            always
 Also: liner.apiVersion (1), liner.place, liner.access, liner.theme (the tokens as it opened), and liner.on(event, fn) → off: "theme" when the colours change (they're applied for you), "session" when the session moves on.
 What it reports by itself: an error it didn't catch takes it off the screen and shows the person a card with the error (so catch what you expect), and a request the content policy blocked shows a notice naming the host.
-Under it, a call is a postMessage { liner: 1, id, method, args } to its parent, answered { liner: 1, id, ok, value | error }; use window.liner rather than that.`;
+Under it, a call is a postMessage { liner: 1, id, method, args } to its parent, answered { liner: 1, id, ok, value | error }; use window.liner rather than that.
+
+A model in an app (access.ai)
+When the person wants AI inside the app (a "help me write" button, a summary, ideas, a chat), ask for "ai": true and call liner.ai.ask. It is just a model: what you send in, text out. No tools, no files, no web, no agent, no memory between calls: put everything it needs in the prompt (the text to rewrite, the design as HTML, the last few chat turns).
+- The first ask opens Liner Code's own picker, where the person picks one of their models and allows it; after that it's remembered for this app. You never choose the model, see their keys or reach a model's API: never ask for network to a model's host (api.openai.com, api.anthropic.com, openrouter.ai…), and never make the person copy a prompt into the chat.
+- system is the model's instructions for this kind of ask ("You rewrite UI copy. Answer with the new text only."). Ask for a shape you can use: plain text, or JSON you parse with a fallback when it isn't.
+- onText(chunk) gets the answer as it's written, so show it growing; the promise resolves with the whole { text, model } when it's done. The first word can take a few seconds: show "Asking Sonnet 5.5…" with the model's name and keep the rest of the app working.
+- It throws when the person didn't allow a model, closed the picker, or the model failed: catch it and say so in place, with a way to try again.
+- liner.ai.model() says which model is picked (null before one is); liner.ai.pick() opens the picker again, so a small "Model: Sonnet 5.5" button can let the person switch.
+- Each ask is billed to the account of the model they picked, and an app has a daily limit: ask when the person acts (a button, Enter), never on each keystroke or on a timer.
+- In addon_check no model is asked: liner.ai.ask answers with a stand-in that says so, so the picture shows where an answer goes.`;
 }
 
 function theme() {

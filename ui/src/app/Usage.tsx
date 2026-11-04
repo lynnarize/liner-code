@@ -18,6 +18,7 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
   const [data, setData] = useState<UsageSummary | null>(null);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
+  const addons = useEngine((s) => s.addons);
   const threads = useEngine((s) => s.threads.length);
   const budget = useEngine((s) => s.settings.budgetUsd ?? 0);
   const [editing, setEditing] = useState(false);
@@ -101,7 +102,9 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
                 <b>By agent</b>
               </div>
               {(data?.byAgent ?? []).map((a) => {
-                const ag = agentOf(a.agent, agents, providers);
+                // An app asking a model (access.ai) is named by the app.
+                const app = a.agent.startsWith("addon:") ? addons.find((x) => x.id === a.agent.slice(6)) : undefined;
+                const ag = a.agent.startsWith("addon:") ? { ...agentOf(undefined, agents, providers), name: `${app?.name ?? "An app"} (app)`, role: "asking a model" } : agentOf(a.agent, agents, providers);
                 const v = a.costUsd || a.tokens / 1e6;
                 return (
                   <div key={a.agent} className="lc-bar-row">

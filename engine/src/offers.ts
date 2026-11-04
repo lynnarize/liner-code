@@ -12,7 +12,7 @@
   draws in Liner 2.0 (creator.ts).
 */
 import type { Item, PanelAccess, PanelPlace, SessionMode, Thread } from "../../contracts/src/index.ts";
-import { accessWords, ADDON_ID, checkManifest, readDraft, widerAccess, type Addons } from "./addons.ts";
+import { accessWords, ADDON_ID, checkManifest, modelHostRefusal, readDraft, widerAccess, type Addons } from "./addons.ts";
 import { uid, type Store } from "./store.ts";
 
 type Offer = Extract<Item, { kind: "offer" }>;
@@ -95,6 +95,8 @@ export class Offers {
     const m = checkManifest({ apiVersion: 1, id: "offer", kind: "panel", name, place, access: args.access ?? {} });
     const access = (m as { access: PanelAccess }).access;
     if (access.network && store.settings.addonNetwork === "never") throw new Error("The person set panels never to reach the internet (Settings › Add-ons): offer it without access.network.");
+    const modelHost = modelHostRefusal(access.network);
+    if (modelHost) throw new Error(modelHost);
     const seed = Array.isArray(args.initialContent) ? args.initialContent.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim().slice(0, 300)).slice(0, 40) : undefined;
     const turn = this.h.turnOf(threadId);
     const items = store.timeline(threadId);

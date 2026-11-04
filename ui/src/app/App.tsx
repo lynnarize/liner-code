@@ -30,6 +30,7 @@ import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfac
 import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
 import { AppPage } from "./Addon";
+import { AppModelHost } from "./AppModel";
 import { AddonsPage } from "./AddonsPage";
 import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
@@ -524,6 +525,7 @@ export function App() {
       )}
       <CommandMenu open={menu} onOpenChange={setMenu} items={commands} hotkey={null} placeholder="Search sessions, projects and commands" />
       <AgentDialog open={agentDialog.open} agent={agentDialog.agent} onClose={() => setAgentDialog({ open: false })} />
+      <AppModelHost />
       <Toaster className="lc-toaster" />
     </div>
   );

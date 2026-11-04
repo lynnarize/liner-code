@@ -14,7 +14,9 @@
   (the strong model writes, critics read it side by side, it revises once).
 */
 import type { Access, Effort, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, Risk, Settings, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
-import { castOf, checkerOf, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { castOf, checkerOf, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, plainWay, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
 import { capture, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { killTree, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
@@ -26,6 +28,7 @@ import { claude } from "./providers/claude.ts";
 import { codex } from "./providers/codex.ts";
 import { demo } from "./providers/demo.ts";
 import { endpointProvider } from "./providers/endpoint.ts";
+import { askEndpoint, PLAIN_SOUL } from "./providers/plain.ts";
 import { ResumeFailed, type Provider, type ProviderSession, type TurnSink, type ToolUpdate, type WakeTurn } from "./providers/types.ts";
 import { attachNote } from "./providers/attachments.ts";
 import type { AgentTools } from "./agent-tools.ts";
@@ -1139,6 +1142,69 @@ export class Runtime {
       const t = this.store.thread(threadId);
       this.store.logUsage({ at: Date.now(), threadId, projectId: t.projectId, agent: as, provider, model, inputTokens: own.inputTokens, outputTokens: own.outputTokens, cacheReadTokens: own.cacheReadTokens, costUsd: own.costUsd, seconds: (Date.now() - started) / 1000 });
     }
+    return text;
+  }
+
+  /**
+    Just a model, for an app (access.ai): its prompt in, text out, with no tools, files or agent.
+    An endpoint's model is asked straight over HTTP; Claude Code's with everything of its own off,
+    in an empty folder. Any other can't be asked this way (plainWay), and says so. Its use is
+    logged under the app (`as`, "addon:<id>"), with no session.
+  */
+  async plain(ref: string, o: { prompt: string; system?: string; signal: AbortSignal; onText?: (t: string) => void; as: string }): Promise<string> {
+    const { provider, model } = splitModel(ref);
+    const way = plainWay(provider, this.store.settings);
+    const name = this.labelOf(ref);
+    if (!way || !providers[provider]) throw new Error(`${name} can't answer an app: it runs through a tool that brings tools of its own. Pick a Claude Code model or one of your API endpoints'.`);
+    const ready = this.providerInfo.find((p) => p.id === provider);
+    if (ready && !ready.available) throw new Error(`${name} isn't ready on this Mac right now. Pick another model.`);
+    const system = [PLAIN_SOUL, o.system?.trim()].filter(Boolean).join("\n\n");
+    const started = Date.now();
+    const own = emptyUsage();
+    const log = () => this.store.logUsage({ at: Date.now(), threadId: "", projectId: "", agent: o.as, provider, model, inputTokens: own.inputTokens, outputTokens: own.outputTokens, cacheReadTokens: own.cacheReadTokens, costUsd: own.costUsd, seconds: (Date.now() - started) / 1000 });
+    if (way.kind === "http") {
+      try {
+        const r = await askEndpoint(way.endpoint, this.keys.get(endpointKey(way.endpoint.id)), model, { system, prompt: o.prompt, signal: o.signal, onText: o.onText });
+        own.inputTokens = r.inputTokens;
+        own.outputTokens = r.outputTokens;
+        return r.text;
+      } finally {
+        log();
+      }
+    }
+    // An empty folder of its own: nothing to read even if a tool turned up.
+    const cwd = join(this.store.home, "addons", ".ask");
+    mkdirSync(cwd, { recursive: true });
+    const session = providers[provider].open({ cwd, model, effort: "low", access: "read", soul: system, guard: true, ephemeral: true, plain: true, env: this.envFor(provider) });
+    let text = "";
+    let failed = "";
+    const sink: TurnSink = {
+      text: (d) => {
+        text += d;
+        o.onText?.(d);
+      },
+      reasoning: () => {},
+      tool: () => {},
+      plan: () => {},
+      approve: async () => ({ allow: false, reason: "You have no tools here: answer from what you were given." }),
+      ask: async () => null,
+      propose: async () => ({ approve: false }),
+      usage: (u, total) => {
+        for (const k of ["inputTokens", "outputTokens", "cacheReadTokens", "costUsd"] as const) if (u[k] !== undefined) own[k] = total ? (u[k] as number) : own[k] + (u[k] as number);
+      },
+      session: () => {},
+      notice: () => {},
+      error: (m) => void (failed = m),
+      limited: (m) => void (failed = m),
+    };
+    try {
+      await session.turn(o.prompt, sink, o.signal);
+    } finally {
+      session.close();
+      log();
+    }
+    if (o.signal.aborted) throw new Error("Stopped.");
+    if (!text.trim() && failed) throw new Error(failed);
     return text;
   }
 

@@ -18,7 +18,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { AgentBrowserOp, AddonInfo, Item, PanelManifest, PanelPlace, ProviderInfo, Risk, Thread } from "../../contracts/src/index.ts";
 import { addonKey, panelDocument } from "../../contracts/src/index.ts";
-import { accessWords, ADDON_GUIDE, readDraft, sizeWords, type Addons, type PanelFiles } from "./addons.ts";
+import { accessWords, ADDON_GUIDE, modelHostRefusal, readDraft, sizeWords, type Addons, type PanelFiles } from "./addons.ts";
 import { CHECK_THEME, panelCall, refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
 import { topicText, TOPICS, type Topic } from "./creator.ts";
 import type { Offers } from "./offers.ts";
@@ -169,6 +169,16 @@ const REACHED: { family: string; label: string; now: boolean }[] = [
   { family: "opencode", label: "OpenCode", now: false },
   { family: "hermes", label: "Hermes", now: false },
 ];
+/**
+  A model, as a check sees it: nobody has picked one, and nothing is billed, so its answer is a
+  stand-in that says so, shaped like a real one, for the picture to show where an answer goes.
+*/
+const CHECK_AI: NonNullable<PanelEnv["ai"]> = {
+  model: () => ({ name: "A model you pick" }),
+  pick: () => ({ name: "A model you pick" }),
+  ask: async ({ prompt }) => ({ text: `(A check asks no model. Once it's added, the model the person picks answers here. It was asked: "${prompt.slice(0, 80)}${prompt.length > 80 ? "…" : ""}")`, model: "A model you pick" }),
+};
+
 /** The tool for Liner Code's own requests (an install card), on the timeline. */
 export const ADDON_TOOL = "liner.addon";
 
@@ -511,6 +521,8 @@ export class AgentTools {
     const here = !have?.project || have.project === project.id;
     if (live && here && next.version === have.version) return text(`applied: ${m.name} is already in as v${have.version}, exactly as this draft is. Nothing to ask.`);
     if (m.access.network && this.store.settings.addonNetwork === "never") return fail(`The person set panels never to reach the internet (Settings › Add-ons), so ${m.name} can't have access.network. Make it work without: whatever it needs from elsewhere goes in its own files. Nothing was added.`);
+    const modelHost = modelHostRefusal(m.access.network);
+    if (modelHost) return fail(`${modelHost} Nothing was added.`);
     const ask = addons.panelAsk(m, path, project, files);
     const seen = this.checked.get(`${threadId}:${m.id}`);
     if (seen && seen.sum === sumOf(files)) ask.checked = seen.words;
@@ -575,6 +587,8 @@ export class AgentTools {
         hosts.length ? `The content policy blocked: ${hosts.join(", ")}. A panel reaches no address but the one host in access.network; scripts, styles and pictures go in its own files.` : "",
         held ? `Requests to ${net} were held: a check runs without the network, which only the person's hold on the install card gives. Make it draw sensibly while that host doesn't answer.` : "",
         c.refused.length ? `The bridge refused: ${[...new Set(c.refused)].join("; ")}` : "",
+        modelHostRefusal(net) ? `addon_install will refuse it: ${modelHostRefusal(net)}` : "",
+        manifest.access.ai ? "No model was asked: in a check, liner.ai.ask answers with a stand-in that says so. In the window, the person's first ask opens Liner Code's model picker, and the model they allow answers." : "",
         "The picture is how it draws in the window. Fix what's off and check again before you call addon_install.",
       ].filter(Boolean);
       return { content: [{ type: "text", text: parts.join("\n\n") }, { type: "image", data: look.png, mimeType: "image/png" }] };
@@ -614,7 +628,7 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
     }
     c.busy++;
     try {
-      const value = await this.panelCall(where, method as PanelMethod, (body.args ?? {}) as Record<string, unknown>, { all: () => c.storage, put: (k, v) => (v === undefined ? delete c.storage[k] : (c.storage[k] = v)) }, c.manifest.access.storage ?? 0);
+      const value = await this.panelCall(where, method as PanelMethod, (body.args ?? {}) as Record<string, unknown>, { all: () => c.storage, put: (k, v) => (v === undefined ? delete c.storage[k] : (c.storage[k] = v)) }, c.manifest.access.storage ?? 0, CHECK_AI);
       // A check never writes to the composer: it says what it would have put there.
       return { ok: true, value };
     } catch (e) {
@@ -642,7 +656,7 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
   }
 
   /** The engine's half of a panel's bridge: the session's folder and timeline, every session, and its storage within its quota. */
-  async panelCall(where: PanelWhere, method: PanelMethod, args: Record<string, unknown>, storage: { all(): Record<string, unknown>; put(key: string, value: unknown): void }, quota: number) {
+  async panelCall(where: PanelWhere, method: PanelMethod, args: Record<string, unknown>, storage: { all(): Record<string, unknown>; put(key: string, value: unknown): void }, quota: number, ai?: PanelEnv["ai"]) {
     const env: PanelEnv = {
       cwdOf: (id) => this.cwdOf(id) ?? this.store.thread(id).worktree?.path ?? this.store.project(this.store.thread(id).projectId).path,
       thread: (id) => this.store.thread(id),
@@ -657,6 +671,7 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
           storage.put(k, v);
         },
       },
+      ai,
     };
     return panelCall(env, where, method, args);
   }

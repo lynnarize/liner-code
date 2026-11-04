@@ -67,9 +67,12 @@ export function panelPolicy(access: PanelAccess) {
 function shim(access: PanelAccess, theme: PanelTheme, place: string) {
   return `(()=>{"use strict";
 const post=(m)=>parent.postMessage(Object.assign({liner:1},m),"*");
-let n=0;const waiting=new Map();const ears=new Map();
+let n=0;const waiting=new Map();const ears=new Map();const streams=new Map();
 const call=(method,args)=>new Promise((ok,no)=>{const id=++n;waiting.set(id,{ok,no});post({id,method,args})});
+const ask=(prompt,o)=>{o=o||{};const f=typeof o.onText==="function"?o.onText:null;const id=++n;
+return new Promise((ok,no)=>{waiting.set(id,{ok,no});if(f)streams.set(id,f);post({id,method:"ai.ask",args:{prompt,system:o.system,stream:!!f}})}).finally(()=>streams.delete(id))};
 addEventListener("message",(e)=>{if(e.source!==parent)return;const d=e.data;if(!d||d.liner!==1)return;
+if(d.event==="ai.text"){const f=streams.get(d.data&&d.data.id);if(f)try{f(String(d.data.text))}catch(x){report(x)}return}
 if(d.event){if(d.event==="theme")for(const[k,v]of Object.entries(d.data||{}))document.documentElement.style.setProperty(k,v);for(const f of ears.get(d.event)||[])try{f(d.data)}catch(x){report(x)}return}
 const w=waiting.get(d.id);if(!w)return;waiting.delete(d.id);d.ok?w.ok(d.value):w.no(new Error(d.error))});
 const report=(x)=>post({kind:"error",message:String(x&&x.message||x),stack:x&&x.stack?String(x.stack).slice(0,2000):undefined});
@@ -85,7 +88,8 @@ files:Object.freeze({list:(dir)=>call("files.list",{dir}),read:(path)=>call("fil
 session:Object.freeze({info:()=>call("session.info"),commands:()=>call("session.commands")}),
 sessions:Object.freeze({list:()=>call("sessions.list")}),
 composer:Object.freeze({put:(text)=>call("composer.put",{text})}),
-storage:Object.freeze({get:(key)=>call("storage.get",{key}),set:(key,value)=>call("storage.set",{key,value}),remove:(key)=>call("storage.remove",{key}),keys:()=>call("storage.keys")})});
+storage:Object.freeze({get:(key)=>call("storage.get",{key}),set:(key,value)=>call("storage.set",{key,value}),remove:(key)=>call("storage.remove",{key}),keys:()=>call("storage.keys")}),
+ai:Object.freeze({ask,model:()=>call("ai.model"),pick:()=>call("ai.pick")})});
 Object.defineProperty(window,"liner",{value:liner,writable:false,configurable:false});
 })();`;
 }

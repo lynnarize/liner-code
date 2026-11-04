@@ -67,6 +67,7 @@ const KIND: Record<PanelPlace, string> = { page: "App · its own page", tab: "Ap
 function touches(a: PanelAccess, place: PanelPlace) {
   const reads = [a.files && "This project's files", a.sessions === "this" && (place === "tab" ? "This session" : "The session it's beside"), a.sessions === "all" && "Your sessions' titles and changes", a.composer && "The composer, to put text in for you"].filter(Boolean) as string[];
   if (a.storage) reads.push(reads.length ? "its own storage" : "Only its own storage");
+  if (a.ai) reads.push("a model you pick");
   reads.push(a.network ? `${a.network}, and no other address` : "no internet");
   return reads.join(" · ");
 }
@@ -515,6 +516,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
       ...(net ? [{ label: "Network", value: <code className="lc-addon-mono">{net}</code> }] : []),
       { label: "Reads", value: <span className="lc-addon-wrap">{reads}</span> },
       { label: "Can do", value: p.access.composer ? "Put text in the composer, for you to send" : "Nothing but show itself" },
+      ...(p.access.ai ? [{ label: "Model", value: "Asks a model you pick when it first asks, billed to that model's account. Just a model: no tools or files" }] : []),
       { label: "Keeps", value: p.access.storage ? `Its own storage, up to ${kbWords(p.access.storage)}` : "Nothing" },
       ...(net ? [] : [{ label: "Network", value: "None" }]),
       ...(p.replaces ? [{ label: "Replaces", value: `v${p.replaces}, which stays kept` }] : []),

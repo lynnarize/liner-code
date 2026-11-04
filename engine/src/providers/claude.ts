@@ -528,6 +528,8 @@ class ClaudeSession implements ProviderSession {
 
   private start() {
     const o = this.o;
+    // Just a model, for an app: no built-in tools, no settings (and so no hooks, plugins or servers of yours), none of Liner's, its own short prompt.
+    const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
     const options: Options = {
       cwd: o.cwd,
       model: o.model || undefined,
@@ -552,6 +554,8 @@ class ClaudeSession implements ProviderSession {
       canUseTool: async (name, input, { signal, toolUseID }) => {
         const sink = this.sink;
         if (!sink) return { behavior: "deny", message: "The turn has ended." };
+        // Just a model has no tools; should one turn up all the same, it's never used.
+        if (o.plain) return { behavior: "deny", message: "You have no tools here: answer from what you were given." };
         // Liner Code's own tools only reach this session's Browser, the Simulator and its timeline.
         if (name.startsWith("mcp__liner__")) return { behavior: "allow", updatedInput: input };
         // The agent asks you to choose: shown as a question card, answered in its input.
@@ -603,6 +607,7 @@ class ClaudeSession implements ProviderSession {
         );
         return answer.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: answer.reason ? `The user said no, and asks instead: ${answer.reason}` : "The user said no to this step." };
       },
+      ...plain,
     };
     this.seen = o.resume ? null : { input: 0, output: 0, cache: 0, cost: 0 };
     this.q = sdk.query({ prompt: this.inbox, options });
@@ -610,7 +615,7 @@ class ClaudeSession implements ProviderSession {
     // The connections go over stdin rather than on the command line with `liner`, where any program
     // on this Mac could read their keys: the SDK writes `mcpServers` as --mcp-config (T3 Code:
     // ClaudeAdapterV2.ts hands its servers over with setMcpServers once query() returns, for the same reason).
-    if (o.connections?.length) this.linking = this.link(this.q);
+    if (o.connections?.length && !o.plain) this.linking = this.link(this.q);
   }
 
   /** Hands Claude Code `liner` and the connections; what didn't connect, by name and why. */

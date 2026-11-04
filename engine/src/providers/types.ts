@@ -95,6 +95,12 @@ export type OpenOptions = {
   guard: boolean;
   /** A one-off read (a review, a judge, a commit message): the tool keeps no transcript of it. */
   ephemeral?: boolean;
+  /**
+    Just a model, for an app (access.ai): no tools of any kind, none of your settings, hooks or
+    servers, and `soul` as its whole system prompt. Only a tool that can promise that takes it
+    (Claude Code); the runtime asks no other (plainWay).
+  */
+  plain?: boolean;
   /** This turn is a lead's plan: read only, ending in a plan to approve rather than in edits. */
   planning?: boolean;
   /** A side chat beside a session: read only, and it answers rather than plans. */

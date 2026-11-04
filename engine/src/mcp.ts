@@ -123,7 +123,7 @@ const TOOLS: ToolDef[] = [
         name: { type: "string", description: "What it's called, a few words" },
         brief: { type: "string", description: "What it does, what it reads and what it keeps, so a session that can't read this one can make it" },
         place: { type: "string", description: "Where it goes", enum: ["dock", "tab", "page"] },
-        access: { type: "object", description: 'As a panel manifest\'s access: files ("project"), sessions ("this" or "all"), composer (true), storage (KB), network (one host)' },
+        access: { type: "object", description: 'As a panel manifest\'s access: files ("project"), sessions ("this" or "all"), composer (true), storage (KB), ai (true: it asks a model the person picks), network (one host)' },
         initialContent: { type: "array", items: { type: "string" }, description: "What it starts with, in the person's own items, when they gave some" },
       },
       required: ["name", "brief", "place"],

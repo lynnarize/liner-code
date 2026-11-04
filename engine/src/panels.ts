@@ -18,7 +18,7 @@ import { readFile } from "./surfaces.ts";
 export const CHECK_THEME = { "--bg": "#f9f9fb", "--surface": "#ffffff", "--well": "#f4f4f5", "--plate": "#ececee", "--ink": "#1f2024", "--ink-2": "#46484f", "--ink-3": "#6b6e76", "--ink-4": "#8b8e95", "--hair": "rgba(31, 32, 36, 0.08)", "--line": "rgba(30, 33, 45, 0.11)", "--accent": "#3a6df0", "--act": "oklch(0.6 0.215 27)", "--act-ink": "#ffffff", "--ok": "oklch(0.6 0.15 152)", "--warn": "oklch(0.7 0.15 65)", "--danger": "oklch(0.6 0.21 25)", "--font": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-display": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-mono": "'Geist Mono', ui-monospace, monospace" };
 
 /** Every call a frame can make (apiVersion 1), and the access each needs. */
-export const PANEL_METHODS = ["context", "files.list", "files.read", "files.search", "session.info", "session.commands", "sessions.list", "composer.put", "storage.get", "storage.set", "storage.remove", "storage.keys"] as const;
+export const PANEL_METHODS = ["context", "files.list", "files.read", "files.search", "session.info", "session.commands", "sessions.list", "composer.put", "storage.get", "storage.set", "storage.remove", "storage.keys", "ai.ask", "ai.model", "ai.pick"] as const;
 export type PanelMethod = (typeof PANEL_METHODS)[number];
 
 /** Where a call comes from: the panel's access, its place, and the session it's beside (none on a page). */
@@ -52,8 +52,16 @@ export function refusal(w: PanelWhere, method: string, apiVersion: number = PANE
     case "storage.remove":
     case "storage.keys":
       return a.storage ? null : "It didn't ask for storage of its own (access.storage).";
+    case "ai.ask":
+    case "ai.model":
+    case "ai.pick":
+      return a.ai ? null : "It didn't ask to use a model (access.ai).";
   }
 }
+
+/** The most an app may send a model at once, in characters: its prompt, and its own instructions. */
+export const AI_PROMPT_MAX = 100_000;
+export const AI_SYSTEM_MAX = 20_000;
 
 /** A path a panel may read: inside the folder, nothing hidden (.env, .git, .liner), no link out of it. */
 export function readable(root: string, path: unknown): string {
@@ -80,6 +88,15 @@ export type PanelEnv = {
   projectName(projectId: string): string;
   branchOf(threadId: string): string | undefined;
   storage: { all(): Record<string, unknown>; put(key: string, value: unknown): void };
+  /**
+    The model an app asked for (access.ai), as just a model: the one picked for it (its name, or
+    null before one is), and its answer. `call` names the answer's pieces as they come (onText).
+  */
+  ai?: {
+    model(): { name: string } | null;
+    pick(): { name: string } | null;
+    ask(o: { prompt: string; system?: string; call?: string }): Promise<{ text: string; model: string }>;
+  };
 };
 
 const hidden = (p: string) => p.split("/").some((x) => x.startsWith("."));
@@ -196,8 +213,26 @@ export async function panelCall(env: PanelEnv, w: PanelWhere, method: PanelMetho
     case "storage.remove":
       env.storage.put(keyOf(args.key), undefined);
       return true;
+    case "ai.model":
+      return need(env).model();
+    case "ai.pick":
+      return need(env).pick();
+    case "ai.ask": {
+      const prompt = typeof args.prompt === "string" ? args.prompt : "";
+      if (!prompt.trim()) throw new Error("Say what to ask the model: liner.ai.ask(prompt).");
+      if (prompt.length > AI_PROMPT_MAX) throw new Error(`That's more than an app may send a model at once (${AI_PROMPT_MAX.toLocaleString("en")} characters).`);
+      if (args.system !== undefined && args.system !== null && typeof args.system !== "string") throw new Error("system is the model's instructions, as a string.");
+      const system = typeof args.system === "string" && args.system.trim() ? args.system : undefined;
+      if (system && system.length > AI_SYSTEM_MAX) throw new Error(`Its instructions are longer than an app may give (${AI_SYSTEM_MAX.toLocaleString("en")} characters).`);
+      return need(env).ask({ prompt, system, call: args.stream && typeof args.call === "string" ? args.call : undefined });
+    }
   }
 }
+
+const need = (env: PanelEnv) => {
+  if (!env.ai) throw new Error("There's no model to ask here.");
+  return env.ai;
+};
 
 const keyOf = (k: unknown) => {
   if (typeof k !== "string" || !k || k.length > 200) throw new Error("A storage key is a string of up to 200 characters.");

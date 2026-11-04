@@ -18,9 +18,11 @@ import { panelDocument, PANEL_API } from "@contracts";
 import { HoldToConfirm } from "@liner/components/hold-to-confirm/hold-to-confirm";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
-import { getState, loadItems, rpc, useEngine, useItemsWhere } from "./engine";
+import { AppModelChip, appModelOf, pickAppModel } from "./AppModel";
+import { getState, loadItems, onStream, rpc, useEngine, useItemsWhere } from "./engine";
 import { toComposer } from "./Find";
 import { I } from "./icons";
+import { modelLabel } from "./model";
 import { THEME_ATTRS, theme } from "./Page";
 import { PanelHead, Pop, Row, Sep } from "./ui";
 
@@ -47,6 +49,7 @@ export function accessLine(a: PanelAsk["access"], place: PanelPlace) {
   if (a.sessions === "all") out.push("reads your sessions' titles and changes");
   if (a.composer) out.push("can put text in the composer");
   if (a.storage) out.push(`keeps its own storage, up to ${kb(a.storage)}`);
+  if (a.ai) out.push("asks a model you pick");
   out.push(a.network ? `reaches ${a.network}` : "no network");
   return out.join(" · ");
 }
@@ -78,6 +81,7 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
         <div className="lc-addon-strip">
           <I.shield size={13} />
           <span>{stripOf({ by: agentName, reaches: accessLine(draft.access, draft.place), place: draft.place, preview: true })}</span>
+          {draft.access.ai && <AppModelChip addon={addon} name={draft.name} />}
         </div>
       </div>
     );
@@ -87,6 +91,7 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
     <div className="lc-addon-strip">
       <I.shield size={13} />
       <span>{info.enabled && !info.removed ? stripOf({ by: info.by.agent, version: info.version, reaches: info.reaches, place: info.panel.place }) : `${info.panel.place === "dock" ? "Add-on" : "App"} by ${info.by.agent} · off`}</span>
+      {info.panel.access.ai && info.enabled && !info.removed && <AppModelChip addon={info.id} name={info.name} />}
       <AddonMenu a={info} thread={thread} agentName={agentName} onOpenElsewhere={onOpenElsewhere} />
     </div>
   );
@@ -132,6 +137,15 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   const [blocked, setBlocked] = useState<string | null>(null);
   const [run, setRun] = useState(0);
   const count = useEngine((s) => (thread ? (s.items[thread.id]?.length ?? 0) : 0));
+  // A model's answers it's waiting on: stopped when the frame goes (closed, another version, run again).
+  const asking = useRef(new Set<string>());
+  useEffect(() => {
+    const now = asking.current;
+    return () => {
+      for (const call of now) void rpc("panel.cancel", { call }).catch(() => {});
+      now.clear();
+    };
+  }, [loaded, run]);
 
   useEffect(() => {
     let live = true;
@@ -158,13 +172,35 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
       if (d.kind === "error") return setCrash({ message: String(d.message ?? "An error"), stack: d.stack ? String(d.stack) : undefined });
       if (d.kind === "blocked") return setBlocked(String(d.host || d.directive || "an address"));
       if (d.kind || typeof d.id !== "number" || typeof d.method !== "string") return;
+      const id = d.id;
       try {
+        // A model (access.ai): Liner Code's own popup picks and allows it, never the frame.
+        if (ok.access.ai && d.method === "ai.pick") {
+          const ref = await pickAppModel(addon, ok.name);
+          return post({ id, ok: true, value: ref ? { name: modelLabel(ref, getState().providers) } : null });
+        }
+        if (ok.access.ai && d.method === "ai.ask") {
+          const ref = appModelOf(addon) ?? (await pickAppModel(addon, ok.name));
+          if (!ref) return post({ id, ok: false, error: `You didn't allow a model for ${ok.name}, so nothing was asked.` });
+          const a = (d.args ?? {}) as Record<string, unknown>;
+          const call = crypto.randomUUID();
+          asking.current.add(call);
+          // The answer's pieces as they come, for its onText.
+          const off = a.stream ? onStream((e) => e.type === "panel.ai" && e.call === call && post({ event: "ai.text", data: { id, text: e.text } })) : () => {};
+          try {
+            const value = await rpc("panel.call", { addon, threadId: thread?.id, preview, method: d.method, args: { ...a, call }, apiVersion: PANEL_API });
+            return post({ id, ok: true, value });
+          } finally {
+            off();
+            asking.current.delete(call);
+          }
+        }
         const value = await rpc("panel.call", { addon, threadId: thread?.id, preview, method: d.method, args: d.args, apiVersion: PANEL_API });
         // What it puts in the composer lands there for you to send, or not.
         if (d.method === "composer.put" && thread) toComposer(thread.id, (value as { text: string }).text);
-        post({ id: d.id, ok: true, value });
+        post({ id, ok: true, value });
       } catch (err) {
-        post({ id: d.id, ok: false, error: err instanceof Error ? err.message : String(err) });
+        post({ id, ok: false, error: err instanceof Error ? err.message : String(err) });
       }
     };
     window.addEventListener("message", onMsg);
@@ -361,6 +397,7 @@ export function willTouch(a: PanelAsk["access"], place: PanelPlace) {
     a.sessions === "all" && "read your sessions' titles and changes",
     a.composer && "put text in the composer for you",
     a.storage ? `keep its entries (up to ${kb(a.storage)})` : "",
+    a.ai && "ask a model you pick",
   ].filter(Boolean) as string[];
   const net = a.network ? `reach ${a.network} and nothing else` : "have no network";
   return `It will ${does.length ? `${does.join(", ")}, and ` : ""}${net}.`;

@@ -117,6 +117,20 @@ export type Endpoint = { id: string; label: string; url: string; protocol: Endpo
 export const ENDPOINT_TOOL: Record<EndpointProtocol, BuiltinProvider> = { anthropic: "claude", responses: "codex", chat: "opencode" };
 export const endpointKey = (id: string) => `endpoint.${id}`;
 /**
+  How a model can answer an app (access.ai) as just a model, with no tools of any kind: an API
+  endpoint's (the promo's too), called straight over HTTP; or Claude Code's, with its tools, settings
+  and servers all off. A model that only runs through Codex, OpenCode, Hermes or another agent can't:
+  those bring tools of their own (a shell, your MCP servers) that an app must never reach. Null then.
+*/
+export function plainWay(provider: ProviderId, s: { endpoints?: Endpoint[]; voucher?: boolean }): { kind: "http"; endpoint: Endpoint } | { kind: "claude" } | null {
+  const [tool, rest] = provider.split(".");
+  if (rest) {
+    const e = (s.endpoints ?? []).find((x) => x.id === rest && ENDPOINT_TOOL[x.protocol] === tool) ?? (s.voucher && rest === VOUCHER.id && tool === ENDPOINT_TOOL[VOUCHER.protocol] ? VOUCHER : undefined);
+    if (e) return { kind: "http", endpoint: e };
+  }
+  return tool === "claude" ? { kind: "claude" } : null;
+}
+/**
   The voucher: a code from Liner Code's site that runs one model, DeepSeek V4.1 Flash, on the site's
   plan (its five hours and its week), through OpenCode. An endpoint Settings doesn't list, named
   only "Promo"; the code is its key, kept like an endpoint's, and the site checks it on each call.
@@ -642,6 +656,11 @@ export type PanelAccess = {
   storage?: number;
   /** The one host it may reach, over https ("api.github.com"). No network when unset. */
   network?: string;
+  /**
+    It may ask a model: text in, text out, with no tools, files or agent. You pick which of your
+    models when it first asks (Settings.addonModels), and it's billed to that model's account.
+  */
+  ai?: boolean;
 };
 /** Where a panel opens: the right dock beside a session, a tab beside Chat, or a page of its own from the left sidebar. */
 export type PanelPlace = "dock" | "tab" | "page";
@@ -1024,6 +1043,8 @@ export type Settings = {
   endpoints?: Endpoint[];
   /** A voucher was redeemed: its model (VOUCHER) is in the picker. */
   voucher?: boolean;
+  /** The model each app that asks for one (access.ai) uses, by the app's id, as "<provider>:<model>": picked in the window when it first asks. */
+  addonModels?: Record<string, string>;
   /** Your shortcuts, the way VS Code writes keybindings.json: keys for a command in place of its own, "-command" to take its keys away. */
   keybindings?: KeyBinding[];
   /** Liner Code's own releases: downloaded and put in when you quit or restart ("auto", the default), only told about, or not looked for. */
@@ -1347,7 +1368,9 @@ export type EngineEvent =
   /** A design's file changed on disk (the agent is editing it): a Design surface showing it draws it again. */
   | { type: "design.changed"; threadId: string; design: string; at: number }
   /** An add-on was added, switched, moved to another version, removed or restored. */
-  | { type: "addons"; addons: AddonInfo[]; off: boolean };
+  | { type: "addons"; addons: AddonInfo[]; off: boolean }
+  /** A piece of a model's answer to an app (liner.ai.ask with onText), for the window to pass to its frame. */
+  | { type: "panel.ai"; call: string; text: string };
 
 /** `shot` isn't the Browser's: the app draws a page of this Mac out of sight and answers with its picture (a design's, for its agent). */
 export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot" | "shot";
@@ -1417,6 +1440,8 @@ export type Rpc = {
     what that panel's access allows.
   */
   "panel.call": [{ addon: string; threadId?: string; preview?: string; method: string; args?: unknown; apiVersion?: number }, unknown];
+  /** Stops a model's answer to an app (its frame closed): `call` is the one the window gave its ai.ask. */
+  "panel.cancel": [{ call: string }, null];
   /**
     An answer on a "Make it an app" card: Create (where to add it, or in your own words), Not now,
     Cancel while it's being made, and once added Keep, Undo (it's removed, its files kept) or Restore.

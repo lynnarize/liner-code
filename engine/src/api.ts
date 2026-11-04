@@ -31,7 +31,7 @@ import type { AgentTools } from "./agent-tools.ts";
 import type { Designs } from "./designs.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
 import { checkManifest } from "./addons.ts";
-import { refusal, type PanelMethod, type PanelWhere } from "./panels.ts";
+import { refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
 import type { Offers } from "./offers.ts";
 import type { Sources } from "./sources.ts";
 import { Updater } from "./updates.ts";
@@ -361,6 +361,49 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     })().finally(() => restoring.delete(root));
     restoring.set(root, back);
     return back;
+  };
+
+  /*
+    A model an app asks (access.ai): the one you picked for it in the window (settings.addonModels),
+    as just a model (runtime.plain). Two answers at a time per app, AI_DAILY a day, three minutes
+    each; the window stops one whose frame closed (panel.cancel), by the `call` it gave.
+  */
+  const aiAsking = new Map<string, AbortController>();
+  const aiBusy = new Map<string, number>();
+  const aiToday = new Map<string, number>();
+  const AI_DAILY = 300;
+  const aiFor = (addon: string, name: string): NonNullable<PanelEnv["ai"]> => {
+    const picked = () => store.settings.addonModels?.[addon];
+    return {
+      model: () => (picked() ? { name: runtime.labelOf(picked()!) } : null),
+      pick: () => {
+        throw new Error("The window opens the model picker: liner.ai.pick() only works in Liner Code's window.");
+      },
+      ask: async ({ prompt, system, call }) => {
+        const ref = picked();
+        if (!ref) throw new Error(`No model is allowed for ${name} yet: the person picks one when it first asks.`);
+        if ((aiBusy.get(addon) ?? 0) >= 2) throw new Error(`${name} is already waiting on two answers: ask one at a time.`);
+        const day = `${addon}:${new Date().toDateString()}`;
+        if ((aiToday.get(day) ?? 0) >= AI_DAILY) throw new Error(`${name} has asked a model ${AI_DAILY} times today, the most an app may in a day.`);
+        aiToday.set(day, (aiToday.get(day) ?? 0) + 1);
+        aiBusy.set(addon, (aiBusy.get(addon) ?? 0) + 1);
+        const ctl = new AbortController();
+        const key = call ?? uid("ai");
+        aiAsking.set(key, ctl);
+        const timer = setTimeout(() => ctl.abort(), 180_000);
+        try {
+          const text = await runtime.plain(ref, { prompt, system, signal: ctl.signal, as: `addon:${addon}`, onText: call ? (t) => store.emit({ type: "panel.ai", call, text: t }) : undefined });
+          return { text, model: runtime.labelOf(ref) };
+        } catch (e) {
+          if (ctl.signal.aborted) throw new Error("The model took too long, or the app closed, so it was stopped.");
+          throw e;
+        } finally {
+          clearTimeout(timer);
+          aiAsking.delete(key);
+          aiBusy.set(addon, (aiBusy.get(addon) ?? 1) - 1);
+        }
+      },
+    };
   };
 
   const snapshot = (): Snapshot => ({ version: updates.state.app.current, seq: store.seq, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state, limits: [...limits.values()], addons: runtime.addons?.list() ?? [], addonsOff: runtime.addons?.off ?? false });
@@ -1017,6 +1060,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "panel.call": async ({ addon, threadId, preview, method, args, apiVersion }) => {
       // Whatever the frame says, its access is read here: the panel in use, or the draft on its card.
       let where: PanelWhere;
+      let name = addon;
       let storage: { all(): Record<string, unknown>; put(k: string, v: unknown): void };
       let quota = 0;
       if (preview) {
@@ -1024,6 +1068,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         if (!d || d.threadId !== threadId || d.manifest.id !== addon) throw new Error("That preview is over.");
         if (addons().off) throw new Error("Add-ons are off until Liner Code starts again.");
         where = { access: { ...d.manifest.access, network: undefined }, place: d.manifest.place, threadId: d.manifest.place === "page" ? undefined : threadId };
+        name = d.manifest.name;
         // A preview plays with storage that's gone when its card is.
         storage = { all: () => d.storage, put: (k, v) => (v === undefined ? delete d.storage[k] : (d.storage[k] = v)) };
         quota = d.manifest.access.storage ?? 0;
@@ -1032,6 +1077,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         const m = addons().panel(addon, project);
         if (!m) throw new Error("That panel is off, removed, or not for this project.");
         where = { access: m.access, place: m.place, threadId: m.place === "page" ? undefined : threadId };
+        name = m.name;
         const a = addons();
         storage = { all: () => a.storage(addon), put: (k, v) => a.store(addon, k, v, m.access.storage ?? 0) };
         quota = m.access.storage ?? 0;
@@ -1039,7 +1085,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const no = refusal(where, method, apiVersion);
       if (no) throw new Error(no);
       if (!x.tools) throw new Error("Panels aren't available here.");
-      return x.tools.panelCall(where, method as PanelMethod, (args ?? {}) as Record<string, unknown>, storage, quota);
+      return x.tools.panelCall(where, method as PanelMethod, (args ?? {}) as Record<string, unknown>, storage, quota, where.access.ai ? aiFor(addon, name) : undefined);
+    },
+    "panel.cancel": ({ call }) => {
+      aiAsking.get(call)?.abort();
+      return null;
     },
     "addons.source": async ({ source }) => {
       if (!x.sources) throw new Error("Adding from GitHub or a folder isn't available here.");
@@ -1217,7 +1267,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { sha, files: new Set(open.flatMap((x) => x.files.filter(picked).map((f) => f.path))).size };
     },
 
-    "usage.summary": ({ days = 30, projectId }) => summarize(store, days, projectId),
+    "usage.summary": ({ days = 30, projectId }) => summarize(store, days, projectId, (id) => runtime.addons?.get(id)?.name),
     "ways.compare": ({ days = 30 }) => compareWays(store, days),
     "keys.set": ({ provider, key }) => {
       if (key) runtime.keys.set(provider, key);
@@ -1573,7 +1623,7 @@ const dayOf = (at: number) => {
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
 };
 
-function summarize(store: Store, days: number, projectId?: string): UsageSummary {
+function summarize(store: Store, days: number, projectId?: string, appName?: (id: string) => string | undefined): UsageSummary {
   const to = Date.now();
   // Whole days, today included, from midnight: 'This month' (days = today's date) starts on the 1st, not partway into last month.
   days = Math.max(1, Math.floor(days));
@@ -1607,7 +1657,8 @@ function summarize(store: Store, days: number, projectId?: string): UsageSummary
       return { model: key.slice(key.indexOf(":") + 1), provider: rs[0].provider, tokens: rs.reduce((s, r) => s + tokens(r), 0), cacheShare: input ? rs.reduce((s, r) => s + r.cacheReadTokens, 0) / input : 0, costUsd: rs.reduce((s, r) => s + r.costUsd, 0) };
     })
     .sort((a, b) => b.costUsd - a.costUsd || b.tokens - a.tokens);
-  const title = priciest ? store.threads.find((t) => t.id === priciest.threadId)?.title ?? "A deleted session" : "";
+  // An app's ask (access.ai) has no session: it's named by the app.
+  const title = priciest ? (priciest.agent.startsWith("addon:") ? `${appName?.(priciest.agent.slice(6)) ?? "An app"}, asking a model` : (store.threads.find((t) => t.id === priciest.threadId)?.title ?? "A deleted session")) : "";
   return {
     from,
     to,

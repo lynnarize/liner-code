@@ -1086,6 +1086,7 @@ function PanelAddonCard({ threadId, it, who }: { threadId: string; it: Ask; who:
     ...(net ? [{ label: "Network", value: <code className="lc-addon-mono">{net}</code> }] : []),
     { label: "Reads", value: <span className="lc-addon-wrap">{reads}</span> },
     { label: "Can do", value: a.access.composer ? "Put text in the composer, for you to send" : "Nothing but show itself" },
+    ...(a.access.ai ? [{ label: "Model", value: "Asks a model you pick when it first asks, billed to that model's account. Just a model: no tools or files" }] : []),
     { label: "Keeps", value: a.access.storage ? `Its own storage, up to ${kbWords(a.access.storage)}` : "Nothing" },
     ...(net ? [] : [{ label: "Network", value: "None" }]),
     ...(a.replaces ? [{ label: "Replaces", value: `v${a.replaces}, which stays kept` }] : []),

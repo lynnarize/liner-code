@@ -239,7 +239,7 @@ function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks): Panel
   const access: PanelAccess = {};
   const a = m.access === undefined ? {} : c.obj(m.access, "access");
   if (a) {
-    c.only(a, "access", ["files", "sessions", "composer", "storage", "network"]);
+    c.only(a, "access", ["files", "sessions", "composer", "storage", "network", "ai"]);
     if (a.files !== undefined) {
       if (a.files !== "project") bad.push('access.files must be "project" (the session\'s project folder, to read), or left out.');
       else access.files = "project";
@@ -256,6 +256,10 @@ function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks): Panel
       if (typeof a.storage !== "number" || !Number.isInteger(a.storage) || a.storage < 0 || a.storage > STORAGE_MAX) bad.push(`access.storage is how many KB it keeps: a whole number up to ${STORAGE_MAX}.`);
       else if (a.storage > 0) access.storage = a.storage;
     }
+    if (a.ai !== undefined) {
+      if (typeof a.ai !== "boolean") bad.push("access.ai must be true or false: true lets it ask a model the person picks (text in, text out).");
+      else if (a.ai) access.ai = true;
+    }
     if (a.network !== undefined) {
       const h = typeof a.network === "string" ? a.network.trim().toLowerCase() : "";
       if (!HOST.test(h)) bad.push('access.network is the one host it reaches over https, like "api.github.com": no https://, port, path or *.');
@@ -264,7 +268,7 @@ function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks): Panel
     }
   }
   // A page has no session beside it, so nothing of one to read or write to.
-  if (place === "page" && (access.files || access.sessions === "this" || access.composer)) bad.push('A page (place "page") has no session beside it: access.files, sessions "this" and composer are for "dock" and "tab". It may read every session (sessions "all").');
+  if (place === "page" && (access.files || access.sessions === "this" || access.composer)) bad.push('A page (place "page") has no session beside it: access.files, sessions "this" and composer are for "dock" and "tab". It may read every session (sessions "all"). For AI on the page, ask for "ai": true and call liner.ai.ask: a model the person picks answers the page itself.');
   if (bad.length) throw new Error(said(bad));
   return { apiVersion: 1, id: id!, kind: "panel", name: name!, ...(description ? { description } : {}), ...(summary ? { summary } : {}), place: place as PanelManifest["place"], entry: entry!, ...(icon ? { icon: icon as PanelManifest["icon"] } : {}), access };
 }
@@ -336,6 +340,16 @@ export function readPanelFiles(dir: string, entry: string, loose = false): Panel
   return files;
 }
 
+/**
+  Hosts that serve models: a panel never reaches one itself (no key belongs in a panel), it asks for
+  "ai" instead. Held at install and offer, not when a kept manifest is read, so nothing you have goes.
+*/
+const MODEL_HOSTS = /(?:^|\.)(?:openai\.com|anthropic\.com|claude\.ai|openrouter\.ai|deepseek\.com|googleapis\.com|mistral\.ai|x\.ai|groq\.com|together\.xyz|fireworks\.ai|moonshot\.(?:ai|cn)|bigmodel\.cn|z\.ai|minimax(?:i)?\.(?:io|chat|com)|opencode\.ai|cohere\.(?:ai|com)|perplexity\.ai|huggingface\.co|replicate\.com)$/;
+export function modelHostRefusal(network?: string) {
+  if (!network || !MODEL_HOSTS.test(network)) return null;
+  return `${network} serves models, and a panel never reaches one itself, nor holds a key for one. Ask for "ai": true instead and call liner.ai.ask: the person picks one of their own models in Liner Code, and the answer comes back to the panel.`;
+}
+
 /** What a panel may touch, in words, for its strip and Settings: "reads this project's files · no network". */
 export function accessWords(a: PanelAccess, place?: PanelManifest["place"]) {
   const out: string[] = [];
@@ -344,6 +358,7 @@ export function accessWords(a: PanelAccess, place?: PanelManifest["place"]) {
   if (a.sessions === "all") out.push("reads your sessions' titles and changes");
   if (a.composer) out.push("can put text in the composer");
   if (a.storage) out.push(`keeps its own storage, up to ${sizeWords(a.storage)}`);
+  if (a.ai) out.push("asks a model you pick");
   out.push(a.network ? `reaches ${a.network}` : "no network");
   return out.join(" · ");
 }
@@ -360,6 +375,7 @@ export function widerAccess(was: PanelAccess, now: PanelAccess): string[] {
   if (rank[String(now.sessions)] > rank[String(was.sessions)]) out.push(now.sessions === "all" ? "Read every session's titles and changes" : "Read the session it's beside");
   if (now.composer && !was.composer) out.push("Put text in the composer");
   if ((now.storage ?? 0) > (was.storage ?? 0)) out.push(was.storage ? `Keep more in its storage: up to ${sizeWords(now.storage!)}, not ${sizeWords(was.storage)}` : `Keep its own storage, up to ${sizeWords(now.storage!)}`);
+  if (now.ai && !was.ai) out.push("Ask a model you pick, billed to its account");
   if (now.network && now.network !== was.network) out.push(was.network ? `Reach ${now.network} instead of ${was.network}` : `Reach ${now.network} over the internet`);
   return out;
 }
@@ -695,8 +711,9 @@ Panels
    - sessions: "this" (the session it's beside: title, changes, commands) or "all" (every session's titles and changes).
    - composer: true: put text in the composer, for the person to send.
    - storage: how many KB of storage of its own (1024 at most), kept across versions.
+   - ai: true: ask a model (liner.ai.ask): text in, text out. The person picks which of their models when it first asks, billed to that model's account. Never reach a model's API over network, and never make the person copy a prompt into the chat: this is the way.
    - network: one host, like "api.github.com", over https. The person holds a button to allow it; ask for it only if the panel can't work without it.
-   A page has no session beside it: only sessions "all", storage and network.
+   A page has no session beside it: only sessions "all", storage, ai and network.
 2. Call addon_check with the id: it draws the panel out of sight at its size, with this project's real data, and returns a picture, its errors and anything it was refused. Fix what's off, and check again.
 3. Call addon_install with the id. The person sees it live in the dock, with a card saying what it touches. A changed panel that asks for nothing more than the version in use goes in without a card; one that asks for more asks again. Every version is kept, and the person can go back.
 In the frame, window.liner is its only way in. Every call returns a promise, and one its access doesn't allow is refused:
@@ -705,6 +722,7 @@ In the frame, window.liner is its only way in. Every call returns a promise, and
 - liner.sessions.list() → [{ id, title, project, status, updatedAt, files, added, removed }]
 - liner.composer.put(text)
 - liner.storage.get(key), .set(key, value), .remove(key), .keys()
+- liner.ai.ask(prompt, { system, onText }) → { text, model }; liner.ai.model() → { name } or null; liner.ai.pick() opens the person's model picker → { name } or null
 - liner.on("session", fn) when the session moves on; liner.on("theme", fn) when the colours change.
 Draw it in Liner 2.0, Liner Code's own look, so it reads as part of the app: read liner_inspect with the topic "design" before any HTML or CSS. Its colours are the app's, so it follows light and dark: var(--bg), var(--surface), var(--well), var(--plate), var(--ink) to var(--ink-4), var(--hair), var(--line), var(--accent), var(--act) for the one main button, var(--ok), var(--warn), var(--danger), var(--font), var(--font-display), var(--font-mono). An empty state when there's nothing to show; an error said in words when a call fails.
 

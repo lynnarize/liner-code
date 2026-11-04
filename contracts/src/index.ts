@@ -662,26 +662,30 @@ export type ModeGuide = { id: "standard" | "creator"; name: string; blurb: strin
 export const CREATE_ADDON_ASK = "Create a Liner Code add-on with a left sidebar entry.";
 /** Words in an add-on, a page or a list of them that are about the feature, not one to make ("the add-ons page"). */
 const ABOUT_ADDONS = /^('s\b|(page|list|menu|settings|api|code|system|manifest|bridge|loader|store|engine|feature|folder|dir|directory|tests?|ui|button|section|sidebar|guide|docs?|install|installer|card|frame|offer|flow|permissions?|versions?)\b)/;
-/** Another program's add-ons, which a project of yours may be ("my Firefox add-on"). */
-const OTHERS_ADDONS = /\b(firefox|chrome|browser|edge|safari|wordpress|blender|anki|excel|word|outlook|office|google|gmail|sheets|workspace|vs ?code|figma|thunderbird|kodi|warcraft|wow|minecraft|godot|unity|unreal|home assistant|obsidian|raycast|alfred)$/;
+/** Another program's add-ons, which a project of yours may be: named before ("my Firefox add-on") or after it, in the same sentence ("the add-on for Firefox", "make the add-on work in Chrome"). */
+const OTHERS = "firefox|chrome|browser|edge|safari|wordpress|blender|anki|excel|word|outlook|office|google|gmail|sheets|workspace|vs ?code|figma|thunderbird|kodi|warcraft|wow|minecraft|godot|unity|unreal|home assistant|obsidian|raycast|alfred";
+const OTHERS_ADDONS = new RegExp(`\\b(${OTHERS})$`);
+const FOR_OTHERS = new RegExp(`^[^.?!\\n]*?\\b(for|in|into|to|on|inside) (the |my |our |a )?(${OTHERS})\\b`);
 /**
   Whether an ask is for an add-on to Liner Code itself, so Home switches a Standard task to Workshop
   as it's typed: an add-on (or addon) of any kind, unless it's about the add-ons feature ("the
   add-ons page"); or something to make in Liner Code: a panel, an app, a page, a tab, a sidebar
   entry, a connection, a plugin, an extension, a widget, an integration. Work on a project's own
-  plugins or panels doesn't count: that names no add-on and no Liner.
+  plugins or panels doesn't count: that names no add-on and no Liner. In Liner Code's own source
+  (`ownSource`), "add a tab to Liner" is work on the code, so only an add-on by name counts there.
 */
-export function asksForAddon(text: string) {
+export function asksForAddon(text: string, { ownSource = false } = {}) {
   const t = text.toLowerCase().replace(/\s+/g, " ");
+  const liner = /\bliner\b/.test(t);
   for (const m of t.matchAll(/\badd-?ons?\b ?/g)) {
     const after = t.slice(m.index + m[0].length);
     const before = t.slice(0, m.index).trimEnd();
-    if (ABOUT_ADDONS.test(after) || OTHERS_ADDONS.test(before)) continue;
+    if (ABOUT_ADDONS.test(after) || OTHERS_ADDONS.test(before) || (!liner && FOR_OTHERS.test(after))) continue;
     // "the add-ons" on its own is the feature; "the add-on I asked for" is one being made.
     if (/\b(the|liner code's|liner's)$/.test(before) && m[0].trim().endsWith("s")) continue;
     return true;
   }
-  if (!/\bliner\b/.test(t)) return false;
+  if (!liner || ownSource) return false;
   // One to make: "a panel", "my own app", or the thing right after the verb ("bikin plugin").
   const verb = "create|make|build|add|write|generate|design|set up|give me|i want|i'd like|i would like|i need|buat|buatkan|bikin|bikinkan|tambah|tambahkan";
   const thing = "panel|app|page|tab|sidebar (?:entry|item|app|link)|connection|plugin|plug-in|extension|widget|integration";

@@ -59,11 +59,14 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     An add-on ask switches a Standard task to Workshop as it's typed, so the agent gets the
     add-on guide and Liner 2.0 (asksForAddon), with a toast to keep Standard; it switches back if the
     ask stops being one. Once you pick a mode yourself, that's yours for this draft; an empty box
-    starts a new one.
+    starts a new one. Models picked to compare keep it Standard, the only mode that compares, and
+    in Liner Code's own source only an add-on by name counts (asksForAddon's ownSource).
   */
   const auto = useRef<"switched" | "yours" | null>(null);
   const modeNow = useRef(mode_);
   modeNow.current = mode_;
+  const ownSource = !!project && /(^|[\\/])liner[ -]?code$/i.test(project.path);
+  const wantsAddon = (text: string) => asksForAddon(text, { ownSource });
   useEffect(() => {
     setSessionMode(startMode ?? defaultMode);
     auto.current = startMode ? "yours" : null;
@@ -82,8 +85,8 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
       return;
     }
     textTimer.current = setTimeout(() => {
-      const wants = asksForAddon(text);
-      if (wants && auto.current === null && modeNow.current === "standard") {
+      const wants = wantsAddon(text);
+      if (wants && auto.current === null && modeNow.current === "standard" && !compareNow.current.length) {
         auto.current = "switched";
         setSessionMode("creator");
         toast(`Switched to ${modeName("creator", agents)}`, {
@@ -99,6 +102,8 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   };
   const [worktree, setWorktree] = useState(worktrees);
   const [compare, setCompare] = useState<string[]>([]);
+  const compareNow = useRef(compare);
+  compareNow.current = compare;
   const [base, setBase] = useState<string | undefined>();
   const [inWorktree, setInWorktree] = useState<{ path: string; branch?: string } | undefined>();
   useEffect(() => setSettings(initial), [initial]);
@@ -136,8 +141,11 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     if (!project) return;
     const quietly = background.current;
     background.current = false;
-    // Sent before the switch above caught up with the typing: an add-on ask still starts in Workshop.
-    const asMode = auto.current === null && mode_ === "standard" && asksForAddon(m.text) ? "creator" : mode_;
+    // Sent before the switch above caught up with the typing: an add-on ask still starts in Workshop,
+    // and says so, since there's no Keep Standard once it has started.
+    clearTimeout(textTimer.current);
+    const late = auto.current === null && mode_ === "standard" && !compare.length && wantsAddon(m.text);
+    const asMode = late ? "creator" : mode_;
     try {
       if (compare.length && asMode === "standard") {
         const made = await rpc("compare.start", { projectId: project.id, text: m.text, files: m.files, models: [settings.lead ?? settings.agent, ...compare], effort: settings.effort, access: settings.access });
@@ -147,6 +155,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
       }
       const t = await rpc("thread.create", { projectId: project.id, mode: asMode, agent: settings.agent, lead: settings.lead, route: settings.route, dual: settings.dual, after: settings.after, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
+      if (late) toast(`Started in ${modeName("creator", agents)}`, { description: "This reads as an add-on for Liner Code, so the agent gets the add-on guide and draws in Liner 2.0." });
       if (quietly) {
         setInWorktree(undefined);
         const ask = m.text.split("\n")[0].trim();

@@ -187,6 +187,12 @@ test("Liner 2.0: a SKILL.md beside the engine's source, read as the guide's desi
 test("an add-on ask: Home switches a Standard task to Workshop for one, and not for work on the feature or another program's add-ons", () => {
   for (const ask of [CREATE_ADDON_ASK, "make me an add-on that tracks my todos", "buatkan add-on untuk catatan", "I want a Liner addon for Linear", "Add a panel to Liner Code that lists my TODOs", "create a page in Liner with a left sidebar entry for notes", "the add-on I asked for yesterday doesn't open", "bikin plugin buat liner code", "Can you build a Liner Code connection to Sentry?"])
     assert.ok(asksForAddon(ask), ask);
-  for (const ask of ["", "Fix the flaky login test", "fix the add-ons page layout", "Fix my Firefox add-on's manifest", "make the add-on install card smaller", "add a settings panel to my app", "build a VS Code plugin", "Make Liner Code's add-ons page faster", "In Liner Code, the sidebar entry for Apps is misaligned, fix it", "make a wordpress add-on for bookings", "the add-ons are slow"])
+  for (const ask of ["", "Fix the flaky login test", "fix the add-ons page layout", "Fix my Firefox add-on's manifest", "make the add-on install card smaller", "add a settings panel to my app", "build a VS Code plugin", "Make Liner Code's add-ons page faster", "In Liner Code, the sidebar entry for Apps is misaligned, fix it", "make a wordpress add-on for bookings", "the add-ons are slow", "make the add-on work in Firefox", "port the add-on to Chrome. It's for my team", "publish my add-on for VS Code"])
     assert.ok(!asksForAddon(ask), ask);
+  // Another program named after the add-on counts only in its own sentence, and not when Liner is named.
+  for (const ask of ["make an add-on for my notes. It should open in Chrome", "a Liner Code add-on that opens links in Chrome"]) assert.ok(asksForAddon(ask), ask);
+  // In Liner Code's own source, "add a tab to Liner" is work on the code; an add-on by name still counts.
+  assert.ok(asksForAddon("Add a tab to Liner that lists my TODOs"));
+  assert.ok(!asksForAddon("Add a tab to Liner that lists my TODOs", { ownSource: true }));
+  assert.ok(asksForAddon("make me an add-on that tracks my todos", { ownSource: true }));
 });

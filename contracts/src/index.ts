@@ -245,52 +245,121 @@ export function makerOf(ref: string): Maker {
 }
 
 /**
-  Each maker's strongest models (frontier) and its quicker, cheaper ones (everyday), by name, best
-  first, so the parts fill from whatever you have: Claude Code or Codex, or only OpenCode, Hermes,
-  Gemini or an API endpoint. The makers are in the order they're picked: for frontier work Claude,
-  GPT, Gemini, Grok, then DeepSeek, Kimi, Qwen, GLM and MiniMax; for everyday work GPT, Claude,
-  Gemini, then DeepSeek, GLM, Qwen, Kimi, MiniMax and Grok.
+  The tier list, from Artificial Analysis (November 2026: Terminal-Bench 4.0, FrontierCode v1.1,
+  and cost per Intelligence Index task). FRONTIER ranks who plans, takes the hard jobs and
+  repairs, best first; EVERYDAY ranks who builds and answers, the cheapest that does it well
+  first. Each row is a maker and its models by name, so the parts fill from whatever you have:
+  Claude Code or Codex, or only OpenCode, Hermes, Gemini or an API endpoint. A model can sit in
+  both (Sol): it builds next to a stronger model, and plans when it's the best you have.
 */
-const FRONTIER: [Maker, RegExp[]][] = [
-  ["anthropic", [/opus/i, /fable/i]],
-  ["openai", [/astra(?!.*(pro|fast|flex))/i, /astra(?!.*pro)/i, /sol(?!.*pro)/i, /sol/i, /gpt-[\d.]+$/i]],
-  ["google", [/gemini.*ultra/i, /gemini.*pro/i]],
-  ["xai", [/grok-[\d.]+(?!.*(fast|mini|code))/i]],
+type Tier = [Maker, RegExp[]];
+const FRONTIER: Tier[] = [
+  // S, Claude Code's and Codex's own: Opus 5.5 (Terminal-Bench 63, FrontierCode 56), GPT-6 Astra (56, 49).
+  ["anthropic", [/opus/i]],
+  ["openai", [/astra(?!.*(pro|fast|flex))/i, /astra(?!.*pro)/i]],
+  // A: Fable 5.1 (58, 49, the dearest at $12.99 a task), Gemini 4 Carbon (64, 51) and Argon (56, 49), GPT-6.1 Sol (53, 49).
+  ["anthropic", [/fable/i]],
+  ["google", [/gemini.*ultra/i, /gemini.*carbon/i, /gemini.*argon/i, /gemini.*pro/i]],
+  ["openai", [/sol(?!.*pro)/i, /sol/i, /gpt-[\d.]+$/i]],
+  // B, behind the frontier: GLM-5.3 (40, 48) the best of the Chinese models, then DeepSeek V4 Pro.
+  // DeepSeek V4.1 Flash (31, 47) sits here too, but it works (EVERYDAY): with nothing above it, it does it all.
+  ["zhipu", [/glm-[\d.]+(?!.*(flash|air|lite))/i]],
   ["deepseek", [/deepseek.*pro/i, /deepseek-[vr][\d.]+(?!.*(flash|lite|mini))/i]],
   ["moonshot", [/kimi.*pro/i, /kimi-k[\d.]+(?!.*(flash|turbo|code|mini))/i]],
   ["qwen", [/qwen.*max/i]],
-  ["zhipu", [/glm-[\d.]+(?!.*(flash|air|lite))/i]],
   ["minimax", [/minimax-m[\d.]+(?!.*(flash|lite|mini))/i]],
+  // Last: Grok 4.7 (33, 44) costs as much as Gemini ($7.77 a task) for less.
+  ["xai", [/grok-[\d.]+(?!.*(fast|mini|code))/i]],
 ];
-const EVERYDAY: [Maker, RegExp[]][] = [
-  ["openai", [/luna(?!.*pro)/i, /terra/i, /luna/i]],
-  ["anthropic", [/sonnet/i]],
-  ["google", [/gemini.*flash(?!.*lite)/i]],
+const EVERYDAY: Tier[] = [
+  // DeepSeek V4.1 Flash: just behind the frontier (FrontierCode 47) at $0.60 a task, cheaper than Sol and Sonnet, and it takes on anything.
   ["deepseek", [/deepseek.*flash/i]],
+  // The workers in Codex and Claude Code: GPT-6.1 Sol (53, 49) at $1.27 a task, then Sonnet 5.5 (66, 48) at $10.02.
+  ["openai", [/sol(?!.*pro)/i]],
+  ["anthropic", [/sonnet/i]],
+  // Quicker and cheaper: GPT-6.1 Terra (46, 45) at $0.96, GPT-6 Luna at $0.15.
+  ["openai", [/terra/i, /luna(?!.*pro)/i, /luna/i]],
+  ["google", [/gemini.*flash(?!.*lite)/i]],
   ["zhipu", [/glm.*(flash|air)/i]],
   ["qwen", [/qwen.*(plus|flash)/i]],
   ["moonshot", [/kimi.*(turbo|flash|code)/i]],
   ["minimax", [/minimax.*(flash|lite)/i]],
   ["xai", [/grok.*(fast|mini)/i]],
 ];
+/**
+  OpenCode Go's models, through OpenCode or Hermes. Each counts against the plan's allowance at
+  its own monthly limit: DeepSeek V4.1 Flash $100, the Flash models $60, every frontier-class
+  model $15 to $30 at many times the price. So none of them plans or takes the hard jobs (the
+  heaviest parts, and the planner runs on every change); the cheapest worker does it all, and
+  the frontier-class ones only read, as critics.
+*/
+const capped = (ref: string) => /^opencode-go[/:]/i.test(splitModel(ref).model);
+/**
+  Models Liner Code reaches for by name, for a part: the first pattern that has a match wins, and
+  with `newest`, the highest version among its matches (so GLM-5.4 takes over from GLM-5.3 on its
+  own, and a newer GLM as it comes).
+*/
+type Wanted = { find: RegExp[]; newest?: RegExp };
+const GLM = /glm-(\d+(?:\.\d+)*)/i;
+/**
+  The critics read first when they're ready: MiMo V2.6 (Pro, else Flash) and the newest GLM
+  frontier model (GLM-5.3 now), in that order, each only while it's another maker than the strong
+  model's, and not ahead of Astra when Claude or GPT does the hard work (ahead of Go's Argon,
+  though). Otherwise critics come from the other makers in FRONTIER.
+*/
+const CRITICS: Wanted[] = [
+  { find: [/mimo-v2\.6-pro/i, /mimo-v2\.6/i] },
+  { find: [/glm-[\d.]+(?!.*(flash|air|lite))/i], newest: GLM },
+];
+/**
+  The judge read first when it's ready: the newest GLM Flash (GLM-5.3 Flash now), quick and cheap
+  for a pass or a hand up, while it's another maker than the everyday model's and the hard work
+  isn't Claude's or GPT's (they judge as before). It only judges and checks; DeepSeek keeps the
+  hard work. Otherwise the judge comes from the cast as before.
+*/
+const JUDGES: Wanted[] = [{ find: [/glm-[\d.]+.*flash/i], newest: GLM }];
+
+const versionOf = (id: string, re: RegExp) => (id.match(re)?.[1] ?? "0").split(".").map(Number);
+const newerThan = (a: number[], b: number[]) => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  return false;
+};
+/** A wanted model from what's ready, as "<provider>:<model>". */
+function wantedOf(ready: ProviderInfo[], w: Wanted) {
+  for (const re of w.find) {
+    const found = ready.flatMap((p) => p.models.filter((m) => !m.legacy && re.test(m.id)).map((m) => ({ ref: `${p.id}:${m.id}`, id: m.id })));
+    if (!found.length) continue;
+    const { newest } = w;
+    return (newest ? found.reduce((a, b) => (newerThan(versionOf(b.id, newest), versionOf(a.id, newest)) ? b : a)) : found[0]).ref;
+  }
+  return undefined;
+}
 /** The tool a maker's models run best in: Claude Code for Claude, Codex for GPT. Others that list them come after. */
 const HOME: Partial<Record<Maker, BuiltinProvider>> = { anthropic: "claude", openai: "codex" };
 
 const readyOf = (providers: ProviderInfo[]) => providers.filter((p) => p.available && p.adapter && p.id !== "demo" && p.models.length);
 
-/** A maker's frontier or everyday model from what's ready, in its own tool when that lists one. */
-function bestOf(ready: ProviderInfo[], maker: Maker, kind: "frontier" | "everyday") {
+/** A row's model from what's ready, in its maker's own tool when that lists one, unless `skip` says no. */
+function bestOf(ready: ProviderInfo[], [maker, res]: Tier, skip: (ref: string) => boolean) {
   const order = [...ready].sort((a, b) => Number(familyOf(b.id) === HOME[maker]) - Number(familyOf(a.id) === HOME[maker]));
-  for (const re of (kind === "frontier" ? FRONTIER : EVERYDAY).find(([m]) => m === maker)?.[1] ?? [])
-    for (const p of order) for (const m of p.models) if (!m.legacy && re.test(m.id) && makerOf(`${p.id}:${m.id}`) === maker) return `${p.id}:${m.id}`;
+  for (const re of res)
+    for (const p of order)
+      for (const m of p.models) {
+        const ref = `${p.id}:${m.id}`;
+        if (!m.legacy && re.test(m.id) && makerOf(ref) === maker && !skip(ref)) return ref;
+      }
   return undefined;
 }
 
-/** The first maker in `makers` with a model of that kind ready, and that model. */
-function firstOf(ready: ProviderInfo[], kind: "frontier" | "everyday", not?: Maker) {
-  for (const [maker] of kind === "frontier" ? FRONTIER : EVERYDAY) {
-    if (maker === not) continue;
-    const ref = bestOf(ready, maker, kind);
+/**
+  The best model of that kind ready, down the tier list: of none of the makers `not`, not
+  `except`, and for frontier work not one of OpenCode Go's, unless it only `reads` (a judge, a
+  critic).
+*/
+function firstOf(ready: ProviderInfo[], kind: "frontier" | "everyday", o: { not?: Maker[]; except?: string; reads?: boolean } = {}) {
+  for (const row of kind === "frontier" ? FRONTIER : EVERYDAY) {
+    if (o.not?.includes(row[0])) continue;
+    const ref = bestOf(ready, row, (r) => r === o.except || (kind === "frontier" && !o.reads && capped(r)));
     if (ref) return ref;
   }
   return undefined;
@@ -301,15 +370,16 @@ const readyRef = (ready: ProviderInfo[], ref?: string) => (ref && ready.some((p)
 
 /**
   Your frontier model and, for Dual frontier, the second one: your picks while their tools are
-  ready, else automatic. The frontier is the first maker's in order (Opus, else GPT Astra or Sol,
-  Gemini Pro, DeepSeek V4 Pro…); the second is the best frontier model of another maker (GPT Astra
-  next to Opus). `second` is unset while no other maker has one ready.
+  ready, else automatic. The frontier is the top of the tier list (Opus, else GPT Astra, Fable,
+  Gemini, Sol, GLM, DeepSeek V4 Pro…, never one of OpenCode Go's); the second is the best frontier
+  model of another maker (GPT Astra next to Opus). `second` is unset while no other maker has one
+  ready.
 */
 export function frontiersOf(providers: ProviderInfo[], picks: ModelPicks = {}): { frontier?: string; second?: string } {
   const ready = readyOf(providers);
   const frontier = readyRef(ready, picks.frontier) ?? firstOf(ready, "frontier");
   const mine = readyRef(ready, picks.second);
-  const second = mine && mine !== frontier ? mine : frontier ? firstOf(ready, "frontier", makerOf(frontier)) : undefined;
+  const second = mine && mine !== frontier ? mine : frontier ? firstOf(ready, "frontier", { not: [makerOf(frontier)] }) : undefined;
   return { frontier, second };
 }
 
@@ -322,29 +392,47 @@ export type RouteCast = { everyday: string; strong: string; judge: string; criti
 
 /**
   The cast from your two picks (ModelPicks) and what's ready, from any makers (FRONTIER,
-  EVERYDAY). `strong` is your frontier model (automatic: Opus, else GPT Astra or Sol, Gemini Pro,
-  DeepSeek V4 Pro…) and `everyday` your cheaper one (automatic: GPT Luna, else Sonnet, Gemini
-  Flash, DeepSeek Flash…), or with `dual` the second frontier model when one is ready. The judge
-  is your checker, else another maker than the everyday model's; the critics are other makers
-  than the strong model's. `checker` is the checker you picked, while its tool is ready.
+  EVERYDAY, the tier list). `strong` is your frontier model (automatic: Opus, else GPT Astra,
+  Fable, Gemini, Sol, GLM…) and `everyday` your cheaper one (automatic: DeepSeek Flash, else Sol,
+  Sonnet, Terra, Luna…), or with `dual` the second frontier model when one is ready. With only
+  OpenCode Go, DeepSeek Flash is both. The judge
+  is your checker, else the newest GLM Flash when ready and the strong model isn't Claude or GPT
+  (JUDGES), else another maker than the
+  everyday model's; the critics are MiMo V2.6 and the newest GLM when ready (CRITICS), else other
+  makers than the strong model's. `checker` is the checker you picked, while its tool is ready.
 */
 export function castOf(providers: ProviderInfo[], o: { dual?: boolean; picks?: ModelPicks } = {}): RouteCast | null {
   const ready = readyOf(providers);
   if (!ready.length) return null;
   const picks = o.picks ?? {};
   const first = `${ready[0].id}:${(ready[0].models.find((m) => m.isDefault) ?? ready[0].models[0]).id}`;
-  // The best of another maker than this model's: its frontier model, else its everyday one.
-  const other = (ref: string) => firstOf(ready, "frontier", makerOf(ref)) ?? firstOf(ready, "everyday", makerOf(ref));
-  const cheaper = readyRef(ready, picks.cheaper) ?? firstOf(ready, "everyday") ?? first;
+  // The best reader of another maker than this model's: its frontier model, else its everyday one.
+  const other = (ref: string) => firstOf(ready, "frontier", { not: [makerOf(ref)], reads: true }) ?? firstOf(ready, "everyday", { not: [makerOf(ref)] });
   const { frontier, second } = frontiersOf(providers, picks);
+  // A worker that isn't the frontier model (Sol plans when it's your best, and Terra builds).
+  const cheaper = readyRef(ready, picks.cheaper) ?? firstOf(ready, "everyday", { except: frontier }) ?? firstOf(ready, "everyday") ?? first;
   const strong = frontier ?? cheaper;
   const everyday = o.dual && second ? second : cheaper;
   const mine = readyRef(ready, picks.checker);
-  const judge = mine && mine !== everyday ? mine : makerOf(strong) !== makerOf(everyday) ? strong : (other(everyday) ?? strong);
-  // Reads from outside the strong model's maker where there is one: its best, and the everyday model when that's another.
+  // With Claude or GPT doing the hard work, it judges as before; a quick GLM only stands in for the rest.
+  const big = ["anthropic", "openai"].includes(makerOf(strong));
+  const preferred = big ? undefined : JUDGES.map((w) => wantedOf(ready, w)).find((r) => r && makerOf(r) !== makerOf(everyday));
+  const judge = mine && mine !== everyday ? mine : (preferred ?? (makerOf(strong) !== makerOf(everyday) ? strong : (other(everyday) ?? strong)));
+  // Two critics from outside the strong model's maker where there are: the ones wanted by name
+  // (CRITICS), its best reader, the everyday model when that's another maker, then the best of a
+  // maker not reading yet, then another everyday model. Alone with one maker, the everyday model.
+  // With Claude or GPT doing the hard work, its best reader (Astra next to Opus) comes first, and
+  // the wanted ones only fill in; unless that reader is one of OpenCode Go's (Gemini 4 Argon next
+  // to Astra), which MiMo and GLM read for at a fraction of its cap.
+  const mark = makerOf(strong);
+  const chosen = CRITICS.map((w) => wantedOf(ready, w)).filter((r): r is string => Boolean(r) && makerOf(r!) !== mark);
   const outside = other(strong);
-  const also = makerOf(everyday) !== makerOf(strong) ? everyday : undefined;
-  const critics = outside ? [...new Set([outside, also ?? outside])] : [everyday];
+  const usual = [outside, makerOf(everyday) !== mark ? everyday : undefined];
+  const pool = big && outside && !capped(outside) ? [...usual, ...chosen] : [...chosen, ...usual];
+  const reading = pool.filter((r): r is string => Boolean(r)).map(makerOf);
+  pool.push(firstOf(ready, "frontier", { not: [mark, ...reading], reads: true }), firstOf(ready, "everyday", { not: [mark], except: outside }));
+  const found = [...new Set(pool.filter((r): r is string => Boolean(r)))].slice(0, 2);
+  const critics = found.length ? found : [everyday];
   return { everyday, strong, judge, critics, ...(mine ? { checker: mine } : {}) };
 }
 

@@ -65,18 +65,18 @@ test("route: a follow-up keeps the warm model; a cold cache or a new size of job
 });
 
 test("route: the timeline line says who does what", () => {
-  const label = (ref: string) => ({ [cast.everyday]: "GPT-6 Luna", [cast.strong]: "Opus 5.5", [cast.critics[0]]: "GPT-6 Sol" })[ref] ?? ref;
-  assert.equal(hintOf(decide("add a dark mode toggle", route("high")), label), "Routed: a medium job. GPT-6 Luna does it, then Opus 5.5 judges the change: it passes, or it repairs it.");
-  assert.equal(hintOf(decide("hi", route("high")), label), "Routed: a question, so GPT-6 Luna answers alone.");
+  const label = (ref: string) => ({ [cast.everyday]: "GPT-6 Sol", [cast.strong]: "Opus 5.5", [cast.critics[1]]: "GPT-6 Luna" })[ref] ?? ref;
+  assert.equal(hintOf(decide("add a dark mode toggle", route("high")), label), "Routed: a medium job. GPT-6 Sol does it, then Opus 5.5 judges the change: it passes, or it repairs it.");
+  assert.equal(hintOf(decide("hi", route("high")), label), "Routed: a question, so GPT-6 Sol answers alone.");
   assert.match(hintOf(decide("refactor the provider layer so every provider shares one base class", route("max")), label), /^Routed: the hardest kind of job\. Opus 5\.5 does it, GPT-6 Sol and GPT-6 Luna read it, and Opus 5\.5 revises once/);
 });
 
-test("cast: Luna for everyday work, Opus for hard jobs and repairs, judges and critics from the other family", () => {
-  assert.deepEqual(cast, { everyday: "codex:gpt-6-luna", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["codex:gpt-6-sol", "codex:gpt-6-luna"] });
+test("cast: Sol for everyday work, Opus for hard jobs and repairs, judges and critics from the other family", () => {
+  assert.deepEqual(cast, { everyday: "codex:gpt-6-sol", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["codex:gpt-6-sol", "codex:gpt-6-luna"] });
   // Claude alone: Sonnet and Opus, and the only critic is Claude's own.
   assert.deepEqual(castOf([both[0]]), { everyday: "claude:claude-sonnet-5-5", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["claude:claude-sonnet-5-5"] });
-  // A Codex without Sol (a ChatGPT sign-in): Luna is its best, and reads once, not twice.
-  assert.deepEqual(castOf([both[0], info("codex", ["gpt-6-luna", "gpt-5.6-terra"])])?.critics, ["codex:gpt-6-luna"]);
+  // A Codex without Sol (a ChatGPT sign-in): Sonnet builds, and Terra and Luna read it.
+  assert.deepEqual(castOf([both[0], info("codex", ["gpt-6-luna", "gpt-5.6-terra"])])?.critics, ["codex:gpt-5.6-terra", "codex:gpt-6-luna"]);
   // Your own picks win; nothing ready, no cast.
   assert.equal(castOf(both, { picks: { frontier: "codex:gpt-6-sol-pro" } })?.strong, "codex:gpt-6-sol-pro");
   assert.equal(castOf([]), null);
@@ -154,15 +154,15 @@ test("runtime: a cascade the judge won't pass goes to Opus to repair, and the ju
   try {
     const { store, runtime, home } = await session("high");
     await runtime.send("t", "add a dark mode toggle to settings");
-    // Luna writes, Opus judges, Opus repairs (taking the conversation over), Opus reads the repair.
-    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-luna writes", "claude-opus-5-5 reads", "claude-opus-5-5 writes", "claude-opus-5-5 reads"]);
+    // Sol writes, Opus judges, Opus repairs (taking the conversation over), Opus reads the repair.
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-sol writes", "claude-opus-5-5 reads", "claude-opus-5-5 writes", "claude-opus-5-5 reads"]);
     assert.match(calls[1].text, /a stronger model repairs it/);
     assert.match(calls[2].text, /^You're taking over this conversation[\s\S]*didn't pass it:[\s\S]*drops the error/);
     const items = store.timeline("t");
     // Why it went that way is the turn's own, said when you ask; no line on the timeline, and the repair is part of your turn.
     assert.ok(!items.some((x) => x.kind === "notice"));
     const marks = items.filter((x) => x.kind === "turn") as { why?: string; part?: string }[];
-    assert.match(marks[0].why ?? "", /^A medium job\. gpt-6-luna does it, then claude-opus-5-5 judges/);
+    assert.match(marks[0].why ?? "", /^A medium job\. gpt-6-sol does it, then claude-opus-5-5 judges/);
     assert.deepEqual(marks.map((m) => m.part), [undefined, "repair"]);
     assert.deepEqual(items.flatMap((x) => (x.kind === "review" ? [`${x.round}:${x.status}`] : [])), ["1:blocked", "2:passed"]);
     const t = store.thread("t");
@@ -170,7 +170,7 @@ test("runtime: a cascade the judge won't pass goes to Opus to repair, and the ju
     // Every leg is counted: two writing turns, two judge reads.
     store.flush();
     const rows = readFileSync(join(home, "usage.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
-    assert.deepEqual(rows.map((r) => `${r.agent === "judge" ? "judge" : "writer"}:${r.model}`), ["writer:gpt-6-luna", "judge:claude-opus-5-5", "writer:claude-opus-5-5", "judge:claude-opus-5-5"]);
+    assert.deepEqual(rows.map((r) => `${r.agent === "judge" ? "judge" : "writer"}:${r.model}`), ["writer:gpt-6-sol", "judge:claude-opus-5-5", "writer:claude-opus-5-5", "judge:claude-opus-5-5"]);
     assert.ok(Math.abs(t.usage.costUsd - 0.04) < 1e-9);
     // More of the same job while the cache is warm stays with Opus, one follow-up after another.
     calls.length = 0;
@@ -189,7 +189,7 @@ test("runtime: a cascade the judge passes never calls Opus to write", async () =
   try {
     const { store, runtime } = await session("high");
     await runtime.send("t", "add a dark mode toggle to settings");
-    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-luna writes", "claude-opus-5-5 reads"]);
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-sol writes", "claude-opus-5-5 reads"]);
     assert.deepEqual([store.thread("t").verdict?.state, store.thread("t").route?.root], ["verified", cast.everyday]);
   } finally {
     restore();
@@ -246,13 +246,13 @@ test("runtime: a tool's running totals add to what other models used in the thre
 test("runtime: a quick model that changes nothing is judged on its answer, and Opus takes on what it didn't do", async () => {
   const calls: Call[] = [];
   const restore = fakeTools(calls, (c) => (/changed no files/.test(c.text) ? `<findings>{"verdict":"fail","summary":"multiply was never added","findings":[]}</findings>` : pass));
-  // Luna can't get at the files and says so, changing nothing.
+  // Sol can't get at the files and says so, changing nothing.
   const codex = providers.codex;
   providers.codex = { ...codex, open: (o) => ({ ...codex.open(o), turn: async (text, sink) => (calls.push({ provider: "codex", model: o.model, read: o.access === "read", text }), sink.session("c"), sink.text("I couldn't read the files.")) }) };
   try {
     const { store, runtime } = await session("high");
     await runtime.send("t", "add a dark mode toggle to settings");
-    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-luna writes", "claude-opus-5-5 reads", "claude-opus-5-5 writes", "claude-opus-5-5 reads"]);
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-sol writes", "claude-opus-5-5 reads", "claude-opus-5-5 writes", "claude-opus-5-5 reads"]);
     assert.match(calls[1].text, /changed no files[\s\S]*I couldn't read the files/);
     assert.match(calls[2].text, /didn't get it done\. A judge \(claude-opus-5-5\) says: multiply was never added/);
     assert.deepEqual(store.timeline("t").flatMap((x) => (x.kind === "review" ? [`${x.round}:${x.status}`] : [])), ["1:blocked", "2:passed"]);
@@ -270,7 +270,7 @@ test("runtime: an answer that does the ask passes the judge, and Opus never writ
   try {
     const { runtime } = await session("high");
     await runtime.send("t", "run the tests and tell me what fails");
-    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-luna writes", "claude-opus-5-5 reads"]);
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-sol writes", "claude-opus-5-5 reads"]);
   } finally {
     restore();
   }
@@ -384,13 +384,13 @@ test("runtime: Stop on a routed turn that changed nothing ends it there; the jud
   const restore = fakeTools(calls, () => pass);
   const codex = providers.codex;
   let runtime: Runtime | undefined;
-  // Luna answers, then you press Stop before its turn has ended.
+  // Sol answers, then you press Stop before its turn has ended.
   providers.codex = { ...codex, open: (o) => ({ ...codex.open(o), turn: async (text, sink) => (calls.push({ provider: "codex", model: o.model, read: o.access === "read", text }), sink.text("Looking…"), runtime!.stop("t")) }) };
   try {
     const s = await session("high");
     runtime = s.runtime;
     await runtime.send("t", "run the tests and tell me what fails");
-    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-luna writes"]);
+    assert.deepEqual(calls.map((c) => `${c.model}${c.read ? " reads" : " writes"}`), ["gpt-6-sol writes"]);
     assert.ok(!s.store.timeline("t").some((x) => x.kind === "review"), "no judge's read on the timeline");
   } finally {
     restore();

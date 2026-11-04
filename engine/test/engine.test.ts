@@ -105,11 +105,21 @@ test("your models: frontier + cheaper, dual frontier with Astra wherever it runs
   const hermes = provider("hermes", ["nous:openai/gpt-6-astra-pro", "nous:openai/gpt-6-astra", "nous:openai/gpt-6-luna", "nous:anthropic/claude-opus-5.5"]);
   const opencode = provider("opencode", ["opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free"]);
   const all = [claude, codex, hermes, opencode];
-  // Automatic: GPT Luna in Codex does the everyday work, Opus in Claude Code the hard jobs.
-  assert.deepEqual(castOf(all), { everyday: "codex:gpt-6-luna", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["hermes:nous:openai/gpt-6-astra", "codex:gpt-6-luna"] });
+  // Automatic: DeepSeek Flash does the everyday work (ahead of GPT Luna), Opus in Claude Code the hard jobs.
+  assert.deepEqual(castOf(all), { everyday: "opencode:opencode/deepseek-v4.1-flash-free", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["hermes:nous:openai/gpt-6-astra", "opencode:opencode/deepseek-v4.1-flash-free"] });
+  // Without DeepSeek or Sol, Sonnet builds: the workers of the tier list come before Terra and Luna.
+  assert.equal(castOf([claude, codex, hermes])!.everyday, "claude:claude-sonnet-5-5");
+  // Codex alone: Astra plans, Sol builds; without Astra, Sol plans and Terra builds.
+  const full = provider("codex", ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]);
+  assert.deepEqual([castOf([full])!.strong, castOf([full])!.everyday], ["codex:gpt-6-astra", "codex:gpt-6.1-sol"]);
+  const noAstra = provider("codex", ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]);
+  assert.deepEqual([castOf([noAstra])!.strong, castOf([noAstra])!.everyday], ["codex:gpt-6.1-sol", "codex:gpt-6.1-terra"]);
+  // Claude Code and Codex: Opus plans, Sol builds (an eighth of Sonnet's cost a task), Opus judges.
+  const pair = castOf([claude, full])!;
+  assert.deepEqual([pair.strong, pair.everyday, pair.judge], ["claude:claude-opus-5-5", "codex:gpt-6.1-sol", "claude:claude-opus-5-5"]);
   // Dual: your frontier model (Opus) still plans; Astra, the best of another maker (here through Hermes, not its Pro), builds.
   assert.deepEqual(frontiersOf(all), { frontier: "claude:claude-opus-5-5", second: "hermes:nous:openai/gpt-6-astra" });
-  assert.deepEqual(castOf(all, { dual: true }), { everyday: "hermes:nous:openai/gpt-6-astra", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["hermes:nous:openai/gpt-6-astra"] });
+  assert.deepEqual(castOf(all, { dual: true }), { everyday: "hermes:nous:openai/gpt-6-astra", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["hermes:nous:openai/gpt-6-astra", "opencode:opencode/deepseek-v4.1-flash-free"] });
   // Opus building instead: pick Astra as your frontier model and Opus as the second.
   const swapped = castOf(all, { dual: true, picks: { frontier: "hermes:nous:openai/gpt-6-astra", second: "claude:claude-opus-5-5" } })!;
   assert.deepEqual([swapped.strong, swapped.everyday], ["hermes:nous:openai/gpt-6-astra", "claude:claude-opus-5-5"]);
@@ -125,11 +135,39 @@ test("your models: frontier + cheaper, dual frontier with Astra wherever it runs
 });
 
 test("without Claude Code or Codex: the parts fill from any maker, Chinese models too", () => {
-  // OpenCode Go only: DeepSeek Flash builds, DeepSeek V4 Pro plans, Kimi (another maker) checks; dual has Kimi build.
+  // OpenCode Go only: DeepSeek Flash does it all (so Plan is Solo), GLM-5.3 Flash judges, GLM-5.3 and Kimi critique; Go's caps leave Dual nothing to build with.
   const go = [provider("opencode", ["opencode-go:deepseek-v4-pro", "opencode-go:deepseek-v4.1-flash", "opencode-go:kimi-k3", "opencode-go:glm-5.3", "opencode-go:glm-5.3-flash", "opencode-go:qwen3.8-max", "opencode-go:qwen3.8-flash"])];
-  assert.deepEqual(castOf(go), { everyday: "opencode:opencode-go:deepseek-v4.1-flash", strong: "opencode:opencode-go:deepseek-v4-pro", judge: "opencode:opencode-go:kimi-k3", critics: ["opencode:opencode-go:kimi-k3"] });
-  assert.deepEqual([castOf(go, { dual: true })!.everyday, castOf(go, { dual: true })!.strong], ["opencode:opencode-go:kimi-k3", "opencode:opencode-go:deepseek-v4-pro"]);
-  assert.deepEqual(frontiersOf(go), { frontier: "opencode:opencode-go:deepseek-v4-pro", second: "opencode:opencode-go:kimi-k3" });
+  assert.deepEqual(castOf(go), { everyday: "opencode:opencode-go:deepseek-v4.1-flash", strong: "opencode:opencode-go:deepseek-v4.1-flash", judge: "opencode:opencode-go:glm-5.3-flash", critics: ["opencode:opencode-go:glm-5.3", "opencode:opencode-go:kimi-k3"] });
+  // Go's whole lineup: DeepSeek V4.1 Flash builds ahead of GPT Luna, and MiMo V2.6 Pro and GLM-5.3 are the critics.
+  const lineup = [provider("opencode", ["opencode-go/grok-4.7", "opencode-go/glm-5.3-flash", "opencode-go/glm-5.3", "opencode-go/glm-5.2", "opencode-go/gpt-6-luna", "opencode-go/gpt-5.6-luna", "opencode-go/claude-haiku-5.5", "opencode-go/gemini-4-argon", "opencode-go/kimi-k3.1-pro", "opencode-go/kimi-k3", "opencode-go/kimi-k2.7-code", "opencode-go/mimo-v2.6-flash", "opencode-go/mimo-v2.6-pro", "opencode-go/mimo-v2.5-pro", "opencode-go/minimax-m3", "opencode-go/qwen3.8-max", "opencode-go/deepseek-v4.1-flash", "opencode-go/deepseek-v4-pro"])];
+  // V4.1 Flash is the frontier model too, ahead of Grok 4.7 and V4 Pro.
+  const full = castOf(lineup)!;
+  assert.deepEqual([full.everyday, full.strong, full.critics], ["opencode:opencode-go/deepseek-v4.1-flash", "opencode:opencode-go/deepseek-v4.1-flash", ["opencode:opencode-go/mimo-v2.6-pro", "opencode:opencode-go/glm-5.3"]]);
+  // GLM-5.3 Flash judges and checks, but never takes the hard work; with Go's caps, Dual has no second model to build.
+  assert.equal(full.judge, "opencode:opencode-go/glm-5.3-flash");
+  assert.equal(checkerOf(full.everyday, full), "opencode:opencode-go/glm-5.3-flash");
+  const dual = castOf(lineup, { dual: true })!;
+  assert.deepEqual([dual.everyday, dual.strong, dual.judge], ["opencode:opencode-go/deepseek-v4.1-flash", "opencode:opencode-go/deepseek-v4.1-flash", "opencode:opencode-go/glm-5.3-flash"]);
+  // Outside Go (no caps), the same lineup plans by the tier list: Gemini 4 Argon plans, DeepSeek Flash builds.
+  const zen = castOf([provider("opencode", lineup[0].models.map((m) => m.id.replace("opencode-go/", "zen/")))])!;
+  assert.deepEqual([zen.strong, zen.everyday], ["opencode:zen/gemini-4-argon", "opencode:zen/deepseek-v4.1-flash"]);
+  // A newer GLM takes over on its own, wherever it's listed: its Flash judges, its frontier model critiques.
+  const later = castOf([provider("opencode", [...lineup[0].models.map((m) => m.id), "opencode-go/glm-5.10", "opencode-go/glm-5.10-flash"])])!;
+  assert.deepEqual([later.judge, later.critics], ["opencode:opencode-go/glm-5.10-flash", ["opencode:opencode-go/mimo-v2.6-pro", "opencode:opencode-go/glm-5.10"]]);
+  // The checker you picked still wins over Argon.
+  assert.equal(castOf(lineup, { picks: { checker: "opencode:opencode-go/glm-5.3" } })!.judge, "opencode:opencode-go/glm-5.3");
+  // With Opus doing the hard work, Astra critiques it, not MiMo or GLM; DeepSeek Flash builds and reads second.
+  const opus = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5"]);
+  const codex = provider("codex", ["gpt-6-astra", "gpt-6.1-sol"]);
+  assert.deepEqual(castOf([opus, codex, lineup[0]])!.critics, ["codex:gpt-6-astra", "opencode:opencode-go/deepseek-v4.1-flash"]);
+  // With Astra doing it, its best reader would be Go's Gemini 4 Argon: MiMo and GLM read instead, for less of Go's allowance.
+  assert.deepEqual(castOf([codex, lineup[0]])!.critics, ["opencode:opencode-go/mimo-v2.6-pro", "opencode:opencode-go/glm-5.3"]);
+  // MiMo V2.6 Flash stands in for the Pro; a critic of the strong model's own maker is left out.
+  const noPro = lineup[0].models.filter((m) => m.id !== "opencode-go/mimo-v2.6-pro").map((m) => m.id);
+  assert.equal(castOf([provider("opencode", noPro)])!.critics[0], "opencode:opencode-go/mimo-v2.6-flash");
+  assert.ok(!castOf(lineup, { picks: { frontier: "opencode:opencode-go/glm-5.3" } })!.critics.includes("opencode:opencode-go/glm-5.3"));
+  assert.deepEqual(castOf(go, { dual: true }), castOf(go));
+  assert.deepEqual(frontiersOf(go), { frontier: undefined, second: undefined });
   // Gemini alone: Flash builds, Pro plans; one maker is no dual pair.
   const gemini = [provider("acp.gemini", ["gemini-3-pro", "gemini-3-flash"])];
   assert.deepEqual([castOf(gemini)!.everyday, castOf(gemini)!.strong], ["acp.gemini:gemini-3-flash", "acp.gemini:gemini-3-pro"]);

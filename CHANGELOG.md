@@ -10,13 +10,19 @@ download the new DMG; on Windows, download the new zip.
 - **Liner 2.0:** what agents make for Liner Code is drawn in its own look. Every add-on is made
   with a design skill of Liner Code's surfaces, buttons, rows and type, and gets the app's colours
   to draw with, so a panel or a page reads as part of the app.
-- Ask for an add-on in Standard and Home switches to Workshop as you type, with Keep Standard to
-  undo it. It switches back if the ask stops being one, and a mode you picked yourself stays. "Make
-  it an app" starts its session in Workshop too.
+- **A model in an app:** an add-on can ask a model and get the answer back as it's written. The
+  first ask opens Liner Code's own popup, where you pick one of your models and allow it; the app
+  keeps it and shows it on its strip, where a click changes it. It's only a model, with no tools,
+  files or agent: an API endpoint's, or Claude Code's with its tools, settings and servers off.
+  Each app gets two answers at a time and 300 a day, and its usage is logged under it.
+- Each mode leads with its icon in the picker, on Home's strip and in the chip beside a session's
+  title: Standard's sparkle, Workshop's blocks, and your own modes with their agent's glyph.
 
 ### Changed
 
 - **Creator mode is now Workshop**, in name only: your sessions and settings carry over.
+- **Workshop only when you ask for it:** it starts from Create your add-on, from "Make it an app",
+  or when you pick it under the box. Everything else starts in your default mode.
 - **Models come from one tier list** built on Artificial Analysis (Terminal-Bench 4.0, FrontierCode
   v1.1, cost per task) instead of a maker-by-maker order. Opus and GPT Astra plan and take the hard
   jobs; DeepSeek V4.1 Flash builds wherever it's ready, then Sol, then Sonnet. A model never builds

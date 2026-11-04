@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.2.1 (alpha), 2026-11-04
+
+**Update from 0.2.0 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or
+download the new DMG; on Windows, download the new zip.
+
+### New
+
+- **Liner 2.0:** what agents make for Liner Code is drawn in its own look. Every add-on is made
+  with a design skill of Liner Code's surfaces, buttons, rows and type, and gets the app's colours
+  to draw with, so a panel or a page reads as part of the app.
+- Ask for an add-on in Standard and Home switches to Workshop as you type, with Keep Standard to
+  undo it. It switches back if the ask stops being one, and a mode you picked yourself stays. "Make
+  it an app" starts its session in Workshop too.
+
+### Changed
+
+- **Creator mode is now Workshop**, in name only: your sessions and settings carry over.
+- **Models come from one tier list** built on Artificial Analysis (Terminal-Bench 4.0, FrontierCode
+  v1.1, cost per task) instead of a maker-by-maker order. Opus and GPT Astra plan and take the hard
+  jobs; DeepSeek V4.1 Flash builds wherever it's ready, then Sol, then Sonnet. A model never builds
+  for itself: when Sol is your best, Sol plans and Terra builds. Critics come from different makers.
+- **OpenCode Go's quota lasts longer:** its frontier-class models have a small monthly cap, so none
+  of them plans, takes hard jobs or builds in Dual. DeepSeek V4.1 Flash does it all, the newest GLM
+  Flash judges, and MiMo V2.6 Pro and the newest GLM critique. Capped models still read.
+
+### Fixed
+
+- Home's strip no longer runs past the box. It holds where the task runs and the branch on the
+  left and the mode at the right, each cut short with an ellipsis; Scratch folder, Carry on a
+  session and the keys move to a quiet line under it.
+
 ## 0.2.0 (alpha), 2026-11-03
 
 **Update from 0.1.9 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or
@@ -25,12 +56,8 @@ for Liner Code itself, and **Workshop** to make them.
   the card said. Then Keep or Undo, and Restore.
 - **Workshop:** each session now has a mode, picked under the box on Home and kept for the session:
   Standard, Workshop, or one of your own. Workshop is Standard plus a guide to add-ons and a closer
-  look at Liner Code, never more trust. Ask for an add-on in Standard and Home switches to Workshop
-  as you type (Keep Standard undoes it). A Workshop session shows a chip beside its title, and the
+  look at Liner Code, never more trust. A Workshop session shows a chip beside its title, and the
   agent can save a mode of yours on a card.
-- **Liner 2.0:** what agents make for Liner Code is drawn in its own look. Every add-on is made
-  with a design skill of Liner Code's surfaces, buttons, rows and type, and gets the app's colours
-  to draw with, so a panel or a page reads as part of the app.
 - **Settings › Modes:** the built-in modes and yours as cards, each with its details, how to use
   it with example tasks, Set as new task default, and Let the agent help me make one.
 - **The Add-ons page:** what you've added, each with one sentence and a switch. A row opens its

@@ -16,7 +16,7 @@ import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { toast } from "@liner/components/toast/toast";
 import { openSession } from "./Addon";
 import { getState, rpc, useEngine } from "./engine";
-import { I } from "./icons";
+import { Glyph, I } from "./icons";
 import { startOf } from "./model";
 import { Pop, Row, Sep } from "./ui";
 import "./modes.css";
@@ -24,6 +24,15 @@ import "./modes.css";
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 const ICON: Record<"standard" | "creator", (p: { size?: number }) => ReactNode> = { standard: I.sparkle, creator: I.blocks };
 const iconOf = (mode?: SessionMode) => (mode === "creator" ? ICON.creator : mode?.startsWith("agent:") ? I.agents : ICON.standard);
+/** A mode's icon: Standard's sparkle, Workshop's blocks, and one of yours drawn with its agent's own glyph. */
+function ModeIcon({ mode, agents, size }: { mode: SessionMode; agents: AgentProfile[]; size: number }) {
+  if (mode.startsWith("agent:")) {
+    const a = agents.find((x) => `agent:${x.id}` === mode);
+    return a ? <Glyph glyph={a.glyph} size={size} /> : <I.agents size={size} />;
+  }
+  const Icon = iconOf(mode);
+  return <Icon size={size} />;
+}
 /** Your named agents that can be a mode: every one but the Demo's. */
 const customs = (agents: AgentProfile[]) => agents.filter((a) => a.id !== "demo");
 
@@ -61,7 +70,7 @@ export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: Se
       triggerClass={`lc-pb lc-mode-pick${value === "creator" ? " lc-mode-creator" : ""}`}
       trigger={
         <>
-          <I.layers size={13} />
+          <ModeIcon mode={value} agents={agents} size={13} />
           <span className="lc-strip-cap">{label}</span>
           <I.chevD size={11} />
         </>
@@ -70,13 +79,14 @@ export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: Se
       {(close) => (
         <div className="lc-mode-menu" role="menu" aria-label="Mode">
           {BUILTIN_MODES.map((m) => (
-            <Row key={m.id} title={m.name} note={m.id === "creator" ? "Add connections, panels and apps to Liner Code" : "Everyday work on your code"} on={value === m.id} onPick={() => (onPick(m.id), close())} />
+            <Row key={m.id} keepIcon icon={<ModeIcon mode={m.id} agents={agents} size={15} />} title={m.name} note={m.id === "creator" ? "Add connections, panels and apps to Liner Code" : "Everyday work on your code"} on={value === m.id} onPick={() => (onPick(m.id), close())} />
           ))}
           {customs(agents).map((a) => (
-            <Row key={a.id} title={a.name} note={a.role} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), close())} />
+            <Row key={a.id} keepIcon icon={<ModeIcon mode={`agent:${a.id}`} agents={agents} size={15} />} title={a.name} note={a.role} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), close())} />
           ))}
           <Sep />
           <button type="button" className="lc-mode-more l-focus" onClick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "modes" })))}>
+            <I.sliders size={15} />
             Modes in Settings…
           </button>
         </div>
@@ -89,10 +99,9 @@ export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: Se
 export function ModeChip({ thread }: { thread: Thread }) {
   const agents = useEngine((s) => s.agents);
   if (!thread.mode || thread.mode === "standard") return null;
-  const Icon = iconOf(thread.mode);
   return (
     <span className="lc-mode-chip" title={thread.mode === "creator" ? "Workshop: this session adds to Liner Code, each add-on on a card" : "A mode of yours: its instructions, on this session's model"}>
-      <Icon size={13} />
+      <ModeIcon mode={thread.mode} agents={agents} size={13} />
       {modeName(thread.mode, agents)}
     </span>
   );

@@ -216,15 +216,17 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
 }
 
 /** A row in a panel: a title, a note under it, and a check when it is the current one. */
-export function Row({ title, note, on, icon, end, disabled, onPick }: { title: ReactNode; note?: ReactNode; on?: boolean; icon?: ReactNode; end?: ReactNode; disabled?: boolean; onPick?: () => void }) {
+/** A row to pick. Picked, its tick takes the icon's place, unless `keepIcon`: then the icon stays and the tick goes at the end. */
+export function Row({ title, note, on, icon, end, disabled, keepIcon, onPick }: { title: ReactNode; note?: ReactNode; on?: boolean; icon?: ReactNode; end?: ReactNode; disabled?: boolean; keepIcon?: boolean; onPick?: () => void }) {
+  const tickEnd = keepIcon && on;
   return (
     <button type="button" className="lc-row l-focus" data-on={on || undefined} disabled={disabled} aria-pressed={on} onClick={onPick}>
-      <span className="lc-row-tick">{on ? <I.check size={14} /> : icon}</span>
+      <span className="lc-row-tick">{on && !keepIcon ? <I.check size={14} /> : icon}</span>
       <span className="lc-row-t">
         <b>{title}</b>
         {note && <small>{note}</small>}
       </span>
-      {end && <span className="lc-row-end">{end}</span>}
+      {(end || tickEnd) && <span className="lc-row-end">{tickEnd ? <I.check size={14} /> : end}</span>}
     </button>
   );
 }

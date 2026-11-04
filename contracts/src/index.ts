@@ -667,8 +667,8 @@ const OTHERS = "firefox|chrome|browser|edge|safari|wordpress|blender|anki|excel|
 const OTHERS_ADDONS = new RegExp(`\\b(${OTHERS})$`);
 const FOR_OTHERS = new RegExp(`^[^.?!\\n]*?\\b(for|in|into|to|on|inside) (the |my |our |a )?(${OTHERS})\\b`);
 /**
-  Whether an ask is for an add-on to Liner Code itself, so Home switches a Standard task to Workshop
-  as it's typed: an add-on (or addon) of any kind, unless it's about the add-ons feature ("the
+  Whether an ask is for an add-on to Liner Code itself (Home no longer switches to Workshop on it:
+  Workshop starts only from Create your add-on or the mode picker): an add-on (or addon) of any kind, unless it's about the add-ons feature ("the
   add-ons page"); or something to make in Liner Code: a panel, an app, a page, a tab, a sidebar
   entry, a connection, a plugin, an extension, a widget, an integration. Work on a project's own
   plugins or panels doesn't count: that names no add-on and no Liner. In Liner Code's own source

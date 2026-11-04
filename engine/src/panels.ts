@@ -90,12 +90,13 @@ export type PanelEnv = {
   storage: { all(): Record<string, unknown>; put(key: string, value: unknown): void };
   /**
     The model an app asked for (access.ai), as just a model: the one picked for it (its name, or
-    null before one is), and its answer. `call` names the answer's pieces as they come (onText).
+    null before one is), and its answer. `call` names the ask, so the window can stop it when its
+    frame closes, and, with `stream`, the answer's pieces as they come (onText).
   */
   ai?: {
     model(): { name: string } | null;
     pick(): { name: string } | null;
-    ask(o: { prompt: string; system?: string; call?: string }): Promise<{ text: string; model: string }>;
+    ask(o: { prompt: string; system?: string; call?: string; stream?: boolean }): Promise<{ text: string; model: string }>;
   };
 };
 
@@ -224,7 +225,7 @@ export async function panelCall(env: PanelEnv, w: PanelWhere, method: PanelMetho
       if (args.system !== undefined && args.system !== null && typeof args.system !== "string") throw new Error("system is the model's instructions, as a string.");
       const system = typeof args.system === "string" && args.system.trim() ? args.system : undefined;
       if (system && system.length > AI_SYSTEM_MAX) throw new Error(`Its instructions are longer than an app may give (${AI_SYSTEM_MAX.toLocaleString("en")} characters).`);
-      return need(env).ask({ prompt, system, call: args.stream && typeof args.call === "string" ? args.call : undefined });
+      return need(env).ask({ prompt, system, call: typeof args.call === "string" ? args.call : undefined, stream: args.stream === true });
     }
   }
 }

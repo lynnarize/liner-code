@@ -1198,7 +1198,9 @@ export class Runtime {
       limited: (m) => void (failed = m),
     };
     try {
-      await session.turn(o.prompt, sink, o.signal);
+      // A prompt that starts with "/" would run one of Claude Code's commands (/context answers
+      // with what it knows of this Mac): a zero-width space ahead of it keeps it just words.
+      await session.turn(/^\s*\//.test(o.prompt) ? `\u200b${o.prompt}` : o.prompt, sink, o.signal);
     } finally {
       session.close();
       log();

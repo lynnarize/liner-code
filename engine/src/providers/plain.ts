@@ -5,10 +5,11 @@
   in between. Claude Code's own models are asked through Claude Code with every tool, setting and
   server off (claude.ts, `plain`); the runtime picks the way (plainWay in contracts).
 
-  The key goes to the endpoint's address only, never through a redirect.
+  The key goes to the endpoint's address only, never through a redirect. What goes wrong reaches
+  the app, so it names the endpoint by its label, never its address, and a refused key by its
+  status alone: the service's own words may echo part of the key.
 */
 import type { Endpoint } from "../../../contracts/src/index.ts";
-import { hostOf } from "./endpoint.ts";
 
 /** What a model is told before an app's own instructions, whichever way it's asked. */
 export const PLAIN_SOUL =
@@ -22,7 +23,7 @@ export type PlainAnswer = { text: string; inputTokens: number; outputTokens: num
 /** Asks an endpoint's model once, the answer's pieces to `onText` as they come. */
 export async function askEndpoint(e: Endpoint, key: string | undefined, model: string, o: { system: string; prompt: string; signal: AbortSignal; onText?: (t: string) => void }): Promise<PlainAnswer> {
   const base = e.url.trim().replace(/\/+$/, "");
-  const host = hostOf(base);
+  const host = e.label || "The endpoint";
   const auth: Record<string, string> = key ? (e.protocol === "anthropic" ? { "x-api-key": key, authorization: `Bearer ${key}` } : { authorization: `Bearer ${key}` }) : {};
   const [at, body] =
     e.protocol === "anthropic"
@@ -47,7 +48,8 @@ export async function askEndpoint(e: Endpoint, key: string | undefined, model: s
         return said.slice(0, 200);
       }
     })();
-    throw new Error(`${host} answered ${r.status}${r.status === 401 || r.status === 403 ? " (check its key in Settings)" : ""}${msg ? `: ${msg}` : "."}`);
+    if (r.status === 401 || r.status === 403) throw new Error(`${host} answered ${r.status}: check its key in Settings.`);
+    throw new Error(`${host} answered ${r.status}${msg ? `: ${msg.slice(0, 200)}` : "."}`);
   }
   const out: PlainAnswer = { text: "", inputTokens: 0, outputTokens: 0 };
   const put = (t: unknown) => {

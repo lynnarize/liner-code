@@ -165,6 +165,16 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   useLayoutEffect(() => {
     if (!ok) return;
     const post = (m: Record<string, unknown>) => frame.current?.contentWindow?.postMessage({ liner: 1, ...m }, "*");
+    // Once you dismiss the model popup, it stays shut for this frame (its strip still changes the
+    // model): an app can't keep putting it back up. A pick answered after the frame went asks nothing.
+    let live = true;
+    let declined = false;
+    const pickOnce = async () => {
+      if (declined) return null;
+      const ref = await pickAppModel(addon, ok.name);
+      if (!ref) declined = true;
+      return ref;
+    };
     const onMsg = async (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow) return;
       const d = e.data as { liner?: number; kind?: string; id?: number; method?: string; args?: unknown; message?: string; stack?: string; host?: string; directive?: string } | null;
@@ -176,11 +186,13 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
       try {
         // A model (access.ai): Liner Code's own popup picks and allows it, never the frame.
         if (ok.access.ai && d.method === "ai.pick") {
-          const ref = await pickAppModel(addon, ok.name);
+          const ref = await pickOnce();
+          if (!live) return;
           return post({ id, ok: true, value: ref ? { name: modelLabel(ref, getState().providers) } : null });
         }
         if (ok.access.ai && d.method === "ai.ask") {
-          const ref = appModelOf(addon) ?? (await pickAppModel(addon, ok.name));
+          const ref = appModelOf(addon) ?? (await pickOnce());
+          if (!live) return;
           if (!ref) return post({ id, ok: false, error: `You didn't allow a model for ${ok.name}, so nothing was asked.` });
           const a = (d.args ?? {}) as Record<string, unknown>;
           const call = crypto.randomUUID();
@@ -208,6 +220,7 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
     const mo = new MutationObserver(() => post({ event: "theme", data: theme() }));
     mo.observe(document.documentElement, { attributes: true, attributeFilter: THEME_ATTRS });
     return () => {
+      live = false;
       window.removeEventListener("message", onMsg);
       mo.disconnect();
     };

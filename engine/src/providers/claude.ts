@@ -272,6 +272,8 @@ const TASK_TOOLS = new Set(["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]);
 const MODE: Record<Access, PermissionMode> ={ read: "plan", ask: "default", edits: "acceptEdits", auto: "auto", review: "acceptEdits", full: "acceptEdits" };
 /** A lead reads and plans, and a side chat reads and answers; these stay with the coder. */
 const LEAD_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
+/** Just a model, for an app (plain): every built-in that reaches this Mac, denied by rule as well as left out. */
+const PLAIN_DENIED = ["Read", "Glob", "Grep", "LS", "Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"];
 
 /** What kind of thing a Claude Code tool does, for its icon and risk. */
 function kindOf(name: string): ToolKind {
@@ -529,7 +531,8 @@ class ClaudeSession implements ProviderSession {
   private start() {
     const o = this.o;
     // Just a model, for an app: no built-in tools, no settings (and so no hooks, plugins or servers of yours), none of Liner's, its own short prompt.
-    const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
+    // Read denied too: with no tools at all, Claude Code still reads a file or lists a folder an @path in the prompt names.
+    const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], settings: { permissions: { deny: PLAIN_DENIED } }, mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
     const options: Options = {
       cwd: o.cwd,
       model: o.model || undefined,

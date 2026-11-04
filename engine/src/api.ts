@@ -366,7 +366,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   /*
     A model an app asks (access.ai): the one you picked for it in the window (settings.addonModels),
     as just a model (runtime.plain). Two answers at a time per app, AI_DAILY a day, three minutes
-    each; the window stops one whose frame closed (panel.cancel), by the `call` it gave.
+    each; the window stops one whose frame closed (panel.cancel), by the `call` it gave, streamed or not.
   */
   const aiAsking = new Map<string, AbortController>();
   const aiBusy = new Map<string, number>();
@@ -379,7 +379,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       pick: () => {
         throw new Error("The window opens the model picker: liner.ai.pick() only works in Liner Code's window.");
       },
-      ask: async ({ prompt, system, call }) => {
+      ask: async ({ prompt, system, call, stream }) => {
         const ref = picked();
         if (!ref) throw new Error(`No model is allowed for ${name} yet: the person picks one when it first asks.`);
         if ((aiBusy.get(addon) ?? 0) >= 2) throw new Error(`${name} is already waiting on two answers: ask one at a time.`);
@@ -392,7 +392,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         aiAsking.set(key, ctl);
         const timer = setTimeout(() => ctl.abort(), 180_000);
         try {
-          const text = await runtime.plain(ref, { prompt, system, signal: ctl.signal, as: `addon:${addon}`, onText: call ? (t) => store.emit({ type: "panel.ai", call, text: t }) : undefined });
+          const text = await runtime.plain(ref, { prompt, system, signal: ctl.signal, as: `addon:${addon}`, onText: call && stream ? (t) => store.emit({ type: "panel.ai", call, text: t }) : undefined });
           return { text, model: runtime.labelOf(ref) };
         } catch (e) {
           if (ctl.signal.aborted) throw new Error("The model took too long, or the app closed, so it was stopped.");

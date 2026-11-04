@@ -53,20 +53,20 @@ test("plainWay: an endpoint's model over HTTP, Claude Code's with its tools off,
 });
 
 test("bridge: what an app sends a model is checked, and its answer comes from the model it was given", async () => {
-  const asked: { prompt: string; system?: string; call?: string }[] = [];
+  const asked: { prompt: string; system?: string; call?: string; stream?: boolean }[] = [];
   const env = {
     storage: { all: () => ({}), put: () => {} },
-    ai: { model: () => ({ name: "Sonnet 5.5" }), pick: () => null, ask: async (o: { prompt: string; system?: string; call?: string }) => (asked.push(o), { text: "Better copy", model: "Sonnet 5.5" }) },
+    ai: { model: () => ({ name: "Sonnet 5.5" }), pick: () => null, ask: async (o: { prompt: string; system?: string; call?: string; stream?: boolean }) => (asked.push(o), { text: "Better copy", model: "Sonnet 5.5" }) },
   } as unknown as PanelEnv;
   const w = { access: { ai: true }, place: "page" as const };
   await assert.rejects(panelCall(env, w, "ai.ask", { prompt: "  " }), /Say what to ask/);
   await assert.rejects(panelCall(env, w, "ai.ask", { prompt: "x".repeat(AI_PROMPT_MAX + 1) }), /more than an app may send/);
   await assert.rejects(panelCall(env, w, "ai.ask", { prompt: "hi", system: 3 }), /instructions, as a string/);
   assert.deepEqual(await panelCall(env, w, "ai.ask", { prompt: "Rewrite: Sign in", system: "Copy only.", stream: true, call: "c1" }), { text: "Better copy", model: "Sonnet 5.5" });
-  assert.deepEqual(asked.at(-1), { prompt: "Rewrite: Sign in", system: "Copy only.", call: "c1" });
-  // No stream asked for, no call to stream to.
+  assert.deepEqual(asked.at(-1), { prompt: "Rewrite: Sign in", system: "Copy only.", call: "c1", stream: true });
+  // No stream asked for: nothing streams, but the call still names it, so a closed frame stops it.
   await panelCall(env, w, "ai.ask", { prompt: "hi", call: "c2" });
-  assert.equal(asked.at(-1)?.call, undefined);
+  assert.deepEqual(asked.at(-1), { prompt: "hi", system: undefined, call: "c2", stream: false });
   assert.deepEqual(await panelCall(env, w, "ai.model", {}), { name: "Sonnet 5.5" });
   await assert.rejects(panelCall({ storage: env.storage } as PanelEnv, w, "ai.ask", { prompt: "hi" }), /no model to ask here/);
 });
@@ -126,10 +126,10 @@ for (const protocol of ["chat", "anthropic", "responses"] as const)
     }
   });
 
-test("askEndpoint: a refusal says who answered and why", async () => {
+test("askEndpoint: a refusal says who answered and why, by label, and a refused key by its status alone", async () => {
   const m = await fakeModel("chat", [], 401);
   try {
-    await assert.rejects(askEndpoint({ id: "x", label: "X", url: m.url, protocol: "chat", models: ["m1"] }, "nope", "m1", { system: PLAIN_SOUL, prompt: "hi", signal: new AbortController().signal }), /127\.0\.0\.1:\d+ answered 401 \(check its key in Settings\): bad key/);
+    await assert.rejects(askEndpoint({ id: "x", label: "X", url: m.url, protocol: "chat", models: ["m1"] }, "nope", "m1", { system: PLAIN_SOUL, prompt: "hi", signal: new AbortController().signal }), (e: Error) => e.message === "X answered 401: check its key in Settings.");
   } finally {
     m.close();
   }

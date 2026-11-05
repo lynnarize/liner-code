@@ -51,7 +51,7 @@ export const home = {
 };
 
 export const intro =
-  'It runs Claude Code, Codex, OpenCode and Hermes with your own sign-ins, and shows their work as plans you approve and questions you answer.';
+  'It runs Claude Code, Codex, OpenCode and Hermes together: one plans, one builds, one from another maker checks. What it lacks, they make as add-ons you say yes to.';
 
 // One turn of the Demo's tide app, as the app shows it. Wording from the app and the Demo.
 export const turn = {

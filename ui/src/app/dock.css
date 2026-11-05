@@ -463,7 +463,7 @@
   color: var(--l-ink);
 }
 .lc-stage[hidden],
-.lc-dock[hidden],
+.lc-thread-foot[hidden],
 .lc-apptab[hidden] {
   display: none;
 }

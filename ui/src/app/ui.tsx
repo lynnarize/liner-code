@@ -316,11 +316,13 @@ export function ContextRing({ used, size = 14 }: { used: number; size?: number }
   used, in tokens, and Compact, which asks the tool to sum up what came before. Compacting waits
   for a running turn to end, so the action is there only while nothing runs.
 */
-export function ContextMeter({ used, max, running, onCompact }: { used: number; max: number; running?: boolean; onCompact?: () => void }) {
+/** The context ring, whose pop also holds the plan's windows when they're known: one ring for both. */
+export function ContextMeter({ used, max, running, onCompact, limits }: { used: number; max: number; running?: boolean; onCompact?: () => void; limits?: ToolLimits[] }) {
+  const now = Date.now();
   const p = Math.max(0, Math.min(1, used / max));
   const pct = Math.round(p * 100);
   return (
-    <Pop label={`Context: ${pct}% used`} side="top" align="center" width={260} triggerClass="lc-seg-b lc-ring-b" trigger={<ContextRing used={p} />}>
+    <Pop label={`Context: ${pct}% used${limits?.length ? ", and the plan's limits" : ""}`} side="top" align="center" width={limits?.length ? 290 : 260} triggerClass="lc-seg-b lc-ring-b" trigger={<ContextRing used={p} />}>
       {(close) => (
         <div className="lc-ctxm">
           <PanelHead end={`${pct}%`}>Context</PanelHead>
@@ -336,6 +338,15 @@ export function ContextMeter({ used, max, running, onCompact }: { used: number; 
             ) : (
               <Row title="Compact" note="Sums up what came before, so the window has room again" onPick={() => (close(), onCompact())} />
             ))}
+          {limits?.map((t) => (
+            <div key={t.provider} className="lc-limm-tool">
+              <Sep />
+              <PanelHead end={t.plan && t.plan[0].toUpperCase() + t.plan.slice(1)}>{t.label}</PanelHead>
+              {t.windows.map((w) => (
+                <LimitRow key={w.label} w={w} label={t.label} now={now} />
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </Pop>

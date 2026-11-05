@@ -3,7 +3,8 @@
   joins, each drawn as the thing people already know it by (a gear for settings, people for the
   team, a ± for a diff, an arrow out of a box for "open elsewhere"). One meaning per icon: Settle
   is a ticked circle, not the plain tick; Snooze is a moon, not a clock.
-  The mark is two nested Ls sharing a corner: the outer in ink, the inner in a light accent.
+  The mark is two turns that share one centre: the outer in ink, the inner in the accent, set in
+  like an inside lane (docs/brand/icon-2026).
 */
 import { useId, type CSSProperties, type ReactNode } from "react";
 import type { AgentGlyph } from "@contracts";
@@ -38,6 +39,7 @@ export const I = {
   panel: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /></S>,
   /** The dock beside the session: a frame with its right part ruled off. */
   dock: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /><path d="M11.75 5.75h.01" /></S>,
+  panelBottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 9.75h11.5" /></S>,
   split: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M8 2.75v10.5" /></S>,
   shrink: (p: P) => <S {...p}><path d="M2.75 9.25h4v4M13.25 6.75h-4v-4M9.25 6.75l4-4M6.75 9.25l-4 4" /></S>,
   /** The New tab guide: four tiles. */

@@ -43,16 +43,11 @@
 .lc-stabs-row::-webkit-scrollbar {
   display: none;
 }
-/* The tabs you aren't on keep only their icon; the name is in the tooltip, and the open one says it. */
+/* Every tab keeps its name (TasteCode v0.5): when the strip runs short they give way to their
+   icons, and the open one keeps its own. */
 .lc-stab:not([data-on]) {
-  min-width: 0;
-}
-.lc-stab:not([data-on]) .lc-stab-b {
-  padding: 0 7px;
-}
-.lc-stab:not([data-on]) .lc-stab-b > span,
-.lc-stab:not([data-on]) .lc-stab-x {
-  display: none;
+  flex-shrink: 1;
+  min-width: 32px;
 }
 .lc-stab {
   position: relative;
@@ -162,9 +157,25 @@
 .lc-stab:has(.lc-stab-x:focus-visible) .lc-stab-b > svg {
   opacity: 0;
 }
-/* A tab down to its icon has no close (a middle click closes it), so its icon stays. */
-.lc-stab:not([data-on]) .lc-stab-b > svg {
-  opacity: 1;
+/* The apps you pinned, at the strip's start: an icon each, a press away. */
+.lc-stab-pin {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-stab-pin:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
 }
 @media (hover: hover) {
   .lc-stab-x:hover {
@@ -4802,4 +4813,137 @@
   .lc-br-zoom {
     transition: none;
   }
+}
+
+/*
+  The bottom panel (TasteCode v0.5): the session's shells and script runs, under the thread and
+  its composer, a third of the column's height. Its strip is the panel's header: the shells as
+  tabs, a + for another, the open shell's folder and tools, and the way to put it away. Nothing
+  stacks over the output.
+*/
+.lc-thread[data-below] {
+  --lc-below-h: clamp(180px, 36%, 340px);
+}
+.lc-thread[data-below] > .lc-thread-foot {
+  bottom: var(--lc-below-h);
+}
+.lc-below {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  height: var(--lc-below-h);
+  min-height: 0;
+  border-top: 1px solid var(--l-line);
+  animation: lc-below-in 260ms var(--l-ease-out) backwards;
+}
+@keyframes lc-below-in {
+  from {
+    opacity: 0;
+  }
+}
+.lc-below .lc-terms {
+  grid-template-rows: 40px minmax(0, 1fr);
+}
+.lc-terms[data-below] > .lc-terms-tabs {
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 8px 0 12px;
+  overflow: visible;
+}
+.lc-terms[data-below] .lc-terms-tab > button:first-child {
+  height: 26px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.lc-terms[data-below] .lc-ib {
+  width: 26px;
+  height: 26px;
+}
+.lc-below-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-below-tools > svg {
+  display: none;
+}
+.lc-below-tools .lc-term-where {
+  max-width: 220px;
+}
+.lc-below .lc-term {
+  padding: 0;
+}
+.lc-below .lc-term-box {
+  padding: 6px 6px 6px 18px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/*
+  The chat, after Claude Code: the conversation's text starts where the composer's text does
+  (the card's own padding), and your messages end where its controls end. A folded row ends in a
+  small triangle; a turn's changes read as a row ("2 files changed +3 −1 · View changes"); agents
+  a model started stay in sight under their row while they work.
+*/
+.lc-scroll-in > .lc-tl {
+  padding-inline: 18px 12px;
+}
+.lc-row-chev {
+  width: 11px;
+  height: 11px;
+  color: var(--l-ink-4);
+}
+.lc-foot-chip.lc-foot-changes {
+  gap: 6px;
+  padding-inline: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--l-ink-3);
+}
+.lc-foot-link {
+  color: var(--l-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--l-line-2);
+  text-underline-offset: 3px;
+}
+@media (hover: hover) {
+  .lc-foot-chip.lc-foot-changes:hover {
+    background: none;
+    color: var(--l-ink-2);
+  }
+  .lc-foot-chip.lc-foot-changes:hover .lc-foot-link {
+    color: var(--l-ink);
+    text-decoration-color: currentColor;
+  }
+}
+.lc-foot-chip.lc-foot-changes[aria-current] .lc-foot-link {
+  text-decoration: none;
+}
+.lc-trail-agents {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0 0 0 18px;
+  list-style: none;
+}
+.lc-trail-agents > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 22px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  animation: lc-row-in 180ms ease-out backwards;
+}
+.lc-trail-agent-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

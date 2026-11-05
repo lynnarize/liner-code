@@ -1204,10 +1204,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             {variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow && (
               <>
                 <span className="lc-seg-div" aria-hidden />
-                <ContextMeter used={usage.contextTokens} max={usage.contextWindow} running={busy} onCompact={canCompact ? compactNow : undefined} />
+                <ContextMeter used={usage.contextTokens} max={usage.contextWindow} running={busy} onCompact={canCompact ? compactNow : undefined} limits={planOf} />
               </>
             )}
-            {planOf.length > 0 && (
+            {/* The plan's windows join the context ring's pop; with no ring (Home) they keep a meter of their own. */}
+            {planOf.length > 0 && !(variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow) && (
               <>
                 <span className="lc-seg-div" aria-hidden />
                 <LimitMeter tools={planOf} />

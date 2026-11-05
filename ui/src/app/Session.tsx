@@ -3,31 +3,31 @@
   right, the timeline, and the composer. The dock beside it holds the surfaces as tabs, in one or
   two panes; the full canvas gives it the whole paper (on the diff, that's the full-width Review).
 */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
 import type { Item, Project, ProjectScript, Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
 import { MarkdownLinks, type FileLink } from "@liner/pro/ai-kit/markdown";
 import { prefersReducedMotion } from "@liner/lib/spring";
-import { getState, isCheckpoint, isPrompt, isSubagent, loadItems, rpc, useEngine, useItems, useItemsWhere } from "./engine";
+import { getState, isCheckpoint, isPrompt, loadItems, rpc, useEngine, useItems, useItemsWhere } from "./engine";
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
 import { EnvMenu } from "./Env";
 import { ShipCard } from "./Ship";
-import { I, ModelMark } from "./icons";
-import { agentOf, checkpointsOf, isModelAgent, markOf, modeOf, modelLabel, sumLines } from "./model";
+import { I } from "./icons";
+import { agentOf, checkpointsOf, modeOf, modelLabel, sumLines } from "./model";
 import { Panel } from "./Panel";
 import { FindBar, onComposerInsert, toComposer } from "./Find";
 import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
 import { readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
-import { closeTab, closeWhere, openTab, paneOf, replaceTab, toggleTab, type DockState } from "./dock";
+import { closeTab, closeWhere, openTab, paneOf, replaceTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, TopBar } from "./TopBar";
 import { ModeChip } from "./Modes";
 import { Timeline } from "./Timeline";
-import { Badge, Disc, Kbd, ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
+import { Badge, Disc, Kbd, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
 type Props = {
@@ -37,6 +37,12 @@ type Props = {
   onNewAgent: () => void;
   onOpenSession: (id: string, tab?: Tab) => void;
   onRoutine: (id?: string) => void;
+  /** Opens another session beside this one (TasteCode's Open beside). */
+  onBeside?: () => void;
+  /** Beside another session: its header closes this side, and it keys only while it has focus. */
+  onCloseSide?: () => void;
+  /** Whether the window's keys are this session's (false for the side you aren't in). */
+  keys?: boolean;
 };
 
 /** Before the timeline has loaded, nothing has been seen. */
@@ -52,6 +58,9 @@ const PANEL_EXIT_MS = 400;
 const places = new Map<string, { top: number; atEnd: boolean }>();
 /** Which view of each session was up: Chat, or an app's tab beside it. */
 const views = new Map<string, string>();
+/** Whether each session's bottom panel (its shells and runs) is up, while the app runs. */
+const belows = new Map<string, boolean>();
+const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
 /** The install previews that have come up by themselves once, while the app runs. */
 const openedPreviews = new Set<string>();
 
@@ -60,10 +69,12 @@ const openedPreviews = new Set<string>();
   subagents, how many items there are), so a streaming reply redraws the timeline and not the
   composer, the header and the rest; the timeline and the panel read the whole of it themselves.
 */
-export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession, onRoutine }: Props) {
+export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession, onRoutine, onBeside, onCloseSide, keys = true }: Props) {
+  // Beside another session only the side you're in takes the window's keys.
+  const keysOn = useRef(keys);
+  keysOn.current = keys;
   const cps = useItemsWhere(thread.id, isCheckpoint);
   const prompts = useItemsWhere(thread.id, isPrompt);
-  const tasks = useItemsWhere(thread.id, isSubagent);
   const count = useEngine((s) => s.items[thread.id]?.length ?? 0);
   // Not fetched yet: a session with history isn't shown as a new one meanwhile.
   const loaded = useEngine((s) => s.items[thread.id] !== undefined);
@@ -158,6 +169,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     const el = scroller.current;
     if (!el) return;
     const onKey = (e: KeyboardEvent) => {
+      if (!keysOn.current) return;
       if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
       if (e.key === "PageUp" || e.key === "ArrowUp" || e.key === "Home" || (e.key === " " && e.shiftKey && e.target === el)) letGo(el);
     };
@@ -204,14 +216,12 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
 
   const lead = thread.lead ? agentOf(thread.lead, agents, providers) : undefined;
   const coder = agentOf(thread.agent, agents, providers);
-  const model = thread.model ?? coder.model;
   const settings: RunSettings = { agent: thread.agent, lead: thread.lead, route: thread.route?.level, dual: thread.dual, after: thread.after, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access };
   const open = checkpointsOf(cps).filter((c) => !c.reverted && !c.committed);
   const lines = sumLines(open.flatMap((c) => c.files));
   const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
   const branch = thread.worktree?.branch ?? project?.branch;
   const busy = thread.status === "running";
-  const subagents = tasks.length;
 
   // One identity for the session's life, so the timeline's turns don't redraw for a new one each time.
   const review = useCallback((id: string, path?: string) => {
@@ -292,11 +302,23 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     }),
     [],
   );
-  const toggle = (tab: Tab) => setDock((d) => toggleTab(d, tab));
+  const [below, setBelowState] = useState(() => belows.get(thread.id) ?? false);
+  const setBelow = (v: boolean) => {
+    belows.set(thread.id, v);
+    setBelowState(v);
+  };
+  // The Terminal lives in the bottom panel: opened from its key, ⌘K, a script, an agent or the
+  // right panel's +, it comes up there, and a layout kept from before moves it down too.
+  useEffect(() => {
+    if (paneOf(dock, "terminal") < 0) return;
+    setDock((d) => closeTab(d, "terminal"));
+    setBelow(true);
+  }, [dock]);
   // ⌘F finds in the thread (Review has its own, over the diff). It counts, so ⌘F with the bar open takes you back to its field.
   const [finding, setFinding] = useState(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!keysOn.current) return;
       if (!is(e, "find")) return;
       if (dock.open && dock.full && dock.panes.length === 1 && dock.panes[0].tab === "changes") return;
       // On an app's tab the chat is hidden: there's nothing of it to find.
@@ -343,6 +365,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   // A project script with keys of its own runs from them, in a Terminal tab of its own.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!keysOn.current) return;
       const x = (project?.scripts ?? []).find((s) => s.key && matches(e, s.key));
       if (!x) return;
       // Ahead of everything else, so a script's keys beat a command on the same ones.
@@ -377,6 +400,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   // A key opens a surface (⌘⇧ and its letter, unless you changed it), while the session is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!keysOn.current) return;
       const s = SURFACES.find((x) => is(e, `surface.${x.id}`));
       if (!s) return;
       e.preventDefault();
@@ -413,7 +437,6 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const beside = dock.open && !dock.full;
   // Plan and Auto are one session to you, whoever works in it at the moment; Solo is the model (or agent) you picked.
   const way = modeOf(thread);
-  const team = way === "auto" && thread.route ? [thread.route.cast.everyday, thread.route.cast.strong] : way === "plan" && lead ? [lead.model, model] : [];
   const wayName = way === "auto" ? "Auto" : "Plan, then build";
   const wayNote = way === "auto" && thread.route ? `${modelLabel(thread.route.cast.everyday, providers)} for most, ${modelLabel(thread.route.cast.strong, providers)} for hard jobs` : lead ? `${lead.name} plans the hard jobs, ${coder.name} builds` : "";
   const placeholder = way === "solo" ? `Ask ${coder.name} for changes, or point at a file with @` : "Ask for changes, or point at a file with @";
@@ -422,6 +445,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   // ⌥↑ and ⌥↓ go to the prompt before or after the one you're reading (in the composer, only while it's empty).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!keysOn.current) return;
       if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
       const t = e.target instanceof Element ? e.target : null;
       // The Terminal's field is always empty, and ⌥ and an arrow mean something to the shell.
@@ -478,6 +502,23 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             {thread.title}
           </h1>
         )}
+        {project && (
+          <EnvMenu
+            thread={thread}
+            project={project}
+            files={openFiles}
+            lines={lines}
+            onChanges={() => setDock((d) => openTab(d, "changes"))}
+            actions={(close) => (
+              <>
+                <Row title="Rename" icon={<I.edit size={13} />} onPick={() => (close(), setRenaming(true))} />
+                <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={13} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }))} />
+                {onBeside && <Row title="Open another session beside it" icon={<I.split size={13} />} onPick={() => (close(), onBeside())} />}
+                <Sep />
+              </>
+            )}
+          />
+        )}
         <ModeChip thread={thread} />
         {tabApps.length > 0 && (
           <div className="lc-views" role="tablist" aria-label="Session views">
@@ -489,38 +530,6 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             ))}
           </div>
         )}
-        <button type="button" className="lc-chain l-focus" aria-label="Who works on this session" title={wayNote || undefined} onClick={() => toggle("agents")}>
-          {way !== "solo" ? (
-            <>
-              <span className="lc-chain-marks">
-                {[...new Set(team)].map((m) => (
-                  <ModelMark key={m} kind={markOf(m)} size={13} />
-                ))}
-              </span>
-              {wayName}
-            </>
-          ) : (
-            <>
-              <Disc agent={coder} size={20} />
-              {isModelAgent(thread.agent) && !thread.model ? (
-                <ModelTag kind={markOf(model)} label={coder.name} />
-              ) : (
-                <>
-                  {coder.name}
-                  <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} />
-                </>
-              )}
-            </>
-          )}
-          {subagents > 0 && (
-            <>
-              <I.chevR size={11} />
-              <span className="lc-quiet">
-                {subagents} {subagents === 1 ? "subagent" : "subagents"}
-              </span>
-            </>
-          )}
-        </button>
         {branch && (
           <span className="lc-branch lc-mono" title={thread.worktree ? `Worktree at ${thread.worktree.path}` : project?.path}>
             <I.branch size={12} />
@@ -529,12 +538,15 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
         )}
         <span className="lc-grow" data-drag />
         {thread.verdict && <Verdict v={thread.verdict} />}
-        {project && <EnvMenu thread={thread} project={project} files={openFiles} lines={lines} onChanges={() => setDock((d) => openTab(d, "changes"))} />}
-        {project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setDock((d) => openTab(d, "terminal")))} />}
-        <TopBar thread={thread} dock={dock} onDock={setDock} files={openFiles} lines={lines} />
+        {onCloseSide && (
+          <button type="button" className="lc-tb l-focus" aria-label="Close this side" title="Close this side" onClick={onCloseSide}>
+            <I.close size={14} />
+          </button>
+        )}
+        <TopBar dock={dock} onDock={setDock} below={below} onBelow={() => setBelow(!below)} files={openFiles} lines={lines} run={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
       </header>
       <div ref={body} className="lc-body">
-        <section ref={threadRef} className="lc-thread" aria-label="Session">
+        <section ref={threadRef} className="lc-thread" aria-label="Session" data-below={below || undefined}>
           <div className="lc-stage" hidden={view !== "chat"}>
             <div ref={scroller} className="lc-scroll">
               <div ref={contentRef} className="lc-scroll-in">
@@ -577,7 +589,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               </div>
             ) : null,
           )}
-          <div ref={foot} className="lc-dock" hidden={view !== "chat"}>
+          <div ref={foot} className="lc-thread-foot" hidden={view !== "chat"}>
             {away && (
               <button type="button" className="lc-jump l-glass l-focus" onClick={jump}>
                 <I.chevD size={13} />
@@ -616,6 +628,13 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               </div>
             )}
           </div>
+          {below && (
+            <div className="lc-below" role="region" aria-label="Bottom panel">
+              <Suspense fallback={null}>
+                <TerminalSurface thread={thread} visible onHide={() => setBelow(false)} />
+              </Suspense>
+            </div>
+          )}
         </section>
         {beside && <PanelGrip body={body} width={panelW} onWidth={setPanelW} onDrag={setResizing} />}
         {(dock.open || leaving) && <SessionPanel thread={thread} dock={dock.open ? dock : leaving!} onDock={setDock} focus={focus} onFocus={setFocus} agentName={(lead ?? coder).name} onOpenSession={onOpenSession} onRoutine={onRoutine} leaving={!dock.open} />}

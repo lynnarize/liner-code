@@ -20,8 +20,10 @@ import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
 import { I, ModelMark } from "./icons";
-import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, plural, since, statusLine, type Bucket } from "./model";
-import { ContextMenu, Disc, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
+import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, plural, since, type Bucket } from "./model";
+import { ContextMenu, Disc, LimitRow, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
+import { appNotice } from "./Updates";
+import { updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
 import * as os from "./os";
 import { toast } from "@liner/components/toast/toast";
@@ -46,6 +48,8 @@ type Props = {
   addonsOn?: boolean;
   /** A new task in Workshop, its ask for an add-on with a sidebar entry written and not sent. */
   onCreateAddon?: () => void;
+  /** Opens a session beside the one on screen. */
+  onBeside?: (id: string) => void;
 };
 
 /** A command's keys for a tip, like " (⌘B)". */
@@ -96,8 +100,13 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onCreateAddon }: Props) {
-  const pages = useEngine((s) => s.addons).filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
+export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onBeside }: Props) {
+  const addons = useEngine((s) => s.addons);
+  const pages = addons.filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
+  const installed = addons.filter((a) => a.enabled && !a.removed).length;
+  const limits = useEngine((s) => s.limits);
+  const update = useEngine((s) => s.updates);
+  const updateMode = useEngine((s) => updateModes(s.settings).app);
   const threads = useEngine((s) => s.threads);
   const groups = useEngine((s) => s.groups);
   const routines = useEngine((s) => s.routines);
@@ -116,6 +125,8 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   const shown = shelf ?? lastShelf.current;
   const [shutProjects, toggleProject] = useFolded("lc:sb-shut");
   const [shutForks, toggleForks] = useFolded("lc:sb-shut-forks");
+  // In Settled, sessions sit under their project's header, each folded until you open it.
+  const [openSettled, toggleSettled] = useFolded("lc:sb-open-settled");
   // The filter field shows from its button, and stays while it holds a filter.
   const [finding, setFinding] = useState(false);
   // Which edges the list runs on past, for the blur that dissolves it there.
@@ -342,8 +353,53 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     toast(`${what} ${plural(ts.length, "session")}`, { description: note, action: { label: "Undo", onClick: () => void Promise.all(before.map((b) => rpc("thread.update", b))) }, duration: 5000 });
   };
 
+  /**
+    Settles a whole project: every session under its header goes to Settled at once, with one
+    Undo. Sessions still at work stay where they are; the project leaves the list until it has a
+    session again.
+  */
+  const settleProject = async (projectId: string, name: string) => {
+    const known = new Set(projects.map((p) => p.id));
+    const mine = [...byBucket.needs, ...byBucket.working, ...byBucket.open].filter((t) => (projectId ? t.projectId === projectId : !known.has(t.projectId)));
+    const go = mine.filter((t) => t.status !== "running");
+    const busy = mine.length - go.length;
+    const still = busy ? `${plural(busy, "session")} still working ${busy === 1 ? "stays" : "stay"} in the list.` : undefined;
+    if (!go.length) return void toast(`Nothing to settle in ${name}`, { description: still });
+    const before = go.map((t) => ({ id: t.id, done: t.done ?? false, unread: t.unread ?? false, pinned: t.pinned ?? false }));
+    try {
+      await Promise.all(go.map((t) => rpc("thread.update", { id: t.id, done: true, unread: false, pinned: false })));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    toast(`Settled ${plural(go.length, "session")} in ${name}`, { description: still ?? "It comes back to the list with its next session.", action: { label: "Undo", onClick: () => void Promise.all(before.map((b) => rpc("thread.update", b))) }, duration: 6000 });
+  };
+  const [projMenu, setProjMenu] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
+
+  /** Settled, by project: a settled project keeps its header there, its sessions under it, the latest first. */
+  const settledGroups = useMemo(() => {
+    const known = new Map(projects.map((p) => [p.id, p.name]));
+    const groups = new Map<string, Thread[]>();
+    for (const t of byBucket.settled) {
+      const k = known.has(t.projectId) ? t.projectId : "";
+      groups.set(k, [...(groups.get(k) ?? []), t]);
+    }
+    return [...groups.entries()].map(([id, ts]) => ({ id, name: known.get(id) ?? "No project", list: ts })).sort((a, b) => b.list[0].updatedAt - a.list[0].updatedAt);
+  }, [byBucket.settled, projects]);
+  /** Brings a settled project back: its sessions leave Settled for its header in Projects, with one Undo. */
+  const unsettleProject = async (g: { id: string; name: string; list: Thread[] }) => {
+    const before = g.list.map((t) => ({ id: t.id, done: true }));
+    try {
+      await Promise.all(g.list.map((t) => rpc("thread.update", { id: t.id, done: false })));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    toast(`Brought ${g.name} back`, { description: `${plural(g.list.length, "session")} back under it in Projects.`, action: { label: "Undo", onClick: () => void Promise.all(before.map((b) => rpc("thread.update", b))) }, duration: 6000 });
+  };
+
   const rowKeys = (e: KeyboardEvent, t: Thread) => {
-    // ⌘, ⌃ and ⌥ keys are the app's (⌘⇧D opens the Diff), not Pin, Snooze or Settle.
+    // ⌘, ⌃ and ⌥ keys are the app's (⌘⇧D opens Changes), not Pin, Snooze or Settle.
     if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === "p" || e.key === "P") void act(t, "pin");
     else if (e.key === "d" || e.key === "D") void act(t, "settle");
@@ -504,21 +560,10 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     );
   };
 
-  // Under its project's own header a row doesn't name the project again; in Pinned, your groups and the shelves it does.
-  const row = (t: Thread, bucket: Bucket, forks?: { n: number; open: boolean; toggle: () => void }, inProject = false) => {
-    const project = projects.find((p) => p.id === t.projectId);
-    const { who, model, ref } = onIt(t, agents, providers);
+  // One line: the maker's mark, the title, and at its end how it stands. The rest is in the card a resting pointer brings.
+  const row = (t: Thread, bucket: Bucket, forks?: { n: number; open: boolean; toggle: () => void }) => {
+    const { ref } = onIt(t, agents, providers);
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
-    // Who, on what, and where it stands: "Forge · Sonnet 5.5 · working". A model on its own is named once.
-    const line: { text: string; warn?: boolean } =
-      run?.status === "running"
-        ? { text: `${run.subject ? `#${run.subject.number}` : "Running"} · step ${run.steps.length}` }
-        : t.wake && bucket === "snoozed"
-          ? { text: t.wake.kind === "checks" ? `Until the checks on #${t.wake.pr} finish` : `Until someone replies on #${t.wake.pr}` }
-          : bucket === "snoozed" && t.snoozedUntil
-            ? { text: `Back ${clock(t.snoozedUntil, now)}` }
-            : statusLine(t, model === who ? who : `${who} · ${model}`);
-    const tone = t.status === "error" && !run ? "danger" : line.warn ? "warn" : undefined;
     // Finished and nothing waits on you, or settled: the title steps back.
     const quiet = bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0);
     return (
@@ -564,23 +609,10 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           onKeyDown={(e) => (e.key === "Enter" ? (clearPicked(), onOpen(t.id)) : rowKeys(e, t))}
           onDoubleClick={(e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && setRenaming(t.id)}
         >
-          {/* The small line on top (T3 Code's card row, sidebar/SidebarThreadRow.tsx): the project
-              where it isn't said already, who works and where it stands, and the time. */}
-          <span className="lc-sb-s">
-            {!inProject && (
-              <>
-                <ProjectBadge id={project?.id ?? ""} name={project?.name ?? "No project"} small />
-                <span className="lc-sb-pj">{project?.name ?? "No project"}</span>
-                <span className="lc-sb-dot">·</span>
-              </>
-            )}
-            {/* Keyed on its words, so a new state fades in (and only then). */}
-            <span className="lc-sb-st" data-tone={tone}>
-              <span key={line.text}>{line.text}</span>
-            </span>
-            <span className="lc-sb-time">{ago(t.updatedAt, now)}</span>
-          </span>
           <span className="lc-sb-h">
+            <span className="lc-sb-lead">
+              <ModelMark kind={markOf(ref)} size={13} />
+            </span>
             {renaming === t.id ? (
               <input
                 className="lc-sb-rename"
@@ -603,9 +635,14 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             ) : (
               <b>{t.title}</b>
             )}
-            <span className="lc-sb-mk">
-              <StatusMark t={t} bucket={bucket} brand={markOf(ref)} />
-            </span>
+            {/* Working, waiting or stuck shows its mark; anything else, how long ago (or when a snooze ends). */}
+            {t.status === "running" || t.status === "error" || t.status === "limited" || bucket === "needs" || run?.status === "running" ? (
+              <span className="lc-sb-mk">
+                <StatusMark t={t} bucket={bucket} brand={markOf(ref)} />
+              </span>
+            ) : (
+              <span className="lc-sb-time">{bucket === "snoozed" && t.snoozedUntil ? clock(t.snoozedUntil, now) : ago(t.updatedAt, now)}</span>
+            )}
           </span>
         </div>
         <span className="lc-sb-acts">
@@ -671,7 +708,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     const shut = shutForks.includes(t.id);
     return (
       <Fragment key={t.id}>
-        {row(t, place(t), kids.length ? { n: kids.length, open: !shut, toggle: () => toggleForks(t.id) } : undefined, true)}
+        {row(t, place(t), kids.length ? { n: kids.length, open: !shut, toggle: () => toggleForks(t.id) } : undefined)}
         {kids.length > 0 && !shut && <div className="lc-sb-kids">{kids.map(branch)}</div>}
       </Fragment>
     );
@@ -701,21 +738,30 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         </button>
       </div>
 
-      {/* Search, and beside it what you start from here: a filter, a project, a session. */}
-      <div className="lc-sb-bar">
-        <button type="button" className="lc-sb-nav lc-sb-search l-focus" title={`Search${key("commands")}`} onClick={onSearch}>
-          <I.search size={16} />
-          Search
+      {/* Your places, one row each: New session (search at its end), Routines and Add-ons. */}
+      <div className="lc-sb-top">
+        <div className="lc-sb-navrow">
+          <button type="button" className="lc-sb-nav l-focus" title={`New session${key("new")}`} onClick={() => onNew()}>
+            <I.compose size={16} />
+            <span>New session</span>
+            {shortcutOf("new") && <kbd className="lc-sb-kbd">{os.keys(shortcutOf("new")!)}</kbd>}
+          </button>
+          <button type="button" className="lc-ib l-focus" aria-label="Search sessions, projects and commands" title={`Search${key("commands")}`} onClick={onSearch}>
+            <I.search size={16} />
+          </button>
+        </div>
+        <button type="button" className="lc-sb-nav l-focus" aria-current={routinesOn ? "page" : undefined} aria-label={`Routines${routinesNote ? `, ${routinesNote}` : ""}`} title={`Routines${routinesNote ? ` · ${routinesNote}` : ""}`} onClick={onRoutines}>
+          <I.routines size={16} />
+          <span>Routines</span>
+          {handed > 0 ? <span className="lc-sb-ndot" data-k="warn" /> : routines.some((r) => r.on) && <span className="lc-sb-nend">{routinesNote}</span>}
         </button>
-        <button type="button" className="lc-ib l-focus" aria-label="Filter sessions" aria-pressed={finding} title="Filter sessions" onClick={() => (finding && setQuery(""), setFinding(!finding))}>
-          <I.filter size={16} />
-        </button>
-        <button type="button" className="lc-ib l-focus" aria-label="Add a project" title={`Add a project${key("open-project")}`} onClick={addProject}>
-          <I.folderAdd size={16} />
-        </button>
-        <button type="button" className="lc-ib l-focus" aria-label="New session" title={`New session${key("new")}`} onClick={() => onNew()}>
-          <I.compose size={16} />
-        </button>
+        {onAddons && (
+          <button type="button" className="lc-sb-nav l-focus" aria-current={addonsOn ? "page" : undefined} title="Add-ons: connections, panels and apps" onClick={onAddons}>
+            <I.blocks size={16} />
+            <span>Add-ons</span>
+            {installed > 0 && <span className="lc-sb-nend">{installed}</span>}
+          </button>
+        )}
       </div>
 
       {finding && (
@@ -772,46 +818,14 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         </form>
       )}
 
-      {/* Apps with a page of their own, above the projects: each opens in place of the conversation (DeepSeek Harness's sidebar entry). */}
-      {(onAddons || (pages.length > 0 && onApp)) && (
+      {/* Apps with a page of their own, while you have one: each opens in place of the conversation (DeepSeek Harness's sidebar entry). */}
+      {pages.length > 0 && onApp && (
         <section className="lc-sb-apps" aria-label="Apps">
-          {/* Add-ons opens a menu under it, as DeepSeek Harness's More does: browse what you have, or create one. */}
-          {onAddons && (
-            <Pop
-              label="Add-ons"
-              menu
-              width="trigger"
-              className="lc-sb-more-pop"
-              triggerClass="lc-sb-nav"
-              triggerAttrs={{ "aria-current": addonsOn ? "page" : undefined, "data-on": addonsOn || undefined }}
-              trigger={
-                <>
-                  <I.blocks size={14} />
-                  <span>Add-ons</span>
-                </>
-              }
-            >
-              {(close) => (
-                <div className="lc-sb-more">
-                  <button type="button" role="menuitem" className="l-focus" onClick={() => (close(), onAddons())}>
-                    <I.blocks size={15} />
-                    Browse add-ons
-                  </button>
-                  {onCreateAddon && (
-                    <button type="button" role="menuitem" className="l-focus" onClick={() => (close(), onCreateAddon())}>
-                      <I.plus size={15} />
-                      Create your add-on
-                    </button>
-                  )}
-                </div>
-              )}
-            </Pop>
-          )}
-          {pages.length > 0 && onApp && <div className="lc-sb-lab">Apps</div>}
-          {onApp && pages.map((a) => {
+          <div className="lc-sb-lab">Apps</div>
+          {pages.map((a) => {
             const Icon = appIcon(a.panel?.icon);
             return (
-              <button key={a.id} type="button" className="lc-sb-nav l-focus" aria-current={appOn === a.id ? "page" : undefined} data-on={appOn === a.id || undefined} onClick={() => onApp(a.id)}>
+              <button key={a.id} type="button" className="lc-sb-nav l-focus" aria-current={appOn === a.id ? "page" : undefined} data-on={appOn === a.id || undefined} onClick={() => onApp?.(a.id)}>
                 <Icon size={14} />
                 <span>{a.name}</span>
               </button>
@@ -822,6 +836,19 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
       <div ref={scroller} className="lc-sb-scroll" data-up={edges.up || undefined} data-down={edges.down || undefined}>
         <div className="lc-sb-inner">
           <span className="lc-sb-plate" aria-hidden style={plate ? { transform: `translate(${plate.x}px, ${plate.y}px)`, width: plate.w, height: plate.h, opacity: 1 } : { opacity: 0 }} />
+          {byBucket.needs.length > 0 && (
+            <section className="lc-sb-sec" aria-label="Needs you">
+              <div className="lc-sb-lab">Needs you</div>
+              {/* The same sessions stay under their projects too: these are a way in, so they don't wear the plate. */}
+              {byBucket.needs.map((t) => (
+                <button key={t.id} type="button" className="lc-sb-need l-focus" aria-current={t.id === current ? "true" : undefined} onClick={() => (clearPicked(), onOpen(t.id))} onContextMenu={(e) => (e.preventDefault(), setMenu({ t, x: e.clientX, y: e.clientY }))}>
+                  <span className="lc-sb-ndot" data-k={t.status === "error" ? "danger" : "warn"} />
+                  <span className="lc-sb-nt">{t.title}</span>
+                  <span className="lc-sb-nend">{projects.find((p) => p.id === t.projectId)?.name ?? "No project"}</span>
+                </button>
+              ))}
+            </section>
+          )}
           {section("pinned")}
           {byGroup.map(({ g, list: ts }) => (
             <section key={g.id} className="lc-sb-sec" aria-label={g.name} {...drop(`group:${g.id}`)}>
@@ -832,11 +859,22 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
               {ts.length ? ts.map((t) => row(t, place(t))) : <p className="lc-sb-hint">Drag a session here, or right-click one.</p>}
             </section>
           ))}
+          <div className="lc-sb-lab lc-sb-projs">
+            Projects
+            <span className="lc-sb-labacts">
+              <button type="button" className="lc-sb-add l-focus" aria-label="Filter sessions" aria-pressed={finding} title="Filter sessions" onClick={() => (finding && setQuery(""), setFinding(!finding))}>
+                <I.filter size={13} />
+              </button>
+              <button type="button" className="lc-sb-add l-focus" aria-label="Add a project" title={`Add a project${key("open-project")}`} onClick={addProject}>
+                <I.plus size={13} />
+              </button>
+            </span>
+          </div>
           {tree.sections.map((x) => {
             const shut = shutProjects.includes(x.id);
             return (
               <section key={x.id || "none"} className="lc-sb-sec lc-sb-proj" aria-label={x.name}>
-                <div className="lc-sb-lab lc-sb-plab">
+                <div className="lc-sb-lab lc-sb-plab" onContextMenu={(e) => (e.preventDefault(), setProjMenu({ id: x.id, name: x.name, x: e.clientX, y: e.clientY }))}>
                   <button type="button" className="lc-sb-pt l-focus" aria-expanded={!shut} title={shut ? "Show its sessions" : "Fold its sessions"} onClick={() => toggleProject(x.id)}>
                     <ProjectBadge id={x.id} name={x.name} />
                     <span>{x.name}</span>
@@ -847,6 +885,9 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
                       <Num value={x.needs} />
                     </span>
                   )}
+                  <button type="button" className="lc-sb-add l-focus" aria-label={`Settle every session in ${x.name}`} title="Settle the project: its sessions go to Settled" onClick={() => void settleProject(x.id, x.name)}>
+                    <I.settle size={12} />
+                  </button>
                   {x.id && (
                     <button type="button" className="lc-sb-add l-focus" aria-label={`New session in ${x.name}`} title="New session here" onClick={() => onNew(x.id)}>
                       <I.plus size={12} />
@@ -927,7 +968,29 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
               <section className="lc-sb-shelf" data-shelf={shown} aria-label={NAME[shown]} key={shown}>
                 <p className="lc-sb-shelf-note">{shown === "snoozed" ? "Each comes back on its own, when its time comes." : "Out of the way until they're busy again."}</p>
                 {byBucket[shown].length ? (
-                  byBucket[shown].map((t) => row(t, shown))
+                  shown === "settled" ? (
+                    settledGroups.map((g) => {
+                      const open = openSettled.includes(g.id || "none");
+                      return (
+                        <section key={g.id || "none"} className="lc-sb-sec lc-sb-proj" aria-label={`${g.name}, settled`}>
+                          <div className="lc-sb-lab lc-sb-plab">
+                            <button type="button" className="lc-sb-pt l-focus" aria-expanded={open} title={open ? "Fold its sessions" : "Show its sessions"} onClick={() => toggleSettled(g.id || "none")}>
+                              <ProjectBadge id={g.id} name={g.name} />
+                              <span>{g.name}</span>
+                              <I.chevR size={11} />
+                            </button>
+                            <span className="lc-sb-pcount">{g.list.length}</span>
+                            <button type="button" className="lc-sb-add l-focus" aria-label={`Bring ${g.name} back`} title="Bring the project back: its sessions leave Settled" onClick={() => void unsettleProject(g)}>
+                              <I.undo size={12} />
+                            </button>
+                          </div>
+                          {open && g.list.map((t) => row(t, shown))}
+                        </section>
+                      );
+                    })
+                  ) : (
+                    byBucket[shown].map((t) => row(t, shown))
+                  )
                 ) : (
                   <p className="lc-sb-hint">{shown === "snoozed" ? "Nothing snoozed. Snooze a session from its row (S), and it comes back by itself." : "Nothing settled. Settle a finished session from its row (D) to put it out of the way."}</p>
                 )}
@@ -953,10 +1016,23 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         return t && createPortal(<SessionCard el={card!.el} side={nav.current}>{cardBody(t)}</SessionCard>, document.body);
       })()}
 
+      <ContextMenu at={projMenu} label={projMenu ? `Actions for ${projMenu.name}` : "A project"} onClose={() => setProjMenu(null)} width={250}>
+        {(close) =>
+          projMenu && (
+            <>
+              {projMenu.id && <Row title="New session here" icon={<I.plus size={13} />} onPick={() => (close(), onNew(projMenu.id))} />}
+              <Row title="Settle the project" note="Every session in it goes to Settled" icon={<I.settle size={13} />} onPick={() => (close(), void settleProject(projMenu.id, projMenu.name))} />
+              <Row title={shutProjects.includes(projMenu.id) ? "Show its sessions" : "Fold its sessions"} icon={<I.chevD size={13} />} onPick={() => (close(), toggleProject(projMenu.id))} />
+            </>
+          )
+        }
+      </ContextMenu>
+
       <ContextMenu at={menu} label={menu ? `Actions for ${menu.t.title}` : "Actions"} onClose={() => setMenu(null)} width={250}>
         {(close) =>
           menu && (
             <>
+              {onBeside && current && current !== menu.t.id && <Row title="Open beside" note="Next to the session on screen" icon={<I.split size={13} />} onPick={() => (close(), onBeside(menu.t.id))} />}
               <Row title={menu.t.pinned ? "Unpin" : "Pin"} end="P" onPick={() => (close(), void act(menu.t, "pin"))} />
               <Row title="Snooze for an hour" end="S" onPick={() => (close(), void act(menu.t, "snooze", snoozeTimes()[0].at))} />
               {menu.t.pr?.state === "OPEN" && <Row title={`Snooze until #${menu.t.pr.number}'s checks finish`} onPick={() => (close(), void wake(menu.t, "checks"))} />}
@@ -977,15 +1053,34 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         }
       </ContextMenu>
 
-      {/* Along the foot, your places as icons: settings, routines, the team, usage, and you at the end. */}
+      {/* A new Liner Code, ready or on its way: a card over the foot, until it goes in. */}
+      {(() => {
+        const n = updateMode !== "off" && update.dismissed.app !== update.app.latest && (update.app.state === "ready" || update.app.state === "downloading") ? appNotice(update.app) : null;
+        if (!n) return null;
+        const busy = working > 0 && update.app.state === "ready" ? ` ${plural(working, "session")} ${working === 1 ? "is" : "are"} working.` : "";
+        return (
+          <div className="lc-sb-update" role="status">
+            <I.download size={15} />
+            <div className="lc-sb-update-t">
+              <b>{n.title}</b>
+              <span>{update.app.state === "ready" ? `Restart now, or it goes in when you next quit.${busy}` : n.body}</span>
+            </div>
+            {n.action && update.app.state === "ready" && (
+              <button type="button" className="lc-sb-update-go l-focus" onClick={n.action.onClick}>
+                Restart
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Along the foot: you, then the team, your plans' limits and Settings. */}
       <div className="lc-sb-foot">
-        <button type="button" className="lc-ib l-focus" aria-label="Settings" title={`Settings (${os.mod},)`} onClick={onSettings}>
-          <I.settings size={16} />
+        <button type="button" className="lc-sb-me l-focus" aria-label={`${me}, ${machine}`} title={`${me} · ${machine}`} onClick={tapMe}>
+          <span className="lc-me-av lc-sb-av">{initials(me)}</span>
+          <span className="lc-sb-me-n">{me}</span>
         </button>
-        <button type="button" className="lc-ib lc-sb-fi l-focus" aria-label={`Routines${routinesNote ? `, ${routinesNote}` : ""}`} aria-pressed={routinesOn} title={`Routines${routinesNote ? ` · ${routinesNote}` : ""}`} onClick={onRoutines}>
-          <I.routines size={16} />
-          {handed > 0 && <span className="lc-sb-fdot" data-k="warn" />}
-        </button>
+        <span className="lc-grow" />
         <Pop
           label={`Team, ${team.length}${working > 0 ? `, ${plural(working, "session")} at work` : ""}`}
           side="top"
@@ -1018,15 +1113,59 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             </>
           )}
         </Pop>
-        <button type="button" className="lc-ib l-focus" aria-label="Usage" aria-pressed={usageOn} title="Usage and cost" onClick={onUsage}>
-          <I.usage size={16} />
-        </button>
-        <span className="lc-grow" />
-        <button type="button" className="lc-me-av lc-sb-av l-focus" aria-label={`${me}, ${machine}`} title={`${me} · ${machine}`} onClick={tapMe}>
-          {initials(me)}
+        <PlanLimits tools={limits.filter((l) => l.windows.length)} usageOn={usageOn} onUsage={onUsage} />
+        <button type="button" className="lc-ib l-focus" aria-label="Settings" title={`Settings (${os.mod},)`} onClick={onSettings}>
+          <I.settings size={16} />
         </button>
       </div>
     </nav>
+  );
+}
+
+/** Your plans' limits at a glance: a ring with the busiest window, every tool's windows in its pop, and the way to Usage. */
+function PlanLimits({ tools, usageOn, onUsage }: { tools: import("@contracts").ToolLimits[]; usageOn: boolean; onUsage: () => void }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const used = (w: import("@contracts").LimitWindow) => (w.resetsAt !== undefined && w.resetsAt <= now ? 0 : Math.max(0, Math.min(100, w.usedPercent)));
+  const top = Math.max(0, ...tools.flatMap((t) => t.windows.map(used)));
+  const r = 5.5;
+  const c = 2 * Math.PI * r;
+  return (
+    <Pop
+      label={tools.length ? `Plan limits: the busiest window is ${Math.round(top)}% used` : "Usage and plan limits"}
+      side="top"
+      align="end"
+      width={290}
+      triggerClass="lc-ib lc-sb-fi"
+      triggerAttrs={{ "aria-pressed": usageOn || undefined }}
+      trigger={
+        <span className="lc-sb-ring" data-warn={top >= 80 || undefined} aria-hidden>
+          <svg width={16} height={16} viewBox="0 0 14 14">
+            <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
+            <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={c} strokeDashoffset={c * (1 - top / 100)} strokeLinecap="round" transform="rotate(-90 7 7)" />
+          </svg>
+        </span>
+      }
+    >
+      {(close) => (
+        <div className="lc-limm">
+          {tools.map((t) => (
+            <div key={t.provider} className="lc-limm-tool">
+              <PanelHead end={t.plan && t.plan[0].toUpperCase() + t.plan.slice(1)}>{t.label}</PanelHead>
+              {t.windows.map((w) => (
+                <LimitRow key={w.label} w={w} label={t.label} now={now} />
+              ))}
+            </div>
+          ))}
+          {!tools.length && <p className="lc-quiet lc-pop-note">No plan has reported its limits yet. They show here once a session runs on Claude Code or Codex.</p>}
+          <Sep />
+          <Row title="Usage and cost" icon={<I.usage size={13} />} onPick={() => (close(), onUsage())} />
+        </div>
+      )}
+    </Pop>
   );
 }
 

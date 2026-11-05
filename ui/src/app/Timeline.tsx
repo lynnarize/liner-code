@@ -457,9 +457,10 @@ function PlanDraft({ text, title }: { text?: string; title?: string }) {
   );
 }
 
+/** A folded row's small triangle (Claude Code's): it points at the words shut and down open. */
 const Chev = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
-    <path d="m4.5 6.25 3.5 3.5 3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  <svg viewBox="0 0 16 16" aria-hidden className={className}>
+    <path d="M4.75 6.25h6.5L8 10.25Z" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
   </svg>
 );
 
@@ -615,11 +616,13 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
   const [rows, setRows] = useState<string[]>([]);
   // A running step's clock ticks only where it's seen.
   const [now, setNow] = useState(Date.now());
+  // Agents a model started (Claude Code's Task) and still at it: a line each under the folded row.
+  const agentsAt = entries.filter((e): e is Extract<Entry, { kind: "tool" }> => e.kind === "tool" && e.it.toolKind === "task" && e.it.status === "running").map((e) => e.it);
   useEffect(() => {
-    if (!live || !isOpen) return;
+    if (!live || (!isOpen && !agentsAt.length)) return;
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
-  }, [live, isOpen]);
+  }, [live, isOpen, agentsAt.length]);
   // Steps in the order they came, with thinking, what was said and asks between them.
   const list = useMemo(() => {
     const out: Row[] = [];
@@ -692,6 +695,17 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
         {failed > 0 && <span className="lc-trail-failed">· {failed} failed</span>}
         <Chev className="lc-row-chev" />
       </button>
+      {live && !isOpen && agentsAt.length > 0 && (
+        <ul className="lc-trail-agents" aria-label={`${plural(agentsAt.length, "agent")} working`}>
+          {agentsAt.map((t) => (
+            <li key={t.id}>
+              <Rays size={10} />
+              <span className="lc-trail-agent-t">{t.title}</span>
+              <span className="lc-quiet l-num">Running · {duration(Math.max(0, Math.round((now - t.at) / 1000)))}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="lc-trail-fold" inert={!isOpen || undefined}>
         <ol className="lc-trail-list">
           {list.map((r, i) => {
@@ -1789,9 +1803,11 @@ function TurnFoot({ cp, all, review, providers, onReview, reviewing }: { cp?: Ch
               Committed {cp.committed}
             </span>
           ) : (
-            <button type="button" className="lc-foot-chip l-focus" aria-current={here || undefined} onClick={() => onReview(all ? "all" : cp.id, cp.files[0]?.path)}>
-              {plural(cp.files.length, "file")} <Lines {...sumLines(cp.files)} />
-              <span className="lc-quiet">{here ? "In the panel" : "Review ›"}</span>
+            <button type="button" className="lc-foot-chip lc-foot-changes l-focus" aria-current={here || undefined} onClick={() => onReview(all ? "all" : cp.id, cp.files[0]?.path)}>
+              {plural(cp.files.length, "file")} changed <Lines {...sumLines(cp.files)} />
+              <span className="lc-quiet">·</span>
+              <span className="lc-foot-link">{here ? "In the panel" : "View changes"}</span>
+              <Chev className="lc-row-chev" />
             </button>
           ))}
         {review && (

@@ -27,7 +27,7 @@ export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { 
   { id: "design", label: "Design", key: "E", icon: I.design },
   { id: "terminal", label: "Terminal", key: "T", icon: I.terminal },
   { id: "files", label: "Files", key: "F", icon: I.file },
-  { id: "changes", label: "Diff", key: "D", icon: I.changes },
+  { id: "changes", label: "Changes", key: "D", icon: I.changes },
   { id: "pr", label: "Pull request", key: "P", icon: I.pr },
   { id: "linked", label: "Linked pull requests", key: "L", icon: I.link },
   { id: "device", label: "Device", key: "M", icon: I.device },

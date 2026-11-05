@@ -8,7 +8,8 @@
   ⌘-click a local address to open it in the session's Browser, a file's path to open it in Files,
   and any other link in your browser.
 */
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Terminal as XTerm, type ILink } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -148,7 +149,8 @@ function linksAt(t: XTerm, y: number, make: (text: string) => Omit<ILink, "range
 }
 
 /** One shell's view. Its terminal is opened the first time, then attached to every time after. */
-function TermPane({ thread, pane, visible, onRestart }: { thread: Thread; pane: Pane; visible: boolean; onRestart: () => void }) {
+/** One shell. In the bottom panel its bar sits in the panel's strip (`slot`), so nothing stacks over the output. */
+function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; pane: Pane; visible: boolean; onRestart: () => void; slot?: HTMLElement | null }) {
   const box = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm | null>(null);
   const fit = useRef<FitAddon | null>(null);
@@ -305,9 +307,8 @@ function TermPane({ thread, pane, visible, onRestart }: { thread: Thread; pane: 
 
   const where = st.cwd && project ? (st.cwd.startsWith(project.path) ? `${project.name}${st.cwd.slice(project.path.length) || ""}` : st.cwd) : "";
 
-  return (
-    <div className="lc-term">
-      <div className="lc-term-bar">
+  const barParts: ReactNode = (
+    <>
         <I.terminal size={13} />
         <span className="lc-mono lc-term-where" title={st.cwd}>
           {where || "Starting a shell"}
@@ -346,14 +347,24 @@ function TermPane({ thread, pane, visible, onRestart }: { thread: Thread; pane: 
         <button type="button" className="lc-ib l-focus" aria-label="A new shell" title="A new shell" onClick={onRestart}>
           <I.refresh size={13} />
         </button>
-      </div>
+    </>
+  );
+  return (
+    <div className="lc-term">
+      {slot ? visible && createPortal(barParts, slot) : <div className="lc-term-bar">{barParts}</div>}
       {st.error && <p className="lc-term-err">{st.error}</p>}
       <div ref={box} className="lc-term-box" onClick={() => term.current?.focus()} />
     </div>
   );
 }
 
-export function TerminalSurface({ thread, visible }: { thread: Thread; visible: boolean }) {
+/**
+  The session's shells. In the dock they're a surface; in the bottom panel (`onHide`) they're the
+  panel itself: its strip is their tabs, a + for another shell, the open one's folder and tools,
+  and the way to put the panel away.
+*/
+export function TerminalSurface({ thread, visible, onHide }: { thread: Thread; visible: boolean; onHide?: () => void }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   const tabs = useTabs(thread.id);
   // The engine's list is the truth: the tabs come back after a reload, and ones whose shells it
   // no longer has (it restarted) go. A tab still opening could come back from the list as a second
@@ -421,8 +432,8 @@ export function TerminalSurface({ thread, visible }: { thread: Thread; visible: 
       </div>
     );
   return (
-    <div className="lc-terms">
-      {panes.length > 1 && (
+    <div className="lc-terms" data-below={onHide ? "" : undefined}>
+      {(panes.length > 1 || onHide) && (
         <div className="lc-terms-tabs" role="tablist" aria-label="Shells">
           {panes.map((p) => (
             <span key={p.key} className="lc-terms-tab" data-on={p.key === on || undefined}>
@@ -435,11 +446,23 @@ export function TerminalSurface({ thread, visible }: { thread: Thread; visible: 
               </button>
             </span>
           ))}
+          {onHide && (
+            <>
+              <button type="button" className="lc-ib l-focus" aria-label="Another shell" title="Another shell" onClick={() => put(thread.id, (k) => { const n = shellPane(); return { panes: [...k.panes, n], on: n.key }; })}>
+                <I.plus size={13} />
+              </button>
+              <span className="lc-grow" />
+              <span ref={setSlot} className="lc-below-tools" />
+              <button type="button" className="lc-ib l-focus" aria-label="Hide the bottom panel" title="Hide the bottom panel" onClick={onHide}>
+                <I.chevD size={14} />
+              </button>
+            </>
+          )}
         </div>
       )}
       {panes.map((p) => (
         <div key={p.key} className="lc-terms-pane" hidden={p.key !== on}>
-          <TermPane thread={thread} pane={p} visible={visible && p.key === on} onRestart={() => restart(p)} />
+          <TermPane thread={thread} pane={p} visible={visible && p.key === on} onRestart={() => restart(p)} slot={onHide ? slot : undefined} />
         </div>
       ))}
     </div>

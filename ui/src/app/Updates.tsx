@@ -136,7 +136,8 @@ export function HomeUpdates() {
   const u = useEngine((s) => s.updates);
   const app = useEngine((s) => updateModes(s.settings).app);
   const tools = useEngine((s) => updateModes(s.settings).tools);
-  const notices = noticesOf(u, { app, tools });
+  // A Liner Code that's ready or downloading has its card in the sidebar, over the foot.
+  const notices = noticesOf(u, { app, tools }).filter((n) => !/^app:(ready|downloading):/.test(n.id));
   if (!notices.length) return null;
   return <NoticeStack className="lc-up-home" label="Updates" notices={notices} onDismiss={dismissNotice} />;
 }

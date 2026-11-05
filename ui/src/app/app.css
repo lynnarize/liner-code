@@ -1220,16 +1220,13 @@ html[data-native="mac"] .lc-sb-head {
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  background: linear-gradient(150deg, oklch(0.72 0.15 calc(var(--lc-pjb-h, 250) + 8)), oklch(0.55 0.19 calc(var(--lc-pjb-h, 250) - 8)));
-  box-shadow:
-    inset 0 0 0 0.5px oklch(1 0 0 / 0.14),
-    inset 0 1px 0 oklch(1 0 0 / 0.22);
+  /* Flat: one colour of its own, no gradient, rim or shadow (Liner 2.0). */
+  background: oklch(0.6 0.16 var(--lc-pjb-h, 250));
   font-size: 8.5px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.02em;
   color: #fff;
-  text-shadow: 0 0.5px 1px oklch(0.25 0.06 var(--lc-pjb-h, 250) / 0.4);
 }
 .lc-pjb[data-none] {
   background: var(--l-ink-4);
@@ -1616,6 +1613,293 @@ html[data-native="mac"] .lc-sb-head {
   border: 0;
   cursor: pointer;
 }
+/*
+  The sidebar after TasteCode v0.5, in Liner 2.0: your places as rows on top (New session with
+  search at its end, Routines, Add-ons), then Apps, Needs you, Pinned and Projects, each only while
+  it has rows. A session is one line: its maker's mark, the title, and at the end a mark while it
+  works or waits, or how long ago. The shelves are one quiet row; the foot is you, then the team,
+  your plans' limits and Settings.
+*/
+.lc-sb-top {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.lc-sb-navrow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.lc-sb-navrow .lc-sb-nav {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.lc-sb-navrow .lc-ib {
+  width: 30px;
+  height: 30px;
+}
+.lc-sb-nav > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sb-kbd,
+.lc-sb-nend {
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lc-sb-ndot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-warn);
+}
+.lc-sb-ndot[data-k="danger"] {
+  background: var(--l-danger);
+}
+.lc-sb-need {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px 0 15px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-sb-need[aria-current] {
+  background: var(--l-wash);
+}
+@media (hover: hover) {
+  .lc-sb-need:hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-sb-nt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sb-need .lc-sb-nend {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-sb-projs {
+  margin-bottom: -10px;
+}
+.lc-sb-labacts {
+  display: inline-flex;
+  gap: 2px;
+}
+.lc-sb-labacts .lc-sb-add {
+  margin-left: 0;
+}
+.lc-sb-labacts .lc-sb-add[aria-pressed="true"] {
+  background: var(--lc-plate);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-sb-labacts .lc-sb-add:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+/* One line per session. */
+.lc-sb .lc-sb-pick {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px 0 12px;
+}
+.lc-sb .lc-sb-h {
+  flex: 1;
+  height: 32px;
+  gap: 9px;
+}
+.lc-sb .lc-sb-h > b {
+  font-size: 13px;
+}
+.lc-sb-lead {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  color: var(--l-ink-3);
+}
+.lc-sb-row[aria-current] .lc-sb-lead {
+  color: var(--l-ink-2);
+}
+.lc-sb .lc-sb-acts {
+  top: 50%;
+  translate: 0 -50%;
+}
+.lc-sb-row:is(:hover, :focus-within) .lc-sb-h > :is(.lc-sb-mk, .lc-sb-time),
+.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h > :is(.lc-sb-mk, .lc-sb-time) {
+  display: none;
+}
+.lc-sb-row:is(:hover, :focus-within) .lc-sb-h > :is(b, .lc-sb-rename),
+.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h > :is(b, .lc-sb-rename) {
+  margin-right: 64px;
+}
+/* Under its project's header a session sits in a step, its mark under the badge's letters. */
+.lc-sb-proj .lc-sb-row .lc-sb-pick {
+  padding-left: 22px;
+}
+.lc-sb .lc-sb-forks {
+  right: 40px;
+  bottom: 7px;
+}
+/* The shelves: one quiet row at the end of the list. */
+.lc-sb .lc-sb-tray {
+  display: flex;
+  gap: 2px;
+}
+.lc-sb .lc-sb-tab {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 9px;
+  background: none;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-sb .lc-sb-tab > span {
+  margin-left: 2px;
+}
+/* In Settled, a project's header says how many of its sessions are there; its bring-back comes as you point at it. */
+.lc-sb-plab > .lc-sb-pcount {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.lc-sb-plab > .lc-sb-pcount + .lc-sb-add {
+  margin-left: 4px;
+}
+.lc-sb-shelf .lc-sb-proj + .lc-sb-proj {
+  margin-top: 2px;
+}
+/* A project's header: Settle the project, then +, both as you point at it. */
+.lc-sb-plab > .lc-sb-add + .lc-sb-add {
+  margin-left: 2px;
+}
+.lc-sb .lc-sb-tab[aria-pressed="true"] {
+  background: var(--lc-plate);
+  color: var(--l-ink);
+}
+/* The shelf's fold is a grid: held to the sidebar's width, so a long title ends in an ellipsis
+   rather than pushing its row past the edge. */
+.lc-sb-dock,
+.lc-sb-dock > .lc-fold {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.lc-sb-dock > .lc-fold > div,
+.lc-sb-shelf {
+  min-width: 0;
+}
+/* A new Liner Code, over the foot. */
+.lc-sb-update {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 11px;
+  border-radius: 12px;
+  background: var(--lc-well);
+  color: var(--l-ink-3);
+  animation: lc-row-in 220ms ease-out backwards;
+}
+.lc-sb-update > svg {
+  flex: none;
+}
+.lc-sb-update-t {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+.lc-sb-update-t > b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-sb-update-t > span {
+  font-size: 12px;
+}
+.lc-sb-update-go {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+/* You, at the start of the foot. */
+.lc-sb-me {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-sb-me .lc-sb-av {
+  width: 24px;
+  height: 24px;
+}
+.lc-sb-me-n {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .lc-sb-me:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-sb-ring {
+  display: grid;
+  place-items: center;
+  color: var(--l-ink-2);
+}
+.lc-sb-ring[data-warn] {
+  color: var(--l-warn);
+}
 /* The team, in the pop its icon opens. */
 .lc-sb-team-list {
   display: flex;
@@ -1922,6 +2206,11 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 15px;
   font-weight: 600;
 }
+/* The title's ···: the session's menu, close beside its name. */
+.lc-top .lc-title-more {
+  margin-left: -6px;
+  color: var(--l-ink-3);
+}
 .lc-chain {
   display: inline-flex;
   flex: none;
@@ -2178,8 +2467,8 @@ html[data-native="mac"] .lc-sb-head {
   padding: 0 14px 12px;
 }
 /* The composer floats over the conversation: the text scrolls on beneath it and only the sliver
-   under it fades out. The dock lets clicks through beside it. */
-.lc-dock {
+   under it fades out. The foot lets clicks through beside it. */
+.lc-thread-foot {
   position: absolute;
   z-index: 5;
   right: 0;
@@ -2187,7 +2476,7 @@ html[data-native="mac"] .lc-sb-head {
   left: 0;
   pointer-events: none;
 }
-.lc-dock > * {
+.lc-thread-foot > * {
   pointer-events: auto;
 }
 /* No line under the bar: what scrolls up under it fades out, as the end fades under the composer. */
@@ -2943,19 +3232,19 @@ html[data-native="mac"] .lc-sb-head {
 }
 /* In a session the composer is glass: the thread scrolling under it shows through, blurred
    (Settings › Appearance › Glass). Its choices sit straight on it, with no bar of their own. */
-html:not([data-composer="solid"]) .lc-dock .lc-card {
+html:not([data-composer="solid"]) .lc-thread-foot .lc-card {
   background: color-mix(in oklab, var(--lc-field) 62%, transparent);
   backdrop-filter: blur(22px) saturate(160%);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
 }
-html[data-composer="clear"] .lc-dock .lc-card {
+html[data-composer="clear"] .lc-thread-foot .lc-card {
   background: color-mix(in oklab, var(--lc-field) 36%, transparent);
 }
-.lc-dock .lc-seg {
+.lc-thread-foot .lc-seg {
   background: none;
 }
 @media (hover: hover) {
-  .lc-dock .lc-seg-b:hover {
+  .lc-thread-foot .lc-seg-b:hover {
     background: var(--l-wash-2);
   }
 }
@@ -3731,7 +4020,8 @@ html[data-composer="clear"] .lc-dock .lc-card {
   justify-content: safe center;
   gap: 22px;
   min-height: 0;
-  padding: 24px 24px 12vh;
+  /* In the middle of the paper, a little above it for the Desk's cue at the foot. */
+  padding: 24px 24px 5vh;
   overflow: auto;
 }
 .lc-ask-h {
@@ -5691,7 +5981,7 @@ html[data-native="mac"] .lc-setup-top {
   .lc-app,
   .lc-body,
   .lc-stage > .lc-scroll,
-  .lc-dock,
+  .lc-thread-foot,
   .lc-top,
   .lc-panel-top,
   .lc-fold,
@@ -6795,4 +7085,20 @@ html[data-native="mac"] .lc-setup-top {
   .lc-queued-now {
     transition: none;
   }
+}
+/* Two sessions side by side (TasteCode's Open beside): each its own column, a hairline between. */
+.lc-besides {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+.lc-beside {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.lc-beside + .lc-beside {
+  border-left: 1px solid var(--l-line);
 }

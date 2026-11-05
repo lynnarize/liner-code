@@ -20,12 +20,13 @@ import { toast } from "@liner/components/toast/toast";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { Boundary } from "./Boundary";
 import { CommitButton } from "./Commit";
-import { canSplit, closeOthers, closeTab, GUIDE, hideDock, moveTab, openTab, pickTab, split, toggleFull, type DockState } from "./dock";
+import { closeOthers, closeTab, GUIDE, moveTab, openTab, pickTab, toggleFull, type DockState } from "./dock";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, plural } from "./model";
 import { ContextMenu, Disc, ModelTag, Num, PanelHead, Pop, Row, Sep } from "./ui";
-import { AddonView, appIcon, isPanelAsk } from "./Addon";
+import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
+import { pin, usePins } from "./TopBar";
 import { BrowserSurface } from "./Browser";
 import { DesignSurface } from "./Design";
 import { DeviceSurface } from "./Device";
@@ -179,6 +180,7 @@ export function Panel({
             onDrop={(e, index) => dropOn(e, i, index)}
             style={{ gridColumn: i + 1 }}
             label={`Pane ${i + 1}`}
+            projectId={thread.projectId}
           />
         ))}
       {dock.panes.map((p, i) =>
@@ -213,9 +215,9 @@ export function Panel({
             />
             <div
               className="lc-dropzone-r"
-              onDragOver={(e) => allow(e) && setDrop(canSplit(dock) && dock.panes[i].tabs.length > 1 && i === dock.panes.length - 1 ? { pane: i, split: true } : { pane: i })}
+              onDragOver={(e) => allow(e) && setDrop({ pane: i })}
               onDragLeave={() => setDrop(null)}
-              onDrop={(e) => dropOn(e, i, undefined, canSplit(dock) && dock.panes[i].tabs.length > 1 && i === dock.panes.length - 1)}
+              onDrop={(e) => dropOn(e, i)}
             />
           </div>
         ))}
@@ -223,8 +225,12 @@ export function Panel({
   );
 }
 
-/** One pane's strip: its chips (one up, the rest a press away), its +, its split, and in the last pane the full canvas and hide. */
-function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, onDragOver, onDrop, style, label }: {
+/**
+  One pane's strip, which is the panel's header (TasteCode v0.5): the apps you pinned first, as
+  icons, then every tab with its name, the + that opens the guide, and in the last pane the full
+  canvas. The header's own button shows and hides the panel.
+*/
+function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, onDragOver, onDrop, style, label, projectId }: {
   i: number;
   dock: DockState;
   onDock: (d: DockState) => void;
@@ -237,8 +243,12 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
   onDrop: (e: DragEvent, index?: number) => void;
   style: CSSProperties;
   label: string;
+  projectId: string;
 }) {
   const p = dock.panes[i];
+  const pins = usePins();
+  const addons = useEngine((s) => s.addons);
+  const pinnedApps = i === 0 ? appsFor(addons, projectId).filter((a) => pins.includes(a.id) && !dock.panes.some((x) => x.tabs.includes(`app:${a.id}`))) : [];
   const row = useRef<HTMLDivElement>(null);
   const [plate, setPlate] = useState<{ x: number; w: number; moved: boolean } | null>(null);
   const [menu, setMenu] = useState<{ t: Tab; x: number; y: number } | null>(null);
@@ -268,6 +278,16 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
   const two = dock.panes.length > 1;
   return (
     <div className="lc-panel-top lc-stabs" role="presentation" style={style} data-pane={i} data-drag data-drop={dropping || undefined} onDragOver={onDragOver} onDrop={(e) => onDrop(e)}>
+      {pinnedApps.map((a) => {
+        const Icon = appIcon(a.panel?.icon);
+        return (
+          <Tooltip key={a.id} content={`${a.name} · pinned`}>
+            <button type="button" className="lc-stab-pin l-focus" aria-label={`${a.name}, pinned`} onClick={() => onDock(openTab(dock, `app:${a.id}`, i))}>
+              <Icon size={14} />
+            </button>
+          </Tooltip>
+        );
+      })}
       <div ref={row} className="lc-stabs-row" role="tablist" aria-label={label} data-plate={plate ? "" : undefined} onKeyDown={onKey}>
         {plate && <span className="lc-stab-plate" data-moved={plate.moved || undefined} style={{ transform: `translateX(${plate.x}px)`, width: plate.w }} aria-hidden />}
         {p.tabs.map((t, k) => {
@@ -306,7 +326,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
                 // A tab down to its icon has no close of its own: a middle click closes it, as in a browser.
                 onAuxClick={(e) => closable && e.button === 1 && (e.preventDefault(), onDock(closeTab(dock, t)))}
                 onContextMenu={(e) => (e.preventDefault(), setMenu({ t, x: e.clientX, y: e.clientY }))}
-                title={on ? m.label : `${m.label} · drag to the other pane · middle-click to close`}
+                title={on ? m.label : `${m.label} · middle-click to close`}
               >
                 <Icon size={13} />
                 <span>{m.short ?? m.label}</span>
@@ -329,35 +349,27 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
         </Tooltip>
       )}
       <span className="lc-grow" data-drag />
-      <Tooltip content={two ? "Two panes at most" : "Split into two panes"}>
-        <button type="button" className="lc-ib l-focus" aria-label={two ? "Two panes at most" : "Split into two panes"} aria-disabled={two || undefined} onClick={() => !two && onDock(split(dock, i))}>
-          <I.split size={15} />
-        </button>
-      </Tooltip>
       {last && (
-        <>
-          <Tooltip content={dock.full ? "Leave the full canvas" : "Open in the full canvas"}>
-            <button type="button" className="lc-ib l-focus" aria-label={dock.full ? "Leave the full canvas" : "Open in the full canvas"} aria-pressed={dock.full} onClick={() => onDock(toggleFull(dock))}>
-              {dock.full ? <I.shrink size={15} /> : <I.expand size={15} />}
-            </button>
-          </Tooltip>
-          <Tooltip content="Hide the dock">
-            <button type="button" className="lc-ib l-focus" aria-label="Hide the dock" onClick={() => onDock(hideDock(dock))}>
-              <I.dock size={15} />
-            </button>
-          </Tooltip>
-        </>
+        <Tooltip content={dock.full ? "Leave the full canvas" : "Open in the full canvas"}>
+          <button type="button" className="lc-ib l-focus" aria-label={dock.full ? "Leave the full canvas" : "Open in the full canvas"} aria-pressed={dock.full} onClick={() => onDock(toggleFull(dock))}>
+            {dock.full ? <I.shrink size={15} /> : <I.expand size={15} />}
+          </button>
+        </Tooltip>
       )}
       <ContextMenu at={menu} label={menu ? `${meta(menu.t).label}, its tab` : "A tab"} onClose={() => setMenu(null)}>
         {(close) =>
           menu && (
             <>
-              {two ? (
-                <Row title={i === 0 ? "Move to the right pane" : "Move to the left pane"} icon={<I.split size={13} />} onPick={() => (close(), onDock(moveTab(dock, menu.t, i === 0 ? 1 : 0)))} />
-              ) : (
-                <Row title="Split it into a pane of its own" icon={<I.split size={13} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(moveTab(dock, menu.t, 1)))} />
+              {two && <Row title={i === 0 ? "Move to the right pane" : "Move to the left pane"} icon={<I.split size={13} />} onPick={() => (close(), onDock(moveTab(dock, menu.t, i === 0 ? 1 : 0)))} />}
+              {menu.t.startsWith("app:") && (
+                <Row
+                  title={pins.includes(menu.t.slice(4)) ? "Unpin from the panel" : "Pin to the panel"}
+                  note={pins.includes(menu.t.slice(4)) ? undefined : "Its tab stays at the strip's start"}
+                  icon={<I.pin size={13} />}
+                  onPick={() => (close(), pin(menu.t.slice(4), !pins.includes(menu.t.slice(4))))}
+                />
               )}
-              <Sep />
+              {(two || menu.t.startsWith("app:")) && <Sep />}
               <Row title="Close" icon={<I.close size={13} />} onPick={() => (close(), onDock(closeTab(dock, menu.t)))} />
               <Row title="Close the others" icon={<I.close size={13} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(closeOthers(dock, menu.t)))} />
             </>

@@ -1,0 +1,1500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A cleaner Liner Code shell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Liner 2.0, measured from ui/src/liner/foundation.css and app/app.css.
+     Layout: a reading column, with the full-window mock breaking out to the page's width. */
+  --bg: oklch(0.984 0.002 265);
+  --surface: oklch(1 0 0);
+  --ink: oklch(0.21 0.008 265);
+  --ink-2: oklch(0.37 0.008 265);
+  --ink-3: oklch(0.5 0.008 265);
+  --ink-4: oklch(0.62 0.006 265);
+  --hair: oklch(0.25 0.02 265 / 0.08);
+  --line: oklch(0.25 0.02 265 / 0.14);
+  --accent: oklch(0.6 0.19 258);
+  --act: oklch(0.6 0.215 27);
+  --act-ink: #fff;
+  --ok: oklch(0.56 0.15 152);
+  --warn: oklch(0.7 0.15 65);
+  --danger: oklch(0.58 0.21 25);
+  --well-p: 4.5%;
+  --plate-p: 7.5%;
+  --well: color-mix(in oklch, var(--ink) var(--well-p), var(--surface));
+  --plate: color-mix(in oklch, var(--ink) var(--plate-p), var(--surface));
+  --font: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg: oklch(0.155 0.004 265); --surface: oklch(0.205 0.004 265);
+    --ink: oklch(0.97 0.002 265); --ink-2: oklch(0.83 0.004 265); --ink-3: oklch(0.69 0.005 265); --ink-4: oklch(0.56 0.005 265);
+    --hair: oklch(1 0 0 / 0.08); --line: oklch(1 0 0 / 0.14);
+    --ok: oklch(0.78 0.16 152); --warn: oklch(0.84 0.15 75); --danger: oklch(0.7 0.19 24);
+    --well-p: 5%; --plate-p: 9.5%;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg: oklch(0.155 0.004 265); --surface: oklch(0.205 0.004 265);
+  --ink: oklch(0.97 0.002 265); --ink-2: oklch(0.83 0.004 265); --ink-3: oklch(0.69 0.005 265); --ink-4: oklch(0.56 0.005 265);
+  --hair: oklch(1 0 0 / 0.08); --line: oklch(1 0 0 / 0.14);
+  --ok: oklch(0.78 0.16 152); --warn: oklch(0.84 0.15 75); --danger: oklch(0.7 0.19 24);
+  --well-p: 5%; --plate-p: 9.5%;
+  color-scheme: dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:400 15px/1.6 var(--font);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid color-mix(in oklch, var(--accent) 60%, transparent);outline-offset:2px}
+.mono{font-family:var(--font-mono);font-size:12px}
+.grow{flex:1 1 auto}
+svg.i{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- the page ---------- */
+.page{max-width:1328px;margin:0 auto;padding:56px 24px 112px}
+.read{max-width:720px}
+.eyebrow{font-size:12.5px;color:var(--ink-3);font-weight:500;margin:0 0 14px}
+h1{font:600 38px/1.08 var(--font-display);letter-spacing:-0.035em;margin:0 0 16px;text-wrap:balance}
+.lede{font-size:17px;line-height:1.55;color:var(--ink-2);margin:0;max-width:62ch}
+h2{font:600 23px/1.2 var(--font-display);letter-spacing:-0.03em;margin:88px 0 10px;text-wrap:balance}
+h3{font:600 15px/1.3 var(--font-display);letter-spacing:-0.01em;margin:0 0 4px}
+.read p{margin:0 0 14px;color:var(--ink-2)}
+.read p b{color:var(--ink);font-weight:500}
+code.c{font-family:var(--font-mono);font-size:12.5px;background:var(--well);padding:1px 5px;border-radius:6px;color:var(--ink-2);overflow-wrap:anywhere}
+
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:36px 0 0}
+.stat{background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px;padding:16px 18px}
+.stat b{display:block;font:600 27px/1.1 var(--font-display);letter-spacing:-0.035em;font-variant-numeric:tabular-nums}
+.stat b span{color:var(--ink-4);font-weight:500;padding:0 4px}
+.stat p{margin:6px 0 0;font-size:12.5px;line-height:1.45;color:var(--ink-3)}
+@media (max-width:820px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* mock controls */
+.mockbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin:22px 0 14px}
+.seg{display:inline-flex;gap:2px;padding:3px;background:var(--well);border-radius:11px}
+.seg button{height:28px;padding:0 12px;border:0;background:none;border-radius:8px;font-size:13px;font-weight:500;color:var(--ink-2);cursor:pointer;transition:background 140ms var(--ease)}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--hair)}
+.sw{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);cursor:pointer;border:0;background:none;padding:4px 2px}
+.sw i{width:28px;height:16px;border-radius:999px;background:var(--plate);position:relative;transition:background 160ms var(--ease)}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--surface);transition:transform 220ms var(--ease)}
+.sw[aria-pressed="true"] i{background:var(--accent)}
+.sw[aria-pressed="true"] i::after{transform:translateX(12px)}
+.hint{font-size:12.5px;color:var(--ink-3)}
+
+.stage{position:relative;width:100%;overflow:hidden}
+.win{position:absolute;top:0;left:0;transform-origin:0 0}
+
+/* ---------- findings ---------- */
+.finds{display:grid;gap:0;margin:22px 0 0;border-top:1px solid var(--hair)}
+.find{display:grid;grid-template-columns:minmax(0,1.1fr) 92px minmax(0,1fr);gap:20px;padding:16px 0;border-bottom:1px solid var(--hair);align-items:start}
+.find p{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink-2)}
+.find .us{color:var(--ink)}
+.verdict{display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 10px;border-radius:999px;background:var(--well);font-size:12px;font-weight:500;color:var(--ink-2);justify-self:start}
+.verdict::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ink-4)}
+.verdict.take::before{background:var(--ok)}
+.verdict.adapt::before{background:var(--accent)}
+.verdict.ours::before{background:var(--ink-3)}
+@media (max-width:760px){.find{grid-template-columns:1fr;gap:8px}}
+
+/* before / after bars */
+.demo{background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px;overflow-x:auto;margin:14px 0 6px}
+.demo-in{width:1180px}
+.cap{font-size:12.5px;color:var(--ink-3);margin:0 0 4px}
+.cap b{color:var(--ink-2);font-weight:500}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:14px}
+@media (max-width:900px){.pair{grid-template-columns:1fr}}
+.stack{background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px;overflow:hidden}
+.stack .lbl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);padding:0 14px;height:26px;background:var(--well)}
+.stack .lbl b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--surface);box-shadow:0 0 0 1px var(--hair);color:var(--ink-2);font-weight:600;font-size:11px}
+.pains{margin:22px 0 0;padding:0;list-style:none;display:grid;gap:12px}
+.pains li{padding-left:18px;position:relative;color:var(--ink-2);font-size:14.5px}
+.pains li::before{content:"";position:absolute;left:2px;top:10px;width:6px;height:6px;border-radius:50%;background:var(--ink-4)}
+.pains b{color:var(--ink);font-weight:500}
+
+.rules{counter-reset:r;list-style:none;padding:0;margin:20px 0 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.rules li{counter-increment:r;background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px;padding:16px 18px 16px 52px;position:relative;font-size:14px;color:var(--ink-2)}
+.rules li::before{content:counter(r);position:absolute;left:18px;top:15px;font:600 15px/1.4 var(--font-display);color:var(--ink-3);font-variant-numeric:tabular-nums}
+.rules li b{display:block;color:var(--ink);font-weight:500;margin-bottom:2px}
+@media (max-width:760px){.rules{grid-template-columns:1fr}}
+
+.tablewrap{overflow-x:auto;margin:18px 0 0;background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:13.5px}
+th,td{text-align:left;vertical-align:top;padding:11px 16px;border-bottom:1px solid var(--hair)}
+tr:last-child td{border-bottom:0}
+th{font-size:12px;font-weight:500;color:var(--ink-3);background:var(--well)}
+td:first-child,th:first-child{width:44px;padding-right:0}
+td.n{font:500 12px/1.9 var(--font-mono);color:var(--accent)}
+td.was{color:var(--ink-3);width:40%}
+td.now{color:var(--ink)}
+td .where{display:block;margin-top:3px;font:400 11.5px/1.5 var(--font-mono);color:var(--ink-3)}
+
+.kept{margin:18px 0 0;padding:0;list-style:none;display:grid;gap:10px}
+.kept li{display:flex;gap:12px;align-items:flex-start;color:var(--ink-2);font-size:14.5px}
+.kept li svg{margin-top:4px;color:var(--ok)}
+.kept b{color:var(--ink);font-weight:500}
+
+.phases{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:20px}
+.phase{background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px;padding:18px}
+.phase .k{font-size:12px;color:var(--ink-3);font-weight:500;margin-bottom:4px}
+.phase ul{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:10px}
+.phase li{font-size:13.5px;color:var(--ink-2);line-height:1.5}
+.phase li code{display:block;margin-top:2px;font:400 11.5px/1.5 var(--font-mono);color:var(--ink-3);overflow-wrap:anywhere}
+@media (max-width:900px){.phases{grid-template-columns:1fr}}
+.foot{margin-top:72px;padding-top:18px;border-top:1px solid var(--hair);font-size:12.5px;color:var(--ink-3);max-width:720px}
+
+/* =========================================================
+   The mock window: Liner Code drawn in its own tokens
+   ========================================================= */
+.win{
+  --well: color-mix(in oklch, var(--ink) var(--well-p), var(--surface));
+  --plate: color-mix(in oklch, var(--ink) var(--plate-p), var(--surface));
+  width:1360px;height:800px;display:flex;background:var(--bg);color:var(--ink);
+  border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px var(--line);
+  font:400 13px/1.45 var(--font);text-align:left;
+}
+.win.t-light{
+  --bg: oklch(0.984 0.002 265); --surface: oklch(1 0 0);
+  --ink: oklch(0.21 0.008 265); --ink-2: oklch(0.37 0.008 265); --ink-3: oklch(0.5 0.008 265); --ink-4: oklch(0.62 0.006 265);
+  --hair: oklch(0.25 0.02 265 / 0.08); --line: oklch(0.25 0.02 265 / 0.14);
+  --ok: oklch(0.56 0.15 152); --warn: oklch(0.7 0.15 65); --danger: oklch(0.58 0.21 25);
+  --well-p: 4.5%; --plate-p: 7.5%; color-scheme: light;
+}
+.win.t-dark{
+  --bg: oklch(0.155 0.004 265); --surface: oklch(0.205 0.004 265);
+  --ink: oklch(0.97 0.002 265); --ink-2: oklch(0.83 0.004 265); --ink-3: oklch(0.69 0.005 265); --ink-4: oklch(0.56 0.005 265);
+  --hair: oklch(1 0 0 / 0.08); --line: oklch(1 0 0 / 0.14);
+  --ok: oklch(0.78 0.16 152); --warn: oklch(0.84 0.15 75); --danger: oklch(0.7 0.19 24);
+  --well-p: 5%; --plate-p: 9.5%; color-scheme: dark;
+}
+.win button{cursor:pointer}
+
+/* parts shared by the mock and the bars above */
+.m-ib{width:28px;height:28px;display:inline-grid;place-items:center;border:0;background:none;border-radius:9px;color:var(--ink-2);flex:none;transition:background 140ms var(--ease)}
+.m-ib:hover{background:var(--well)}
+.m-ib[aria-pressed="true"]{background:var(--plate);color:var(--ink)}
+.m-ib.sm{width:24px;height:24px;border-radius:8px}
+.m-ib.sm svg{width:14px;height:14px}
+.m-qb{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;border:0;background:none;border-radius:9px;color:var(--ink-2);font-size:13px;flex:none;white-space:nowrap;transition:background 140ms var(--ease)}
+.m-qb:hover{background:var(--well)}
+.m-chipb{height:26px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border:0;border-radius:999px;background:var(--well);color:var(--ink-2);font-size:12.5px;white-space:nowrap;flex:none}
+.m-chipb svg.i{width:13px;height:13px}
+.m-chipb .mono{font-size:11.5px}
+.m-b1,.m-b2{height:32px;padding:0 14px;border:0;border-radius:999px;font-size:13px;font-weight:500;white-space:nowrap}
+.m-b1{background:var(--act);color:var(--act-ink)}
+.m-b2{background:var(--well);color:var(--ink)}
+.m-n{font:500 12px/1 var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ok{color:var(--ok)} .bad{color:var(--danger)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none;display:inline-block}
+.dot.ok{background:var(--ok)}
+.m-div{width:1px;height:14px;background:var(--hair);margin:0 4px;flex:none}
+.m-note{font-size:12px;color:var(--ink-3);white-space:nowrap}
+.spin{width:13px;height:13px;flex:none;fill:none;stroke:var(--ink-3);stroke-width:1.75;stroke-linecap:round;stroke-dasharray:20 15;animation:spin 900ms linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.g{color:var(--ink-3)}
+
+/* header (one per column) */
+.m-head{height:52px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px 0 20px;border-bottom:1px solid transparent;white-space:nowrap;min-width:0}
+.m-head.under{border-bottom-color:var(--hair)}
+.m-title{font:600 14px/1.2 var(--font-display);letter-spacing:-0.01em;overflow:hidden;text-overflow:ellipsis;min-width:0;margin-right:2px}
+.m-badge{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px;font-size:12.5px;color:var(--ink-2);border-radius:9px;border:0;background:none;white-space:nowrap}
+.m-seg{display:inline-flex;gap:2px;padding:2px;background:var(--well);border-radius:9px;flex:none}
+.m-seg span{height:22px;padding:0 9px;display:inline-flex;align-items:center;border-radius:7px;font-size:12.5px;color:var(--ink-3)}
+.m-seg span.on{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--hair)}
+.m-chain{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:999px;background:var(--well);font-size:12.5px;color:var(--ink-2);flex:none}
+.m-chain svg.i{width:13px;height:13px}
+
+/* sidebar */
+.m-side{width:244px;flex:none;display:flex;flex-direction:column;padding:0 8px 8px 8px;min-height:0}
+.m-side-head{height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 0 0 10px}
+.m-lights{display:inline-flex;gap:8px}
+.m-lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57;box-shadow:inset 0 0 0 0.5px oklch(0 0 0 / 0.12)}
+.m-lights i:nth-child(2){background:#febc2e}
+.m-lights i:nth-child(3){background:#28c840}
+.m-brand{font:600 13.5px/1 var(--font-display);letter-spacing:-0.01em;margin-left:6px}
+.m-scroll{flex:1;min-height:0;overflow:hidden;padding:0 4px;margin:0 -4px}
+.m-rowwrap{display:flex;align-items:center;gap:2px;position:relative}
+.m-rowwrap .m-row{flex:1}
+.m-row{width:100%;display:flex;align-items:center;gap:9px;height:32px;padding:0 9px;border:0;background:none;border-radius:11px;color:var(--ink-2);font-size:13px;text-align:left;min-width:0;transition:background 140ms var(--ease)}
+.m-row:hover{background:var(--well)}
+.m-row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-row .e{font-size:12px;color:var(--ink-3);white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}
+.m-row.s{color:var(--ink)}
+.m-row.s .g{width:14px;height:14px}
+.m-row.sub{padding-left:24px}
+.m-row.pick{background:var(--plate)}
+.m-row.quiet{color:var(--ink-3);font-size:12.5px;height:28px}
+.m-row kbd{font:400 12px var(--font);color:var(--ink-3)}
+.m-sec{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:500;color:var(--ink-3);padding:14px 9px 4px;height:auto}
+.m-pb{width:18px;height:18px;border-radius:6px;background:var(--plate);display:inline-grid;place-items:center;font:600 10px/1 var(--font-mono);color:var(--ink-2);flex:none;text-transform:lowercase}
+.m-cnt{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
+.m-update{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:var(--well);margin:6px 0 4px}
+.m-update .tx{flex:1;min-width:0;line-height:1.35}
+.m-update .tx b{display:block;font-weight:500;font-size:12.5px;color:var(--ink)}
+.m-update .tx span{font-size:12px;color:var(--ink-3)}
+.m-foot{display:flex;align-items:center;gap:6px;height:40px;padding:0 2px 0 6px;flex:none}
+.m-av{width:24px;height:24px;border-radius:50%;background:var(--plate);display:inline-grid;place-items:center;font-size:11px;font-weight:600;color:var(--ink-2);flex:none}
+.m-ring svg{width:15px;height:15px}
+
+/* paper and views */
+.m-paper{flex:1;min-width:0;margin:6px 6px 6px 0;background:var(--surface);border-radius:14px;box-shadow:0 0 0 1px var(--hair);display:flex;overflow:hidden;position:relative}
+.m-view{flex:1;min-width:0;display:none}
+.win[data-view="session"] .m-view[data-v="session"],
+.win[data-view="home"] .m-view[data-v="home"],
+.win[data-view="beside"] .m-view[data-v="beside"],
+.win[data-view="apps"] .m-view[data-v="apps"]{display:flex}
+.m-col{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.m-col + .m-col{border-left:1px solid var(--hair)}
+
+/* thread */
+.m-thread{flex:1;min-height:0;overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding:0 20px 10px}
+.m-measure{max-width:600px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+.m-pmap{position:absolute;left:16px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:7px}
+.m-pmap i{display:block;width:10px;height:2px;border-radius:2px;background:var(--line)}
+.m-pmap i.on{width:14px;background:var(--ink-3)}
+.m-user{align-self:flex-end;max-width:82%;background:var(--well);border-radius:16px;padding:8px 14px;font-size:13.5px;line-height:1.5;margin:8px 0 4px}
+.m-turnhead{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-3);margin-top:4px}
+.m-turnhead b{color:var(--ink);font-weight:500;font-size:13px}
+.m-fold{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;height:24px;padding:0;border:0;background:none;color:var(--ink-3);font-size:13px}
+.m-fold svg.i{width:13px;height:13px}
+.m-fold:hover{color:var(--ink-2)}
+.m-p{margin:0;font-size:13.5px;line-height:1.6;color:var(--ink)}
+/* Claude Code's chat: the thread's text starts where the composer's text starts */
+.m-measure{padding:0 16px}
+.m-fold .m-n{margin-left:2px}
+.m-fold .lnk{color:var(--ink-2);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.tri{display:inline-block;width:0;height:0;border-left:5px solid currentColor;border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;margin-left:1px}
+.tri.dn{transform:rotate(90deg)}
+.m-file{background:var(--well);border-radius:12px;padding:10px 12px;display:grid;gap:6px}
+.m-file .r{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2)}
+.m-file .r .mono{color:var(--ink-2)}
+.m-review{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;height:24px;padding:0 10px;border-radius:999px;background:var(--well);font-size:12px;color:var(--ink-2)}
+.m-agents{display:grid;gap:2px;padding:2px 0 0}
+.m-agent{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2);padding:3px 0 3px 20px;white-space:nowrap;min-width:0}
+.m-agent b{font-weight:500;color:var(--ink)}
+.m-agent .t{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.m-agent em{font-style:normal;color:var(--ink-3);display:inline-flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+.m-plan{background:var(--surface);box-shadow:0 0 0 1px var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:8px}
+.m-plan .h{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-3)}
+.m-plan .h b{color:var(--ink);font-weight:500}
+.m-plan .s{display:flex;gap:9px;align-items:center;font-size:13px;color:var(--ink)}
+.m-plan .s i{width:14px;height:14px;border-radius:4px;box-shadow:inset 0 0 0 1.5px var(--line);flex:none}
+.m-plan .f{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:4px}
+
+/* composer */
+.m-compose{flex:none;padding:0 20px 14px}
+/* the composer as it is in the app today (Composer.tsx:1196-1227): a tray inside the box, a lit pill of
+   controls on the left, attach and a round red Send on the right */
+.m-box{max-width:600px;margin:0 auto;background:color-mix(in oklch, var(--ink) 2.5%, var(--surface));border-radius:22px;box-shadow:0 0 0 1px var(--line);padding:14px 10px 10px 16px}
+.m-ph{font-size:13.5px;color:var(--ink-4);height:22px;padding-left:2px}
+.m-box.tall .m-ph{height:74px;font-size:14.5px}
+.m-tray{display:flex;align-items:center;gap:8px;margin-top:10px;margin-left:-6px}
+.m-segbar{display:inline-flex;align-items:center;height:34px;padding:0 4px;border-radius:999px;background:var(--well);min-width:0}
+.m-segbar .sb{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;border:0;background:none;border-radius:999px;font-size:13px;color:var(--ink);white-space:nowrap}
+.m-segbar .sb:hover{background:var(--plate)}
+.m-segbar .sb svg.i{width:14px;height:14px;color:var(--ink-2)}
+.m-segbar .sb .chev{width:12px;height:12px;color:var(--ink-3)}
+.m-segbar .sb.who{padding-left:3px}
+.m-segbar .av{width:24px;height:24px;border-radius:50%;background:var(--plate);display:inline-grid;place-items:center}
+.m-segbar .av svg.i{width:13px;height:13px}
+.m-segbar .sep{width:1px;height:16px;background:var(--line);margin:0 2px;flex:none}
+.m-segbar .ctx{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.m-round{width:34px;height:34px;border-radius:50%;border:0;background:var(--well);color:var(--ink-2);display:inline-grid;place-items:center;flex:none}
+.m-round svg.i{width:15px;height:15px}
+.m-tray .m-send{width:36px;height:36px}
+.m-dots{display:inline-flex;gap:3px;margin-left:2px}
+.m-dots i{width:4px;height:4px;border-radius:50%;background:var(--ink-2)}
+.m-dots i.off{background:var(--line)}
+.m-send{width:30px;height:30px;border-radius:999px;border:0;background:var(--act);color:var(--act-ink);display:inline-grid;place-items:center;flex:none}
+.m-send svg.i{width:15px;height:15px;stroke-width:2}
+.m-send .sq{width:9px;height:9px;border-radius:2px;background:currentColor}
+
+/* bottom panel */
+.m-bottom{display:none;flex:none;height:214px;border-top:1px solid var(--hair);flex-direction:column}
+.win.has-bottom .m-bottom{display:flex}
+.m-bstrip{height:40px;flex:none;display:flex;align-items:center;gap:2px;padding:0 8px 0 12px}
+.m-term{flex:1;margin:0;padding:4px 18px 12px;font:400 12px/1.65 var(--font-mono);color:var(--ink-2);overflow:hidden;white-space:pre}
+.m-term .p{color:var(--ink-3)} .m-term .ok{color:var(--ok)}
+
+/* right panel */
+.m-panel{width:420px;flex:none;border-left:1px solid var(--hair);display:flex;flex-direction:column;position:relative;min-width:0}
+.win.no-right .m-panel{display:none}
+.win.full [data-v="session"] > .m-col{display:none}
+.win.full .m-panel{flex:1;width:auto;border-left:0}
+.m-pstrip{height:52px;flex:none;display:flex;align-items:center;gap:2px;padding:0 10px}
+.m-tabs{display:flex;align-items:center;gap:2px;min-width:0}
+.m-tab{display:inline-flex;align-items:center;height:28px;border-radius:9px;color:var(--ink-3);transition:background 140ms var(--ease)}
+.m-tab:hover{background:var(--well)}
+.m-tab.on{background:var(--plate);color:var(--ink)}
+.m-tab-b{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 4px 0 8px;border:0;background:none;color:inherit;font-size:12.5px;font-weight:500;white-space:nowrap}
+.m-tab-b svg.i{width:14px;height:14px}
+.m-tab-b .m-n{font-size:11.5px;margin-left:2px}
+.m-tab-x{width:20px;height:20px;margin-right:4px;border:0;background:none;border-radius:6px;display:inline-grid;place-items:center;color:var(--ink-3);opacity:0}
+.m-tab.on .m-tab-x,.m-tab:hover .m-tab-x{opacity:1}
+.m-tab-x:hover{background:var(--well);color:var(--ink)}
+.m-tab-x svg.i{width:12px;height:12px}
+.m-pbody{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.m-tool{height:40px;flex:none;display:flex;align-items:center;gap:4px;padding:0 10px 0 12px;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
+.m-field{height:28px;flex:1;min-width:0;display:flex;align-items:center;gap:7px;background:var(--well);border-radius:9px;padding:0 9px;font-size:12.5px;color:var(--ink-4)}
+.m-field.u{color:var(--ink-2)}
+.m-field svg.i{width:13px;height:13px;color:var(--ink-3)}
+.m-diff{flex:1;min-height:0;overflow:hidden;padding:10px 0}
+.m-fhead{display:flex;align-items:center;gap:8px;padding:0 14px 8px;font-size:12.5px;color:var(--ink-2)}
+.m-unch{margin:2px 14px;height:24px;display:flex;align-items:center;gap:7px;padding:0 10px;font-size:12px;color:var(--ink-3);background:var(--well);border-radius:8px}
+.ln{display:grid;grid-template-columns:40px 16px 1fr;font:400 12px/20px var(--font-mono);color:var(--ink)}
+.ln i{font-style:normal;color:var(--ink-4);text-align:right;padding-right:8px;font-variant-numeric:tabular-nums}
+.ln s{text-decoration:none;color:var(--ink-3)}
+.ln code{font:inherit;white-space:pre-wrap;padding-right:12px}
+.ln.add{background:color-mix(in oklch, var(--ok) 11%, transparent)} .ln.add s{color:var(--ok)}
+.ln.del{background:color-mix(in oklch, var(--danger) 11%, transparent)} .ln.del s{color:var(--danger)}
+.ln .cm{color:var(--ink-3)}
+.m-pfoot{flex:none;display:flex;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid var(--hair)}
+.m-tree{padding:8px 6px;display:grid;gap:1px}
+.m-tree .m-row{height:28px;font-size:12.5px;gap:7px;color:var(--ink-2)}
+.m-tree .m-row .e{font:500 11.5px var(--font-mono)}
+.m-tree .ind{padding-left:26px}
+.m-site{flex:1;margin:14px;border-radius:12px;box-shadow:0 0 0 1px var(--hair);background:var(--bg);padding:18px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+.m-site .top{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--ink-3)}
+.m-site .top b{font:600 14px var(--font-display);color:var(--ink)}
+.m-site .card{background:var(--surface);border-radius:14px;box-shadow:0 0 0 1px var(--hair);padding:16px 18px}
+.m-site .k{font-size:12px;color:var(--ink-3);display:flex;align-items:center;gap:8px}
+.m-site .big{font:600 40px/1.05 var(--font-display);letter-spacing:-0.04em;margin:8px 0 2px;font-variant-numeric:tabular-nums}
+.m-site .row{display:flex;gap:16px;font-size:12.5px;color:var(--ink-2)}
+.m-site svg.curve{width:100%;height:64px;fill:none;stroke:var(--accent);stroke-width:1.75;margin-top:10px}
+.m-site svg.curve .base{stroke:var(--hair);stroke-width:1}
+.m-tag{height:20px;padding:0 8px;border-radius:999px;background:var(--well);font-size:11.5px;color:var(--ink-2);display:inline-flex;align-items:center}
+.m-canvas{flex:1;position:relative;background:var(--well);overflow:hidden}
+.m-board{position:absolute;width:230px;background:var(--surface);border-radius:12px;box-shadow:0 0 0 1px var(--hair);padding:14px}
+.m-board .bt{position:absolute;top:-20px;left:2px;font-size:11.5px;color:var(--ink-3)}
+.m-pin{position:absolute;width:22px;height:22px;border-radius:50% 50% 50% 4px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:600}
+.m-bubble{position:absolute;width:200px;background:var(--surface);border-radius:12px;padding:10px 12px;font-size:12.5px;color:var(--ink);box-shadow:0 0 0 1px var(--hair),0 16px 40px -16px color-mix(in oklch, black 45%, transparent)}
+.m-bubble span{display:block;font-size:11.5px;color:var(--ink-3);margin-bottom:3px}
+.m-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px 40px;gap:6px}
+.m-empty svg.i{width:20px;height:20px;color:var(--ink-4);margin-bottom:6px}
+.m-empty b{font-size:13px;font-weight:500;color:var(--ink-2)}
+.m-empty p{margin:0 0 10px;font-size:12.5px;color:var(--ink-3);max-width:300px;line-height:1.5}
+
+/* the menu, the one thing that floats */
+.m-menu{position:absolute;z-index:20;width:268px;background:var(--surface);border-radius:12px;padding:4px;box-shadow:0 0 0 1px var(--hair),0 16px 40px -16px color-mix(in oklch, black 45%, transparent)}
+.m-menu[hidden]{display:none}
+.m-menu .m-sec{padding:8px 9px 4px}
+.m-mi{width:100%;display:flex;align-items:center;gap:9px;height:30px;padding:0 9px;border:0;background:none;border-radius:9px;color:var(--ink-2);font-size:13px;text-align:left}
+.m-mi:hover{background:var(--well);color:var(--ink)}
+.m-mi .t{flex:1}
+.m-mi em{font-style:normal;font-size:12px;color:var(--ink-3)}
+.m-mi kbd{font:400 12px var(--font);color:var(--ink-3)}
+.m-mi .tick{width:14px;height:14px;color:var(--ink-3)}
+.m-mi.on{background:var(--plate);color:var(--ink)}
+.m-mi.danger{color:var(--danger)}
+.m-hr{height:1px;background:var(--hair);margin:4px 6px}
+#pmenu{top:46px;left:10px}
+.m-ctx{top:300px;left:150px}
+.win:not([data-view="beside"]) .m-ctx{display:none}
+
+/* home */
+.m-home{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:110px 24px 0}
+.m-home-in{width:min(700px,100%)}
+.m-home h2{font:600 30px/1.2 var(--font-display);letter-spacing:-0.04em;margin:0 0 22px;text-align:center;color:var(--ink)}
+.m-pick{border:0;background:none;padding:0;font:inherit;letter-spacing:inherit;color:inherit;border-radius:6px;text-decoration:underline dotted color-mix(in oklch, var(--ink) 45%, transparent);text-decoration-thickness:2px;text-underline-offset:6px}
+.m-home{padding:46px 24px 16px}
+.m-deskcue{align-self:center;display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px 0 10px;border:0;border-radius:999px;background:var(--well);font-size:12.5px;font-weight:500;color:var(--ink-2)}
+.m-deskcue span{font-weight:400;color:var(--ink-3)}
+.m-deskcue svg.i{width:13px;height:13px}
+.m-home .m-box{max-width:none}
+.m-strip{display:flex;align-items:center;gap:4px;margin:8px 4px 0}
+.m-strip .m-qb{height:26px;font-size:12.5px;color:var(--ink-2)}
+.m-strip .m-qb svg.i{width:13px;height:13px}
+.m-or{margin:10px 0 0;font-size:12px;color:var(--ink-3);text-align:center}
+.m-back{margin-top:44px}
+.m-back .m-sec{padding:0 4px 6px}
+.m-desk{background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px;padding:4px}
+.m-dr{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:11px}
+.m-dr + .m-dr{box-shadow:0 -1px 0 0 var(--hair)}
+.m-dr .tx{flex:1;min-width:0}
+.m-dr .tx b{display:block;font-weight:500;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-dr .tx span{font-size:12px;color:var(--ink-3)}
+.m-dr .m-b2{height:28px;font-size:12.5px;padding:0 12px}
+.m-ring2{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1.75px var(--warn);display:grid;place-items:center;flex:none}
+.m-ring2::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.m-crumb{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-3)}
+.m-crumb b{color:var(--ink);font-weight:600;font-family:var(--font-display)}
+.m-stack{display:inline-flex}
+.m-stack i{width:22px;height:22px;border-radius:50%;background:var(--well);box-shadow:0 0 0 2px var(--surface);display:inline-grid;place-items:center;color:var(--ink-2)}
+.m-stack i + i{margin-left:-6px}
+.m-stack svg.i{width:12px;height:12px}
+
+/* session-tab switch, as a real control */
+.m-seg button{height:22px;padding:0 9px;display:inline-flex;align-items:center;gap:6px;border:0;background:none;border-radius:7px;font-size:12.5px;color:var(--ink-3)}
+.m-seg button svg.i{width:13px;height:13px}
+.m-seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--hair)}
+
+/* agent-made apps */
+.m-appname{display:inline-flex;align-items:center;gap:7px;min-width:0}
+.m-appname b{font:600 14px/1.2 var(--font-display);letter-spacing:-0.01em}
+.m-trust{gap:8px;font-size:12px;color:var(--ink-3);white-space:nowrap}
+.m-trust svg.i{width:13px;height:13px}
+.m-trust .t{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.m-app{flex:1;min-height:0;overflow:hidden;padding:22px 28px;display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:24px}
+.m-app h4{margin:0 0 12px;font:600 20px/1.2 var(--font-display);letter-spacing:-0.03em;display:flex;align-items:baseline;gap:10px}
+.m-app h4 span{font:400 12.5px var(--font);color:var(--ink-3);letter-spacing:0}
+.m-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.m-cal .wd{font-size:11.5px;color:var(--ink-3);padding:0 4px 2px}
+.m-cal .d{height:104px;background:var(--well);border-radius:10px;padding:7px 8px;display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;min-width:0}
+.m-cal .d.today{background:var(--surface);box-shadow:0 0 0 1.5px var(--accent);color:var(--ink)}
+.m-cal .d.off{background:transparent;box-shadow:inset 0 0 0 1px var(--hair)}
+.m-ev{display:block;height:20px;line-height:20px;padding:0 6px;border-radius:6px;background:var(--surface);box-shadow:0 0 0 1px var(--hair);font-size:11.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-ev.due{box-shadow:inset 2px 0 0 var(--warn),0 0 0 1px var(--hair)}
+.m-app aside .m-sec{padding:0 0 6px}
+.m-app aside .m-row{height:auto;padding:8px 9px;align-items:flex-start}
+.m-app aside .m-row .t b{display:block;font-weight:500;color:var(--ink);font-size:13px;overflow:hidden;text-overflow:ellipsis}
+.m-app aside .m-row .t span{font-size:12px;color:var(--ink-3)}
+.m-notes{flex:1;min-height:0;overflow:hidden;padding:8px 6px;display:grid;align-content:start;gap:2px}
+.m-notes .m-row{height:auto;padding:8px 9px;align-items:flex-start}
+.m-notes .m-row .t{white-space:normal}
+.m-notes .m-row .t b{display:block;font-weight:500;color:var(--ink);font-size:13px}
+.m-notes .m-row .t span{display:block;font-size:12.5px;color:var(--ink-2);line-height:1.5;margin-top:2px}
+.m-notes .m-row .e{margin-top:2px}
+
+/* the page's add-on section */
+.places{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:20px}
+.place{background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px;padding:16px 18px}
+.place .k{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);font-weight:500;margin-bottom:6px}
+.place .k svg.i{width:14px;height:14px}
+.place p{margin:6px 0 0;font-size:13.5px;line-height:1.55;color:var(--ink-2)}
+.place p.was{font-size:12.5px;color:var(--ink-3)}
+@media (max-width:900px){.places{grid-template-columns:1fr}}
+.colmock{margin-top:14px;background:var(--surface);box-shadow:0 0 0 1px var(--hair);border-radius:14px;overflow-x:auto}
+.colmock-in{width:760px}
+.board{padding:16px 20px 18px;display:grid;gap:8px}
+.board .r{display:grid;grid-template-columns:150px repeat(6,minmax(0,1fr));gap:6px;align-items:center;font-size:12.5px;color:var(--ink-2)}
+.board .r.h{font-size:11.5px;color:var(--ink-3)}
+.board .c{height:22px;border-radius:6px;background:color-mix(in oklch, var(--ok) 16%, var(--well))}
+.board .c.f{background:color-mix(in oklch, var(--danger) 20%, var(--well))}
+.board .c.n{background:var(--well)}
+.ask{margin-top:28px;background:var(--surface);box-shadow:0 0 0 1px var(--line);border-radius:14px;padding:18px 20px}
+.ask h3{display:flex;align-items:center;gap:8px}
+.ask p{margin:6px 0 0;color:var(--ink-2);font-size:14px;max-width:72ch}
+.ask .cap{margin-top:14px}
+
+/* what's new marks */
+.win.marks [data-new]{position:relative;outline:1.5px dashed color-mix(in oklch, var(--accent) 70%, transparent);outline-offset:2px;border-radius:10px}
+.win.marks [data-new]::after{content:attr(data-new);position:absolute;top:-9px;right:-9px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font:600 11px/17px var(--font);text-align:center;z-index:6;pointer-events:none;font-variant-numeric:tabular-nums}
+
+@media (prefers-reduced-motion: reduce){
+  .spin{animation:none}
+  *{transition-duration:1ms !important}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-side" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-compose" viewBox="0 0 24 24"><path d="M12 20h8"/><path d="M16.5 3.6a2.1 2.1 0 0 1 3 3L7.5 18.6 4 19.5l.9-3.5Z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></symbol>
+  <symbol id="i-desk" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/></symbol>
+  <symbol id="i-routines" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/><path d="M12 8v4l2.5 1.5"/></symbol>
+  <symbol id="i-addons" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.8"/><rect x="13" y="4" width="7" height="7" rx="1.8"/><rect x="4" y="13" width="7" height="7" rx="1.8"/><path d="M16.5 13.5v6M13.5 16.5h6"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6.5" cy="6" r="2.2"/><circle cx="6.5" cy="18" r="2.2"/><circle cx="17.5" cy="8" r="2.2"/><path d="M6.5 8.2v7.6M17.5 10.2c0 3.6-4.5 3.4-9.6 5.9"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5Z"/></symbol>
+  <symbol id="i-pbottom" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 14.5h18"/></symbol>
+  <symbol id="i-pright" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M14.5 4v16"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></symbol>
+  <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M10 14l-6.5 6.5M14 10l6.5-6.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6.5 9.5 5.5 5.5 5.5-5.5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="m6.5 14.5 5.5-5.5 5.5 5.5"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9.5 6.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m14.5 6.5-5.5 5.5 5.5 5.5"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5S9.6 5.9 12 3.5Z"/></symbol>
+  <symbol id="i-design" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1 0 1.5-.7 1.5-1.5 0-1.2-1-1.5-1-2.7 0-.9.7-1.4 1.5-1.4H16a4.5 4.5 0 0 0 4.5-4.5c0-3.8-3.8-6.9-8.5-6.9Z"/><path d="M7.8 11h.01M10.5 7.6h.01M14.8 8h.01" stroke-width="2.4"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7.5 9.5 2.8 2.5-2.8 2.5M12.5 15h4"/></symbol>
+  <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="6.5" cy="6" r="2.2"/><circle cx="6.5" cy="18" r="2.2"/><circle cx="17.5" cy="18" r="2.2"/><path d="M6.5 8.2v7.6M17.5 15.8V10a3 3 0 0 0-3-3h-3.5M13 4.5 10.5 7 13 9.5"/></symbol>
+  <symbol id="i-changes" viewBox="0 0 24 24"><path d="M12 4.5v8M8 8.5h8M8 18.5h8"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M4.6 7.8l1.9 1.1M17.5 15.1l1.9 1.1M4.6 16.2l1.9-1.1M17.5 8.9l1.9-1.1"/><circle cx="12" cy="12" r="6.3"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><path d="M15.5 5.6a3.1 3.1 0 0 1 0 5.8M17.5 14.2a5.4 5.4 0 0 1 3 5.3"/></symbol>
+  <symbol id="i-arrowup" viewBox="0 0 24 24"><path d="M12 19V5.5M6.5 11 12 5.5 17.5 11"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-agents" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="10" rx="1.6"/><path d="M3 19h18"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6.5v5c0 4.3-2.9 7.6-7 9.5-4.1-1.9-7-5.2-7-9.5v-5Z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5v17M3.5 12h17M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-knot" viewBox="0 0 24 24"><path d="M12 3.2 19.6 7.6v8.8L12 20.8l-7.6-4.4V7.6Z"/><path d="M12 8.3l3.2 1.85v3.7L12 15.7l-3.2-1.85v-3.7Z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 5 3 3H7l3-3ZM12 12v8"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
+  <symbol id="i-beside" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 4v16"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 4v16M15 10l2 2-2 2"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m20 11.5-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4L15 6.9"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.5 17a8 8 0 1 1 15 0"/><path d="m12 14 3.5-4"/></symbol>
+  <symbol id="i-fork" viewBox="0 0 24 24"><path d="M12 4v7M12 11l-6 8M12 11l6 8"/></symbol>
+  <symbol id="i-star4" viewBox="0 0 24 24"><path d="M12 3.5c.6 4.6 3.9 7.9 8.5 8.5-4.6.6-7.9 3.9-8.5 8.5-.6-4.6-3.9-7.9-8.5-8.5 4.6-.6 7.9-3.9 8.5-8.5Z"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M8.5 3v4M15.5 3v4"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 4h9l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M8 11h8M8 15h5"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M9 9.5V20"/></symbol>
+  <symbol id="i-hide" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M14.5 4v16M8 10l2 2-2 2"/></symbol>
+</svg>
+
+<main class="page">
+
+  <header class="read">
+    <p class="eyebrow">Layout study · TasteCode v0.5 against Liner Code 0.2.1 · 5 November 2026</p>
+    <h1>A cleaner shell for Liner Code</h1>
+    <p class="lede">TasteCode v0.5 rebuilt its window so that every column has one header, one row of tabs and nothing stacked on top of them. This page takes that layout, fits Liner Code's sessions, surfaces and agents into it, and draws it in Liner 2.0: the same tokens, the same type, the same red Send.</p>
+  </header>
+
+  <div class="stats" role="list">
+    <div class="stat" role="listitem"><b>19<span>→</span>8</b><p>things in the session header, title included</p></div>
+    <div class="stat" role="listitem"><b>3<span>→</span>1</b><p>layers of tabs: header, dock, then inside a surface</p></div>
+    <div class="stat" role="listitem"><b>3<span>→</span>1</b><p>bars stacked above the terminal's output</p></div>
+    <div class="stat" role="listitem"><b>6<span>→</span>3</b><p>ways to open a turn's diff</p></div>
+  </div>
+
+  <section aria-labelledby="h-mock">
+    <div class="read">
+      <h2 id="h-mock">The proposed window</h2>
+      <p>It's live. The two icons at the right of the header open the bottom and right panels, the panel's tabs switch (Tide notes is an add-on), "View changes" in the thread opens Changes, <b>+</b> adds one, <b>×</b> closes it and the arrows give a tab the whole window. "An app's page" shows a global page from the sidebar's Apps. The blue numbers point at rows in the table further down; switch them off to judge it clean.</p>
+    </div>
+    <div class="mockbar">
+      <div class="seg" role="group" aria-label="Which screen">
+        <button type="button" data-view-btn="session" aria-pressed="true">Session</button>
+        <button type="button" data-view-btn="home" aria-pressed="false">Home</button>
+        <button type="button" data-view-btn="beside" aria-pressed="false">Two sessions</button>
+        <button type="button" data-view-btn="apps" aria-pressed="false">An app's page</button>
+      </div>
+      <div class="seg" role="group" aria-label="Theme of the mock">
+        <button type="button" data-theme-btn="" aria-pressed="true">As the page</button>
+        <button type="button" data-theme-btn="t-light" aria-pressed="false">Light</button>
+        <button type="button" data-theme-btn="t-dark" aria-pressed="false">Dark</button>
+      </div>
+      <button type="button" class="sw" id="marks-btn" aria-pressed="true"><i></i>Numbers</button>
+      <span class="grow"></span>
+      <span class="hint">Drawn at 1360 × 800</span>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="win marks" id="win" data-view="session">
+
+        <!-- ============ sidebar ============ -->
+        <aside class="m-side" aria-label="Sidebar">
+          <div class="m-side-head">
+            <span class="m-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="m-brand">Liner Code</span>
+            <span class="grow"></span>
+            <button type="button" class="m-ib" aria-label="Hide the sidebar"><svg class="i"><use href="#i-side"/></svg></button>
+          </div>
+
+          <div class="m-scroll">
+            <div class="m-rowwrap" data-new="13">
+              <button type="button" class="m-row" data-go="home" data-pick="new"><svg class="i"><use href="#i-compose"/></svg><span class="t">New session</span><kbd>⌘N</kbd></button>
+              <button type="button" class="m-ib" aria-label="Search sessions, projects and commands (⌘K)"><svg class="i"><use href="#i-search"/></svg></button>
+            </div>
+            <button type="button" class="m-row" data-new="17"><svg class="i"><use href="#i-routines"/></svg><span class="t">Routines</span><span class="dot ok" title="A routine handed something back"></span></button>
+            <button type="button" class="m-row" data-new="22"><svg class="i"><use href="#i-addons"/></svg><span class="t">Add-ons</span><span class="e">5</span></button>
+
+            <div class="m-sec" data-new="17">Apps</div>
+            <button type="button" class="m-row s" data-go="apps" data-pick="cal"><svg class="i g"><use href="#i-cal"/></svg><span class="t">Release calendar</span></button>
+
+            <div class="m-sec" data-new="15">Needs you</div>
+            <button type="button" class="m-row s" data-pick="offline"><span class="dot"></span><span class="t">Support offline tide tables</span><span class="e">tidewater</span></button>
+            <button type="button" class="m-row s"><span class="dot"></span><span class="t">Nightly invoice export</span><span class="e">ledger-api</span></button>
+
+            <div class="m-sec">Pinned</div>
+            <button type="button" class="m-row s"><svg class="i g"><use href="#i-spark"/></svg><span class="t">Polish the forecast before 0.5</span><span class="e">1d</span></button>
+
+            <div class="m-sec">Projects <button type="button" class="m-ib sm" aria-label="Add a project"><svg class="i"><use href="#i-plus"/></svg></button></div>
+            <button type="button" class="m-row s"><span class="m-pb">td</span><span class="t" style="font-weight:500">tidewater</span><span class="m-cnt"><span class="dot"></span>1</span></button>
+            <button type="button" class="m-row s sub" data-go="session" data-pick="tide" data-new="14"><svg class="i g"><use href="#i-spark"/></svg><span class="t">Fix the tide time after midnight</span><svg class="spin" viewBox="0 0 16 16" aria-label="Working"><circle cx="8" cy="8" r="5.5"/></svg></button>
+            <button type="button" class="m-row s sub"><svg class="i g"><use href="#i-spark"/></svg><span class="t">Add a weekly tide chart</span><svg class="spin" viewBox="0 0 16 16" aria-label="Working"><circle cx="8" cy="8" r="5.5"/></svg></button>
+            <button type="button" class="m-row s sub" data-go="beside" data-pick="offline"><svg class="i g"><use href="#i-knot"/></svg><span class="t">Support offline tide tables</span><span class="dot" title="Waits for you"></span></button>
+            <button type="button" class="m-row s sub"><svg class="i g"><use href="#i-spark"/></svg><span class="t">Show the moon phase next to each tide</span><span class="e">4m</span></button>
+            <button type="button" class="m-row quiet sub"><span class="t">Show 3 more</span></button>
+            <button type="button" class="m-row s"><span class="m-pb">la</span><span class="t" style="font-weight:500">ledger-api</span><span class="m-cnt"><span class="dot"></span>1</span></button>
+            <button type="button" class="m-row quiet" data-new="18"><svg class="i"><use href="#i-clock"/></svg><span class="t">Snoozed 2 · Settled 14</span><svg class="i"><use href="#i-right"/></svg></button>
+          </div>
+
+          <div class="m-update" data-new="19">
+            <svg class="i g"><use href="#i-download"/></svg>
+            <div class="tx"><b>Update ready</b><span>Installs when 2 sessions finish</span></div>
+            <button type="button" class="m-ib sm" aria-label="Update options"><svg class="i"><use href="#i-dots"/></svg></button>
+          </div>
+          <div class="m-foot" data-new="17">
+            <span class="m-av">LN</span><span style="font-size:13px;color:var(--ink-2)">Lin</span>
+            <span class="grow"></span>
+            <button type="button" class="m-ib" aria-label="Team"><svg class="i"><use href="#i-users"/></svg></button>
+            <button type="button" class="m-ib m-ring" aria-label="Usage and plan limits"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--plate)" stroke-width="2"/><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink-2)" stroke-width="2" stroke-linecap="round" stroke-dasharray="26 38" transform="rotate(-90 8 8)"/></svg></button>
+            <button type="button" class="m-ib" aria-label="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
+          </div>
+
+          <!-- right-click menu, shown on the Two sessions screen -->
+          <div class="m-menu m-ctx" role="menu" aria-label="Session">
+            <button type="button" class="m-mi on" data-new="20" role="menuitem"><svg class="i"><use href="#i-beside"/></svg><span class="t">Open beside</span></button>
+            <button type="button" class="m-mi" role="menuitem"><svg class="i"><use href="#i-pin"/></svg><span class="t">Pin</span></button>
+            <button type="button" class="m-mi" role="menuitem"><svg class="i"><use href="#i-clock"/></svg><span class="t">Snooze</span></button>
+            <button type="button" class="m-mi" role="menuitem"><svg class="i"><use href="#i-check"/></svg><span class="t">Settle</span></button>
+            <button type="button" class="m-mi" role="menuitem"><svg class="i"><use href="#i-compose"/></svg><span class="t">Rename</span></button>
+            <div class="m-hr"></div>
+            <button type="button" class="m-mi danger" role="menuitem"><svg class="i"><use href="#i-trash"/></svg><span class="t">Delete</span></button>
+          </div>
+        </aside>
+
+        <!-- ============ paper ============ -->
+        <div class="m-paper">
+
+          <!-- ===== Session ===== -->
+          <div class="m-view" data-v="session">
+            <section class="m-col" aria-label="Session">
+              <header class="m-head under">
+                <h3 class="m-title" style="margin:0">Fix the tide time after midnight</h3>
+                <button type="button" class="m-ib" aria-label="Session menu: where it works, open in editor, rename, pin, snooze, open beside" data-new="9"><svg class="i"><use href="#i-dots"/></svg></button>
+                <button type="button" class="m-chipb" data-new="10"><svg class="i"><use href="#i-branch"/></svg><span class="mono">main</span></button>
+                <span class="grow"></span>
+                <span class="m-badge"><span class="dot ok"></span>Verified</span>
+                <button type="button" class="m-qb" id="b-changes" data-new="8"><svg class="i"><use href="#i-changes"/></svg>Changes <span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span></button>
+                <button type="button" class="m-ib" aria-label="Run a script"><svg class="i"><use href="#i-play"/></svg></button>
+                <span class="m-div"></span>
+                <span style="display:inline-flex;gap:2px" data-new="7">
+                  <button type="button" class="m-ib" id="b-bottom" aria-pressed="false" aria-label="Show the bottom panel"><svg class="i"><use href="#i-pbottom"/></svg></button>
+                  <button type="button" class="m-ib" id="b-right" aria-pressed="true" aria-label="Hide the right panel"><svg class="i"><use href="#i-pright"/></svg></button>
+                </span>
+              </header>
+
+              <div class="m-thread">
+                <nav class="m-pmap" aria-label="Your prompts"><i></i><i class="on"></i></nav>
+                <div class="m-measure">
+                  <div class="m-user">After the day's last high tide the card goes blank. Fix the tide time after midnight.</div>
+                  <div class="m-turnhead"><svg class="i g"><use href="#i-spark"/></svg><b>Opus 5.5</b>· planned in 41s</div>
+                  <button type="button" class="m-fold">Read 2 files and searched once <i class="tri"></i></button>
+                  <p class="m-p">Times are compared as strings, which works until the day's last high tide has passed. After 21:52 it finds nothing, where it should find tomorrow's first high tide.</p>
+                  <div class="m-turnhead"><svg class="i g"><use href="#i-spark"/></svg><b>Sonnet 5.5</b>· built it in 2m</div>
+                  <button type="button" class="m-fold" data-open="changes">Edited 1 file and ran 2 commands <span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span> · <span class="lnk">View changes</span> <i class="tri"></i></button>
+                  <p class="m-p">Now it wraps round to tomorrow's first high tide and marks it, so the label can say so. The test passes.</p>
+                  <div class="m-review"><span class="dot ok"></span>Reviewer · GPT-6 Luna · Verified · no findings</div>
+                  <div class="m-user">Mark it on the card as well, so people can tell it's tomorrow's.</div>
+                  <div class="m-turnhead"><svg class="spin" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/></svg><b>Sonnet 5.5</b>· working · 0:42</div>
+                  <button type="button" class="m-fold">Reading src/card.js <i class="tri"></i></button>
+                  <div class="m-agents" data-new="21">
+                    <button type="button" class="m-fold">2 agents working <i class="tri dn"></i></button>
+                    <div class="m-agent"><b>Explore</b><span class="t">Find where the card draws its label</span><em><span class="dot" style="background:var(--ink-3)"></span>Running · 1 tool · 0:38</em></div>
+                    <div class="m-agent"><b>Explore</b><span class="t">Check how the card's tests are set up</span><em><span class="dot" style="background:var(--ink-3)"></span>Running · 0:31</em></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="m-compose">
+                <div class="m-box">
+                  <div class="m-ph">Ask for a change, paste an error, or drop in a screenshot</div>
+                  <div class="m-tray">
+                    <button type="button" class="m-ib" aria-label="Attach"><svg class="i"><use href="#i-plus"/></svg></button>
+                    <button type="button" class="m-chipb" data-new="12">Plan, then build <span class="m-dots" aria-label="Effort: high"><i></i><i></i><i></i><i class="off"></i></span> High <svg class="i"><use href="#i-down"/></svg></button>
+                    <button type="button" class="m-chipb"><svg class="i"><use href="#i-shield"/></svg>Auto <svg class="i"><use href="#i-down"/></svg></button>
+                    <span class="grow"></span>
+                    <button type="button" class="m-qb" style="height:26px;font-size:12px;color:var(--ink-3)" aria-label="Context and plan limits" data-new="12"><svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--plate)" stroke-width="2"/><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink-3)" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 38" transform="rotate(-90 8 8)"/></svg>4%</button>
+                    <button type="button" class="m-send" aria-label="Stop"><span class="sq"></span></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="m-bottom" aria-label="Bottom panel" data-new="5">
+                <div class="m-bstrip">
+                  <div class="m-tab on"><button type="button" class="m-tab-b"><svg class="i"><use href="#i-term"/></svg>zsh</button><button type="button" class="m-tab-x" aria-label="Close zsh"><svg class="i"><use href="#i-x"/></svg></button></div>
+                  <div class="m-tab"><button type="button" class="m-tab-b"><svg class="i"><use href="#i-play"/></svg>npm test</button><button type="button" class="m-tab-x" aria-label="Close npm test"><svg class="i"><use href="#i-x"/></svg></button></div>
+                  <button type="button" class="m-ib sm" aria-label="New shell"><svg class="i"><use href="#i-plus"/></svg></button>
+                  <span class="grow"></span>
+                  <span class="mono" style="color:var(--ink-3);margin-right:6px">tidewater/src</span>
+                  <button type="button" class="m-ib" id="b-bhide" aria-label="Hide the bottom panel"><svg class="i"><use href="#i-down"/></svg></button>
+                </div>
+<pre class="m-term"><span class="p">~/tidewater $</span> npm test
+
+&gt; tidewater@0.4.2 test
+&gt; vitest run
+
+ <span class="ok">✓</span> test/tides.test.js  (12 tests) 41ms
+ <span class="ok">✓</span> test/label.test.js  (4 tests) 9ms
+
+ Test Files  <span class="ok">2 passed</span> (2)
+      Tests  <span class="ok">16 passed</span> (16)
+<span class="p">~/tidewater $</span> </pre>
+              </div>
+            </section>
+
+            <aside class="m-panel" aria-label="Right panel">
+              <div class="m-pstrip">
+                <div class="m-tabs" id="ptabs" data-new="4"></div>
+                <button type="button" class="m-ib" id="b-add" aria-label="Open in this panel" aria-expanded="false" data-new="1"><svg class="i"><use href="#i-plus"/></svg></button>
+                <span class="grow"></span>
+                <button type="button" class="m-ib" id="b-full" aria-label="Open in the full canvas"><svg class="i"><use href="#i-expand"/></svg></button>
+              </div>
+              <div class="m-pbody" id="pbody"></div>
+
+              <div class="m-menu" id="pmenu" role="menu" aria-label="Open in this panel" hidden>
+                <div class="m-sec">Built in</div>
+                <button type="button" class="m-mi" data-open="terminal" role="menuitem"><svg class="i"><use href="#i-term"/></svg><span class="t">Terminal</span><em>below</em><kbd>⌘⇧T</kbd></button>
+                <button type="button" class="m-mi" data-open="changes" role="menuitem"><svg class="i"><use href="#i-changes"/></svg><span class="t">Changes</span><kbd>⌘⇧D</kbd></button>
+                <button type="button" class="m-mi" data-open="files" role="menuitem"><svg class="i"><use href="#i-file"/></svg><span class="t">Files</span><kbd>⌘⇧F</kbd></button>
+                <button type="button" class="m-mi" data-open="browser" role="menuitem"><svg class="i"><use href="#i-globe"/></svg><span class="t">Browser</span><kbd>⌘⇧B</kbd></button>
+                <button type="button" class="m-mi" data-open="design" role="menuitem"><svg class="i"><use href="#i-design"/></svg><span class="t">Design</span><kbd>⌘⇧E</kbd></button>
+                <button type="button" class="m-mi" data-open="pr" role="menuitem"><svg class="i"><use href="#i-pr"/></svg><span class="t">Pull request</span><kbd>⌘⇧P</kbd></button>
+                <button type="button" class="m-mi" data-open="side" role="menuitem"><svg class="i"><use href="#i-chat"/></svg><span class="t">Side chat</span><kbd>⌘⇧C</kbd></button>
+                <button type="button" class="m-mi" data-open="device" role="menuitem"><svg class="i"><use href="#i-device"/></svg><span class="t">Device</span><kbd>⌘⇧M</kbd></button>
+                <button type="button" class="m-mi" data-open="routines" role="menuitem"><svg class="i"><use href="#i-routines"/></svg><span class="t">Routines</span><kbd>⌘⇧R</kbd></button>
+                <button type="button" class="m-mi" data-open="agents" role="menuitem"><svg class="i"><use href="#i-agents"/></svg><span class="t">Agents</span><kbd>⌘⇧A</kbd></button>
+                <div class="m-sec">Your apps</div>
+                <button type="button" class="m-mi" data-open="notes" role="menuitem"><svg class="i"><use href="#i-note"/></svg><span class="t">Tide notes</span></button>
+                <button type="button" class="m-mi" data-open="board" role="menuitem"><svg class="i"><use href="#i-board"/></svg><span class="t">Test board</span><em>made for beside Chat</em></button>
+                <button type="button" class="m-mi" data-go="apps" role="menuitem"><svg class="i"><use href="#i-cal"/></svg><span class="t">Release calendar</span><em>a page</em></button>
+                <button type="button" class="m-mi" role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span class="t">Make one…</span><em>Workshop</em></button>
+              </div>
+            </aside>
+          </div>
+
+          <!-- ===== Home ===== -->
+          <div class="m-view" data-v="home">
+            <section class="m-col" aria-label="Home">
+              <header class="m-head">
+                <span class="m-crumb"><svg class="i"><use href="#i-folder"/></svg>tidewater<span>/</span><b>New session</b></span>
+                <span class="grow"></span>
+                <span class="m-stack"><i><svg class="i"><use href="#i-spark"/></svg></i><i><svg class="i"><use href="#i-spark"/></svg></i></span>
+                <span class="m-note" style="margin:0 6px 0 4px">2 working</span>
+              </header>
+              <div class="m-home">
+                <span class="grow"></span>
+                <div class="m-home-in">
+                  <h2>What should we build in <button type="button" class="m-pick">tidewater</button>?</h2>
+                  <div class="m-box tall">
+                    <div class="m-ph">Ask for a change, paste an error, or drop in a screenshot</div>
+                    <div class="m-tray">
+                      <button type="button" class="m-ib" aria-label="Attach"><svg class="i"><use href="#i-plus"/></svg></button>
+                      <button type="button" class="m-chipb">Auto <span class="m-dots" aria-label="Effort: high"><i></i><i></i><i></i><i class="off"></i></span> High <svg class="i"><use href="#i-down"/></svg></button>
+                      <button type="button" class="m-chipb"><svg class="i"><use href="#i-shield"/></svg>Auto <svg class="i"><use href="#i-down"/></svg></button>
+                      <span class="grow"></span>
+                      <button type="button" class="m-send" aria-label="Start the session"><svg class="i"><use href="#i-arrowup"/></svg></button>
+                    </div>
+                  </div>
+                  <div class="m-strip">
+                    <button type="button" class="m-qb"><svg class="i"><use href="#i-laptop"/></svg>This checkout<svg class="i"><use href="#i-down"/></svg></button>
+                    <button type="button" class="m-qb"><svg class="i"><use href="#i-branch"/></svg>from <span class="mono">main</span><svg class="i"><use href="#i-down"/></svg></button>
+                    <span class="grow"></span>
+                    <button type="button" class="m-qb">Standard<svg class="i"><use href="#i-down"/></svg></button>
+                  </div>
+                  <p class="m-or">Or start in a scratch folder · carry on a session from Claude Code or Codex · keys</p>
+
+                </div>
+                <span class="grow"></span>
+                <button type="button" class="m-deskcue" aria-label="The Desk: 2 back with you, 2 out with agents. Scroll twice to open it."><svg class="i"><use href="#i-up"/></svg>Desk<span>2 back · 2 out</span></button>
+              </div>
+            </section>
+          </div>
+
+          <!-- ===== Two sessions ===== -->
+          <div class="m-view" data-v="beside">
+            <section class="m-col" aria-label="Fix the tide time after midnight">
+              <header class="m-head under">
+                <h3 class="m-title" style="margin:0">Fix the tide time after midnight</h3>
+                <button type="button" class="m-ib" aria-label="Session menu"><svg class="i"><use href="#i-dots"/></svg></button>
+                <span class="grow"></span>
+                <button type="button" class="m-qb"><svg class="i"><use href="#i-changes"/></svg><span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span></button>
+                <button type="button" class="m-ib" aria-label="Close this side"><svg class="i"><use href="#i-x"/></svg></button>
+              </header>
+              <div class="m-thread">
+                <div class="m-measure">
+                  <button type="button" class="m-fold" data-open="changes">Edited 1 file and ran 2 commands <span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span> · <span class="lnk">View changes</span> <i class="tri"></i></button>
+                  <div class="m-review"><span class="dot ok"></span>Reviewer · GPT-6 Luna · Verified</div>
+                  <div class="m-user">Mark it on the card as well, so people can tell it's tomorrow's.</div>
+                  <div class="m-turnhead"><svg class="spin" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/></svg><b>Sonnet 5.5</b>· working · 0:42</div>
+                  <button type="button" class="m-fold">Reading src/card.js <i class="tri"></i></button>
+                </div>
+              </div>
+              <div class="m-compose">
+                <div class="m-box">
+                  <div class="m-ph">Ask for a change</div>
+                  <div class="m-tray">
+                    <button type="button" class="m-ib" aria-label="Attach"><svg class="i"><use href="#i-plus"/></svg></button>
+                    <button type="button" class="m-chipb">Plan, then build <span class="m-dots"><i></i><i></i><i></i><i class="off"></i></span><svg class="i"><use href="#i-down"/></svg></button>
+                    <span class="grow"></span>
+                    <button type="button" class="m-send" aria-label="Stop"><span class="sq"></span></button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section class="m-col" aria-label="Support offline tide tables">
+              <header class="m-head under">
+                <h3 class="m-title" style="margin:0">Support offline tide tables</h3>
+                <button type="button" class="m-ib" aria-label="Session menu"><svg class="i"><use href="#i-dots"/></svg></button>
+                <span class="grow"></span>
+                <button type="button" class="m-ib" aria-label="Close this side"><svg class="i"><use href="#i-x"/></svg></button>
+                <span class="m-div"></span>
+                <button type="button" class="m-ib" aria-label="Show the bottom panel"><svg class="i"><use href="#i-pbottom"/></svg></button>
+                <button type="button" class="m-ib" aria-label="Show the right panel"><svg class="i"><use href="#i-pright"/></svg></button>
+              </header>
+              <div class="m-thread">
+                <div class="m-measure">
+                  <div class="m-user">Keep the last tide tables, so the app still works offline.</div>
+                  <div class="m-turnhead"><svg class="i g"><use href="#i-knot"/></svg><b>GPT-6 Luna</b>· planned in 1m 5s</div>
+                  <button type="button" class="m-fold">Read 4 files <i class="tri"></i></button>
+                  <div class="m-plan">
+                    <div class="h"><b>Plan</b><span>3 steps</span></div>
+                    <div class="s"><i></i>Save each tide table in IndexedDB when it loads</div>
+                    <div class="s"><i></i>Read from the saved table when the network fails</div>
+                    <div class="s"><i></i>Say on the card when the table was saved</div>
+                    <div class="f"><button type="button" class="m-qb">Change it</button><button type="button" class="m-b1">Approve and start</button></div>
+                  </div>
+                </div>
+              </div>
+              <div class="m-compose">
+                <div class="m-box">
+                  <div class="m-ph">Ask for a change</div>
+                  <div class="m-tray">
+                    <button type="button" class="m-ib" aria-label="Attach"><svg class="i"><use href="#i-plus"/></svg></button>
+                    <button type="button" class="m-chipb"><svg class="i"><use href="#i-knot"/></svg>GPT-6 Luna <span class="m-dots"><i></i><i></i><i class="off"></i><i class="off"></i></span><svg class="i"><use href="#i-down"/></svg></button>
+                    <span class="grow"></span>
+                    <button type="button" class="m-send" aria-label="Send" style="background:var(--plate);color:var(--ink-3)"><svg class="i"><use href="#i-arrowup"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- ===== An app's page ===== -->
+          <div class="m-view" data-v="apps">
+            <section class="m-col" aria-label="Release calendar">
+              <header class="m-head">
+                <button type="button" class="m-qb" data-go="session" style="margin-left:-8px"><svg class="i"><use href="#i-left"/></svg>Fix the tide time after midnight</button>
+                <span class="m-note">/</span>
+                <span class="m-appname"><svg class="i g"><use href="#i-cal"/></svg><b>Release calendar</b></span>
+                <button type="button" class="m-ib" aria-label="More for Release calendar: versions, change it, show its files, open it in the panel, turn it off, remove"><svg class="i"><use href="#i-dots"/></svg></button>
+                <span class="grow"></span>
+              </header>
+              <div class="m-tool m-trust" data-new="23">
+                <svg class="i"><use href="#i-shield"/></svg><span class="t">App by Opus 5.5 · v3 · reads your projects' branches and tags · no network</span>
+                <span class="grow"></span>
+                <button type="button" class="m-qb" style="height:26px;font-size:12.5px">Change it</button>
+              </div>
+              <div class="m-app">
+                <div>
+                  <h4>November <span>3 releases, 1 due this week</span></h4>
+                  <div class="m-cal">
+                    <div class="wd">Mon</div><div class="wd">Tue</div><div class="wd">Wed</div><div class="wd">Thu</div><div class="wd">Fri</div><div class="wd">Sat</div><div class="wd">Sun</div>
+                    <div class="d">2</div>
+                    <div class="d">3<span class="m-ev">ledger-api 1.4</span></div>
+                    <div class="d">4</div>
+                    <div class="d today">5<span class="m-ev">liner-site copy</span></div>
+                    <div class="d">6<span class="m-ev due">tidewater 0.5</span></div>
+                    <div class="d off">7</div>
+                    <div class="d off">8</div>
+                    <div class="d">9</div>
+                    <div class="d">10<span class="m-ev">ledger-api 1.5</span></div>
+                    <div class="d">11</div>
+                    <div class="d">12</div>
+                    <div class="d">13<span class="m-ev">liner-site launch</span></div>
+                    <div class="d off">14</div>
+                    <div class="d off">15</div>
+                  </div>
+                </div>
+                <aside aria-label="Coming up">
+                  <div class="m-sec">Coming up</div>
+                  <button type="button" class="m-row"><span class="dot" style="margin-top:6px"></span><span class="t"><b>tidewater 0.5</b><span>Tomorrow · 2 sessions still open</span></span></button>
+                  <button type="button" class="m-row"><span class="dot ok" style="margin-top:6px"></span><span class="t"><b>ledger-api 1.5</b><span>Tue 10 · tag v1.5.0 ready</span></span></button>
+                  <button type="button" class="m-row"><span class="dot ok" style="margin-top:6px;background:var(--ink-4)"></span><span class="t"><b>liner-site launch</b><span>Fri 13 · nothing started</span></span></button>
+                </aside>
+              </div>
+            </section>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== add-ons ===================== -->
+  <section aria-labelledby="h-apps">
+    <div class="read">
+      <h2 id="h-apps">Add-ons and the apps you make</h2>
+      <p>Agent-made apps keep the three places you picked on 3 November, after DeepSeek Harness: <b>Right panel</b>, <b>Session tab</b> and <b>Global page</b>. Each one lands in a part the new shell already has, so none of them adds a bar. The "Make it an app" card at the end of a turn doesn't change: its "Add to" still offers the three, plus Write your own.</p>
+    </div>
+    <div class="places">
+      <div class="place">
+        <div class="k"><svg class="i"><use href="#i-pright"/></svg>Right panel · Tide notes</div>
+        <h3>A tab in the panel</h3>
+        <p>Listed under Your apps in the panel's +, beside the built-in surfaces. Its strip (who made it, the version, what it reads) becomes the tab's one tool row, with ⋯ for versions, Change it, Turn it off and Remove.</p>
+        <p class="was">Today: a dock tab with the strip above the frame. On the mock it's the third tab.</p>
+      </div>
+      <div class="place">
+        <div class="k"><svg class="i"><use href="#i-board"/></svg>Session tab · Test board</div>
+        <h3>Beside Chat, as now</h3>
+        <p>The Chat · Test board switch stays after the title, and only shows while the session has one. Picking the app gives it the session's column; Chat brings the thread and the composer back. The panel stays open beside either.</p>
+        <p class="was">Today: the same switch (<code class="c">Session.tsx:482-491</code>). Only the header around it gets lighter.</p>
+      </div>
+      <div class="place">
+        <div class="k"><svg class="i"><use href="#i-cal"/></svg>Global page · Release calendar</div>
+        <h3>An Apps section in the sidebar</h3>
+        <p>Under the top rows, shown only while you have a page. The page takes the conversation's place, with the way back in its header and its strip as the tool row. See "An app's page" on the mock.</p>
+        <p class="was">Today: an Apps label over the pages, under the Add-ons menu (<code class="c">Sidebar.tsx:776-821</code>).</p>
+      </div>
+      <div class="place">
+        <div class="k"><svg class="i"><use href="#i-addons"/></svg>The Add-ons row</div>
+        <h3>Opens the list straight away</h3>
+        <p>The plain list with a switch per add-on, connections included. Create your add-on is that page's main button, and Make one… at the end of the panel's + starts the same thing.</p>
+        <p class="was">Today: a menu with Browse add-ons and Create your add-on.</p>
+      </div>
+      <div class="place">
+        <div class="k"><svg class="i"><use href="#i-pin"/></svg>Pinned apps</div>
+        <h3>A tab that stays in the panel</h3>
+        <p>A pinned panel app keeps an icon-only tab at the start of the strip, so it's there whenever the panel opens. It doesn't take a header button.</p>
+        <p class="was">Today: a button in the header's row, next to the surfaces.</p>
+      </div>
+      <div class="place">
+        <div class="k"><svg class="i"><use href="#i-shield"/></svg>Previews and installs</div>
+        <h3>Same cards, same gates</h3>
+        <p>An install preview opens as a panel tab marked Preview. The approval card, the sealed frame, the strip of what it touches and holding to allow network all stay as built.</p>
+        <p class="was">Connections (MCP) have no place in the layout: they're on the Add-ons page and in Settings › Add-ons.</p>
+      </div>
+    </div>
+
+    <p class="cap" style="margin-top:28px"><b>A session-tab app picked:</b> it has the session's column, and the header is the same 52 px row with the switch in it</p>
+    <div class="colmock"><div class="colmock-in">
+      <div class="m-head under">
+        <span class="m-title">Fix the tide time after midnight</span>
+        <span class="m-ib"><svg class="i"><use href="#i-dots"/></svg></span>
+        <span class="m-seg" data-new="3"><button type="button"><svg class="i"><use href="#i-chat"/></svg>Chat</button><button type="button" class="on"><svg class="i"><use href="#i-board"/></svg>Test board</button></span>
+        <span class="m-chipb"><svg class="i"><use href="#i-branch"/></svg><span class="mono">main</span></span>
+        <span class="grow"></span>
+        <span class="m-qb"><svg class="i"><use href="#i-changes"/></svg>Changes <span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span></span>
+        <span class="m-ib"><svg class="i"><use href="#i-play"/></svg></span>
+        <span class="m-div"></span>
+        <span class="m-ib"><svg class="i"><use href="#i-pbottom"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-pright"/></svg></span>
+      </div>
+      <div class="m-tool m-trust"><svg class="i"><use href="#i-shield"/></svg><span class="t">App by Sonnet 5.5 · v1 · reads this session</span><span class="grow"></span><span class="m-ib"><svg class="i"><use href="#i-dots"/></svg></span></div>
+      <div class="board">
+        <div class="r h"><span>Test file</span><span>Turn 1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>Now</span></div>
+        <div class="r"><span class="mono">tides.test.js</span><i class="c f"></i><i class="c f"></i><i class="c"></i><i class="c"></i><i class="c"></i><i class="c"></i></div>
+        <div class="r"><span class="mono">label.test.js</span><i class="c"></i><i class="c"></i><i class="c"></i><i class="c f"></i><i class="c"></i><i class="c"></i></div>
+        <div class="r"><span class="mono">card.test.js</span><i class="c n"></i><i class="c n"></i><i class="c n"></i><i class="c n"></i><i class="c"></i><i class="c"></i></div>
+      </div>
+    </div></div>
+
+    <div class="ask">
+      <h3><span class="dot"></span>One thing for you to decide: the surfaces row</h3>
+      <p>On 3 November you replaced the floating strip with a fixed row at the top right of the header, so Browser, Terminal, Design and the rest stay in sight and open by hand, and you turned down removing them. The proposal above folds that row into the panel's +. If the row should stay, this is the lightest version: it becomes the panel's launcher, the panel's strip names what's open, and pinned apps sit at its end. 14 things in the header instead of 8.</p>
+      <p class="cap"><b>Header B:</b> the 3 November row kept</p>
+      <div class="demo" style="margin-top:4px"><div class="demo-in">
+        <div class="m-head" style="padding-right:12px">
+          <span class="m-title">Fix the tide time after midnight</span>
+          <span class="m-ib"><svg class="i"><use href="#i-dots"/></svg></span>
+          <span class="m-chipb"><svg class="i"><use href="#i-branch"/></svg><span class="mono">main</span></span>
+          <span class="grow"></span>
+          <span class="m-badge"><span class="dot ok"></span>Verified</span>
+          <span class="m-qb"><svg class="i"><use href="#i-changes"/></svg>Changes <span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span></span>
+          <span class="m-ib"><svg class="i"><use href="#i-play"/></svg></span>
+          <span class="m-div"></span>
+          <span class="m-ib"><svg class="i"><use href="#i-chat"/></svg></span>
+          <span class="m-ib"><svg class="i"><use href="#i-term"/></svg></span>
+          <span class="m-ib"><svg class="i"><use href="#i-globe"/></svg></span>
+          <span class="m-ib"><svg class="i"><use href="#i-file"/></svg></span>
+          <span class="m-ib"><svg class="i"><use href="#i-design"/></svg></span>
+          <span class="m-ib"><svg class="i"><use href="#i-pr"/></svg></span>
+          <span class="m-ib"><svg class="i"><use href="#i-note"/></svg></span>
+          <span class="m-div"></span>
+          <span class="m-ib" style="background:var(--plate);color:var(--ink)"><svg class="i"><use href="#i-pright"/></svg></span>
+        </div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- panel bodies -->
+  <template id="tpl-changes">
+    <div class="m-tool" data-new="6">
+      <button type="button" class="m-qb">Turn 2 of 2<svg class="i"><use href="#i-down"/></svg></button>
+      <span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span>
+      <span class="grow"></span>
+      <button type="button" class="m-ib" aria-label="Previous change"><svg class="i"><use href="#i-up"/></svg></button>
+      <button type="button" class="m-ib" aria-label="Next change"><svg class="i"><use href="#i-down"/></svg></button>
+    </div>
+    <div class="m-diff">
+      <div class="m-fhead"><svg class="i g"><use href="#i-down"/></svg><span class="mono">src/tides.js</span><span class="grow"></span><span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span></div>
+      <div class="m-unch"><svg class="i"><use href="#i-up"/></svg>2 unchanged lines</div>
+      <div class="ln"><i>3</i><s></s><code>  for (const t of times) {</code></div>
+      <div class="ln"><i>4</i><s></s><code>    if (t.kind === "high" &amp;&amp; t.at &gt; from) return t;</code></div>
+      <div class="ln"><i>5</i><s></s><code>  }</code></div>
+      <div class="ln del"><i>6</i><s>−</s><code>  return null;</code></div>
+      <div class="ln add"><i>6</i><s>+</s><code class="cm">  // Past the last high tide: wrap round to tomorrow's first one.</code></div>
+      <div class="ln add"><i>7</i><s>+</s><code>  const first = times.find((t) =&gt; t.kind === "high");</code></div>
+      <div class="ln add"><i>8</i><s>+</s><code>  return first ? { ...first, tomorrow: true } : null;</code></div>
+      <div class="ln"><i>9</i><s></s><code>}</code></div>
+      <div class="ln"><i>10</i><s></s><code> </code></div>
+      <div class="ln"><i>11</i><s></s><code>export function label(t) {</code></div>
+      <div class="m-unch"><svg class="i"><use href="#i-down"/></svg>14 unchanged lines</div>
+    </div>
+    <div class="m-pfoot"><span class="m-note">1 of 1 viewed</span><span class="grow"></span><button type="button" class="m-b2">Undo turn 2</button><button type="button" class="m-b1">Commit 1 file</button></div>
+  </template>
+
+  <template id="tpl-notes">
+    <div class="m-tool m-trust" data-new="23">
+      <svg class="i"><use href="#i-shield"/></svg><span class="t">Add-on by Opus 5.5 · v2 · reads the session it's beside</span>
+      <span class="grow"></span>
+      <button type="button" class="m-ib" aria-label="More for Tide notes"><svg class="i"><use href="#i-dots"/></svg></button>
+    </div>
+    <div class="m-notes">
+      <div class="m-sec" style="padding:6px 9px 4px">Hoek van Holland · 3 notes</div>
+      <div class="m-row pick"><span class="t"><b>Tables end at 23:59</b><span>The next day's table only loads at 00:10, so anything after the last high tide has nothing to compare with.</span></span><span class="e">today</span></div>
+      <div class="m-row"><span class="t"><b>Times are local, not UTC</b><span>Rijkswaterstaat sends CET; summer time is already applied.</span></span><span class="e">2d</span></div>
+      <div class="m-row"><span class="t"><b>Spring tides run 0.3 m higher</b><span>Check the card's scale on the 14th and 28th.</span></span><span class="e">1w</span></div>
+    </div>
+    <div class="m-pfoot"><div class="m-field">Add a note for this station</div></div>
+  </template>
+
+  <template id="tpl-files">
+    <div class="m-tool"><div class="m-field"><svg class="i"><use href="#i-search"/></svg>Filter files</div></div>
+    <div class="m-tree">
+      <div class="m-row"><svg class="i g"><use href="#i-down"/></svg><svg class="i g"><use href="#i-folder"/></svg><span class="t">src</span></div>
+      <div class="m-row ind pick"><svg class="i g"><use href="#i-file"/></svg><span class="t">tides.js</span><span class="e" style="color:var(--warn)">M</span></div>
+      <div class="m-row ind"><svg class="i g"><use href="#i-file"/></svg><span class="t">card.js</span></div>
+      <div class="m-row ind"><svg class="i g"><use href="#i-file"/></svg><span class="t">label.js</span></div>
+      <div class="m-row ind"><svg class="i g"><use href="#i-file"/></svg><span class="t">moon.js</span></div>
+      <div class="m-row"><svg class="i g"><use href="#i-down"/></svg><svg class="i g"><use href="#i-folder"/></svg><span class="t">test</span></div>
+      <div class="m-row ind"><svg class="i g"><use href="#i-file"/></svg><span class="t">tides.test.js</span><span class="e" style="color:var(--warn)">M</span></div>
+      <div class="m-row ind"><svg class="i g"><use href="#i-file"/></svg><span class="t">label.test.js</span></div>
+      <div class="m-row"><svg class="i g"><use href="#i-right"/></svg><svg class="i g"><use href="#i-folder"/></svg><span class="t">public</span></div>
+      <div class="m-row"><svg class="i g"><use href="#i-file"/></svg><span class="t">package.json</span></div>
+      <div class="m-row"><svg class="i g"><use href="#i-file"/></svg><span class="t">README.md</span></div>
+    </div>
+  </template>
+
+  <template id="tpl-browser">
+    <div class="m-tool">
+      <button type="button" class="m-ib" aria-label="Back"><svg class="i"><use href="#i-left"/></svg></button>
+      <button type="button" class="m-ib" aria-label="Forward"><svg class="i"><use href="#i-right"/></svg></button>
+      <button type="button" class="m-ib" aria-label="Reload"><svg class="i"><use href="#i-refresh"/></svg></button>
+      <div class="m-field u"><span class="mono">localhost:5173/forecast</span></div>
+    </div>
+    <div class="m-site">
+      <div class="top"><b>Tidewater</b><span>Hoek van Holland</span></div>
+      <div class="card">
+        <div class="k">Next high tide <span class="m-tag">Tomorrow</span></div>
+        <div class="big">04:12</div>
+        <div class="row"><span>1.8 m</span><span>Low at 10:31</span></div>
+        <svg class="curve" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true"><path class="base" d="M0 32H300"/><path d="M0 40C25 40 38 10 62 10S100 54 125 54 163 12 188 12 226 50 250 50 280 24 300 22"/></svg>
+      </div>
+      <div class="row" style="font-size:12px;color:var(--ink-3)"><span>Tables saved 21:58</span><span>Source: Rijkswaterstaat</span></div>
+    </div>
+  </template>
+
+  <template id="tpl-design">
+    <div class="m-tool"><span style="font-size:13px;font-weight:500;padding-left:2px">Forecast card</span><span class="m-note" style="margin-left:6px">2 boards</span><span class="grow"></span><button type="button" class="m-b2" style="height:28px;font-size:12.5px">Build it</button></div>
+    <div class="m-canvas">
+      <div class="m-board" style="left:24px;top:46px"><span class="bt">Now</span>
+        <div style="font-size:11.5px;color:var(--ink-3)">Next high tide</div>
+        <div style="font:600 30px/1.1 var(--font-display);letter-spacing:-0.04em;margin:6px 0 2px">16:48</div>
+        <div style="font-size:11.5px;color:var(--ink-2)">1.6 m</div>
+      </div>
+      <div class="m-board" style="left:110px;top:220px"><span class="bt">After midnight</span>
+        <div style="font-size:11.5px;color:var(--ink-3);display:flex;gap:6px;align-items:center">Next high tide <span class="m-tag" style="height:18px">Tomorrow</span></div>
+        <div style="font:600 30px/1.1 var(--font-display);letter-spacing:-0.04em;margin:6px 0 2px">04:12</div>
+        <div style="font-size:11.5px;color:var(--ink-2)">1.8 m</div>
+      </div>
+      <span class="m-pin" style="left:228px;top:222px">1</span>
+      <div class="m-bubble" style="left:190px;top:380px"><span>You · on "Tomorrow"</span>Quieter than the time, and spelled out.</div>
+    </div>
+  </template>
+
+  <!-- ===================== findings ===================== -->
+  <section class="read" aria-labelledby="h-tc" style="max-width:none">
+    <div class="read">
+      <h2 id="h-tc">What TasteCode v0.5 does</h2>
+      <p>Read from its 70-second release video, two frames a second. Each pattern, then what it means for Liner Code.</p>
+    </div>
+    <div class="finds">
+      <div class="find"><div><h3>Sections that appear when they have something</h3><p>Needs you, Pinned, Projects, then "Archived 3" at the end. Needs you is only there while a chat waits.</p></div><span class="verdict take">Take</span><p class="us">Our "Needs you" bucket is already defined in <code class="c">Sidebar.tsx:57</code>; it just never draws as a section.</p></div>
+      <div class="find"><div><h3>One line per chat</h3><p>The provider's mark, the title, and at the end a spinner while it works, a dot when it's back, or its age.</p></div><span class="verdict take">Take</span><p class="us">Our line one (project · status · time) moves to the hover card, which already opens after 450 ms.</p></div>
+      <div class="find"><div><h3>A header that names the chat</h3><p>Title and a ··· menu on the left, two icons on the right: one for a bottom panel, one for a right panel.</p></div><span class="verdict adapt">Adapt</span><p class="us">We keep the branch, the Reviewer badge, Changes and Run. They're ours and get used every turn.</p></div>
+      <div class="find"><div><h3>One panel with its own tabs</h3><p>The right panel has labelled tabs ("Review ×", then +) and nothing stacked above them.</p></div><span class="verdict adapt">Adapt</span><p class="us">Our twelve surfaces and add-on tabs all live there, one key each. Terminal and runs open below.</p></div>
+      <div class="find"><div><h3>Open beside</h3><p>Right-click a chat, Open beside: two chats, each with its own header, composer and model.</p></div><span class="verdict adapt">Adapt</span><p class="us">Compare stays for one prompt to several models. Open beside is for two sessions you're running.</p></div>
+      <div class="find"><div><h3>A composer in four parts</h3><p>+, a few toggles, then a context ring, the model with its effort as dots, and Send.</p></div><span class="verdict adapt">Adapt</span><p class="us">Our "Who works on this" chip (Solo, Plan then build, Auto) carries the effort dots, and the plan-limit meter joins the context ring. The box keeps its shape and copy.</p></div>
+      <div class="find"><div><h3>Agents a model starts, grouped</h3><p>"Running 3 subagents", then one line each: name, task, "Running · 1 tool · 2m 14s".</p></div><span class="verdict take">Take</span><p class="us">One more folded row in our turn layout, open by default while they run.</p></div>
+      <div class="find"><div><h3>Plan limits at a glance</h3><p>A popover per provider: what's left, a bar, and when it resets.</p></div><span class="verdict take">Take</span><p class="us">Opens from the composer's context ring and the footer's usage ring. Usage stays as the full page.</p></div>
+      <div class="find"><div><h3>An update that waits</h3><p>"Installs when 2 chats finish", with Install now (it stops them first) and Install later.</p></div><span class="verdict take">Take</span><p class="us">A small card above the sidebar's footer, in place of the notice on Home.</p></div>
+      <div class="find"><div><h3>Chips above the composer for project, place and branch</h3><p>A new chat shows its folder, Local and the branch on top of the box.</p></div><span class="verdict">Skip</span><p class="us">Home's strip (option C, picked on 4 November) already says where it runs and on which branch, under the box.</p></div>
+      <div class="find"><div><h3>A note when you switch model mid-chat</h3><p>"Switched to Codex", then "Picking up from Claude Code".</p></div><span class="verdict">Skip</span><p class="us">Our hand-offs stay silent and fold into the turn, as decided on 1 November.</p></div>
+      <div class="find"><div><h3>A map of your prompts on the left edge</h3><p>Short ticks, one per message you sent.</p></div><span class="verdict ours">Ours</span><p class="us">Liner Code already has it as "Your prompts" (<code class="c">Session.tsx:692</code>).</p></div>
+      <div class="find"><div><h3>Layout presets and dotted settings rows</h3><p>Onboarding offers Classic, Inbox, Bottom and Right; settings rows run a dotted leader to the value.</p></div><span class="verdict">Skip</span><p class="us">Later, one setting could choose where the panel opens. The dotted rows aren't our look.</p></div>
+      <div class="find"><div><h3>A yellow "needs you"</h3><p>A yellow dot, and yellow in the headline.</p></div><span class="verdict adapt">Adapt</span><p class="us">A <code class="c">--warn</code> dot, as Liner 2.0 has it. No coloured text.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-today">
+    <div class="read">
+      <h2 id="h-today">Where it's crowded today</h2>
+      <p>From the code on <b>design-and-api-endpoints</b> at 0921b33. The session header and the dock carry most of the weight.</p>
+    </div>
+
+    <p class="cap" style="margin-top:22px"><b>Session header today:</b> 19 things in one row that doesn't wrap (<code class="c">Session.tsx:455-535</code>)</p>
+    <div class="demo"><div class="demo-in">
+      <div class="m-head" style="padding-right:12px">
+        <span class="m-title">Fix the tide time after midnight</span>
+        <span class="m-seg"><span class="on">Chat</span><span>Tide notes</span></span>
+        <span class="m-chain"><svg class="i"><use href="#i-spark"/></svg>Opus 5.5<svg class="i" style="width:11px"><use href="#i-right"/></svg><svg class="i"><use href="#i-spark"/></svg>Sonnet 5.5</span>
+        <span class="m-chipb"><svg class="i"><use href="#i-branch"/></svg><span class="mono">main</span></span>
+        <span class="grow"></span>
+        <span class="m-badge"><span class="dot ok"></span>Verified</span>
+        <span class="m-qb"><svg class="i"><use href="#i-laptop"/></svg><svg class="i" style="width:12px"><use href="#i-down"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-play"/></svg></span>
+        <span class="m-qb"><svg class="i"><use href="#i-changes"/></svg>Changes <span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span></span>
+        <span class="m-ib"><svg class="i"><use href="#i-chat"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-term"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-globe"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-file"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-design"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-pr"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-addons"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-dots"/></svg></span>
+        <span class="m-ib"><svg class="i"><use href="#i-pright"/></svg></span>
+      </div>
+    </div></div>
+    <p class="cap" style="margin-top:14px"><b>Proposed:</b> 8 (9 when the session has a tab app), and every surface still one click away from the panel's +</p>
+    <div class="demo"><div class="demo-in">
+      <div class="m-head" style="padding-right:12px">
+        <span class="m-title">Fix the tide time after midnight</span>
+        <span class="m-ib"><svg class="i"><use href="#i-dots"/></svg></span>
+        <span class="m-chipb"><svg class="i"><use href="#i-branch"/></svg><span class="mono">main</span></span>
+        <span class="grow"></span>
+        <span class="m-badge"><span class="dot ok"></span>Verified</span>
+        <span class="m-qb"><svg class="i"><use href="#i-changes"/></svg>Changes <span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span></span>
+        <span class="m-ib"><svg class="i"><use href="#i-play"/></svg></span>
+        <span class="m-div"></span>
+        <span class="m-ib"><svg class="i"><use href="#i-pbottom"/></svg></span>
+        <span class="m-ib" style="background:var(--plate);color:var(--ink)"><svg class="i"><use href="#i-pright"/></svg></span>
+      </div>
+    </div></div>
+
+    <div class="pair">
+      <div>
+        <p class="cap"><b>Terminal today:</b> three bars before any output</p>
+        <div class="stack">
+          <div class="lbl"><b>1</b>The dock's strip (<code class="c">Panel.tsx:226</code>)</div>
+          <div class="m-pstrip" style="height:46px">
+            <div class="m-tab on"><span class="m-tab-b"><svg class="i"><use href="#i-term"/></svg>Terminal</span><span class="m-tab-x" style="opacity:1"><svg class="i"><use href="#i-x"/></svg></span></div>
+            <span class="m-ib sm"><svg class="i"><use href="#i-globe"/></svg></span><span class="m-ib sm"><svg class="i"><use href="#i-changes"/></svg></span><span class="m-ib sm"><svg class="i"><use href="#i-plus"/></svg></span>
+            <span class="grow"></span>
+            <span class="m-ib sm"><svg class="i"><use href="#i-split"/></svg></span><span class="m-ib sm"><svg class="i"><use href="#i-expand"/></svg></span><span class="m-ib sm"><svg class="i"><use href="#i-hide"/></svg></span>
+          </div>
+          <div class="lbl"><b>2</b>Shells (<code class="c">Terminal.tsx:426</code>)</div>
+          <div class="m-bstrip" style="height:36px">
+            <div class="m-tab on"><span class="m-tab-b"><svg class="i"><use href="#i-term"/></svg>zsh</span><span class="m-tab-x" style="opacity:1"><svg class="i"><use href="#i-x"/></svg></span></div>
+            <div class="m-tab"><span class="m-tab-b"><svg class="i"><use href="#i-play"/></svg>npm test</span></div>
+          </div>
+          <div class="lbl"><b>3</b>The terminal's own bar (<code class="c">Terminal.tsx:310</code>)</div>
+          <div class="m-bstrip" style="height:34px;gap:8px;color:var(--ink-3)"><svg class="i"><use href="#i-term"/></svg><span class="mono">tidewater/src</span></div>
+          <pre class="m-term" style="height:76px;border-top:1px solid var(--hair);padding-top:10px"><span class="p">~/tidewater $</span> npm test
+ <span class="ok">✓</span> test/tides.test.js  (12 tests) 41ms</pre>
+        </div>
+      </div>
+      <div>
+        <p class="cap"><b>Proposed:</b> one strip, the shells are its tabs</p>
+        <div class="stack">
+          <div class="lbl"><b>1</b>The bottom panel's strip</div>
+          <div class="m-bstrip">
+            <div class="m-tab on"><span class="m-tab-b"><svg class="i"><use href="#i-term"/></svg>zsh</span><span class="m-tab-x" style="opacity:1"><svg class="i"><use href="#i-x"/></svg></span></div>
+            <div class="m-tab"><span class="m-tab-b"><svg class="i"><use href="#i-play"/></svg>npm test</span></div>
+            <span class="m-ib sm"><svg class="i"><use href="#i-plus"/></svg></span>
+            <span class="grow"></span>
+            <span class="mono" style="color:var(--ink-3);margin-right:6px">tidewater/src</span>
+            <span class="m-ib"><svg class="i"><use href="#i-down"/></svg></span>
+          </div>
+          <pre class="m-term" style="height:190px;border-top:1px solid var(--hair);padding-top:10px"><span class="p">~/tidewater $</span> npm test
+ <span class="ok">✓</span> test/tides.test.js  (12 tests) 41ms
+ <span class="ok">✓</span> test/label.test.js  (4 tests) 9ms
+
+ Test Files  <span class="ok">2 passed</span> (2)
+      Tests  <span class="ok">16 passed</span> (16)</pre>
+        </div>
+      </div>
+    </div>
+
+    <ul class="pains read">
+      <li><b>Three layers of tabs.</b> "Session views" in the header, the dock's strip (one per pane, two panes at most), then tabs inside a surface: Shells in Terminal, segmented controls in Files, Browser, Pull request, Design and Review.</li>
+      <li><b>Bars stack up.</b> Session header, dock strip, the surface's own bar, sometimes Shells. Full-canvas Review repeats the title and branch in a header of its own (<code class="c">Review.tsx:367</code>).</li>
+      <li><b>Five or six doors to one surface.</b> A header button, ⋯ "More surfaces", the + guide, ⌘K, a key, and for the diff the laptop menu too. "Hide the dock" sits in two places.</li>
+      <li><b>One thing, two names.</b> "Changes" in the header and the laptop menu, "Diff" as a tab and in ⋯.</li>
+      <li><b>A sidebar of mixed parts.</b> An action bar, the Add-ons menu, Apps, groups, projects, a Snoozed and Settled tray, then five buttons in the footer. Each row takes two lines and repeats its project.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-rules">
+    <div class="read"><h2 id="h-rules">Rules for the new shell</h2></div>
+    <ol class="rules">
+      <li><b>One header per column, 52 px, nothing stacked on it.</b>The panel's tab strip is the panel's header, and it lines up with the session's.</li>
+      <li><b>One layer of tabs.</b>A surface gets one tool row at most, and no tabs of its own.</li>
+      <li><b>One door you click, one key.</b>Every surface opens from the panel's + or ⌘⇧ and its letter. ⌘K finds everything.</li>
+      <li><b>One name per thing, in every menu.</b>Changes, Terminal, Pull request: the tab, the button and ⌘K say the same word.</li>
+      <li><b>Rows on one line.</b>What needs a second line goes in the hover card.</li>
+      <li><b>Sections show only while they have rows.</b>Needs you, Pinned and the shelves come and go.</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="h-moves">
+    <div class="read">
+      <h2 id="h-moves">Where each control goes</h2>
+      <p>Numbers match the blue marks on the mock. Nothing is dropped: each control moves to one place.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>#</th><th>Today</th><th>In the new shell</th></tr></thead>
+        <tbody>
+          <tr><td class="n">1</td><td class="was">Header buttons for Side chat, Terminal, Browser, Files, Design and Pull request</td><td class="now">The panel's + menu and ⌘⇧ keys. Terminal opens in the bottom panel.<span class="where">Session.tsx:455-535 · TopBar.tsx</span></td></tr>
+          <tr><td class="n">2</td><td class="was">⋯ with "More surfaces", "Your apps" and "Make one…"</td><td class="now">The same + menu: Built in, Your apps, Make one… (Workshop).<span class="where">TopBar.tsx:129-182 · Surfaces.tsx:230-289</span></td></tr>
+          <tr><td class="n">3</td><td class="was">"Session views": Chat and the session's tab apps, after the title</td><td class="now">Stays, still drawn only while the session has a tab app. Picking one gives it the session's column.<span class="where">Session.tsx:482-491</span></td></tr>
+          <tr><td class="n">4</td><td class="was">Dock tabs that are only icons until picked</td><td class="now">Every tab keeps its label; icons alone only when the strip runs out of room.<span class="where">surfaces.css:26-170</span></td></tr>
+          <tr><td class="n">5</td><td class="was">The dock split into two panes, 1.6 times as wide</td><td class="now">A right panel and a bottom panel. Below: shells, script runs and "Run on #N".<span class="where">dock.ts:21 · dock.css:162</span></td></tr>
+          <tr><td class="n">6</td><td class="was">Surfaces' own bars and inner tabs (Shells, segmented controls)</td><td class="now">One tool row at most, under the strip. Shells become the bottom panel's tabs.<span class="where">Terminal.tsx:310, 426 · Files · Browser · Pr · Design · Review</span></td></tr>
+          <tr><td class="n">7</td><td class="was">"Show the dock" / "Hide the dock" in the header and again in the strip</td><td class="now">Only the header's two panel icons. Closing the last tab still hides the panel.<span class="where">Panel.tsx:337-350 · dock.ts:86-96</span></td></tr>
+          <tr><td class="n">8</td><td class="was">"Changes" in the header and laptop menu, "Diff" as a tab and in ⋯</td><td class="now">Changes, everywhere, still ⌘⇧D.<span class="where">Surfaces.tsx:31</span></td></tr>
+          <tr><td class="n">9</td><td class="was">Laptop menu "Where this session works"</td><td class="now">The title's ··· menu: where it works, Open in your editor, Add project script, Rename, Pin, Snooze, Settle, Open beside.<span class="where">Env.tsx:43-270</span></td></tr>
+          <tr><td class="n">10</td><td class="was">Branch chip</td><td class="now">Stays, and takes Commit, Push and Open a PR from the laptop menu.</td></tr>
+          <tr><td class="n">11</td><td class="was">Who-works chain in the header (Opus 5.5 › Sonnet 5.5)</td><td class="now">Leaves the header. The composer's chip is the one place, and it opens Agents.<span class="where">Session.tsx:492</span></td></tr>
+          <tr><td class="n">12</td><td class="was">Composer bar: who works, effort, context ring, plan-limit meter, permissions</td><td class="now">Who works with its effort as dots, permissions, and one ring that opens context and plan limits. The box itself stays as it is.<span class="where">Composer.tsx:1196-1227</span></td></tr>
+          <tr><td class="n">13</td><td class="was">Sidebar bar: Search, Filter sessions, Add a project, New session</td><td class="now">A "New session" row with search at its end (⌘K filters too); + beside Projects adds one.<span class="where">Sidebar.tsx:705-719</span></td></tr>
+          <tr><td class="n">14</td><td class="was">Two-line session rows</td><td class="now">One line: mark, title, then a spinner, a dot or the age. The status line moves to the hover card.</td></tr>
+          <tr><td class="n">15</td><td class="was">"Needs you", a bucket that isn't drawn</td><td class="now">Its own section on top, shown only when it has rows, with the project at each row's end.<span class="where">Sidebar.tsx:57</span></td></tr>
+          <tr><td class="n">16</td><td class="was">The Desk behind two scrolls on Home</td><td class="now">Kept hidden, as designed (your call, 5 November): the "Desk" cue at Home's foot, two scrolls to open it.<span class="where">Home.tsx · DeskStage.tsx</span></td></tr>
+          <tr><td class="n">17</td><td class="was">Apps (your pages) under the Add-ons menu; Routines in the footer</td><td class="now">"Routines" and "Add-ons" rows at the top, then an Apps section with your pages while you have one. The footer keeps you, Team, the usage ring and Settings.<span class="where">Sidebar.tsx:776-821, 981-1028</span></td></tr>
+          <tr><td class="n">18</td><td class="was">Snoozed and Settled tray</td><td class="now">One quiet row at the end of the list.<span class="where">Sidebar.tsx:923-949</span></td></tr>
+          <tr><td class="n">19</td><td class="was">Update notices on Home</td><td class="now">A card above the footer that waits for running sessions to finish.</td></tr>
+          <tr><td class="n">20</td><td class="was">One session at a time</td><td class="now">Right-click a session, Open beside: two sessions, each with its own header and composer.</td></tr>
+          <tr><td class="n">21</td><td class="was">Agents a model starts show as separate steps</td><td class="now">One group row, a line each with its state, tools and time.<span class="where">Timeline.tsx</span></td></tr>
+          <tr><td class="n">22</td><td class="was">Add-ons menu: Browse add-ons, Create your add-on</td><td class="now">The Add-ons row opens the list. Create your add-on is that page's main button, and Make one… in the panel's + starts it too.<span class="where">Sidebar.tsx:778-808 · AddonsPage.tsx</span></td></tr>
+          <tr><td class="n">23</td><td class="was">An add-on's strip above its frame (who made it, version, what it reads)</td><td class="now">The tab's or page's one tool row, with ⋯ for versions, Change it, Turn it off and Remove.<span class="where">Addon.tsx:41-126, 325-385</span></td></tr>
+          <tr><td class="n">24</td><td class="was">Pinned apps as buttons in the header's row</td><td class="now">An icon-only tab at the start of the panel's strip, there whenever the panel opens.<span class="where">TopBar.tsx:129-182</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="read" aria-labelledby="h-kept">
+    <h2 id="h-kept">Kept as it is</h2>
+    <ul class="kept">
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>The Reviewer.</b> The Reviewing, Verified and Blocked badge stays in the header, and the chip under a turn stays where it is.</span></li>
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>The turn layout from 1 November.</b> A head per model's part ("Opus 5.5 · planned in 41s"), grey folded rows, and a permission request that never folds.</span></li>
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>Bare models by default.</b> Named agents show only when you made one.</span></li>
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>Four permissions.</b> Auto, Manual, Reviewer decides, then Full access.</span></li>
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>Home's strip, option C,</b> and the quiet line under it.</span></li>
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>The composer's box.</b> Its shape, its placeholder and the round red Send, on Home and in a session. Only the buttons in its tray change.</span></li>
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>The Desk, hidden.</b> The cue at Home's foot ("2 back · 2 out"), and two scrolls to slide it up.</span></li>
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>Add-ons as built on 3 November.</b> The three places for an app, the "Make it an app" card, sealed frames, the strip of what each one touches, holding to allow network, and kept versions.</span></li>
+      <li><svg class="i"><use href="#i-check"/></svg><span><b>Run, the prompts map, ⌘K and Settings,</b> and Liner 2.0 throughout: flat surfaces, one accent, red for the main button, no glass.</span></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-build">
+    <div class="read">
+      <h2 id="h-build">Build order</h2>
+      <p>Each step ships on its own. The first needs no new parts, so it can land and be lived with before the panel changes.</p>
+    </div>
+    <div class="phases">
+      <div class="phase">
+        <div class="k">Step 1 · Trim</div>
+        <h3>Fewer things, same parts</h3>
+        <ul>
+          <li>Header down to the title, ···, branch, Reviewer, Changes, Run and the panel icons.<code>Session.tsx:455-535 · TopBar.tsx · Env.tsx</code></li>
+          <li>"Diff" renamed Changes in the tab, ⋯ and ⌘K.<code>Surfaces.tsx:31</code></li>
+          <li>Sidebar: top rows, Apps kept under them, Needs you as a section, rows on one line, the shelves as one row, a footer of four.<code>Sidebar.tsx:57, 695-1029</code></li>
+        </ul>
+      </div>
+      <div class="phase">
+        <div class="k">Step 2 · One layer of tabs</div>
+        <h3>The panel becomes one strip</h3>
+        <ul>
+          <li>The dock's strip is its header, every tab labelled, + holds the guide.<code>Panel.tsx:226-369 · surfaces.css:26-170</code></li>
+          <li>A bottom panel for shells and runs, in place of the second pane.<code>dock.ts:21 · Terminal.tsx:310, 426</code></li>
+          <li>Files, Browser, Pull request, Design and Review trade their bars for one tool row.<code>Files.tsx · Browser.tsx · Pr.tsx · Design.tsx · Review.tsx</code></li>
+          <li>An add-on's strip becomes its tool row; pinned apps become tabs at the strip's start.<code>Addon.tsx:41-126 · TopBar.tsx:129-182</code></li>
+        </ul>
+      </div>
+      <div class="phase">
+        <div class="k">Step 3 · New parts</div>
+        <h3>From TasteCode, in our words</h3>
+        <ul>
+          <li>Open beside, from the row's menu and the title's ···.<code>App.tsx:471-518 · Session.tsx</code></li>
+          <li>The composer's tray: effort dots in the who-works chip, one ring for context and limits.<code>Composer.tsx:790-852, 1196-1227</code></li>
+          <li>The limits popover, the update card, grouped agents in the timeline.<code>Timeline.tsx · Usage</code></li>
+          <li>In code only: rename <code style="display:inline">.lc-dock</code> (the composer's foot) so "dock" means one thing.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <p class="foot">Sources: the TasteCode v0.5 release video (70 s), read at two frames a second, and Liner Code at 0921b33 on design-and-api-endpoints. The mock is drawn by hand in Liner 2.0's tokens with Liner Code's own copy; nothing from TasteCode's screens is copied into it. Model names and the tidewater project are the same examples the README uses.</p>
+</main>
+
+<script>
+(function(){
+  var win = document.getElementById('win');
+  var stage = document.getElementById('stage');
+
+  function fit(){
+    var s = Math.min(1, stage.clientWidth / 1360);
+    win.style.transform = 'scale(' + s + ')';
+    stage.style.height = Math.round(800 * s) + 'px';
+  }
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
+  window.addEventListener('resize', fit);
+  fit();
+
+  /* screens */
+  var VIEWS = ['session', 'home', 'beside', 'apps'];
+  function show(v){
+    if (VIEWS.indexOf(v) < 0) v = 'session';
+    win.dataset.view = v;
+    document.querySelectorAll('[data-view-btn]').forEach(function(b){ b.setAttribute('aria-pressed', String(b.dataset.viewBtn === v)); });
+    win.querySelectorAll('.m-side [data-pick]').forEach(function(r){
+      var p = r.dataset.pick;
+      var on = (v === 'session' && p === 'tide') || (v === 'home' && p === 'new') || (v === 'apps' && p === 'cal') || (v === 'beside' && (p === 'tide' || p === 'offline') && r.classList.contains('sub'));
+      r.classList.toggle('pick', on);
+    });
+    st.menu = false; render();
+  }
+  function go(v){
+    try { if (/^https?:$/.test(location.protocol) && location.hash.slice(1) !== v) location.hash = v; } catch (e) {}
+    show(v);
+  }
+  window.addEventListener('hashchange', function(){ show(location.hash.slice(1)); });
+  document.querySelectorAll('[data-view-btn]').forEach(function(b){ b.addEventListener('click', function(){ go(b.dataset.viewBtn); }); });
+
+  /* theme and marks */
+  document.querySelectorAll('[data-theme-btn]').forEach(function(b){
+    b.addEventListener('click', function(){
+      win.classList.remove('t-light', 't-dark');
+      if (b.dataset.themeBtn) win.classList.add(b.dataset.themeBtn);
+      document.querySelectorAll('[data-theme-btn]').forEach(function(x){ x.setAttribute('aria-pressed', String(x === b)); });
+    });
+  });
+  var marks = document.getElementById('marks-btn');
+  marks.addEventListener('click', function(){
+    var on = marks.getAttribute('aria-pressed') !== 'true';
+    marks.setAttribute('aria-pressed', String(on));
+    win.classList.toggle('marks', on);
+  });
+
+  /* the panel */
+  var S = {
+    changes: { label: 'Changes', icon: 'changes', key: 'D' },
+    files: { label: 'Files', icon: 'file', key: 'F' },
+    browser: { label: 'Browser', icon: 'globe', key: 'B' },
+    design: { label: 'Design', icon: 'design', key: 'E' },
+    terminal: { label: 'Terminal', icon: 'term', key: 'T', below: true },
+    pr: { label: 'Pull request', icon: 'pr', key: 'P' },
+    side: { label: 'Side chat', icon: 'chat', key: 'C' },
+    device: { label: 'Device', icon: 'device', key: 'M' },
+    routines: { label: 'Routines', icon: 'routines', key: 'R' },
+    agents: { label: 'Agents', icon: 'agents', key: 'A' },
+    notes: { label: 'Tide notes', icon: 'note' },
+    board: { label: 'Test board', icon: 'board' }
+  };
+  var EMPTY = {
+    pr: ['No pull request yet', 'fix/tide-after-midnight is 1 commit ahead of main.', 'Open a PR'],
+    side: ['Ask on the side', 'A side chat reads this session and never changes its files.', 'New side chat'],
+    device: ['No device running', 'Start a simulator or plug in a phone to see the app here.', 'Choose a device'],
+    routines: ['No routines on this project', 'A routine runs on a schedule and hands back what it found.', 'New routine'],
+    agents: ['Plan, then build', 'Opus 5.5 plans, Sonnet 5.5 builds, GPT-6 Luna checks each change.', 'Modes and models'],
+    board: ['Test board', 'Made as a session tab. Opened here it gets the panel, and Chat keeps the session\'s column.', 'Open it beside Chat']
+  };
+  var st = { tabs: ['changes', 'files', 'notes'], on: 'changes', right: true, bottom: false, full: false, menu: false };
+  var ptabs = document.getElementById('ptabs'), pbody = document.getElementById('pbody'), pmenu = document.getElementById('pmenu');
+  var bAdd = document.getElementById('b-add'), bFull = document.getElementById('b-full');
+  var bRight = document.getElementById('b-right'), bBottom = document.getElementById('b-bottom');
+
+  function ic(n){ return '<svg class="i"><use href="#i-' + n + '"/></svg>'; }
+  function empty(id){
+    var e = EMPTY[id] || [S[id].label, '', 'Open'];
+    return '<div class="m-empty">' + ic(S[id].icon) + '<b>' + e[0] + '</b><p>' + e[1] + '</p><button type="button" class="m-qb" style="background:var(--well)">' + e[2] + '</button></div>';
+  }
+  function render(){
+    ptabs.innerHTML = st.tabs.map(function(id){
+      var s = S[id], on = id === st.on;
+      var n = id === 'changes' ? '<span class="m-n"><span class="ok">+3</span> <span class="bad">−1</span></span>' : '';
+      return '<div class="m-tab' + (on ? ' on' : '') + '"><button type="button" class="m-tab-b" data-tab="' + id + '" title="' + s.label + (s.key ? ' (⌘⇧' + s.key + ')' : '') + '">' + ic(s.icon) + '<span>' + s.label + '</span>' + n + '</button><button type="button" class="m-tab-x" data-close="' + id + '" aria-label="Close ' + s.label + '">' + ic('x') + '</button></div>';
+    }).join('');
+    var tpl = document.getElementById('tpl-' + st.on);
+    pbody.innerHTML = st.on ? (tpl ? tpl.innerHTML : empty(st.on)) : '';
+    win.classList.toggle('no-right', !st.right);
+    win.classList.toggle('has-bottom', st.bottom);
+    win.classList.toggle('full', st.full && st.right);
+    bRight.setAttribute('aria-pressed', String(st.right));
+    bRight.setAttribute('aria-label', st.right ? 'Hide the right panel' : 'Show the right panel');
+    bBottom.setAttribute('aria-pressed', String(st.bottom));
+    bBottom.setAttribute('aria-label', st.bottom ? 'Hide the bottom panel' : 'Show the bottom panel');
+    bFull.innerHTML = ic(st.full ? 'collapse' : 'expand');
+    bFull.setAttribute('aria-label', st.full ? 'Leave the full canvas' : 'Open in the full canvas');
+    pmenu.hidden = !st.menu;
+    bAdd.setAttribute('aria-expanded', String(st.menu));
+    pmenu.querySelectorAll('[data-open]').forEach(function(m){
+      var id = m.dataset.open;
+      m.classList.toggle('on', id === 'terminal' ? st.bottom : st.tabs.indexOf(id) >= 0);
+    });
+  }
+  function open(id){
+    if (S[id].below) { st.bottom = true; }
+    else {
+      if (st.tabs.indexOf(id) < 0) st.tabs.push(id);
+      st.on = id; st.right = true;
+    }
+    st.menu = false; render();
+  }
+  function close(id){
+    var i = st.tabs.indexOf(id);
+    if (i < 0) return;
+    st.tabs.splice(i, 1);
+    if (st.on === id) st.on = st.tabs[Math.max(0, i - 1)] || '';
+    if (!st.tabs.length) { st.right = false; st.full = false; }
+    render();
+  }
+
+  win.addEventListener('click', function(e){
+    var t = e.target.closest('button');
+    if (!t) { if (st.menu) { st.menu = false; render(); } return; }
+    if (t.dataset.tab) { st.on = t.dataset.tab; st.menu = false; render(); return; }
+    if (t.dataset.close) { close(t.dataset.close); return; }
+    if (t.dataset.open) { open(t.dataset.open); return; }
+    if (t.dataset.go) { go(t.dataset.go); return; }
+    switch (t.id) {
+      case 'b-add': st.menu = !st.menu; render(); return;
+      case 'b-full': st.full = !st.full; render(); return;
+      case 'b-right':
+        st.right = !st.right;
+        if (st.right && !st.tabs.length) { st.tabs = ['changes']; st.on = 'changes'; }
+        if (!st.right) st.full = false;
+        st.menu = false; render(); return;
+      case 'b-bottom': st.bottom = !st.bottom; render(); return;
+      case 'b-bhide': st.bottom = false; render(); return;
+      case 'b-changes': open('changes'); return;
+    }
+    if (st.menu && !pmenu.contains(t)) { st.menu = false; render(); }
+  });
+  pmenu.addEventListener('keydown', function(e){ if (e.key === 'Escape') { st.menu = false; render(); bAdd.focus(); } });
+
+  show(location.hash.slice(1));
+})();
+</script>
+</body>
+</html>

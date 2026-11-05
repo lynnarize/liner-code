@@ -19,7 +19,7 @@ const SURFACE_KEYS: [string, string, string][] = [
   ["design", "Design", "e"],
   ["terminal", "Terminal", "t"],
   ["files", "Files", "f"],
-  ["changes", "Diff", "d"],
+  ["changes", "Changes", "d"],
   ["pr", "Pull request", "p"],
   ["linked", "Linked pull requests", "l"],
   ["device", "Device", "m"],

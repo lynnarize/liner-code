@@ -38,7 +38,7 @@ import { HiddenBrowsers } from "./Browser";
 import { matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 import * as os from "./os";
 
-type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
+type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string; beside?: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
 
 const readView = (): View => {
   try {
@@ -123,6 +123,9 @@ export function App() {
   }, [lastProject]);
 
   const current = view.kind === "session" ? threads.find((t) => t.id === view.id) : undefined;
+  // The session open beside it, if any, and which side has your keys.
+  const besideThread = view.kind === "session" && view.beside && view.beside !== view.id ? threads.find((t) => t.id === view.beside && !t.archived) : undefined;
+  const [sideFocus, setSideFocus] = useState(0);
   // A session that went away (removed elsewhere) hands back to Home.
   useEffect(() => {
     if (ready && view.kind === "session" && !current) setView({ kind: "home" });
@@ -466,13 +469,24 @@ export function App() {
       ) : (
         <>
           <div className="lc-side" inert={!sidebar || undefined}>
-            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => setMenu(true)} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} />
+            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => setMenu(true)} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
             <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening</span></div>}>
             {view.kind === "session" && current ? (
+              besideThread ? (
+                // Two sessions side by side (TasteCode's Open beside): each has its header, its composer and its panels; keys go to the one you're in.
+                <div className="lc-besides" onFocusCapture={(e) => setSideFocus((e.currentTarget.lastElementChild as HTMLElement).contains(e.target as Node) ? 1 : 0)} onPointerDownCapture={(e) => setSideFocus((e.currentTarget.lastElementChild as HTMLElement).contains(e.target as Node) ? 1 : 0)}>
+                  {[current, besideThread].map((t, i) => (
+                    <div key={t.id} className="lc-beside">
+                      <Session key={t.id} thread={t} sidebar={sidebar || i > 0} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, t.projectId)} keys={sideFocus === i} onCloseSide={() => setView({ kind: "session", id: i === 0 ? besideThread.id : current.id })} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <Session key={current.id} thread={current} sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, current.projectId)} />
+              )
             ) : view.kind === "routines" ? (
               <RoutinesPage sidebar={sidebar} onSidebar={() => setSidebar(true)} onNew={() => editRoutine()} onEdit={(id) => editRoutine(id)} onOpenRun={openRun} />
             ) : view.kind === "routine" ? (

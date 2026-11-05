@@ -40,10 +40,20 @@ const THEN: { id: Then; title: string; note: string }[] = [
   { id: "commit", title: "Commit", note: `Only here, on ${os.here}` },
 ];
 
-export function EnvMenu({ thread, project, files, lines, onChanges }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void }) {
+/**
+  The title's ··· (TasteCode's chat menu): the session's own actions first (rename, pin, open
+  beside), then where it works: the machine and folder, your editor, project scripts, the branch,
+  and committing what changed.
+*/
+export function EnvMenu({ thread, project, files, lines, onChanges, actions }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; actions?: (close: () => void) => ReactNode }) {
   return (
-    <Pop label="Where this session works" align="end" width={340} triggerClass="lc-tb" trigger={<I.laptop size={16} />}>
-      {(close) => <EnvPanel thread={thread} project={project} files={files} lines={lines} onChanges={onChanges} close={close} />}
+    <Pop label="The session's menu: rename, pin, where it works" align="start" width={340} triggerClass="lc-tb lc-title-more" trigger={<I.more size={16} />}>
+      {(close) => (
+        <>
+          {actions?.(close)}
+          <EnvPanel thread={thread} project={project} files={files} lines={lines} onChanges={onChanges} close={close} />
+        </>
+      )}
     </Pop>
   );
 }

@@ -14,6 +14,8 @@ const getSea = () => {
   if (sea === undefined) {
     sea = Sea.create();
     if (sea) document.documentElement.classList.add('gl-on');
+    // The first frame is already the picked sea: a change of sea eases over, a page load doesn't.
+    if (sea) sea.dark = document.documentElement.dataset.sea === 'blue' ? 0 : 1;
   }
   return sea;
 };

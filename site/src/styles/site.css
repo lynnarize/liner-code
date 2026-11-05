@@ -32,7 +32,7 @@ html[data-nav-tone='night'] { --nav-fg: var(--paper); --nav-bg: var(--night); --
 }
 .nav.is-solid { background: var(--nav-bg); }
 .nav.is-away { translate: 0 -110%; }
-.nav__brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.02em; height: 44px; }
+.nav__brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.02em; height: 44px; }
 .mark { width: 26px; height: 26px; flex: none; }
 .nav__links { flex: 1; display: flex; justify-content: center; }
 .nav__links ul { display: flex; gap: clamp(16px, 2.2vw, 34px); }
@@ -55,14 +55,29 @@ html[data-nav-tone='night'] { --nav-fg: var(--paper); --nav-bg: var(--night); --
 html:not([data-sea='blue']) .seas [data-pick='dark'], html[data-sea='blue'] .seas [data-pick='blue'] { background: var(--nav-fg); color: var(--nav-bg); }
 .seas--sheet { display: none; margin-top: 14px; width: max-content; color: var(--paper); }
 html:not([data-sea='blue']) .seas--sheet [data-pick='dark'], html[data-sea='blue'] .seas--sheet [data-pick='blue'] { background: var(--paper); color: var(--night); }
+/* GitHub, with the repository's stars: a pill in the nav's own ink, beside Download. */
+.stars {
+  display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px 0 12px; border-radius: 999px; flex: none;
+  font-size: var(--t-small); font-weight: 500; background: color-mix(in oklab, currentColor 12%, transparent);
+  transition: background-color 0.25s var(--ease);
+}
+.stars:hover { background: color-mix(in oklab, currentColor 20%, transparent); }
+.stars:active { scale: 0.97; }
+.stars__gh { width: 16px; height: 16px; flex: none; }
+.stars__n { display: inline-flex; align-items: center; gap: 4px; padding-left: 9px; margin-left: 2px; box-shadow: inset 1px 0 0 color-mix(in oklab, currentColor 22%, transparent); font-variant-numeric: tabular-nums; }
+.stars__star { width: 12px; height: 12px; flex: none; color: #f2c14e; }
+.sheet__stars { font-weight: 500; opacity: 0.7; }
 .nav__menu { display: none; height: 38px; padding: 0 14px; border-radius: 999px; font-size: var(--t-small); font-weight: 500; background: color-mix(in oklab, currentColor 14%, transparent); }
 .sheet {
-  position: fixed; left: 8px; right: 8px; top: calc(var(--nav-h) + 4px);
+  position: fixed; right: 8px; top: calc(var(--nav-h) + 4px); width: min(100% - 16px, 440px);
   padding: 20px; border-radius: 20px; background: var(--night); color: var(--paper);
   box-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.5);
 }
 .sheet a { display: block; padding: 10px 4px; font-size: var(--t-lead); font-weight: 600; letter-spacing: -0.02em; }
-@media (max-width: 860px) {
+/* Below 1080 the nav's links and sea toggle go into the Menu: with the stars beside Download, the
+   full row no longer fits. Below 1240 the stars pill drops its word. */
+@media (max-width: 1239px) { .stars__label { display: none; } }
+@media (max-width: 1080px) {
   .nav__links { display: none; }
   .nav { justify-content: space-between; gap: 10px; }
   .nav__brand { margin-right: auto; }
@@ -70,6 +85,8 @@ html:not([data-sea='blue']) .seas--sheet [data-pick='dark'], html[data-sea='blue
   .nav > .seas { display: none; }
   .seas--sheet { display: flex; }
 }
+/* On a phone the stars move into the Menu, beside GitHub. */
+@media (max-width: 600px) { .nav > .stars { display: none; } }
 
 /* ---------- The stage: sky, word, ground, you ---------- */
 .stage { position: relative; overflow: clip; background: var(--stage-sky, var(--sky)); color: var(--paper); isolation: isolate; transition: background-color 0.9s var(--ease); }

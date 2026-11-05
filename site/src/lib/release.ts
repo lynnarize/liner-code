@@ -2,6 +2,8 @@
 // day it came out, and the files to download. The build (src/data/release.ts) and the browser
 // (src/motion/release.ts) both read GitHub through this, so they always agree.
 export const LATEST = 'https://api.github.com/repos/lynnarize/liner-code/releases/latest';
+// The repository itself, for its stars.
+export const REPO = 'https://api.github.com/repos/lynnarize/liner-code';
 
 type File = { file: string; url: string };
 export type Release = {
@@ -35,6 +37,13 @@ export function newer(a: string, b: string) {
   const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
   for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
   return false;
+}
+
+/** A star count as GitHub shows it: 2, 950, 1.2k, 12k. */
+export function shortCount(n: number) {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return `${k < 10 ? k.toFixed(1).replace(/\.0$/, '') : Math.round(k)}k`;
 }
 
 /** 2026-11-05 as 5 November 2026. */

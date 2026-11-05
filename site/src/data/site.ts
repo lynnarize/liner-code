@@ -1,8 +1,8 @@
 // Every word on the site. Facts come from the README, the changelog and the source; nothing here
 // is a claim the app doesn't make about itself. Server only: the version and the files come from
 // GitHub's latest release at build time (./release). The browser's scripts import ./auto instead.
-import { release } from './release';
-import { longDate } from '../lib/release';
+import { release, stars } from './release';
+import { longDate, shortCount } from '../lib/release';
 export { autoCast } from './auto';
 
 export const VERSION = release.version;
@@ -18,6 +18,9 @@ export const site = {
   released: longDate(release.date),
   repo: REPO,
   releases: `${REPO}/releases`,
+  // The repository's stars at build time, as GitHub shows them (null if GitHub didn't answer).
+  stars: stars === null ? null : shortCount(stars),
+  starsExact: stars,
   issues: `${REPO}/issues/new/choose`,
   mac: release.mac.url,
   win: release.win.url,

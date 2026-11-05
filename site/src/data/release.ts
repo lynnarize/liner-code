@@ -4,15 +4,15 @@
 // hourly limit for shared build machines. If GitHub can't be reached, the changelog's newest entry
 // stands in, and the buttons lead to the releases page rather than to files that might not be there.
 import changelog from '../../../CHANGELOG.md?raw';
-import { fromGitHub, LATEST, type Release } from '../lib/release';
+import { fromGitHub, LATEST, REPO, type Release } from '../lib/release';
 
-async function fromApi(): Promise<Release | null> {
+async function ask(url: string): Promise<any> {
   try {
     const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'linercode.dev build' };
     const token = typeof process === 'undefined' ? undefined : process.env?.GITHUB_TOKEN;
     if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(LATEST, { headers, signal: AbortSignal.timeout(8000) });
-    return res.ok ? fromGitHub(await res.json()) : null;
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+    return res.ok ? await res.json() : null;
   } catch {
     return null;
   }
@@ -30,6 +30,9 @@ function fromChangelog(): Release {
   };
 }
 
-const api = await fromApi();
+const [latest, repo] = await Promise.all([ask(LATEST), ask(REPO)]);
+const api = latest ? fromGitHub(latest) : null;
 if (!api) console.warn('[release] GitHub could not be reached: the site uses CHANGELOG.md\'s newest version');
 export const release: Release = api ?? fromChangelog();
+/** The repository's stars when the site was built, or null if GitHub didn't say. */
+export const stars: number | null = typeof repo?.stargazers_count === 'number' ? repo.stargazers_count : null;

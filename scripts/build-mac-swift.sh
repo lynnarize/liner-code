@@ -47,6 +47,16 @@ ICONSET="$ROOT/build/swift/AppIcon.iconset"
 rm -rf "$ICONSET"
 swift scripts/make-icon.swift "$ICONSET" >/dev/null
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+# macOS 26 and later turn the icon dark with the system, from Assets.car (scripts/build-mac.sh says how).
+# Only its Assets.car: actool writes an AppIcon.icns of its own beside it, which would replace ours.
+ICON_NAME=""
+CAR="$ROOT/build/swift/icon-car"
+rm -rf "$CAR" && mkdir -p "$CAR"
+if xcrun actool desktop/AppIcon.icon --compile "$CAR" --platform macosx --minimum-deployment-target 14.0 --app-icon AppIcon --output-partial-info-plist "$CAR/partial.plist" >/dev/null 2>&1 && [[ -f "$CAR/Assets.car" ]]; then
+  cp "$CAR/Assets.car" "$APP/Contents/Resources/"
+  ICON_NAME="<key>CFBundleIconName</key><string>AppIcon</string>"
+fi
+rm -rf "$CAR"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -58,6 +68,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>app.liner.code</string>
   <key>CFBundleExecutable</key><string>LinerCode</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  $ICON_NAME
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>

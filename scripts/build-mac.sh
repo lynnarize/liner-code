@@ -42,6 +42,23 @@ ICONSET="$ROOT/build/AppIcon.iconset"
 rm -rf "$ICONSET"
 swift scripts/make-icon.swift "$ICONSET" >/dev/null
 iconutil -c icns "$ICONSET" -o "$ROOT/build/AppIcon.icns"
+# Before macOS 26 the Dock only knows the .icns, which is light, so the app sets these as the system's appearance changes.
+swift scripts/make-icon.swift "$STAGE/icons/light.png" light 512 >/dev/null
+swift scripts/make-icon.swift "$STAGE/icons/dark.png" dark 512 >/dev/null
+# macOS 26 and later switch an app's icon with the appearance only when it comes from an Icon
+# Composer icon compiled into Assets.car and named by CFBundleIconName. actool (Xcode 26 or later)
+# takes desktop/AppIcon.icon as it is: icon.json with a light and a dark fill for the tile and each
+# layer, and the two turns as filled outlines (it fills an SVG's stroked paths as shapes). It comes
+# out as IconImageStack renditions for NSAppearanceNameAqua, NSAppearanceNameDarkAqua and
+# ISAppearanceTintable (`xcrun assetutil --info Assets.car`). The .icns stays for older macOS.
+CAR="$ROOT/build/icon-car"
+ICON_CAR=""
+rm -rf "$CAR" && mkdir -p "$CAR"
+if xcrun actool desktop/AppIcon.icon --compile "$CAR" --platform macosx --minimum-deployment-target 13.0 --app-icon AppIcon --output-partial-info-plist "$CAR/partial.plist" >/dev/null 2>&1 && [[ -f "$CAR/Assets.car" ]]; then
+  ICON_CAR="$CAR/Assets.car"
+else
+  echo "  (no actool from Xcode 26 or later here: on macOS 26 the icon won't turn dark with the system)"
+fi
 
 echo "→ Gathering the licences"
 RES="$ROOT/build/licences"
@@ -59,10 +76,10 @@ echo "→ Wrapping it in Electron $(node -p "require('electron/package.json').ve
 if [[ -n "$LINER_SIGN_IDENTITY" ]]; then
   echo "  signing as $LINER_SIGN_IDENTITY${LINER_NOTARY_PROFILE:+, notarizing with $LINER_NOTARY_PROFILE}"
 fi
-OUT="$(node desktop/package.ts "$STAGE" "$ROOT/build/AppIcon.icns" "$ROOT/build/electron" "$RES"/*)"
+OUT="$(node desktop/package.ts "$STAGE" "$ROOT/build/AppIcon.icns" "$ROOT/build/electron" "$RES"/* ${ICON_CAR:+"$ICON_CAR"})"
 rm -rf "$APP"
 mv "$OUT/Liner Code.app" "$APP"
-rm -rf "$ROOT/build/electron" "$STAGE" "$RES"
+rm -rf "$ROOT/build/electron" "$STAGE" "$RES" "$CAR"
 
 if [[ -z "$LINER_SIGN_IDENTITY" ]]; then
   echo "→ Signing (ad hoc: no Developer ID on this Mac)"

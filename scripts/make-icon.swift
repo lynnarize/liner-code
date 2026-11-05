@@ -1,73 +1,93 @@
-// Draws Liner Code's app icon: the two nested Ls on a white squircle, at every size macOS
-// asks for, into an .iconset that iconutil turns into AppIcon.icns.
-// Usage: swift scripts/make-icon.swift <out.iconset>
-import AppKit
+// Draws Liner Code's app icon: two turns round one centre, the outer in ink and the inner in blue,
+// on a flat squircle tile with a soft shadow, at every size macOS asks for, into an .iconset that
+// iconutil turns into AppIcon.icns. The geometry is docs/brand/icon-2026's: a 1024 grid, y down, the
+// tile inset 100 (824 across, a superellipse of exponent 5), strokes 78 wide with round caps.
+// Usage: swift scripts/make-icon.swift <out.iconset> [light|dark]
+//        swift scripts/make-icon.swift <out.png> [light|dark] [px]    one image, 1024 px unless px says
+import CoreGraphics
+import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
-let out = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon.iconset")
-try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+let args = CommandLine.arguments
+let out = URL(fileURLWithPath: args.count > 1 ? args[1] : "AppIcon.iconset")
+let dark = args.count > 2 && args[2] == "dark"
+
+func rgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
+    CGColor(srgbRed: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+}
+let tile = rgb(dark ? 0x161719 : 0xF9FAFB)
+let edge = dark ? rgb(0xFFFFFF, 0.10) : rgb(0x141828, 0.08)
+let ink = rgb(dark ? 0xF4F5F6 : 0x16181C)
+let blue = rgb(dark ? 0x609EFA : 0x297CEF)
 
 func draw(_ px: Int) -> Data? {
     let s = CGFloat(px)
-    guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-    let ctx = NSGraphicsContext.current!.cgContext
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    guard let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    // Draw on the 1024 grid with y down, as the SVGs are written; shadows stay in pixels, y up.
+    ctx.translateBy(x: 0, y: s)
+    ctx.scaleBy(x: s / 1024, y: -s / 1024)
 
-    // macOS icon grid: an 824/1024 squircle with a soft shadow.
-    let inset = s * 100 / 1024
-    let box = CGRect(x: inset, y: inset, width: s - inset * 2, height: s - inset * 2)
-    let radius = box.width * 0.2237
+    // The tile: |x|^5 + |y|^5 = 412^5 round (512, 512).
+    let shape = CGMutablePath()
+    for i in 0..<720 {
+        let t = CGFloat(i) / 720 * 2 * .pi
+        let c = cos(t), n = sin(t)
+        let p = CGPoint(x: 512 + 412 * (c < 0 ? -1 : 1) * pow(abs(c), 0.4), y: 512 + 412 * (n < 0 ? -1 : 1) * pow(abs(n), 0.4))
+        if i == 0 { shape.move(to: p) } else { shape.addLine(to: p) }
+    }
+    shape.closeSubpath()
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.012), blur: s * 0.03, color: NSColor(white: 0, alpha: 0.28).cgColor)
-    let shape = CGPath(roundedRect: box, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.012), blur: s * 0.03, color: rgb(0x000000, 0.28))
     ctx.addPath(shape)
-    ctx.setFillColor(NSColor.white.cgColor)
+    ctx.setFillColor(tile)
     ctx.fillPath()
     ctx.restoreGState()
-    ctx.saveGState()
     ctx.addPath(shape)
-    ctx.clip()
-    let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1).cgColor, NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1).cgColor] as CFArray, locations: [0, 1])!
-    ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: box.maxY), end: CGPoint(x: 0, y: box.minY), options: [])
-    ctx.restoreGState()
+    ctx.setStrokeColor(edge)
+    ctx.setLineWidth(3)
+    ctx.strokePath()
 
-    // The mark, in its own 28 × 36.4 box, centred and scaled to about half the icon.
-    let h = box.height * 0.52
-    let k = h / 36.4
-    let w = 28 * k
-    let ox = box.midX - w / 2 + k * 0.6
-    let oy = box.midY + h / 2
-    func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: ox + x * k, y: oy - y * k) }
+    // The mark: down, a quarter turn round (545, 488), across.
     ctx.setLineCap(.round)
-    ctx.setLineJoin(.round)
-    ctx.setLineWidth(2.6 * k)
-    // Outer L: down, a rounded corner, across.
+    ctx.setLineWidth(78)
     let outer = CGMutablePath()
-    outer.move(to: p(1.13, 1.13))
-    outer.addLine(to: p(1.13, 29.9))
-    outer.addArc(tangent1End: p(1.13, 35.2), tangent2End: p(6.43, 35.2), radius: 5.3 * k)
-    outer.addLine(to: p(26.87, 35.2))
+    outer.move(to: CGPoint(x: 309, y: 300))
+    outer.addLine(to: CGPoint(x: 309, y: 488))
+    outer.addArc(tangent1End: CGPoint(x: 309, y: 724), tangent2End: CGPoint(x: 545, y: 724), radius: 236)
+    outer.addLine(to: CGPoint(x: 715, y: 724))
     ctx.addPath(outer)
-    ctx.setStrokeColor(NSColor(srgbRed: 0.13, green: 0.14, blue: 0.16, alpha: 1).cgColor)
+    ctx.setStrokeColor(ink)
     ctx.strokePath()
-    // Inner L, in a light accent blue.
     let inner = CGMutablePath()
-    inner.move(to: p(8.76, 1.13))
-    inner.addLine(to: p(8.76, 26.2))
-    inner.addArc(tangent1End: p(8.76, 27.75), tangent2End: p(10.31, 27.75), radius: 1.55 * k)
-    inner.addLine(to: p(26.87, 27.75))
+    inner.move(to: CGPoint(x: 433, y: 424))
+    inner.addLine(to: CGPoint(x: 433, y: 488))
+    inner.addArc(tangent1End: CGPoint(x: 433, y: 600), tangent2End: CGPoint(x: 545, y: 600), radius: 112)
+    inner.addLine(to: CGPoint(x: 591, y: 600))
     ctx.addPath(inner)
-    ctx.setStrokeColor(NSColor(srgbRed: 0.42, green: 0.63, blue: 0.96, alpha: 1).cgColor)
+    ctx.setStrokeColor(blue)
     ctx.strokePath()
 
-    NSGraphicsContext.restoreGraphicsState()
-    return rep.representation(using: .png, properties: [:])
+    guard let image = ctx.makeImage() else { return nil }
+    let data = NSMutableData()
+    guard let dest = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { return nil }
+    CGImageDestinationAddImage(dest, image, nil)
+    return CGImageDestinationFinalize(dest) ? data as Data : nil
 }
 
-for (base, scales) in [(16, [1, 2]), (32, [1, 2]), (128, [1, 2]), (256, [1, 2]), (512, [1, 2])] {
-    for sc in scales {
-        let name = sc == 1 ? "icon_\(base)x\(base).png" : "icon_\(base)x\(base)@2x.png"
-        if let data = draw(base * sc) { try? data.write(to: out.appendingPathComponent(name)) }
+if out.pathExtension == "png" {
+    try? FileManager.default.createDirectory(at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let px = args.count > 3 ? Int(args[3]) ?? 1024 : 1024
+    guard let data = draw(px) else { fatalError("couldn't draw the icon") }
+    try data.write(to: out)
+} else {
+    try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    for (base, scales) in [(16, [1, 2]), (32, [1, 2]), (128, [1, 2]), (256, [1, 2]), (512, [1, 2])] {
+        for sc in scales {
+            let name = sc == 1 ? "icon_\(base)x\(base).png" : "icon_\(base)x\(base)@2x.png"
+            if let data = draw(base * sc) { try data.write(to: out.appendingPathComponent(name)) }
+        }
     }
 }
 print("wrote \(out.path)")

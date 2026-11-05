@@ -9,7 +9,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, No
 import { exec, execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, release, tmpdir } from "node:os";
 import { basename, delimiter, join, normalize } from "node:path";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
@@ -781,14 +781,31 @@ app.on("before-quit", (e) => {
 app.on("window-all-closed", () => {
   if (!isMac) app.quit();
 });
+/**
+  The Dock icon, light or dark as the system is. macOS 26 and later (Darwin 25) do that themselves
+  with the icon in Assets.car, so the Dock is left alone there; before that it only knows the .icns,
+  which is light, so the app puts the build's own PNG in (the brand PNGs when run from source).
+*/
+const ownDockIcon = isMac && Number(release().split(".")[0]) < 25;
+function setDockIcon() {
+  if (!ownDockIcon) return;
+  const look = systemPreferences.getUserDefault("AppleInterfaceStyle", "string") === "Dark" ? "dark" : "light";
+  const file = app.isPackaged ? join(app.getAppPath(), "icons", `${look}.png`) : join(__dirname, "../..", "docs/brand/icon-2026", `liner-code-icon-${look}.png`);
+  if (existsSync(file)) app.dock?.setIcon(nativeImage.createFromPath(file));
+}
+
 nativeTheme.on("updated", () => {
   if (win && !mac && material === "solid") win.setBackgroundColor(windowColor());
+  setDockIcon();
 });
 
 void app.whenReady().then(async () => {
   if (!firstCopy) return;
   loadPrefs();
   material = prefs.material ?? "solid";
+  setDockIcon();
+  // It follows the system, not the page: a theme picked in the app doesn't move the system's, so its own notice does.
+  if (ownDockIcon) systemPreferences.subscribeNotification("AppleInterfaceThemeChangedNotification", setDockIcon);
   guardPermissions();
   buildMenu();
   startMenu();

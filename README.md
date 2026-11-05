@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src=".github/readme/icon.png" width="112" alt="Liner Code icon">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/icon-dark.png">
+  <img src=".github/readme/icon.png" width="112" alt="Liner Code icon">
+</picture>
 
 # Liner Code
 

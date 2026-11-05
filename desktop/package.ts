@@ -2,6 +2,9 @@
   Wraps a staged app folder in Electron as "Liner Code.app" with @electron/packager. No asar: the
   engine's TypeScript runs from plain files on Electron's own Node.
     node desktop/package.ts <staged folder> <icon.icns> <out dir> [extra resource…]
+  An Assets.car among the extra resources (actool's build of desktop/AppIcon.icon) lands in
+  Contents/Resources and is named by CFBundleIconName, so macOS 26 and later draw that icon and turn
+  it dark with the system; the .icns stays CFBundleIconFile for older macOS.
   Signing: with LINER_SIGN_IDENTITY (a "Developer ID Application: …" identity in your keychain) the
   app is signed with the hardened runtime, and with LINER_NOTARY_PROFILE too (a notarytool keychain
   profile: `xcrun notarytool store-credentials`) it's notarized and stapled. Without them the build
@@ -12,7 +15,7 @@
 import { packager } from "@electron/packager";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 const [dir, icon, out, ...extraResource] = process.argv.slice(2);
 const electron = JSON.parse(readFileSync(createRequire(import.meta.url).resolve("electron/package.json"), "utf8")) as { version: string };
@@ -62,6 +65,7 @@ const [app] = await packager({
   prune: false,
   overwrite: true,
   darwinDarkModeSupport: true,
+  ...(extraResource.some((f) => basename(f) === "Assets.car") && { extendInfo: { CFBundleIconName: "AppIcon" } }),
   quiet: true,
   ...(identity && {
     osxSign: { identity, optionsForFile: () => ({ hardenedRuntime: true, entitlements: join(import.meta.dirname, "entitlements.mac.plist") }) },

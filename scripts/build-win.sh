@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
 # Builds Liner Code for Windows, from this Mac: the same pages, shell, engine source and its one
-# dependency as the Mac app, wrapped in Electron's Windows build as "Liner Code.exe" in a folder,
-# then zipped with its SHA-256 beside it. It isn't signed, so SmartScreen asks the first time.
-#   npm run win                 build/release/Liner-Code-<version>-win-x64.zip and .sha256
+# dependency as the Mac app, wrapped in Electron's Windows build as "Liner Code.exe" in a folder.
+# That folder goes into a setup (NSIS, scripts/windows/liner-code.nsi: for you alone, no
+# administrator, in the Start menu and Settings › Apps) and into a zip to run from anywhere, each
+# with its SHA-256 beside it. Neither is signed, so SmartScreen asks the first time.
+# Needs NSIS 3: brew install makensis.
+#   npm run win                 build/release/Liner-Code-<version>-win-x64-setup.exe and .zip, each with a .sha256
 #   npm run win -- arm64        …for Windows on Arm
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 ARCH="${1:-x64}"
 case "$ARCH" in x64|arm64) ;; *) echo "Unknown architecture: $ARCH (x64 or arm64)" >&2; exit 2 ;; esac
+if ! command -v makensis >/dev/null; then
+  echo "NSIS isn't installed, and the Windows setup needs it: brew install makensis" >&2
+  exit 1
+fi
 STAGE="$ROOT/build/stage-win"
 VERSION="$(node -p "require('./package.json').version")"
 REPO="$(bash scripts/release-repo.sh)"
 OUT="$ROOT/build/release"
 ZIP="$OUT/Liner-Code-$VERSION-win-$ARCH.zip"
+SETUP="$OUT/Liner-Code-$VERSION-win-$ARCH-setup.exe"
 
 echo "→ Building the app's pages"
 npm run build -w ui >/dev/null
@@ -63,5 +71,14 @@ TMP="$ROOT/build/zip-win" && rm -rf "$TMP" && mkdir -p "$TMP" && mv "$APP" "$TMP
 mv "$TMP/Liner Code" "$APP" && rm -rf "$TMP"
 ( cd "$OUT" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256" )
 
+echo "→ Making the setup"
+rm -f "$SETUP" "$SETUP.sha256"
+# Warnings stop it (-WX), and what it says goes to stderr, so a caller that hides the steps still
+# shows why. Without a UTF-8 locale makensis crashes on its language tables (NSIS bug 1165).
+LC_ALL=en_US.UTF-8 makensis -WX -V2 -DVERSION="$VERSION" -DARCH="$ARCH" -DAPPDIR="$APP" -DICON="$ROOT/build/AppIcon.ico" -DOUTFILE="$SETUP" scripts/windows/liner-code.nsi >&2
+( cd "$OUT" && shasum -a 256 "$(basename "$SETUP")" > "$(basename "$SETUP").sha256" )
+
+echo "✓ $SETUP ($(du -h "$SETUP" | cut -f1))"
+echo "  $(cut -d' ' -f1 "$SETUP.sha256")"
 echo "✓ $ZIP ($(du -h "$ZIP" | cut -f1))"
 echo "  $(cut -d' ' -f1 "$ZIP.sha256")"

@@ -27,7 +27,7 @@ so the expensive model only works when the job needs it.
 
 [![Download for macOS](https://img.shields.io/badge/Download_for_macOS-.dmg-e2412f?logo=apple&logoColor=white&style=for-the-badge)](https://github.com/lynnarize/liner-code/releases/latest)
 &nbsp;
-[![Download for Windows](https://img.shields.io/badge/Download_for_Windows-.zip-1b1d22?logo=windows&logoColor=white&style=for-the-badge)](https://github.com/lynnarize/liner-code/releases/latest)
+[![Download for Windows](https://img.shields.io/badge/Download_for_Windows-.exe-1b1d22?logo=windows&logoColor=white&style=for-the-badge)](https://github.com/lynnarize/liner-code/releases/latest)
 
 [Install](#install-the-alpha) · [Features](#features) · [How agents share the work](#how-agents-share-the-work) · [Designs](#designs) · [API endpoints](#api-endpoints) · [Run from source](#run-it-from-source) · [Changelog](CHANGELOG.md)
 
@@ -174,11 +174,14 @@ System Settings › Privacy & Security, press **Open Anyway** beside Liner Code,
 Terminal: `xattr -dr com.apple.quarantine "/Applications/Liner Code.app"`.) After that it updates
 itself from this repository's releases.
 
-**On Windows** (x64, new in 0.1.9): download `Liner-Code-<version>-win-x64.zip`, unzip it anywhere
-and open `Liner Code.exe`; it puts itself in the Start menu. It isn't signed yet, so SmartScreen
-asks the first time: **More info › Run anyway**. It doesn't update itself yet, so download the next
-zip, and its Terminal is PowerShell, without full-screen programs for now. Building it from a Mac:
-`npm run win`.
+**On Windows** (x64, new in 0.1.9): download `Liner-Code-<version>-win-x64-setup.exe` and run it.
+It installs for you alone, with no administrator, and puts Liner Code in the Start menu; Settings ›
+Apps removes it again, leaving your sessions and settings. It isn't signed yet, so SmartScreen asks
+the first time: **More info › Run anyway**. It doesn't update itself yet: run the next setup, which
+puts the new version in place of the old one. To run it without installing, unzip
+`Liner-Code-<version>-win-x64.zip` anywhere and open `Liner Code.exe`. Its Terminal is PowerShell,
+without full-screen programs for now. Building it from a Mac: `npm run win` (it needs NSIS:
+`brew install makensis`).
 
 You need at least one coding tool installed and signed in: [Claude Code](https://code.claude.com),
 [Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai) or
@@ -432,7 +435,7 @@ desktop/                   the Electron shell
                            the trackpad's tap, and Apple Intelligence's badge kept off text fields
   build.ts, package.ts     bundles the shell and compiles the addon; wraps the app with @electron/packager
 mac/                       the older Swift shell (npm run mac:swift builds it into build/swift/)
-scripts/                   dev runner, Mac build, release, icon, Liner sync
+scripts/                   dev runner, Mac and Windows builds (windows/: the setup), release, icon, Liner sync
 engine/test/               node:test tests for the engine's pure parts and the proxy
 docs/BACKEND.md            what the backend needs, now and later
 ```

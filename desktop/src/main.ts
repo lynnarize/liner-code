@@ -28,8 +28,10 @@ const isWin = process.platform === "win32";
 if (isWin) app.setAppUserModelId("app.liner.code");
 
 /**
-  The zip has no installer, so the app puts its own Start menu shortcut in, with its id, and points
-  it at wherever this copy now is (a moved folder moves it).
+  The Start menu shortcut, with the app's id, pointed at wherever this copy now is (a moved folder
+  moves it). The setup (scripts/windows/liner-code.nsi) puts in this same one, by name and folder,
+  but stock NSIS can't give it the id, so the app writes it again at every launch; a copy from the
+  zip has no setup, so this is its only shortcut.
 */
 function startMenu() {
   if (!isWin || !app.isPackaged) return;

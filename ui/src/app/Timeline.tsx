@@ -493,7 +493,7 @@ function commandOf(t: Tool) {
 }
 
 /** One line of the trail: what it did (a verb and what it touched), how it went, and the fact that matters, under it. */
-/** `diff`: the file in the turn's checkpoint an edit step changed, which a press opens in the Diff. */
+/** `diff`: the file in the turn's checkpoint an edit step changed, which a press opens in Changes. */
 type TrailStep = { key: string; tools: Tool[]; verb: string; target?: string; result?: ReactNode; state: "running" | "done" | "failed"; at: number; seconds: number; tail?: string; diff?: string };
 type Row = { kind: "step"; step: TrailStep } | Exclude<Entry, { kind: "tool" }>;
 
@@ -725,7 +725,7 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
             const said = s.tools.flatMap((t) => asks.get(t.id) ?? []);
             // A step you said no to failed because of it: your no says so, once.
             const result = said.length && said.every((a) => a.state === "denied") ? undefined : s.result;
-            // An edit with its file in the turn's checkpoint opens the Diff at that file; the diff says more than the edit's input.
+            // An edit with its file in the turn's checkpoint opens Changes at that file; the diff says more than the edit's input.
             const diff = s.diff && cp ? { id: cp.id, path: s.diff } : null;
             const has = !diff && (s.tools.some((t) => t.input || t.output) || said.some((a) => a.reason));
             const rowOpen = rows.includes(s.key);
@@ -737,13 +737,13 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
                   data-diff={diff ? true : undefined}
                   aria-expanded={has ? rowOpen : undefined}
                   disabled={!has && !diff}
-                  title={diff ? `Show ${nameOf(diff.path)} in the Diff` : undefined}
+                  title={diff ? `Show ${nameOf(diff.path)} in Changes` : undefined}
                   onClick={() => (diff ? onReview(diff.id, diff.path) : setRows((x) => (x.includes(s.key) ? x.filter((k) => k !== s.key) : [...x, s.key])))}
                 >
                   <span className="lc-tstep-dot" aria-hidden />
                   <b className={s.state === "running" ? "lc-tstep-verb l-shimmer" : "lc-tstep-verb"}>{s.verb}</b>
                   {s.target && <code className="lc-tstep-target">{s.target}</code>}
-                  {diff && <span className="lc-tstep-go" aria-hidden>Diff ›</span>}
+                  {diff && <span className="lc-tstep-go" aria-hidden>Changes ›</span>}
                   <span className="lc-grow" />
                   <span className="lc-tstep-time l-num">{s.state === "running" ? (now - s.at >= 2000 ? duration((now - s.at) / 1000) : "") : s.seconds >= 1 ? duration(s.seconds) : ""}</span>
                 </button>

@@ -243,7 +243,7 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
       const { st, pic } = await look(emit);
       if (!st.pr) {
         if (!pic.ahead) {
-          emit({ type: "message", text: "Nothing is committed on this branch yet. Commit the changes from the Diff tab first; the pull request carries what's committed." });
+          emit({ type: "message", text: "Nothing is committed on this branch yet. Commit from the Changes tab first; the pull request carries what's committed." });
           emit({ type: "stage", stage: "idle" });
           return;
         }

@@ -1,8 +1,9 @@
 /*
   Updates, as you meet them: a notice stack in Home's corner for a new Liner Code (downloading,
   ready to go in, or out) and for each agent tool the engine is updating, has updated or couldn't
-  update. Each notice says what happened and what's next; putting one away keeps it away until a
-  newer version comes out. Settings › Updates has the rest.
+  update. One downloading or ready is the sidebar's card instead, while the sidebar shows. Each
+  notice says what happened and what's next; putting one away keeps it away until a newer version
+  comes out. Settings › Updates has the rest.
 */
 import type { AppUpdate, BuiltinProvider, ToolUpdate, Updates } from "@contracts";
 import { newerVersion, updateModes } from "@contracts";
@@ -131,13 +132,13 @@ function dismissNotice(id: string) {
   for (const one of rest.split(",")) updates.dismiss(one.slice(0, one.indexOf("@")));
 }
 
-/** Home's corner: the notices, stacked. */
-export function HomeUpdates() {
+/** Home's corner: the notices, stacked. `sidebar`: whether the sidebar shows. */
+export function HomeUpdates({ sidebar = true }: { sidebar?: boolean }) {
   const u = useEngine((s) => s.updates);
   const app = useEngine((s) => updateModes(s.settings).app);
   const tools = useEngine((s) => updateModes(s.settings).tools);
-  // A Liner Code that's ready or downloading has its card in the sidebar, over the foot.
-  const notices = noticesOf(u, { app, tools }).filter((n) => !/^app:(ready|downloading):/.test(n.id));
+  // A Liner Code that's ready or downloading has its card in the sidebar, over the foot; with the sidebar hidden it's here again.
+  const notices = noticesOf(u, { app, tools }).filter((n) => !sidebar || !/^app:(ready|downloading):/.test(n.id));
   if (!notices.length) return null;
   return <NoticeStack className="lc-up-home" label="Updates" notices={notices} onDismiss={dismissNotice} />;
 }

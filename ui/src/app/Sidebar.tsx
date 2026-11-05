@@ -22,7 +22,7 @@ import { appIcon } from "./Addon";
 import { I, ModelMark } from "./icons";
 import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, plural, since, type Bucket } from "./model";
 import { ContextMenu, Disc, LimitRow, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
-import { appNotice } from "./Updates";
+import { appNotice, updates } from "./Updates";
 import { updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
 import * as os from "./os";
@@ -59,6 +59,15 @@ const key = (id: string) => {
 };
 
 const NAME: Record<Bucket, string> = { pinned: "Pinned", needs: "Needs you", working: "Working", open: "Open", snoozed: "Snoozed", settled: "Settled" };
+
+/**
+  Waits on you, wherever you keep it: a pinned session or one in your groups as well, the way the
+  Dock's count takes it (App). Snoozed and settled ones are put away, so they don't.
+*/
+export const waitsOnYou = (t: Thread, now = Date.now()) => bucketOf(t.pinned ? { ...t, pinned: false } : t, now) === "needs";
+
+/** When a snooze ends, said short for a row: its time, or the pull request it waits on. */
+const snoozeEnd = (t: Thread, now: number) => (t.wake ? `#${t.wake.pr} ${t.wake.kind === "checks" ? "checks" : "reply"}` : t.snoozedUntil ? clock(t.snoozedUntil, now) : "");
 
 /** A list of ids kept in localStorage, for what you folded. */
 function useFolded(key: string) {
@@ -193,6 +202,8 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     return m;
   }, [list, now, groups]);
   const byGroup = useMemo(() => groups.map((g) => ({ g, list: list.filter((t) => t.group === g.id && inGroup(t, place(t))) })), [groups, list, now]);
+  // Needs you lists every session waiting on you, pinned and grouped ones too; each keeps its own row where it sits.
+  const needsYou = useMemo(() => list.filter((t) => waitsOnYou(t, now)), [list, now]);
 
   // Project > session > its forks: every session that isn't pinned, in a group, snoozed or
   // settled, under its project in your projects' order. A fork sits under the session it came
@@ -250,9 +261,10 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
 
   const act = async (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => {
     const settled = bucketOf(t, now) === "settled";
+    // A snooze for a time, or waking it now, ends one that waited on a pull request (else that one still wakes it, and the row reads it).
     const patch =
-      what === "pin" ? { pinned: !t.pinned } : what === "settle" ? { done: !settled, unread: false, pinned: false } : what === "snooze" ? { snoozedUntil: at!.getTime() } : { snoozedUntil: null };
-    const before = { pinned: t.pinned ?? false, done: t.done ?? false, snoozedUntil: t.snoozedUntil ?? null, unread: t.unread ?? false };
+      what === "pin" ? { pinned: !t.pinned } : what === "settle" ? { done: !settled, unread: false, pinned: false } : what === "snooze" ? { snoozedUntil: at!.getTime(), wake: null } : { snoozedUntil: null, wake: null };
+    const before = { pinned: t.pinned ?? false, done: t.done ?? false, snoozedUntil: t.snoozedUntil ?? null, unread: t.unread ?? false, wake: t.wake ?? null };
     await rpc("thread.update", { id: t.id, ...patch });
     const where = what === "pin" ? (t.pinned ? "out of Pinned" : "to Pinned") : what === "settle" ? (settled ? "back to its project" : "to Settled") : what === "snooze" ? `to Snoozed, until ${at!.toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "back";
     toast(`Moved ${t.title} ${where}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: t.id, ...before }) }, duration: 5000 });
@@ -266,8 +278,9 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   };
   const wake = async (t: Thread, kind: "checks" | "reply") => {
     if (!t.pr) return;
+    const before = { wake: t.wake ?? null, snoozedUntil: t.snoozedUntil ?? null };
     await rpc("thread.update", { id: t.id, wake: { kind, pr: t.pr.number }, snoozedUntil: Date.now() + 30 * 86400000 });
-    toast(`Moved ${t.title} to Snoozed`, { description: kind === "checks" ? `Back when the checks on #${t.pr.number} finish` : `Back when someone replies on #${t.pr.number}`, action: { label: "Undo", onClick: () => void rpc("thread.update", { id: t.id, wake: null, snoozedUntil: null }) }, duration: 5000 });
+    toast(`Moved ${t.title} to Snoozed`, { description: kind === "checks" ? `Back when the checks on #${t.pr.number} finish` : `Back when someone replies on #${t.pr.number}`, action: { label: "Undo", onClick: () => void rpc("thread.update", { id: t.id, ...before }) }, duration: 5000 });
   };
   const newGroup = async (name: string, forThread?: string) => {
     const id = `g${Date.now().toString(36)}`;
@@ -342,7 +355,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   const bulk = async (what: string, patch: Omit<Parameters<typeof rpc<"thread.update">>[1], "id">, note?: string) => {
     const ts = pickedThreads;
     if (!ts.length) return;
-    const before = ts.map((t) => ({ id: t.id, pinned: t.pinned ?? false, done: t.done ?? false, snoozedUntil: t.snoozedUntil ?? null, unread: t.unread ?? false, archived: t.archived ?? false, group: t.group ?? null }));
+    const before = ts.map((t) => ({ id: t.id, pinned: t.pinned ?? false, done: t.done ?? false, snoozedUntil: t.snoozedUntil ?? null, unread: t.unread ?? false, archived: t.archived ?? false, group: t.group ?? null, wake: t.wake ?? null }));
     clearPicked();
     try {
       await Promise.all(ts.map((t) => rpc("thread.update", { id: t.id, ...patch })));
@@ -354,16 +367,20 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   };
 
   /**
-    Settles a whole project: every session under its header goes to Settled at once, with one
-    Undo. Sessions still at work stay where they are; the project leaves the list until it has a
-    session again.
+    Settles a whole project: every finished session under its header goes to Settled at once, with
+    one Undo. Sessions still at work, and those waiting on you (an approval, a question, a plan, an
+    answer you haven't read: whatever Needs you holds), stay where they are; settled, they'd leave
+    Needs you and the Dock's count. With none left, the project leaves the list until it has a
+    session again (T3 Code's auto-settle passes over a pending request too: ThreadSettlementService.ts).
   */
   const settleProject = async (projectId: string, name: string) => {
     const known = new Set(projects.map((p) => p.id));
     const mine = [...byBucket.needs, ...byBucket.working, ...byBucket.open].filter((t) => (projectId ? t.projectId === projectId : !known.has(t.projectId)));
-    const go = mine.filter((t) => t.status !== "running");
-    const busy = mine.length - go.length;
-    const still = busy ? `${plural(busy, "session")} still working ${busy === 1 ? "stays" : "stay"} in the list.` : undefined;
+    const go = mine.filter((t) => place(t) === "open");
+    const busy = mine.filter((t) => place(t) === "working").length;
+    const waiting = mine.length - go.length - busy;
+    const stay = [busy ? `${plural(busy, "session")} still working` : "", waiting ? `${busy ? waiting : plural(waiting, "session")} waiting on you` : ""].filter(Boolean).join(" and ");
+    const still = stay ? `${stay} ${busy + waiting === 1 ? "stays" : "stay"} in the list.` : undefined;
     if (!go.length) return void toast(`Nothing to settle in ${name}`, { description: still });
     const before = go.map((t) => ({ id: t.id, done: t.done ?? false, unread: t.unread ?? false, pinned: t.pinned ?? false }));
     try {
@@ -635,13 +652,13 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             ) : (
               <b>{t.title}</b>
             )}
-            {/* Working, waiting or stuck shows its mark; anything else, how long ago (or when a snooze ends). */}
+            {/* Working, waiting or stuck shows its mark; anything else, how long ago (or when a snooze ends: one until a pull request's checks or a reply says so, not the fallback date behind it). */}
             {t.status === "running" || t.status === "error" || t.status === "limited" || bucket === "needs" || run?.status === "running" ? (
               <span className="lc-sb-mk">
                 <StatusMark t={t} bucket={bucket} brand={markOf(ref)} />
               </span>
             ) : (
-              <span className="lc-sb-time">{bucket === "snoozed" && t.snoozedUntil ? clock(t.snoozedUntil, now) : ago(t.updatedAt, now)}</span>
+              <span className="lc-sb-time">{bucket === "snoozed" ? snoozeEnd(t, now) : ago(t.updatedAt, now)}</span>
             )}
           </span>
         </div>
@@ -836,11 +853,11 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
       <div ref={scroller} className="lc-sb-scroll" data-up={edges.up || undefined} data-down={edges.down || undefined}>
         <div className="lc-sb-inner">
           <span className="lc-sb-plate" aria-hidden style={plate ? { transform: `translate(${plate.x}px, ${plate.y}px)`, width: plate.w, height: plate.h, opacity: 1 } : { opacity: 0 }} />
-          {byBucket.needs.length > 0 && (
+          {needsYou.length > 0 && (
             <section className="lc-sb-sec" aria-label="Needs you">
               <div className="lc-sb-lab">Needs you</div>
-              {/* The same sessions stay under their projects too: these are a way in, so they don't wear the plate. */}
-              {byBucket.needs.map((t) => (
+              {/* The same sessions keep their rows where they sit (under their project, in Pinned or a group): these are a way in, so they don't wear the plate. */}
+              {needsYou.map((t) => (
                 <button key={t.id} type="button" className="lc-sb-need l-focus" aria-current={t.id === current ? "true" : undefined} onClick={() => (clearPicked(), onOpen(t.id))} onContextMenu={(e) => (e.preventDefault(), setMenu({ t, x: e.clientX, y: e.clientY }))}>
                   <span className="lc-sb-ndot" data-k={t.status === "error" ? "danger" : "warn"} />
                   <span className="lc-sb-nt">{t.title}</span>
@@ -885,7 +902,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
                       <Num value={x.needs} />
                     </span>
                   )}
-                  <button type="button" className="lc-sb-add l-focus" aria-label={`Settle every session in ${x.name}`} title="Settle the project: its sessions go to Settled" onClick={() => void settleProject(x.id, x.name)}>
+                  <button type="button" className="lc-sb-add l-focus" aria-label={`Settle the finished sessions in ${x.name}`} title="Settle the project: its finished sessions go to Settled" onClick={() => void settleProject(x.id, x.name)}>
                     <I.settle size={12} />
                   </button>
                   {x.id && (
@@ -928,7 +945,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             title="Snooze them for an hour"
             onClick={() => {
               const at = snoozeTimes()[0];
-              void bulk("Snoozed", { snoozedUntil: at.at.getTime() }, `Back at ${at.note}`);
+              void bulk("Snoozed", { snoozedUntil: at.at.getTime(), wake: null }, `Back at ${at.note}`);
             }}
           >
             <I.snooze size={14} />
@@ -1021,7 +1038,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           projMenu && (
             <>
               {projMenu.id && <Row title="New session here" icon={<I.plus size={13} />} onPick={() => (close(), onNew(projMenu.id))} />}
-              <Row title="Settle the project" note="Every session in it goes to Settled" icon={<I.settle size={13} />} onPick={() => (close(), void settleProject(projMenu.id, projMenu.name))} />
+              <Row title="Settle the project" note="Its finished sessions go to Settled" icon={<I.settle size={13} />} onPick={() => (close(), void settleProject(projMenu.id, projMenu.name))} />
               <Row title={shutProjects.includes(projMenu.id) ? "Show its sessions" : "Fold its sessions"} icon={<I.chevD size={13} />} onPick={() => (close(), toggleProject(projMenu.id))} />
             </>
           )
@@ -1053,7 +1070,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
         }
       </ContextMenu>
 
-      {/* A new Liner Code, ready or on its way: a card over the foot, until it goes in. */}
+      {/* A new Liner Code, ready or on its way: a card over the foot, until it goes in or you put it away (until a newer one). */}
       {(() => {
         const n = updateMode !== "off" && update.dismissed.app !== update.app.latest && (update.app.state === "ready" || update.app.state === "downloading") ? appNotice(update.app) : null;
         if (!n) return null;
@@ -1070,6 +1087,9 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
                 Restart
               </button>
             )}
+            <button type="button" className="lc-sb-a l-focus" aria-label="Put it away" title="Put it away until a newer version" onClick={() => updates.dismiss("app")}>
+              <I.close size={12} />
+            </button>
           </div>
         );
       })()}

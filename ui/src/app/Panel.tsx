@@ -1,12 +1,11 @@
 /*
-  The right dock beside the session: one or two panes side by side, each a strip of tabs over the
-  surface that's up (dock.ts has the rules; DeepSeek Harness's ui-dockkit and ui-sidebar-right
-  were the model). A chip moves to the other pane by dragging it there, or from its menu; dropped
-  on the right half of a lone pane it splits it. A pane's + opens the New tab guide in it. The
-  last pane's strip ends with the full-canvas switch and the hide button, and the full canvas on
-  Diff is the full-width Review.
-  Every surface you open is mounted once and kept while it's open in either pane, placed into its
-  pane's column, so moving it never reloads a page or restarts a shell.
+  The right dock beside the session: one pane, a strip of tabs over the surface that's up (dock.ts
+  has the rules; DeepSeek Harness's ui-dockkit and ui-sidebar-right were the model). A chip drags
+  to another place in the strip. The + opens the New tab guide. The strip ends with the
+  full-canvas switch, and the full canvas on Changes is the full-width Review. (0.2.1 had a second
+  pane; dock.ts's readDock folds a layout it kept into the one.)
+  Every surface you open is mounted once and kept while it's open, so moving its tab never
+  reloads a page or restarts a shell.
   Changes is the diff, kept by turn: the turn picker sits in the diff's strip, the file you
   pressed in the thread scrolls into view, and the foot says how many files you've looked at,
   with Undo for the turn and Commit for everything that's left.
@@ -102,7 +101,7 @@ export function Panel({
   }, [shown.join()]);
   useEffect(() => setMounted((m) => new Set([...m].filter((t) => all.includes(t)))), [all.join()]);
   const [dragging, setDragging] = useState<Tab | null>(null);
-  const [drop, setDrop] = useState<{ pane: number; split?: boolean } | null>(null);
+  const [drop, setDrop] = useState<{ pane: number } | null>(null);
   const open = (t: Tab, pane?: number) => onDock(openTab(dock, t, pane));
   const wideReview = dock.full && dock.panes.length === 1 && dock.panes[0].tab === "changes";
   const make = () => toComposer(thread.id, "Make me a panel that ");
@@ -139,13 +138,13 @@ export function Panel({
     return null;
   };
 
-  const dropOn = (e: DragEvent, pane: number, index?: number, splitIt?: boolean) => {
+  const dropOn = (e: DragEvent, pane: number, index?: number) => {
     const t = e.dataTransfer.getData(DRAG) || dragging;
     setDrop(null);
     setDragging(null);
     if (!t) return;
     e.preventDefault();
-    onDock(splitIt ? moveTab(dock, t, dock.panes.length) : moveTab(dock, t, pane, index));
+    onDock(moveTab(dock, t, pane, index));
   };
   const allow = (e: DragEvent) => {
     if (!dragging && !e.dataTransfer.types.includes(DRAG)) return false;
@@ -173,7 +172,7 @@ export function Panel({
             onDock={onDock}
             meta={meta}
             last={i === dock.panes.length - 1}
-            dropping={drop?.pane === i && !drop.split}
+            dropping={drop?.pane === i}
             onDragTab={(t) => setDragging(t)}
             onDragEnd={() => (setDragging(null), setDrop(null))}
             onDragOver={(e) => allow(e) && setDrop({ pane: i })}
@@ -206,7 +205,7 @@ export function Panel({
       {/* While a chip is dragged, each pane's body takes the drop (a page or a terminal under it would swallow it). */}
       {dragging &&
         dock.panes.map((_, i) => (
-          <div key={`drop:${i}`} className="lc-dropzone" style={{ gridColumn: i + 1, gridRow: 2 }} data-on={drop?.pane === i || undefined} data-split={(drop?.pane === i && drop.split) || undefined}>
+          <div key={`drop:${i}`} className="lc-dropzone" style={{ gridColumn: i + 1, gridRow: 2 }} data-on={drop?.pane === i || undefined}>
             <div
               className="lc-dropzone-l"
               onDragOver={(e) => allow(e) && setDrop({ pane: i })}
@@ -275,7 +274,6 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
     e.preventDefault();
     chips[to].focus();
   };
-  const two = dock.panes.length > 1;
   return (
     <div className="lc-panel-top lc-stabs" role="presentation" style={style} data-pane={i} data-drag data-drop={dropping || undefined} onDragOver={onDragOver} onDrop={(e) => onDrop(e)}>
       {pinnedApps.map((a) => {
@@ -360,7 +358,6 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
         {(close) =>
           menu && (
             <>
-              {two && <Row title={i === 0 ? "Move to the right pane" : "Move to the left pane"} icon={<I.split size={13} />} onPick={() => (close(), onDock(moveTab(dock, menu.t, i === 0 ? 1 : 0)))} />}
               {menu.t.startsWith("app:") && (
                 <Row
                   title={pins.includes(menu.t.slice(4)) ? "Unpin from the panel" : "Pin to the panel"}
@@ -369,7 +366,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
                   onPick={() => (close(), pin(menu.t.slice(4), !pins.includes(menu.t.slice(4))))}
                 />
               )}
-              {(two || menu.t.startsWith("app:")) && <Sep />}
+              {menu.t.startsWith("app:") && <Sep />}
               <Row title="Close" icon={<I.close size={13} />} onPick={() => (close(), onDock(closeTab(dock, menu.t)))} />
               <Row title="Close the others" icon={<I.close size={13} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(closeOthers(dock, menu.t)))} />
             </>

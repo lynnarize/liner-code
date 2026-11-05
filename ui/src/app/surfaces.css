@@ -4844,17 +4844,50 @@
 .lc-below .lc-terms {
   grid-template-rows: 40px minmax(0, 1fr);
 }
+/*
+  In a narrow session the strip gives way: the folder first, then the tabs, each down to its icon
+  and a few letters (T3 Code truncates its terminals' labels the same way: ThreadTerminalDrawer.tsx);
+  past that it scrolls. Hide stands outside the scroller, at its end, so nothing runs over it and
+  it never scrolls away.
+*/
+.lc-terms[data-below] {
+  position: relative;
+}
 .lc-terms[data-below] > .lc-terms-tabs {
   align-items: center;
   gap: 2px;
   height: 40px;
-  padding: 0 8px 0 12px;
-  overflow: visible;
+  margin-right: 34px;
+  padding: 0 4px 0 12px;
+  overflow: auto hidden;
+}
+.lc-terms[data-below] > .lc-terms-tabs > .lc-ib:last-child {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+}
+.lc-terms[data-below] .lc-terms-tab {
+  flex: 0 1 auto;
+  min-width: 72px;
 }
 .lc-terms[data-below] .lc-terms-tab > button:first-child {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
   height: 26px;
+  overflow: hidden;
   font-size: 12.5px;
   font-weight: 500;
+  line-height: 26px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-terms[data-below] .lc-terms-tab > button:first-child > svg {
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.lc-terms[data-below] .lc-terms-x {
+  flex: none;
 }
 .lc-terms[data-below] .lc-ib {
   width: 26px;
@@ -4866,6 +4899,7 @@
   gap: 4px;
   min-width: 0;
   font-size: 12px;
+  white-space: nowrap;
   color: var(--l-ink-3);
 }
 .lc-below-tools > svg {

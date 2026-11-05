@@ -219,12 +219,12 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
       {project ? (
         <DeskStage project={project} settings={settings} worktree={worktree} onOpen={onStarted}>
           {ask}
-          <HomeUpdates />
+          <HomeUpdates sidebar={sidebar} />
         </DeskStage>
       ) : (
         <>
           {ask}
-          <HomeUpdates />
+          <HomeUpdates sidebar={sidebar} />
         </>
       )}
     </div>

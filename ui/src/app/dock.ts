@@ -1,14 +1,15 @@
 /*
-  The right dock's layout, as plain data: one or two panes side by side, each a row of tabs with
-  one on screen, and whether the dock shows and fills the paper. Every change is a function from
-  one layout to the next, so the session, the top-right row and the guide all move it the same
-  way, and the rules are tested on their own (engine/test/dock.test.ts).
+  The right dock's layout, as plain data: its panes, each a row of tabs with one on screen, and
+  whether the dock shows and fills the paper. Every change is a function from one layout to the
+  next, so the session, the top-right row and the guide all move it the same way, and the rules
+  are tested on their own (engine/test/panels.test.ts).
 
   The rules are DeepSeek Harness's right sidebar (packages/client/ui-sidebar-right and its
   ui-dockkit, MIT): at most two panes; a pane is never left empty (one whose last tab goes merges
   away); a pane holds at most one New tab guide, and the guide gives way to what you open from
-  it; closing the last tab hides the dock. Ours is a list rather than their split tree, since two
-  panes side by side is all the dock ever holds.
+  it; closing the last tab hides the dock. Ours is a list rather than their split tree.
+  Since 0.2.2 the panel holds one pane: nothing makes a second (split, and moveTab past the last
+  pane, are kept for their tests), and readDock folds a two-pane layout 0.2.1 kept into one.
 */
 
 /** A tab: a built-in surface, the New tab guide, one routine run, an add-on's panel (`app:<id>`), or one an agent asks to add (`preview:<item>`). */
@@ -161,7 +162,11 @@ export function replaceTab(d0: DockState, from: DockTab, to: DockTab): DockState
   return d;
 }
 
-/** A layout read back from storage, kept only if it still makes sense. */
+/**
+  A layout read back from storage, kept only if it still makes sense. Since 0.2.2 the panel shows
+  one pane, so two side by side, as 0.2.1 kept them, come back as one: the left pane's tabs, then
+  the right's, one guide at most, with the tab that was up in the pane you were in still up.
+*/
 export function readDock(raw: unknown): DockState | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Partial<DockState>;
@@ -174,5 +179,7 @@ export function readDock(raw: unknown): DockState | null {
     for (const t of tabs) if (t !== GUIDE) seen.add(t);
     if (tabs.length) panes.push({ tabs: [...new Set(tabs)], tab: tabs.includes(p.tab) ? p.tab : tabs[tabs.length - 1] });
   }
-  return settle({ open: Boolean(r.open) && panes.length > 0, full: Boolean(r.full), panes, at: Number(r.at) || 0 });
+  const d = settle({ open: Boolean(r.open) && panes.length > 0, full: Boolean(r.full), panes, at: Number(r.at) || 0 });
+  if (d.panes.length < 2) return d;
+  return { ...d, panes: [{ tabs: [...new Set(d.panes.flatMap((p) => p.tabs))], tab: (d.panes[d.at] ?? d.panes[0]).tab }], at: 0 };
 }

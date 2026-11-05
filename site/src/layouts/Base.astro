@@ -1,0 +1,86 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import { site } from '../data/site';
+import Nav from '../components/Nav.astro';
+import Mark from '../components/Mark.astro';
+import '../styles/tokens.css';
+import '../styles/base.css';
+import '../styles/site.css';
+import '../styles/ui.css';
+
+interface Props { title?: string; description?: string; image?: string; tone?: string }
+const { title, description = site.description, image = '/og.png', tone = 'sky' } = Astro.props;
+const fullTitle = title ? `${title} | ${site.name}` : site.title;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
+const ogImage = new URL(image, Astro.site ?? site.url).href;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: site.name,
+  description: site.description,
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Windows',
+  softwareVersion: site.version,
+  license: 'https://opensource.org/licenses/MIT',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  downloadUrl: site.releases,
+  codeRepository: site.repo,
+  url: site.url,
+};
+---
+<!doctype html>
+<html lang="en" transition:animate="none" data-nav-tone={tone}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta name="theme-color" content="#0b0e1c" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.name} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/geist-mono-500.woff2" as="font" type="font/woff2" crossorigin />
+    <script is:inline>
+      document.documentElement.classList.add('js');
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('motion');
+      // The sea at night by default, or blue if this visitor picked it; kept across page swaps.
+      (function () {
+        var sea = function () {
+          var v = 'dark'; try { v = localStorage.getItem('lc:sea') === 'blue' ? 'blue' : 'dark'; } catch (e) {}
+          document.documentElement.dataset.sea = v;
+          var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', v === 'blue' ? '#0b33b4' : '#0b0e1c');
+        };
+        sea();
+        document.addEventListener('astro:after-swap', sea);
+      })();
+    </script>
+    <ClientRouter fallback="swap" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div id="curtain" transition:persist="curtain" aria-hidden="true"><div class="curtain__panel"><Mark class="curtain__mark" /></div></div>
+    <Nav />
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <slot name="footer" />
+    <script>
+      import { start } from '../engine/astro';
+      import { setupMotion } from '../motion/setup';
+      start(setupMotion);
+    </script>
+  </body>
+</html>

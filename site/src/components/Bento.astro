@@ -1,0 +1,57 @@
+---
+// Everything around the session, as one grid of cards: a title, a sentence or two, and the thing
+// itself (a working fragment, the app's real keys, or the app as it is in 0.2.1).
+import { data } from '../data/site';
+const shots = [
+  { id: 'desk', title: 'The Desk', text: 'Sessions sort themselves by what they need from you. Press what waits, and one press decides.', src: '/media/mac-desk.webp', alt: 'Home with the Desk open: the tide fix back with you with one file to review, and the tide screen design done.', pos: 'left' },
+  { id: 'design', title: 'Designs', text: 'Any agent draws the screen beside the session. Point at a part to change it, then Build it.', src: '/media/mac-design.webp', alt: 'A session that asked for a home screen for the tide tables, with the Design surface beside it showing the phone screen.', pos: 'right' },
+  { id: 'modes', title: 'Solo, Plan, Auto', text: "Pick how a session works. A model from another maker checks each change before it's yours.", src: '/media/mac-agentic.webp', alt: 'Settings, Agentic features: Solo, Plan then build and Auto, each with the models it uses.', pos: 'left' },
+  { id: 'addons', title: 'Add-ons, made in Workshop', text: "Ask for what Liner Code doesn't have, and an agent makes it. Nothing goes in until you say yes.", src: '/media/mac-addons-page.webp', alt: 'The Add-ons page with nothing added yet, and Make one with an agent.', pos: 'left', link: { href: '/workshop/', label: 'About Workshop' } },
+];
+---
+<section class="bento" id="features" data-tone="paper" aria-labelledby="bento-title">
+  <h2 class="bento__title" id="bento-title" data-split="words">Everything around the session</h2>
+  <div class="bento__grid">
+
+    <article class="card card--turn" data-reveal="up">
+      <h3 class="card__title">One turn, from ask to diff</h3>
+      <p class="card__text">Ask in plain words. It asks before it guesses, plans, builds, and hands you a diff to keep or undo.</p>
+      <div class="card__show peek peek--right">
+        <img src="/media/mac-diff-1100.webp" srcset="/media/mac-diff-1100.webp 1100w, /media/mac-diff.webp 1800w" sizes="(max-width: 1023px) 190vw, 66vw" alt="The tide fix in Liner Code: the Demo's plan, its edit and test, and the Diff panel beside it with src/tides.js, Undo turn 1 and Commit 1 file." width="1800" height="1160" loading="lazy" decoding="async" />
+      </div>
+    </article>
+
+    <article class="card card--surfaces" id="surfaces" data-reveal="up" data-delay="0.06">
+      <h3 class="card__title">Surfaces beside the session</h3>
+      <p class="card__text">The Browser, Design, Terminal, Files and the rest open next to the conversation, each one key away.</p>
+      <div class="card__show peek peek--right">
+        <img src="/media/mac-surfaces-1100.webp" srcset="/media/mac-surfaces-1100.webp 1100w, /media/mac-surfaces.webp 1800w" sizes="(max-width: 1023px) 190vw, 66vw"
+          alt="The tide fix session with its panel open on the New tab guide: Session, Side chat, Browser, Design, Terminal, Files, Changes, Pull request and the rest, each with its key, and Changes, Files and Browser as tabs above."
+          width="1800" height="1160" loading="lazy" decoding="async" />
+      </div>
+    </article>
+
+    {shots.map((c, i) => (
+      <article class:list={['card', 'card--shot', `card--${c.id}`]} data-reveal="up" data-delay={String((i % 2) * 0.06)}>
+        <h3 class="card__title">{c.title}</h3>
+        <p class="card__text">{c.text}{c.link && <> <a class="card__link" href={c.link.href}>{c.link.label}</a></>}</p>
+        <div class:list={['card__show', 'peek', `peek--${c.pos}`]}>
+          <img src={c.src.replace(".webp", "-1100.webp")} srcset={`${c.src.replace(".webp", "-1100.webp")} 1100w, ${c.src} 1800w`} sizes="(max-width: 1023px) 190vw, 66vw" alt={c.alt} width="1800" height="1160" loading="lazy" decoding="async" />
+        </div>
+      </article>
+    ))}
+
+    <article class="card card--wide" id="data" data-reveal="up">
+      <div class="card__body">
+        <h3 class="card__title">Nothing in between</h3>
+        <p class="card__text">No server, no telemetry. Sign-ins stay with each tool, keys stay in your Mac's keychain, and model traffic goes straight to each provider.</p>
+      </div>
+      <figure class="card__show card__code mini">
+        <pre><code><span class="c-com"># All it asks each tool</span>
+{data.commands.map((c) => <span><span class="c-prompt">$</span> {c}{'\n'}</span>)}</code></pre>
+      </figure>
+    </article>
+
+  </div>
+  <p class="bento__note">Pictures: the Liner Code 0.2.1 app on macOS, in dark mode, with the Demo agent on its sample project.</p>
+</section>

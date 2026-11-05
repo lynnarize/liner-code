@@ -1,0 +1,84 @@
+---
+// The brand kit, as a board: one idea (you stand still in the middle; the code moves around you)
+// carried through the mark, the colours, the type, the picture and the parts.
+import Base from '../layouts/Base.astro';
+import Mark from '../components/Mark.astro';
+import Footer from '../components/Footer.astro';
+const colours = [
+  { name: 'Sky', hex: '#0B33B4', use: 'Fields, the curtain' },
+  { name: 'Tide', hex: '#2557E3', use: 'The code, a picked row' },
+  { name: 'Paper', hex: '#F4EBDC', use: 'Ground, type on sky' },
+  { name: 'Paper 2', hex: '#E9DFCC', use: 'A step in tone' },
+  { name: 'Night', hex: '#0B0E1C', use: 'Ink, you' },
+  { name: 'Send', hex: '#D93B29', use: 'The one main button' },
+];
+---
+<Base title="Brand" description="The Liner Code brand kit: the two-turn mark, the sea of code, its colours, type and parts." tone="night">
+  <section class="brand" data-tone="night" aria-labelledby="brand-title">
+    <div class="brand__head">
+      <h1 id="brand-title" class="brand__title">Brand kit</h1>
+      <p class="brand__lead">You stand still in the middle. The code moves around you, and every message is a ripple you can take back.</p>
+    </div>
+    <div class="board">
+      <figure class="panel panel--cover">
+        <Mark class="panel__mark" />
+        <p class="panel__name">Liner Code</p>
+        <figcaption>The mark and the name</figcaption>
+      </figure>
+      <figure class="panel panel--build">
+        <div class="build">
+          <Mark class="build__mark" />
+          <p class="build__a">The one that writes</p>
+          <p class="build__b">The one that checks</p>
+        </div>
+        <figcaption>Two turns round one centre: a model writes, another checks</figcaption>
+      </figure>
+      <figure class="panel panel--app">
+        <img src="/media/app-icon.png" alt="The Liner Code app icon: an ink turn and a blue turn round one centre, on a white tile." width="512" height="512" loading="lazy" />
+        <div class="panel__chips" data-ui>
+          <span class="turnbar"><span class="turnbar__changes"><span class="turnbar__label">Changes</span><span class="turnbar__add">+59</span><span class="turnbar__del">&minus;20</span></span><span class="turnbar__send" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></span>
+        </div>
+        <figcaption>The icon, and the app's own row</figcaption>
+      </figure>
+      <figure class="panel panel--line">
+        <p class="panel__say">Stand in the middle.</p>
+        <figcaption>The line</figcaption>
+      </figure>
+      <figure class="panel panel--colour">
+        <ul class="swatches">
+          {colours.map((c) => (
+            <li style={`--c:${c.hex}`}><span class="swatch" aria-hidden="true"></span><span class="swatch__name">{c.name}</span><span class="swatch__hex">{c.hex}</span><span class="swatch__use">{c.use}</span></li>
+          ))}
+        </ul>
+        <figcaption>Colour: the owner's sky and paper, the app's red</figcaption>
+      </figure>
+      <figure class="panel panel--type">
+        <p class="type__big">Aa</p>
+        <p class="type__name">Instrument Sans</p>
+        <p class="type__mono"><code>const turn = decide(text, route);</code></p>
+        <p class="type__name type__name--mono">Geist Mono, for real code only</p>
+        <figcaption>Type: the app's own faces</figcaption>
+      </figure>
+      <figure class="panel panel--poster">
+        <img src="/media/sea-horizon.jpg" alt="The sea of code: the word Liner Code on a curved horizon of blue and cream rings of code, a small figure in the middle." width="1280" height="800" loading="lazy" />
+        <figcaption>The picture: the name on the horizon</figcaption>
+      </figure>
+      <figure class="panel panel--above">
+        <img src="/media/sea-above.jpg" alt="The sea of code from above: concentric rings of code around a small figure." width="1280" height="800" loading="lazy" />
+        <figcaption>From above: every ring is a real line of the source</figcaption>
+      </figure>
+      <figure class="panel panel--parts">
+        <div class="parts" data-ui>
+          <span class="ui-chip"><span class="ui-dot"></span>Plan, then build</span>
+          <span class="ui-chip">Auto · High</span>
+          <span class="cmd__keys parts__keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>E</kbd></span>
+          <button class="ui-btn ui-btn--act" type="button" tabindex="-1">Approve and start</button>
+          <button class="ui-btn" type="button" tabindex="-1">Undo turn 1</button>
+          <span class="ui-ok"><span class="ui-dot ui-dot--ok"></span>Verified</span>
+        </div>
+        <figcaption>Parts: flat, stepped in tone, one red button</figcaption>
+      </figure>
+    </div>
+  </section>
+  <Footer slot="footer" />
+</Base>

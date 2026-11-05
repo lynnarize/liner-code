@@ -1,0 +1,44 @@
+---
+import SeaStage from './SeaStage.astro';
+import { hero, home, site } from '../data/site';
+---
+<section class="hero" data-hero aria-labelledby="hero-title">
+  <SeaStage kind="hero" label="A sea of code in rings around a figure, made of lines from Liner Code's own source. Click it to send a ripple.">
+    <!-- Under the sea: what shows when it parts, seen from overhead. -->
+    <div class="floor" data-floor>
+      <img src="/media/mac-working.webp" srcset="/media/mac-working-1400.webp 1400w, /media/mac-working.webp 2400w" sizes="min(84vw, 1180px)"
+        alt={home.alt} width="2400" height="1414" decoding="async" fetchpriority="low" />
+    </div>
+    <h1 slot="word" id="hero-title" class="word" data-word>
+      <span class="word__line">Liner</span> <span class="word__line">Code</span>
+    </h1>
+    <div class="hero__top" data-hero-top>
+      <p class="hero__lead" data-split="words" data-intro data-delay="0.3">{hero.lead}</p>
+      <div class="hero__act" data-reveal="focus" data-intro data-delay="0.55">
+        <p class="hero__note">{hero.note}</p>
+        <div class="hero__buttons">
+          <a class="btn btn--paper" href={site.mac}>Download for Mac</a>
+          <a class="btn btn--line" href={site.win}>Windows zip</a>
+        </div>
+      </div>
+    </div>
+    <div class="hero__foot" data-hero-foot>
+      <p class="hero__hint" data-hint data-fine={hero.hint.fine} data-touch={hero.hint.touch}>{hero.hint.fine}</p>
+      <div class="turnbar" data-ui data-turnbar>
+        <span class="turnbar__changes" aria-live="polite" data-changes>
+          <span class="turnbar__label">Changes</span>
+          <span class="turnbar__add" data-add>+0</span>
+          <span class="turnbar__del" data-del>&minus;0</span>
+        </span>
+        <button class="turnbar__btn" type="button" data-undo disabled>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+          Undo turn
+        </button>
+        <button class="turnbar__send" type="button" data-send aria-label="Send a turn from the middle">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+        </button>
+      </div>
+      <p class="sr-only" aria-live="polite" data-announce></p>
+    </div>
+  </SeaStage>
+</section>

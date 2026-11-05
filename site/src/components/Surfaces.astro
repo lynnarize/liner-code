@@ -1,0 +1,24 @@
+---
+// Everything beside the session, set as the app's own command menu with its real keys.
+import { surfaces } from '../data/site';
+---
+<section class="surfaces" id="surfaces" data-tone="paper2" aria-labelledby="surfaces-title">
+  <h2 class="sr-only" id="surfaces-title">Surfaces beside the session</h2>
+  <div class="cmd" data-ui data-cmd>
+    <div class="cmd__search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+      <label class="sr-only" for="cmd-input">Filter the surfaces</label>
+      <input id="cmd-input" type="search" placeholder="Open a surface beside the session" autocomplete="off" data-cmd-input />
+    </div>
+    <ul class="cmd__list" role="listbox" aria-label="Surfaces" data-cmd-list>
+      {surfaces.map((s, i) => (
+        <li class="cmd__row" role="option" aria-selected={i === 1 ? 'true' : 'false'} tabindex={i === 1 ? 0 : -1} data-row={s.name.toLowerCase()} id={`cmd-${s.key}`}>
+          <span class="cmd__name">{s.name}</span>
+          <span class="cmd__keys" aria-label={`Command Shift ${s.key}`}><kbd>⌘</kbd><kbd>⇧</kbd><kbd>{s.key}</kbd></span>
+          <span class="cmd__note">{s.note}</span>
+        </li>
+      ))}
+    </ul>
+    <p class="cmd__empty" hidden data-cmd-empty>No surface by that name. Try Design or Terminal.</p>
+  </div>
+</section>

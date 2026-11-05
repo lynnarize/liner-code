@@ -1,0 +1,41 @@
+---
+// Features in Liner Code, as tabs; the real picture of each crossfades in when its tab opens.
+import { features } from '../data/site';
+---
+<section class="new" id="features" data-tone="paper" aria-labelledby="features-title">
+  <div class="new__head">
+    <h2 class="new__title" id="features-title"><span class="new__soft">Features in</span> <span>Liner Code</span></h2>
+    <a class="btn btn--ink" href="/changelog/">Read the changelog</a>
+  </div>
+  <div class="new__body">
+    <div class="new__tabs" role="tablist" aria-label="Features" data-tabs>
+      {features.map((f, i) => (
+        <button class="new__tab" type="button" role="tab" id={`tab-${f.id}`} aria-controls={`panel-${f.id}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1} data-tab={f.id}>
+          <span class="new__v">{f.name}</span><span class="new__tag">{f.tag}</span>
+        </button>
+      ))}
+    </div>
+    <div class="new__panels">
+      {features.map((f, i) => (
+        <div class="new__panel" role="tabpanel" id={`panel-${f.id}`} aria-labelledby={`tab-${f.id}`} hidden={i !== 0} data-panel={f.id}>
+          <p class="new__lead">{f.title}</p>
+          <ul class="new__bands">
+            {f.items.map((it) => (
+              <li class="new__band"><span class="new__kind">{it.label}</span><span class="new__item"><span class="new__name">{it.title}</span><span class="new__note">{it.note}</span></span></li>
+            ))}
+          </ul>
+          {'more' in f && f.more && <a class="btn btn--ink new__more" href={f.more.href}>{f.more.label}</a>}
+        </div>
+      ))}
+    </div>
+    <div class="new__pics">
+      {features.map((f, i) => (
+        <figure class:list={['new__pic', i === 0 && 'is-on']} data-pic={f.id} aria-hidden={i === 0 ? undefined : 'true'}>
+          <div class="new__frame"><img src={f.pic.src} alt={f.pic.alt} width={f.pic.w} height={f.pic.h} loading="lazy" decoding="async" /></div>
+          <figcaption>{f.pic.cap}</figcaption>
+        </figure>
+      ))}
+      <p class="new__shots">Pictures: Liner Code 0.2.1, with the Demo agent on its sample project.</p>
+    </div>
+  </div>
+</section>

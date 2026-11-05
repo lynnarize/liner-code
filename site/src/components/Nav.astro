@@ -1,0 +1,37 @@
+---
+import Mark from './Mark.astro';
+import { nav, site } from '../data/site';
+const path = Astro.url.pathname;
+---
+<header class="nav" data-nav>
+  <a class="nav__brand" href="/" aria-label="Liner Code, home">
+    <Mark class="nav__mark" />
+    <span>Liner Code</span>
+  </a>
+  <nav class="nav__links" aria-label="Main">
+    <ul>
+      {nav.map((l) => (
+        <li><a href={l.href} aria-current={l.href === path ? 'page' : undefined}>{l.label}</a></li>
+      ))}
+      <li><a href={site.repo} rel="noopener">GitHub</a></li>
+    </ul>
+  </nav>
+  <!-- The sea at night (the default) or blue; kept for this visitor. -->
+  <div class="seas" role="group" aria-label="Sea" data-seas>
+    <button type="button" data-pick="dark" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>Night</button>
+    <button type="button" data-pick="blue" aria-pressed="false"><span class="seas__dot" aria-hidden="true"></span>Blue</button>
+  </div>
+  <a class="btn btn--nav" href="/#download">Download</a>
+  <button class="nav__menu" type="button" aria-expanded="false" aria-controls="sheet" data-menu>Menu</button>
+  <div class="sheet" id="sheet" hidden data-sheet>
+    <ul>
+      {nav.map((l) => <li><a href={l.href} aria-current={l.href === path ? 'page' : undefined}>{l.label}</a></li>)}
+      <li><a href={site.repo} rel="noopener">GitHub</a></li>
+      <li><a href="/#download">Download</a></li>
+    </ul>
+    <div class="seas seas--sheet" role="group" aria-label="Sea" data-seas>
+      <button type="button" data-pick="dark" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>Night</button>
+      <button type="button" data-pick="blue" aria-pressed="false"><span class="seas__dot" aria-hidden="true"></span>Blue</button>
+    </div>
+  </div>
+</header>

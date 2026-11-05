@@ -1,0 +1,36 @@
+---
+import Base from '../layouts/Base.astro';
+import SeaStage from '../components/SeaStage.astro';
+import Footer from '../components/Footer.astro';
+import { releases } from '../lib/changelog';
+const all = releases();
+const iso = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? d : undefined);
+const nice = (d: string) => { const t = iso(d) ? new Date(d + 'T12:00:00Z') : null; return t ? t.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : d; };
+---
+<Base title="Changelog" description={`Every Liner Code release, from ${all.at(-1)?.version} to ${all[0]?.version}: what's new, what changed and what was fixed.`}>
+  <section class="cl-top" aria-labelledby="cl-title">
+    <SeaStage kind="page" class="stage--short" label="The sea of code under the word Changelog.">
+      <p slot="word" class="word word--page" aria-hidden="true">Changelog</p>
+      <div class="page-top">
+        <h1 id="cl-title" class="page-title">Every release of Liner Code, newest first.</h1>
+      </div>
+    </SeaStage>
+  </section>
+  <div class="cl" data-tone="paper">
+    <nav class="cl__index" aria-label="Releases">
+      <ul>{all.map((r) => <li><a href={`#v${r.version}`}>{r.version}</a></li>)}</ul>
+    </nav>
+    <div class="cl__list">
+      {all.map((r) => (
+        <article class="cl__release" id={`v${r.version}`} aria-labelledby={`h-${r.version}`}>
+          <header class="cl__head">
+            <h2 id={`h-${r.version}`}>{r.version}</h2>
+            <p>{r.title && <span>{r.title[0].toUpperCase() + r.title.slice(1)}, </span>}<time datetime={iso(r.date)}>{nice(r.date)}</time></p>
+          </header>
+          <div class="cl__body" set:html={r.html} />
+        </article>
+      ))}
+    </div>
+  </div>
+  <Footer slot="footer" />
+</Base>

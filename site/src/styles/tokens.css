@@ -1,0 +1,75 @@
+@font-face {
+  font-family: 'Instrument Sans';
+  src: url('/fonts/instrument-sans.woff2') format('woff2');
+  font-weight: 400 700;
+  font-stretch: 75% 100%;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/geist-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/geist-mono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+
+:root {
+  /* Colour, by role. The sky and the paper are the owner's picture; the red is the app's Send. */
+  --paper: #f4ebdc;
+  --paper-2: #e9dfcc;
+  --night: #0b0e1c;
+  --slate: #4f4c47;
+  --sky: #0b33b4;
+  --tide: #2557e3;
+  --send: #d93b29; /* the app's red, a step darker so white text passes AA */
+  --sky-soft: #c9d3f2;
+
+  /* The page's ground and ink: paper with the blue sea, night with the night sea (html[data-sea]). */
+  --ground: var(--paper);
+  --ground-2: var(--paper-2);
+  --text: var(--night);
+  --text-2: var(--slate);
+  --tide-ink: var(--tide); /* the blue as text: lighter at night, so small text still reads */
+
+  /* The ink of whatever field is under the text; sections set it. */
+  --fg: var(--night);
+  --fg-2: var(--slate);
+
+  --f: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace; /* taste-skill-ignore: real code only (the sea, commands, diffs) */
+
+  /* Five sizes. */
+  --t-mega: clamp(5.2rem, 18.2vw, 23rem);
+  --t-head: clamp(2.25rem, 1.1rem + 4.2vw, 4.75rem);
+  --t-lead: clamp(1.375rem, 1.05rem + 1.1vw, 2.25rem);
+  --t-body: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  --t-small: 0.875rem;
+
+  --m: clamp(16px, 2.4vw, 36px);
+  --g: clamp(12px, 1.4vw, 24px);
+  --col: calc((100vw - 2 * var(--m) - 11 * var(--g)) / 12);
+  --nav-h: 64px;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --z-sea: 1;
+  --z-ui: 3;
+  --z-nav: 50;
+  --z-curtain: 90;
+}
+
+/* The night sea darkens the whole page: the same ground and ink, turned over. */
+html[data-sea='dark'] {
+  color-scheme: dark;
+  --ground: #0b0e1c;
+  --ground-2: #151a2b;
+  --text: #f4ebdc;
+  --text-2: #aaa497;
+  --tide-ink: #8fb0ff;
+}
+html[data-sea='dark'] ::selection { background: #2557e3; color: #fff; }

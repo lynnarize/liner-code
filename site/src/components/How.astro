@@ -1,0 +1,106 @@
+---
+// One turn of the Demo's tide app, told as what you give and what comes back. Each fragment is
+// the app's own part, working: pick an answer, approve the plan, undo or commit the diff.
+import { turn } from '../data/site';
+const send = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
+---
+<section class="how" id="how" data-tone="paper" aria-labelledby="how-title">
+  <h2 class="how__title" id="how-title" data-split="words">One turn, from ask to diff</h2>
+
+  <div class="how__step">
+    <p class="how__say" data-reveal="focus">First, ask for a change in plain words.</p>
+    <div class="how__frags">
+    <div class="ui ui-composer how__call" data-ui data-reveal="up">
+      <label class="sr-only" for="ask">Your message</label>
+      <input id="ask" class="ui-composer__field" value={turn.ask} />
+      <div class="ui-composer__row">
+        <span class="ui-chip"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M4 12h16M4 17h7"/></svg>Plan, then build</span>
+        <button class="ui-send" type="button" aria-label="Send" data-ask-send set:html={send} />
+      </div>
+    </div>
+    <div class="ui ui-thread how__answer" data-ui data-reveal="up" data-delay="0.1">
+      <p class="ui-who"><b>Opus 5.5</b> <span>plans · read 2 files · 1.1s</span></p>
+      <div class="ui-card ui-question" role="group" aria-labelledby="q-title">
+        <p class="ui-question__count"><span class="ui-bar"></span>Question 1 of 1</p>
+        <p class="ui-question__title" id="q-title">{turn.question.title}</p>
+        <p class="ui-note">{turn.question.note}</p>
+        <div class="ui-options" role="radiogroup" aria-labelledby="q-title" data-options>
+          {turn.question.options.map((o, i) => (
+            <button class="ui-option" type="button" role="radio" aria-checked={i === 0 ? 'true' : 'false'} data-option={o.title}>
+              <span class="ui-radio" aria-hidden="true"></span>
+              <span class="ui-option__text">
+                <span class="ui-option__title">{o.title}{o.suggested && <span class="ui-tag">Suggested</span>}</span>
+                <span class="ui-note">{o.note}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div class="ui-card__foot">
+          <span class="ui-note">Nothing runs until you answer</span>
+          <button class="ui-btn ui-btn--act" type="button" data-answer>Send answer</button>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <div class="how__step">
+    <p class="how__say" data-reveal="focus">Then answer it, and read the plan.</p>
+    <div class="how__frags">
+    <div class="ui ui-reply how__call" data-ui data-reveal="up">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>
+      <span data-picked>{turn.question.options[0].title}</span>
+    </div>
+    <div class="ui ui-thread how__answer" data-ui data-reveal="up" data-delay="0.1">
+      <div class="ui-card ui-plan">
+        <div class="ui-plan__head">
+          <div><p class="ui-note">The plan</p><p class="ui-plan__title">{turn.plan.title}</p></div>
+          <span class="ui-chip"><span class="ui-dot"></span>4 steps · 2 files</span>
+        </div>
+        <ol class="ui-steps">
+          {turn.plan.steps.map((s) => (
+            <li><span class="ui-ring" aria-hidden="true"></span><span><span class="ui-step__title">{s.title}</span><span class="ui-note">DeepSeek V4.1 Flash builds{s.file && <code>{s.file}</code>}</span></span></li>
+          ))}
+        </ol>
+        <div class="ui-card__foot">
+          <span class="ui-note">Nothing runs until you approve</span>
+          <span class="ui-btns">
+            <button class="ui-btn" type="button">Edit steps</button>
+            <button class="ui-btn ui-btn--act" type="button" data-approve>Approve and start</button>
+          </span>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <div class="how__step how__step--wide">
+    <p class="how__say" data-reveal="focus">It builds, a model from another maker checks, and the turn is yours.</p>
+    <div class="how__frags">
+    <div class="ui ui-thread how__answer how__answer--wide" data-ui data-reveal="up" data-diff>
+      <div class="ui-review"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"/></svg><b>Reviewer</b> passed it · Opus 5.5 <span class="ui-ok"><span class="ui-dot ui-dot--ok"></span>Verified</span></div>
+      <div class="ui-diff">
+        <div class="ui-diff__head"><span class="ui-turn">Turn 1 of 1</span><span class="ui-add">+3</span><span class="ui-del">&minus;1</span><code class="ui-diff__file">{turn.diff.file}</code></div>
+        <pre class="ui-diff__body"><code>{turn.diff.lines.map((l) => (
+          <span class:list={['ui-line', l.k === '+' && 'is-add', l.k === '-' && 'is-del']}><span class="ui-ln">{l.n}</span><span class="ui-mk">{l.k === ' ' ? '' : l.k === '-' ? '−' : '+'}</span>{l.t}{'\n'}</span>
+        ))}</code></pre>
+        <div class="ui-diff__foot">
+          <span class="ui-note" data-diff-state>1 of 1 file viewed</span>
+          <span class="ui-btns">
+            <button class="ui-btn" type="button" data-undo-turn>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+              <span>Undo turn 1</span>
+            </button>
+            <button class="ui-btn ui-btn--act" type="button" data-commit>Commit 1 file</button>
+          </span>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <figure class="how__real" data-reveal="up">
+    <div class="new__frame"><img src="/media/app-diff.jpg" alt="The same turn in Liner Code: the Demo's plan of three steps, the edit and the test, and the Diff panel beside it with src/tides.js, Undo turn 1 and Commit 1 file." width="1800" height="1125" loading="lazy" decoding="async" /></div>
+    <figcaption>The same turn in the app, with its Diff beside it.</figcaption>
+  </figure>
+</section>

@@ -1,0 +1,11 @@
+---
+// Liner Code's mark: two turns round one centre, the outer one in ink and the inner one in Liner
+// blue. Drawn from docs/brand/icon-2026/liner-code-mark.svg (radii 236 and 112, stroke 78), in a
+// square box round the centre so it sits where the old mark sat.
+interface Props { class?: string; title?: string }
+const { class: cls, title } = Astro.props;
+---
+<svg class:list={['mark', cls]} viewBox="192 192 640 640" fill="none" stroke-width="78" stroke-linecap="round" role={title ? 'img' : undefined} aria-hidden={title ? undefined : 'true'} aria-label={title}>
+  <path class="mark__a" d="M309 300V488A236 236 0 0 0 545 724H715" stroke="currentColor" />
+  <path class="mark__b" d="M433 424V488A112 112 0 0 0 545 600H591" stroke="var(--mark-b, #609efa)" />
+</svg>

@@ -1,0 +1,36 @@
+---
+import SeaStage from './SeaStage.astro';
+import Mark from './Mark.astro';
+import { footer, nav, site } from '../data/site';
+---
+<footer class="foot" data-tone="night">
+  <div class="foot__tile foot__statement">
+    <p class="foot__say">{footer.statement}</p>
+    <p class="foot__legal">{footer.legal}</p>
+  </div>
+  <nav class="foot__tile foot__nav" aria-label="Footer">
+    <ul>
+      {nav.map((l) => <li><a href={l.href}>{l.label}</a></li>)}
+      <li><a href="/#surfaces">Surfaces</a></li>
+      <li><a href="/brand/">Brand</a></li>
+    </ul>
+  </nav>
+  <div class="foot__tile foot__version">
+    <p class="foot__big">{site.version}</p>
+    <p class="foot__small">Alpha, released {site.released}</p>
+  </div>
+  <div class="foot__tile foot__gh">
+    <a class="foot__repo" href={site.repo} rel="noopener">github.com/lynnarize/liner-code</a>
+    <a class="foot__small foot__issue" href={site.issues} rel="noopener">Report a problem</a>
+  </div>
+  <div class="foot__tile foot__sea">
+    <SeaStage kind="tile" label="The sea of code again, with the name on its horizon. Click it to send a ripple.">
+      <p slot="word" class="word word--tile" aria-hidden="true">Liner Code</p>
+    </SeaStage>
+  </div>
+  <a class="foot__tile foot__get" href="/#download">
+    <span class="foot__getline">Get the alpha</span>
+    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 34 34 14"/><path d="M17 14h17v17"/></svg>
+  </a>
+  <div class="foot__mark"><Mark /><span>Liner Code</span></div>
+</footer>

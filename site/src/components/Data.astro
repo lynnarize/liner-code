@@ -1,0 +1,21 @@
+---
+import { data } from '../data/site';
+---
+<section class="data" id="data" data-tone="sky" aria-labelledby="data-title">
+  <div class="data__left">
+    <h2 class="data__title" id="data-title" data-split="words">{data.title}</h2>
+    <p class="data__lead" data-reveal="focus">{data.lead}</p>
+  </div>
+  <div class="data__right">
+    <figure class="data__code" data-reveal="up">
+      <pre><code><span class="c-com"># All it asks each tool</span>
+{data.commands.map((c) => <span><span class="c-prompt">$</span> {c}{'\n'}</span>)}</code></pre>
+      <figcaption>The only two questions, asked of the tools you installed.</figcaption>
+    </figure>
+    <ul class="data__facts">
+      {data.facts.map((f, i) => (
+        <li data-reveal="focus" data-delay={String(i * 0.08)}><p class="data__fact">{f.title}</p><p class="data__note">{f.note}</p></li>
+      ))}
+    </ul>
+  </div>
+</section>

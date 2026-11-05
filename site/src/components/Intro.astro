@@ -1,0 +1,19 @@
+---
+// The claim, in one statement. Between the words sit the app's own parts, drawn at the size of
+// the type and in the page's colours: the red Approve and a picked answer. Each part stays on the
+// line of the word after it. The spaces are written out: Astro's compression drops a line break
+// that sits between text and a tag.
+import { home } from '../data/site';
+---
+<section class="intro" data-tone="paper" aria-label="What it is">
+  <!-- Where the sea can't part (no WebGL, or reduced motion), the home window sits here instead. -->
+  <img class="intro__home" src="/media/mac-working-1400.webp" srcset="/media/mac-working-1400.webp 1400w, /media/mac-working.webp 2400w"
+    sizes="min(92vw, 1100px)" alt={home.alt} width="2400" height="1414" loading="lazy" decoding="async" />
+  <p class="intro__text" data-reveal="focus">
+    It runs Claude Code, Codex, OpenCode and Hermes with your own sign-ins, and shows their work as{' '}
+    <span class="intro__pair"><span class="inl inl--act" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>Approve</span> plans</span>{' '}
+    you approve and{' '}
+    <span class="intro__pair"><span class="inl inl--pick" aria-hidden="true"><span class="inl__radio"></span>Tomorrow</span> questions</span>{' '}
+    you answer.
+  </p>
+</section>

@@ -1,0 +1,31 @@
+---
+import { download, site } from '../data/site';
+const d = download;
+---
+<section class="dl" id="download" data-tone="sky" aria-labelledby="dl-title">
+  <div class="dl__close">
+    <h2 class="dl__title" id="dl-title" data-split="words">{d.close[0]} {d.close[1]}</h2>
+    <p class="dl__after" data-reveal="focus">{d.after}</p>
+  </div>
+  <div class="ui ui-dialog dl__dialog" data-ui data-reveal="up" data-dl role="group" aria-labelledby="dl-dialog-title">
+    <p class="ui-dialog__title" id="dl-dialog-title">Download Liner Code {site.version}</p>
+    <p class="ui-note">An alpha. Expect rough edges, and tell us on GitHub.</p>
+    <div class="ui-seg" role="radiogroup" aria-label="Your computer" data-seg>
+      <span class="ui-seg__plate" aria-hidden="true" data-seg-plate></span>
+      <button type="button" role="radio" aria-checked="true" data-os="mac">{d.mac.label}</button>
+      <button type="button" role="radio" aria-checked="false" data-os="win">{d.win.label}</button>
+    </div>
+    {(['mac', 'win'] as const).map((os) => (
+      <div class="ui-dialog__os" data-os-panel={os} hidden={os !== 'mac'}>
+        <div class="ui-row"><span class="ui-row__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg></span><span><span class="ui-row__title">{d[os].file}</span><span class="ui-note">{d[os].needs}</span></span></div>
+        <p class="ui-dialog__first">{d[os].first}</p>
+        <div class="ui-field ui-field--code"><code>{d[os].command}</code>{os === 'mac' && <button class="ui-btn ui-btn--quiet" type="button" data-copy={d[os].command}>Copy</button>}</div>
+        <p class="ui-note">{d[os].after}</p>
+      </div>
+    ))}
+    <div class="ui-card__foot">
+      <a class="ui-link" href={site.releases}>All releases</a>
+      <a class="ui-btn ui-btn--act ui-btn--big" href={site.mac} data-dl-main data-mac={site.mac} data-win={site.win}>Download the DMG</a>
+    </div>
+  </div>
+</section>

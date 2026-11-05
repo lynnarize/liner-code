@@ -1,0 +1,23 @@
+---
+// A stage for the sea of code: the sky, a word that sits on the horizon, the ground and you.
+// The one canvas moves into whichever stage is on screen. Without WebGL the ground is a picture.
+import Figure from './Figure.astro';
+interface Props {
+  kind: 'hero' | 'page' | 'tile';
+  class?: string;
+  label?: string;
+}
+const { kind, class: cls, label } = Astro.props;
+---
+<div class:list={['stage', `stage--${kind}`, cls]} data-sea-stage={kind} data-tone="sky">
+  <div class="stage__word" data-stage-word>
+    <slot name="word" />
+  </div>
+  <picture class="stage__ground" aria-hidden="true">
+    <source media="(max-width: 767px)" srcset="/media/ground-phone.webp" />
+    <img src="/media/ground.webp" alt="" width="2400" height="843" decoding="async" fetchpriority={kind === 'hero' ? 'high' : 'auto'} />
+  </picture>
+  <div class="sea-slot" data-sea-slot role={label ? 'img' : undefined} aria-label={label}></div>
+  <Figure />
+  <slot />
+</div>

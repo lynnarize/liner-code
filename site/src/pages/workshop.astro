@@ -1,0 +1,194 @@
+---
+// Workshop: the mode that adds to Liner Code itself. The live part is the add-on card, the gate
+// everything Workshop makes passes through, built from the app's own wording.
+import Base from '../layouts/Base.astro';
+import SeaStage from '../components/SeaStage.astro';
+import Footer from '../components/Footer.astro';
+import { workshop as w } from '../data/workshop';
+import { site } from '../data/site';
+const blocks = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.75 2.75h4.5v4.5h-4.5ZM2.75 8.75h4.5v4.5h-4.5ZM8.75 8.75h4.5v4.5h-4.5ZM11 2.1l3 3-3 3-3-3Z"/></svg>';
+const sparkle = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v3M8 10.5v3M2.5 8h3M10.5 8h3M4.6 4.6l1.6 1.6M9.8 9.8l1.6 1.6M11.4 4.6 9.8 6.2M6.2 9.8l-1.6 1.6"/></svg>';
+const send = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
+const check = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
+---
+<Base title="Workshop" description="Workshop, the Liner Code mode that adds to the app itself: connections, panels, apps and modes, made by an agent, added only on a card you answer.">
+  <section class="ws-top" aria-labelledby="ws-title">
+    <SeaStage kind="page" class="stage--short" label="The sea of code under the word Workshop.">
+      <p slot="word" class="word word--page" aria-hidden="true">Workshop</p>
+      <div class="page-top">
+        <h1 id="ws-title" class="page-title">{w.blurb}</h1>
+        <a class="btn btn--paper" href="/#download">Get the alpha</a>
+      </div>
+    </SeaStage>
+  </section>
+
+  <section class="intro" data-tone="paper" aria-label="What Workshop is">
+    <p class="intro__text" data-reveal="focus">
+      <span class="inl inl--pick" aria-hidden="true"><Fragment set:html={blocks} />Workshop</span>{' '}
+      is Standard plus a guide to add-ons and a closer look at Liner Code, never more trust. Ask for what the app doesn't have, and an agent makes it.
+    </p>
+  </section>
+
+  <section class="ws-kinds" data-tone="paper2" aria-labelledby="ws-kinds-title">
+    <h2 class="ws-h2" id="ws-kinds-title" data-split="words">What it can make</h2>
+    <ul class="ws-kinds__list">
+      {w.kinds.map((k, i) => (
+        <li class="ws-kind" data-reveal="up" data-delay={String(i * 0.06)}>
+          <p class="ws-kind__name">{k.name}</p>
+          <p class="ws-kind__where">{k.where}</p>
+          <p class="ws-kind__note">{k.note}</p>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <section class="ws-ways" data-tone="paper" aria-labelledby="ws-ways-title">
+    <h2 class="ws-h2" id="ws-ways-title" data-split="words">Three ways in, only when you ask</h2>
+    <p class="ws-ways__lead" data-reveal="focus">Since 0.2.1, Workshop starts only from one of these. Everything else starts in your default mode.</p>
+
+    <div class="how__step">
+      <p class="how__say" data-reveal="focus">Create your add-on, from Add-ons in the sidebar.</p>
+      <div class="how__frags">
+        <div class="ui ui-menu how__call" data-ui data-reveal="up">
+          <span class="ui-menu__row">Browse add-ons</span>
+          <span class="ui-menu__row is-on">Create your add-on</span>
+        </div>
+        <div class="ui ui-composer how__answer" data-ui data-reveal="up" data-delay="0.1">
+          <label class="sr-only" for="ws-ask">The new Workshop task's box</label>
+          <input id="ws-ask" class="ui-composer__field" value={w.ask} />
+          <div class="ui-composer__row">
+            <span class="ui-chip ui-chip--ws"><Fragment set:html={blocks} />Workshop</span>
+            <button class="ui-send" type="button" aria-label="Send" data-ask-send set:html={send} />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="how__step">
+      <p class="how__say" data-reveal="focus">Make it an app, at the end of a turn.</p>
+      <div class="how__frags">
+        <div class="ui ui-card ws-offer how__answer how__answer--flush" data-ui data-reveal="up" data-offer>
+          <p class="ws-offer__head"><span class="ui-chip ui-chip--ws"><Fragment set:html={blocks} />Make it an app</span><span class="ui-note">The agent offers; you pick where it goes</span></p>
+          <div class="ws-places" role="radiogroup" aria-label="Add to" data-places>
+            {w.places.map((p, i) => (
+              <button class="ws-place" type="button" role="radio" aria-checked={i === 2 ? 'true' : 'false'} data-place={p.id}>
+                <span class="ws-place__label">{p.label}</span><span class="ui-note">{p.hint}</span>
+              </button>
+            ))}
+          </div>
+          <ol class="ws-steps" data-steps>
+            {w.offerSteps.map((s) => <li><span class="ws-steps__mark" aria-hidden="true" set:html={check} />{s}</li>)}
+          </ol>
+          <div class="ui-card__foot">
+            <span class="ui-note" data-offer-note>Made in the background, then Keep or Undo.</span>
+            <span class="ui-btns"><button class="ui-btn" type="button" data-offer-no>Not now</button><button class="ui-btn ui-btn--act" type="button" data-offer-go>Create</button></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="how__step">
+      <p class="how__say" data-reveal="focus">Or pick it under the box on Home.</p>
+      <div class="how__frags">
+        <div class="ui ui-card ws-modes how__answer how__answer--flush" data-ui data-reveal="up" role="radiogroup" aria-label="Mode" data-modes>
+          <button class="ws-mode" type="button" role="radio" aria-checked="false"><span class="ws-mode__icon" set:html={sparkle} /><span><span class="ws-mode__name">Standard</span><span class="ui-note">Work with code, files and information.</span></span></button>
+          <button class="ws-mode" type="button" role="radio" aria-checked="true"><span class="ws-mode__icon ws-mode__icon--ws" set:html={blocks} /><span><span class="ws-mode__name">Workshop</span><span class="ui-note">Customize Liner Code through conversation.</span></span></button>
+          <p class="ui-note ws-modes__foot">A Workshop session keeps a chip beside its title. Settings, Modes holds yours too.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ws-shots" data-tone="paper2" aria-label="Workshop in the app">
+    <figure class="ws-shot" data-reveal="up">
+      <div class="new__frame new__frame--mac"><img src="/media/mac-workshop-home-1100.webp" srcset="/media/mac-workshop-home-1100.webp 1100w, /media/mac-workshop-home.webp 1800w" sizes="(max-width: 1023px) 190vw, 66vw" alt="Home in Workshop after Create your add-on: the box holds Create a Liner Code add-on with a left sidebar entry, and the mode under the box reads Workshop." width="1800" height="1160" loading="lazy" decoding="async" /></div>
+      <figcaption>Create your add-on opens Home in Workshop, with the ask already in the box.</figcaption>
+    </figure>
+    <figure class="ws-shot" data-reveal="up" data-delay="0.08">
+      <div class="new__frame new__frame--mac"><img src="/media/mac-modes-1100.webp" srcset="/media/mac-modes-1100.webp 1100w, /media/mac-modes.webp 1800w" sizes="(max-width: 1023px) 190vw, 66vw" alt="Settings, Modes: the built-in Standard and Workshop modes as cards, with Mode details and How to use, and Let the agent help me make one." width="1800" height="1160" loading="lazy" decoding="async" /></div>
+      <figcaption>Settings, Modes: Standard, Workshop, and the ones you make.</figcaption>
+    </figure>
+    <p class="ws-shots__note">The Liner Code 0.2.1 app on macOS, with the Demo agent on its sample project.</p>
+  </section>
+
+  <section class="ws-gate" data-tone="sky" aria-labelledby="ws-gate-title">
+    <div class="ws-gate__text">
+      <h2 class="ws-gate__title" id="ws-gate-title" data-split="words">Nothing goes in without your yes</h2>
+      <p class="ws-gate__lead" data-reveal="focus">Everything Workshop makes runs in a sealed frame and reaches Liner Code only through what its card lists. Set what this one asks for, and read the card it would show you.</p>
+      <div class="ws-asks" data-asks>
+        <fieldset class="ws-asks__group">
+          <legend>Where</legend>
+          <div class="ws-seg" role="radiogroup" aria-label="Where it opens">
+            <button type="button" role="radio" aria-checked="false" data-where="dock">Right panel</button>
+            <button type="button" role="radio" aria-checked="false" data-where="tab">Session tab</button>
+            <button type="button" role="radio" aria-checked="true" data-where="page">Global page</button>
+          </div>
+        </fieldset>
+        <fieldset class="ws-asks__group">
+          <legend>It asks for</legend>
+          <div class="ws-toggles">
+            <button type="button" aria-pressed="true" data-ask="files">Project files</button>
+            <button type="button" aria-pressed="false" data-ask="session">The session</button>
+            <button type="button" aria-pressed="false" data-ask="composer">The composer</button>
+            <button type="button" aria-pressed="true" data-ask="storage">Its own storage</button>
+            <button type="button" aria-pressed="false" data-ask="ai">A model</button>
+            <button type="button" aria-pressed="false" data-ask="network">api.linear.app</button>
+          </div>
+        </fieldset>
+      </div>
+    </div>
+    <div class="ui ui-dialog ws-card" data-ui data-reveal="up" data-card aria-live="polite">
+      <p class="ui-note" data-card-from>An add-on made by Opus 5.5 in Workshop</p>
+      <p class="ui-dialog__title" data-card-title>Notes, a page of its own</p>
+      <dl class="ws-card__fields" data-card-fields></dl>
+      <p class="ws-card__strip" data-card-strip></p>
+      <div class="ui-card__foot">
+        <span class="ui-note" data-card-state>Nothing is added until you answer.</span>
+        <span class="ui-btns" data-card-btns><button class="ui-btn" type="button" data-card-no>Not now</button><button class="ui-btn ui-btn--act" type="button" data-card-add>Add</button></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="ws-turn" data-tone="night" aria-labelledby="ws-turn-title">
+    <h2 class="ws-turn__title" id="ws-turn-title" data-split="words">Inside a Workshop turn</h2>
+    <ol class="ws-turn__list">
+      {w.turn.map((t, i) => (
+        <li data-reveal="focus" data-delay={String(i * 0.05)}><p class="ws-turn__step">{t.title}</p><p class="ws-turn__note">{t.note}</p></li>
+      ))}
+    </ol>
+  </section>
+
+  <section class="new ws-keep" data-tone="paper" aria-labelledby="ws-keep-title">
+    <div class="new__head">
+      <h2 class="new__title" id="ws-keep-title"><span class="new__soft">Every version</span> <span>kept</span></h2>
+    </div>
+    <div class="ws-keep__body">
+      <ul class="new__bands">
+        {w.versions.map((v) => (
+          <li class="new__band" data-reveal="up"><span class="new__kind">{v.label}</span><span class="new__item"><span class="new__name">{v.title}</span><span class="new__note">{v.note}</span></span></li>
+        ))}
+      </ul>
+      <figure class="new__pic is-on ws-keep__pic" data-reveal="up">
+        <div class="new__frame"><img src="/media/app-addons-menu.jpg" alt="The Add-ons menu in the sidebar: Browse add-ons, and Create your add-on." width="1800" height="1125" loading="lazy" decoding="async" /></div>
+        <figcaption>Add-ons in the sidebar: Browse add-ons, and Create your add-on.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="ws-try" data-tone="paper2" aria-labelledby="ws-try-title">
+    <h2 class="ws-h2" id="ws-try-title" data-split="words">Try one in Workshop</h2>
+    <ul class="ws-try__list">
+      {w.examples.map((e) => (
+        <li class="ws-try__item" data-reveal="up">
+          <p class="ws-try__h">{e.h}</p>
+          <blockquote class="ws-try__ask"><p>{e.ask}</p></blockquote>
+          <p class="ws-try__expect"><span>What you get:</span> {e.expect}</p>
+          <button class="btn btn--ink ws-try__copy" type="button" data-copy={e.ask}>Copy</button>
+        </li>
+      ))}
+    </ul>
+    <p class="ws-try__more">These are the examples Workshop shows in Settings, Modes. <a href={site.releases}>Get the alpha</a> to try them.</p>
+  </section>
+
+  <Footer slot="footer" />
+</Base>

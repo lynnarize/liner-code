@@ -1,0 +1,33 @@
+---
+// Auto, live: the message is scored by engine/src/route.ts itself, in the browser.
+import { autoExamples, autoCast } from '../data/site';
+---
+<section class="auto" id="auto" data-tone="night" aria-labelledby="auto-title">
+  <h2 class="auto__title" id="auto-title" data-split="words">Auto gives each message the least work it needs.</h2>
+  <div class="auto__line" data-ui>
+    <label class="sr-only" for="auto-input">A message for Auto to weigh</label>
+    <input id="auto-input" class="auto__input" value="Refactor the cache layer" autocomplete="off" spellcheck="false" data-auto-input />
+  </div>
+  <div class="auto__grid">
+    <div class="auto__answer" data-ui aria-live="polite" data-auto-answer>
+      <div class="auto__levels" role="radiogroup" aria-label="Auto's level">
+        <span class="auto__plate" aria-hidden="true" data-plate></span>
+        <button type="button" role="radio" aria-checked="false" data-level="standard">Standard</button>
+        <button type="button" role="radio" aria-checked="true" data-level="high">High</button>
+        <button type="button" role="radio" aria-checked="false" data-level="max">Max</button>
+      </div>
+      <p class="auto__weight"><span data-weight>Heavy job</span><span class="auto__rule" data-rule>A hard job</span></p>
+      <ol class="auto__flow" data-flow></ol>
+      <p class="auto__hint" data-hint-line></p>
+      <dl class="auto__scores" data-scores></dl>
+    </div>
+    <div class="auto__side">
+      <p class="auto__note">This is <code>route.ts</code> from Liner Code, running in your browser. In the app it runs on your Mac with no model call, so it costs nothing and sends nothing anywhere.</p>
+      <p class="auto__cast">Shown with Claude Code, Codex and OpenCode Go signed in: {autoCast.everyday} takes most messages, {autoCast.strong} the hard ones, {autoCast.critics[0]} reads them.</p>
+      <div class="auto__examples">
+        <p class="auto__try">Try one</p>
+        <ul>{autoExamples.map((e) => <li><button type="button" data-example={e}>{e}</button></li>)}</ul>
+      </div>
+    </div>
+  </div>
+</section>

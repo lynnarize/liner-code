@@ -1,0 +1,15 @@
+---
+import Base from '../layouts/Base.astro';
+import SeaStage from '../components/SeaStage.astro';
+---
+<Base title="Not found" description="Nothing was written at this address.">
+  <section class="lost" aria-labelledby="lost-title">
+    <SeaStage kind="page" label="The sea of code, calm, with nobody else in it. Click it to send a ripple.">
+      <p slot="word" class="word" aria-hidden="true">404</p>
+      <div class="page-top">
+        <h1 id="lost-title" class="page-title">Nothing was written at this address.</h1>
+        <a class="btn btn--paper" href="/">Back to the middle</a>
+      </div>
+    </SeaStage>
+  </section>
+</Base>

@@ -174,7 +174,7 @@ export const download = {
   close: ['Stand in', 'the middle.'],
   after: 'Open it, connect the tools you have, add a project, and pick how you will work: Solo, Plan then build, or Auto.',
   mac: {
-    label: 'Mac', file: release.mac.file, needs: 'Apple Silicon, tried on macOS 27',
+    label: 'Mac', file: release.mac.file, needs: 'Apple Silicon, tried on macOS 27', short: 'Apple Silicon · DMG',
     first: "The alpha isn't notarized yet. The first time, open System Settings, Privacy & Security, and press Open Anyway, or run:",
     command: 'xattr -dr com.apple.quarantine "/Applications/Liner Code.app"',
     after: 'After that it updates itself.',
@@ -182,14 +182,14 @@ export const download = {
   // Since 0.2.2 Windows has a setup; the zip stays, to run it without installing.
   win: release.win.kind === 'setup'
     ? {
-        label: 'Windows', file: release.win.file, needs: 'x64, installs for you alone, no administrator',
+        label: 'Windows', file: release.win.file, needs: 'x64, installs for you alone, no administrator', short: 'x64 · Setup',
         first: "It isn't signed yet, so SmartScreen asks the first time: More info, then Run anyway.",
         command: '',
         after: "Then it's in the Start menu. It doesn't update itself yet: run the next setup over it.",
         zip: release.win.zip,
       }
     : {
-        label: 'Windows', file: release.win.file, needs: 'x64, unzip it anywhere',
+        label: 'Windows', file: release.win.file, needs: 'x64, unzip it anywhere', short: 'x64 · Zip',
         first: "It isn't signed yet, so SmartScreen asks the first time: More info, then Run anyway.",
         command: 'Liner Code.exe',
         after: "It doesn't update itself yet: download the next zip.",

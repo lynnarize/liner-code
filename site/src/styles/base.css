@@ -36,7 +36,7 @@ code, pre, kbd { font-family: var(--mono); }
 
 :focus-visible { outline: 2px solid var(--tide); outline-offset: 3px; border-radius: 4px; }
 [data-tone='sky'] :focus-visible, [data-tone='night'] :focus-visible { outline-color: var(--paper); }
-#main:focus { outline: none; }
+#main:focus, section[tabindex='-1']:focus { outline: none; }
 .skip-link {
   position: fixed; left: var(--m); top: 12px; z-index: 100;
   padding: 0.6em 1em; border-radius: 999px; background: var(--night); color: var(--paper);

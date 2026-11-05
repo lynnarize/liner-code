@@ -385,20 +385,63 @@ function workshop() {
 function nav() {
   const btn = $<HTMLButtonElement>('[data-menu]');
   const sheet = $('[data-sheet]');
+  const get = $<HTMLAnchorElement>('[data-get-btn]');
+  const menu = $('[data-get-menu]');
   if (!btn || !sheet) return;
   const close = () => { btn.setAttribute('aria-expanded', 'false'); sheet.hidden = true; btn.textContent = 'Menu'; };
+  const closeGet = () => { if (!get || !menu) return; get.setAttribute('aria-expanded', 'false'); menu.hidden = true; };
   const toggle = () => {
     const open = btn.getAttribute('aria-expanded') !== 'true';
+    if (open) closeGet();
     btn.setAttribute('aria-expanded', String(open));
     sheet.hidden = !open;
     btn.textContent = open ? 'Close' : 'Menu';
     if (open) { (sheet.querySelector('a') as HTMLElement | null)?.focus(); if (!prefersReducedMotion()) gsap.from(sheet.querySelectorAll('li'), { autoAlpha: 0, y: 12, filter: 'blur(6px)', stagger: 0.04, duration: 0.6, ease: 'expo.out', clearProps: 'filter' }); }
   };
-  const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !sheet.hidden) { close(); btn.focus(); } };
+  // Download: a short menu of the two files. The visitor's own computer goes first.
+  if (get && menu) {
+    get.setAttribute('role', 'button');
+    get.setAttribute('aria-haspopup', 'true');
+    get.setAttribute('aria-controls', menu.id);
+    get.setAttribute('aria-expanded', 'false');
+    const yours = /Windows/i.test(navigator.userAgent) ? 'win' : /Mac/i.test(navigator.userAgent) ? 'mac' : '';
+    if (yours) $(`[data-get-os="${yours}"]`, menu)?.setAttribute('data-yours', '');
+  }
+  const toggleGet = (e: Event) => {
+    if (!get || !menu) return;
+    e.preventDefault();
+    const open = menu.hidden;
+    if (open) close();
+    get.setAttribute('aria-expanded', String(open));
+    menu.hidden = !open;
+    if (!open) return;
+    ($('[data-yours]', menu) ?? $('a', menu))?.focus();
+    if (!prefersReducedMotion()) {
+      gsap.fromTo(menu, { autoAlpha: 0, y: -8, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5, ease: 'expo.out', clearProps: 'transform,opacity,visibility' });
+      gsap.from($$('.get__os, .get__foot', menu), { autoAlpha: 0, y: 8, stagger: 0.04, duration: 0.5, delay: 0.04, ease: 'expo.out', clearProps: 'all' });
+    }
+  };
+  // A click anywhere else, or a choice made, puts it away.
+  const away = (e: PointerEvent) => { if (menu && !menu.hidden && !(e.target as HTMLElement).closest('[data-get]')) closeGet(); };
+  const picked = (e: Event) => { if ((e.target as HTMLElement).closest('a')) closeGet(); };
+  const key = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    if (!sheet.hidden) { close(); btn.focus(); }
+    if (menu && !menu.hidden) { closeGet(); get?.focus(); }
+  };
   btn.addEventListener('click', toggle);
+  get?.addEventListener('click', toggleGet);
+  menu?.addEventListener('click', picked);
+  document.addEventListener('pointerdown', away);
   document.addEventListener('keydown', key);
   sheet.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('a')) close(); });
-  return () => { btn.removeEventListener('click', toggle); document.removeEventListener('keydown', key); };
+  return () => {
+    btn.removeEventListener('click', toggle);
+    get?.removeEventListener('click', toggleGet);
+    menu?.removeEventListener('click', picked);
+    document.removeEventListener('pointerdown', away);
+    document.removeEventListener('keydown', key);
+  };
 }
 
 // The sea at night or blue: the pick goes on <html data-sea>, which the sea, the sky and the nav
@@ -430,7 +473,7 @@ function tone() {
     const y = 32;
     if (bar) {
       const dy = scrollY - lastY;
-      if (Math.abs(dy) > 4) { bar.classList.toggle('is-away', dy > 0 && scrollY > innerHeight * 0.6 && !document.querySelector('[data-sheet]:not([hidden])')); lastY = scrollY; }
+      if (Math.abs(dy) > 4) { bar.classList.toggle('is-away', dy > 0 && scrollY > innerHeight * 0.6 && !document.querySelector('[data-sheet]:not([hidden]), [data-get-menu]:not([hidden])')); lastY = scrollY; }
       const heroR = hero?.getBoundingClientRect();
       bar.classList.toggle('is-solid', !(heroR && heroR.top <= 0 && heroR.bottom > innerHeight * 0.5) && !document.querySelector('.stage--page'));
     }

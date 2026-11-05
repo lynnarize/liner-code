@@ -26,15 +26,18 @@ html[data-nav-tone='night'] { --nav-fg: var(--paper); --nav-bg: var(--night); --
 .nav {
   position: fixed; inset: 0 0 auto 0; z-index: var(--z-nav);
   height: var(--nav-h); padding: 0 var(--m);
-  display: flex; align-items: center; gap: 24px;
+  /* Three columns, the outer two equal, so the links sit at the page's centre. When the right-hand
+     controls need more than half of what is left, its column grows and the links give way to the left. */
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px;
   color: var(--nav-fg);
   transition: color 0.35s var(--ease), background-color 0.35s var(--ease), translate 0.5s var(--ease);
 }
 .nav.is-solid { background: var(--nav-bg); }
 .nav.is-away { translate: 0 -110%; }
-.nav__brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.02em; height: 44px; }
+.nav__brand { justify-self: start; display: flex; align-items: center; gap: 9px; white-space: nowrap; font-weight: 600; font-size: 1.0625rem; letter-spacing: -0.02em; height: 44px; }
 .mark { width: 26px; height: 26px; flex: none; }
-.nav__links { flex: 1; display: flex; justify-content: center; }
+.nav__links { display: flex; justify-content: center; }
+.nav__end { justify-self: end; display: flex; align-items: center; gap: 10px; }
 .nav__links ul { display: flex; gap: clamp(16px, 2.2vw, 34px); }
 .nav__links a { font-size: var(--t-small); display: inline-flex; align-items: center; height: 44px; position: relative; }
 .nav__links a::after {
@@ -67,6 +70,38 @@ html:not([data-sea='blue']) .seas--sheet [data-pick='dark'], html[data-sea='blue
 .stars__n { display: inline-flex; align-items: center; gap: 4px; padding-left: 9px; margin-left: 2px; box-shadow: inset 1px 0 0 color-mix(in oklab, currentColor 22%, transparent); font-variant-numeric: tabular-nums; }
 .stars__star { width: 12px; height: 12px; flex: none; color: #f2c14e; }
 .sheet__stars { font-weight: 500; opacity: 0.7; }
+/* Download: a short menu under the button, the night card of the phone Menu at a smaller size. */
+.get { position: relative; display: flex; }
+.get__chev { flex: none; width: 14px; height: 14px; margin-right: -4px; transition: rotate 0.3s var(--ease); }
+.get [aria-expanded='true'] .get__chev { rotate: 180deg; }
+.get__menu {
+  position: absolute; z-index: 1; top: calc(100% + 10px); right: 0; width: 300px;
+  padding: 6px; border-radius: 18px; background: var(--night); color: var(--paper);
+  box-shadow: 0 0 0 1px rgb(244 235 220 / 0.1), 0 24px 60px -20px rgb(0 0 0 / 0.6);
+  transform-origin: top right;
+}
+.get__title { padding: 10px 12px 6px; font-size: 13px; color: rgb(244 235 220 / 0.68); }
+.get__list { display: flex; flex-direction: column; }
+.get__os {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px;
+  padding: 10px 10px 10px 12px; border-radius: 13px; transition: background-color 0.2s var(--ease);
+}
+.get__os[data-yours] { order: -1; }
+.get__os:hover, .get__os:focus-visible { background: rgb(244 235 220 / 0.09); }
+.get__os:focus-visible { outline-offset: -2px; outline-color: var(--paper); }
+.get__os:active { scale: 0.985; }
+.get__name { font-size: 1rem; font-weight: 600; letter-spacing: -0.015em; }
+.get__sub { grid-column: 1; font-size: 13px; color: rgb(244 235 220 / 0.68); }
+.get__arrow {
+  grid-column: 2; grid-row: 1 / span 2; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: rgb(244 235 220 / 0.1); transition: background-color 0.2s var(--ease), color 0.2s var(--ease), translate 0.3s var(--ease);
+}
+.get__os[data-yours] .get__arrow, .get__os:hover .get__arrow { background: var(--paper); color: var(--night); }
+.get__os:hover .get__arrow { translate: 0 2px; }
+.get__foot { display: flex; justify-content: space-between; gap: 12px; padding: 6px 12px 8px; }
+.get__foot a { display: inline-flex; align-items: center; min-height: 32px; font-size: 13px; font-weight: 500; color: rgb(244 235 220 / 0.82); }
+.get__foot a:hover { color: var(--paper); text-decoration: underline; text-underline-offset: 3px; }
+.get__foot a:focus-visible { outline-color: var(--paper); }
 .nav__menu { display: none; height: 38px; padding: 0 14px; border-radius: 999px; font-size: var(--t-small); font-weight: 500; background: color-mix(in oklab, currentColor 14%, transparent); }
 .sheet {
   position: fixed; right: 8px; top: calc(var(--nav-h) + 4px); width: min(100% - 16px, 440px);
@@ -79,14 +114,18 @@ html:not([data-sea='blue']) .seas--sheet [data-pick='dark'], html[data-sea='blue
 @media (max-width: 1239px) { .stars__label { display: none; } }
 @media (max-width: 1080px) {
   .nav__links { display: none; }
-  .nav { justify-content: space-between; gap: 10px; }
-  .nav__brand { margin-right: auto; }
+  .nav { grid-template-columns: 1fr auto; column-gap: 10px; }
   .nav__menu { display: inline-flex; align-items: center; }
-  .nav > .seas { display: none; }
+  .nav__end > .seas { display: none; }
   .seas--sheet { display: flex; }
 }
-/* On a phone the stars move into the Menu, beside GitHub. */
-@media (max-width: 600px) { .nav > .stars { display: none; } }
+/* On a phone the stars move into the Menu, beside GitHub, and the Download menu spans the width
+   under the nav like the Menu does. */
+@media (max-width: 600px) {
+  .nav__end > .stars { display: none; }
+  .get { position: static; }
+  .get__menu { top: calc(var(--nav-h) + 4px); right: 8px; width: calc(100% - 16px); }
+}
 
 /* ---------- The stage: sky, word, ground, you ---------- */
 .stage { position: relative; overflow: clip; background: var(--stage-sky, var(--sky)); color: var(--paper); isolation: isolate; transition: background-color 0.9s var(--ease); }

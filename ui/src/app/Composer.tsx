@@ -14,7 +14,7 @@
     (⌘⇧Enter for the first), or edited where it waits.
   - A paste of 32 KiB or more comes as a text file. Drafts outlast a restart.
 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Access, After, CommandInfo, SkillInfo, Effort, Mode, Project, QueuedMessage, RouteLevel, RpcResult, Thread } from "@contracts";
 import { AFTER, castOf, checkerOf, familyOf, frontiersOf, MODES, ROUTE_LEVELS, splitModel } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
@@ -25,6 +25,7 @@ import { I, ModelMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, isModelAgent, markOf, modeOf, modelLabel, plural, since, startOf } from "./model";
 import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
+import { SideKeys } from "./TopBar";
 import { ContextMeter, Disc, LimitMeter, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
@@ -491,12 +492,14 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     if (s.at < last) setQueue([...queue.slice(0, s.at), queue[last], ...queue.slice(s.at, last)]);
   }, [thread?.queue]);
 
-  // ⌘⇧Enter sends the first queued message now, wherever the focus is in the session.
-  const live = useRef({ queue, sendNow });
-  live.current = { queue, sendNow };
+  // ⌘⇧Enter sends the first queued message now, wherever the focus is in the session; beside another, only in the side you're in.
+  const keys = useContext(SideKeys);
+  const live = useRef({ queue, sendNow, keys });
+  live.current = { queue, sendNow, keys };
   useEffect(() => {
     if (!thread) return;
     const onKey = (e: KeyboardEvent) => {
+      if (!live.current.keys) return;
       if (e.key !== "Enter" || !e.shiftKey || !(e.metaKey || e.ctrlKey) || e.altKey || e.isComposing) return;
       const first = live.current.queue[0];
       if (!first) return;

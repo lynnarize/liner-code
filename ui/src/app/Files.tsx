@@ -6,8 +6,9 @@
   (T3 Code: files/FilePreviewPanel.tsx).
 
   A link to a file elsewhere in the app (an answer's Markdown, the Terminal) opens it here, at its
-  line: dispatch `lc:open-file` with { path, line }, or call openInFiles. Files takes it now if it's
-  on screen, or as it mounts (the session brings the Files tab up), for a few seconds.
+  line: dispatch `lc:open-file` with { path, line, threadId }, or call openInFiles. The session it
+  names takes it (with none, the side of Open beside you're in) and brings its Files tab up; that
+  session's Files takes it now if it's on screen, or as it mounts, for a few seconds.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff, Item, Thread, TreeEntry } from "@contracts";
@@ -32,26 +33,34 @@ const HTML = /\.html?$/i;
 
 /* ---------- Opening a file at a line, from elsewhere in the app ---------- */
 
-type Reveal = { path: string; line?: number; at: number };
+/*
+  Each session's own, so a link opens in the Files of the session it's in and not in every one on
+  screen (Open beside shows two). T3 Code opens a link the same way, in its thread's panel:
+  ChatMarkdown.tsx's onOpenFile, rightPanelStore.ts's openFile(threadRef, path).
+*/
+type Reveal = { threadId: string; path: string; line?: number; at: number };
 let waiting: Reveal | null = null;
-const takers = new Set<(r: Reveal) => void>();
-/** Open a file in the Files surface, scrolled to a line. The path is the session folder's, or absolute inside it. */
-export function openInFiles(path: string, line?: number) {
-  window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path, line } }));
+const takers = new Map<(r: Reveal) => void, string>();
+/** Open a file in the Files surface, scrolled to a line. The path is the session folder's, or absolute inside it; without a session, the one you're in. */
+export function openInFiles(path: string, line?: number, threadId?: string) {
+  window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path, line, threadId } }));
 }
-window.addEventListener("lc:open-file", (e) => {
-  const d = (e as CustomEvent<{ path?: unknown; line?: unknown }>).detail;
-  if (!d || typeof d.path !== "string" || !d.path.trim()) return;
+/** A link's file for a session's Files (Session.tsx decides which session's): false when it names none. */
+export function revealFile(threadId: string, d: { path?: unknown; line?: unknown } | undefined) {
+  if (!d || typeof d.path !== "string" || !d.path.trim()) return false;
   const line = typeof d.line === "number" && d.line > 0 ? Math.floor(d.line) : typeof d.line === "string" && /^\d+$/.test(d.line) ? Number(d.line) : undefined;
-  const r: Reveal = { path: d.path.trim(), line, at: Date.now() };
+  const r: Reveal = { threadId, path: d.path.trim(), line, at: Date.now() };
   // On screen, it's taken now; else it waits for the Files surface the session is bringing up.
-  if (takers.size) for (const f of takers) f(r);
+  const here = [...takers].filter(([, id]) => id === threadId);
+  if (here.length) for (const [f] of here) f(r);
   else waiting = r;
-});
-function takeWaiting() {
+  return true;
+}
+function takeWaiting(threadId: string) {
   const r = waiting;
+  if (!r || r.threadId !== threadId) return null;
   waiting = null;
-  return r && Date.now() - r.at < 10_000 ? r : null;
+  return Date.now() - r.at < 10_000 ? r : null;
 }
 
 /** The session folder's path for a link's: ./a, /Users/…/project/a and a all read as "a". */
@@ -138,11 +147,11 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
   openRef.current = open;
   useEffect(() => {
     const take = (r: Reveal) => openRef.current(r);
-    takers.add(take);
-    const w = takeWaiting();
+    takers.set(take, thread.id);
+    const w = takeWaiting(thread.id);
     if (w) take(w);
     return () => void takers.delete(take);
-  }, []);
+  }, [thread.id]);
   useEffect(() => {
     if (reveal?.path) open(reveal);
   }, [reveal?.path, reveal?.line]);

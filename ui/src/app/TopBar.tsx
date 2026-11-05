@@ -5,7 +5,7 @@
   + and their keys (⌘⇧ and a letter), and ⌘K finds them all; the apps you pin keep a tab at the
   start of that panel's strip.
 */
-import { useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useSyncExternalStore, type ReactNode } from "react";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { behind, onScreen, toggleDock, toggleTab, type DockState } from "./dock";
 import { I } from "./icons";
@@ -32,6 +32,13 @@ export function openSurface(threadId: string, tab: Tab) {
   open?.(tab);
   return Boolean(open);
 }
+
+/*
+  Whether the window's keys are this session's. Open beside shows two, and only the side you're in
+  takes them: what a session holds that listens on the window (its composer, Review) asks here.
+  Alone, or outside a session, it's always yes.
+*/
+export const SideKeys = createContext(true);
 
 /* The apps you pinned to the row, the same in every session. */
 const PINS = "lc:pinned-apps";

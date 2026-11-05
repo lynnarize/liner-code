@@ -6,7 +6,7 @@
   test files step aside, if you ask; both are remembered, and so is what you've viewed, until the
   file changes again.
 */
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff, Finding, Item, Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { diffRows, segment, type Row } from "@liner/pro/code-diff/diff";
@@ -22,6 +22,7 @@ import { baseOf, dirOf, langOf, linesOf, tokensOf, Toks } from "./code";
 import { Lines, ModelTag, Pop, Row as PickRow, Sep } from "./ui";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { FindBar } from "./Find";
+import { SideKeys } from "./TopBar";
 import { undoTurn } from "./undo";
 
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
@@ -242,8 +243,11 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
     const c = changes[n];
     box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(c.path)}"] [data-change="${c.change}"]`)?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
+  // Beside another session, J, K and ⌘F are the side you're in.
+  const keys = useContext(SideKeys);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!keys) return;
       const t = e.target as HTMLElement;
       if (is(e, "find")) {
         e.preventDefault();
@@ -257,7 +261,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [at, changes.length, sel]);
+  }, [at, changes.length, sel, keys]);
 
   const send = async () => {
     if (!sel || !ask.trim()) return;

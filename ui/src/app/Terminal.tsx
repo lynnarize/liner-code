@@ -175,7 +175,7 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
       if (!root || !path.startsWith(`${root}/`)) return toast("That file is outside this session's folder", { description: path });
       path = path.slice(root.length + 1);
     }
-    window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: path.replace(/^\.\//, ""), line } }));
+    window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: path.replace(/^\.\//, ""), line, threadId: thread.id } }));
   };
   const followRef = useRef(follow);
   followRef.current = follow;

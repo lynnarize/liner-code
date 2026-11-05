@@ -18,13 +18,14 @@ import { I } from "./icons";
 import { agentOf, checkpointsOf, modeOf, modelLabel, sumLines } from "./model";
 import { Panel } from "./Panel";
 import { FindBar, onComposerInsert, toComposer } from "./Find";
+import { revealFile } from "./Files";
 import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
 import { readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
 import { closeTab, closeWhere, openTab, paneOf, replaceTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
-import { onOpenSurface, TopBar } from "./TopBar";
+import { onOpenSurface, SideKeys, TopBar } from "./TopBar";
 import { ModeChip } from "./Modes";
 import { Timeline } from "./Timeline";
 import { Badge, Disc, Kbd, PanelHead, Pop, Row, Sep } from "./ui";
@@ -60,6 +61,10 @@ const places = new Map<string, { top: number; atEnd: boolean }>();
 const views = new Map<string, string>();
 /** Whether each session's bottom panel (its shells and runs) is up, while the app runs. */
 const belows = new Map<string, boolean>();
+/** The bottom panel up for a session that isn't on screen, for when it opens (⌘K's Open Terminal from Settings). */
+export function showBelow(threadId: string) {
+  belows.set(threadId, true);
+}
 const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
 /** The install previews that have come up by themselves once, while the app runs. */
 const openedPreviews = new Set<string>();
@@ -101,6 +106,22 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     const t = setTimeout(() => setLeaving(null), PANEL_EXIT_MS);
     return () => clearTimeout(t);
   }, [leaving]);
+  // The bottom panel (its shells and runs) is up or not on its own: the right panel stays open or hidden as you left it.
+  const [below, setBelowState] = useState(() => belows.get(thread.id) ?? false);
+  const setBelow = (v: boolean | ((b: boolean) => boolean)) =>
+    setBelowState((prev) => {
+      const next = typeof v === "function" ? v(prev) : v;
+      belows.set(thread.id, next);
+      return next;
+    });
+  /*
+    A surface asked for (⌘K, an agent, a key): up in the right panel, but the Terminal comes up in
+    the bottom panel and leaves the right panel be. T3 Code keeps its terminal drawer apart from the
+    right panel the same way (chat/useChatTerminalActions.ts).
+  */
+  const bring = (tab: Tab) => (tab === "terminal" ? setBelow(true) : setDock((d) => openTab(d, tab)));
+  // The right panel's + (its guide) opens the Terminal below too, with the right panel as it was.
+  const fromPanel = (d: DockState) => (paneOf(d, "terminal") >= 0 && paneOf(dock, "terminal") < 0 ? setBelow(true) : setDock(d));
   const [focus, setFocus] = useState<{ id: string; path?: string } | null>(null);
   const [renaming, setRenaming] = useState(false);
   // The panel's width, while you drag its edge and after.
@@ -245,8 +266,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     return () => window.removeEventListener("lc:open-app", on);
   }, [thread.id]);
 
-  // ⌘K's "Open Browser" and the like reach this session's dock.
-  useEffect(() => onOpenSurface(thread.id, (tab) => setDock((d) => openTab(d, tab))), [thread.id]);
+  // ⌘K's "Open Browser" and the like reach this session's dock (its Terminal, the bottom panel).
+  useEffect(() => onOpenSurface(thread.id, bring), [thread.id]);
   // Something put in the composer from an app's tab ("Ask … to fix it", composer.put): back to Chat, where it is.
   useEffect(() => onComposerInsert(thread.id, () => setView("chat")), [thread.id]);
 
@@ -286,11 +307,14 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     });
   }, [panelAsks, addons]);
 
-  // A path in an answer ("src/a.ts:42") brings up the Files surface, which takes the same event and
-  // opens the file at its line (Files.tsx); a web address opens in the browser you use.
+  // A path in an answer or a terminal ("src/a.ts:42") brings up this session's Files, which opens the
+  // file at its line (Files.tsx); one that names no session goes to the side of Open beside you're
+  // in. A web address opens in the browser you use.
   useEffect(() => {
     const onOpen = (e: Event) => {
-      if ((e as CustomEvent<{ path?: string }>).detail?.path) setDock((d) => openTab(d, "files"));
+      const d = (e as CustomEvent<{ path?: unknown; line?: unknown; threadId?: unknown } | undefined>).detail;
+      if (d?.threadId ? d.threadId !== thread.id : !keysOn.current) return;
+      if (revealFile(thread.id, d)) setDock((x) => openTab(x, "files"));
     };
     window.addEventListener("lc:open-file", onOpen);
     return () => window.removeEventListener("lc:open-file", onOpen);
@@ -298,17 +322,12 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const links = useMemo(
     () => ({
       openExternal: (href: string) => bridge.openExternal(href),
-      openFile: (f: FileLink) => window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: f.path, line: f.line } })),
+      openFile: (f: FileLink) => window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: f.path, line: f.line, threadId: thread.id } })),
     }),
-    [],
+    [thread.id],
   );
-  const [below, setBelowState] = useState(() => belows.get(thread.id) ?? false);
-  const setBelow = (v: boolean) => {
-    belows.set(thread.id, v);
-    setBelowState(v);
-  };
-  // The Terminal lives in the bottom panel: opened from its key, ⌘K, a script, an agent or the
-  // right panel's +, it comes up there, and a layout kept from before moves it down too.
+  // The Terminal lives in the bottom panel (bring and fromPanel send it there); a layout kept from
+  // before, with it in the right panel, moves it down too.
   useEffect(() => {
     if (paneOf(dock, "terminal") < 0) return;
     setDock((d) => closeTab(d, "terminal"));
@@ -330,7 +349,9 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     return () => window.removeEventListener("keydown", onKey);
   }, [dock, view]);
 
-  // Select part of an answer and Cite puts it in the composer as a quote.
+  // Select part of an answer and Cite puts it in the composer as a quote. Only an answer of this
+  // session's: beside another, a selection over there is that one's to cite (T3 Code reads only its
+  // own viewport's: chat/AssistantSelectionToolbar.tsx).
   const [cite, setCite] = useState<{ text: string; x: number; y: number } | null>(null);
   useEffect(() => {
     const onUp = () =>
@@ -338,7 +359,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
         const sel = window.getSelection();
         const text = sel?.toString().trim() ?? "";
         const node = sel?.anchorNode?.parentElement;
-        if (!text || !sel?.rangeCount || !node?.closest(".lc-tl .lc-md")) return setCite(null);
+        if (!text || !sel?.rangeCount || !node?.closest(".lc-tl .lc-md") || !scroller.current?.contains(node)) return setCite(null);
         const r = sel.getRangeAt(0).getBoundingClientRect();
         setCite({ text, x: r.left + r.width / 2, y: r.top });
       });
@@ -372,7 +393,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       e.preventDefault();
       e.stopPropagation();
       runScript(thread.id, x);
-      setDock((d) => openTab(d, "terminal"));
+      setBelow(true);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -404,7 +425,9 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       const s = SURFACES.find((x) => is(e, `surface.${x.id}`));
       if (!s) return;
       e.preventDefault();
-      setDock((d) => openTab(d, s.id));
+      // The Terminal's key shows the bottom panel, and hides it when it's up, as its button's tip says.
+      if (s.id === "terminal") setBelow((b) => !b);
+      else setDock((d) => openTab(d, s.id));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -467,6 +490,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
 
   return (
     <MarkdownLinks.Provider value={links}>
+    <SideKeys.Provider value={keys}>
     <div
       className="lc-session"
       data-panel={dock.open || undefined}
@@ -637,9 +661,10 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           )}
         </section>
         {beside && <PanelGrip body={body} width={panelW} onWidth={setPanelW} onDrag={setResizing} />}
-        {(dock.open || leaving) && <SessionPanel thread={thread} dock={dock.open ? dock : leaving!} onDock={setDock} focus={focus} onFocus={setFocus} agentName={(lead ?? coder).name} onOpenSession={onOpenSession} onRoutine={onRoutine} leaving={!dock.open} />}
+        {(dock.open || leaving) && <SessionPanel thread={thread} dock={dock.open ? dock : leaving!} onDock={fromPanel} focus={focus} onFocus={setFocus} agentName={(lead ?? coder).name} onOpenSession={onOpenSession} onRoutine={onRoutine} leaving={!dock.open} />}
       </div>
     </div>
+    </SideKeys.Provider>
     </MarkdownLinks.Provider>
   );
 }

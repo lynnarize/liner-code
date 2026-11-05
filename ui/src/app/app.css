@@ -309,12 +309,13 @@ html[data-shell="electron"] body > :not(#root) {
 /*
   With the sidebar away, the paper's top bar starts after the traffic lights, and its row moves up
   by the window's gap so its centre sits on theirs; the bar keeps its height. In full screen the
-  lights are hidden (their x is 0), so the cap is 0 and the row stays put.
+  lights are hidden (their x is 0), so the cap is 0 and the row stays put. With a session open
+  beside another, only the left one's bar is under the lights.
 */
 html[data-native="mac"] .lc-top {
   transition: padding 520ms var(--l-spring-smooth);
 }
-html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top {
+html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc-beside .lc-top) {
   --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 26px)), min(8px, var(--lc-lights-x, 70px)));
   padding-top: calc(8px - var(--lc-up));
   padding-bottom: calc(8px + var(--lc-up));

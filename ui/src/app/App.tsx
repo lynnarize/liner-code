@@ -13,10 +13,10 @@ import { bridge, onCommand } from "./bridge";
 import { getState, onNotify, onStream, rpc, startEngine, useEngine } from "./engine";
 import { Home } from "./Home";
 import { I } from "./icons";
-import { ACCESS_LEVELS, agentOf, bucketOf } from "./model";
-import { Session } from "./Session";
+import { ACCESS_LEVELS, agentOf } from "./model";
+import { Session, showBelow } from "./Session";
 import { applyLook, readLook } from "./look";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, waitsOnYou } from "./Sidebar";
 // The builder brings Liner's workflow canvas; it loads when you first edit a routine.
 const RoutineBuilder = lazy(() => import("./RoutineBuilder").then((m) => ({ default: m.RoutineBuilder })));
 // Screens you open now and then load when you first do, so launch has less to read.
@@ -51,7 +51,8 @@ const readView = (): View => {
 /*
   F6 and ⇧F6 move between the window's areas, T3 Code's workspace areas (docs/user/keyboard-focus.md):
   the sidebar, the thread, the composer and the panel, skipping any that's hidden or absent, and
-  back to where you last were in each. A dialog that's open (⌘K) keeps the keyboard.
+  back to where you last were in each. A dialog that's open (⌘K) keeps the keyboard. Beside another
+  session, the thread, the composer and the panel are the side you're in (`side`).
 */
 const AREAS: { root: string; first: string[] }[] = [
   { root: ".lc-side:not([inert])", first: [".lc-sb-row[aria-current='page'] .lc-sb-pick", ".lc-sb-pick", "button"] },
@@ -62,13 +63,13 @@ const AREAS: { root: string; first: string[] }[] = [
 const lastIn = new Map<number, HTMLElement>();
 const shows = (el: Element | null | undefined): el is HTMLElement => el instanceof HTMLElement && el.isConnected && el.checkVisibility();
 const areaOf = (el: Element | null) => (el ? AREAS.findIndex((a) => el.closest(a.root)) : -1);
-function moveFocus(step: 1 | -1) {
+function moveFocus(step: 1 | -1, side: ParentNode = document) {
   if (document.querySelector("dialog[open]")) return;
   const here = areaOf(document.activeElement);
   const from = here >= 0 ? here : step > 0 ? -1 : AREAS.length;
   for (let n = 1; n <= AREAS.length; n++) {
     const i = (from + step * n + AREAS.length * 2) % AREAS.length;
-    const root = document.querySelector(AREAS[i].root);
+    const root = (i === 0 ? document : side).querySelector(AREAS[i].root);
     if (!shows(root)) continue;
     const kept = lastIn.get(i);
     const target = (shows(kept) && root.contains(kept) ? kept : undefined) ?? AREAS[i].first.map((q) => [...root.querySelectorAll(q)].find(shows)).find(Boolean) ?? root;
@@ -126,13 +127,32 @@ export function App() {
   // The session open beside it, if any, and which side has your keys.
   const besideThread = view.kind === "session" && view.beside && view.beside !== view.id ? threads.find((t) => t.id === view.beside && !t.archived) : undefined;
   const [sideFocus, setSideFocus] = useState(0);
-  // A session that went away (removed elsewhere) hands back to Home.
+  // The session your keys are in: the one open, or beside another the side you're in. ⌘K's "This session" is that one.
+  const here = besideThread && sideFocus === 1 ? besideThread : current;
+  // The two sides' boxes: F6 moves through the areas of the side you're in.
+  const besides = useRef<HTMLDivElement>(null);
+  const sideEl = () => (besideThread ? besides.current?.children[sideFocus] : undefined) ?? document;
+  // A press or focus in a side gives it your keys. A menu or a Pop opened from a side is portaled out
+  // of both (React still passes its events up through here): it leaves the keys where they are.
+  const pickSide = (box: HTMLElement, target: EventTarget) => {
+    const i = [...box.children].findIndex((c) => c.contains(target as Node));
+    if (i >= 0) setSideFocus(i);
+  };
+  // A session that went away (removed elsewhere) hands back to the one beside it, or to Home.
   useEffect(() => {
-    if (ready && view.kind === "session" && !current) setView({ kind: "home" });
-  }, [ready, view, current]);
+    if (ready && view.kind === "session" && !current) setView(besideThread ? { kind: "session", id: besideThread.id } : { kind: "home" });
+  }, [ready, view, current, besideThread]);
+  /** A session put away (archived, deleted): beside another, that one stays on screen; alone, back to Home. */
+  const leave = (id: string) =>
+    setView((v) => {
+      if (v.kind !== "session" || (v.id !== id && v.beside !== id)) return v;
+      const other = v.id === id ? v.beside : v.id;
+      return other && other !== id && getState().threads.some((t) => t.id === other && !t.archived) ? { kind: "session", id: other } : { kind: "home" };
+    });
 
   // The Dock says how many sessions need you; notifications say which, while you're elsewhere.
-  const needs = threads.filter((t) => !t.archived && bucketOf(t) === "needs" && t.turns > 0).length;
+  // Pinned ones too, as the sidebar's Needs you lists them.
+  const needs = threads.filter((t) => !t.archived && waitsOnYou(t) && t.turns > 0).length;
   useEffect(() => bridge.badge(badgeOn ? needs : 0), [needs, badgeOn]);
   // The menu bar item says the same, with which sessions, while the window is out of sight.
   const menuBar = useEngine((s) => s.settings.menuBar !== false);
@@ -140,20 +160,21 @@ export function App() {
   const traySay = JSON.stringify({
     show: menuBar,
     working: live.filter((t) => t.status === "running").map((t) => ({ id: t.id, title: t.title })),
-    needs: live.filter((t) => bucketOf(t) === "needs" && t.turns > 0).map((t) => ({ id: t.id, title: t.title, waiting: t.status === "waiting" })),
+    needs: live.filter((t) => waitsOnYou(t) && t.turns > 0).map((t) => ({ id: t.id, title: t.title, waiting: t.status === "waiting" })),
     // Every turn going, routines' and side chats' too: ⌘Q asks first while there are any.
     running: [...threads, ...sides].filter((t) => !t.archived && t.status === "running").length,
   });
   useEffect(() => bridge.status(JSON.parse(traySay)), [traySay]);
   useEffect(() => {
     const off = onNotify((e) => {
-      const open = view.kind === "session" && view.id === e.threadId && document.hasFocus();
+      // Either side of Open beside is on screen.
+      const open = view.kind === "session" && (view.id === e.threadId || besideThread?.id === e.threadId) && document.hasFocus();
       if (open) return;
       if (notifyOn) bridge.notify(e.title, e.body, e.threadId);
       if (e.kind === "error" && document.hasFocus()) toast.error(e.title, { description: e.body });
     });
     return () => void off();
-  }, [view, notifyOn]);
+  }, [view, notifyOn, besideThread?.id]);
 
   // A session a rule settled says so, with an Undo.
   useEffect(
@@ -195,9 +216,9 @@ export function App() {
     };
   }, []);
   const openRun = (run: RoutineRun) => (run.threadId ? openSession(run.threadId, `run:${run.id}`) : setView({ kind: "routines" }));
-  const editRoutine = (id?: string, projectId?: string) => setView({ kind: "routine", id, projectId: projectId ?? (current?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
+  const editRoutine = (id?: string, projectId?: string) => setView({ kind: "routine", id, projectId: projectId ?? (here?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
   const newSession = (projectId?: string) => {
-    setView({ kind: "home", projectId: projectId ?? (current?.projectId || lastProject) });
+    setView({ kind: "home", projectId: projectId ?? (here?.projectId || lastProject) });
   };
   // Create your add-on (the sidebar's Add-ons menu, the Add-ons page): a new task in Workshop, in the
   // project New session would pick (Scratch when there's none), with DeepSeek Harness's ask written in the
@@ -205,7 +226,7 @@ export function App() {
   const createAddon = async () => {
     try {
       const have = (id?: string) => (id && projects.some((p) => p.id === id) ? id : undefined);
-      const projectId = have(current?.projectId) ?? have(lastProject) ?? projects.find((p) => p.agent !== "demo")?.id ?? (await rpc("project.scratch", {})).id;
+      const projectId = have(here?.projectId) ?? have(lastProject) ?? projects.find((p) => p.agent !== "demo")?.id ?? (await rpc("project.scratch", {})).id;
       setView({ kind: "home", projectId, mode: "creator", prompt: { text: CREATE_ADDON_ASK, at: Date.now() } });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -218,17 +239,36 @@ export function App() {
   const nextNeeds = () => {
     const order = sidebarOrder();
     const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
-    const here = current ? rank(current.id) : -1;
-    const needs = threads.filter((t) => !t.archived && t.id !== current?.id && bucketOf(t) === "needs" && t.turns > 0).sort((a, b) => rank(a.id) - rank(b.id));
-    const next = needs.find((t) => rank(t.id) > here) ?? needs[0];
+    // From the side your keys are in, beside another session.
+    const from = here ? rank(here.id) : -1;
+    const needs = threads.filter((t) => !t.archived && t.id !== here?.id && waitsOnYou(t) && t.turns > 0).sort((a, b) => rank(a.id) - rank(b.id));
+    const next = needs.find((t) => rank(t.id) > from) ?? needs[0];
     if (next) {
       setSettings(false);
       openSession(next.id);
-    } else toast(current && bucketOf(current) === "needs" ? "Nothing else needs you" : "Nothing needs you", { duration: 2500 });
+    } else toast(here && waitsOnYou(here) ? "Nothing else needs you" : "Nothing needs you", { duration: 2500 });
   };
-  /** Opens a surface in the open session's panel, or in its kept panel for when it opens. */
+  /** Opens a surface in the open session's panel, or in its kept panel for when it opens; the Terminal, in its bottom panel. */
   const showSurface = (id: string, tab: SurfaceId) => {
-    if (!openSurface(id, tab)) openSession(id, tab);
+    if (openSurface(id, tab)) return;
+    if (tab === "terminal") (showBelow(id), openSession(id));
+    else openSession(id, tab);
+  };
+  /*
+    The title's ··· "Open another session beside it": ⌘K, with the sessions to pick from. The one
+    you pick takes the other side (the right, from a session alone), as the sidebar's Open beside does.
+  */
+  const [besideOf, setBesideOf] = useState<number | null>(null);
+  const pickBeside = (side: number) => {
+    setBesideOf(side);
+    setMenu(true);
+  };
+  const openBeside = (id: string, side: number) => {
+    if (view.kind !== "session") return openSession(id);
+    const keep = side === 1 && besideThread ? besideThread.id : view.id;
+    if (keep === id) return;
+    setSideFocus(side === 1 ? 0 : 1);
+    setView(side === 1 ? { kind: "session", id, beside: keep } : { kind: "session", id: keep, beside: id });
   };
   const copy = (text: string, what: string) =>
     void navigator.clipboard.writeText(text).then(
@@ -239,7 +279,10 @@ export function App() {
   // Menu-bar commands from the shell, and the same commands from their keys.
   const run = (name: string) => {
     if (name === "new") newSession();
-    else if (name === "commands") setMenu((m) => !m);
+    else if (name === "commands") {
+      if (!menu) setBesideOf(null);
+      setMenu(!menu);
+    }
     else if (name === "settings") setSettings((o) => !o);
     else if (name === "updates") {
       window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "updates" }));
@@ -249,8 +292,8 @@ export function App() {
     else if (name === "usage") setView({ kind: "usage" });
     else if (name === "open-project") void bridge.pickFolder().then((p) => (p ? rpc("project.add", { path: p }).then((x) => setView({ kind: "home", projectId: x.id })) : undefined)).catch((e: Error) => toast.error(e.message));
     else if (name === "next-needs") nextNeeds();
-    else if (name === "focus.next") moveFocus(1);
-    else if (name === "focus.prev") moveFocus(-1);
+    else if (name === "focus.next") moveFocus(1, sideEl());
+    else if (name === "focus.prev") moveFocus(-1, sideEl());
     else if (name.startsWith("open:")) openSession(name.slice(5));
   };
   // The listeners stay; each press reaches what's current through the ref.
@@ -363,38 +406,38 @@ export function App() {
           }),
       },
     ];
-    if (current) {
-      const branch = current.worktree?.branch ?? projects.find((p) => p.id === current.projectId)?.branch;
+    if (here) {
+      const branch = here.worktree?.branch ?? projects.find((p) => p.id === here.projectId)?.branch;
       items.push(
         // The panel's surfaces, opened beside this session (T3 Code's palette lists them too).
-        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: `Open ${s.label}`, group: "This session", icon: <s.icon size={15} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(current.id, s.id) })),
+        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: `Open ${s.label}`, group: "This session", icon: <s.icon size={15} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
         ...(branch ? [{ id: "copy-branch", label: "Copy branch name", group: "This session", hint: branch, icon: <I.branch size={15} />, onSelect: () => copy(branch, "the branch name") }] : []),
-        { id: "copy-id", label: "Copy session id", group: "This session", hint: current.id, onSelect: () => copy(current.id, "the session id") },
-        { id: "stop", label: "Stop this session", group: "This session", keywords: ["cancel", "interrupt"], onSelect: () => void rpc("thread.stop", { id: current.id }) },
-        { id: "pin", label: current.pinned ? "Unpin it" : "Pin it", group: "This session", onSelect: () => void rpc("thread.update", { id: current.id, pinned: !current.pinned }) },
-        { id: "settle", label: "Settle it", group: "This session", onSelect: () => void rpc("thread.update", { id: current.id, done: true, unread: false }) },
-        { id: "archive", label: "Archive it", group: "This session", keywords: ["put away", "hide"], onSelect: () => void rpc("thread.update", { id: current.id, archived: true }).then(() => setView({ kind: "home" })) },
+        { id: "copy-id", label: "Copy session id", group: "This session", hint: here.id, onSelect: () => copy(here.id, "the session id") },
+        { id: "stop", label: "Stop this session", group: "This session", keywords: ["cancel", "interrupt"], onSelect: () => void rpc("thread.stop", { id: here.id }) },
+        { id: "pin", label: here.pinned ? "Unpin it" : "Pin it", group: "This session", onSelect: () => void rpc("thread.update", { id: here.id, pinned: !here.pinned }) },
+        { id: "settle", label: "Settle it", group: "This session", onSelect: () => void rpc("thread.update", { id: here.id, done: true, unread: false }) },
+        { id: "archive", label: "Archive it", group: "This session", keywords: ["put away", "hide"], onSelect: () => void rpc("thread.update", { id: here.id, archived: true }).then(() => leave(here.id)) },
         {
           id: "fork",
           label: "Fork it",
           group: "This session",
           icon: <I.fork size={15} />,
-          onSelect: () => void rpc("thread.create", { projectId: current.projectId, forkOf: current.id }).then((t) => openSession(t.id)),
+          onSelect: () => void rpc("thread.create", { projectId: here.projectId, forkOf: here.id }).then((t) => openSession(t.id)),
         },
         {
           id: "access",
           label: "Change what it may do",
           group: "This session",
           icon: <I.lock size={15} />,
-          items: ACCESS_LEVELS.map((l) => ({ id: `access-${l.id}`, label: l.label, hint: l.note, onSelect: () => void rpc("thread.update", { id: current.id, access: l.id }) })),
+          items: ACCESS_LEVELS.map((l) => ({ id: `access-${l.id}`, label: l.label, hint: l.note, onSelect: () => void rpc("thread.update", { id: here.id, access: l.id }) })),
         },
         {
           id: "reveal",
           label: `Show the project in ${os.fileManager}`,
           group: "This session",
           onSelect: () => {
-            const p = projects.find((x) => x.id === current.projectId);
-            if (p) bridge.openIn(current.worktree?.path ?? p.path, "finder");
+            const p = projects.find((x) => x.id === here.projectId);
+            if (p) bridge.openIn(here.worktree?.path ?? p.path, "finder");
           },
         },
         {
@@ -404,8 +447,8 @@ export function App() {
           hint: "In Terminal",
           icon: <I.terminal size={15} />,
           onSelect: () => {
-            const p = projects.find((x) => x.id === current.projectId);
-            if (p) bridge.openIn(current.worktree?.path ?? p.path, "terminal");
+            const p = projects.find((x) => x.id === here.projectId);
+            if (p) bridge.openIn(here.worktree?.path ?? p.path, "terminal");
           },
         },
         {
@@ -416,15 +459,15 @@ export function App() {
           // It can't be undone, so it asks first, on a page of its own; Enter alone keeps it.
           items: [
             { id: "delete-keep", label: "Keep it", onSelect: () => {} },
-            { id: "delete-archive", label: "Archive it instead", hint: "Out of the sidebar, back from Settings any time", onSelect: () => void rpc("thread.update", { id: current.id, archived: true }).then(() => setView({ kind: "home" })) },
+            { id: "delete-archive", label: "Archive it instead", hint: "Out of the sidebar, back from Settings any time", onSelect: () => void rpc("thread.update", { id: here.id, archived: true }).then(() => leave(here.id)) },
             {
               id: "delete-yes",
-              label: `Delete “${current.title}” for good`,
-              hint: current.worktree ? "Its worktree is kept if it has changes" : "Its timeline goes; your files stay",
+              label: `Delete “${here.title}” for good`,
+              hint: here.worktree ? "Its worktree is kept if it has changes" : "Its timeline goes; your files stay",
               icon: <I.trash size={15} />,
               onSelect: () =>
-                void rpc("thread.remove", { id: current.id })
-                  .then(() => setView({ kind: "home" }))
+                void rpc("thread.remove", { id: here.id })
+                  .then(() => leave(here.id))
                   .catch((e: Error) => toast.error(e.message)),
             },
           ],
@@ -438,7 +481,17 @@ export function App() {
     for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
     return items;
     // New session and New routine read where you are and your last project, so they're here too.
-  }, [threads, projects, agents, providers, current, sidebar, view, lastProject, found, asked]);
+  }, [threads, projects, agents, providers, current, here, sidebar, view, lastProject, found, asked]);
+  const besidePicks = useMemo<CommandItem[]>(
+    () =>
+      besideOf === null
+        ? []
+        : threads
+            .filter((t) => !t.archived && t.id !== current?.id && t.id !== besideThread?.id)
+            .slice(0, 200)
+            .map((t) => ({ id: `b-${t.id}`, label: t.title, group: "Open beside it", hint: `${projects.find((p) => p.id === t.projectId)?.name ?? ""} · ${agentOf(t.agent, agents, providers).name}`, onSelect: () => openBeside(t.id, besideOf) })),
+    [besideOf, threads, projects, agents, providers, current, besideThread, view],
+  );
 
   if (!ready)
     return (
@@ -469,7 +522,7 @@ export function App() {
       ) : (
         <>
           <div className="lc-side" inert={!sidebar || undefined}>
-            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => setMenu(true)} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
@@ -477,15 +530,15 @@ export function App() {
             {view.kind === "session" && current ? (
               besideThread ? (
                 // Two sessions side by side (TasteCode's Open beside): each has its header, its composer and its panels; keys go to the one you're in.
-                <div className="lc-besides" onFocusCapture={(e) => setSideFocus((e.currentTarget.lastElementChild as HTMLElement).contains(e.target as Node) ? 1 : 0)} onPointerDownCapture={(e) => setSideFocus((e.currentTarget.lastElementChild as HTMLElement).contains(e.target as Node) ? 1 : 0)}>
+                <div ref={besides} className="lc-besides" onFocusCapture={(e) => pickSide(e.currentTarget, e.target)} onPointerDownCapture={(e) => pickSide(e.currentTarget, e.target)}>
                   {[current, besideThread].map((t, i) => (
                     <div key={t.id} className="lc-beside">
-                      <Session key={t.id} thread={t} sidebar={sidebar || i > 0} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, t.projectId)} keys={sideFocus === i} onCloseSide={() => setView({ kind: "session", id: i === 0 ? besideThread.id : current.id })} />
+                      <Session key={t.id} thread={t} sidebar={sidebar || i > 0} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, t.projectId)} onBeside={() => pickBeside(i)} keys={sideFocus === i} onCloseSide={() => setView({ kind: "session", id: i === 0 ? besideThread.id : current.id })} />
                     </div>
                   ))}
                 </div>
               ) : (
-              <Session key={current.id} thread={current} sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, current.projectId)} />
+              <Session key={current.id} thread={current} sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, current.projectId)} onBeside={() => pickBeside(0)} />
               )
             ) : view.kind === "routines" ? (
               <RoutinesPage sidebar={sidebar} onSidebar={() => setSidebar(true)} onNew={() => editRoutine()} onEdit={(id) => editRoutine(id)} onOpenRun={openRun} />
@@ -537,7 +590,7 @@ export function App() {
           <span className="l-shimmer">Reconnecting to the engine</span>
         </div>
       )}
-      <CommandMenu open={menu} onOpenChange={setMenu} items={commands} hotkey={null} placeholder="Search sessions, projects and commands" />
+      <CommandMenu open={menu} onOpenChange={setMenu} items={besideOf === null ? commands : besidePicks} hotkey={null} placeholder={besideOf === null ? "Search sessions, projects and commands" : "Find a session to open beside it"} />
       <AgentDialog open={agentDialog.open} agent={agentDialog.agent} onClose={() => setAgentDialog({ open: false })} />
       <AppModelHost />
       <Toaster className="lc-toaster" />

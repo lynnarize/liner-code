@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.2.2 (alpha), 2026-11-05
+
+**Update from 0.2.1 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or
+download the new DMG; on Windows, download the new zip. **A cleaner window**, after TasteCode
+v0.5, in Liner 2.0's own look, and **a new icon** that turns dark with your Mac.
+
+### New
+
+- **A new icon:** two turns that share one centre, the outer in ink and the inner in Liner blue.
+  On macOS 26 and later it follows the system's light or dark look by itself, in the Dock, the
+  Finder and Launchpad; on earlier systems the Dock icon follows it while Liner Code runs. The
+  site's favicon and the README follow your theme too.
+- **A bottom panel:** the session's shells and script runs open under the thread and its composer,
+  with the shells as the panel's own tabs, a + for another, the open shell's folder and tools, and
+  a button to put it away. Terminal comes up there from its key, ⌘K, a script or an agent.
+- **Open beside:** right-click a session and Open beside puts it next to the one on screen, each
+  with its own header, composer and panels. Keys go to the side you're in; × closes a side.
+- **Needs you:** sessions waiting on you have a section at the top of the sidebar, with their
+  project at the end of the row, while there are any.
+- **Plan limits at a glance:** the ring at the sidebar's foot shows your busiest plan window and
+  opens every tool's windows with when each resets, and Usage and cost. In a session, the context
+  ring's pop holds the plan's windows too.
+- **Agents at work stay in sight:** while a model's subagents run, each has a line under its folded
+  row, with what it's doing and for how long.
+- **Settle a whole project:** point at a project's header and press its settle button, or right-click
+  it, and every session in it goes to Settled at once, with one Undo. Sessions still at work stay;
+  the project comes back to the list with its next session. In Settled, sessions sit under their
+  project's header, folded, and the header's ↶ brings the whole project back.
+- **An update waits in the sidebar:** a Liner Code that's ready or downloading shows on a card over
+  the foot, with Restart and how many sessions are working.
+
+### Changed
+
+- **The session's header is one quiet row:** the title with its ··· menu (rename, pin, where it
+  works, your editor, scripts, the branch and committing), the branch, the Reviewer's verdict,
+  Changes, Run, and two buttons for the bottom and right panels. Side chat, Browser, Files, Design,
+  Pull request and the rest open from the right panel's + and their keys (⌘⇧ and a letter).
+- **The right panel's tabs are its header:** every tab keeps its name, the + holds the guide, and
+  the arrows give a tab the whole window. Apps you pin (right-click their tab) keep an icon at the
+  start of the strip. The second pane and its Split button are gone.
+- **The sidebar is lighter:** New session, with search at its end, Routines and Add-ons as rows on
+  top; your app pages under Apps; then Needs you, Pinned and Projects, with Filter and Add a project
+  beside the Projects label. A session takes one line: its maker's mark, its title, and a mark while
+  it works or waits, or how long ago; the rest is in the card that comes as you rest on it.
+  Snoozed and Settled are one quiet row; the foot is you, the team, your plans' limits and Settings.
+- **The chat lines up with the composer:** the text starts where the composer's does, folded rows
+  end in a small triangle, and a turn's changes read "2 files changed +3 −1 · View changes".
+- **Diff is called Changes** everywhere: its tab, its key's name and ⌘K.
+- **Project badges are flat:** one colour of their own each, without the gradient and shine.
+- **Add-ons in the sidebar opens its page** straight away; Create your add-on is that page's button.
+
 ## 0.2.1 (alpha), 2026-11-04
 
 **Update from 0.2.0 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or

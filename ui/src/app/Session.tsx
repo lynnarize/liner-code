@@ -1,6 +1,6 @@
 /*
-  An open session: its name, who works on it and on which branch, its surfaces' row at the top
-  right, the timeline, and the composer. The dock beside it holds the surfaces as tabs, in one or
+  An open session: its name, which opens its menu (where it works, its branch, rename and pin), the
+  Reviewer's word and the panels' row at the top right, the timeline, and the composer. The dock beside it holds the surfaces as tabs, in one or
   two panes; the full canvas gives it the whole paper (on the diff, that's the full-width Review).
 */
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
@@ -28,7 +28,7 @@ import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, SideKeys, TopBar } from "./TopBar";
 import { ModeChip } from "./Modes";
 import { Timeline } from "./Timeline";
-import { Badge, Disc, Kbd, PanelHead, Pop, Row, Sep } from "./ui";
+import { Disc, Kbd, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
 type Props = {
@@ -241,7 +241,6 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const open = checkpointsOf(cps).filter((c) => !c.reverted && !c.committed);
   const lines = sumLines(open.flatMap((c) => c.files));
   const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
-  const branch = thread.worktree?.branch ?? project?.branch;
   const busy = thread.status === "running";
 
   // One identity for the session's life, so the timeline's turns don't redraw for a new one each time.
@@ -521,27 +520,31 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               setRenaming(false);
             }}
           />
+        ) : project ? (
+          // The title is the menu's button, as Claude Code's is: where it works, its branch, rename, pin.
+          <>
+            <h1 className="l-sr-only">{thread.title}</h1>
+            <EnvMenu
+              thread={thread}
+              project={project}
+              files={openFiles}
+              lines={lines}
+              onRename={() => setRenaming(true)}
+              onChanges={() => setDock((d) => openTab(d, "changes"))}
+              actions={(close) => (
+                <>
+                  <Row title="Rename" icon={<I.edit size={13} />} onPick={() => (close(), setRenaming(true))} />
+                  <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={13} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }))} />
+                  {onBeside && <Row title="Open another session beside it" icon={<I.split size={13} />} onPick={() => (close(), onBeside())} />}
+                  <Sep />
+                </>
+              )}
+            />
+          </>
         ) : (
           <h1 className="lc-title" key={thread.title} onDoubleClick={() => setRenaming(true)} title="Double-click to rename">
             {thread.title}
           </h1>
-        )}
-        {project && (
-          <EnvMenu
-            thread={thread}
-            project={project}
-            files={openFiles}
-            lines={lines}
-            onChanges={() => setDock((d) => openTab(d, "changes"))}
-            actions={(close) => (
-              <>
-                <Row title="Rename" icon={<I.edit size={13} />} onPick={() => (close(), setRenaming(true))} />
-                <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={13} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }))} />
-                {onBeside && <Row title="Open another session beside it" icon={<I.split size={13} />} onPick={() => (close(), onBeside())} />}
-                <Sep />
-              </>
-            )}
-          />
         )}
         <ModeChip thread={thread} />
         {tabApps.length > 0 && (
@@ -554,12 +557,6 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             ))}
           </div>
         )}
-        {branch && (
-          <span className="lc-branch lc-mono" title={thread.worktree ? `Worktree at ${thread.worktree.path}` : project?.path}>
-            <I.branch size={12} />
-            {branch}
-          </span>
-        )}
         <span className="lc-grow" data-drag />
         {thread.verdict && <Verdict v={thread.verdict} />}
         {onCloseSide && (
@@ -567,7 +564,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             <I.close size={14} />
           </button>
         )}
-        <TopBar dock={dock} onDock={setDock} below={below} onBelow={() => setBelow(!below)} files={openFiles} lines={lines} run={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
+        <TopBar dock={dock} onDock={setDock} below={below} onBelow={() => setBelow(!below)} files={openFiles} lines={lines} projectId={thread.projectId} run={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
       </header>
       <div ref={body} className="lc-body">
         <section ref={threadRef} className="lc-thread" aria-label="Session" data-below={below || undefined}>
@@ -790,7 +787,7 @@ function Announcer({ status, turns, who }: { status: Thread["status"]; turns: nu
   return <div ref={region} className="l-sr-only" aria-live="polite" />;
 }
 
-/** The Reviewer's last word on this session's changes, in the bar. */
+/** The Reviewer's last word on this session's changes, in the bar: quiet text in its colour, no pill. */
 function Verdict({ v }: { v: NonNullable<Thread["verdict"]> }) {
   if (v.state === "checking")
     return (
@@ -798,9 +795,13 @@ function Verdict({ v }: { v: NonNullable<Thread["verdict"]> }) {
         <span className="l-shimmer">Reviewing</span>
       </span>
     );
+  const ok = v.state === "verified";
   return (
-    <span className="lc-verdict" title={v.note}>
-      <Badge tone={v.state === "verified" ? "ok" : "danger"}>{v.state === "verified" ? "Verified" : "Blocked"}</Badge>
+    <span className="lc-verdict" data-state={v.state} title={v.note}>
+      <span key={v.state}>
+        {ok ? <I.verified size={14} /> : <I.alert size={14} />}
+        {ok ? "Verified" : "Blocked"}
+      </span>
     </span>
   );
 }
@@ -815,8 +816,8 @@ function ScriptsPick({ project, onRun }: { project: Project; onRun: (s: { name: 
       label="Run a script"
       align="end"
       width={300}
-      triggerClass="lc-tb"
-      trigger={<I.play size={15} />}
+      triggerClass="lc-tb lc-sbar-b"
+      trigger={<I.play size={16} />}
     >
       {(close) => (
         <ScriptsMenu

@@ -3,12 +3,15 @@
   as the rest: white paper, washes for grouping, one accent, nothing drawn round what isn't a card.
 */
 
-/* ---------- The row, at the top right of the session's bar ---------- */
+/* ---------- The row, at the top right of the session's bar ----------
+   Claude Code's: icon buttons of one size, grey, a wash under the one you point at and a plate
+   under the one that's open. Each icon is 16px at a whole-pixel offset (7px into 30), so its
+   strokes stay on the device pixels icons.tsx drew them for. */
 .lc-sbar {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 .lc-sbar > .lc-pop {
   display: inline-flex;
@@ -27,12 +30,18 @@
   height: 30px;
   border-radius: 8px;
 }
-.lc-tb-changes {
-  position: relative;
+@media (hover: hover) {
+  .lc-sbar-b:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-sbar-b[aria-pressed="true"],
+.lc-sbar-b[data-open] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
 }
 /* Open in the dock but not on screen: a dot under its icon. */
-.lc-sbar-b[data-behind]::after,
-.lc-tb-changes[data-behind]::after {
+.lc-sbar-b[data-behind]::after {
   content: "";
   position: absolute;
   bottom: 3px;
@@ -43,20 +52,26 @@
   border-radius: 999px;
   background: var(--l-ink-3);
 }
-/* The files waiting to be committed and pushed, in the action colour, on Changes. */
+/* The files waiting to be committed and pushed, in the action colour, on Changes' corner, cut out
+   of the paper by a ring so it reads apart from the icon. */
 .lc-tb-count {
-  min-width: 16px;
-  height: 16px;
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 14px;
+  height: 14px;
   box-sizing: border-box;
-  padding: 0 4px;
+  padding: 0 3.5px;
   border-radius: 999px;
   background: var(--lc-act);
+  box-shadow: 0 0 0 2px var(--lc-paper);
   color: var(--lc-act-ink);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-  line-height: 16px;
+  line-height: 14px;
   text-align: center;
+  pointer-events: none;
   animation: lc-count-in 320ms var(--l-ease-enter) backwards;
 }
 @keyframes lc-count-in {

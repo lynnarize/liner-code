@@ -1,19 +1,23 @@
 /*
-  The right end of the session's header, after TasteCode v0.5: Changes, with how many files wait to
-  be committed and pushed, then the two panels' buttons, the one below (shells and runs) and the
-  one on the right (every other surface and your apps). The surfaces open from the right panel's
-  + and their keys (⌘⇧ and a letter), and ⌘K finds them all; the apps you pin keep a tab at the
-  start of that panel's strip.
+  The right end of the session's header, the way Claude Code draws its own: Run a script, then a
+  row of icon buttons of one size that are the panels' tabs. Session, Changes, Browser and Files
+  come up in the right panel and go away when pressed again (dock.ts, toggleTab); Terminal shows
+  the bottom panel, with its shells and runs. Changes carries a small count of the files waiting to
+  be committed and pushed. The ··· holds the other surfaces, your apps, and hiding the panel. Every
+  surface also has its key (⌘⇧ and a letter), and ⌘K finds them all; the apps you pin keep a tab
+  at the start of the panel's strip.
 */
 import { createContext, useSyncExternalStore, type ReactNode } from "react";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
-import { behind, onScreen, toggleDock, toggleTab, type DockState } from "./dock";
+import { appIcon, appsFor } from "./Addon";
+import { behind, onScreen, openTab, toggleDock, toggleTab, type DockState } from "./dock";
+import { useEngine } from "./engine";
 import { I } from "./icons";
 import { shortcutOf } from "./keymap";
 import { plural } from "./model";
 import * as os from "./os";
-import type { Tab } from "./Surfaces";
-import { Lines } from "./ui";
+import { SURFACES, surfaceOf, type SurfaceId, type Tab } from "./Surfaces";
+import { PanelHead, Pop, Row, Sep } from "./ui";
 
 
 /*
@@ -66,42 +70,74 @@ export function pin(id: string, on: boolean) {
   for (const f of pinWatch) f();
 }
 
-export function TopBar({ dock, onDock, below, onBelow, files, lines, run }: { dock: DockState; onDock: (f: (d: DockState) => DockState) => void; below: boolean; onBelow: () => void; files: number; lines: { added: number; removed: number }; run?: ReactNode }) {
-  const changes = onScreen(dock, "changes");
+/** The surfaces with a button of their own in the row; the rest are in its ···. */
+const ROW: SurfaceId[] = ["session", "terminal", "changes", "browser", "files"];
+
+export function TopBar({ dock, onDock, below, onBelow, files, lines, run, projectId }: { dock: DockState; onDock: (f: (d: DockState) => DockState) => void; below: boolean; onBelow: () => void; files: number; lines: { added: number; removed: number }; run?: ReactNode; projectId?: string }) {
+  const addons = useEngine((s) => s.addons);
+  const apps = appsFor(addons, projectId).filter((a) => a.panel?.place !== "tab");
   const keys = (id: string) => os.keys(shortcutOf(id) ?? []) || undefined;
+  const changed = lines.added || lines.removed ? `+${lines.added} −${lines.removed}` : "";
+  const waiting = files ? `${plural(files, "file")} waiting to commit and push` : "";
   return (
     <>
-      <button
-        type="button"
-        className="lc-tb lc-tb-changes l-focus"
-        aria-label={`Changes${files ? `, ${plural(files, "file")} waiting to commit and push` : ""}`}
-        aria-pressed={changes}
-        data-behind={behind(dock, "changes") || undefined}
-        title={files ? `${plural(files, "file")} waiting to commit and push` : "The session's changes"}
-        onClick={() => onDock((d) => toggleTab(d, "changes"))}
-      >
-        <I.changes size={16} />
-        Changes
-        <Lines {...lines} />
-        {files > 0 && (
-          <span key={files} className="lc-tb-count l-num" aria-hidden>
-            {files > 99 ? "99+" : files}
-          </span>
-        )}
-      </button>
       {run}
       <span className="lc-sbar-sep" aria-hidden />
       <div className="lc-sbar" role="toolbar" aria-label="Panels">
-        <Tooltip content={below ? "Hide the bottom panel" : "Show the bottom panel: shells and runs"} shortcut={keys("surface.terminal")}>
-          <button type="button" className="lc-tb lc-sbar-b l-focus" aria-label={below ? "Hide the bottom panel" : "Show the bottom panel"} aria-pressed={below} onClick={onBelow}>
-            <I.panelBottom size={16} />
-          </button>
-        </Tooltip>
-        <Tooltip content={dock.open ? "Hide the right panel" : "Show the right panel"}>
-          <button type="button" className="lc-tb lc-sbar-b l-focus" aria-label={dock.open ? "Hide the right panel" : "Show the right panel"} aria-pressed={dock.open} onClick={() => onDock(toggleDock)}>
-            <I.dock size={16} />
-          </button>
-        </Tooltip>
+        {ROW.map((id) => {
+          const s = surfaceOf(id)!;
+          if (id === "terminal")
+            return (
+              <Tooltip key={id} content={below ? "Hide the Terminal" : "Terminal"} shortcut={keys("surface.terminal")}>
+                <button type="button" className="lc-tb lc-sbar-b l-focus" aria-label="Terminal" aria-pressed={below} onClick={onBelow}>
+                  <s.icon size={16} />
+                </button>
+              </Tooltip>
+            );
+          const on = onScreen(dock, id);
+          const tip = id === "changes" ? ["Changes", changed, waiting].filter(Boolean).join(" · ") : s.label;
+          return (
+            <Tooltip key={id} content={on ? `Hide ${s.label}` : tip} shortcut={keys(`surface.${id}`)}>
+              <button
+                type="button"
+                className="lc-tb lc-sbar-b l-focus"
+                aria-label={id === "changes" && files ? `Changes, ${waiting}` : s.label}
+                aria-pressed={on}
+                data-behind={behind(dock, id) || undefined}
+                onClick={() => onDock((d) => toggleTab(d, id))}
+              >
+                <s.icon size={16} />
+                {id === "changes" && files > 0 && (
+                  <span key={files} className="lc-tb-count l-num" aria-hidden>
+                    {files > 99 ? "99+" : files}
+                  </span>
+                )}
+              </button>
+            </Tooltip>
+          );
+        })}
+        <Pop label="More panels" align="end" width={260} menu triggerClass="lc-tb lc-sbar-b" trigger={<I.more size={16} />}>
+          {(close) => (
+            <>
+              <PanelHead>Open in the panel</PanelHead>
+              {SURFACES.filter((s) => !ROW.includes(s.id)).map((s) => (
+                <Row key={s.id} title={s.label} icon={<s.icon size={14} />} end={keys(`surface.${s.id}`)} onPick={() => (close(), onDock((d) => openTab(d, s.id)))} />
+              ))}
+              {apps.length > 0 && (
+                <>
+                  <Sep />
+                  <PanelHead>Your apps</PanelHead>
+                  {apps.map((a) => {
+                    const Icon = appIcon(a.panel?.icon);
+                    return <Row key={a.id} title={a.name} icon={<Icon size={14} />} onPick={() => (close(), onDock((d) => openTab(d, `app:${a.id}`)))} />;
+                  })}
+                </>
+              )}
+              <Sep />
+              <Row title={dock.open ? "Hide the panel" : "Show the panel"} icon={<I.dock size={14} />} onPick={() => (close(), onDock(toggleDock))} />
+            </>
+          )}
+        </Pop>
       </div>
     </>
   );

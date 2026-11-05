@@ -3,6 +3,11 @@
   joins, each drawn as the thing people already know it by (a gear for settings, people for the
   team, a ± for a diff, an arrow out of a box for "open elsewhere"). One meaning per icon: Settle
   is a ticked circle, not the plain tick; Snooze is a moon, not a clock.
+  The session bar's glyphs follow Claude Code's: boxed for what opens in the panel (Session,
+  Changes), open for the rest (terminal, globe, folder). They're drawn for sharpness: every straight
+  stroke sits on a quarter pixel (x.25 or x.75), so at 16px a 1.5 stroke fills whole device pixels
+  on a 2x screen instead of smearing across two. Where a centre line can't be on one (±, the
+  globe's equator) the glyph sits a quarter pixel off centre, which the eye doesn't see.
   The mark is two turns that share one centre: the outer in ink, the inner in the accent, set in
   like an inside lane (docs/brand/icon-2026).
 */
@@ -24,22 +29,26 @@ export const I = {
   search: (p: P) => <S {...p}><circle cx="7.25" cy="7.25" r="4.5" /><path d="m10.6 10.6 2.65 2.65" /></S>,
   filter: (p: P) => <S {...p}><path d="M2.75 4.25h10.5M4.75 8h6.5M6.75 11.75h2.5" /></S>,
   routines: (p: P) => <S {...p}><path d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71" /><path d="M12.25 1.9v2.75H9.5M8 5.25V8l1.75 1" /></S>,
-  folder: (p: P) => <S {...p}><path d="M2.75 5a1.25 1.25 0 0 1 1.25-1.25h2.4c.36 0 .7.16.94.43l.86 1.07H12A1.25 1.25 0 0 1 13.25 6.5v5.25A1.25 1.25 0 0 1 12 13H4a1.25 1.25 0 0 1-1.25-1.25Z" /></S>,
-  folderPlus: (p: P) => <S {...p}><path d="M2.75 5a1.25 1.25 0 0 1 1.25-1.25h2.4c.36 0 .7.16.94.43l.86 1.07H12A1.25 1.25 0 0 1 13.25 6.5v5.25A1.25 1.25 0 0 1 12 13H4a1.25 1.25 0 0 1-1.25-1.25Z" /><path d="M8 7.4v3.7M6.15 9.25h3.7" /></S>,
-  folderAdd: (p: P) => <S {...p}><path d="M2.75 5a1.25 1.25 0 0 1 1.25-1.25h2.4c.36 0 .7.16.94.43l.86 1.07H12A1.25 1.25 0 0 1 13.25 6.5v5.25A1.25 1.25 0 0 1 12 13H4a1.25 1.25 0 0 1-1.25-1.25Z" /><path d="M8 7.25v3.5M6.25 9h3.5" /></S>,
+  folder: (p: P) => <S {...p}><path d="M2.25 4.75a1.5 1.5 0 0 1 1.5-1.5h2.38c.4 0 .78.16 1.06.44l1.06 1.06h4a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5h-8.5a1.5 1.5 0 0 1-1.5-1.5Z" /></S>,
+  folderPlus: (p: P) => <S {...p}><path d="M2.25 4.75a1.5 1.5 0 0 1 1.5-1.5h2.38c.4 0 .78.16 1.06.44l1.06 1.06h4a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5h-8.5a1.5 1.5 0 0 1-1.5-1.5Z" /><path d="M8 7.4v3.7M6.15 9.25h3.7" /></S>,
+  folderAdd: (p: P) => <S {...p}><path d="M2.25 4.75a1.5 1.5 0 0 1 1.5-1.5h2.38c.4 0 .78.16 1.06.44l1.06 1.06h4a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5h-8.5a1.5 1.5 0 0 1-1.5-1.5Z" /><path d="M8 7.25v3.5M6.25 9h3.5" /></S>,
   pin: (p: P) => <S {...p}><path d="M6.25 2.75h3.5M6.75 2.75v3.4L4.75 8.4v1.85h6.5V8.4l-2-2.25v-3.4M8 10.25v3.25" /></S>,
   snooze: (p: P) => <S {...p}><path d="M8 2.5a4 4 0 0 0 5.5 5.5A5.5 5.5 0 1 1 8 2.5Z" /></S>,
   settle: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.5" /><path d="m5.75 8.1 1.6 1.6 2.9-3.2" /></S>,
+  /** The Reviewer passed the changes: a ticked circle, drawn apart from Settle so either can change. */
+  verified: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.75" /><path d="m5.5 8.25 1.75 1.75 3.25-3.5" /></S>,
+  /** The small chevron after a title that opens its menu. */
+  caret: (p: P) => <S {...p}><path d="m5.25 6.75 2.75 2.75 2.75-2.75" /></S>,
   check: (p: P) => <S {...p}><path d="M3.5 8.4 6.5 11.25 12.5 4.75" /></S>,
   chevR: (p: P) => <S {...p}><path d="M6.25 4.25 10 8l-3.75 3.75" /></S>,
   chevL: (p: P) => <S {...p}><path d="M9.75 4.25 6 8l3.75 3.75" /></S>,
   chevD: (p: P) => <S {...p}><path d="M4.25 6.25 8 10l3.75-3.75" /></S>,
   chevU: (p: P) => <S {...p}><path d="M4.25 9.75 8 6l3.75 3.75" /></S>,
-  sidebar: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M6.25 2.75v10.5" /></S>,
+  sidebar: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M6.25 2.75v10.5" /></S>,
   panel: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /></S>,
-  /** The dock beside the session: a frame with its right part ruled off. */
-  dock: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /><path d="M11.75 5.75h.01" /></S>,
-  panelBottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 9.75h11.5" /></S>,
+  /** The panel beside the session: a frame with its right part ruled off. */
+  dock: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M9.75 2.75v10.5" /></S>,
+  panelBottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M2.25 9.75h11.5" /></S>,
   split: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M8 2.75v10.5" /></S>,
   shrink: (p: P) => <S {...p}><path d="M2.75 9.25h4v4M13.25 6.75h-4v-4M9.25 6.75l4-4M6.75 9.25l-4 4" /></S>,
   /** The New tab guide: four tiles. */
@@ -55,7 +64,7 @@ export const I = {
   tab: (p: P) => <S {...p}><path d="M2.25 13.25V5a1 1 0 0 1 1-1h3.5l1.25 1.75h5a1 1 0 0 1 1 1v6.5Z" /></S>,
   bottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 9.5h11.5" /></S>,
   agents: (p: P) => <S {...p}><circle cx="6" cy="5.5" r="2.25" /><path d="M2.25 13a3.75 3.75 0 0 1 7.5 0M10.25 3.35a2.25 2.25 0 0 1 0 4.3M11.6 9.65A3.75 3.75 0 0 1 13.75 13" /></S>,
-  changes: (p: P) => <S {...p}><path d="M8 2.75v7M4.5 6.25h7M4.5 13h7" /></S>,
+  changes: (p: P) => <S {...p}><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.75" /><path d="M7.75 4.75v4M5.75 6.75h4M5.75 11.25h4" /></S>,
   branch: (p: P) => <S {...p}><circle cx="4.5" cy="12" r="1.5" /><circle cx="11.5" cy="4.25" r="1.5" /><path d="M4.5 2.75v7.75M11.5 5.75A6.25 6.25 0 0 1 6 12" /></S>,
   attach: (p: P) => <S {...p}><path d="M12.6 7.45 8.05 12a3.1 3.1 0 0 1-4.4-4.4l4.9-4.9a2.05 2.05 0 0 1 2.9 2.9L6.6 10.45a1.02 1.02 0 0 1-1.45-1.45l4.3-4.3" /></S>,
   send: (p: P) => <S {...p} w={1.7}><path d="M8 12.75V3.5M4.25 7.25 8 3.5l3.75 3.75" /></S>,
@@ -69,8 +78,8 @@ export const I = {
   lock: (p: P) => <S {...p}><rect x="3.25" y="7" width="9.5" height="6.25" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></S>,
   effort: (p: P) => <S {...p}><path d="M2.75 11.5a5.25 5.25 0 1 1 10.5 0" /><path d="m8 11.5 2.5-3" /></S>,
   laptop: (p: P) => <S {...p}><path d="M3.25 10.25v-6a1 1 0 0 1 1-1h7.5a1 1 0 0 1 1 1v6M1.75 12.75h12.5" /></S>,
-  details: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2" /><path d="M5 6h.01M7 6h4M5 8h.01M7 8h4M5 10h.01M7 10h4" /></S>,
-  terminal: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2" /><path d="m5.25 6.25 2 1.75-2 1.75M8.75 9.75h2" /></S>,
+  details: (p: P) => <S {...p}><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.75" /><path d="M5.25 5.75h.01M7.75 5.75h3M5.25 10.25h.01M7.75 10.25h3" /></S>,
+  terminal: (p: P) => <S {...p}><path d="M3.75 4.75 7 8l-3.25 3.25M8.5 11.25h3.75" /></S>,
   push: (p: P) => <S {...p}><path d="M8 10.5V2.75M4.75 6 8 2.75 11.25 6M3 13.25h10" /></S>,
   download: (p: P) => <S {...p}><path d="M8 2.75v7.75M4.75 7.25 8 10.5l3.25-3.25M3 13.25h10" /></S>,
   external: (p: P) => <S {...p}><path d="M9.25 2.75h4v4M13.25 2.75 7.75 8.25M11.75 9.25v2.5a1.5 1.5 0 0 1-1.5 1.5h-6a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5h2.5" /></S>,
@@ -82,7 +91,7 @@ export const I = {
   usage: (p: P) => <S {...p}><path d="M2.75 2.75v9.5a1 1 0 0 0 1 1h9.5M6 10.25V7.5M9 10.25v-5M12 10.25V8.5" /></S>,
   settings: (p: P) => <S {...p}><path d={GEAR} /><circle cx="8" cy="8" r="2" /></S>,
   read: (p: P) => <S {...p}><circle cx="7.25" cy="7.25" r="4.5" /><path d="m10.6 10.6 2.65 2.65" /></S>,
-  globe: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.75" /><path d="M2.25 8h11.5M8 2.25A8.8 8.8 0 0 1 10.3 8 8.8 8.8 0 0 1 8 13.75 8.8 8.8 0 0 1 5.7 8 8.8 8.8 0 0 1 8 2.25Z" /></S>,
+  globe: (p: P) => <S {...p}><circle cx="7.75" cy="7.75" r="5.5" /><path d="M2.25 7.75h11M7.75 2.25c1.45 1.55 2.2 3.4 2.2 5.5s-.75 3.95-2.2 5.5c-1.45-1.55-2.2-3.4-2.2-5.5s.75-3.95 2.2-5.5Z" /></S>,
   undo: (p: P) => <S {...p}><path d="M5.75 3.75 3 6.5l2.75 2.75M3 6.5h6.75a3.25 3.25 0 0 1 0 6.5H7.25" /></S>,
   commit: (p: P) => <S {...p}><circle cx="8" cy="8" r="2.5" /><path d="M1.75 8h3.75M10.5 8h3.75" /></S>,
   drag: (p: P) => <S {...p} w={2}><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" /></S>,
@@ -93,7 +102,7 @@ export const I = {
   copy: (p: P) => <S {...p}><rect x="5.5" y="5.5" width="7.75" height="7.75" rx="1.5" /><path d="M10.5 5.5V4.25a1.5 1.5 0 0 0-1.5-1.5H4.25a1.5 1.5 0 0 0-1.5 1.5V9a1.5 1.5 0 0 0 1.5 1.5H5.5" /></S>,
   edit: (p: P) => <S {...p}><path d="M11.2 2.55a1.6 1.6 0 0 1 2.25 2.25l-7.7 7.7-3 .75.75-3ZM9.75 4l2.25 2.25" /></S>,
   trash: (p: P) => <S {...p}><path d="M2.75 4.25h10.5M6.25 4.25V3a.75.75 0 0 1 .75-.75h2a.75.75 0 0 1 .75.75v1.25M4.25 4.25l.55 8.2a1 1 0 0 0 1 .95h4.4a1 1 0 0 0 1-.95l.55-8.2" /></S>,
-  more: (p: P) => <S {...p} w={2}><path d="M3.75 8h.01M8 8h.01M12.25 8h.01" /></S>,
+  more: (p: P) => <S {...p} w={2}><path d="M4 8h.01M8 8h.01M12 8h.01" /></S>,
   fork: (p: P) => <S {...p}><circle cx="4.5" cy="3.5" r="1.5" /><circle cx="11.5" cy="3.5" r="1.5" /><circle cx="8" cy="12.5" r="1.5" /><path d="M4.5 5v1a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2V5M8 8v3" /></S>,
   sliders: (p: P) => <S {...p}><path d="M2.75 5h5M11.25 5h2M2.75 11h2M8.25 11h5" /><circle cx="9.5" cy="5" r="1.75" /><circle cx="6.5" cy="11" r="1.75" /></S>,
   contrast: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.5" /><path d="M8 2.5v11a5.5 5.5 0 0 0 0-11Z" fill="currentColor" stroke="none" /></S>,
@@ -114,7 +123,7 @@ export const I = {
   target: (p: P) => <S {...p}><path d="m3.25 3.25 3.9 9.5 1.4-4.2 4.2-1.4Z" /></S>,
   /** A pen nib, as design tools draw their pen. */
   design: (p: P) => <S {...p}><path d="M8 13.25 4.25 8.5 6 2.75h4l1.75 5.75Z" /><path d="M8 13.25V9.4" /><circle cx="8" cy="8.25" r="1.15" /></S>,
-  play: (p: P) => <S {...p}><path d="M5 3.5v9l7.25-4.5Z" /></S>,
+  play: (p: P) => <S {...p}><path d="M5.25 4.3v7.4a.9.9 0 0 0 1.36.77l6.1-3.7a.9.9 0 0 0 0-1.54l-6.1-3.7a.9.9 0 0 0-1.36.77Z" /></S>,
   bolt: (p: P) => <S {...p}><path d="M8.75 1.75 3.75 9h4L7 14.25l5-7.25H8Z" /></S>,
   clock: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.25" /></S>,
   hand: (p: P) => <S {...p}><path d="M5.5 8.5V4.25a.95.95 0 0 1 1.9 0V7.5M7.4 7V3.4a.95.95 0 0 1 1.9 0V7M9.3 7V4.1a.95.95 0 0 1 1.9 0v4.6c0 2.7-1.6 4.55-3.9 4.55-1.5 0-2.4-.8-3.2-2L2.9 8.9a.95.95 0 0 1 1.5-1.1l1.1 1.2" /></S>,

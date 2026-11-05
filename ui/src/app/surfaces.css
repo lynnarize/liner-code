@@ -2360,11 +2360,26 @@
   animation: l-blur-in 300ms var(--l-ease-out) backwards;
 }
 
+/* The Reviewer's word in the session's bar: quiet text in its colour beside a small mark, no pill. */
 .lc-verdict {
   display: inline-flex;
   flex: none;
   align-items: center;
+  margin-right: 2px;
   font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-verdict > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.lc-verdict[data-state="verified"] {
+  color: var(--l-ok-text);
+}
+.lc-verdict[data-state="blocked"] {
+  color: var(--l-danger-text);
 }
 /* "Reviewing" gives way to the verdict by unblurring into it, as a replaced label does. */
 .lc-verdict > :not(.l-shimmer) {

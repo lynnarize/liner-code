@@ -385,12 +385,6 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
     color: var(--l-ink);
   }
 }
-.lc-tb-changes {
-  padding: 0 10px 0 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink-2);
-}
 .lc-lines {
   display: inline-flex;
   gap: 4px;
@@ -2207,10 +2201,57 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 15px;
   font-weight: 600;
 }
-/* The title's ···: the session's menu, close beside its name. */
-.lc-top .lc-title-more {
-  margin-left: -6px;
-  color: var(--l-ink-3);
+/*
+  The title is its menu's button, as in Claude Code: medium weight in the second ink with a small
+  chevron, a wash under both on hover and while the menu is open. It gives up its width before the
+  buttons on the right do, and ends in an ellipsis.
+*/
+.lc-tt-pop {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* It shrinks as the wrapper's flex item: a max-width of 100% would size it against itself and cut a
+   title that fits. */
+.lc-tt {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 30px;
+  margin-left: -8px;
+  padding: 0 6px 0 8px;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+.lc-tt .lc-title {
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.lc-tt > svg {
+  flex: none;
+  color: var(--l-ink-4);
+  transition: rotate 220ms var(--l-ease-out);
+}
+.lc-tt[data-open] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lc-tt[data-open] > svg {
+  rotate: 180deg;
+}
+@media (hover: hover) {
+  .lc-tt:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
 }
 .lc-chain {
   display: inline-flex;
@@ -2248,13 +2289,9 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-3);
 }
 /* The session's bar spans the paper, over the thread and the dock: narrow, it keeps the title and
-   drops the branch, then who works on it to its discs and the mode to its icon, then those discs
-   and the lines changed (⋯ still has Agents), so the buttons on the right keep their room. */
-@container lc-session (max-width: 1100px) {
-  .lc-top .lc-branch {
-    display: none;
-  }
-}
+   turns who works on it to its discs and the mode to its icon, then drops those discs and the
+   Reviewer's word to its icon (⋯ still has Agents), so the buttons on the right keep their room.
+   The branch isn't in the bar: it's in the title's menu. */
 @container lc-session (max-width: 1000px) {
   .lc-chain {
     gap: 2px;
@@ -2262,14 +2299,6 @@ html[data-native="mac"] .lc-sb-head {
   }
   .lc-chain > :not(.lc-disc, svg) {
     display: none;
-  }
-  .lc-tb-changes {
-    padding-inline: 8px;
-    font-size: 0;
-  }
-  .lc-tb-changes > svg,
-  .lc-tb-changes .lc-lines {
-    font-size: 11.5px;
   }
   .lc-top .lc-mode-chip {
     gap: 0;
@@ -2280,9 +2309,11 @@ html[data-native="mac"] .lc-sb-head {
   .lc-top {
     gap: 6px;
   }
-  .lc-top .lc-chain,
-  .lc-tb-changes .lc-lines {
+  .lc-top .lc-chain {
     display: none;
+  }
+  .lc-verdict > span:not(.l-shimmer) {
+    font-size: 0;
   }
 }
 .lc-crumb {

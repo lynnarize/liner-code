@@ -41,13 +41,28 @@ const THEN: { id: Then; title: string; note: string }[] = [
 ];
 
 /**
-  The title's ··· (TasteCode's chat menu): the session's own actions first (rename, pin, open
-  beside), then where it works: the machine and folder, your editor, project scripts, the branch,
+  The session's menu, opened from its title (Claude Code's title menu, TasteCode's chat menu): the
+  session's own actions first (rename, pin, open beside), then where it works: the machine and folder, your editor, project scripts, the branch,
   and committing what changed.
 */
-export function EnvMenu({ thread, project, files, lines, onChanges, actions }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; actions?: (close: () => void) => ReactNode }) {
+export function EnvMenu({ thread, project, files, lines, onChanges, onRename, actions }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; onRename: () => void; actions?: (close: () => void) => ReactNode }) {
+  // The session's title is the button, with a small chevron, as in Claude Code. A double-click still renames it.
   return (
-    <Pop label="The session's menu: rename, pin, where it works" align="start" width={340} triggerClass="lc-tb lc-title-more" trigger={<I.more size={16} />}>
+    <Pop
+      label={`${thread.title}: the session's menu, to rename it, pin it, or change where it works`}
+      align="start"
+      width={340}
+      className="lc-tt-pop"
+      triggerClass="lc-tt"
+      trigger={
+        <>
+          <span className="lc-title" key={thread.title} onDoubleClick={onRename}>
+            {thread.title}
+          </span>
+          <I.caret size={16} />
+        </>
+      }
+    >
       {(close) => (
         <>
           {actions?.(close)}

@@ -1,5 +1,6 @@
-// Cloudflare: the built site served as static assets (Workers & Pages, root directory "site",
-// build "npm run build", deploy "npx wrangler deploy"). Missing pages get dist/404.html.
+// Cloudflare: the built site served as static assets by the Worker "liner-code", whose name
+// must match the one in the dashboard. Build settings there: root directory "site", build
+// "npm run build", deploy "npx wrangler deploy". Missing pages get dist/404.html.
 {
   "name": "liner-code",
   "compatibility_date": "2026-10-01",

@@ -1,8 +1,9 @@
 // The changelog, read from the repository's CHANGELOG.md at build time and turned into HTML.
 // It only needs what that file uses: ## and ### headings, paragraphs, "- " lists, **bold**,
 // `code` and [links](url).
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+// Vite reads the file into the build itself (?raw), so it works wherever the pages are rendered,
+// even in Cloudflare's runtime, which has no file system to read the repository from.
+import text from '../../../CHANGELOG.md?raw';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const inline = (s: string) =>
@@ -14,9 +15,6 @@ const inline = (s: string) =>
 export type Release = { version: string; date: string; title: string; html: string };
 
 export function releases(): Release[] {
-  // Astro runs from site/, the changelog sits at the repository's root.
-  const file = join(process.cwd(), '..', 'CHANGELOG.md');
-  const text = readFileSync(file, 'utf8');
   const out: Release[] = [];
   let cur: Release | null = null;
   let html: string[] = [];

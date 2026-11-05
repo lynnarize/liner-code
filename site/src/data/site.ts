@@ -5,7 +5,7 @@ const REPO = 'https://github.com/lynnarize/liner-code';
 
 export const site = {
   name: 'Liner Code',
-  url: 'https://linercode.sorafel.com', // placeholder: set the real domain before deploying
+  url: 'https://linercode.dev',
   title: 'Liner Code: a home for the coding agents you already use',
   description:
     'A free, open-source app for Mac and Windows that drives Claude Code, Codex, OpenCode and Hermes, with plans, cards and a diff for every turn.',

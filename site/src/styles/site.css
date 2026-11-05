@@ -142,14 +142,19 @@ html:not(.motion) .hero { height: auto; }
 .hero__foot > * { pointer-events: auto; }
 .hero__hint { font-size: var(--t-small); font-weight: 500; color: var(--night); background: var(--paper); height: 40px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 999px; }
 html:not(.gl-on) .hero__hint, html:not(.gl-on) .turnbar { display: none; }
+/* A phone or a tablet can't install the app, so the hero offers no downloads there: the nav's
+   Download still leads to the section with both links. Narrow screens lose the note as well. */
+@media (hover: none) and (pointer: coarse) {
+  .hero__buttons { display: none; }
+  .hero__note { margin-bottom: 0; }
+}
 
 @media (max-width: 767px) {
   .hero { height: 260svh; }
   .hero__top { grid-template-columns: 1fr; row-gap: 14px; }
   .hero__lead, .hero__act { grid-column: 1; justify-self: start; }
   .hero__lead { max-width: 14em; }
-  .hero__note { display: none; }
-  .hero__buttons .btn { height: 44px; padding: 0 18px; font-size: 0.9375rem; }
+  .hero__act { display: none; }
   .word { flex-direction: column; align-items: center; gap: 0; font-size: 34vw; line-height: 0.8; letter-spacing: -0.055em; margin-bottom: -0.25em; }
   .hero__foot { flex-direction: column; align-items: stretch; }
   .hero__hint { align-self: flex-start; }

@@ -51,6 +51,24 @@ function baseCamera(st: Stage): Omit<Camera, 'pitch'> {
   return portrait ? { height: 3.0, back: 3.4, fovY: 0.98, fovX: 0.95 } : { height: 3.2, back: 4.2, fovY: 0.8, fovX: 1.2 };
 }
 
+// How far the word's letters stand above the horizon: its box (one row, or two on a phone) less
+// the part its negative margin tucks under the horizon, plus however far the capitals rise past
+// the top of a line box set under 1em. Layout sizes only, so the sink and the intro don't move it.
+let pen: CanvasRenderingContext2D | null = null;
+function wordAbove(word: HTMLElement) {
+  const cs = getComputedStyle(word);
+  const fs = parseFloat(cs.fontSize), lh = parseFloat(cs.lineHeight) || fs;
+  const under = Math.max(0, -parseFloat(cs.marginBottom) || 0);
+  pen ??= document.createElement('canvas').getContext('2d');
+  let rise = 0;
+  if (pen) {
+    pen.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const m = pen.measureText((word.querySelector('.word__line')?.textContent ?? word.textContent ?? '').trim());
+    rise = m.actualBoundingBoxAscent - m.fontBoundingBoxAscent + (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent - lh) / 2;
+  }
+  return word.offsetHeight - under + Math.max(0, rise);
+}
+
 function measure(st: Stage) {
   const h = st.el.clientHeight;
   let horizon = h * (st.kind === 'tile' ? 0.58 : 0.5);
@@ -58,9 +76,8 @@ function measure(st: Stage) {
     const top = st.el.querySelector<HTMLElement>('[data-hero-top]');
     const word = st.word?.firstElementChild as HTMLElement | null;
     const topBottom = top ? top.offsetTop + top.offsetHeight : 0;
-    const wordH = word ? word.offsetHeight : 0;
-    // The word's box runs a quarter of its height under the horizon: count only what shows.
-    horizon = Math.min(h * 0.62, Math.max(h * 0.46, topBottom + wordH * 0.7 + h * 0.03));
+    // The word stands on the horizon just under the hero's words, never into them.
+    horizon = Math.min(h * 0.66, Math.max(h * 0.46, topBottom + (word ? wordAbove(word) : 0) + h * 0.03));
   } else if (st.kind === 'page') {
     horizon = h * 0.64;
   }

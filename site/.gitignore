@@ -30,3 +30,6 @@ pnpm-debug.log*
 .app-shots/
 .mac-shots/
 .shots-reveal/
+
+# wrangler's local state
+.wrangler/

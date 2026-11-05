@@ -1,0 +1,10 @@
+// Cloudflare: the built site served as static assets (Workers & Pages, root directory "site",
+// build "npm run build", deploy "npx wrangler deploy"). Missing pages get dist/404.html.
+{
+  "name": "liner-code",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}

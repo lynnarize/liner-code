@@ -3,33 +3,42 @@
 ## 0.2.2 (alpha), 2026-11-05
 
 **Update from 0.2.1 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or
-download the new DMG; on Windows, download the new zip. **A cleaner window**, after TasteCode
-v0.5, in Liner 2.0's own look, and **a new icon** that turns dark with your Mac.
+download the new DMG. **On Windows, Liner Code now installs:** run the new setup. **A cleaner
+window**, after TasteCode v0.5, in Liner 2.0's own look, and **a new icon** that turns dark with your
+Mac.
 
 ### New
 
+- **A Windows installer:** `Liner-Code-0.2.2-win-x64-setup.exe` installs Liner Code for you alone,
+  with no administrator, in your own folder. It's in the Start menu with the new apps, and Settings ›
+  Apps removes it again, leaving your sessions and settings. Running the next setup puts the new
+  version in place of the old one, asking to quit Liner Code first. The zip stays, to run it without
+  installing. Neither is signed yet, so SmartScreen asks the first time (More info › Run anyway).
 - **A new icon:** two turns that share one centre, the outer in ink and the inner in Liner blue.
   On macOS 26 and later it follows the system's light or dark look by itself, in the Dock, the
   Finder and Launchpad; on earlier systems the Dock icon follows it while Liner Code runs. The
   site's favicon and the README follow your theme too.
 - **A bottom panel:** the session's shells and script runs open under the thread and its composer,
   with the shells as the panel's own tabs, a + for another, the open shell's folder and tools, and
-  a button to put it away. Terminal comes up there from its key, ⌘K, a script or an agent.
+  a button to put it away. Terminal comes up there from its key (which also puts it away), ⌘K or a
+  script.
 - **Open beside:** right-click a session and Open beside puts it next to the one on screen, each
   with its own header, composer and panels. Keys go to the side you're in; × closes a side.
 - **Needs you:** sessions waiting on you have a section at the top of the sidebar, with their
-  project at the end of the row, while there are any.
+  project at the end of the row, while there are any; pinned ones too, as the Dock's badge counts
+  them.
 - **Plan limits at a glance:** the ring at the sidebar's foot shows your busiest plan window and
   opens every tool's windows with when each resets, and Usage and cost. In a session, the context
   ring's pop holds the plan's windows too.
 - **Agents at work stay in sight:** while a model's subagents run, each has a line under its folded
   row, with what it's doing and for how long.
 - **Settle a whole project:** point at a project's header and press its settle button, or right-click
-  it, and every session in it goes to Settled at once, with one Undo. Sessions still at work stay;
-  the project comes back to the list with its next session. In Settled, sessions sit under their
+  it, and its finished sessions go to Settled at once, with one Undo. Sessions still at work or
+  waiting on you stay; the project comes back to the list with its next session. In Settled, sessions sit under their
   project's header, folded, and the header's ↶ brings the whole project back.
 - **An update waits in the sidebar:** a Liner Code that's ready or downloading shows on a card over
-  the foot, with Restart and how many sessions are working.
+  the foot, with Restart and how many sessions are working, and × to put it away until the next
+  one. With the sidebar hidden, Home says so instead.
 
 ### Changed
 
@@ -39,7 +48,8 @@ v0.5, in Liner 2.0's own look, and **a new icon** that turns dark with your Mac.
   Pull request and the rest open from the right panel's + and their keys (⌘⇧ and a letter).
 - **The right panel's tabs are its header:** every tab keeps its name, the + holds the guide, and
   the arrows give a tab the whole window. Apps you pin (right-click their tab) keep an icon at the
-  start of the strip. The second pane and its Split button are gone.
+  start of the strip. The second pane and its Split button are gone: a panel split in two in 0.2.1
+  opens as one, with all its tabs.
 - **The sidebar is lighter:** New session, with search at its end, Routines and Add-ons as rows on
   top; your app pages under Apps; then Needs you, Pinned and Projects, with Filter and Add a project
   beside the Projects label. A session takes one line: its maker's mark, its title, and a mark while
@@ -49,7 +59,8 @@ v0.5, in Liner 2.0's own look, and **a new icon** that turns dark with your Mac.
   end in a small triangle, and a turn's changes read "2 files changed +3 −1 · View changes".
 - **Diff is called Changes** everywhere: its tab, its key's name and ⌘K.
 - **Project badges are flat:** one colour of their own each, without the gradient and shine.
-- **Add-ons in the sidebar opens its page** straight away; Create your add-on is that page's button.
+- **Add-ons in the sidebar opens its page** straight away; Make one with an agent is that page's
+  button.
 
 ## 0.2.1 (alpha), 2026-11-04
 

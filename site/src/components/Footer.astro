@@ -16,8 +16,8 @@ import { footer, nav, site } from '../data/site';
     </ul>
   </nav>
   <div class="foot__tile foot__version">
-    <p class="foot__big">{site.version}</p>
-    <p class="foot__small">Alpha, released {site.released}</p>
+    <p class="foot__big" data-rel="version">{site.version}</p>
+    <p class="foot__small">Alpha, released <span data-rel="date">{site.released}</span></p>
   </div>
   <div class="foot__tile foot__gh">
     <a class="foot__repo" href={site.repo} rel="noopener">github.com/lynnarize/liner-code</a>

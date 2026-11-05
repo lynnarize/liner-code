@@ -1,6 +1,11 @@
 // Every word on the site. Facts come from the README, the changelog and the source; nothing here
-// is a claim the app doesn't make about itself.
-export const VERSION = '0.2.1';
+// is a claim the app doesn't make about itself. Server only: the version and the files come from
+// GitHub's latest release at build time (./release). The browser's scripts import ./auto instead.
+import { release } from './release';
+import { longDate } from '../lib/release';
+export { autoCast } from './auto';
+
+export const VERSION = release.version;
 const REPO = 'https://github.com/lynnarize/liner-code';
 
 export const site = {
@@ -10,12 +15,15 @@ export const site = {
   description:
     'A free, open-source app for Mac and Windows that drives Claude Code, Codex, OpenCode and Hermes, with plans, cards and a diff for every turn.',
   version: VERSION,
-  released: '4 November 2026',
+  released: longDate(release.date),
   repo: REPO,
   releases: `${REPO}/releases`,
   issues: `${REPO}/issues/new/choose`,
-  mac: `${REPO}/releases/download/v${VERSION}/Liner-Code-${VERSION}-mac-arm64.dmg`,
-  win: `${REPO}/releases/download/v${VERSION}/Liner-Code-${VERSION}-win-x64.zip`,
+  mac: release.mac.url,
+  win: release.win.url,
+  // The hero's second button, and the download panel's when Windows is picked.
+  winLabel: release.win.kind === 'setup' ? 'Windows setup' : 'Windows zip',
+  winAction: release.win.kind === 'setup' ? 'Download the setup' : 'Download the zip',
   author: 'Lin',
   licence: 'MIT',
 };
@@ -29,7 +37,8 @@ export const nav = [
 
 export const hero = {
   lead: 'A home for the coding agents you already use.',
-  note: `Free and open source. Version ${VERSION}, an alpha, for Apple Silicon Macs and Windows.`,
+  // {v} is the version, kept in its own element so the browser can bring it up to date.
+  note: 'Free and open source. Version {v}, an alpha, for Apple Silicon Macs and Windows.',
   hint: { fine: 'Click the code to send a turn.', touch: 'Tap the code to send a turn.' },
 };
 
@@ -78,12 +87,6 @@ export const turn = {
 };
 
 // Auto, with Claude Code, Codex and OpenCode Go signed in: the cast castOf() picks from them.
-export const autoCast = {
-  everyday: 'DeepSeek V4.1 Flash',
-  strong: 'Opus 5.5',
-  judge: 'Opus 5.5',
-  critics: ['GPT Astra', 'DeepSeek V4.1 Flash'],
-};
 export const autoExamples = [
   'Why does the build fail on Windows?',
   'Fix the typo in the onboarding title',
@@ -168,17 +171,27 @@ export const download = {
   close: ['Stand in', 'the middle.'],
   after: 'Open it, connect the tools you have, add a project, and pick how you will work: Solo, Plan then build, or Auto.',
   mac: {
-    label: 'Mac', file: `Liner-Code-${VERSION}-mac-arm64.dmg`, needs: 'Apple Silicon, tried on macOS 27',
+    label: 'Mac', file: release.mac.file, needs: 'Apple Silicon, tried on macOS 27',
     first: "The alpha isn't notarized yet. The first time, open System Settings, Privacy & Security, and press Open Anyway, or run:",
     command: 'xattr -dr com.apple.quarantine "/Applications/Liner Code.app"',
     after: 'After that it updates itself.',
   },
-  win: {
-    label: 'Windows', file: `Liner-Code-${VERSION}-win-x64.zip`, needs: 'x64, unzip it anywhere',
-    first: "It isn't signed yet, so SmartScreen asks the first time: More info, then Run anyway.",
-    command: 'Liner Code.exe',
-    after: "It doesn't update itself yet: download the next zip.",
-  },
+  // Since 0.2.2 Windows has a setup; the zip stays, to run it without installing.
+  win: release.win.kind === 'setup'
+    ? {
+        label: 'Windows', file: release.win.file, needs: 'x64, installs for you alone, no administrator',
+        first: "It isn't signed yet, so SmartScreen asks the first time: More info, then Run anyway.",
+        command: '',
+        after: "Then it's in the Start menu. It doesn't update itself yet: run the next setup over it.",
+        zip: release.win.zip,
+      }
+    : {
+        label: 'Windows', file: release.win.file, needs: 'x64, unzip it anywhere',
+        first: "It isn't signed yet, so SmartScreen asks the first time: More info, then Run anyway.",
+        command: 'Liner Code.exe',
+        after: "It doesn't update itself yet: download the next zip.",
+        zip: undefined,
+      },
 };
 
 export const footer = {

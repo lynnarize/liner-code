@@ -1,8 +1,9 @@
 // The working fragments: each control does what the app's does, with the app's words.
 import { gsap } from 'gsap';
 import { decide, hintOf, scoreAsk } from '../../../engine/src/route.ts';
-import { autoCast } from '../data/site';
+import { autoCast } from '../data/auto';
 import { onPage, prefersReducedMotion } from '../engine';
+import { release } from './release';
 
 const $ = <T extends Element = HTMLElement>(s: string, r: ParentNode = document) => r.querySelector<T>(s);
 const $$ = <T extends Element = HTMLElement>(s: string, r: ParentNode = document) => [...r.querySelectorAll<T>(s)];
@@ -223,7 +224,7 @@ function download() {
     btns.forEach((x) => x.setAttribute('aria-checked', String(x === b)));
     $$('[data-os-panel]', root).forEach((p) => { p.hidden = p.dataset.osPanel !== os; });
     main.href = os === 'mac' ? main.dataset.mac! : main.dataset.win!;
-    main.textContent = os === 'mac' ? 'Download the DMG' : 'Download the zip';
+    main.textContent = os === 'mac' ? 'Download the DMG' : main.dataset.winAction ?? 'Download the zip';
     glide(plate, b, instant);
   };
   // Windows visitors start on Windows.
@@ -443,7 +444,7 @@ function tone() {
 
 export function startSections() {
   onPage(() => {
-    const offs = [how(), auto(), commands(), tabs(), download(), copies(), workshop(), nav(), seas(), tone()].filter(Boolean) as (() => void)[];
+    const offs = [how(), auto(), commands(), tabs(), download(), copies(), workshop(), nav(), seas(), tone(), release()].filter(Boolean) as (() => void)[];
     return () => offs.forEach((f) => f());
   });
 }

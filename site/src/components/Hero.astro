@@ -1,6 +1,7 @@
 ---
 import SeaStage from './SeaStage.astro';
 import { hero, home, site } from '../data/site';
+const [noteA, noteB] = hero.note.split('{v}');
 ---
 <section class="hero" data-hero aria-labelledby="hero-title">
   <SeaStage kind="hero" label="A sea of code in rings around a figure, made of lines from Liner Code's own source. Click it to send a ripple.">
@@ -15,10 +16,10 @@ import { hero, home, site } from '../data/site';
     <div class="hero__top" data-hero-top>
       <p class="hero__lead" data-split="words" data-intro data-delay="0.3">{hero.lead}</p>
       <div class="hero__act" data-reveal="focus" data-intro data-delay="0.55">
-        <p class="hero__note">{hero.note}</p>
+        <p class="hero__note">{noteA}<span data-rel="version">{site.version}</span>{noteB}</p>
         <div class="hero__buttons">
-          <a class="btn btn--paper" href={site.mac}>Download for Mac</a>
-          <a class="btn btn--line" href={site.win}>Windows zip</a>
+          <a class="btn btn--paper" href={site.mac} data-rel="mac">Download for Mac</a>
+          <a class="btn btn--line" href={site.win} data-rel="win">{site.winLabel}</a>
         </div>
       </div>
     </div>

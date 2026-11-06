@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { acpMcp, acpProvider, opencodeAsks, opencodeEnv, setCancelMs, CANCEL_MS } from "../src/providers/acp.ts";
+import { acpMcp, acpProvider, commandWords, fromFolder, inFolder, leaves, opencodeAsks, opencodeEnv, secretFile, setCancelMs, CANCEL_MS } from "../src/providers/acp.ts";
 import { TOOLS } from "../src/liner-tools.ts";
 import { CodexServerSession, codexAsk } from "../src/providers/codex-server.ts";
 import { ResumeFailed, type ApprovalRequest, type OpenOptions, type TurnSink } from "../src/providers/types.ts";
@@ -467,6 +467,165 @@ test("acp: a command that only reads keeps to the project: what leaves it, by a 
   }
   assert.equal((await run("cat link/secret.txt", "full")).picked, "yes", "Full access is all of it");
   assert.equal((await run("cp link/secret.txt src/", "ask")).cards[0].risk, "low", "a command that isn't a read goes by its own risk, as it did");
+});
+
+test("acp: a quoted path is one word, on any platform, and a login shell's script is read too", async () => {
+  const { root, away } = project();
+  mkdirSync(join(away, "First Last"));
+  writeFileSync(join(away, "First Last", "config"), "secret");
+  mkdirSync(join(root, "my src"));
+  writeFileSync(join(root, "my src", "a.ts"), "a");
+  assert.deepEqual(commandWords(String.raw`cat "C:\Users\First Last\.ssh\config"`), ["cat", String.raw`C:\Users\First Last\.ssh\config`]);
+  assert.deepEqual(commandWords(`grep -n "a b" --file="c d/e" 'f g' -r`), ["grep", "a b", "c d/e", "f g"]);
+  assert.deepEqual(commandWords(`cat 'a b'/../c`), ["cat", "a b/../c"], "the parts of one word stay one word");
+  assert.deepEqual(commandWords("bash -lc 'head ../x'"), ["head", "../x"], "what `readsOnly` reads inside a login shell is read here too");
+  assert.deepEqual(commandWords(`sh -c "cat 'a b'"`), ["cat", "a b"]);
+  assert.deepEqual(commandWords("cat a.txt | head && ls b"), ["cat", "a.txt", "head", "ls", "b"]);
+  const run = (command: string, access: Access) => acpStep({ kind: "execute", title: command, rawInput: { command } }, access, { cwd: root });
+  for (const access of ACCESS) {
+    for (const command of [`cat "${join(away, "First Last", "config")}"`, `cat '${join(away, "First Last", "config")}'`, `cat "link/First Last/config"`, `bash -lc 'head link/secret.txt'`, `sh -c "head ../${basename(away)}/secret.txt"`]) {
+      const out = await run(command, access);
+      assert.equal(out.cards[0]?.risk, "high", `${access}: ${command}`);
+      assert.equal(out.cards[0].rule, undefined);
+    }
+    assert.deepEqual(await run(`cat "my src/a.ts"`, access), { picked: "yes", cards: [] }, "and one that stays in stays free");
+    assert.deepEqual(await run(`echo "a; cat ../x"`, access), { picked: "yes", cards: [] }, "what's inside quotes isn't another command");
+  }
+});
+
+/** A Windows disk for path.win32: what's on it, its links, and every path anything looked at. */
+function windowsDisk(paths: string[], links: Record<string, string> = {}) {
+  const known = new Set(paths.map((p) => p.toLowerCase()));
+  const link = new Map(Object.entries(links).map(([from, to]) => [from.toLowerCase(), to]));
+  const looked: string[] = [];
+  const gone = () => Object.assign(new Error("no such file"), { code: "ENOENT" });
+  return {
+    looked,
+    real(p: string) {
+      looked.push(p);
+      const to = link.get(p.toLowerCase());
+      if (to) return to;
+      if (!known.has(p.toLowerCase())) throw gone();
+      return p;
+    },
+    lstat(p: string) {
+      looked.push(p);
+      throw gone();
+    },
+    exists(p: string) {
+      looked.push(p);
+      return known.has(p.toLowerCase()) || link.has(p.toLowerCase());
+    },
+  };
+}
+const PROJECT = String.raw`C:\proj`;
+const ATTACHED = String.raw`C:\Liner\attachments`;
+const onDisk = () => windowsDisk(["C:\\", PROJECT, String.raw`C:\proj\src`, String.raw`C:\proj\src\a.ts`, ATTACHED, String.raw`C:\Liner\attachments\note.txt`, "D:\\", String.raw`D:\away`, String.raw`D:\away\x.txt`], { [String.raw`C:\proj\link`]: String.raw`D:\away` });
+
+test("windows: Git Bash's paths are read as Windows finds them, and one with no drive is outside, there or not", () => {
+  const disk = onDisk();
+  const out = (word: string, cwd = PROJECT) => leaves(word, cwd, [ATTACHED], "win32", disk);
+  for (const word of ["/c/Users/me/.ssh/config", "/C/Users/me/.ssh/config", "/d/away/x.txt", "/c", "/etc/hosts", "/tmp/x", "/usr/bin/env", "/proj/src/a.ts", "/mnt/c/proj/src/a.ts", "/cygdrive/c/Users/me"]) assert.equal(out(word), true, word);
+  for (const word of ["/c/proj/src/a.ts", "/C/proj/src/a.ts", "/c/proj/not-yet.ts", "/c/liner/attachments/note.txt", "src/a.ts", "src/not-yet.ts", "c:/proj/src/a.ts", String.raw`C:\PROJ\SRC\a.ts`, String.raw`C:\Liner\attachments\note.txt`]) assert.equal(out(word), false, word);
+  // Nothing there says nothing, and something there at the name Windows would give it says nothing either.
+  const lying = windowsDisk(["C:\\", PROJECT, String.raw`C:\etc`, String.raw`C:\etc\hosts`, String.raw`C:\tmp\x`]);
+  assert.equal(leaves("/etc/hosts", PROJECT, [], "win32", lying), true);
+  assert.equal(leaves("/etc/hosts", String.raw`C:\etc`, [], "win32", lying), true, "Git Bash's /etc isn't C:\\etc, even from there");
+  assert.equal(leaves("/tmp/x", PROJECT, [], "win32", lying), true);
+  assert.equal(out("../no-such-thing"), true, "up and out, whether or not it's there");
+  assert.equal(out(String.raw`D:\no-such-thing`), true);
+  assert.equal(out("link/x.txt"), true, "through a link");
+  assert.equal(out("/c/proj/link/x.txt"), true);
+  assert.ok(!disk.looked.some((p) => p.startsWith("/")), "and nothing goes looking for a path as Git Bash wrote it");
+  assert.equal(leaves("/api/", PROJECT, [], "win32", onDisk()), true, "a pattern that looks like a path asks: the safe way to be wrong");
+});
+
+test("mac: a word that names nothing still isn't outside, and /c is just a folder", () => {
+  const { root, away } = project();
+  for (const word of ["/api/", "/no/such/place", "../no-such-thing", "/c/Users/me", "%HOME%/x"]) assert.equal(leaves(word, root, [], "darwin"), false, word);
+  for (const word of [join(away, "secret.txt"), `../${basename(away)}/secret.txt`, "link/secret.txt", "~/x", "$HOME/x"]) assert.equal(leaves(word, root, [], "darwin"), true, word);
+  assert.equal(leaves(join(away, "secret.txt"), root, [away], "darwin"), false, "what's handed to it");
+  assert.equal(leaves("secret.txt", root, [away], "darwin"), false, "a relative word goes by the project, not the handed folder");
+  writeFileSync(join(root, "here.txt"), "x");
+  assert.equal(leaves("here.txt", root, [away], "darwin"), false);
+  assert.equal(leaves("/c/x", "/proj", [], "darwin", windowsDisk(["/", "/proj", "/c", "/c/x"])), true, "a folder called /c is that folder");
+});
+
+test("windows: a %VAR% can't be told, as $VAR and ~ can't", () => {
+  const out = (word: string) => leaves(word, PROJECT, [], "win32", onDisk());
+  for (const word of ["%USERPROFILE%/.ssh/config", String.raw`%USERPROFILE%\.ssh\config`, "%APPDATA%", "x%TEMP%y", "$HOME/x", "$env:USERPROFILE/x", "~/x", "~"]) assert.equal(out(word), true, word);
+  assert.equal(out("src/100%.ts"), false, "a lone % names nothing");
+  assert.equal(out("src/a%b c%d.ts"), false, "nor do two with a space between");
+  for (const word of commandWords(`cat "%USERPROFILE%/.ssh/config"`).slice(1)) assert.equal(out(word), true, "quoted too");
+  for (const word of commandWords(`cat '%USERPROFILE%/x'`).slice(1)) assert.equal(out(word), true, "cmd doesn't take single quotes for quotes");
+});
+
+test("windows: another machine's path is outside, and nothing goes looking at it", () => {
+  const paths = [String.raw`\\host\share\x`, String.raw`\\host\share`, String.raw`\\host`, String.raw`\\host\\`, "//host/share/x", "//host", String.raw`/\host\share\x`, String.raw`\/host/share`, String.raw`\\?\C:\proj\src\a.ts`, String.raw`\\.\pipe\x`, String.raw`\\?\UNC\host\share\x`];
+  for (const path of paths) {
+    const disk = onDisk();
+    assert.equal(inFolder(PROJECT, path, "win32", disk), false, `a tool: ${path}`);
+    assert.equal(leaves(path, PROJECT, [ATTACHED], "win32", disk), true, `a word: ${path}`);
+    assert.ok(!disk.looked.some((p) => /host|pipe|^[\\/]{2}/.test(p)), `${path}: looked at ${disk.looked.join(", ")}`);
+  }
+  // A project that's on a share is where you chose to work, and it's the only one looked at.
+  const share = String.raw`\\nas\work\proj`;
+  const disk = windowsDisk([share, String.raw`\\nas\work\proj\src`, String.raw`\\nas\work\proj\src\a.ts`, "C:\\"]);
+  assert.equal(inFolder(share, String.raw`src\a.ts`, "win32", disk), true);
+  assert.equal(inFolder(share, String.raw`\\NAS\work\proj\src\a.ts`, "win32", disk), true);
+  assert.equal(leaves("src/a.ts", share, [], "win32", disk), false);
+  disk.looked.length = 0;
+  assert.equal(inFolder(share, String.raw`\\nas\work\other\x`, "win32", disk), false, "the share next door");
+  assert.equal(inFolder(share, String.raw`\\evil\work\proj\x`, "win32", disk), false);
+  assert.equal(inFolder(share, String.raw`..\other\x`, "win32", disk), false, "or by the way up");
+  assert.deepEqual(disk.looked, []);
+  const mac = windowsDisk(["/", "/proj"]);
+  assert.equal(inFolder("/proj", "//proj/a.ts", "darwin", mac), true, "// on a Mac is just /");
+  assert.equal(inFolder("/proj", "//other/a.ts", "darwin", mac), false);
+  assert.ok(mac.looked.includes("/other/a.ts"), "so it's looked at like any other path");
+});
+
+test("windows: what's in the project reads as a Windows path does, links and all", () => {
+  const disk = onDisk();
+  const inside = (path: string) => inFolder(PROJECT, path, "win32", disk);
+  for (const path of [String.raw`src\a.ts`, "src/a.ts", String.raw`C:\proj\src\a.ts`, String.raw`c:\PROJ\src\new.ts`, String.raw`C:/proj/new.ts`, "new.ts"]) assert.equal(inside(path), true, path);
+  for (const path of [String.raw`..\x`, String.raw`C:\proj2\x`, String.raw`D:\away\x.txt`, String.raw`link\x.txt`, String.raw`C:\proj\link\x.txt`, String.raw`\Windows\x`]) assert.equal(inside(path), false, path);
+});
+
+test("acp: a .env is a .env in any case", async () => {
+  for (const name of [".env", ".ENV", ".Env", ".env.local", ".Env.local", ".ENV.PRODUCTION", "prod.env", "PROD.ENV"]) assert.equal(secretFile(name), true, name);
+  for (const name of [".env.example", ".ENV.EXAMPLE", ".Env.Example", "env", "a.txt", "envy.ts"]) assert.equal(secretFile(name), false, name);
+  assert.equal(secretFile(String.raw`C:\proj\.ENV`, "win32"), true);
+  assert.equal(secretFile(String.raw`C:\proj\sub\.Env.local`, "win32"), true);
+  assert.equal(secretFile("C:/proj/.ENV.example", "win32"), false);
+  assert.equal(secretFile(String.raw`C:\proj\.ENV`, "darwin"), true, "a backslash isn't a folder on a Mac, and the name still ends so");
+  assert.equal(secretFile(String.raw`C:\proj\.env.d\config`, "win32"), false, "it's the file's name that counts, not a folder's");
+  assert.equal(secretFile("/proj/.env.d/config", "darwin"), false);
+  const { root } = project();
+  writeFileSync(join(root, ".ENV"), "KEY=1");
+  for (const access of ACCESS) {
+    assert.equal((await acpStep({ kind: "read", title: "read", locations: [{ path: ".ENV" }] }, access, { cwd: root })).cards.length, 1, `${access}: the read tool`);
+    if (access !== "auto" && access !== "review") assert.equal((await acpStep({ kind: "execute", title: "cat .ENV", rawInput: { command: "cat .ENV" } }, access, { cwd: root })).cards.length, 1, `${access}: a command`);
+  }
+});
+
+test("acp: a card shows a path from the project, with the platform's own separator", async () => {
+  assert.equal(fromFolder(PROJECT, String.raw`C:\proj\src\a.ts`, "win32"), String.raw`src\a.ts`);
+  assert.equal(fromFolder(PROJECT, String.raw`c:\PROJ\src\a.ts`, "win32"), String.raw`src\a.ts`, "a drive and a folder in any case");
+  assert.equal(fromFolder(PROJECT, "C:/proj/src/a.ts", "win32"), String.raw`src\a.ts`);
+  assert.equal(fromFolder(PROJECT, String.raw`src\a.ts`, "win32"), String.raw`src\a.ts`);
+  assert.equal(fromFolder(PROJECT, String.raw`C:\proj2\a.ts`, "win32"), String.raw`C:\proj2\a.ts`, "the folder next door is no part of it");
+  assert.equal(fromFolder(PROJECT, String.raw`D:\a.ts`, "win32"), String.raw`D:\a.ts`);
+  assert.equal(fromFolder(PROJECT, PROJECT, "win32"), PROJECT);
+  assert.equal(fromFolder(String.raw`\\nas\work\proj`, String.raw`\\nas\work\proj\src\a.ts`, "win32"), String.raw`src\a.ts`);
+  assert.equal(fromFolder("/p/app", "/p/app/src/a.ts", "darwin"), "src/a.ts");
+  assert.equal(fromFolder("/p/app", "/p/app2/a.ts", "darwin"), "/p/app2/a.ts");
+  assert.equal(fromFolder("/p/app", "src/a.ts", "darwin"), "src/a.ts");
+  assert.equal(fromFolder("/p/app", "../x", "darwin"), "../x");
+  assert.equal(fromFolder("/p/app", "/p/app/..notes", "darwin"), "..notes", "a name that starts with two dots is no way up");
+  const { root } = project();
+  const card = (await acpStep({ kind: "edit", title: "Edit", locations: [{ path: join(root, "src", "a.ts") }] }, "ask", { cwd: root })).cards[0];
+  assert.equal(card.fields.find((f) => f.label === "File")?.value, join("src", "a.ts"));
 });
 
 /** OpenCode's way out of the project: the step's own call, its ask to go out under the same id, then the step's own ask. */

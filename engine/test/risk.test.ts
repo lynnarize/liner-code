@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseStep } from "../src/review.ts";
-import { commandRisk, isDestructive, plainGit, readsOnly, ruleFor } from "../src/risk.ts";
+import { commandRisk, isDestructive, plainGit, readsOnly, ruleFor, shellWords, unwrapped } from "../src/risk.ts";
 
 test("reads: what only reads still does, piped, chained or quoted", () => {
   for (const c of ["ls -la", "git status && git diff", "rg foo src | head", "cat a.txt", "sed -n '1,20p' file", "sed -n '/<script>/,/<\\/script>/p' index.html", "sed -n 's/version: \\(.*\\)/\\1/p' a.yml", "rg -o 'foo.*' src", "tree -L 2 src", "git log --oneline -n 5", "find . -name '*.ts'", "bash -lc 'ls src'"]) assert.equal(readsOnly(c), true, c);
@@ -99,6 +99,66 @@ test("risk: cargo's +toolchain doesn't hide publish, and a rule from one command
   assert.notEqual(ruleFor("cargo +nightly test"), ruleFor("cargo +nightly build"));
   assert.equal(commandRisk("cargo +nightly test"), "low");
   assert.equal(ruleFor("cargo test"), "cargo test");
+});
+
+test("risk: a shell gets no rule, by any name it goes by, as bash and sh get none", () => {
+  for (const c of ["bash -c x", "sh x.sh", "/bin/bash -c x", "zsh -c x", "csh -c x"]) assert.equal(ruleFor(c), undefined, c);
+  for (const name of ["cmd", "powershell", "pwsh", "wsl", "bash.exe", "sh.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "wsl.exe", "CMD", "Cmd.EXE", "PowerShell.exe", "BASH.EXE", "cmd.bat", "command.com"]) assert.equal(ruleFor(`${name} /c anything`), undefined, name);
+  for (const c of [String.raw`C:\Windows\System32\cmd.exe /c del x`, String.raw`C:\WINDOWS\system32\WindowsPowerShell\v1.0\powershell.exe -Command x`, "C:/Windows/System32/cmd.exe /c x", String.raw`.\bash.exe -c x`, String.raw`"C:\Program Files\Git\bin\bash.exe" -c x`, String.raw`"C:\Program Files\PowerShell\7\pwsh.exe" -c x`, `'C:\\Program Files\\Git\\bin\\sh.exe' x`, "/usr/bin/BASH -c x", "/mnt/c/Windows/System32/cmd.exe /c x"]) assert.equal(ruleFor(c), undefined, c);
+  for (const c of ["BASH -c x", "Bash x.sh", "ENV x", "Sudo x"]) assert.equal(ruleFor(c), undefined, `${c}: a Mac's disk finds it too`);
+  for (const c of ["start evil.exe", "call x.bat", "runas /user:a b", "forfiles /c x", "cscript a.vbs", "wscript a.js", "mshta a.hta", "rundll32 a,b", "regsvr32 a", "msiexec /i a", "iex x", "Invoke-Expression x", "icm x", "Invoke-Command x", "Start-Process x"]) assert.equal(ruleFor(c), undefined, c);
+  for (const c of ["$SHELL -c x", "%COMSPEC% /c x", `"$SHELL" -c x`, String.raw`%SystemRoot%\System32\cmd.exe /c x`]) assert.equal(ruleFor(c), undefined, `${c}: a variable can be any program`);
+});
+
+test("risk: an interpreter's rule is for what it was given and nothing else", () => {
+  for (const c of ["python x.py", "python3 x.py", "python3.12 x.py", "py x.py", "node x.js", "ruby x.rb", "perl x.pl", "php x.php"]) assert.equal(ruleFor(c), c, c);
+  assert.equal(ruleFor("python.exe x.py"), "python x.py");
+  assert.equal(ruleFor("node.exe x.js"), "node x.js");
+  assert.equal(ruleFor("Python x.py"), "Python x.py");
+  assert.notEqual(ruleFor("node x.js"), ruleFor("node evil.js"));
+  assert.notEqual(ruleFor("python x.py"), ruleFor(`python -c "print(1)"`));
+  assert.equal(ruleFor(String.raw`C:\Python312\python.exe x.py`), String.raw`C:\Python312\python.exe x.py`);
+  assert.equal(ruleFor("node rm -rf ~"), undefined, "nor one for what can't be undone");
+});
+
+test("risk: a bare Windows program is its plain name, and one with a folder stays as written", () => {
+  for (const [c, rule] of [["git.exe status", "git status"], ["GIT.EXE status", "git status"], ["Git.Exe status", "git status"], ["npm.cmd test", "npm test"], ["pnpm.cmd build", "pnpm build"], ["yarn.bat test", "yarn test"], ["npm.cmd --prefix ui run build", "npm --prefix ui run build"], ["ls.exe -la", "ls"], [`"git.exe" status`, "git status"], [`cd "C:\\app" && git.exe status`, "git status"]] as const) assert.equal(ruleFor(c), rule, c);
+  assert.equal(ruleFor("git status"), "git status");
+  assert.equal(ruleFor("git.exe -C x status"), undefined, "the same as git");
+  assert.equal(ruleFor("npm.cmd --prefix app publish"), undefined);
+  // The folder is the difference between the `git` you allowed and a program of the same name.
+  for (const c of [String.raw`C:\evil\git.exe status`, String.raw`.\git.exe status`, "./git.exe status", "C:/evil/npm.cmd test", String.raw`"C:\Program Files\Git\bin\git.exe" status`]) {
+    assert.equal(ruleFor(c), c, c);
+    assert.notEqual(ruleFor(c), "git status");
+  }
+  assert.equal(ruleFor("/tmp/evil/npm test"), "/tmp/evil/npm test");
+  assert.equal(ruleFor("./git status"), "./git status");
+  // A program in any case is still the one with subcommands: `Git status` isn't a rule for all of Git.
+  assert.equal(ruleFor("Git status"), "Git status");
+  assert.notEqual(ruleFor("Git status"), ruleFor("Git push"));
+  assert.equal(ruleFor("GIT -C x push"), undefined);
+});
+
+test("risk: a Windows program's risk is the plain name's, however it's written", () => {
+  for (const c of ["git.exe reset --hard", "GIT.EXE reset --hard", "Git.exe push --force", String.raw`C:\Git\git.exe push --force`, String.raw`C:\Program\Git\cmd\git.exe reset --hard`, String.raw`"C:\Program Files\Git\cmd\git.exe" push --force`, `'C:\\Program Files\\Git\\cmd\\git.exe' reset --hard`, "C:/Git/git.exe clean -fd", "git.exe -C app reset --hard", String.raw`C:\Git\git.exe --no-pager reset --hard`, "cd a && git.exe clean -fd", "git.exe status; git.exe reset --hard", "npm.cmd publish", "pnpm.cmd --filter ui publish", "cargo.exe +nightly publish", "rm.exe -rf x", "sudo.exe ls"]) {
+    assert.equal(commandRisk(c), "high", c);
+    assert.equal(isDestructive(c), true, c);
+  }
+  assert.equal(commandRisk("git.exe commit -m x"), "medium");
+  for (const c of ["git.exe status", String.raw`C:\Git\git.exe log`, "setup.exe --help", "curl https://example.com/a", "echo x.exe"]) assert.equal(commandRisk(c), "low", c);
+  assert.equal(commandRisk("git reset --hard"), "high");
+  assert.equal(commandRisk("git status"), "low");
+});
+
+test("risk: a command's words as the shell reads them", () => {
+  assert.deepEqual(shellWords(`cat "a b" 'c d' e`), [`cat`, `"a b"`, `'c d'`, `e`]);
+  assert.deepEqual(shellWords(`a"b c"d  e`), [`a"b c"d`, `e`]);
+  assert.deepEqual(shellWords("a && b | c; d"), ["a", "b", "c", "d"]);
+  assert.deepEqual(shellWords(""), []);
+  assert.equal(unwrapped("bash -lc 'ls a'"), "ls a");
+  assert.equal(unwrapped(`/bin/sh -c "ls a"`), "ls a");
+  assert.equal(unwrapped("ls a"), "ls a");
+  assert.equal(ruleFor(`"`), undefined, "a quote alone is no program");
 });
 
 test("reviewer decides: the call is the last line that starts with ALLOW or ASK", () => {

@@ -54,6 +54,8 @@ const MEDIUM = [/\bgit\s+(push|commit|merge|rebase|tag)\b/, /\bgit\s+branch\b[^;
 
 /** One word as the shell reads it, so a quoted space stays inside it. */
 const WORD = String.raw`(?:"[^"]*"|'[^']*'|[^\s"';&|])+`;
+/** A command's words as the shell reads them, quotes still on. */
+export const shellWords = (command: string) => command.match(new RegExp(WORD, "g")) ?? [];
 /**
   The options git takes before its command, which say nothing about what the command does: the ones
   whose value is the next word by name, then any other `--option` or `--option=value`, which git either
@@ -65,13 +67,28 @@ const GIT_OPTIONS = new RegExp(String.raw`\bgit(?:\s+(?:${GIT_OPTION}))+(?=\s)`,
 /** A command with those options taken out, so `git -C app reset --hard` reads as what it is. */
 export const plainGit = (command: string) => command.replace(GIT_OPTIONS, "git");
 
+/** The endings Windows finds a program by when it's named without one. */
+const ENDING = String.raw`\.(?:exe|cmd|bat|com)`;
+const ENDS_LIKE_A_PROGRAM = new RegExp(`${ENDING}$`);
+const WINDOWS_PROGRAMS = new RegExp(String.raw`"(?:[^"\n]*[\\/])?([^"\n\\/]+)${ENDING}"|'(?:[^'\n]*[\\/])?([^'\n\\/]+)${ENDING}'|(?<![^\s;&|])(?:[^\s"';&|]*[\\/])?([^\s"';&|\\/]+)${ENDING}(?=$|[\s;&|])`, "gi");
+
+/** A command with each Windows program as its bare name, so `C:\Git\git.exe push --force` reads as what it is. Only for reading its risk: see ruleFor. */
+const bareNames = (command: string) => command.replace(WINDOWS_PROGRAMS, (_, a?: string, b?: string, c?: string) => (a ?? b ?? c ?? "").toLowerCase());
+
 export function commandRisk(command: string): Risk {
   // As written too: what the plain text no longer shows (a quoted `rm -rf` in an option) still counts.
-  const texts = [command, plainGit(command)];
+  const texts = [command, bareNames(command)].flatMap((c) => [c, plainGit(c)]);
   if (HIGH.some((r) => texts.some((c) => r.test(c)))) return "high";
   if (MEDIUM.some((r) => texts.some((c) => r.test(c)))) return "medium";
   return "low";
 }
+
+/**
+  The script a login shell is handed, the way Codex runs commands. Only when the outer shell hands it
+  over as written: one quoted string with no quote of its kind inside it, and in double quotes no
+  backslash, $ or backtick it would expand first.
+*/
+export const unwrapped = (command: string) => command.trim().replace(/^(?:\/bin\/)?(?:ba|z)?sh\s+-l?c\s+(?:'([^']*)'|"([^"\\$`]*)"|([^'"\\]*))$/, (_, a?: string, b?: string, d?: string) => a ?? b ?? d ?? "").trim();
 
 /**
   A command that only reads (pwd, ls, cat, sed -n, rg, git diff…), alone or piped and chained,
@@ -79,9 +96,7 @@ export function commandRisk(command: string): Risk {
   in-place edits, and the flags that make a reader write a file or run a command never count.
 */
 export function readsOnly(command: string) {
-  // Unwrapped only when the outer shell hands the script over as written: one quoted string with no
-  // quote of its kind inside it, and in double quotes no backslash, $ or backtick it would expand first.
-  const c = command.trim().replace(/^(?:\/bin\/)?(?:ba|z)?sh\s+-l?c\s+(?:'([^']*)'|"([^"\\$`]*)"|([^'"\\]*))$/, (_, a?: string, b?: string, d?: string) => a ?? b ?? d ?? "").trim();
+  const c = unwrapped(command);
   // What's quoted is an argument (a path with spaces, a sed pattern with < in it), never a redirect or a pipe.
   // Double quotes still expand $( ) and backticks, so those stay visible. The quoted text is kept
   // aside, so a sed script in it can still be read. Quotes pair left to right the way the shell
@@ -198,8 +213,13 @@ export function toolRisk(kind: ToolKind, command?: string): Risk {
 
 /** Tools whose first word says little on its own: their subcommand is part of the rule. */
 const SUB = /^(git|npm|pnpm|yarn|bun|npx|bunx|cargo|go|docker|kubectl|gh|make|pip|uv|poetry|swift|xcodebuild|dotnet|deno|rails|bundle|mix)$/;
-/** Shells and wrappers: a rule for one would allow any command it's handed. */
-const WRAPPERS = /^(sh|bash|zsh|fish|dash|ksh|env|xargs|eval|exec|command|builtin|nohup|time|nice|timeout|sudo|doas)$/;
+/** Shells and wrappers, by a lower-case name: a rule for one would allow any command it's handed. The second line is Windows's. */
+const WRAPPERS = new RegExp(`^(${[
+  "sh|bash|zsh|fish|dash|ksh|csh|tcsh|env|xargs|eval|exec|command|builtin|nohup|time|nice|timeout|sudo|doas",
+  "cmd|powershell|pwsh|wsl|start|call|runas|forfiles|cscript|wscript|mshta|rundll32|regsvr32|msiexec|iex|invoke-expression|icm|invoke-command|saps|start-process",
+].join("|")})$`);
+/** Interpreters: what they run is in their arguments, so a rule is for those arguments and no others, or `python x.py` would allow `python -c …`. */
+const INTERPRETERS = /^(python[\d.]*|py|pypy[\d.]*|node|nodejs|ruby|perl|php|lua|rscript|osascript)$/;
 
 /**
   What "Don't ask again for … this session" would allow: a single plain command, named by its
@@ -207,22 +227,32 @@ const WRAPPERS = /^(sh|bash|zsh|fish|dash|ksh|env|xargs|eval|exec|command|builti
   compound command (&&, &, ;, |, a new line, redirects, substitutions) gets none, and neither
   does a shell or a wrapper that runs whatever follows it, so a rule can never carry something
   else along with it. Nor does one that starts by setting a variable (PATH, NODE_OPTIONS,
-  GIT_EXTERNAL_DIFF can change what runs), and the program is matched as written, so `./git` or
-  `/tmp/x/npm` never passes for the `git` or `npm` a rule names.
+  GIT_EXTERNAL_DIFF can change what runs), nor a program that is one ($SHELL, %COMSPEC%), and the
+  program is matched as written, so `./git` or `/tmp/x/npm` never passes for the `git` or `npm` a
+  rule names. What a program is goes by its name in any case, with no folder and none of Windows's
+  endings: a Mac's disk and Windows both find `BASH`, and `C:\Windows\System32\cmd.exe` is cmd.
+  A bare `git.exe` is `git`, and the rule says so; one with a folder keeps it, as above.
 */
 export function ruleFor(command: string): string | undefined {
   const c = command.trim().replace(/^(?:cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*&&\s*)+/, "");
   if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(c)) return undefined;
   if (!c || /[&;|<>`\r\n]|\$\(/.test(c)) return undefined;
-  const words = c.split(/\s+/);
-  const name = words[0].split("/").pop() ?? words[0];
+  const [first, ...rest] = shellWords(c);
+  if (!first) return undefined;
+  const path = first.replace(/["']/g, "");
+  if (/[$%]/.test(path)) return undefined;
+  const file = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const name = file.replace(ENDS_LIKE_A_PROGRAM, "");
   if (WRAPPERS.test(name)) return undefined;
-  if (SUB.test(name) && /^[-+]/.test(words[1] ?? "")) {
+  const head = name !== file && !/[\\/]/.test(path) ? name : first;
+  const whole = () => (commandRisk(c) === "high" ? undefined : [head, ...rest].join(" "));
+  if (INTERPRETERS.test(name)) return whole();
+  if (SUB.test(name) && /^[-+]/.test(rest[0] ?? "")) {
     // `git -C app status` has no subcommand to name: the rule would be `git`, for every git command written that way.
     if (name === "git") return undefined;
     // The same goes for `make -j8 test` or `npm --prefix ui run build`, where a flag's value can't be told from a
     // subcommand, and `cargo +nightly test`: the rule is the whole command, which allows that one again and nothing else.
-    return commandRisk(c) === "high" ? undefined : words.join(" ");
+    return whole();
   }
-  return SUB.test(name) && words[1] ? `${words[0]} ${words[1]}` : words[0];
+  return SUB.test(name) && rest[0] ? `${head} ${rest[0]}` : head;
 }

@@ -8,12 +8,12 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, posix, resolve, win32, type PlatformPath } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { closesOnExit, jsonLines, killTree, spawn, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
-import { commandRisk, isDestructive, readsOnly, ruleFor } from "../risk.ts";
+import { commandRisk, isDestructive, readsOnly, ruleFor, shellWords, unwrapped } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { TOOLS } from "../liner-tools.ts";
 import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
@@ -32,8 +32,8 @@ const AUTH_REQUIRED = -32000;
 type ToolCall = { toolCallId: string; title?: string; kind?: string; status?: string; content?: Json[]; locations?: { path: string }[]; rawInput?: unknown; rawOutput?: unknown };
 
 const KIND: Record<string, ToolKind> = { read: "read", edit: "edit", delete: "edit", move: "edit", search: "search", execute: "exec", think: "think", fetch: "fetch" };
-/** What OpenCode's own rules keep back from reading by itself: .env files, not their examples. */
-const SECRET = /\.env(?:\.(?!example$).*)?$/;
+/** What OpenCode's own rules keep back from reading by itself: .env files, not their examples. In any case: Windows and a Mac's disk find .ENV all the same. */
+const SECRET = /\.env(?:\.(?!example$).*)?$/i;
 
 /**
   OpenCode lets nearly everything through unless it's told otherwise, so it's told to ask, and the
@@ -194,37 +194,77 @@ export function opencodeEnv(cwd: string, env: NodeJS.ProcessEnv, linerServer = t
 /** Where OpenCode saves a long output, for the agent to read back. */
 const opencodeOutputs = (env: NodeJS.ProcessEnv) => join(env.XDG_DATA_HOME || join(env.HOME || homedir(), ".local", "share"), "opencode", "tool-output");
 
+/** The file system, as far as telling where a path really goes needs it. A parameter, as the platform is, so Windows's rules can be tried anywhere. */
+type Files = { real(path: string): string; lstat(path: string): unknown; exists(path: string): boolean };
+const FILES: Files = { real: (path) => realpathSync.native(path), lstat: lstatSync, exists: existsSync };
+const pathsOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
+/** Whether a path from a folder stays in it. */
+const stays = (rel: string, paths: PlatformPath) => rel !== ".." && !rel.startsWith(`..${paths.sep}`) && !paths.isAbsolute(rel);
+/** Another machine's, to Windows: \\host\share or //host/share, and its \\?\ and \\.\ forms. */
+const remote = (path: string, platform: NodeJS.Platform) => platform === "win32" && /^[\\/]{2}/.test(path);
+
 /**
   A path with its links followed, what doesn't exist yet kept as written; null when that can't be
   told, as for a link to nothing, which a write would follow out (T3 Code: provider-acp clientPolicy.ts).
 */
-function realPath(path: string) {
+function realPath(path: string, paths: PlatformPath, files: Files) {
   const missing: string[] = [];
   const absent = (e: unknown) => (e as NodeJS.ErrnoException).code === "ENOENT";
-  for (let at = path; ; at = dirname(at)) {
+  for (let at = path; ; at = paths.dirname(at)) {
     try {
-      return resolve(realpathSync.native(at), ...missing);
+      return paths.resolve(files.real(at), ...missing);
     } catch (e) {
       if (!absent(e)) return null;
     }
     try {
-      lstatSync(at);
+      files.lstat(at);
       return null;
     } catch (e) {
       if (!absent(e)) return null;
     }
-    if (dirname(at) === at) return null;
-    missing.unshift(basename(at));
+    if (paths.dirname(at) === at) return null;
+    missing.unshift(paths.basename(at));
   }
 }
 
 /** Whether a path is really in a folder, once its links are followed. */
-export function inFolder(folder: string, path: unknown) {
-  const root = realPath(folder);
-  const real = realPath(resolve(folder, String(path)));
+export function inFolder(folder: string, path: unknown, platform = process.platform, files = FILES) {
+  const paths = pathsOf(platform);
+  const target = paths.resolve(folder, String(path));
+  // Looking at another machine's path reaches it, and Windows signs in to it as you, all before any ask: it's outside
+  // unseen, unless it's where the folder itself is. `\\host` alone doesn't resolve to one, so it's read as it came too.
+  if ((remote(String(path), platform) || remote(target, platform)) && !stays(paths.relative(folder, target), paths)) return false;
+  const root = realPath(folder, paths, files);
+  const real = realPath(target, paths, files);
   if (!root || !real) return false;
-  const rel = relative(root, real);
-  return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+  return stays(paths.relative(root, real), paths);
+}
+
+/** A .env file, by a path's last part as this platform splits it. */
+export const secretFile = (path: string, platform = process.platform) => SECRET.test(pathsOf(platform).basename(path));
+
+/** A path as a card shows it: from the folder, when it's in it. */
+export function fromFolder(folder: string, path: string, platform = process.platform) {
+  const paths = pathsOf(platform);
+  const rel = paths.relative(folder, paths.resolve(folder, path));
+  return rel && stays(rel, paths) ? rel : path;
+}
+
+/**
+  Whether a word of a command that only reads leaves the project and what's handed to it. `~`, a
+  variable and Windows's %VAR% can't be told, so they do. On a Mac a word that names nothing can't
+  read anything, and is likely a pattern (`grep /api/`). Windows goes by the word alone: its Git Bash
+  has paths of its own, /c/Users for C:\Users, and any other (/etc/hosts, /tmp/x) is in Git Bash's
+  folder, not at C:\etc, so whether that exists says nothing.
+*/
+export function leaves(word: string, cwd: string, dirs: string[] = [], platform = process.platform, files = FILES) {
+  const windows = platform === "win32";
+  if (/^~|\$/.test(word) || (windows && /%[^%\s]+%/.test(word))) return true;
+  const path = windows ? word.replace(/^\/([a-zA-Z])(?=\/|$)/, "$1:/") : word;
+  if (windows && /^\/(?![\\/])/.test(path)) return true;
+  const full = remote(path, platform) ? path : pathsOf(platform).resolve(cwd, path);
+  if ([cwd, ...dirs].some((d) => inFolder(d, full, platform, files))) return false;
+  return windows || files.exists(full);
 }
 
 /**
@@ -594,9 +634,9 @@ class AcpSession implements ProviderSession {
       // A command that only reads names its own files, and OpenCode asks to go outside for few of them: not for a
       // relative path, nor a link. An ask you've allowed for this step has said so already.
       const words = reader ? commandWords(command) : [];
-      const beyond = reaching || this.reached.has(call.toolCallId) ? undefined : words.find((w) => /^~|\$/.test(w) || (existsSync(resolve(this.o.cwd, w)) && !this.inProject(w) && !handed(w)));
+      const beyond = reaching || this.reached.has(call.toolCallId) ? undefined : words.find((w) => leaves(w, this.o.cwd, this.o.dirs));
       const away = stray?.path ?? beyond;
-      const secret = [...files.map((l) => l.path), ...words].some((path) => SECRET.test(basename(path)) && !handed(path));
+      const secret = [...files.map((l) => l.path), ...words].some((path) => secretFile(path) && !handed(path));
       // Reading goes by itself at every level (T3 Code: provider-acp clientPolicy.ts), and so does a command that only
       // reads, as in Claude Code. What reaches past the project, as a link can, doesn't, nor do the .env files OpenCode
       // would have asked about itself.
@@ -655,7 +695,7 @@ class AcpSession implements ProviderSession {
   }
 
   private rel(p: string) {
-    return p.startsWith(this.o.cwd + "/") ? p.slice(this.o.cwd.length + 1) : p;
+    return fromFolder(this.o.cwd, p);
   }
 
   private onUpdate(u: Json) {
@@ -869,12 +909,13 @@ function commandOf(call: ToolCall) {
 }
 
 /**
-  The words of a command that only reads, as far as they can be told: all but its flags, a flag's value
-  kept, quotes off. A $ inside single quotes is a character (a grep for "end of line"), so it doesn't count.
+  The words of a command that only reads, as far as they can be told: all but its flags, a flag's
+  value kept, quotes off, as the shell splits them, so a quoted space stays in its path. A $ inside
+  single quotes is a character (a grep for "end of line"), so it doesn't count.
 */
-function commandWords(command: string) {
-  const unquoted = command.replace(/'[^']*'/g, (q) => q.slice(1, -1).replace(/\$/g, "")).replace(/"/g, "");
-  return unquoted.split(/[\s;&|]+/).map((w) => w.replace(/^-[^=]*=/, "")).filter((w) => w && !w.startsWith("-"));
+export function commandWords(command: string) {
+  const bare = shellWords(unwrapped(command)).map((w) => w.replace(/'[^']*'/g, (q) => q.slice(1, -1).replace(/\$/g, "")).replace(/"/g, ""));
+  return bare.map((w) => w.replace(/^-[^=]*=/, "")).filter((w) => w && !w.startsWith("-"));
 }
 
 type AcpSpec = { label: string; cmd: string[]; install?: string; login: string; env?: Record<string, string>; added?: ProviderInfo["added"]; detail?: string };

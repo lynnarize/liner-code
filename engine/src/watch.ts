@@ -13,8 +13,6 @@ export class Watch {
   private timer: NodeJS.Timeout | null = null;
   /** A tick still waiting on gh when the next minute comes, so two never follow the same pull request at once. */
   private ticking = false;
-  /** Comments and reviews on a pull request when its session was snoozed until someone replies. */
-  private baseline = new Map<string, number>();
   private store: Store;
   private env: NodeJS.ProcessEnv;
   /** Whether something works in a checkout now (a session's turn, a routine run), so it isn't pulled under it. */
@@ -66,8 +64,6 @@ export class Watch {
       const now = Date.now();
       void this.pull().catch(() => {});
       for (const t of this.store.threads) {
-        // No longer snoozed until someone replies (undone, switched to checks): the next such snooze counts from then.
-        if (t.wake?.kind !== "reply") this.baseline.delete(t.id);
         if (t.archived) continue;
         try {
           // Nothing has happened for days and nothing waits on you: it settles into Done.
@@ -87,24 +83,24 @@ export class Watch {
     if (r.code !== 0) return;
     const v = JSON.parse(r.stdout) as { state: string; statusCheckRollup?: { status?: string; state?: string; conclusion?: string }[]; comments?: unknown[]; reviews?: unknown[] };
     if (v.state !== t.pr!.state) this.store.patchThread(t.id, { pr: { ...t.pr!, state: v.state } });
-    if (v.state === "MERGED" && this.store.settings.settleOnMerge && !t.done) return this.settle(t, `#${t.pr!.number} merged`);
-    if (!t.wake) return;
     const wake = (why: string) => {
       this.store.patchThread(t.id, { snoozedUntil: undefined, wake: undefined, unread: true });
       this.store.emit({ type: "notify", threadId: t.id, kind: "done", title: why, body: t.title });
     };
+    // Once it's closed nothing follows it any more, so what waited on it would sleep out its thirty days.
+    const over = v.state === "MERGED" || v.state === "CLOSED";
+    if (over && t.wake) wake(`#${t.pr!.number} ${v.state === "MERGED" ? "merged" : "was closed"}`);
+    if (v.state === "MERGED" && this.store.settings.settleOnMerge && !t.done) return this.settle(t, `#${t.pr!.number} merged`);
+    if (!t.wake || over) return;
     if (t.wake.kind === "checks") {
       const checks = v.statusCheckRollup ?? [];
       const pending = checks.some((c) => /PENDING|QUEUED|IN_PROGRESS|EXPECTED/.test((c.status || c.state || "").toUpperCase()) && !c.conclusion);
       if (checks.length && !pending) wake(`Checks finished on #${t.pr!.number}`);
     } else {
       const count = (v.comments?.length ?? 0) + (v.reviews?.length ?? 0);
-      const before = this.baseline.get(t.id);
-      if (before === undefined) this.baseline.set(t.id, count);
-      else if (count > before) {
-        this.baseline.delete(t.id);
-        wake(`Someone replied on #${t.pr!.number}`);
-      }
+      // Kept with the session: counted afresh after a restart, a reply that came while Liner Code was shut would be taken as the start.
+      if (t.wake.seen === undefined) this.store.patchThread(t.id, { wake: { ...t.wake, seen: count } });
+      else if (count > t.wake.seen) wake(`Someone replied on #${t.pr!.number}`);
     }
   }
 }

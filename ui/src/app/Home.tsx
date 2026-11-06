@@ -127,7 +127,9 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         <>
           <h2 className="lc-ask-h">
             What should we build in{" "}
-            <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />?
+            <span className="lc-ask-p">
+              <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />?
+            </span>
           </h2>
           <div
             className="lc-home-compose"
@@ -209,7 +211,9 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         )}
         <span className="lc-crumb">
           <I.folder size={13} />
-          {project?.name ?? "No project"}
+          <span className="lc-crumb-n" title={project?.name}>
+            {project?.name ?? "No project"}
+          </span>
           <span className="lc-quiet">/</span>
           <b>New session</b>
         </span>

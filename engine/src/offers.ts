@@ -11,9 +11,11 @@
   child is an ordinary session you can open and watch, in Workshop, so it has the guide and
   draws in Liner 2.0 (creator.ts).
 */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Item, PanelAccess, PanelPlace, SessionMode, Thread } from "../../contracts/src/index.ts";
 import { accessWords, ADDON_ID, checkManifest, modelHostRefusal, readDraft, widerAccess, type Addons } from "./addons.ts";
-import { uid, type Store } from "./store.ts";
+import { uid, writeAtomic, type Store } from "./store.ts";
 
 type Offer = Extract<Item, { kind: "offer" }>;
 const PLACES: Record<PanelPlace, string> = { dock: "the right dock, beside the session", tab: "a tab beside Chat in the session", page: "a page of its own, opened from Apps in the left sidebar" };
@@ -65,16 +67,60 @@ export function briefOf(o: Offer, id: string) {
 }
 
 export class Offers {
-  /** Background sessions making an app, by session: the offer they answer to, and whether their turn has started. */
+  /** Background sessions making an app, by session: the offer they answer to, and whether their turn has started. Kept on disk: quitting doesn't end them. */
   private making = new Map<string, { threadId: string; itemId: string; id: string; started: boolean }>();
 
   private h: OfferHost;
 
   constructor(h: OfferHost) {
     this.h = h;
+    try {
+      if (existsSync(this.file)) this.making = new Map(JSON.parse(readFileSync(this.file, "utf8")) as [string, { threadId: string; itemId: string; id: string; started: boolean }][]);
+    } catch {
+      // torn: its cards can be cancelled by hand
+    }
     h.store.on((e) => {
       if (e.type === "thread") this.watch(e.thread);
+      if (e.type === "thread.removed") this.gone(e.id);
     });
+  }
+
+  private get file() {
+    return join(this.h.store.home, "making.json");
+  }
+
+  private keep() {
+    writeAtomic(this.file, JSON.stringify([...this.making]));
+  }
+
+  /** The offer a background session answers to, if that session is still there. */
+  private offerOf(m: { threadId: string; itemId: string }) {
+    if (!this.h.store.threads.some((t) => t.id === m.threadId)) return null;
+    const it = this.h.store.timeline(m.threadId).find((x) => x.id === m.itemId);
+    return it?.kind === "offer" ? it : null;
+  }
+
+  /** Once the engine is back: what was being made carries on with its session, or is added, or says why not. `going` is who carried on by itself. */
+  resume(going: string[]) {
+    for (const [child, m] of [...this.making]) {
+      const t = this.h.store.threads.find((x) => x.id === child);
+      if (!t) this.gone(child);
+      else if (going.includes(child)) m.started = false;
+      else {
+        m.started = true;
+        this.watch(t);
+      }
+    }
+  }
+
+  /** The session making it was deleted: its card says so, and can be tried again. */
+  private gone(child: string) {
+    const m = this.making.get(child);
+    if (!m) return;
+    this.making.delete(child);
+    this.keep();
+    const it = this.offerOf(m);
+    if (it && (it.state === "creating" || it.state === "installing")) this.h.store.putItem(m.threadId, { ...it, state: "failed", error: "The session making it was deleted. Try again." });
   }
 
   /**
@@ -118,6 +164,7 @@ export class Offers {
       case "cancel":
         if (it.state !== "creating" || !it.child) throw new Error("It isn't being made.");
         this.making.delete(it.child);
+        this.keep();
         this.h.stop(it.child);
         return put({ state: "cancelled" });
       case "keep":
@@ -149,8 +196,16 @@ export class Offers {
     // Making an add-on is Workshop's work, whatever mode the session that offered it is in: its guide and Liner 2.0 come with it.
     const child = await this.h.createThread({ projectId: parent.projectId, agent: parent.agent, model: parent.model, title: `Make ${it.name}`, access: parent.access === "read" ? "edits" : parent.access, mode: "creator" });
     this.making.set(child.id, { threadId, itemId: it.id, id, started: false });
+    this.keep();
     store.putItem(threadId, { ...o, state: "creating", child: child.id, error: undefined });
-    await this.h.send(child.id, briefOf(o, id));
+    try {
+      await this.h.send(child.id, briefOf(o, id));
+    } catch (e) {
+      // Nothing is being made: the card says why, and Create is there again.
+      this.making.delete(child.id);
+      this.keep();
+      store.putItem(threadId, { ...(store.item(threadId, it.id) as Offer), state: "failed", error: `It didn't start: ${e instanceof Error ? e.message : String(e)}` });
+    }
   }
 
   /** A background session moved on: once its turn has run and ended, what it made is added, or it says why not. */
@@ -163,9 +218,11 @@ export class Offers {
     }
     if (!m.started || t.status === "waiting") return;
     this.making.delete(t.id);
+    this.keep();
     const store = this.h.store;
-    const it = store.item(m.threadId, m.itemId) as Offer;
-    if (it.state !== "creating") return;
+    // Told from inside whatever changed this session (its turn ending): the session that offered it may be gone.
+    const it = this.offerOf(m);
+    if (!it || (it.state !== "creating" && it.state !== "installing")) return;
     if (t.status === "error" || t.status === "limited") return void store.putItem(m.threadId, { ...it, state: "failed", error: "Making it stopped with an error. Try again." });
     store.putItem(m.threadId, { ...it, state: "installing" });
     try {

@@ -50,6 +50,8 @@ type Props = {
   onCreateAddon?: () => void;
   /** Opens a session beside the one on screen. */
   onBeside?: (id: string) => void;
+  /** A session was archived from here: if it's on screen, the window moves off it. */
+  onPutAway?: (id: string) => void;
 };
 
 /** A command's keys for a tip, like " (⌘B)". */
@@ -109,7 +111,7 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onBeside }: Props) {
+export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onBeside, onPutAway }: Props) {
   const addons = useEngine((s) => s.addons);
   const pages = addons.filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
   const installed = addons.filter((a) => a.enabled && !a.removed).length;
@@ -363,7 +365,14 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
       toast.error(e instanceof Error ? e.message : String(e));
       return;
     }
+    if (patch.archived) for (const t of ts) onPutAway?.(t.id);
     toast(`${what} ${plural(ts.length, "session")}`, { description: note, action: { label: "Undo", onClick: () => void Promise.all(before.map((b) => rpc("thread.update", b))) }, duration: 5000 });
+  };
+
+  const archive = async (t: Thread) => {
+    await rpc("thread.update", { id: t.id, archived: true });
+    onPutAway?.(t.id);
+    toast(`Archived ${t.title}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: t.id, archived: false }) } });
   };
 
   /**
@@ -444,7 +453,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   const leaveTimer = useRef(0);
   // Nothing floats over a row while you rename, pick several, or have a menu open (a drag hides it as it starts).
   const busy = useRef(false);
-  busy.current = renaming !== null || picked.size > 0 || menu !== null;
+  busy.current = renaming !== null || pickedThreads.length > 0 || menu !== null;
   const blocked = () => busy.current || document.querySelector(".lc-pop-panel") !== null;
   const hideCard = () => {
     window.clearTimeout(cardTimer.current);
@@ -623,7 +632,12 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             clearPicked();
             onOpen(t.id);
           }}
-          onKeyDown={(e) => (e.key === "Enter" ? (clearPicked(), onOpen(t.id)) : rowKeys(e, t))}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" && e.key !== " ") return rowKeys(e, t);
+            e.preventDefault();
+            clearPicked();
+            onOpen(t.id);
+          }}
           onDoubleClick={(e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && setRenaming(t.id)}
         >
           <span className="lc-sb-h">
@@ -633,6 +647,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             {renaming === t.id ? (
               <input
                 className="lc-sb-rename"
+                aria-label={`Rename ${t.title}`}
                 defaultValue={t.title}
                 autoFocus
                 onClick={(e) => e.stopPropagation()}
@@ -640,8 +655,10 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
                   e.stopPropagation();
                   // The Enter that confirms an IME composition is not the end of the rename.
                   if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  if (e.key === "Escape") setRenaming(null);
+                  if (e.key !== "Enter" && e.key !== "Escape") return;
+                  // Back to the row, not nowhere: Enter saves as the field loses focus, Escape puts the title back first.
+                  if (e.key === "Escape") e.currentTarget.value = t.title;
+                  e.currentTarget.closest<HTMLElement>(".lc-sb-pick")?.focus();
                 }}
                 onBlur={(e) => {
                   const v = e.target.value.trim();
@@ -663,10 +680,10 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
           </span>
         </div>
         <span className="lc-sb-acts">
-          <button type="button" className="lc-sb-a l-focus" aria-label={t.pinned ? "Unpin" : "Pin"} title={t.pinned ? "Unpin (P)" : "Pin (P)"} aria-pressed={t.pinned} onClick={() => void act(t, "pin")}>
+          <button type="button" className="lc-sb-a l-focus" aria-label={t.pinned ? "Unpin" : "Pin"} title={t.pinned ? "Unpin (P)" : "Pin (P)"} aria-pressed={Boolean(t.pinned)} onClick={() => void act(t, "pin")}>
             <I.pin size={14} />
           </button>
-          <Pop label="Snooze until" align="end" width={230} triggerClass="lc-sb-a" trigger={<I.snooze size={14} />}>
+          <Pop label="Snooze until" align="end" width={230} menu triggerClass="lc-sb-a" trigger={<I.snooze size={14} />}>
             {(close) => (
               <>
                 <PanelHead>Snooze until</PanelHead>
@@ -799,13 +816,18 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
                         <span
                           role="button"
                           tabIndex={0}
-                          className="lc-sb-gdel"
+                          className="lc-sb-gdel l-focus"
                           aria-label={`Remove the ${g.name} group`}
                           onClick={(e) => {
                             e.stopPropagation();
                             void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
                           }}
-                          onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) }))}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
+                          }}
                         >
                           <I.close size={10} />
                         </span>
@@ -1064,7 +1086,7 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
               <Sep />
               <Row title="Rename" end="F2" onPick={() => (close(), setRenaming(menu.t.id))} />
               <Row title="Export as Markdown" note="Asks, plans, answers and diffs, saved in Downloads" onPick={() => (close(), exportSession(menu.t.id))} />
-              <Row title="Archive" onPick={() => (close(), void rpc("thread.update", { id: menu.t.id, archived: true }).then(() => toast(`Archived ${menu.t.title}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: menu.t.id, archived: false }) } })))} />
+              <Row title="Archive" onPick={() => (close(), void archive(menu.t))} />
             </>
           )
         }

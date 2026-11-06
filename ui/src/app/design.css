@@ -321,6 +321,10 @@
   overflow: auto;
   box-shadow: inset 0 1px 0 var(--l-line);
 }
+/* The line numbers stay put on the paper: in dark, a surface-toned gutter shows as a strip. */
+.lc-dz-code .lc-cl-n {
+  background: var(--lc-paper);
+}
 
 /* ---------- On the timeline ---------- */
 .lc-dz-card,
@@ -372,7 +376,8 @@
   flex: none;
 }
 .lc-dz-capline > b {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 48px;
   max-width: 50%;
   overflow: hidden;
   font-weight: 500;
@@ -518,8 +523,15 @@ html[data-native="mac"] .lc-dz-full-bar {
   padding-left: calc(var(--lc-lights-x, 70px) + 12px);
 }
 .lc-dz-full-bar b {
+  min-width: 0;
+  overflow: hidden;
   font-weight: 600;
   color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-dz-full-bar > :not(b, .lc-grow) {
+  flex: none;
 }
 .lc-dz-full-stage {
   display: grid;

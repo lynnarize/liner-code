@@ -22,6 +22,7 @@ import { baseOf, dirOf, langOf, linesOf, tokensOf, Toks } from "./code";
 import { Lines, ModelTag, Pop, Row as PickRow, Sep } from "./ui";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { FindBar } from "./Find";
+import { SurfaceNote } from "./Surfaces";
 import { SideKeys } from "./TopBar";
 import { undoTurn } from "./undo";
 
@@ -159,6 +160,8 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
   const pick = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : (cps[cps.length - 1]?.id ?? "all");
   const cp = cps.find((c) => c.id === pick);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [diffErr, setDiffErr] = useState<string | null>(null);
   const [view, setView] = useState<"unified" | "split">("unified");
   const [marks, setMarks] = useState<Record<string, number>>(readViewed);
   const [wrap, setWrap] = usePref("lc:review:wrap");
@@ -172,17 +175,34 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
   const box = useRef<HTMLDivElement>(null);
   const coder = agentOf(thread.agent, agents, providers);
 
-  const key = `${pick}:${cp?.reverted}:${cp?.committed}:${cps.length}`;
+  // All turns and This branch have no one checkpoint to watch: any turn undone changes what they show.
+  const key = `${pick}:${cp?.reverted}:${cp?.committed}:${cps.length}:${cps.filter((c) => c.reverted).length}`;
   useEffect(() => {
     let live = true;
     setDiff(null);
+    setDiffErr(null);
     void rpc("checkpoint.diff", { threadId: thread.id, itemId: pick })
-      .then((d) => live && setDiff(d))
-      .catch(() => live && setDiff([]));
+      .then((d) => {
+        if (!live) return;
+        setDiff(d.files);
+        setTotal(d.total);
+      })
+      .catch((e) => {
+        if (!live) return;
+        setDiff([]);
+        setTotal(0);
+        setDiffErr(e instanceof Error ? e.message : String(e));
+      });
     return () => {
       live = false;
     };
   }, [thread.id, key]);
+  // Another turn's diff: where you stepped to, what you unfolded and the lines you picked were the old one's.
+  useEffect(() => {
+    setAt(0);
+    setOpen(new Set());
+    setSel(null);
+  }, [pick]);
 
   // Line questions and their answers, and the Reviewer's findings, by file.
   const asked = useMemo(() => {
@@ -195,7 +215,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
       out.push({ id: it.id, anchor: it.anchor, question: it.text, answer: text.map((x) => x.text).join("\n\n"), who: agentOf(who, agents, providers).name, model: turn?.kind === "turn" ? turn.model : coder.model, at: it.at, streaming: text.some((x) => x.streaming) || (turn?.kind === "turn" && turn.status === "running") });
     }
     return out;
-  }, [items, agents, providers]);
+  }, [items, agents, providers, thread.agent, coder.model]);
   const findings = useMemo(() => {
     const reviews = items.filter((x): x is Extract<Item, { kind: "review" }> => x.kind === "review");
     const last = reviews[reviews.length - 1];
@@ -208,8 +228,10 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
         const before = linesOf(f.before);
         const after = linesOf(f.after);
         const lang = langOf(f.path);
-        const rows = diffRows(before, after);
-        return { file: f, rows, segs: segment(rows, 3), tb: tokensOf(before, lang), ta: tokensOf(after, lang), added: rows.filter((r) => r.kind === "add").length, removed: rows.filter((r) => r.kind === "del").length, isNew: f.before === undefined, gone: f.after === undefined, seenKey: `${thread.id}|${f.path}|${hashOf(f.after)}` };
+        // git show hands a binary file over as it is: it says so rather than drawing its bytes as lines.
+        const binary = f.before?.includes("\u0000") || f.after?.includes("\u0000") || false;
+        const rows = binary ? [] : diffRows(before, after);
+        return { file: f, binary, rows, at: new Map(rows.map((r, i) => [r, i])), segs: segment(rows, 3), tb: binary ? [] : tokensOf(before, lang), ta: binary ? [] : tokensOf(after, lang), added: rows.filter((r) => r.kind === "add").length, removed: rows.filter((r) => r.kind === "del").length, isNew: f.before === undefined, gone: f.after === undefined, moved: f.from && f.from !== f.path ? f.from : undefined, seenKey: `${thread.id}|${f.path}|${hashOf(f.after)}` };
       }),
     [diff],
   );
@@ -229,12 +251,12 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
     writeViewed(all);
   };
 
-  // The file pressed elsewhere scrolls into view.
+  // The file pressed elsewhere scrolls into view; pressed again after scrolling away, it does again.
   useEffect(() => {
     if (!diff || !focus?.path) return;
     box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(focus.path)}"]`)?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     setViewed(focus.path, true);
-  }, [diff, focus?.path]);
+  }, [diff, focus]);
 
   const goChange = (i: number) => {
     if (!changes.length) return;
@@ -243,6 +265,8 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
     const c = changes[n];
     box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(c.path)}"] [data-change="${c.change}"]`)?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
+  const stepTo = useRef(goChange);
+  stepTo.current = goChange;
   // Beside another session, J, K and ⌘F are the side you're in.
   const keys = useContext(SideKeys);
   useEffect(() => {
@@ -255,22 +279,28 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
         return;
       }
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || e.metaKey || e.ctrlKey) return;
-      if (e.key === "j") goChange(at + 1);
-      else if (e.key === "k") goChange(at - 1);
+      // Split draws its own rows, with no changes to step to.
+      if (e.key === "j" && view === "unified") stepTo.current(at + 1);
+      else if (e.key === "k" && view === "unified") stepTo.current(at - 1);
       else if (e.key === "Escape" && sel) setSel(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [at, changes.length, sel, keys]);
+  }, [at, sel, keys, view]);
 
+  // Two quick Enters are one question.
+  const sending = useRef(false);
   const send = async () => {
-    if (!sel || !ask.trim()) return;
+    if (!sel || !ask.trim() || sending.current) return;
+    sending.current = true;
     try {
       await rpc("thread.send", { id: thread.id, text: ask.trim(), anchor: sel, mode: thread.status === "running" ? "queue" : undefined });
       setAsk("");
       setSel(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      sending.current = false;
     }
   };
   const undo = async () => {
@@ -292,6 +322,10 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
   const turnNo = cp?.turn;
   const subs = items.filter((x): x is Extract<Item, { kind: "tool" }> => x.kind === "tool" && x.toolKind === "task" && (turnNo === undefined || x.turn === turnNo));
 
+  // A folded run doesn't hide what's on its lines: a finding, a question, the line you picked.
+  const carries = (p: (typeof prepared)[number], r: Row) =>
+    r.new !== undefined && (asked.some((t) => t.anchor.file === p.file.path && (t.anchor.endLine ?? t.anchor.line) === r.new) || findings.list.some((f) => f.file === p.file.path && (f.endLine ?? f.line) === r.new) || (sel?.file === p.file.path && (sel.endLine ?? sel.line) === r.new));
+
   const lineRow = (p: (typeof prepared)[number], r: Row, k: number) => {
     const tok = r.kind === "del" ? p.tb[(r.old ?? 1) - 1] : p.ta[(r.new ?? 1) - 1];
     const inSel = sel && sel.file === p.file.path && r.new !== undefined && r.new >= sel.line && r.new <= (sel.endLine ?? sel.line);
@@ -305,7 +339,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
           {r.new !== undefined ? (
             <button
               type="button"
-              className="lc-rv-n lc-rv-pick"
+              className="lc-rv-n lc-rv-pick l-focus"
               aria-label={`Ask about line ${r.new}`}
               onClick={(e) => {
                 const line = r.new!;
@@ -353,7 +387,8 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               onChange={(e) => setAsk(e.target.value)}
               placeholder={`Ask ${coder.name} about ${sel!.endLine && sel!.endLine !== sel!.line ? "these lines" : "this line"}`}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void send();
+                // Enter that picks an input method's word isn't a send (T3 Code: BranchPicker.tsx).
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
                 if (e.key === "Escape") setSel(null);
               }}
             />
@@ -379,9 +414,9 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
         </span>
         <span className="lc-grow" />
         {(thread.worktree?.branch ?? project?.branch) && (
-          <span className="lc-branch lc-mono">
+          <span className="lc-branch lc-mono" title={thread.worktree?.branch ?? project?.branch}>
             <I.branch size={12} />
-            {thread.worktree?.branch ?? project?.branch}
+            <span>{thread.worktree?.branch ?? project?.branch}</span>
           </span>
         )}
       </header>
@@ -396,7 +431,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
           {shown.map((p) => (
             <label key={p.file.path} className="lc-rv-f" data-on={viewed.has(p.file.path) || undefined}>
               <input type="checkbox" checked={viewed.has(p.file.path)} onChange={(e) => setViewed(p.file.path, e.target.checked)} />
-              <button type="button" className="lc-rv-fb lc-mono" title={p.file.path} onClick={() => onFocus({ id: pick, path: p.file.path })}>
+              <button type="button" className="lc-rv-fb lc-mono l-focus" title={p.file.path} onClick={() => onFocus({ id: pick, path: p.file.path })}>
                 {baseOf(p.file.path)}
               </button>
               <Lines added={p.added} removed={p.removed} />
@@ -407,6 +442,8 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               {plural(prepared.length - shown.length, "test file")} hidden · Show
             </button>
           )}
+          {/* The engine sends the first 60 files. */}
+          {diff && total > diff.length && <p className="lc-rv-more lc-quiet">{plural(total - diff.length, "more file")} {cp ? "in this turn" : pick === "branch" ? "on this branch" : "across all turns"} aren't shown here.</p>}
           {(subs.length > 0 || findings.reviewer) && (
             <div className="lc-rv-checked">
               <span className="lc-rv-navh">{coder.name}'s subagents checked</span>
@@ -486,6 +523,10 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               <div className="lc-diff-wait">
                 <span className="l-shimmer">Reading the changes</span>
               </div>
+            ) : diffErr ? (
+              <SurfaceNote icon={<I.alert size={20} />} title="The changes didn't open">
+                {diffErr}
+              </SurfaceNote>
             ) : !diff.length ? (
               <div className="lc-panel-empty">
                 <b>{pick === "branch" ? "This branch matches main" : "Nothing changed here"}</b>
@@ -503,24 +544,26 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               shown.map((p) => (
                 <article key={p.file.path} className="lc-rv-file" data-file={p.file.path}>
                   <header className="lc-rv-fh">
-                    <span className="lc-mono">
+                    <span className="lc-mono lc-path" title={p.moved ? `Moved from ${p.moved}` : p.file.path}>
                       <span className="lc-quiet">{dirOf(p.file.path)}</span>
-                      {baseOf(p.file.path)}
+                      <span>{baseOf(p.file.path)}</span>
                     </span>
                     {p.isNew && <span className="lc-pill" data-tone="ok">New</span>}
                     {p.gone && <span className="lc-pill" data-tone="danger">Deleted</span>}
+                    {p.moved && <span className="lc-pill">Moved</span>}
                     <span className="lc-grow" />
                     <Lines added={p.added} removed={p.removed} />
                   </header>
                   <div className="lc-rv-code lc-mono">
+                    {p.binary && <p className="lc-rv-bin lc-quiet">A binary file, so there's no text to compare.</p>}
                     {p.segs.map((s, si) =>
-                      s.kind === "fold" && !open.has(`${p.file.path}:${s.id}`) ? (
-                        <button key={si} type="button" className="lc-rv-fold" onClick={() => setOpen((o) => new Set(o).add(`${p.file.path}:${s.id}`))}>
+                      s.kind === "fold" && !open.has(`${p.file.path}:${s.id}`) && !s.rows.some((r) => carries(p, r)) ? (
+                        <button key={si} type="button" className="lc-rv-fold l-focus" onClick={() => setOpen((o) => new Set(o).add(`${p.file.path}:${s.id}`))}>
                           <I.chevD size={11} />
                           {plural(s.rows.length, "unchanged line")}
                         </button>
                       ) : (
-                        <Fragment key={si}>{s.rows.map((r) => lineRow(p, r, p.rows.indexOf(r)))}</Fragment>
+                        <Fragment key={si}>{s.rows.map((r) => lineRow(p, r, p.at.get(r) ?? 0))}</Fragment>
                       ),
                     )}
                   </div>

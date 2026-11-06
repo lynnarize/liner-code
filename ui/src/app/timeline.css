@@ -220,7 +220,8 @@
 @media (prefers-reduced-motion: reduce) {
   .lc-pmap,
   .lc-pmap-tip,
-  .lc-you-thumb img {
+  .lc-you-thumb img,
+  .lc-you-thumb-wait {
     animation: none;
   }
   .lc-pmap-tick::before {

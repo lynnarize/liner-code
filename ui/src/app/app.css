@@ -562,6 +562,10 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
 .lc-btn:active:not(:disabled) {
   transform: scale(0.97);
 }
+.lc-btn:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
 .lc-btn:disabled {
   opacity: 0.45;
   cursor: default;
@@ -621,6 +625,25 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   font-size: 13px;
   color: var(--l-ink-2);
   cursor: pointer;
+}
+/* The quiet controls that had nothing to show under the pointer. */
+@media (hover: hover) {
+  .lc-link:hover,
+  .lc-sb-plab > .lc-sb-add:hover,
+  .lc-ad-add:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+  .lc-ad-dd:not([data-off]):hover,
+  .lc-spec:not([data-on]):hover,
+  .lc-st-link:hover,
+  .lc-sb-update-go:hover {
+    background: var(--lc-plate);
+  }
+  .lc-st-mode:not([data-on]):hover,
+  .lc-rc:not([data-on]):hover {
+    box-shadow: 0 0 0 1px var(--l-line-strong);
+  }
 }
 .lc-input {
   min-width: 0;
@@ -757,12 +780,14 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
+  overflow-wrap: anywhere;
 }
 .lc-row-t small {
   display: block;
   font-size: 12px;
   line-height: 17px;
   color: var(--l-ink-3);
+  overflow-wrap: anywhere;
 }
 .lc-row-end {
   font-size: 12px;
@@ -982,6 +1007,10 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-find input::placeholder {
   color: var(--l-ink-4);
 }
+.lc-sb-find:not(.lc-st-find):has(input:focus-visible) {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
 .lc-sb-find .lc-ib {
   width: 26px;
   height: 26px;
@@ -1136,6 +1165,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-sb-add {
   display: grid;
+  flex: none;
   place-items: center;
   width: 20px;
   height: 20px;
@@ -1288,6 +1318,15 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-row[data-forks] .lc-sb-h > b {
   margin-right: 40px;
 }
+/* While a row's actions show, its forks' toggle steps left of them, and the title stops short of both. */
+.lc-sb .lc-sb-row[data-forks]:is(:hover, :focus-within) > .lc-sb-forks,
+.lc-sb .lc-sb-row[data-forks]:has(.lc-sb-acts [data-open]) > .lc-sb-forks {
+  right: 78px;
+}
+.lc-sb-row[data-forks]:is(:hover, :focus-within) .lc-sb-h > :is(b, .lc-sb-rename),
+.lc-sb-row[data-forks]:has(.lc-sb-acts [data-open]) .lc-sb-h > :is(b, .lc-sb-rename) {
+  margin-right: 112px;
+}
 .lc-sb-kids {
   position: relative;
   display: flex;
@@ -1421,6 +1460,7 @@ html[data-native="mac"] .lc-sb-head {
   font: inherit;
   font-size: 13.5px;
   font-weight: 500;
+  color: var(--l-ink);
 }
 /* A new state fades in over the old one's place: no letters sliding or popping. */
 .lc-sb-st > span {
@@ -1924,13 +1964,19 @@ html[data-native="mac"] .lc-sb-head {
   min-width: 0;
 }
 .lc-sb-agent-t > span {
+  overflow: hidden;
   font-size: 13px;
   line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-sb-agent-t > small {
+  overflow: hidden;
   font-size: 12px;
   line-height: 16px;
   color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-sb-agent .lc-model {
   margin-left: auto;
@@ -2189,14 +2235,18 @@ html[data-native="mac"] .lc-sb-head {
   animation: l-swap-in 280ms var(--l-ease-out) backwards;
 }
 .lc-title-edit {
-  min-width: 200px;
+  flex: 0 1 420px;
+  min-width: 120px;
   height: 28px;
+  box-sizing: border-box;
   padding: 0 8px;
   margin-left: -8px;
   border: 0;
   border-radius: 8px;
   outline: none;
+  background: none;
   box-shadow: 0 0 0 1.5px var(--l-accent);
+  color: var(--l-ink);
   font: inherit;
   font-size: 15px;
   font-weight: 600;
@@ -2320,8 +2370,19 @@ html[data-native="mac"] .lc-sb-head {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   font-size: 14.5px;
   color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-crumb > :not(.lc-crumb-n) {
+  flex: none;
+}
+/* A long project name gives way; New session and what's after it in the bar stay. */
+.lc-crumb-n {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .lc-crumb b {
   font-weight: 500;
@@ -2606,7 +2667,17 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 13px;
 }
 .lc-head b {
+  min-width: 0;
+  overflow: hidden;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* In a narrow column (a side chat, two sessions beside each other) the words give way, not the row. */
+.lc-head-meta:not(:last-child) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* A model that carried the turn on starts its part with a little room above its head. */
 .lc-head[data-part] {
@@ -2788,11 +2859,13 @@ html[data-native="mac"] .lc-sb-head {
   line-height: 19px;
   color: var(--l-danger-text);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .lc-notice {
   margin: 0;
   font-size: 12.5px;
   color: var(--l-ink-3);
+  overflow-wrap: anywhere;
 }
 
 /* Folds: rows open on grid rows, so nothing resizes in one frame. */
@@ -2834,8 +2907,11 @@ html[data-native="mac"] .lc-sb-head {
     background-color 160ms ease,
     color 160ms ease;
 }
+.lc-thought-h:disabled {
+  cursor: default;
+}
 @media (hover: hover) and (pointer: fine) {
-  .lc-thought-h:hover {
+  .lc-thought-h:not(:disabled):hover {
     background: var(--l-wash);
     color: var(--l-ink-2);
   }
@@ -2849,6 +2925,7 @@ html[data-native="mac"] .lc-sb-head {
   line-height: 20px;
   color: var(--l-ink-3);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .lc-pre {
   max-height: 260px;
@@ -2917,6 +2994,10 @@ html[data-native="mac"] .lc-sb-head {
   gap: 10px;
   min-height: 24px;
   font-size: 13px;
+}
+.lc-todo li > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .lc-todo li[data-s="completed"] > span:last-child {
   color: var(--l-ink-3);
@@ -2998,6 +3079,7 @@ html[data-native="mac"] .lc-sb-head {
   font-weight: 600;
   letter-spacing: -0.012em;
   line-height: 21px;
+  overflow-wrap: anywhere;
 }
 .lc-ask-desc {
   margin: 0;
@@ -3080,6 +3162,7 @@ html[data-native="mac"] .lc-sb-head {
   box-shadow:
     0 0 0 1.5px var(--l-accent),
     0 0 0 4px var(--l-accent-soft);
+  color: var(--l-ink);
   font: inherit;
   font-size: 13.5px;
   line-height: 20px;
@@ -3104,6 +3187,13 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 13px;
   color: var(--l-ink-2);
   animation: l-unblur 360ms var(--l-ease-out) backwards;
+}
+.lc-answered > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lc-answered > svg {
+  flex: none;
 }
 .lc-answered b {
   font-weight: 500;
@@ -3140,6 +3230,7 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
 }
 .lc-q-title p {
   margin: 4px 0 0;
@@ -3156,6 +3247,7 @@ html[data-native="mac"] .lc-sb-head {
   padding: 11px 12px;
   border-radius: 13px;
   outline: none;
+  overflow-wrap: anywhere;
   background: var(--l-wash);
   box-shadow: inset 0 0 0 1px var(--l-line);
   cursor: pointer;
@@ -3227,7 +3319,6 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-3);
   font-family: var(--l-font-mono);
   font-size: 12px;
-  white-space: nowrap;
 }
 
 /* ---------- The composer ---------- */
@@ -3736,6 +3827,8 @@ html[data-composer="clear"] .lc-thread-foot .lc-card {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+  max-width: 100%;
   height: 28px;
   padding: 0 6px 0 9px;
   border-radius: 9px;
@@ -3744,8 +3837,20 @@ html[data-composer="clear"] .lc-thread-foot .lc-card {
   font-size: 12.5px;
   animation: l-pop-in 240ms var(--l-ease-enter) backwards;
 }
+.lc-file-chip > * {
+  flex: none;
+}
 .lc-file-chip > span {
   color: var(--l-ink-3);
+}
+/* A long name gives way; its size and its × stay. */
+.lc-file-chip > .lc-file-n {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-file-chip button {
   display: grid;
@@ -3756,6 +3861,15 @@ html[data-composer="clear"] .lc-thread-foot .lc-card {
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+@media (hover: hover) {
+  .lc-file-chip button:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
 }
 .lc-mention {
   position: absolute;
@@ -4057,6 +4171,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card {
   overflow: auto;
 }
 .lc-ask-h {
+  width: 100%;
   margin: 0;
   font-family: var(--l-font-display);
   font-size: clamp(24px, 3.2vw, 34px);
@@ -4064,11 +4179,33 @@ html[data-composer="clear"] .lc-thread-foot .lc-card {
   letter-spacing: -0.035em;
   text-align: center;
   text-wrap: balance;
+  overflow-wrap: anywhere;
   animation: l-unblur 520ms var(--l-ease-out) backwards;
 }
 .lc-ask-h .lc-pop {
   display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
   vertical-align: baseline;
+}
+/* The project and its question mark are one piece: a long name ends in an ellipsis on its own
+   line, and the mark never falls to the next. */
+.lc-ask-p {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+}
+.lc-proj {
+  min-width: 0;
+  max-width: 100%;
+}
+.lc-proj > span {
+  display: block;
+  margin-bottom: -10px;
+  padding-bottom: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-proj {
   padding: 0;
@@ -4115,6 +4252,8 @@ html[data-composer="clear"] .lc-thread-foot .lc-card {
 }
 .lc-noproj-acts {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
   margin-top: 6px;
 }
@@ -4579,6 +4718,7 @@ html[data-native="mac"] .lc-setup-top {
   align-items: center;
   gap: 8px;
   color: var(--l-ink-3);
+  white-space: nowrap;
 }
 .lc-stepper li + li::before {
   content: "";
@@ -4745,8 +4885,10 @@ html[data-native="mac"] .lc-setup-top {
 .lc-cli code {
   display: block;
   margin-top: 2px;
+  overflow: hidden;
   font-size: 11.5px;
   color: var(--l-ink-3);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .lc-tile-av {
@@ -4873,13 +5015,19 @@ html[data-native="mac"] .lc-setup-top {
 }
 .lc-prj-row b {
   display: block;
+  overflow: hidden;
   font-size: 13.5px;
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-prj-row small {
   display: block;
+  overflow: hidden;
   font-size: 11.5px;
   color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-prj-row[data-added] {
   opacity: 0.7;
@@ -5026,9 +5174,13 @@ html[data-native="mac"] .lc-setup-top {
   box-shadow: inset 0 1px 0 var(--lc-hair);
 }
 
-/* New agent: compact, in two columns, The agent and What it knows. */
+/* New agent: compact, in two columns, The agent and What it knows. In a short window the body scrolls
+   between the head and the foot, so its buttons stay on screen. */
 .lc-sheet.lc-ad {
   width: min(1000px, calc(100vw - 48px));
+}
+.lc-ad-frame {
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 .lc-ad-body {
   display: grid;
@@ -5393,6 +5545,8 @@ html[data-native="mac"] .lc-setup-top {
 }
 .lc-st-col {
   display: grid;
+  /* One track held to the column: a long path ends in an ellipsis, it doesn't widen the page. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 28px;
   max-width: 760px;
   margin: 0 auto;
@@ -5473,6 +5627,7 @@ html[data-native="mac"] .lc-setup-top {
 }
 .lc-st-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
   min-height: 60px;
@@ -5497,17 +5652,23 @@ html[data-native="mac"] .lc-setup-top {
   gap: 2px;
   min-width: 0;
 }
+/* Too narrow for the words and the control side by side, the control drops under them. */
+.lc-st-row:not([data-below]) > .lc-st-t {
+  flex: 1 1 160px;
+}
 .lc-st-t b {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13.5px;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .lc-st-t small {
   font-size: 12.5px;
   line-height: 18px;
   color: var(--l-ink-3);
+  overflow-wrap: anywhere;
 }
 .lc-st-t small > span {
   display: block;
@@ -5522,6 +5683,7 @@ html[data-native="mac"] .lc-setup-top {
   flex: none;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
 }
 .lc-st-row[data-below] .lc-st-c {
   display: block;
@@ -5987,6 +6149,23 @@ html[data-native="mac"] .lc-setup-top {
   background-image: linear-gradient(100deg, var(--lc-ctl-ink-2) 35%, var(--lc-ctl-ink) 50%, var(--lc-ctl-ink-2) 65%);
 }
 
+/* First run's header keeps one line: the steps tighten, and this Mac's name goes first. */
+@media (max-width: 1040px) {
+  .lc-stepper li + li::before {
+    width: 20px;
+  }
+  .lc-stepper .lc-quiet,
+  .lc-machine {
+    display: none;
+  }
+}
+/* Usage's note gives way to the period switch. */
+.lc-usage > .lc-top > .lc-quiet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* Narrow windows: the panel takes over the paper rather than squeezing the session. */
 @media (max-width: 980px) {
   .lc-usage-top,

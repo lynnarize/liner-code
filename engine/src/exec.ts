@@ -274,13 +274,29 @@ export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS
   return new Promise((resolve) => {
     const child = execFile(l.cmd, l.args, { cwd: o.cwd, env: o.env ?? process.env, timeout: o.timeout ?? 30000, maxBuffer: o.maxBuffer ?? 32 * 1024 * 1024, encoding: "utf8", ...(win ? { windowsHide: true, windowsVerbatimArguments: Boolean(o.verbatim), ...(l.shell ? { shell: true } : {}) } : {}) }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as NodeJS.ErrnoException & { code?: unknown }).code === "number" ? ((err as unknown as { code: number }).code) : 1) : 0;
-      resolve({ code, stdout: stdout ?? "", stderr: stderr ?? (err ? String(err.message) : "") });
+      // One that never started (a folder that's gone), or was cut off, printed nothing: what happened is in `err`.
+      resolve({ code, stdout: stdout ?? "", stderr: stderr || (err && typeof (err as { code?: unknown }).code !== "number" ? String(err.message) : "") });
     });
     // What it prints as it goes, both streams, for a caller that shows progress.
     if (o.onOutput) for (const s of [child.stdout, child.stderr]) s?.on("data", (d: Buffer | string) => o.onOutput!(String(d)));
     if (o.input !== undefined) {
+      // One that ends without reading it breaks the pipe: its exit says what happened, and this would be an uncaught error.
+      child.stdin?.on("error", () => {});
       child.stdin?.end(o.input);
     }
+  });
+}
+
+/**
+  "close" waits for the process's pipes, which something it left behind can hold for as long as it
+  lives. Once the process itself is gone, those pipes are let go and "close" comes.
+*/
+export function closesOnExit(child: ChildProcess) {
+  child.once("exit", () => {
+    setTimeout(() => {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    }, 500).unref();
   });
 }
 
@@ -328,18 +344,27 @@ export async function versionOf(path: string, env: NodeJS.ProcessEnv, args = ["-
 export function jsonLines(stream: NodeJS.ReadableStream, onLine: (v: unknown) => void, onRaw?: (line: string) => void) {
   let buf = "";
   stream.setEncoding?.("utf8");
+  const take = (line: string) => {
+    if (!line) return;
+    try {
+      onLine(JSON.parse(line));
+    } catch {
+      onRaw?.(line);
+    }
+  };
   stream.on("data", (chunk: string) => {
     buf += chunk;
     let i: number;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i).trim();
       buf = buf.slice(i + 1);
-      if (!line) continue;
-      try {
-        onLine(JSON.parse(line));
-      } catch {
-        onRaw?.(line);
-      }
+      take(line);
     }
+  });
+  // A last line with no new line after it counts (T3 Code's protocol.test.ts): a request can wait on it.
+  stream.on("end", () => {
+    const line = buf.trim();
+    buf = "";
+    take(line);
   });
 }

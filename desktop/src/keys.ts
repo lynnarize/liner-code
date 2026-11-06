@@ -5,7 +5,7 @@
 */
 import { safeStorage } from "electron";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ACCOUNTS = ["key:anthropic", "key:openai"];
@@ -32,7 +32,13 @@ export class Keys {
       if (!safeStorage.isEncryptionAvailable()) throw new Error("This computer can't encrypt the key.");
       all[account] = safeStorage.encryptString(value).toString("base64");
     } else delete all[account];
-    writeFileSync(this.file, JSON.stringify(all, null, 2), { mode: 0o600 });
+    this.write(all);
+  }
+
+  /** Whole or not at all: cut short by a crash, the file reads as no keys, and the next save would keep it so. */
+  private write(all: Record<string, string>) {
+    writeFileSync(`${this.file}.tmp`, JSON.stringify(all, null, 2), { mode: 0o600 });
+    renameSync(`${this.file}.tmp`, this.file);
   }
 
   /** Every key that's set, by provider ("anthropic"), for the engine at launch. */
@@ -63,7 +69,7 @@ export class Keys {
         if (value && safeStorage.isEncryptionAvailable()) all[account] = safeStorage.encryptString(value).toString("base64");
       }
     }
-    writeFileSync(this.file, JSON.stringify(all, null, 2), { mode: 0o600 });
+    this.write(all);
   }
 }
 

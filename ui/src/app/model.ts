@@ -258,6 +258,8 @@ export function duration(seconds?: number) {
 }
 
 export const money = (n: number) => (n >= 100 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`);
+/** Dollars as typed, 0 for none: "1,50" is one and a half where a comma is the decimal point, not 150, and "1.234,56" is 1234.56. */
+export const dollars = (typed: string) => Math.max(0, Number(typed.trim().replace(/\.(?=.*,\d{1,2}$)/g, "").replace(/,(?=\d{1,2}$)/, ".").replace(/[^\d.]/g, "")) || 0);
 /** 152k, 7.5k, 1M, 1.2M: one decimal where it says something, none where it would be .0. */
 export const compact = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : `${n}`);
 

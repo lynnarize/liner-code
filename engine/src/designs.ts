@@ -196,6 +196,8 @@ export class Designs {
 
   /** A kept version's HTML, or null when it's gone. */
   version(threadId: string, design: string, version: number) {
+    // A number, whatever was sent: anything else in the name could lead out of the design's folder.
+    if (!Number.isInteger(version)) return null;
     const file = join(this.dir(threadId, design), `v${version}.html`);
     return existsSync(file) ? readFileSync(file, "utf8") : null;
   }

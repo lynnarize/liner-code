@@ -455,7 +455,8 @@ export class Addons {
   manifest(id: string, version?: number): AddonManifest | null {
     const e = this.index.addons[id];
     const v = version ?? e?.version;
-    if (!ADDON_ID.test(id) || !v) return null;
+    // A number, whatever was sent: anything else in the path below could lead out of the add-on's folder.
+    if (!ADDON_ID.test(id) || !Number.isInteger(v)) return null;
     try {
       return checkManifest(JSON.parse(readFileSync(join(this.dir, id, `v${v}`, "addon.json"), "utf8")));
     } catch {

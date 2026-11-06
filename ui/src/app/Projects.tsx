@@ -115,7 +115,7 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
                     />
                   );
                 })}
-              {mac.length === 0 && <p className="lc-quiet lc-mp-none">No Git repositories in the usual folders.</p>}
+              {mac.length === 0 ? <p className="lc-quiet lc-mp-none">No Git repositories in the usual folders.</p> : !mac.some((r) => match(r.name, r.path, r.remote)) && <p className="lc-quiet lc-mp-none">No repository here matches that.</p>}
               <Sep />
               <Row title="Choose a folder…" note={`Any folder on ${os.here}`} icon={<I.plus size={13} />} disabled={busy !== null} onPick={() =>
                   void bridge.pickFolder().then((path) => {
@@ -174,7 +174,7 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
                     />
                   );
                 })}
-              {gh.repos.length === 0 && !gh.detail && <p className="lc-quiet lc-mp-none">No repositories on this account yet.</p>}
+              {gh.repos.length === 0 ? !gh.detail && <p className="lc-quiet lc-mp-none">No repositories on this account yet.</p> : !gh.repos.some((r) => match(r.fullName, r.description)) && <p className="lc-quiet lc-mp-none">No repository matches that.</p>}
               <p className="lc-pc-foot lc-quiet">
                 {gh.login ? `Signed in as ${gh.login}. ` : ""}Clones go to {tilde(root ?? "~/Code")}.{" "}
                 <button type="button" className="lc-link l-focus" onClick={() => loadGh(true)}>

@@ -5,7 +5,26 @@
   Codex exec, say) simply never calls that part of the sink.
 */
 import type { Access, CommandInfo, ContextUse, Effort, LimitWindow, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
+import { homedir } from "node:os";
 import type { Connection } from "../addons.ts";
+
+/**
+  What a tool wrote to stderr, fit for the timeline, which is shown and saved: home folders become ~,
+  and keys, tokens and sign-in links come out (T3 Code: provider-acp stderr.ts). A value `env` holds
+  under a secret's name goes too, whatever it looks like.
+*/
+export function scrub(text: string, env: NodeJS.ProcessEnv = process.env) {
+  let out = text.replaceAll("\0", "");
+  for (const home of new Set([env.HOME, env.USERPROFILE, homedir()])) if (home && home.length > 1) out = out.split(home).join("~");
+  for (const [name, value] of Object.entries(env)) if (value && value.length >= 8 && /(KEY|TOKEN|SECRET|PASSWORD)$/i.test(name)) out = out.split(value).join("[redacted]");
+  return out
+    .replace(/https?:\/\/[^\s]*\/pair#[^\s]*/gi, "[pairing-url]")
+    .replace(/https?:\/\/accounts\.google\.com[^\s]*/gi, "[sign-in-url]")
+    .replace(/\bBearer\s+[A-Za-z0-9._\-+=/]+/gi, "Bearer [redacted]")
+    .replace(/\bAuthorization:\s*Basic\s+\S+/gi, "Authorization: Basic [redacted]")
+    .replace(/\bx-api-key:\s*\S+/gi, "x-api-key: [redacted]")
+    .replace(/\b(?:sk-[A-Za-z0-9][A-Za-z0-9_-]{7,}|ghp_[A-Za-z0-9]+|xox[a-zA-Z]-[A-Za-z0-9-]+)\b/g, "[redacted]");
+}
 
 export type ToolUpdate = {
   /** The provider's id for the call, so later updates find it. */
@@ -40,7 +59,8 @@ export type TurnSink = {
   /** Asks you; resolves with your answer. Rejects if the turn is stopped first. */
   approve(req: ApprovalRequest, signal: AbortSignal): Promise<{ allow: boolean; reason?: string }>;
   /** Asks you to pick between options; resolves with an answer per question, or null if you skipped. */
-  ask(questions: Question[], signal: AbortSignal): Promise<Record<string, string> | null>;
+  /** `optional`: fine to go unanswered, so nobody being there (a routine) answers it with null rather than waiting. */
+  ask(questions: Question[], signal: AbortSignal, o?: { optional?: boolean }): Promise<Record<string, string> | null>;
   /** Shows a plan to approve; resolves with your decision, and the plan as you edited it when you did. */
   propose(title: string, plan: string, signal: AbortSignal): Promise<{ approve: boolean; note?: string; plan?: string }>;
   /** Token use. `total` means the numbers are the session's running totals, not this turn's. */
@@ -105,6 +125,8 @@ export type OpenOptions = {
   planning?: boolean;
   /** A side chat beside a session: read only, and it answers rather than plans. */
   side?: boolean;
+  /** Folders that exist outside `cwd` the tool may read as its own: where your attachments are saved. */
+  dirs?: string[];
   /** Claude Code subagents this agent brings (Explorer, Test runner, Opus for hard parts). */
   subagents?: Record<string, { description: string; prompt: string; tools?: string[]; model?: string }>;
   /** PATH and friends, from the shell that launched the app. */
@@ -130,6 +152,8 @@ export interface ProviderSession {
   steer?(text: string, files?: string[]): boolean | Promise<boolean>;
   /** Settings changed between turns. Return false to be reopened instead. */
   update?(o: Pick<OpenOptions, "model" | "effort" | "access">): Promise<boolean>;
+  /** Something update() took and couldn't apply yet: the runtime calls it again next turn, rather than counting it as done. */
+  owes?(): boolean;
   /**
     The connections changed: take them in now, even mid-turn, where the tool can. A session without
     this (or that answers false) is reopened for its next turn, resuming where it was.

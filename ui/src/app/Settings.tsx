@@ -25,7 +25,7 @@ import { Backdrop, ownChanged, useBackgroundUrl } from "./Backdrop";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
-import { ACCESS_LEVELS, accessOf, agentOf, ago, markOf, modelLabel, plural, providerLabel, since } from "./model";
+import { ACCESS_LEVELS, accessOf, agentOf, ago, dollars, markOf, modelLabel, plural, providerLabel, since } from "./model";
 import { appIcon, dayOf } from "./Addon";
 import { ModesPlace } from "./Modes";
 import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop, Row } from "./ui";
@@ -190,7 +190,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
     // The parts LOOK_DEFAULT has no word for (your own theme, colours and picture) go too, or they'd stay on.
     appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined }),
     notifications: () => {
-      save({ notify: true, badge: true });
+      save({ notify: true, badge: true, menuBar: true });
       feedback.setEnabled(false);
     },
     agentic: () => save({ dual: false, after: "check", reviewRounds: 2, reviewSmall: false, route: { level: "high" } }),
@@ -225,7 +225,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
         </div>
         <div className="lc-sb-find lc-st-find" role="search">
           <I.search size={15} />
-          <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a setting" aria-label="Find a setting" onKeyDown={(e) => e.key === "Escape" && query && (e.preventDefault(), setQuery(""))} />
+          <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a setting" aria-label="Find a setting" onKeyDown={(e) => e.key === "Escape" && (query ? (e.preventDefault(), setQuery("")) : e.currentTarget.blur())} />
           {query ? (
             <button type="button" className="lc-ib l-focus" aria-label="Clear" onClick={() => (setQuery(""), find.current?.focus())}>
               <I.close size={12} />
@@ -647,7 +647,9 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
               inputMode="decimal"
               aria-label="Monthly budget in dollars"
               onBlur={(e) => {
-                const n = Math.max(0, Math.round(Number(e.target.value.replace(/[^\d.]/g, "")) || 0));
+                const n = Math.round(dollars(e.target.value));
+                // The field says what's kept, whatever was typed.
+                e.target.value = n ? String(n) : "";
                 if (n !== (s.budgetUsd ?? 0)) save({ budgetUsd: n });
               }}
               onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
@@ -665,7 +667,8 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
               inputMode="decimal"
               aria-label="Spending cap per session in dollars"
               onBlur={(e) => {
-                const n = Math.max(0, Math.round((Number(e.target.value.replace(/[^\d.]/g, "")) || 0) * 100) / 100);
+                const n = Math.round(dollars(e.target.value) * 100) / 100;
+                e.target.value = n ? String(n) : "";
                 if (n !== (s.capUsd ?? 0)) save({ capUsd: n });
               }}
               onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
@@ -941,11 +944,13 @@ function Backgrounds({ value, onPick }: { value: string; onPick: (id: string) =>
     r.readAsDataURL(file);
   };
   const remove = () =>
-    void rpc("background.remove", {}).then(() => {
-      ownChanged();
-      setN((x) => x + 1);
-      if (value === "own") onPick("none");
-    });
+    void rpc("background.remove", {})
+      .then(() => {
+        ownChanged();
+        setN((x) => x + 1);
+        if (value === "own") onPick("none");
+      })
+      .catch(fail);
   return (
     <div className="lc-bgs">
       <div className="lc-bgs-grid" role="radiogroup" aria-label="Background picture">
@@ -954,8 +959,8 @@ function Backgrounds({ value, onPick }: { value: string; onPick: (id: string) =>
         </BgTile>
         {list?.own && <BgTile id="own" label="Your picture" on={value === "own"} onPick={() => onPick("own")} />}
         {list?.pictures.map((p) => <BgTile key={p.id} id={p.id} label={p.name} on={value === p.id} onPick={() => onPick(p.id)} />)}
-        <label className="lc-bgs-t lc-bgs-add l-focus" title="A picture of your own" data-busy={busy || undefined}>
-          <input type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/tiff,image/gif,image/webp" onChange={(e) => (e.target.files?.[0] && add(e.target.files[0]), (e.target.value = ""))} />
+        <label className="lc-bgs-t lc-bgs-add l-focus-within" title="A picture of your own" data-busy={busy || undefined}>
+          <input type="file" aria-label="A picture of your own" accept="image/jpeg,image/png,image/heic,image/heif,image/tiff,image/gif,image/webp" onChange={(e) => (e.target.files?.[0] && add(e.target.files[0]), (e.target.value = ""))} />
           {busy ? <span className="l-shimmer">Adding</span> : <I.plus size={14} />}
         </label>
       </div>
@@ -1184,7 +1189,7 @@ function Keyboard() {
       if (e.key === "Escape") return setRecording(null);
       const spec = specOf(e);
       if (!spec) return;
-      if (!/^(mod|ctrl|alt)\+/.test(spec) && !/^f\d+$/.test(spec)) return toast(os.macKeys ? "Use ⌘, ⌃ or ⌥ with it" : "Use Ctrl or Alt with it", { description: "A key on its own would fire while you type." });
+      if (!/^(mod|ctrl|alt)\+/.test(spec) && !/^(shift\+)?f\d+$/.test(spec)) return toast(os.macKeys ? "Use ⌘, ⌃ or ⌥ with it" : "Use Ctrl or Alt with it", { description: "A key on its own would fire while you type." });
       const clash = COMMANDS.find((c) => c.id !== recording && bindingsOf(c.id).some((b) => b.key === spec));
       put([...mine.filter((b) => b.command !== recording && b.command !== `-${recording}`), { key: spec, command: recording }]);
       if (clash) toast(`${os.keys(spec)} is also ${clash.label.split(":")[0].toLowerCase()}`, { description: "The first in the list wins. Change one of them, or narrow it with when." });
@@ -1278,6 +1283,8 @@ function Models() {
     try {
       await bridge.keychainSet(`key:${id}`, key);
       await rpc("keys.set", { provider: id, key });
+      // With its key gone Claude Code bills to the plan anyway: the switch says so rather than sitting on a choice it can't take.
+      if (id === "anthropic" && !key && s.claudeBilling === "key") save({ claudeBilling: "plan" });
       setKeyFor(null);
       setKeyVal("");
       toast.success(key ? `Key saved in ${os.keyStore()}` : "Key removed");
@@ -1321,7 +1328,7 @@ function Models() {
                       {UNTRIED.has(p.id) && p.adapter && <Badge tone="neutral">Beta</Badge>}
                     </>
                   }
-                  note={p.available ? `${p.version ?? "Installed"}${p.adapter ? ` · ${p.detail ?? ""}` : " · Liner Code can't drive it yet"}` : (p.detail ?? "Not installed")}
+                  note={p.available ? [p.version ?? "Installed", p.adapter ? p.detail : "Liner Code can't drive it yet"].filter(Boolean).join(" · ") : (p.detail ?? "Not installed")}
                 >
                   {p.available && p.adapter ? (
                     <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.runInTerminal(p.login)}>
@@ -1387,7 +1394,7 @@ function Models() {
                 Remove
               </button>
             ) : (
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setKeyFor(id)}>
+              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (setKeyFor(id), setKeyVal(""))}>
                 Add key
               </button>
             )}
@@ -1474,7 +1481,7 @@ function ProviderRow({ p, fallback, onRemove, children }: { p?: ProviderInfo; fa
           {p?.label ?? fallback} <Badge tone={state === "Ready" ? "ok" : state === "Looking" ? "neutral" : "warn"}>{state}</Badge>
         </>
       }
-      note={p ? `${p.version ? `${p.version} · ` : ""}${p.detail ?? ""}` : "Looking for it"}
+      note={p ? [p.version, p.detail].filter(Boolean).join(" · ") : "Looking for it"}
     >
       {children}
       <button type="button" className="lc-ib l-focus" aria-label={`Remove ${p?.label ?? fallback}`} title="Remove" onClick={onRemove}>
@@ -1910,7 +1917,7 @@ function CustomModels() {
         <Select options={tools.map((p) => ({ value: p.id, label: p.label }))} value={pick} onValueChange={setTool} placeholder="Tool" />
         <input className="lc-input lc-mono" value={id} onChange={(e) => setId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Model id" aria-label="Model id" aria-invalid={clash || undefined} spellCheck={false} />
         <input className="lc-input" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Name (optional)" aria-label="Name" />
-        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!id.trim() || clash} title={clash ? "That tool lists it already" : undefined} onClick={add}>
+        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!pick || !id.trim() || clash} title={clash ? "That tool lists it already" : undefined} onClick={add}>
           Add
         </button>
       </div>
@@ -1924,6 +1931,8 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
   const agents = useEngine((x) => x.agents);
   const providers = useEngine((x) => x.providers);
   const threads = useEngine((x) => x.threads);
+  // The Demo stays out of sight until you turn it on, here as in the pickers.
+  const showDemo = useEngine((x) => x.settings.showDemo === true);
   return (
     <Group
       title="Agents"
@@ -1935,10 +1944,10 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
         </button>
       }
     >
-      {agents.map((a) => {
+      {agents.filter((a) => a.id !== "demo" || showDemo).map((a) => {
         const used = threads.filter((t) => t.agent === a.id || t.lead === a.id).length;
         return (
-          <Field key={a.id} lead={<Disc agent={a} size={28} />} title={a.name} note={`${a.role}${a.id === "demo" ? " · scripted, no account" : ` · ${a.effort} effort`} · ${plural(used, "session")}`}>
+          <Field key={a.id} lead={<Disc agent={a} size={28} />} title={a.name} note={[a.role, a.id === "demo" ? "scripted, no account" : `${a.effort} effort`, plural(used, "session")].filter(Boolean).join(" · ")}>
             <ModelTag kind={markOf(a.model)} label={modelLabel(a.model, providers)} />
             {a.id !== "demo" && (
               <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => onAgent(a)}>
@@ -1988,7 +1997,7 @@ function Safety() {
   const s = useEngine((x) => x.settings);
   return (
     <>
-      <Group title="What a new session may do" note="Six steps, from looking only to acting on its own. A session can change it any time from its composer.">
+      <Group title="What a new session may do" note="Four levels, from asking first to acting on its own. A session can change it any time from its composer.">
         <div className="lc-st-radios">
           <RadioGroup label="Default access" showLabel={false} value={s.defaultAccess} onValueChange={(v) => save({ defaultAccess: v as Access })} options={ACCESS_LEVELS.map((l) => ({ value: l.id, label: l.label, description: l.note }))} />
         </div>
@@ -2262,6 +2271,7 @@ function Projects() {
   const projects = useEngine((x) => x.projects);
   const agents = useEngine((x) => x.agents);
   const threads = useEngine((x) => x.threads);
+  const showDemo = useEngine((x) => x.settings.showDemo === true);
   const [sure, setSure] = useState<string | null>(null);
   const add = () =>
     void bridge.pickFolder().then((p) => {
@@ -2270,7 +2280,9 @@ function Projects() {
           .then((x) => toast.success(`Added ${x.name}`))
           .catch(fail);
     });
-  const options = [{ value: "", label: "Whoever Home picks" }, ...agents.map((a) => ({ value: a.id, label: a.id === "demo" ? "Demo (scripted)" : `${a.name} · ${a.role}` }))];
+  // The Demo is offered while it's on, or while a project (the sample) starts with it, so that one still names who it has.
+  const demo = showDemo || projects.some((p) => p.agent === "demo");
+  const options = [{ value: "", label: "Whoever Home picks" }, ...agents.filter((a) => a.id !== "demo" || demo).map((a) => ({ value: a.id, label: a.id === "demo" ? "Demo (scripted)" : `${a.name} · ${a.role}` }))];
   return (
     <Group
       title={plural(projects.length, "project")}
@@ -2341,7 +2353,7 @@ function Projects() {
                   placeholder="npm install"
                   spellCheck={false}
                   aria-label={`Setup command for ${p.name}`}
-                  onBlur={(e) => e.target.value.trim() !== (p.setup ?? "") && void rpc("project.update", { id: p.id, setup: e.target.value }).catch(fail)}
+                  onBlur={(e) => e.target.value.trim() !== (p.setup ?? "") && void rpc("project.update", { id: p.id, setup: e.target.value.trim() }).catch(fail)}
                   onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
                 />
               </Field>
@@ -2405,6 +2417,8 @@ function MemoryEditor({ project }: { project: Project }) {
 
 function RulesEditor({ project }: { project: Project }) {
   const [rules, setRules] = useState<ProjectRules | null>(null);
+  // What you've written so far: a press outside closes the pop, and that mustn't lose it.
+  const draft = useRef<string | null>(null);
   useEffect(() => {
     void rpc("project.rules", { id: project.id })
       .then(setRules)
@@ -2419,13 +2433,13 @@ function RulesEditor({ project }: { project: Project }) {
   return (
     <Field title="Rules for every agent" note={note}>
       <Pop label={`Rules for ${project.name}`} align="end" width={520} triggerClass="lc-btn" trigger={<>{claude || agents ? "Edit" : "Write them"}</>}>
-        {(close) => <RulesForm project={project} start={start} merging={!same && Boolean(claude && agents)} onSaved={(r) => (setRules(r), close())} />}
+        {(close) => <RulesForm project={project} start={draft.current ?? start} merging={!same && Boolean(claude && agents)} onDraft={(t) => (draft.current = t)} onSaved={(r) => ((draft.current = null), setRules(r), close())} />}
       </Pop>
     </Field>
   );
 }
 
-function RulesForm({ project, start, merging, onSaved }: { project: Project; start: string; merging: boolean; onSaved: (r: ProjectRules) => void }) {
+function RulesForm({ project, start, merging, onDraft, onSaved }: { project: Project; start: string; merging: boolean; onDraft: (text: string) => void; onSaved: (r: ProjectRules) => void }) {
   const [text, setText] = useState(start);
   const [busy, setBusy] = useState(false);
   const save = () => {
@@ -2437,7 +2451,7 @@ function RulesForm({ project, start, merging, onSaved }: { project: Project; sta
   };
   return (
     <div className="lc-rules">
-      <textarea className="lc-input lc-mono lc-rules-t" value={text} onChange={(e) => setText(e.target.value)} placeholder={"How to build and test, what to leave alone, the house style…"} spellCheck={false} aria-label={`Rules for ${project.name}`} autoFocus />
+      <textarea className="lc-input lc-mono lc-rules-t" value={text} onChange={(e) => (setText(e.target.value), onDraft(e.target.value))} placeholder={"How to build and test, what to leave alone, the house style…"} spellCheck={false} aria-label={`Rules for ${project.name}`} autoFocus />
       <p className="lc-quiet lc-rules-n">{merging ? "Both files are here, one under the other: make them one text. " : ""}Saving writes AGENTS.md and makes CLAUDE.md a one-line @AGENTS.md, which Claude Code follows. Commit them with the project.</p>
       <div className="lc-rules-f">
         <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={busy || !text.trim()} onClick={save}>
@@ -2554,8 +2568,9 @@ function Git() {
   const trees = threads.filter((t) => t.worktree && !t.archived);
   const commitPrefix = () => {
     const v = prefix.trim().replace(/\s+/g, "-");
-    if (v && v !== s.branchPrefix) save({ branchPrefix: v.endsWith("/") || v.endsWith("-") ? v : `${v}/` });
-    else setPrefix(s.branchPrefix);
+    const next = !v ? s.branchPrefix : v.endsWith("/") || v.endsWith("-") ? v : `${v}/`;
+    setPrefix(next);
+    if (next !== s.branchPrefix) save({ branchPrefix: next });
   };
   return (
     <>
@@ -2578,7 +2593,8 @@ function Git() {
               placeholder={tilde(`${home}/worktrees`)}
               spellCheck={false}
               aria-label="Where worktrees live"
-              onBlur={(e) => e.target.value.trim() !== (s.worktreeRoot ?? "") && save({ worktreeRoot: e.target.value.trim() || undefined })}
+              // Emptied, it goes back to the default: an undefined wouldn't survive the trip to the engine, which would keep the old folder.
+              onBlur={(e) => e.target.value.trim() !== (s.worktreeRoot ?? "") && save({ worktreeRoot: e.target.value.trim() })}
               onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             />
           </span>
@@ -2904,7 +2920,7 @@ function Data({ onSetup }: { onSetup: () => void }) {
           title="Sessions, projects and settings"
           note={
             <>
-              <span className="lc-mono">{tilde(home)}</span> · {plural(threads, "session")}
+              {plural(threads, "session")} · <span className="lc-mono">{tilde(home)}</span>
             </>
           }
         >

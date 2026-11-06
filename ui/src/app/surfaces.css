@@ -44,10 +44,13 @@
   display: none;
 }
 /* Every tab keeps its name (TasteCode v0.5): when the strip runs short they give way to their
-   icons, and the open one keeps its own. */
-.lc-stab:not([data-on]) {
-  flex-shrink: 1;
-  min-width: 32px;
+   icons, and the open one keeps its own. Panel.tsx decides, from the names' widths. */
+.lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-b {
+  gap: 0;
+  padding: 0 8px;
+}
+.lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-b > span {
+  max-width: 0;
 }
 .lc-stab {
   position: relative;
@@ -327,6 +330,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* In a flex row the ellipsis is its own: a path that's cut says so. */
+.lc-sinfo-v > .lc-quiet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /*
   Context: a bar of ticks in each source's colour over the grey of what's free, a mark where the
@@ -2222,10 +2231,16 @@
 .lc-cmp-cols {
   display: grid;
   flex: 1;
+  /* The columns fill the height and scroll inside, so the stats and Keep this one stay in view. */
+  grid-auto-rows: minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
   overflow-x: auto;
   padding: 12px;
+}
+.lc-cmp-n {
+  flex: none;
+  white-space: nowrap;
 }
 .lc-cmp-col {
   display: flex;
@@ -2251,6 +2266,12 @@
   font-size: 13.5px;
   font-weight: 600;
   color: var(--l-ink);
+}
+.lc-cmp-h > .lc-quiet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-cmp-s {
   font-size: 12.5px;
@@ -2297,6 +2318,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 100%;
   height: 22px;
   margin-bottom: 4px;
   padding: 0 8px;
@@ -2310,10 +2332,12 @@
 }
 /* The part of a design a comment is about: said, not a link. */
 .lc-you-part {
-  max-width: 100%;
   cursor: default;
 }
-.lc-you-part > span {
+.lc-you-anchor > svg {
+  flex: none;
+}
+.lc-you-anchor > span {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -2450,6 +2474,7 @@
   border-radius: 7px;
   outline: none;
   background: var(--l-wash-2);
+  color: var(--l-ink);
   font: inherit;
   font-size: 13px;
 }
@@ -2535,6 +2560,7 @@
     0 0 0 4px var(--l-accent-soft);
   font: inherit;
   font-size: 13px;
+  color: var(--l-ink);
   animation: l-pop-in 220ms var(--l-ease-enter) backwards;
 }
 .lc-sb-hint {
@@ -2846,6 +2872,7 @@
 /* A usage limit in the timeline. */
 .lc-limit {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
@@ -2858,10 +2885,12 @@
 }
 .lc-limit-t {
   display: grid;
-  flex: 1;
+  /* Its buttons go under the words in a narrow column, rather than squeeze them to a word a line. */
+  flex: 1 1 220px;
   gap: 2px;
   min-width: 0;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 .lc-limit-t b {
   font-weight: 600;
@@ -2974,6 +3003,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* A file has no note beside it: its path takes the row. */
+.lc-mention-row[data-kind="@"] .lc-mention-n {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
 }
 .lc-mention-d {
   flex: 1;
@@ -4425,6 +4460,14 @@
   flex: none;
   font-weight: 600;
 }
+/* A step with no target says all of it in its verb (a tool's own title), which can be long. */
+.lc-tstep-verb:not(:has(+ .lc-tstep-target)) {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .lc-tstep-target {
   min-width: 0;
   overflow: hidden;
@@ -4512,6 +4555,8 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+  max-width: 100%;
   height: 30px;
   padding: 0 11px;
   border: 0;
@@ -4549,6 +4594,16 @@
 .lc-foot-chip b {
   font-weight: 600;
 }
+.lc-foot-chip > svg,
+.lc-foot-chip > b {
+  flex: none;
+}
+/* A long model's name gives way first. */
+.lc-foot-chip > .lc-quiet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .lc-foot-chev {
   width: 14px;
   height: 14px;
@@ -4572,6 +4627,7 @@
   color: var(--l-ink-2);
   font-size: 13px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .lc-foot-f {
   display: flex;
@@ -4590,9 +4646,17 @@
 }
 .lc-foot-f > code {
   flex: none;
+  max-width: 40%;
+  overflow: hidden;
   color: var(--l-ink-3);
   font-family: var(--l-font-mono);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-foot-f > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .lc-foot-f[data-sev="blocking"] > code {
   color: var(--l-danger-text);
@@ -5004,4 +5068,143 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+  Long names, wherever they'd push a control out of its row. A path gives up its folders first, so
+  the file's own name stays in sight.
+*/
+.lc-path {
+  display: flex;
+  min-width: 0;
+}
+.lc-path > span:first-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-path > span:last-child {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rv-fh > :not(.lc-path, .lc-grow) {
+  flex: none;
+}
+.lc-rv-top .lc-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+}
+.lc-rv-top .lc-branch > svg {
+  flex: none;
+}
+.lc-rv-top .lc-branch > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rv-q p,
+.lc-rv-note > span {
+  overflow-wrap: anywhere;
+}
+.lc-rv-lines {
+  flex: none;
+  white-space: nowrap;
+}
+.lc-rv-more {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.lc-rv-bin {
+  margin: 0;
+  padding: 8px 12px;
+  font-family: var(--l-font-sans, inherit);
+  font-size: 12.5px;
+}
+.lc-br-hint {
+  box-sizing: border-box;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-br-ask {
+  max-width: calc(100% - 16px);
+}
+.lc-br-ports {
+  max-width: 300px;
+}
+.lc-br-first {
+  width: 100%;
+  max-width: 300px;
+}
+.lc-br-first .lc-input {
+  flex: 1;
+}
+/* A field drawn as its wrapper shows its focus there. */
+.lc-files-find:focus-within,
+.lc-rb-test:focus-within {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+.lc-rt-name b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pr-title b,
+.lc-run-sum {
+  overflow-wrap: anywhere;
+}
+.lc-rb-proj-n {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-rb-proj > svg {
+  flex: none;
+}
+.lc-prcon-h code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-prcon-h > :not(code, .lc-grow) {
+  flex: none;
+}
+/* The branch on a PR or push card gives way; what the card says about it doesn't. */
+.lc-ship-tag {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-ship-tag[data-m],
+.lc-ship-hsw,
+.lc-ship-row > .lc-ship-meta,
+.lc-prc-ttl,
+.lc-prc-num,
+.lc-prc-state {
+  flex: none;
+}
+.lc-ship-row > .t3 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-prc-note,
+.lc-prc-file {
+  overflow-wrap: anywhere;
+}
+.lc-prc-checks li {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

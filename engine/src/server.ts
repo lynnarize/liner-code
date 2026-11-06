@@ -57,8 +57,19 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
     return chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
   };
 
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
+  const server = createServer((req, res) => {
+    // Whatever goes wrong below, the caller gets an answer: left alone, it would wait for good.
+    void handle(req, res).catch((e) => {
+      console.error("[server]", e);
+      if (!res.headersSent) res.writeHead(500);
+      res.end();
+    });
+  });
+
+  const handle = async (req: IncomingMessage, res: ServerResponse) => {
+    const url = URL.parse(req.url ?? "/", "http://localhost");
+    // "//" and the like aren't addresses at all.
+    if (!url) return void res.writeHead(400).end("Bad request");
     if (url.pathname === "/events" || url.pathname === "/rpc") {
       if (!authed(req)) {
         res.writeHead(401).end("Unauthorized");
@@ -187,7 +198,7 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       return;
     }
     res.writeHead(404).end("Not found");
-  });
+  };
 
   return new Promise<{ port: number; close: () => void }>((resolve, reject) => {
     server.once("listening", () => {

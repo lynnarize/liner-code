@@ -557,7 +557,7 @@ export type Thread = {
   /** Your own sidebar group. */
   group?: string;
   /** Snoozed until something happens rather than a time. */
-  wake?: { kind: "checks" | "reply"; pr: number };
+  wake?: { kind: "checks" | "reply"; pr: number; seen?: number };
   /** One of several models given the same ask, to compare and keep one. */
   compare?: { id: string; base: string };
   /** The pull request this session's branch opened. */
@@ -1467,7 +1467,8 @@ export type Rpc = {
   "question.answer": [{ threadId: string; itemId: string; answers?: Record<string, string> }, null];
   "proposal.answer": [{ threadId: string; itemId: string; approve: boolean; note?: string; plan?: string }, null];
   "review.run": [{ threadId: string }, null];
-  "checkpoint.diff": [{ threadId: string; itemId: string }, FileDiff[]];
+  /** `files` stops at the first 60; `total` is how many changed. */
+  "checkpoint.diff": [{ threadId: string; itemId: string }, { files: FileDiff[]; total: number }];
   /** Undoes a turn's changes. Refused when a file it changed was changed again after it, unless `force`. */
   "checkpoint.revert": [{ threadId: string; itemId: string; force?: boolean }, Item];
   /** Commits the session's open changes, or only `paths` of them. */

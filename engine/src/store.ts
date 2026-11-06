@@ -329,7 +329,10 @@ export class Store {
     const byId = new Map<string, Item>();
     let lines = 0;
     if (existsSync(file)) {
-      for (const line of readFileSync(file, "utf8").split("\n")) {
+      const text = readFileSync(file, "utf8");
+      // A line a crash cut short: what's written next starts on a line of its own, or it goes with it.
+      if (text && !text.endsWith("\n")) appendFileSync(file, "\n");
+      for (const line of text.split("\n")) {
         if (!line) continue;
         lines++;
         try {

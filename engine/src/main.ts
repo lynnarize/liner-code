@@ -125,7 +125,7 @@ outside.now.apply();
 const awake = new Awake(store, () => routines.busy || store.threads.some((t) => t.status === "running"));
 void api.ready.then(() => {
   // Sessions stopped mid-turn when Liner Code last quit or crashed carry on, now that the tools are known.
-  runtime.continueAfterRestart();
+  offers.resume(runtime.continueAfterRestart());
   routines.start();
   watch.start();
   api.updates.start();
@@ -135,17 +135,16 @@ void api.ready.then(() => {
 process.stdout.write(`LINER_READY ${JSON.stringify({ port: server.port, home: store.home })}\n`);
 
 const quit = () => {
-  awake.stop();
-  routines.stop();
-  watch.stop();
-  api.updates.stop();
-  terms.closeAll();
-  proxies.closeAll();
-  logs.stopAll();
-  runtime.shutdown();
-  store.keepStreaming();
-  store.flush();
-  server.close();
+  // Each on its own, so one that fails (the last save, on a full disk) doesn't leave the rest undone
+  // and the engine running with nothing to stop it: its signal has been sent, and its stdin has closed.
+  const steps = [() => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => proxies.closeAll(), () => logs.stopAll(), () => runtime.shutdown(), () => store.keepStreaming(), () => store.flush(), () => server.close()];
+  for (const step of steps) {
+    try {
+      step();
+    } catch (e) {
+      console.error("[engine]", e);
+    }
+  }
   process.exit(0);
 };
 process.on("SIGTERM", quit);

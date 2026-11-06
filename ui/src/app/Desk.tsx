@@ -245,7 +245,7 @@ export function Desk({ project, settings, worktree, onOpen }: Props) {
   };
   const toggle = (task: PlanTask) => {
     void rpc("thread.update", { id: task.id, done: true })
-      .then(() => toast(`Settled ${task.title}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: task.id, done: false }) }, duration: 5000 }))
+      .then(() => toast(`Settled ${task.title}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: task.id, done: false }).catch((e) => toast.error(msg(e))) }, duration: 5000 }))
       .catch((e) => toast.error(msg(e)));
     if (open?.id === task.id) setOpen(null);
   };

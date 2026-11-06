@@ -223,6 +223,7 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder={`Click the screen, then ask ${agentName}`}
+              aria-label={`Ask ${agentName} about the screen`}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void ask();
                 if (e.key === "Escape") setPoint(null);

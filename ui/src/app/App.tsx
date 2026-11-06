@@ -10,7 +10,7 @@ import { Toaster, toast } from "@liner/components/toast/toast";
 import { AgentDialog } from "./AgentDialog";
 import { Backdrop, Scene } from "./Backdrop";
 import { bridge, onCommand } from "./bridge";
-import { getState, onNotify, onStream, rpc, startEngine, useEngine } from "./engine";
+import { EngineAway, getState, onNotify, onStream, RpcError, rpc, startEngine, useEngine } from "./engine";
 import { Home } from "./Home";
 import { I } from "./icons";
 import { ACCESS_LEVELS, agentOf } from "./model";
@@ -117,6 +117,16 @@ export function App() {
     mq.addEventListener("change", follow);
     return () => mq.removeEventListener("change", follow);
   }, []);
+  // A command with no catch of its own (Pin, Stop, a rename) says when the engine turned it down, rather than nothing happening.
+  useEffect(() => {
+    const on = (e: PromiseRejectionEvent) => {
+      if (!(e.reason instanceof RpcError)) return;
+      e.preventDefault();
+      if (!(e.reason instanceof EngineAway)) toast.error(e.reason.message);
+    };
+    window.addEventListener("unhandledrejection", on);
+    return () => window.removeEventListener("unhandledrejection", on);
+  }, []);
   useEffect(() => sessionStorage.setItem("lc:view", JSON.stringify(view)), [view]);
   useEffect(() => localStorage.setItem("lc:sidebar", sidebar ? "1" : "0"), [sidebar]);
   useEffect(() => {
@@ -197,17 +207,27 @@ export function App() {
     return () => window.removeEventListener("lc:open-settings", on);
   }, []);
 
+  /** Going somewhere from ⌘K, the menu bar or the keys: Settings would otherwise stay over the place you went to. */
+  const go = (v: View) => {
+    setSettings(false);
+    setView(v);
+  };
   const openSession = (id: string, tab?: Tab) => {
     if (tab) keepDock(id, openTab(keptDock(id), tab));
-    setView({ kind: "session", id });
+    go({ kind: "session", id });
   };
   // An app made from an offer, opened on its page, and the session that made it ("Watch it").
   useEffect(() => {
     const app = (e: Event) => {
       const d = (e as CustomEvent<{ id: string; place: string }>).detail;
-      if (d.place === "page") setView((v) => ({ kind: "app", id: d.id, back: v.kind === "app" ? v.back : v }));
+      if (d.place !== "page") return;
+      setSettings(false);
+      setView((v) => ({ kind: "app", id: d.id, back: v.kind === "app" ? v.back : v }));
     };
-    const session = (e: Event) => setView({ kind: "session", id: (e as CustomEvent<{ id: string }>).detail.id });
+    const session = (e: Event) => {
+      setSettings(false);
+      setView({ kind: "session", id: (e as CustomEvent<{ id: string }>).detail.id });
+    };
     window.addEventListener("lc:open-app", app);
     window.addEventListener("lc:open-session", session);
     return () => {
@@ -215,11 +235,12 @@ export function App() {
       window.removeEventListener("lc:open-session", session);
     };
   }, []);
-  const openRun = (run: RoutineRun) => (run.threadId ? openSession(run.threadId, `run:${run.id}`) : setView({ kind: "routines" }));
-  const editRoutine = (id?: string, projectId?: string) => setView({ kind: "routine", id, projectId: projectId ?? (here?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
+  const openRun = (run: RoutineRun) => (run.threadId ? openSession(run.threadId, `run:${run.id}`) : go({ kind: "routines" }));
+  const editRoutine = (id?: string, projectId?: string) => go({ kind: "routine", id, projectId: projectId ?? (here?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
   const newSession = (projectId?: string) => {
-    setView({ kind: "home", projectId: projectId ?? (here?.projectId || lastProject) });
+    go({ kind: "home", projectId: projectId ?? (here?.projectId || lastProject) });
   };
+  const addProject = () => void bridge.pickFolder().then((p) => (p ? rpc("project.add", { path: p }).then((x) => go({ kind: "home", projectId: x.id })) : undefined)).catch((e: Error) => toast.error(e.message));
   // Create your add-on (the sidebar's Add-ons menu, the Add-ons page): a new task in Workshop, in the
   // project New session would pick (Scratch when there's none), with DeepSeek Harness's ask written in the
   // box and not sent, so you go on to say what it should be.
@@ -278,6 +299,9 @@ export function App() {
 
   // Menu-bar commands from the shell, and the same commands from their keys.
   const run = (name: string) => {
+    // Nothing of the window's while first run is up, or under a dialog that has the keyboard (⌘K toggles itself; a menu-bar item naming a session still opens it).
+    if (!getState().settings.onboarded) return;
+    if (document.querySelector("dialog[open]") && name !== "commands" && name !== "updates" && !name.startsWith("open:")) return;
     if (name === "new") newSession();
     else if (name === "commands") {
       if (!menu) setBesideOf(null);
@@ -289,8 +313,8 @@ export function App() {
       void rpc("updates.check", {}).catch(() => {});
     }
     else if (name === "sidebar") setSidebar((s) => !s);
-    else if (name === "usage") setView({ kind: "usage" });
-    else if (name === "open-project") void bridge.pickFolder().then((p) => (p ? rpc("project.add", { path: p }).then((x) => setView({ kind: "home", projectId: x.id })) : undefined)).catch((e: Error) => toast.error(e.message));
+    else if (name === "usage") go({ kind: "usage" });
+    else if (name === "open-project") addProject();
     else if (name === "next-needs") nextNeeds();
     else if (name === "focus.next") moveFocus(1, sideEl());
     else if (name === "focus.prev") moveFocus(-1, sideEl());
@@ -375,7 +399,7 @@ export function App() {
   }, [asked]);
   // Your shortcuts: the keymap reads them, and the Mac app's menu takes the same keys.
   const keybindings = useEngine((s) => s.settings.keybindings);
-  const [, setKeysSeen] = useState(0);
+  const [keysSeen, setKeysSeen] = useState(0);
   useEffect(() => {
     setBindings(keybindings);
     bridge.setMenuKeys(menuKeys());
@@ -385,26 +409,14 @@ export function App() {
   const commands = useMemo<CommandItem[]>(() => {
     const items: CommandItem[] = [
       { id: "new", label: "New session", group: "Actions", icon: <I.compose size={15} />, shortcut: shortcutOf("new"), onSelect: () => newSession() },
-      { id: "next-needs", label: "Next session that needs you", group: "Actions", keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
-      { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={15} />, onSelect: () => setView({ kind: "usage" }) },
-      { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={15} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => setView({ kind: "routines" }) },
+      { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={15} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
+      { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={15} />, onSelect: () => go({ kind: "usage" }) },
+      { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={15} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
       { id: "routine-new", label: "New routine", group: "Actions", icon: <I.plus size={15} />, onSelect: () => editRoutine() },
       { id: "settings", label: "Settings", group: "Actions", icon: <I.settings size={15} />, shortcut: shortcutOf("settings"), onSelect: () => setSettings(true) },
       { id: "sidebar", label: sidebar ? "Hide the sidebar" : "Show the sidebar", group: "Actions", icon: <I.sidebar size={15} />, shortcut: shortcutOf("sidebar"), onSelect: () => setSidebar((s) => !s) },
       { id: "agent", label: "New agent", group: "Actions", icon: <I.plus size={15} />, onSelect: () => setAgentDialog({ open: true }) },
-      {
-        id: "project",
-        label: "Add a project",
-        group: "Actions",
-        icon: <I.folder size={15} />,
-        onSelect: () =>
-          void bridge.pickFolder().then((p) => {
-            if (p)
-              void rpc("project.add", { path: p })
-                .then((x) => setView({ kind: "home", projectId: x.id }))
-                .catch((e) => toast.error(String(e.message)));
-          }),
-      },
+      { id: "project", label: "Add a project", group: "Actions", icon: <I.folder size={15} />, onSelect: addProject },
     ];
     if (here) {
       const branch = here.worktree?.branch ?? projects.find((p) => p.id === here.projectId)?.branch;
@@ -477,11 +489,11 @@ export function App() {
     for (const t of threads.filter((x) => !x.archived).slice(0, 200)) items.push({ id: `t-${t.id}`, label: t.title, group: "Sessions", hint: `${projects.find((p) => p.id === t.projectId)?.name ?? ""} · ${agentOf(t.agent, agents, providers).name}`, onSelect: () => openSession(t.id) });
     // Words inside messages: the query itself is a keyword, so a hit stays listed while you type on.
     for (const h of found) items.push({ id: `m-${h.threadId}`, label: h.snippet, group: "In messages", hint: h.title, icon: <I.comment size={15} />, keywords: [asked.toLowerCase()], onSelect: () => openSession(h.threadId) });
-    for (const p of projects) items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={15} />, onSelect: () => setView({ kind: "home", projectId: p.id }) });
+    for (const p of projects) items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={15} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
     for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
     return items;
     // New session and New routine read where you are and your last project, so they're here too.
-  }, [threads, projects, agents, providers, current, here, sidebar, view, lastProject, found, asked]);
+  }, [threads, projects, agents, providers, current, here, sidebar, view, lastProject, found, asked, keysSeen]);
   const besidePicks = useMemo<CommandItem[]>(
     () =>
       besideOf === null
@@ -522,7 +534,7 @@ export function App() {
       ) : (
         <>
           <div className="lc-side" inert={!sidebar || undefined}>
-            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
@@ -569,7 +581,8 @@ export function App() {
                   setView({ kind: "home", projectId: id });
                 }}
                 onStarted={(id) => {
-                  const t = threads.find((x) => x.id === id);
+                  // Read now: Home's start() holds the render it began in, before this session existed.
+                  const t = getState().threads.find((x) => x.id === id);
                   if (t) setLastProject(t.projectId);
                   openSession(id);
                 }}

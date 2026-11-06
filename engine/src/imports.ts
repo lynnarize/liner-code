@@ -54,7 +54,11 @@ const titleOf = (text: string) => {
 };
 const newest = (files: string[]) =>
   files
-    .map((f) => ({ f, at: statSync(f).mtimeMs }))
+    // A file the tool cleared away since the folder was read, or a link to nothing, is one session less, not none at all.
+    .flatMap((f) => {
+      const st = statSync(f, { throwIfNoEntry: false });
+      return st ? [{ f, at: st.mtimeMs }] : [];
+    })
     .sort((a, b) => b.at - a.at)
     .slice(0, LATEST);
 

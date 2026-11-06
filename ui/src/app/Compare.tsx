@@ -19,7 +19,7 @@ export function Compare({ id, sidebar, onSidebar, onOpen, onDone }: { id: string
   const [kept, setKept] = useState<string | null>(null);
   const [diffs, setDiffs] = useState(false);
   useEffect(() => {
-    for (const t of threads) void loadItems(t.id);
+    for (const t of threads) void loadItems(t.id).catch(() => {});
   }, [threads.length]);
 
   const keep = async (t: Thread) => {
@@ -45,11 +45,13 @@ export function Compare({ id, sidebar, onSidebar, onOpen, onDone }: { id: string
           </button>
         )}
         <h1 className="lc-title">{title}</h1>
-        <span className="lc-quiet">{running ? `${running} of ${threads.length} still working` : `${threads.length} answers, pick one`}</span>
+        <span className="lc-quiet lc-cmp-n">{running ? `${running} of ${threads.length} still working` : `${plural(threads.length, "answer")}, pick one`}</span>
         <span className="lc-grow" data-drag />
-        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-pressed={diffs} onClick={() => setDiffs((d) => !d)}>
-          {diffs ? "Hide the diffs" : "Show the diffs"}
-        </button>
+        {threads.length > 0 && (
+          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-pressed={diffs} onClick={() => setDiffs((d) => !d)}>
+            {diffs ? "Hide the diffs" : "Show the diffs"}
+          </button>
+        )}
       </header>
       {threads.length === 0 ? (
         <div className="lc-panel-empty">
@@ -84,20 +86,22 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
     if (!diffs || t.status === "running" || !cps.length) return;
     let live = true;
     void rpc("checkpoint.diff", { threadId: t.id, itemId: "all" })
-      .then((d) => live && setDiff(d))
+      .then((d) => live && setDiff(d.files))
       .catch(() => live && setDiff([]));
     return () => {
       live = false;
     };
   }, [diffs, t.status, cps.length]);
   const u = t.usage;
+  // A column that changed nothing has no diff to ask for: it says so, rather than show its answer under "Hide the diffs".
+  const shown = diffs ? (diff ?? (t.status !== "running" && !cps.length ? [] : null)) : null;
   return (
     <section className="lc-cmp-col" style={{ animationDelay: `${i * 60}ms` }} aria-label={modelLabel(model, providers)}>
       <header className="lc-cmp-h">
         <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} size={13} />
         <span className="lc-quiet">{a.name !== modelLabel(model, providers) ? a.name : ""}</span>
         <span className="lc-grow" />
-        {t.status === "running" ? <span className="l-shimmer lc-cmp-s">Working</span> : t.status === "waiting" ? <Badge tone="warn">Waits for you</Badge> : t.status === "error" ? <Badge tone="danger">A problem</Badge> : <Badge tone="ok">Done</Badge>}
+        {t.status === "running" ? <span className="l-shimmer lc-cmp-s">Working</span> : t.status === "waiting" ? <Badge tone="warn">Waits for you</Badge> : t.status === "limited" ? <Badge tone="warn">Hit its limit</Badge> : t.status === "error" ? <Badge tone="danger">A problem</Badge> : <Badge tone="ok">Done</Badge>}
       </header>
       <dl className="lc-cmp-stats">
         <div>
@@ -114,8 +118,8 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
         </div>
       </dl>
       <div className="lc-cmp-body">
-        {diffs && diff ? (
-          diff.length ? <CodeDiff files={diff} view="unified" maxHeight={100000} /> : <p className="lc-quiet">No changes.</p>
+        {shown ? (
+          shown.length ? <CodeDiff files={shown} view="unified" maxHeight={100000} /> : <p className="lc-quiet">No changes.</p>
         ) : last?.kind === "text" ? (
           <StreamedMarkdown className="lc-md" text={last.text} streaming={last.streaming} animate={false} />
         ) : (

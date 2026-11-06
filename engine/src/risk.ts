@@ -10,8 +10,8 @@ const HIGH = [
   /\brm\b(?=[^;&|\n]*\s(?:-[a-zA-Z]*[rR][a-zA-Z]*|--r[a-z]*)\b)(?=[^;&|\n]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--f[a-z]*)\b)/,
   /\brm\s+-[a-z]*r\b.*\s(\/|~|\$HOME|\.\.?)(\s|$)/i,
   /\bgit\s+push\b.*(--force|-f\b|--force-with-lease)/i,
-  /\bgit\s+reset\s+--hard\b/i,
-  /\bgit\s+clean\s+-[a-z]*f/i,
+  /\bgit\s+reset\b[^;&|\n]*\s--hard\b/i,
+  /\bgit\s+clean\b[^;&|\n]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--force)\b/i,
   // What throws away work git can't give back: changes not committed, stashes, unmerged branches.
   // [^;&|\n]* keeps a rule to the one command, so a later one in a chain isn't read as its flag.
   /\bgit\s+branch\b[^;&|\n]*\s-[a-zA-Z]*D/,
@@ -33,7 +33,7 @@ const HIGH = [
   /(curl|wget)[^|]*\|\s*(sh|bash|zsh)\b/,
   /\bdrop\s+(table|database)\b/i,
   /\btruncate\s+table\b/i,
-  /\bnpm\s+publish\b|\bcargo\s+publish\b|\bgh\s+release\s+create\b/,
+  /\b(?:npm|pnpm|yarn|bun|cargo)\s+publish\b|\bgem\s+push\b|\btwine\s+upload\b|\bgh\s+release\s+create\b/,
   /\bkubectl\s+delete\b|\bterraform\s+(apply|destroy)\b/,
   />\s*\/dev\/(sd|disk)/,
 ];
@@ -51,9 +51,17 @@ if (process.platform === "win32")
   );
 const MEDIUM = [/\bgit\s+(push|commit|merge|rebase|tag)\b/, /\bgit\s+branch\b[^;&|\n]*\s(?:-d|--delete)\b/, /\b(npm|pnpm|yarn|bun)\s+(i|install|add|remove)\b/, /\bpip\s+install\b/, /\bbrew\s+install\b/, /\bmv\b|\bcp\s+-r\b/, /\bgh\s+pr\s+(create|merge)\b/, /\bdocker\s+(rm|rmi|system\s+prune)\b/, /\bcurl\b.*-X\s*(POST|PUT|DELETE|PATCH)/i];
 
+/** The options git takes before its command, which say nothing about what the command does. */
+const GIT_OPTION = String.raw`-[Cc]\s+(?:"[^"]*"|'[^']*'|\S+)|--(?:git-dir|work-tree|namespace|config-env)(?:=\S+|\s+\S+)|--no-pager|--paginate|--no-replace-objects|--bare|--literal-pathspecs|--no-optional-locks|-p`;
+const GIT_OPTIONS = new RegExp(String.raw`\bgit(?:\s+(?:${GIT_OPTION}))+(?=\s)`, "g");
+
+/** A command with those options taken out, so `git -C app reset --hard` reads as what it is. */
+export const plainGit = (command: string) => command.replace(GIT_OPTIONS, "git");
+
 export function commandRisk(command: string): Risk {
-  if (HIGH.some((r) => r.test(command))) return "high";
-  if (MEDIUM.some((r) => r.test(command))) return "medium";
+  const c = plainGit(command);
+  if (HIGH.some((r) => r.test(c))) return "high";
+  if (MEDIUM.some((r) => r.test(c))) return "medium";
   return "low";
 }
 
@@ -81,16 +89,17 @@ export function readsOnly(command: string) {
   return bare.split(/&&|\|\||;|\||&|[\r\n]/).every((part) => {
     const p = part.trim().replace(/^cd\s+\S+$/, "pwd");
     const words = p.split(/\s+/).map((w) => w.replace(/\u0000(\d+)\u0000/g, (_, i: string) => quoted[Number(i)]));
-    if (/^(pwd|ls|cat|head|tail|wc|nl|grep|stat|echo)\b/.test(p)) return true;
+    // A whole word: tree-sitter, cat-file-writer and the like are programs of their own.
+    if (/^(pwd|ls|cat|head|tail|wc|nl|grep|stat|echo)(?=\s|$)/.test(p)) return true;
     // rg --pre and --hostname-bin run a command; tree -o, file -C and git --output write a file.
-    if (/^rg\b/.test(p)) return !words.some((w) => /^--(pre|hostname-bin)(=|$)/.test(w));
-    if (/^tree\b/.test(p)) return !words.some((w) => /^-[^-]*o/.test(w));
-    if (/^file\b/.test(p)) return !words.some((w) => /^-[^-]*C|^--compile$/.test(w));
-    if (/^sed\b/.test(p)) return sedReads(words);
+    if (/^rg(?=\s|$)/.test(p)) return !words.some((w) => /^--(pre|hostname-bin)(=|$)/.test(w));
+    if (/^tree(?=\s|$)/.test(p)) return !words.some((w) => /^-[^-]*o/.test(w));
+    if (/^file(?=\s|$)/.test(p)) return !words.some((w) => /^-[^-]*C|^--compile$/.test(w));
+    if (/^sed(?=\s|$)/.test(p)) return sedReads(words);
     // Read off the words with their quotes put back, so a quoted '-delete' is seen too.
-    if (/^find\b/.test(p)) return !words.some((w) => /^-(delete|exec|ok|fprint|fls)/.test(w));
-    if (/^git\s+branch\b/.test(p)) return branchLists(words.slice(2));
-    return /^git\s+(status|diff|log|show|ls-files|rev-parse)\b/.test(p) && !words.some((w) => /^--output(=|$)/.test(w));
+    if (/^find(?=\s|$)/.test(p)) return !words.some((w) => /^-(delete|exec|ok|fprint|fls)/.test(w));
+    if (/^git\s+branch(?=\s|$)/.test(p)) return branchLists(words.slice(2));
+    return /^git\s+(status|diff|log|show|ls-files|rev-parse)(?=\s|$)/.test(p) && !words.some((w) => /^--output(=|$)/.test(w));
   });
 }
 
@@ -200,6 +209,8 @@ export function ruleFor(command: string): string | undefined {
   const words = c.split(/\s+/);
   const name = words[0].split("/").pop() ?? words[0];
   if (WRAPPERS.test(name)) return undefined;
+  // `git -C app status` has no subcommand to name: the rule would be `git`, for every git command written that way.
+  if (SUB.test(name) && words[1]?.startsWith("-")) return undefined;
   const sub = SUB.test(name) && words[1] && !words[1].startsWith("-") ? words[1] : "";
   return sub ? `${words[0]} ${sub}` : words[0];
 }

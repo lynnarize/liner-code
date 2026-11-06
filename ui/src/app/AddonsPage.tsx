@@ -224,7 +224,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
         />
       )}
       {adding === "connect" && (
-        <Dialog open onOpenChange={(o) => !o && setAdding(null)} title="Connect a service" description="Paste the connection's settings, as its maker gives them, and type its key. The key goes to this Mac's keychain, never into a chat." size="lg" className="lc-ao-connect">
+        <Dialog open onOpenChange={(o) => !o && setAdding(null)} title="Connect a service" description={`Paste the connection's settings, as its maker gives them, and type its key. The key goes to ${os.keyStore(`${os.here}'s keychain`)}, never into a chat.`} size="lg" className="lc-ao-connect">
           <Suspense fallback={null}>
             <AddByHand onDone={() => setAdding(null)} />
           </Suspense>
@@ -251,7 +251,9 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
   }, [onClose]);
-  useEffect(() => (setFiles(null), setSure(false)), [a.id]);
+  // Another version has other files: the list shown was the old one's.
+  useEffect(() => setFiles(null), [a.id, a.version]);
+  useEffect(() => setSure(false), [a.id]);
   const update = (p: { version?: number; removed?: boolean }) => rpc("addons.update", { id: a.id, ...p });
   const prev = Math.max(0, ...a.versions.filter((v) => v < a.version));
   const latest = Math.max(...a.versions);
@@ -535,7 +537,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
           title={p.place === "page" ? `${p.name}, a page of its own` : p.place === "tab" ? `${p.name}, a tab beside Chat` : `${p.name}, beside your sessions`}
           ask={`${from}: ${p.place === "dock" ? "a panel" : "an app"}${net ? " that reaches the internet" : ""}`}
           icon={<Icon size={16} />}
-          description={net ? `Whatever it reads could leave this Mac through ${net}. It can reach that one, and no other.` : `It runs in a sealed frame ${p.place === "page" ? "of its own" : "beside the session"}, never in Liner Code's engine, and gets only what it lists below.`}
+          description={net ? `Whatever it reads could leave ${os.here} through ${net}. It can reach that one, and no other.` : `It runs in a sealed frame ${p.place === "page" ? "of its own" : "beside the session"}, never in Liner Code's engine, and gets only what it lists below.`}
           fields={fields}
           hold={Boolean(net)}
           aside={aside(`Its ${plural(p.files.length, "file")}`)}
@@ -567,7 +569,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
           <input type="password" autoComplete="off" spellCheck={false} aria-label={k.label} placeholder={kept(k.name) ? "Kept from before · type to replace" : c.moved && keys.includes(addonKey(c.id, k.name)) ? "Type it again for the new server" : k.name} value={values[k.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))} />
           <small>
             <I.lock size={12} />
-            {isNative() ? "Sealed in this Mac's keychain, and never put in a chat." : "Kept in Liner Code's memory until it quits, and never put in a chat."}
+            {isNative() ? `Sealed in ${os.keyStore(`${os.here}'s keychain`)}, and never put in a chat.` : "Kept in Liner Code's memory until it quits, and never put in a chat."}
           </small>
         </span>
       ),

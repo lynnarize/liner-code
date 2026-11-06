@@ -42,6 +42,15 @@ function split(name: string): { group?: string; label: string } {
 
 type Json = Record<string, unknown>;
 
+/** Resolves when a probed tool is gone (it may never answer), and keeps its closed pipe from raising an error nobody catches. */
+function gone(child: ChildProcessWithoutNullStreams) {
+  child.stdin.on("error", () => {});
+  return new Promise<null>((r) => {
+    child.once("error", () => r(null));
+    child.once("close", () => r(null));
+  });
+}
+
 /**
   Opens a throwaway ACP session in an empty folder and reads the models it offers: a "model"
   config option (OpenCode) or the session's model list (Hermes). The first entry is "default",
@@ -56,8 +65,9 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
   const waiting = new Map<number, (m: Json) => void>();
   let seq = 0;
   jsonLines(child.stdout, (v) => {
-    const m = v as { id?: number; result?: Json; error?: unknown };
-    if (typeof m.id === "number" && waiting.has(m.id)) {
+    const m = v as { id?: number; method?: string; result?: Json; error?: unknown };
+    // With a method it's the tool's own request, under an id of its own.
+    if (typeof m.id === "number" && waiting.has(m.id) && !m.method) {
       waiting.get(m.id)!(m.error ? {} : (m.result ?? {}));
       waiting.delete(m.id);
     }
@@ -78,6 +88,7 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
         return request("session/new", { cwd: scratch, mcpServers: [] });
       })(),
       timeout,
+      gone(child),
     ]);
     if (!s) return [];
     const out: ModelInfo[] = [];
@@ -85,7 +96,9 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
     const option = ((s.configOptions as Json[] | undefined) ?? []).find((c) => c.category === "model" || c.id === "model");
     if (option) {
       current = String(option.currentValue ?? "");
-      for (const o of (option.options as { value: string; name?: string; description?: string }[] | undefined) ?? []) out.push({ id: o.value, ...split(o.name ?? o.value), description: o.description ?? "", isDefault: o.value === current });
+      // Flat, or in groups with options of their own (the ACP schema's SessionConfigSelectGroup).
+      type Choice = { value: string; name?: string; description?: string; options?: Choice[] };
+      for (const o of ((option.options as Choice[] | undefined) ?? []).flatMap((c) => c.options ?? [c])) out.push({ id: o.value, ...split(o.name ?? o.value), description: o.description ?? "", isDefault: o.value === current });
     } else {
       const state = s.models as { currentModelId?: string; availableModels?: { modelId: string; name?: string; description?: string }[] } | undefined;
       current = state?.currentModelId ?? "";
@@ -182,6 +195,7 @@ export async function acpCommands(cmd: string[], env: NodeJS.ProcessEnv, cwd: st
         await Promise.race([arrived, after(2500)]);
       })(),
       after(30000),
+      gone(child),
     ]);
     return found ?? [];
   } finally {

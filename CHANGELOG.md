@@ -39,6 +39,130 @@
 - OpenCode's questions never reached you: its question tool failed with "couldn't be shown to the
   user" and the agent went on guessing. They now come as the question card, and any other ACP agent's
   forms do too.
+- In Full access, a step your own Claude settings said to ask about went ahead anyway. It now comes
+  to you, with Claude Code's reason.
+- In Auto, a Codex edit outside the project, or one asking for a folder outside it, went ahead without
+  asking. It now asks each time, as ACP agents do. A Codex request to reach a host, or for more
+  access, showed little or nothing of what it asked; both now say so and come to you.
+- "Don't ask again" for a harmless `rm` also allowed `rm -rf`, and on `git -C x status` it allowed any
+  git command written that way. What can't be undone now always asks.
+- `git -C folder reset --hard` and the like passed as safe, in Full access's guard too.
+  `git clean --force`, `git reset x --hard` and publishing with other package tools weren't high risk.
+- Programs named like a reader (`tree-sitter`, say) counted as read-only and ran without asking.
+- A routine could push with `git -C …` or `docker push`, or with a rule you gave in its session.
+- In Reviewer decides, a step could go ahead on the Reviewer's word after you pressed Stop. A Reviewer
+  that answered "blocked" or "needs changes" counted as a pass, and a fail with no blocking finding
+  told the coder nothing.
+- Read only could put an ACP agent in its "don't ask" mode, because the name has "ask" in it. It now
+  also reaches agents that offer their mode as a setting, and a failed switch is tried again and said.
+- A crafted link could run script on a session's local preview. An endpoint that quoted your key in
+  an error could pass it to an app, and keys and home folders in a tool's error output reached the
+  timeline.
+- With a large paste the Terminal froze for good. It now goes in as the shell takes it. One that
+  couldn't start showed an empty pane; it now says why, or that the session's folder has gone.
+- When Claude Code carried on by itself, its first request could be refused before you saw it. It
+  now waits and shows on that turn. If its process died first, the turn hung; it now ends.
+- After Claude Code died while idle, your next message could be lost and the turn hang. One that never
+  answered on reopening hung too, and now ends after 90 seconds and says so.
+- A connection slow to start could hold a session for good, or leave a turn without its tools unsaid.
+  It now goes on and says so.
+- Changing the effort on Claude Code no longer restarts it, so a dev server or background agent keeps
+  running. A model or mode a tool refused failed your turn; the session now reopens and goes on.
+- After a crash, the first thing written to a session could be lost along with the cut-off line before
+  it. An answer that went on after a retry notice lost everything past the notice once the app restarted.
+- A turn cut off by a crash or quit had no diff and no undo. It now gets its checkpoint at the next start.
+- A message or a steer sent right after Stop waited in the queue, or was lost. It now goes as soon as
+  the stop has settled, and skipping a question or turning a plan down no longer leaves the queue waiting.
+- A `/goal` or `/reviewer` sent while a turn ran reached the agent as words. It now runs when the turn
+  ends. `/compact` after a switch or a rewind went to the model as words too.
+- Stopping a session just as another tool took over left that tool with no conversation, and a handoff
+  kept only the first line of older multi-line messages.
+- A session left limited for days started by itself when you reopened the app. Past a day it now waits
+  for you. A limit first reported with no reset time now takes one a later report gives, and a gateway's
+  rate limit counts as a limit.
+- A request that arrived after its turn ended left the session in Needs you, and a stopped Codex turn
+  could still ask you something in the next one.
+- Stop now reaches Codex's subagents, its running commands and a compaction, and ends tests and agents
+  that ignore being asked. A Codex subagent that finished after the turn ended went unread; the parent
+  now carries on with what it found.
+- A session whose folder was gone hung on ACP agents and Codex. It now fails and says which folder.
+- A tool that crashed while something it started held its pipes left the turn running.
+- After a compaction, the next Codex message could end as soon as it began, and Claude Code's context
+  meter jumped back to the old size.
+- A Codex conversation open in another client was quietly restarted. It now says it's in use.
+- Rules saved when CLAUDE.md and AGENTS.md were linked replaced them with one line, and wrote through a
+  link to a file elsewhere. Your text now stays, and that file isn't touched.
+- A file made in one turn and deleted in a later one stopped Commit for everything else.
+- A compared model that couldn't start lost your message, and Keep could bring in only part of a very
+  large change. In Compare, each column now scrolls inside itself and says when a model hit its limit.
+- GitHub routines never fired: their check failed quietly every time. With two audit steps a later
+  pass undid an earlier fail, a gate's `*.lock` rule matched nothing, and a work step cut off by a limit
+  counted as done, so its pass actions ran.
+- A session snoozed until a reply or checks stayed asleep for a month if its pull request closed or
+  merged, and a reply that came while Liner Code was shut didn't wake it.
+- A card for an app being made could stay on "making" for good. It now finishes after a restart, or
+  says why it didn't.
+- An update download that hit a full disk or a dead connection stayed on Downloading for good.
+- An add-on that asks you to choose or confirm now shows a card. A picture with the wrong extension no
+  longer breaks every later turn, and reading a file you attached no longer asks.
+- If the window's page crashed it stayed blank. It now loads again by itself. A crash while saving a key
+  could lose all your saved keys. On Windows, a folder with `&` in its name broke Open in Terminal.
+- In an answer, a number in square brackets vanished, so `items[0]` read `items`. A fast reply could
+  stall and then arrive in a lump.
+- Going back to a long session could land you somewhere other than where you left it.
+- Files you'd attached but not sent were lost when you moved to another session. What you were writing
+  in a side chat now survives moving away too. Attaching more than ten files says some were left out.
+- Escape while composing with an input method stopped the running turn, and Enter or Tab picked from an
+  open list or sent early. Those keys now go to the input method.
+- After pressing Send or Stop, your typing went nowhere. Editing a recalled message and pressing ↑ lost
+  your edit, and text dragged into the composer was dropped.
+- Find now keeps up with a reply as it streams, stays on your match and gives the keyboard back. It sat
+  too low, and opened where you couldn't see it.
+- A question with no choices sent an empty answer. Dropping every step of a plan no longer leaves you
+  stuck, and a message edited from an earlier turn that couldn't send goes back to the composer.
+- Review said nothing changed when it couldn't read the changes, kept the old position when you switched
+  turns, hid notes on folded lines and showed a binary file as garbled text. It now marks moved files.
+- Two very large files rewritten line by line could stall the window. They now read as one out, one in.
+- A dev server you start in the Terminal now opens in the Browser without waiting for a turn to end.
+  Reload did nothing on the "Nothing answers on localhost" page, and a local address with a query or
+  hash opened in your browser. A dev server dying mid-page hung it.
+- After a pull request was closed on GitHub, you couldn't open another from that branch. One failed look
+  at GitHub could take the card down mid-step, or say the project had no remote. A check that failed
+  showed green, and the card named main whatever the base branch.
+- A commit stopped by a hook said "The push didn't go through", and the chip vanished when you left.
+- Remove was already armed when you reopened an add-on's menu, one click from removing it.
+- Going back right after an edit in the routine builder lost that edit, and a step added on a gate's
+  path disappeared the next time you opened the routine.
+- Opening a session from ⌘K while Settings was open did nothing you could see. Archiving the open
+  session from the sidebar left it on screen.
+- A budget typed with a decimal comma was read a hundred times too high. Clearing Where worktrees live
+  didn't take, and clicking away from a project's rules lost what you wrote.
+- A pin, rename or stop the engine turned down now says so, and errors while it's away read in words.
+- After the engine restarted mid-reply, a session could show text twice.
+- Arrow keys now move through the panel, snooze and mode menus. On a session with forks, Pin and Snooze
+  were covered by the forks button.
+- With many tabs open, the panel's names shrank to single letters and the open tab was cut off. They now
+  go down to icons together, and the open one stays in view.
+- Long paths, branch names and unbroken strings no longer push Settings, the timeline or the panels
+  sideways, and a long project name on Home keeps its question mark.
+- A message sent while a rewind or undo was putting files back started a turn underneath it, and one
+  sent to a session being deleted could outlive it. It now waits, or goes with the deleted session.
+- Going back or undoing in a session whose worktree was cleaned up failed, and so did a session carrying
+  on after a restart or a usage limit. The worktree now comes back first.
+- Going back silently dropped messages Stop had kept in the queue, and a side chat could answer from
+  turns that no longer exist. The messages stay, and the side chat starts fresh.
+- A side chat or a `/goal` in a new worktree started before its setup had finished. They now wait, as a
+  message does.
+- A fork whose files couldn't be copied left an empty session in the sidebar. It's now removed.
+- Files attached before a restart asked for approval when read again. They no longer do.
+- Text before and after a plan ran together in one paragraph on some agents.
+- Back and Forward did nothing on the Browser's "nothing answers here" and "file not found" pages.
+- All turns and This branch now say how many files past the first 60 aren't shown.
+- A command that ended without reading what it was given could take the engine down.
+- An add-on's form in a routine could hold the run for good. With nobody there to answer, it's declined.
+- A queued `/compact` was joined to the next message and did neither. It now goes on its own.
+- Liner Code's own tools went without a card only by name: one from an agent's or a project's config that
+  called itself `liner` ran unasked. Only Liner Code's own server does now.
 
 ## 0.2.2 (alpha), 2026-11-05
 

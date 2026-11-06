@@ -250,6 +250,8 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
   const pinnedApps = i === 0 ? appsFor(addons, projectId).filter((a) => pins.includes(a.id) && !dock.panes.some((x) => x.tabs.includes(`app:${a.id}`))) : [];
   const row = useRef<HTMLDivElement>(null);
   const [plate, setPlate] = useState<{ x: number; w: number; moved: boolean } | null>(null);
+  /** The names don't all fit: every tab but the open one is down to its icon. */
+  const [icons, setIcons] = useState(false);
   const [menu, setMenu] = useState<{ t: Tab; x: number; y: number } | null>(null);
   // One white plate glides to the tab that's up (Liner's rule: one highlight moves between targets).
   useLayoutEffect(() => {
@@ -258,10 +260,30 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
     const place = () => {
       const tab = el.querySelector<HTMLElement>(".lc-stab[data-on]");
       setPlate((was) => (tab ? { x: tab.offsetLeft, w: tab.offsetWidth, moved: Boolean(was) } : null));
+      // All or none, measured from the names' own widths: shrinking each tab in turn left "C" and "Se...".
+      const strip = el.parentElement;
+      if (strip) {
+        // The strip's spacer holds what's spare: that's the room, so it isn't counted as taken.
+        const others = [...strip.children].reduce((n, c) => (c === el || c.classList.contains("lc-grow") ? n : n + c.getBoundingClientRect().width + 2), 0);
+        const names = [...el.querySelectorAll<HTMLElement>(".lc-stab")].reduce((n, t) => {
+          const name = t.querySelector<HTMLElement>(".lc-stab-b > span");
+          const tag = t.querySelector<HTMLElement>(".lc-stab-tag");
+          return n + Math.min(180, 37 + (name?.scrollWidth ?? 0) + (tag ? tag.offsetWidth + 6 : 0)) + 2;
+        }, -2);
+        setIcons(names > strip.clientWidth - 16 - others);
+      }
+      // Too many even as icons, the row scrolls: the open tab stays in view.
+      if (tab) {
+        const left = tab.offsetLeft;
+        const right = left + tab.offsetWidth;
+        if (left < el.scrollLeft) el.scrollLeft = left - 4;
+        else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth + 4;
+      }
     };
     place();
     const ro = new ResizeObserver(place);
     for (const t of el.querySelectorAll(".lc-stab")) ro.observe(t);
+    if (el.parentElement) ro.observe(el.parentElement);
     return () => ro.disconnect();
   }, [p.tab, p.tabs.join()]);
   // Manual activation, as WAI-ARIA tabs: the arrows, Home and End move between chips; Enter or Space picks one.
@@ -286,7 +308,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
           </Tooltip>
         );
       })}
-      <div ref={row} className="lc-stabs-row" role="tablist" aria-label={label} data-plate={plate ? "" : undefined} onKeyDown={onKey}>
+      <div ref={row} className="lc-stabs-row" role="tablist" aria-label={label} data-plate={plate ? "" : undefined} data-icons={icons || undefined} onKeyDown={onKey}>
         {plate && <span className="lc-stab-plate" data-moved={plate.moved || undefined} style={{ transform: `translateX(${plate.x}px)`, width: plate.w }} aria-hidden />}
         {p.tabs.map((t, k) => {
           const m = meta(t);
@@ -410,8 +432,13 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
     let live = true;
     setDiff(null);
     void rpc("checkpoint.diff", { threadId: thread.id, itemId: pick })
-      .then((d) => live && setDiff(d))
-      .catch(() => live && setDiff([]));
+      .then((d) => live && setDiff(d.files))
+      .catch((e) => {
+        if (!live) return;
+        setDiff([]);
+        // An empty diff alone would read as a turn that changed nothing.
+        fail(e);
+      });
     return () => {
       live = false;
     };

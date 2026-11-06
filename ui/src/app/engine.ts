@@ -310,10 +310,18 @@ export function startEngine() {
 }
 
 export class RpcError extends Error {}
+/** The call never got an answer: the app's own Reconnecting pill says so already. */
+export class EngineAway extends RpcError {}
 
 export async function rpc<M extends RpcMethod>(method: M, params: RpcParams<M>): Promise<RpcResult<M>> {
-  const res = await fetch(`${base()}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": token() }, body: JSON.stringify({ method, params }) });
-  const body = (await res.json()) as { ok: boolean; result?: RpcResult<M>; error?: string };
+  // The engine away, or an answer that isn't its own (401 is plain text): said in words, not "Failed to fetch".
+  let body: { ok: boolean; result?: RpcResult<M>; error?: string };
+  try {
+    const res = await fetch(`${base()}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": token() }, body: JSON.stringify({ method, params }) });
+    body = (await res.json()) as typeof body;
+  } catch {
+    throw new EngineAway("The engine isn't answering. Try again in a moment.");
+  }
   if (!body.ok) throw new RpcError(body.error ?? "Something went wrong.");
   return body.result as RpcResult<M>;
 }
@@ -327,7 +335,9 @@ export function loadItems(threadId: string, again = false): Promise<void> {
   wanted.add(threadId);
   const going = loading.get(threadId);
   if (going && !again) return going.done;
-  const held: Numbered[] = going?.events ?? [];
+  // After a reconnect only the new stream counts: what the old one left here is in the fresh read, and a
+  // restarted engine counts from 0 again, so its high numbers would pass as new and write old text twice.
+  const held: Numbered[] = again ? [] : (going?.events ?? []);
   const mark = {};
   const done = (async () => {
     try {

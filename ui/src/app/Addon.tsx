@@ -66,7 +66,7 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
   const off = useEngine((s) => s.addonsOff);
   const projects = useEngine((s) => s.projects);
   const asks = useItemsWhere(thread?.id, isPanelAsk) as Extract<Item, { kind: "approval" }>[];
-  const ask = preview ? asks.find((x) => x.id === preview && x.state === "asking")?.addon : undefined;
+  const ask = preview ? asks?.find((x) => x.id === preview && x.state === "asking")?.addon : undefined;
   const draft = ask?.kind === "panel" ? ask : undefined;
 
   if (preview) {
@@ -324,17 +324,16 @@ function PanelNote({ icon, title, body, action }: { icon: ReactNode; title: stri
 /** A panel's ⋯: its versions, change it, its files, where it shows, off and remove. */
 export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass = "lc-ib" }: { a: AddonInfo; thread?: Thread; agentName: string; onOpenElsewhere?: () => void; triggerClass?: string }) {
   const projects = useEngine((s) => s.projects);
-  const [sure, setSure] = useState(false);
   const set = (p: { enabled?: boolean; version?: number; removed?: boolean; project?: string | null }) => void rpc("addons.update", { id: a.id, ...p }).catch(fail);
   const here = thread ? projects.find((p) => p.id === thread.projectId) : undefined;
   const page = a.panel?.place === "page";
   return (
     <Pop label={`More for ${a.name}`} align="end" side="top" width={290} triggerClass={triggerClass} trigger={<I.more size={14} />}>
       {(close) => (
-        <div className="lc-addon-menu" onKeyDown={(e) => e.key === "Escape" && setSure(false)}>
+        <div className="lc-addon-menu">
           <PanelHead>Versions</PanelHead>
           {[...a.versions].reverse().map((v) => (
-            <Row key={v} title={`v${v}`} note={`${v === a.version ? "In use · " : ""}${a.dates?.[v] ? dayOf(a.dates[v]) : ""}`} on={v === a.version} onPick={() => (set({ version: v }), close())} />
+            <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ")} on={v === a.version} onPick={() => (set({ version: v }), close())} />
           ))}
           <Sep />
           {thread && <Row title={`Change it with ${agentName}`} icon={<I.edit size={13} />} onPick={() => (close(), toComposer(thread.id, `Change the ${a.name} ${page ? "app" : "panel"} so `))} />}
@@ -343,15 +342,17 @@ export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass 
           {!page && (a.project ? <Row title="Show it in every project" icon={<I.globe size={13} />} onPick={() => (close(), set({ project: null }))} /> : here && <Row title={`Show it only in ${here.name}`} icon={<I.folder size={13} />} onPick={() => (close(), set({ project: here.id }))} />)}
           <Sep />
           <Row title={a.enabled ? "Turn it off" : "Turn it on"} icon={<I.shieldOff size={13} />} onPick={() => (close(), set({ enabled: !a.enabled }))} />
-          {sure ? (
-            <Row title={`Remove ${a.name}`} note="Its files, versions and storage are kept" icon={<I.trash size={13} />} onPick={() => (close(), setSure(false), set({ removed: true }))} />
-          ) : (
-            <Row title="Remove…" icon={<I.trash size={13} />} onPick={() => setSure(true)} />
-          )}
+          <RemoveRow name={a.name} onRemove={() => (close(), set({ removed: true }))} />
         </div>
       )}
     </Pop>
   );
+}
+
+/** Remove, asked twice. Its yes goes with the menu: opened again, it asks from the start. */
+function RemoveRow({ name, onRemove }: { name: string; onRemove: () => void }) {
+  const [sure, setSure] = useState(false);
+  return sure ? <Row title={`Remove ${name}`} note="Its files, versions and storage are kept" icon={<I.trash size={13} />} onPick={onRemove} /> : <Row title="Remove…" icon={<I.trash size={13} />} onPick={() => setSure(true)} />;
 }
 
 /**

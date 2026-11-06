@@ -329,6 +329,10 @@ export function WorkflowBuilder({
     now.current = { live, status: testing.status };
   });
   const [recent, setRecent] = useState<WorkflowRunRecord[]>(() => runs ?? (sample ? sampleRuns : []));
+  // Runs given from outside (a routine's) go on arriving while this is open.
+  useEffect(() => {
+    if (runs) setRecent(runs);
+  }, [runs]);
   const abortRun = useRef<AbortController | null>(null);
   const abortAsk = useRef<AbortController | null>(null);
   useEffect(

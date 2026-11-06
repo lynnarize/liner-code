@@ -22,7 +22,8 @@ export type FileLink = { path: string; line?: number };
 export type Run =
   | { kind: "text"; text: string; start: number }
   | { kind: "code"; text: string; start: number; file?: FileLink }
-  | { kind: "cite"; ids: number[]; start: number }
+  /** `raw` is what was written: with no sources to cite, "[0]" is words ("items[0]"). */
+  | { kind: "cite"; ids: number[]; raw: string; start: number }
   | { kind: "strong" | "em" | "del"; runs: Run[]; start: number }
   /** No href yet: a link whose address is still streaming. */
   | { kind: "link"; href?: string; file?: FileLink; runs: Run[]; start: number };
@@ -231,7 +232,7 @@ function parseInline(text: string, base: number, ctx: Ctx): Run[] {
       CITE.lastIndex = i;
       const cite = CITE.exec(text);
       if (cite) {
-        put({ kind: "cite", ids: cite[1].split(",").map((n) => Number(n.trim())), start: base + i }, i + cite[0].length);
+        put({ kind: "cite", ids: cite[1].split(",").map((n) => Number(n.trim())), raw: cite[0], start: base + i }, i + cite[0].length);
         continue;
       }
       const link = ctx.inLink ? null : linkAt(text, i, open);
@@ -630,7 +631,7 @@ function renderRuns(runs: Run[], o: RenderOptions, sentence: number | null): Rea
           </MdLink>
         );
       case "cite":
-        return <Fragment key={`k${r.start}`}>{o.renderCite?.(r.ids, r.start, sentence) ?? <sup>[{r.ids.join(",")}]</sup>}</Fragment>;
+        return <Fragment key={`k${r.start}`}>{o.renderCite?.(r.ids, r.start, sentence) ?? chunked(r.raw, r.start, o)}</Fragment>;
     }
   });
 }

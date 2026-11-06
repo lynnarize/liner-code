@@ -40,6 +40,8 @@ export class Engine {
       // the first launch
     }
     this.log = createWriteStream(logFile, { flags: "w" });
+    // A full disk costs the log, not a crash dialog from the shell.
+    this.log.on("error", (e) => console.error("[shell] the engine's log:", e.message));
     this.keys = { ...keys };
     this.launch(paths, env);
   }
@@ -60,6 +62,8 @@ export class Engine {
       windowsHide: true,
     });
     this.child = child;
+    // An engine that fell over as it started: its exit below brings it back. Unheard, this EPIPE would stop the shell with an error box.
+    child.stdin.on("error", (e) => console.error("[shell] the engine's stdin:", e.message));
     child.stdin.write(`${JSON.stringify({ token: this.token, keys: this.keys })}\n`);
     let buffer = "";
     child.stdout.on("data", (data: Buffer) => {

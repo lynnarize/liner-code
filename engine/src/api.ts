@@ -3,7 +3,7 @@
   background and reports through events; handlers answer as soon as the command is accepted.
 */
 import { fileURLToPath } from "node:url";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { castOf, endpointKey, splitModel, VOUCHER } from "../../contracts/src/index.ts";
@@ -364,6 +364,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     restoring.set(root, back);
     return back;
   };
+  runtime.worktreeBack = ensureWorktree;
 
   /*
     A model an app asks (access.ai): the one you picked for it in the window (settings.addonModels),
@@ -494,18 +495,26 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   const backgrounds = new Backgrounds(store.home);
 
   /**
-    A session going for good, and all it kept: its turn stopped and wound down, its snapshots, its
-    worktree when nothing in it would be lost, its log, its design versions and its attachments. A
-    fork holds its own copies of those (thread.create), so it loses nothing. Returns why a worktree stayed.
+    A session going for good, held from start to end: what's sent to it meanwhile starts nothing and
+    goes with it. `quiet`: a fork that never was, with nothing to say about the worktree it shared.
   */
-  const dropThread = async (id: string) => {
+  const dropThread = async (id: string, quiet = false) => {
+    store.thread(id);
+    return runtime.exclusive(id, () => letGo(id, quiet));
+  };
+  /**
+    All it kept goes: its turn stopped and wound down, its snapshots, its worktree when nothing in it
+    would be lost, its log, its design versions and its attachments. A fork holds its own copies of
+    those (thread.create), so it loses nothing. Returns why a worktree stayed.
+  */
+  const letGo = async (id: string, quiet: boolean) => {
     const t = store.thread(id);
     leftBehind(id);
     for (const s of store.threads.filter((x) => x.sideOf === id)) dropSide(s.id);
     runtime.closeThread(id);
     // A turn that was running winds down first: its last snapshot and items land before they're forgotten,
     // and its tool is out of the worktree before that goes (T3 Code: ThreadDeletion.ts cancels the run as part of the delete).
-    await runtime.idle(id);
+    await runtime.idle(id, 10_000, 1);
     // A worktree still being set up finishes first, so it isn't taken out from under its setup command.
     await setups.get(id)?.catch(() => {});
     const project = store.project(t.projectId);
@@ -525,7 +534,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const lent = store.threads.some((o) => o.forkOf && !o.sideOf && store.peek(o.id, ["user"]).some((x) => x.kind === "user" && x.files?.some((f) => f.startsWith(`${sent}${sep}`))));
     for (const dir of lent ? ["designs"] : ["designs", "attachments"]) rmSync(join(store.home, dir, id), { recursive: true, force: true });
     store.emit({ type: "thread.removed", id });
-    if (kept) store.emit({ type: "notify", threadId: id, kind: "done", title: "Kept its worktree", body: `${root} stays: ${kept}. Its branch ${t.worktree!.branch} stays too.` });
+    if (kept && !quiet) store.emit({ type: "notify", threadId: id, kind: "done", title: "Kept its worktree", body: `${root} stays: ${kept}. Its branch ${t.worktree!.branch} stays too.` });
     return kept;
   };
 
@@ -613,9 +622,16 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "project.rules": ({ id }) => rulesOf(store.project(id).path),
     "project.rules.save": ({ id, text }) => {
       const root = store.project(id).path;
-      writeFileSync(join(root, "AGENTS.md"), `${text.trim()}\n`);
+      const agents = join(root, "AGENTS.md");
+      const claude = join(root, "CLAUDE.md");
+      // One file under both names, by a link: it takes the text. The line below, written through the link, would replace it.
+      const same = existsSync(agents) && existsSync(claude) && realOf(agents) === realOf(claude);
+      writeFileSync(agents, `${text.trim()}\n`);
+      if (same) return rulesOf(root);
+      // A link to a file somewhere else goes, and that file stays as it is.
+      if (lstatSync(claude, { throwIfNoEntry: false })?.isSymbolicLink()) rmSync(claude);
       // Claude Code reads CLAUDE.md, and follows an @ import in it: one line keeps the two in step.
-      writeFileSync(join(root, "CLAUDE.md"), "@AGENTS.md\n");
+      writeFileSync(claude, "@AGENTS.md\n");
       return rulesOf(root);
     },
     "project.update": ({ id, name, agent, setup, scripts }) =>
@@ -753,6 +769,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
     "thread.create": async ({ projectId, agent, lead, route, dual, after, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode }) => {
       const project = store.project(projectId);
+      // It goes to git as an argument of its own: one starting with - would be an option.
+      if (base?.startsWith("-")) throw new Error("That base isn't a branch or a commit.");
       // A mode is set once, as the session starts; a custom one is one of your named agents.
       if (mode !== undefined && mode !== "standard" && mode !== "creator" && !(mode.startsWith("agent:") && store.agents.some((a) => `agent:${a.id}` === mode))) throw new Error("There's no mode by that name.");
       const parent = forkOf ? store.thread(forkOf) : undefined;
@@ -837,22 +855,28 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (notice) store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: now, text: notice });
       // A fork starts with its parent's timeline, so you can see where it branched.
       if (parent) {
-        // Your attachments come along under the fork's own folder, so they outlive the session they were sent in.
-        const sent = join(store.home, "attachments", parent.id);
-        const mine = join(store.home, "attachments", t.id);
-        const had = existsSync(sent);
-        if (had) cpSync(sent, mine, { recursive: true });
-        const moved = (f: string) => (had && f.startsWith(`${sent}${sep}`) ? join(mine, f.slice(sent.length + 1)) : f);
-        for (const it of store.timeline(parent.id)) {
-          if (live && it.turn >= parent.turns) continue;
-          const copy = settledCopy(it, !live);
-          store.putItem(t.id, copy.kind === "user" && copy.files ? { ...copy, files: copy.files.map(moved) } : copy);
+        try {
+          // Your attachments come along under the fork's own folder, so they outlive the session they were sent in.
+          const sent = join(store.home, "attachments", parent.id);
+          const mine = join(store.home, "attachments", t.id);
+          const had = existsSync(sent);
+          if (had) cpSync(sent, mine, { recursive: true });
+          const moved = (f: string) => (had && f.startsWith(`${sent}${sep}`) ? join(mine, f.slice(sent.length + 1)) : f);
+          for (const it of store.timeline(parent.id)) {
+            if (live && it.turn >= parent.turns) continue;
+            const copy = settledCopy(it, !live);
+            store.putItem(t.id, copy.kind === "user" && copy.files ? { ...copy, files: copy.files.map(moved) } : copy);
+          }
+          // Its own hold on what it copied: deleting the session it came from leaves its diffs, undo and design versions whole.
+          const commits = store.timeline(t.id).flatMap((x) => (x.kind === "checkpoint" ? [x.from, x.to, x.redo].filter((c): c is string => Boolean(c)) : []));
+          if (commits.length) await keep(t.worktree?.path ?? project.path, t.id, commits).catch(() => {});
+          const versions = join(store.home, "designs", parent.id);
+          if (existsSync(versions)) cpSync(versions, join(store.home, "designs", t.id), { recursive: true });
+        } catch (e) {
+          // A copy that failed (a full disk, permissions) leaves no half-made fork in the sidebar (T3 Code: AttachmentClaims.test.ts rolls a failed copy back).
+          await dropThread(t.id, true).catch(() => {});
+          throw e;
         }
-        // Its own hold on what it copied: deleting the session it came from leaves its diffs, undo and design versions whole.
-        const commits = store.timeline(t.id).flatMap((x) => (x.kind === "checkpoint" ? [x.from, x.to, x.redo].filter((c): c is string => Boolean(c)) : []));
-        if (commits.length) await keep(t.worktree?.path ?? project.path, t.id, commits).catch(() => {});
-        const versions = join(store.home, "designs", parent.id);
-        if (existsSync(versions)) cpSync(versions, join(store.home, "designs", t.id), { recursive: true });
       }
       return t;
     },
@@ -930,15 +954,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const t = store.thread(id);
       // Liner Code's own commands, whichever tool the session runs on.
       const goal = /^\/goal(?:\s+([\s\S]*))?$/.exec(text.trim());
-      const stopGoal = goal && (!(goal[1] ?? "").trim() || /^(stop|clear|off)$/i.test((goal[1] ?? "").trim()));
-      if (goal && (stopGoal || !runtime.isRunning(id))) {
-        const what = (goal[1] ?? "").trim();
-        if (stopGoal) {
-          store.patchThread(id, { goal: t.goal ? { ...t.goal, status: "stopped" } : undefined });
-          store.putItem(id, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: t.goal ? "You stopped the goal." : "There's no goal to stop. Give one: /goal all tests in packages/api pass" });
-          return null;
-        }
-        void runtime.startGoal(id, what).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "The goal didn't start", body: String(e?.message ?? e) }));
+      const what = (goal?.[1] ?? "").trim();
+      if (goal && (!what || /^(stop|clear|off)$/i.test(what))) {
+        store.patchThread(id, { goal: t.goal ? { ...t.goal, status: "stopped" } : undefined });
+        store.putItem(id, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: t.goal ? "You stopped the goal." : "There's no goal to stop. Give one: /goal all tests in packages/api pass" });
         return null;
       }
       if (/^\/reviewer\s*$/.test(text.trim()) && !runtime.isRunning(id)) {
@@ -946,13 +965,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         return null;
       }
       // The turn runs on; its progress comes back as events. A new worktree finishes setting up
-      // first, and one that's gone is put back.
+      // first, and one that's gone is put back. A side chat works in its session's worktree, so it
+      // waits for that one (T3 Code: ThreadFork.execution.test.ts, a side chat and its parent's worktree).
       const asked = stops.get(id) ?? 0;
       const stopped = () => (stops.get(id) ?? 0) !== asked;
       void (async () => {
         let c: ReturnType<typeof withContext>;
         try {
-          await setups.get(id);
+          await setups.get(t.sideOf ?? id);
           if (!stopped()) await ensureWorktree(id);
           if (stopped()) return keepMessage(id, text, files, anchor, "You stopped this before it started.");
           c = withContext(t, text, files);
@@ -961,6 +981,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: why });
           return keepMessage(id, text, files, anchor, `That didn't start: ${why}.`);
         }
+        // A goal with work in flight waits in the queue, like any message, and starts from there.
+        if (goal && !runtime.isRunning(id)) return void (await runtime.startGoal(id, what).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "The goal didn't start", body: String(e?.message ?? e) })));
         await runtime.send(id, c.text, mode, anchor, c.files);
       })().catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
       return null;
@@ -972,26 +994,33 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (it.kind !== "user") throw new Error("Only a message you sent can be edited.");
       if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Stop the session before going back.");
       const from = it.turn;
-      const later = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && x.turn >= from && !x.reverted ? [x] : []));
-      let undone = 0;
-      if (files && later.length) {
-        const committed = later.find((x) => x.committed);
-        if (committed) throw new Error(`Turn ${committed.turn}'s changes are committed (${committed.committed}). Revert the commit first, or keep the changes.`);
-        const other = busyBeside(threadId);
-        if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before putting files back.`);
-        // Newest first, so each file ends as it was before the first of these turns. The files as they
-        // are now are kept in a snapshot first, and one changed after its turn stops it unless forced.
-        const turns = [...later].reverse().flatMap((cp) => (cp.from ? [{ from: cp.from, to: cp.to, files: cp.files }] : []));
-        await undo(cwdOf(threadId), `${threadId}/undo-${Date.now().toString(36)}`, turns, force);
-        undone = new Set(later.flatMap((x) => x.files.map((f) => f.path))).size;
-      }
-      runtime.closeThread(threadId);
-      store.truncate(threadId, from);
-      // The tools' own sessions remember the turns that came off, so the next turn starts fresh
-      // and gets the conversation that's left as text.
-      // Taken back to before a turn, the conversation starts again: how full the old one was no longer holds.
-      store.patchThread(threadId, { usage: { ...store.thread(threadId).usage, contextTokens: undefined, contextWindow: undefined }, turns: from - 1, status: "idle", providerSession: undefined, leadSession: undefined, sessions: undefined, forkSession: undefined, queue: [], verdict: undefined, toReview: runtime.toReview(threadId), unread: false, done: false });
-      return { turn: from, files: undone };
+      return runtime.exclusive(threadId, async () => {
+        const later = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && x.turn >= from && !x.reverted ? [x] : []));
+        let undone = 0;
+        if (files && later.length) {
+          const committed = later.find((x) => x.committed);
+          if (committed) throw new Error(`Turn ${committed.turn}'s changes are committed (${committed.committed}). Revert the commit first, or keep the changes.`);
+          const other = busyBeside(threadId);
+          if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before putting files back.`);
+          // A worktree that's gone comes back first, as for a message (T3 Code: CheckpointRestoreSafety.test.ts).
+          await ensureWorktree(threadId);
+          // Newest first, so each file ends as it was before the first of these turns. The files as they
+          // are now are kept in a snapshot first, and one changed after its turn stops it unless forced.
+          const turns = [...later].reverse().flatMap((cp) => (cp.from ? [{ from: cp.from, to: cp.to, files: cp.files }] : []));
+          await undo(cwdOf(threadId), `${threadId}/undo-${Date.now().toString(36)}`, turns, force);
+          undone = new Set(later.flatMap((x) => x.files.map((f) => f.path))).size;
+        }
+        // A side chat that holds turns coming off answers from a conversation that no longer is: the next one starts fresh.
+        for (const s of store.threads.filter((x) => x.sideOf === threadId && (x.sideFrom ?? from) >= from)) dropSide(s.id);
+        runtime.closeThread(threadId);
+        store.truncate(threadId, from);
+        // The tools' own sessions remember the turns that came off, so the next turn starts fresh
+        // and gets the conversation that's left as text.
+        // Taken back to before a turn, the conversation starts again: how full the old one was no longer holds.
+        // What waits in the queue stays, held for your next message: going back is no reason to lose it.
+        store.patchThread(threadId, { usage: { ...store.thread(threadId).usage, contextTokens: undefined, contextWindow: undefined }, turns: from - 1, status: "idle", providerSession: undefined, leadSession: undefined, sessions: undefined, forkSession: undefined, verdict: undefined, toReview: runtime.toReview(threadId), unread: false, done: false });
+        return { turn: from, files: undone };
+      });
     },
     "thread.stop": ({ id }) => {
       // A message still waiting for its worktree doesn't start after this.
@@ -1164,10 +1193,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // "all": every turn in the session, from before the first one to the tree as it is now.
       if (itemId === "all") {
         const first = store.timeline(threadId).find((x) => x.kind === "checkpoint");
-        if (first?.kind !== "checkpoint" || !first.from) return [];
+        if (first?.kind !== "checkpoint" || !first.from) return { files: [], total: 0 };
         const cwd = cwdOf(threadId);
         const now = await capture(cwd, `${threadId}/now`);
-        return now ? diffFiles(cwd, first.from, now, await changes(cwd, first.from, now)) : [];
+        return now ? diffOf(cwd, first.from, now, await changes(cwd, first.from, now)) : { files: [], total: 0 };
       }
       // "branch": what a pull request from this branch would carry, from where it left the main branch.
       if (itemId === "branch") {
@@ -1175,25 +1204,30 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         const base = await mainBranch(cwd);
         const mb = base ? (await git(cwd, ["merge-base", "HEAD", base])).stdout.trim() : "";
         const now = await capture(cwd, `${threadId}/now`);
-        return mb && now ? diffFiles(cwd, mb, now, await changes(cwd, mb, now)) : [];
+        return mb && now ? diffOf(cwd, mb, now, await changes(cwd, mb, now)) : { files: [], total: 0 };
       }
       const it = store.item(threadId, itemId);
-      if (it.kind !== "checkpoint" || !it.from || !it.to) return [];
-      return diffFiles(cwdOf(threadId), it.from, it.to, it.files);
+      if (it.kind !== "checkpoint" || !it.from || !it.to) return { files: [], total: 0 };
+      return diffOf(cwdOf(threadId), it.from, it.to, it.files);
     },
     "checkpoint.revert": async ({ threadId, itemId, force }) => {
       const it = store.item(threadId, itemId);
       if (it.kind !== "checkpoint" || !it.from) throw new Error("That turn has no snapshot to go back to.");
+      // Again would snapshot the tree without its work as the way back.
+      if (it.reverted) throw new Error("That turn is already undone.");
       if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Stop the session before undoing a turn.");
       if (it.committed) throw new Error("Those changes are committed. Revert the commit instead.");
       const other = busyBeside(threadId);
       if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before undoing a turn.`);
-      // The files as they are now are kept first, so the undo can be taken back too; a file changed
-      // after the turn stops it unless forced, since putting the turn back would lose that change.
-      const redo = await undo(cwdOf(threadId), `${threadId}/undo-${it.turn}-${Date.now().toString(36)}`, [{ from: it.from, to: it.to, files: it.files }], force);
-      const next = store.putItem(threadId, { ...it, reverted: true, redo });
-      store.patchThread(threadId, { toReview: runtime.toReview(threadId) });
-      return next;
+      return runtime.exclusive(threadId, async () => {
+        await ensureWorktree(threadId);
+        // The files as they are now are kept first, so the undo can be taken back too; a file changed
+        // after the turn stops it unless forced, since putting the turn back would lose that change.
+        const redo = await undo(cwdOf(threadId), `${threadId}/undo-${it.turn}-${Date.now().toString(36)}`, [{ from: it.from!, to: it.to, files: it.files }], force);
+        const next = store.putItem(threadId, { ...it, reverted: true, redo });
+        store.patchThread(threadId, { toReview: runtime.toReview(threadId) });
+        return next;
+      });
     },
     "git.push": async ({ threadId }) => {
       if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish before pushing.");
@@ -1270,8 +1304,20 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const prefix = await prefixOf(cwd);
       const paths = [...new Set(open.flatMap((x) => x.files.filter(picked).flatMap((f) => [f.path, ...(f.from ? [f.from] : [])].map((p) => local(p, prefix, f.rel)))))];
       if (!paths.length) throw new Error("Nothing to commit.");
-      const add = await git(cwd, ["add", "-A", "--", ...literal(paths)]);
-      if (add.code !== 0) throw new Error(add.stderr.trim() || "git add failed.");
+      // A file made in one turn and gone by a later one is on no side of a commit, and git stops
+      // at a path it can't find. What's only in HEAD (an agent's git rm) is staged already: add
+      // can't find it, and commit can.
+      const listed = async (...o: string[]) => new Set((await git(cwd, ["ls-files", "-z", ...o, "--", ...literal(paths)])).stdout.split("\0"));
+      const [staged, committed] = [await listed(), await listed("--with-tree=HEAD")];
+      const here = (p: string) => Boolean(lstatSync(join(cwd, p), { throwIfNoEntry: false }));
+      const adding = paths.filter((p) => here(p) || staged.has(p));
+      const going = paths.filter((p) => here(p) || staged.has(p) || committed.has(p));
+      if (!going.length) throw new Error("Nothing to commit.");
+      // Never with no paths: that would add the whole folder.
+      if (adding.length) {
+        const add = await git(cwd, ["add", "-A", "--", ...literal(adding)]);
+        if (add.code !== 0) throw new Error(add.stderr.trim() || "git add failed.");
+      }
       // The approved plan's title, or the first line of what you asked, says what the commit is.
       const items = store.timeline(threadId);
       const plan = [...items].reverse().find((x) => x.kind === "proposal" && x.state === "approved");
@@ -1279,7 +1325,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const line = (plan?.kind === "proposal" ? plan.title : asked?.kind === "user" ? asked.text.split("\n")[0] : t.title).trim();
       const subject = message ?? (line.length > 72 ? `${line.slice(0, 71).trimEnd()}…` : line);
       // Hooks and signing can take minutes, and nothing here can answer a prompt. What they say, all of it, is why it failed.
-      const c = await run("git", ["commit", "-m", subject, "--", ...literal(paths)], { cwd, env: { ...env, GIT_TERMINAL_PROMPT: "0" }, input: "", timeout: 10 * 60_000 });
+      const c = await run("git", ["commit", "-m", subject, "--", ...literal(going)], { cwd, env: { ...env, GIT_TERMINAL_PROMPT: "0" }, input: "", timeout: 10 * 60_000 });
       if (c.code !== 0) throw new Error(c.stderr.trim() || c.stdout.trim() || "The commit failed.");
       const sha = (await git(cwd, ["rev-parse", "--short", "HEAD"])).stdout.trim();
       // A turn is committed once all its files are; until then the committed ones wait in `done`,
@@ -1424,7 +1470,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       for (const t of made) {
         const c = withContext(t, text, files);
         // Each starts once its new worktree is set up, as a message sent there would (thread.send).
-        void (setups.get(t.id) ?? Promise.resolve()).then(() => runtime.send(t.id, c.text, "queue", undefined, c.files)).catch(() => {});
+        void (setups.get(t.id) ?? Promise.resolve()).then(() => runtime.send(t.id, c.text, "queue", undefined, c.files)).catch((e) => keepMessage(t.id, text, files, undefined, `That didn't start: ${String(e?.message ?? e)}.`));
       }
       return made;
     },
@@ -1434,7 +1480,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const project = store.project(t.projectId);
       const now = await capture(t.worktree.root ?? t.worktree.path, `${threadId}/keep`);
       if (!now) throw new Error("Couldn't read that session's changes.");
-      const patch = (await run("git", ["diff", "--binary", ...PATCH, t.compare.base, now], { cwd: t.worktree.root ?? t.worktree.path, maxBuffer: 256 * 1024 * 1024 })).stdout;
+      const diff = await run("git", ["diff", "--binary", ...PATCH, t.compare.base, now], { cwd: t.worktree.root ?? t.worktree.path, maxBuffer: 256 * 1024 * 1024, timeout: 120000 });
+      // Cut short by its limits, what's read would apply as far as it goes and look kept.
+      if (diff.code !== 0) throw new Error(`Couldn't read that session's changes: ${diff.stderr.trim().split("\n").pop() || "git stopped."}`);
+      const patch = diff.stdout;
       const files = (patch.match(/^diff --git /gm) ?? []).length;
       if (!files) throw new Error("That one didn't change anything.");
       const top = (await git(project.path, ["rev-parse", "--show-toplevel"])).stdout.trim() || project.path;
@@ -1600,6 +1649,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     x.terms.closeThread?.(threadId);
     void stopServers(env, mine(threadId), { only: "session" }).catch(() => {});
   }
+  /** A diff card's files, and how many there are past the ones it holds. */
+  async function diffOf(cwd: string, from: string, to: string, files: FileChange[]) {
+    return { files: await diffFiles(cwd, from, to, files), total: files.length };
+  }
   function cwdOf(threadId: string) {
     const t = store.thread(threadId);
     return t.worktree?.path ?? store.project(t.projectId).path;
@@ -1638,7 +1691,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     ready,
     updates,
     async call(method: string, params: unknown) {
-      const h = (handlers as Record<string, (p: unknown) => unknown>)[method];
+      const h = Object.hasOwn(handlers, method) ? (handlers as Record<string, (p: unknown) => unknown>)[method] : undefined;
       if (!h) throw new Error(`Unknown method ${method}`);
       return h(params ?? {});
     },

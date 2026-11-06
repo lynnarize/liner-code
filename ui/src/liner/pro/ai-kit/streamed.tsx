@@ -54,7 +54,8 @@ export const StreamedMarkdown = memo(function StreamedMarkdown({ text, streaming
         sentences,
         litSentence: lit?.from === "cite" ? lit.sentence : null,
         litSources: lit?.from === "card" ? lit.sources : null,
-        renderCite: (ids, at, sentence) => <Cite key={at} ids={ids} at={at} sentence={sentence} />,
+        // Outside a CiteScope there's nothing to cite, and Cite draws nothing: "[0]" stays words.
+        renderCite: cites ? (ids, at, sentence) => <Cite key={at} ids={ids} at={at} sentence={sentence} /> : undefined,
       })}
     </div>
   );

@@ -70,6 +70,13 @@ export function fill(text: string, ctx: Context) {
   });
 }
 
+/** A gate's deny pattern against a changed file: a folder or name from the start, a bare name in any folder, `*` within a name. */
+export function denied(file: string, pattern: string) {
+  if (file.startsWith(pattern)) return true;
+  const name = pattern.split("*").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*");
+  return new RegExp(`(^|/)${name}$`).test(file);
+}
+
 export class Routines {
   private list: Routine[] = [];
   private runs: RoutineRun[] = [];
@@ -95,7 +102,7 @@ export class Routines {
     // Read the way state.json is: one cut short by a power cut is set aside for the last good copy, so the engine still starts.
     const saved = loadState<{ routines: Routine[]; runs: RoutineRun[]; seen: Record<string, number[]> }>(join(store.home, "routines.json"));
     this.list = saved.routines ?? [];
-    this.runs = (saved.runs ?? []).map((r) => (r.status === "running" ? { ...r, status: "failed", outcome: "The engine stopped during this run." } : r));
+    this.runs = (saved.runs ?? []).map((r) => (r.status === "running" ? { ...r, status: "failed", outcome: "The engine stopped during this run.", steps: r.steps.map((s) => (s.status === "running" ? { ...s, status: "failed" as const, detail: "The engine stopped during this step." } : s)) } : r));
     for (const [k, v] of Object.entries(saved.seen ?? {})) this.seen.set(k, new Set(v));
   }
 
@@ -164,11 +171,13 @@ export class Routines {
     if (!p) return;
     const cwd = p.path;
     const kind = r.trigger.event === "pr.opened" ? "pr" : "issue";
-    const res = await run("gh", [kind, "list", "--state", "open", "--limit", "20", "--json", "number,title,author,url,authorAssociation"], { cwd, env: this.env, timeout: 30000 });
+    // GitHub's REST lists, newest first: who someone is to the repository isn't among `gh pr list`'s or `gh issue list`'s --json fields, and gh refuses one it doesn't know.
+    const res = await run("gh", ["api", `repos/{owner}/{repo}/${kind === "pr" ? "pulls" : "issues"}?state=open&per_page=20`], { cwd, env: this.env, timeout: 30000 });
     if (res.code !== 0) return;
-    let items: { number: number; title: string; url: string; author?: { login: string }; authorAssociation?: string }[];
+    let items: { number: number; title: string; html_url: string; user?: { login: string }; author_association?: string; pull_request?: unknown }[];
     try {
-      items = JSON.parse(res.stdout);
+      // The issues list has pull requests in it too.
+      items = (JSON.parse(res.stdout) as typeof items).filter((x) => kind === "pr" || !x.pull_request);
     } catch {
       return;
     }
@@ -181,10 +190,10 @@ export class Routines {
       if (seen.has(it.number)) continue;
       seen.add(it.number);
       if (quiet || it.number < mark) continue;
-      const outside = !["OWNER", "MEMBER", "COLLABORATOR"].includes((it.authorAssociation ?? "").toUpperCase());
+      const outside = !["OWNER", "MEMBER", "COLLABORATOR"].includes((it.author_association ?? "").toUpperCase());
       if (r.trigger.outside && !outside) continue;
-      const who = it.author?.login ?? "Someone";
-      void this.fire(r.id, `${who} opened #${it.number}`, { subject: { kind, number: it.number, title: it.title, author: who, url: it.url } });
+      const who = it.user?.login ?? "Someone";
+      void this.fire(r.id, `${who} opened #${it.number}`, { subject: { kind, number: it.number, title: it.title, author: who, url: it.html_url } });
     }
     this.seen.set(r.id, seen);
     this.save();
@@ -341,14 +350,18 @@ export class Routines {
             this.store.patchThread(thread.id, { access: before });
           }
           const t = this.store.thread(thread.id);
-          end(s, t.status === "error" ? "failed" : "done", t.status === "error" ? "The agent ran into a problem" : `${t.toReview ?? 0} files changed`);
+          // A step that didn't get to its end isn't done, and nothing on the gate's pass path follows it.
+          const last = this.store.timeline(thread.id).findLast((x) => x.kind === "turn");
+          const cut = t.status === "error" ? "The agent ran into a problem" : t.status === "limited" ? "The agent ran out of usage" : last?.kind === "turn" && last.status === "stopped" ? "It was stopped" : undefined;
+          end(s, cut ? "failed" : "done", cut ?? `${t.toReview ?? 0} files changed`);
         } else {
           const text = await this.runtime.quiet(thread.id, who.model, cwd, st.role === "audit" ? reviewPrompt(prompt, (ctx.diff ?? "").slice(0, 60000), 1) : prompt, abort.signal);
           this.note(thread, st.agent, `${model.provider}:${model.model}`, st.role === "audit" ? text.replace(/<findings>[\s\S]*<\/findings>/, "").trim() : text);
           if (st.role === "audit") {
             const found = parseFindings(text);
-            verdict = found?.verdict ?? "fail";
-            notes = (found?.findings ?? []).map((f) => `- ${f.file}${f.line ? `:${f.line}` : ""}: ${f.note}`).join("\n");
+            // One audit that fails stands, whatever a later one says.
+            verdict = verdict === "fail" ? "fail" : (found?.verdict ?? "fail");
+            notes = [notes, ...(found?.findings ?? []).map((f) => `- ${f.file}${f.line ? `:${f.line}` : ""}: ${f.note}`)].filter(Boolean).join("\n");
             if (found) this.store.putItem(thread.id, { kind: "review", id: uid("it"), turn: this.store.thread(thread.id).turns, at: Date.now(), reviewer: who.model, round: 1, status: found.verdict === "pass" ? "passed" : "blocked", findings: found.findings, summary: found.summary });
             end(s, "done", found ? `${found.findings.length} ${found.findings.length === 1 ? "note" : "notes"}, ${found.verdict === "pass" ? "nothing blocking" : "something blocks"}` : "No verdict");
           } else end(s, "done", text.split("\n").find((l) => l.trim())?.slice(0, 120));
@@ -397,8 +410,7 @@ export class Routines {
     rec.status = abort.signal.aborted ? "failed" : outcome;
     rec.outcome = over ? "Over its token limit" : abort.signal.aborted ? "You stopped this run." : rec.status === "merged" ? "Merged on its own" : rec.status === "handed" ? "Waits for you" : rec.status === "failed" ? "Something failed" : "Done";
     rec.seconds = (Date.now() - started) / 1000;
-    const u = t.usage ?? emptyUsage();
-    rec.tokens = u.inputTokens + u.outputTokens + u.cacheReadTokens;
+    rec.tokens = Math.max(0, tokensOf(t.usage) - base);
     this.putRun(rec);
     if (rec.test) {
       rec.outcome = over ? "Over its token limit" : abort.signal.aborted ? "You stopped this test." : passed ? "Would have taken the pass path" : `Would have taken Otherwise${rec.rules?.find((x) => !x.ok) ? `: ${rec.rules.find((x) => !x.ok)!.label.toLowerCase()} failed` : ""}`;
@@ -476,7 +488,7 @@ export class Routines {
         const lines = (ctx.additions ?? Infinity) + (ctx.deletions ?? 0);
         out.push({ label: `Fewer than ${rule.n} changed lines`, ok: lines < rule.n, detail: Number.isFinite(lines) ? String(lines) : "Unknown" });
       } else if (rule.kind === "paths") {
-        const hit = (ctx.files ?? []).filter((f) => rule.deny.some((p) => f.startsWith(p) || new RegExp(`(^|/)${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`).test(f)));
+        const hit = (ctx.files ?? []).filter((f) => rule.deny.some((p) => denied(f, p)));
         out.push({ label: `Leaves ${rule.deny.slice(0, 3).join(", ")} alone`, ok: ctx.files !== undefined && hit.length === 0, detail: hit.length ? hit.slice(0, 3).join(", ") : `${ctx.files?.length ?? 0} files` });
       } else if (rule.kind === "knownAuthor") {
         const who = ctx.subject?.author;

@@ -15,6 +15,8 @@ import { Timeline } from "./Timeline";
 import { Disc } from "./ui";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
+/** What's being written to each session's side chat, while the app runs: the panel shuts, and you move between sessions. */
+const drafts = new Map<string, string>();
 
 export function SideChat({ thread, visible }: { thread: Thread; visible: boolean }) {
   const side = useEngine((s) => s.sides.find((x) => x.sideOf === thread.id));
@@ -25,7 +27,11 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
   const from = side?.sideFrom ?? thread.turns;
   // Its own turns: the session's, copied in when it started, stay out of sight.
   const items = useMemo(() => all.filter((x) => x.turn > from), [all, from]);
-  const [text, setText] = useState("");
+  const [text, setTextState] = useState(() => drafts.get(thread.id) ?? "");
+  const setText = (v: string) => {
+    drafts.set(thread.id, v);
+    setTextState(v);
+  };
   const [starting, setStarting] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
   const seen = useRef<Set<string> | null>(null);
@@ -34,7 +40,7 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
   useEffect(() => {
     if (!side) return;
     seen.current = null;
-    void loadItems(side.id);
+    void loadItems(side.id).catch(() => {});
     stick();
   }, [side?.id]);
   if (seen.current === null && items.length) seen.current = new Set(items.map((x) => x.id));
@@ -57,6 +63,7 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
         await loadItems(s.id);
       }
       await rpc("thread.send", { id: s.id, text: ask });
+      stick();
     } catch (e) {
       setText(ask);
       fail(e);

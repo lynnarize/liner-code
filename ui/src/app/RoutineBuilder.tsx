@@ -93,6 +93,32 @@ function gateStep(g: Extract<RoutineStep, { kind: "gate" }>, pass: WorkflowStep[
   };
 }
 
+const ruleCount = (s: WorkflowStep) => [val(s, "checks", false), val(s, "reviewer", false), val(s, "maxOn", false), val<string>(s, "deny", "").trim() !== "", val(s, "known", false)].filter(Boolean).length;
+
+/**
+  A card's words follow its settings: the gate's count of rules, who an AI step is, what starts the
+  trigger. Its fields are left as they are, so what you're typing isn't rewritten under you, and a
+  name you gave a card stays until the setting it names changes.
+*/
+function reword(next: WorkflowStep[], prev: WorkflowStep[], d: Draft, c: Ctx) {
+  return next.map((s) => {
+    const was = prev.find((x) => x.id === s.id);
+    if (s.type === "gate" && s.paths) {
+      const n = ruleCount(s);
+      return { ...s, summary: `${plural(n, "rule")}, checked by code`, paths: s.paths.map((p, i) => (i === 0 ? { ...p, label: n ? `All ${plural(n, "rule")} hold` : "It passes" } : p)) };
+    }
+    if (s.type === "trigger") {
+      const t = triggerStep(d, c, s.id);
+      return { ...s, title: t.title, label: t.label, summary: t.summary, glyph: t.glyph };
+    }
+    if (s.kind === "ai" && was && val(was, "agent", "") !== val(s, "agent", "")) {
+      const role = (s.type ?? "").slice(3) as keyof typeof AI_TITLE;
+      return { ...s, title: `${agentOf(val(s, "agent", ""), c.agents, c.providers).name} ${AI_TITLE[role].toLowerCase()}` };
+    }
+    return s;
+  });
+}
+
 const ACTION_GLYPH = { merge: "code", comment: "chat", label: "record", close: "doc", inbox: "person", notify: "send" } as const;
 function actionStep(a: Extract<RoutineStep, { kind: "action" }>, id = uidOf(a.action)): WorkflowStep {
   const fields: WorkflowField[] = [];
@@ -228,24 +254,34 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
   const [steps, setSteps] = useState<WorkflowStep[]>(() => toSteps(draft, c));
   const [name, setName] = useState(draft.name);
   const [testOn, setTestOn] = useState("");
-  const [savedAt, setSavedAt] = useState<number | null>(saved ? Date.now() : null);
+  // Saved, as far as you've edited: an edit waiting for its save, or one that failed, isn't.
+  const [savedNow, setSavedNow] = useState(Boolean(saved));
   const idRef = useRef<string | undefined>(saved?.id);
   const testNo = useRef("");
   testNo.current = testOn;
 
-  // Changes save a moment after you stop.
+  // Changes save a moment after you stop; leaving before that moment saves them on the way out.
   const timer = useRef(0);
+  const waiting = useRef<Draft | null>(null);
+  const shownName = () => name.trim() || draft.name;
   const persist = async (d: Draft) => {
     if (!d.projectId) throw new Error("Add a project first: routines run in one.");
     // A save now carries every edit so far: one still waiting would put back the draft it was made from (Turn on undone).
     window.clearTimeout(timer.current);
+    waiting.current = null;
     const r = await rpc("routine.save", { routine: { ...d, id: idRef.current } });
     idRef.current = r.id;
     setDraft(r);
-    setSavedAt(Date.now());
+    setSavedNow(true);
     return r;
   };
   const change = (next: WorkflowStep[]) => {
+    // A routine is flat (contracts' RoutineStep): one gate, and only actions on its paths. Anything else would vanish on the next open.
+    const nested = next.flatMap((s) => (s.paths ?? []).flatMap((p) => p.steps)).filter((s) => !(s.type && s.type in ACTION));
+    if (nested.length || next.filter((s) => s.type === "gate").length > 1) {
+      toast(nested.length ? "Only actions go on the gate's paths" : "A routine has one gate", { description: nested.length ? "Add AI steps and the gate to the main line." : "Its rules decide both paths." });
+      return;
+    }
     // A trigger that changed kind gets the settings for its kind.
     const t0 = steps.find((s) => s.type === "trigger");
     const t1 = next.find((s) => s.type === "trigger");
@@ -257,17 +293,26 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
       if (start === "schedule" && d.trigger.kind !== "schedule") d.trigger = { kind: "schedule", every: "day", at: "09:00" };
       fixed = next.map((s) => (s.type === "trigger" ? triggerStep(d, c, s.id) : s));
     }
-    setSteps(fixed);
-    const d = { ...fromSteps(fixed, draft), name };
+    const d = { ...fromSteps(fixed, draft), name: shownName() };
+    setSteps(reword(fixed, steps, d, c));
     setDraft(d);
+    setSavedNow(false);
+    waiting.current = d;
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void persist(d).catch((e) => toast.error(e instanceof Error ? e.message : String(e))), 700);
   };
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current);
+      const d = waiting.current;
+      if (d?.projectId) void rpc("routine.save", { routine: { ...d, id: idRef.current } }).catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
+    },
+    [],
+  );
 
   // A test: it saves, runs on the pull request you name, and the canvas follows the run.
   const runner: WorkflowRunner = async (current, emit, signal) => {
-    const d = { ...fromSteps(current, draft), name };
+    const d = { ...fromSteps(current, draft), name: shownName() };
     const r = await persist(d);
     const n = Number(testNo.current.replace(/\D/g, "")) || undefined;
     emit({ type: "status", text: n ? `Testing on #${n}` : "Testing" });
@@ -278,7 +323,7 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
     emit({ type: "step", id: current[0].id, state: "done" });
     for (;;) {
       if (signal.aborted) {
-        void rpc("routine.stop", { runId: started.id });
+        void rpc("routine.stop", { runId: started.id }).catch(() => {});
         throw Object.assign(new Error("Stopped"), { name: "AbortError" });
       }
       const run = getState().runs.find((x) => x.id === started.id);
@@ -335,7 +380,9 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
           aria-label="The routine's name"
           onChange={(e) => setName(e.target.value)}
           onBlur={() => {
-            if (name.trim() && name !== draft.name) void persist({ ...draft, name: name.trim() }).catch(() => {});
+            // A routine always has a name: left empty, it keeps the one it had.
+            if (!name.trim()) return setName(draft.name);
+            if (name !== draft.name) void persist({ ...draft, name: name.trim() }).catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
           }}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         />
@@ -347,7 +394,7 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
           trigger={
             <>
               <I.folder size={13} />
-              {projects.find((p) => p.id === draft.projectId)?.name ?? "Choose a project"}
+              <span className="lc-rb-proj-n">{projects.find((p) => p.id === draft.projectId)?.name ?? "Choose a project"}</span>
               <I.chevD size={11} />
             </>
           }
@@ -358,7 +405,7 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
               need={draft.trigger.kind === "github" ? "github" : undefined}
               onPick={(p) => {
                 close();
-                const d = { ...fromSteps(steps, draft), name, projectId: p.id };
+                const d = { ...fromSteps(steps, draft), name: shownName(), projectId: p.id };
                 setDraft(d);
                 setSteps((st) => st.map((x) => (x.type === "trigger" ? triggerStep(d, { ...c, projects: projects.some((y) => y.id === p.id) ? projects : [...projects, p] }, x.id) : x)));
                 void persist(d).catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
@@ -366,7 +413,7 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
             />
           )}
         </Pop>
-        <span className="lc-quiet lc-rb-saved">{savedAt ? "Saved" : "Not saved yet"}</span>
+        <span className="lc-quiet lc-rb-saved">{savedNow ? "Saved" : "Not saved yet"}</span>
         <span className="lc-grow" data-drag />
         {(draft.trigger.kind === "github" || draft.trigger.kind === "webhook") && (
           <label className="lc-rb-test">
@@ -398,7 +445,7 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
           <I.bolt size={13} />
           <span className="lc-quiet">POST to</span>
           <span className="lc-mono lc-rb-url">{hook}</span>
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void navigator.clipboard?.writeText(hook).then(() => toast("Copied the URL"))}>
+          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void navigator.clipboard?.writeText(hook).then(() => toast("Copied the URL"), () => toast.error("Couldn't copy it"))}>
             Copy
           </button>
           <span className="lc-quiet">{os.Here} only, until remote access. The prompt can quote {"{{body.…}}"}.</span>

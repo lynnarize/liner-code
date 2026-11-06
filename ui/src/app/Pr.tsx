@@ -24,12 +24,26 @@ import { prLine, SurfaceNote } from "./Surfaces";
 import { Badge, Lines } from "./ui";
 import * as os from "./os";
 
-type Gh = "ready" | "missing" | "signed-out" | "no-remote";
+/** "failed": the question itself failed, which says nothing about the project. */
+type Gh = "ready" | "missing" | "signed-out" | "no-remote" | "failed";
 
 function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry: () => void }) {
   if (gh === "missing")
     return (
-      <SurfaceNote icon={<I.pr size={20} />} title="Pull requests need the GitHub CLI" action={<button type="button" className="lc-btn" data-kind="plain" onClick={() => bridge.runInTerminal(ghInstall())}>Install it in Terminal</button>}>
+      <SurfaceNote
+        icon={<I.pr size={20} />}
+        title="Pull requests need the GitHub CLI"
+        action={
+          <span className="lc-noproj-acts">
+            <button type="button" className="lc-btn" data-kind="plain" onClick={() => bridge.runInTerminal(ghInstall())}>
+              Install it in Terminal
+            </button>
+            <button type="button" className="lc-btn" data-kind="plain" onClick={onRetry}>
+              Look again
+            </button>
+          </span>
+        }
+      >
         Liner Code reads and opens pull requests through <span className="lc-code">gh</span>, signed in as you.
       </SurfaceNote>
     );
@@ -52,6 +66,12 @@ function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry: () 
         {detail ?? "The GitHub CLI is installed but not signed in."}
       </SurfaceNote>
     );
+  if (gh === "failed")
+    return (
+      <SurfaceNote icon={<I.pr size={20} />} title="GitHub didn't answer" action={<button type="button" className="lc-btn" data-kind="plain" onClick={onRetry}>Look again</button>}>
+        {detail}
+      </SurfaceNote>
+    );
   return (
     <SurfaceNote icon={<I.pr size={20} />} title="This project has no GitHub remote" action={<button type="button" className="lc-btn" data-kind="plain" onClick={onRetry}>Look again</button>}>
       Push it to GitHub first, with <span className="lc-code">gh repo create</span> or a remote of your own. Then its pull requests show here.
@@ -67,8 +87,9 @@ const CHECK: Record<PrInfo["checks"][number]["state"], PrCheck["state"]> = { pas
 const pause = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     if (signal.aborted) return reject(new DOMException("Stopped", "AbortError"));
-    const t = window.setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => (window.clearTimeout(t), reject(new DOMException("Stopped", "AbortError"))), { once: true });
+    const stop = () => (window.clearTimeout(t), reject(new DOMException("Stopped", "AbortError")));
+    const t = window.setTimeout(() => (signal.removeEventListener("abort", stop), resolve()), ms);
+    signal.addEventListener("abort", stop, { once: true });
   });
 const names = (list: string[]) => (list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : (list[0] ?? ""));
 
@@ -93,8 +114,9 @@ function localCheck() {
 const untilStopped = <T,>(p: Promise<T>, signal: AbortSignal) =>
   new Promise<T>((resolve, reject) => {
     if (signal.aborted) return reject(new DOMException("Stopped", "AbortError"));
-    signal.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError")), { once: true });
-    p.then(resolve, reject);
+    const stop = () => reject(new DOMException("Stopped", "AbortError"));
+    signal.addEventListener("abort", stop, { once: true });
+    void p.then(resolve, reject).finally(() => signal.removeEventListener("abort", stop));
   });
 
 /**
@@ -165,6 +187,8 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
   const local = localCheck();
   let last: PrPicture | null = null;
   let number = 0;
+  /** Looks in a row with no pull request, after one was seen. */
+  let empty = 0;
   const look = async (emit: (e: PrEvent) => void) => {
     const [st, pic] = await Promise.all([rpc("pr.status", { threadId }), rpc("pr.picture", { threadId })]);
     last = pic;
@@ -178,13 +202,31 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
   const watch = async (emit: (e: PrEvent) => void, signal: AbortSignal) => {
     let said = "";
     const say = (text: string) => text !== said && (emit({ type: "message", text }), (said = text));
+    let seenOnce = false;
     for (;;) {
-      const { st, pic } = await look(emit);
+      // One failed look at GitHub (the network, a slow gh) doesn't end the watch; the first says why, by failing the step.
+      let got: Awaited<ReturnType<typeof look>>;
+      try {
+        got = await look(emit);
+      } catch (e) {
+        if ((e as Error).name === "AbortError" || !seenOnce) throw e;
+        await pause(o.seen() ? 8000 : 25000, signal);
+        continue;
+      }
+      seenOnce = true;
+      const { st, pic } = got;
       const pr = st.pr;
       if (!pr) {
+        // gh answering nothing for a pull request already seen is gh, not the pull request.
+        // A few in a row is the session on another branch now, and there's nothing left to watch.
+        if (number && ++empty <= 5) {
+          await pause(o.seen() ? 8000 : 25000, signal);
+          continue;
+        }
         emit({ type: "stage", stage: "idle" });
         return;
       }
+      empty = 0;
       number = pr.number;
       emit({ type: "pr", number: pr.number, url: pr.url });
       // Two runs can share a name (one workflow on push and on pull_request): each keeps a row of its own.
@@ -241,7 +283,8 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
     create: guarded("idle", async (emit, signal) => {
       emit({ type: "status", text: "Looking at the branch" });
       const { st, pic } = await look(emit);
-      if (!st.pr) {
+      // A pull request closed without merging is over: the branch can open another.
+      if (!st.pr || st.pr.state === "CLOSED") {
         if (!pic.ahead) {
           emit({ type: "message", text: "Nothing is committed on this branch yet. Commit from the Changes tab first; the pull request carries what's committed." });
           emit({ type: "stage", stage: "idle" });
@@ -310,6 +353,7 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
   const [editing, setEditing] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [diff, setDiff] = useState<{ add: number; del: number } | undefined>();
+  const [base, setBase] = useState<string | undefined>();
   const seen = useRef(visible);
   seen.current = visible;
   const fields = useRef({ title, body, draft });
@@ -323,10 +367,15 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
     const get = () =>
       rpc("pr.status", { threadId: thread.id })
         .then((s) => live && setSt(s))
-        .catch((e) => live && setSt({ pr: null, gh: "no-remote", detail: e instanceof Error ? e.message : String(e) }));
+        // A look that fails while the card is up leaves it up: taking it down would stop the steps it's running.
+        .catch((e) => live && setSt((s) => s ?? { pr: null, gh: "failed", detail: e instanceof Error ? e.message : String(e) }));
     void get();
     void rpc("pr.picture", { threadId: thread.id })
-      .then((p) => live && setDiff(p.diff))
+      .then((p) => {
+        if (!live) return;
+        setDiff(p.diff);
+        setBase(p.base);
+      })
       .catch(() => {});
     // The card watches its own checks; this keeps the reviews under it current.
     const t = visible ? window.setInterval(get, 30000) : 0;
@@ -354,7 +403,8 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
 
   if (!st) return <SurfaceNote icon={<I.pr size={20} />} title="Asking GitHub" />;
   if (st.gh !== "ready") return <GhNote gh={st.gh} detail={st.detail} onRetry={() => setN((x) => x + 1)} />;
-  const pr = st.pr;
+  // One closed without merging is over: the branch reads as having none, so another can open.
+  const pr = st.pr?.state === "CLOSED" ? null : st.pr;
   const approved = pr?.reviews.filter((r) => r.state === "APPROVED").length ?? 0;
 
   return (
@@ -365,7 +415,7 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
           variant="panel"
           title={pr?.title ?? (title.trim() || thread.title)}
           branch={st.branch ?? "this branch"}
-          base={pr?.base ?? "main"}
+          base={pr?.base ?? base ?? "main"}
           agent={agent}
           diff={pr ? { add: pr.additions, del: pr.deletions } : (diff ?? { add: 0, del: 0 })}
           start={Boolean(pr)}
@@ -560,7 +610,7 @@ export function PrChatCard({ threadId, it, fresh, run, ask }: { threadId: string
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const agentName = agentOf(thread?.agent, agents, providers).name;
-  const [st, setSt] = useState<{ pr: PrInfo | null; branch?: string; gh: Gh; detail?: string; diff?: { add: number; del: number } } | null>(null);
+  const [st, setSt] = useState<{ pr: PrInfo | null; branch?: string; gh: Gh; detail?: string; diff?: { add: number; del: number }; base?: string } | null>(null);
   const [n, setN] = useState(0);
   // Asked just now: a new session's first message counts as already there, so its age decides too.
   const [live] = useState(() => fresh || Date.now() - it.at < 30000);
@@ -569,8 +619,8 @@ export function PrChatCard({ threadId, it, fresh, run, ask }: { threadId: string
     if (it.demo) return;
     let live = true;
     void Promise.all([rpc("pr.status", { threadId }), rpc("pr.picture", { threadId }).catch(() => null)])
-      .then(([s, p]) => live && setSt({ ...s, diff: p?.diff }))
-      .catch((e) => live && setSt({ pr: null, gh: "no-remote", detail: e instanceof Error ? e.message : String(e) }));
+      .then(([s, p]) => live && setSt({ ...s, diff: p?.diff, base: p?.base }))
+      .catch((e) => live && setSt({ pr: null, gh: "failed", detail: e instanceof Error ? e.message : String(e) }));
     return () => {
       live = false;
     };
@@ -588,7 +638,7 @@ export function PrChatCard({ threadId, it, fresh, run, ask }: { threadId: string
   const under = (
     <>
       {ask?.(agentName)}
-      {run && <PrConsole threadId={threadId} run={run} agentName={agentName} />}
+      {run && <PrConsole key={run.id} threadId={threadId} run={run} agentName={agentName} />}
     </>
   );
   if (it.demo) {
@@ -602,10 +652,10 @@ export function PrChatCard({ threadId, it, fresh, run, ask }: { threadId: string
   }
   if (!st) return <p className="lc-notice">Asking GitHub</p>;
   if (st.gh !== "ready") return <GhNote gh={st.gh} detail={st.detail} onRetry={() => setN((x) => x + 1)} />;
-  const pr = st.pr;
+  const pr = st.pr?.state === "CLOSED" ? null : st.pr;
   return (
     <div className="lc-prchat">
-      <PrCard key={it.id} title={pr?.title ?? thread.title} branch={branch} base={pr?.base ?? "main"} agent={agent} diff={pr ? { add: pr.additions, del: pr.deletions } : (st.diff ?? { add: 0, del: 0 })} start={live || Boolean(pr)} />
+      <PrCard key={it.id} title={pr?.title ?? thread.title} branch={branch} base={pr?.base ?? st.base ?? "main"} agent={agent} diff={pr ? { add: pr.additions, del: pr.deletions } : (st.diff ?? { add: 0, del: 0 })} start={live || Boolean(pr)} />
       {under}
     </div>
   );
@@ -629,10 +679,12 @@ function PrConsole({ threadId, run, agentName }: { threadId: string; run: Tool; 
   }, [run.output, isOpen]);
   const fix = async () => {
     const end = (run.output ?? "").trim().split("\n").slice(-30).join("\n");
+    // Said at the press, so a second one can't ask twice; given back if it didn't go.
+    setAsked(true);
     try {
       await rpc("thread.send", { id: threadId, text: `\`${run.input}\` fails on this branch, so the pull request didn't go up. Fix what it reports, run it again, and commit the fix.${end ? `\n\nThe end of its output:\n\`\`\`\n${end}\n\`\`\`` : ""}`, mode: busy ? "queue" : undefined });
-      setAsked(true);
     } catch (e) {
+      setAsked(false);
       toast.error(e instanceof Error ? e.message : String(e));
     }
   };
@@ -682,7 +734,7 @@ export function LinkedSurface({ thread, agentName, onOpenSession }: { thread: Th
     let live = true;
     void rpc("pr.list", { projectId: thread.projectId })
       .then((s) => live && setSt(s))
-      .catch((e) => live && setSt({ prs: [], gh: "no-remote", detail: e instanceof Error ? e.message : String(e) }));
+      .catch((e) => live && setSt({ prs: [], gh: "failed", detail: e instanceof Error ? e.message : String(e) }));
     return () => {
       live = false;
     };
@@ -708,12 +760,15 @@ export function LinkedSurface({ thread, agentName, onOpenSession }: { thread: Th
   };
   const resolve = async (p: PrInfo) => {
     const target = p.threadId ?? thread.id;
+    setBusy(p.number);
     try {
       await rpc("thread.send", { id: target, text: `#${p.number} (${p.head}) conflicts with ${p.base}. Bring ${p.base} into it, resolve the conflicts, run the tests and push.`, mode: "queue" });
       toast(p.threadId ? "Asked its session to resolve them" : `Asked ${agentName} to resolve them`);
       if (p.threadId && p.threadId !== thread.id) onOpenSession(p.threadId);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -749,7 +804,7 @@ export function LinkedSurface({ thread, agentName, onOpenSession }: { thread: Th
                 <span className="lc-linked-t">
                   <b>{p.title}</b>
                   <small className="lc-quiet">
-                    #{p.number} · {mine(p) ? "this session" : p.threadId ? "another session" : (p.author ?? "")} · <Lines added={p.additions} removed={p.deletions} />
+                    #{p.number} ·{mine(p) ? " this session ·" : p.threadId ? " another session ·" : p.author ? ` ${p.author} ·` : ""} <Lines added={p.additions} removed={p.deletions} />
                   </small>
                 </span>
                 {stateBadge(p)}
@@ -765,7 +820,7 @@ export function LinkedSurface({ thread, agentName, onOpenSession }: { thread: Th
                   </button>
                 )}
                 {conflict && p.state === "OPEN" && (
-                  <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void resolve(p)}>
+                  <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy !== null} onClick={() => void resolve(p)}>
                     Resolve conflicts
                   </button>
                 )}
@@ -774,7 +829,7 @@ export function LinkedSurface({ thread, agentName, onOpenSession }: { thread: Th
                     {busy === p.number ? "Merging" : "Merge"}
                   </button>
                 )}
-                <button type="button" className="lc-ib l-focus" aria-label={`Open #${p.number} on GitHub`} onClick={() => bridge.openExternal(p.url)}>
+                <button type="button" className="lc-ib l-focus" aria-label={`Open #${p.number} on GitHub`} title={`Open #${p.number} on GitHub`} onClick={() => bridge.openExternal(p.url)}>
                   <I.push size={13} />
                 </button>
               </div>

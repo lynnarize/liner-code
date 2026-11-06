@@ -179,6 +179,10 @@ function keepDraft(key: string, text: string) {
   }
 }
 
+/** Files waiting to go, by draft, while the app runs: a File can't be stored, but it lasts a move to another session and back. */
+const draftFiles = new Map<string, File[]>();
+const MAX_FILES = 10;
+
 /** A paste this big (in bytes, as T3 Code counts it: chat/useComposerAttachmentIntake.ts) comes as a text file. */
 const PASTE_AS_FILE = 32 * 1024;
 const bytesOf = (s: string) => (s.length * 3 < PASTE_AS_FILE ? s.length : new TextEncoder().encode(s).byteLength);
@@ -219,12 +223,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const [text, setText] = useState(() => draftOf(draftKey));
   // A queued message being edited: it keeps its place in the queue, and the draft it pushed aside comes back after.
   const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>(() => draftFiles.get(draftKey) ?? []);
   const [mode, setMode] = useState<"queue" | "steer">(() => (localStorage.getItem("lc:enter") as "steer") ?? "queue");
   const [mention, setMention] = useState<{ start: number; query: string; kind: "@" | "/" | "$" } | null>(null);
   const [found, setFound] = useState<Choice[]>([]);
   const [tools, setTools] = useState<{ commands: CommandInfo[]; skills: SkillInfo[] } | null>(null);
   const [hl, setHl] = useState(0);
+  const list = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
   // Markdown styled as you type: the mirror behind the field draws the same text with its look.
@@ -254,6 +259,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   // Past the window can't be: that's a total an older version saved, not how full the context is.
   const ctx = usage?.contextTokens && usage.contextWindow && usage.contextTokens <= usage.contextWindow ? usage.contextTokens / usage.contextWindow : undefined;
 
+  const recall = useRef(-1);
   // The draft is kept per session (and Home's), a moment after you stop typing and when you leave.
   // While a queued message is edited, the draft kept is the one it pushed aside.
   const pendingDraft = useRef<{ key: string; text: string } | null>(null);
@@ -268,6 +274,15 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     return () => clearTimeout(t);
   }, [text, draftKey, editing]);
   useEffect(() => flushDraft, [draftKey]);
+  // Quitting doesn't wait for that moment (T3 Code: composerDraftStore.ts).
+  useEffect(() => {
+    window.addEventListener("beforeunload", flushDraft);
+    return () => window.removeEventListener("beforeunload", flushDraft);
+  }, []);
+  useEffect(() => {
+    if (files.length) draftFiles.set(draftKey, files);
+    else draftFiles.delete(draftKey);
+  }, [files, draftKey]);
   useEffect(() => {
     try {
       localStorage.setItem("lc:enter", mode);
@@ -302,6 +317,10 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     el.style.transition = "";
   };
   useLayoutEffect(fit, [text]);
+  // The field has already scrolled to the caret; the mirror keeps its line in the same frame, not after the scroll event.
+  useLayoutEffect(() => {
+    if (mirrorRef.current && field.current) mirrorRef.current.scrollTop = field.current.scrollTop;
+  }, [text]);
   useEffect(() => {
     const el = field.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -363,8 +382,19 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     };
   }, [mention, project.id, thread?.id, tools]);
 
+  // The row under ↑ and ↓ stays in view in a list that scrolls (a short window).
+  useEffect(() => {
+    const box = list.current;
+    const row = box?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!box || !row) return;
+    if (row.offsetTop < box.scrollTop) box.scrollTop = row.offsetTop;
+    else if (row.offsetTop + row.offsetHeight > box.scrollTop + box.clientHeight) box.scrollTop = row.offsetTop + row.offsetHeight - box.clientHeight;
+  }, [hl, found]);
+
   const onType = (v: string, caret: number) => {
     setText(v);
+    // Changed by hand, it's yours: ↑ on the first line no longer swaps it for an older message.
+    recall.current = -1;
     const before = v.slice(0, caret);
     // A command only at the very start; a file or a skill anywhere after a space.
     const slash = /^\/([\w:.-]*)$/.exec(before);
@@ -417,11 +447,14 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       const used = [...skillsUsed.current].filter(([name]) => t.includes(`$${name}`));
       if (used.length) t = `${t}\n\n${used.map(([name, path]) => `Use the ${name} skill${path ? ` (${path})` : ""}.`).join("\n")}`;
       skillsUsed.current.clear();
+      const from = document.activeElement;
       const payload = { text: t || "Here are the files.", files: await Promise.all(files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how };
       setText(edit?.draft ?? "");
       setFiles([]);
       setMention(null);
       handed = true;
+      // The button pressed goes as the turn starts, and the keys would go with it.
+      if (variant === "session" && (document.activeElement === from || document.activeElement === document.body)) field.current?.focus();
       await onSend(payload);
     } catch (e) {
       // The draft comes back to try again, unless you've started a new one. Whoever sent it has said what went wrong.
@@ -435,11 +468,16 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   };
 
   const addFiles = (list: FileList | File[] | null) => {
-    if (!list) return;
-    setFiles((f) => [...f, ...Array.from(list)].slice(0, 10));
+    // Read now: the file picker's list empties as its field is cleared, before an update waiting its turn runs.
+    const added = Array.from(list ?? []);
+    if (!added.length) return;
+    if (files.length + added.length > MAX_FILES) toast(`A message takes ${MAX_FILES} files at most`, { description: `${plural(files.length + added.length - MAX_FILES, "file")} left out.` });
+    setFiles((f) => [...f, ...added].slice(0, MAX_FILES));
   };
 
-  const setQueue = (q: QueuedMessage[]) => thread && void rpc("thread.queue", { id: thread.id, queue: q });
+  const setQueue = (q: QueuedMessage[]) => {
+    if (thread) void rpc("thread.queue", { id: thread.id, queue: q }).catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
+  };
 
   /** Edit a queued message in the field; it stays queued, in its place, until you save it. */
   const editQueued = (q: QueuedMessage) => {
@@ -553,18 +591,21 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   useEffect(() => {
     if (!thread) return;
     return onComposerInsert(thread.id, (add) => {
+      // Asked here, once: an update function can run twice, and by then focus may have moved.
+      const box = field.current;
+      const caret = box && document.activeElement === box ? box.selectionStart : null;
+      let end = -1;
       setText((cur) => {
-        const el = field.current;
-        const at = el && document.activeElement === el ? el.selectionStart : cur.length;
-        const before = cur.slice(0, at);
+        const before = cur.slice(0, caret ?? cur.length);
         const lead = before && !before.endsWith("\n") ? "\n\n" : "";
-        return `${before}${lead}${add}${cur.slice(at)}`;
+        end = before.length + lead.length + add.length;
+        return `${before}${lead}${add}${cur.slice(caret ?? cur.length)}`;
       });
       requestAnimationFrame(() => {
         const el = field.current;
         if (!el) return;
         el.focus();
-        el.setSelectionRange(el.value.length, el.value.length);
+        el.setSelectionRange(end < 0 ? el.value.length : end, end < 0 ? el.value.length : end);
       });
     });
   }, [thread?.id]);
@@ -573,7 +614,6 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   // Only your messages: a reply streaming in doesn't redraw the composer.
   const items = useItemsWhere(thread?.id, isPrompt);
   const sent = items.flatMap((x) => (x.kind === "user" && !x.steer ? [x.text] : []));
-  const recall = useRef(-1);
   useEffect(() => {
     recall.current = -1;
   }, [thread?.id, sent.length]);
@@ -946,7 +986,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             </>
           )}
         </Pop>
-        <button type="button" className="lc-stop l-focus" aria-label="Stop" title="Stop (Esc)" onClick={onStop}>
+        <button type="button" className="lc-stop l-focus" aria-label="Stop" title="Stop (Esc)" onClick={() => (onStop?.(), field.current?.focus())}>
           <I.stop />
         </button>
         <button type="button" className="lc-send l-focus" aria-label={mode === "queue" ? "Queue it" : "Steer now"} title={mode === "queue" ? "Queue it (Enter)" : "Steer now (Enter)"} data-ready={ready || undefined} disabled={!ready} onClick={() => void send()}>
@@ -979,10 +1019,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           setDrag(true);
         }
       }}
-      onDragLeave={() => setDrag(false)}
+      // Moving over its own parts is no leaving.
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setDrag(false)}
       onDrop={(e) => {
-        e.preventDefault();
         setDrag(false);
+        // Words dragged in are the field's to take.
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
         addFiles(e.dataTransfer.files);
       }}
     >
@@ -1047,9 +1090,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             {files.map((f, i) => (
               <span key={`${f.name}${i}`} className="lc-file-chip" data-image={thumbs[i] ? true : undefined}>
                 {thumbs[i] ? <img src={thumbs[i]!} alt="" className="lc-file-thumb" /> : <I.file size={13} />}
-                {f.name}
+                <span className="lc-file-n" title={f.name}>{f.name}</span>
                 <span>{f.size < 1024 ? `${f.size} B` : `${Math.round(f.size / 1024)} KB`}</span>
-                <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>
+                <button type="button" className="l-focus" aria-label={`Remove ${f.name}`} onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>
                   <I.close size={11} />
                 </button>
               </span>
@@ -1073,7 +1116,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             onType(e.target.value, e.target.selectionStart);
             setStashOpen(false);
           }}
-          onBlur={() => setStashOpen(false)}
+          // A list open on a word you've left is no use: it goes when the caret leaves the word, or the field.
+          onSelect={(e) => mention && e.currentTarget.selectionEnd !== mention.start + 1 + mention.query.length && setMention(null)}
+          onBlur={() => (setStashOpen(false), setMention(null))}
           onPaste={(e) => {
             if (e.clipboardData.files.length) {
               e.preventDefault();
@@ -1083,7 +1128,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             // A big paste (a log, a file's worth) comes as a text file instead, to keep the message
             // readable; the toast puts it in the message after all if that's what you meant.
             const plain = e.clipboardData.getData("text/plain");
-            if (!plain || bytesOf(plain) < PASTE_AS_FILE || files.length >= 10) return;
+            if (!plain || bytesOf(plain) < PASTE_AS_FILE || files.length >= MAX_FILES) return;
             e.preventDefault();
             const el = e.currentTarget;
             const at = { start: el.selectionStart, end: el.selectionEnd };
@@ -1101,6 +1146,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             });
           }}
           onKeyDown={(e) => {
+            // Enter, Tab, Escape and the arrows belong to the input method while it composes (T3 Code: ComposerPromptEditorTiptap.tsx).
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (mention && found.length) {
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
@@ -1154,7 +1201,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 return;
               }
             }
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               void send(busy && (e.metaKey || e.ctrlKey) ? "steer" : busy ? mode : "queue");
             } else if (e.key === "Escape" && busy) onStop?.();
@@ -1170,7 +1217,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           <div className="lc-mention l-glass" role="listbox" aria-label="Stashed drafts">
             <span className="lc-quiet lc-mention-wait">Stashed drafts</span>
             {readStash().map((x, i) => (
-              <button key={x.at} type="button" role="option" aria-selected={false} className="lc-mention-row" onMouseDown={(e) => (e.preventDefault(), unstash(i))}>
+              <button key={x.at} type="button" role="option" aria-selected={false} className="lc-mention-row l-focus" onMouseDown={(e) => (e.preventDefault(), unstash(i))}>
                 <I.edit size={12} />
                 <span className="lc-mention-d lc-stash-t">{x.text.split("\n")[0]}</span>
                 <span className="lc-quiet">{ago(x.at)}</span>
@@ -1179,10 +1226,10 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           </div>
         )}
         {mention && (found.length > 0 || (mention.kind !== "@" && !tools)) && (
-          <div className="lc-mention l-glass" role="listbox" aria-label={mention.kind === "@" ? "Files" : mention.kind === "/" ? "Commands" : "Skills"}>
+          <div ref={list} className="lc-mention l-glass" role="listbox" aria-label={mention.kind === "@" ? "Files" : mention.kind === "/" ? "Commands" : "Skills"} onMouseDown={(e) => e.preventDefault()}>
             {mention.kind !== "@" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
             {found.map((f, i) => (
-              <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
+              <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
                 {f.kind === "@" ? <I.file size={13} /> : f.kind === "/" ? <span className="lc-mention-k">/</span> : <I.sparkle size={13} />}
                 <span className="lc-mono lc-mention-n">
                   {f.label}

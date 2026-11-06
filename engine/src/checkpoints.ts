@@ -242,24 +242,37 @@ export async function authoredPaths(cwd: string, from: string, to: string): Prom
 }
 
 const MAX = 400_000;
-async function show(cwd: string, rev: string, path: string) {
+/** What one diff card holds in all: 60 files of 400,000 characters a side would be tens of MB in one reply (T3 Code's CheckpointDiffQuery.ts shares one budget too). */
+const ALL = 4_000_000;
+/** `text` cut to `n` characters, never through the middle of an emoji. */
+const clip = (text: string, n: number) => {
+  const end = n > 0 && /[\ud800-\udbff]/.test(text[n - 1]) ? n - 1 : n;
+  return `${text.slice(0, end)}\n… (cut off: the file is larger than the diff view shows)`;
+};
+async function show(cwd: string, rev: string, path: string, left: { chars: number }) {
   // rev:./path reads from this folder; rev:path would read from the repository's top.
   const r = await git(cwd, ["show", `${rev}:./${path}`]);
   if (r.code !== 0) return undefined;
-  return r.stdout.length > MAX ? `${r.stdout.slice(0, MAX)}\n… (cut off: the file is larger than the diff view shows)` : r.stdout;
+  const room = Math.min(MAX, left.chars);
+  const text = r.stdout.length > room ? clip(r.stdout, room) : r.stdout;
+  left.chars = Math.max(0, left.chars - Math.min(r.stdout.length, room));
+  return text;
 }
 
-/** Each changed file's text before and after, for the diff card. */
+/** Each changed file's text before and after, for the diff card, up to what the card holds in all. */
 export async function diffFiles(cwd: string, from: string, to: string, files: FileChange[]): Promise<FileDiff[]> {
   const prefix = await prefixOf(cwd);
-  return Promise.all(
-    files.slice(0, 60).map(async (f) => ({
+  const left = { chars: ALL };
+  const out: FileDiff[] = [];
+  for (const f of files.slice(0, 60)) {
+    out.push({
       path: f.path,
       from: f.from,
-      before: f.status === "added" ? undefined : await show(cwd, from, local(f.from ?? f.path, prefix, f.rel)),
-      after: f.status === "deleted" ? undefined : await show(cwd, to, local(f.path, prefix, f.rel)),
-    })),
-  );
+      before: f.status === "added" ? undefined : await show(cwd, from, local(f.from ?? f.path, prefix, f.rel), left),
+      after: f.status === "deleted" ? undefined : await show(cwd, to, local(f.path, prefix, f.rel), left),
+    });
+  }
+  return out;
 }
 
 /**

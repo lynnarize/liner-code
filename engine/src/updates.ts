@@ -18,6 +18,9 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebStream } from "node:stream/web";
 import type { AppUpdate, BuiltinProvider, Settings, ToolUpdate, Updates } from "../../contracts/src/index.ts";
 import { newerVersion, updateModes } from "../../contracts/src/index.ts";
 import { run, which } from "./exec.ts";
@@ -185,6 +188,8 @@ export class Updater {
   */
   private stuck?: { version: string; why: string };
   private token: string | undefined | null = null;
+  /** How long a download may go without a byte before it's given up on. */
+  private stall = 60_000;
   private timers: NodeJS.Timeout[] = [];
   private readonly dir: string;
   private readonly env: NodeJS.ProcessEnv;
@@ -456,42 +461,63 @@ export class Updater {
     return /^[0-9a-f]{64}/i.exec(text.trim())?.[0].toLowerCase();
   }
 
-  private async assetResponse(asset: Asset) {
+  private async assetResponse(asset: Asset, signal: AbortSignal) {
     // The API's own address for an asset works for public and private releases alike.
     const headers: Record<string, string> = { accept: "application/octet-stream", "user-agent": `Liner Code/${this.app.current}` };
-    let res = await fetch(asset.url, { headers, redirect: "follow" });
+    let res = await fetch(asset.url, { headers, redirect: "follow", signal });
     if (res.status === 404 || res.status === 401 || res.status === 403) {
       const token = await this.ghToken();
-      if (token) res = await fetch(asset.url, { headers: { ...headers, authorization: `Bearer ${token}` }, redirect: "follow" });
+      if (token) res = await fetch(asset.url, { headers: { ...headers, authorization: `Bearer ${token}` }, redirect: "follow", signal });
     }
     if (!res.ok || !res.body) throw new Error(`${res.status} for ${asset.name}`);
     return res;
   }
 
   private async fetchAsset(asset: Asset) {
-    return Buffer.from(await (await this.assetResponse(asset)).arrayBuffer());
+    const signal = AbortSignal.timeout(this.stall);
+    return Buffer.from(await (await this.assetResponse(asset, signal)).arrayBuffer());
   }
 
   /** Streams an asset to a file, hashing it on the way; the SHA-256 in hex. */
   private async stream(asset: Asset, file: string) {
-    const res = await this.assetResponse(asset);
-    const total = Number(res.headers.get("content-length")) || asset.size || 0;
-    const hash = createHash("sha256");
-    const out = createWriteStream(file);
-    let done = 0;
-    let told = 0;
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-      hash.update(chunk);
-      done += chunk.byteLength;
-      if (!out.write(chunk)) await new Promise<void>((r) => out.once("drain", () => r()));
-      if (total && Date.now() - told > 250) {
-        told = Date.now();
-        this.app = { ...this.app, progress: Math.min(0.99, done / total) };
-        this.emit();
-      }
+    // Any failure ends it, and says so: a full disk, or a connection that went quiet with nothing
+    // to end it. "downloading" has no way out by itself, and nothing can be tried again until it does.
+    const quiet = new AbortController();
+    let timer: NodeJS.Timeout | undefined;
+    const heard = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => quiet.abort(new Error("no data came for a while")), this.stall);
+    };
+    heard();
+    try {
+      const res = await this.assetResponse(asset, quiet.signal);
+      const total = Number(res.headers.get("content-length")) || asset.size || 0;
+      const hash = createHash("sha256");
+      let done = 0;
+      let told = 0;
+      const update = this;
+      await pipeline(
+        Readable.fromWeb(res.body as unknown as WebStream),
+        async function* (chunks: AsyncIterable<Uint8Array>) {
+          for await (const chunk of chunks) {
+            heard();
+            hash.update(chunk);
+            done += chunk.byteLength;
+            if (total && Date.now() - told > 250) {
+              told = Date.now();
+              update.app = { ...update.app, progress: Math.min(0.99, done / total) };
+              update.emit();
+            }
+            yield chunk;
+          }
+        },
+        createWriteStream(file),
+        { signal: quiet.signal },
+      );
+      return hash.digest("hex");
+    } finally {
+      clearTimeout(timer);
     }
-    await new Promise<void>((resolve, reject) => out.end((e?: Error | null) => (e ? reject(e) : resolve())));
-    return hash.digest("hex");
   }
 
   /** Why an unpacked app isn't the one to put in, or nothing. */

@@ -468,10 +468,6 @@
   color: var(--l-ink-3);
   animation: l-pop-in 200ms var(--l-ease-enter) backwards;
 }
-/* In a session the bar's header heads the thread's column, so the find bar sits under it. */
-.lc-thread > .lc-find {
-  top: calc(var(--lc-head) + 8px);
-}
 .lc-find input {
   flex: 1;
   min-width: 0;

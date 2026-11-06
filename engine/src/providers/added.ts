@@ -11,7 +11,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import type { AddedAgent, BuiltinProvider, ProviderId, RegistryAgent, ToolAccount } from "../../../contracts/src/index.ts";
 import { ACCOUNT_HOME } from "../../../contracts/src/index.ts";
 import { binVar, run, which } from "../exec.ts";
@@ -148,6 +148,8 @@ export async function fromRegistry(entry: Entry, home: string, taken: string[], 
   if (build) {
     const dir = join(home, "agents", entry.id, entry.version);
     const cmd = resolve(dir, build.cmd);
+    // The folder is emptied before unpacking, and the registry's words name it: they stay under agents/.
+    if (!dir.startsWith(join(home, "agents") + sep) || !cmd.startsWith(dir + sep)) throw new Error(`${entry.name}'s entry in the registry points outside its folder.`);
     if (!existsSync(cmd)) await download(build, dir, env);
     if (!existsSync(cmd)) throw new Error(`The download didn't have ${build.cmd} in it.`);
     return { ...base, command: [cmd, ...(build.args ?? [])], env: build.env };

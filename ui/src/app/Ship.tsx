@@ -6,7 +6,7 @@
   when it lands, the ring turns green with a check. Then the card folds back into a Pushed chip,
   with Open a pull request beside it. Each stage holds long enough to read, however fast git is.
 */
-import { useEffect, useSyncExternalStore, type CSSProperties } from "react";
+import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from "react";
 import type { GitCommit, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "./engine";
@@ -32,6 +32,8 @@ type Shipment = {
   /** The commit this made, once git says its sha. */
   fresh?: string;
   error?: string;
+  /** Which step the error stopped at. */
+  stopped?: "commit" | "push";
 };
 
 const runs = new Map<string, Shipment>();
@@ -58,11 +60,14 @@ const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 export async function ship(thread: Thread, commit: { message: string; paths?: string[]; files: number; added: number; removed: number } | null): Promise<boolean> {
   let committed = false;
   const id = thread.id;
+  // One at a time: a second press while it runs would start the card again over the first.
+  const going = runs.get(id);
+  if (going && going.stage < 4) return false;
   const subject = commit?.message.split("\n")[0] ?? "";
   put(id, { stage: 0, files: commit?.files ?? 0, subject, added: commit?.added ?? 0, removed: commit?.removed ?? 0, commits: [] });
   const fail = (e: unknown) => {
     const message = e instanceof Error ? e.message : String(e);
-    patch(id, { stage: 4, error: message });
+    patch(id, { stage: 4, error: message, stopped: commit && !committed ? "commit" : "push" });
     toast.error(message);
   };
   try {
@@ -113,8 +118,12 @@ export function ShipCard({ thread }: { thread: Thread }) {
     (f) => (seen.add(f), () => void seen.delete(f)),
     () => runs.get(thread.id),
   );
-  // The next turn starts a new chapter: the chip from the last push steps aside.
+  // The next turn starts a new chapter: the chip from the last push steps aside. Only a new turn:
+  // coming back to the session mounts this again, and the chip (or what went wrong) stays.
+  const turns = useRef(thread.turns);
   useEffect(() => {
+    if (turns.current === thread.turns) return;
+    turns.current = thread.turns;
     if (s?.stage === 4) dismiss(thread.id);
   }, [thread.turns]);
   if (!s) return null;
@@ -143,7 +152,11 @@ export function ShipCard({ thread }: { thread: Thread }) {
               <div className="lc-ship-in">
                 <div className="lc-ship-head" style={{ "--d": "120ms" } as CSSProperties}>
                   <span className="lc-ship-ttl">Push</span>
-                  {s.branch && <span className="lc-ship-tag">{s.branch}</span>}
+                  {s.branch && (
+                    <span className="lc-ship-tag" title={s.branch}>
+                      {s.branch}
+                    </span>
+                  )}
                   <span className="lc-ship-sw lc-ship-hsw">
                     <span className="h1">Committing</span>
                     <span className="h2">Pushing</span>
@@ -162,7 +175,8 @@ export function ShipCard({ thread }: { thread: Thread }) {
                       <path d="M18.2 15.2l1.3 1.3 2.4-2.6" className="ck" />
                     </svg>
                     <span className="t3">
-                      To {remote}/{s.branch}
+                      To {remote}
+                      {s.branch ? `/${s.branch}` : ""}
                     </span>
                     <span className="lc-ship-meta lc-ship-sw">
                       <span className="m0">{plural(n, "commit")} to push</span>
@@ -226,7 +240,7 @@ export function ShipCard({ thread }: { thread: Thread }) {
               </span>
               <span className="x4">
                 {s.error ? <I.alert size={14} /> : <I.check size={14} />}
-                {s.error ? "The push didn't go through" : `Pushed ${plural(n, "commit")}`}
+                {s.error ? (s.stopped === "commit" ? "The commit didn't go through" : "The push didn't go through") : `Pushed ${plural(n, "commit")}`}
               </span>
             </span>
             {s.added + s.removed > 0 && (

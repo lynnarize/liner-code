@@ -49,6 +49,7 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
 
   return (
     <div className="lc-sinfo">
+      {failed && <p className="lc-sinfo-note" role="alert">{failed}</p>}
       <section className="lc-sinfo-card">
         <PanelHead
           end={

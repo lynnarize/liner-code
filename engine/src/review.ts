@@ -56,7 +56,9 @@ function readFindings(json: string) {
     const findings: Finding[] = (Array.isArray(v.findings) ? v.findings : [])
       .filter((f) => f && typeof f.file === "string" && typeof f.note === "string")
       .map((f) => ({ file: f.file!.replace(/^\.?\//, ""), line: typeof f.line === "number" ? f.line : undefined, endLine: typeof f.endLine === "number" ? f.endLine : undefined, severity: String(f.severity).toLowerCase() === "blocking" ? "blocking" : "note", note: f.note! }));
-    const verdict: "pass" | "fail" = String(v.verdict ?? "").toLowerCase() === "fail" || findings.some((f) => f.severity === "blocking") ? "fail" : "pass";
+    // Only a pass passes: "blocked" or "needs changes" says no as surely as "fail" does. No verdict goes by the findings.
+    const said = String(v.verdict ?? "").trim().toLowerCase();
+    const verdict: "pass" | "fail" = (said && !/^(pass(ed|es)?|approved?|ok(ay)?)[.!]?$/.test(said)) || findings.some((f) => f.severity === "blocking") ? "fail" : "pass";
     return { verdict, summary: v.summary, findings };
   } catch {
     return null;
@@ -64,16 +66,20 @@ function readFindings(json: string) {
 }
 
 /** What the coder is told when the Reviewer blocks. */
-export function fixPrompt(reviewer: string, findings: Finding[]) {
-  const lines = findings.filter((f) => f.severity === "blocking").map((f) => `- ${f.file}${f.line ? `:${f.line}${f.endLine && f.endLine !== f.line ? `-${f.endLine}` : ""}` : ""}: ${f.note}`);
+export function fixPrompt(reviewer: string, findings: Finding[], summary?: string) {
+  const blocking = findings.filter((f) => f.severity === "blocking");
+  // A fail with nothing marked blocking still says what's wrong: its notes, or at least its summary.
+  const lines = (blocking.length ? blocking : findings).map((f) => `- ${f.file}${f.line ? `:${f.line}${f.endLine && f.endLine !== f.line ? `-${f.endLine}` : ""}` : ""}: ${f.note}`);
+  if (!lines.length) lines.push(`- ${summary?.trim() || "It didn't pass, and didn't say why: read your change again."}`);
   return `The Reviewer (${reviewer}) found problems in your last change that must be fixed before it ships:\n${lines.join("\n")}\n\nFix these, run the tests that cover them, and say in one line what you changed. Leave everything else as it is.`;
 }
 
 const mustFixFirst = (findings: Finding[]) => [...findings].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
 
 /** What the strong model is told when a cascade's judge won't pass the quicker model's change. */
-export function repairPrompt(judge: string, writer: string, findings: Finding[]) {
+export function repairPrompt(judge: string, writer: string, findings: Finding[], summary?: string) {
   const lines = mustFixFirst(findings).map((f) => `- ${f.severity === "blocking" ? "" : "(a note) "}${f.file}${f.line ? `:${f.line}${f.endLine && f.endLine !== f.line ? `-${f.endLine}` : ""}` : ""}: ${f.note}`);
+  if (!lines.length) lines.push(`- ${summary?.trim() || "It didn't say why: read the change against the request."}`);
   return `${writer} just made a change for the request above, and a judge (${judge}) didn't pass it:\n${lines.join("\n")}\n\nYou're the stronger model, brought in to repair it. Read the change as it is in the files. Keep what's right and fix what the judge found; if the approach itself is wrong, redo it. Run the tests that cover it, then say in a line or two what you changed.`;
 }
 
@@ -105,8 +111,9 @@ export function takeOverPrompt(judge: string, writer: string, why: string, findi
 }
 
 /** What a writer is told when critics read its change: everything they found, to keep or revise, once. */
-export function critiquePrompt(critics: string[], findings: Finding[]) {
+export function critiquePrompt(critics: string[], findings: Finding[], summaries: (string | undefined)[] = []) {
   const lines = mustFixFirst(findings).map((f) => `- ${f.severity === "blocking" ? "Must fix" : "Note"}, ${f.file}${f.line ? `:${f.line}${f.endLine && f.endLine !== f.line ? `-${f.endLine}` : ""}` : ""}: ${f.note}`);
+  if (!lines.length) lines.push(...summaries.flatMap((s) => (s?.trim() ? [`- ${s.trim()}`] : [])));
   return `${critics.join(" and ")} read your change side by side. What they found:\n${lines.join("\n")}\n\nRevise your change once with this. Fix what must be fixed; take a note only where it makes the change better, and where you're sure a finding is wrong, leave it and say why. Run the tests that cover it, then say in a line or two what you changed.`;
 }
 

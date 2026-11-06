@@ -74,14 +74,18 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
   const settled = conflicts.length > 0 && open === 0;
   const want: Act | null = paused ? "resume" : stage === "idle" ? "open" : stage === "conflicts" ? "resolve" : stage === "ready" ? "merge" : merged && pr?.url ? "view" : null;
   const line = stage === "idle" ? `Opens ${branch} into ${base}` : paused ? "Stopped. Continue when you're ready." : status || SAYS[stage];
-  const tone = stage === "conflicts" ? "warn" : stage === "ready" || merged ? "ok" : undefined;
+  // Ready with a check failed is yours to decide, not a green tick: the note says you can merge anyway.
+  const failing = stage === "ready" && checks.some((k) => k.state === "failed");
+  const tone = stage === "conflicts" || failing ? "warn" : stage === "ready" || merged ? "ok" : undefined;
 
   return (
     <section ref={ref} className="lc-prc" data-variant={variant} data-stage={stage} data-busy={busy || undefined} aria-label={`Pull request: ${title}`}>
       <div className="lc-prc-head">
         <span className="lc-prc-ttl">Pull request</span>
         {pr && <span className="lc-prc-num">#{pr.number}</span>}
-        <span className="lc-ship-tag">{branch}</span>
+        <span className="lc-ship-tag" title={branch}>
+          {branch}
+        </span>
         <span className="lc-prc-state" data-tone={tone} key={stage}>
           {(stage === "ready" || merged || (pr && !busy && stage !== "conflicts")) && <i />}
           {merged ? "Merged" : stage === "ready" ? "Open" : SAYS[stage]}
@@ -141,7 +145,9 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
           <span className="lc-ship-tag" data-m>
             {base}
           </span>
-          <span className="t3">where {branch} left it</span>
+          <span className="t3" title={branch}>
+            where {branch} left it
+          </span>
         </div>
       </div>
       {note && (
@@ -233,7 +239,8 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
             View pull request
           </a>
         )}
-        {busy && variant === "panel" && (
+        {/* A merge asked for can't be called back, so there's nothing for Stop to stop. */}
+        {busy && variant === "panel" && stage !== "merging" && (
           <button
             type="button"
             className="lc-btn"

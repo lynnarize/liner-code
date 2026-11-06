@@ -10,7 +10,7 @@ import { Segmented } from "@liner/components/segmented/segmented";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { agentOf, compact, markOf, modelLabel, money } from "./model";
+import { agentOf, compact, dollars, markOf, modelLabel, money, plural } from "./model";
 import { LimitRow, ModelTag } from "./ui";
 
 export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () => void }) {
@@ -77,13 +77,13 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
                 <RollingNumber value={t?.costUsd ?? 0} format={{ style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }} />
               </div>
               <p className="lc-quiet">
-                {t?.turns ? `${t.turns} turns across your sessions. Sessions on a plan show tokens without a cost.` : "Nothing has run in this period yet. Each turn adds its tokens and cost here."}
+                {t?.turns ? `${plural(t.turns, "turn")} across your sessions. Sessions on a plan show tokens without a cost.` : "Nothing has run in this period yet. Each turn adds its tokens and cost here."}
               </p>
               <Budget spent={days === "month" ? (t?.costUsd ?? 0) : null} budget={budget} editing={editing} onEdit={setEditing} />
             </div>
           </section>
           <div className="lc-usage-tiles">
-            <Tile label="Tokens" value={compact(t?.tokens ?? 0)} note={`${t?.turns ?? 0} turns`} />
+            <Tile label="Tokens" value={compact(t?.tokens ?? 0)} note={plural(t?.turns ?? 0, "turn")} />
             <Tile label="Per turn" value={money(t?.perTurn ?? 0)} note="on average" />
             <Tile label="From the cache" value={`${Math.round((t?.cacheShare ?? 0) * 100)}%`} note="of input tokens" />
             <Tile label="Most expensive turn" value={money(t?.priciest?.costUsd ?? 0)} note={t?.priciest?.title ?? "—"} />
@@ -110,9 +110,7 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
                   <div key={a.agent} className="lc-bar-row">
                     <span>
                       <b>{ag.name}</b>
-                      <small>
-                        {ag.role} · {a.turns} turns
-                      </small>
+                      <small>{[ag.role, plural(a.turns, "turn")].filter(Boolean).join(" · ")}</small>
                     </span>
                     <span className="lc-bar">
                       <i style={{ width: `${(v / maxAgent) * 100}%` }} />
@@ -151,6 +149,13 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
                     <td className="lc-mono">{m.costUsd ? money(m.costUsd) : "Plan"}</td>
                   </tr>
                 ))}
+                {!data?.byModel.length && (
+                  <tr>
+                    <td colSpan={4} className="lc-quiet">
+                      No turns yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
               {data && data.byModel.length > 0 && (
                 <tfoot>
@@ -186,8 +191,7 @@ function Budget({ spent, budget, editing, onEdit }: { spent: number | null; budg
   const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const pace = spent === null ? 0 : (spent / Math.max(1, now.getDate() - 1 + now.getHours() / 24)) * days;
   const save = (v: string) => {
-    const n = Math.max(0, Math.round(Number(v.replace(/[^\d.]/g, "")) || 0));
-    void rpc("settings.save", { budgetUsd: n });
+    void rpc("settings.save", { budgetUsd: Math.round(dollars(v)) });
     onEdit(false);
   };
   if (editing || !budget)

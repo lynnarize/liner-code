@@ -63,6 +63,11 @@ function takeWaiting(threadId: string) {
   return Date.now() - r.at < 10_000 ? r : null;
 }
 
+/** A size in words: 512 B, 40 KB, 3.1 MB. */
+const sizeOf = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`);
+/** Past this the engine sends no text (surfaces.ts, readFile), whatever the file holds. */
+const SHOWS_UP_TO = 2_000_000;
+
 /** The session folder's path for a link's: ./a, /Users/…/project/a and a all read as "a". */
 function inFolder(path: string, cwd: string) {
   let p = path.replace(/^file:\/\//, "");
@@ -123,7 +128,11 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
   useEffect(() => {
     let live = true;
     void rpc("fs.tree", { projectId: thread.projectId, threadId: thread.id })
-      .then((t) => live && setTree(t))
+      .then((t) => {
+        if (!live) return;
+        setTree(t);
+        setErr(null);
+      })
       .catch((e) => live && (setTree([]), setErr(e instanceof Error ? e.message : String(e))));
     return () => {
       live = false;
@@ -180,7 +189,7 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
     const c = changed.get(sel);
     if (c)
       void rpc("checkpoint.diff", { threadId: thread.id, itemId: c.cp })
-        .then((d) => live && setDiff(d.find((x) => x.path === sel) ?? null))
+        .then((d) => live && setDiff(d.files.find((x) => x.path === sel) ?? null))
         .catch(() => {});
     return () => {
       live = false;
@@ -196,7 +205,7 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
     };
     const list = (tree ?? []).filter(keep).map(toNode);
     // Deleted files aren't in the tree any more; they still show under Changed.
-    if (filter === "changed") for (const [p, c] of changed) if (c.status === "deleted" && (!q || p.includes(q))) list.push({ id: p, label: p, meta: "D" });
+    if (filter === "changed") for (const [p, c] of changed) if (c.status === "deleted" && (!q || p.toLowerCase().includes(q))) list.push({ id: p, label: p, meta: "D" });
     return list;
   }, [tree, filter, query, changed]);
 
@@ -260,7 +269,7 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
           {tree === null ? (
             <span className="l-shimmer lc-files-wait">Reading the folder</span>
           ) : nodes.length ? (
-            <TreeView key={`${filter}:${query ? "q" : ""}:${asked}`} nodes={nodes} label="Files" defaultExpanded={openDirs} selected={sel} onSelect={(n) => !n.children && (setSel(n.id), setGoto(null))} />
+            <TreeView key={`${filter}:${query.trim().toLowerCase()}:${asked}`} nodes={nodes} label="Files" defaultExpanded={openDirs} selected={sel} onSelect={(n) => !n.children && (setSel(n.id), setGoto(null))} />
           ) : (
             <p className="lc-quiet lc-files-none">{err ?? (filter === "changed" ? "No turn has changed a file yet." : query ? "No file matches that." : "This folder is empty.")}</p>
           )}
@@ -274,9 +283,9 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
         ) : (
           <>
             <div className="lc-files-head">
-              <span className="lc-mono lc-files-path" title={sel}>
+              <span className="lc-mono lc-files-path lc-path" title={sel}>
                 <span className="lc-quiet">{dirOf(sel)}</span>
-                {baseOf(sel)}
+                <span>{baseOf(sel)}</span>
               </span>
               <span className="lc-grow" />
               {twoWays && (
@@ -319,13 +328,13 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
                 ) : (
                   <div className="lc-files-img">
                     <img src={image.src} alt={baseOf(sel)} draggable={false} />
-                    {file && <span className="lc-quiet">{file.size < 1024 ? `${file.size} B` : `${Math.round(file.size / 1024)} KB`}</span>}
+                    {file && <span className="lc-quiet">{sizeOf(file.size)}</span>}
                   </div>
                 )
               ) : !file ? (
                 <span className="l-shimmer lc-files-wait">Opening {baseOf(sel)}</span>
               ) : file.binary ? (
-                <p className="lc-quiet lc-files-none">{file.size ? `A binary file, ${Math.round(file.size / 1024)} KB.` : file.text}</p>
+                <p className="lc-quiet lc-files-none">{!file.size ? file.text : file.size > SHOWS_UP_TO ? `Too large to show here, at ${sizeOf(file.size)}. Open it in your editor.` : `A binary file, ${sizeOf(file.size)}.`}</p>
               ) : kind === "markdown" && !asSource ? (
                 // Rendered with the app's own Markdown (T3 Code: files/FileMarkdownPreview.tsx).
                 <div className="lc-files-md">

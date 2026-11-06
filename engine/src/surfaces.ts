@@ -37,7 +37,9 @@ export function readFile(rootIn: string, path: string) {
 /**
   A real terminal without a native module: Python's pty module forks the shell on a
   pseudo-terminal and relays bytes both ways. Window size changes come in on file descriptor 3
-  as "cols rows" lines and reach the shell as SIGWINCH.
+  as "cols rows" lines and reach the shell as SIGWINCH. What you type is held here and written as
+  the pty takes it: written straight, a large paste blocks this loop while the shell's echo fills
+  the pty the other way, and neither ever moves again.
 */
 const PTY = String.raw`
 import os, pty, sys, select, signal, fcntl, termios, struct
@@ -51,24 +53,36 @@ def size(cols, rows):
 size(int(sys.argv[1]), int(sys.argv[2]))
 ctl = os.fdopen(3, "rb", buffering=0)
 buf = b""
+typed = b""
+os.set_blocking(fd, False)
 while True:
     try:
-        r, _, _ = select.select([fd, 0, 3], [], [])
+        r, w, _ = select.select([fd, 3] + ([0] if len(typed) < 1048576 else []), [fd] if typed else [], [])
     except InterruptedError:
         continue
     if fd in r:
         try:
             data = os.read(fd, 65536)
+        except BlockingIOError:
+            data = None
         except OSError:
             break
-        if not data:
+        if data == b"":
             break
-        os.write(1, data)
+        if data:
+            os.write(1, data)
+    if fd in w:
+        try:
+            typed = typed[os.write(fd, typed[:4096]):]
+        except BlockingIOError:
+            pass
+        except OSError:
+            break
     if 0 in r:
         data = os.read(0, 65536)
         if not data:
             break
-        os.write(fd, data)
+        typed += data
     if 3 in r:
         buf += ctl.read(256) or b""
         while b"\n" in buf:
@@ -228,13 +242,15 @@ export class Terminals {
   }
 
   open(cwd: string, cols: number, rows: number, command?: string, threadId?: string, title?: string) {
+    // Refused here, where the app can say so (T3 Code: terminal/Manager.ts assertValidCwd).
+    if (!existsSync(cwd)) throw new Error("This session's folder isn't there any more.");
     const id = uid("tm");
     const env = { ...this.env, TERM: "xterm-256color", COLORTERM: "truecolor", LINER_CODE: "1", ...(threadId ? { [THREAD_ENV]: threadId } : {}) };
     // Windows has no pty a script can open: PowerShell on pipes, with the line editing done here.
     const win = process.platform === "win32" ? winShell(cwd, cols, env, (s) => push(s)) : null;
     const child =
       win?.child ??
-      (spawn(which("python3", this.env) ?? "/usr/bin/python3", ["-I", "-c", PTY, String(Math.max(20, cols)), String(Math.max(5, rows))], {
+      (spawn(which("python3", this.env) ?? "/usr/bin/python3", ["-I", "-c", PTY, String(Math.max(20, cols || 80)), String(Math.max(5, rows || 24))], {
         cwd,
         env,
         stdio: ["pipe", "pipe", "pipe", "pipe"],
@@ -270,6 +286,11 @@ export class Terminals {
       if (this.terms.get(id) === t) t.exited = code ?? 0;
       this.store.emit({ type: "term.exit", id, code: code ?? 0 });
     });
+    // Nothing listening, either of these takes the engine's uncaught path: a shell that couldn't
+    // start shows nothing, and a write to one that has just gone (EPIPE) is no one's to answer.
+    child.on("error", (e) => push(`The terminal didn't start: ${e.message}\r\n`));
+    child.stdin.on("error", () => {});
+    (ctl as unknown as NodeJS.EventEmitter | null)?.on("error", () => {});
     // A script to run: typed into the shell once it's up, so it stays after the command ends
     // (through write, so on Windows it's echoed and sent as a line like anything you type).
     if (command) setTimeout(() => this.write(id, `${command}\r`), 350);
@@ -596,7 +617,7 @@ export function pagePath(root: string, asked: string) {
   const [, file, rest] = /^([^?#]*)(.*)$/s.exec(asked.trim().replace(/^file:\/\/(?:\/(?=[a-z]:))?/i, "")) ?? ["", "", ""];
   const full = isAbsolute(file) && (file.startsWith(`${root}/`) || file === root || existsSync(file));
   const rel = relative(root, full ? file : resolve(root, file.replace(/^\/+/, "")));
-  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("That file is outside this session's folder.");
+  if (outside(rel)) throw new Error("That file is outside this session's folder.");
   return `/${rel.split(sep).join("/")}${rest}`;
 }
 
@@ -672,6 +693,7 @@ export class DeviceLogs {
   private live = new Map<string, ChildProcessWithoutNullStreams>();
   private store: Store;
   private env: NodeJS.ProcessEnv;
+  private tool = "xcrun";
   constructor(store: Store, env: NodeJS.ProcessEnv) {
     this.store = store;
     this.env = env;
@@ -682,8 +704,12 @@ export class DeviceLogs {
     if (!on) return;
     const args = ["simctl", "spawn", udid, "log", "stream", "--style", "compact", "--level", "info"];
     if (filter) args.push("--predicate", `eventMessage CONTAINS[c] "${filter.replace(/"/g, "")}" OR process CONTAINS[c] "${filter.replace(/"/g, "")}"`);
-    const child = spawn("xcrun", args, { env: this.env }) as ChildProcessWithoutNullStreams;
+    const child = spawn(this.tool, args, { env: this.env }) as ChildProcessWithoutNullStreams;
     this.live.set(udid, child);
+    // No simulator tools on this machine: the log just stays empty.
+    child.on("error", () => {
+      if (this.live.get(udid) === child) this.live.delete(udid);
+    });
     let buf = "";
     let batch: string[] = [];
     let timer: NodeJS.Timeout | null = null;

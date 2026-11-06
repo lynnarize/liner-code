@@ -129,7 +129,7 @@ const ago = (at: number) => {
 
 type Want = { threadId: string; design?: string; version?: number; auto?: boolean; at: number };
 let waiting: Want | null = null;
-const takers = new Set<(w: Want) => void>();
+const takers = new Map<(w: Want) => void, string>();
 /** Brings up the session's Design surface on a design (a version of it, or its file now). */
 export function openInDesign(threadId: string, design?: string, version?: number) {
   window.dispatchEvent(new CustomEvent("lc:open-design", { detail: { threadId, design, version } }));
@@ -139,7 +139,9 @@ window.addEventListener("lc:open-design", (e) => {
   if (!d?.threadId) return;
   const w: Want = { ...d, at: Date.now() };
   // On screen, it's taken now; else it waits for the Design surface the session is bringing up.
-  if (takers.size) for (const f of takers) f(w);
+  // Another session's Design on screen (Open beside) doesn't count: it isn't asked (as Files.tsx's links).
+  const here = [...takers].filter(([, id]) => id === w.threadId);
+  if (here.length) for (const [f] of here) f(w);
   else waiting = w;
 });
 function takeWaiting(threadId: string) {
@@ -176,7 +178,8 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
   const [front, setFront] = useState<0 | 1>(0);
   const shown = slots[front];
   const [oldHtml, setOldHtml] = useState<string | null>(null);
-  const [code, setCode] = useState<string | null>(null);
+  // The code shown, and which design and version it's of: another's isn't shown under this one's name.
+  const [code, setCode] = useState<{ of: string; html: string; error?: string } | null>(null);
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [comment, setComment] = useState("");
@@ -193,12 +196,11 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
   // Asked from elsewhere: the timeline's Open, or an agent showing one.
   useEffect(() => {
     const take = (w: Want) => {
-      if (w.threadId !== thread.id) return;
       if (w.design) setSel(w.design);
       setVersion(w.version ?? "live");
       setPicked(null);
     };
-    takers.add(take);
+    takers.set(take, thread.id);
     const w = takeWaiting(thread.id);
     if (w) take(w);
     return () => void takers.delete(take);
@@ -250,10 +252,11 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
     if (now && noQuery(now) === noQuery(liveSrc)) setSlots((s) => (front === 0 ? [s[0], liveSrc] : [liveSrc, s[1]]));
     else setSlots((s) => (front === 0 ? [liveSrc, s[1]] : [s[0], liveSrc]));
   }, [liveSrc]);
+  // The code view takes the frame away, and the picker with it.
   useEffect(() => {
     setPicked(null);
     setPicking(false);
-  }, [latest?.design, version, shown]);
+  }, [latest?.design, version, shown, view]);
 
   // A version, or the code: read when it's what's shown.
   useEffect(() => {
@@ -267,12 +270,14 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
       on = false;
     };
   }, [thread.id, latest?.design, shownVersion?.version]);
+  const codeOf = `${latest?.design}:${shownVersion?.version ?? "live"}`;
+  const codeNow = code?.of === codeOf ? code : null;
   useEffect(() => {
     if (view !== "code" || !latest) return;
     let on = true;
     void (shownVersion ? versionHtml(thread.id, latest.design, shownVersion.version) : rpc("design.read", { threadId: thread.id, design: latest.design }).then((r) => r.html))
-      .then((h) => on && setCode(h))
-      .catch(() => on && setCode(""));
+      .then((html) => on && setCode({ of: codeOf, html }))
+      .catch((e) => on && setCode({ of: codeOf, html: "", error: e instanceof Error ? e.message : String(e) }));
     return () => {
       on = false;
     };
@@ -334,11 +339,15 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
     }
   };
 
+  // Two quick Enters are one comment.
+  const sending = useRef(false);
   const ask = async () => {
-    if (!picked || !comment.trim() || !latest) return;
+    if (!picked || !comment.trim() || !latest || sending.current) return;
+    sending.current = true;
     const quote = picked.text ? ` (“${picked.text.slice(0, 80)}${picked.text.length > 80 ? "…" : ""}”)` : "";
     const text = `${comment.trim()}\n\nThat's about this part of the design “${latest.title}” (\`${latest.path}\`): \`${picked.selector}\`${quote}, at ${picked.path}:\n\n\`\`\`html\n${picked.html}\n\`\`\`\n\nChange the design's file, then show it again with design_show.`;
     if (await send(text, `Sent to ${agentName}`)) setPicked(null);
+    sending.current = false;
   };
 
   const build = async () => {
@@ -376,7 +385,7 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
       </SurfaceNote>
     );
 
-  const toks = view === "code" && code !== null ? tokensOf(linesOf(code), langOf("design.html")) : [];
+  const toks = view === "code" && codeNow ? tokensOf(linesOf(codeNow.html), langOf("design.html")) : [];
   const frameStyle = { width: W, height: frameH, transform: scale === 1 ? undefined : `scale(${scale})`, colorScheme: scheme === "system" ? undefined : scheme };
 
   const builtNote = built ? (built.version < latest.version ? `built v${built.version}, changed since` : `built v${built.version}`) : null;
@@ -451,10 +460,8 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
             aria-pressed={picking}
             onClick={() => {
               setPicked(null);
-              setPicking((p) => {
-                cmd(p ? "unpick" : "pick");
-                return !p;
-              });
+              cmd(picking ? "unpick" : "pick");
+              setPicking(!picking);
               live.current?.focus();
             }}
           >
@@ -513,11 +520,13 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
       </div>
       {view === "code" ? (
         <div className="lc-dz-code">
-          {code === null ? (
+          {!codeNow ? (
             <span className="l-shimmer lc-files-wait">Reading {latest.path}</span>
+          ) : codeNow.error ? (
+            <p className="lc-quiet lc-files-none">{codeNow.error}</p>
           ) : (
             <pre className="lc-code-view">
-              {linesOf(code).map((_, i) => (
+              {linesOf(codeNow.html).map((_, i) => (
                 <div key={i} className="lc-cl">
                   <span className="lc-cl-n">{i + 1}</span>
                   <span className="lc-cl-t">
@@ -590,7 +599,7 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
                   onChange={(e) => setComment(e.target.value)}
                   placeholder="What should change here?"
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") void ask();
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing) void ask();
                     if (e.key === "Escape") setPicked(null);
                   }}
                 />
@@ -641,6 +650,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
   const [width, setWidth] = useState(0);
   const [seen, setSeen] = useState(false);
   const [html, setHtml] = useState<string | null>(null);
+  const [broken, setBroken] = useState(false);
   const [full, setFull] = useState(false);
   const thread = useEngine((s) => s.threads.find((t) => t.id === threadId));
   const agents = useEngine((s) => s.agents);
@@ -659,7 +669,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
     let on = true;
     void versionHtml(threadId, it.design, it.version)
       .then((h) => on && setHtml(h))
-      .catch(() => {});
+      .catch(() => on && setBroken(true));
     return () => {
       on = false;
     };
@@ -681,6 +691,8 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
             {html !== null && scale > 0 ? (
               // Drawn on its own, with no origin: it can't reach the app.
               <iframe className="lc-dz-in-f" title={`${it.title}, version ${it.version}`} srcDoc={withShim(html)} sandbox="allow-scripts allow-forms" style={{ width: W, height: H, transform: `scale(${scale})` }} />
+            ) : broken ? (
+              <span className="lc-quiet lc-dz-wait">This version can't be drawn: its file isn't there any more.</span>
             ) : (
               <span className="l-shimmer lc-dz-wait">Drawing {it.title}</span>
             )}
@@ -725,6 +737,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
   return (
     <figure className="lc-dz-card">
       <button ref={measure} type="button" className="lc-dz-thumb l-focus" data-size={it.size} aria-label={`Open “${it.title}” in the Design surface`} onClick={open} style={{ height: it.size === "desktop" ? Math.min(tall, Math.round(H * scale) || tall) : tall }}>
+        {broken && <span className="lc-quiet lc-dz-wait">This version can't be drawn: its file isn't there any more.</span>}
         {html !== null && scale > 0 && (
           <span className="lc-dz-thumb-in" style={{ width: px(W * scale), height: px(H * scale) }}>
             {/* Drawn on its own, with no origin: it can't reach the app. */}
@@ -762,6 +775,8 @@ function DesignFull({ it, html, onOpen, onClose }: { it: DesignItem; html: strin
     if (!el) return;
     const ro = new ResizeObserver(() => setBox({ w: el.clientWidth, h: el.clientHeight }));
     ro.observe(el);
+    // Back where it was when this closes.
+    const was = document.activeElement as HTMLElement | null;
     close.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -770,7 +785,7 @@ function DesignFull({ it, html, onOpen, onClose }: { it: DesignItem; html: strin
       onClose();
     };
     window.addEventListener("keydown", onKey, true);
-    return () => (ro.disconnect(), window.removeEventListener("keydown", onKey, true));
+    return () => (ro.disconnect(), window.removeEventListener("keydown", onKey, true), was?.focus?.());
   }, []);
   const { width: W, height: H } = FRAME[it.size];
   const scale = box.w ? Math.min(1, (box.w - 48) / W, (box.h - 48) / H) : 0;

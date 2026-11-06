@@ -207,7 +207,7 @@ function Models({ onNext }: { onNext: () => void }) {
                         {t.name}
                         {t.beta && <small className="lc-quiet"> · Beta</small>}
                       </b>
-                      <code>{p?.login || "—"}</code>
+                      <code title={p?.login}>{p?.login || "—"}</code>
                     </span>
                     {!p ? (
                       <span className="lc-quiet">…</span>
@@ -262,7 +262,7 @@ function Models({ onNext }: { onNext: () => void }) {
                       <span className="lc-keyin">
                         <span className="lc-keyin-f">
                           <I.lock size={12} />
-                          <input autoFocus type="password" placeholder={k.id === "anthropic" ? "sk-ant-…" : "sk-…"} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void save(k.id)} aria-label={`${k.name} key`} />
+                          <input autoFocus type="password" placeholder={k.id === "anthropic" ? "sk-ant-…" : "sk-…"} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => (e.key === "Enter" ? void save(k.id) : e.key === "Escape" && (setTyping(null), setValue("")))} aria-label={`${k.name} key`} />
                         </span>
                         <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => void save(k.id)}>
                           Save
@@ -439,7 +439,7 @@ function Projects({ onBack, onNext }: { onBack: () => void; onNext: () => void }
               <I.folder size={13} />
               Add a folder
             </button>
-            <input className="lc-input" placeholder="Clone from GitHub: owner/repo or a URL" value={clone} onChange={(e) => setClone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void doClone()} />
+            <input className="lc-input" placeholder="Clone from GitHub: owner/repo or a URL" aria-label="Clone from GitHub" value={clone} onChange={(e) => setClone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void doClone()} />
             <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy || !clone.trim()} onClick={() => void doClone()}>
               Clone
             </button>
@@ -467,8 +467,11 @@ function Work({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   const providers = useEngine((s) => s.providers);
   // Who'd do what with the tools found: a cheaper model for most work, a frontier one for the hard parts.
   const cast = useMemo(() => castOf(providers), [providers]);
-  const quick = cast ? modelLabel(cast.everyday, providers) : "A cheaper model";
+  const quick = cast ? modelLabel(cast.everyday, providers) : "a cheaper model";
   const strong = cast ? modelLabel(cast.strong, providers) : "a frontier model";
+  // The fallbacks open sentences too; a model's own name keeps its spelling.
+  const Quick = cast ? quick : "A cheaper model";
+  const Strong = cast ? strong : "A frontier model";
   const finish = async () => {
     try {
       await rpc("settings.save", { onboarded: true, mode: pick });
@@ -478,12 +481,12 @@ function Work({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
     }
   };
   const cards = [
-    { id: "solo" as const, title: "Solo", sub: "Simplest", body: `One model does it all, as you allow. ${quick} by default; pick any model for each session.`, icon: <span className="lc-disc" style={{ width: 32, height: 32 }}><Glyph glyph="spark" size={15} /></span> },
+    { id: "solo" as const, title: "Solo", sub: "Simplest", body: `One model does it all, as you allow. ${Quick} by default; pick any model for each session.`, icon: <span className="lc-disc" style={{ width: 32, height: 32 }}><Glyph glyph="spark" size={15} /></span> },
     {
       id: "plan" as const,
       title: "Plan, then build",
       sub: "For bigger changes",
-      body: `${strong} reads and plans, you approve, ${quick} builds. Questions go straight to ${quick}.`,
+      body: `${Strong} reads and plans, you approve, ${quick} builds. Questions go straight to ${quick}.`,
       icon: (
         <span className="lc-stack">
           <span className="lc-disc" data-filled style={{ width: 32, height: 32 }}>

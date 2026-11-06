@@ -9,11 +9,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, PlanEntry, ProviderInfo } from "../../../contracts/src/index.ts";
 import { linerTitle } from "../agent-tools.ts";
-import { jsonLines, killTree, run, spawn, versionOf, which, withCodexPath } from "../exec.ts";
+import { closesOnExit, jsonLines, killTree, run, spawn, versionOf, which, withCodexPath } from "../exec.ts";
 import { codexAsk, CodexServerSession, isLimit, reasoning, toml } from "./codex-server.ts";
 import { imageType } from "./attachments.ts";
 import { effortOf, skillsIn } from "./models.ts";
-import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
+import { ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
 
 /**
   Whether each Codex binary has the app server, by its path: every Codex account and endpoint detects at
@@ -86,6 +86,8 @@ class CodexSession implements ProviderSession {
   }
 
   turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
+    // Stopped already: the signal won't say so again, and nothing could stop this.
+    if (signal.aborted) return Promise.resolve();
     const o = this.o;
     const bin = which("codex", o.env);
     if (!bin) return Promise.reject(new Error("Codex isn't installed."));
@@ -93,7 +95,10 @@ class CodexSession implements ProviderSession {
       this.told = o.access;
       sink.notice("This Codex can't stop to ask, so this session only reads. Update Codex to let it ask, or choose Edits to let it write.");
     }
-    const common = ["--json", "--skip-git-repo-check", "-c", `sandbox_mode="${SANDBOX[o.access]}"`, "-c", `approval_policy="never"`];
+    // Your images go to the model as they are (exec and exec resume both take -i); every file is named in the text
+    // either way. First: -i takes every word after it up to the next flag, the thread to resume and the "-" too.
+    const images = files.filter((f) => imageType(f) && existsSync(f)).flatMap((f) => ["-i", f]);
+    const common = [...images, "--json", "--skip-git-repo-check", "-c", `sandbox_mode="${SANDBOX[o.access]}"`, "-c", `approval_policy="never"`];
     // Claude Code's extras mean nothing here; anything else is Codex's own name for the level.
     if (o.effort && !/^ultra(code|think)$/.test(o.effort)) common.push("-c", `model_reasoning_effort="${o.effort}"`);
     if (o.model && o.model !== "default") common.push("-m", o.model);
@@ -103,8 +108,6 @@ class CodexSession implements ProviderSession {
     // Your connections don't come this way: settings go on `codex exec`'s command line, where their keys could be read. The app server takes them.
     if (o.mcp) common.push("-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`);
     for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
-    // Your images go to the model as they are (exec and exec resume both take -i); every file is named in the text either way.
-    for (const f of files) if (imageType(f) && existsSync(f)) common.push("-i", f);
     const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, ...(o.ephemeral ? ["--ephemeral"] : []), "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {
       const child = spawn(bin, args, { cwd: o.cwd, env: withCodexPath(bin, o.env), stdio: ["pipe", "pipe", "pipe"] });
@@ -122,7 +125,10 @@ class CodexSession implements ProviderSession {
         said.add(m);
         say(m);
       };
+      // One that went before reading it says so on close; this is only the pipe's own word for it.
+      child.stdin.on("error", () => {});
       child.stdin.end(text);
+      closesOnExit(child);
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (d: string) => (err = (err + d).slice(-4000)));
       const onItem = (it: CodexItem, phase: "started" | "updated" | "completed") => {
@@ -179,10 +185,17 @@ class CodexSession implements ProviderSession {
         }
       });
       // Windows has no SIGINT for it: killTree ends Codex and the commands it started.
-      const stop = () => (process.platform === "win32" ? killTree(child) : child.kill("SIGINT"));
+      // One that doesn't end on it is ended: nothing else ends the turn.
+      let late: NodeJS.Timeout | undefined;
+      const stop = () => {
+        if (process.platform === "win32") return killTree(child);
+        child.kill("SIGINT");
+        late = setTimeout(() => child.kill("SIGKILL"), STOP_MS);
+      };
       signal.addEventListener("abort", stop, { once: true });
       child.on("error", (e) => reject(e));
       child.on("close", (code) => {
+        clearTimeout(late);
         signal.removeEventListener("abort", stop);
         if (this.child === child) this.child = null;
         // The thread it was to resume is gone: said as a failed resume, so the runtime starts a new one with
@@ -193,7 +206,7 @@ class CodexSession implements ProviderSession {
           return reject(new ResumeFailed(`Codex couldn't resume its thread ${resuming}.`));
         }
         if (code === 0 || signal.aborted || said.size) resolve();
-        else reject(new Error(err.trim().split("\n").slice(-3).join("\n") || `Codex exited with ${code}.`));
+        else reject(new Error(scrub(err.trim().split("\n").slice(-3).join("\n"), o.env) || `Codex exited with ${code}.`));
       });
     });
   }
@@ -203,11 +216,18 @@ class CodexSession implements ProviderSession {
     return true;
   }
   close() {
-    if (process.platform === "win32" && this.child) killTree(this.child);
-    else this.child?.kill("SIGINT");
+    const child = this.child;
     this.child = null;
+    if (process.platform === "win32" && child) killTree(child);
+    else if (child) {
+      child.kill("SIGINT");
+      setTimeout(() => child.kill("SIGKILL"), STOP_MS).unref();
+    }
   }
 }
+
+/** How long Stop waits for `codex exec` to end by itself. */
+const STOP_MS = 3000;
 
 /** What Codex says when the thread it was to resume isn't there (Synara's list). */
 const LOST = /not found|no rollout found|missing thread|no such thread|unknown thread|does not exist/i;

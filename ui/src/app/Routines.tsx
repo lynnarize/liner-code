@@ -6,12 +6,11 @@
   steps, the gate (code, not a model) with its two paths, and the actions on each.
 */
 import type { Routine, RoutineRun, RoutineStep, Trigger } from "@contracts";
-import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { agentOf, duration, compact, modelLabel, plural, since } from "./model";
-import { Badge, ModelTag } from "./ui";
+import { Badge, ModelTag, NamedSwitch } from "./ui";
 import { markOf } from "./model";
 
 /* ---------- Words ---------- */
@@ -23,6 +22,7 @@ export function triggerText(t: Trigger) {
   if (t.kind === "webhook") return "When its webhook is called";
   return "When you run it";
 }
+const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 const ROLE = { read: "reads", work: "works", audit: "audits" } as const;
 export const ACTION: Record<string, string> = { merge: "Squash and merge", comment: "Comment", label: "Add a label", close: "Close it", inbox: "Hand it to you", notify: "Tell you" };
 
@@ -36,7 +36,7 @@ function outcomeText(r: Routine) {
   const parts: string[] = [];
   if (work) parts.push("does the work in a session");
   if (other.length) parts.push(other.join(", "));
-  if (pass.length) parts.push(`${pass.join(", ")} when ${gate ? plural(gate.rules.length, "rule") : "every step"} ${gate && gate.rules.length === 1 ? "holds" : "hold"}`);
+  if (pass.length) parts.push(`${pass.join(", ")} when ${gate ? plural(gate.rules.length, "rule") : "every step"} ${!gate || gate.rules.length === 1 ? "holds" : "hold"}`);
   const s = parts.join(", and ") || "Reports in its session";
   return s[0].toUpperCase() + s.slice(1);
 }
@@ -137,7 +137,7 @@ export function RoutinesList({ projectId, onNew, onEdit, onRun, compact: tight }
                   {!r.on && r.failures > 0 ? ` · paused after ${plural(r.failures, "failure")}` : !r.on ? " · off" : next && r.trigger.kind === "schedule" ? ` · ${next}` : ""}
                 </small>
               </button>
-              <Switch size="sm" checked={r.on} onCheckedChange={(on) => void toggle(r, on)} aria-label={`${r.name} is ${r.on ? "on" : "off"}`} />
+              <NamedSwitch size="sm" name={`${r.name} is ${r.on ? "on" : "off"}`} checked={r.on} onCheckedChange={(on) => void toggle(r, on)} />
             </div>
             <div className="lc-rt-who">
               {ai.map((s, k) => {
@@ -161,7 +161,7 @@ export function RoutinesList({ projectId, onNew, onEdit, onRun, compact: tight }
                   <b>{live.subject ? `#${live.subject.number} ${live.subject.title}` : live.cause}</b>
                   <span className="lc-grow" />
                   <span className="lc-quiet">Step {live.steps.length}</span>
-                  <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void rpc("routine.stop", { runId: live.id })}>
+                  <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void rpc("routine.stop", { runId: live.id }).catch(fail)}>
                     Stop
                   </button>
                 </div>
@@ -293,7 +293,7 @@ export function RunDetail({ runId, onOpenSession }: { runId: string; onOpenSessi
         </p>
         <span className="lc-grow" />
         {run.status === "running" && (
-          <button type="button" className="lc-btn" data-kind="plain" onClick={() => void rpc("routine.stop", { runId: run.id })}>
+          <button type="button" className="lc-btn" data-kind="plain" onClick={() => void rpc("routine.stop", { runId: run.id }).catch(fail)}>
             Stop
           </button>
         )}

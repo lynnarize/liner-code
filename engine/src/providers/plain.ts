@@ -24,6 +24,8 @@ export type PlainAnswer = { text: string; inputTokens: number; outputTokens: num
 export async function askEndpoint(e: Endpoint, key: string | undefined, model: string, o: { system: string; prompt: string; signal: AbortSignal; onText?: (t: string) => void }): Promise<PlainAnswer> {
   const base = e.url.trim().replace(/\/+$/, "");
   const host = e.label || "The endpoint";
+  // A service may quote the key it was sent, in a refusal or partway through an answer.
+  const clean = (m: string) => (key ? m.split(key).join("[key]") : m);
   const auth: Record<string, string> = key ? (e.protocol === "anthropic" ? { "x-api-key": key, authorization: `Bearer ${key}` } : { authorization: `Bearer ${key}` }) : {};
   const [at, body] =
     e.protocol === "anthropic"
@@ -36,7 +38,7 @@ export async function askEndpoint(e: Endpoint, key: string | undefined, model: s
     r = await fetch(at, { method: "POST", headers: { "content-type": "application/json", accept: "text/event-stream", ...(e.protocol === "anthropic" ? { "anthropic-version": "2023-06-01" } : {}), ...auth }, body: JSON.stringify(body), signal: o.signal, redirect: "error" });
   } catch (err) {
     if (o.signal.aborted) throw new Error("Stopped.");
-    throw new Error(`${host} didn't answer: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`${host} didn't answer${why(err)}`);
   }
   if (!r.ok || !r.body) {
     const said = await r.text().catch(() => "");
@@ -49,7 +51,7 @@ export async function askEndpoint(e: Endpoint, key: string | undefined, model: s
       }
     })();
     if (r.status === 401 || r.status === 403) throw new Error(`${host} answered ${r.status}: check its key in Settings.`);
-    throw new Error(`${host} answered ${r.status}${msg ? `: ${msg.slice(0, 200)}` : "."}`);
+    throw new Error(`${host} answered ${r.status}${msg ? `: ${clean(msg).slice(0, 200)}` : "."}`);
   }
   const out: PlainAnswer = { text: "", inputTokens: 0, outputTokens: 0 };
   const put = (t: unknown) => {
@@ -57,35 +59,68 @@ export async function askEndpoint(e: Endpoint, key: string | undefined, model: s
     out.text += t;
     o.onText?.(t);
   };
-  for await (const data of events(r.body, o.signal)) {
-    if (data === "[DONE]") break;
-    let j: Record<string, any>;
-    try {
-      j = JSON.parse(data);
-    } catch {
-      continue;
-    }
-    if (j.error || j.type === "error" || j.type === "response.failed") throw new Error(`${host}: ${j.error?.message ?? j.response?.error?.message ?? j.message ?? "the model failed"}`);
-    if (e.protocol === "anthropic") {
-      if (j.type === "content_block_delta" && j.delta?.type === "text_delta") put(j.delta.text);
-      else if (j.type === "message_start") out.inputTokens = Number(j.message?.usage?.input_tokens ?? 0) + Number(j.message?.usage?.cache_read_input_tokens ?? 0);
-      else if (j.type === "message_delta" && j.usage) out.outputTokens = Number(j.usage.output_tokens ?? out.outputTokens);
-    } else if (e.protocol === "responses") {
-      if (j.type === "response.output_text.delta") put(j.delta);
-      else if (j.type === "response.completed" && j.response?.usage) {
-        out.inputTokens = Number(j.response.usage.input_tokens ?? 0);
-        out.outputTokens = Number(j.response.usage.output_tokens ?? 0);
-      }
-    } else {
-      put(j.choices?.[0]?.delta?.content);
-      if (j.usage) {
-        out.inputTokens = Number(j.usage.prompt_tokens ?? 0);
-        out.outputTokens = Number(j.usage.completion_tokens ?? 0);
-      }
-    }
+  const failure = (j: Record<string, any>) => (j.error || j.type === "error" || j.type === "response.failed" ? new Error(`${host}: ${clean(String(j.error?.message ?? j.response?.error?.message ?? j.message ?? "the model failed"))}`) : null);
+  // Asked to stream, a service may still answer in one piece (some gateways and local servers do), or put its error there.
+  // A body that isn't JSON after all (a gateway labelling its stream) is read as the stream it is, below.
+  const whole = /\bjson\b/i.test(r.headers.get("content-type") ?? "") ? ((await r.clone().json().catch(() => null)) as Record<string, any> | null) : null;
+  if (whole) {
+    const j = whole;
+    if (o.signal.aborted) throw new Error("Stopped.");
+    const bad = failure(j);
+    if (bad) throw bad;
+    const parts: { text?: unknown; type?: string }[] = e.protocol === "anthropic" ? (j.content ?? []) : e.protocol === "responses" ? (j.output ?? []).flatMap((x: { content?: [] }) => x.content ?? []) : [];
+    put(e.protocol === "chat" ? j.choices?.[0]?.message?.content : parts.flatMap((x) => (typeof x.text === "string" ? [x.text] : [])).join(""));
+    out.inputTokens = Number(j.usage?.input_tokens ?? j.usage?.prompt_tokens ?? 0);
+    out.outputTokens = Number(j.usage?.output_tokens ?? j.usage?.completion_tokens ?? 0);
+    return out;
   }
+  let bad: Error | null = null;
+  try {
+    for await (const data of events(r.body, o.signal)) {
+      if (data === "[DONE]") break;
+      let j: Record<string, any>;
+      try {
+        j = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      bad = failure(j);
+      if (bad) break;
+      if (e.protocol === "anthropic") {
+        if (j.type === "content_block_delta" && j.delta?.type === "text_delta") put(j.delta.text);
+        else if (j.type === "message_start") out.inputTokens = Number(j.message?.usage?.input_tokens ?? 0) + Number(j.message?.usage?.cache_read_input_tokens ?? 0);
+        else if (j.type === "message_delta" && j.usage) out.outputTokens = Number(j.usage.output_tokens ?? out.outputTokens);
+        // Its last word: a connection left open after it would hold the answer for good.
+        else if (j.type === "message_stop") break;
+      } else if (e.protocol === "responses") {
+        if (j.type === "response.output_text.delta") put(j.delta);
+        else if (j.type === "response.completed") {
+          out.inputTokens = Number(j.response?.usage?.input_tokens ?? 0);
+          out.outputTokens = Number(j.response?.usage?.output_tokens ?? 0);
+          break;
+        }
+      } else {
+        put(j.choices?.[0]?.delta?.content);
+        if (j.usage) {
+          out.inputTokens = Number(j.usage.prompt_tokens ?? 0);
+          out.outputTokens = Number(j.usage.completion_tokens ?? 0);
+        }
+      }
+    }
+  } catch (err) {
+    // The stream's own words for being cut off (an abort, a socket) mean nothing to an app.
+    if (o.signal.aborted) throw new Error("Stopped.");
+    throw new Error(`${host} stopped answering${why(err)}`);
+  }
+  if (bad) throw bad;
   if (o.signal.aborted) throw new Error("Stopped.");
   return out;
+}
+
+/** What went wrong on the way, by its system code alone: fetch's own words can hold the address. */
+function why(err: unknown) {
+  const code = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
+  return typeof code === "string" ? ` (${code}).` : ".";
 }
 
 /** A server-sent event stream's data, one event at a time. */
@@ -120,5 +155,7 @@ async function* events(body: ReadableStream<Uint8Array>, signal: AbortSignal): A
     if (tail) yield tail;
   } finally {
     signal.removeEventListener("abort", stop);
+    // Read to the end or not: a connection the server leaves open goes now.
+    void reader.cancel().catch(() => {});
   }
 }

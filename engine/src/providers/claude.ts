@@ -9,20 +9,22 @@
   - edits: acceptEdits (edits on its own, asks before commands)
   - auto:  auto (Claude Code's classifier approves routine steps and asks about the rest)
   - full:  acceptEdits, and every other call is allowed, except destructive commands while the
-           guard is on, which still come back to you.
+           guard is on and what your own Claude settings said to ask about, which still come back to you.
   AskUserQuestion and ExitPlanMode are caught in canUseTool and shown as cards.
 
   A lead doesn't run in plan mode: Claude Code's plan mode makes every turn end in a plan or a
   question, even "hello". It runs in the default mode with the editing tools taken away, answers
   talk directly, and wraps a plan in <plan> tags when you ask for a change (see the runtime).
 */
-import { query, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKResultMessage, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages, query, type ElicitationRequest, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKResultMessage, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, sep } from "node:path";
-import type { Access, ContextPart, ContextSource, ContextUse, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
-import { base64Size, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { StringDecoder } from "node:string_decoder";
+import { stripVTControlCharacters } from "node:util";
+import type { Access, ContextPart, ContextSource, ContextUse, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
+import { base64Size, imageKind, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
 import { outside, run, sdkPath, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { linerTitle } from "../agent-tools.ts";
@@ -32,8 +34,14 @@ import { effortOf, skillsIn, ULTRACODE, ULTRATHINK } from "./models.ts";
 import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
-/** The SDK's query(), held here so tests can stand in a Claude Code of their own. */
-export const sdk = { query };
+/** The SDK's query() and transcript reader, held here so tests can stand in a Claude Code of their own. */
+export const sdk = { query, getSessionMessages };
+
+/**
+  How long, in milliseconds: a resumed Claude Code has to say it's up, the connections have to be
+  handed over before a turn goes without them, and a stopped turn has to say it ended.
+*/
+export const waits = { open: 90_000, link: 30_000, stop: 4_000 };
 
 /** Only until Claude Code answers: the engine asks it for its real list as it starts. */
 const FALLBACK: ModelInfo[] = [
@@ -50,9 +58,17 @@ const sdkEffort = (e: string) => (e === "ultracode" ? "xhigh" : LEVELS.has(e) ? 
 export function claudeMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = []): Record<string, McpServerConfig> {
   const out: Record<string, McpServerConfig> = {};
   if (o.mcp) out.liner = { type: "stdio", command: o.mcp.command, args: o.mcp.args, env: o.mcp.env };
-  for (const c of connections) out[c.name] = c.http ? { type: "http", url: c.http.url, headers: c.http.headers } : { type: "stdio", command: c.stdio!.command, args: c.stdio!.args, env: c.stdio!.env };
+  // `liner` is ours, and its tools go without a card: a connection of that name is any other server.
+  for (const c of connections) out[c.name === "liner" ? "liner-addon" : c.name] = c.http ? { type: "http", url: c.http.url, headers: c.http.headers } : { type: "stdio", command: c.stdio!.command, args: c.stdio!.args, env: c.stdio!.env };
   return out;
 }
+
+/**
+  Is this Liner Code's own server? Ours is handed over at run time, so it's "dynamic"; an older CLI
+  says nothing. Any other source is a config file, a plugin or an agent's own, whatever it's called,
+  and the SDK says to treat one it doesn't know as configured ("key trust decisions on source").
+*/
+const handedOver = (source?: string) => !source || source === "dynamic";
 
 const limitName = (t?: string) => (t === "five_hour" ? "5-hour limit" : t === "seven_day" ? "weekly limit" : t === "seven_day_opus" ? "weekly Opus limit" : t === "seven_day_sonnet" ? "weekly Sonnet limit" : t === "overage" ? "extra usage" : "usage limit");
 
@@ -129,6 +145,14 @@ export function resultError(m: SDKResultMessage, hint?: string): string | undefi
   return structured ?? hint ?? (m.result || "Claude Code stopped with an error.");
 }
 
+/** When a gateway's 503 around a rate limit says it lifts, if this result is one (T3 Code: ClaudeAdapterV2.ts, gatewayCooldownResetAt). */
+function gatewayCooldown(m: SDKResultMessage): number | undefined {
+  if (m.subtype !== "success" || !m.is_error || m.terminal_reason !== "api_error" || m.api_error_status !== 503) return undefined;
+  const c = /^API Error: 503 \[[^\]\r\n]+\] \[429\]: \{"type":"error","error":\{"type":"rate_limit_error",[^\r\n]*\} \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(m.result);
+  const seconds = c ? Number(c[1] ?? 0) * 3600 + Number(c[2] ?? 0) * 60 + Number(c[3] ?? 0) : 0;
+  return seconds > 0 ? Date.now() + seconds * 1000 : undefined;
+}
+
 /** Said when Claude Code's sign-in stopped working, naming an account's own config folder (T3 Code: ClaudeHome.ts, claudeSignedOutMessage). */
 export function signedOut(configDir?: string) {
   const dir = configDir?.trim();
@@ -192,6 +216,32 @@ export function applyTaskTool(tasks: TaskList, tool: string, input: unknown, res
   return title === task.title && status === task.status ? undefined : new Map(tasks).set(id, { title, status });
 }
 
+/**
+  The task list Claude Code keeps on disk for a session, or undefined when there's none to read
+  (T3 Code: ClaudeAdapterV2.ts, readClaudeTaskList). It outlives a restart, which ours doesn't.
+*/
+export function storedTasks(env: NodeJS.ProcessEnv, cwd: string, session: string): TaskList | undefined {
+  const config = env.CLAUDE_CONFIG_DIR?.trim();
+  const dir = join(config ? resolve(cwd, config) : join(homedir(), ".claude"), "tasks", (env.CLAUDE_CODE_TASK_LIST_ID?.trim() || session).replace(/[^a-zA-Z0-9_-]/g, "-"));
+  try {
+    const out: TaskList = new Map();
+    for (const name of readdirSync(dir).filter((n) => /^\d+\.json$/.test(n)).sort((a, b) => parseInt(a, 10) - parseInt(b, 10))) {
+      try {
+        const t: unknown = JSON.parse(readFileSync(join(dir, name), "utf8"));
+        const id = word(t, "id");
+        const title = word(t, "subject");
+        const status = taskStatus(field(t, "status"));
+        if (id && title && status && !field(field(t, "metadata"), "_internal")) out.set(id, { title, status });
+      } catch {
+        // One half written: the rest still say.
+      }
+    }
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Claude reads at most this much of images and documents in a conversation (T3 Code: ClaudeAdapterV2.ts, its attachment budget). */
 const MAX_BYTES = 28 * 1024 * 1024;
 const MAX_PAGES = 100;
@@ -201,7 +251,8 @@ type Content = Exclude<Extract<SDKUserMessage["message"], { role: "user" }>["con
   Your message with its images and PDFs as content blocks, so Claude sees them as they are
   (T3 Code: ClaudeAdapterV2.ts, makeClaudeUserMessageWithAttachments). They count against what a
   conversation may hold: a file past it, an image over 5 MB, or a PDF whose pages can't be counted
-  goes by its path alone, which the text names either way.
+  goes by its path alone, which the text names either way. An image goes by what its bytes are: the
+  API refuses one that isn't what it's labelled, on this turn and on every turn after.
 */
 export function withFiles(text: string, files: string[], budget: { bytes: number; pages: number }): string | Content {
   const blocks: Content = [];
@@ -209,9 +260,10 @@ export function withFiles(text: string, files: string[], budget: { bytes: number
     const type = imageType(path);
     if (type) {
       const bytes = readUpTo(path, 5 * 1024 * 1024);
-      if (!bytes || budget.bytes + base64Size(bytes.length) > MAX_BYTES) continue;
+      const kind = bytes ? imageKind(bytes) : undefined;
+      if (!bytes || !kind || budget.bytes + base64Size(bytes.length) > MAX_BYTES) continue;
       budget.bytes += base64Size(bytes.length);
-      blocks.push({ type: "image", source: { type: "base64", media_type: type as "image/png", data: bytes.toString("base64") } });
+      blocks.push({ type: "image", source: { type: "base64", media_type: kind as "image/png", data: bytes.toString("base64") } });
     } else if (isPdf(path)) {
       const bytes = readUpTo(path, 20 * 1024 * 1024);
       const pages = bytes ? pdfPages(bytes) : null;
@@ -222,6 +274,52 @@ export function withFiles(text: string, files: string[], budget: { bytes: number
     }
   }
   return blocks.length ? [...blocks, { type: "text", text }] : text;
+}
+
+/** What a transcript's messages already hold of images and PDFs, as the budget above counts them. */
+function heldFiles(messages: { message: unknown }[]) {
+  const held = { bytes: 0, pages: 0 };
+  for (const { message } of messages) {
+    const content = field(message, "content");
+    for (const b of Array.isArray(content) ? (content as unknown[]) : []) {
+      const data = field(field(b, "source"), "data");
+      const type = field(b, "type");
+      if (typeof data !== "string" || (type !== "image" && type !== "document")) continue;
+      held.bytes += data.length + 128;
+      if (type === "document") held.pages += pdfPages(Buffer.from(data, "base64")) ?? 0;
+    }
+  }
+  return held;
+}
+
+/**
+  An MCP server's form as questions, with how to read each answer back. The card offers choices and
+  no box to type in, so a form with a required field of any other kind can't be shown: null.
+*/
+function formOf(schema: unknown, server: string): { key: string; question: Question; value: (label: string) => unknown }[] | null {
+  const properties = field(schema, "properties");
+  const list = field(schema, "required");
+  const required = Array.isArray(list) ? (list as unknown[]) : [];
+  const out: { key: string; question: Question; value: (label: string) => unknown }[] = [];
+  for (const [key, p] of Object.entries(typeof properties === "object" && properties !== null ? properties : {})) {
+    const said = field(p, "enum");
+    const titled = field(p, "oneOf");
+    const pairs: [string, unknown][] | null =
+      field(p, "type") === "boolean"
+        ? [["Yes", true], ["No", false]]
+        : Array.isArray(said)
+          ? said.map((v) => [String(v), v])
+          : Array.isArray(titled)
+            ? titled.map((v) => [word(v, "title") ?? String(field(v, "const")), field(v, "const")])
+            : null;
+    if (!pairs) {
+      if (required.includes(key)) return null;
+      continue;
+    }
+    const byLabel = new Map(pairs);
+    out.push({ key, question: { question: word(p, "title") ?? word(p, "description") ?? key, header: server, options: pairs.map(([label]) => ({ label })) }, value: (label) => byLabel.get(label) });
+  }
+  return out;
 }
 
 /** Opens Claude Code with no prompt to ask it something (its models, its limits), then closes it. */
@@ -513,7 +611,7 @@ class ClaudeSession implements ProviderSession {
   /** The task list (TaskCreate and friends), kept across turns. */
   private taskList: TaskList = new Map();
   /** A running command's output, read from the file Claude Code writes it to, by its tool call. */
-  private tails = new Map<string, { timer?: NodeJS.Timeout; file?: string; offset: number; text: string; tries: number }>();
+  private tails = new Map<string, { timer?: NodeJS.Timeout; file?: string; offset: number; text: string; tries: number; decoder: StringDecoder }>();
   /** The notice an API retry or a compaction updates in place while it lasts. */
   private retryKey: string | null = null;
   private compactKey: string | null = null;
@@ -521,11 +619,27 @@ class ClaudeSession implements ProviderSession {
   private authFailure: string | undefined;
   /** The connections being handed to Claude Code, waited on before a turn's message goes so their tools are there for it. */
   private linking: Promise<string[]> | null = null;
+  /** The session a transcript was opened on, until what it holds of images and PDFs is counted. */
+  private uncounted: string | undefined;
+  /** Whether Claude Code's own record of the task list has been read, once per session. */
+  private tasksRead = false;
+  /** The message a compaction ended on: what's still reported about it is from before. */
+  private stale: string | null = null;
+  /** Folders your attachments were saved in, outside the project, where reading them would ask. */
+  private attached = new Set<string>();
+  /** Asks made while a turn Claude Code began waits to run: each gets that turn's sink, or null if it never does. */
+  private holds = new Set<(sink: TurnSink | null) => void>();
+  /** An effort update() couldn't apply: the next turn calls it again. */
+  private owed = false;
+  /** What the next turn says about that: nothing runs when update() does, so there's no turn to say it on then. */
+  private owedNote: string | null = null;
 
   constructor(o: OpenOptions) {
     this.o = o;
     this.access = o.access;
     this.path = which("claude", o.env);
+    this.uncounted = o.resume;
+    for (const dir of o.dirs ?? []) this.attached.add(dir);
   }
 
   private start() {
@@ -535,6 +649,8 @@ class ClaudeSession implements ProviderSession {
     const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], settings: { permissions: { deny: PLAIN_DENIED } }, mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
     const options: Options = {
       cwd: o.cwd,
+      // T3 Code: ClaudeAdapterV2.ts hands its attachments folder over the same way.
+      additionalDirectories: o.dirs?.length ? o.dirs : undefined,
       model: o.model || undefined,
       effort: sdkEffort(o.effort),
       // Ultracode: standing multi-agent workflows on top of extra high effort.
@@ -554,13 +670,16 @@ class ClaudeSession implements ProviderSession {
       permissionPrompts: "host",
       pathToClaudeCodeExecutable: sdkPath(this.path) ?? undefined,
       mcpServers: o.mcp ? claudeMcp(o) : undefined,
-      canUseTool: async (name, input, { signal, toolUseID }) => {
-        const sink = this.sink;
+      canUseTool: async (name, input, { signal, toolUseID, matchedAskRule, decisionReason, suppressAlwaysAllowRule, mcpServer }) => {
+        const sink = this.sink ?? (await this.wakeSink(signal));
         if (!sink) return { behavior: "deny", message: "The turn has ended." };
         // Just a model has no tools; should one turn up all the same, it's never used.
         if (o.plain) return { behavior: "deny", message: "You have no tools here: answer from what you were given." };
+        // Your own ask rule wants a person's answer, whatever would answer for you here (the SDK says so of
+        // hosts that approve by themselves; T3 Code: ClaudeAdapterV2.ts, claudeApprovalPresentation).
+        const forced = matchedAskRule !== undefined;
         // Liner Code's own tools only reach this session's Browser, the Simulator and its timeline.
-        if (name.startsWith("mcp__liner__")) return { behavior: "allow", updatedInput: input };
+        if (name.startsWith("mcp__liner__") && !forced && handedOver(mcpServer?.source)) return { behavior: "allow", updatedInput: input };
         // The agent asks you to choose: shown as a question card, answered in its input.
         if (name === "AskUserQuestion" && Array.isArray(input.questions)) {
           const questions = (input.questions as { question: string; header?: string; options?: { label: string; description?: string }[]; multiSelect?: boolean }[]).map((q) => ({
@@ -584,9 +703,11 @@ class ClaudeSession implements ProviderSession {
           // The plan as you left it: you may have edited its steps before approving.
           return { behavior: "allow", updatedInput: { ...input, plan: answer.plan ?? input.plan } };
         }
+        // What you attached is yours to read, though it's saved outside the project (T3 Code hands its folder over as an extra directory).
+        if (name === "Read" && !forced && this.isAttached(input.file_path)) return { behavior: "allow", updatedInput: input };
         const command = typeof input.command === "string" ? input.command : "";
         // Full access acts, except where the guard says the step can't be undone.
-        if (this.access === "full" && !(this.o.guard && isDestructive(command))) return { behavior: "allow", updatedInput: input };
+        if (this.access === "full" && !forced && !(this.o.guard && isDestructive(command))) return { behavior: "allow", updatedInput: input };
         const kind = kindOf(name);
         const { title, path } = titleOf(name, input, o.cwd);
         const fields: { label: string; value: string }[] = [];
@@ -595,21 +716,25 @@ class ClaudeSession implements ProviderSession {
         if (typeof input.url === "string") fields.push({ label: "URL", value: input.url });
         if (!fields.length) fields.push({ label: "Input", value: short(JSON.stringify(input), 240) });
         fields.push({ label: "Runs in", value: o.cwd });
+        // Why Claude Code asks, which can carry its terminal's colours (T3 Code: ClaudeAdapterV2.ts, claudeApprovalPresentation).
+        const reason = stripVTControlCharacters(decisionReason ?? "").trim();
         const answer = await sink.approve(
           {
             key: toolUseID,
             tool: name,
             // A command's own description reads as the ask ("Write the note and commit it"); the command is in its field.
             title: kind === "exec" ? (typeof input.description === "string" && input.description.trim() ? short(input.description.charAt(0).toUpperCase() + input.description.slice(1), 70) : `Run ${short(command, 60)}`) : title,
-            description: typeof input.description === "string" && kind !== "exec" ? input.description : undefined,
-            risk: kind === "exec" ? commandRisk(command) : kind === "edit" || kind === "write" ? "low" : "medium",
+            description: [typeof input.description === "string" && kind !== "exec" ? input.description : "", reason].filter(Boolean).join("\n\n") || undefined,
+            // High, so no Reviewer, Auto or routine answers for you; no rule, so no "don't ask again" does.
+            risk: forced ? "high" : kind === "exec" ? commandRisk(command) : kind === "edit" || kind === "write" ? "low" : "medium",
             fields,
-            rule: kind === "exec" ? ruleFor(command) : kind === "edit" || kind === "write" ? "Edit" : name,
+            rule: forced || suppressAlwaysAllowRule ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" || kind === "write" ? "Edit" : name,
           },
           signal,
         );
         return answer.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: answer.reason ? `The user said no, and asks instead: ${answer.reason}` : "The user said no to this step." };
       },
+      onElicitation: (request, { signal }) => this.elicit(request, signal),
       ...plain,
     };
     this.seen = o.resume ? null : { input: 0, output: 0, cache: 0, cost: 0 };
@@ -618,7 +743,86 @@ class ClaudeSession implements ProviderSession {
     // The connections go over stdin rather than on the command line with `liner`, where any program
     // on this Mac could read their keys: the SDK writes `mcpServers` as --mcp-config (T3 Code:
     // ClaudeAdapterV2.ts hands its servers over with setMcpServers once query() returns, for the same reason).
-    if (o.connections?.length && !o.plain) this.linking = this.link(this.q);
+    if (o.connections?.length && !o.plain) {
+      this.linking = this.link(this.q);
+      // A resume that fails first never reaches the turn that waits on this.
+      this.linking.catch(() => {});
+    }
+  }
+
+  /**
+    A turn Claude Code began by itself can ask for a tool while the runtime is still setting that
+    turn up, which takes a git snapshot: the ask waits for it, and shows on it (T3 Code:
+    ClaudeAdapterV2.ts, its wake turns). No sink comes when nothing is about to run: a background
+    subagent asking with no turn of yours open. The SDK hands an ask over ahead of the messages
+    before it, so the words that begin the turn get a moment to arrive.
+  */
+  private async wakeSink(signal: AbortSignal): Promise<TurnSink | null> {
+    if (!this.waking) await new Promise((r) => setTimeout(r, 50));
+    if (this.sink || !this.waking || signal.aborted) return this.sink;
+    return new Promise((done) => {
+      const give = (sink: TurnSink | null) => {
+        this.holds.delete(give);
+        signal.removeEventListener("abort", drop);
+        done(sink);
+      };
+      const drop = () => give(null);
+      this.holds.add(give);
+      signal.addEventListener("abort", drop, { once: true });
+    });
+  }
+  private release(sink: TurnSink | null) {
+    for (const give of [...this.holds]) give(sink);
+  }
+
+  /**
+    An MCP server asks you something in the middle of a tool: choices come as a question card, a
+    plain yes as an approval card that only you can answer (T3 Code: ClaudeAdapterV2.ts,
+    onElicitationEffect). Anything else (a link to open, a box to fill in) is declined, as no
+    handler would. Never null: the SDK reads that as answered elsewhere and leaves the server waiting.
+  */
+  private async elicit(request: ElicitationRequest, signal: AbortSignal): Promise<ElicitationResult> {
+    const form = request.mode === "url" || this.o.plain ? null : formOf(request.requestedSchema, request.displayName ?? request.serverName);
+    const sink = form ? (this.sink ?? (await this.wakeSink(signal))) : null;
+    if (!form || !sink) return { action: "decline" };
+    let content: Record<string, unknown> | null = null;
+    if (form.length) {
+      const answers = await sink.ask(form.map((f) => f.question), signal, { optional: true }).catch(() => null);
+      if (answers) content = Object.fromEntries(form.map((f) => [f.key, f.value(answers[f.question.question] ?? "")]));
+    } else {
+      const answer = await sink.approve({ tool: `mcp__${request.serverName}`, title: request.message, description: request.description, risk: "high", fields: [{ label: "Asked by", value: request.displayName ?? request.serverName }] }, signal).catch(() => ({ allow: false }));
+      if (answer.allow) content = {};
+    }
+    return signal.aborted ? { action: "cancel" } : content ? { action: "accept", content: content as NonNullable<ElicitationResult["content"]> } : { action: "decline" };
+  }
+
+  private isAttached(path: unknown) {
+    if (typeof path !== "string" || !isAbsolute(path)) return false;
+    return [...this.attached].some((dir) => {
+      const r = relative(dir, path);
+      return Boolean(r) && !outside(r);
+    });
+  }
+
+  /** How a handover went: what didn't connect, or null when it's still going after a while, or you stopped. */
+  private async handed(linking: Promise<string[]>, signal?: AbortSignal): Promise<string[] | null> {
+    let timer: NodeJS.Timeout | undefined;
+    let off = () => {};
+    const waited = new Promise<null>((r) => {
+      timer = setTimeout(() => r(null), waits.link);
+      const stop = () => r(null);
+      signal?.addEventListener("abort", stop, { once: true });
+      off = () => signal?.removeEventListener("abort", stop);
+    });
+    try {
+      return await Promise.race([linking, waited]);
+    } finally {
+      clearTimeout(timer);
+      off();
+    }
+  }
+  private stillLinking() {
+    return `Still connecting ${(this.o.connections ?? []).map((c) => c.name).join(", ")}: their tools may not be there yet.`;
   }
 
   /** Hands Claude Code `liner` and the connections; what didn't connect, by name and why. */
@@ -639,8 +843,10 @@ class ClaudeSession implements ProviderSession {
     const linking = this.link(q);
     this.linking = linking;
     try {
-      const errors = await linking;
-      if (errors.length) this.sink?.notice(`Didn't connect ${errors.join("; ")}`);
+      // Not for good: Claude Code can stall on this (T3 Code: ClaudeAgentSdkQueryRunner.test.ts). It may yet land, so the session stays.
+      const errors = await this.handed(linking);
+      if (!errors) this.sink?.notice(this.stillLinking());
+      else if (errors.length) this.sink?.notice(`Didn't connect ${errors.join("; ")}`);
       return true;
     } catch {
       return false;
@@ -656,9 +862,20 @@ class ClaudeSession implements ProviderSession {
     } catch (e) {
       if (!this.retired.has(q)) this.fail?.(e instanceof Error ? e : new Error(String(e)));
     } finally {
-      if (this.q === q) this.q = null;
+      if (this.q === q) this.lost();
       for (const id of [...this.tails.keys()]) this.untail(id);
     }
+  }
+
+  /** The process is gone. So is what it ran, and the SDK's reader stays on its inbox, where it would take your next message to nobody. */
+  private lost() {
+    this.q = null;
+    this.inbox.end();
+    this.inbox = new Inbox();
+    this.tasks.clear();
+    this.hushed.clear();
+    this.hushedNotes = 0;
+    this.release(null);
   }
 
   /** Work Claude Code runs as a task, kept whether or not a turn runs, so Stop and a steer can reach it. */
@@ -735,6 +952,7 @@ class ClaudeSession implements ProviderSession {
         this.idle = [];
         this.draining = !ended;
         if (!ended) void this.q?.interrupt().catch(() => {});
+        this.release(null);
       },
     });
   }
@@ -788,7 +1006,7 @@ class ClaudeSession implements ProviderSession {
           this.ctx = { id: ev.message.id, input: promptTokens(u), output: u.output_tokens ?? 0 };
           if (this.ctx.input > 0) sink.usage({ contextTokens: this.ctx.input + this.ctx.output });
         }
-      } else if (ev.type === "message_delta" && this.ctx) {
+      } else if (ev.type === "message_delta" && this.ctx && this.ctx.id !== this.stale) {
         // Each delta carries the message's running count; fields it leaves out keep their start values.
         const u = ev.usage;
         if (u.input_tokens != null || u.cache_read_input_tokens != null || u.cache_creation_input_tokens != null) {
@@ -839,7 +1057,7 @@ class ClaudeSession implements ProviderSession {
       // Without a stream (or a stream that started with no counts), the message's own usage says it. Claude Code's
       // "<synthetic>" notices report none.
       const u = m.message.usage;
-      if (u && m.message.model !== "<synthetic>" && (this.ctx?.id !== m.message.id || this.ctx.input <= 0) && promptTokens(u) > 0)
+      if (u && m.message.model !== "<synthetic>" && m.message.id !== this.stale && (this.ctx?.id !== m.message.id || this.ctx.input <= 0) && promptTokens(u) > 0)
         this.ctx = { id: m.message.id, input: promptTokens(u), output: Math.max(u.output_tokens ?? 0, this.ctx?.id === m.message.id ? this.ctx.output : 0) };
       for (const b of m.message.content) {
         if (b.type !== "tool_use") continue;
@@ -873,7 +1091,11 @@ class ClaudeSession implements ProviderSession {
         sink.tool({ key: b.tool_use_id, tool: call.name, toolKind: kindOf(call.name), title, path, output: out.slice(0, 20000), status: b.is_error ? "failed" : "done" });
         // The task list changed: the plan shows it as it is now. A lone result carries its structured form.
         if (TASK_TOOLS.has(call.name) && !b.is_error) {
-          const next = applyTaskTool(this.taskList, call.name, call.input, (results.length === 1 ? m.tool_use_result : undefined) ?? out);
+          const said = (results.length === 1 ? m.tool_use_result : undefined) ?? out;
+          // The first since this session opened: a list from before a restart is on disk, unless this result is the list.
+          const stored = this.tasksRead || (call.name === "TaskList" && Array.isArray(field(said, "tasks"))) ? undefined : storedTasks(this.o.env, this.o.cwd, m.session_id ?? this.o.resume ?? "");
+          this.tasksRead = true;
+          const next = applyTaskTool(stored ?? this.taskList, call.name, call.input, said) ?? (stored?.size ? stored : undefined);
           if (next) {
             this.taskList = next;
             sink.plan([...next.values()]);
@@ -931,11 +1153,15 @@ class ClaudeSession implements ProviderSession {
       if (other && !this.woke) return;
       for (const id of echoed) this.sent.delete(id);
       // A failure after the sign-in stopped working says what to do about it.
-      const failed = this.signal?.aborted ? undefined : resultError(m);
-      const said = failed && this.authFailure ? this.authFailure : failed;
+      // Claude Code calls a 403 a failed sign-in too, and signing in can't grant that (T3 Code: ClaudeAdapterV2.ts, permissionDenied).
+      const denied = m.subtype === "success" && m.api_error_status === 403;
+      const failed = this.signal?.aborted ? undefined : resultError(m, denied ? m.result : undefined);
+      const said = failed && this.authFailure && !denied ? this.authFailure : failed;
       // A limit was already said, with its reset time; the result's own words would repeat it.
       if (said && !this.limited) {
-        if (/usage limit|rate limit|limit reached|hit your limit/i.test(said)) sink.limited(said);
+        const cooldown = gatewayCooldown(m);
+        if (cooldown) sink.limited("Claude's API rate limit was reached. Try again later.", cooldown);
+        else if (/usage limit|rate limit|limit reached|hit your limit/i.test(said)) sink.limited(said);
         else sink.error(said);
       }
       // An answer no message carried (T3 Code: ClaudeAdapterV2.ts, its result fallbackText).
@@ -994,6 +1220,10 @@ class ClaudeSession implements ProviderSession {
         const { pre_tokens: pre, post_tokens: post } = m.compact_metadata;
         sink.notice(`Compacted the conversation${pre && post ? `, from ${k(pre)} to ${k(post)} tokens` : pre ? ` (${k(pre)} tokens before)` : ""}.`, this.compactKey ?? undefined);
         this.compactKey = null;
+        // The request before it says nothing of the size now, and what's still reported of it is from before
+        // (T3 Code: ClaudeAdapterV2.test.ts, "ignores stale snapshots after compaction").
+        this.stale = this.ctx?.id ?? this.streamId ?? "";
+        this.ctx = post && post > 0 ? { id: this.stale, input: post, output: 0 } : null;
         if (post && post > 0) sink.usage({ contextTokens: post });
         // What it compacted away no longer counts against the images and PDFs a conversation may hold.
         if (!m.compact_metadata.preserved_segment && !m.compact_metadata.preserved_messages) this.budget = { bytes: 0, pages: 0 };
@@ -1018,7 +1248,7 @@ class ClaudeSession implements ProviderSession {
     const uid = process.getuid?.();
     if (uid === undefined || this.tails.has(toolUseId)) return;
     const root = join(this.o.env.CLAUDE_CODE_TMPDIR?.trim() || "/tmp", `claude-${uid}`);
-    const t: { timer?: NodeJS.Timeout; file?: string; offset: number; text: string; tries: number } = { offset: 0, text: "", tries: 0 };
+    const t: { timer?: NodeJS.Timeout; file?: string; offset: number; text: string; tries: number; decoder: StringDecoder } = { offset: 0, text: "", tries: 0, decoder: new StringDecoder("utf8") };
     this.tails.set(toolUseId, t);
     const tick = () => {
       const call = this.tools.get(toolUseId);
@@ -1034,9 +1264,16 @@ class ClaudeSession implements ProviderSession {
           if (!t.file && ++t.tries >= 40) return this.untail(toolUseId);
         }
         const size = t.file ? statSync(t.file).size : 0;
+        // Written over: read it again from the top (T3 Code: ClaudeTaskOutputTail.ts).
+        if (size < t.offset) {
+          t.offset = 0;
+          t.decoder = new StringDecoder("utf8");
+        }
         if (t.file && size > t.offset) {
           // Only the tail shows: a fast writer is skipped ahead of.
           const from = Math.max(t.offset, size - 256 * 1024);
+          const skipped = from > t.offset;
+          if (skipped) t.decoder = new StringDecoder("utf8");
           const buf = Buffer.alloc(size - from);
           const fd = openSync(t.file, "r");
           try {
@@ -1045,7 +1282,8 @@ class ClaudeSession implements ProviderSession {
             closeSync(fd);
           }
           t.offset = size;
-          t.text = (t.text + buf.toString("utf8")).slice(-20000);
+          // Decoded as a stream, so a character cut between two reads stays whole.
+          t.text = (t.text + (skipped ? "\n" : "") + t.decoder.write(buf)).slice(-20000);
           const { title, path } = titleOf(call.name, call.input, this.o.cwd);
           sink.tool({ key: toolUseId, tool: call.name, toolKind: kindOf(call.name), title, path, output: t.text, status: "running" });
           sink.heard?.();
@@ -1074,8 +1312,17 @@ class ClaudeSession implements ProviderSession {
     const linking = this.linking;
     this.linking = null;
     if (linking) {
-      const errors = await Promise.race([linking.catch((e: Error) => [`connections: ${e.message}`]), new Promise<string[]>((r) => setTimeout(() => r([]), 30_000)), new Promise<string[]>((r) => signal.addEventListener("abort", () => r([]), { once: true }))]);
-      if (errors.length) sink.notice(`Didn't connect ${errors.join("; ")}`);
+      const errors = await this.handed(linking.catch((e: Error) => [`connections: ${e.message}`]), signal);
+      if (!errors && !signal.aborted) sink.notice(this.stillLinking());
+      else if (errors?.length) sink.notice(`Didn't connect ${errors.join("; ")}`);
+    }
+    for (const f of files) this.attached.add(dirname(f));
+    // A session opened on a transcript: what it holds counts against what Claude reads (T3 Code keeps this count with the session).
+    if (this.uncounted && files.some((f) => imageType(f) || isPdf(f))) {
+      const id = this.uncounted;
+      this.uncounted = undefined;
+      const held = await sdk.getSessionMessages(id, { dir: this.o.cwd }).then(heldFiles, () => null);
+      if (held) this.budget = { bytes: Math.max(this.budget.bytes, held.bytes), pages: Math.max(this.budget.pages, held.pages) };
     }
     return this.drive(sink, signal, false, () => {
       this.sent = new Set([this.inbox.push(this.message(text, files))]);
@@ -1092,19 +1339,23 @@ class ClaudeSession implements ProviderSession {
     this.start();
     const q = this.q!;
     const stopped = new Promise<void>((r) => signal.addEventListener("abort", () => r(), { once: true }));
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<"late">((r) => (timer = setTimeout(() => r("late"), waits.open)));
     try {
-      await Promise.race([q.initializationResult(), stopped]);
+      if ((await Promise.race([q.initializationResult(), stopped, late])) === "late") throw new Error("Claude Code didn't start in time. Send your message again; if this keeps happening, check that claude runs in a terminal.");
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       if (!/no conversation found/i.test(message)) throw e;
       const lost = this.o.resume;
       this.retired.add(q);
-      if (this.q === q) this.q = null;
+      if (this.q === q) this.lost();
       this.idle = [];
       this.o.resume = undefined;
       this.o.fork = false;
-      this.inbox = new Inbox();
+      this.uncounted = undefined;
       throw new ResumeFailed(`Claude Code couldn't find its session ${lost ?? ""} any more.`);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -1119,11 +1370,17 @@ class ClaudeSession implements ProviderSession {
     this.woke = woke;
     this.draining = false;
     this.said = false;
+    if (this.owedNote) sink.notice(this.owedNote, "effort");
+    this.owedNote = null;
+    // Not carried over from a turn that was stopped before its result: they'd hide this one's failure.
+    this.limited = false;
+    this.authFailure = undefined;
     // Only this turn's messages are waited on; a steer an earlier turn never answered isn't.
     this.sent = new Set();
     // Your turn takes in what Claude Code had to say about work you stopped.
     if (!woke) this.hushedNotes = 0;
-    if (!this.q) this.start();
+    // A turn Claude Code began has nothing to send a new process.
+    if (!this.q && !woke) this.start();
     const done = new Promise<void>((resolve, reject) => {
       this.finish = resolve;
       this.fail = reject;
@@ -1137,7 +1394,7 @@ class ClaudeSession implements ProviderSession {
       late = setTimeout(() => {
         this.draining = true;
         this.finish?.();
-      }, 4000);
+      }, waits.stop);
     };
     signal.addEventListener("abort", stop, { once: true });
     // Stopped before it began: nothing of yours went, so nothing is waited for; a turn Claude Code began is interrupted.
@@ -1152,8 +1409,11 @@ class ClaudeSession implements ProviderSession {
     this.idle = [];
     try {
       for (const m of held) this.onMessage(m);
+      this.release(sink);
       // Stopped before it began: nothing more is asked of Claude Code.
       if (!signal.aborted) begin();
+      // The process that began this turn died before it ran: what it said is all there is.
+      if (woke && !this.q) this.finish?.();
       await done;
     } finally {
       // Not left to end the next turn, should that start within the moment.
@@ -1194,6 +1454,7 @@ class ClaudeSession implements ProviderSession {
     const agents = [...this.tasks.values()].filter((t) => !t.background && t.toolUseId && t.type !== "local_bash").map((t) => t.toolUseId!);
     const send = () => {
       if (this.q !== q || this.sink !== sink) return false;
+      for (const f of files) this.attached.add(dirname(f));
       this.sent.add(this.inbox.push(this.message(text, files), "now"));
       return true;
     };
@@ -1203,16 +1464,39 @@ class ClaudeSession implements ProviderSession {
     return Promise.race([moved, new Promise((r) => (timer = setTimeout(r, 5000)))]).then(() => (clearTimeout(timer), send()));
   }
 
+  owes() {
+    return this.owed;
+  }
+
   async update(o: Pick<OpenOptions, "model" | "effort" | "access">) {
-    if (!this.q) {
+    const q = this.q;
+    this.owed = false;
+    if (!q) {
       Object.assign(this.o, o);
       this.access = o.access;
       return true;
     }
-    // Effort is fixed for a running query; reopen with resume for that.
-    if (o.effort !== this.o.effort) return false;
-    if (o.model !== this.o.model) await this.q.setModel(o.model || undefined);
-    if (o.access !== this.access) await this.q.setPermissionMode(MODE[o.access]);
+    try {
+      if (o.effort !== this.o.effort) {
+        // Both keys, or a new level on its own turns ultracode off (T3 Code: ClaudeAdapterV2.ts, claudeLiveSelectionFlagSettings).
+        const level = sdkEffort(o.effort);
+        const set = level ? await q.applyFlagSettings({ effortLevel: level, ultracode: o.effort === "ultracode" ? true : null }).then(() => true, () => false) : false;
+        // It can't be changed in place (and a level can't be cleared in place): reopen with resume for that, unless
+        // that would end what runs in the background, a dev server say (T3 Code: its ClaudeBackgroundWorkBlocksQueryReplacementError).
+        if (!set && !this.tasks.size) return false;
+        if (!set) {
+          // Left as it was, so the next turn tries again, and you aren't shown a level it isn't on.
+          o = { ...o, effort: this.o.effort };
+          this.owed = true;
+          this.owedNote = "Claude Code kept its effort for now: changing it would end what runs in the background.";
+        }
+      }
+      if (o.model !== this.o.model) await q.setModel(o.model || undefined);
+      if (o.access !== this.access) await q.setPermissionMode(MODE[o.access]);
+    } catch {
+      // Claude Code refused (auto mode isn't there for this account or model, say). Reopened with it, the turn in hand goes on.
+      return false;
+    }
     Object.assign(this.o, o);
     this.access = o.access;
     return true;
@@ -1235,6 +1519,8 @@ class ClaudeSession implements ProviderSession {
     if (this.waking) this.waking.pending = false;
     this.waking = null;
     this.idle = [];
+    this.tasks.clear();
+    this.release(null);
     for (const id of [...this.tails.keys()]) this.untail(id);
     void this.signal;
   }

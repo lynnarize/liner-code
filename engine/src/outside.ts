@@ -56,7 +56,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   } catch {
     return;
   }
-  if (m.id === undefined) return;
+  // Valid JSON needn't be a message: null, say.
+  if (m?.id === undefined) return;
   if (m.method === "initialize") {
     send({
       id: m.id,

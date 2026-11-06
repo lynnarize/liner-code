@@ -44,6 +44,8 @@ const dataUrl = (path: string, content: string) => {
   if (type === "image/svg+xml" || type.startsWith("text/") || type === "application/json") return `data:${type};charset=utf-8,${encodeURIComponent(content)}`;
   return `data:${type};base64,${content}`;
 };
+/** One of its own files by the path it names: "constructor" names no file, whatever every object inherits. */
+const fileOf = (files: Record<string, string>, p: string | null) => (p !== null && Object.hasOwn(files, p) ? files[p] : undefined);
 /** A script's text, safe inside a <script> element. */
 const scriptText = (js: string) => js.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
 
@@ -99,7 +101,7 @@ Object.defineProperty(window,"liner",{value:liner,writable:false,configurable:fa
   `entry` the HTML among them it opens on.
 */
 export function panelDocument(o: { files: Record<string, string>; entry: string; access: PanelAccess; theme: PanelTheme; place: string }) {
-  const html = o.files[o.entry] ?? `<p>There's no ${o.entry} among its files.</p>`;
+  const html = fileOf(o.files, o.entry) ?? `<p>There's no ${o.entry} among its files.</p>`;
   const root = Object.entries(o.theme)
     .map(([k, v]) => `${k}:${v || "initial"}`)
     .join(";");
@@ -114,19 +116,22 @@ export function panelDocument(o: { files: Record<string, string>; entry: string;
       const p = src === null ? null : local(src);
       if (src === null) return whole;
       // Named after its file, so an error's stack says app.js:48 rather than about:srcdoc.
-      return p && o.files[p] !== undefined ? `<script${a.replace(ATTR("src"), "")}>${scriptText(o.files[p])}\n//# sourceURL=${p.replace(/[^\w./-]/g, "")}</script>` : "<!-- a script from elsewhere, left out -->";
+      const js = fileOf(o.files, p);
+      return p && js !== undefined ? `<script${a.replace(ATTR("src"), "")}>${scriptText(js)}\n//# sourceURL=${p.replace(/[^\w./-]/g, "")}</script>` : "<!-- a script from elsewhere, left out -->";
     })
     .replace(/<link\b[^>]*>/gi, (tag) => {
       const rel = (attr(tag, "rel") ?? "").toLowerCase();
       const href = attr(tag, "href");
       const p = href === null ? null : local(href);
-      if (rel.split(/\s+/).includes("stylesheet")) return p && o.files[p] !== undefined ? `<style>${o.files[p].replace(/<\/style/gi, "<\\/style")}</style>` : "<!-- a stylesheet from elsewhere, left out -->";
+      const css = fileOf(o.files, p);
+      if (rel.split(/\s+/).includes("stylesheet")) return css !== undefined ? `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>` : "<!-- a stylesheet from elsewhere, left out -->";
       if (rel.split(/\s+/).includes("icon")) return "";
       return tag;
     })
     .replace(/(\s(?:src|href|poster)\s*=\s*)("([^"]*)"|'([^']*)')/gi, (whole, lead: string, _q: string, a?: string, b?: string) => {
       const p = local(a ?? b ?? "");
-      return p && o.files[p] !== undefined && /^(?:svg|png|jpe?g|gif|webp)$/.test(extOf(p)) ? `${lead}"${dataUrl(p, o.files[p])}"` : whole;
+      const file = fileOf(o.files, p);
+      return p && file !== undefined && /^(?:svg|png|jpe?g|gif|webp)$/.test(extOf(p)) ? `${lead}"${dataUrl(p, file)}"` : whole;
     });
   // The policy and the bridge come before anything of the agent's, always: its own document's
   // wrappers go, so no script of its can run ahead of them (one written before <head> would),

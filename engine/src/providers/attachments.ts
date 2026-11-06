@@ -12,6 +12,16 @@ const IMAGE: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg
 export const imageType = (path: string): string | undefined => IMAGE[extname(path).toLowerCase()];
 export const isPdf = (path: string) => extname(path).toLowerCase() === ".pdf";
 
+/** What an image's bytes say it is, or nothing for anything else (an empty file, a page saved as .png). */
+export function imageKind(b: Buffer): string | undefined {
+  const head = b.subarray(0, 12).toString("latin1");
+  if (head.startsWith("\x89PNG\r\n\x1a\n")) return "image/png";
+  if (head.startsWith("\xff\xd8\xff")) return "image/jpeg";
+  if (head.startsWith("GIF87a") || head.startsWith("GIF89a")) return "image/gif";
+  if (head.startsWith("RIFF") && head.slice(8) === "WEBP") return "image/webp";
+  return undefined;
+}
+
 /** A file's bytes, or null when it's gone or bigger than `max`. */
 export function readUpTo(path: string, max: number): Buffer | null {
   try {

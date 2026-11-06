@@ -212,7 +212,13 @@
   white-space: nowrap;
 }
 .lc-ag-chip b {
+  min-width: 0;
+  overflow: hidden;
   font-weight: 500;
+  text-overflow: ellipsis;
+}
+.lc-ag-chip svg {
+  flex: none;
 }
 .lc-ag-chip .lc-quiet {
   overflow: hidden;
@@ -336,7 +342,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .lc-ag-way-more,
-  .lc-ag-radio {
+  .lc-ag-radio,
+  .lc-ag-wait {
     transition: none;
     animation: none;
   }

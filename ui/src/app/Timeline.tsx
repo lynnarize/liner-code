@@ -1188,10 +1188,12 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
       </div>
     );
   const OTHER = "Something else";
-  const chosen = picks[q.question];
+  // A question that comes with no choices (Codex's and ACP's free text): writing your own is the one there is.
+  const pickOf = (x: (typeof it.questions)[number]) => picks[x.question] ?? x.options[0]?.label ?? OTHER;
+  const chosen = pickOf(q);
   const last = at === it.questions.length - 1;
   const answers = () =>
-    Object.fromEntries(it.questions.map((x) => [x.question, picks[x.question] === OTHER ? other[x.question] || OTHER : (picks[x.question] ?? x.options[0]?.label ?? "")]));
+    Object.fromEntries(it.questions.map((x) => [x.question, pickOf(x) === OTHER ? other[x.question]?.trim() || OTHER : pickOf(x)]));
   const submit = () => rpc("question.answer", { threadId, itemId: it.id, answers: answers() }).catch(fail);
   return (
     <section className="lc-q lc-frame" aria-label={`${who} asks: ${q.question}`}>
@@ -1214,9 +1216,14 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
         </div>
         <div className="lc-opts" role="radiogroup" aria-label={q.question}>
           {[...q.options, { label: OTHER, description: "Write your own answer." }].map((o) => {
-            const on = (chosen ?? q.options[0]?.label) === o.label;
+            const on = chosen === o.label;
             return (
-              <div key={o.label} className="lc-opt" role="radio" aria-checked={on} tabIndex={0} data-on={on || undefined} onClick={() => setPicks((p) => ({ ...p, [q.question]: o.label }))} onKeyDown={(e) => (e.key === " " || e.key === "Enter") && setPicks((p) => ({ ...p, [q.question]: o.label }))}>
+              <div key={o.label} className="lc-opt" role="radio" aria-checked={on} tabIndex={0} data-on={on || undefined} onClick={() => setPicks((p) => ({ ...p, [q.question]: o.label }))} onKeyDown={(e) => {
+                // Its own keys only: space and Enter in the field inside it are letters, and space here would scroll the thread.
+                if (e.target !== e.currentTarget || (e.key !== " " && e.key !== "Enter")) return;
+                e.preventDefault();
+                setPicks((p) => ({ ...p, [q.question]: o.label }));
+              }}>
                 <span className="lc-radio" data-on={on || undefined} />
                 <span>
                   <b>
@@ -1224,7 +1231,7 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
                     {"suggested" in o && o.suggested && <Badge tone="accent" dot={false}>{who} suggests</Badge>}
                   </b>
                   {o.description && <small>{o.description}</small>}
-                  {o.label === OTHER && on && <textarea className="lc-else" autoFocus placeholder="Say what you would like instead" value={other[q.question] ?? ""} onChange={(e) => setOther((x) => ({ ...x, [q.question]: e.target.value }))} onClick={(e) => e.stopPropagation()} />}
+                  {o.label === OTHER && on && <textarea className="lc-else" autoFocus={picks[q.question] === OTHER} aria-label="Your own answer" placeholder="Say what you would like instead" value={other[q.question] ?? ""} onChange={(e) => setOther((x) => ({ ...x, [q.question]: e.target.value }))} onClick={(e) => e.stopPropagation()} />}
                 </span>
               </div>
             );
@@ -1238,7 +1245,7 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
               Back
             </button>
           )}
-          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => (last ? void submit() : setAt(at + 1))}>
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={chosen === OTHER && !other[q.question]?.trim()} title={chosen === OTHER && !other[q.question]?.trim() ? "Write your answer first" : undefined} onClick={() => (last ? void submit() : setAt(at + 1))}>
             {last ? "Send answer" : "Next question"}
           </button>
         </div>
@@ -1458,7 +1465,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
           <p className="lc-notice">This plan was waiting when the session stopped. Ask again to get a fresh one.</p>
         ) : (
           <>
-            <input className="lc-input" placeholder={`Or tell ${who} what to change`} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && note.trim() && void answer(false)} />
+            <input className="lc-input" aria-label={`Tell ${who} what to change`} placeholder={`Or tell ${who} what to change`} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && note.trim() && void answer(false)} />
             <div className="lc-ask-foot">
               <span className="lc-quiet">{edit ? "Your edits go to the plan as you approve it" : "Nothing runs until you approve"}</span>
               <span className="lc-grow" />
@@ -1466,7 +1473,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
                 <button type="button" className="lc-btn" data-kind="plain" onClick={() => void answer(false)}>
                   Send changes
                 </button>
-              ) : steps.length > 0 ? (
+              ) : edit || steps.length > 0 ? (
                 <button type="button" className="lc-btn" data-kind="plain" onClick={() => setEdit(edit ? null : parsed)}>
                   {edit ? "Undo edits" : "Edit steps"}
                 </button>
@@ -1557,12 +1564,16 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
     const text = (edit ?? "").trim();
     if (!text) return;
     setBusy(true);
+    let wound = false;
     try {
       const r = await rpc("thread.rewind", { threadId, itemId: it.id, files: revertFiles, force });
+      wound = true;
       await rpc("thread.send", { id: threadId, text: text + rest });
       toast(`Went back to turn ${r.turn}`, { description: revertFiles && r.files ? `${plural(r.files, "file")} back as they were` : "The files stay as they are" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      // Gone back but not sent: this message came off with the turns, so your words go to the composer.
+      if (wound) toComposer(threadId, text);
       // A file changed after those turns: putting them back would lose that, so it's yours to say.
       if (revertFiles && !force && /^Changed after that turn:/.test(message))
         toast.error("Nothing was put back", { description: message, action: { label: "Go back anyway", onClick: () => void go(true, true) }, duration: 10000 });
@@ -1584,8 +1595,9 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
             e.target.style.height = `${Math.min(e.target.scrollHeight, 260)}px`;
           }}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === "Escape") setEdit(null);
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) void go(false);
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void go(false);
           }}
         />
         <div className="lc-you-acts">
@@ -1611,7 +1623,9 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
       {it.anchor && (
         <button type="button" className="lc-you-anchor l-focus" onClick={() => onReview("all", it.anchor!.file)} title="Show these lines">
           <I.comment size={11} />
-          {it.anchor.file.split("/").pop()}, {it.anchor.endLine && it.anchor.endLine !== it.anchor.line ? `lines ${it.anchor.line}–${it.anchor.endLine}` : `line ${it.anchor.line}`}
+          <span>
+            {it.anchor.file.split("/").pop()}, {it.anchor.endLine && it.anchor.endLine !== it.anchor.line ? `lines ${it.anchor.line}–${it.anchor.endLine}` : `line ${it.anchor.line}`}
+          </span>
         </button>
       )}
       {part && (
@@ -1630,7 +1644,7 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
             <I.edit size={12} />
             Edit from here
           </button>
-          <button type="button" className="lc-you-btn l-focus" title="Copy" aria-label="Copy the message" onClick={() => void navigator.clipboard?.writeText(part ? said : it.text).then(() => toast("Copied"))}>
+          <button type="button" className="lc-you-btn l-focus" title="Copy" aria-label="Copy the message" onClick={() => void navigator.clipboard?.writeText(said).then(() => toast("Copied"), fail)}>
             <I.copy size={12} />
           </button>
         </span>
@@ -1786,7 +1800,8 @@ function TurnFoot({ cp, all, review, providers, onReview, reviewing }: { cp?: Ch
   useEffect(() => {
     if (blocked) setOpen(true);
   }, [blocked]);
-  const here = Boolean(cp && reviewing?.id === cp.id);
+  // A turn of several parts opens as "all", at its first file.
+  const here = Boolean(cp && reviewing && (all ? reviewing.id === "all" && reviewing.path === cp.files[0]?.path : reviewing.id === cp.id));
   const has = Boolean(review && (review.findings.length || review.summary));
   const blockers = review?.findings.filter((f) => f.severity === "blocking").length ?? 0;
   const verdict = !review ? "" : review.status === "running" ? "is reading it" : review.status === "passed" ? (review.findings.length ? `passed, ${plural(review.findings.length, "note")}` : "passed") : review.status === "blocked" ? plural(blockers || review.findings.length, "blocker") : "gave no verdict";

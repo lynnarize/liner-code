@@ -45,6 +45,8 @@ export class Outside {
   private api: Api;
   /** Where the engine listens, set once its server is up. */
   url = "";
+  /** Sessions sent a message that hasn't started yet, by the turn they were on: a send returns before its turn begins. */
+  private sent = new Map<string, { turns: number; at: number }>();
 
   constructor(store: Store, api: Api) {
     this.store = store;
@@ -114,18 +116,30 @@ export class Outside {
           const agent = args.agent ? String(args.agent) : undefined;
           const t = (await this.api.call("thread.create", { projectId: p.id, ...(agent ? { agent: agent.includes(":") && !agent.startsWith("@") ? `@${agent}` : agent } : {}) })) as Thread;
           await this.api.call("thread.send", { id: t.id, text: message });
+          this.sent.set(t.id, { turns: t.turns, at: Date.now() });
           return text(`Started ${t.id} in ${p.name}. liner_wait waits for it to finish; what it asks waits for the person in Liner Code.`);
         }
         case "liner_send": {
           const t = this.thread(args.session);
-          await this.api.call("thread.send", { id: t.id, text: String(args.message ?? ""), mode: t.status === "running" ? "queue" : undefined });
-          return text(t.status === "running" ? "Queued: it goes when the turn that's running ends." : "Sent.");
+          const message = String(args.message ?? "");
+          if (!message.trim()) return fail("Say what to tell the session, as message.");
+          await this.api.call("thread.send", { id: t.id, text: message, mode: t.status === "running" ? "queue" : undefined });
+          if (t.status !== "running" && t.status !== "waiting") this.sent.set(t.id, { turns: t.turns, at: Date.now() });
+          return text(t.status === "running" ? "Queued: it goes when the turn that's running ends." : t.status === "waiting" ? "Sent, but the session is waiting on the person in Liner Code, so it may not go until they answer." : "Sent.");
         }
         case "liner_wait": {
           const t = this.thread(args.session);
           // Under 300 seconds: the outside fetch gives up when no headers come back by then (undici's headersTimeout).
           const until = Date.now() + Math.min(240, Math.max(1, Number(args.seconds) || 120)) * 1000;
-          while (Date.now() < until && this.thread(t.id).status === "running") await new Promise((r) => setTimeout(r, 1000));
+          // A session it just messaged is working, though its turn may take a moment to begin (a worktree being set up).
+          const working = () => {
+            const now = this.thread(t.id);
+            const sent = this.sent.get(t.id);
+            // Two minutes for a slow start: one that never comes (a message that waits in the queue) isn't a turn to wait on.
+            return now.status === "running" || (now.status !== "waiting" && sent?.turns === now.turns && Date.now() - sent.at < 120_000);
+          };
+          while (Date.now() < until && working()) await new Promise((r) => setTimeout(r, 1000));
+          if (!working()) this.sent.delete(t.id);
           return text(readout(this.thread(t.id), this.store.timeline(t.id), 1));
         }
         default:

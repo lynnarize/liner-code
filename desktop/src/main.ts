@@ -8,7 +8,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, session, shell, systemPreferences, type MenuItemConstructorOptions, type NativeImage, type Rectangle } from "electron";
 import { exec, execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, release, tmpdir } from "node:os";
 import { basename, delimiter, join, normalize } from "node:path";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
@@ -84,7 +84,15 @@ const loadPrefs = () => {
 };
 const savePrefs = () => {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => writeFileSync(prefsFile(), JSON.stringify(prefs, null, 2)), 300);
+  saveTimer = setTimeout(() => {
+    // Whole or not at all: a crash mid-write would forget the port, and with it all the page keeps per address.
+    try {
+      writeFileSync(`${prefsFile()}.tmp`, JSON.stringify(prefs, null, 2));
+      renameSync(`${prefsFile()}.tmp`, prefsFile());
+    } catch (e) {
+      console.error("[shell] couldn't save the window's place:", e);
+    }
+  }, 300);
 };
 
 /** The saved frame, if it still fits on a screen you have. */
@@ -256,6 +264,21 @@ function createWindow() {
     if (/^(https?|mailto):/i.test(e.url)) void shell.openExternal(e.url);
   });
   wc.on("will-attach-webview", (e) => e.preventDefault());
+
+  // A page that dies (out of memory, a crash) leaves a blank window while the engine works on, and
+  // there's no reload to reach for: it's loaded again, three times a minute at most (T3 Code:
+  // window/DesktopWindow.ts).
+  let gone: number[] = [];
+  wc.on("render-process-gone", (_e, d) => {
+    console.error("[shell] the page went:", d.reason, d.exitCode);
+    const now = Date.now();
+    gone = gone.filter((t) => now - t < 60_000);
+    if (quitting || d.reason === "clean-exit" || d.reason === "launch-failed" || gone.length >= 3) return;
+    gone.push(now);
+    setTimeout(() => {
+      if (win && !win.isDestroyed()) wc.reload();
+    }, 500);
+  });
 
   // The page is an app, not a web page: a right-click keeps text actions (spelling, Copy, Paste,
   // Look Up) and nothing of a browser's. On the page's chrome the page itself shows no menu.
@@ -448,7 +471,10 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
     case "relaunch":
       // Start without add-ons: the engine left its mark for the next start, and this is that start.
       quitting = true;
-      app.relaunch();
+      // An update waiting goes in now, and its swap opens the app: relaunching as well would start
+      // this copy just as it's replaced.
+      updating = installUpdate(engine.home, true);
+      if (!updating) app.relaunch();
       setImmediate(() => app.quit());
       return;
     case "setMaterial": {
@@ -553,15 +579,16 @@ async function openIn(path: string, where: string) {
   if (isMac && where === "terminal" && (await opens(["-a", "Terminal", path]))) return;
   if (isMac && where === "editor") for (const id of EDITORS) if (await opens(["-b", id, path])) return;
   // On Windows: Windows Terminal in the folder, else a Command Prompt there (Explorer would only show it).
-  if (isWin && where === "terminal" && ((await started("wt.exe", ["-d", path])) || (await started(process.env.ComSpec || "cmd.exe", ["/c", "start", "", "/d", path, "cmd.exe"], true)))) return;
+  // The folder goes as the working directory, not through cmd.exe, which would run what follows an & in its name.
+  if (isWin && where === "terminal" && ((await started("wt.exe", ["-d", path])) || (await started(process.env.ComSpec || "cmd.exe", ["/c", "start", "", "cmd.exe"], true, path)))) return;
   const err = await shell.openPath(path);
   if (err) throw new Error(err);
 }
 
 /** Starts a program that carries on by itself; false when it couldn't. */
-const started = (cmd: string, args: string[], hide = false) =>
+const started = (cmd: string, args: string[], hide = false, cwd?: string) =>
   new Promise<boolean>((resolve) => {
-    const c = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: hide });
+    const c = spawn(cmd, args, { cwd, detached: true, stdio: "ignore", windowsHide: hide });
     c.on("error", () => resolve(false));
     c.on("spawn", () => (c.unref(), resolve(true)));
   });
@@ -829,15 +856,17 @@ void app.whenReady().then(async () => {
   const [env, own] = await Promise.all([loginEnvironment(), keys.all().catch(() => ({}))]);
   shellEnv = env;
   engine.onReady = (port) => {
-    // A restarted engine keeps its port and token; the page reconnects by itself.
-    if (loaded) return;
+    // A restarted engine keeps its port and token, and the page reconnects by itself; one that
+    // couldn't have its port back (something took it) is somewhere else, where the page must go too.
+    const origin = `http://127.0.0.1:${port}`;
+    if (loaded && origin === appOrigin) return;
     loaded = true;
     if (prefs.port !== port) {
       prefs.port = port;
       savePrefs();
     }
     boot.token = engine.token;
-    appOrigin = `http://127.0.0.1:${port}`;
+    appOrigin = origin;
     void win?.loadURL(`${appOrigin}/`);
   };
   engine.onFail = (m) => void fail(m);

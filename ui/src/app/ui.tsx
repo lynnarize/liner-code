@@ -2,7 +2,7 @@
   Small pieces the screens share: an anchored glass panel with rich rows, agent discs, the
   model chip, badges and the session's status mark.
 */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
@@ -84,6 +84,9 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
   return at;
 }
 
+/** Rows inside a menu are its items: role="menuitem", which the arrow keys go by. */
+const InMenu = createContext(false);
+
 /** A trigger and a glass panel under (or over) it, in the layer above the window. The panel gets `close`. */
 export function Pop({
   trigger,
@@ -157,7 +160,7 @@ export function Pop({
               }
               // A menu's rows, by the arrow keys, Home and End, round from the last to the first.
               if (menu && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
-                const rows = [...(panel.current?.querySelectorAll<HTMLElement>("[role='menuitem']:not(:disabled)") ?? [])];
+                const rows = [...(panel.current?.querySelectorAll<HTMLElement>("[role^='menuitem']:not(:disabled)") ?? [])];
                 const i = rows.indexOf(document.activeElement as HTMLElement);
                 const to = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
                 rows[to]?.focus();
@@ -165,7 +168,7 @@ export function Pop({
               }
             }}
           >
-            {children(close)}
+            <InMenu.Provider value={menu}>{children(close)}</InMenu.Provider>
           </div>,
           // Inside a modal dialog the panel joins it in the top layer, or the dialog would cover it.
           wrap.current?.closest("dialog[open]") ?? document.body,
@@ -179,6 +182,13 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
   const panel = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; max?: number } | null>(null);
   useDismiss(Boolean(at), onClose, [panel]);
+  // Focus goes back where it was when the menu goes: a row whose menu the keyboard opened keeps the keyboard.
+  const shown = Boolean(at);
+  useLayoutEffect(() => {
+    if (!shown) return;
+    const back = document.activeElement as HTMLElement | null;
+    return () => back?.focus({ preventScroll: true });
+  }, [shown]);
   useLayoutEffect(() => {
     if (!at || !panel.current) return setPos(null);
     const h = panel.current.scrollHeight;
@@ -209,7 +219,7 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
         }
       }}
     >
-      {children(onClose)}
+      <InMenu.Provider value>{children(onClose)}</InMenu.Provider>
     </div>,
     document.body,
   );
@@ -219,8 +229,9 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
 /** A row to pick. Picked, its tick takes the icon's place, unless `keepIcon`: then the icon stays and the tick goes at the end. */
 export function Row({ title, note, on, icon, end, disabled, keepIcon, onPick }: { title: ReactNode; note?: ReactNode; on?: boolean; icon?: ReactNode; end?: ReactNode; disabled?: boolean; keepIcon?: boolean; onPick?: () => void }) {
   const tickEnd = keepIcon && on;
+  const inMenu = useContext(InMenu);
   return (
-    <button type="button" className="lc-row l-focus" data-on={on || undefined} disabled={disabled} aria-pressed={on} onClick={onPick}>
+    <button type="button" className="lc-row l-focus" role={inMenu ? (on === undefined ? "menuitem" : "menuitemcheckbox") : undefined} data-on={on || undefined} disabled={disabled} aria-pressed={inMenu ? undefined : on} aria-checked={inMenu ? on : undefined} onClick={onPick}>
       <span className="lc-row-tick">{on && !keepIcon ? <I.check size={14} /> : icon}</span>
       <span className="lc-row-t">
         <b>{title}</b>

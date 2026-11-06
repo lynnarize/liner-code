@@ -33,6 +33,14 @@ function themeNow() {
   };
 }
 
+/** Fits the shell to its box; one that was following its output still is (T3 Code: ThreadTerminalDrawer.tsx). */
+function fitKeepingEnd(t: XTerm, f: FitAddon) {
+  const buf = t.buffer.active;
+  const atEnd = buf.viewportY >= buf.baseY;
+  f.fit();
+  if (atEnd) t.scrollToBottom();
+}
+
 /* ---------- A session's tabs, kept while the app is open ---------- */
 
 /** A tab: its terminal in the engine once it has one (`id`), and how often it was started afresh (`gen`). */
@@ -220,6 +228,7 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
     let live = true;
     idRef.current = null;
     setSt({});
+    setPicked("");
     // Live output that comes before the backlog waits for it; then only what the backlog lacks is written.
     let held: { data: string; at?: number }[] | null = [];
     let seen = 0;
@@ -264,7 +273,7 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
       raf = requestAnimationFrame(() => {
         if (!el.offsetWidth || !el.offsetHeight) return;
         try {
-          f.fit();
+          fitKeepingEnd(t, f);
         } catch {
           return;
         }
@@ -296,7 +305,7 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
     if (!visible) return;
     const r = requestAnimationFrame(() => {
       try {
-        fit.current?.fit();
+        if (term.current && fit.current) fitKeepingEnd(term.current, fit.current);
       } catch {
         // hidden
       }
@@ -311,7 +320,7 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
     <>
         <I.terminal size={13} />
         <span className="lc-mono lc-term-where" title={st.cwd}>
-          {where || "Starting a shell"}
+          {where || (st.error ? "No shell" : "Starting a shell")}
         </span>
         <span className="lc-grow" />
         {st.exited !== undefined && <span className="lc-quiet">Exited with {st.exited}</span>}

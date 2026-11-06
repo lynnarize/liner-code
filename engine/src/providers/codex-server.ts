@@ -10,14 +10,16 @@
   - review: workspace-write sandbox; what Codex doesn't trust goes to the Reviewer, then to you
   - full:  full access; Codex still asks when it judges a step risky
 */
+import { existsSync } from "node:fs";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Access, PlanEntry, Question } from "../../../contracts/src/index.ts";
-import { jsonLines, killTree, spawn, which, withCodexPath } from "../exec.ts";
+import { closesOnExit, jsonLines, killTree, spawn, which, withCodexPath } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
+import { inFolder } from "./acp.ts";
 import { dataUrl, imageType } from "./attachments.ts";
-import { ResumeFailed, type OpenOptions, type ProviderSession, type TurnSink } from "./types.ts";
+import { ResumeFailed, scrub, type OpenOptions, type ProviderSession, type TurnSink, type WakeTurn } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
@@ -59,6 +61,16 @@ export const unwrap = (cmd: string) => {
   when every turn asks, as T3 Code does.
 */
 export const reasoning = new Set<string>();
+
+/** Codex holds a thread for one writer, across every client on this CODEX_HOME (T3 Code: CodexAdapterV2.ts, isCodexActiveWriterError). */
+const IN_USE = /already has an active writer/i;
+const IN_USE_TEXT = "This conversation is open in another Codex client, such as the Codex CLI or an IDE extension. Codex lets one client write to it at a time. Quit that client, then send your message again.";
+
+/** How long a closed app server gets to end by itself. */
+const KILL_AFTER_MS = 2000;
+
+/** A request Liner Code has no answer for: JSON-RPC's "method not found". */
+class Unknown extends Error {}
 
 /** What you sent, as Codex takes it: the text, and your images as data URLs (T3 Code: CodexAdapterV2.ts, resolveCodexAttachment). */
 function input(text: string, files: string[] = []) {
@@ -147,14 +159,24 @@ export class CodexServer {
     this.child = child;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d: string) => (this.stderr = (this.stderr + d).slice(-4000)));
-    jsonLines(child.stdout, (v) => void this.onMessage(v as Msg));
-    child.on("close", (code) => {
-      const err = new Error(this.stderr.trim().split("\n").slice(-3).join("\n") || `Codex's app server exited with ${code}.`);
+    // A process closed while it was still talking: what it says now is nobody's, and an answer to it would reach the next one.
+    jsonLines(child.stdout, (v) => void (this.child === child && this.onMessage(v as Msg)));
+    const said = () => scrub(this.stderr.trim().split("\n").slice(-3).join("\n"), this.env);
+    const fail = (err: Error) => {
       for (const [id, p] of this.pending)
         if (p.child === child) {
           this.pending.delete(id);
           p.reject(err);
         }
+    };
+    // It didn't start (a project folder that's gone): without a listener this throws, and "close" never comes.
+    let unstarted = "";
+    child.on("error", (e) => (unstarted ||= existsSync(this.cwd) ? e.message : `${this.cwd} isn't there any more.`));
+    child.stdin.on("error", (e) => fail(new Error(said() || `Codex's app server stopped reading: ${e.message}`)));
+    closesOnExit(child);
+    child.on("close", (code) => {
+      const err = new Error(said() || unstarted || `Codex's app server exited with ${code}.`);
+      fail(err);
       // A process closed earlier (Stop, an update) ending now leaves the one that replaced it alone.
       if (this.child !== child) return;
       this.onExit(err.message);
@@ -164,7 +186,11 @@ export class CodexServer {
     this.booting = (async () => {
       await this.request("initialize", { clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION }, capabilities: { experimentalApi: true, requestAttestation: false } });
       this.notify("initialized", {});
-    })();
+    })().catch((e) => {
+      // Refused with the process up: the next ask starts again rather than standing on this for good (T3 Code: CodexAdapterV2.ts, a failed open is discarded).
+      if (this.child === child) this.close();
+      throw e;
+    });
     return this.booting;
   }
 
@@ -200,7 +226,7 @@ export class CodexServer {
     try {
       this.write({ id: m.id, result: await this.onRequest(m.method, m.params ?? {}) });
     } catch (e) {
-      this.write({ id: m.id, error: { code: -32603, message: e instanceof Error ? e.message : String(e) } });
+      this.write({ id: m.id, error: { code: e instanceof Unknown ? -32601 : -32603, message: e instanceof Error ? e.message : String(e) } });
     }
   }
 
@@ -211,7 +237,11 @@ export class CodexServer {
     this.booting = null;
     // On Windows, with the commands it started (they leave its job by themselves).
     if (c && process.platform === "win32") killTree(c);
-    else c?.kill();
+    else if (c) {
+      c.kill();
+      // One that ignores it would stay for good, unseen.
+      setTimeout(() => c.kill("SIGKILL"), KILL_AFTER_MS).unref();
+    }
   }
 }
 
@@ -242,6 +272,22 @@ export class CodexServerSession implements ProviderSession {
   private opening: Promise<void> | null = null;
   /** The turn's start is still waiting on Codex: if Codex exits now, that request fails with the same words, which are said once, by the throw. */
   private starting = false;
+  /** While a turn/start is unanswered, the turns that ended: only its answer tells this turn's end from an earlier one's (T3 Code: CodexAdapterV2.test.ts, "rejects a previous run's native turn"). */
+  private early: Map<string, Json> | null = null;
+  /** A /compact is the turn: Codex may run it as a turn of its own, which it says with turn/started. */
+  private compacting = false;
+  /** A retry's line on the timeline, while Codex retries. */
+  private retry: string | null = null;
+  /** Subagents' turns running, by thread (each thread on this connection is this session's: it has its own process). */
+  private others = new Map<string, string>();
+  /** Commands running with a process Codex can stop, by item. */
+  private running = new Map<string, { threadId: string; turnId: string; processId: string }>();
+  /** You pressed Stop: what starts now is stopped too, and what ends now wakes nothing. Until your next turn. */
+  private stopping = false;
+  /** The subagents this thread started: the prompt each was given, and its last words. */
+  private kids = new Map<string, { prompt: string; said: string }>();
+  /** What's waiting to wake the parent, if anything is; a subagent finishing meanwhile joins it. */
+  private waking: { pending: boolean; details: string[] } | null = null;
   private o: OpenOptions;
 
   constructor(o: OpenOptions) {
@@ -272,11 +318,14 @@ export class CodexServerSession implements ProviderSession {
       // Only the thread's settings: its turns are already on the timeline (T3 Code: CodexAdapterV2.ts, resumeThread).
       const threadId = this.thread;
       const resume = () => this.server.request("thread/resume", { threadId, excludeTurns: true, ...common });
-      r = await resume().catch((e: Error) =>
+      r = await resume().catch((e: Error) => {
+        // Not lost, in use: a new thread would go on without what the other client is writing.
+        if (IN_USE.test(e.message)) throw new Error(IN_USE_TEXT);
         // An archived thread resumes once it's unarchived.
-        /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(e.message) ? this.server.request("thread/unarchive", { threadId }).then(resume).catch(() => null) : null,
-      );
-      if (!r) this.lost = threadId;
+        return /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(e.message) ? this.server.request("thread/unarchive", { threadId }).then(resume).catch(() => null) : null;
+      });
+      // Answered now, whatever an earlier try said.
+      this.lost = r ? undefined : threadId;
     }
     if (!r) r = await this.server.request("thread/start", { ...common, ephemeral: this.o.ephemeral || null });
     this.thread = String((r.thread as Json).id);
@@ -289,11 +338,17 @@ export class CodexServerSession implements ProviderSession {
     this.signal = signal;
     this.streamed.clear();
     this.failure = null;
+    this.stopping = false;
     const stop = () => {
+      this.stopping = true;
       if (this.thread && this.turnId) {
         this.stale.add(this.turnId);
         void this.server.request("turn/interrupt", { threadId: this.thread, turnId: this.turnId }).catch(() => {});
       }
+      // Stop reaches everything this turn set going: the subagents' turns and the commands running, its own
+      // and theirs, which turn/interrupt leaves (T3 Code: CodexAdapterV2.ts interrupts the whole lineage and terminates tracked terminals).
+      for (const [threadId, turnId] of this.others) void this.server.request("turn/interrupt", { threadId, turnId }).catch(() => {});
+      for (const [item, c] of this.running) if (c.turnId === this.turnId || this.others.get(c.threadId) === c.turnId) this.endCommand(item);
       this.done?.();
     };
     // Stop ends the turn while Codex is still starting or hasn't answered its start, which may never come (as acp.ts does).
@@ -321,9 +376,11 @@ export class CodexServerSession implements ProviderSession {
       try {
         // `/compact` is the Codex CLI's own command, not words for the model: app-server compacts on request.
         if (text.trim() === "/compact") {
+          this.compacting = true;
           if (!(await Promise.race([this.server.request("thread/compact/start", { threadId: this.thread }), aborted]))) return;
         } else {
           const model = this.o.model && this.o.model !== "default" ? this.o.model : null;
+          this.early = new Map();
           const start = this.server.request("turn/start", {
             threadId: this.thread,
             input: input(text, files),
@@ -338,6 +395,7 @@ export class CodexServerSession implements ProviderSession {
           const r = await Promise.race([start, aborted]);
           // Stopped before Codex answered: a turn it starts after all is stopped as soon as it says which, and what it sends is dropped.
           if (!r) {
+            this.stopping = true;
             const threadId = this.thread;
             void start.then((x) => {
               const turnId = String((x.turn as Json | undefined)?.id ?? "");
@@ -347,9 +405,13 @@ export class CodexServerSession implements ProviderSession {
             return;
           }
           this.turnId = String((r.turn as Json | undefined)?.id ?? "");
+          const ended = this.early.get(this.turnId);
+          this.early = null;
+          if (ended) this.onNotify("turn/completed", ended);
         }
       } finally {
         this.starting = false;
+        this.early = null;
       }
       signal.addEventListener("abort", stop, { once: true });
       // Stopped while the turn was starting: the signal won't say so again.
@@ -361,6 +423,8 @@ export class CodexServerSession implements ProviderSession {
       this.sink = null;
       this.signal = null;
       this.done = null;
+      this.compacting = false;
+      this.retry = null;
       // A command cut off mid-run never completes here: its pending output isn't left to mark the row running again.
       for (const out of this.outputs.values()) clearTimeout(out.timer);
       this.outputs.clear();
@@ -397,10 +461,82 @@ export class CodexServerSession implements ProviderSession {
   }
 
   close() {
+    // What a subagent left for a wake goes with it: run later, it would open a server nothing closes.
+    if (this.waking) this.waking.pending = false;
     this.server.close();
+    this.opened = false;
+    // Its process is gone without a word: a turn under way ends here.
+    this.done?.();
+  }
+
+  /** Stops a command Codex runs, as turn/interrupt doesn't (an older Codex doesn't know this, and the interrupt is all it gets). */
+  private endCommand(item: string) {
+    const c = this.running.get(item);
+    this.running.delete(item);
+    if (c) void this.server.request("thread/backgroundTerminals/terminate", { threadId: c.threadId, processId: c.processId }).catch(() => {});
+  }
+
+  /** What's at work on this connection, which goes on whether or not a turn of yours runs (and whichever thread it's on). */
+  private track(method: string, p: Json) {
+    const threadId = typeof p.threadId === "string" ? p.threadId : undefined;
+    const item = p.item as Json | undefined;
+    const own = !threadId || threadId === this.thread;
+    if (method === "turn/started") {
+      const turnId = String((p.turn as Json | undefined)?.id ?? "");
+      if (own) {
+        // The /compact under way: Stop can reach it now, and its end says it's over.
+        if (this.compacting) this.turnId ||= turnId;
+      } else if (threadId) {
+        this.others.set(threadId, turnId);
+        if (this.stopping) void this.server.request("turn/interrupt", { threadId, turnId }).catch(() => {});
+      }
+    } else if (method === "item/started" && item?.type === "commandExecution" && typeof item.processId === "string") {
+      this.running.set(String(item.id), { threadId: threadId ?? this.thread ?? "", turnId: String(p.turnId ?? ""), processId: item.processId });
+      if (this.stopping) this.endCommand(String(item.id));
+    } else if (method === "item/completed" && item?.type === "commandExecution") {
+      this.running.delete(String(item.id));
+    }
+    // An approval for a subagent's edit comes through this session, so its files are needed here too.
+    if ((method === "item/started" || method === "item/completed") && item?.type === "fileChange") this.changes.set(String(item.id), this.pathsOf(item));
+    if (method === "item/completed" && item?.type === "collabAgentToolCall" && own)
+      for (const kid of (item.receiverThreadIds as string[] | undefined) ?? []) if (!this.kids.has(kid)) this.kids.set(kid, { prompt: short(item.prompt, 200), said: "" });
+    if (!threadId || own) return;
+    const kid = this.kids.get(threadId);
+    if (method === "item/completed" && kid && item?.type === "agentMessage" && item.text) kid.said = String(item.text);
+    if (method === "turn/completed") {
+      const turn = p.turn as { id?: string; status?: string } | undefined;
+      if (this.others.get(threadId) === turn?.id) this.others.delete(threadId);
+      if (kid && (turn?.status === "completed" || turn?.status === "failed")) this.kidEnded(kid, turn.status);
+    }
+  }
+
+  /**
+    Codex tells a running parent what its subagent found by itself, and never wakes one that has
+    finished, so the result would go unread: the parent gets it as a turn of its own (T3 Code:
+    CodexAdapterV2.ts, only direct children wake an idle root turn). Not after Stop.
+  */
+  private kidEnded(kid: { prompt: string; said: string }, status: string) {
+    const offer = this.o.wake;
+    if (!offer || this.sink || this.stopping) return;
+    const detail = `Subagent ${status}: ${kid.prompt || "a subagent"}${kid.said ? `\n\nResult:\n${kid.said}` : ""}`;
+    if (this.waking?.pending) return void this.waking.details.push(detail);
+    const w = { pending: true, details: [detail] };
+    this.waking = w;
+    const wake: WakeTurn = {
+      why: "a subagent finished",
+      pending: () => w.pending,
+      run: (sink, signal) => {
+        if (!w.pending) return Promise.resolve();
+        w.pending = false;
+        return this.turn(w.details.join("\n\n"), sink, signal);
+      },
+      cancel: () => void (w.pending = false),
+    };
+    offer(wake);
   }
 
   private onNotify(method: string, p: Json) {
+    this.track(method, p);
     // A turn you stopped: its late items and deltas aren't the next turn's, and its end is forgotten even between turns
     // (T3 Code: CodexAdapterV2.ts, interruptingNativeTurns). Its tokens still count.
     if (method === "turn/completed" && this.stale.delete(String((p.turn as Json | undefined)?.id))) return;
@@ -412,6 +548,12 @@ export class CodexServerSession implements ProviderSession {
     // but its words, steps and turn ends aren't this turn's (T3 Code: CodexAdapterV2.ts keeps them apart by thread).
     const other = typeof p.threadId === "string" && Boolean(this.thread) && p.threadId !== this.thread;
     if (other && method !== "thread/tokenUsage/updated") return void sink.heard?.();
+    // Codex is back after retrying: its line stops saying it's trying (T3 Code: CodexAdapterV2.ts resolves the retry on the next activity).
+    if (this.retry && (method === "item/started" || method === "item/agentMessage/delta" || method === "item/reasoning/summaryTextDelta" || method === "item/reasoning/textDelta" || method === "turn/completed")) {
+      const failed = method === "turn/completed" && (p.turn as Json | undefined)?.status !== "completed";
+      if (!failed) sink.notice("Codex hit a problem and got past it.", this.retry);
+      this.retry = null;
+    }
     switch (method) {
       case "item/agentMessage/delta":
         this.streamed.add(String(p.itemId));
@@ -464,21 +606,33 @@ export class CodexServerSession implements ProviderSession {
       }
       case "error": {
         const e = (p.error ?? {}) as { message?: string; codexErrorInfo?: unknown };
-        if (p.willRetry) return sink.notice(`${e.message ?? "Codex hit a problem"}; it's trying again.`);
+        if (p.willRetry) {
+          // One line for a run of retries, counting up (as claude.ts does).
+          this.retry ??= `retry-${this.turnId ?? ""}`;
+          return sink.notice(`${e.message ?? "Codex hit a problem"}; it's trying again.`, this.retry);
+        }
         // turn/completed brings the same error again: it's said there, once (as T3 Code does).
         this.failure = e;
+        // A /compact with no turn of its own: nothing more will come.
+        if (this.compacting && !this.turnId) {
+          this.failure = null;
+          sink.error(e.message ?? "Codex couldn't compact the conversation.");
+          this.done?.();
+        }
         return;
       }
       case "turn/completed": {
         const turn = p.turn as { id?: string; status?: string; error?: { message?: string; codexErrorInfo?: unknown } | null } | undefined;
         // A turn you stopped ending late, or one that isn't this one: the turn running now goes on.
         if (turn?.id && (this.stale.delete(turn.id) || (this.turnId && turn.id !== this.turnId))) return;
+        // Which turn this is shows once Codex answers the start: kept until then.
+        if (turn?.id && this.early) return void this.early.set(turn.id, p);
         const failed = turn?.status === "interrupted" ? null : ((turn?.status === "failed" ? turn.error : null) ?? this.failure);
         this.failure = null;
         if (failed) {
           if (isLimit(failed)) sink.limited(failed.message ?? "Codex hit its usage limit.");
           else sink.error(failed.message ?? "Codex stopped with an error.");
-        }
+        } else if (turn?.status === "failed") sink.error("Codex stopped with an error.");
         this.done?.();
         return;
       }
@@ -486,7 +640,7 @@ export class CodexServerSession implements ProviderSession {
       // makes by itself mid-turn ends nothing, and its contextCompaction item says so (Synara:
       // codexAppServerManager.ts settles on it only when no turn is active).
       case "thread/compacted":
-        if (this.turnId) return;
+        if (!this.compacting || this.turnId) return;
         sink.notice("Codex compacted the conversation.");
         this.done?.();
         return;
@@ -496,7 +650,6 @@ export class CodexServerSession implements ProviderSession {
   private onItem(it: Json, done: boolean) {
     const sink = this.sink!;
     const id = String(it.id);
-    const cwd = `${this.o.cwd}/`;
     switch (it.type) {
       case "agentMessage":
         if (done && !this.streamed.has(id) && it.text) sink.text(String(it.text), id);
@@ -519,8 +672,7 @@ export class CodexServerSession implements ProviderSession {
         return;
       }
       case "fileChange": {
-        const paths = ((it.changes as { path: string }[] | undefined) ?? []).map((c) => c.path.replace(cwd, ""));
-        this.changes.set(id, paths);
+        const paths = this.pathsOf(it);
         sink.tool({ key: id, tool: "apply_patch", toolKind: "edit", title: `Edit ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ` and ${paths.length - 3} more` : ""}`, path: paths[0], status: !done ? "running" : it.status === "failed" || it.status === "declined" ? "failed" : "done" });
         return;
       }
@@ -537,12 +689,24 @@ export class CodexServerSession implements ProviderSession {
       case "contextCompaction":
         if (done) sink.notice("Codex compacted the conversation to make room.");
         return;
+      case "imageGeneration": {
+        const failed = it.status === "failed" || Boolean(it.failure);
+        sink.tool({ key: id, tool: "image_generation", toolKind: "other", title: "Make an image", input: (it.revisedPrompt as string | null | undefined) ?? undefined, output: (it.savedPath as string | null | undefined) ?? undefined, status: !done ? "running" : failed ? "failed" : "done" });
+        return;
+      }
     }
+  }
+
+  /** A file change's paths, from the project's folder. */
+  private pathsOf(it: Json) {
+    return ((it.changes as { path: string }[] | undefined) ?? []).map((c) => c.path.replace(`${this.o.cwd}/`, ""));
   }
 
   /** Codex asks: a command, an edit, or a question. Each becomes a card and waits for you. */
   private async onRequest(method: string, p: Json): Promise<Json> {
-    const sink = this.sink;
+    // A turn you stopped has nothing to ask, here or in the turn after it.
+    const stopped = typeof p.turnId === "string" && this.stale.has(p.turnId);
+    const sink = stopped ? null : this.sink;
     const signal = this.signal;
     // No turn to ask in (a subagent still at work after the turn ended): refused, in the shape each method takes.
     if (!sink || !signal) {
@@ -554,15 +718,30 @@ export class CodexServerSession implements ProviderSession {
     }
     if (method === "item/commandExecution/requestApproval" || method === "execCommandApproval") {
       const command = unwrap(Array.isArray(p.command) ? (p.command as string[]).join(" ") : String(p.command ?? ""));
-      const fields = [{ label: "Command", value: command }];
+      // What it asks beyond the command: a host to reach (with no command at all, for a managed network's
+      // ask), or more access for this command. Allow grants it, so it's shown, it's yours to read, and no
+      // rule or read-only command passes it along.
+      const net = p.networkApprovalContext as { host?: string; protocol?: string } | null | undefined;
+      const more = p.additionalPermissions ? JSON.stringify(p.additionalPermissions) : "";
+      const fields = command ? [{ label: "Command", value: command }] : [];
+      if (net) fields.push({ label: "Reach", value: `${net.host ?? "the network"}${net.protocol ? ` (${net.protocol})` : ""}` });
+      if (more) fields.push({ label: "More access", value: short(more, 400) });
       if (p.cwd) fields.push({ label: "Runs in", value: String(p.cwd) });
       if (p.reason) fields.push({ label: "Why", value: String(p.reason) });
-      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "shell", title: `Run ${short(command, 60)}`, description: (p.reason as string | undefined) ?? undefined, risk: commandRisk(command), fields, rule: ruleFor(command) }, signal);
+      const extra = Boolean(net || more);
+      const title = command ? `Run ${short(command, 60)}` : net ? `Let Codex reach ${net.host ?? "the network"}` : "Run a command";
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "shell", title, description: (p.reason as string | undefined) ?? undefined, risk: extra ? "high" : commandRisk(command), fields, rule: extra ? undefined : ruleFor(command) }, signal);
       return method === "execCommandApproval" ? { decision: a.allow ? "approved" : "denied" } : { decision: a.allow ? "accept" : "decline" };
     }
     if (method === "item/fileChange/requestApproval" || method === "applyPatchApproval") {
       const paths = this.changes.get(String(p.itemId)) ?? Object.keys((p.fileChanges as Json | undefined) ?? {});
-      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "apply_patch", title: `Edit ${paths.slice(0, 3).join(", ") || "files"}`, description: (p.reason as string | undefined) ?? undefined, risk: "medium", fields: paths.map((x) => ({ label: "File", value: x })).concat(p.grantRoot ? [{ label: "Write access to", value: String(p.grantRoot) }] : []), rule: "Edit" }, signal);
+      // An edit outside the project, a folder granted outside it, or an edit that names no file is yours each
+      // time: high, so Auto and the Reviewer leave it to you, and no rule (as acp.ts does; T3 Code: provider-acp clientPolicy.ts).
+      const stray = [...paths, ...(p.grantRoot ? [String(p.grantRoot)] : [])].find((x) => !inFolder(this.o.cwd, x));
+      const loose = Boolean(stray) || !paths.length;
+      const why = stray ? `${stray} is outside the project.` : !paths.length ? "Codex didn't say which files this changes." : undefined;
+      const description = [why, p.reason as string | undefined].filter(Boolean).join("\n\n") || undefined;
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "apply_patch", title: `Edit ${paths.slice(0, 3).join(", ") || "files"}`, description, risk: loose ? "high" : "medium", fields: paths.map((x) => ({ label: "File", value: x })).concat(p.grantRoot ? [{ label: "Write access to", value: String(p.grantRoot) }] : []), rule: loose ? undefined : "Edit" }, signal);
       return method === "applyPatchApproval" ? { decision: a.allow ? "approved" : "denied" } : { decision: a.allow ? "accept" : "decline" };
     }
     if (method === "item/tool/requestUserInput") {
@@ -582,7 +761,9 @@ export class CodexServerSession implements ProviderSession {
       const listed = [...(want.network?.enabled ? [{ label: "Network", value: "Access the network" }] : []), ...write.map((x) => ({ label: "Write access to", value: x })), ...read.map((x) => ({ label: "Read access to", value: x }))];
       // Allow grants what was asked, so nothing asked for goes unseen, even in a shape not known here.
       const fields = listed.length ? listed : [{ label: "Asked for", value: JSON.stringify(p.permissions ?? {}) }];
-      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "permissions", title: "Grant Codex more access", description: (p.reason as string | undefined) ?? undefined, risk: "medium", fields }, signal);
+      // Writing outside the project is a step out of its sandbox: yours, not the Reviewer's. A glob or a special path can't be told to be inside.
+      const wide = !listed.length || write.some((x) => /[*?{[]/.test(x) || !inFolder(this.o.cwd, x));
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "permissions", title: "Grant Codex more access", description: (p.reason as string | undefined) ?? undefined, risk: wide ? "high" : "medium", fields }, signal);
       return a.allow ? { permissions: p.permissions ?? {}, scope: "turn" } : { permissions: {}, scope: "turn" };
     }
     if (method === "mcpServer/elicitation/request") {
@@ -595,6 +776,6 @@ export class CodexServerSession implements ProviderSession {
       const a = await sink.approve({ tool: String(p.serverName), title: String(p.message ?? "Use a tool"), risk: "medium", fields, rule: `${p.serverName}` }, signal);
       return { action: a.allow ? "accept" : "decline", content: a.allow ? {} : null, _meta: null };
     }
-    throw new Error(`Liner Code doesn't answer ${method} yet.`);
+    throw new Unknown(`Liner Code doesn't answer ${method} yet.`);
   }
 }

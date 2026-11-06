@@ -72,20 +72,22 @@ export function useReveal(
     }
   }, [text, instant, streaming]);
 
-  // The clock: runs only while there is something left to reveal.
+  // The clock: runs only while there is something left to reveal. Its time outlasts this effect:
+  // new text restarts it, and text that comes every frame kept restarting a tick that takes two,
+  // so a fast reply stalled until the stream paused.
+  const clock = useRef({ last: 0, carry: 0 });
   useEffect(() => {
     if (instant || paused || state.end >= text.length) return;
     const perTick = Math.max(1, (speed * TICK) / 1000);
-    let last = performance.now();
-    let carry = 0;
+    const c = clock.current;
     let raf = requestAnimationFrame(function step(now) {
-      if (now - last >= TICK) {
-        last = now;
+      if (now - c.last >= TICK) {
+        c.last = now;
         // Whole words only, with a little variance so the rhythm doesn't feel mechanical.
-        carry += perTick * (0.8 + Math.random() * 0.4);
-        const take = Math.floor(carry);
+        c.carry += perTick * (0.8 + Math.random() * 0.4);
+        const take = Math.floor(c.carry);
         if (take > 0) {
-          carry -= take;
+          c.carry -= take;
           const s = stateRef.current;
           const ends = wordEnds(textRef.current, s.end);
           if (ends.length) {

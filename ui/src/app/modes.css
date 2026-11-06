@@ -91,8 +91,6 @@
   margin-top: 8px;
   font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
   color: var(--l-ink-3);
 }
 .lc-modes-grid {
@@ -225,6 +223,11 @@
   font-weight: 500;
   color: var(--l-ink-3);
   cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-mode-tabs > button:hover {
+    color: var(--l-ink);
+  }
 }
 .lc-mode-tabs > button[aria-selected="true"] {
   background: var(--l-surface);

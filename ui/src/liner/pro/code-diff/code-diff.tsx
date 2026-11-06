@@ -69,13 +69,16 @@ type Prepared = {
   first: number;
   changes: number;
   digits: number;
+  binary: boolean;
 };
 
 function prepare(files: DiffFile[], context: number): Prepared[] {
   let first = 0;
   return files.map((file, i) => {
-    const a = linesOf(file.before);
-    const b = linesOf(file.after);
+    // git hands a binary file over as it is: it's named, not drawn as lines of its bytes.
+    const binary = Boolean(file.before?.includes("\u0000") || file.after?.includes("\u0000"));
+    const a = binary ? [] : linesOf(file.before);
+    const b = binary ? [] : linesOf(file.after);
     const lang = file.language ?? EXT[file.path.split(".").pop()?.toLowerCase() ?? ""];
     const rows = diffRows(a, b);
     const changes = rows.reduce((n, r) => Math.max(n, (r.change ?? -1) + 1), 0);
@@ -91,6 +94,7 @@ function prepare(files: DiffFile[], context: number): Prepared[] {
       first,
       changes,
       digits: String(Math.max(a.length, b.length, 1)).length,
+      binary,
     };
     first += changes;
     return p;
@@ -387,7 +391,7 @@ export function CodeDiff({ files, title, view, defaultView = "unified", onViewCh
           // A new or deleted file has only one side, so it reads unified in either view.
           const two = split && p.status !== "New" && p.status !== "Deleted";
           return (
-            <div key={p.key} className="l-cdiff__file" data-folded={folded || undefined}>
+            <div key={p.key} className="l-cdiff__file" data-file={p.file.path} data-folded={folded || undefined}>
               <div className="l-cdiff__head">
                 <button type="button" className="l-cdiff__name l-focus" aria-expanded={!folded} onClick={() => toggleFile(p)}>
                   <Chevron />
@@ -409,7 +413,7 @@ export function CodeDiff({ files, title, view, defaultView = "unified", onViewCh
               <div className="l-cdiff__body" inert={folded}>
                 <div className="l-cdiff__clip">
                   {p.changes === 0 ? (
-                    <p className="l-cdiff__same">{p.status === "Moved" ? "Moved without changes." : "No changes in this file."}</p>
+                    <p className="l-cdiff__same">{p.binary ? "A binary file, so there's no text to compare." : p.status === "Moved" ? "Moved without changes." : "No changes in this file."}</p>
                   ) : (
                     <div className="l-cdiff__scroll" tabIndex={wrap || split ? undefined : 0} role="group" aria-label={`Changes to ${p.file.path}`}>
                       <div className="l-cdiff__rows" style={{ ["--cd-digits" as string]: p.digits }}>

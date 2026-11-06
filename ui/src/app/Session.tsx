@@ -46,6 +46,7 @@ type Props = {
   keys?: boolean;
 };
 
+const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 /** Before the timeline has loaded, nothing has been seen. */
 const NONE_SEEN = new Set<string>();
 /** How long a shut dock stays while its column closes (the body's shutting transition, app.css). */
@@ -56,7 +57,7 @@ const PANEL_EXIT_MS = 400;
   and at the end only if you were at the end or its agent is working (T3 Code:
   useTimelinePositionRestore.ts, timelineScrollAnchoring.ts).
 */
-const places = new Map<string, { top: number; atEnd: boolean }>();
+const places = new Map<string, { top: number; atEnd: boolean; at?: { id: string; off: number } }>();
 /** Which view of each session was up: Chat, or an app's tab beside it. */
 const views = new Map<string, string>();
 /** Whether each session's bottom panel (its shells and runs) is up, while the app runs. */
@@ -152,28 +153,38 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
 
   // Back where you were: once the timeline is there, before it paints. At the end (or working) it follows as before.
   const placed = useRef(false);
-  const restoring = useRef<number | null>(null);
+  const restoring = useRef<((block?: boolean) => number) | null>(null);
   useLayoutEffect(() => {
     if (placed.current || !count) return;
     placed.current = true;
     const el = scroller.current;
     const was = places.get(thread.id);
     if (!el || !was || was.atEnd || thread.status === "running") return stick();
-    el.scrollTop = was.top;
-    restoring.current = was.top;
+    // From the block you were at: turns far from the view keep a guessed height until they're near
+    // it (surfaces.css, content-visibility), so the same number of pixels lands somewhere else
+    // (T3 Code: useTimelinePositionRestore.ts keeps a row and the offset within it too).
+    // Deep in a long turn the place can lie past that turn's guess, where it stays undrawn: so the
+    // block's own top comes first, which draws the turn, and the frames that follow go the rest of the way.
+    const where = (block?: boolean) => {
+      const t = was.at ? topOf(el, was.at.id) : null;
+      return t === null ? was.top : block ? t : t - was.at!.off;
+    };
+    el.scrollTop = where(true);
+    restoring.current = where;
   }, [count > 0]);
   // The stick-to-bottom hook starts listening in an effect of its own, which has run by now: it lets go here.
   useEffect(() => {
     const el = scroller.current;
-    const top = restoring.current;
-    if (!el || top === null) return;
+    const where = restoring.current;
+    if (!el || where === null) return;
     restoring.current = null;
     letGo(el);
-    el.scrollTop = top;
-    // Pictures and code that settle a frame later can move it; it's set again until it holds, or you scroll.
+    el.scrollTop = where(true);
+    // Pictures, code and the turns coming in around it settle a frame later and can move it; it's set again until it holds, or you scroll.
     let n = 0;
     let frame = 0;
     const hold = () => {
+      const top = where();
       if (Math.abs(el.scrollTop - top) > 1 && el.scrollHeight - el.clientHeight >= top) el.scrollTop = top;
       if (++n < 6) frame = requestAnimationFrame(hold);
     };
@@ -220,7 +231,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     if (!el) return;
     const keep = () => {
       if (!placed.current) return;
-      places.set(thread.id, { top: el.scrollTop, atEnd: el.scrollHeight - el.clientHeight - el.scrollTop < 30 });
+      const atEnd = el.scrollHeight - el.clientHeight - el.scrollTop < 30;
+      places.set(thread.id, { top: el.scrollTop, atEnd, at: atEnd ? undefined : blockAt(el) });
     };
     el.addEventListener("scroll", keep, { passive: true });
     return () => el.removeEventListener("scroll", keep);
@@ -338,9 +350,9 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     const onKey = (e: KeyboardEvent) => {
       if (!keysOn.current) return;
       if (!is(e, "find")) return;
-      if (dock.open && dock.full && dock.panes.length === 1 && dock.panes[0].tab === "changes") return;
-      // On an app's tab the chat is hidden: there's nothing of it to find.
-      if (view !== "chat") return;
+      // The panel over the whole paper (Review has its own find), or the window too narrow for both,
+      // or an app's tab: the chat isn't showing, and a bar opened over it couldn't be seen.
+      if (view !== "chat" || (threadRef.current && getComputedStyle(threadRef.current).pointerEvents === "none")) return;
       e.preventDefault();
       setFinding((n) => n + 1);
     };
@@ -360,7 +372,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
         const node = sel?.anchorNode?.parentElement;
         if (!text || !sel?.rangeCount || !node?.closest(".lc-tl .lc-md") || !scroller.current?.contains(node)) return setCite(null);
         const r = sel.getRangeAt(0).getBoundingClientRect();
-        setCite({ text, x: r.left + r.width / 2, y: r.top });
+        // Kept in the window, for a selection that runs past its edge (T3 Code: chat/AssistantSelectionToolbar.tsx).
+        setCite({ text, x: Math.min(Math.max(r.left + r.width / 2, 90), window.innerWidth - 90), y: Math.max(r.top, 48) });
       });
     // The button sits where the selection was; once the timeline moves or the selection goes, it's in the wrong place.
     // Only a scroll that moves the selection: a terminal or a panel printing beside it leaves it be.
@@ -437,7 +450,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       await rpc("thread.send", { id: thread.id, text: m.text, files: m.files, mode: m.mode });
       stick();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      fail(e);
       // Thrown on, so the composer puts the message back.
       throw e;
     }
@@ -452,7 +465,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     if ("route" in patch) p.route = patch.route ?? null;
     if ("dual" in patch) p.dual = patch.dual;
     if ("after" in patch) p.after = patch.after ?? null;
-    void rpc("thread.update", p).catch((e) => toast.error(String(e?.message ?? e)));
+    void rpc("thread.update", p).catch(fail);
   };
 
   // The dock beside the thread, rather than over the whole paper.
@@ -509,14 +522,16 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           <input
             className="lc-title-edit"
             defaultValue={thread.title}
+            aria-label="Session name"
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur();
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
               if (e.key === "Escape") setRenaming(false);
             }}
             onBlur={(e) => {
               const v = e.target.value.trim();
-              if (v && v !== thread.title) void rpc("thread.update", { id: thread.id, title: v });
+              if (v && v !== thread.title) void rpc("thread.update", { id: thread.id, title: v }).catch(fail);
               setRenaming(false);
             }}
           />
@@ -534,7 +549,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               actions={(close) => (
                 <>
                   <Row title="Rename" icon={<I.edit size={13} />} onPick={() => (close(), setRenaming(true))} />
-                  <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={13} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }))} />
+                  <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={13} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }).catch(fail))} />
                   {onBeside && <Row title="Open another session beside it" icon={<I.split size={13} />} onPick={() => (close(), onBeside())} />}
                   <Sep />
                 </>
@@ -586,7 +601,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             <PromptMap prompts={prompts} scroller={scroller} />
           </div>
           <Announcer status={thread.status} turns={thread.turns} who={(lead && thread.turnBy === lead.id ? lead : coder).name} />
-          {finding > 0 && <FindBar root={contentRef} asked={finding} onClose={() => setFinding(0)} />}
+          {finding > 0 && view === "chat" && <FindBar root={contentRef} asked={finding} onClose={() => setFinding(0)} onMove={() => scroller.current && letGo(scroller.current)} />}
           {cite && (
             <button
               type="button"
@@ -626,7 +641,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                 <span className="lc-quiet lc-goal-n">
                   turn {thread.goal.turns} of {thread.goal.max}
                 </span>
-                <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void rpc("thread.send", { id: thread.id, text: "/goal stop" })}>
+                <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void rpc("thread.send", { id: thread.id, text: "/goal stop" }).catch(fail)}>
                   Stop the goal
                 </button>
               </div>
@@ -640,7 +655,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                   settings={settings}
                   onSettings={update}
                   onSend={send}
-                  onStop={() => void rpc("thread.stop", { id: thread.id })}
+                  onStop={() => void rpc("thread.stop", { id: thread.id }).catch(fail)}
                   onNewAgent={onNewAgent}
                   busy={busy}
                   placeholder={busy ? `Write while it works: it goes when the turn ends` : placeholder}
@@ -680,6 +695,20 @@ const PROMPT_PAD = 16;
 function topOf(el: HTMLElement, id: string) {
   const b = el.querySelector<HTMLElement>(`[data-item="${CSS.escape(id)}"]`);
   return b ? b.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop : null;
+}
+/** The block at the top of the view, and how far above the view's top it starts. */
+function blockAt(el: HTMLElement) {
+  const blocks = el.querySelectorAll<HTMLElement>("[data-item]");
+  const top = el.getBoundingClientRect().top;
+  let lo = 0;
+  let hi = blocks.length - 1;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (blocks[m].getBoundingClientRect().bottom > top) hi = m;
+    else lo = m + 1;
+  }
+  const b = blocks[lo];
+  return b ? { id: b.dataset.item!, off: b.getBoundingClientRect().top - top } : undefined;
 }
 /**
   The prompt you're reading under: the last one that starts at the top of the view or above it,

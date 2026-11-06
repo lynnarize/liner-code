@@ -19,6 +19,13 @@ export type Row = {
 };
 export type Segment = { kind: "rows"; rows: Row[] } | { kind: "fold"; id: number; rows: Row[] };
 
+/**
+  How many rounds a diff may take. Each keeps its diagonals to walk back through, so the memory
+  grows with the square of the edits: two files of 20,000 different lines would ask for gigabytes,
+  and stall the window. Past this the pair reads as the one taken out and the other put in.
+*/
+const ROUNDS = 4096;
+
 /** Myers' O(ND) diff. Common ends are trimmed first; each round keeps only the diagonals it reached. */
 export function diffSeq<T>(a: readonly T[], b: readonly T[]): Edit[] {
   let pre = 0;
@@ -36,7 +43,7 @@ export function diffSeq<T>(a: readonly T[], b: readonly T[]): Edit[] {
   const v = new Int32Array(2 * max + 3);
   const trace: Int32Array[] = [];
   let done = max === 0;
-  for (let d = 0; d <= max && !done; d++) {
+  for (let d = 0; d <= Math.min(max, ROUNDS) && !done; d++) {
     trace.push(v.slice(off - d, off + d + 1));
     for (let k = -d; k <= d; k += 2) {
       let x = k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]) ? v[off + k + 1] : v[off + k - 1] + 1;
@@ -52,6 +59,11 @@ export function diffSeq<T>(a: readonly T[], b: readonly T[]): Edit[] {
   // Walk the rounds back from the end, reading each round's diagonals as it started.
   let x = n;
   let y = m;
+  if (!done) {
+    while (y > 0) mid.push({ op: "add", a: pre + n, b: pre + --y });
+    while (x > 0) mid.push({ op: "del", a: pre + --x, b: pre });
+    trace.length = 0;
+  }
   for (let d = trace.length - 1; d >= 0; d--) {
     const t = trace[d];
     const at = (k: number) => t[k + d];

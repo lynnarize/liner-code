@@ -56,11 +56,16 @@ const TYPES: Record<string, string> = {
   ".otf": "font/otf", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".mp4": "video/mp4", ".webm": "video/webm", ".wasm": "application/wasm", ".pdf": "application/pdf",
 };
 
-const note = (text: string) => `<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;color:#666;display:grid;place-items:center;height:90vh"><div>${text}</div>`;
+/** Text from a request, safe in a page: anything with this page's address could otherwise run script on it, and read the folder it serves. */
+const escaped = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** A page of the proxy's own. It carries the probe too: without it Back and Forward do nothing from here. */
+const note = (text: string) => `<!doctype html><meta charset="utf-8"><script src="${PROBE_PATH}"></script><body style="font:14px system-ui;color:#666;display:grid;place-items:center;height:90vh"><div>${text}</div>`;
 
 export class Proxies {
-  private open = new Map<number, { server: Server; port: number }>();
-  private folders = new Map<string, { server: Server; port: number }>();
+  /** Each with the server, so a second ask while one opens gets the same one, not a server nothing will close. */
+  private open = new Map<number, { server: Server; port: Promise<number> }>();
+  private folders = new Map<string, { server: Server; port: Promise<number> }>();
 
   /**
     A server for a session folder's own files, for a page that needs no dev server: an
@@ -70,7 +75,7 @@ export class Proxies {
   */
   async files(root: string): Promise<string> {
     const have = this.folders.get(root);
-    if (have) return `http://127.0.0.1:${have.port}`;
+    if (have) return `http://127.0.0.1:${await have.port}`;
     const server = createServer((req, res) => {
       if (!addressed(server, req.headers.host)) return void res.writeHead(403).end();
       if (req.method !== "GET" && req.method !== "HEAD") return void res.writeHead(405).end();
@@ -91,24 +96,41 @@ export class Proxies {
       } catch {
         // missing; said below
       }
-      if (!existsSync(abs) || !statSync(abs).isFile()) return void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note(`No ${inside || "index.html"} in this session's folder yet.`));
+      if (!existsSync(abs) || !statSync(abs).isFile()) return void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note(`No ${escaped(inside || "index.html")} in this session's folder yet.`));
       const type = TYPES[extname(abs).toLowerCase()] ?? "application/octet-stream";
       const headers = { "content-type": type, "cache-control": "no-store" };
-      if (type.startsWith("text/html")) return void res.writeHead(200, headers).end(req.method === "HEAD" ? undefined : withProbe(readFileSync(abs, "utf8"), design ? DESIGN_FRAME_STYLE : ""));
-      res.writeHead(200, { ...headers, "content-length": statSync(abs).size });
-      if (req.method === "HEAD") return void res.end();
-      createReadStream(abs).pipe(res);
+      // A file can go, or be out of reach, between the look above and the read.
+      const unread = () => void (res.headersSent ? res.destroy() : res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note(`Couldn't read ${escaped(inside)}.`)));
+      if (type.startsWith("text/html")) {
+        let page: string;
+        try {
+          page = readFileSync(abs, "utf8");
+        } catch {
+          return unread();
+        }
+        return void res.writeHead(200, headers).end(req.method === "HEAD" ? undefined : withProbe(page, design ? DESIGN_FRAME_STYLE : ""));
+      }
+      if (req.method === "HEAD") return void res.writeHead(200, { ...headers, "content-length": statSync(abs).size }).end();
+      // The headers wait for the file to open, so one that can't be read can still say so.
+      const file = createReadStream(abs);
+      file.once("error", unread);
+      file.once("open", () => {
+        res.writeHead(200, { ...headers, "content-length": statSync(abs).size });
+        file.pipe(res);
+      });
+      res.once("close", () => file.destroy());
     });
-    const port = await listen(server);
+    const port = listen(server);
+    port.catch(() => this.folders.delete(root));
     this.folders.set(root, { server, port });
-    return `http://127.0.0.1:${port}`;
+    return `http://127.0.0.1:${await port}`;
   }
 
   /** The proxy's address for a local port, opening one the first time. */
   async url(target: number): Promise<string> {
     if (!Number.isInteger(target) || target < 1024 || target > 65535) throw new Error("That isn't a port on this Mac.");
     const have = this.open.get(target);
-    if (have) return `http://127.0.0.1:${have.port}`;
+    if (have) return `http://127.0.0.1:${await have.port}`;
     const server = createServer((req, res) => {
       if (!addressed(server, req.headers.host)) return void res.writeHead(403).end();
       if (req.url === PROBE_PATH) {
@@ -120,9 +142,12 @@ export class Proxies {
       delete headers.referer;
       const up = request({ host: "localhost", port: target, method: req.method, path: req.url, headers }, (r) => this.answer(r, res, target, own()));
       up.on("error", () => {
-        if (!res.headersSent) res.writeHead(502, { "content-type": "text/html; charset=utf-8" });
-        res.end(note(`Nothing answers on localhost:${target}. Start the dev server, then reload.`));
+        // Partway through an answer, a page of ours would land in the middle of it.
+        if (res.headersSent) return void res.destroy();
+        res.writeHead(502, { "content-type": "text/html; charset=utf-8" }).end(note(`Nothing answers on localhost:${target}. Start the dev server, then reload.`));
       });
+      // The page went (a reload, a tab closed): an event stream to the dev server would stay open for good.
+      res.once("close", () => void (res.writableFinished || up.destroy()));
       req.pipe(up);
     });
     // Hot reload and anything else that upgrades: the raw socket goes straight through.
@@ -146,13 +171,18 @@ export class Proxies {
       up.on("error", end);
       socket.on("error", end);
     });
-    const port = await listen(server);
-    const own = () => `http://127.0.0.1:${port}`;
+    let address = "";
+    const own = () => address;
+    const port = listen(server);
+    port.catch(() => this.open.delete(target));
     this.open.set(target, { server, port });
-    return own();
+    address = `http://127.0.0.1:${await port}`;
+    return address;
   }
 
   private answer(r: IncomingMessage, res: import("node:http").ServerResponse, target: number, own: string) {
+    // The dev server died partway: without this the page's request waits for an end that never comes.
+    r.once("close", () => void (r.complete || res.destroy()));
     const headers = { ...r.headers };
     // The page shows inside the app, so headers that forbid framing come off.
     delete headers["x-frame-options"];

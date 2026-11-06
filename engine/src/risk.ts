@@ -33,7 +33,8 @@ const HIGH = [
   /(curl|wget)[^|]*\|\s*(sh|bash|zsh)\b/,
   /\bdrop\s+(table|database)\b/i,
   /\btruncate\s+table\b/i,
-  /\b(?:npm|pnpm|yarn|bun|cargo)\s+publish\b|\bgem\s+push\b|\btwine\s+upload\b|\bgh\s+release\s+create\b/,
+  // Flags can stand in front of publish, and a flag's value with them (npm --prefix app publish), and cargo's +toolchain.
+  /\b(?:npm|pnpm|yarn|bun|cargo)(?:\s+-[^\s;&|]*(?:\s+[^-\s;&|][^\s;&|]*)?|\s+\+[^\s;&|]+)*\s+publish\b|\bgem\s+push\b|\btwine\s+upload\b|\bgh\s+release\s+create\b/,
   /\bkubectl\s+delete\b|\bterraform\s+(apply|destroy)\b/,
   />\s*\/dev\/(sd|disk)/,
 ];
@@ -51,17 +52,24 @@ if (process.platform === "win32")
   );
 const MEDIUM = [/\bgit\s+(push|commit|merge|rebase|tag)\b/, /\bgit\s+branch\b[^;&|\n]*\s(?:-d|--delete)\b/, /\b(npm|pnpm|yarn|bun)\s+(i|install|add|remove)\b/, /\bpip\s+install\b/, /\bbrew\s+install\b/, /\bmv\b|\bcp\s+-r\b/, /\bgh\s+pr\s+(create|merge)\b/, /\bdocker\s+(rm|rmi|system\s+prune)\b/, /\bcurl\b.*-X\s*(POST|PUT|DELETE|PATCH)/i];
 
-/** The options git takes before its command, which say nothing about what the command does. */
-const GIT_OPTION = String.raw`-[Cc]\s+(?:"[^"]*"|'[^']*'|\S+)|--(?:git-dir|work-tree|namespace|config-env)(?:=\S+|\s+\S+)|--no-pager|--paginate|--no-replace-objects|--bare|--literal-pathspecs|--no-optional-locks|-p`;
+/** One word as the shell reads it, so a quoted space stays inside it. */
+const WORD = String.raw`(?:"[^"]*"|'[^']*'|[^\s"';&|])+`;
+/**
+  The options git takes before its command, which say nothing about what the command does: the ones
+  whose value is the next word by name, then any other `--option` or `--option=value`, which git either
+  takes or refuses. Not `-c alias.x=…`: that's the command itself, so it stays to be read.
+*/
+const GIT_OPTION = String.raw`-C\s+${WORD}|-c\s+(?!['"]?[aA][lL][iI][aA][sS]\.)${WORD}|--(?:git-dir|work-tree|namespace|config-env|attr-source)\s+${WORD}|--[a-z][a-z-]*(?:=${WORD})?|-[pP]`;
 const GIT_OPTIONS = new RegExp(String.raw`\bgit(?:\s+(?:${GIT_OPTION}))+(?=\s)`, "g");
 
 /** A command with those options taken out, so `git -C app reset --hard` reads as what it is. */
 export const plainGit = (command: string) => command.replace(GIT_OPTIONS, "git");
 
 export function commandRisk(command: string): Risk {
-  const c = plainGit(command);
-  if (HIGH.some((r) => r.test(c))) return "high";
-  if (MEDIUM.some((r) => r.test(c))) return "medium";
+  // As written too: what the plain text no longer shows (a quoted `rm -rf` in an option) still counts.
+  const texts = [command, plainGit(command)];
+  if (HIGH.some((r) => texts.some((c) => r.test(c)))) return "high";
+  if (MEDIUM.some((r) => texts.some((c) => r.test(c)))) return "medium";
   return "low";
 }
 
@@ -209,8 +217,12 @@ export function ruleFor(command: string): string | undefined {
   const words = c.split(/\s+/);
   const name = words[0].split("/").pop() ?? words[0];
   if (WRAPPERS.test(name)) return undefined;
-  // `git -C app status` has no subcommand to name: the rule would be `git`, for every git command written that way.
-  if (SUB.test(name) && words[1]?.startsWith("-")) return undefined;
-  const sub = SUB.test(name) && words[1] && !words[1].startsWith("-") ? words[1] : "";
-  return sub ? `${words[0]} ${sub}` : words[0];
+  if (SUB.test(name) && /^[-+]/.test(words[1] ?? "")) {
+    // `git -C app status` has no subcommand to name: the rule would be `git`, for every git command written that way.
+    if (name === "git") return undefined;
+    // The same goes for `make -j8 test` or `npm --prefix ui run build`, where a flag's value can't be told from a
+    // subcommand, and `cargo +nightly test`: the rule is the whole command, which allows that one again and nothing else.
+    return commandRisk(c) === "high" ? undefined : words.join(" ");
+  }
+  return SUB.test(name) && words[1] ? `${words[0]} ${words[1]}` : words[0];
 }

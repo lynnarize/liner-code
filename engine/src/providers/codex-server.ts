@@ -66,8 +66,18 @@ export const reasoning = new Set<string>();
 const IN_USE = /already has an active writer/i;
 const IN_USE_TEXT = "This conversation is open in another Codex client, such as the Codex CLI or an IDE extension. Codex lets one client write to it at a time. Quit that client, then send your message again.";
 
+/**
+  A planner's words for Codex's plan mode, the only mode request_user_input answers in ("unavailable
+  in Default mode"). They stand in for Codex's built-in ones, which would end every turn in a plan
+  or a question, even "hello" (why a lead stays out of Claude Code's plan mode too: claude.ts), and
+  put a plan in <proposed_plan> rather than the <plan> tags the runtime's planRules ask for.
+*/
+const PLAN_MODE = "Your other instructions say when to plan and how to hand a plan over: follow them. When a decision only the user can make would change the plan, ask it with the request_user_input tool; find out everything else for yourself.";
+
 /** How long a closed app server gets to end by itself. */
 const KILL_AFTER_MS = 2000;
+/** When to look for a stopped command on Codex's list of what's running: at once, then twice more. */
+const LISTED_AFTER_MS = [0, 300, 1000];
 
 /** A request Liner Code has no answer for: JSON-RPC's "method not found". */
 class Unknown extends Error {}
@@ -110,8 +120,9 @@ const LINER_WAIT_SEC = 1800;
 export function codexMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = []): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (o.mcp) Object.assign(out, { "mcp_servers.liner.command": o.mcp.command, "mcp_servers.liner.args": o.mcp.args, "mcp_servers.liner.env": o.mcp.env, "mcp_servers.liner.tool_timeout_sec": LINER_WAIT_SEC });
+  // `liner` is ours, and its tools go without a card: a connection of that name is any other server (as claudeMcp has it).
   for (const c of connections) {
-    const at = `mcp_servers.${c.name}`;
+    const at = `mcp_servers.${c.name === "liner" ? "liner-addon" : c.name}`;
     if (c.http) Object.assign(out, { [`${at}.url`]: c.http.url }, Object.keys(c.http.headers).length ? { [`${at}.http_headers`]: c.http.headers } : {});
     else if (c.stdio) Object.assign(out, { [`${at}.command`]: c.stdio.command, [`${at}.args`]: c.stdio.args, [`${at}.env`]: c.stdio.env });
   }
@@ -280,14 +291,16 @@ export class CodexServerSession implements ProviderSession {
   private retry: string | null = null;
   /** Subagents' turns running, by thread (each thread on this connection is this session's: it has its own process). */
   private others = new Map<string, string>();
-  /** Commands running with a process Codex can stop, by item. */
-  private running = new Map<string, { threadId: string; turnId: string; processId: string }>();
+  /** Commands running, by item, with the process Codex says stops each: none for one that went through a card (see processOf). */
+  private running = new Map<string, { threadId: string; turnId: string; processId: string | null }>();
   /** You pressed Stop: what starts now is stopped too, and what ends now wakes nothing. Until your next turn. */
   private stopping = false;
   /** The subagents this thread started: the prompt each was given, and its last words. */
   private kids = new Map<string, { prompt: string; said: string }>();
   /** What's waiting to wake the parent, if anything is; a subagent finishing meanwhile joins it. */
   private waking: { pending: boolean; details: string[] } | null = null;
+  /** The model the thread opened on: a plan turn has to name one, and you may have left it to Codex. */
+  private openedOn: string | null = null;
   private o: OpenOptions;
 
   constructor(o: OpenOptions) {
@@ -329,6 +342,7 @@ export class CodexServerSession implements ProviderSession {
     }
     if (!r) r = await this.server.request("thread/start", { ...common, ephemeral: this.o.ephemeral || null });
     this.thread = String((r.thread as Json).id);
+    this.openedOn = typeof r.model === "string" ? r.model : null;
     this.sink?.session(this.thread);
     this.opened = true;
   }
@@ -348,7 +362,7 @@ export class CodexServerSession implements ProviderSession {
       // Stop reaches everything this turn set going: the subagents' turns and the commands running, its own
       // and theirs, which turn/interrupt leaves (T3 Code: CodexAdapterV2.ts interrupts the whole lineage and terminates tracked terminals).
       for (const [threadId, turnId] of this.others) void this.server.request("turn/interrupt", { threadId, turnId }).catch(() => {});
-      for (const [item, c] of this.running) if (c.turnId === this.turnId || this.others.get(c.threadId) === c.turnId) this.endCommand(item);
+      for (const [item, c] of this.running) if (c.turnId === this.turnId || this.others.get(c.threadId) === c.turnId) void this.endCommand(item);
       this.done?.();
     };
     // Stop ends the turn while Codex is still starting or hasn't answered its start, which may never come (as acp.ts does).
@@ -380,6 +394,7 @@ export class CodexServerSession implements ProviderSession {
           if (!(await Promise.race([this.server.request("thread/compact/start", { threadId: this.thread }), aborted]))) return;
         } else {
           const model = this.o.model && this.o.model !== "default" ? this.o.model : null;
+          const named = model ?? this.openedOn;
           this.early = new Map();
           const start = this.server.request("turn/start", {
             threadId: this.thread,
@@ -391,6 +406,8 @@ export class CodexServerSession implements ProviderSession {
             sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
             model: this.o.model && this.o.model !== "default" ? this.o.model : null,
             effort,
+            // T3 Code: CodexAdapterV2.ts sends the mode the same way, and also "default" to leave it; a planner's thread is only ever a planner's.
+            ...(this.o.planning && named ? { collaborationMode: { mode: "plan", settings: { model: named, reasoning_effort: effort, developer_instructions: PLAN_MODE } } } : {}),
           });
           const r = await Promise.race([start, aborted]);
           // Stopped before Codex answered: a turn it starts after all is stopped as soon as it says which, and what it sends is dropped.
@@ -470,10 +487,33 @@ export class CodexServerSession implements ProviderSession {
   }
 
   /** Stops a command Codex runs, as turn/interrupt doesn't (an older Codex doesn't know this, and the interrupt is all it gets). */
-  private endCommand(item: string) {
+  private async endCommand(item: string) {
     const c = this.running.get(item);
+    if (!c) return;
     this.running.delete(item);
-    if (c) void this.server.request("thread/backgroundTerminals/terminate", { threadId: c.threadId, processId: c.processId }).catch(() => {});
+    const processId = c.processId ?? (await this.processOf(c.threadId, item).catch(() => null));
+    if (processId) await this.server.request("thread/backgroundTerminals/terminate", { threadId: c.threadId, processId }).catch(() => {});
+  }
+
+  /**
+    The process of a command that went through a card: its item/started has none, as it hasn't
+    started, and nothing says it later (T3 Code goes by that id alone: CodexAdapterV2.ts,
+    trackRunningCommandItem). Codex's list of what's running goes by item, so a dev server an
+    earlier turn left running stays. A command approved a moment before Stop can take a moment to
+    be on the list.
+  */
+  private async processOf(threadId: string, item: string) {
+    for (const wait of LISTED_AFTER_MS) {
+      await new Promise((r) => setTimeout(r, wait));
+      let cursor: string | null | undefined;
+      do {
+        const page = (await this.server.request("thread/backgroundTerminals/list", { threadId, ...(cursor ? { cursor } : {}) })) as { data?: { itemId?: string; processId?: string }[]; nextCursor?: string | null };
+        const found = page.data?.find((t) => t.itemId === item);
+        if (found?.processId) return found.processId;
+        cursor = page.nextCursor;
+      } while (cursor);
+    }
+    return null;
   }
 
   /** What's at work on this connection, which goes on whether or not a turn of yours runs (and whichever thread it's on). */
@@ -490,9 +530,9 @@ export class CodexServerSession implements ProviderSession {
         this.others.set(threadId, turnId);
         if (this.stopping) void this.server.request("turn/interrupt", { threadId, turnId }).catch(() => {});
       }
-    } else if (method === "item/started" && item?.type === "commandExecution" && typeof item.processId === "string") {
-      this.running.set(String(item.id), { threadId: threadId ?? this.thread ?? "", turnId: String(p.turnId ?? ""), processId: item.processId });
-      if (this.stopping) this.endCommand(String(item.id));
+    } else if (method === "item/started" && item?.type === "commandExecution") {
+      this.running.set(String(item.id), { threadId: threadId ?? this.thread ?? "", turnId: String(p.turnId ?? ""), processId: typeof item.processId === "string" ? item.processId : null });
+      if (this.stopping) void this.endCommand(String(item.id));
     } else if (method === "item/completed" && item?.type === "commandExecution") {
       this.running.delete(String(item.id));
     }
@@ -686,6 +726,10 @@ export class CodexServerSession implements ProviderSession {
       case "webSearch":
         sink.tool({ key: id, tool: "web_search", toolKind: "web", title: `Search the web for ${short(it.query, 50)}`, status: done ? "done" : "running" });
         return;
+      // A plan written the way Codex's plan mode has it comes out of the message and only here, so it's handed over as any other (see PLAN_MODE).
+      case "plan":
+        if (done && it.text) sink.text(`<plan>\n${String(it.text).trim()}\n</plan>`, id);
+        return;
       case "contextCompaction":
         if (done) sink.notice("Codex compacted the conversation to make room.");
         return;
@@ -747,7 +791,8 @@ export class CodexServerSession implements ProviderSession {
     if (method === "item/tool/requestUserInput") {
       const qs = (p.questions as { id: string; header: string; question: string; options: { label: string; description: string }[] | null }[] | undefined) ?? [];
       const questions: Question[] = qs.map((q) => ({ question: q.question, header: q.header, options: (q.options ?? []).map((o) => ({ label: o.label, description: o.description })) }));
-      const answers = await sink.ask(questions, signal);
+      // Optional: a routine has nobody to answer, and a planner left waiting would hold it for good.
+      const answers = await sink.ask(questions, signal, { optional: true });
       return { answers: Object.fromEntries(qs.map((q) => [q.id, { answers: answers?.[q.question] ? [answers[q.question]] : [] }])) };
     }
     if (method === "item/permissions/requestApproval") {
@@ -756,20 +801,23 @@ export class CodexServerSession implements ProviderSession {
       // Codex is moving from the read and write lists to `entries`, which also carry globs and special paths (T3 Code: CodexAdapterV2.ts).
       const named = (e: { path?: { path?: string; pattern?: string } }) => e.path?.path ?? e.path?.pattern ?? JSON.stringify(e.path);
       const entries = want.fileSystem?.entries ?? [];
-      const write = [...(want.fileSystem?.write ?? []), ...entries.filter((e) => e.access === "write").map(named)];
-      const read = [...(want.fileSystem?.read ?? []), ...entries.filter((e) => e.access !== "write").map(named)];
-      const listed = [...(want.network?.enabled ? [{ label: "Network", value: "Access the network" }] : []), ...write.map((x) => ({ label: "Write access to", value: x })), ...read.map((x) => ({ label: "Read access to", value: x }))];
+      // Codex sends a path in both while it moves over: each shows once.
+      const paths = (access: string, old?: string[] | null) => [...new Set([...(old ?? []), ...entries.filter((e) => e.access === access).map(named)])];
+      const write = paths("write", want.fileSystem?.write);
+      const read = paths("read", want.fileSystem?.read);
+      const listed = [...(want.network?.enabled ? [{ label: "Network", value: "Access the network" }] : []), ...write.map((x) => ({ label: "Write access to", value: x })), ...read.map((x) => ({ label: "Read access to", value: x })), ...paths("deny").map((x) => ({ label: "No access to", value: x }))];
+      const odd = entries.some((e) => e.access !== "write" && e.access !== "read" && e.access !== "deny");
       // Allow grants what was asked, so nothing asked for goes unseen, even in a shape not known here.
-      const fields = listed.length ? listed : [{ label: "Asked for", value: JSON.stringify(p.permissions ?? {}) }];
+      const fields = listed.length && !odd ? listed : [...listed, { label: "Asked for", value: JSON.stringify(p.permissions ?? {}) }];
       // Writing outside the project is a step out of its sandbox: yours, not the Reviewer's. A glob or a special path can't be told to be inside.
-      const wide = !listed.length || write.some((x) => /[*?{[]/.test(x) || !inFolder(this.o.cwd, x));
+      const wide = !listed.length || odd || write.some((x) => /[*?{[]/.test(x) || !inFolder(this.o.cwd, x));
       const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "permissions", title: "Grant Codex more access", description: (p.reason as string | undefined) ?? undefined, risk: wide ? "high" : "medium", fields }, signal);
       return a.allow ? { permissions: p.permissions ?? {}, scope: "turn" } : { permissions: {}, scope: "turn" };
     }
     if (method === "mcpServer/elicitation/request") {
       const meta = (p._meta ?? {}) as { codex_approval_kind?: string; tool_params_display?: { display_name?: string; name: string; value: unknown }[] };
       // Liner Code's own tools only reach this session's Browser, the Simulator and its timeline.
-      if (p.serverName === "liner") return { action: "accept", content: {}, _meta: null };
+      if (this.o.mcp && p.serverName === "liner") return { action: "accept", content: {}, _meta: null };
       // Another server's tool call asks like any other step; anything else it wants filled in, Liner Code can't show yet.
       if (meta.codex_approval_kind !== "mcp_tool_call") return { action: "decline", content: null, _meta: null };
       const fields = (meta.tool_params_display ?? []).slice(0, 4).map((x) => ({ label: x.display_name || x.name, value: short(typeof x.value === "string" ? x.value : JSON.stringify(x.value), 200) }));

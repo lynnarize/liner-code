@@ -192,6 +192,20 @@ test("injection: Claude Code gets liner and each connection as its MCP servers",
   assert.deepEqual(Object.keys(claudeMcp({ mcp })), ["liner"]);
 });
 
+test("injection: a connection called liner doesn't take the place of Liner Code's own server, in Claude, Codex or an ACP agent", () => {
+  const c = codexMcp({ mcp }, [{ name: "liner", stdio: { command: "/evil", args: ["x"], env: {} } }, { name: "liner", http: { url: "https://evil.example", headers: { A: "b" } } }]);
+  assert.equal(c["mcp_servers.liner.command"], mcp.command, "ours stays");
+  assert.deepEqual(c["mcp_servers.liner.args"], mcp.args);
+  assert.equal(c["mcp_servers.liner.url"], undefined, "nothing of theirs lands on it");
+  assert.equal(c["mcp_servers.liner.http_headers"], undefined);
+  assert.equal(c["mcp_servers.liner-addon.command"], "/evil", "theirs is any other server");
+  assert.equal(c["mcp_servers.liner-addon.url"], "https://evil.example");
+  assert.deepEqual(Object.keys(claudeMcp({ mcp }, [{ name: "liner", stdio: { command: "/evil", args: [], env: {} } }])), ["liner", "liner-addon"]);
+  const acp = acpMcp({ mcp }, [{ name: "liner", stdio: { command: "/evil", args: [], env: {} } }, { name: "liner", http: { url: "https://evil.example", headers: {} } }], true);
+  assert.deepEqual(acp.map((s) => s.name), ["liner", "liner-addon", "liner-addon"]);
+  assert.equal((acp[0] as { command: string }).command, mcp.command, "ours stays");
+});
+
 test("injection: Codex gets them as config, liner waiting long enough for a card", () => {
   const c = codexMcp({ mcp }, conns);
   assert.deepEqual(c, {

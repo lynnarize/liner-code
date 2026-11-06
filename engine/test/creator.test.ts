@@ -102,7 +102,7 @@ test("Create your add-on: its ask means a page, and a page app is held to the fu
   assert.match(read("starters"), new RegExp(`"place": "page", "icon": "notes", "access": \\{ "storage": ${STORAGE_MAX} \\}`));
   assert.match(read("starters"), /grid-template: auto 1fr auto \/ 260px 1fr/);
   // The MCP server (its own small process) lists the topics by hand: it keeps up with the guide's.
-  const enumOf = /enum: \[("catalogue"[^\]]*)\]/.exec(readFileSync(new URL("../src/mcp.ts", import.meta.url), "utf8"))?.[1];
+  const enumOf = /enum: \[("catalogue"[^\]]*)\]/.exec(readFileSync(new URL("../src/liner-tools.ts", import.meta.url), "utf8"))?.[1];
   assert.deepEqual(JSON.parse(`[${enumOf}]`), [...TOPICS]);
 });
 

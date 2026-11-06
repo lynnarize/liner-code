@@ -16,9 +16,10 @@
   question, even "hello". It runs in the default mode with the editing tools taken away, answers
   talk directly, and wraps a plan in <plan> tags when you ask for a change (see the runtime).
 */
-import { getSessionMessages, query, type ElicitationRequest, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKResultMessage, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages, query, type ElicitationRequest, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKPermissionRuleEntry, type SDKResultMessage, type SDKUserMessage, type SessionStore, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -39,9 +40,10 @@ export const sdk = { query, getSessionMessages };
 
 /**
   How long, in milliseconds: a resumed Claude Code has to say it's up, the connections have to be
-  handed over before a turn goes without them, and a stopped turn has to say it ended.
+  handed over before a turn goes without them, a stopped turn has to say it ended, and Claude Code
+  has to list your ask rules while a step waits on them.
 */
-export const waits = { open: 90_000, link: 30_000, stop: 4_000 };
+export const waits = { open: 90_000, link: 30_000, stop: 4_000, rules: 3_000 };
 
 /** Only until Claude Code answers: the engine asks it for its real list as it starts. */
 const FALLBACK: ModelInfo[] = [
@@ -216,13 +218,42 @@ export function applyTaskTool(tasks: TaskList, tool: string, input: unknown, res
   return title === task.title && status === task.status ? undefined : new Map(tasks).set(id, { title, status });
 }
 
+/** Claude Code's folder for this session's account: its own CLAUDE_CONFIG_DIR, or the usual one. */
+function configDir(env: NodeJS.ProcessEnv, cwd: string) {
+  const config = env.CLAUDE_CONFIG_DIR?.trim();
+  return config ? resolve(cwd, config) : join(homedir(), ".claude");
+}
+
+/**
+  Where the SDK reads a session's transcript from. By itself it goes by the engine's own
+  CLAUDE_CONFIG_DIR, which isn't an extra account's, and would find nothing: handed this it still
+  makes the conversation out of the lines, and only where they come from is ours. Changing
+  process.env for it would reach every session running (T3 Code starts a worker process with the
+  session's env for this: claudeHistoryWorker.ts).
+*/
+function transcripts(env: NodeJS.ProcessEnv, cwd: string): SessionStore {
+  return {
+    append: async () => {},
+    load: async ({ projectKey, sessionId }) => {
+      const text = await readFile(join(configDir(env, cwd), "projects", projectKey, `${sessionId}.jsonl`), "utf8").catch(() => "");
+      return text.split("\n").flatMap((line) => {
+        try {
+          return line.trim() ? [JSON.parse(line)] : [];
+        } catch {
+          // One half written: the rest still say.
+          return [];
+        }
+      });
+    },
+  };
+}
+
 /**
   The task list Claude Code keeps on disk for a session, or undefined when there's none to read
   (T3 Code: ClaudeAdapterV2.ts, readClaudeTaskList). It outlives a restart, which ours doesn't.
 */
 export function storedTasks(env: NodeJS.ProcessEnv, cwd: string, session: string): TaskList | undefined {
-  const config = env.CLAUDE_CONFIG_DIR?.trim();
-  const dir = join(config ? resolve(cwd, config) : join(homedir(), ".claude"), "tasks", (env.CLAUDE_CODE_TASK_LIST_ID?.trim() || session).replace(/[^a-zA-Z0-9_-]/g, "-"));
+  const dir = join(configDir(env, cwd), "tasks", (env.CLAUDE_CODE_TASK_LIST_ID?.trim() || session).replace(/[^a-zA-Z0-9_-]/g, "-"));
   try {
     const out: TaskList = new Map();
     for (const name of readdirSync(dir).filter((n) => /^\d+\.json$/.test(n)).sort((a, b) => parseInt(a, 10) - parseInt(b, 10))) {
@@ -372,6 +403,26 @@ const MODE: Record<Access, PermissionMode> ={ read: "plan", ask: "default", edit
 const LEAD_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
 /** Just a model, for an app (plain): every built-in that reaches this Mac, denied by rule as well as left out. */
 const PLAIN_DENIED = ["Read", "Glob", "Grep", "LS", "Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"];
+
+/** A command near enough as a shell reads it: no quotes or escapes, one space between words. */
+const plainCommand = (s: string) => s.replace(/["'\\]/g, "").replace(/\s+/g, " ").trim();
+
+/**
+  Does one of your ask rules name this command, anywhere in it? For what Claude Code leaves
+  unmatched: a compound command where more than one part asks says only "subcommandResults", and it
+  doesn't look inside `bash -c`. Looser than its own matching on purpose (a rule's words in an
+  argument count too): a card too many beats a step you asked about going ahead.
+*/
+export function askRuleNames(rules: string[], tool: string, command: string) {
+  const text = plainCommand(command);
+  return rules.some((rule) => {
+    if (rule === tool) return true;
+    if (!rule.startsWith(`${tool}(`) || !rule.endsWith(")")) return false;
+    // `npm test:*` and `npm test *` are the words alone, with or without more after; any other * is anything at all.
+    const words = plainCommand(rule.slice(tool.length + 1, -1)).replace(/(?::| )\*$/, "").split("*").map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+    return new RegExp(`(?:^|[\\s;&|(\`/])${words}(?=$|[\\s;&|)\`])`).test(text);
+  });
+}
 
 /** What kind of thing a Claude Code tool does, for its icon and risk. */
 function kindOf(name: string): ToolKind {
@@ -644,6 +695,8 @@ class ClaudeSession implements ProviderSession {
 
   private start() {
     const o = this.o;
+    // Claude Code can't start in a folder that's gone, and the SDK takes that for a missing program ("does not match this system's libc").
+    if (!existsSync(o.cwd)) throw new Error(`This session's folder isn't there any more: ${o.cwd}`);
     // Just a model, for an app: no built-in tools, no settings (and so no hooks, plugins or servers of yours), none of Liner's, its own short prompt.
     // Read denied too: with no tools at all, Claude Code still reads a file or lists a folder an @path in the prompt names.
     const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], settings: { permissions: { deny: PLAIN_DENIED } }, mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
@@ -670,14 +723,15 @@ class ClaudeSession implements ProviderSession {
       permissionPrompts: "host",
       pathToClaudeCodeExecutable: sdkPath(this.path) ?? undefined,
       mcpServers: o.mcp ? claudeMcp(o) : undefined,
-      canUseTool: async (name, input, { signal, toolUseID, matchedAskRule, decisionReason, suppressAlwaysAllowRule, mcpServer }) => {
+      canUseTool: async (name, input, ask) => {
+        const { signal, toolUseID, decisionReason, suppressAlwaysAllowRule, mcpServer } = ask;
         const sink = this.sink ?? (await this.wakeSink(signal));
         if (!sink) return { behavior: "deny", message: "The turn has ended." };
         // Just a model has no tools; should one turn up all the same, it's never used.
         if (o.plain) return { behavior: "deny", message: "You have no tools here: answer from what you were given." };
         // Your own ask rule wants a person's answer, whatever would answer for you here (the SDK says so of
         // hosts that approve by themselves; T3 Code: ClaudeAdapterV2.ts, claudeApprovalPresentation).
-        const forced = matchedAskRule !== undefined;
+        const forced = await this.ruleCaught(name, input, ask);
         // Liner Code's own tools only reach this session's Browser, the Simulator and its timeline.
         if (name.startsWith("mcp__liner__") && !forced && handedOver(mcpServer?.source)) return { behavior: "allow", updatedInput: input };
         // The agent asks you to choose: shown as a question card, answered in its input.
@@ -747,6 +801,37 @@ class ClaudeSession implements ProviderSession {
       this.linking = this.link(this.q);
       // A resume that fails first never reaches the turn that waits on this.
       this.linking.catch(() => {});
+    }
+  }
+
+  /**
+    Did your own ask rule catch this step? Claude Code says so with `matchedAskRule` when the tool
+    made its own ask, and otherwise with a decision reason of type "rule", which the SDK passes on
+    but leaves out of its types. Any other type can come with no rule of yours at all (a command it
+    can't call safe, a path outside the project), and Full access would then ask about each of
+    them, so none counts by itself: a command is read against your rules instead. When Claude Code
+    can't list them, only a compound command comes to you, the one answer that can hide a rule.
+  */
+  private async ruleCaught(name: string, input: Record<string, unknown>, ask: { matchedAskRule?: unknown }) {
+    const type = (ask as { decisionReasonType?: string }).decisionReasonType;
+    // A hook of yours that says ask is a rule of yours too.
+    if (ask.matchedAskRule !== undefined || type === "rule" || type === "hook") return true;
+    if (typeof input.command !== "string") return false;
+    const rules = await this.askRules();
+    return rules ? askRuleNames(rules, name, input.command) : type === "subcommandResults";
+  }
+
+  /** Your ask rules as Claude Code holds them now, from every settings file; null when it can't say (one too old to, or that doesn't answer). */
+  private async askRules(): Promise<string[] | null> {
+    const q = this.q as unknown as { listPermissionRules?: () => Promise<{ state: { rules: SDKPermissionRuleEntry[] } }> } | null;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const listed = await Promise.race([q?.listPermissionRules?.(), new Promise<undefined>((r) => (timer = setTimeout(() => r(undefined), waits.rules)))]);
+      return listed ? listed.state.rules.flatMap((r) => (r.behavior === "ask" && !r.notInEffect ? [r.rule] : [])) : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -1321,7 +1406,7 @@ class ClaudeSession implements ProviderSession {
     if (this.uncounted && files.some((f) => imageType(f) || isPdf(f))) {
       const id = this.uncounted;
       this.uncounted = undefined;
-      const held = await sdk.getSessionMessages(id, { dir: this.o.cwd }).then(heldFiles, () => null);
+      const held = await sdk.getSessionMessages(id, { dir: this.o.cwd, sessionStore: transcripts(this.o.env, this.o.cwd) }).then(heldFiles, () => null);
       if (held) this.budget = { bytes: Math.max(this.budget.bytes, held.bytes), pages: Math.max(this.budget.pages, held.pages) };
     }
     return this.drive(sink, signal, false, () => {

@@ -7,7 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +17,7 @@ import { createInterface } from "node:readline";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Question, Thread, Usage } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
-import { claude, claudeMcp, sdk, waits, withFiles } from "../src/providers/claude.ts";
+import { askRuleNames, claude, claudeMcp, sdk, waits, withFiles } from "../src/providers/claude.ts";
 import { acpModels } from "../src/providers/models.ts";
 import { Outside } from "../src/outside-tools.ts";
 import type { ApprovalRequest, OpenOptions, TurnSink, WakeTurn } from "../src/providers/types.ts";
@@ -140,6 +141,129 @@ test("full access: what your own ask rule stopped still comes to you, with the t
     made[0].emit(result({ user_message_uuids: [mine] }));
     await turn;
     s.close();
+  } finally {
+    restore();
+  }
+});
+
+test("full access: a plain ask rule comes to you, though Claude Code sends only its type and no matched rule", async () => {
+  const { made, restore } = standIn(() => ({ listPermissionRules: async () => ({ state: { rules: [] } }) }));
+  try {
+    const s = claude.open(opts({ access: "full", mcp: { command: "node", args: ["mcp.ts"], env: {} } }));
+    const { r, sink } = recorder();
+    const { turn, mine } = await running(made, s, sink);
+    const ask = askOf(made[0]);
+    const rule = askOptions({ decisionReasonType: "rule" });
+    await ask("Bash", { command: "echo hi > a.txt" }, rule);
+    await ask("Write", { file_path: "/tmp/a.txt", content: "x" }, rule);
+    await ask("Read", { file_path: "/tmp/a.txt" }, rule);
+    await ask("mcp__liner__memory_add", {}, askOptions({ decisionReasonType: "rule", mcpServer: { name: "liner", source: "dynamic" } }));
+    assert.deepEqual(r.approvals.map((a) => a.tool), ["Bash", "Write", "Read", "mcp__liner__memory_add"], "each came to you");
+    assert.ok(r.approvals.every((a) => a.risk === "high" && a.rule === undefined), "and only you can answer it");
+    // What Claude Code asks about with no rule of yours, by each of the types it sends then: Full goes ahead.
+    await ask("Bash", { command: "npm test" }, askOptions({ decisionReasonType: "other", decisionReason: "This command requires approval" }));
+    await ask("Bash", { command: "npm test && npm run build" }, askOptions({ decisionReasonType: "subcommandResults" }));
+    await ask("Write", { file_path: "/elsewhere/a.txt" }, askOptions({ decisionReasonType: "workingDir" }));
+    await ask("Write", { file_path: "/tmp/.claude/settings.json" }, askOptions({ decisionReasonType: "safetyCheck" }));
+    await ask("WebFetch", { url: "https://example.com" }, askOptions());
+    assert.equal(r.approvals.length, 4, "no card for any of them");
+    made[0].emit(result({ user_message_uuids: [mine] }));
+    await turn;
+    s.close();
+  } finally {
+    restore();
+  }
+});
+
+test("full access: a command Claude Code leaves unmatched comes to you only when one of your rules names it", async () => {
+  const rules = [
+    { behavior: "ask", source: "userSettings", rule: "Bash(npm test)" },
+    { behavior: "ask", source: "userSettings", rule: "Bash(make *)", notInEffect: true },
+    { behavior: "allow", source: "userSettings", rule: "Bash(cargo *)" },
+    { behavior: "deny", source: "userSettings", rule: "Bash(rm *)" },
+  ];
+  const { made, restore } = standIn(() => ({ listPermissionRules: async () => ({ state: { rules } }) }));
+  try {
+    const s = claude.open(opts({ access: "full" }));
+    const { r, sink } = recorder();
+    const { turn, mine } = await running(made, s, sink);
+    const ask = askOf(made[0]);
+    const compound = askOptions({ decisionReasonType: "subcommandResults" });
+    await ask("Bash", { command: "npm test && npm run build" }, compound);
+    await ask("Bash", { command: "FOO=1 npm test | cat" }, compound);
+    await ask("Bash", { command: 'bash -c "npm test"' }, askOptions({ decisionReasonType: "other" }));
+    assert.equal(r.approvals.length, 3, "each names your rule");
+    assert.ok(r.approvals.every((a) => a.risk === "high" && a.rule === undefined));
+    await ask("Bash", { command: "npm run lint && npm run build" }, compound);
+    await ask("Bash", { command: "cargo test && make all" }, compound);
+    await ask("Bash", { command: "curl example.com" }, askOptions({ decisionReasonType: "other" }));
+    assert.equal(r.approvals.length, 3, "an allow rule, or one that isn't in force, asks nothing");
+    made[0].emit(result({ user_message_uuids: [mine] }));
+    await turn;
+    s.close();
+  } finally {
+    restore();
+  }
+});
+
+test("when Claude Code can't list your rules, a compound command comes to you, and the rest of Full goes ahead", async () => {
+  const cases: Over[] = [{ listPermissionRules: async () => Promise.reject(new Error("Unsupported control request subtype")) }, { listPermissionRules: () => new Promise(() => {}) }, {}];
+  for (const over of cases) {
+    await quick(
+      async () => {
+        const { made, restore } = standIn(() => over);
+        try {
+          const s = claude.open(opts({ access: "full" }));
+          const { r, sink } = recorder();
+          const { turn, mine } = await running(made, s, sink);
+          const ask = askOf(made[0]);
+          await ask("Bash", { command: "npm test" }, askOptions({ decisionReasonType: "other" }));
+          assert.equal(r.approvals.length, 0);
+          await ask("Bash", { command: "npm test && npm run build" }, askOptions({ decisionReasonType: "subcommandResults" }));
+          assert.equal(r.approvals.length, 1);
+          made[0].emit(result({ user_message_uuids: [mine] }));
+          await turn;
+          s.close();
+        } finally {
+          restore();
+        }
+      },
+      { rules: 20 },
+    );
+  }
+});
+
+test("an ask rule that names a command: forms it can take, and what it doesn't reach", () => {
+  const caught = (rule: string, command: string) => askRuleNames([rule], "Bash", command);
+  assert.ok(caught("Bash", "anything at all"));
+  assert.ok(caught("Bash(npm test)", "npm run build && npm test"));
+  assert.ok(caught("Bash(npm test)", "npm  test --watch"), "extra spaces, and words after");
+  assert.ok(caught("Bash(npm test)", 'cd sub; "npm" test'), "quotes are gone by the time it runs");
+  assert.ok(caught("Bash(npm test)", "n\\pm test"), "and so are escapes");
+  assert.ok(caught("Bash(npm test)", "$(npm test) | cat"));
+  assert.ok(caught("Bash(npm test)", "/usr/local/bin/npm test"));
+  assert.ok(caught("Bash(git push:*)", "ls; git push origin main"));
+  assert.ok(caught("Bash(git push:*)", "ls; git push"));
+  assert.ok(caught("Bash(echo *)", "npm test && echo"));
+  assert.ok(caught("Bash(git * --force)", "ls && git push --force"));
+  assert.ok(caught("Bash(foo*)", "ls && foobar"));
+  assert.ok(caught("Bash(*)", "ls"));
+  assert.ok(!caught("Bash(npm test)", "npm run test"));
+  assert.ok(!caught("Bash(npm test)", "xnpm test"));
+  assert.ok(!caught("Bash(ls)", "lsof -i && pwd"));
+  assert.ok(!caught("Write", "npm test"), "another tool's rule");
+  assert.ok(!caught("Bash(1+1)", "11"), "a rule's words are read as they are");
+  assert.ok(!askRuleNames([], "Bash", "npm test"));
+});
+
+test("a project folder that's gone is said plainly, before Claude Code is started", async () => {
+  const { made, restore } = standIn();
+  const gone = join(tmpdir(), `lc-gone-${randomUUID()}`);
+  try {
+    const signal = new AbortController().signal;
+    await assert.rejects(claude.open(opts({ cwd: gone })).turn("hi", recorder().sink, signal), new RegExp(`folder isn't there any more: ${gone}`));
+    await assert.rejects(claude.open(opts({ cwd: gone, resume: "s1" })).turn("hi", recorder().sink, signal), /folder isn't there any more/);
+    assert.equal(made.length, 0, "nothing started, so the SDK has no libc to blame");
   } finally {
     restore();
   }
@@ -678,7 +802,7 @@ test("after a reopen, the images a transcript already holds count against what C
   writeFileSync(image, PNG);
   const { made, restore } = standIn();
   const saved = sdk.getSessionMessages;
-  const asked: unknown[] = [];
+  const asked: [string, unknown][] = [];
   sdk.getSessionMessages = (async (id: string, o: unknown) => {
     asked.push([id, o]);
     return [
@@ -690,13 +814,39 @@ test("after a reopen, the images a transcript already holds count against what C
     const s = claude.open(opts({ resume: "s1", cwd: dir }));
     const { sink } = recorder();
     const { turn, mine } = await running(made, s, sink, 0, undefined, [image]);
-    assert.deepEqual(asked, [["s1", { dir }]]);
+    assert.deepEqual(asked.map(([id, o]) => [id, (o as { dir: string }).dir]), [["s1", dir]]);
     assert.equal(made[0].sent[0].message.content, "go", "the budget is spent: the new one goes by its path");
     made[0].emit(result({ user_message_uuids: [mine] }));
     await turn;
     s.close();
   } finally {
     sdk.getSessionMessages = saved;
+    restore();
+  }
+});
+
+test("the transcript of an account with its own config folder is read from there, by the SDK's real reader", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "lc-audit-"));
+  const config = mkdtempSync(join(tmpdir(), "lc-audit-config-"));
+  const image = join(dir, "next.png");
+  writeFileSync(image, PNG);
+  const id = randomUUID();
+  const [u1, u2] = [randomUUID(), randomUUID()];
+  const line = (uuid: string, parentUuid: string | null, type: string, content: unknown) => JSON.stringify({ parentUuid, isSidechain: false, type, message: { role: type, content }, uuid, timestamp: "2026-11-06T00:00:00.000Z", sessionId: id });
+  const big = { type: "image", source: { type: "base64", media_type: "image/png", data: "x".repeat(28 * 1024 * 1024) } };
+  const project = join(config, "projects", realpathSync(dir).replace(/[^a-zA-Z0-9]/g, "-"));
+  mkdirSync(project, { recursive: true });
+  writeFileSync(join(project, `${id}.jsonl`), [line(u1, null, "user", [big, { type: "text", text: "look" }]), line(u2, u1, "assistant", [{ type: "text", text: "I see" }]), '{"half a li'].join("\n"));
+  const { made, restore } = standIn();
+  try {
+    const s = claude.open(opts({ resume: id, cwd: dir, env: { PATH: "", CLAUDE_CONFIG_DIR: config } }));
+    const { sink } = recorder();
+    const { turn, mine } = await running(made, s, sink, 0, undefined, [image]);
+    assert.equal(made[0].sent[0].message.content, "go", "the budget is spent: the new one goes by its path");
+    made[0].emit(result({ user_message_uuids: [mine] }));
+    await turn;
+    s.close();
+  } finally {
     restore();
   }
 });

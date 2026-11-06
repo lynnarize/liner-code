@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseStep } from "../src/review.ts";
-import { readsOnly, ruleFor } from "../src/risk.ts";
+import { commandRisk, isDestructive, plainGit, readsOnly, ruleFor } from "../src/risk.ts";
 
 test("reads: what only reads still does, piped, chained or quoted", () => {
   for (const c of ["ls -la", "git status && git diff", "rg foo src | head", "cat a.txt", "sed -n '1,20p' file", "sed -n '/<script>/,/<\\/script>/p' index.html", "sed -n 's/version: \\(.*\\)/\\1/p' a.yml", "rg -o 'foo.*' src", "tree -L 2 src", "git log --oneline -n 5", "find . -name '*.ts'", "bash -lc 'ls src'"]) assert.equal(readsOnly(c), true, c);
@@ -47,6 +47,58 @@ test("rules: a leading variable or a program by another path doesn't pass for th
   assert.equal(ruleFor("/tmp/evil/npm test"), "/tmp/evil/npm test");
   assert.equal(ruleFor("/usr/bin/git status"), "/usr/bin/git status");
   assert.equal(ruleFor("/bin/bash -c 'ls'"), undefined);
+});
+
+test("rules: a flag in front of the subcommand gives a rule for that command alone, and none in git's own case", () => {
+  for (const c of ["xcodebuild -scheme App build", "make -j8 test", "npm --prefix ui run build", "pnpm --filter ui build"]) assert.equal(ruleFor(c), c, c);
+  assert.equal(ruleFor("cd app && make  -j8   test"), "make -j8 test", "the rule doesn't change with the spacing");
+  // One command's rule can't allow another written the same way.
+  assert.notEqual(ruleFor("npm --prefix ui install evil"), ruleFor("npm --prefix ui run build"));
+  assert.notEqual(ruleFor("make -j8 deploy"), ruleFor("make -j8 test"));
+  for (const c of ["git -C x status", "git -C x push", "git --no-pager log", "git -c core.x=y status", "/usr/bin/git -C x status"]) assert.equal(ruleFor(c), undefined, c);
+  // Nor is what can't be undone allowed for good, flags or no.
+  for (const c of ["npm --prefix app publish", "pnpm --filter ui publish"]) assert.equal(ruleFor(c), undefined, c);
+  assert.equal(ruleFor("make test"), "make test");
+  assert.equal(ruleFor("make"), "make");
+});
+
+test("risk: what's in a quoted option counts, and a quoted value ends where the shell ends it", () => {
+  // An alias is the command itself, so it's read as written.
+  for (const c of [`git -c alias.x='!rm -rf ~' x`, `git -c "alias.x=!rm -rf ~" x`, `git -c alias.x='!git reset --hard' x`, `git -c ALIAS.x='!git push --force' x`]) {
+    assert.equal(commandRisk(c), "high", c);
+    assert.equal(isDestructive(c), true, "so Full access's guard asks");
+  }
+  assert.equal(commandRisk(`git -c alias.x='!git push' x`), "medium", "the lesser list reads it as written too");
+  assert.equal(plainGit(`git -c alias.x='!git push' x`), `git -c alias.x='!git push' x`, "and so does a routine's check for what leaves this Mac");
+  // A quoted space stays in the value, whichever quotes and wherever they start.
+  for (const c of [`git -c user.name='A B' reset --hard`, `git -c user.name="A B" clean -fd`, `git -c "user.name=A B" push --force`, `git -C "/a b" -c k='c d' branch -D main`, `git --git-dir="/a b/.git" reset --hard`]) assert.equal(commandRisk(c), "high", c);
+  assert.equal(plainGit(`git -c user.name='A B' commit -m x`), "git commit -m x");
+  assert.equal(commandRisk(`git -c user.name='A B' commit -m x`), "medium");
+  assert.equal(commandRisk(`git -c user.name='A B' status`), "low", "what only reads stays as it is");
+  // A folder called alias.* is only a folder.
+  assert.equal(commandRisk("git -C alias.dir reset --hard"), "high");
+});
+
+test("risk: any of git's --options in front doesn't hide the command, known to us or not", () => {
+  for (const c of ["git --no-advice reset --hard", "git --exec-path=/x reset --hard", "git --html-path --no-advice clean -fd", "git --no-lazy-fetch push --force", "git --attr-source HEAD reset --hard", "git --attr-source=HEAD reset --hard", "git --namespace x branch -D main", "git -P reset --hard", "git status && git --no-advice reset --hard"]) assert.equal(commandRisk(c), "high", c);
+  assert.equal(commandRisk("git --no-advice push"), "medium");
+  for (const c of ["git --no-advice status", "git --version", "git --no-pager log --oneline"]) assert.equal(commandRisk(c), "low", c);
+  assert.equal(plainGit("git --no-advice --exec-path=/x log"), "git log");
+  assert.equal(plainGit("git log --oneline reset --hard"), "git log --oneline reset --hard", "only what's in front of the command goes");
+});
+
+test("risk: flags in front of publish don't hide it, and a script named after it isn't it", () => {
+  for (const c of ["npm --prefix app publish", "pnpm --filter ui publish", "cargo --locked publish", "npm publish"]) assert.equal(commandRisk(c), "high", c);
+  for (const c of ["npm run publish", "npm --prefix ui run publish-docs"]) assert.equal(commandRisk(c), "low", c);
+});
+
+test("risk: cargo's +toolchain doesn't hide publish, and a rule from one command can't carry another", () => {
+  for (const c of ["cargo +nightly publish", "cargo +1.80.0 --locked publish", "cargo --locked +nightly publish"]) assert.equal(commandRisk(c), "high", c);
+  assert.equal(ruleFor("cargo +nightly publish"), undefined);
+  assert.equal(ruleFor("cargo +nightly test"), "cargo +nightly test", "that one again and nothing else");
+  assert.notEqual(ruleFor("cargo +nightly test"), ruleFor("cargo +nightly build"));
+  assert.equal(commandRisk("cargo +nightly test"), "low");
+  assert.equal(ruleFor("cargo test"), "cargo test");
 });
 
 test("reviewer decides: the call is the last line that starts with ALLOW or ASK", () => {

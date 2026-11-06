@@ -16,6 +16,7 @@ import { codex } from "../src/providers/codex.ts";
 import { askEndpoint } from "../src/providers/plain.ts";
 import { fromRegistry } from "../src/providers/added.ts";
 import { Proxies } from "../src/proxy.ts";
+import { takePlan } from "../src/runtime.ts";
 import { ResumeFailed, type ApprovalRequest, type OpenOptions, type ToolUpdate, type TurnSink, type WakeTurn } from "../src/providers/types.ts";
 import type { Endpoint, ProviderInfo } from "../../contracts/src/index.ts";
 
@@ -465,6 +466,65 @@ test("codex: Stop reaches the subagents' turns and the commands running, also th
   assert.deepEqual(sent.filter((m) => m.method === "thread/backgroundTerminals/terminate").map((m) => [m.params.threadId, m.params.processId]).sort(), [["kid-1", "42"], ["root", "41"], ["root", "43"]]);
 });
 
+/** Turn one leaves a command running, as a dev server does; turn two starts commands that went through a card, its own and a subagent's. */
+const CARDED = `
+const cmd = (threadId, turnId, id) => send({ method: "item/started", params: { threadId, turnId, item: { type: "commandExecution", id, command: "sleep", processId: null, status: "inProgress" } } });
+if (m.method === "turn/start" && seen("turn/start") === 1) {
+  send({ id: m.id, result: { turn: { id: "turn-0" } } });
+  cmd("root", "turn-0", "server");
+  send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-0", status: "completed" } } });
+  continue;
+}
+if (m.method === "turn/start") {
+  send({ id: m.id, result: { turn: { id: "turn-1" } } });
+  send({ method: "turn/started", params: { threadId: "kid-1", turn: { id: "kid-turn-1" } } });
+  cmd("root", "turn-1", "mine");
+  cmd("kid-1", "kid-turn-1", "kids");
+  continue;
+}
+if (m.method === "turn/interrupt") { send({ id: m.id, result: {} }); if (m.params.turnId === "turn-1") send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "interrupted" } } }); continue; }
+if (m.method === "thread/backgroundTerminals/list") {
+  const pages = { root: [{ data: [{ itemId: "server", processId: "7" }], nextCursor: "2" }, { data: [{ itemId: "mine", processId: "8" }], nextCursor: null }], "kid-1": [{ data: [{ itemId: "kids", processId: "9" }], nextCursor: null }] };
+  send({ id: m.id, result: pages[m.params.threadId][m.params.cursor ? 1 : 0] });
+  continue;
+}`;
+
+test("codex: Stop finds a command that went through a card on Codex's list, and leaves what an earlier turn left running", async () => {
+  const { fake, s } = cx(codexServer(CARDED));
+  await s.turn("start the server", recorder().sink, live());
+  const stop = new AbortController();
+  const turn = s.turn("work", recorder().sink, stop.signal);
+  await until(() => fake.read().filter((m) => m.method === "turn/start").length === 2, "the turn starts");
+  await tick(30);
+  stop.abort();
+  await turn;
+  await until(() => fake.read().filter((m) => m.method === "thread/backgroundTerminals/terminate").length === 2, "each command is stopped");
+  await tick(30);
+  s.close();
+  assert.deepEqual(fake.read().filter((m) => m.method === "thread/backgroundTerminals/terminate").map((m) => [m.params.threadId, m.params.processId]).sort(), [["kid-1", "9"], ["root", "8"]]);
+});
+
+test("codex: a command approved a moment before Stop is looked for again, and one never listed ends the search", async () => {
+  const { fake, s } = cx(codexServer(`
+if (m.method === "turn/start") {
+  send({ id: m.id, result: { turn: { id: "turn-1" } } });
+  for (const id of ["late", "never"]) send({ method: "item/started", params: { threadId: "root", turnId: "turn-1", item: { type: "commandExecution", id, command: "sleep", processId: null, status: "inProgress" } } });
+  continue;
+}
+if (m.method === "thread/backgroundTerminals/list") { send({ id: m.id, result: { data: seen("backgroundTerminals/list") > 2 ? [{ itemId: "late", processId: "5" }] : [], nextCursor: null } }); continue; }`));
+  const stop = new AbortController();
+  const turn = s.turn("work", recorder().sink, stop.signal);
+  await until(() => fake.read().some((m) => m.method === "turn/start"), "the turn starts");
+  await tick(30);
+  stop.abort();
+  await turn;
+  await until(() => fake.read().filter((m) => m.method === "thread/backgroundTerminals/terminate").length === 1, "the late one is stopped");
+  assert.deepEqual(fake.read().filter((m) => m.method === "thread/backgroundTerminals/terminate").map((m) => m.params.processId), ["5"]);
+  await tick(1400);
+  s.close();
+  assert.equal(fake.read().filter((m) => m.method === "thread/backgroundTerminals/list").length, 5, "twice for the one found, three times for the one never listed");
+});
+
 const SPAWN = (receiver: string) => `send({ method: "item/completed", params: { threadId: "root", turnId: "turn-1", item: { type: "collabAgentToolCall", id: "spawn-${receiver}", tool: "spawnAgent", senderThreadId: "root", receiverThreadIds: ["${receiver}"], prompt: "check the ${receiver} tests", status: "completed", agentsStates: {} } } });`;
 const KID_ENDS = (kid: string, status = "completed") => `
   send({ method: "item/completed", params: { threadId: "${kid}", turnId: "t-${kid}", item: { type: "agentMessage", id: "w-${kid}", text: "${kid} found 2 failures" } } });
@@ -594,6 +654,22 @@ test("codex: an edit outside the project, or one granting a folder outside it, i
   assert.equal(legacy.risk, "high");
 });
 
+test("codex: a planner's question can go unanswered, so a routine's turn never waits for good on one", async () => {
+  const ask = { method: "item/tool/requestUserInput", params: { questions: [{ id: "q", header: "Pick", question: "Which?", options: [{ label: "A", description: "a" }] }] } };
+  const { s } = cx(codexServer(`if (m.method === "turn/start") {
+    send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    send({ id: 900, ...${JSON.stringify(ask)} });
+    continue;
+  }
+  if (m.id === 900) { send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } }); continue; }`));
+  const { sink } = recorder();
+  let said: { optional?: boolean } | undefined;
+  sink.ask = async (_q, _s, o) => ((said = o), null);
+  await s.turn("hi", sink, live());
+  s.close();
+  assert.deepEqual(said, { optional: true });
+});
+
 test("codex: an edit it doesn't name yet is yours to read, with no rule", async () => {
   const card = await codexCard({ method: "item/fileChange/requestApproval", params: { itemId: "early" } });
   assert.equal(card.risk, "high");
@@ -632,6 +708,64 @@ test("codex: more access outside the project is high, so Auto and the Reviewer l
   assert.equal(glob.risk, "high");
   const inside = await codexCard({ method: "item/permissions/requestApproval", params: { itemId: "c1", permissions: { fileSystem: { write: [`${cwd}/out`] } } } }, { cwd });
   assert.equal(inside.risk, "medium");
+});
+
+test("codex: a path sent in the old lists and in entries shows once, and a path it denies doesn't read as access", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "lc-audit-cwd-"));
+  const path = (x: string) => ({ path: { type: "path", path: `${cwd}/${x}` } });
+  const card = await codexCard({ method: "item/permissions/requestApproval", params: { itemId: "c1", permissions: { fileSystem: { write: [`${cwd}/w`], read: [`${cwd}/r`], entries: [{ access: "write", ...path("w") }, { access: "read", ...path("r") }, { access: "deny", ...path(".env") }] } } } }, { cwd });
+  assert.deepEqual(card.fields, [{ label: "Write access to", value: `${cwd}/w` }, { label: "Read access to", value: `${cwd}/r` }, { label: "No access to", value: `${cwd}/.env` }]);
+  assert.equal(card.risk, "medium");
+  const odd = await codexCard({ method: "item/permissions/requestApproval", params: { itemId: "c1", permissions: { fileSystem: { write: [`${cwd}/w`], entries: [{ access: "execute", ...path("x") }] } } } }, { cwd });
+  assert.ok(odd.fields.some((f) => f.label === "Asked for" && f.value.includes("execute")), "what isn't known here still shows, as asked");
+  assert.equal(odd.risk, "high");
+});
+
+test("codex: a server called liner asks like any other unless Liner Code gave the session its own", async () => {
+  const ask = { method: "mcpServer/elicitation/request", params: { serverName: "liner", message: "Use it?", _meta: { codex_approval_kind: "mcp_tool_call" } } };
+  assert.equal((await codexCard(ask))?.title, "Use it?");
+  assert.equal(await codexCard(ask, { mcp: { command: "node", args: [], env: {} } }), undefined, "its own goes without a card");
+});
+
+test("codex: a planner's turn runs in plan mode, with Liner Code's words for it, on the model the thread opened with", async () => {
+  const { fake, s } = cx(codexServer(`if (m.method === "thread/start") { send({ id: m.id, result: { thread: { id: "root" }, model: "gpt-9" } }); continue; }`), { planning: true, effort: "high" });
+  await s.turn("plan it", recorder().sink, live());
+  s.close();
+  const { mode, settings } = fake.read().find((m) => m.method === "turn/start").params.collaborationMode;
+  assert.equal(mode, "plan");
+  assert.equal(settings.model, "gpt-9");
+  assert.equal(settings.reasoning_effort, "high");
+  assert.match(settings.developer_instructions, /request_user_input/);
+  assert.doesNotMatch(settings.developer_instructions, /proposed_plan/, "null would bring Codex's own words, which end every turn in a plan of its kind");
+  for (const extra of [{}, { access: "read" as const }]) {
+    const other = cx(codexServer(), { model: "gpt-9", ...extra });
+    await other.s.turn("build it", recorder().sink, live());
+    other.s.close();
+    assert.equal(other.fake.read().find((m) => m.method === "turn/start").params.collaborationMode, undefined, "only a planner's");
+  }
+  const named = cx(codexServer(), { planning: true, model: "gpt-8" });
+  await named.s.turn("plan it", recorder().sink, live());
+  named.s.close();
+  assert.equal(named.fake.read().find((m) => m.method === "turn/start").params.collaborationMode.settings.model, "gpt-8", "the model you chose");
+  const none = cx(codexServer(), { planning: true });
+  await none.s.turn("plan it", recorder().sink, live());
+  none.s.close();
+  assert.equal(none.fake.read().find((m) => m.method === "turn/start").params.collaborationMode, undefined, "with no model to name, it isn't sent: Codex would refuse the turn");
+});
+
+test("codex: a plan that came out of the message as Codex's own plan item is handed over the way a planner's is", async () => {
+  const { s } = cx(codexServer(`if (m.method === "turn/start") {
+    send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    send({ method: "item/started", params: { threadId: "root", turnId: "turn-1", item: { type: "plan", id: "p1", text: "" } } });
+    send({ method: "item/plan/delta", params: { threadId: "root", turnId: "turn-1", itemId: "p1", delta: "# Paint it" } });
+    send({ method: "item/completed", params: { threadId: "root", turnId: "turn-1", item: { type: "plan", id: "p1", text: "# Paint it\\n- Buy paint\\n" } } });
+    send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } });
+    continue;
+  }`), { planning: true, model: "gpt-9" });
+  const { r, sink } = recorder();
+  await s.turn("plan it", sink, live());
+  s.close();
+  assert.deepEqual(takePlan(r.text), { title: undefined, plan: "# Paint it\n- Buy paint", before: "", after: "" });
 });
 
 test("codex: a stopped turn's late request is refused, not put to you in the next turn", async () => {

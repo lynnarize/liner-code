@@ -7,7 +7,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync,
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { castOf, endpointKey, splitModel, VOUCHER } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderId, ProviderInfo, Mode, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Mode, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
 import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
@@ -54,7 +54,7 @@ export function settledCopy(it: Item, keepAsks = false): Item {
   return copy;
 }
 
-const git = (cwd: string, args: string[]) => run("git", args, { cwd, timeout: 120000 });
+const git = (cwd: string, args: string[]) => run("git", ["-c", "log.showSignature=false", ...args], { cwd, timeout: 120000 });
 
 /** Git and Python, for real: Apple's stubs in /usr/bin only work once the command line tools are in. */
 export async function systemCheck(env: NodeJS.ProcessEnv): Promise<SystemCheck> {
@@ -294,6 +294,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   // A new worktree has none of the checkout's installed packages; the project's setup command
   // runs there before the first turn, and says how it went on the timeline.
   const setups = new Map<string, Promise<void>>();
+  /** How many times each session was stopped, so a message waiting to start can tell. */
+  const stops = new Map<string, number>();
   /**
     Work in flight in a session: a turn, or its new worktree still being set up (up to 15 minutes),
     which a rewind, an undo, a commit or a branch switch mustn't pull files out from under (T3 Code:
@@ -437,6 +439,21 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       });
     }
     return { text: mentioned.length ? `${text}\n\nFiles I pointed at: ${[...new Set(mentioned)].join(", ")}` : text, files: saved.length ? saved : undefined };
+  };
+
+  /** A message that couldn't start isn't lost: it waits in the queue, and the timeline says why. */
+  const keepMessage = (id: string, text: string, files: { name: string; data: string }[] | undefined, anchor: QueuedMessage["anchor"], why: string) => {
+    const t = store.threads.find((x) => x.id === id);
+    if (!t) return;
+    let saved: string[] | undefined;
+    let lost = false;
+    try {
+      saved = withContext(t, "", files).files;
+    } catch {
+      lost = Boolean(files?.length);
+    }
+    runtime.keepQueued(id, text, saved, anchor);
+    store.putItem(id, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `${why} Your message is in the queue.${lost ? " Its files couldn't be kept, so add them again." : ""}` });
   };
 
   const addProject = async (abs: string, name?: string, agent?: string) => {
@@ -930,13 +947,22 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       }
       // The turn runs on; its progress comes back as events. A new worktree finishes setting up
       // first, and one that's gone is put back.
-      void (setups.get(id) ?? Promise.resolve())
-        .then(() => ensureWorktree(id))
-        .then(() => {
-          const c = withContext(t, text, files);
-          return runtime.send(id, c.text, mode, anchor, c.files);
-        })
-        .catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
+      const asked = stops.get(id) ?? 0;
+      const stopped = () => (stops.get(id) ?? 0) !== asked;
+      void (async () => {
+        let c: ReturnType<typeof withContext>;
+        try {
+          await setups.get(id);
+          if (!stopped()) await ensureWorktree(id);
+          if (stopped()) return keepMessage(id, text, files, anchor, "You stopped this before it started.");
+          c = withContext(t, text, files);
+        } catch (e) {
+          const why = String((e as Error)?.message ?? e);
+          store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: why });
+          return keepMessage(id, text, files, anchor, `That didn't start: ${why}.`);
+        }
+        await runtime.send(id, c.text, mode, anchor, c.files);
+      })().catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
       return null;
     },
     "thread.queue": ({ id, queue }) => runtime.setQueue(id, queue),
@@ -968,6 +994,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { turn: from, files: undone };
     },
     "thread.stop": ({ id }) => {
+      // A message still waiting for its worktree doesn't start after this.
+      stops.set(id, (stops.get(id) ?? 0) + 1);
       runtime.stop(id);
       return null;
     },

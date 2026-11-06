@@ -328,6 +328,20 @@ test("github: a remote's owner and name, whichever way it's written", () => {
   assert.equal(githubName("https://gitlab.com/halcyon/app.git"), undefined);
 });
 
+test("handoff: one huge message is cut, not the whole conversation lost", async () => {
+  const { handoff } = await import("../src/runtime.ts");
+  const items = [
+    { kind: "user", id: "u1", turn: 1, at: 0, text: "the first ask" },
+    { kind: "text", id: "t1", turn: 1, at: 0, text: "the first answer", streaming: false },
+    { kind: "user", id: "u2", turn: 2, at: 0, text: `here's the log ${"x".repeat(60000)}` },
+  ] as never[];
+  const out = handoff(items, "switch");
+  assert.ok(out.length < 26000, "it stays in the budget");
+  assert.match(out, /here's the log/);
+  assert.match(out, /cut here/);
+  assert.match(out, /the first ask/, "the earlier work still fits");
+});
+
 test("handoff: your requests survive a small budget; the newest answers come first", async () => {
   const { handoff } = await import("../src/runtime.ts");
   const items = [1, 2, 3].flatMap((turn) => [

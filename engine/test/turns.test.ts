@@ -390,3 +390,110 @@ test("watchdog: a read by another model in the turn's place counts as word from 
     restore();
   }
 });
+
+test("a question you answer twice goes once", async () => {
+  // The tool asked after its turn ended: the answer goes as your next message, once.
+  const { seen, restore } = fake(async () => {});
+  try {
+    const { store, runtime } = session({ status: "waiting" });
+    store.putItem("t", { kind: "question", id: "q", turn: 1, at: 1, questions: [{ question: "Which?", options: [] }], state: "asking" });
+    runtime.answerQuestion("t", "q", { "Which?": "This one" });
+    runtime.answerQuestion("t", "q", { "Which?": "This one" });
+    await until(() => seen.texts.length > 0, "the answer went");
+    await tick(50);
+    assert.equal(seen.texts.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("quitting keeps an open question: it's still there after the restart, and your answer carries on", async () => {
+  const { seen, restore } = fake(async (text, sink, signal) => {
+    if (text === "ask me") await sink.ask([{ question: "Which?", options: [] }], signal).catch(() => null);
+  });
+  try {
+    const { store, runtime } = session();
+    void runtime.send("t", "ask me").catch(() => {});
+    await until(() => store.timeline("t").some((x) => x.kind === "question"), "it asked");
+    runtime.shutdown();
+    store.flush();
+    const again = new Store(store.home);
+    const card = again.timeline("t").find((x) => x.kind === "question");
+    assert.equal(card?.kind === "question" ? card.state : "", "asking");
+    assert.equal(again.thread("t").status, "waiting");
+    const next = new Runtime(again, process.env);
+    next.providerInfo = ready;
+    next.answerQuestion("t", card!.id, { "Which?": "This one" });
+    await until(() => seen.texts.some((x) => /This one/.test(x)), "the answer went on");
+
+    // Stop is different: the question ends with the turn.
+    const s = session();
+    void s.runtime.send("t", "ask me").catch(() => {});
+    await until(() => s.store.timeline("t").some((x) => x.kind === "question"), "it asked");
+    s.runtime.stop("t");
+    await until(() => s.store.timeline("t").some((x) => x.kind === "question" && x.state === "expired"), "it expired");
+  } finally {
+    restore();
+  }
+});
+
+test("a save that fails as a turn ends doesn't leave the session running for good", async () => {
+  let calls = 0;
+  const { restore } = fake(async (_text, sink) => {
+    if (++calls === 1) sink.tool({ key: "c", tool: "Bash", toolKind: "exec", title: "Run it", status: "running" });
+  });
+  try {
+    const { store, runtime } = session();
+    const put = store.putItem.bind(store);
+    store.putItem = ((id: string, item: Parameters<typeof put>[1], log?: boolean) => {
+      if (item.kind === "tool" && item.status !== "running") throw new Error("ENOSPC: no space left on device");
+      return put(id, item, log);
+    }) as typeof store.putItem;
+    await runtime.send("t", "first").catch(() => {});
+    assert.equal(runtime.isRunning("t"), false, "the turn let go");
+    assert.equal(store.thread("t").status, "error");
+    store.putItem = put;
+    await runtime.send("t", "second");
+    assert.equal(calls, 2, "the next message runs, it doesn't queue for ever");
+  } finally {
+    restore();
+  }
+});
+
+test("a message about a line keeps its line in the queue and as a steer", async () => {
+  const anchor = { file: "src/a.ts", line: 12, endLine: 14 };
+  let release = () => {};
+  const steered: string[] = [];
+  const { seen, restore } = fake(async (text) => {
+    if (text === "first") await new Promise<void>((r) => (release = r));
+  });
+  const claude = providers.claude;
+  const open = claude.open;
+  claude.open = (o) => Object.assign(open(o), { steer: async (t: string) => (steered.push(t), steered.length === 1) });
+  try {
+    const { store, runtime } = session();
+    void runtime.send("t", "first").catch(() => {});
+    await until(() => seen.texts.length === 1, "it's working");
+    await runtime.send("t", "steer this", "steer", anchor);
+    assert.match(steered[0], /^About src\/a\.ts:12-14 in your last change:\n\nsteer this/);
+    assert.deepEqual(store.timeline("t").find((x) => x.kind === "user" && x.steer), { ...store.timeline("t").find((x) => x.kind === "user" && x.steer), anchor });
+    await runtime.send("t", "queue this", "queue", anchor);
+    assert.deepEqual(store.thread("t").queue?.[0].anchor, anchor);
+    release();
+    await until(() => seen.texts.length === 2, "the queue went");
+    assert.match(seen.texts[1], /^About src\/a\.ts:12-14 in your last change:\n\nqueue this/);
+
+    // Joined with others, it keeps its line in words.
+    const s = session();
+    void s.runtime.send("t", "first").catch(() => {});
+    await until(() => seen.texts.length === 3, "it's working");
+    await s.runtime.send("t", "plain");
+    await s.runtime.send("t", "about it", "queue", anchor);
+    release();
+    await until(() => seen.texts.length === 4, "the queue went");
+    assert.match(seen.texts[3], /plain\n\nAbout src\/a\.ts:12-14 in your last change:\n\nabout it/);
+  } finally {
+    restore();
+  }
+});
+

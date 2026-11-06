@@ -9,7 +9,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import type { ProviderId, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
+import type { ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { jsonLines, killTree, spawn, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
@@ -50,7 +50,54 @@ function realPath(path: string) {
   }
 }
 
+/** One field of an agent's form, in the shapes ACP has for a choice: oneOf or enum, items of anyOf or enum for several. */
+type FormChoice = { const: string; title?: string; description?: string };
+type FormField = { type?: string; title?: string; description?: string; enum?: string[]; oneOf?: FormChoice[]; items?: { enum?: string[]; anyOf?: FormChoice[] } };
+type FormSchema = { properties?: Record<string, FormField>; required?: string[] };
+
+/**
+  A form an agent wants filled in, as the question card asks it, with what turns each answer back
+  into the field's value. OpenCode's question tool comes this way, each question with a "<key>_custom"
+  field for an answer of your own, which the card's Something else fills. (T3 Code: provider-acp
+  adapter.ts, handleElicitation.)
+*/
+function formFields(message: string, schema: FormSchema | undefined) {
+  const props = schema?.properties ?? {};
+  return Object.entries(props)
+    .filter(([key]) => !(key.endsWith("_custom") && props[key.slice(0, -"_custom".length)]))
+    .map(([key, f]) => {
+      const listed = f.oneOf ?? f.items?.anyOf ?? (f.enum ?? f.items?.enum)?.map((v): FormChoice => ({ const: v }));
+      const choices: { label: string; value: string | boolean; description?: string }[] =
+        f.type === "boolean" ? [{ label: "Yes", value: true }, { label: "No", value: false }] : (listed ?? []).map((c) => ({ label: c.title ?? c.const, value: c.const, description: c.description }));
+      const question: Question = {
+        question: f.description || f.title || message,
+        header: f.title,
+        multiSelect: f.type === "array" || undefined,
+        options: choices.map(({ label, description }, i) => ({ label, description, suggested: i === 0 && /recommend/i.test(label + (description ?? "")) })),
+      };
+      return { key, type: f.type, custom: props[`${key}_custom`] ? `${key}_custom` : undefined, choices, question };
+    });
+}
+
+/** The card's answers, by question, as the form's content. */
+function formContent(fields: ReturnType<typeof formFields>, answers: Record<string, string>) {
+  const content: Record<string, unknown> = {};
+  for (const f of fields) {
+    const said = answers[f.question.question];
+    if (!said) continue;
+    const choice = f.choices.find((c) => c.label === said);
+    if (!choice && f.custom) content[f.custom] = said;
+    else {
+      const value = choice ? choice.value : f.type === "number" || f.type === "integer" ? Number(said) : said;
+      content[f.key] = f.type === "array" ? [value] : value;
+    }
+  }
+  return content;
+}
+
 class AcpSession implements ProviderSession {
+  /** Files you allowed this turn, which a write of them needn't ask about again. */
+  private granted = new Set<string>();
   private child: ChildProcessWithoutNullStreams | null = null;
   private seq = 1;
   /** Each request with the process it went to: one that ends fails only its own, never the next one's. */
@@ -122,7 +169,9 @@ class AcpSession implements ProviderSession {
     this.booting = (async () => {
       const init = await this.request("initialize", {
         protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false },
+        // Forms: an agent only asks what a client says it can show. OpenCode's question tool is dropped without it
+        // (T3 Code: provider-acp adapter.ts).
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false, elicitation: { form: {} } },
         clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION },
       });
       const caps = init.agentCapabilities as Json | undefined;
@@ -228,6 +277,15 @@ class AcpSession implements ProviderSession {
     if (method === "fs/write_text_file") {
       if (this.o.access === "read") throw new Error("This thread is read only.");
       const abs = inside(p.path);
+      // Ask first holds here too, for an agent that writes without asking; one that asked for this file has its answer.
+      if (this.o.access === "ask" && !this.granted.has(abs)) {
+        const sink = this.sink;
+        const signal = this.signal;
+        if (!sink || !signal) throw new Error("Nothing can allow this write now.");
+        const fields = [{ label: "File", value: this.rel(abs) }, { label: "Where", value: this.o.cwd }];
+        const a = await sink.approve({ tool: "edit", title: `Write ${this.rel(abs)}`, risk: "low", fields, rule: "Edit" }, signal).catch(() => ({ allow: false }));
+        if (!a.allow) throw new Error("You didn't allow this write.");
+      }
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, String(p.content ?? ""));
       return {};
@@ -253,14 +311,34 @@ class AcpSession implements ProviderSession {
       const fields = [command && { label: "Command", value: command }, file && { label: "File", value: this.rel(file.path) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
       // An edit outside the project, or of files it doesn't name, is yours each time: high, so Auto and the Reviewer leave it to you, and no rule.
       const loose = kind === "edit" && !scoped;
-      const rule = loose ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : call.kind;
+      // Not "other" either: it's a catch-all, so a rule for it would allow every tool nobody named (T3 Code never turns an unknown request into a grant).
+      const rule = loose || kind === "other" ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : call.kind;
       const description = loose ? (stray ? "This file is outside the project." : "The agent didn't say which files this changes.") : undefined;
       const a = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: call.title ?? "Use a tool", description, risk: loose ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule }, signal).catch(() => ({ allow: false }));
       // Stopped while it asked: a request open when the prompt is cancelled is answered "cancelled", as ACP
       // asks, not as a no (T3 Code: provider-acp adapter.ts).
       if (signal.aborted) return { outcome: { outcome: "cancelled" } };
+      if (a.allow) for (const f of files) this.granted.add(resolve(this.o.cwd, f.path));
       const id = pick(a.allow);
       return id ? { outcome: { outcome: "selected", optionId: id } } : { outcome: { outcome: "cancelled" } };
+    }
+    if (method === "elicitation/create") {
+      const sink = this.sink;
+      const signal = this.signal;
+      if (!sink || !signal || p.mode !== "form") return { action: "cancel" };
+      const schema = p.requestedSchema as FormSchema | undefined;
+      const fields = formFields(String(p.message ?? ""), schema);
+      // Nothing to fill in is a yes or a no, as a tool's approval comes from some agents (T3 Code: clientPolicy.ts).
+      if (!fields.length) {
+        if (this.o.access === "full") return { action: "accept", content: {} };
+        const a = await sink.approve({ key: p.toolCallId ? String(p.toolCallId) : undefined, tool: "tool", title: String(p.message || "Use a tool"), risk: "medium", fields: [] }, signal).catch(() => ({ allow: false }));
+        return signal.aborted ? { action: "cancel" } : a.allow ? { action: "accept", content: {} } : { action: "decline" };
+      }
+      const answers = await sink.ask(fields.map((f) => f.question), signal).catch(() => null);
+      if (signal.aborted) return { action: "cancel" };
+      // Skipped: cancelling would end OpenCode's turn, and skipping lets it carry on. Left unanswered, it does.
+      if (!answers) return schema?.required?.length ? { action: "decline" } : { action: "accept", content: {} };
+      return { action: "accept", content: formContent(fields, answers) };
     }
     throw new Error(`Liner Code doesn't handle ${method} yet.`);
   }
@@ -291,7 +369,8 @@ class AcpSession implements ProviderSession {
       const ours = /^(?:mcp__)?liner(?:__|[_.:])([a-z_]+)$/.exec(call.title ?? "")?.[1];
       sink.tool({
         key: call.toolCallId,
-        tool: ours ? `liner.${ours}` : (call.kind ?? "tool"),
+        // OpenCode's question tool is the question card, as AskUserQuestion is: not a row of its own as well.
+        tool: ours ? `liner.${ours}` : call.title === "question" ? "AskUserQuestion" : (call.kind ?? "tool"),
         toolKind: KIND[call.kind ?? ""] ?? "other",
         title: ours ? linerTitle(ours, call.rawInput) : (call.title ?? "Use a tool"),
         path: path ? this.rel(path) : undefined,
@@ -331,6 +410,7 @@ class AcpSession implements ProviderSession {
     }
     this.sink = sink;
     this.signal = signal;
+    this.granted.clear();
     // An agent that hasn't finished cancelling 15 seconds after Stop is stopped itself, and the turn
     // ends as stopped; the next turn starts it again on the same session (T3 Code: AcpSessionRuntime.ts, defaultCancelTimeout).
     let late: NodeJS.Timeout | undefined;

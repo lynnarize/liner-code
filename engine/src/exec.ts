@@ -284,6 +284,9 @@ export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS
   });
 }
 
+/** How long a process group gets to end by itself. */
+const KILL_AFTER_MS = 2000;
+
 /** Stops a process started in a group of its own, and everything in that group; the process alone if that fails. */
 export function killTree(child: { pid?: number; kill: (s?: NodeJS.Signals) => boolean }) {
   // Windows has no process groups: taskkill ends the process and everything it started (T3 Code:
@@ -295,7 +298,19 @@ export function killTree(child: { pid?: number; kill: (s?: NodeJS.Signals) => bo
     return void tk.unref();
   }
   try {
-    if (child.pid) return void process.kill(-child.pid, "SIGTERM");
+    if (child.pid) {
+      const group = child.pid;
+      process.kill(-group, "SIGTERM");
+      // One that ignores it would go on working beside whatever starts next (T3 Code force-kills after a deadline too).
+      setTimeout(() => {
+        try {
+          process.kill(-group, "SIGKILL");
+        } catch {
+          // it went when it was asked
+        }
+      }, KILL_AFTER_MS).unref();
+      return;
+    }
   } catch {
     // the group is gone already, or it isn't one
   }

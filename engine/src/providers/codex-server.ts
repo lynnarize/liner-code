@@ -573,8 +573,15 @@ export class CodexServerSession implements ProviderSession {
     }
     if (method === "item/permissions/requestApproval") {
       // More access for the rest of the turn: granted as asked, or nothing (T3 Code: CodexAdapterV2.ts, permissionsResponseFromDecision).
-      const want = (p.permissions ?? {}) as { network?: { enabled?: boolean | null } | null; fileSystem?: { read?: string[] | null; write?: string[] | null } | null };
-      const fields = [...(want.network?.enabled ? [{ label: "Network", value: "Access the network" }] : []), ...(want.fileSystem?.write ?? []).map((x) => ({ label: "Write access to", value: x })), ...(want.fileSystem?.read ?? []).map((x) => ({ label: "Read access to", value: x }))];
+      const want = (p.permissions ?? {}) as { network?: { enabled?: boolean | null } | null; fileSystem?: { read?: string[] | null; write?: string[] | null; entries?: { access?: string; path?: { path?: string; pattern?: string } }[] | null } | null };
+      // Codex is moving from the read and write lists to `entries`, which also carry globs and special paths (T3 Code: CodexAdapterV2.ts).
+      const named = (e: { path?: { path?: string; pattern?: string } }) => e.path?.path ?? e.path?.pattern ?? JSON.stringify(e.path);
+      const entries = want.fileSystem?.entries ?? [];
+      const write = [...(want.fileSystem?.write ?? []), ...entries.filter((e) => e.access === "write").map(named)];
+      const read = [...(want.fileSystem?.read ?? []), ...entries.filter((e) => e.access !== "write").map(named)];
+      const listed = [...(want.network?.enabled ? [{ label: "Network", value: "Access the network" }] : []), ...write.map((x) => ({ label: "Write access to", value: x })), ...read.map((x) => ({ label: "Read access to", value: x }))];
+      // Allow grants what was asked, so nothing asked for goes unseen, even in a shape not known here.
+      const fields = listed.length ? listed : [{ label: "Asked for", value: JSON.stringify(p.permissions ?? {}) }];
       const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "permissions", title: "Grant Codex more access", description: (p.reason as string | undefined) ?? undefined, risk: "medium", fields }, signal);
       return a.allow ? { permissions: p.permissions ?? {}, scope: "turn" } : { permissions: {}, scope: "turn" };
     }

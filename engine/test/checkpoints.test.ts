@@ -342,3 +342,24 @@ test("a folder its repository ignores isn't a Git project", async () => {
   assert.equal(await isRepo(top), true);
   assert.equal(await isRepo(tmpdir()), false);
 });
+
+test("changes: a signed commit with log.showSignature on doesn't lose a file from the turn", async (t) => {
+  const key = join(mkdtempSync(join(tmpdir(), "liner-key-")), "k");
+  if ((await run("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key])).code !== 0) return t.skip("no ssh-keygen");
+  const dir = await repo();
+  await git(dir, "checkout", "-q", "-b", "upstream");
+  writeFileSync(join(dir, "theirs.txt"), "from upstream\n");
+  await git(dir, "add", "-A");
+  await run("git", ["-c", "commit.gpgsign=false", "commit", "-q", "-m", "upstream"], { cwd: dir, env: { ...process.env, ...who, GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" } });
+  await git(dir, "checkout", "-q", "main");
+  await git(dir, "config", "log.showSignature", "true");
+  const before = await capture(dir, "signed/1-before");
+  await git(dir, "merge", "-q", "--ff-only", "upstream");
+  writeFileSync(join(dir, "signed.txt"), "the turn committed this\n");
+  await git(dir, "add", "signed.txt");
+  await git(dir, "-c", "gpg.format=ssh", "-c", `user.signingkey=${key}`, "commit", "-q", "-S", "-m", "signed");
+  const after = await capture(dir, "signed/1-after");
+  assert.ok(before && after);
+  assert.deepEqual((await changes(dir, before, after, { turn: true })).map((f) => f.path), ["signed.txt"]);
+});
+

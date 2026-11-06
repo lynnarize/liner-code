@@ -13,7 +13,7 @@
   quick model writes, a judge passes it or hands it to the strong model to repair), or a critique
   (the strong model writes, critics read it side by side, it revises once).
 */
-import type { Access, Effort, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, Risk, Settings, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
+import type { Access, Effort, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, Settings, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { castOf, checkerOf, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, plainWay, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
@@ -79,6 +79,9 @@ export const QUIET_STEP_MS = 12 * 60_000;
   part: a turn that carries on yours (building the plan, refining, repairing…), shown as part of it. why: who it went to and why, said when you ask.
   approved: a planner's turn whose plan goes straight on to be built, nobody's OK needed.
 */
+/** What the agent is told of a message about lines in its change. */
+const aboutLines = (a: NonNullable<QueuedMessage["anchor"]>, text: string) => `About ${a.file}:${a.line}${a.endLine && a.endLine !== a.line ? `-${a.endLine}` : ""} in your last change:\n\n${text}`;
+
 type TurnOptions = { show?: boolean; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string; note?: string; files?: string[]; wake?: { session: ProviderSession; w: WakeTurn }; part?: TurnPart; why?: string; approved?: boolean };
 /** What's sent on your behalf to carry a turn on (after a restart, or when a usage window reopens). */
 const CONTINUE = "Continue where you left off.";
@@ -121,6 +124,7 @@ export class Runtime {
   private kept = new Set<string>();
   /** Threads a routine is working in right now, with nobody watching. */
   private unattended = new Set<string>();
+  private quitting = false;
   /** When each tool that ran out of usage has it again: a limit is the account's, whichever session met it. */
   private limitedUntil = new Map<string, number>();
   /** Keys you added, by provider; handed to the tools that use them, never written to disk. */
@@ -226,7 +230,21 @@ export class Runtime {
     this.store.patchThread(threadId, { queue: [] });
     for (const q of queued) this.drained.add(q.id);
     const files = queued.flatMap((q) => q.files ?? []);
-    void this.send(threadId, queued.map((q) => q.text).join("\n\n"), "queue", undefined, files.length ? files : undefined).catch(() => {});
+    // On its own it goes as it would have; joined with others, a message about lines says so in words.
+    const only = queued.length === 1 ? queued[0] : undefined;
+    const text = only ? only.text : queued.map((q) => (q.anchor ? aboutLines(q.anchor, q.text) : q.text)).join("\n\n");
+    void this.send(threadId, text, "queue", only?.anchor, files.length ? files : undefined).catch(() => {});
+  }
+
+  private enqueue(threadId: string, text: string, files?: string[], anchor?: TurnOptions["anchor"]) {
+    const t = this.store.thread(threadId);
+    this.store.patchThread(threadId, { queue: [...(t.queue ?? []), { id: uid("q"), text, at: Date.now(), ...(files?.length ? { files } : {}), ...(anchor ? { anchor } : {}) }] });
+  }
+
+  /** A message that didn't start waits in the queue, where you can edit, send or drop it, like one Stop kept. */
+  keepQueued(threadId: string, text: string, files?: string[], anchor?: TurnOptions["anchor"]) {
+    this.enqueue(threadId, text, files, anchor);
+    this.kept.add(threadId);
   }
 
   /**
@@ -234,7 +252,7 @@ export class Runtime {
     from before the queue went: what already went stays gone, and what's left goes now if nothing runs
     (T3 Code: useQueuedRunEdit.ts edits one queued message by its id instead of the whole list).
   */
-  setQueue(threadId: string, queue: { id: string; text: string; at: number; files?: string[] }[]) {
+  setQueue(threadId: string, queue: QueuedMessage[]) {
     const t = this.store.patchThread(threadId, { queue: queue.filter((q) => !this.drained.has(q.id)) });
     // One Stop kept for you waits on, edited: taking a message out of it doesn't send the rest.
     if (t.queue?.length && !this.isRunning(threadId) && !this.kept.has(threadId)) this.drain(threadId);
@@ -458,12 +476,11 @@ export class Runtime {
     if (running || this.busy.has(threadId)) {
       // A steer the tool couldn't take (its request failed, or the turn ended first) isn't lost: it goes
       // next, from the queue (T3 Code: SteeringCompletion.integration.test.ts).
-      if (mode === "steer" && running?.session?.steer && (await running.session.steer([text, attachNote(files ?? [])].filter(Boolean).join("\n\n"), files))) {
-        store.putItem(threadId, { kind: "user", id: uid("it"), turn: running.turn, at: Date.now(), text, steer: true, ...(files?.length ? { files } : {}) });
+      if (mode === "steer" && running?.session?.steer && (await running.session.steer([anchor ? aboutLines(anchor, text) : text, attachNote(files ?? [])].filter(Boolean).join("\n\n"), files))) {
+        store.putItem(threadId, { kind: "user", id: uid("it"), turn: running.turn, at: Date.now(), text, steer: true, ...(anchor ? { anchor } : {}), ...(files?.length ? { files } : {}) });
         return;
       }
-      const t = store.thread(threadId);
-      store.patchThread(threadId, { queue: [...(t.queue ?? []), { id: uid("q"), text, at: Date.now(), ...(files?.length ? { files } : {}) }] });
+      this.enqueue(threadId, text, files, anchor);
       // The turn ended while the steer was tried: nothing in flight will send the queue now.
       if (!this.isRunning(threadId)) this.drain(threadId);
       return;
@@ -760,7 +777,7 @@ export class Runtime {
     if (o.note) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: o.note });
     store.putItem(threadId, marker);
 
-    let prompt = o.prompt ? o.prompt : o.anchor ? `About ${o.anchor.file}:${o.anchor.line}${o.anchor.endLine && o.anchor.endLine !== o.anchor.line ? `-${o.anchor.endLine}` : ""} in your last change:\n\n${text}` : text;
+    let prompt = o.prompt ? o.prompt : o.anchor ? aboutLines(o.anchor, text) : text;
     // Your attachments are named only in what the agent is sent; the timeline shows them as files.
     if (o.files?.length) prompt = `${prompt}\n\n${attachNote(o.files)}`;
 
@@ -827,7 +844,14 @@ export class Runtime {
         this.live.delete(key);
       }
     } finally {
-      sink.end();
+      // A save that fails here (a full disk) can't leave the turn running for good, with every message after it queued.
+      try {
+        sink.end();
+      } catch (e) {
+        failed = true;
+        store.patchThread(threadId, { status: "error" });
+        store.emit({ type: "notify", threadId, kind: "error", title: "This turn couldn't be saved", body: e instanceof Error ? e.message : String(e) });
+      }
       // An install card its agent stopped waiting on (the turn ended) expires like the tool's own requests.
       for (const id of live.liner ?? []) this.approvals.get(id)?.reject(new Error("The turn ended."));
       this.turns.delete(threadId);
@@ -1268,6 +1292,8 @@ export class Runtime {
   answerQuestion(threadId: string, itemId: string, answers?: Record<string, string>) {
     const item = this.store.item(threadId, itemId);
     if (item.kind !== "question") throw new Error("That isn't a question.");
+    // A double click, or a second window: it's been answered.
+    if (item.state === "answered" || item.state === "skipped") return;
     const waiter = this.questions.get(itemId);
     this.questions.delete(itemId);
     this.store.putItem(threadId, { ...item, state: answers ? "answered" : "skipped", answers });
@@ -1512,6 +1538,7 @@ export class Runtime {
   }
 
   shutdown() {
+    this.quitting = true;
     clearInterval(this.watchdog);
     for (const id of this.turns.keys()) this.stop(id);
     // A pull request's test suite runs outside any turn, in a process group of its own.
@@ -1575,7 +1602,9 @@ export class Runtime {
           if (!map.has(id)) return;
           map.delete(id);
           const it = store.timeline(threadId).find((x) => x.id === id);
-          if (it && "state" in it && it.state === "asking") store.putItem(threadId, { ...it, state: "expired" } as Item);
+          // Quitting isn't Stop: a question outlives its turn, and your answer goes as your next message (answerQuestion).
+          const keep = this.quitting && it?.kind === "question";
+          if (it && "state" in it && it.state === "asking" && !keep) store.putItem(threadId, { ...it, state: "expired" } as Item);
           reject(new Error("stopped"));
         };
         // A signal that's already aborted never fires again: settle it now.
@@ -1897,8 +1926,11 @@ export function handoff(items: Item[], why: "switch" | "fork" | "restart" | "cat
   let used = 0;
   let dropped = 0;
   for (let i = blocks.length - 1; i >= 0; i--) {
-    let b = blocks[i];
+    const whole = blocks[i];
+    let b = whole;
     if (used + b.length > budget) b = b.split("\n").filter((l) => l.startsWith("You were asked:")).join("\n");
+    // The newest turn always goes, cut to half the budget if it must be, so one huge paste leaves room for the work before it.
+    if (!kept.length && (!b || b.length > budget)) b = `${(b || whole).slice(0, budget >> 1)}\n(cut here: it was too long to carry over)`;
     if (!b || used + b.length > budget) {
       dropped = i + 1;
       break;

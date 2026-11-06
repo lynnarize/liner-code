@@ -195,6 +195,31 @@ test("a new worktree being set up counts as work: going back waits, and deleting
   assert.ok(!existsSync(root), "removed once its setup was done, not from under it");
 });
 
+test("Stop while a worktree is set up holds the message back: it doesn't start, and it waits in the queue", async () => {
+  const { store, call } = await setup();
+  store.putProject({ ...store.project("p"), setup: "sleep 1" });
+  const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true });
+  await call("thread.send", { id: t.id, text: "build it" });
+  await call("thread.stop", { id: t.id });
+  await new Promise((r) => setTimeout(r, 1300));
+  assert.ok(!store.timeline(t.id).some((x) => x.kind === "user"), "it didn't start");
+  assert.deepEqual(store.thread(t.id).queue?.map((q) => q.text), ["build it"]);
+  assert.ok(store.timeline(t.id).some((x) => x.kind === "notice" && /in the queue/.test(x.text)));
+});
+
+test("a message that can't start isn't lost: it waits in the queue, and the timeline says why", async () => {
+  const { home, store, call, events } = await setup();
+  const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo" });
+  writeFileSync(join(home, "attachments"), "a file where the folder should be");
+  await call("thread.send", { id: t.id, text: "build it", files: [{ name: "a.png", data: "AA==" }], anchor: { file: "a.txt", line: 1 } });
+  await new Promise((r) => setTimeout(r, 50));
+  const q = store.thread(t.id).queue;
+  assert.deepEqual(q?.map((x) => [x.text, x.anchor?.file]), [["build it", "a.txt"]]);
+  const said = store.timeline(t.id).find((x) => x.kind === "notice");
+  assert.match(said?.kind === "notice" ? said.text : "", /didn't start[\s\S]*in the queue[\s\S]*files/);
+  assert.ok(events.some((e) => e.type === "notify" && e.kind === "error"));
+});
+
 test("removing a project takes its sessions' logs, snapshots, designs and worktrees with it, and leaves its folder", async () => {
   const { dir, home, store, call } = await setup();
   const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true });

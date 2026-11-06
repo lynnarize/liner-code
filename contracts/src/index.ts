@@ -612,7 +612,7 @@ export type Thread = {
 };
 
 /** files: what you attached, saved on disk, which go with the message when it's sent. */
-export type QueuedMessage = { id: string; text: string; at: number; files?: string[] };
+export type QueuedMessage = { id: string; text: string; at: number; files?: string[]; anchor?: { file: string; line: number; endLine?: number } };
 export type Question = { question: string; header?: string; options: { label: string; description?: string; suggested?: boolean }[]; multiSelect?: boolean };
 
 export type ToolKind = "read" | "edit" | "write" | "exec" | "search" | "fetch" | "think" | "task" | "web" | "other";

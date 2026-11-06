@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { PrPicture } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
 
-const git = (cwd: string, args: string[]) => run("git", args, { cwd, timeout: 60000 });
+const git = (cwd: string, args: string[]) => run("git", ["-c", "log.showSignature=false", ...args], { cwd, timeout: 60000 });
 const SEP = "\x1f";
 
 /** The lines where your branch and the base both changed the same place, one pair each. */

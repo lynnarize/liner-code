@@ -11,7 +11,8 @@ import type { FileChange, FileDiff } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
 
 let n = 0;
-const git = (cwd: string, args: string[], env?: NodeJS.ProcessEnv, input?: string) => run("git", args, { cwd, env: { ...process.env, ...env }, input, timeout: 120000 });
+// log.showSignature would print a signed commit's check among what's read back as paths and hashes.
+const git = (cwd: string, args: string[], env?: NodeJS.ProcessEnv, input?: string) => run("git", ["-c", "log.showSignature=false", ...args], { cwd, env: { ...process.env, ...env }, input, timeout: 120000 });
 
 /**
   Paths handed to git as names, never as patterns: a file called `*.txt` or `:x` is that file and

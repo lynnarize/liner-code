@@ -15,9 +15,30 @@
   They now only read there, and say so.
 - With Carry on set, two tools out of usage handed a session back and forth without end. It now makes
   one hop and stops on the limit card.
+- A message that couldn't start was lost, with only a toast to say so. It now waits in the queue,
+  and the timeline says why.
+- Handing a session to another tool dropped the whole conversation when your newest message was very
+  long. That message is now cut, and the work before it goes over.
+- A comment on a diff line lost its file and line when it waited in the queue or went as a steer.
+- Answering a question twice sent the answer twice.
+- Quitting with a question open expired it. It now stays, and your answer carries on after the restart.
+- A save that failed as a turn ended, on a full disk, left the session running until the next start.
+- Stop did nothing while a new worktree was set up, and the message started anyway. It now waits in
+  the queue.
+- An ACP agent that ignored being stopped went on working. It's now ended after two seconds.
+- "Don't ask again" on an ACP tool of no known kind allowed every other such tool. It can't be
+  chosen for those now.
+- In Ask first, an ACP agent that wrote files through Liner Code without asking wasn't stopped. That
+  write now asks, unless you just allowed that file.
+- A Codex request for more access could show an empty card, and Allow granted it unseen. The card now
+  lists the paths, including globs.
+- With `log.showSignature` on, a signed commit dropped a file from its turn's diff and undo.
 - In the composer, the text you typed slowly slid away from what the field really held: the caret sat
   in empty space past the last letter, the blanks could be selected, and spellcheck's underlines
   landed on the wrong words. The two now line up to the pixel.
+- OpenCode's questions never reached you: its question tool failed with "couldn't be shown to the
+  user" and the agent went on guessing. They now come as the question card, and any other ACP agent's
+  forms do too.
 
 ## 0.2.2 (alpha), 2026-11-05
 

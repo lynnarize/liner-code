@@ -1,9 +1,52 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (alpha), 2026-11-06
+
+**Update from 0.2.2 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or
+download the new DMG; on Windows, run the new setup. **A session header in the manner of Claude
+Code**, and **a full audit** of the layout and the engine: about 200 fixes, most of all to what asks
+before it writes, tried this time on the real Claude Code, Codex and OpenCode. **On OpenCode, access
+levels now hold**, and its subagents are off for now (below).
+
+### Changed
+
+- **The session's header follows Claude Code:** the title, grey with a chevron, opens the session's
+  menu: Rename, Pin, where it works and the branch. The Reviewer's word is quiet text with a ticked
+  circle. On the right are Run, then Session, Terminal, Changes (with its count on the icon's
+  corner), Browser, Files and a ··· for the other panels, your apps and hiding the panel. Each opens
+  its tab, and pressing it again closes the panel. The icons are redrawn to be sharp at 2x. In a
+  narrow window they step into the ··· one by one, and the title cuts short rather than running
+  under them.
+- **A surface's key hides it too:** ⌘⇧ and its letter shows a surface, and on the one showing it closes
+  the panel, as its icon does.
+- **OpenCode always asks Liner Code now,** and your access level decides. In your `opencode.json`,
+  allows give way to the level and denies stay denies, at every level; an agent's own `permission`
+  there still goes around it. Saying no lets it carry on and adapt, and a turn stops after 10 refused
+  steps, so a model that won't take no can't go on for good.
+- **OpenCode's subagents are off for now:** its ACP drops their approvals, so one would wait for good.
+  `/review` runs in the session instead, and any other command that runs a subagent stops and says
+  why.
 
 ### Fixed
 
+- **OpenCode's access levels didn't hold:** Ask first ran writes, edits and commands with no card;
+  Read only stopped edits but not a command that writes; a link out of the project read and wrote
+  there unasked. Each level now does what it says, also when you change it mid-session. A harmless
+  command like `ls` or `git status` goes without a card, a connection's tool can be allowed by name,
+  and reading a file you attached doesn't ask.
+- In Full access, a step your own Claude settings, or a hook of yours, said to ask about went ahead.
+  It now comes to you, in every mode, with no "Don't ask again". A compound command that holds such
+  a step does too.
+- **On Windows with OpenCode,** a Git Bash path, a network path or a quoted path with spaces could
+  read outside the project unasked, and `.ENV` wasn't a secret. They now count for what they are.
+- "Don't ask again" on `cmd`, `powershell` or a path to one allowed whatever came next. Shells get
+  no such rule now, `git.exe status` counts as `git status`, and `git.exe reset --hard` as high risk.
+  For an interpreter the rule covers that exact command: `python x.py` no longer allows `python -c`.
+- Stop left a Codex command you had approved running. It now ends that one and leaves a server from
+  an earlier turn alone.
+- A Codex planner's question never reached you: Codex said it wasn't available. It now comes as the
+  question card.
+- A Claude session on a second account didn't see the files it had read when it picked up again.
 - The first start still made room for the logo that's gone: the name sat off centre, then slid over.
   It now stays in one place from the start screen until it docks in the corner, and Setup's top row
   sits level with the traffic lights, its steps on the window's centre.
@@ -11,10 +54,12 @@
   choosing, so one that reads your files could have leaked them. Panels now have no WebRTC at all,
   from any frame they make, and one that may reach a host reaches only that. Anything that stays on
   https still works, and the Browser surface keeps its WebRTC.
-- A panel whose process ended left a grey frame and no word of why. It now steps aside, and the
-  Add-ons page shows it with a Problem tag, the reason and Retry, as DeepSeek Harness's Plugins page does.
+- A panel whose process ended left a grey frame and no word of why. Its tab now says so with Retry,
+  and the Add-ons page shows it with a Problem tag, the reason and Retry, as DeepSeek Harness's
+  Plugins page does. Retry there takes you to where it runs, and the tag stays until it's back.
 - A planner, a side chat or a Read only session could run a write command when the Reviewer allowed
-  it, or on an earlier "don't ask again". What writes now always comes to you in those turns.
+  it, or on an earlier "don't ask again". A command or edit that writes now always comes to you in
+  those turns.
 - An ACP agent's edit went ahead in Edits, Auto and Reviewer decides wherever it pointed. One outside
   the project, or one that names no file, now asks each time. Agents that don't name their files will
   ask more often.
@@ -34,7 +79,7 @@
 - A save that failed as a turn ended, on a full disk, left the session running until the next start.
 - Stop did nothing while a new worktree was set up, and the message started anyway. It now waits in
   the queue.
-- An ACP agent that ignored being stopped went on working. It's now ended after two seconds.
+- An ACP agent that ignored being stopped went on working. After 15 seconds it's now ended.
 - "Don't ask again" on an ACP tool of no known kind allowed every other such tool. It can't be
   chosen for those now.
 - In Ask first, an ACP agent that wrote files through Liner Code without asking wasn't stopped. That
@@ -45,17 +90,16 @@
 - In the composer, the text you typed slowly slid away from what the field really held: the caret sat
   in empty space past the last letter, the blanks could be selected, and spellcheck's underlines
   landed on the wrong words. The two now line up to the pixel.
-- OpenCode's questions never reached you: its question tool failed with "couldn't be shown to the
-  user" and the agent went on guessing. They now come as the question card, and any other ACP agent's
-  forms do too.
-- In Full access, a step your own Claude settings said to ask about went ahead anyway. It now comes
-  to you, with Claude Code's reason.
+- An ACP agent's form now comes as the question card. OpenCode doesn't send them yet, so its own
+  question tool stays off.
 - In Auto, a Codex edit outside the project, or one asking for a folder outside it, went ahead without
-  asking. It now asks each time, as ACP agents do. A Codex request to reach a host, or for more
+  asking. It now asks each time, as ACP agents do, except in the temporary folders its sandbox allows. A Codex request to reach a host, or for more
   access, showed little or nothing of what it asked; both now say so and come to you.
 - "Don't ask again" for a harmless `rm` also allowed `rm -rf`, and on `git -C x status` it allowed any
   git command written that way. What can't be undone now always asks.
-- `git -C folder reset --hard` and the like passed as safe, in Full access's guard too.
+- `git -C folder reset --hard` and the like passed as safe, in Full access's guard too, and so did
+  `git -c alias.x='!rm -rf ~' x`, `git --no-advice reset --hard`, `npm --prefix app publish` and
+  `cargo +nightly publish`.
   `git clean --force`, `git reset x --hard` and publishing with other package tools weren't high risk.
 - Programs named like a reader (`tree-sitter`, say) counted as read-only and ran without asking.
 - A routine could push with `git -C …` or `docker push`, or with a rule you gave in its session.
@@ -163,15 +207,18 @@
 - A side chat or a `/goal` in a new worktree started before its setup had finished. They now wait, as a
   message does.
 - A fork whose files couldn't be copied left an empty session in the sidebar. It's now removed.
-- Files attached before a restart asked for approval when read again. They no longer do.
+- Files attached before a restart asked for approval when read again on Claude Code. They no longer do.
 - Text before and after a plan ran together in one paragraph on some agents.
 - Back and Forward did nothing on the Browser's "nothing answers here" and "file not found" pages.
-- All turns and This branch now say how many files past the first 60 aren't shown.
+- All turns and This branch now say how many files past the first 60 aren't shown, in the side
+  Changes panel too.
 - A command that ended without reading what it was given could take the engine down.
-- An add-on's form in a routine could hold the run for good. With nobody there to answer, it's declined.
+- An add-on's form in a routine could hold the run for good, on Claude Code and ACP agents. With
+  nobody there to answer, it's declined.
 - A queued `/compact` was joined to the next message and did neither. It now goes on its own.
 - Liner Code's own tools went without a card only by name: one from an agent's or a project's config that
-  called itself `liner` ran unasked. Only Liner Code's own server does now.
+  called itself `liner` ran unasked, and an add-on with that id took its place on Codex. On OpenCode
+  any server named `liner_…` passed as ours. Only Liner Code's own server does now.
 
 ## 0.2.2 (alpha), 2026-11-05
 

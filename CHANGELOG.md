@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- The first start still made room for the logo that's gone: the name sat off centre, then slid over.
+  It now stays in one place from the start screen until it docks in the corner, and Setup's top row
+  sits level with the traffic lights, its steps on the window's centre.
 - A panel's "no network" wasn't quite true: over WebRTC, a page could still send to a server of its
   choosing, so one that reads your files could have leaked them. Panels now have no WebRTC at all,
   from any frame they make, and one that may reach a host reaches only that. Anything that stays on

@@ -109,7 +109,8 @@ function visibleBounds(b?: Rectangle) {
 
 // Where the traffic lights go: centred in the page's 52px top row, as the Swift shell's unified toolbar put them.
 const LIGHTS = { x: 20, y: 19 };
-const BOOT_PAGE = `<html><body style="margin:0;height:100vh;display:grid;place-items:center;background:transparent;font:13px -apple-system,system-ui,sans-serif;color:#8a8f98"><span>Starting the engine…</span></body></html>`;
+// The line sits where the page's own boot screen keeps it, under the name, so it doesn't jump when that loads.
+const BOOT_PAGE = `<html><body style="margin:0;height:100vh;background:transparent;font:13px -apple-system,system-ui,sans-serif;color:#8a8f98"><span style="position:fixed;top:calc(50% + 30px);left:50%;translate:-50% 0;white-space:nowrap">Starting the engine</span></body></html>`;
 
 let material = "solid";
 let glassRect: Frame = { x: 0, y: 0, width: 0, height: 0 };

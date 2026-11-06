@@ -89,6 +89,18 @@ const around = (text: string, q: string) => {
 };
 type Hit = { threadId: string; title: string; snippet: string };
 
+/** The name while the engine starts. `still`: it's already in focus, so it doesn't come in again. */
+function Boot({ label, still }: { label: string; still?: boolean }) {
+  return (
+    <div className="lc-boot" data-drag>
+      <span className="lc-boot-wm" data-still={still || undefined}>
+        Liner Code
+      </span>
+      <span className="l-shimmer">{label}</span>
+    </div>
+  );
+}
+
 export function App() {
   const ready = useEngine((s) => s.ready);
   const connected = useEngine((s) => s.connected);
@@ -505,18 +517,12 @@ export function App() {
     [besideOf, threads, projects, agents, providers, current, besideThread, view],
   );
 
-  if (!ready)
-    return (
-      <div className="lc-boot" data-drag>
-        <span className="lc-boot-wm">Liner Code</span>
-        <span className="l-shimmer">{connected ? "Opening" : "Starting the engine"}</span>
-      </div>
-    );
+  if (!ready) return <Boot label={connected ? "Opening" : "Starting the engine"} />;
 
   if (!onboarded)
     return (
       <>
-        <Suspense fallback={null}>
+        <Suspense fallback={<Boot label="Opening" still />}>
           <Setup onDone={() => setView({ kind: "home" })} />
         </Suspense>
         <Toaster className="lc-toaster" />

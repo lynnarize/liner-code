@@ -43,7 +43,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
   const machine = window.__LINER__?.machine ?? "This computer";
   useEffect(() => {
     if (!intro) return;
-    const t = window.setTimeout(() => setIntro(false), 3300);
+    const t = window.setTimeout(() => setIntro(false), 2600);
     return () => window.clearTimeout(t);
   }, [intro]);
 
@@ -74,7 +74,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** The mark and the wordmark, which start large in the middle and dock in the corner. */
+/** The wordmark, which starts where the boot screen left it, says what this is, and docks in the corner. */
 function Lockup({ intro }: { intro: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [from, setFrom] = useState<{ x: number; y: number } | null>(null);
@@ -83,19 +83,18 @@ function Lockup({ intro }: { intro: boolean }) {
     const el = ref.current;
     if (!el || !intro) return;
     const measure = () => {
-      const r = { left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight };
-      for (let p = el.offsetParent as HTMLElement | null; p; p = p.offsetParent as HTMLElement | null) {
-        r.left += p.offsetLeft;
-        r.top += p.offsetTop;
-      }
-      setFrom({ x: window.innerWidth / 2 - (r.left + r.width / 2), y: window.innerHeight / 2 - 40 - (r.top + r.height / 2) });
+      let left = el.offsetLeft;
+      for (let p = el.offsetParent as HTMLElement | null; p; p = p.offsetParent as HTMLElement | null) left += p.offsetLeft;
+      // The bar's centre, not offsetTop: that rounds, and half a pixel shows when the name changes hands.
+      const bar = el.parentElement!.getBoundingClientRect();
+      setFrom({ x: window.innerWidth / 2 - (left + el.offsetWidth / 2), y: window.innerHeight / 2 - (bar.top + bar.height / 2) });
     };
     measure();
     void document.fonts.ready.then(measure);
   }, [intro]);
   return (
     <span ref={ref} className="lc-lockup" data-intro={intro || undefined} data-measured={Boolean(from) || undefined} style={from && intro ? ({ "--fx": `${from.x}px`, "--fy": `${from.y}px` } as CSSProperties) : undefined}>
-      <span className="lc-lockup-wm">Liner Code</span>
+      <span>Liner Code</span>
       <span className="lc-lockup-tag" aria-hidden={!intro}>
         Your models, your code. Agents when you want them.
       </span>

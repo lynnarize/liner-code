@@ -4616,23 +4616,32 @@ html[data-composer="clear"] .lc-thread-foot .lc-card {
 }
 html[data-native="mac"] .lc-setup {
   background: color-mix(in oklab, var(--l-bg) 82%, transparent);
+  transition: background 600ms var(--l-ease-out);
 }
+html[data-native="mac"] .lc-setup[data-intro] {
+  background: var(--lc-ground);
+}
+/* Equal outer columns and equal padding keep the steps on the window's centre; the row's centre is
+   the traffic lights'. */
 .lc-setup-top {
-  display: flex;
+  display: grid;
   flex: none;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   gap: 16px;
-  min-height: 64px;
-  padding: 10px 24px 0 30px;
+  height: 52px;
+  box-sizing: border-box;
+  padding: 0 24px;
 }
 html[data-native="mac"] .lc-setup-top {
-  padding-left: 96px;
+  height: calc(var(--lc-lights-y, 26px) * 2);
 }
 .lc-lockup {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 11px;
+  justify-self: start;
+  margin-left: 6px;
   font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.025em;
@@ -4640,21 +4649,17 @@ html[data-native="mac"] .lc-setup-top {
   transform-origin: 50% 50%;
   transition: transform 1000ms cubic-bezier(0.32, 0.72, 0, 1);
 }
+html[data-native="mac"] .lc-lockup {
+  margin-left: max(6px, calc(var(--lc-lights-x, 70px) - 2px));
+}
 .lc-lockup[data-intro]:not([data-measured]) {
   opacity: 0;
 }
+/* The boot screen's name, in the same spot at the same size (26px), so nothing moves when Setup
+   takes over. The name is already in focus: only the line under it comes and goes. */
 .lc-lockup[data-intro] {
-  transform: translate(var(--fx, 0px), var(--fy, 0px)) scale(2.2);
+  transform: translate(var(--fx, 0px), var(--fy, 0px)) scale(calc(26 / 17));
   transition: none;
-  animation: lc-glide 1.4s cubic-bezier(0.32, 0.72, 0, 1) 900ms backwards;
-}
-@keyframes lc-glide {
-  from {
-    transform: translate(calc(var(--fx, 0px) + 92px), var(--fy, 0px)) scale(2.2);
-  }
-}
-.lc-lockup-wm {
-  animation: lc-wm 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 200ms backwards;
 }
 @keyframes lc-wm {
   from {
@@ -4662,12 +4667,13 @@ html[data-native="mac"] .lc-setup-top {
     filter: blur(8px);
   }
 }
+/* 13px at the intro's scale, on the line where the boot screen says "Opening" (30px below centre). */
 .lc-lockup-tag {
   position: absolute;
-  top: calc(100% + 18px);
+  top: calc(50% + 30px * 17 / 26);
   left: 50%;
   translate: -50% 0;
-  font-size: 7.5px;
+  font-size: calc(13px * 17 / 26);
   font-weight: 400;
   letter-spacing: -0.004em;
   color: var(--l-ink-3);
@@ -4675,15 +4681,16 @@ html[data-native="mac"] .lc-setup-top {
   pointer-events: none;
 }
 .lc-lockup[data-intro] .lc-lockup-tag {
-  animation: lc-tag 2.6s cubic-bezier(0.2, 0.8, 0.2, 1) 1500ms backwards;
+  animation: lc-tag 2.25s cubic-bezier(0.2, 0.8, 0.2, 1) 250ms backwards;
 }
 @keyframes lc-tag {
-  0% {
+  0%,
+  100% {
     opacity: 0;
     filter: blur(6px);
   }
   25%,
-  70% {
+  75% {
     opacity: 1;
     filter: none;
   }
@@ -4704,7 +4711,6 @@ html[data-native="mac"] .lc-setup-top {
 }
 .lc-stepper {
   display: flex;
-  flex: 1;
   justify-content: center;
   align-items: center;
   gap: 12px;
@@ -4766,6 +4772,7 @@ html[data-native="mac"] .lc-setup-top {
 }
 .lc-machine {
   display: inline-flex;
+  justify-self: end;
   align-items: center;
   gap: 8px;
   height: 30px;
@@ -6111,11 +6118,11 @@ html[data-native="mac"] .lc-setup-top {
 }
 
 /* ---------- Boot and offline ---------- */
+/* The name on the window's exact centre, where Setup's intro picks it up. */
 .lc-boot {
+  position: relative;
   display: grid;
   place-content: center;
-  justify-items: center;
-  gap: 14px;
   height: 100%;
   background: var(--lc-ground);
   font-size: 13px;
@@ -6125,9 +6132,19 @@ html[data-native="mac"] .lc-setup-top {
 .lc-boot-wm {
   font-size: 26px;
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
   color: var(--l-ink);
   animation: lc-wm 700ms var(--l-ease-enter) backwards;
+}
+.lc-boot-wm[data-still] {
+  animation: none;
+}
+.lc-boot > .l-shimmer {
+  position: absolute;
+  top: calc(50% + 30px);
+  left: 50%;
+  translate: -50% 0;
+  white-space: nowrap;
 }
 .lc-offline {
   position: fixed;

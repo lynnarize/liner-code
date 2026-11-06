@@ -22,9 +22,13 @@ import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { plural, since } from "./model";
 import { startCreator } from "./Modes";
+import { retryPanel, useStoppedPanels } from "./panelLife";
 import { NamedSwitch, Pop } from "./ui";
 import * as os from "./os";
 import "./addons-page.css";
+
+/** What a stopped panel's row says, in DeepSeek Harness's shape: a reason, with the Problem tag beside the name. */
+const STOPPED_REASON = "Reason: it stopped running. Anything it was showing is gone.";
 
 // The by-hand form for a connection lives with Settings, which loads only when it's needed.
 const AddByHand = lazy(() => import("./Settings").then((m) => ({ default: m.AddByHand })));
@@ -93,6 +97,7 @@ function madeBy(a: AddonInfo, open: boolean): ReactNode {
 export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; onSidebar: () => void; onMake: () => void }) {
   const addons = useEngine((x) => x.addons);
   const off = useEngine((x) => x.addonsOff);
+  const stopped = useStoppedPanels();
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState<"source" | "connect" | null>(null);
   const [looking, setLooking] = useState(false);
@@ -165,14 +170,22 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
           <section className="lc-ao-list" aria-labelledby="lc-ao-installed">
             <h2 id="lc-ao-installed">Installed</h2>
             {shown.map((a) => (
-              <div key={a.id} className="lc-ao-row" data-off={!a.enabled || undefined}>
+              <div key={a.id} className="lc-ao-row" data-off={!a.enabled || undefined} data-state={a.enabled && stopped.has(a.id) ? "failed" : undefined}>
                 <button type="button" className="lc-ao-open l-focus" aria-label={`Details for ${a.name}`} onClick={() => setOpen(a.id)}>
                   <Tile a={a} />
                   <span>
-                    <b>{a.name}</b>
-                    <small>{summaryOf(a)}</small>
+                    <b>
+                      {a.name}
+                      {a.enabled && stopped.has(a.id) && <i className="lc-ao-tag">Problem</i>}
+                    </b>
+                    <small>{a.enabled && stopped.has(a.id) ? STOPPED_REASON : summaryOf(a)}</small>
                   </span>
                 </button>
+                {a.enabled && stopped.has(a.id) && (
+                  <button type="button" className="lc-btn" data-size="sm" onClick={() => retryPanel(a.id)}>
+                    Retry
+                  </button>
+                )}
                 <NamedSwitch name={a.enabled ? `Turn off ${a.name}` : `Turn on ${a.name}`} checked={a.enabled} onCheckedChange={(enabled) => update(a.id, { enabled })} />
               </div>
             ))}

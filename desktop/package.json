@@ -8,6 +8,7 @@
   "scripts": {
     "build": "node build.ts",
     "start": "node build.ts && electron .",
+    "test": "node --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

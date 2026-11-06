@@ -13,11 +13,12 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Item, PanelAccess, PanelAsk, PanelManifest, Thread } from "../../contracts/src/index.ts";
-import { emptyUsage, panelDocument, panelPolicy } from "../../contracts/src/index.ts";
+import { emptyUsage, panelDocument, panelFrame, panelFrameUrl, panelPolicy, sealedFrame } from "../../contracts/src/index.ts";
 import { accessWords, Addons, checkManifest, readDraft, readPanelFiles, widerAccess } from "../src/addons.ts";
 import { AgentTools, type AddonHost } from "../src/agent-tools.ts";
 import { panelCall, PANEL_METHODS, readable, refusal, type PanelEnv } from "../src/panels.ts";
 import { Offers } from "../src/offers.ts";
+import { startServer } from "../src/server.ts";
 import { Store } from "../src/store.ts";
 import * as dock from "../../ui/src/app/dock.ts";
 
@@ -315,6 +316,50 @@ test("frame: the content policy and the bridge come first, its own files go in, 
   assert.equal((doc.match(/<head>/g) ?? []).length, 1, "one head, ours");
   assert.equal(panelPolicy({ network: "api.github.com" }).includes("connect-src https://api.github.com"), true);
   assert.doesNotMatch(panelPolicy({ network: "api.github.com" }), /\*|'self'/, "nothing but the one host");
+});
+
+// desktop/test/panel-network.test.ts tries all of this in real Electron; here, that it's served.
+test("panel frame: its header takes WebRTC and every other host away, however it's asked for", async () => {
+  const check = { page: () => "<p>check</p>", call: async () => null, report: () => {}, settle: async () => {} };
+  const server = await startServer({ store: new Store(home()), api: { call: async () => null, ready: Promise.resolve() }, snapshot: async () => ({}) as never, token: "t", port: 0, check });
+  const at = (path: string) => fetch(`http://127.0.0.1:${server.port}${path}`);
+  try {
+    // No token: the page asks for it as an iframe's address, and it holds nothing.
+    const plain = await at(panelFrameUrl({}));
+    assert.equal(plain.status, 200);
+    const self = `"http://127.0.0.1:${server.port}/panel-frame"`;
+    assert.equal(plain.headers.get("connection-allowlist"), `(${self})`, "its own address, to reload, and nothing else");
+    assert.match(plain.headers.get("content-security-policy") ?? "", /sandbox allow-scripts/, "sandboxed however it's loaded: it's on the app's origin, and it writes what it's sent");
+    assert.match(plain.headers.get("content-security-policy") ?? "", /frame-ancestors 'self'/);
+    assert.doesNotMatch(await plain.text(), /liner-token|"t"/);
+    const reach = await at(panelFrameUrl({ network: "api.github.com" }));
+    assert.equal(reach.headers.get("connection-allowlist"), `(${self} "https://api.github.com/*")`);
+    for (const bad of ["*", "evil.com/*\")(\"https://x.com", "localhost", "a b.com"]) assert.equal((await at(`/panel-frame?network=${encodeURIComponent(bad)}`)).status, 400, bad);
+    // A Host that isn't this Mac names nothing.
+    assert.equal(panelFrame(null, 'http://x"y')?.headers["connection-allowlist"], "()");
+    assert.equal(panelFrame(null, "http://evil.example:80")?.headers["connection-allowlist"], "()");
+    // addon_check's page is its own host: it reaches itself, and its frame nothing.
+    const checked = await at(`/addon-check/${"a".repeat(36)}`);
+    assert.equal(checked.headers.get("connection-allowlist"), `("http://127.0.0.1:${server.port}/addon-check/*")`);
+  } finally {
+    server.close();
+  }
+});
+
+test("panel frame: a sealed frame stays on its document", () => {
+  const app = "http://127.0.0.1:7317";
+  const frame = `${app}/panel-frame`;
+  assert.equal(sealedFrame(frame, "https://leak.example/?what=it-read", app), true);
+  assert.equal(sealedFrame(frame, "data:text/html,x", app), true);
+  assert.equal(sealedFrame(frame, `${app}/`, app), true);
+  assert.equal(sealedFrame(`${frame}?network=api.github.com`, frame, app), true, "not to a wider or narrower one");
+  assert.equal(sealedFrame(frame, frame, app), false, "reloading itself asks for its document again");
+  assert.equal(sealedFrame(frame, `${frame}#x`, app), false);
+  assert.equal(sealedFrame("about:srcdoc", "https://leak.example/", app), true);
+  assert.equal(sealedFrame("about:srcdoc", "about:srcdoc#x", app), false);
+  // Anything else moves as it did: a page's first load, and a dev server's own address of that name.
+  assert.equal(sealedFrame("", frame, app), false);
+  assert.equal(sealedFrame("http://localhost:5173/panel-frame", "http://localhost:5173/", app), false);
 });
 
 /* ---------- addon_install for a panel ---------- */

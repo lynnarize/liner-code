@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- A panel's "no network" wasn't quite true: over WebRTC, a page could still send to a server of its
+  choosing, so one that reads your files could have leaked them. Panels now have no WebRTC at all,
+  from any frame they make, and one that may reach a host reaches only that. Anything that stays on
+  https still works, and the Browser surface keeps its WebRTC.
+- A panel whose process ended left a grey frame and no word of why. It now steps aside, and the
+  Add-ons page shows it with a Problem tag, the reason and Retry, as DeepSeek Harness's Plugins page does.
 - A planner, a side chat or a Read only session could run a write command when the Reviewer allowed
   it, or on an earlier "don't ask again". What writes now always comes to you in those turns.
 - An ACP agent's edit went ahead in Edits, Auto and Reviewer decides wherever it pointed. One outside

@@ -28,7 +28,7 @@
     "win": "bash scripts/build-win.sh",
     "release": "bash scripts/release.sh",
     "sync-liner": "bash scripts/sync-liner.sh",
-    "test": "npm test -w engine"
+    "test": "npm test -w engine && npm test -w desktop"
   },
   "engines": {
     "node": ">=24"

@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, release, tmpdir } from "node:os";
 import { basename, delimiter, join, normalize } from "node:path";
+import { sealedFrame } from "../../contracts/src/panel.ts";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
 import { mac, type Frame, type Rect } from "./mac";
@@ -174,8 +175,8 @@ const isLocal = (url: string) => {
     return false;
   }
 };
-/** A srcdoc frame sending itself anywhere but a new srcdoc of its own. */
-const sealed = (e: { url: string; frame?: { url: string } | null }) => e.frame?.url === "about:srcdoc" && e.url.split("#")[0] !== "about:srcdoc";
+/** A srcdoc frame, or a panel's, sending itself anywhere but where it is. */
+const sealed = (e: { url: string; frame?: { url: string } | null }) => sealedFrame(e.frame?.url, e.url, appOrigin);
 /** The app's own page: the engine's origin, or the dev server's (LINER_UI_URL). */
 const ours = (url: string) => {
   try {
@@ -251,7 +252,7 @@ function createWindow() {
   // The window itself never leaves the app's origin (a localhost link dropped on it would get the
   // token and the bridge); the frames it shows pages in stay on this machine. loadURL isn't asked.
   wc.on("will-frame-navigate", (e) => {
-    // A sealed srcdoc frame (an add-on's panel, an agent's page, a design's version) never leaves its
+    // A sealed frame (an add-on's panel, an agent's page, a design's version) never leaves its
     // document: not in place, and not out to your browser, where what it read would leave with it.
     // Its links come to the window as a message instead (Page.tsx).
     if (!e.isMainFrame && sealed(e)) return e.preventDefault();

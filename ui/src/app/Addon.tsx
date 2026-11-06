@@ -14,12 +14,13 @@
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AddonInfo, Item, PanelAsk, PanelIcon, PanelPlace, Thread } from "@contracts";
-import { panelDocument, PANEL_API } from "@contracts";
+import { panelDocument, panelFrameUrl, PANEL_API } from "@contracts";
 import { HoldToConfirm } from "@liner/components/hold-to-confirm/hold-to-confirm";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { AppModelChip, appModelOf, pickAppModel } from "./AppModel";
 import { getState, loadItems, onStream, rpc, useEngine, useItemsWhere } from "./engine";
+import { panelRunning, panelStopped, usePanelTries } from "./panelLife";
 import { toComposer } from "./Find";
 import { I } from "./icons";
 import { modelLabel } from "./model";
@@ -136,6 +137,19 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   const [crash, setCrash] = useState<{ message: string; stack?: string } | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
   const [run, setRun] = useState(0);
+  // Its process ended (panelFrame's port closed): the frame steps aside, as DeepSeek Harness's slot
+  // does, and the Add-ons page says so and offers Retry. Its other frames may be fine.
+  const [ended, setEnded] = useState(false);
+  const tries = usePanelTries(addon);
+  const line = useRef<MessagePort | null>(null);
+  useEffect(() => {
+    setEnded(false);
+    return () => {
+      const held = line.current;
+      line.current = null;
+      held?.close();
+    };
+  }, [run, tries]);
   const count = useEngine((s) => (thread ? (s.items[thread.id]?.length ?? 0) : 0));
   // A model's answers it's waiting on: stopped when the frame goes (closed, another version, run again).
   const asking = useRef(new Set<string>());
@@ -160,6 +174,8 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
 
   const ok = loaded && !("error" in loaded) ? loaded : null;
   const doc = useMemo(() => (ok ? panelDocument({ files: ok.files, entry: ok.entry, access: ok.access, theme: theme(), place: ok.place }) : ""), [ok, run]);
+  const written = useRef(doc);
+  written.current = doc;
 
   // The bridge: only this frame's own window is heard, and every request is the engine's to answer.
   useLayoutEffect(() => {
@@ -179,6 +195,26 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
       if (!frame.current || e.source !== frame.current.contentWindow) return;
       const d = e.data as { liner?: number; kind?: string; id?: number; method?: string; args?: unknown; message?: string; stack?: string; host?: string; directive?: string } | null;
       if (!d || d.liner !== 1) return;
+      // Its frame has loaded, empty: the panel is written into it (panelFrame says why).
+      if (d.kind === "frame") {
+        const { port1, port2 } = new MessageChannel();
+        line.current = port1;
+        // A reload closes it too, and asks again straight after: only a line nobody replaced means it.
+        port1.addEventListener("close", () => {
+          setTimeout(() => {
+            if (line.current !== port1) return;
+            line.current = null;
+            setEnded(true);
+            // A preview isn't on the Add-ons page yet, so its own card says it.
+            if (preview) setCrash({ message: "It stopped running." });
+            else panelStopped(addon);
+          }, 1000);
+        });
+        port1.start();
+        frame.current.contentWindow?.postMessage({ liner: 1, doc: written.current }, "*", [port2]);
+        if (!preview) panelRunning(addon);
+        return;
+      }
       if (d.kind === "error") return setCrash({ message: String(d.message ?? "An error"), stack: d.stack ? String(d.stack) : undefined });
       if (d.kind === "blocked") return setBlocked(String(d.host || d.directive || "an address"));
       if (d.kind || typeof d.id !== "number" || typeof d.method !== "string") return;
@@ -297,12 +333,12 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
       )}
       <iframe
         ref={frame}
-        key={run}
+        key={`${run}:${tries}`}
         className="lc-addon-frame"
         title={name}
         sandbox="allow-scripts"
-        srcDoc={doc}
-        hidden={Boolean(crash)}
+        src={panelFrameUrl(loaded.access)}
+        hidden={Boolean(crash) || ended}
         // Out of sight it keeps running, but takes no keys.
         tabIndex={visible ? 0 : -1}
       />
@@ -472,7 +508,7 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
       <div className="lc-offer-head">
         <I.sparkle size={13} />
         <span>Make it an app</span>
-        <span className="lc-quiet">You can remove it any time</span>
+        <span className="lc-quiet">You can remove it at any time</span>
       </div>
       <div className="lc-offer-what">
         <b>{it.name}</b>

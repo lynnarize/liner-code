@@ -1,11 +1,19 @@
 /*
   A panel's frame: the one document an add-on panel runs in, built the same way in the window
-  (the dock, a session tab, a page) and in the engine's headless check (addon_check). It is loaded
-  as `srcdoc` into an iframe with `sandbox="allow-scripts"` and nothing else, so it has an opaque
-  origin: no cookies, no storage of the app's, no way into the window around it, no popups, forms
-  or top-level navigation. A content policy, first in its head, takes the network away (or leaves
-  the one host its manifest names), and a small bridge script, before anything the agent wrote,
-  is its only way to ask Liner Code for anything (apiVersion 1).
+  (the dock, a session tab, a page) and in the engine's headless check (addon_check). It runs in an
+  iframe with `sandbox="allow-scripts"` and nothing else, so it has an opaque origin: no cookies, no
+  storage of the app's, no way into the window around it, no popups, forms or top-level navigation.
+  A content policy, first in its head, takes the network away (or leaves the one host its manifest
+  names), and a small bridge script, before anything the agent wrote, is its only way to ask Liner
+  Code for anything (apiVersion 1).
+
+  A content policy doesn't reach WebRTC: under it a page still sends STUN and TURN to any host. So
+  the frame also lives under a Connection-Allowlist, which only a response's header can set: the
+  engine serves an empty document with it (panelFrame), and the window writes the panel into that.
+  Chromium then gives it no WebRTC: the frame's own peer connections never gather, and one in a
+  child frame, which that check misses, is refused its socket by the browser process, which ends
+  the renderer that asked (the frame's, apart from the window's). Leaving for a document with no
+  allowlist is refused too. A page without the header, the Browser surface's, keeps its WebRTC.
 
   The agent's files are inlined: scripts and styles it links by a relative path go in as they are,
   pictures as data: addresses. Nothing it names elsewhere loads.
@@ -17,10 +25,10 @@ export const PANEL_API = 1;
 
 /** What a frame asks of the window (every message carries `liner: 1`). */
 export type PanelRequest = { liner: 1; id: number; method: string; args?: unknown };
-/** What it says on its own: an error it didn't catch, a request the content policy blocked, that it drew. */
-export type PanelReport = { liner: 1; kind: "error"; message: string; stack?: string } | { liner: 1; kind: "blocked"; host: string; directive: string } | { liner: 1; kind: "ready"; elements: number; width: number; height: number };
-/** The window's answer to a request, or news it pushes (`event`): the theme, a change in the session. */
-export type PanelReply = { liner: 1; id: number; ok: true; value: unknown } | { liner: 1; id: number; ok: false; error: string } | { liner: 1; event: string; data?: unknown };
+/** What it says on its own: that its frame is ready for its document, an error it didn't catch, a request the content policy blocked, that it drew. */
+export type PanelReport = { liner: 1; kind: "frame" } | { liner: 1; kind: "error"; message: string; stack?: string } | { liner: 1; kind: "blocked"; host: string; directive: string } | { liner: 1; kind: "ready"; elements: number; width: number; height: number };
+/** The window's answer to a request, or news it pushes (`event`): the theme, a change in the session. `doc` answers a frame that's ready. */
+export type PanelReply = { liner: 1; doc: string } | { liner: 1; id: number; ok: true; value: unknown } | { liner: 1; id: number; ok: false; error: string } | { liner: 1; event: string; data?: unknown };
 
 /** The app's colours and fonts as CSS variables, the same names a shown page gets. */
 export type PanelTheme = Record<string, string>;
@@ -49,6 +57,48 @@ const fileOf = (files: Record<string, string>, p: string | null) => (p !== null 
 /** A script's text, safe inside a <script> element. */
 const scriptText = (js: string) => js.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
 
+/** Where a panel's frame loads from, on the app's own origin. */
+export const PANEL_FRAME = "/panel-frame";
+/** A panel's frame for this access: the one host it may reach goes in the address, for the header. */
+export const panelFrameUrl = (access: PanelAccess) => (access.network ? `${PANEL_FRAME}?network=${encodeURIComponent(access.network)}` : PANEL_FRAME);
+/** Where this Mac's engine says it's served from, if that's a thing to name in a header. */
+const hereOf = (origin?: string) => (origin && /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/.test(origin) ? origin : "");
+/** addon_check's page: it reaches its own addresses, and its srcdoc frame inherits the rest of the refusal. */
+export const checkConnections = (origin?: string) => (hereOf(origin) ? `("${hereOf(origin)}/addon-check/*")` : "()");
+/**
+  The empty document a panel is written into, and its headers: null for a host that can't be one.
+  It's served on the app's origin to whoever asks, so it holds nothing and can't run as the app:
+  its own policy sandboxes it, however it was loaded, and only the app's page may frame it.
+  `origin` is where it's served from: the allowlist names this one address, so a panel that
+  reloads comes back, and nothing else on this Mac opens to it.
+*/
+export function panelFrame(network?: string | null, origin?: string) {
+  if (network && !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(network)) return null;
+  const home = hereOf(origin) ? `"${hereOf(origin)}${PANEL_FRAME}"` : "";
+  const headers = {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "content-security-policy": "sandbox allow-scripts; frame-ancestors 'self'",
+    "connection-allowlist": `(${[home, network ? `"https://${network}/*"` : ""].filter(Boolean).join(" ")})`,
+  };
+  // It asks for its document, as it does each time it loads. Writing it drops this listener too.
+  // The port comes with it and stays held: it closes when this frame's process ends, which is how
+  // the window hears of it. Nothing else reports that.
+  const html = `<!doctype html><meta charset="utf-8"><script>addEventListener("message",(e)=>{const d=e.data;if(e.source!==parent||!d||d.liner!==1||typeof d.doc!=="string")return;Object.defineProperty(self,"linerLine",{value:e.ports[0]});document.open();document.write(d.doc);document.close()});parent.postMessage({liner:1,kind:"frame"},"*")</script>`;
+  return { headers, html };
+}
+/**
+  A frame that must stay on its document, sending itself anywhere else: what would load there has
+  no policy and no allowlist of ours. A srcdoc anywhere, or a panel's frame on the app's origin.
+*/
+export function sealedFrame(at: string | undefined, to: string, appOrigin: string) {
+  const here = (at ?? "").split("#")[0];
+  if (to.split("#")[0] === here) return false;
+  if (here === "about:srcdoc") return true;
+  const u = URL.parse(here);
+  return !!u && u.origin === appOrigin && u.pathname === PANEL_FRAME;
+}
+
 /** The content policy: nothing but inline scripts and styles, pictures in data:, and at most one host over https. */
 export function panelPolicy(access: PanelAccess) {
   const host = access.network ? `https://${access.network}` : "";
@@ -65,9 +115,14 @@ export function panelPolicy(access: PanelAccess) {
   ].join("; ");
 }
 
-/** The bridge, as the frame's first script: window.liner, and what it reports on its own. */
+/**
+  The bridge, as the frame's first script: window.liner, and what it reports on its own. WebRTC is
+  removed only so a panel that looks for it finds none, rather than a connection that never comes:
+  the allowlist is what stops it, since a child frame has the constructors back.
+*/
 function shim(access: PanelAccess, theme: PanelTheme, place: string) {
   return `(()=>{"use strict";
+delete window.RTCPeerConnection;delete window.webkitRTCPeerConnection;
 const post=(m)=>parent.postMessage(Object.assign({liner:1},m),"*");
 let n=0;const waiting=new Map();const ears=new Map();const streams=new Map();
 const call=(method,args)=>new Promise((ok,no)=>{const id=++n;waiting.set(id,{ok,no});post({id,method,args})});

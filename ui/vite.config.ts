@@ -17,6 +17,6 @@ export default defineConfig({
       "@contracts": fileURLToPath(new URL("../contracts/src/index.ts", import.meta.url)),
     },
   },
-  server: { port: 5179, strictPort: true, proxy: { "/rpc": proxy, "/events": proxy } },
+  server: { port: 5179, strictPort: true, proxy: { "/rpc": proxy, "/events": proxy, "/panel-frame": proxy } },
   build: { outDir: "dist", chunkSizeWarningLimit: 900 },
 });

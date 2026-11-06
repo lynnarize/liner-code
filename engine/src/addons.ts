@@ -713,7 +713,7 @@ Panels
    - composer: true: put text in the composer, for the person to send.
    - storage: how many KB of storage of its own (1024 at most), kept across versions.
    - ai: true: ask a model (liner.ai.ask): text in, text out. The person picks which of their models when it first asks, billed to that model's account. Never reach a model's API over network, and never make the person copy a prompt into the chat: this is the way.
-   - network: one host, like "api.github.com", over https. The person holds a button to allow it; ask for it only if the panel can't work without it.
+   - network: one host, like "api.github.com", over https. The person holds a button to allow it; ask for it only if the panel can't work without it. A panel has no WebRTC, with or without it.
    A page has no session beside it: only sessions "all", storage, ai and network.
 2. Call addon_check with the id: it draws the panel out of sight at its size, with this project's real data, and returns a picture, its errors and anything it was refused. Fix what's off, and check again.
 3. Call addon_install with the id. The person sees it live in the dock, with a card saying what it touches. A changed panel that asks for nothing more than the version in use goes in without a card; one that asks for more asks again. Every version is kept, and the person can go back.

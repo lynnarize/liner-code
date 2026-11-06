@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import type { EngineEvent, Snapshot } from "../../contracts/src/index.ts";
+import { PANEL_FRAME, checkConnections, panelFrame, type EngineEvent, type Snapshot } from "../../contracts/src/index.ts";
 import type { Store } from "./store.ts";
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".woff": "font/woff", ".json": "application/json", ".ico": "image/x-icon" };
@@ -137,7 +137,8 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       return;
     }
     // A routine's webhook: its own secret in the URL stands in for the app's token.
-    // A panel drawn for its agent to look at (addon_check): the token is its own, made for that one check.
+    // A panel drawn for its agent to look at (addon_check): the token is its own, made for that one
+    // check. The page is its own host, so it reaches itself, and its srcdoc frame inherits the allowlist.
     const check = /^\/addon-check\/([a-f0-9]{36})(?:\/(call|report|settle))?$/.exec(url.pathname);
     if (check && o.check) {
       const [, tok, part] = check;
@@ -145,7 +146,7 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
         if (!part && req.method === "GET") {
           const page = o.check.page(tok);
           if (!page) return void res.writeHead(404).end();
-          return void res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; font-src data:; connect-src 'self'; frame-src 'self' about:; child-src about:" }).end(page);
+          return void res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; font-src data:; connect-src 'self'; frame-src 'self' about:; child-src about:", "connection-allowlist": checkConnections(`http://${req.headers.host}`) }).end(page);
         }
         if (part === "settle" && req.method === "GET") {
           await o.check.settle(tok);
@@ -175,6 +176,12 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       const ok = o.hooks(hook[1], url.searchParams.get("key") ?? "", payload, Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, String(v)])));
       res.writeHead(ok ? 200 : 404, { "content-type": "application/json" }).end(JSON.stringify({ ok }));
       return;
+    }
+    // The empty frame a panel is written into: it's asked for by the page, so without the token.
+    if (url.pathname === PANEL_FRAME && req.method === "GET") {
+      const frame = panelFrame(url.searchParams.get("network"), `http://${req.headers.host}`);
+      if (!frame) return void res.writeHead(400).end("Bad request");
+      return void res.writeHead(200, frame.headers).end(frame.html);
     }
     if (url.pathname === "/health") {
       res.writeHead(200).end("ok");

@@ -90,11 +90,11 @@ export function useReveal(
           c.carry -= take;
           const s = stateRef.current;
           const ends = wordEnds(textRef.current, s.end);
-          if (ends.length) {
-            const nextEnd = ends[Math.min(take, ends.length) - 1];
-            setState({ end: nextEnd, chunks: [...s.chunks, s.end], caughtUp: nextEnd >= textRef.current.length, settled: false });
-            if (nextEnd >= textRef.current.length) return;
-          }
+          // Only whitespace left has no word to take: it goes out with this tick, or the clock would
+          // run on with nothing to show and the reply would never catch up.
+          const nextEnd = ends.length ? ends[Math.min(take, ends.length) - 1] : textRef.current.length;
+          setState({ end: nextEnd, chunks: [...s.chunks, s.end], caughtUp: nextEnd >= textRef.current.length, settled: false });
+          if (nextEnd >= textRef.current.length) return;
         }
       }
       raf = requestAnimationFrame(step);

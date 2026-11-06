@@ -39,7 +39,7 @@ export const COMMANDS: Command[] = [
   { id: "focus.next", label: "Move to the next area: sidebar, thread, composer, panel", group: "Anywhere", keys: ["f6"] },
   { id: "focus.prev", label: "Move to the area before", group: "Anywhere", keys: ["shift+f6"] },
   { id: "find", label: "Find in the session, or in the diff", group: "In a session", keys: ["mod+f"], when: "session || review" },
-  ...SURFACE_KEYS.map(([id, label, k]) => ({ id: `surface.${id}`, label: `Open ${label}`, group: "In a session", keys: [`mod+shift+${k}`], when: "session" })),
+  ...SURFACE_KEYS.map(([id, label, k]) => ({ id: `surface.${id}`, label: `Show or hide ${label}`, group: "In a session", keys: [`mod+shift+${k}`], when: "session" })),
   { id: "stash", label: "Put the draft aside, or bring it back", group: "Writing a message", keys: ["mod+s"], when: "composer" },
 ];
 

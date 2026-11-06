@@ -23,7 +23,7 @@ import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
 import { readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
-import { closeTab, closeWhere, openTab, paneOf, replaceTab, type DockState } from "./dock";
+import { closeTab, closeWhere, openTab, paneOf, replaceTab, toggleTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, SideKeys, TopBar } from "./TopBar";
 import { ModeChip } from "./Modes";
@@ -60,6 +60,10 @@ const PANEL_EXIT_MS = 400;
 const places = new Map<string, { top: number; atEnd: boolean; at?: { id: string; off: number } }>();
 /** Which view of each session was up: Chat, or an app's tab beside it. */
 const views = new Map<string, string>();
+/** An app's tab up for a session that isn't on screen, for when it opens (the Add-ons page's Retry). */
+export function showAppTab(threadId: string, addon: string) {
+  views.set(threadId, addon);
+}
 /** Whether each session's bottom panel (its shells and runs) is up, while the app runs. */
 const belows = new Map<string, boolean>();
 /** The bottom panel up for a session that isn't on screen, for when it opens (⌘K's Open Terminal from Settings). */
@@ -430,7 +434,9 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     return () => window.removeEventListener("lc:open-design", onDesign);
   }, [thread.id]);
 
-  // A key opens a surface (⌘⇧ and its letter, unless you changed it), while the session is open.
+  // A surface's key (⌘⇧ and its letter, unless you changed it) is its button in the bar, while the
+  // session is open: up if it isn't showing, the panel away if it is (dock.ts, toggleTab, as T3 Code's
+  // rightPanelStore.ts toggles). Beside another session it's the side you're in that takes it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!keysOn.current) return;
@@ -439,7 +445,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       e.preventDefault();
       // The Terminal's key shows the bottom panel, and hides it when it's up, as its button's tip says.
       if (s.id === "terminal") setBelow((b) => !b);
-      else setDock((d) => openTab(d, s.id));
+      // Held down, a key repeats: one press is one change, not a panel that flickers.
+      else if (!e.repeat) setDock((d) => toggleTab(d, s.id));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

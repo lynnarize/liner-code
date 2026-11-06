@@ -3,7 +3,7 @@
   nothing drawn between them. ⌘K reaches everything; the shell's menu bar sends the same commands.
 */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentProfile, RoutineRun, SessionMode } from "@contracts";
+import type { AgentProfile, PanelPlace, RoutineRun, SessionMode } from "@contracts";
 import { CREATE_ADDON_ASK } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
 import { Toaster, toast } from "@liner/components/toast/toast";
@@ -14,7 +14,7 @@ import { EngineAway, getState, onNotify, onStream, RpcError, rpc, startEngine, u
 import { Home } from "./Home";
 import { I } from "./icons";
 import { ACCESS_LEVELS, agentOf } from "./model";
-import { Session, showBelow } from "./Session";
+import { Session, showAppTab, showBelow } from "./Session";
 import { applyLook, readLook } from "./look";
 import { Sidebar, waitsOnYou } from "./Sidebar";
 // The builder brings Liner's workflow canvas; it loads when you first edit a routine.
@@ -228,7 +228,8 @@ export function App() {
     if (tab) keepDock(id, openTab(keptDock(id), tab));
     go({ kind: "session", id });
   };
-  // An app made from an offer, opened on its page, and the session that made it ("Watch it").
+  // An app made from an offer, opened on its page, and the session that made it ("Watch it"), or
+  // where a panel ran, with it up there (the Add-ons page's Retry).
   useEffect(() => {
     const app = (e: Event) => {
       const d = (e as CustomEvent<{ id: string; place: string }>).detail;
@@ -237,8 +238,9 @@ export function App() {
       setView((v) => ({ kind: "app", id: d.id, back: v.kind === "app" ? v.back : v }));
     };
     const session = (e: Event) => {
-      setSettings(false);
-      setView({ kind: "session", id: (e as CustomEvent<{ id: string }>).detail.id });
+      const { id, panel } = (e as CustomEvent<{ id: string; panel?: { id: string; place: PanelPlace } }>).detail;
+      if (panel?.place === "tab") showAppTab(id, panel.id);
+      openSession(id, panel?.place === "dock" ? `app:${panel.id}` : undefined);
     };
     window.addEventListener("lc:open-app", app);
     window.addEventListener("lc:open-session", session);

@@ -22,13 +22,10 @@ import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { plural, since } from "./model";
 import { startCreator } from "./Modes";
-import { retryPanel, useStoppedPanels } from "./panelLife";
+import { STOPPED_REASON, useStoppedPanels } from "./panelLife";
 import { NamedSwitch, Pop } from "./ui";
 import * as os from "./os";
 import "./addons-page.css";
-
-/** What a stopped panel's row says, in DeepSeek Harness's shape: a reason, with the Problem tag beside the name. */
-const STOPPED_REASON = "Reason: it stopped running. Anything it was showing is gone.";
 
 // The by-hand form for a connection lives with Settings, which loads only when it's needed.
 const AddByHand = lazy(() => import("./Settings").then((m) => ({ default: m.AddByHand })));
@@ -97,6 +94,7 @@ function madeBy(a: AddonInfo, open: boolean): ReactNode {
 export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; onSidebar: () => void; onMake: () => void }) {
   const addons = useEngine((x) => x.addons);
   const off = useEngine((x) => x.addonsOff);
+  const threads = useEngine((x) => x.threads);
   const stopped = useStoppedPanels();
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState<"source" | "connect" | null>(null);
@@ -105,6 +103,14 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
   const removed = addons.filter((a) => a.removed);
   const picked = addons.find((a) => a.id === open);
   const update = (id: string, p: { enabled?: boolean; version?: number; removed?: boolean }) => void rpc("addons.update", { id, ...p }).catch(fail);
+  // A panel runs only where it's shown, and nothing is shown behind this page: Retry goes to where it
+  // ran, its session or its own page, and the frame that comes up there is the retry. Its Problem
+  // stays until that frame is back (panelLife.ts), and comes back if it stops again.
+  const retry = (a: AddonInfo) => {
+    const at = threads.find((t) => t.id === stopped.get(a.id) && !t.archived);
+    if (at && a.panel && a.panel.place !== "page") openSession(at.id, { id: a.id, place: a.panel.place });
+    else openApp({ id: a.id, place: "page" });
+  };
   const refresh = () => {
     setLooking(true);
     void rpc("addons.list", {})
@@ -182,7 +188,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                   </span>
                 </button>
                 {a.enabled && stopped.has(a.id) && (
-                  <button type="button" className="lc-btn" data-size="sm" onClick={() => retryPanel(a.id)}>
+                  <button type="button" className="lc-btn" data-size="sm" title="Opens it where it ran, which starts it again" onClick={() => retry(a)}>
                     Retry
                   </button>
                 )}

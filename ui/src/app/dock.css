@@ -23,6 +23,32 @@
   margin: 0 2px;
   background: var(--l-line-2);
 }
+/*
+  In a narrow bar (two sessions beside each other) the row gives way to its ··· a button at a time,
+  which lists them (TopBar.tsx). Each step keeps 40px over what the title's least and the buttons
+  need, for a chip or the sidebar's button.
+*/
+@container lc-bar (max-width: 425px) {
+  .lc-sbar .lc-sbar-step1 {
+    display: none;
+  }
+}
+@container lc-bar (max-width: 391px) {
+  .lc-sbar .lc-sbar-step2 {
+    display: none;
+  }
+}
+@container lc-bar (max-width: 357px) {
+  .lc-sbar .lc-sbar-step3 {
+    display: none;
+  }
+}
+@container lc-bar (max-width: 323px) {
+  .lc-sbar .lc-sbar-step4,
+  .lc-sbar-sep {
+    display: none;
+  }
+}
 .lc-sbar-b {
   position: relative;
   width: 30px;
@@ -440,11 +466,14 @@
 /* ---------- A session's tabs: Chat, and the apps placed beside it ---------- */
 .lc-views {
   display: inline-flex;
-  flex: none;
+  flex: 0 1 auto;
   gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
   padding: 2px;
   border-radius: 10px;
   background: var(--l-wash);
+  scrollbar-width: none;
 }
 .lc-view-b {
   display: inline-flex;
@@ -462,6 +491,23 @@
   font-weight: 500;
   color: var(--l-ink-3);
   cursor: pointer;
+}
+.lc-view-b > svg {
+  flex: none;
+}
+/* A narrow bar keeps the tabs' icons, and their row scrolls. */
+@container lc-bar (max-width: 391px) {
+  .lc-view-b {
+    flex: none;
+    gap: 0;
+    padding: 0 7px;
+    font-size: 0;
+  }
+}
+@container lc-bar (max-width: 323px) {
+  .lc-view-b {
+    padding: 0 5px;
+  }
 }
 /* A long app name ends in an ellipsis rather than pushing the bar's buttons off the paper. */
 .lc-view-b > span {

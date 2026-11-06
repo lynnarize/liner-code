@@ -20,7 +20,7 @@ import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { AppModelChip, appModelOf, pickAppModel } from "./AppModel";
 import { getState, loadItems, onStream, rpc, useEngine, useItemsWhere } from "./engine";
-import { panelRunning, panelStopped, usePanelTries } from "./panelLife";
+import { isPanelStopped, panelRunning, panelStopped, STOPPED_REASON } from "./panelLife";
 import { toComposer } from "./Find";
 import { I } from "./icons";
 import { modelLabel } from "./model";
@@ -57,6 +57,8 @@ export function accessLine(a: PanelAsk["access"], place: PanelPlace) {
 const kb = (n: number) => (n >= 1024 && n % 1024 === 0 ? `${n / 1024} MB` : `${n} KB`);
 
 type Loaded = { files: Record<string, string>; entry: string; access: PanelAsk["access"]; place: PanelPlace; name: string };
+/** A preview's card says it stopped with this, so a preview that comes back can take it away. */
+const STOPPED_PREVIEW = "It stopped running.";
 
 /**
   A panel in a tab of the dock, beside Chat, or on a page: an add-on you have (`addon`), or the draft
@@ -138,18 +140,18 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   const [blocked, setBlocked] = useState<string | null>(null);
   const [run, setRun] = useState(0);
   // Its process ended (panelFrame's port closed): the frame steps aside, as DeepSeek Harness's slot
-  // does, and the Add-ons page says so and offers Retry. Its other frames may be fine.
-  const [ended, setEnded] = useState(false);
-  const tries = usePanelTries(addon);
+  // does, and its tab and the Add-ons page say so and offer Retry. Its other frames may be fine. It
+  // stands until a frame says it's back, here or one that came up to retry it from the Add-ons page,
+  // so a Retry that brings nothing up says so rather than leaving the tab blank.
+  const [ended, setEnded] = useState(() => !preview && isPanelStopped(addon));
   const line = useRef<MessagePort | null>(null);
   useEffect(() => {
-    setEnded(false);
     return () => {
       const held = line.current;
       line.current = null;
       held?.close();
     };
-  }, [run, tries]);
+  }, [run]);
   const count = useEngine((s) => (thread ? (s.items[thread.id]?.length ?? 0) : 0));
   // A model's answers it's waiting on: stopped when the frame goes (closed, another version, run again).
   const asking = useRef(new Set<string>());
@@ -206,12 +208,15 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
             line.current = null;
             setEnded(true);
             // A preview isn't on the Add-ons page yet, so its own card says it.
-            if (preview) setCrash({ message: "It stopped running." });
-            else panelStopped(addon);
+            if (preview) setCrash({ message: STOPPED_PREVIEW });
+            else panelStopped(addon, thread?.id);
           }, 1000);
         });
         port1.start();
         frame.current.contentWindow?.postMessage({ liner: 1, doc: written.current }, "*", [port2]);
+        // Back, a slow reload's or a Retry's: this frame out of hiding, here and on the Add-ons page.
+        setEnded(false);
+        setCrash((c) => (c?.message === STOPPED_PREVIEW ? null : c));
         if (!preview) panelRunning(addon);
         return;
       }
@@ -274,6 +279,8 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   const name = loaded.name;
   const earlier = info ? info.versions.filter((v) => v < info.version).at(-1) : undefined;
   const reach = loaded.access.network;
+  // A new frame in this one's place. What stopped stays said until it's back (`frame`, above).
+  const again = () => (setCrash(null), setRun((n) => n + 1));
   return (
     <>
       {blocked && (
@@ -319,21 +326,34 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
                 Back to v{earlier}
               </button>
             )}
-            {info ? (
+            {info && (
               <button type="button" className="lc-btn" data-kind="ghost" onClick={() => void rpc("addons.update", { id: addon, enabled: false }).catch(fail)}>
                 Turn it off
               </button>
-            ) : (
-              <button type="button" className="lc-btn" data-kind="ghost" onClick={() => (setCrash(null), setRun((n) => n + 1))}>
+            )}
+            {(!info || ended) && (
+              <button type="button" className="lc-btn" data-kind="ghost" onClick={again}>
                 Try it again
               </button>
             )}
           </div>
         </div>
       )}
+      {ended && !crash && (
+        <PanelNote
+          icon={<I.alert size={20} />}
+          title={`${name} stopped`}
+          body={STOPPED_REASON}
+          action={
+            <button type="button" className="lc-btn" onClick={again}>
+              Retry
+            </button>
+          }
+        />
+      )}
       <iframe
         ref={frame}
-        key={`${run}:${tries}`}
+        key={run}
         className="lc-addon-frame"
         title={name}
         sandbox="allow-scripts"
@@ -428,7 +448,8 @@ export function AppPage({ id, back, onBack, sidebar, onSidebar }: { id: string; 
 
 /** Opens an app where it lives: in the dock or beside Chat in a session, or its page (App.tsx and Session.tsx listen). */
 export const openApp = (d: { id: string; place: PanelPlace; threadId?: string }) => window.dispatchEvent(new CustomEvent("lc:open-app", { detail: d }));
-export const openSession = (id: string) => window.dispatchEvent(new CustomEvent("lc:open-session", { detail: { id } }));
+/** Opens a session, with a panel up in it if one's named: in its dock, or as its tab beside Chat (App.tsx listens). */
+export const openSession = (id: string, panel?: { id: string; place: PanelPlace }) => window.dispatchEvent(new CustomEvent("lc:open-session", { detail: { id, panel } }));
 
 type Offer = Extract<Item, { kind: "offer" }>;
 const PLACES: { id: PanelPlace | "custom"; label: string; hint: string; icon: (p: { size?: number }) => ReactNode }[] = [

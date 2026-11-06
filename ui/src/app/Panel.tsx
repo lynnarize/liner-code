@@ -32,7 +32,7 @@ import { DeviceSurface } from "./Device";
 import { FilesSurface } from "./Files";
 import { toComposer } from "./Find";
 import { LinkedSurface, PrSurface } from "./Pr";
-import { Review, TurnPicker, Viewed } from "./Review";
+import { MoreFiles, Review, TurnPicker, Viewed } from "./Review";
 import { RoutinesList, RunDetail } from "./Routines";
 import { ship } from "./Ship";
 import { SideChat } from "./SideChat";
@@ -419,6 +419,7 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
   const pick = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : (cps[cps.length - 1]?.id ?? null);
   const cp = cps.find((c) => c.id === pick);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
+  const [total, setTotal] = useState(0);
   const [view, setView] = useState<"unified" | "split">(() => (localStorage.getItem("lc:view") as "split") ?? "unified");
   const [viewed, setViewed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<"undo" | null>(null);
@@ -432,10 +433,15 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
     let live = true;
     setDiff(null);
     void rpc("checkpoint.diff", { threadId: thread.id, itemId: pick })
-      .then((d) => live && setDiff(d.files))
+      .then((d) => {
+        if (!live) return;
+        setDiff(d.files);
+        setTotal(d.total);
+      })
       .catch((e) => {
         if (!live) return;
         setDiff([]);
+        setTotal(0);
         // An empty diff alone would read as a turn that changed nothing.
         fail(e);
       });
@@ -491,6 +497,7 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
           <CodeDiff files={diff} title={picker} view={view} onViewChange={setView} maxHeight={4000} />
         )}
       </div>
+      {diff && total > diff.length && <MoreFiles n={total - diff.length} turn={Boolean(cp)} pick={pick} />}
       <div className="lc-panel-foot">
         <Viewed seen={seen} total={files.length} />
         <span className="lc-grow" />

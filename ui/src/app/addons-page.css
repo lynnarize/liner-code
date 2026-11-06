@@ -231,14 +231,14 @@ button.lc-ao-open {
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--danger, #d0382e) 12%, transparent);
-  color: var(--danger, #d0382e);
+  background: color-mix(in oklab, var(--l-danger) 12%, transparent);
+  color: var(--l-danger-text);
   font-size: 11px;
   font-style: normal;
   font-weight: 500;
 }
 .lc-ao-row[data-state="failed"] small {
-  color: var(--danger, #d0382e);
+  color: var(--l-danger-text);
 }
 .lc-ao-open small {
   font-size: 14px;

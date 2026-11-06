@@ -3,11 +3,12 @@
   row of icon buttons of one size that are the panels' tabs. Session, Changes, Browser and Files
   come up in the right panel and go away when pressed again (dock.ts, toggleTab); Terminal shows
   the bottom panel, with its shells and runs. Changes carries a small count of the files waiting to
-  be committed and pushed. The ··· holds the other surfaces, your apps, and hiding the panel. Every
-  surface also has its key (⌘⇧ and a letter), and ⌘K finds them all; the apps you pin keep a tab
-  at the start of the panel's strip.
+  be committed and pushed. The ··· holds the other surfaces, your apps, and hiding the panel, and in
+  a narrow bar the buttons that gave way to it. Every surface also has its key (⌘⇧ and a letter),
+  which does what its button does, and ⌘K finds them all; the apps you pin keep a tab at the start
+  of the panel's strip.
 */
-import { createContext, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { appIcon, appsFor } from "./Addon";
 import { behind, onScreen, openTab, toggleDock, toggleTab, type DockState } from "./dock";
@@ -72,6 +73,8 @@ export function pin(id: string, on: boolean) {
 
 /** The surfaces with a button of their own in the row; the rest are in its ···. */
 const ROW: SurfaceId[] = ["session", "terminal", "changes", "browser", "files"];
+/** The step of a narrowing bar at which each gives way to the ··· (dock.css, lc-bar). The Terminal stays. */
+const GIVES_WAY: Partial<Record<SurfaceId, number>> = { files: 1, browser: 2, session: 3, changes: 4 };
 
 export function TopBar({ dock, onDock, below, onBelow, files, lines, run, projectId }: { dock: DockState; onDock: (f: (d: DockState) => DockState) => void; below: boolean; onBelow: () => void; files: number; lines: { added: number; removed: number }; run?: ReactNode; projectId?: string }) {
   const addons = useEngine((s) => s.addons);
@@ -79,11 +82,12 @@ export function TopBar({ dock, onDock, below, onBelow, files, lines, run, projec
   const keys = (id: string) => os.keys(shortcutOf(id) ?? []) || undefined;
   const changed = lines.added || lines.removed ? `+${lines.added} −${lines.removed}` : "";
   const waiting = files ? `${plural(files, "file")} waiting to commit and push` : "";
+  const row = useRef<HTMLDivElement>(null);
   return (
     <>
       {run}
       <span className="lc-sbar-sep" aria-hidden />
-      <div className="lc-sbar" role="toolbar" aria-label="Panels">
+      <div ref={row} className="lc-sbar" role="toolbar" aria-label="Panels">
         {ROW.map((id) => {
           const s = surfaceOf(id)!;
           if (id === "terminal")
@@ -97,10 +101,11 @@ export function TopBar({ dock, onDock, below, onBelow, files, lines, run, projec
           const on = onScreen(dock, id);
           const tip = id === "changes" ? ["Changes", changed, waiting].filter(Boolean).join(" · ") : s.label;
           return (
-            <Tooltip key={id} content={on ? `Hide ${s.label}` : tip} shortcut={keys(`surface.${id}`)}>
+            <Tooltip key={id} className={`lc-sbar-step${GIVES_WAY[id]}`} content={on ? `Hide ${s.label}` : tip} shortcut={keys(`surface.${id}`)}>
               <button
                 type="button"
                 className="lc-tb lc-sbar-b l-focus"
+                data-surface={id}
                 aria-label={id === "changes" && files ? `Changes, ${waiting}` : s.label}
                 aria-pressed={on}
                 data-behind={behind(dock, id) || undefined}
@@ -120,6 +125,11 @@ export function TopBar({ dock, onDock, below, onBelow, files, lines, run, projec
           {(close) => (
             <>
               <PanelHead>Open in the panel</PanelHead>
+              {/* The steps are the CSS's to take, so the buttons it hid say which. */}
+              {ROW.filter((id) => row.current?.querySelector(`[data-surface="${id}"]`)?.checkVisibility() === false).map((id) => {
+                const s = surfaceOf(id)!;
+                return <Row key={id} title={onScreen(dock, id) ? `Hide ${s.label}` : s.label} note={id === "changes" ? waiting || undefined : undefined} icon={<s.icon size={14} />} end={keys(`surface.${id}`)} onPick={() => (close(), onDock((d) => toggleTab(d, id)))} />;
+              })}
               {SURFACES.filter((s) => !ROW.includes(s.id)).map((s) => (
                 <Row key={s.id} title={s.label} icon={<s.icon size={14} />} end={keys(`surface.${s.id}`)} onPick={() => (close(), onDock((d) => openTab(d, s.id)))} />
               ))}

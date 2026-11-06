@@ -2222,6 +2222,10 @@ html[data-native="mac"] .lc-sb-head {
   box-sizing: border-box;
   padding: 8px 10px 8px 20px;
 }
+/* What the bar has room for: its own width less its padding, which grows under the traffic lights. */
+.lc-session > .lc-top {
+  container: lc-bar / inline-size;
+}
 .lc-title {
   flex: 0 1 auto;
   min-width: 72px;
@@ -2254,12 +2258,14 @@ html[data-native="mac"] .lc-sb-head {
 /*
   The title is its menu's button, as in Claude Code: medium weight in the second ink with a small
   chevron, a wash under both on hover and while the menu is open. It gives up its width before the
-  buttons on the right do, and ends in an ellipsis.
+  chips, the tabs and the buttons do, down to room for a few letters and its chevron, and ends in an
+  ellipsis (T3 Code's title narrows the same way: chat/ChatHeader.tsx). Past that the buttons give
+  way (dock.css), so it never runs under them.
 */
 .lc-tt-pop {
   display: flex;
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 999 auto;
+  min-width: 88px;
 }
 /* It shrinks as the wrapper's flex item: a max-width of 100% would size it against itself and cut a
    title that fits. */
@@ -2281,6 +2287,7 @@ html[data-native="mac"] .lc-sb-head {
     color 160ms ease;
 }
 .lc-tt .lc-title {
+  min-width: 0;
   font-size: 14.5px;
   font-weight: 500;
   letter-spacing: -0.01em;
@@ -2364,6 +2371,23 @@ html[data-native="mac"] .lc-sb-head {
   }
   .lc-verdict > span:not(.l-shimmer) {
     font-size: 0;
+  }
+}
+@container lc-session (max-width: 353px) {
+  .lc-top {
+    gap: 4px;
+  }
+}
+/* Between the title and the buttons, the chips shrink once the title can't, rather than push them
+   off; a bar that's giving up its buttons (dock.css) drops the mode's icon first. */
+.lc-top :is(.lc-mode-chip, .lc-verdict) {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+@container lc-bar (max-width: 425px) {
+  .lc-top .lc-mode-chip {
+    display: none;
   }
 }
 .lc-crumb {

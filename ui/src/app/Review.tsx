@@ -152,6 +152,15 @@ type Anchor = { file: string; line: number; endLine?: number };
 type Thread_ = { id: string; anchor: Anchor; question: string; answer: string; who: string; model: string; at: number; streaming: boolean };
 
 
+/** The engine sends the first 60 files; here and in the side panel, the rest are counted (T3 Code: chat/ChangedFilesTree.tsx). */
+export function MoreFiles({ n, turn, pick }: { n: number; turn: boolean; pick: string | null }) {
+  return (
+    <p className="lc-rv-more lc-quiet">
+      {plural(n, "more file")} {turn ? "in this turn" : pick === "branch" ? "on this branch" : "across all turns"} {n === 1 ? "isn't" : "aren't"} shown here.
+    </p>
+  );
+}
+
 export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thread; items: Item[]; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void; onBack: () => void }) {
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
@@ -442,8 +451,7 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               {plural(prepared.length - shown.length, "test file")} hidden · Show
             </button>
           )}
-          {/* The engine sends the first 60 files. */}
-          {diff && total > diff.length && <p className="lc-rv-more lc-quiet">{plural(total - diff.length, "more file")} {cp ? "in this turn" : pick === "branch" ? "on this branch" : "across all turns"} aren't shown here.</p>}
+          {diff && total > diff.length && <MoreFiles n={total - diff.length} turn={Boolean(cp)} pick={pick} />}
           {(subs.length > 0 || findings.reviewer) && (
             <div className="lc-rv-checked">
               <span className="lc-rv-navh">{coder.name}'s subagents checked</span>

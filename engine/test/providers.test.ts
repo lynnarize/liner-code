@@ -5,13 +5,14 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { acpProvider } from "../src/providers/acp.ts";
 import { CodexServerSession, codexAsk } from "../src/providers/codex-server.ts";
-import { ResumeFailed, type OpenOptions, type TurnSink } from "../src/providers/types.ts";
+import { ResumeFailed, type ApprovalRequest, type OpenOptions, type TurnSink } from "../src/providers/types.ts";
+import type { Access } from "../../contracts/src/index.ts";
 import { demo } from "../src/providers/demo.ts";
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
@@ -171,4 +172,86 @@ test("codex: an app server that dies as it opens fails the turn once, not twice"
   await assert.rejects(s.turn("hi", sink, new AbortController().signal), /bad config/);
   s.close();
   assert.deepEqual(r.errors, [], "the turn's own failure says it; the sink isn't told again");
+});
+
+/** An agent that sends the client one request as its prompt starts, and ends the turn on the reply. */
+const ACP_ASKS = `
+switch (m.method) {
+  case "initialize": send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: {} } }); break;
+  case "session/new": send({ id: m.id, result: { sessionId: "s-new" } }); break;
+  case "session/prompt":
+    global.prompt = m.id;
+    send({ jsonrpc: "2.0", id: 900, ...JSON.parse(process.env.FAKE_ASK) });
+    break;
+  default:
+    if (m.id === 900) send({ id: global.prompt, result: { stopReason: "end_turn" } });
+    else if (m.id !== undefined) send({ id: m.id, result: {} });
+}`;
+
+async function acpAsk(ask: { method: string; params: Record<string, unknown> }, extra: Partial<OpenOptions>, approve?: TurnSink["approve"]) {
+  const fake = script("agent", ACP_ASKS);
+  const p = acpProvider("acp.fake", { label: "Fake", cmd: [fake.file], login: "" });
+  const s = p.open(opts({ ...extra, env: { ...process.env, FAKE_LOG: fake.log, FAKE_ASK: JSON.stringify(ask) } }));
+  const { sink } = recorder();
+  if (approve) sink.approve = approve;
+  await s.turn("go", sink, new AbortController().signal);
+  s.close();
+  return fake.read().find((m) => m.id === 900 && !m.method) as { result?: { content?: string; outcome?: { optionId?: string } }; error?: { message: string } };
+}
+
+function project() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lc-acp-root-")));
+  const away = realpathSync(mkdtempSync(join(tmpdir(), "lc-acp-away-")));
+  writeFileSync(join(away, "secret.txt"), "secret");
+  symlinkSync(away, join(root, "link"));
+  symlinkSync(join(away, "not-yet.txt"), join(root, "dangling.txt"));
+  mkdirSync(join(root, "src"));
+  writeFileSync(join(root, "src", "a.ts"), "a");
+  writeFileSync(join(root, "..notes"), "kept");
+  return { root, away };
+}
+
+test("acp: a link that leaves the project is outside it, for reading and for writing", async () => {
+  const { root, away } = project();
+  const read = (path: string) => acpAsk({ method: "fs/read_text_file", params: { path } }, { cwd: root });
+  const write = (path: string) => acpAsk({ method: "fs/write_text_file", params: { path, content: "x" } }, { cwd: root });
+
+  assert.match((await read(join(root, "link", "secret.txt"))).error?.message ?? "", /outside the project/);
+  assert.match((await write(join(root, "link", "new.txt"))).error?.message ?? "", /outside the project/);
+  assert.match((await write(join(root, "dangling.txt"))).error?.message ?? "", /outside the project/, "a link to nothing yet");
+  assert.match((await write(join(root, "link", "new", "deep.txt"))).error?.message ?? "", /outside the project/, "through folders that don't exist yet");
+  assert.throws(() => readFileSync(join(away, "not-yet.txt")));
+  assert.throws(() => readFileSync(join(away, "new.txt")));
+
+  assert.equal((await read(join(root, "src", "a.ts"))).result?.content, "a");
+  assert.equal((await read("..notes")).result?.content, "kept", "a name that starts with two dots is still inside");
+  assert.equal((await write("fresh/new.txt")).error, undefined, "a new file in a new folder");
+  assert.equal(readFileSync(join(root, "fresh", "new.txt"), "utf8"), "x");
+});
+
+test("acp: edits go ahead by themselves only when every file is in the project; the rest ask, and can't be allowed for good", async () => {
+  const { root, away } = project();
+  const options = [{ optionId: "yes", kind: "allow_once" }, { optionId: "no", kind: "reject_once" }];
+  const edit = async (kind: string, locations: { path: string }[] | undefined, access: Access = "edits") => {
+    const cards: ApprovalRequest[] = [];
+    const reply = await acpAsk(
+      { method: "session/request_permission", params: { sessionId: "s-new", options, toolCall: { toolCallId: "c1", kind, title: "Change it", locations } } },
+      { cwd: root, access },
+      async (req) => (cards.push(req), { allow: false }),
+    );
+    return { picked: reply.result?.outcome?.optionId, cards };
+  };
+
+  assert.deepEqual(await edit("edit", [{ path: "src/a.ts" }, { path: join(root, "src", "new.ts") }]), { picked: "yes", cards: [] });
+  for (const access of ["edits", "auto", "review"] as const) {
+    const out = await edit("edit", [{ path: "src/a.ts" }, { path: join(away, "secret.txt") }], access);
+    assert.equal(out.picked, "no", `${access}: one file outside is enough`);
+    assert.equal(out.cards[0].risk, "high", "so Auto and the Reviewer leave it to you");
+    assert.equal(out.cards[0].rule, undefined, "Don't ask again can't cover it");
+    assert.match(out.cards[0].fields.find((f) => f.label === "File")?.value ?? "", /secret\.txt/, "the card names the file outside");
+  }
+  for (const kind of ["delete", "move"]) assert.equal((await edit(kind, [{ path: join(away, "secret.txt") }])).picked, "no");
+  assert.equal((await edit("edit", [{ path: "link/secret.txt" }])).picked, "no", "through a link");
+  assert.equal((await edit("edit", undefined)).picked, "no", "no file named");
+  assert.equal((await edit("edit", [{ path: join(away, "secret.txt") }], "full")).picked, "yes", "Full access is all of it");
 });

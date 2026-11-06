@@ -305,6 +305,107 @@ test("limits: a session that runs out carries on with the other tool, the conver
   }
 });
 
+test("read only: a write command in a planner's turn or a side chat comes to you, whatever the Reviewer or an earlier rule says", async () => {
+  const reviewed: string[] = [];
+  const make = (id: ProviderId): Provider => ({
+    id,
+    detect: async () => info(id, []),
+    open: (o: OpenOptions) => ({
+      turn: async (text, sink, signal) => {
+        if (o.ephemeral) return reviewed.push(text), sink.text("ALLOW: it's fine");
+        const a = await sink.approve({ key: "call-1", tool: "Bash", title: "Run npm install", risk: "low", fields: [{ label: "Command", value: "npm install" }], rule: "npm install" }, signal);
+        sink.text(a.allow ? "Ran it." : "Didn't run it.");
+      },
+      update: async () => true,
+      close() {},
+    }),
+  });
+  const saved = { claude: providers.claude, codex: providers.codex };
+  providers.claude = make("claude");
+  providers.codex = make("codex");
+  const raw = (r: Runtime) => r as unknown as { rules: Map<string, Set<string>>; unattended: Set<string>; turn(id: string, text: string, agent: string, planning: boolean): Promise<void> };
+  const waitAsk = async (store: Store) => {
+    for (let i = 0; i < 100 && !asks(store.timeline("t")).some((x) => x.state === "asking"); i++) await new Promise((r) => setTimeout(r, 10));
+    return asks(store.timeline("t")).find((x) => x.state === "asking");
+  };
+  try {
+    // A planner on Reviewer decides, with a rule from an earlier turn: neither lets it through.
+    const a = session("review");
+    raw(a.runtime).rules.set("t", new Set(["npm install"]));
+    const planning = raw(a.runtime).turn("t", "plan it", "forge", true);
+    const card = await waitAsk(a.store);
+    assert.ok(card, "it came to you");
+    assert.deepEqual(reviewed, [], "the Reviewer wasn't asked");
+    a.runtime.answer("t", card!.id, false);
+    await planning;
+
+    // A session you made Read only, and a side chat, the same.
+    for (const patch of [{ access: "read" as Access }, { sideOf: "other" }]) {
+      const b = session("edits");
+      b.store.patchThread("t", patch);
+      raw(b.runtime).rules.set("t", new Set(["npm install"]));
+      const turn = raw(b.runtime).turn("t", "look", "forge", false);
+      const asked = await waitAsk(b.store);
+      assert.ok(asked, `it came to you: ${JSON.stringify(patch)}`);
+      b.runtime.answer("t", asked!.id, false);
+      await turn;
+    }
+
+    // Nobody's there to ask in a routine: it's declined.
+    const c = session("full");
+    raw(c.runtime).unattended.add("t");
+    await raw(c.runtime).turn("t", "plan it", "forge", true);
+    assert.equal(asks(c.store.timeline("t")).length, 0);
+    assert.ok(c.store.timeline("t").some((x) => x.kind === "text" && /Didn't run it/.test(x.text)), "declined, not run");
+
+    // A builder's turn still uses the rule.
+    const d = session("ask");
+    raw(d.runtime).rules.set("t", new Set(["npm install"]));
+    await raw(d.runtime).turn("t", "build it", "forge", false);
+    assert.equal(asks(d.store.timeline("t")).length, 0);
+    assert.ok(d.store.timeline("t").some((x) => x.kind === "text" && /Ran it/.test(x.text)));
+  } finally {
+    Object.assign(providers, saved);
+  }
+});
+
+test("limits: when the tool it would carry on with is out of usage too, it stops, and doesn't hand back and forth", async () => {
+  const calls: string[] = [];
+  const make = (id: ProviderId, until: number): Provider => ({
+    id,
+    detect: async () => info(id, []),
+    open: () => ({
+      turn: async (_text, sink) => {
+        calls.push(id);
+        if (calls.length > 6) throw new Error("it never stopped");
+        sink.limited("You've hit your limit.", until);
+      },
+      update: async () => false,
+      close() {},
+    }),
+  });
+  const saved = { claude: providers.claude, codex: providers.codex };
+  const soon = Date.now() + 400;
+  providers.claude = make("claude", Date.now() + 3_600_000);
+  providers.codex = make("codex", soon);
+  try {
+    const { store, runtime } = session("edits");
+    store.setSettings({ onLimit: "carry" });
+    await runtime.send("t", "make the counter page");
+    await new Promise((r) => setTimeout(r, 200));
+    assert.deepEqual(calls, ["claude", "codex"], "one hop, then it stops");
+    assert.equal(store.thread("t").status, "limited");
+    const last = store.timeline("t").findLast((x) => x.kind === "limit");
+    assert.equal(last?.kind === "limit" ? last.fallback : "none", undefined, "nothing left to offer");
+    // Its window reopens, and it's a way out again.
+    assert.equal(runtime.fallbackFor("claude", "claude-sonnet-5-5"), undefined);
+    await new Promise((r) => setTimeout(r, Math.max(0, soon - Date.now()) + 20));
+    assert.equal(runtime.fallbackFor("claude", "claude-sonnet-5-5"), "codex:gpt-6-luna-mini");
+  } finally {
+    Object.assign(providers, saved);
+  }
+});
+
 test("watchdog: a turn that says nothing for a while is flagged once, and not while it waits on you", async () => {
   let release = () => {};
   const make = (id: ProviderId): Provider => ({

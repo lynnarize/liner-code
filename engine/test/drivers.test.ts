@@ -913,6 +913,45 @@ out({ type: "turn.completed", usage: { input_tokens: 100, cached_input_tokens: 4
   assert.deepEqual(used.at(-1), { inputTokens: 60, cacheReadTokens: 40, outputTokens: 5 });
 });
 
+test("codex exec: it can't stop to ask, so Ask first and Reviewer decides only read, and it says so once", async () => {
+  const { codex } = await import("../src/providers/codex.ts");
+  const dir = mkdtempSync(join(tmpdir(), "lc-codex-access-"));
+  const log = join(dir, "args.jsonl");
+  writeFileSync(
+    join(dir, "codex"),
+    `#!/usr/bin/env node
+const fs = require("fs");
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");
+const out = (e) => process.stdout.write(JSON.stringify(e) + "\\n");
+out({ type: "thread.started", thread_id: "t-new" });
+out({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } });
+`,
+    { mode: 0o755 },
+  );
+  const sandbox = async (access: OpenOptions["access"]) => {
+    writeFileSync(log, "");
+    const s = codex.open(opts({ access, env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin` } }));
+    const notices: string[] = [];
+    const { sink } = recorder();
+    sink.notice = (t) => void notices.push(t);
+    await s.turn("one", sink, new AbortController().signal);
+    await s.turn("two", sink, new AbortController().signal);
+    s.close();
+    const args = JSON.parse(readFileSync(log, "utf8").trim().split("\n")[0]) as string[];
+    return { sandbox: args.find((a) => a.startsWith("sandbox_mode=")), notices };
+  };
+  for (const access of ["ask", "review"] as const) {
+    const out = await sandbox(access);
+    assert.equal(out.sandbox, `sandbox_mode="read-only"`, access);
+    assert.equal(out.notices.length, 1, "said once");
+    assert.match(out.notices[0], /can't stop to ask/);
+  }
+  assert.deepEqual(await sandbox("read"), { sandbox: `sandbox_mode="read-only"`, notices: [] });
+  assert.deepEqual(await sandbox("edits"), { sandbox: `sandbox_mode="workspace-write"`, notices: [] });
+  assert.deepEqual(await sandbox("auto"), { sandbox: `sandbox_mode="workspace-write"`, notices: [] });
+  assert.deepEqual(await sandbox("full"), { sandbox: `sandbox_mode="danger-full-access"`, notices: [] });
+});
+
 test("acp: Stop while it asks answers cancelled; a loaded session isn't sent its instructions again; closing stops what the agent started", async () => {
   const { acpProvider } = await import("../src/providers/acp.ts");
   const fake = script("agent", ACP);

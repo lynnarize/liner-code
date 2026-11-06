@@ -92,6 +92,8 @@ const ROUNDS = 2;
 /** A command that reaches outside this Mac: a push, a merge or a post, a send, a copy to another machine. */
 const OUTWARD = /\bgit\s+push\b|\bgh\s+(?:\w+\s+)?(?:merge|create|close|edit|comment|review|delete|reopen)\b|\bgh\s+api\b.*(?:-X|--method|-f\b|-F\b|--field|--input)|\b(?:curl|wget)\b.*(?:\s-d\b|--data|\s-F\b|--form|\s-T\b|--upload-file|-X\s*(?:POST|PUT|DELETE|PATCH)|--post-)|\b(?:ssh|scp|rsync|sftp|nc)\s/i;
 /** The tools that only edit files in the project, by the name each provider asks with (Claude Code's, Codex's apply_patch, ACP's "edit" kind). */
+/** How long a tool counts as out of usage when it doesn't say when that ends. */
+const LIMIT_UNKNOWN_MS = 3_600_000;
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit", "apply_patch", "edit"]);
 type Waiter<T> = { resolve: (v: T) => void; reject: (e: Error) => void };
 
@@ -119,6 +121,8 @@ export class Runtime {
   private kept = new Set<string>();
   /** Threads a routine is working in right now, with nobody watching. */
   private unattended = new Set<string>();
+  /** When each tool that ran out of usage has it again: a limit is the account's, whichever session met it. */
+  private limitedUntil = new Map<string, number>();
   /** Keys you added, by provider; handed to the tools that use them, never written to disk. */
   keys = new Map<string, string>();
   /** What's installed, kept up to date by the API, for choosing a Reviewer. */
@@ -1396,7 +1400,9 @@ export class Runtime {
     quota; else the everyday pick among the other families' ready tools.
   */
   fallbackFor(provider: ProviderId, model: string): string | undefined {
-    const ready = this.providerInfo.filter((p) => p.available && p.adapter && p.id !== "demo" && p.id !== provider && p.models.length);
+    const now = Date.now();
+    // Not a tool that's out of usage too: two of them would hand a session back and forth with no end.
+    const ready = this.providerInfo.filter((p) => p.available && p.adapter && p.id !== "demo" && p.id !== provider && p.models.length && (this.limitedUntil.get(p.id) ?? 0) <= now);
     const twin = ready.find((p) => familyOf(p.id) === familyOf(provider));
     if (twin) return `${twin.id}:${twin.models.some((m) => m.id === model) ? model : (twin.models.find((m) => m.isDefault) ?? twin.models[0]).id}`;
     return castOf(ready.filter((p) => familyOf(p.id) !== familyOf(provider)))?.everyday;
@@ -1631,25 +1637,30 @@ export class Runtime {
         store.putItem(threadId, { kind: "plan", id: plan, turn, at: prev?.at ?? Date.now(), entries });
       },
       approve: (req, sig) => {
+        const now = store.thread(threadId);
+        const command = req.fields.find((f) => f.label === "Command")?.value;
+        // Read only means it, here as in the tool: in a planner's turn, a side chat or Read only, what writes
+        // never goes ahead by itself, whatever the access or an earlier "don't ask again". It comes to you.
+        const writes = command !== undefined ? !readsOnly(command) : EDIT_TOOLS.has(req.tool) || req.rule === "Edit";
+        const held = writes && (planning || now.access === "read" || Boolean(now.sideOf));
         // Allowed for the rest of the session already.
-        if (req.rule && this.rules.get(threadId)?.has(req.rule)) return Promise.resolve({ allow: true });
+        if (!held && req.rule && this.rules.get(threadId)?.has(req.rule)) return Promise.resolve({ allow: true });
+        // Nobody's there to ask.
+        if (held && (this.unattended.has(threadId) || now.trial)) return Promise.resolve({ allow: false, reason: "This turn only reads. Leave the change for the turn that builds." });
         // A routine runs with nobody watching: it may do what can be undone, never what can't, and
         // nothing that leaves this Mac (a push, a merge, a post): the routine's gate does that, or you do.
         if (this.unattended.has(threadId)) {
-          const command = req.fields.find((f) => f.label === "Command")?.value ?? "";
-          return Promise.resolve(req.risk === "high" || OUTWARD.test(command) ? { allow: false, reason: "Routines don't run commands that can't be undone or that reach outside this Mac. Leave it for the person." } : { allow: true });
+          return Promise.resolve(req.risk === "high" || OUTWARD.test(command ?? "") ? { allow: false, reason: "Routines don't run commands that can't be undone or that reach outside this Mac. Leave it for the person." } : { allow: true });
         }
         // A cost test runs with nobody watching too, on a task that only needs edits: edits go ahead, and so does reading
         // (Codex reads files with commands), anything else is declined.
-        if (store.thread(threadId).trial) {
-          const command = req.fields.find((f) => f.label === "Command")?.value ?? req.title.replace(/^Run /, "");
-          return Promise.resolve(EDIT_TOOLS.has(req.tool) || readsOnly(command) ? { allow: true } : { allow: false, reason: "This is a short cost test: read and edit the files without running anything." });
+        if (now.trial) {
+          return Promise.resolve(EDIT_TOOLS.has(req.tool) || readsOnly(command ?? req.title.replace(/^Run /, "")) ? { allow: true } : { allow: false, reason: "This is a short cost test: read and edit the files without running anything." });
         }
         const toolId = req.key ? tools.get(req.key)?.id : undefined;
-        const access = store.thread(threadId).access;
-        const command = req.fields.find((f) => f.label === "Command")?.value;
+        const access = now.access;
         // Auto: the tool's own auto mode lets through what it can; of what it hands over, reading and editing go ahead.
-        if (access === "auto" && req.risk !== "high" && (command === undefined ? EDIT_TOOLS.has(req.tool) : readsOnly(command))) return Promise.resolve({ allow: true });
+        if (!held && access === "auto" && req.risk !== "high" && (command === undefined ? EDIT_TOOLS.has(req.tool) : readsOnly(command))) return Promise.resolve({ allow: true });
         const ask = (note?: string) => {
           // Stopped while the Reviewer read the step: nothing to ask about.
           if (sig.aborted || signal.aborted) return Promise.resolve({ allow: false });
@@ -1660,7 +1671,7 @@ export class Runtime {
           return wait(this.approvals, id, sig);
         };
         // Reviewer decides: reading goes ahead, what can't be undone comes to you, the Reviewer calls the rest.
-        if (access === "review" && req.risk !== "high") {
+        if (!held && access === "review" && req.risk !== "high") {
           if (command !== undefined && readsOnly(command)) return Promise.resolve({ allow: true });
           return this.stepCall(threadId, req, sig).then((call) => {
             if (!call?.allow) return ask(call ? `${this.labelOf(call.model)}, reviewing: ${call.reason}` : undefined);
@@ -1743,6 +1754,7 @@ export class Runtime {
         if (limit) return;
         const r = this.resolve(store.thread(threadId), agentId);
         limit = { message, until, provider: r.provider };
+        this.limitedUntil.set(r.provider, until ?? Date.now() + LIMIT_UNKNOWN_MS);
         store.putItem(threadId, { kind: "limit", id: uid("it"), turn, at: Date.now(), message, until, provider: r.provider, fallback: this.fallbackFor(r.provider, r.model) });
       },
     };

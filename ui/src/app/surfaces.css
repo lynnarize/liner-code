@@ -3726,6 +3726,12 @@
   font-kerning: none;
   font-variant-ligatures: none;
   font-feature-settings: "kern" 0, "liga" 0, "calt" 0;
+  /* A form field resets these, and font: inherit doesn't bring them back. The field's letters would
+     run wider than the mirror's, a little more each character, into blanks that select and misplace
+     the spellcheck's underlines. */
+  letter-spacing: inherit;
+  word-spacing: inherit;
+  text-rendering: inherit;
 }
 .lc-field-md {
   position: absolute;
@@ -3742,6 +3748,9 @@
   position: relative;
   color: transparent;
   caret-color: var(--l-ink);
+  /* A scrollbar that takes up room (Windows) would narrow the field alone, and its lines would wrap
+     apart from the mirror's. */
+  scrollbar-width: none;
 }
 .lc-field[data-md]::selection {
   color: transparent;

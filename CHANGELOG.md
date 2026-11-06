@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A planner, a side chat or a Read only session could run a write command when the Reviewer allowed
+  it, or on an earlier "don't ask again". What writes now always comes to you in those turns.
+- An ACP agent's edit went ahead in Edits, Auto and Reviewer decides wherever it pointed. One outside
+  the project, or one that names no file, now asks each time. Agents that don't name their files will
+  ask more often.
+- A link in the project that points outside it let an ACP agent read and write there. Links are now
+  followed before the check, and a file whose name starts with two dots is no longer refused.
+- Ask first and Reviewer decides on an older Codex, without its app server, edited without asking.
+  They now only read there, and say so.
+- With Carry on set, two tools out of usage handed a session back and forth without end. It now makes
+  one hop and stops on the limit card.
+- In the composer, the text you typed slowly slid away from what the field really held: the caret sat
+  in empty space past the last letter, the blanks could be selected, and spellcheck's underlines
+  landed on the wrong words. The two now line up to the pixel.
+
 ## 0.2.2 (alpha), 2026-11-05
 
 **Update from 0.2.1 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or

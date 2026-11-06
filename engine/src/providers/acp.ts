@@ -5,8 +5,9 @@
   answers the agent's permission requests with the approval card, and reads and writes files for
   it inside the project.
 */
+import { lstatSync, realpathSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ProviderId, ProviderInfo, ToolKind } from "../../../contracts/src/index.ts";
 import { jsonLines, killTree, spawn, versionOf, which } from "../exec.ts";
@@ -24,6 +25,30 @@ type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Jso
 type ToolCall = { toolCallId: string; title?: string; kind?: string; status?: string; content?: Json[]; locations?: { path: string }[]; rawInput?: unknown; rawOutput?: unknown };
 
 const KIND: Record<string, ToolKind> = { read: "read", edit: "edit", delete: "edit", move: "edit", search: "search", execute: "exec", think: "think", fetch: "fetch" };
+
+/**
+  A path with its links followed, what doesn't exist yet kept as written; null when that can't be
+  told, as for a link to nothing, which a write would follow out (T3 Code: provider-acp clientPolicy.ts).
+*/
+function realPath(path: string) {
+  const missing: string[] = [];
+  const absent = (e: unknown) => (e as NodeJS.ErrnoException).code === "ENOENT";
+  for (let at = path; ; at = dirname(at)) {
+    try {
+      return resolve(realpathSync.native(at), ...missing);
+    } catch (e) {
+      if (!absent(e)) return null;
+    }
+    try {
+      lstatSync(at);
+      return null;
+    } catch (e) {
+      if (!absent(e)) return null;
+    }
+    if (dirname(at) === at) return null;
+    missing.unshift(basename(at));
+  }
+}
 
 class AcpSession implements ProviderSession {
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -179,13 +204,20 @@ class AcpSession implements ProviderSession {
     }
   }
 
+  /** Whether a path is really in the project, once its links are followed. */
+  private inProject(path: unknown) {
+    const root = realPath(this.o.cwd);
+    const real = realPath(resolve(this.o.cwd, String(path)));
+    if (!root || !real) return false;
+    const rel = relative(root, real);
+    return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+  }
+
   /** Requests from the agent: permission, and file access inside the project. */
   private async answer(method: string, p: Json): Promise<Json> {
     const inside = (path: unknown) => {
-      const abs = resolve(this.o.cwd, String(path));
-      const rel = relative(this.o.cwd, abs);
-      if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("That path is outside the project.");
-      return abs;
+      if (!this.inProject(path)) throw new Error("That path is outside the project.");
+      return resolve(this.o.cwd, String(path));
     };
     if (method === "fs/read_text_file") {
       const text = await readFile(inside(p.path), "utf8");
@@ -206,16 +238,24 @@ class AcpSession implements ProviderSession {
       const pick = (allow: boolean) => (options.find((o) => o.kind === (allow ? "allow_once" : "reject_once")) ?? options.find((o) => o.kind.startsWith(allow ? "allow" : "reject")))?.optionId;
       const command = commandOf(call);
       const kindNow = KIND[call.kind ?? ""] ?? "other";
+      // An edit goes by itself only when every file it names is in the project (T3 Code: provider-acp clientPolicy.ts).
+      const files = call.locations ?? [];
+      const stray = files.find((l) => !this.inProject(l.path));
+      const scoped = files.length > 0 && !stray;
       // Edits go ahead from Edits on its own up; Auto and Reviewer decides hand the rest to Liner Code.
-      const free = this.o.access === "full" || ((this.o.access === "edits" || this.o.access === "auto" || this.o.access === "review") && kindNow === "edit");
+      const free = this.o.access === "full" || ((this.o.access === "edits" || this.o.access === "auto" || this.o.access === "review") && kindNow === "edit" && scoped);
       if (free && !(this.o.guard && isDestructive(command))) return { outcome: { outcome: "selected", optionId: pick(true) } };
       const sink = this.sink;
       const signal = this.signal;
       if (!sink || !signal) return { outcome: { outcome: "cancelled" } };
       const kind = KIND[call.kind ?? ""] ?? "other";
-      const fields = [command && { label: "Command", value: command }, call.locations?.[0] && { label: "File", value: this.rel(call.locations[0].path) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
-      const rule = kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : call.kind;
-      const a = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: call.title ?? "Use a tool", risk: kind === "exec" ? commandRisk(command) : "low", fields, rule }, signal).catch(() => ({ allow: false }));
+      const file = stray ?? files[0];
+      const fields = [command && { label: "Command", value: command }, file && { label: "File", value: this.rel(file.path) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
+      // An edit outside the project, or of files it doesn't name, is yours each time: high, so Auto and the Reviewer leave it to you, and no rule.
+      const loose = kind === "edit" && !scoped;
+      const rule = loose ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : call.kind;
+      const description = loose ? (stray ? "This file is outside the project." : "The agent didn't say which files this changes.") : undefined;
+      const a = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: call.title ?? "Use a tool", description, risk: loose ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule }, signal).catch(() => ({ allow: false }));
       // Stopped while it asked: a request open when the prompt is cancelled is answered "cancelled", as ACP
       // asks, not as a no (T3 Code: provider-acp adapter.ts).
       if (signal.aborted) return { outcome: { outcome: "cancelled" } };

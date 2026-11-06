@@ -1,7 +1,8 @@
 /*
   Codex, through `codex exec --json`. Each turn is one process: the first starts a Codex
   thread, later ones resume it by id. Exec mode can't stop to ask, so access becomes Codex's
-  sandbox instead: read only, write inside the project, or full access.
+  sandbox instead: read only, write inside the project, or full access. What's meant to ask first
+  only reads here, and says so: nothing can ask, so nothing goes ahead unasked.
 */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -21,7 +22,9 @@ import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, ty
 const appServers = new Map<string, boolean>();
 const appServerFor = (env: NodeJS.ProcessEnv) => appServers.get(which("codex", env) ?? "") ?? false;
 
-const SANDBOX: Record<Access, string> = { read: "read-only", ask: "workspace-write", edits: "workspace-write", auto: "workspace-write", review: "workspace-write", full: "danger-full-access" };
+const SANDBOX: Record<Access, string> = { read: "read-only", ask: "read-only", edits: "workspace-write", auto: "workspace-write", review: "read-only", full: "danger-full-access" };
+/** Asks first in Liner Code, and can't here. */
+const CANT_ASK = new Set<Access>(["ask", "review"]);
 
 type CodexItem = {
   id: string;
@@ -75,6 +78,8 @@ class CodexSession implements ProviderSession {
   /** The turn's process, so closing the session stops it. */
   private child: ReturnType<typeof spawn> | null = null;
   private o: OpenOptions;
+  /** It said once that this access only reads here. */
+  private told: Access | undefined;
   constructor(o: OpenOptions) {
     this.o = o;
     this.thread = o.resume;
@@ -84,6 +89,10 @@ class CodexSession implements ProviderSession {
     const o = this.o;
     const bin = which("codex", o.env);
     if (!bin) return Promise.reject(new Error("Codex isn't installed."));
+    if (CANT_ASK.has(o.access) && this.told !== o.access) {
+      this.told = o.access;
+      sink.notice("This Codex can't stop to ask, so this session only reads. Update Codex to let it ask, or choose Edits to let it write.");
+    }
     const common = ["--json", "--skip-git-repo-check", "-c", `sandbox_mode="${SANDBOX[o.access]}"`, "-c", `approval_policy="never"`];
     // Claude Code's extras mean nothing here; anything else is Codex's own name for the level.
     if (o.effort && !/^ultra(code|think)$/.test(o.effort)) common.push("-c", `model_reasoning_effort="${o.effort}"`);

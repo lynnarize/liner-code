@@ -94,6 +94,27 @@ test("files: a page from the session's folder gets the probe; its scripts pass a
   }
 });
 
+test("files: pages are given as localhost, a site apart from the app's 127.0.0.1, and both loopbacks are the proxy's", async () => {
+  const root = mkdtempSync(join(tmpdir(), "liner-files-"));
+  writeFileSync(join(root, "index.html"), "<p>hi</p>");
+  const proxies = new Proxies();
+  try {
+    const base = new URL(await proxies.files(root));
+    assert.equal(base.hostname, "localhost");
+    // localhost is ::1 or 127.0.0.1, whichever the browser tries first: nothing else may answer on either.
+    for (const host of ["127.0.0.1", "::1"]) {
+      const status = await new Promise<number>((resolve, reject) => {
+        request({ host, port: base.port, path: "/", headers: { host: base.host } }, (r) => (r.resume(), resolve(r.statusCode ?? 0)))
+          .on("error", reject)
+          .end();
+      });
+      assert.equal(status, 200, host);
+    }
+  } finally {
+    proxies.closeAll();
+  }
+});
+
 /** A Node server on a free port, started with `env` in `cwd`; resolves with its port and a way to stop it. */
 function serve(cwd: string, env: Record<string, string>, type = "text/html") {
   const child = spawn(process.execPath, ["-e", `const s=require("http").createServer((q,r)=>{r.writeHead(200,{"content-type":${JSON.stringify(type)}});r.end("ok")});s.listen(0,"127.0.0.1",()=>console.log(s.address().port))`], { cwd, env: { ...process.env, ...env } });

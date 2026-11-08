@@ -4,8 +4,8 @@
   request through (WebSockets too, so hot reload keeps working) and adds one script to each HTML
   page. That script reports console lines and navigation to the app, and answers its commands:
   back, forward, reload, pick an element, simulate offline, and, for an agent, read the page and
-  click or type in it. Only ports on this machine, only on 127.0.0.1, and only requests addressed
-  to the proxy itself. A page that needs no dev server (an index.html with its scripts) is served
+  click or type in it. Only ports on this machine, only on its loopback (127.0.0.1, and ::1 for
+  localhost), and only requests addressed to the proxy itself. A page that needs no dev server (an index.html with its scripts) is served
   from the session's folder the same way, probe and all.
 */
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
@@ -39,15 +39,40 @@ const withProbe = (html: string, extra = "") => {
   return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + tag) : tag + html;
 };
 
-/** Opens a server on a free port of 127.0.0.1 and says which. */
-const listen = (server: Server) =>
+/** Opens a server on a port (a free one for 0) of a host and says which. */
+const listen = (server: Server, port: number, host: string) =>
   new Promise<number>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       const a = server.address();
       resolve(typeof a === "object" && a ? a.port : 0);
     });
   });
+
+/** A proxy's servers (closed together) and the address pages are given. */
+type Served = { servers: Server[]; address: Promise<string> };
+
+/**
+  Opens a proxy on a free port of 127.0.0.1. Its pages are given as localhost, a site apart from
+  the app's 127.0.0.1, so they draw in a process of their own: a live page's frames don't run on
+  the app's thread or have its window drawn again. localhost is ::1 as well, so the same port is
+  taken there too, for nothing else to answer on it; where it can't be, pages stay on 127.0.0.1.
+*/
+function serve(server: Server): Served {
+  const servers = [server];
+  const address = listen(server, 0, "127.0.0.1").then(async (port) => {
+    const twin = createServer();
+    for (const event of ["request", "upgrade"] as const) for (const on of server.listeners(event)) twin.on(event, on as (...args: unknown[]) => void);
+    try {
+      await listen(twin, port, "::1");
+      servers.push(twin);
+      return `http://localhost:${port}`;
+    } catch {
+      return `http://127.0.0.1:${port}`;
+    }
+  });
+  return { servers, address };
+}
 
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -63,9 +88,9 @@ const escaped = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCod
 const note = (text: string) => `<!doctype html><meta charset="utf-8"><script src="${PROBE_PATH}"></script><body style="font:14px system-ui;color:#666;display:grid;place-items:center;height:90vh"><div>${text}</div>`;
 
 export class Proxies {
-  /** Each with the server, so a second ask while one opens gets the same one, not a server nothing will close. */
-  private open = new Map<number, { server: Server; port: Promise<number> }>();
-  private folders = new Map<string, { server: Server; port: Promise<number> }>();
+  /** Each with its servers, so a second ask while one opens gets the same one, not a server nothing will close. */
+  private open = new Map<number, Served>();
+  private folders = new Map<string, Served>();
 
   /**
     A server for a session folder's own files, for a page that needs no dev server: an
@@ -75,7 +100,7 @@ export class Proxies {
   */
   async files(root: string): Promise<string> {
     const have = this.folders.get(root);
-    if (have) return `http://127.0.0.1:${await have.port}`;
+    if (have) return have.address;
     const server = createServer((req, res) => {
       if (!addressed(server, req.headers.host)) return void res.writeHead(403).end();
       if (req.method !== "GET" && req.method !== "HEAD") return void res.writeHead(405).end();
@@ -120,17 +145,17 @@ export class Proxies {
       });
       res.once("close", () => file.destroy());
     });
-    const port = listen(server);
-    port.catch(() => this.folders.delete(root));
-    this.folders.set(root, { server, port });
-    return `http://127.0.0.1:${await port}`;
+    const served = serve(server);
+    served.address.catch(() => this.folders.delete(root));
+    this.folders.set(root, served);
+    return served.address;
   }
 
   /** The proxy's address for a local port, opening one the first time. */
   async url(target: number): Promise<string> {
     if (!Number.isInteger(target) || target < 1024 || target > 65535) throw new Error("That isn't a port on this Mac.");
     const have = this.open.get(target);
-    if (have) return `http://127.0.0.1:${await have.port}`;
+    if (have) return have.address;
     const server = createServer((req, res) => {
       if (!addressed(server, req.headers.host)) return void res.writeHead(403).end();
       if (req.url === PROBE_PATH) {
@@ -173,10 +198,10 @@ export class Proxies {
     });
     let address = "";
     const own = () => address;
-    const port = listen(server);
-    port.catch(() => this.open.delete(target));
-    this.open.set(target, { server, port });
-    address = `http://127.0.0.1:${await port}`;
+    const served = serve(server);
+    served.address.catch(() => this.open.delete(target));
+    this.open.set(target, served);
+    address = await served.address;
     return address;
   }
 
@@ -207,7 +232,7 @@ export class Proxies {
   }
 
   closeAll() {
-    for (const { server } of [...this.open.values(), ...this.folders.values()]) server.close();
+    for (const { servers } of [...this.open.values(), ...this.folders.values()]) for (const server of servers) server.close();
     this.open.clear();
     this.folders.clear();
   }

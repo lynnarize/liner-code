@@ -3378,13 +3378,26 @@ html[data-native="mac"] .lc-sb-head {
   padding: 16px 12px 12px 18px;
 }
 /* In a session the composer is glass: the thread scrolling under it shows through, blurred
-   (Settings › Appearance › Glass). Its choices sit straight on it, with no bar of their own. */
+   (Settings › Appearance › Glass). Its choices sit straight on it, with no bar of their own.
+   The glass is a layer of its own under the card's content, as T3 Code draws its composer's:
+   blurred on the card itself, each frame of a live page beside it (a game in the Browser) had
+   the window drawn again from the thread to the panel. */
 html:not([data-composer="solid"]) .lc-thread-foot .lc-card {
+  isolation: isolate;
+  background: none;
+}
+html:not([data-composer="solid"]) .lc-thread-foot .lc-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
   background: color-mix(in oklab, var(--lc-field) 62%, transparent);
   backdrop-filter: blur(22px) saturate(160%);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
+  pointer-events: none;
 }
-html[data-composer="clear"] .lc-thread-foot .lc-card {
+html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   background: color-mix(in oklab, var(--lc-field) 36%, transparent);
 }
 .lc-thread-foot .lc-seg {

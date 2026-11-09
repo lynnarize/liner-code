@@ -11,11 +11,12 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { AddonAsk, AddonManifest } from "../../contracts/src/index.ts";
 import { ADDON_DIR, checkManifest, readPanelFiles, reachOf, type Addons, type PanelFiles } from "./addons.ts";
 import { isDsh, npmFetch, npmOf, readDsh } from "./dsh.ts";
-import { sandboxWords } from "./dsh-hosts.ts";
+import { sandboxWords, savesFolder } from "./dsh-hosts.ts";
 import { run } from "./exec.ts";
 
 /** A GitHub address, as people paste them: owner/repo, maybe a branch and a folder in it. */
@@ -185,8 +186,11 @@ export class Sources {
     this.staged.set(o.token, { manifest, files: read.files, from: o.from, dir: o.clone, pkg: manifest.dsh ? { dir: o.dir, modules: read.deps.length > 0 } : undefined, at: Date.now() });
     const shown = { id: "", name: "Every project" };
     const path = o.npm ? `${manifest.dsh ? manifest.dsh.package : o.from.replace(/^npmjs\.com\/package\//, "")}` : o.dir;
-    // Its card: its package, what its program may do here, the tools it gives your agents, and what of it is left out.
-    const dsh = manifest.dsh ? { package: manifest.dsh.package, version: manifest.dsh.version, host: !!manifest.dsh.host, ...(manifest.dsh.host && sandboxWords() ? { sandbox: sandboxWords()! } : {}), ...(manifest.dsh.tools?.length ? { tools: manifest.dsh.tools.map((t) => t.name), gives: manifest.dsh.tools } : {}), left: read.left, size: read.size } : undefined;
+    // Its card: its package, what its program may do here, the tools it gives your agents and what it tells them, and what of it is left out.
+    const said = manifest.dsh?.instructions;
+    // Where it would save in your Documents: a folder Liner Code makes for it when it first runs, or why it gets none.
+    const saves = manifest.kind === "panel" && manifest.dsh?.host && sandboxWords() ? savesFolder(this.env.HOME ?? homedir(), [manifest.name, manifest.id], join(this.addons.dir, manifest.id, "folders.json")) : null;
+    const dsh = manifest.dsh ? { package: manifest.dsh.package, version: manifest.dsh.version, host: !!manifest.dsh.host, ...(manifest.dsh.host && sandboxWords() ? { sandbox: sandboxWords()! } : {}), ...(manifest.dsh.tools?.length ? { tools: manifest.dsh.tools.map((t) => t.name), gives: manifest.dsh.tools } : {}), ...(said?.texts.length ? { instructions: said.texts.join("\n\n") } : {}), ...(said?.live ? { instructionsLive: true } : {}), ...(saves?.path ? { saves: { path: saves.path, ...(saves.why ? { why: saves.why } : {}) } } : {}), left: read.left, size: read.size } : undefined;
     if (manifest.kind === "panel") return { token: o.token, from: o.from, ask: { ...this.addons.panelAsk(manifest, path, shown, read.files!), scope: "all", ...(dsh ? { dsh } : {}) } };
     return { token: o.token, from: o.from, ask: { ...this.addons.askOf(manifest, path, shown, ["Claude Code", "Codex", "OpenCode", "Hermes"]), scope: "all", ...(dsh ? { dsh } : {}) } };
   }

@@ -353,6 +353,8 @@ export class Store {
     for (const it of list) {
       if ((it.kind === "text" || it.kind === "reasoning") && it.streaming) it.streaming = false;
       if (it.kind === "tool" && it.status === "running") it.status = "failed";
+      // An agent still at work in the background went with the engine's tool process.
+      if (it.kind === "tool" && it.agent?.state === "running") it.agent = { ...it.agent, state: "stopped", now: undefined };
       if (it.kind === "approval" && it.state === "asking") it.state = "expired";
       if (it.kind === "proposal" && it.state === "asking" && !planned.has(it.turn)) it.state = "expired";
       if (it.kind === "turn" && it.status === "running") it.status = "stopped";

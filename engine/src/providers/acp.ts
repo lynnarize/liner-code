@@ -443,7 +443,7 @@ class AcpSession implements ProviderSession {
   private later = new Map<string, NodeJS.Timeout>();
   /** When each call's output last reached the app. */
   private shown = new Map<string, number>();
-  /** Hermes's delegations, by call: the tasks each started with, read off its first words. */
+  /** Hermes's delegations this turn, by call: the tasks each started with, read off its first words. A call is only shown in its turn, so they go with it. */
   private delegations = new Map<string, { goal: string; role?: string }[]>();
   private pid: string;
   private stderr = "";
@@ -874,6 +874,7 @@ class AcpSession implements ProviderSession {
     // A call is only asked about in its turn.
     this.calls.clear();
     this.shown.clear();
+    this.delegations.clear();
     // An agent that hasn't finished cancelling 15 seconds after Stop is stopped itself, and the turn
     // ends as stopped; the next turn starts it again on the same session (T3 Code: AcpSessionRuntime.ts, defaultCancelTimeout).
     let late: NodeJS.Timeout | undefined;
@@ -938,6 +939,7 @@ class AcpSession implements ProviderSession {
       this.cut = null;
       this.sink = null;
       this.signal = null;
+      this.delegations.clear();
     }
   }
   private soulSent = false;

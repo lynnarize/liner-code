@@ -9,16 +9,25 @@
   one you ran: a command the file says now is never run without a press.
 
   Agents start them too (server_start, agent-tools.ts), and what one starts follows the same rules.
-  The entries you've run in a folder are kept, so an agent runs one of those as freely as you did;
-  any other command comes to you first, unless the session may run commands without asking.
+  The entries you've said yes to in a folder are kept, as their command, folder, environment and
+  port, so an agent runs one of those as freely as you did; any other comes to you first as a card
+  showing all four, unless the session may run commands without asking. A run nobody said yes to
+  (an agent's in Full access) trusts nothing for later. Run in the Browser is the same: an entry
+  nobody has said yes to, or one changed since, comes back to be shown before it runs. What an
+  entry runs in turn (npm run dev's script in package.json) is the entry's business, as in Claude
+  Code: a script changed under a trusted `npm run dev` isn't asked about again.
+
+  A server that outlives the engine (a crash, a SIGKILL) is found by the pid and start time kept
+  for it and stopped when the engine next starts.
 */
-import type { ChildProcess } from "node:child_process";
+import { execFile, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
-import type { EngineEvent, LaunchServer } from "../../contracts/src/index.ts";
+import type { EngineEvent, LaunchAsk, LaunchServer, Risk } from "../../contracts/src/index.ts";
 import { closesOnExit, killTree, spawn, THREAD_ENV } from "./exec.ts";
+import { commandRisk } from "./risk.ts";
 
 const win = process.platform === "win32";
 
@@ -36,6 +45,27 @@ const ANSI = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g;
 
 /** An entry of launch.json, as it runs. `raw` is the entry as written, to tell when the file says something else. */
 export type LaunchEntry = { name: string; command?: string; args: string[]; port: number; cwd: string; env: Record<string, string>; autoPort?: boolean; url?: string; raw: string; problem?: string };
+
+/** A launch.json entry's command, as a line to read. */
+export const commandLine = (e: Pick<LaunchEntry, "command" | "args">) => [e.command ?? "", ...e.args].map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : JSON.stringify(a))).join(" ");
+
+/**
+  Variables that change what runs under a harmless-looking command: what Node, Python, Ruby, Perl,
+  Java, .NET and the shells load first, where programs are looked for, the dynamic loader's
+  preloads, the tools a build calls (git, npm, cargo, go, a C compiler), and the programs a dev
+  server opens (BROWSER, EDITOR). One of these makes an entry high risk.
+*/
+const RISKY_ENV = /^(?:PATH|PATHEXT|COMSPEC|HOME|ZDOTDIR|XDG_CONFIG_HOME|ENV|BASH_ENV|BASH_FUNC_.*|SHELLOPTS|BASHOPTS|PROMPT_COMMAND|PS4|IFS|NODE_OPTIONS|NODE_PATH|NODE_REPL_EXTERNAL_MODULE|ELECTRON_RUN_AS_NODE|PYTHON.*|PERL5?OPT|PERL5?LIB|PERL5DB|RUBYOPT|RUBYLIB|BUNDLE_GEMFILE|JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS|JAVA_HOME|CLASSPATH|GRADLE_OPTS|MAVEN_OPTS|SBT_OPTS|ANT_OPTS|OPENSSL_CONF|PHPRC|PHP_INI_SCAN_DIR|LUA_INIT(?:_5_\d)?|DOTNET_STARTUP_HOOKS|CORECLR_.*|COR_.*|LD_.*|DYLD_.*|GIT_.*|NPM_CONFIG_.*|YARN_.*|PNPM_.*|BUN_.*|DENO_.*|CARGO_.*|RUSTC.*|RUSTDOC|RUSTFLAGS|GOFLAGS|CC|CXX|CPP|LD|BROWSER|EDITOR|VISUAL|PAGER|SSH_ASKPASS|SUDO_ASKPASS|GIT_ASKPASS|PSMODULEPATH)$/i;
+/** The variables of an entry's environment that change what runs, by name. */
+export const riskyEnv = (env: Record<string, string>) => Object.keys(env).filter((k) => RISKY_ENV.test(k));
+/** Names that look like they hold a secret (an API key, a token, a password): said to be set on a card, never shown, since a card is kept in the session's history. */
+const SECRETISH = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|AUTH|CREDENTIAL|PRIVATE|COOKIE|SESSION|SIGNATURE|CERT|_DSN$/i;
+/** What a card shows for a value it keeps back. */
+export const HIDDEN = "(set, not shown)";
+/** An entry's environment as a card shows it: a secret's value kept back, never one that changes what runs (GIT_ASKPASS names a program). */
+export const shownEnv = (env: Record<string, string>) => Object.fromEntries(Object.entries(env).map(([k, v]) => [k, SECRETISH.test(k) && !RISKY_ENV.test(k) ? HIDDEN : v]));
+/** How risky running an entry is: its command line's risk, and high when its environment changes what runs. */
+export const launchRisk = (e: Pick<LaunchEntry, "command" | "args" | "env">): Risk => (riskyEnv(e.env).length ? "high" : commandRisk(commandLine(e)));
 
 /** JSON with comments and trailing commas, as launch.json may be written (VS Code's own allows them), made plain JSON. */
 export function plainJson(text: string) {
@@ -206,6 +236,65 @@ async function freePort() {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+  Waits, up to `ms`, for each of these process groups to be empty, then kills what's left of them,
+  so a server that ignores SIGTERM doesn't outlive Liner Code. Windows has no groups, and taskkill
+  /T /F (exec.ts, killTree) has ended the trees already.
+*/
+export async function groupsGone(groups: number[], ms: number) {
+  if (win) return;
+  const alive = (g: number) => {
+    try {
+      process.kill(-g, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const until = Date.now() + ms;
+  let left = groups.filter(alive);
+  while (left.length && Date.now() < until) {
+    await sleep(50);
+    left = left.filter(alive);
+  }
+  for (const g of left) {
+    try {
+      process.kill(-g, "SIGKILL");
+    } catch {
+      // It went as it was asked.
+    }
+  }
+}
+
+/**
+  Whether `pid` is still the process that was started by `at`: alive, started no later than that (a
+  pid the system gave out again started after), and, given `program`, running it. The start-time
+  check is T3 Code's (apps/server/src/serverOwnership.ts, legacyOwnerIsLive).
+*/
+async function sameProcess(pid: number, at: number, program?: string): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 1) return false;
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  const script = `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; (Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o'); $p.CommandLine`;
+  const out = await new Promise<string | null>((done) =>
+    execFile(win ? "powershell.exe" : "ps", win ? ["-NoProfile", "-NonInteractive", "-Command", script] : ["-p", String(pid), "-o", "lstart=,command="], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: 4000, windowsHide: true }, (err, stdout) => done(err ? null : String(stdout))),
+  );
+  if (!out) return false;
+  const m = win ? /^\s*(\S+)\r?\n([\s\S]*)$/.exec(out) : /^\s*(\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4})\s+([\s\S]*)$/.exec(out);
+  if (!m) return false;
+  const started = Date.parse(win ? m[1] : `${m[1]} UTC`);
+  const name = program === undefined ? undefined : basename(program).replace(/\.(cmd|exe|bat|ps1)$/i, "").toLowerCase();
+  // ps gives whole seconds.
+  return Number.isFinite(started) && started <= at + 1000 && (name === undefined || (!!name && m[2].toLowerCase().includes(name)));
+}
+/** Whether a server kept from an engine is still what it started: its pid, its start time, its command. */
+const stillOurs = (x: Running) => x.pid !== process.pid && sameProcess(x.pid, x.at, x.command);
+/** This engine, as the servers it starts are kept with: its pid, and when it started. */
+const ENGINE = { pid: process.pid, at: Math.floor(Date.now() - process.uptime() * 1000) };
 const keyOf = (root: string, name: string) => `${root}\0${name}`;
 const exitWords = (code: number | null, signal: string | null) => (signal ? `Ended by ${signal}` : code ? `Exited with code ${code}` : "Exited");
 
@@ -227,12 +316,30 @@ type Run = {
   gone: Promise<void>;
   /** Settles once it answers on its port, gives up waiting, or ends. */
   ready: Promise<void>;
+  /** When it was started, by the clock (not the host's), for knowing its pid again after a crash. */
+  spawnedAt: number;
 };
 /** A server stopped while no one looked (or by the quit), to start again when a session in its folder is opened. */
 type Asleep = { root: string; name: string; threadId: string; raw: string; at: number };
 type Ended = { reason: string; at: number; port: number; failed?: boolean; tail?: string[]; lines?: string[] };
-/** An entry as written in one folder, for telling the ones you've run. */
-const trustKey = (root: string, raw: string) => createHash("sha256").update(`${root}\0${raw}`).digest("hex").slice(0, 32);
+/**
+  An entry as it would run in one folder: its command line, the folder it runs in, its environment
+  and its port, the four things its card shows. A yes is kept by this, so a change to any of them asks again.
+*/
+export const runKey = (root: string, e: Pick<LaunchEntry, "command" | "args" | "cwd" | "env" | "port">) =>
+  createHash("sha256")
+    .update(JSON.stringify(["launch 2", root, e.command ?? "", e.args, e.cwd, Object.entries(e.env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)), e.port]))
+    .digest("hex")
+    .slice(0, 32);
+/**
+  A server running now, kept so one that outlives the engine (a crash, a SIGKILL) is stopped when an
+  engine next starts: its group's leader, when it was started, what it runs, and the engine that
+  started it (its pid and start time). Two engines can share a home (npm run dev beside the app):
+  what one runs, the other leaves alone while that one is alive.
+*/
+type Running = { pid: number; at: number; command: string; root: string; name: string; engine?: { pid: number; at: number } };
+/** How a server is started: `key`, only while the entry is still what was shown; `trust`, a person said yes to it (or ran it from the Browser having seen it), so agents may run it again. */
+type StartOptions = { key?: string; trust?: boolean };
 
 export type LaunchHost = {
   env: NodeJS.ProcessEnv;
@@ -243,6 +350,8 @@ export type LaunchHost = {
   sessionsIn: (root: string) => { id: string; busy: boolean }[];
   /** Where the servers to start again are kept through a quit; none, kept in memory only. */
   file?: string;
+  /** This engine (its pid and start time), as what it starts is kept with: a test's stands in for another. */
+  engine?: { pid: number; at: number };
   /** Who's on a port, for the note when it's taken. */
   holder?: (port: number) => Promise<string | undefined>;
   now?: () => number;
@@ -254,8 +363,10 @@ export class Launcher {
   private runs = new Map<string, Run>();
   private ended = new Map<string, Ended>();
   private asleep: Asleep[];
-  /** The entries run in each folder by you, or by an agent you let: run again without asking. */
+  /** The entries you've said yes to in each folder (runKey): run again without asking. */
   private trusted: string[];
+  /** What the last engine left running, until reap() has looked at it. */
+  private left: Running[];
   /** When the app last showed each session. */
   private seenAt = new Map<string, number>();
   /** Starts under way, so two quick presses start one server. */
@@ -266,6 +377,7 @@ export class Launcher {
     const kept = this.load();
     this.asleep = kept.asleep;
     this.trusted = kept.trusted;
+    this.left = kept.running;
   }
   private now() {
     return this.host.now?.() ?? Date.now();
@@ -283,7 +395,8 @@ export class Launcher {
   async list(threadId: string): Promise<{ servers: LaunchServer[]; file: boolean; error?: string }> {
     const root = this.host.cwdOf(threadId);
     const { entries, file, error } = readLaunch(root);
-    const servers = await Promise.all(entries.map((e) => this.state(root, e)));
+    // Each with what a press would run, when that needs a yes first.
+    const servers = await Promise.all(entries.map(async (e) => ({ ...(await this.state(root, e)), ...(this.needsYes(root, e) ? { ask: this.askOf(root, e) } : {}) })));
     // One the file no longer names runs on till it's stopped: listed, so it can be.
     for (const r of this.runs.values()) if (r.root === root && !entries.some((e) => e.name === r.entry.name)) servers.push({ ...(await this.state(root, r.entry)), changed: true });
     return { servers, file, error };
@@ -311,24 +424,52 @@ export class Launcher {
     return e;
   }
 
-  /** Whether this entry, as written, is one you ran in this folder (or let an agent run). */
+  /** Whether this entry, as it would run (command, folder, environment, port), is one you said yes to in this folder. */
   trusts(threadId: string, e: LaunchEntry) {
-    return !e.command || this.trusted.includes(trustKey(this.host.cwdOf(threadId), e.raw));
+    return !e.command || this.trusted.includes(runKey(this.host.cwdOf(threadId), e));
+  }
+  /** The key a yes to this entry is kept by, as it would run in the session's folder. */
+  keyFor(threadId: string, e: LaunchEntry) {
+    return runKey(this.host.cwdOf(threadId), e);
+  }
+  private needsYes(root: string, e: LaunchEntry) {
+    return Boolean(e.command && !e.problem && !this.trusted.includes(runKey(root, e)));
+  }
+  /** What an entry would run, for you to see before it does. */
+  askOf(root: string, e: LaunchEntry): LaunchAsk {
+    const risky = riskyEnv(e.env);
+    return { key: runKey(root, e), command: commandLine(e), cwd: e.cwd, env: shownEnv(e.env), port: e.port, risk: launchRisk(e), ...(risky.length ? { risky } : {}) };
   }
 
   /**
     Runs the entry named `name` of the session's folder, or answers with the one that runs already.
-    With `raw`, only while the file still says that: what you were asked about is what runs.
+    With `key`, only while the entry is still what was shown (runKey); with `trust`, a person said
+    yes to it, and it's kept as theirs for agents to run again. An agent's run nobody said yes to
+    (Full access) trusts nothing.
   */
-  async start(threadId: string, name: string, raw?: string) {
+  async start(threadId: string, name: string, o: StartOptions = {}) {
     const root = this.host.cwdOf(threadId);
     const e = this.entry(threadId, name);
-    if (raw !== undefined && e.raw !== raw) throw new Error(`${name}'s entry in .claude/launch.json changed after it was asked about, so it didn't run.`);
-    if (e.command) {
-      const k = trustKey(root, e.raw);
-      if (this.trusted.at(-1) !== k) (this.trusted = [...this.trusted.filter((x) => x !== k), k].slice(-TRUSTED)), this.save();
-    }
+    const k = runKey(root, e);
+    if (o.key !== undefined && k !== o.key) throw new Error(`${name}'s entry in .claude/launch.json changed after it was asked about, so it didn't run.`);
+    if (e.command && o.trust && this.trusted.at(-1) !== k) (this.trusted = [...this.trusted.filter((x) => x !== k), k].slice(-TRUSTED)), this.save();
     return this.run(root, e, threadId);
+  }
+
+  /**
+    Run (or Restart, `again`) pressed in the Browser. An entry you've said yes to runs; one nobody
+    has, or one whose command, folder, environment or port changed since, doesn't: it comes back
+    with `ask`, what it would run, and runs (and is yours from then on) only when that ask's key
+    comes back as `allow`. Pressing Run on one that's running starts nothing, so asks nothing.
+  */
+  async press(threadId: string, name: string, o: { allow?: string; again?: boolean } = {}): Promise<LaunchServer> {
+    const root = this.host.cwdOf(threadId);
+    const e = this.entry(threadId, name);
+    const k = runKey(root, e);
+    const runsNew = Boolean(e.command && !e.problem && (o.again || !this.runs.has(keyOf(root, name))));
+    if (runsNew && this.needsYes(root, e) && o.allow !== k) return { ...(await this.state(root, e)), ask: this.askOf(root, e) };
+    const opts = { key: k, trust: runsNew };
+    return o.again ? this.restart(threadId, name, opts) : this.start(threadId, name, opts);
   }
 
   /** Waits, up to `ms`, for a server that's starting to answer on its port or end; then says how it is. */
@@ -348,11 +489,12 @@ export class Launcher {
     return { running: false, lines: x?.lines ?? x?.tail ?? [], ended: x?.reason };
   }
 
-  async restart(threadId: string, name: string) {
+  async restart(threadId: string, name: string, o: StartOptions = {}) {
     const root = this.host.cwdOf(threadId);
     const r = this.runs.get(keyOf(root, name));
+    if (o.key !== undefined && runKey(root, this.entry(threadId, name)) !== o.key) throw new Error(`${name}'s entry in .claude/launch.json changed after it was asked about, so it didn't run.`);
     if (r) await this.halt(r, "Restarted");
-    return this.start(threadId, name);
+    return this.start(threadId, name, o);
   }
 
   /** Stops one, or (no name) all of the folder's; and none of them starts again by itself. */
@@ -420,17 +562,44 @@ export class Launcher {
     for (const r of [...this.runs.values()]) if (r.threadId === threadId || (alone && r.root === root)) void this.halt(r, "Stopped with the session that started it");
   }
 
-  /** Liner Code quits: each stops, and is kept to start again when its folder's session is opened next time. */
-  quit() {
+  /**
+    Liner Code quits: each stops, and is kept to start again when its folder's session is opened
+    next time. Settles once they've gone, or after `ms` with what's left of them killed (SIGKILL).
+  */
+  quit(ms = 1500) {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    const groups: number[] = [];
     for (const r of this.runs.values()) {
+      if (r.child.pid) groups.push(r.child.pid);
       if (r.stop) continue;
       this.putToSleep(r);
       r.stop = "Stopped when Liner Code quit";
       killTree(r.child);
     }
     this.save();
+    return groupsGone(groups, ms);
+  }
+
+  /**
+    Stops what the last engine left running, when it crashed or was killed before it could: each
+    kept server whose pid is still the process it started (stillOurs), with what it started. Answers
+    with how many it stopped.
+  */
+  async reap() {
+    const left = this.left;
+    if (!left.length) return 0;
+    const me = this.host.engine ?? ENGINE;
+    let n = 0;
+    const alive: Running[] = [];
+    for (const x of left) {
+      // Another engine's, on the same home and still running: its to stop, and kept for when it's gone.
+      if (x.engine && !(x.engine.pid === me.pid && x.engine.at === me.at) && (await sameProcess(x.engine.pid, x.engine.at))) alive.push(x);
+      else if (await stillOurs(x)) killTree({ pid: x.pid, kill: () => false }), n++;
+    }
+    this.left = [...alive, ...this.left.filter((x) => !left.includes(x))];
+    this.save();
+    return n;
   }
 
   private putToSleep(r: Run) {
@@ -503,9 +672,11 @@ export class Launcher {
     }
     closesOnExit(child);
     let gone!: () => void;
-    const r: Run = { key, root, entry: e, port, child, status: "starting", startedAt: this.now(), threadId, tail: [], done: false, gone: new Promise<void>((ok) => (gone = ok)), ready: Promise.resolve() };
+    const r: Run = { key, root, entry: e, port, child, status: "starting", startedAt: this.now(), threadId, tail: [], done: false, gone: new Promise<void>((ok) => (gone = ok)), ready: Promise.resolve(), spawnedAt: Date.now() };
     this.runs.set(key, r);
     this.ended.delete(key);
+    // Kept with its pid, so a crash doesn't leave it running unknown.
+    this.save();
     this.emit(root);
     let part = "";
     const take = (d: Buffer) => {
@@ -526,7 +697,7 @@ export class Launcher {
       r.done = true;
       if (part.trim()) r.tail.push(part.slice(0, 400));
       if (error) r.tail.push(error);
-      if (this.runs.get(key) === r) this.runs.delete(key);
+      if (this.runs.get(key) === r) this.runs.delete(key), this.save();
       const quick = this.now() - r.startedAt < EARLY_MS;
       const lines = r.tail.slice();
       this.ended.set(key, r.stop ? { reason: r.stop, at: this.now(), port: r.port, lines } : { reason: error ? `${e.name} didn't start: ${error}` : exitWords(code, signal), at: this.now(), port: r.port, failed: Boolean(error) || quick || (code !== 0 && code !== null) || Boolean(signal), tail: r.tail.slice(-12), lines });
@@ -559,22 +730,27 @@ export class Launcher {
     return this.state(root, e);
   }
 
-  private load(): { asleep: Asleep[]; trusted: string[] } {
-    if (!this.host.file) return { asleep: [], trusted: [] };
+  private load(): { asleep: Asleep[]; trusted: string[]; running: Running[] } {
+    if (!this.host.file) return { asleep: [], trusted: [], running: [] };
     try {
-      const v = JSON.parse(readFileSync(this.host.file, "utf8")) as { asleep?: unknown; trusted?: unknown } | unknown[];
-      // The first ones kept only the list of servers asleep.
+      const v = JSON.parse(readFileSync(this.host.file, "utf8")) as { asleep?: unknown; trust?: unknown; running?: unknown } | unknown[];
+      // The first ones kept only the list of servers asleep. Entries kept as `trusted`, by what was
+      // written alone, were trusted on a card that didn't show their environment, and by agents'
+      // runs nobody said yes to: `trust` starts afresh.
       const asleep = Array.isArray(v) ? v : Array.isArray(v?.asleep) ? v.asleep : [];
-      const trusted = !Array.isArray(v) && Array.isArray(v?.trusted) ? v.trusted.filter((k): k is string => typeof k === "string") : [];
-      return { asleep: asleep.filter((a): a is Asleep => Boolean(a) && typeof a.root === "string" && typeof a.name === "string" && typeof a.threadId === "string" && typeof a.raw === "string"), trusted: trusted.slice(-TRUSTED) };
+      const trusted = !Array.isArray(v) && Array.isArray(v?.trust) ? v.trust.filter((k): k is string => typeof k === "string") : [];
+      const running = !Array.isArray(v) && Array.isArray(v?.running) ? (v.running as Running[]).filter((x) => Boolean(x) && Number.isInteger(x.pid) && typeof x.at === "number" && typeof x.command === "string" && typeof x.root === "string" && typeof x.name === "string") : [];
+      return { asleep: asleep.filter((a): a is Asleep => Boolean(a) && typeof a.root === "string" && typeof a.name === "string" && typeof a.threadId === "string" && typeof a.raw === "string"), trusted: trusted.slice(-TRUSTED), running };
     } catch {
-      return { asleep: [], trusted: [] };
+      return { asleep: [], trusted: [], running: [] };
     }
   }
   private save() {
     if (!this.host.file) return;
+    const engine = this.host.engine ?? ENGINE;
+    const running = [...this.left, ...[...this.runs.values()].flatMap((r) => (r.child.pid && !r.done ? [{ pid: r.child.pid, at: r.spawnedAt, command: r.entry.command ?? "", root: r.root, name: r.entry.name, engine }] : []))];
     try {
-      writeFileSync(this.host.file, JSON.stringify({ asleep: this.asleep, trusted: this.trusted }));
+      writeFileSync(this.host.file, JSON.stringify({ asleep: this.asleep, trust: this.trusted, running }));
     } catch {
       // A full disk: they don't come back after a quit, and that's all.
     }

@@ -1793,17 +1793,23 @@ export class Runtime {
       text: (d, b) => void (!over && (heard(), flow("text", d, b))),
       reasoning: (d, b) => void (!over && (heard(), flow("reasoning", d, b))),
       tool: (u: ToolUpdate) => {
-        if (over) return;
-        heard();
-        settle();
-        lastKind = null;
         let rec = tools.get(u.key);
+        // Once the turn has ended, a late word from the tool changes nothing, except on the row of an agent it
+        // sent off: one in the background outlives its turn, and goes on and ends on its row, where it started.
+        if (over && !(u.agent && rec && store.threads.some((t) => t.id === threadId))) return;
+        if (!over) {
+          heard();
+          settle();
+          lastKind = null;
+        }
         if (!rec) {
           rec = { id: uid("it"), started: Date.now() };
           tools.set(u.key, rec);
         }
         const prev = store.timeline(threadId).find((x) => x.id === rec!.id);
         const base = prev?.kind === "tool" ? prev : undefined;
+        // Its row is gone (the turn was rewound): nothing to go on.
+        if (over && !base) return;
         // An agent's row keeps what it knew (its brief, its model) when a later word leaves it out; the agent that sent it is named by its row.
         let agent = base?.agent;
         if (u.agent) {
@@ -1811,27 +1817,26 @@ export class Runtime {
           const parent = parentKey ? tools.get(parentKey)?.id : undefined;
           agent = { ...base?.agent, ...said, ...(parent ? { parent } : {}) };
         }
-        // Saved when it starts and when it ends; what it prints meanwhile only goes to the window.
-        store.putItem(
-          threadId,
-          {
-            kind: "tool",
-            id: rec.id,
-            turn,
-            at: base?.at ?? Date.now(),
-            tool: u.tool,
-            toolKind: u.toolKind,
-            title: u.title || base?.title || u.tool,
-            input: u.input ?? base?.input,
-            output: u.output ?? base?.output,
-            path: u.path ?? base?.path,
-            status: u.status,
-            seconds: u.status === "running" ? undefined : (Date.now() - rec.started) / 1000,
-            ...(agent ? { agent } : {}),
-          },
-          // An agent that ended (in the background, after its call) is saved as it ended too.
-          !base || u.status !== "running" || (agent?.state !== undefined && agent.state !== "running" && base.agent?.state !== agent.state),
-        );
+        const item: Extract<Item, { kind: "tool" }> = {
+          kind: "tool",
+          id: rec.id,
+          turn,
+          at: base?.at ?? Date.now(),
+          tool: u.tool,
+          toolKind: u.toolKind,
+          title: u.title || base?.title || u.tool,
+          input: u.input ?? base?.input,
+          output: u.output ?? base?.output,
+          path: u.path ?? base?.path,
+          status: u.status,
+          seconds: u.status === "running" ? undefined : (Date.now() - rec.started) / 1000,
+          ...(agent ? { agent } : {}),
+        };
+        // Saved when it starts and when it ends; what it prints meanwhile only goes to the window. An agent's row
+        // is saved as it changes how it stands (its call returns, it ends, in the background after its call too),
+        // is named or reports: not at each of its steps, which may go on long after its call is done.
+        const save = !base || (agent ? base.status !== item.status || agentState(base) !== agentState(item) || base.title !== item.title || base.agent?.report !== agent.report : u.status !== "running");
+        store.putItem(threadId, item, save);
       },
       plan: (entries: PlanEntry[]) => {
         heard();

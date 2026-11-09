@@ -38,7 +38,9 @@ export type ToolUpdate = {
   path?: string;
   /**
     The agent a "task" call sent off, as it stands now (the whole of it each time). `parentKey`: the
-    call of the agent that sent it, when an agent did; the runtime makes it that row's id.
+    call of the agent that sent it, when an agent did; the runtime makes it that row's id. One in the
+    background (its call done, `state` "running") goes on after its turn: its updates go to the sink
+    of the turn that sent it, which takes them on that row after the turn has ended, until it ends.
   */
   agent?: Omit<AgentRun, "parent"> & { parentKey?: string };
 };
@@ -157,7 +159,10 @@ export interface ProviderSession {
   turn(text: string, sink: TurnSink, signal: AbortSignal, files?: string[]): Promise<void>;
   /** A message for the running turn, read at the agent's next step. False (or a promise of it) if it couldn't take it. */
   steer?(text: string, files?: string[]): boolean | Promise<boolean>;
-  /** Stops one agent it sent off (`taskId`: its AgentRun's), the turn going on without it. False if it couldn't. */
+  /**
+    Stops one agent it sent off (`taskId`: its AgentRun's), in the background or not, the turn and the
+    other agents going on without it, and the model that sent it told. False if it couldn't.
+  */
   stopAgent?(taskId: string): boolean | Promise<boolean>;
   /** A word for one agent it sent off, read at that agent's next step. False if it couldn't take it. */
   steerAgent?(taskId: string, text: string): boolean | Promise<boolean>;

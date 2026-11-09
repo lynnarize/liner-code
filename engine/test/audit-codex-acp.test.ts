@@ -607,7 +607,9 @@ test("codex: an agent it sends off gets a row: who it is, what it was asked, its
   assert.equal(steer?.params.threadId, "kid");
   assert.equal(steer?.params.expectedTurnId, "t-kid");
   assert.equal(steer?.params.input[0].text, "only src");
-  assert.ok(fake.read().some((m) => m.method === "turn/interrupt" && m.params.threadId === "kid"), "its turn alone was interrupted");
+  // Stop shuts its thread down, which Codex's wait_agent takes as its end; nothing of the parent's is interrupted.
+  assert.ok(fake.read().some((m) => m.method === "thread/archive" && m.params.threadId === "kid"), "its thread alone was shut down");
+  assert.ok(!fake.read().some((m) => m.method === "turn/interrupt" || (m.method === "thread/archive" && m.params.threadId !== "kid")));
   const end = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
   assert.equal(end.status, "done");
   assert.equal(end.agent?.report, "kid found 2 failures");
@@ -616,21 +618,94 @@ test("codex: an agent it sends off gets a row: who it is, what it was asked, its
   assert.ok(!r.tools.some((u) => u.key === "c1"));
 });
 
-test("codex: an agent still at work when the turn ends is shown as sent to the background, and its thread's later work writes nothing", async () => {
+test("codex: an agent still at work when the turn ends goes on in the background on its row, and ends there", async () => {
   const { s } = cx(codexServer(`if (m.method === "turn/start" && seen("turn/start") === 1) {
     send({ id: m.id, result: { turn: { id: "turn-1" } } });
     send({ method: "turn/started", params: { threadId: "kid", turn: { id: "t-kid" } } });
     ${SPAWN("kid")}
     send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } });
+    setTimeout(() => {
+      send({ method: "item/started", params: { threadId: "kid", turnId: "t-kid", item: { type: "commandExecution", id: "c1", command: "npm test", status: "inProgress" } } });
+      send({ method: "item/completed", params: { threadId: "kid", turnId: "t-kid", item: { type: "commandExecution", id: "c1", command: "npm test", status: "completed", exitCode: 0 } } });
+      ${KID_ENDS("kid")}
+    }, 50);
+    continue;
+  }`));
+  const { r, sink } = recorder();
+  await s.turn("work", sink, live());
+  const parked = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
+  assert.equal(parked.status, "done", "the turn didn't wait for it");
+  assert.equal(parked.agent?.background, true);
+  assert.equal(parked.agent?.state, "running", "still at work: it can be stopped, and counts as working");
+  assert.equal(await s.stopAgent!("nobody"), false);
+  // Its later work and its end come to the same row, through the turn that sent it.
+  await until(() => r.tools.filter((u) => u.key === "spawn-kid").at(-1)?.agent?.state === "done", "it ends on its row");
+  s.close();
+  const end = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
+  assert.equal(end.agent?.report, "kid found 2 failures");
+  assert.deepEqual(end.agent?.steps, [{ title: "Run npm test", toolKind: "exec", status: "done" }]);
+  assert.equal(new Set(r.tools.map((u) => u.key)).size, 1, "one agent, one row");
+});
+
+test("codex: an agent the model redirects (its turn interrupted by send_input) goes on to its report, not ended as stopped", async () => {
+  const { s } = cx(codexServer(`if (m.method === "turn/start") {
+    send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    send({ method: "turn/started", params: { threadId: "kid", turn: { id: "t-kid-1" } } });
+    ${SPAWN("kid")}
+    send({ method: "turn/completed", params: { threadId: "kid", turn: { id: "t-kid-1", status: "interrupted" } } });
+    send({ method: "turn/started", params: { threadId: "kid", turn: { id: "t-kid" } } });
+    ${KID_ENDS("kid")}
+    setTimeout(() => send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } }), 20);
     continue;
   }`));
   const { r, sink } = recorder();
   await s.turn("work", sink, live());
   s.close();
+  const rows = r.tools.filter((u) => u.key === "spawn-kid");
+  assert.ok(!rows.some((u) => u.agent?.state === "stopped"));
+  assert.equal(rows.at(-1)?.status, "done");
+  assert.equal(rows.at(-1)?.agent?.report, "kid found 2 failures");
+});
+
+test("codex: an agent the model redirected that finishes after the parent's turn still wakes it, once, and ends on its row", async () => {
+  const wakes: WakeTurn[] = [];
+  const { s } = cx(codexServer(`if (m.method === "turn/start" && seen("turn/start") === 1) {
+    send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    send({ method: "turn/started", params: { threadId: "kid", turn: { id: "t-kid-1" } } });
+    ${SPAWN("kid")}
+    send({ method: "turn/completed", params: { threadId: "kid", turn: { id: "t-kid-1", status: "interrupted" } } });
+    send({ method: "turn/started", params: { threadId: "kid", turn: { id: "t-kid" } } });
+    send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } });
+    setTimeout(() => { ${KID_ENDS("kid")} }, 40);
+    continue;
+  }`), { wake: (w) => void wakes.push(w) });
+  const { r, sink } = recorder();
+  await s.turn("work", sink, live());
+  await until(() => wakes.length === 1, "the parent is woken");
+  await tick(40);
+  s.close();
+  assert.equal(wakes.length, 1);
   const end = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
-  assert.equal(end.status, "done");
-  assert.equal(end.agent?.background, true);
-  assert.equal(end.agent?.state, undefined);
+  assert.equal(end.agent?.state, "done");
+  assert.equal(end.agent?.report, "kid found 2 failures");
+});
+
+test("codex: an agent's row is named from its thread, which Codex 0.167.0 only says when asked", async () => {
+  const { fake, s } = cx(codexServer(`if (m.method === "thread/read") { send({ id: m.id, result: { thread: { id: m.params.threadId, agentNickname: "Planck", agentRole: null } } }); continue; }
+  if (m.method === "turn/start") {
+    send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    ${SPAWN("kid")}
+    setTimeout(() => { ${KID_ENDS("kid")} send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } }); }, 100);
+    continue;
+  }`));
+  const { r, sink } = recorder();
+  await s.turn("work", sink, live());
+  s.close();
+  const rows = r.tools.filter((u) => u.key === "spawn-kid");
+  assert.equal(rows[0].agent?.name, "Subagent", "nothing named it yet");
+  assert.equal(rows.at(-1)?.agent?.name, "Planck");
+  assert.equal(rows.at(-1)?.title, "Planck: check the kid tests");
+  assert.equal(fake.read().find((m) => m.method === "thread/read")?.params.threadId, "kid");
 });
 
 test("codex: a subagent that finishes after the parent's turn wakes it with what it found", async () => {

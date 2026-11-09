@@ -35,7 +35,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { gunzipSync } from "node:zlib";
-import type { AddonManifest, DshPlugin, DshSlot, DshTool, PanelManifest } from "../../contracts/src/index.ts";
+import type { AddonManifest, DshInstructions, DshPlugin, DshSlot, DshTool, PanelManifest } from "../../contracts/src/index.ts";
 import { dshEntry } from "../../contracts/src/index.ts";
 import { ADDON_ID, checkManifest, DSH_TOOLS_MAX, type PanelFiles } from "./addons.ts";
 import { SHIMMED, WEB_TOOLS } from "./dsh-shims.ts";
@@ -560,6 +560,29 @@ export function toolsIn(code: string[]): { tools: DshTool[]; unnamed: number } {
   return { tools, unnamed };
 }
 
+/**
+  What a plugin's program tells DSH's agent, by its code: the text of each section({ … text }) written
+  as plain text. `live` when a call to systemPrompt.section(…) gives it any other way (a function, a
+  string worked out as it runs, an object made elsewhere), which can't be shown before it's added.
+  What's read here is all your agents are told, unless `live` (dsh-hosts.ts, told): a section it
+  adds some way this doesn't see is left out, not told unshown.
+*/
+export function sectionsIn(code: string[]): DshInstructions {
+  const texts: string[] = [];
+  let live = false;
+  for (const c of code)
+    for (const m of c.matchAll(/(\bsystemPrompt\s*\??|["'`]systemPrompt["'`]\s*\)\s*\??)?\.\s*section\s*\(\s*(\{)?/g)) {
+      const k = m[2] ? literalKeys(c, m.index + m[0].length - 1, ["text"]) : {};
+      if (typeof k.text !== "string") {
+        if (m[1]) live = true;
+        continue;
+      }
+      const text = k.text.slice(0, 8000);
+      if (text.trim() && !texts.includes(text)) texts.push(text);
+    }
+  return { texts, ...(live ? { live: true } : {}) };
+}
+
 /** A Liner Code add-on id from a package's name: "@michengai/dsh-archive" → "michengai-dsh-archive". */
 export function idOf(name: string) {
   let id = name.toLowerCase().replace(/^@/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -700,6 +723,9 @@ export function readDsh(dir: string, o: { integrity?: string } = {}): DshRead {
   // The tools it gives an agent, as its code names them: your agents get these, and only these.
   const found = host ? toolsIn(hostCode) : { tools: [], unnamed: 0 };
   const tools = found.tools.slice(0, DSH_TOOLS_MAX);
+  // What it tells every agent with its tools, as its code writes it: on the card, and all they're told.
+  const told = host && tools.length ? sectionsIn(hostCode) : null;
+  const instructions = told && (told.texts.length || told.live) ? { instructions: told } : {};
   if (found.tools.length > DSH_TOOLS_MAX) left.push(`${found.tools.length - DSH_TOOLS_MAX} more tools: your agents get the first ${DSH_TOOLS_MAX}.`);
   if (found.unnamed || (host && !tools.length && hostCode.some((c) => /\btools\s*\??\.\s*register\s*\(|["'`]tools["'`]\s*\)\s*\??\.\s*register\s*\(/.test(c)))) left.push("Tools whose names its program works out as it runs: your agents get only the tools it names before it's added.");
   // What its program needs from npm: what it names, none of DSH's but the public ones it imports, which DSH would have given it.
@@ -727,7 +753,7 @@ export function readDsh(dir: string, o: { integrity?: string } = {}): DshRead {
   const id = idOf(pkg);
 
   if (slot) {
-    const dsh: DshPlugin = { package: pkg, version, integrity: o.integrity ?? digestOf(dir, files), ...(host ? { host } : {}), ...(host && mine[0]?.config && typeof mine[0].config === "object" ? { config: mine[0].config } : {}), ...(tools.length ? { tools } : {}), slot };
+    const dsh: DshPlugin = { package: pkg, version, integrity: o.integrity ?? digestOf(dir, files), ...(host ? { host } : {}), ...(host && mine[0]?.config && typeof mine[0].config === "object" ? { config: mine[0].config } : {}), ...(tools.length ? { tools } : {}), ...instructions, slot };
     const raw = { apiVersion: 1, id, kind: "panel", name, ...(description ? { description } : {}), ...(first ? { summary: first } : {}), place: PLACE[slot], entry: "index.html", icon: slot === "sidebar.panellist" ? "app" : "blocks", access: usesModel ? { ai: true } : {}, dsh };
     const manifest = checkManifest(raw, { dsh: true });
     if (mcp.length) left.push(`The MCP server it connects in DeepSeek Harness: add it as a connection of its own.`);
@@ -773,7 +799,7 @@ export function readDsh(dir: string, o: { integrity?: string } = {}): DshRead {
   // Tools and nothing to show: a connection whose server is its own program.
   if (host && tools.length) {
     if (usesModel) left.push("The model its program asks for itself: with no page to pick one on, it has none here.");
-    const dsh = { package: pkg, version, integrity: o.integrity ?? digestOf(dir, files), host, ...(mine[0]?.config && typeof mine[0].config === "object" ? { config: mine[0].config } : {}), tools };
+    const dsh = { package: pkg, version, integrity: o.integrity ?? digestOf(dir, files), host, ...(mine[0]?.config && typeof mine[0].config === "object" ? { config: mine[0].config } : {}), tools, ...instructions };
     const manifest = checkManifest({ apiVersion: 1, id, kind: "connection", name, ...(description ? { description } : {}), ...(first ? { summary: first } : {}), dsh }, { dsh: true });
     return { manifest, left, size, deps };
   }

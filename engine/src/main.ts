@@ -100,10 +100,13 @@ const launch = new Launcher({
   holder: (port) => listeningPorts(env).then((l) => l.find((s) => s.port === port)?.process),
 });
 launch.watch();
+// What the last engine left running when it crashed or was killed: stopped, if it's still what it started.
+void launch.reap().catch((e) => console.error("[engine]", e));
 tools.launch = launch;
 const outside: { now?: Outside } = {};
 // Ported DeepSeek Harness plugins' own programs: each in a process of its own, never in the engine.
 const dsh = new DshHosts(addons, env, store.home);
+dsh.projects = () => [...store.projects.map((p) => p.path), ...store.threads.flatMap((t) => (t.worktree?.path ? [t.worktree.path] : []))];
 const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, launch, dsh, outside: { apply: () => outside.now?.apply() } };
 const api = createApi(store, runtime, env, extras);
 // "Make it an app": the card's Create starts a session of its own, through the same door the app uses.
@@ -164,10 +167,18 @@ void api.ready.then(() => {
 
 process.stdout.write(`LINER_READY ${JSON.stringify({ port: server.port, home: store.home })}\n`);
 
+/** How long launch.json servers and plugins' programs get to go by themselves when Liner Code quits, before SIGKILL. */
+const QUIT_WAIT = 1500;
+let quitting = false;
 const quit = () => {
+  if (quitting) return;
+  quitting = true;
+  // However the waits below go, the engine is gone in a few seconds.
+  setTimeout(() => process.exit(0), QUIT_WAIT + 2500);
   // Each on its own, so one that fails (the last save, on a full disk) doesn't leave the rest undone
   // and the engine running with nothing to stop it: its signal has been sent, and its stdin has closed.
-  const steps = [() => dsh.stopAll(), () => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => launch.quit(), () => proxies.closeAll(), () => logs.stopAll(), () => runtime.shutdown(), () => store.keepStreaming(), () => store.flush(), () => server.close()];
+  const waits: Promise<void>[] = [];
+  const steps = [() => waits.push(dsh.stopAll(QUIT_WAIT)), () => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => waits.push(launch.quit(QUIT_WAIT)), () => proxies.closeAll(), () => logs.stopAll(), () => runtime.shutdown(), () => store.keepStreaming(), () => store.flush(), () => server.close()];
   for (const step of steps) {
     try {
       step();
@@ -175,7 +186,8 @@ const quit = () => {
       console.error("[engine]", e);
     }
   }
-  process.exit(0);
+  // Servers and programs asked to stop get a moment to, then what's left of their groups is killed (SIGKILL), then out.
+  void Promise.allSettled(waits).then(() => process.exit(0));
 };
 process.on("SIGTERM", quit);
 process.on("SIGINT", quit);

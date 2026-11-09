@@ -23,8 +23,9 @@
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { AddonAsk, AddonInfo, AddonManifest, AddonSecret, AnyConnectionManifest, ConnectionAsk, ConnectionManifest, DshConnectionManifest, DshPlugin, DshSlot, DshTool, DshToolsPlugin, PanelAccess, PanelManifest } from "../../contracts/src/index.ts";
+import type { AddonAsk, AddonInfo, AddonManifest, AddonSecret, AnyConnectionManifest, ConnectionAsk, ConnectionManifest, DshConnectionManifest, DshInstructions, DshPlugin, DshSlot, DshTool, DshToolsPlugin, PanelAccess, PanelManifest } from "../../contracts/src/index.ts";
 import { addonKey, PANEL_ICONS } from "../../contracts/src/index.ts";
+import { sandboxed } from "./dsh-hosts.ts";
 import { loadState, writeAtomic } from "./store.ts";
 
 /** Where an agent writes a draft, in the session's folder. */
@@ -246,11 +247,20 @@ function checkTools(v: unknown, bad: string[], c: Checks): DshTool[] {
   });
   return out;
 }
+/** What a ported plugin tells every agent with its tools, as dsh.ts read it from its code: each section's text, and whether more is worked out as it runs. */
+function checkInstructions(v: unknown, bad: string[], c: Checks): DshInstructions | undefined {
+  const o = c.obj(v, "dsh.instructions");
+  if (!o) return undefined;
+  c.only(o, "dsh.instructions", ["texts", "live"]);
+  if (!Array.isArray(o.texts) || o.texts.length > DSH_TOOLS_MAX || o.texts.some((t) => typeof t !== "string" || t.length > 8000)) return void bad.push("dsh.instructions.texts is a list of its sections' words, 8000 characters each at most."), undefined;
+  if (o.live !== undefined && o.live !== true) bad.push("dsh.instructions.live is true, or not there.");
+  return { texts: o.texts as string[], ...(o.live === true ? { live: true } : {}) };
+}
 /** A ported plugin's block, as dsh.ts writes it: its package, its slot, its Node half's file and config, and the tools it gives. */
 function checkDsh(v: unknown, bad: string[], c: Checks, slotted = true): DshPlugin | undefined {
   const d = c.obj(v, "dsh");
   if (!d) return undefined;
-  c.only(d, "dsh", ["package", "version", "integrity", "host", "config", "tools", ...(slotted ? ["slot"] : [])]);
+  c.only(d, "dsh", ["package", "version", "integrity", "host", "config", "tools", "instructions", ...(slotted ? ["slot"] : [])]);
   const pkg = c.text(d.package, "dsh.package", 214);
   const version = c.text(d.version, "dsh.version", 64);
   if (pkg !== undefined && !/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/.test(pkg)) bad.push("dsh.package isn't an npm package's name.");
@@ -261,8 +271,10 @@ function checkDsh(v: unknown, bad: string[], c: Checks, slotted = true): DshPlug
   if (slotted && !DSH_SLOTS.includes(d.slot as DshSlot)) bad.push(`dsh.slot is one of ${DSH_SLOTS.join(", ")}.`);
   const tools = d.tools === undefined ? undefined : checkTools(d.tools, bad, c);
   if (tools?.length && !host) bad.push("dsh.tools are its program's: a plugin with tools has dsh.host.");
+  const instructions = d.instructions === undefined ? undefined : checkInstructions(d.instructions, bad, c);
+  if (instructions && !tools?.length) bad.push("dsh.instructions are told to agents with its tools: a plugin with them gives tools.");
   if (pkg === undefined || version === undefined) return undefined;
-  return { package: pkg, version, ...(typeof d.integrity === "string" ? { integrity: d.integrity } : {}), ...(host ? { host } : {}), ...(d.config && typeof d.config === "object" ? { config: d.config as Record<string, unknown> } : {}), ...(tools?.length ? { tools } : {}), slot: d.slot as DshSlot };
+  return { package: pkg, version, ...(typeof d.integrity === "string" ? { integrity: d.integrity } : {}), ...(host ? { host } : {}), ...(d.config && typeof d.config === "object" ? { config: d.config as Record<string, unknown> } : {}), ...(tools?.length ? { tools } : {}), ...(instructions ? { instructions } : {}), slot: d.slot as DshSlot };
 }
 
 /**
@@ -340,8 +352,13 @@ function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks, dshOk 
   return { apiVersion: 1, id: id!, kind: "panel", name: name!, ...(description ? { description } : {}), ...(summary ? { summary } : {}), place: place as PanelManifest["place"], entry: entry!, ...(icon ? { icon: icon as PanelManifest["icon"] } : {}), access, ...(dsh ? { dsh } : {}) };
 }
 
+/**
+  Where a ported plugin's program runs, in words: "on this Mac", in its sandbox there (dsh-hosts.ts);
+  elsewhere, as you, with nothing round it.
+*/
+export const programWhere = (platform: NodeJS.Platform = process.platform) => (sandboxed(platform) ? "on this Mac" : `on this ${platform === "darwin" ? "Mac" : "computer"}, with no sandbox`);
 /** What a connection reaches, in words: its address, or the command it runs; a plugin's, its own program and its tools. */
-export const reachOf = (m: AnyConnectionManifest) => (m.dsh ? `its own program on this Mac · ${toolWords(m.dsh.tools)}` : "http" in m.server ? m.server.http.url : [m.server.stdio.command, ...(m.server.stdio.args ?? [])].join(" "));
+export const reachOf = (m: AnyConnectionManifest, platform: NodeJS.Platform = process.platform) => (m.dsh ? `its own program ${programWhere(platform)} · ${toolWords(m.dsh.tools)}` : "http" in m.server ? m.server.http.url : [m.server.stdio.command, ...(m.server.stdio.args ?? [])].join(" "));
 /** "gives your agents web_search, weather and 3 more". */
 export const toolWords = (tools: DshTool[] = []) => {
   const names = tools.map((t) => t.name);
@@ -429,9 +446,9 @@ export function modelHostRefusal(network?: string) {
   What a panel may touch, in words, for its strip and Settings: "reads this project's files · no
   network". A ported plugin with a Node half says that first: its program reaches what its frame can't.
 */
-export function accessWords(a: PanelAccess, place?: PanelManifest["place"], dsh?: DshPlugin) {
+export function accessWords(a: PanelAccess, place?: PanelManifest["place"], dsh?: DshPlugin, platform: NodeJS.Platform = process.platform) {
   const out: string[] = [];
-  if (dsh?.host) out.push("runs its own program on this Mac");
+  if (dsh?.host) out.push(`runs its own program ${programWhere(platform)}`);
   if (dsh?.tools?.length) out.push(toolWords(dsh.tools));
   if (a.files) out.push("reads this project's files");
   if (a.sessions === "this") out.push(place === "tab" ? "reads this session" : "reads the session it's beside");
@@ -750,7 +767,7 @@ export class Addons {
     const had = this.index.addons[m.id];
     const was = had && !had.removed ? this.manifest(m.id) : null;
     const newTools = (m.dsh?.tools ?? []).filter((t) => !(was?.kind === "panel" ? (was.dsh?.tools ?? []) : []).some((x) => x.name === t.name));
-    const wider = was?.kind === "panel" ? [...(m.dsh?.host && !was.dsh?.host ? ["Run its own program on this Mac"] : []), ...(newTools.length ? [`Give your agents ${newTools.map((t) => t.name).join(", ")}`] : []), ...widerAccess(was.access, m.access)] : undefined;
+    const wider = was?.kind === "panel" ? [...(m.dsh?.host && !was.dsh?.host ? [`Run its own program ${programWhere()}`] : []), ...(newTools.length ? [`Give your agents ${newTools.map((t) => t.name).join(", ")}`] : []), ...widerAccess(was.access, m.access)] : undefined;
     return {
       kind: "panel",
       next,
@@ -783,7 +800,7 @@ export class Addons {
       name: m.name,
       ...(m.description ? { description: m.description } : {}),
       transport: m.dsh || "stdio" in m.server ? "stdio" : "http",
-      server: m.dsh ? "Its own program, in a process of its own on this Mac" : reachOf(m),
+      server: m.dsh ? `Its own program, in a process of its own ${programWhere()}` : reachOf(m),
       ...(!m.dsh && "stdio" in m.server ? { env: [...new Set([...Object.keys(m.server.stdio.env ?? {}), ...(m.secrets ?? []).map((x) => x.name)])] } : {}),
       reaches,
       path,

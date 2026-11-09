@@ -27,8 +27,8 @@
 */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { registerHooks } from "node:module";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { createRequire, registerHooks, syncBuiltinESMExports } from "node:module";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SHIMMED, WEB_TOOLS } from "./dsh-shims.ts";
 
@@ -36,8 +36,8 @@ import { SHIMMED, WEB_TOOLS } from "./dsh-shims.ts";
 const SHIM = new URL("./dsh-shims.ts", import.meta.url).href;
 registerHooks({ resolve: (spec, context, next) => (SHIMMED.includes(spec) ? { url: SHIM, shortCircuit: true } : next(spec, context)) });
 
-type Start = { t: "start"; dir: string; entry: string; config?: Record<string, unknown>; name: string; secret: string; model: string | null; tools?: string[] };
-type Down = Start | { t: "model"; model: string | null } | { t: "text"; call: string; text: string } | { t: "done"; call: string } | { t: "fail"; call: string; error: string } | { t: "call"; call: string; name: string; args?: unknown } | { t: "abort"; call: string };
+type Start = { t: "start"; dir: string; entry: string; config?: Record<string, unknown>; name: string; secret: string; model: string | null; tools?: string[]; named?: string[] };
+type Down = Start | { t: "made"; id: string; first?: string; error?: string; code?: string } | { t: "model"; model: string | null } | { t: "text"; call: string; text: string } | { t: "done"; call: string } | { t: "fail"; call: string; error: string } | { t: "call"; call: string; name: string; args?: unknown } | { t: "abort"; call: string };
 type Route = { kind: "exact" | "prefix"; path: string; handler: (req: IncomingMessage, res: ServerResponse) => unknown };
 
 const send = (m: Record<string, unknown>) => {
@@ -51,6 +51,46 @@ const said = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 let started: Start | null = null;
+
+/*
+  Folders in the folder Liner Code made for it in yours (~/Documents/Media Desk): the sandbox lets it
+  make none there, so a folder built elsewhere can't be moved in whole with what's in it unchecked
+  (SBPL can't tell a move from a mkdir). Its fs.mkdir and fs.promises.mkdir for a path in there ask
+  the engine instead, which makes them after checking each name (dsh-hosts.ts, makeIn). mkdirSync
+  can't wait on the engine: there, it's refused as the sandbox refuses it.
+*/
+const making = new Map<string, { ok: (first: string | undefined) => void; no: (e: Error) => void }>();
+const inNamed = (p: unknown) => {
+  if (typeof p !== "string" && !(p instanceof URL)) return null;
+  const abs = resolve(p instanceof URL ? p.pathname : p);
+  return (started?.named ?? []).some((n) => abs === n || abs.startsWith(n + sep)) ? abs : null;
+};
+const askMkdir = (path: string, recursive: boolean) =>
+  new Promise<string | undefined>((ok, no) => {
+    const id = randomUUID();
+    making.set(id, { ok, no });
+    send({ t: "mkdir", id, path, recursive });
+  });
+{
+  const req = createRequire(import.meta.url);
+  const fs = req("node:fs") as typeof import("node:fs");
+  const fsp = req("node:fs/promises") as typeof import("node:fs/promises");
+  const was = { promise: fsp.mkdir, callback: fs.mkdir };
+  const recursiveOf = (o: unknown) => !!(o && typeof o === "object" && (o as { recursive?: unknown }).recursive);
+  fsp.mkdir = ((path: Parameters<typeof fsp.mkdir>[0], o?: Parameters<typeof fsp.mkdir>[1]) => {
+    const abs = inNamed(path);
+    return abs ? askMkdir(abs, recursiveOf(o)) : was.promise(path, o as never);
+  }) as typeof fsp.mkdir;
+  fs.mkdir = ((path: Parameters<typeof fs.mkdir>[0], o: unknown, cb?: unknown) => {
+    const done = (typeof o === "function" ? o : cb) as (e: Error | null, first?: string) => void;
+    const abs = inNamed(path);
+    if (!abs) return (was.callback as (...a: unknown[]) => void)(path, ...(typeof o === "function" ? [o] : [o, cb]));
+    askMkdir(abs, recursiveOf(o)).then((first) => done(null, first), (e: Error) => done(e));
+  }) as typeof fs.mkdir;
+  fs.promises.mkdir = fsp.mkdir;
+  // So `import { mkdir } from "node:fs/promises"` in its program gets these too.
+  syncBuiltinESMExports();
+}
 let model: string | null = null;
 const routes = new Set<Route>();
 const asks = new Map<string, { push(t: string): void; done(): void; fail(e: string): void }>();
@@ -350,7 +390,8 @@ async function offered() {
     }
     list.push({ name, description: String(def.description ?? "").slice(0, 4000), inputSchema: inputOf(def.parameters) });
   }
-  const text = [...sections]
+  // Each section on its own: the engine tells your agents only the ones its card showed (dsh-hosts.ts, told).
+  const texts = [...sections]
     .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
     .map((s) => {
       try {
@@ -360,8 +401,8 @@ async function offered() {
       }
     })
     .filter((t) => t.trim())
-    .join("\n\n");
-  return { tools: list, instructions: text.slice(0, 8000) };
+    .map((t) => t.slice(0, 8000));
+  return { tools: list, sections: texts };
 }
 
 /** A DSH result's content as MCP's: its text, and an image only when it carries its own bytes. */
@@ -620,7 +661,12 @@ process.on("message", (raw: unknown) => {
       logger.error(e);
       send({ t: "failed", error: said(e) });
     });
-  else if (m.t === "model") model = m.model;
+  else if (m.t === "made") {
+    const w = making.get(m.id);
+    making.delete(m.id);
+    if (w && m.error !== undefined) w.no(Object.assign(new Error(m.error), { code: m.code ?? "EPERM" }));
+    else w?.ok(m.first);
+  } else if (m.t === "model") model = m.model;
   else if (m.t === "text") asks.get(m.call)?.push(m.text);
   else if (m.t === "done") asks.get(m.call)?.done();
   else if (m.t === "fail") asks.get(m.call)?.fail(m.error);

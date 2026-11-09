@@ -738,11 +738,24 @@ export type DshPlugin = {
     code before it's added: what the card says it gives your agents, and all its program may give them.
   */
   tools?: DshTool[];
+  /**
+    What its program tells DSH's agent (ctx.systemPrompt.section), as read from its code before it's
+    added: told to every agent with its tools as their MCP server's instructions, and only these
+    words. `live`: some of it is worked out as it runs, which the card can't show, and that is told
+    too. Only a plugin that gives tools has this.
+  */
+  instructions?: DshInstructions;
   /** The DSH slot its browser half draws in, which made `place`. */
   slot: DshSlot;
 };
-/** A tool a ported plugin gives your agents: its name, and what it says it does when that's plain text in its code. */
+/**
+  A tool a ported plugin gives your agents: its name, and what it says it does when that's plain text
+  in its code. The text read here is what agents are told; a tool without one is described by its
+  program as it runs.
+*/
 export type DshTool = { name: string; description?: string };
+/** A ported plugin's words for every agent: each section's text as written in its code, and whether more is worked out as it runs. */
+export type DshInstructions = { texts: string[]; live?: boolean };
 /** The `dsh` block of a plugin that only gives tools: no slot, a program, and the tools it gives. */
 export type DshToolsPlugin = Omit<DshPlugin, "slot" | "host" | "tools"> & { host: string; tools: DshTool[] };
 /** The DeepSeek Harness slots a ported plugin can draw in: a sidebar page, a right-pane tab, a conversation view. */
@@ -750,9 +763,11 @@ export type DshSlot = "sidebar.panellist" | "sidebar.right.pane.tab" | "conversa
 /**
   What a ported plugin's frame needs beside its files: which package and slot to start, its config,
   and `base`, the engine's path for this run that reaches its Node half and its package's pictures
-  (/dsh/<token>/), or `error`, why its Node half didn't start.
+  (/dsh/<token>/), or `error`, why its Node half didn't start. `notice`, why it can't save where it
+  would (the folder Liner Code would make for it in your Documents is one of yours already, or holds
+  a project): its page says so, since what it then says itself is only "operation not permitted".
 */
-export type DshFrame = { package: string; slot: DshSlot; config?: Record<string, unknown>; base?: string; error?: string };
+export type DshFrame = { package: string; slot: DshSlot; config?: Record<string, unknown>; base?: string; error?: string; notice?: string };
 /** A panel's manifest, version 1. `entry` is its HTML file, beside the manifest. */
 export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; summary?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess; dsh?: DshPlugin };
 export type AddonManifest = ConnectionManifest | DshConnectionManifest | PanelManifest;
@@ -823,7 +838,7 @@ export const BUILTIN_MODES: ModeGuide[] = [
       { h: "How the result takes effect", p: "Ask it to add and check what it makes, not only to write the files. Nothing goes in without your yes on its card, and it gets only the access it lists. A panel or an app opens at once; a connection reaches agent tools now or from their next turn. A new mode is picked when you start a session. Its folder is the project you picked, or Scratch." },
     ],
     examples: [
-      { h: "Add a page", ask: "Make a notes app with a left sidebar entry that opens a full-page editor. Keep my notes between sessions. Add it, and check that the page opens.", expect: "An app under Apps in the left sidebar, its page working, and what it checked." },
+      { h: "Add a page", ask: "Make a notes app with a left sidebar entry that opens a full-page editor. Keep my notes between sessions. Add it, and check that the page opens.", expect: "An app under Add-ons in the left sidebar, its page working, and what it checked." },
       { h: "Add a panel", ask: "Make a panel beside my sessions that lists the TODOs in this project, so I can send one to you. Check it, then ask me to add it.", expect: "A panel in the right dock, tried live as a preview before you add it." },
       { h: "Make my own mode", ask: "Make a “Code review” mode: prioritise likely bugs and missing tests, cite files and lines, and ask before changing anything. Save it as a mode I can pick.", expect: "A mode you pick when you start a session. Its instructions guide the model; Safety still decides what it may do." },
     ],
@@ -906,9 +921,15 @@ export type PanelAsk = AskBase & { kind: "panel"; place: PanelPlace; access: Pan
 /**
   A DeepSeek Harness plugin's card: its package, and when it runs a program of its own, what that
   program may do here (`sandbox`, in words). `left` is what of it Liner Code doesn't have, said plainly.
-  `gives`: the tools it gives your agents, with what each says it does.
+  `gives`: the tools it gives your agents, with what each says it does (one with no description is
+  described by its program as it runs). `instructions`: what it tells every agent with its tools, as
+  read from its code (sections apart by a blank line); `instructionsLive`, that its program works
+  out more of it as it runs, which can't be shown here. `saves`, on a Mac, for a plugin with a page:
+  the folder Liner Code makes for it in your Documents when it first runs (~/Documents/Media Desk),
+  the one place there it may save text and save again; with `why`, it gets none (a folder of that
+  name is yours already, or holds a project).
 */
-export type DshAsk = DshInfo & { sandbox?: string; left: string[]; size: number; gives?: DshTool[] };
+export type DshAsk = DshInfo & { sandbox?: string; left: string[]; size: number; gives?: DshTool[]; instructions?: string; instructionsLive?: boolean; saves?: { path: string; why?: string } };
 export type ConnectionAsk = AskBase & {
   kind?: "connection";
   transport: "stdio" | "http";
@@ -1490,6 +1511,9 @@ export type LocalServer = { port: number; process: string; url: string; owner: "
   ran on (another, when the entry's was taken). `ended` says why it isn't running; `asleep`, that
   it stopped while no one looked and starts again when a session in its folder is opened.
   `changed`: launch.json's entry isn't what it runs now. `problem`: an entry that can't run here.
+  `ask`: what a press of Run or Restart would run, when nobody has said yes to it in this folder as
+  the file says it now. In launch.start's and launch.restart's answer it means nothing ran: show it
+  and run it only on a yes, by sending `ask.key` back as `allow`.
 */
 export type LaunchServer = {
   name: string;
@@ -1501,7 +1525,16 @@ export type LaunchServer = {
   asleep?: boolean;
   changed?: boolean;
   problem?: string;
+  ask?: LaunchAsk;
 };
+/**
+  A launch.json entry as it would run, for you to see before it does: its command line, folder,
+  environment (as written in the file, values and all) and port. `risky` names the variables that
+  change what runs (NODE_OPTIONS, PATH, DYLD_*…), which make it high risk. `key` stands for exactly
+  this: a yes trusts the entry as shown, and any change to the command, folder, environment or port
+  asks again.
+*/
+export type LaunchAsk = { key: string; command: string; cwd: string; env: Record<string, string>; port: number; risk: Risk; risky?: string[] };
 
 /** App → engine. Each method's params and result. */
 export type Rpc = {
@@ -1702,11 +1735,17 @@ export type Rpc = {
   "ports.stop": [{ threadId: string; port: number }, number[]];
   /** The session folder's .claude/launch.json servers, and whether the file is there (`error`: it couldn't be read). */
   "launch.list": [{ threadId: string }, { servers: LaunchServer[]; file: boolean; error?: string }];
-  /** Runs one (the one that runs already, if it does); answers once it has got past starting up, or throws with why it didn't. */
-  "launch.start": [{ threadId: string; name: string }, LaunchServer];
+  /**
+    Runs one (the one that runs already, if it does); answers once it has got past starting up, or
+    throws with why it didn't. One nobody has said yes to, or one whose entry changed since, doesn't
+    run: the answer carries `ask`, and it runs (and is trusted from then on) only when that ask's
+    key comes back as `allow`.
+  */
+  "launch.start": [{ threadId: string; name: string; allow?: string }, LaunchServer];
   /** Stops one, or (no name) every one in the session's folder; answers with how many stopped. */
   "launch.stop": [{ threadId: string; name?: string }, number];
-  "launch.restart": [{ threadId: string; name: string }, LaunchServer];
+  /** Stops it and runs the entry as the file says it now: like launch.start, an entry nobody said yes to comes back with `ask`, and the running one is left alone. */
+  "launch.restart": [{ threadId: string; name: string; allow?: string }, LaunchServer];
   /** The app shows this session: its folder's servers stay up, and those stopped while no one looked start again. */
   "launch.seen": [{ threadId: string }, null];
   /** A proxy onto a local port, for the Browser surface: the page reports its console and answers picks. */

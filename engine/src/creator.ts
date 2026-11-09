@@ -42,7 +42,7 @@ export function creatorNote(n: (tool: string) => string) {
     "This session adds to Liner Code itself: the person describes something they'd like in the app they're using, and you make it as an add-on. What you can make:",
     "- a connection: an MCP server every agent tool in Liner Code gets (Linear, Sentry, a database);",
     "- a panel: a small page of your own in the right dock, beside a session (a viewer, an editor, something to watch while chatting);",
-    "- an app: a panel as a tab beside Chat in a session (its live output or interaction), or as a page of its own opened from Apps in the left sidebar (something global, kept across projects). An ask for a left sidebar entry, a page, a full-page app or a workspace is a page (place \"page\"), never the right dock. A visual request that names no other place means an add-on in Liner Code, not an HTML file;",
+    "- an app: a panel as a tab beside Chat in a session (its live output or interaction), or as a page of its own opened from Add-ons in the left sidebar (something global, kept across projects). An ask for a left sidebar entry, a page, a full-page app or a workspace is a page (place \"page\"), never the right dock. A visual request that names no other place means an add-on in Liner Code, not an HTML file;",
     `- a mode: instructions (with skills and context files) for whichever model a session runs, which the person picks when they start one. Work it out with them, then ask with ${n("mode_add")}.`,
     "",
     'AI inside an add-on (writing help, a summary, a chat, live edits of what it shows) is "ai": true and liner.ai.ask in its scripts, on any place, a page too: the person picks one of their models in Liner Code\'s popup. Never a prompt to copy into the chat, their API key, or the composer ("bridge").',
@@ -90,7 +90,7 @@ const PANELS = `Panels, step by step
 2. Write ${ADDON_DIR}/<id>/addon.json and its files beside it: index.html, and any .js, .css, .json, .svg or pictures it links by a relative path. Up to 40 files and 2 MB; html, js, css, json, svg, png, jpg, gif, webp, txt, md only; no links, nothing hidden. Nothing from a CDN: the frame can't reach one, so libraries go in its own files.
 3. In its scripts, window.liner is the only way to Liner Code ("bridge"). Draw with the theme's tokens ("theme").
 4. addon_check it, fix what's off, check again ("verify").
-5. addon_install it. A dock panel opens as a preview beside its card; a tab or a page shows in the dock too while the card is up. After the yes, a dock panel stays in the dock, a tab shows beside Chat in its project's sessions, and a page gets an entry under Apps in the left sidebar.
+5. addon_install it. A dock panel opens as a preview beside its card; a tab or a page shows in the dock too while the card is up. After the yes, a dock panel stays in the dock, a tab shows beside Chat in its project's sessions, and a page gets an entry under Add-ons in the left sidebar.
 6. To change it, edit the draft and addon_install again.`;
 
 function manifest() {
@@ -121,7 +121,7 @@ Asking for more than the version in use (a new kind of access, more storage, ano
 const PLACES = `Places: which one fits
 - "dock": the right dock, beside a session, a tab among Liner Code's own surfaces (Browser, Terminal, Files…). For something to look at or edit while the conversation goes on: a viewer, an editor, a live log to watch. It knows the session it's beside.
 - "tab": a tab beside Chat in each session of its project. For a session's own output or interaction, in place of the conversation while it's up: test runs, a task board. It knows its session.
-- "page": a page of its own, opened from Apps at the top of the left sidebar, in the conversation's place, with a way back. For something global, kept across projects: notes, a log, a checklist. It has no session beside it.
+- "page": a page of its own, opened from Add-ons in the left sidebar, in the conversation's place, with a way back. For something global, kept across projects: notes, a log, a checklist. It has no session beside it.
 Default by scope first: global goes on a page; tied to a session, watched while chatting goes in the dock, the session's own output or interaction goes in a tab. When the person names a place, use theirs: "a left sidebar entry", "a page", "full page", "its own page" or "like Word" (a workspace to write or work in) all mean "page", which takes the whole centre column, never a small panel. The person can open any of them in the dock too.`;
 
 const APPS = `Apps on a page: the full version, not a demo

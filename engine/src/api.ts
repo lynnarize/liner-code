@@ -1629,9 +1629,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "ports.list": ({ threadId }) => (threadId ? listeningPorts(env, mine(threadId)) : listeningPorts(env)),
     "ports.stop": ({ threadId, port }) => stopServers(env, mine(threadId), { port }),
     "launch.list": ({ threadId }) => launcher().list(threadId),
-    "launch.start": ({ threadId, name }) => launcher().start(threadId, name),
+    // A press of Run or Restart: an entry nobody said yes to comes back with what it would run, and runs on `allow`.
+    "launch.start": ({ threadId, name, allow }) => launcher().press(threadId, name, { allow }),
     "launch.stop": ({ threadId, name }) => launcher().stop(threadId, name),
-    "launch.restart": ({ threadId, name }) => launcher().restart(threadId, name),
+    "launch.restart": ({ threadId, name, allow }) => launcher().press(threadId, name, { allow, again: true }),
     "launch.seen": ({ threadId }) => (x.launch?.seen(threadId), null),
     "browser.proxy": async ({ port }) => ({ url: await x.proxies.url(port) }),
     "browser.files": async ({ threadId, path }) => {

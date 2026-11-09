@@ -24,8 +24,7 @@ import { topicText, TOPICS, type Topic } from "./creator.ts";
 import type { Offers } from "./offers.ts";
 import { DESIGN_FRAME, keepOutOfGit, sizeOf, type DesignItem, type Designs } from "./designs.ts";
 import { run } from "./exec.ts";
-import type { LaunchEntry, Launcher } from "./launch.ts";
-import { commandRisk } from "./risk.ts";
+import { commandLine, launchRisk, riskyEnv, shownEnv, type Launcher } from "./launch.ts";
 import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
 import { remember, searchSessions } from "./memory.ts";
 import { uid, type Store } from "./store.ts";
@@ -196,8 +195,8 @@ export const ADDON_TOOL = "liner.addon";
 /** The tool for an agent's request to run a server from launch.json, on the timeline. */
 export const SERVER_TOOL = "liner.server";
 
-/** A launch.json entry's command, as a line to read. */
-export const commandLine = (e: Pick<LaunchEntry, "command" | "args">) => [e.command ?? "", ...e.args].map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : JSON.stringify(a))).join(" ");
+/** A launch.json entry's command, as a line to read (launch.ts has it). */
+export { commandLine };
 /** Lines that read like an error, as Claude Code's preview_logs picks them. */
 const ERRORISH = /error|exception|failed|fatal|cannot|unable|ERR!/i;
 
@@ -480,31 +479,39 @@ export class AgentTools {
     const e = launch.entry(threadId, name);
     // One that runs already (you started it, or it came back by itself) is only used.
     const running = (await launch.list(threadId)).servers.some((v) => v.name === name && v.status !== "stopped" && !v.changed);
-    if (!running && !launch.trusts(threadId, e)) {
+    const known = launch.trusts(threadId, e);
+    // Only a person's yes makes an entry theirs for agents to run again: a run in Full access that nobody saw trusts nothing.
+    let yes = false;
+    if (!running && !known) {
       const line = commandLine(e);
-      const risk = commandRisk(line);
+      const risk = launchRisk(e);
+      const risky = riskyEnv(e.env);
       const host = this.host;
-      if (host?.unwatched?.(threadId)) return fail(`No one is here to say yes, and nobody has run ${name} from this folder's launch.json before, so it didn't run. Leave it for the person.`);
+      if (host?.unwatched?.(threadId)) return fail(`No one is here to say yes, and nobody has said yes to ${name} in this folder's launch.json as it is now, so it didn't run. Leave it for the person.`);
       const t = this.store.thread(threadId);
       const free = t.access === "full" && risk !== "high" && !host?.readOnly(threadId);
       if (!free) {
         if (!host) return fail(`${name} hasn't been run here before, and there's no one to ask. The person can run it from the Browser.`);
+        // A secret's value is said to be set, not shown: the card is kept in the session's history.
+        const env = Object.entries(shownEnv(e.env));
         const { answer } = host.askLiner(threadId, {
           tool: SERVER_TOOL,
           title: `Run ${name} from launch.json`,
-          description: "Starts a dev server from .claude/launch.json in this folder and opens it in the Browser. Liner Code stops it when no session here needs it, and an entry you allow runs again without asking.",
+          description: `Starts a dev server from .claude/launch.json in this folder and opens it in the Browser. Liner Code stops it when no session here needs it, and an entry you allow runs again without asking until its command, folder, environment or port changes.${risky.length ? ` Its environment sets ${risky.join(", ")}, which can make it run other code than its command shows.` : ""}`,
           risk,
           fields: [
             { label: "Command", value: line },
             { label: "Where", value: e.cwd },
+            ...(env.length ? [{ label: "Environment", value: env.map(([k, v]) => `${k}=${v}`).join("\n") }] : []),
             { label: "Port", value: String(e.port) },
           ],
         });
         const a = await answer;
         if (!a.allow) return fail(`The person said no to running ${name}${a.reason ? `: ${a.reason}` : "."} Don't start it another way.`);
+        yes = true;
       }
     }
-    let up = await launch.start(threadId, name, e.raw);
+    let up = await launch.start(threadId, name, { key: launch.keyFor(threadId, e), trust: yes || known });
     if (up.status === "starting") up = (await launch.settle(threadId, name, 60_000)) ?? up;
     if (up.status === "stopped") {
       const why = up.ended ? [up.ended.reason, ...(up.ended.tail ?? []).slice(-6)].join("\n") : "It stopped.";
@@ -672,7 +679,7 @@ export class AgentTools {
     const version = addons.install(m, { project: scope === "project" ? project.id : undefined, by }, files);
     const it = this.store.item(threadId, id);
     if (it.kind === "approval" && it.addon) this.store.putItem(threadId, { ...it, addon: { ...it.addon, scope, version } });
-    const where = m.place === "page" ? "under Apps in the left sidebar" : m.place === "tab" ? `as a tab beside Chat, in ${scope === "project" ? `${project.name}'s sessions` : "every session"}` : `in the right dock, in ${scope === "project" ? `${project.name}'s sessions` : "every session"}`;
+    const where = m.place === "page" ? "under Add-ons in the left sidebar" : m.place === "tab" ? `as a tab beside Chat, in ${scope === "project" ? `${project.name}'s sessions` : "every session"}` : `in the right dock, in ${scope === "project" ? `${project.name}'s sessions` : "every session"}`;
     return text(`applied: ${m.name} (v${version}) is added ${where}. To change it, edit the draft and call addon_install again: a version that asks for nothing more goes in without a card.`);
   }
 

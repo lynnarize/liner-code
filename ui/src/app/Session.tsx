@@ -49,7 +49,9 @@ type Props = {
   /**
     Opened from the Wall: the way back at the start of the header, where it is among the Wall's
     tiles (`at` of `of`, 0 when it's no longer among them) and the tiles either side. The composer
-    waits for a click, so Esc goes back to the Wall rather than stopping the turn.
+    waits for a click, so Esc goes back to the Wall; in the composer Esc is the composer's first
+    (it stops a turn that's running, else lets go of the field), and the way back's hint says so
+    while a turn runs (App.tsx).
   */
   wall?: { at: number; of: number; onBack: () => void; onPrev?: () => void; onNext?: () => void };
 };
@@ -139,6 +141,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const fromPanel = (d: DockState) => (paneOf(d, "terminal") >= 0 && paneOf(dock, "terminal") < 0 ? setBelow(true) : setDock(d));
   const [focus, setFocus] = useState<{ id: string; path?: string } | null>(null);
   const [renaming, setRenaming] = useState(false);
+  // In the composer's field: the way back from the Wall reads what Esc does there.
+  const [writing, setWriting] = useState(false);
   // The panel's width, while you drag its edge and after.
   const body = useRef<HTMLDivElement>(null);
   const [panelW, setPanelW] = usePanelWidth();
@@ -537,10 +541,11 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
         )}
         {wall && (
           <div className="lc-wallback" role="group" aria-label="The Wall">
-            <button type="button" className="lc-wallback-b l-focus" title="Back to the Wall (Esc)" onClick={wall.onBack}>
+            <button type="button" className="lc-wallback-b l-focus" title={busy ? "Back to the Wall (Esc). In the composer, Esc stops the turn first" : "Back to the Wall (Esc)"} onClick={wall.onBack}>
               <I.chevL size={14} />
               The Wall
-              <Kbd>Esc</Kbd>
+              {/* Not while you write in the composer and a turn runs: there Esc stops it. */}
+              {!(writing && busy) && <Kbd>Esc</Kbd>}
             </button>
             {wall.at > 0 && (
               <>
@@ -688,7 +693,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               </div>
             )}
             {project && (
-              <div className="lc-compose">
+              <div className="lc-compose" onFocus={(e) => setWriting(e.target instanceof HTMLTextAreaElement)} onBlur={() => setWriting(false)}>
                 <Composer
                   variant="session"
                   project={project}

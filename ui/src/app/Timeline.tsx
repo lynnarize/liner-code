@@ -20,8 +20,8 @@ import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
 import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
-import { Badge, Disc, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
-import { Fanout } from "./Crew";
+import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
+import { Fanout, stateOf } from "./Crew";
 import { toast } from "@liner/components/toast/toast";
 import { Boundary } from "./Boundary";
 import { bridge, isNative } from "./bridge";
@@ -681,7 +681,8 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
   // Working: the step under way, as the head would say it ("Editing index.html…"), or the agents it waits on.
   const current = tools.findLast((t) => t.status === "running");
   const thinking = entries.some((e) => e.kind === "thought" && e.it.streaming);
-  const waiting = sent.filter((t) => t.status === "running").length;
+  // Held up by the agents still at work, as the composer's line counts them (one you stopped isn't).
+  const waiting = sent.filter((t) => stateOf(t) === "running" && t.status === "running").length;
   const doing = current ? verb(current).replace(/^is /, "") : thinking ? "thinking" : waiting ? `waiting on ${plural(waiting, "agent")}` : "working";
   return (
     <div className="lc-trail" data-open={isOpen || undefined} data-live={live || undefined}>
@@ -768,7 +769,7 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
           })}
         </ol>
       </div>
-      <Fanout threadId={threadId} tools={sent} live={live} />
+      <Fanout threadId={threadId} tools={sent} />
     </div>
   );
 }
@@ -802,6 +803,9 @@ function Todo({ it }: { it: Extract<Item, { kind: "plan" }> }) {
   );
 }
 
+
+/** An ask's fields shown as written, in mono and whole, their line breaks kept. */
+const CODE_FIELDS = ["Command", "File", "Environment", "Instructions"];
 
 /** A request to do something: what, where, and what leaves this machine. */
 /**
@@ -851,8 +855,23 @@ function Approval({ threadId, it, who }: { threadId: string; it: Extract<Item, {
         risk={it.risk}
         fields={(details ? it.fields : []).map((f) => ({
           label: f.label,
-          // A command is shown whole: what runs is what you read. So are a mode's instructions, which every session in it is told.
-          value: f.label === "Command" || f.label === "File" || f.label === "Instructions" ? <code className="lc-ask-cmd">{os.tilde(f.value)}</code> : os.tilde(f.value),
+          // A command is shown whole: what runs is what you read. So is the environment it runs with (a
+          // launch.json server's, a line each), and a mode's instructions, which every session in it is told.
+          value:
+            f.label === "Environment" ? (
+              <code className="lc-ask-cmd">
+                {f.value.split("\n").map((l, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && "\n"}
+                    {l.indexOf("=") > 0 ? <EnvLine k={l.slice(0, l.indexOf("="))} v={os.tilde(l.slice(l.indexOf("=") + 1))} /> : l}
+                  </Fragment>
+                ))}
+              </code>
+            ) : CODE_FIELDS.includes(f.label) ? (
+              <code className="lc-ask-cmd">{os.tilde(f.value)}</code>
+            ) : (
+              os.tilde(f.value)
+            ),
         }))}
         approveLabel={it.risk === "high" ? (/push/i.test(it.title) ? "Hold to push" : "Hold to allow") : shell ? "Run it" : "Allow"}
         denyLabel="Not this"
@@ -1113,7 +1132,7 @@ function PanelAddonCard({ threadId, it, who }: { threadId: string; it: Ask; who:
     ...(net ? [] : [{ label: "Network", value: "None" }]),
     ...(a.replaces ? [{ label: "Replaces", value: `v${a.replaces}, which stays kept` }] : []),
     ...(a.place === "page"
-      ? [{ label: "Where", value: "Under Apps, in the left sidebar" }]
+      ? [{ label: "Where", value: "Under Add-ons, in the left sidebar" }]
       : [{ label: "Where", value: <Segmented size="sm" value={scope} onValueChange={(v) => setScope(v)} options={[{ value: "project" as const, label: a.project.name }, { value: "all" as const, label: "Every project" }]} aria-label="Where it shows" /> }]),
     { label: "Checked", value: a.checked ?? <span className="lc-quiet">Not checked yet</span> },
     ...(files

@@ -8,12 +8,14 @@
   newest first and steady while it works; while the pointer is over the tiles they don't move at
   all, so a tile that changes doesn't slide out from under a click.
   While it's up: 1 to 9 open the tile with that number, the arrows pick a tile, Enter opens the one
-  picked, typing writes to it, and Esc goes back to where you were.
+  picked, typing writes to it, and Esc goes back to where you were. The pick is a session, not a
+  place: it stays with its tile as the tiles reorder, so words you're writing never change session.
 */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as PressEvent } from "react";
 import { PR_TEST_TOOL, type FileChange, type Item, type Thread } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
+import { addToDraft } from "./Composer";
 import { getState, loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf, ago, bucketOf, clock, duration, isModelAgent, markOf, mergeFiles, modelLabel, onTheWall, plural, providerLabel, sumLines, threadModel, turnsOf, wallShown } from "./model";
@@ -57,6 +59,19 @@ const GAP = 12;
 const PAD = 20;
 
 const firstLine = (s: string) => s.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+
+/*
+  What you've written to each tile, while the app runs: a tile's field comes and goes with the pick
+  and with how its session stands, its words don't. Opening the session takes them to its composer,
+  and so does a session that leaves the Wall with words waiting for it.
+*/
+const drafts = new Map<string, string>();
+const toComposer = (id: string) => {
+  const text = drafts.get(id);
+  drafts.delete(id);
+  if (text?.trim()) addToDraft(id, text);
+  return Boolean(text?.trim());
+};
 
 /*
   A done tile reads as a brief, not the answer's paragraphs run together: its first sentence, then
@@ -273,19 +288,46 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
     for (const t of all) if (!have[t.id]) void loadItems(t.id).catch(() => {});
   }, [every]);
 
+  /*
+    The pick is a session's id. With none picked yet it's the first tile, held by its id from then on;
+    one hidden by the filter gives way to the first shown, and comes back with the filter. One that
+    leaves the Wall hands the pick to the tile that takes its place, unless you were writing to it:
+    then nothing is picked until you pick, so what you type next goes to no one you didn't choose.
+  */
   const [picked, setPicked] = useState<string | null>(() => wallShown.picked);
-  const pick = picked && ids.includes(picked) ? picked : (ids[0] ?? null);
+  const [adrift, setAdrift] = useState(false);
+  const lastAt = useRef(0);
+  const onWall = (id: string) => all.some((t) => t.id === id);
+  // Gone with words written to it: no pick from the render it goes, not a frame later.
+  const lost = picked !== null && !onWall(picked) && Boolean(drafts.get(picked)?.trim());
+  const pick = adrift || lost ? null : picked && ids.includes(picked) ? picked : picked && onWall(picked) ? (ids[0] ?? null) : (ids[Math.min(lastAt.current, ids.length - 1)] ?? null);
   // The same function for every render, so a tile redraws for its own session's changes only.
   const opener = useRef(onOpen);
   opener.current = onOpen;
   const open = useCallback((id: string) => {
     wallShown.picked = id;
+    // Words started on its tile go on in its composer.
+    toComposer(id);
     opener.current(id);
   }, []);
   const choose = useCallback((id: string) => {
     wallShown.picked = id;
     setPicked(id);
+    setAdrift(false);
   }, []);
+  useEffect(() => {
+    if (pick) lastAt.current = ids.indexOf(pick);
+    if (pick && pick !== picked && !(picked && onWall(picked))) choose(pick);
+  });
+  // A session that leaves the Wall (settled, archived, snoozed from the sidebar) with words written to it takes them to its composer, and says so.
+  useEffect(() => {
+    if (!threads.length) return;
+    for (const id of [...drafts.keys()]) {
+      if (onWall(id) || !toComposer(id)) continue;
+      if (id === picked) setAdrift(true);
+      toast(`Kept what you wrote to ${threads.find((t) => t.id === id)?.title ?? "a session"}`, { description: "It left the Wall. Your words wait in its composer." });
+    }
+  }, [every]);
 
   // The grid's shape: how many columns fit, and a row height that fills the window when the tiles fit in it.
   const grid = useRef<HTMLDivElement>(null);
@@ -344,8 +386,16 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
         e.preventDefault();
         return open(pick);
       }
-      // A letter starts a message to the picked tile: its field takes the key as it comes.
-      if (e.key.length === 1 && e.key !== " " && pick) fields.current.get(pick)?.focus();
+      // A letter starts a message to the picked tile: its field takes the key as it comes, and the pick
+      // is held to that session from here. So does an input method's first key, Process or 229 (the
+      // test T3 Code knows an input method's keys by: ComposerPromptEditorTiptap.tsx), and an accent's
+      // (Dead): with the field focused now, what it composes lands there.
+      if (((e.key.length === 1 && e.key !== " ") || e.key === "Process" || e.keyCode === 229 || e.key === "Dead") && pick) {
+        const f = fields.current.get(pick);
+        if (!f) return;
+        choose(pick);
+        f.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -429,7 +479,12 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   const info = useMemo(() => infoOf(t, items), [t, items]);
   const kind = wallKind(t);
   const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftState] = useState(() => drafts.get(t.id) ?? "");
+  const setDraft = (v: string) => {
+    setDraftState(v);
+    if (v) drafts.set(t.id, v);
+    else drafts.delete(t.id);
+  };
   const act = (run: () => Promise<unknown>) => {
     setBusy(true);
     void run()
@@ -462,7 +517,9 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   // A step that's high risk is held to allow in the session, and an add-on's card is read there: here they open it.
   const askHere = ask && ask.risk !== "high" && !ask.addon;
   const command = ask?.fields.find((f) => f.label === "Command" || f.label === "File")?.value;
-  const q = question?.questions[0];
+  const first = question?.questions[0];
+  // Only a question asked alone is answered here; several open the session, as a high-risk step or a plan does.
+  const q = question?.questions.length === 1 ? first : undefined;
   const answer = (allow: boolean) => act(() => rpc("approval.answer", { threadId: t.id, itemId: ask!.id, allow }));
   const choose = (label: string) => act(() => rpc("question.answer", { threadId: t.id, itemId: question!.id, answers: { [q!.question]: label } }));
 
@@ -567,8 +624,8 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                   <I.comment size={14} />
                   {question.questions.length > 1 ? `Asks you ${question.questions.length} things` : "Asks you"}
                 </span>
-                {q ? <p className="lc-wt-q">{q.question}</p> : <p className="lc-wt-why">It's waiting on a question it didn't say.</p>}
-                {q && question.questions.length === 1 && q.options.length > 0 ? (
+                {first ? <p className="lc-wt-q">{first.question}</p> : <p className="lc-wt-why">It's waiting on a question it didn't say.</p>}
+                {q && q.options.length > 0 ? (
                   <div className="lc-wt-choices">
                     {q.options.slice(0, 4).map((o) => (
                       <button key={o.label} type="button" className="lc-wt-chip l-focus" title={o.description} disabled={busy} onClick={() => choose(o.label)}>
@@ -577,7 +634,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                     ))}
                   </div>
                 ) : (
-                  (question.questions.length > 1 || !q) && (
+                  !q && (
                     <div className="lc-wt-acts">
                       <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
                         Answer in the session

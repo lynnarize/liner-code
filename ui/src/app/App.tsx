@@ -286,13 +286,19 @@ export function App() {
         onNext: wallAt >= 0 && wallAt < wallIds.length - 1 ? () => openFromWall(wallIds[wallAt + 1]) : undefined,
       }
     : undefined;
-  // There, Esc goes back to the Wall, unless something it was pressed in has a use for it (a field, a menu, the composer, a terminal).
+  /*
+    There, Esc goes back to the Wall, unless something it was pressed in has a use for it (a field, a
+    menu, a terminal). The composer is a field as the Wall's tiles have them: Esc stops a turn that's
+    running (its Stop says so, and the way back's hint while one runs), else lets go of the field, and
+    the next one goes back.
+  */
   useEffect(() => {
     if (!fromWall) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (document.querySelector("dialog[open], .lc-st-side")) return;
       const t = e.target instanceof Element ? e.target : null;
+      if (t instanceof HTMLTextAreaElement && t.closest(".lc-compose")) return void (e.preventDefault(), t.blur());
       if (t?.closest("input, textarea, select, [contenteditable='true'], [contenteditable=''], .xterm, [role='menu'], [role='listbox'], [role='dialog']")) return;
       e.preventDefault();
       setView({ kind: "wall" });

@@ -501,7 +501,9 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
   A DeepSeek Harness plugin's card: its package, and when it has a program of its own, exactly what
   that program may do here and the tools it gives your agents, held to allow like the network. What
   of it Liner Code doesn't have is said, so nothing half-works by surprise. One that draws nothing
-  and only gives tools is a connection: its program is the server every agent tool gets.
+  and only gives tools is a connection: its program is the server every agent tool gets. What it
+  tells your agents with its tools is there to read, folded, as read from its code; what its
+  program works out as it runs (a tool's description, more words) can't be, and the card says so.
 */
 function DshCard({ o, p: a, more, aside, yes, no }: { o: Opened; p: PanelAsk | ConnectionAsk; more: boolean; aside: (label: string) => ReactNode; yes: () => Promise<void>; no: () => Promise<void> }) {
   const d = a.dsh!;
@@ -510,7 +512,7 @@ function DshCard({ o, p: a, more, aside, yes, no }: { o: Opened; p: PanelAsk | C
   const mb = (n: number) => (n < 1_000_000 ? `${Math.max(1, Math.round(n / 1000))} KB` : `${(n / 1_000_000).toFixed(1)} MB`);
   const fields = [
     { label: "Plugin", value: <span className="lc-addon-wrap"><code className="lc-addon-mono">{d.package} {d.version}</code> · {mb(d.size)}</span> },
-    { label: "Program", value: <span className="lc-addon-wrap">{d.host ? (d.sandbox ?? "Runs as you, with no sandbox here: it can read and change your files and reach the internet.") : "None: only its page, in a sealed frame with no network"}</span> },
+    { label: "Program", value: <span className="lc-addon-wrap lc-addon-long">{d.host ? (d.sandbox ?? "Runs as you, with no sandbox here: it can read and change your files and reach the internet.") : "None: only its page, in a sealed frame with no network"}</span> },
     ...(gives.length
       ? [
           {
@@ -520,7 +522,7 @@ function DshCard({ o, p: a, more, aside, yes, no }: { o: Opened; p: PanelAsk | C
                 {gives.map((t) => (
                   <span key={t.name} style={{ display: "block" }}>
                     <code className="lc-addon-mono">{t.name}</code>
-                    {t.description ? ` · ${t.description.length > 140 ? `${t.description.slice(0, 139)}…` : t.description}` : ""}
+                    {t.description ? ` · ${t.description.length > 140 ? `${t.description.slice(0, 139)}…` : t.description}` : <span className="lc-quiet"> · Described by its program as it runs.</span>}
                   </span>
                 ))}
               </span>
@@ -528,11 +530,43 @@ function DshCard({ o, p: a, more, aside, yes, no }: { o: Opened; p: PanelAsk | C
           },
         ]
       : []),
+    ...(d.instructions || d.instructionsLive
+      ? [
+          {
+            label: "Tells them",
+            value: (
+              <details className="lc-ao-told">
+                <summary className="l-focus">
+                  <I.chevR size={11} />
+                  What it tells your agents
+                </summary>
+                {d.instructions && <div className="lc-ao-told-text">{d.instructions}</div>}
+                {d.instructionsLive && <p className="lc-ao-told-note">{d.instructions ? "Its program also works out more as it runs, which can't be shown here." : "Its program works out what it tells them as it runs, which can't be shown here."}</p>}
+              </details>
+            ),
+          },
+        ]
+      : []),
     ...(p?.access.ai ? [{ label: "Model", value: "Asks a model you pick, billed to that model's account. Just a model: no tools or files" }] : []),
     ...(d.host ? [{ label: "Keeps", value: "What it makes, in Liner Code's DeepSeek Harness folder" }] : []),
+    // Where it may save what you write in it: a folder Liner Code makes for it, or why it gets none.
+    ...(d.saves
+      ? [
+          {
+            label: "Saves",
+            value: d.saves.why ? (
+              <span className="lc-addon-wrap lc-addon-long lc-ao-cant">
+                Can't save to {os.tilde(d.saves.path)}: {d.saves.why}
+              </span>
+            ) : (
+              <span className="lc-addon-wrap lc-addon-long">Saves to {os.tilde(d.saves.path)}, a folder Liner Code makes for it</span>
+            ),
+          },
+        ]
+      : []),
     ...(d.left.length ? [{ label: "Left out", value: <span className="lc-addon-wrap">{d.left.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}</span> }] : []),
     ...(a.replaces ? [{ label: "Replaces", value: `v${a.replaces}, which stays kept` }] : []),
-    { label: "Where", value: !p ? "Every agent tool (Claude Code, Codex, OpenCode and Hermes), in every project" : p.place === "page" ? "Under Apps, in the left sidebar" : p.place === "tab" ? "A tab beside Chat, in every project" : "The right dock, in every project" },
+    { label: "Where", value: !p ? "Every agent tool (Claude Code, Codex, OpenCode and Hermes), in every project" : p.place === "page" ? "Under Add-ons, in the left sidebar" : p.place === "tab" ? "A tab beside Chat, in every project" : "The right dock, in every project" },
     ...(more
       ? [
           ...(a.description ? [{ label: "About", value: <span className="lc-addon-wrap">{a.description}</span> }] : []),
@@ -624,7 +658,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
       { label: "Keeps", value: p.access.storage ? `Its own storage, up to ${kbWords(p.access.storage)}` : "Nothing" },
       ...(net ? [] : [{ label: "Network", value: "None" }]),
       ...(p.replaces ? [{ label: "Replaces", value: `v${p.replaces}, which stays kept` }] : []),
-      { label: "Where", value: p.place === "page" ? "Under Apps, in the left sidebar" : p.place === "tab" ? "A tab beside Chat, in every project" : "The right dock, in every project" },
+      { label: "Where", value: p.place === "page" ? "Under Add-ons, in the left sidebar" : p.place === "tab" ? "A tab beside Chat, in every project" : "The right dock, in every project" },
       ...(more
         ? [
             { label: "Files", value: <span className="lc-addon-files">{p.files.map((f) => <span key={f.path}><code>{f.path}</code> <small>{f.size < 1000 ? `${f.size} B` : `${Math.round(f.size / 1000)} KB`}</small></span>)}</span> },

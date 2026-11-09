@@ -238,7 +238,7 @@
   overflow: visible;
   white-space: normal;
 }
-.lc-addon .l-appr__fields > div:has(.lc-addon-key, .lc-addon-json) {
+.lc-addon .l-appr__fields > div:has(.lc-addon-key, .lc-addon-json, .lc-addon-long, .lc-ao-told) {
   align-items: start;
 }
 .lc-addon .l-appr__fields > div:has(.lc-addon-key) dt {

@@ -49,6 +49,30 @@
     display: none;
   }
 }
+/*
+  A bar that holds more than its width allows for (the Wall's way back, the crew, the apps' tabs, the
+  Wall's button) takes the next steps itself, measured (TopBar.tsx, useGiveWay): a numbered one as
+  the width's step of that number does it, and the Wall's, the crew's and the room's between. While
+  it measures, nothing in it squeezes but the title, so what each part holds is what it needs.
+*/
+.lc-top[data-give~="wall"] .lc-sbar-wall,
+.lc-top[data-give~="1"] .lc-sbar .lc-sbar-step1,
+.lc-top[data-give~="1"] .lc-mode-chip,
+.lc-top[data-give~="2"] .lc-sbar .lc-sbar-step2,
+.lc-top[data-give~="3"] .lc-sbar .lc-sbar-step3,
+.lc-top[data-give~="4"] .lc-sbar .lc-sbar-step4,
+.lc-top[data-give~="4"] .lc-sbar-sep,
+.lc-top[data-give~="faces"] .lc-crew-t,
+.lc-top[data-give~="crew"] .lc-crew-pop {
+  display: none;
+}
+.lc-top[data-give~="tight"] {
+  gap: 2px;
+}
+.lc-top[data-measure] > :not(.lc-tt-pop, .lc-title, .lc-title-edit, .lc-grow),
+.lc-top[data-measure] .lc-view-b {
+  flex-shrink: 0;
+}
 .lc-sbar-b {
   position: relative;
   width: 30px;
@@ -382,6 +406,13 @@
   font-size: 12px;
   font-weight: 500;
 }
+/* A plugin's notice (why it can't save where it would): said over its page, quieter than a block, and the page goes on under it. */
+.lc-addon-blocked[data-tone="quiet"] {
+  background: var(--l-wash);
+}
+.lc-addon-blocked[data-tone="quiet"] > svg {
+  color: var(--l-ink-3);
+}
 .lc-addon-crash {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -495,7 +526,8 @@
 .lc-view-b > svg {
   flex: none;
 }
-/* A narrow bar keeps the tabs' icons, and their row scrolls. */
+/* A narrow bar keeps the tabs' icons, and their row scrolls; so does one that measured itself to its
+   second step (no weightier than the width's, so a narrower bar's padding below still wins). */
 @container lc-bar (max-width: 391px) {
   .lc-view-b {
     flex: none;
@@ -503,6 +535,12 @@
     padding: 0 7px;
     font-size: 0;
   }
+}
+:where(.lc-top[data-give~="2"]) .lc-view-b {
+  flex: none;
+  gap: 0;
+  padding: 0 7px;
+  font-size: 0;
 }
 @container lc-bar (max-width: 323px) {
   .lc-view-b {
@@ -943,4 +981,13 @@
   .lc-wallback-b .lc-kbd {
     display: none;
   }
+}
+/* A bar short of room (TopBar.tsx, useGiveWay) drops the count and arrows as a narrow one does, and in the end the words: the arrow back stays. */
+.lc-top[data-give~="count"] :is(.lc-wallback-n, .lc-wallback .lc-tb, .lc-wallback-b .lc-kbd) {
+  display: none;
+}
+.lc-top[data-give~="back"] .lc-wallback-b {
+  gap: 0;
+  padding: 0 6px;
+  font-size: 0;
 }

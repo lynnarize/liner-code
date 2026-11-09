@@ -7,10 +7,13 @@
   offered, never picked. Pick an element and ask the agent about it; the question goes with the element's
   place in the page and its HTML. Desktop, Tablet and Phone set the page's width; Offline makes
   the page's requests fail the way they would without a network. The ⋯ menu zooms the page and
-  shows it light or dark. Where an agent clicks, its pointer glides there and pulses.
+  shows it light or dark. Where an agent clicks, its pointer glides there and pulses. A launch.json
+  entry nobody has said yes to as it is now shows what it runs before it runs: its command, folder,
+  environment and port, on a card to run or not.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { LaunchServer, LocalServer, Thread } from "@contracts";
+import type { LaunchAsk, LaunchServer, LocalServer, Thread } from "@contracts";
+import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
@@ -20,7 +23,7 @@ import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { launchNote, useLaunch } from "./launch";
 import { SurfaceNote } from "./Surfaces";
-import { PanelHead, Pop } from "./ui";
+import { EnvLine, PanelHead, Pop } from "./ui";
 import * as os from "./os";
 
 type Log = { level: string; text: string; at: number };
@@ -146,8 +149,12 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const [opening, setOpening] = useState<{ name: string; at: number } | null>(null);
   const [pressing, setPressing] = useState<string | null>(null);
   const [allServers, setAllServers] = useState(false);
+  // A Run or Restart the engine answered with what it would run, waiting on a yes.
+  const [asked, setAsked] = useState<{ name: string; again: boolean; ask: LaunchAsk } | null>(null);
+  useEffect(() => setAsked(null), [thread.id]);
   // The launch.json server the page is of: by name once opened from the list, else by the port it runs on.
-  const shownServer = target?.port != null ? (servers.find((s) => s.name === target.server) ?? servers.find((s) => s.at === target.port)) : undefined;
+  // A stopped one keeps the port it last ran on, but no longer claims it: what serves there now (your own npm run dev) is the page.
+  const shownServer = target?.port != null ? (servers.find((s) => s.name === target.server) ?? servers.find((s) => s.at === target.port && s.status !== "stopped")) : undefined;
 
   /** What could open: the servers on the Mac (the session's first) and the folder's HTML pages. */
   const look = () =>
@@ -400,17 +407,25 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       setRetry((n) => n + 1);
     }
   };
-  /** Runs one (again, restarting it, when `again`): it opens once it answers. */
-  const runServer = async (name: string, again = false) => {
+  /**
+    Runs one (again, restarting it, when `again`): it opens once it answers. One nobody has said yes
+    to as the file says it now runs nothing and comes back with what it would run, for the card;
+    the yes sends that back (`allow`), and an entry that changed in between asks again.
+  */
+  const runServer = async (name: string, again = false, allow?: string) => {
     const at = Date.now();
     setPressing(name);
     try {
-      const s = await rpc(again ? "launch.restart" : "launch.start", { threadId: thread.id, name });
+      const s = await rpc(again ? "launch.restart" : "launch.start", { threadId: thread.id, name, ...(allow ? { allow } : {}) });
+      if (s.ask) return setAsked({ name, again, ask: s.ask });
+      setAsked(null);
       if (s.status === "running") openServer(s);
       else setOpening({ name, at });
     } catch (e) {
       const [first, ...rest] = (e instanceof Error ? e.message : String(e)).split("\n");
       toast.error(first, { description: rest.slice(-2).join(" · ") || undefined });
+      // Said from the card, it stays up to try again.
+      if (allow) throw e;
     } finally {
       setPressing(null);
     }
@@ -523,6 +538,15 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   if (!target) {
     // Servers elsewhere on the Mac are offered, the ones that serve a page first, never opened by themselves.
     const others = (ports ?? []).filter((p) => !p.owner).sort((a, b) => Number(b.web) - Number(a.web));
+    // What a Run would run, in the list's place until it's answered.
+    if (asked)
+      return (
+        <div className="lc-br-start">
+          <div className="lc-br-start-in">
+            <RunAsk asked={asked} onYes={() => runServer(asked.name, asked.again, asked.ask.key)} onNo={() => setAsked(null)} />
+          </div>
+        </div>
+      );
     // launch.json lists servers: each a press from running, as Claude Code's Browser lists them.
     if (servers.length > 0)
       return (
@@ -731,6 +755,12 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         />
       </div>
       <div ref={stage} className="lc-br-stage" data-width={width}>
+        {/* Over the page rather than in its place, so a No leaves it as it was. */}
+        {asked && (
+          <div className="lc-br-askover">
+            <RunAsk asked={asked} onYes={() => runServer(asked.name, asked.again, asked.ask.key)} onNo={() => setAsked(null)} />
+          </div>
+        )}
         {shownServer && shownServer.status !== "running" ? (
           // Its server isn't up: why, and a press to run it again, in place of the proxy's "nothing answers".
           <ServerDown server={shownServer} pressing={pressing === shownServer.name} onRun={() => void runServer(shownServer.name)} />
@@ -828,6 +858,63 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   );
 }
 
+/** What Run says on an entry that would show what it runs before it does. */
+const FIRST = "Shows what it runs first";
+
+/**
+  An entry of launch.json before it runs, as the engine would run it: the command, the folder, the
+  environment as the file writes it (a variable that changes what runs is said so) and the port.
+  High risk (such a variable, or a command that is) holds to run, as an add-on with a program
+  holds to allow. `key` makes each ask its own card, so one the file changed under comes up afresh.
+*/
+function RunAsk({ asked: { name, ask }, onYes, onNo }: { asked: { name: string; ask: LaunchAsk }; onYes: () => Promise<void>; onNo: () => void }) {
+  const env = Object.entries(ask.env);
+  const high = ask.risk === "high";
+  return (
+    <ApprovalCard
+      key={ask.key}
+      className="lc-br-ask"
+      ask="From .claude/launch.json"
+      title={`Run ${name}?`}
+      description="Liner Code hasn't run this entry as it is now."
+      icon={<I.server size={16} />}
+      risk={ask.risk}
+      hold={high}
+      fields={[
+        { label: "Command", value: <code className="lc-ask-cmd">{ask.command}</code> },
+        { label: "Where", value: <code className="lc-ask-cmd">{os.tilde(ask.cwd)}</code> },
+        ...(env.length
+          ? [
+              {
+                label: "Environment",
+                value: (
+                  <span className="lc-br-env">
+                    {env.map(([k, v]) => (
+                      <span key={k} className="lc-br-envrow">
+                        <code className="lc-ask-cmd">
+                          <EnvLine k={k} v={v} />
+                        </code>
+                        {ask.risky?.includes(k) && <span className="lc-br-risky">changes what runs</span>}
+                      </span>
+                    ))}
+                  </span>
+                ),
+              },
+            ]
+          : []),
+        { label: "Port", value: <span className="l-num">{ask.port}</span> },
+      ]}
+      approveLabel={high ? "Hold to run" : "Run it"}
+      denyLabel="Not now"
+      explain={false}
+      onApprove={onYes}
+      onDeny={onNo}
+      approvedText={`Running ${name}`}
+      deniedText="Not run"
+    />
+  );
+}
+
 /** The folder's launch.json servers, each a press from running: Run, or once it's on, Restart and Stop; a row that's on opens its page. */
 function LaunchRows({ servers, pressing, onRun, onStop, onOpen }: { servers: LaunchServer[]; pressing: string | null; onRun: (name: string, again?: boolean) => void; onStop: (name: string) => void; onOpen: (s: LaunchServer) => void }) {
   return (
@@ -847,7 +934,7 @@ function LaunchRows({ servers, pressing, onRun, onStop, onOpen }: { servers: Lau
               <span className="lc-br-lport lc-mono">:{s.at ?? s.port}</span>
             </button>
             {s.status === "running" && (
-              <button type="button" className="lc-br-lgo l-focus" data-quiet={s.changed ? undefined : ""} aria-label={`Restart ${s.name}`} title={s.changed ? "Restart with launch.json as it is now" : "Restart"} disabled={busy} onClick={() => onRun(s.name, true)}>
+              <button type="button" className="lc-br-lgo l-focus" data-quiet={s.changed ? undefined : ""} aria-label={`Restart ${s.name}`} title={s.ask ? FIRST : s.changed ? "Restart with launch.json as it is now" : "Restart"} disabled={busy} onClick={() => onRun(s.name, true)}>
                 <I.refresh size={13} />
               </button>
             )}
@@ -859,7 +946,7 @@ function LaunchRows({ servers, pressing, onRun, onStop, onOpen }: { servers: Lau
                 </span>
               </button>
             ) : (
-              <button type="button" className="lc-br-lgo l-focus" aria-label={`Run ${s.name}`} title={s.problem ?? "Run"} disabled={busy || Boolean(s.problem)} onClick={() => onRun(s.name)}>
+              <button type="button" className="lc-br-lgo l-focus" aria-label={`Run ${s.name}`} title={s.problem ?? (s.ask ? FIRST : "Run")} disabled={busy || Boolean(s.problem)} onClick={() => onRun(s.name)}>
                 {busy ? <span className="lc-br-lspin" aria-hidden /> : <I.play size={14} />}
               </button>
             )}
@@ -886,7 +973,7 @@ function ServerDown({ server: s, pressing, onRun }: { server: LaunchServer; pres
       <p>{why}</p>
       {s.ended?.failed && s.ended.tail?.length ? <pre className="lc-br-tail lc-mono">{s.ended.tail.slice(-8).join("\n")}</pre> : null}
       {!s.asleep && (
-        <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={pressing || Boolean(s.problem)} onClick={onRun}>
+        <button type="button" className="lc-btn" data-kind="primary" data-size="sm" title={s.ask ? FIRST : undefined} disabled={pressing || Boolean(s.problem)} onClick={onRun}>
           <I.play size={12} />
           Run {s.name}
         </button>

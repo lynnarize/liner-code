@@ -181,6 +181,12 @@ function keepDraft(key: string, text: string) {
   }
 }
 
+/** Words written to a session elsewhere (its tile on the Wall), put after its draft for its composer to find when it opens. */
+export function addToDraft(key: string, text: string) {
+  const was = draftOf(key);
+  keepDraft(key, was.trim() ? `${was.trimEnd()}\n\n${text}` : text);
+}
+
 /** Files waiting to go, by draft, while the app runs: a File can't be stored, but it lasts a move to another session and back. */
 const draftFiles = new Map<string, File[]>();
 const MAX_FILES = 10;
@@ -1214,8 +1220,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               void send(busy && (e.metaKey || e.ctrlKey) ? "steer" : busy ? mode : "queue");
-            } else if (e.key === "Escape" && busy) onStop?.();
-            else if (e.key === "ArrowUp" && !e.altKey && !text && queue.length) {
+            } else if (e.key === "Escape" && busy) {
+              // Taken: a session opened from the Wall goes back to it on an Escape nothing here used (App.tsx).
+              e.preventDefault();
+              onStop?.();
+            } else if (e.key === "ArrowUp" && !e.altKey && !text && queue.length) {
               // The last queued message, to edit where it is.
               e.preventDefault();
               editQueued(queue[queue.length - 1]);

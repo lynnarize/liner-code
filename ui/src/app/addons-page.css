@@ -564,3 +564,48 @@ button.lc-ao-open {
 .lc-ao-card {
   text-align: left;
 }
+/* A plugin that gets no folder to save to says why, in the warning's ink. */
+.lc-ao-cant {
+  color: var(--l-warn-text);
+}
+/* A DeepSeek Harness plugin's words for your agents, folded on its card; opened, they read as written. */
+.lc-ao-told > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  list-style: none;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-ao-told > summary::-webkit-details-marker {
+  display: none;
+}
+.lc-ao-told > summary > svg {
+  color: var(--l-ink-4);
+  transition: rotate 260ms var(--l-spring-smooth);
+}
+.lc-ao-told[open] > summary > svg {
+  rotate: 90deg;
+}
+.lc-ao-told-text {
+  max-height: 16lh;
+  margin-top: 6px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: 9px;
+  background: var(--l-wash);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+}
+.lc-ao-told-note {
+  margin: 6px 0 0;
+  color: var(--l-ink-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-ao-told > summary > svg {
+    transition: none;
+  }
+}

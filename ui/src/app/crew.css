@@ -517,6 +517,10 @@ button.lc-cr-bg:hover {
 .lc-cr-kid[data-last]::before {
   display: none;
 }
+/* Agents of agents of agents: past three steps the tree steps in by its rails alone, so a long chain of them stays inside a narrow panel. */
+.lc-cr-kids .lc-cr-kids .lc-cr-kids .lc-cr-kids .lc-cr-kids {
+  margin-left: 0;
+}
 
 /* Who worked when. */
 .lc-cr-lanes {

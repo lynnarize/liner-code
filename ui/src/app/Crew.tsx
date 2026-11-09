@@ -7,7 +7,9 @@
   sent back (AgentRun). Shown four ways: the header's crew chip and its popover, the fan-out under
   a turn's work, a line on the composer while the work waits on agents, and the Agents surface
   (the tree, a timeline of who worked when, the tasks with who took them, what runs in the
-  background), where one agent opens on its own.
+  background), where one agent opens on its own. An agent in the background (Claude Code's by
+  default, Codex's past its turn) outlives the turn that sent it and ends on its own row, turns
+  later: until then it counts wherever agents at work do, whichever message is the latest.
 */
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { toast } from "@liner/components/toast/toast";
@@ -50,10 +52,12 @@ export function agentNow(t: Tool) {
   if (s === "running") return t.agent?.now ?? "Starting";
   if (s === "stopped") return "Stopped before it finished";
   if (s === "failed") return firstLine(t.output) ?? "Didn't finish";
-  if (t.agent?.background && !t.agent.report) return "Working in the background";
+  // A row from before agents said how they ended: its call returned and nothing more was heard.
+  if (t.agent?.background && t.agent.state === undefined && !t.agent.report) return "Working in the background";
   return firstLine(t.agent?.report) ?? firstLine(t.output) ?? "Done";
 }
-const secsOf = (t: Tool, now: number) => (stateOf(t) === "running" && !(t.agent?.background && t.status !== "running") ? Math.max(0, (now - t.at) / 1000) : t.seconds);
+/** How long it has run: its clock while it's at work (in the background too), else what the engine kept at its end. */
+const secsOf = (t: Tool, now: number) => (stateOf(t) === "running" ? Math.max(0, (now - t.at) / 1000) : t.seconds);
 /** "12 tools · 18k · 41s" */
 export function agentStats(t: Tool, now: number) {
   const a = t.agent;
@@ -64,14 +68,16 @@ export function agentStats(t: Tool, now: number) {
 
 export type AgentNode = { it: Tool; kids: AgentNode[] };
 export type Member = { key: string; agent: string; model: string; name: string; tag?: string; role?: string; status: Turn["status"]; at: number; seconds?: number; agents: AgentNode[] };
-export type Crew = { turn: number; mode: string; members: Member[]; reviews: Review[]; agents: Tool[]; plan?: PlanEntry[]; start: number; lead?: Member };
+/** `earlier`: agents an earlier message sent that are still at work, in the background past their turn. */
+export type Crew = { turn: number; mode: string; members: Member[]; reviews: Review[]; agents: Tool[]; earlier: Tool[]; plan?: PlanEntry[]; start: number; lead?: Member };
 
 const ROLE: Record<string, string> = { build: "Builder", refine: "Refiner", repair: "Fixer", fix: "Fixer", revise: "Reviser", takeover: "Took over" };
 
 /**
   Who worked on your latest message: each model's part (a planner, then a builder), with the
   agents it sent (in order, under the one that sent each), and the Reviewer's rounds. The model
-  at work, or the last one, leads.
+  at work, or the last one, leads. With them, the agents of earlier messages still at work: a new
+  turn (one Claude Code starts by itself when one of them ends, too) doesn't make them leave.
 */
 export function crewOf(items: Item[], thread: Thread, profiles: AgentProfile[], providers: ProviderInfo[]): Crew | null {
   let turn = -1;
@@ -80,11 +86,15 @@ export function crewOf(items: Item[], thread: Thread, profiles: AgentProfile[], 
   const members: Member[] = [];
   const reviews: Review[] = [];
   const agents: Tool[] = [];
+  const earlier: Tool[] = [];
   const nodes = new Map<string, AgentNode>();
   let plan: PlanEntry[] | undefined;
   let cur: Member | undefined;
   for (const it of items) {
-    if (it.turn !== turn) continue;
+    if (it.turn !== turn) {
+      if (isAgent(it) && stateOf(it) === "running") earlier.push(it);
+      continue;
+    }
     if (it.kind === "turn") {
       const role = it.planning ? "Planner" : it.part ? ROLE[it.part] : thread.lead ? "Builder" : thread.route ? "Writes" : undefined;
       // A part goes on after an answer of yours as another turn item: it's the same member.
@@ -112,7 +122,7 @@ export function crewOf(items: Item[], thread: Thread, profiles: AgentProfile[], 
   }
   if (!members.length) return null;
   const mode = thread.route ? `Auto · ${ROUTE_LEVELS.find((l) => l.id === thread.route!.level)?.label ?? "Standard"}` : thread.lead ? "Plan, then build" : "Solo";
-  return { turn, mode, members, reviews, agents, plan, start: members[0].at, lead: members.findLast((m) => m.status === "running") ?? members.at(-1) };
+  return { turn, mode, members, reviews, agents, earlier, plan, start: members[0].at, lead: members.findLast((m) => m.status === "running") ?? members.at(-1) };
 }
 
 /** The crew of a session, read from only the items that make it (not every streamed word). */
@@ -138,7 +148,15 @@ function useNow(on: boolean) {
 const running = (t: Tool) => stateOf(t) === "running";
 /** Running and holding up the model that sent it: one in the background doesn't. */
 const holding = (t: Tool) => running(t) && t.status === "running";
-const countOf = (crew: Crew) => crew.members.length + crew.agents.length + new Set(crew.reviews.map((r) => r.reviewer)).size;
+/** At work and not waited on: in the background, its call returned (or its turn over), on until it ends. */
+const behind = (t: Tool) => running(t) && !holding(t);
+/** Every agent under these, agents of agents too: a model waits on the Subagent its Explore sent as much as on the Explore. */
+const everyAgent = (nodes: AgentNode[]): Tool[] => nodes.flatMap((n) => [n.it, ...everyAgent(n.kids)]);
+/** Every agent at work now: the latest message's, and those earlier ones left in the background. */
+const atWork = (crew: Crew) => [...crew.agents.filter(running), ...crew.earlier];
+/** "waiting on 1 agent · 2 in the background", or either half, or nothing. */
+const waitWords = (waited: number, back: number) => [waited ? `waiting on ${plural(waited, "agent")}` : "", back ? `${back} in the background` : ""].filter(Boolean).join(" · ");
+const countOf = (crew: Crew) => crew.members.length + crew.agents.length + crew.earlier.length + new Set(crew.reviews.map((r) => r.reviewer)).size;
 const stopAll = (threadId: string, tools: Tool[]) => {
   for (const t of tools.filter((x) => running(x) && x.agent?.taskId)) void rpc("thread.stopAgent", { id: threadId, item: t.id }).catch(fail);
 };
@@ -162,9 +180,12 @@ function useShownAgent(threadId: string) {
 
 /* ---------- small parts ---------- */
 
-/** An agent's kind, as a mark: Explore looks, the Test runner runs tests, the rest do what they're sent to. */
+/**
+  An agent's kind, as a mark: Explore (Codex's Explorer) looks, the Test runner runs tests, the rest
+  do what they're sent to, one Codex calls by a nickname ("Planck") as well.
+*/
 function Kind({ name, size = 12 }: { name: string; size?: number }) {
-  const Icon = name === "Explore" ? I.search : name === "Test runner" ? I.flask : I.sparkle;
+  const Icon = /^explor/i.test(name) ? I.search : /^test/i.test(name) ? I.flask : I.sparkle;
   return <Icon size={size} />;
 }
 const STATE_WORD: Record<State, string> = { running: "Working", done: "Done", failed: "Didn't finish", stopped: "Stopped" };
@@ -185,14 +206,16 @@ export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
 */
 export function CrewChip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
-  if (!crew || (crew.members.length < 2 && !crew.agents.length && !crew.reviews.length)) return null;
-  const live = thread.status === "running" || thread.status === "waiting";
+  if (!crew || (crew.members.length < 2 && !crew.agents.length && !crew.reviews.length && !crew.earlier.length)) return null;
+  const working = atWork(crew);
+  // Live while a turn runs or waits, and while an agent works on in the background after it.
+  const live = thread.status === "running" || thread.status === "waiting" || working.length > 0;
   const lead = crew.lead!;
-  const working = crew.agents.filter(running);
   return (
     <Pop
       label="Who's on this session"
       width={400}
+      className="lc-crew-pop"
       triggerClass="lc-crew l-focus"
       triggerAttrs={{ "data-live": live || undefined }}
       trigger={
@@ -210,7 +233,7 @@ export function CrewChip({ thread }: { thread: Thread }) {
           {live ? (
             <span className="lc-crew-t">
               {lead.name}
-              {crew.agents.length > 0 && <span className="lc-quiet"> + {plural(crew.agents.length, "agent")}</span>}
+              {crew.agents.length + crew.earlier.length > 0 && <span className="lc-quiet"> + {plural(crew.agents.length + crew.earlier.length, "agent")}</span>}
             </span>
           ) : (
             <span className="lc-crew-t">{countOf(crew)} worked on it</span>
@@ -227,11 +250,10 @@ export function CrewChip({ thread }: { thread: Thread }) {
 /** The crew as a list, in the chip's popover: who leads, who works for it, what runs in the background. */
 function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: () => void }) {
   const providers = useEngine((s) => s.providers);
-  const live = crew.members.some((m) => m.status === "running") || crew.agents.some(running);
-  const now = useNow(live);
+  const working = crew.members.filter((m) => m.status === "running").length + atWork(crew).length + crew.reviews.filter((r) => r.status === "running").length;
+  const now = useNow(working > 0);
   const [launch] = useLaunch(thread.id);
   const servers = launch?.servers.filter((s) => s.status !== "stopped") ?? [];
-  const working = crew.members.filter((m) => m.status === "running").length + crew.agents.filter(running).length + crew.reviews.filter((r) => r.status === "running").length;
   const open = (t: Tool) => (close(), showAgent(thread.id, t.id));
   const rows = (nodes: AgentNode[], depth: number): ReactNode[] =>
     nodes.flatMap((n) => [
@@ -255,12 +277,21 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
             <Mark state={m.status === "running" ? "running" : m.status === "error" ? "failed" : m.status === "stopped" ? "stopped" : "done"} />
             <b>{m.name}</b>
             {m.role && <span className="lc-crp-role">{m.role}</span>}
-            <span className="lc-crp-t">{memberWord(m, now)}</span>
+            <span className="lc-crp-t">{memberWord(m, now, m === crew.lead ? crew.earlier.length : 0)}</span>
             <span className="lc-crp-n">{duration(m.status === "running" ? (now - m.at) / 1000 : m.seconds)}</span>
           </div>
           {rows(m.agents, 1)}
         </div>
       ))}
+      {crew.earlier.length > 0 && (
+        <div>
+          <div className="lc-crp-r lc-quiet">Still at work from an earlier message</div>
+          {rows(
+            crew.earlier.map((it) => ({ it, kids: [] })),
+            1,
+          )}
+        </div>
+      )}
       {crew.reviews.slice(-1).map((r) => (
         <div key={r.id} className="lc-crp-r">
           <Mark state={r.status === "running" ? "running" : r.status === "blocked" || r.status === "error" ? "failed" : "done"} />
@@ -290,8 +321,8 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
           Show in the panel
         </button>
         <span className="lc-grow" />
-        {crew.agents.some((t) => running(t) && t.agent?.taskId) && (
-          <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => stopAll(thread.id, crew.agents)}>
+        {atWork(crew).some((t) => t.agent?.taskId) && (
+          <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => stopAll(thread.id, atWork(crew))}>
             Stop all agents
           </button>
         )}
@@ -300,15 +331,21 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
   );
 }
 
-function memberWord(m: Member, now: number) {
-  if (m.status === "running") {
-    const waiting = m.agents.filter((n) => holding(n.it)).length;
-    return waiting ? `waiting on ${plural(waiting, "agent")}` : m.role === "Planner" ? "planning" : "working";
-  }
-  if (m.status === "stopped") return "stopped";
-  if (m.status === "error") return "stopped with a problem";
+/**
+  How a model's part stands, its agents counted as the composer's line counts them: every one at
+  work under it, not only those it sent itself, those it waits on apart from those in the background.
+  The lead's count takes in an earlier message's still at work too (`earlier`): it's the one that hears when they end.
+*/
+function memberWord(m: Member, now: number, earlier = 0) {
+  const all = everyAgent(m.agents);
+  const back = all.filter(behind).length + earlier;
+  const also = back ? ` · ${back} in the background` : "";
+  const waited = all.filter(holding).length;
+  if (m.status === "running") return waited ? waitWords(waited, back) : `${m.role === "Planner" ? "planning" : "working"}${also}`;
+  if (m.status === "stopped") return `stopped${also}`;
+  if (m.status === "error") return `stopped with a problem${also}`;
   void now;
-  return m.role === "Planner" ? "planned it" : m.agents.length ? `worked with ${plural(m.agents.length, "agent")}` : "done";
+  return (m.role === "Planner" ? "planned it" : m.agents.length ? `worked with ${plural(m.agents.length, "agent")}` : "done") + also;
 }
 function reviewWord(r: Review) {
   if (r.status === "running") return "reading the change";
@@ -322,9 +359,11 @@ function reviewWord(r: Review) {
 /**
   The agents a part of a turn sent, under its work: "Started 3 agents", each on a branch under
   the one that sent it, with what it's doing now, its model and its counts; once they're done,
-  what each sent back. Pressing one opens it in the Agents surface.
+  what each sent back. Pressing one opens it in the Agents surface. Whether they're at work is
+  theirs to say, not the trail's: a trail the model has gone on past (a plan, a word) is no longer
+  live, while the agents it sent still are.
 */
-export function Fanout({ threadId, tools, live }: { threadId: string; tools: Tool[]; live: boolean }) {
+export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] }) {
   const providers = useEngine((s) => s.providers);
   const anyRunning = tools.some(running);
   const now = useNow(anyRunning);
@@ -340,8 +379,9 @@ export function Fanout({ threadId, tools, live }: { threadId: string; tools: Too
   }, [tools]);
   if (!tools.length) return null;
   const done = tools.filter((t) => !running(t)).length;
-  const working = tools.length - done;
-  const ongoing = live && working > 0;
+  const back = tools.filter(behind).length;
+  const working = tools.length - done - back;
+  const ongoing = working + back > 0;
   const branch = (nodes: AgentNode[]): ReactNode =>
     nodes.map((n, i) => {
       const t = n.it;
@@ -374,7 +414,7 @@ export function Fanout({ threadId, tools, live }: { threadId: string; tools: Too
       <div className="lc-fan-h">
         <I.fanout size={14} />
         {ongoing ? `Started ${plural(tools.length, "agent")}` : `With ${plural(tools.length, "agent")}`}
-        <span className="lc-quiet">· {ongoing ? [done && `${done} done`, `${working} working`].filter(Boolean).join(", ") : "what each sent back"}</span>
+        <span className="lc-quiet">· {ongoing ? [done && `${done} done`, working && `${working} working`, back && `${back} in the background`].filter(Boolean).join(", ") : "what each sent back"}</span>
       </div>
       <div className="lc-fan-kids">{branch(roots)}</div>
     </div>
@@ -383,13 +423,16 @@ export function Fanout({ threadId, tools, live }: { threadId: string; tools: Too
 
 /* ---------- the composer's line ---------- */
 
-/** While the work waits on agents: who waits on how many, and what one of them is doing. */
+/**
+  While agents work: who waits on how many, how many go on in the background, and what one of
+  them is doing, with Stop. Up while any is at work, an earlier message's and with no turn running too.
+*/
 export function CrewStrip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
-  const live = thread.status === "running";
-  const working = live ? (crew?.agents.filter(running) ?? []) : [];
+  const working = crew ? atWork(crew) : [];
   if (!crew || !working.length) return null;
   const waited = working.filter(holding);
+  const back = working.length - waited.length;
   const latest = working.reduce((a, b) => (b.at > a.at ? b : a));
   return (
     <div className="lc-crs" role="status">
@@ -401,7 +444,7 @@ export function CrewStrip({ thread }: { thread: Thread }) {
         ))}
       </span>
       <span className="lc-crs-t">
-        {waited.length ? `${crew.lead!.name} is waiting on ${plural(waited.length, "agent")}` : `${plural(working.length, "agent")} at work in the background`}
+        {waited.length ? `${crew.lead!.name} is ${waitWords(waited.length, back)}` : `${plural(back, "agent")} at work in the background`}
         <span className="lc-quiet">
           {" "}
           · {agentName(latest)} is {doing(agentNow(latest))}
@@ -433,7 +476,7 @@ export function AgentsSurface({ thread, items }: { thread: Thread; items: Item[]
 
 function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; items: Item[] }) {
   const providers = useEngine((s) => s.providers);
-  const live = Boolean(crew && (crew.members.some((m) => m.status === "running") || crew.agents.some(running)));
+  const live = Boolean(crew && (crew.members.some((m) => m.status === "running") || atWork(crew).length));
   const now = useNow(live);
   const [launch, again] = useLaunch(thread.id);
   const servers = launch?.servers.filter((s) => s.status !== "stopped") ?? [];
@@ -444,8 +487,9 @@ function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; 
         <SessionUse thread={thread} items={items} />
       </>
     );
-  const working = crew.members.filter((m) => m.status === "running").length + crew.agents.filter(running).length;
-  const background = crew.agents.filter((t) => t.agent?.background && running(t));
+  const working = crew.members.filter((m) => m.status === "running").length + atWork(crew).length;
+  // At work and not waited on, this message's and earlier ones': each opens on its own, with Stop it.
+  const background = atWork(crew).filter(behind);
   const tree = (nodes: AgentNode[]): ReactNode =>
     nodes.map((n, i) => (
       <div key={n.it.id} className="lc-cr-kid" data-last={i === nodes.length - 1 || undefined}>
@@ -500,7 +544,7 @@ function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; 
                   </b>
                   <small>
                     <Mark state={m.status === "running" ? "running" : m.status === "error" ? "failed" : m.status === "stopped" ? "stopped" : "done"} />
-                    {memberWord(m, now).replace(/^./, (c) => c.toUpperCase())}
+                    {memberWord(m, now, m === crew.lead ? crew.earlier.length : 0).replace(/^./, (c) => c.toUpperCase())}
                   </small>
                 </span>
                 <span className="lc-cr-n l-num">{duration(m.status === "running" ? (now - m.at) / 1000 : m.seconds)}</span>
@@ -596,7 +640,8 @@ function Lanes({ crew, now }: { crew: Crew; now: number }) {
   const endOf = (at: number, live: boolean, seconds?: number) => (live ? now : at + (seconds ?? 0) * 1000);
   const walk = (nodes: AgentNode[]) => {
     for (const n of nodes) {
-      const live = running(n.it) && n.it.status === "running";
+      // Live while it works, in the background too: the engine keeps its seconds as it goes and at its end.
+      const live = running(n.it);
       lanes.push({ key: n.it.id, label: agentName(n.it), from: n.it.at, to: Math.max(n.it.at + 500, endOf(n.it.at, live, n.it.seconds)), live });
       walk(n.kids);
     }
@@ -660,6 +705,7 @@ const LaneRow = ({ label, children }: { label: string; children: ReactNode }) =>
 /** One agent: who sent it, what it was asked, its steps, what it sent back; stop it, or tell the model that sent it. */
 function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | null; it: Tool; items: Item[] }) {
   const providers = useEngine((s) => s.providers);
+  const profiles = useEngine((s) => s.agents);
   const st = stateOf(it);
   const now = useNow(st === "running");
   const [say, setSay] = useState("");
@@ -671,7 +717,9 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
     const has = (ns: AgentNode[]): boolean => ns.some((n) => n.it.id === it.id || has(n.kids));
     return has(m.agents);
   });
-  const sender = parent ? agentName(parent) : (owner?.name ?? "the model");
+  // One an earlier message sent, still at work: the model whose part of that turn it came in.
+  const part = !parent && !owner ? items.findLast((x): x is Turn => x.kind === "turn" && x.turn === it.turn && x.at <= it.at) : undefined;
+  const sender = parent ? agentName(parent) : (owner?.name ?? (part ? (isModelAgent(part.agent) || part.agent === "demo" ? modelLabel(part.model, providers) : agentOf(part.agent, profiles, providers).name) : "the model"));
   const kids = items.filter((x): x is Tool => isAgent(x) && x.agent?.parent === it.id);
   const steps = a?.steps ?? [];
   // An agent whose tool takes a word mid-run (Codex's) hears it at its next step; another's goes to the model that sent it.
@@ -715,7 +763,7 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
       </div>
       <div className="lc-cr-astat">
         <Mark state={st} />
-        {[a?.background && st === "running" && it.status !== "running" ? "In the background" : STATE_WORD[st], duration(secsOf(it, now)), `sent by ${sender}`].filter(Boolean).join(" · ")}
+        {[st === "running" && it.status !== "running" ? "In the background" : STATE_WORD[st], duration(secsOf(it, now)), `sent by ${sender}`].filter(Boolean).join(" · ")}
       </div>
       {(a?.tools || a?.tokens) && (
         <div className="lc-cr-stats">
@@ -780,7 +828,7 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
 
       <div className="lc-cr-h">Report</div>
       <div className="lc-cr-report" data-empty={!a?.report || undefined}>
-        {a?.report ?? (st === "running" ? (a?.background && it.status !== "running" ? `It works in the background; ${sender} hears when it ends.` : `Goes back to ${sender} when it finishes, and shows here.`) : st === "stopped" ? `Stopped before it reported. ${sender} was told.` : (it.output ?? "Nothing came back."))}
+        {a?.report ?? (st === "running" ? (it.status !== "running" ? `It works in the background; ${sender} hears when it ends.` : `Goes back to ${sender} when it finishes, and shows here.`) : st === "stopped" ? `Stopped before it reported. ${sender} was told.` : (it.output ?? "Nothing came back."))}
       </div>
 
       {st === "running" && (direct || (thread.status === "running" && !parent)) && (

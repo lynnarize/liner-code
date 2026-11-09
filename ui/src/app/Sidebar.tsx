@@ -94,6 +94,12 @@ function useStored<T extends string>(key: string, fallback: T, allowed: readonly
   Dock's count takes it (App). Snoozed and settled ones are put away, so they don't.
 */
 export const waitsOnYou = (t: Thread, now = Date.now()) => bucketOf(t.pinned ? { ...t, pinned: false } : t, now) === "needs";
+/**
+  How a row and its card show a session on its shelf: a pinned one that waits on you as Needs you
+  (its dot, its words, its mark). T3 Code reads a row's state from the thread alone, its pin apart
+  (sidebar/SidebarThreadRow.tsx, resolveSidebarThreadStatus).
+*/
+const standing = (t: Thread, shelf: Bucket, now = Date.now()): Bucket => (shelf === "pinned" && waitsOnYou(t, now) ? "needs" : shelf);
 
 /** A list of ids kept in localStorage, for what you folded. */
 function useFolded(key: string) {
@@ -522,7 +528,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
 
   /** The card's contents: the title, where it is, then how it stands, who works, where, what changed, and the keys. */
   const cardBody = (t: Thread) => {
-    const bucket = place(t);
+    const bucket = standing(t, place(t), now);
     const project = projects.find((p) => p.id === t.projectId);
     const branch = t.worktree?.branch ?? project?.branch;
     const on = onIt(t, agents, providers);
@@ -611,8 +617,10 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     and under it its project, how it stands and how long ago. One line under its folder: the title,
     and at its end how it stands. The rest is in the card a resting pointer brings.
   */
-  const row = (t: Thread, bucket: Bucket, opts: { two?: boolean; forks?: { n: number; open: boolean; toggle: () => void } } = {}) => {
+  const row = (t: Thread, shelf: Bucket, opts: { two?: boolean; forks?: { n: number; open: boolean; toggle: () => void } } = {}) => {
     const { two, forks } = opts;
+    // Pinned is where it's kept, not how it stands: one that waits on you shows it, as the Dock counts it.
+    const bucket = standing(t, shelf, now);
     const on = onIt(t, agents, providers);
     const { ref } = on;
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;

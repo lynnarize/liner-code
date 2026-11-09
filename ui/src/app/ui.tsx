@@ -456,6 +456,15 @@ export function LimitMeter({ tools }: { tools: ToolLimits[] }) {
 
 export const Kbd = ({ children }: { children: ReactNode }) => <kbd className="lc-kbd">{children}</kbd>;
 
+/** What a card shows in place of a secret's value (the engine's launch.ts, HIDDEN). */
+export const HIDDEN_VALUE = "(set, not shown)";
+/** A variable as a card shows it, KEY=value: a value kept back reads quieter, its name kept, so it isn't taken for the value. */
+export const EnvLine = ({ k, v }: { k: string; v: string }) => (
+  <>
+    {k}={v === HIDDEN_VALUE ? <span className="lc-env-hidden">{v}</span> : v}
+  </>
+);
+
 /**
   A figure that rolls to its new value, digit by digit (Liner's rolling number), written the way
   the rest of Liner Code writes it: 152k, 1.2M, $0.31, 77%.

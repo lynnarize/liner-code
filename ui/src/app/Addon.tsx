@@ -146,6 +146,8 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   const [loaded, setLoaded] = useState<Loaded | { error: string } | null>(null);
   const [crash, setCrash] = useState<{ message: string; stack?: string } | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
+  // A plugin's notice you put away: it stays away until it says something else.
+  const [heard, setHeard] = useState<string | null>(null);
   const [run, setRun] = useState(0);
   // Asked again for its files: a ported plugin whose program didn't start tries it again.
   const [tries, setTries] = useState(0);
@@ -308,6 +310,8 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   const earlier = info ? info.versions.filter((v) => v < info.version).at(-1) : undefined;
   const reach = loaded.access.network;
   const hostDown = loaded.dsh?.error;
+  // Why a ported plugin can't save where it would: what it says itself is only "operation not permitted".
+  const notice = loaded.dsh?.notice;
   // A new frame in this one's place. What stopped stays said until it's back (`frame`, above).
   const again = () => (setCrash(null), setRun((n) => n + 1));
   return (
@@ -319,6 +323,16 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
             Blocked a request to <b>{blocked}</b>. {reach ? `${name} may reach ${reach} and nothing else.` : `${name} didn't ask for the network, so it can't reach it.`}
           </span>
           <button type="button" className="lc-ib l-focus" aria-label="Dismiss" onClick={() => setBlocked(null)}>
+            <I.close size={11} />
+          </button>
+        </div>
+      )}
+      {/* Said whether or not the page then stopped: what stops it may be just this. */}
+      {notice && notice !== heard && (
+        <div className="lc-addon-blocked" data-tone="quiet" role="status">
+          <I.folder size={13} />
+          <span>{notice}</span>
+          <button type="button" className="lc-ib l-focus" aria-label="Dismiss" onClick={() => setHeard(notice)}>
             <I.close size={11} />
           </button>
         </div>
@@ -452,7 +466,7 @@ function RemoveRow({ name, onRemove }: { name: string; onRemove: () => void }) {
 }
 
 /**
-  An app's page of its own, from the left sidebar's Apps: it takes the conversation's place, with a
+  An app's page of its own, from the left sidebar's Add-ons: it takes the conversation's place, with a
   way back to where you were (DeepSeek Harness's main-area page, reached from its sidebar entry).
 */
 export function AppPage({ id, back, onBack, sidebar, onSidebar }: { id: string; back: string; onBack: () => void; sidebar: boolean; onSidebar: () => void }) {
@@ -498,7 +512,7 @@ const PLACES: { id: PanelPlace | "custom"; label: string; hint: string; icon: (p
   { id: "page", label: "Global page", hint: "Open from the left sidebar", icon: I.page },
   { id: "custom", label: "Write your own", hint: "Describe where you want it", icon: I.edit },
 ];
-const WHERE: Record<PanelPlace, string> = { dock: "in the right panel, beside your sessions", tab: "a tab beside Chat in this project's sessions", page: "under Apps, in the left sidebar" };
+const WHERE: Record<PanelPlace, string> = { dock: "in the right panel, beside your sessions", tab: "a tab beside Chat in this project's sessions", page: "under Add-ons, in the left sidebar" };
 
 /** What it will touch, as one sentence: "It will read your sessions' titles and changes, keep its entries, and have no network." */
 export function willTouch(a: PanelAsk["access"], place: PanelPlace) {

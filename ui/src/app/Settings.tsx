@@ -542,7 +542,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             value={s.mode}
             onValueChange={(v) => save({ mode: v as Mode })}
             options={[
-              { value: "solo", title: "Solo", description: `One model does it all, as you allow${cast ? `: ${label(cast.everyday)}` : ""}.`, icon: <I.sparkle size={16} /> },
+              { value: "solo", title: "Solo", description: `One model does it all, as you allow${cast ? `: ${label(cast.everyday)}` : ""}.`, icon: <I.node size={16} /> },
               { value: "plan", title: "Plan, then build", description: cast ? `${label(cast.strong)} plans, you approve, ${label(cast.everyday)} builds.` : "A stronger model plans, you approve, a cheaper one builds.", icon: <I.flow size={16} /> },
               { value: "auto", title: "Auto", description: cast ? `Each message gets the least work: ${label(cast.everyday)} for most, ${label(cast.strong)} for hard jobs.` : "Each message gets the least work likely to do it well.", icon: <I.branchIf size={16} /> },
             ]}

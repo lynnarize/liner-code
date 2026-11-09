@@ -22,9 +22,9 @@ import { Pop, Row, Sep } from "./ui";
 import "./modes.css";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
-const ICON: Record<"standard" | "creator", (p: { size?: number }) => ReactNode> = { standard: I.sparkle, creator: I.blocks };
+const ICON: Record<"standard" | "creator", (p: { size?: number }) => ReactNode> = { standard: I.code, creator: I.blocks };
 const iconOf = (mode?: SessionMode) => (mode === "creator" ? ICON.creator : mode?.startsWith("agent:") ? I.agents : ICON.standard);
-/** A mode's icon: Standard's sparkle, Workshop's blocks, and one of yours drawn with its agent's own glyph. */
+/** A mode's icon: Standard's code brackets, Workshop's blocks, and one of yours drawn with its agent's own glyph. */
 function ModeIcon({ mode, agents, size }: { mode: SessionMode; agents: AgentProfile[]; size: number }) {
   if (mode.startsWith("agent:")) {
     const a = agents.find((x) => `agent:${x.id}` === mode);

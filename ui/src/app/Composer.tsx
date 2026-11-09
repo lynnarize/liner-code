@@ -743,7 +743,14 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     </>
   ) : (
     <>
-      <Disc agent={talkTo} size={22} />
+      {/* A model on its own is Solo's node, as Plan shows its flow; a named agent keeps its own glyph. */}
+      {isModelAgent(settings.agent) ? (
+        <span className="lc-way-chip-i">
+          <I.node size={12} />
+        </span>
+      ) : (
+        <Disc agent={talkTo} size={22} />
+      )}
       <span className="lc-chip-name" title={isModelAgent(settings.agent) || settings.agent === "demo" ? undefined : modelLabel(shownModel, providers)}>
         {isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}
       </span>
@@ -848,7 +855,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               <WayRow
                 key={m.id}
                 on={on}
-                icon={m.id === "solo" ? <I.sparkle size={13} /> : m.id === "plan" ? <I.flow size={13} /> : <I.branchIf size={13} />}
+                icon={m.id === "solo" ? <I.node size={13} /> : m.id === "plan" ? <I.flow size={13} /> : <I.branchIf size={13} />}
                 title={m.label}
                 note={note}
                 marks={marks}
@@ -902,7 +909,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const effortPick = <EffortPick modelRef={model} value={settings.effort} onChange={(effort) => onSettings({ effort })} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} triggerClass="lc-seg-b lc-effort" hideEmpty />;
   // Permissions as a short list (Claude Code's own): Auto, Manual and Reviewer decides, each a
   // number away while it's open, and Full access last, a row of its own that you enable.
-  const LevelIcon = ACCESS_ICONS[settings.access] ?? I.sparkle;
+  const LevelIcon = ACCESS_ICONS[settings.access] ?? I.ahead;
   const picks = ACCESS_LEVELS.filter((l) => l.id !== "full");
   const full = ACCESS_LEVELS.find((l) => l.id === "full")!;
   const accessPick = (
@@ -1374,4 +1381,4 @@ function WayRow({ on, icon, title, note, marks, onPick }: { on: boolean; icon: R
 export const Hints = ({ children }: { children?: ReactNode }) => <div className="lc-hints">{children}</div>;
 
 /** Each access level's icon, in the permissions picker and on its chip. */
-const ACCESS_ICONS: Record<Access, (p: { size?: number }) => ReactNode> = { read: I.eye, ask: I.lock, edits: I.edit, auto: I.sparkle, review: I.shield, full: I.shieldOff };
+const ACCESS_ICONS: Record<Access, (p: { size?: number }) => ReactNode> = { read: I.eye, ask: I.lock, edits: I.edit, auto: I.ahead, review: I.shield, full: I.shieldOff };

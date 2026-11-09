@@ -152,6 +152,10 @@ export const I = {
   monitor: (p: P) => <S {...p}><rect x="2" y="3" width="12" height="8" rx="1.5" /><path d="M6 13.25h4M8 11v2.25" /></S>,
   tablet: (p: P) => <S {...p}><rect x="3.5" y="2" width="9" height="12" rx="1.75" /><path d="M7.25 11.75h1.5" /></S>,
   code: (p: P) => <S {...p}><path d="M5.75 5 2.75 8l3 3M10.25 5l3 3-3 3" /></S>,
+  /** Goes ahead by itself (the Auto permission): a step forward, up to a bar. */
+  ahead: (p: P) => <S {...p}><path d="M3.75 4.3v7.4a.75.75 0 0 0 1.15.63l5.6-3.7a.75.75 0 0 0 0-1.26L4.9 3.67a.75.75 0 0 0-1.15.63Z" /><path d="M12.75 3.75v8.5" /></S>,
+  /** One model on its own (Solo): a single node, beside Plan's two in a flow and Auto's branch. */
+  node: (p: P) => <S {...p}><circle cx="8" cy="8" r="4.75" /><circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none" /></S>,
   minus: (p: P) => <S {...p}><path d="M3.5 8h9" /></S>,
   fit: (p: P) => <S {...p}><path d="M2.75 5.75v-3h3M13.25 5.75v-3h-3M2.75 10.25v3h3M13.25 10.25v3h-3" /></S>,
   tool: (p: P) => <S {...p}><path d="M10.2 2.9a3.25 3.25 0 0 0-4 4.25L2.9 10.45a1.4 1.4 0 0 0 2 2L8.2 9.15a3.25 3.25 0 0 0 4.25-4l-2 2-1.6-.4-.4-1.6Z" /></S>,

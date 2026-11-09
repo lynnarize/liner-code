@@ -67,7 +67,7 @@ export class Watch {
         if (t.archived) continue;
         try {
           // Nothing has happened for days and nothing waits on you: it settles into Done.
-          if (s.settleDays > 0 && !t.done && !t.pinned && t.status === "done" && !t.toReview && !t.unread && now - t.updatedAt > s.settleDays * 86400000) this.settle(t, `Nothing happened for ${s.settleDays} days`);
+          if (s.settleDays > 0 && !t.done && !t.pinned && t.status === "done" && !t.toReview && !t.unread && !t.agentsAtWork && now - t.updatedAt > s.settleDays * 86400000) this.settle(t, `Nothing happened for ${s.settleDays} days`);
           if (t.pr && t.pr.state === "OPEN" && (s.settleOnMerge || t.wake)) await this.followPr(t);
         } catch {
           // gh is offline or the project moved; try again next minute
@@ -90,7 +90,7 @@ export class Watch {
     // Once it's closed nothing follows it any more, so what waited on it would sleep out its thirty days.
     const over = v.state === "MERGED" || v.state === "CLOSED";
     if (over && t.wake) wake(`#${t.pr!.number} ${v.state === "MERGED" ? "merged" : "was closed"}`);
-    if (v.state === "MERGED" && this.store.settings.settleOnMerge && !t.done) return this.settle(t, `#${t.pr!.number} merged`);
+    if (v.state === "MERGED" && this.store.settings.settleOnMerge && !t.done && !t.agentsAtWork) return this.settle(t, `#${t.pr!.number} merged`);
     if (!t.wake || over) return;
     if (t.wake.kind === "checks") {
       const checks = v.statusCheckRollup ?? [];

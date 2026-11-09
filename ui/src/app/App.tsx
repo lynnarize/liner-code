@@ -183,10 +183,11 @@ export function App() {
   const live = threads.filter((t) => !t.archived && !t.routine && !t.trial);
   const traySay = JSON.stringify({
     show: menuBar,
-    working: live.filter((t) => t.status === "running").map((t) => ({ id: t.id, title: t.title })),
+    working: live.filter((t) => t.status === "running" || t.agentsAtWork).map((t) => ({ id: t.id, title: t.title })),
     needs: live.filter((t) => waitsOnYou(t) && t.turns > 0).map((t) => ({ id: t.id, title: t.title, waiting: t.status === "waiting" })),
     // Every turn going, routines' and side chats' too: ⌘Q asks first while there are any.
-    running: [...threads, ...sides].filter((t) => !t.archived && t.status === "running").length,
+    // Agents in the background count: quitting ends them.
+    running: [...threads, ...sides].filter((t) => !t.archived && (t.status === "running" || t.agentsAtWork)).length,
   });
   useEffect(() => bridge.status(JSON.parse(traySay)), [traySay]);
   useEffect(() => {

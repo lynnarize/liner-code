@@ -35,8 +35,8 @@ type Mark = Extract<Item, { kind: "turn" }>;
 export type WallKind = "needs" | "working" | "done";
 type Filter = "all" | WallKind;
 
-/** Where a session stands on the Wall, from its status alone: the order and the counts need no timelines. */
-export const wallKind = (t: Thread): WallKind => (t.status === "running" ? "working" : t.status === "waiting" || t.status === "error" || t.status === "limited" ? "needs" : "done");
+/** Where a session stands on the Wall, from the session alone: the order and the counts need no timelines. One whose turn is over while agents it sent still work is working, not done. */
+export const wallKind = (t: Thread): WallKind => (t.status === "running" ? "working" : t.status === "waiting" || t.status === "error" || t.status === "limited" ? "needs" : t.agentsAtWork ? "working" : "done");
 const RANK: Record<WallKind, number> = { needs: 0, working: 1, done: 2 };
 
 /** The sessions on the Wall, in its order. Within a kind, newest first, unread answers ahead of read ones. */
@@ -507,7 +507,9 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
           ? { word: `Failed · ${when}`, tone: "danger" }
           : t.status === "limited"
             ? { word: t.limit?.until && t.limit.until > now ? `Limited until ${clock(t.limit.until, now)}` : "Limited", tone: "warn" }
-            : { word: `Done · ${when}`, tone: t.unread ? "ok" : undefined };
+            : kind === "working"
+              ? { word: `${plural(t.agentsAtWork ?? 0, "agent")} at work · ${when}` }
+              : { word: `Done · ${when}`, tone: t.unread ? "ok" : undefined };
 
   // What it waits on, said on the tile with what one press can do about it.
   const ask = t.status === "waiting" ? info.ask : undefined;
@@ -547,7 +549,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   };
 
   const live = t.status === "running";
-  const write = picked && (t.status === "running" || t.status === "waiting");
+  const write = picked && (t.status === "running" || t.status === "waiting" || kind === "working");
   // Anywhere on the tile does what its head does, except on its own controls and when you were selecting its words.
   const own = (e: PressEvent) => e.target instanceof Element && e.target.closest("button, a, input, textarea, select, label, [role='button']") !== null;
   const tileClick = (e: PressEvent) => {
@@ -725,7 +727,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
             </button>
           </form>
         ) : (
-          <span className="lc-wt-note l-num">{t.status === "running" ? `${plural(info.count, "step")} this turn` : `Waiting since ${clock(info.since, now)}`}</span>
+          <span className="lc-wt-note l-num">{t.status === "running" ? `${plural(info.count, "step")} this turn` : kind === "working" ? `${plural(t.agentsAtWork ?? 0, "agent")} still at work in the background` : `Waiting since ${clock(info.since, now)}`}</span>
         )}
       </div>
     </article>

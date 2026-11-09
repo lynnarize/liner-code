@@ -160,8 +160,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   // The agents at work in each working session ("Sonnet 5.5 + 3 agents"), from the sessions whose timeline is here; read as one line so a streamed word redraws nothing.
   const sentLine = useEngine((s) =>
     s.threads
-      .filter((t) => t.status === "running")
-      .map((t) => `${t.id}=${itemsWhere(s, t.id, isSubagent).filter((x) => x.kind === "tool" && agentState(x) === "running").length}`)
+      .filter((t) => t.status === "running" || t.agentsAtWork)
+      .map((t) => `${t.id}=${Math.max(itemsWhere(s, t.id, isSubagent).filter((x) => x.kind === "tool" && agentState(x) === "running").length, t.agentsAtWork ?? 0)}`)
       .join(","),
   );
   const sent = useMemo(() => new Map(sentLine.split(",").filter(Boolean).map((x) => [x.split("=")[0], Number(x.split("=")[1])] as const)), [sentLine]);
@@ -540,7 +540,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const builds = coder.name === model ? model : `${coder.name}${lead ? " builds" : ""} on ${model}`;
     const team = lead ? `${lead} plans, ${coder.name === model ? `${model} builds` : builds}` : builds;
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
-    const sentNow = t.status === "running" ? (sent.get(t.id) ?? 0) : 0;
+    const sentNow = sent.get(t.id) ?? 0;
     const said = cardState(t, bucket, on.who, on.leadOn ? lead : undefined, now, run);
     const state = sentNow ? { ...said, text: `${said.text} with ${plural(sentNow, "agent")}` } : said;
     const changes = [(t.toReview ?? 0) > 0 ? `${plural(t.toReview!, "file")} changed, not committed` : "", t.pr ? `pull request #${t.pr.number}${t.pr.state ? `, ${t.pr.state.toLowerCase()}` : ""}` : ""].filter(Boolean).join(" · ");
@@ -653,9 +653,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       ) : (
         <b>{t.title}</b>
       );
-    const working = t.status === "running" ? (sent.get(t.id) ?? 0) : 0;
+    const working = sent.get(t.id) ?? 0;
     const state = two ? (working ? { text: `${on.who} + ${plural(working, "agent")}` } : rowState(t, bucket, Boolean(on.leadOn && t.lead), now, run)) : null;
-    const dot = t.archived ? undefined : t.status === "running" || run?.status === "running" ? "work" : t.status === "error" ? "danger" : bucket === "needs" || t.status === "limited" ? "warn" : undefined;
+    const dot = t.archived ? undefined : t.status === "running" || run?.status === "running" || (working && bucket !== "needs") ? "work" : t.status === "error" ? "danger" : bucket === "needs" || t.status === "limited" ? "warn" : undefined;
     return (
       <div
         key={t.id}

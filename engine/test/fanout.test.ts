@@ -330,3 +330,26 @@ test("claude: one that ends before its call says it launched still ends; and clo
     restore();
   }
 });
+
+test("runtime: a session whose turn is over while agents it sent work says so on the session, for the Wall, the sidebar and quitting", async () => {
+  const second = { key: "call-2", tool: "Agent", toolKind: "task" as const, title: "Explore: Read the tests" };
+  const k = keeper((sink) => {
+    sink.tool({ ...call, status: "done", agent: agent({ background: true, state: "running" }) });
+    sink.tool({ ...second, status: "done", agent: agent({ taskId: "t2", background: true, state: "running" }) });
+  });
+  try {
+    const { store, runtime, home } = session();
+    await runtime.send("t", "find it");
+    await until(() => store.thread("t").status !== "running", "the turn ends");
+    assert.equal(store.thread("t").agentsAtWork, 2, "both still at work count after their turn");
+    k.sinks[0].tool({ ...call, status: "done", agent: agent({ background: true, state: "done", report: "found it" }) });
+    assert.equal(store.thread("t").agentsAtWork, 1, "one has ended");
+    // At work when the engine stopped: it went with the tool's process, so a new engine counts none.
+    store.flush();
+    assert.equal(new Store(home).thread("t").agentsAtWork, undefined, "a new engine starts with none at work");
+    k.sinks[0].tool({ ...second, status: "done", agent: agent({ taskId: "t2", background: true, state: "stopped" }) });
+    assert.equal(store.thread("t").agentsAtWork, undefined, "none once both have ended");
+  } finally {
+    k.restore();
+  }
+});

@@ -550,6 +550,8 @@ export type Thread = {
   toReview?: number;
   /** A turn finished while you were looking elsewhere. */
   unread?: boolean;
+  /** Agents it sent that still work, also in the background after the turn that sent them: the Wall, the sidebar and quitting read it here, not from the timeline. None once the engine stops. */
+  agentsAtWork?: number;
   /** Messages you wrote while it worked, sent in order when the turn ends. */
   queue?: QueuedMessage[];
   /** The Reviewer's last word on this session's changes. */

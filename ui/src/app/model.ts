@@ -196,7 +196,8 @@ export function bucketOf(t: Thread, now = Date.now()): Bucket {
   // Files changed and not committed don't wait on you: committing is yours to do or not (T3 Code
   // marks only what asks, fails or hasn't been seen, too).
   const needs = t.status === "waiting" || t.status === "error" || t.status === "limited" || t.unread || t.turns === 0;
-  return needs ? "needs" : "open";
+  // Agents it sent still at work in the background: it works, though its turn has ended.
+  return needs ? "needs" : t.agentsAtWork ? "working" : "open";
 }
 
 /**
@@ -220,6 +221,7 @@ export function statusLine(t: Thread, who: string): { text: string; warn?: boole
   if (t.goal?.status === "active") return { text: `${who} · goal, turn ${t.goal.turns}` };
   if (t.turns === 0) return { text: `${who} · not started` };
   if (t.unread) return { text: `${who} · answered`, warn: true };
+  if (t.agentsAtWork) return { text: `${who} · ${plural(t.agentsAtWork, "agent")} at work` };
   // Said quietly: what's left to commit, for whoever commits.
   if ((t.toReview ?? 0) > 0) return { text: `${who} · ${t.toReview} ${t.toReview === 1 ? "file" : "files"} changed` };
   return { text: `${who} · done` };

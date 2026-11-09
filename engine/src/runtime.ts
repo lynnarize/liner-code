@@ -987,6 +987,7 @@ export class Runtime {
     const asking = store.timeline(threadId).some((x) => x.turn > (t.sideFrom ?? 0) && (x.kind === "proposal" || x.kind === "question" || x.kind === "approval") && x.state === "asking");
     const limited = sink.limited();
     t = store.patchThread(threadId, { status: limited ? "limited" : errored ? "error" : asking ? "waiting" : "done", limit: limited ?? undefined, forkSession: undefined, toReview: this.toReview(threadId), unread: true });
+    this.countAgents(threadId);
     // You're looking at a side chat when you ask in it, so it doesn't notify.
     if (!stopped && !t.sideOf) {
       const who = this.resolve(t, agentId).agent.name;
@@ -1344,6 +1345,14 @@ export class Runtime {
     const pending = new Set<string>();
     for (const it of this.store.timeline(threadId)) if (it.kind === "checkpoint" && !it.reverted && !it.committed) for (const f of it.files) pending.add(f.path);
     return pending.size;
+  }
+
+  /** The agents a session sent that still work, kept on the session (agentsAtWork) as one starts or ends, and at a turn's end. */
+  private countAgents(threadId: string) {
+    const t = this.store.threads.find((x) => x.id === threadId);
+    if (!t) return;
+    const n = this.store.timeline(threadId).filter((x) => x.kind === "tool" && x.agent && agentState(x) === "running").length;
+    if ((t.agentsAtWork ?? 0) !== n) this.store.patchThread(threadId, { agentsAtWork: n || undefined });
   }
 
   stop(threadId: string) {
@@ -1837,6 +1846,7 @@ export class Runtime {
         // is named or reports: not at each of its steps, which may go on long after its call is done.
         const save = !base || (agent ? base.status !== item.status || agentState(base) !== agentState(item) || base.title !== item.title || base.agent?.report !== agent.report : u.status !== "running");
         store.putItem(threadId, item, save);
+        if (agent && (base ? agentState(base) : undefined) !== agentState(item)) this.countAgents(threadId);
       },
       plan: (entries: PlanEntry[]) => {
         heard();

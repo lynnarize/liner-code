@@ -157,6 +157,8 @@ export class Store {
         // A review it was in the middle of ended with it (its item settles as an error when read).
         if (t.verdict?.state === "checking") t.verdict = undefined;
       }
+    // Its agents in the background went with the engine's tool process too (timeline() settles their rows).
+    for (const t of this.state.threads) if (t.agentsAtWork) t.agentsAtWork = undefined;
   }
 
   on(fn: Listener) {

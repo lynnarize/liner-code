@@ -1245,9 +1245,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             {mention.kind !== "@" && tools && found.length === 0 && <span className="lc-quiet lc-mention-wait">No {mention.kind === "/" ? "command" : "skill"} matches that.</span>}
           </div>
         )}
-        {/* The controls sit in a tray of their own inside the text box: solid ink in a lit pill. */}
+        {/* The controls sit in a tray of their own inside the text box, the same on Home and in a session: attach, then the choices, then Send. */}
         <div className="lc-card-row" ref={tray}>
-          {variant === "session" && attach}
+          {attach}
           <span className="lc-seg">
             <Pop label="Who works on this" side={variant === "home" ? "bottom" : "top"} width={640} keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
               {teamPanel}
@@ -1276,7 +1276,6 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           ) : (
             variant === "session" && !busy && queue.length > 0 && <span className="lc-tray-note">{plural(queue.length, "message")} waiting</span>
           )}
-          {variant === "home" && attach}
           {sendButton}
         </div>
         <input ref={clip} type="file" multiple hidden onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />

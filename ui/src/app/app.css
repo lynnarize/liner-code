@@ -3391,9 +3391,6 @@ html:not([data-composer="solid"]) .lc-thread-foot .lc-card::before {
 html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   background: color-mix(in oklab, var(--lc-field) 36%, transparent);
 }
-.lc-thread-foot .lc-seg {
-  background: none;
-}
 @media (hover: hover) {
   .lc-thread-foot .lc-seg-b:hover {
     background: var(--l-wash-2);
@@ -3441,9 +3438,9 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 .lc-card-row > .lc-grow {
   flex-shrink: 1;
 }
-/* The choices are one light bar, slim, each drawn small beside its word (Home and the session
-   alike); attach is a light round, and Send and Stop the solid ones. A bar never shrinks: what
-   doesn't fit gives way in steps instead (below). */
+/* The choices are one row with dividers and nothing behind it, each drawn small beside its word
+   (Home and the session alike); attach is a light round before them, and Send and Stop the solid
+   ones. The row never shrinks: what doesn't fit gives way in steps instead (below). */
 .lc-seg {
   display: inline-flex;
   align-items: center;
@@ -3452,7 +3449,6 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   padding: 0 3px;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--lc-bar);
   color: var(--l-ink);
 }
 .lc-seg > .lc-pop {

@@ -1,6 +1,6 @@
 // The changelog, read from the repository's CHANGELOG.md at build time and turned into HTML.
-// It only needs what that file uses: ## and ### headings, paragraphs, "- " lists, **bold**,
-// `code` and [links](url).
+// It only needs what that file uses: ## and ### headings ("## 0.2.4 (beta), 2026-11-09"),
+// paragraphs, "- " lists with "  - " lists inside an item, **bold**, `code` and [links](url).
 // Vite reads the file into the build itself (?raw), so it works wherever the pages are rendered,
 // even in Cloudflare's runtime, which has no file system to read the repository from.
 import text from '../../../CHANGELOG.md?raw';
@@ -21,7 +21,16 @@ export function releases(): Release[] {
   let para: string[] = [];
   let list: string[] | null = null;
   let item: string[] | null = null;
-  const flushItem = () => { if (item && list) list.push(`<li>${inline(item.join(' '))}</li>`); item = null; };
+  // An item's own list ("  - " under it), the one of those being read, and the item's words after it.
+  let subs: string[] | null = null;
+  let sub: string[] | null = null;
+  let after: string[] | null = null;
+  const flushSub = () => { if (sub && subs) subs.push(`<li>${inline(sub.join(' '))}</li>`); sub = null; };
+  const flushItem = () => {
+    flushSub();
+    if (item && list) list.push(`<li>${inline(item.join(' '))}${subs ? `<ul>${subs.join('')}</ul>` : ''}${after ? `<p>${inline(after.join(' '))}</p>` : ''}</li>`);
+    item = null; subs = null; after = null;
+  };
   const flushList = () => { flushItem(); if (list) html.push(`<ul>${list.join('')}</ul>`); list = null; };
   const flushPara = () => { if (para.length) html.push(`<p>${inline(para.join(' '))}</p>`); para = []; };
   const close = () => { flushPara(); flushList(); if (cur) { cur.html = html.join('\n'); out.push(cur); } html = []; };
@@ -38,7 +47,13 @@ export function releases(): Release[] {
     const h3 = /^### (.+)$/.exec(line);
     if (h3) { flushPara(); flushList(); html.push(`<h3>${inline(h3[1])}</h3>`); continue; }
     if (/^- /.test(line)) { flushPara(); if (!list) list = []; flushItem(); item = [line.slice(2)]; continue; }
-    if (item && /^\s{2,}\S/.test(line)) { item.push(line.trim()); continue; }
+    if (item && /^\s{2,}- /.test(line)) { flushSub(); subs ??= []; sub = [line.trim().slice(2)]; continue; }
+    if (item && /^\s{2,}\S/.test(line)) {
+      if (sub && /^\s{4,}/.test(line)) sub.push(line.trim());
+      else if (subs) { flushSub(); (after ??= []).push(line.trim()); }
+      else item.push(line.trim());
+      continue;
+    }
     if (!line.trim()) { flushPara(); if (item) flushItem(); continue; }
     flushList();
     para.push(line.trim());

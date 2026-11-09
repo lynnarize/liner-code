@@ -278,7 +278,7 @@ function workshop() {
 
   if (offer) {
     let place = 'page';
-    const WHERE: Record<string, string> = { dock: 'in the right panel', tab: 'a tab beside Chat', page: 'under Apps in the left sidebar', custom: 'where you described' };
+    const WHERE: Record<string, string> = { dock: 'in the right panel', tab: 'a tab beside Chat', page: 'under Add-ons in the left sidebar', custom: 'where you described' };
     offs.push(radios($('[data-places]', offer), (b) => { place = b.dataset.place!; }));
     const steps = $$('[data-steps] li', offer);
     const note = $('[data-offer-note]', offer)!;
@@ -333,7 +333,7 @@ function workshop() {
         ...(state.ai ? [['Model', "Asks a model you pick when it first asks, billed to that model's account. Just a model: no tools or files"] as [string, string]] : []),
         ['Keeps', state.storage ? 'Its own storage, up to 1 MB' : 'Nothing'],
         ...(state.network ? [] : [['Network', 'None'] as [string, string]]),
-        ['Where', p === 'page' ? 'Under Apps, in the left sidebar' : p === 'tab' ? 'A tab beside Chat, in every project' : 'The right dock, in every project'],
+        ['Where', p === 'page' ? 'Under Add-ons, in the left sidebar' : p === 'tab' ? 'A tab beside Chat, in every project' : 'The right dock, in every project'],
       ];
       $('[data-card-fields]', card)!.innerHTML = fields.map(([l, v]) => `<div><dt>${l}</dt><dd>${v}</dd></div>`).join('');
       const line: string[] = [];
@@ -372,7 +372,7 @@ function workshop() {
     const no = $<HTMLButtonElement>('[data-card-no]', card)!;
     const onAdd = () => added()
       ? settle('Removed. Its files stay, so Restore brings it back.', false)
-      : settle(state.where === 'page' ? 'Added. Notes is under Apps in the left sidebar.' : state.where === 'tab' ? 'Added. Notes is a tab beside Chat.' : 'Added. Notes is in the right dock.', true);
+      : settle(state.where === 'page' ? 'Added. Notes is under Add-ons in the left sidebar.' : state.where === 'tab' ? 'Added. Notes is a tab beside Chat.' : 'Added. Notes is in the right dock.', true);
     const onNo = () => settle('Not now. Nothing was added.', false);
     add.addEventListener('click', onAdd);
     no.addEventListener('click', onNo);

@@ -32,7 +32,7 @@ const arrow = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" strok
   <div class="get" data-get>
     <a class="btn btn--nav" href="/#download" data-get-btn>Download<svg class="get__chev" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
     <div class="get__menu" id="get-menu" hidden data-get-menu>
-      <p class="get__title">Liner Code <span data-rel="version">{site.version}</span>, an alpha</p>
+      <p class="get__title">Liner Code <span data-rel="version">{site.version}</span>, a beta</p>
       <div class="get__list">
         {(['mac', 'win'] as const).map((os) => (
           <a class="get__os" href={site[os]} data-rel={os} data-get-os={os}>

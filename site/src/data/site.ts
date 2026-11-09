@@ -41,7 +41,7 @@ export const nav = [
 export const hero = {
   lead: 'A home for the coding agents you already use.',
   // {v} is the version, kept in its own element so the browser can bring it up to date.
-  note: 'Free and open source. Version {v}, an alpha, for Apple Silicon Macs and Windows.',
+  note: 'Free and open source. Version {v}, a beta, for Apple Silicon Macs and Windows.',
   hint: { fine: 'Click the code to send a turn.', touch: 'Tap the code to send a turn.' },
 };
 
@@ -170,12 +170,90 @@ export const features = [
   },
 ];
 
+// New in 0.2.4, the first beta: cards in "Everything around the session", each with the app's own
+// parts drawn at their size (Wall.tsx, Crew.tsx, Browser.tsx, AddonsPage.tsx), in their words.
+// The facts are the 0.2.4 changelog's; the sessions are the Demo's tide project.
+export const news = {
+  since: 'New in 0.2.4',
+  wall: {
+    title: 'The Wall',
+    text: "Every live session at once, as tiles you can answer from. What waits on you comes first, then what's working, then what's done.",
+    aside: 'Allow a request or say no, pick an answer, steer one at work, retry or settle, from its tile. 1 to 9 open a tile, Esc goes back.',
+    alt: 'The Wall with three sessions. Nightly invoice export needs you: it wants to run npm run export, with Not this and Run it. Add a weekly tide chart is working, running npm test. Fix the tide time after midnight is done, with its answer in brief, the two files it changed and Verified.',
+    tiles: [
+      {
+        kind: 'needs', title: 'Nightly invoice export', state: 'Needs you · 2m', sub: 'ledger-api · Claude Code · Sonnet 5.5',
+        steps: [['Read', 'export.ts', '1.2s'], ['Edited', 'export.ts', '+18 −2']],
+        ask: { lead: 'Wants to run', cmd: 'npm run export -- --dry-run' },
+        field: 'Or tell it what to do instead',
+      },
+      {
+        kind: 'working', title: 'Add a weekly tide chart', state: 'Working · 4m', sub: 'tidewater · Codex · GPT Astra',
+        steps: [['Searched', 'weekly', '3 matches'], ['Read', 'chart.js', '0.9s'], ['Edited', 'chart.js', '+24 −3'], ['Read', 'tides.js', '0.6s'], ['Edited', 'chart.test.js', '+31'], ['Running', 'npm test', '']],
+        foot: '7 steps this turn',
+      },
+      {
+        kind: 'done', title: 'Fix the tide time after midnight', state: 'Done · 12m', sub: 'tidewater · Claude Code · Opus 5.5',
+        lead: "Past the last high tide, it wraps round to tomorrow's first.",
+        points: ['Marked as tomorrow, so the label can say so.', 'A test for a time after the last high tide passes.'],
+        files: [['tides.js', 'src', '+3', '−1'], ['tides.test.js', 'src', '+12', '']],
+        foot: ['+15', '−1', '2 files'],
+      },
+    ],
+  },
+  crew: {
+    title: 'Who sent whom',
+    text: "When a model sends agents off, they fan out under its work: what each was sent to do, what it's doing now, its model, tokens and time, then what it sent back. The header says who leads and how many work for it; the Agents surface (⌘⇧A) shows the crew as a tree, a timeline and the tasks. Stop one, and the turn goes on.",
+    tools: [
+      { name: 'Claude Code', note: 'Its agents show their steps, model, tokens and report as they work. A word for one goes to the model that sent it.' },
+      { name: 'Codex', note: "Each agent's own thread, step by step, and a word for one goes straight to it." },
+      { name: 'Hermes', note: 'A row per delegated task, with its goal, role, model and report; ACP can’t show its steps live.' },
+      { name: 'OpenCode', note: 'Subagents stay off: its ACP drops their permission requests, so they’d get past your access level.' },
+    ],
+    alt: 'A session where Sonnet 5.5 sent three agents. The header reads Sonnet 5.5 plus 3 agents. Under its work: Started 3 agents, 1 done and 2 working. The Test runner is done: 1 test, 1 passed. Explore, on Haiku 5.5, is reading src/tides.test.js; the Subagent, on Sonnet 5.5, is fetching tidesandcurrents.noaa.gov. Over the box: Sonnet 5.5 is waiting on 2 agents, and Stop agents.',
+    session: 'Spring tide alert',
+    lead: 'Sonnet 5.5',
+    ask: 'Add an alert for spring tides. Send agents to look, test and write fixtures at once.',
+    agents: [
+      { kind: 'explore', name: 'Explore', task: 'Find where tide heights are parsed', model: 'Haiku 5.5', now: 'Read src/tides.test.js', stats: '3 tools · 7.4k · 6.1s' },
+      { kind: 'test', name: 'Test runner', done: "1 test, 1 passed. Nothing covers a day's range yet.", time: '2.7s' },
+      { kind: 'sub', name: 'Subagent', task: 'Write spring-tide fixtures', model: 'Sonnet 5.5', now: 'Fetch tidesandcurrents.noaa.gov', stats: '2 tools · 4.6k · 4.4s' },
+    ],
+    strip: { waiting: 'Sonnet 5.5 is waiting on 2 agents', doing: 'Explore is reading src/tides.test.js' },
+  },
+  servers: {
+    title: 'Dev servers from launch.json',
+    text: "The servers in .claude/launch.json, the file Claude Code reads, are each a press from running in the Browser. Agents start them too, with server_start, and they stop by themselves, as Claude Code's do, once nothing in their folder has been on screen or working for half an hour.",
+    alt: 'An agent started web, on localhost:5173. Under it, the Browser lists the dev servers from .claude/launch.json: web running on 5173 with restart and stop, storybook stopped while you were away, and api ready to run.',
+    step: ['Started', 'web', 'localhost:5173'],
+    rows: [
+      { name: 'web', port: '5173', on: true },
+      { name: 'storybook', port: '6006', note: 'Stopped while you were away' },
+      { name: 'api', port: '8787' },
+    ],
+    foot: 'Run a server to preview your app, or enter an address. Edit this list in .claude/launch.json.',
+  },
+  plugins: {
+    title: 'DeepSeek Harness plugins',
+    text: "Type a plugin's npm name in Add add-on, and it comes in as a page, a dock panel or a tab, with the tools it names for your agents. Its program runs in a process of its own, under a sandbox on a Mac (not on Windows), and as you either way, so its card asks you to trust where it's from.",
+    alt: "The card for a DeepSeek Harness plugin from npm: Media Desk, a page of its own. Plugin dsh-media-desk 2.6.2. Its program runs as you, in a process of its own, and a sandbox keeps it from your keys, your sign-ins, Liner Code's state and other apps. It goes under Add-ons, in the left sidebar. Not this, or Hold to allow.",
+    from: 'An add-on from npmjs.com/package/dsh-media-desk',
+    name: 'Media Desk, a page of its own',
+    ask: 'A DeepSeek Harness plugin with a program of its own',
+    fields: [
+      ['Plugin', 'dsh-media-desk 2.6.2'],
+      ['Program', "Runs as you, in a process of its own. A sandbox keeps it from your keys, your sign-ins, Liner Code's state and other apps."],
+      ['Where', 'Under Add-ons, in the left sidebar'],
+    ],
+  },
+};
+
 export const download = {
   close: ['Stand in', 'the middle.'],
   after: 'Open it, connect the tools you have, add a project, and pick how you will work: Solo, Plan then build, or Auto.',
   mac: {
     label: 'Mac', file: release.mac.file, needs: 'Apple Silicon, tried on macOS 27', short: 'Apple Silicon · DMG',
-    first: "The alpha isn't notarized yet. The first time, open System Settings, Privacy & Security, and press Open Anyway, or run:",
+    first: "The beta isn't notarized yet. The first time, open System Settings, Privacy & Security, and press Open Anyway, or run:",
     command: 'xattr -dr com.apple.quarantine "/Applications/Liner Code.app"',
     after: 'After that it updates itself.',
   },

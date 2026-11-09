@@ -2,11 +2,11 @@
 
 ## Brief
 
-- **Subject:** Liner Code 0.2.1 (alpha), a free, MIT-licensed desktop app for macOS (Apple Silicon)
-  and Windows (x64) that drives the coding agents already on the machine (Claude Code, Codex,
-  OpenCode, Hermes) and shows their work as plans, cards and diffs.
+- **Subject:** Liner Code 0.2.1 (an alpha then; a beta since 0.2.4), a free, MIT-licensed desktop
+  app for macOS (Apple Silicon) and Windows (x64) that drives the coding agents already on the
+  machine (Claude Code, Codex, OpenCode, Hermes) and shows their work as plans, cards and diffs.
 - **Audience:** developers who already use one of those CLIs.
-- **Job:** download the alpha (GitHub Releases), or read the code (GitHub).
+- **Job:** download the beta (GitHub Releases), or read the code (GitHub).
 - **Assets that exist:** the app icon (two offset L strokes, ink and blue), the app's fonts
   (Instrument Sans, Geist Mono), Liner 2.0 tokens, the ad stills in `../ads` (0.1.2 real captures;
   0.2.0/0.2.1 drawn in HTML from the app's look), the README, the changelog, the source itself.
@@ -103,7 +103,7 @@ the product), the section blueprints. Overridden with reasons:
 | Surfaces | Everything beside the session, one key away | the real ⌘⇧ keys | giant command list |
 | Data | Nothing in between | the only two commands it asks | ink field split |
 | New | Three releases in three days | the changelog | release tabs, banded |
-| Download | Get the alpha | the real files and the first-open step | sky field, dialog |
+| Download | Get the beta | the real files and the first-open step | sky field, dialog |
 | Footer | the name returns, on the sea | tiles + a live horizon tile | tiles |
 
 ```
@@ -128,7 +128,7 @@ NEW            heading 2 lines           [Read the changelog]
                [0.2.1][0.2.0][0.1.9] | bands: kind · title · note
 DOWNLOAD (sky) closing line bottom-left        dialog right (Mac | Windows)
 FOOTER         tiles: statement | nav | version | GitHub
-               [ live horizon with the wordmark ............ ][ Get the alpha ↗ ]
+               [ live horizon with the wordmark ............ ][ Get the beta ↗ ]
 ```
 
 ### Genericness test
@@ -146,6 +146,27 @@ FOOTER         tiles: statement | nav | version | GitHub
   answer, +3 −1). Every fragment is re-toned into the page's paper and ink: surfaces stepped in
   tone, no white boxes, no rings.
 - The wordmark sinks deeper: about a quarter of its letters sit under the horizon.
+
+## Changes for 0.2.4, the first beta (9 Nov 2026)
+
+- Every "alpha" became "beta" in the same voice: the hero's note, the download menu and dialog,
+  the first-open step, the footer's version tile and "Get the beta", Workshop's buttons.
+- "Everything around the session" gained four cards for what 0.2.4 brought, each with a "New in
+  0.2.4" mark over its title, and the app's own parts drawn at their size from Wall.tsx, Crew.tsx,
+  Browser.tsx and AddonsPage.tsx, in their words (no new captures). They take the bento's dark app
+  tones (a surface rising from the card's foot, then well, then plate; at night the parts step up
+  from the card instead), with greens, reds and ambers lightened to read on them:
+  - **The Wall** (across the grid, first): its bar and three tiles, one that needs you (Wants to
+    run, Not this, Run it, picked, with its field), one at work (its trail), one done (its brief,
+    files, Verified, Settle). Two tiles under 1024px, stacked under 600px.
+  - **Who sent whom** (across the grid, after One turn and Surfaces): the words and each tool's
+    agents as stepped bands on the left (OpenCode's subagents said to be off), the session on the
+    right: the crew chip, the fan-out of the Demo's three agents, the composer's waiting line.
+  - **Dev servers from launch.json** and **DeepSeek Harness plugins**, side by side: an agent's
+    Started step over the Browser's launch.json list; the plugin's card from npm, sandboxed only
+    on a Mac.
+- Surfaces' sentence says a live page in the Browser costs about what it costs on its own.
+- The changelog page reads a list inside a list item ("  - ", as in 0.2.4's tools), with open dots.
 
 ## Inspector results we keep on purpose
 

@@ -7,7 +7,7 @@ export const workshop = {
   kinds: [
     { name: 'Connections', where: 'Every agent tool', note: "An MCP server from a prompt: Linear, Sentry, a database. Its key goes to the keychain, and every agent gets it next to Liner Code's own tools." },
     { name: 'Panels', where: 'The right dock', note: 'A small page of its own beside a session: a viewer, an editor, something to watch while you chat.' },
-    { name: 'Apps', where: 'Beside Chat, or a page', note: 'A tab beside Chat for a session’s live output, or a page of its own under Apps in the left sidebar, kept across projects.' },
+    { name: 'Apps', where: 'Beside Chat, or a page', note: 'A tab beside Chat for a session’s live output, or a page of its own under Add-ons in the left sidebar, kept across projects.' },
     { name: 'Modes', where: 'Picked for a session', note: 'Instructions, with skills and context files, for whichever model a session runs. You pick it when you start one.' },
   ],
   ask: 'Create a Liner Code add-on with a left sidebar entry.',
@@ -33,7 +33,7 @@ export const workshop = {
     { label: 'Model', title: 'A model in an app', note: 'New in 0.2.1: two answers at a time and 300 a day, each app’s usage logged under it.' },
   ],
   examples: [
-    { h: 'Add a page', ask: 'Make a notes app with a left sidebar entry that opens a full-page editor. Keep my notes between sessions. Add it, and check that the page opens.', expect: 'An app under Apps in the left sidebar, its page working, and what it checked.' },
+    { h: 'Add a page', ask: 'Make a notes app with a left sidebar entry that opens a full-page editor. Keep my notes between sessions. Add it, and check that the page opens.', expect: 'An app under Add-ons in the left sidebar, its page working, and what it checked.' },
     { h: 'Add a panel', ask: 'Make a panel beside my sessions that lists the TODOs in this project, so I can send one to you. Check it, then ask me to add it.', expect: 'A panel in the right dock, tried live as a preview before you add it.' },
     { h: 'Make my own mode', ask: 'Make a “Code review” mode: prioritise likely bugs and missing tests, cite files and lines, and ask before changing anything. Save it as a mode I can pick.', expect: 'A mode you pick when you start a session. Its instructions guide the model; Safety still decides what it may do.' },
   ],

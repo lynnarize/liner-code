@@ -32,9 +32,9 @@ export function fromGitHub(gh: GitHub): Release | null {
   };
 }
 
-/** Whether version a comes after version b (both like 0.2.2). */
+/** Whether version a comes after version b (both like 0.2.2; a word after the numbers, as in 0.2.4-beta, is left out). */
 export function newer(a: string, b: string) {
-  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  const pa = a.split('.').map((x) => parseInt(x, 10)), pb = b.split('.').map((x) => parseInt(x, 10));
   for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
   return false;
 }

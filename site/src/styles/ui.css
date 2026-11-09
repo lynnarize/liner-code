@@ -226,3 +226,165 @@ html[data-sea='dark'] [data-ui] {
 /* Workshop's purple, lighter on the dark surfaces, so its words still read. */
 html[data-sea='dark'] .ui-chip--ws, html[data-sea='dark'] .ws-mode__icon--ws, .auto .ui-chip--ws, .bento .ui-chip--ws { color: oklch(0.8 0.12 292); background: color-mix(in oklab, oklch(0.6 0.2 292) 24%, var(--surface)); }
 .ws-modes__foot { padding: 6px 10px 2px; }
+
+/* ---------- What came in 0.2.4, drawn from the app (Wall.tsx, Crew.tsx, Browser.tsx, AddonsPage.tsx)
+   in the bento's dark app tones: a surface rising from the card's foot, its parts stepped in tone
+   (well, then plate), no rings. The greens, reds and ambers are lightened to read on it. ---------- */
+.frag {
+  --ok-text: #7ad6a0;
+  --danger-text: #ff9282;
+  --warn: #eea33e;
+  --warn-text: #f2b764;
+  border-radius: 18px 18px 0 0; background: var(--surface); overflow: hidden;
+}
+/* At night the card is as dark as the app's surface, so the parts step up from it instead. */
+html[data-sea='dark'] .bento .frag { --surface: #1a2040; --well: #232a4b; --plate: #2e365c; }
+.frag kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px; background: var(--well); color: var(--ink-2); font: 500 11px/1 var(--mono); }
+.frag .ui-btn { height: 26px; padding: 0 10px; font-size: 12.5px; }
+.frag .ui-btn--quiet { color: var(--ink-2); }
+.frag .ui-add, .frag .ui-del { font-family: var(--mono); font-size: 12px; }
+.frag .lines { display: inline-flex; gap: 6px; }
+
+/* A turn's steps, as the session's trail draws them: a dot, what it did, to what, and how long. */
+.trail { display: grid; gap: 1px; }
+.trail li, .launch__step { display: flex; align-items: center; gap: 8px; min-width: 0; height: 24px; font-size: 12.5px; color: var(--ink-3); }
+.trail__dot { flex: none; width: 5px; height: 5px; margin: 0 3px; border-radius: 50%; background: var(--ink-4); }
+.trail b, .launch__step b { flex: none; font-weight: 500; color: var(--ink-2); }
+.trail code, .launch__step code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
+.trail__end { flex: none; margin-left: auto; font-size: 12px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+.trail li[data-on] .trail__dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 24%, transparent); }
+.trail li[data-on] b { color: var(--ink); }
+
+/* The Wall: its bar, then a tile per session, what waits on you first. */
+.wall__bar { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; overflow: hidden; white-space: nowrap; }
+.wall__name { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; }
+.wall__seg { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--well); }
+.wall__seg > span { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.wall__seg > span.is-on { background: var(--plate); color: var(--ink); }
+.wall__seg i { font-style: normal; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+.wall__hint { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 12px; color: var(--ink-3); }
+.wall__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 2px 14px 14px; }
+.wt { display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 272px; padding: 10px 12px 12px; border-radius: 12px; background: var(--well); }
+.wt[data-picked] { box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--accent) 60%, transparent); }
+.wt__head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wt__n { display: inline-grid; flex: none; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: var(--plate); color: var(--ink-2); font: 500 11px/1 var(--mono); }
+.wt[data-picked] .wt__n { background: var(--ink); color: var(--surface); }
+.wt__title { flex: 1; min-width: 0; overflow: hidden; font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.wt__state { display: inline-flex; flex: none; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wt__state[data-tone='warn'] { color: var(--warn-text); }
+.wt__state[data-tone='ok'] { color: var(--ok-text); }
+.wt__dot { width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px color-mix(in oklab, var(--warn) 22%, transparent); }
+.wt__rays { display: inline-grid; color: var(--ink-2); }
+.wt__sub { margin-top: -4px; padding-left: 26px; overflow: hidden; font-size: 12px; color: var(--ink-3); text-overflow: ellipsis; white-space: nowrap; }
+/* What it's doing: the latest at the bottom, older steps going under the top edge. */
+.wt__body { position: relative; display: flex; flex: 1; flex-direction: column; justify-content: flex-end; gap: 10px; min-height: 0; padding-top: 4px; overflow: hidden; }
+.wt__body::before { content: ''; position: absolute; inset: 0 0 auto; z-index: 1; height: 26px; background: linear-gradient(var(--well), transparent); pointer-events: none; }
+.wt__card { display: grid; gap: 5px; padding: 10px 12px; border-radius: 12px; background: var(--plate); }
+.wt__lead { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--warn-text); }
+.wt__cmd { font: 400 12.5px/1.45 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.wt__acts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 2px; }
+.wt__brief { display: grid; gap: 9px; min-width: 0; }
+.wt__leadline { font-size: 13.5px; font-weight: 500; line-height: 1.45; }
+.wt__points { display: grid; gap: 4px; }
+.wt__points li { position: relative; padding-left: 14px; overflow: hidden; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); text-overflow: ellipsis; white-space: nowrap; }
+.wt__points li::before { content: ''; position: absolute; top: 0.68em; left: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--ink-4); }
+.wt__files { display: grid; gap: 1px; padding-top: 7px; box-shadow: inset 0 1px 0 var(--hair); }
+.wt__files li { display: flex; align-items: center; gap: 6px; min-width: 0; height: 22px; font-size: 12.5px; color: var(--ink-3); }
+.wt__fname { color: var(--ink-2); }
+.wt__fdir { font-size: 12px; color: var(--ink-4); }
+.wt__files .lines { margin-left: auto; }
+.wt__foot { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; min-height: 30px; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.wt__field { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; height: 32px; padding: 0 3px 0 10px; border-radius: 10px; background: var(--plate); font-size: 13px; color: var(--ink-4); }
+.wt__field > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wt__send { display: inline-grid; flex: none; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--act); color: var(--act-ink); opacity: 0.4; }
+.wt__vf { display: inline-flex; align-items: center; gap: 5px; }
+.wt__grow { flex: 1; }
+.wt__settle { margin-right: -6px; }
+@media (max-width: 1023px) {
+  .wall__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wt:nth-child(2) { display: none; }
+  .wall__hint { display: none; }
+}
+@media (max-width: 600px) {
+  .wall__grid { grid-template-columns: minmax(0, 1fr); }
+  /* A tile as tall as what it holds: the brief and the ask read whole on a phone. */
+  .wt { height: auto; }
+  .wt__body::before { content: none; }
+  .wall__count { display: none; }
+  .wall__seg > span:nth-child(n + 3) { display: none; }
+}
+
+/* Who sent whom: the header's crew, the fan-out under the lead's work, the composer's line. */
+.crew { display: flex; flex-direction: column; }
+.crew__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 50px; padding: 0 14px 0 18px; }
+.crew__session { min-width: 0; overflow: hidden; font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.crew__chip { display: inline-flex; flex: none; align-items: center; gap: 7px; height: 28px; padding: 0 9px 0 4px; border-radius: 999px; background: var(--well); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+.crew__quiet { font-weight: 400; color: var(--ink-3); }
+.faces { display: inline-flex; flex: none; }
+.faces > span { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--plate); color: var(--ink-2); box-shadow: 0 0 0 2px var(--well); }
+.faces > span + span { margin-left: -5px; }
+.faces > span[data-lead] { color: var(--ink); }
+.crew__thread { display: flex; flex-direction: column; gap: 10px; padding: 4px 18px 16px; }
+.crew__ask { align-self: flex-end; max-width: 82%; padding: 8px 13px; border-radius: 14px; background: var(--well); font-size: 13px; line-height: 1.45; }
+.crew__who { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-3); }
+.crew__who b { font-weight: 600; color: var(--ink); }
+.crew__rays { display: inline-grid; color: var(--ink-2); }
+.fan { display: grid; gap: 7px; }
+.fan__h { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.fan__kids { position: relative; display: grid; gap: 4px; margin-left: 6px; padding-left: 16px; }
+.fan__kids::before { content: ''; position: absolute; left: 0; top: 0; bottom: 19px; width: 1.5px; border-radius: 1px; background: var(--plate); }
+.fan__kid { position: relative; display: grid; gap: 3px; min-width: 0; padding: 8px 11px; border-radius: 10px; background: var(--well); }
+.fan__kid::before { content: ''; position: absolute; left: -16px; top: 18px; width: 13px; height: 1.5px; background: var(--plate); }
+.fan__1, .fan__2 { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12.5px; }
+.fan__1 b { flex: none; font-weight: 600; }
+.fan__task { flex: 1; min-width: 0; overflow: hidden; color: var(--ink-3); text-overflow: ellipsis; white-space: nowrap; }
+.fan__m { flex: none; font-size: 12px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+.fan__2 { padding-left: 39px; }
+.fan__now { flex: 1; min-width: 0; overflow: hidden; color: var(--ink-2); text-overflow: ellipsis; white-space: nowrap; }
+.fan__mark { display: inline-grid; flex: none; place-items: center; width: 14px; height: 14px; color: var(--ok-text); }
+.fan__mark i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 24%, transparent); }
+.fan__kind { display: inline-grid; flex: none; color: var(--ink-3); }
+.crew__foot { margin: 0 12px; border-radius: 16px 16px 0 0; background: var(--well); }
+.crs { display: flex; align-items: center; gap: 8px; min-width: 0; height: 40px; margin: 0 6px; padding: 0 4px 0 6px; font-size: 12.5px; box-shadow: inset 0 -1px 0 var(--hair); }
+.crs .faces > span { width: 18px; height: 18px; background: var(--plate); }
+.crs__t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crs__i { display: inline-grid; flex: none; color: var(--ink-3); }
+.crs__stop { display: inline-flex; flex: none; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--plate); font-size: 12px; font-weight: 500; }
+.crew__box { display: flex; align-items: center; justify-content: space-between; height: 54px; padding: 0 10px 0 16px; font-size: 13.5px; color: var(--ink-4); }
+.crew__stop { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--act); color: var(--act-ink); }
+@media (max-width: 600px) {
+  .crew__session { display: none; }
+  .fan__task { display: none; }
+  .fan__1 .fan__m { margin-left: auto; }
+  .crs { height: auto; padding: 9px 4px 9px 6px; }
+  .crs__t { white-space: normal; line-height: 1.4; }
+  .crs .crew__quiet, .crs__i { display: none; }
+}
+
+/* Dev servers: the agent's step, then the Browser's list from launch.json. */
+.launch { display: grid; gap: 10px; padding: 12px 14px 0; }
+.launch__step { padding: 0 6px; }
+.launch__br { padding: 0 10px 14px; border-radius: 14px 14px 0 0; background: var(--well); }
+.launch__tab { display: flex; align-items: center; gap: 7px; height: 40px; padding: 0 4px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.launch__rows { display: grid; gap: 4px; }
+.launch__rows li { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 11px; background: var(--plate); }
+.launch__main { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; color: var(--ink-3); }
+.launch__rows li[data-on] .launch__main > svg { color: var(--ok-text); }
+.launch__text { display: grid; flex: 1; min-width: 0; }
+.launch__name { font-size: 13px; font-weight: 500; color: var(--ink); }
+.launch__note { overflow: hidden; font-size: 12px; color: var(--ink-3); text-overflow: ellipsis; white-space: nowrap; }
+.launch__port { flex: none; font-size: 12px; color: var(--ink-3); }
+.launch__go { display: inline-grid; flex: none; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--ink-2); }
+.launch__foot { margin-top: 10px; padding: 0 4px; font-size: 12px; line-height: 1.45; color: var(--ink-4); }
+
+/* A DeepSeek Harness plugin's card: where it's from, what it is, what its program may do. */
+.dsh { display: grid; gap: 3px; padding: 18px 18px 16px; }
+.dsh__title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.dsh__ask { display: flex; align-items: center; gap: 9px; margin: 8px 0 10px; font-size: 12.5px; color: var(--ink-2); }
+.dsh__icon { display: inline-grid; flex: none; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--well); color: var(--ink-2); }
+.dsh__fields { display: grid; gap: 1px; padding: 4px; border-radius: 12px; background: var(--well); }
+.dsh__fields div { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); gap: 10px; padding: 7px 8px; font-size: 12.5px; }
+.dsh__fields dt { color: var(--ink-3); }
+.dsh__fields dd { line-height: 1.45; color: var(--ink); }
+.dsh__fields code { color: var(--ink); }
+.dsh__foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }

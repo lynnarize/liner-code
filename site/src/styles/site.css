@@ -470,6 +470,10 @@ html.gl-on.motion .intro__home { display: none; }
 .cl__body ul { display: grid; gap: 12px; margin-bottom: 14px; }
 .cl__body li { padding-left: 20px; position: relative; }
 .cl__body li::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 7px; height: 7px; border-radius: 50%; background: var(--tide); }
+/* A list inside an item (each tool's agents, say): smaller steps, open dots. */
+.cl__body li ul { gap: 8px; margin: 10px 0 0; }
+.cl__body li li::before { background: none; box-shadow: inset 0 0 0 1.5px var(--tide); }
+.cl__body li p { margin: 10px 0 0; }
 .cl__body strong { font-weight: 600; }
 .cl__body code { font-size: 0.88em; padding: 1px 5px; border-radius: 5px; background: var(--ground-2); }
 .cl__body a { color: var(--tide-ink); text-decoration: underline; text-underline-offset: 3px; }
@@ -649,6 +653,42 @@ html.gl-on.motion .intro__home { display: none; }
 @media (max-width: 767px) {
   .peek { height: 260px; }
   .peek img { width: 200%; }
+}
+
+/* What came in 0.2.4: "New in" over the title, and the app's own parts drawn at their size
+   (ui.css, .frag), rising from the card's foot as the pictures do. Two cards go across the grid:
+   the Wall, its words over three tiles, and who sent whom, its words beside the session. */
+.card__new {
+  align-self: flex-start; display: inline-flex; align-items: center; height: 26px; padding: 0 11px; margin-bottom: 14px;
+  border-radius: 999px; font-size: var(--t-small); font-weight: 500; color: var(--tide-ink); background: color-mix(in oklab, var(--tide) 13%, transparent);
+}
+.card__text code { font-size: 0.84em; padding: 1px 5px; border-radius: 5px; background: color-mix(in oklab, var(--text) 8%, transparent); white-space: nowrap; }
+.card__keys { display: inline-flex; gap: 4px; margin-left: 14px; vertical-align: 0.14em; }
+.card__keys kbd {
+  display: grid; place-items: center; min-width: 1.7em; height: 1.7em; padding: 0 0.3em; border-radius: 0.34em;
+  font-family: var(--f); font-size: 0.5em; font-weight: 600; letter-spacing: 0; background: color-mix(in oklab, var(--text) 9%, transparent);
+}
+.card--span { grid-column: 1 / -1; min-height: 0; }
+.card__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px calc(var(--g) * 3); flex-wrap: wrap; }
+.card__lead { display: flex; flex-direction: column; max-width: 38em; }
+.card__aside { max-width: 25em; font-size: var(--t-small); color: var(--text-2); }
+.card--crew { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: calc(var(--g) * 2.5); align-items: end; }
+.crew__text { display: flex; flex-direction: column; align-self: start; padding-bottom: var(--pad); }
+.crew__show { padding-top: 0; }
+/* Each tool's agents, as bands stepped in tone. */
+.crew__tools { display: grid; gap: 3px; margin-top: 28px; }
+.crew__tools div { display: grid; grid-template-columns: 7.4em minmax(0, 1fr); gap: 14px; padding: 11px 16px; background: color-mix(in oklab, var(--ground-2) 40%, var(--ground)); }
+.crew__tools div:nth-child(even) { background: color-mix(in oklab, var(--ground-2) 70%, var(--ground)); }
+.crew__tools dt { font-size: var(--t-small); font-weight: 600; color: var(--tide-ink); }
+.crew__tools dd { font-size: var(--t-small); line-height: 1.45; color: var(--text-2); }
+@media (max-width: 1023px) {
+  .card--crew { grid-template-columns: minmax(0, 1fr); }
+  .crew__text { padding-bottom: 0; }
+  .crew__show { padding-top: 36px; }
+}
+@media (max-width: 600px) {
+  .card__keys { display: none; }
+  .crew__tools div { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 11px 14px; }
 }
 
 /* A real macOS window capture: its own corners and shadow, no frame of ours. */

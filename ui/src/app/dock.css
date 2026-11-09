@@ -597,11 +597,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-sb-apps .lc-sb-nav[data-on] {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-  font-weight: 600;
-}
 
 /* Add-ons' menu, under the entry and as wide as it: Browse add-ons, and Create your add-on. */
 .lc-sb-more-pop > .lc-sb-nav[data-open]:not([data-on]) {

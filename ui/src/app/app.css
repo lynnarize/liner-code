@@ -1206,10 +1206,17 @@ html[data-native="mac"] .lc-sb-head {
   color: inherit;
   cursor: pointer;
 }
-.lc-sb-pt > span:not(.lc-pjb) {
+.lc-sb-pt > span:not(.lc-pjb, .lc-sb-picon) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* By folder, a project's header leads with its folder, in the icons' grey. */
+.lc-sb-picon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--l-ink-4);
 }
 .lc-sb-pt > svg {
   flex: none;
@@ -1234,36 +1241,63 @@ html[data-native="mac"] .lc-sb-head {
   }
 }
 /*
-  The badge: two letters on the project's own hue (set on it as --lc-pjb-h), lit from the top
-  left like an app icon: the hue a step lighter there, deeper and richer at the foot, with a
-  hairline of light round its edge.
+  The badge: a project's two letters in grey on a tint of the ink, the same for every project
+  (Liner 2.0: no colour per item). A session's state is the only colour it carries: a dot at its
+  corner, ringed in what's under it.
 */
 .lc-pjb {
+  position: relative;
   display: grid;
   flex: none;
   place-items: center;
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  /* Flat: one colour of its own, no gradient, rim or shadow (Liner 2.0). */
-  background: oklch(0.6 0.16 var(--lc-pjb-h, 250));
+  background: color-mix(in oklab, var(--l-ink) 9%, transparent);
   font-size: 8.5px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   letter-spacing: 0.02em;
-  color: #fff;
+  color: var(--l-ink-2);
 }
 .lc-pjb[data-none] {
-  background: var(--l-ink-4);
-  box-shadow: none;
-  color: var(--l-surface);
-  text-shadow: none;
+  color: var(--l-ink-4);
 }
-.lc-pjb[data-small] {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  font-size: 6.5px;
+.lc-pjb-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--l-accent);
+  box-shadow: 0 0 0 2px var(--lc-ground);
+  animation: lc-dot-in 320ms var(--l-ease-enter) backwards;
+}
+.lc-pjb-dot[data-k="warn"] {
+  background: var(--l-warn);
+}
+.lc-pjb-dot[data-k="danger"] {
+  background: var(--l-danger);
+}
+/* At work, the dot breathes: slowly, and not at all for reduced motion. */
+.lc-pjb-dot[data-k="work"] {
+  animation:
+    lc-dot-in 320ms var(--l-ease-enter) backwards,
+    lc-dot-work 1.8s ease-in-out 320ms infinite;
+}
+@keyframes lc-dot-work {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-pjb-dot[data-k="work"] {
+    animation: none;
+  }
+}
+.lc-sb-row[aria-current] .lc-pjb-dot {
+  box-shadow: 0 0 0 2px var(--lc-plate);
 }
 .lc-sb-plab > .lc-sb-pneeds {
   margin-left: auto;
@@ -1515,89 +1549,34 @@ html[data-native="mac"] .lc-sb-head {
     background: var(--l-wash-2);
   }
 }
-/* Snoozed and Settled: a tray of two docked under the list, the open shelf sliding up above it. */
-.lc-sb-dock {
-  display: grid;
-}
-.lc-sb-shelf {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: min(40vh, 320px);
-  margin-inline: calc(var(--lc-ring) * -1);
-  padding: 0 var(--lc-ring) 6px;
-  overflow: hidden auto;
-  scrollbar-width: none;
-}
-.lc-sb-shelf-note {
-  margin: 0 8px 2px;
-  font-size: 11.5px;
-  line-height: 16px;
-  color: var(--l-ink-3);
-}
-/* Settled is the low shelf: its rows sit back until you point at one. */
-.lc-sb-shelf[data-shelf="settled"] .lc-sb-row:not([aria-current]):not(:hover):not(:focus-within) {
-  opacity: 0.62;
-}
-.lc-sb-shelf .lc-sb-row[aria-current] {
-  background: var(--lc-plate);
-  box-shadow: none;
-}
-/* Snoozed and Settled: two quiet pills side by side; the open shelf's pill is a plate. */
-.lc-sb-tray {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-.lc-sb-tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 30px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--lc-well);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--l-ink-2);
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    box-shadow 160ms ease,
-    color 160ms ease;
-}
-.lc-sb-tab > svg {
-  flex: none;
-  color: var(--l-ink-3);
-}
-.lc-sb-tab > span {
-  margin-left: auto;
-  font-weight: 400;
-  color: var(--l-ink-3);
-  font-variant-numeric: tabular-nums;
-}
-.lc-sb-tab[data-empty] {
-  color: var(--l-ink-3);
-}
-.lc-sb-tab[aria-pressed="true"] {
-  background: var(--lc-plate);
-  box-shadow: none;
-  color: var(--l-ink);
-}
-.lc-sb-tab[aria-pressed="true"] > svg {
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-sb-tab:not([aria-pressed="true"]):hover {
-    background: var(--lc-plate);
-    color: var(--l-ink);
-  }
-}
+/* Settings' places, when the filter finds none. */
 .lc-sb-empty {
   margin: 8px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+}
+/* A list with nothing in it: in the middle of its room, an icon, what's missing and how to fill it. */
+.lc-sb-none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 40px 0 0;
+  padding: 0 16px;
+  text-align: center;
+  animation: lc-row-in 220ms ease-out backwards;
+}
+.lc-sb-none > svg {
+  margin-bottom: 4px;
+  color: var(--l-ink-4);
+}
+.lc-sb-none > b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-sb-none > span {
   font-size: 12.5px;
   line-height: 18px;
   color: var(--l-ink-3);
@@ -1649,11 +1628,10 @@ html[data-native="mac"] .lc-sb-head {
   cursor: pointer;
 }
 /*
-  The sidebar after TasteCode v0.5, in Liner 2.0: your places as rows on top (New session with
-  search at its end, Routines, Add-ons), then Apps, Needs you, Pinned and Projects, each only while
-  it has rows. A session is one line: its maker's mark, the title, and at the end a mark while it
-  works or waits, or how long ago. The shelves are one quiet row; the foot is you, then the team,
-  your plans' limits and Settings.
+  The sidebar in Liner 2.0: your places as rows on top (New session with search at its end,
+  Routines), then Add-ons with your apps, then what the list shows (All projects, By folder,
+  Snoozed, Settled, Archive) with the filter under it, and the list taking the room down to the
+  foot: you, then the team, your plans' limits and Settings.
 */
 .lc-sb-top {
   display: flex;
@@ -1701,64 +1679,6 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-ndot[data-k="danger"] {
   background: var(--l-danger);
 }
-.lc-sb-need {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 30px;
-  padding: 0 10px 0 15px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink);
-  text-align: left;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-.lc-sb-need[aria-current] {
-  background: var(--l-wash);
-}
-@media (hover: hover) {
-  .lc-sb-need:hover {
-    background: var(--l-wash-2);
-  }
-}
-.lc-sb-nt {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-sb-need .lc-sb-nend {
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lc-sb-projs {
-  margin-bottom: -10px;
-}
-.lc-sb-labacts {
-  display: inline-flex;
-  gap: 2px;
-}
-.lc-sb-labacts .lc-sb-add {
-  margin-left: 0;
-}
-.lc-sb-labacts .lc-sb-add[aria-pressed="true"] {
-  background: var(--lc-plate);
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-sb-labacts .lc-sb-add:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
 /* One line per session. */
 .lc-sb .lc-sb-pick {
   display: flex;
@@ -1796,62 +1716,133 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h > :is(b, .lc-sb-rename) {
   margin-right: 64px;
 }
-/* Under its project's header a session sits in a step, its mark under the badge's letters. */
-.lc-sb-proj .lc-sb-row .lc-sb-pick {
-  padding-left: 22px;
+/* By folder, a session sits in a step under its project's header, its title under the folder's name. */
+.lc-sb-proj .lc-sb-row:not([data-two]) .lc-sb-pick {
+  padding-left: 32px;
 }
 .lc-sb .lc-sb-forks {
   right: 40px;
   bottom: 7px;
 }
-/* The shelves: one quiet row at the end of the list. */
-.lc-sb .lc-sb-tray {
-  display: flex;
-  gap: 2px;
-}
-.lc-sb .lc-sb-tab {
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 9px;
-  background: none;
-  font-weight: 400;
-  color: var(--l-ink-3);
-}
-.lc-sb .lc-sb-tab > span {
-  margin-left: 2px;
-}
-/* In Settled, a project's header says how many of its sessions are there; its bring-back comes as you point at it. */
-.lc-sb-plab > .lc-sb-pcount {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--l-ink-3);
-  font-variant-numeric: tabular-nums;
-}
-.lc-sb-plab > .lc-sb-pcount + .lc-sb-add {
-  margin-left: 4px;
-}
-.lc-sb-shelf .lc-sb-proj + .lc-sb-proj {
-  margin-top: 2px;
-}
 /* A project's header: Settle the project, then +, both as you point at it. */
 .lc-sb-plab > .lc-sb-add + .lc-sb-add {
   margin-left: 2px;
 }
-.lc-sb .lc-sb-tab[aria-pressed="true"] {
+/*
+  Two lines a session, in All projects and where sessions are put away (D, after the November
+  study): its project's letters, its title with the maker's mark at the end, and under it its
+  project, how it stands and how long ago. Pointing at it, the mark and the time give their place
+  to Pin, Snooze and Settle.
+*/
+.lc-sb .lc-sb-row[data-two] .lc-sb-pick {
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 10px;
+}
+.lc-sb-row[data-two] .lc-pjb {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  font-size: 9px;
+}
+.lc-sb-tx {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.lc-sb .lc-sb-row[data-two] .lc-sb-h {
+  flex: none;
+  height: 19px;
+  gap: 6px;
+}
+.lc-sb-row[data-two] .lc-sb-lead {
+  width: auto;
+}
+.lc-sb-st > [data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-sb-st > [data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.lc-sb-row[data-two]:is(:hover, :focus-within) .lc-sb-lead,
+.lc-sb-row[data-two]:has(.lc-sb-acts [data-open]) .lc-sb-lead {
+  display: none;
+}
+/* Add-ons, apart from your places: its ··· at the end of its label, your apps under it. */
+.lc-sb-labpop {
+  margin-left: auto;
+}
+.lc-sb-labpop > .lc-sb-add {
+  margin-left: 0;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.lc-sb-labpop > .lc-sb-add:is([data-open], [aria-current]) {
   background: var(--lc-plate);
   color: var(--l-ink);
 }
-/* The shelf's fold is a grid: held to the sidebar's width, so a long title ends in an ellipsis
-   rather than pushing its row past the edge. */
-.lc-sb-dock,
-.lc-sb-dock > .lc-fold {
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
+@media (hover: hover) {
+  .lc-sb-labpop > .lc-sb-add:not([data-open], [aria-current]):hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
 }
-.lc-sb-dock > .lc-fold > div,
-.lc-sb-shelf {
-  min-width: 0;
+/* The sidebar's menus: their icons in the icons' grey, the picked one's tick in the accent. */
+.lc-sb-menu {
+  display: contents;
+}
+.lc-sb-menu .lc-row-tick {
+  color: var(--l-ink-3);
+}
+.lc-sb-menu .lc-row[data-on] .lc-row-tick {
+  color: var(--l-ink);
+}
+/* What the list shows, how it's sorted and a new project; the filter field under them. */
+.lc-sb-views {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+}
+.lc-sb-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+}
+.lc-sb-bar .lc-ib {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+.lc-sb-view {
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.lc-sb-view > svg {
+  color: var(--l-ink-3);
+}
+.lc-sb-view[data-open] {
+  background: var(--lc-plate);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-sb-view:not([data-open]):hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
 }
 /* A new Liner Code, over the foot. */
 .lc-sb-update {

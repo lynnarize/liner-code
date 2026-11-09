@@ -24,6 +24,8 @@ import { topicText, TOPICS, type Topic } from "./creator.ts";
 import type { Offers } from "./offers.ts";
 import { DESIGN_FRAME, keepOutOfGit, sizeOf, type DesignItem, type Designs } from "./designs.ts";
 import { run } from "./exec.ts";
+import type { LaunchEntry, Launcher } from "./launch.ts";
+import { commandRisk } from "./risk.ts";
 import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
 import { remember, searchSessions } from "./memory.ts";
 import { uid, type Store } from "./store.ts";
@@ -52,6 +54,14 @@ export function linerTitle(tool: string, input: unknown): string {
       return `Type into ${/^\d+$/.test(s(a.target)) ? `field ${s(a.target)}` : `“${s(a.target)}”`} in the Browser`;
     case "browser_screenshot":
       return "Look at the Browser";
+    case "server_start":
+      return `Run ${s(a.name) || "a dev server"} from launch.json`;
+    case "server_stop":
+      return s(a.name) ? `Stop ${s(a.name)}` : "Stop the dev servers";
+    case "server_list":
+      return "List the dev servers";
+    case "server_logs":
+      return `Read ${s(a.name) || "a dev server"}'s output`;
     case "device_list":
       return "List the simulators";
     case "device_screenshot":
@@ -158,6 +168,8 @@ export type AddonHost = {
   askLiner(threadId: string, ask: { tool: string; title: string; description?: string; risk: Risk; fields: { label: string; value: string }[]; addon?: Extract<Item, { kind: "approval" }>["addon"] }): { id: string; answer: Promise<{ allow: boolean; reason?: string; scope?: "all" | "project" }> };
   relink(): Promise<Map<string, "now" | "next">>;
   readOnly(threadId: string): boolean;
+  /** Nobody is there to answer a card: a routine's step, or a cost test. */
+  unwatched?(threadId: string): boolean;
   whoIs(threadId: string): string;
   toolOf(threadId: string): { label: string; family: string };
 };
@@ -181,6 +193,13 @@ const CHECK_AI: NonNullable<PanelEnv["ai"]> = {
 
 /** The tool for Liner Code's own requests (an install card), on the timeline. */
 export const ADDON_TOOL = "liner.addon";
+/** The tool for an agent's request to run a server from launch.json, on the timeline. */
+export const SERVER_TOOL = "liner.server";
+
+/** A launch.json entry's command, as a line to read. */
+export const commandLine = (e: Pick<LaunchEntry, "command" | "args">) => [e.command ?? "", ...e.args].map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : JSON.stringify(a))).join(" ");
+/** Lines that read like an error, as Claude Code's preview_logs picks them. */
+const ERRORISH = /error|exception|failed|fatal|cannot|unable|ERR!/i;
 
 /** The size a panel is drawn at to check it, by where it opens: the dock's width, a tab's, a page's. */
 export const CHECK_SIZE: Record<PanelPlace, { width: number; height: number }> = { dock: { width: 428, height: 780 }, tab: { width: 900, height: 720 }, page: { width: 1100, height: 800 } };
@@ -218,6 +237,8 @@ export class AgentTools {
   host?: AddonHost;
   /** "Make it an app" cards, and the background sessions that make them. */
   offers?: Offers;
+  /** The dev servers of the sessions' launch.json files. */
+  launch?: Launcher;
   /** Panels whose card is up: the draft exactly as asked about, which the preview draws and Add it installs. */
   readonly pending = new Map<string, { threadId: string; manifest: PanelManifest; files: PanelFiles; storage: Record<string, unknown> }>();
   /** Panels being drawn out of sight for addon_check, by their one-time token. */
@@ -329,6 +350,28 @@ export class AgentTools {
           const png = await this.browser<string>(threadId, "screenshot", {});
           return { content: [{ type: "image", data: png, mimeType: "image/png" }] };
         }
+        case "server_start":
+          return await this.serverStart(threadId, args);
+        case "server_stop": {
+          const launch = this.launcher();
+          const name = String(args.name ?? "").trim() || undefined;
+          const n = await launch.stop(threadId, name);
+          return text(name ? (n ? `Stopped ${name}.` : `${name} wasn't running.`) : n ? `Stopped ${n} ${n === 1 ? "server" : "servers"}.` : "No server from .claude/launch.json was running.");
+        }
+        case "server_list":
+          return text(await this.serverList(threadId));
+        case "server_logs": {
+          const launch = this.launcher();
+          const name = String(args.name ?? "").trim();
+          if (!name) return fail("Say which server, as name.");
+          launch.entry(threadId, name);
+          const log = launch.logs(threadId, name);
+          const search = String(args.search ?? "").trim().toLowerCase();
+          const picked = log.lines.filter((l) => (!search || l.toLowerCase().includes(search)) && (!args.errors || ERRORISH.test(l)));
+          const lines = picked.slice(-Math.max(1, Math.min(200, Math.round(Number(args.lines) || 50))));
+          const head = log.running ? `${name} is running.` : log.ended ? `${name} isn't running: ${log.ended}.` : `${name} hasn't run since Liner Code started.`;
+          return text(`${head}\n\n${lines.length ? lines.join("\n") : log.lines.length ? "(No lines match.)" : "(No output.)"}`);
+        }
         case "device_list": {
           const d = await devices(this.env);
           if (!d.ready) return fail(d.detail ?? "Xcode's simulators aren't set up on this Mac.");
@@ -397,6 +440,84 @@ export class AgentTools {
       }
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  private launcher() {
+    if (!this.launch) throw new Error("Dev servers from launch.json aren't available in this session.");
+    return this.launch;
+  }
+
+  /** The folder's launch.json servers, for the agent. */
+  private async serverList(threadId: string) {
+    const { servers, file, error } = await this.launcher().list(threadId);
+    if (error) return error;
+    if (!file) return 'This folder has no .claude/launch.json. Write one to run a dev server with server_start: {"version": "0.0.1", "configurations": [{"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173}]}';
+    if (!servers.length) return ".claude/launch.json lists no servers.";
+    return servers
+      .map((v) => {
+        const where = `localhost:${v.at ?? v.port}`;
+        if (v.status !== "stopped") return `${v.name} · ${v.status} on ${where}${v.at && v.at !== v.port ? ` (its port ${v.port} was taken)` : ""}${v.changed ? " · its entry changed since it started: restart it with server_stop, then server_start" : ""}`;
+        if (v.problem) return `${v.name} · can't run: ${v.problem}`;
+        return `${v.name} · stopped (port ${v.port})${v.ended ? `: ${v.ended.reason}` : ""}`;
+      })
+      .join("\n");
+  }
+
+  /**
+    Runs a server from launch.json, once the person would have it run: one they ran (or let run)
+    in this folder goes ahead, and so does any in Full access, short of what can't be undone;
+    another comes to them as a card. Then it's opened in the Browser.
+  */
+  private async serverStart(threadId: string, args: Record<string, unknown>): Promise<McpResult> {
+    const launch = this.launcher();
+    let name = String(args.name ?? args.server ?? "").trim();
+    if (!name) {
+      const { servers } = await launch.list(threadId);
+      if (servers.length !== 1) return fail(servers.length ? `Say which server, as name: ${servers.map((v) => v.name).join(", ")}.` : "Say which server, as name, once .claude/launch.json lists it.");
+      name = servers[0].name;
+    }
+    const e = launch.entry(threadId, name);
+    // One that runs already (you started it, or it came back by itself) is only used.
+    const running = (await launch.list(threadId)).servers.some((v) => v.name === name && v.status !== "stopped" && !v.changed);
+    if (!running && !launch.trusts(threadId, e)) {
+      const line = commandLine(e);
+      const risk = commandRisk(line);
+      const host = this.host;
+      if (host?.unwatched?.(threadId)) return fail(`No one is here to say yes, and nobody has run ${name} from this folder's launch.json before, so it didn't run. Leave it for the person.`);
+      const t = this.store.thread(threadId);
+      const free = t.access === "full" && risk !== "high" && !host?.readOnly(threadId);
+      if (!free) {
+        if (!host) return fail(`${name} hasn't been run here before, and there's no one to ask. The person can run it from the Browser.`);
+        const { answer } = host.askLiner(threadId, {
+          tool: SERVER_TOOL,
+          title: `Run ${name} from launch.json`,
+          description: "Starts a dev server from .claude/launch.json in this folder and opens it in the Browser. Liner Code stops it when no session here needs it, and an entry you allow runs again without asking.",
+          risk,
+          fields: [
+            { label: "Command", value: line },
+            { label: "Where", value: e.cwd },
+            { label: "Port", value: String(e.port) },
+          ],
+        });
+        const a = await answer;
+        if (!a.allow) return fail(`The person said no to running ${name}${a.reason ? `: ${a.reason}` : "."} Don't start it another way.`);
+      }
+    }
+    let up = await launch.start(threadId, name, e.raw);
+    if (up.status === "starting") up = (await launch.settle(threadId, name, 60_000)) ?? up;
+    if (up.status === "stopped") {
+      const why = up.ended ? [up.ended.reason, ...(up.ended.tail ?? []).slice(-6)].join("\n") : "It stopped.";
+      return fail(`${name} didn't stay up.\n${why}\n\nserver_logs has all it printed.`);
+    }
+    const port = up.at ?? up.port;
+    const moved = port !== up.port ? ` (its port ${up.port} was taken, so it moved)` : "";
+    const said = `${name} is ${up.status === "starting" ? "starting, and not answering yet," : "running"} on localhost:${port}${moved}, from .claude/launch.json. Liner Code stops it when no session in this folder needs it; don't start it from your shell as well.`;
+    try {
+      return text(`${said}\n\nIn the Browser now:\n${described(await this.browser<PageRead>(threadId, "open", { url: `localhost:${port}` }))}`);
+    } catch (err) {
+      if (/window didn't answer/.test(String(err)) || NOT_HERE.test(String(err))) return text(`${said}\n\n${await this.fetched(threadId, `localhost:${port}`).catch((x) => `(It didn't answer a request: ${x instanceof Error ? x.message : String(x)})`)}`);
+      return text(`${said}\n\n(The Browser couldn't open it: ${err instanceof Error ? err.message : String(err)})`);
     }
   }
 

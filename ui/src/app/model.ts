@@ -199,6 +199,18 @@ export function bucketOf(t: Thread, now = Date.now()): Bucket {
   return needs ? "needs" : "open";
 }
 
+/**
+  On the Wall: a session you've started that works, waits on you, or has finished and isn't settled
+  yet. Snoozed, settled and archived ones stay off it, and so do routines' runs and the cost test's.
+*/
+export const onTheWall = (t: Thread, now = Date.now()) => !t.archived && !t.routine && !t.trial && !t.done && t.turns > 0 && !(t.snoozedUntil && t.snoozedUntil > now);
+/**
+  What the Wall showed last, in its order, and the tile picked: a session opened from it says where
+  it is among them and steps to the one before or after, and coming back picks the tile you left.
+  Here rather than in Wall.tsx, which loads when you first open it.
+*/
+export const wallShown: { ids: string[]; picked: string | null } = { ids: [], picked: null };
+
 /** The line under a session's title, like "Forge · 3 files to review". */
 export function statusLine(t: Thread, who: string): { text: string; warn?: boolean } {
   if (t.status === "running") return { text: `${who} · working` };

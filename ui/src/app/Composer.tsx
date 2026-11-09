@@ -63,6 +63,8 @@ type Props = {
   stripUnder?: ReactNode;
   /** Home: the box's text as it changes, so an add-on ask can switch the task's mode. */
   onText?: (text: string) => void;
+  /** A session: a line at the box's top edge, inside it (who the work waits on). */
+  top?: ReactNode;
 };
 
 /*
@@ -209,7 +211,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, top }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -1084,7 +1086,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         </div>
       )}
 
-      <div className="lc-card">
+      <div className="lc-card" data-top={top ? true : undefined}>
+        {top}
         {files.length > 0 && (
           <div className="lc-files">
             {files.map((f, i) => (

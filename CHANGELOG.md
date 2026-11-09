@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.2.4 (alpha), 2026-11-08
+
+**The Wall:** every live session at once, as tiles you can answer from. And a live page in the
+Browser now costs about what it costs on its own.
+
+### Added
+
+- **The Wall** (⌘⇧O, "The Wall" in the sidebar, or the grid icon in a session's header) shows each
+  session that isn't settled as a tile: its title, project and model, how it stands, and its latest
+  steps, or once it's done, its answer in brief: the first sentence, its main points and the files it
+  changed. What waits on you comes first, then what's working, then what's done, and All, Needs you,
+  Working and Done filter them. From a tile you can allow a request or say no, pick an answer, retry
+  a turn that stopped, settle what's done, or write to it: while it works your words steer it, and
+  while it asks they're your reason or your answer. High-risk requests and plans open the session.
+  1–9 open a tile, the arrows pick one, typing writes to it, and Esc goes back. A session you open
+  from the Wall says where it sits ("3 of 7"), steps to the next tile, and Esc takes you back.
+- **Dev servers from `.claude/launch.json`**, the file Claude Code reads, are listed in the Browser,
+  each a press from running, and the server icon in its bar restarts or stops them. As Claude Code's
+  do, they stop by themselves: after half an hour with no session in their folder on screen and
+  none working, when the session that started one is archived, when another needs the port, and
+  when Liner Code quits. One stopped while you were away, or by the quit, starts again when you
+  open a session in its folder, unless its entry in launch.json changed since you ran it.
+- **Agents start those servers too**, with `server_start`, as Claude Code's do with `preview_start`,
+  instead of from their shell: the page opens in the Browser beside the session, and the server
+  stops and starts again on the same rules. `server_logs` reads what it printed, `server_list` and
+  `server_stop` do what they say. An entry you ran, or allowed once, runs again without asking;
+  a command nobody has run from the file asks you first (in Full access, only one that can't be
+  undone), and never runs in a routine.
+- **DeepSeek Harness plugins from npm.** In Add add-on, type a DSH plugin's name (`dsh-media-desk`,
+  or `npm i dsh-media-desk`) and it comes in as an add-on. A plugin with a sidebar page, a
+  right-pane tab or a conversation view becomes a page, a dock panel or a tab. Its page runs in a
+  sealed frame under a loader shaped like DSH's, with React and DSH's design tokens drawn in Liner
+  Code's colours. If it has a program of its own, that runs in a separate process, never in the
+  engine. On a Mac it runs under a sandbox: it can't read your keys, your agents' sign-ins or Liner
+  Code's state, or start other apps, and it writes only in its own folder and your Documents,
+  Downloads, Desktop, Pictures, Movies and Music, and even there never a repository's `.git`, a
+  `package.json` or a script that would run later. It still runs as you, so the card asks you to
+  trust where it's from. Its model calls go to a model you pick for it, as an app's do. A bundle
+  that only connects an MCP server becomes a connection, and a key DSH would read from your
+  environment is a key you type on its card. The card says what the plugin's program may do, holds
+  to allow, and lists anything of DSH's that Liner Code doesn't have. A plugin with nothing Liner
+  Code can show, like one that only adds to DSH's own agent, is refused, with the reason.
+- **Who sent whom.** When a model sends agents off (Claude Code's Explore, Test runner and
+  Subagent), they fan out under its work, each on a branch under the one that sent it: what it was
+  sent to do, what it's doing now, its model, its tools, tokens and time, and once it's done, what it
+  sent back. The session's header says who leads and how many work for it ("Sonnet 5.5 + 3 agents")
+  and opens the whole crew as a list; the composer says who waits on how many ("Sonnet 5.5 is
+  waiting on 2 agents"); the sidebar row says it too. The Agents surface (⌘⇧A) shows the crew as a
+  tree (you, the mode, each model's part, the agents each sent, the Reviewer), a timeline of who
+  worked when, with a model's wait on its agents hatched, the tasks with who took each, and what
+  runs in the background. Open an agent to read its brief, its steps and its report; Stop it stops
+  that agent alone and the turn goes on. The same goes for each tool's agents:
+  - Claude Code's agents show their steps, model, tokens and report as they work. A word for one
+    goes to the model that sent it, since Claude Code's agents can't take one mid-run.
+  - Codex's agents (spawnAgent) show their thread's own steps, model, tokens and last words, and
+    a word for one goes straight to it, read at its next step.
+  - Hermes's delegations become a row per task, with its goal, role, model, report and the tools it
+    used, from what Hermes says over ACP; ACP can't show their steps live, or stop one alone.
+  - OpenCode's subagents stay off, as before: its ACP drops their permission requests, so they'd
+    get past your access level.
+  The Demo agent sends three when you mention agents, and they take a word as Codex's do.
+
+### Fixed
+
+- A live page in the Browser, such as a canvas game, took about half as much again of the CPU and
+  three times the GPU as the same page alone. The composer's glass, the stage's round corners and
+  the page running on the app's own thread were each to blame; now it costs about what it costs
+  alone.
+
 ## 0.2.3 (alpha), 2026-11-06
 
 **Update from 0.2.2 if you have it.** On a Mac Liner Code does it by itself (Restart to update), or

@@ -137,7 +137,7 @@ export const onNotify = (fn: (e: NotifyEvent) => void) => {
   agent using a Browser, a design's file changing. A design shown (an item) goes to the state and
   here too, so the session can bring its Design surface up.
 */
-type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "settled" | "agent.browser" | "design.changed" | "panel.ai" }> | Extract<EngineEvent, { type: "item" }>;
+type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "launch" | "settled" | "agent.browser" | "design.changed" | "panel.ai" }> | Extract<EngineEvent, { type: "item" }>;
 const streamListeners = new Set<(e: Stream) => void>();
 export const onStream = (fn: (e: Stream) => void) => {
   streamListeners.add(fn);
@@ -245,6 +245,7 @@ function apply(e: Numbered) {
     case "term":
     case "term.exit":
     case "devlog":
+    case "launch":
     case "settled":
     case "agent.browser":
     case "design.changed":

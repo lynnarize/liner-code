@@ -17,7 +17,7 @@ import { emptyUsage } from "../../contracts/src/index.ts";
 import { providers, Runtime } from "../src/runtime.ts";
 import { applyTaskTool, claude, resultError, sdk, signedOut, withFiles, type TaskList } from "../src/providers/claude.ts";
 import { pdfPages } from "../src/providers/attachments.ts";
-import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink, type WakeTurn } from "../src/providers/types.ts";
+import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink, type WakeTurn } from "../src/providers/types.ts";
 import { Store } from "../src/store.ts";
 
 const info = (id: ProviderInfo["id"], models: string[]): ProviderInfo => ({ id, label: id === "claude" ? "Claude Code" : id, available: true, adapter: true, login: "", models: models.map((m) => ({ id: m, label: m, description: "" })), supports: { approvals: true, resume: true, effort: true, plan: true } });
@@ -481,6 +481,79 @@ test("claude: a steer moves running subagents to the background, then goes in no
     assert.equal(over, false);
     made[0].emit(result({ user_message_uuids: [steer.uuid] }));
     await turn;
+    s.close();
+  } finally {
+    restore();
+  }
+});
+
+test("claude: an agent's row says who it is, what it was asked, its own steps and model, and what it sent back; Stop stops it alone", async () => {
+  const { made, restore } = standIn();
+  try {
+    const s = claude.open(opts());
+    const { sink } = recorder();
+    const tools: ToolUpdate[] = [];
+    const turn = s.turn("find the parser", { ...sink, tool: (u) => void tools.push(u) }, new AbortController().signal);
+    await until(() => made[0]?.sent.length === 1, "your message went");
+    const q = made[0];
+    q.emit({ type: "assistant", parent_tool_use_id: null, uuid: "a", session_id: "s", message: { id: "m1", model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: "call-1", name: "Agent", input: { subagent_type: "Explore", description: "Find the parser", prompt: "Find where tide heights are parsed." } }] } });
+    q.emit({ type: "system", subtype: "task_started", task_id: "t1", tool_use_id: "call-1", description: "Find the parser", task_type: "local_agent", uuid: "x", session_id: "s" });
+    // Its own messages: a step, then the step's result.
+    q.emit({ type: "assistant", parent_tool_use_id: "call-1", uuid: "c1", session_id: "s", message: { id: "k1", model: "claude-haiku-5-5", content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/tmp/src/noaa.ts" } }] } });
+    q.emit({ type: "user", parent_tool_use_id: "call-1", session_id: "s", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "r1", content: "export function parse() {}" }] } });
+    q.emit({ type: "system", subtype: "task_progress", task_id: "t1", tool_use_id: "call-1", description: "Find the parser", usage: { total_tokens: 1800, tool_uses: 1, duration_ms: 900 }, summary: "Reading the NOAA parser", uuid: "p", session_id: "s" });
+    await until(() => tools.some((u) => u.agent?.now === "Reading the NOAA parser"), "its progress");
+    // Its steps never become rows of their own: everything is its call's row.
+    assert.deepEqual([...new Set(tools.map((u) => u.key))], ["call-1"]);
+    const live = tools.at(-1)!.agent!;
+    assert.equal(live.name, "Explore");
+    assert.equal(live.task, "Find the parser");
+    assert.equal(live.brief, "Find where tide heights are parsed.");
+    assert.equal(live.taskId, "t1");
+    assert.equal(live.model, "claude:claude-haiku-5-5");
+    assert.deepEqual(live.steps, [{ title: "Read src/noaa.ts", toolKind: "read", status: "done", path: "src/noaa.ts" }]);
+    assert.equal(live.tokens, 1800);
+    assert.equal(tools.at(-1)!.status, "running");
+    // Stop reaches it alone.
+    assert.equal(await s.stopAgent!("t1"), true);
+    assert.deepEqual(q.calls.stopped, ["t1"]);
+    assert.equal(await s.stopAgent!("nobody"), false);
+    q.emit({ type: "user", parent_tool_use_id: null, session_id: "s", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "call-1", content: "Heights are parsed in noaa.ts.\nagentId: x1 (use SendMessage to continue)" }] }, tool_use_result: { status: "completed", agentId: "x1", prompt: "", content: [{ type: "text", text: "Heights are parsed in noaa.ts." }], totalToolUseCount: 3, totalDurationMs: 4000, totalTokens: 2400, resolvedModel: "claude-haiku-5-5", usage: {} } });
+    q.emit(result({ user_message_uuids: [q.sent[0].uuid] }));
+    await turn;
+    const end = tools.at(-1)!;
+    assert.equal(end.status, "done");
+    assert.equal(end.agent?.report, "Heights are parsed in noaa.ts.");
+    assert.equal(end.agent?.tools, 3);
+    assert.equal(end.agent?.tokens, 2400);
+    s.close();
+  } finally {
+    restore();
+  }
+});
+
+test("claude: an agent's agent gets a row of its own, named under the one that sent it", async () => {
+  const { made, restore } = standIn();
+  try {
+    const s = claude.open(opts());
+    const { sink } = recorder();
+    const tools: ToolUpdate[] = [];
+    const turn = s.turn("go", { ...sink, tool: (u) => void tools.push(u) }, new AbortController().signal);
+    await until(() => made[0]?.sent.length === 1, "your message went");
+    const q = made[0];
+    q.emit({ type: "assistant", parent_tool_use_id: null, uuid: "a", session_id: "s", message: { id: "m1", model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: "outer", name: "Agent", input: { description: "Write fixtures", prompt: "Write them." } }] } });
+    q.emit({ type: "assistant", parent_tool_use_id: "outer", uuid: "c1", session_id: "s", message: { id: "k1", model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: "inner", name: "Agent", input: { subagent_type: "Explore", description: "Fetch a week", prompt: "Fetch it." } }] } });
+    q.emit({ type: "user", parent_tool_use_id: "outer", session_id: "s", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "inner", content: "Fetched." }] } });
+    q.emit({ type: "user", parent_tool_use_id: null, session_id: "s", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "outer", content: "Written." }] } });
+    q.emit(result({ user_message_uuids: [q.sent[0].uuid] }));
+    await turn;
+    const inner = tools.filter((u) => u.key === "inner");
+    assert.equal(inner[0].agent?.parentKey, "outer");
+    assert.equal(inner[0].agent?.name, "Explore");
+    assert.equal(inner.at(-1)?.status, "done");
+    assert.equal(inner.at(-1)?.agent?.report, "Fetched.");
+    // The outer one counts it as a step of its own.
+    assert.equal(tools.filter((u) => u.key === "outer").at(-1)?.agent?.steps?.[0]?.title, "Explore: Fetch a week");
     s.close();
   } finally {
     restore();

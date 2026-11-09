@@ -76,7 +76,8 @@ test("from a folder: the checks an agent's draft gets, and the rules the card ke
   const addons = new Addons(mkdtempSync(join(tmpdir(), "lc-src-home-")));
   const sources = new Sources(addons, process.env);
   await assert.rejects(sources.open(""), /Paste a GitHub address/);
-  await assert.rejects(sources.open("pomodoro"), /isn't a GitHub address or a folder/);
+  // A bare name is an npm package's (dsh.test.ts); words that are none of the three are said so.
+  await assert.rejects(sources.open("my pomodoro timer"), /isn't a GitHub address, an npm package or a folder/);
   await assert.rejects(sources.open(join(tmpdir(), "no-such-folder-here")), /no folder there/);
   await assert.rejects(sources.open(mkdtempSync(join(tmpdir(), "lc-src-empty-"))), /There's no add-on there/);
   await assert.rejects(sources.open(folder({ ...pomodoro(), server: { http: { url: "https://x" } } })), /server isn't a key a manifest has here/);

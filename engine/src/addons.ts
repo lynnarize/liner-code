@@ -21,9 +21,9 @@
   Creator mode (github.com/deepseek-ai/deepseek-harness, MIT); the shape and the code are our own.
 */
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { AddonAsk, AddonInfo, AddonManifest, AddonSecret, ConnectionAsk, ConnectionManifest, PanelAccess, PanelManifest } from "../../contracts/src/index.ts";
+import type { AddonAsk, AddonInfo, AddonManifest, AddonSecret, AnyConnectionManifest, ConnectionAsk, ConnectionManifest, DshConnectionManifest, DshPlugin, DshSlot, DshTool, DshToolsPlugin, PanelAccess, PanelManifest } from "../../contracts/src/index.ts";
 import { addonKey, PANEL_ICONS } from "../../contracts/src/index.ts";
 import { loadState, writeAtomic } from "./store.ts";
 
@@ -53,9 +53,11 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 
 /**
   A manifest, checked strictly: known keys only, a sane id, and keys named, never written in. Every
-  problem is said at once, in words an agent can fix them from.
+  problem is said at once, in words an agent can fix them from. `dsh`, a ported DeepSeek Harness
+  plugin's block, is taken only from Liner Code itself (dsh.ts, and a version it kept): never from
+  an agent's draft or an addon.json, since it can name a program to run.
 */
-export function checkManifest(raw: unknown): AddonManifest {
+export function checkManifest(raw: unknown, o: { dsh?: boolean } = {}): AddonManifest {
   const bad: string[] = [];
   const obj = (v: unknown, at: string) => {
     if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
@@ -74,7 +76,8 @@ export function checkManifest(raw: unknown): AddonManifest {
 
   const m = obj(raw, "The manifest");
   if (!m) throw new Error(said(bad));
-  if (m.kind === "panel") return checkPanel(m, bad, { obj, only, text });
+  if (m.kind === "panel") return checkPanel(m, bad, { obj, only, text }, o.dsh);
+  if (m.kind === "connection" && o.dsh && m.dsh !== undefined) return checkDshConnection(m, bad, { obj, only, text });
   only(m, "", ["apiVersion", "id", "kind", "name", "description", "summary", "server", "secrets"]);
   if (m.apiVersion !== 1) bad.push("apiVersion must be 1.");
   const id = text(m.id, "id", 40);
@@ -95,12 +98,13 @@ export function checkManifest(raw: unknown): AddonManifest {
         const at = `secrets[${i}]`;
         const o = obj(s, at);
         if (!o) return;
-        only(o, at, ["name", "label"]);
+        only(o, at, ["name", "label", "optional"]);
         const n = text(o.name, `${at}.name`, 64);
         const label = text(o.label, `${at}.label`, 60);
+        if (o.optional !== undefined && typeof o.optional !== "boolean") bad.push(`${at}.optional must be true or false: true when the server works without it.`);
         if (n !== undefined && !SECRET.test(n)) bad.push(`${at}.name must be a name like LINEAR_API_KEY: A–Z, 0–9 and _, starting with a letter.`);
         else if (n !== undefined && secrets.some((x) => x.name === n)) bad.push(`${at}.name ${n} is named twice.`);
-        if (n !== undefined && label !== undefined) secrets.push({ name: n, label });
+        if (n !== undefined && label !== undefined) secrets.push({ name: n, label, ...(o.optional === true ? { optional: true } : {}) });
       });
   }
   const declared = new Set(secrets.map((s) => s.name));
@@ -220,9 +224,72 @@ const ENTRY = /^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*\/)?[A-Za-z0-9_-][A-Za-z0-9._-]*\
 /** The most storage a panel may keep, in KB. */
 export const STORAGE_MAX = 1024;
 
+const DSH_SLOTS: DshSlot[] = ["sidebar.panellist", "sidebar.right.pane.tab", "conversation.view"];
+/** A tool's name as every agent tool takes it over MCP. */
+const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+/** The most tools one plugin may give your agents. */
+export const DSH_TOOLS_MAX = 64;
+/** The tools a ported plugin gives your agents, as dsh.ts read them from its code: names MCP takes, once each, and plain words. */
+function checkTools(v: unknown, bad: string[], c: Checks): DshTool[] {
+  if (!Array.isArray(v)) return void bad.push("dsh.tools is a list of { name, description }."), [];
+  if (v.length > DSH_TOOLS_MAX) bad.push(`dsh.tools has more than ${DSH_TOOLS_MAX} in it.`);
+  const out: DshTool[] = [];
+  v.slice(0, DSH_TOOLS_MAX).forEach((t, i) => {
+    const o = c.obj(t, `dsh.tools[${i}]`);
+    if (!o) return;
+    c.only(o, `dsh.tools[${i}]`, ["name", "description"]);
+    const name = c.text(o.name, `dsh.tools[${i}].name`, 64);
+    if (name !== undefined && !TOOL_NAME.test(name)) bad.push(`dsh.tools[${i}].name is a tool's name: A–Z, a–z, 0–9, _ and -.`);
+    else if (name !== undefined && out.some((x) => x.name === name)) bad.push(`dsh.tools[${i}].name ${name} is named twice.`);
+    const description = o.description === undefined ? undefined : c.text(o.description, `dsh.tools[${i}].description`, 1000);
+    if (name !== undefined) out.push({ name, ...(description ? { description } : {}) });
+  });
+  return out;
+}
+/** A ported plugin's block, as dsh.ts writes it: its package, its slot, its Node half's file and config, and the tools it gives. */
+function checkDsh(v: unknown, bad: string[], c: Checks, slotted = true): DshPlugin | undefined {
+  const d = c.obj(v, "dsh");
+  if (!d) return undefined;
+  c.only(d, "dsh", ["package", "version", "integrity", "host", "config", "tools", ...(slotted ? ["slot"] : [])]);
+  const pkg = c.text(d.package, "dsh.package", 214);
+  const version = c.text(d.version, "dsh.version", 64);
+  if (pkg !== undefined && !/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/.test(pkg)) bad.push("dsh.package isn't an npm package's name.");
+  if (d.integrity !== undefined && (typeof d.integrity !== "string" || !/^sha(?:512|384|256)-[A-Za-z0-9+/=]{20,100}$/.test(d.integrity))) bad.push("dsh.integrity isn't a checksum.");
+  const host = d.host === undefined ? undefined : c.text(d.host, "dsh.host", 300);
+  if (host !== undefined && (host.startsWith("/") || host.split("/").some((p) => !p || p === ".." || p === ".") || !/\.(?:m?js|cjs)$/.test(host))) bad.push("dsh.host is a .js file in the package, by its path in it.");
+  if (d.config !== undefined && (!d.config || typeof d.config !== "object" || Array.isArray(d.config) || JSON.stringify(d.config).length > 64_000)) bad.push("dsh.config is its Node half's settings, an object.");
+  if (slotted && !DSH_SLOTS.includes(d.slot as DshSlot)) bad.push(`dsh.slot is one of ${DSH_SLOTS.join(", ")}.`);
+  const tools = d.tools === undefined ? undefined : checkTools(d.tools, bad, c);
+  if (tools?.length && !host) bad.push("dsh.tools are its program's: a plugin with tools has dsh.host.");
+  if (pkg === undefined || version === undefined) return undefined;
+  return { package: pkg, version, ...(typeof d.integrity === "string" ? { integrity: d.integrity } : {}), ...(host ? { host } : {}), ...(d.config && typeof d.config === "object" ? { config: d.config as Record<string, unknown> } : {}), ...(tools?.length ? { tools } : {}), slot: d.slot as DshSlot };
+}
+
+/**
+  A ported plugin that gives your agents tools and draws nothing: a connection whose server is its
+  own program, so no server or keys of its own; its program and at least one tool.
+*/
+function checkDshConnection(m: Record<string, unknown>, bad: string[], c: Checks): DshConnectionManifest {
+  c.only(m, "", ["apiVersion", "id", "kind", "name", "description", "summary", "dsh"]);
+  if (m.apiVersion !== 1) bad.push("apiVersion must be 1.");
+  const id = c.text(m.id, "id", 40);
+  if (id !== undefined && !ADDON_ID.test(id)) bad.push("id must be 2 to 40 characters of a–z, 0–9 and -, starting with a letter and not ending with -.");
+  if (id !== undefined && /^liner/.test(id)) bad.push("id can't start with liner: that's Liner Code's own server.");
+  const name = c.text(m.name, "name", 60);
+  const description = m.description === undefined ? undefined : c.text(m.description, "description", 300);
+  const summary = m.summary === undefined ? undefined : c.text(m.summary, "summary", 140);
+  const d = checkDsh(m.dsh, bad, c, false);
+  if (d && !d.host) bad.push("dsh.host is the program that gives its tools: a connection from a plugin has one.");
+  if (d && !d.tools?.length) bad.push("dsh.tools is what it gives your agents: a connection from a plugin gives at least one tool.");
+  if (bad.length) throw new Error(said(bad));
+  const { slot: _slot, ...rest } = d!;
+  return { apiVersion: 1, id: id!, kind: "connection", name: name!, ...(description ? { description } : {}), ...(summary ? { summary } : {}), dsh: rest as DshToolsPlugin };
+}
+
 /** A panel's manifest: where it opens, its entry file, and what it may touch, each checked. */
-function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks): PanelManifest {
-  c.only(m, "", ["apiVersion", "id", "kind", "name", "description", "summary", "place", "entry", "icon", "access"]);
+function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks, dshOk = false): PanelManifest {
+  c.only(m, "", ["apiVersion", "id", "kind", "name", "description", "summary", "place", "entry", "icon", "access", ...(dshOk ? ["dsh"] : [])]);
+  const dsh = dshOk && m.dsh !== undefined ? checkDsh(m.dsh, bad, c) : undefined;
   if (m.apiVersion !== 1) bad.push("apiVersion must be 1.");
   const id = c.text(m.id, "id", 40);
   if (id !== undefined && !ADDON_ID.test(id)) bad.push("id must be 2 to 40 characters of a–z, 0–9 and -, starting with a letter and not ending with -.");
@@ -270,11 +337,17 @@ function checkPanel(m: Record<string, unknown>, bad: string[], c: Checks): Panel
   // A page has no session beside it, so nothing of one to read or write to.
   if (place === "page" && (access.files || access.sessions === "this" || access.composer)) bad.push('A page (place "page") has no session beside it: access.files, sessions "this" and composer are for "dock" and "tab". It may read every session (sessions "all"). For AI on the page, ask for "ai": true and call liner.ai.ask: a model the person picks answers the page itself.');
   if (bad.length) throw new Error(said(bad));
-  return { apiVersion: 1, id: id!, kind: "panel", name: name!, ...(description ? { description } : {}), ...(summary ? { summary } : {}), place: place as PanelManifest["place"], entry: entry!, ...(icon ? { icon: icon as PanelManifest["icon"] } : {}), access };
+  return { apiVersion: 1, id: id!, kind: "panel", name: name!, ...(description ? { description } : {}), ...(summary ? { summary } : {}), place: place as PanelManifest["place"], entry: entry!, ...(icon ? { icon: icon as PanelManifest["icon"] } : {}), access, ...(dsh ? { dsh } : {}) };
 }
 
-/** What a connection reaches, in words: its address, or the command it runs. */
-export const reachOf = (m: ConnectionManifest) => ("http" in m.server ? m.server.http.url : [m.server.stdio.command, ...(m.server.stdio.args ?? [])].join(" "));
+/** What a connection reaches, in words: its address, or the command it runs; a plugin's, its own program and its tools. */
+export const reachOf = (m: AnyConnectionManifest) => (m.dsh ? `its own program on this Mac · ${toolWords(m.dsh.tools)}` : "http" in m.server ? m.server.http.url : [m.server.stdio.command, ...(m.server.stdio.args ?? [])].join(" "));
+/** "gives your agents web_search, weather and 3 more". */
+export const toolWords = (tools: DshTool[] = []) => {
+  const names = tools.map((t) => t.name);
+  const shown = names.length > 4 ? [...names.slice(0, 3), `${names.length - 3} more`] : names;
+  return `gives your agents ${shown.length < 2 ? (shown[0] ?? "no tools") : `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}`}`;
+};
 
 /** A panel's files: what it may hold, and how much. */
 const PANEL_TYPES = /\.(?:html?|m?js|css|json|svg|png|jpe?g|gif|webp|txt|md)$/i;
@@ -282,6 +355,8 @@ const BINARY = /\.(?:png|jpe?g|gif|webp)$/i;
 export const PANEL_FILES = 40;
 export const PANEL_FILE_MAX = 512_000;
 export const PANEL_TOTAL_MAX = 2_000_000;
+/** A ported DeepSeek Harness plugin's page is one bundle (client.js), larger than an agent's files. */
+export const DSH_LIMITS = { file: 4_000_000, total: 4_200_000 };
 /** A panel's files by path, as the frame takes them: text as it is, pictures in base64. */
 export type PanelFiles = Record<string, string>;
 
@@ -291,7 +366,7 @@ export type PanelFiles = Record<string, string>;
   `loose`, for a folder from outside (a repository with its LICENSE and sources beside the page):
   files of other kinds and folders too deep are left out rather than said.
 */
-export function readPanelFiles(dir: string, entry: string, loose = false): PanelFiles {
+export function readPanelFiles(dir: string, entry: string, loose = false, limits = { file: PANEL_FILE_MAX, total: PANEL_TOTAL_MAX }): PanelFiles {
   const files: PanelFiles = {};
   const bad: string[] = [];
   let total = 0;
@@ -320,8 +395,8 @@ export function readPanelFiles(dir: string, entry: string, loose = false): Panel
         if (!loose) bad.push(`${rel} isn't a kind of file a panel holds (html, js, css, json, svg, png, jpg, gif, webp, txt, md).`);
         continue;
       }
-      if (st.size > PANEL_FILE_MAX) {
-        bad.push(`${rel} is over ${PANEL_FILE_MAX / 1000} KB.`);
+      if (st.size > limits.file) {
+        bad.push(`${rel} is over ${limits.file / 1000} KB.`);
         continue;
       }
       total += st.size;
@@ -334,7 +409,7 @@ export function readPanelFiles(dir: string, entry: string, loose = false): Panel
     }
   };
   walk(dir, 0);
-  if (total > PANEL_TOTAL_MAX) bad.push(`Its files come to over ${PANEL_TOTAL_MAX / 1_000_000} MB.`);
+  if (total > limits.total) bad.push(`Its files come to over ${limits.total / 1_000_000} MB.`);
   if (files[entry] === undefined) bad.push(`There's no ${entry} beside the manifest: that's the page it opens on (entry).`);
   if (bad.length) throw new Error(bad.length === 1 ? `The panel's files aren't right: ${bad[0]}` : `The panel's files aren't right:\n${bad.map((b) => `- ${b}`).join("\n")}`);
   return files;
@@ -350,16 +425,21 @@ export function modelHostRefusal(network?: string) {
   return `${network} serves models, and a panel never reaches one itself, nor holds a key for one. Ask for "ai": true instead and call liner.ai.ask: the person picks one of their own models in Liner Code, and the answer comes back to the panel.`;
 }
 
-/** What a panel may touch, in words, for its strip and Settings: "reads this project's files · no network". */
-export function accessWords(a: PanelAccess, place?: PanelManifest["place"]) {
+/**
+  What a panel may touch, in words, for its strip and Settings: "reads this project's files · no
+  network". A ported plugin with a Node half says that first: its program reaches what its frame can't.
+*/
+export function accessWords(a: PanelAccess, place?: PanelManifest["place"], dsh?: DshPlugin) {
   const out: string[] = [];
+  if (dsh?.host) out.push("runs its own program on this Mac");
+  if (dsh?.tools?.length) out.push(toolWords(dsh.tools));
   if (a.files) out.push("reads this project's files");
   if (a.sessions === "this") out.push(place === "tab" ? "reads this session" : "reads the session it's beside");
   if (a.sessions === "all") out.push("reads your sessions' titles and changes");
   if (a.composer) out.push("can put text in the composer");
   if (a.storage) out.push(`keeps its own storage, up to ${sizeWords(a.storage)}`);
   if (a.ai) out.push("asks a model you pick");
-  out.push(a.network ? `reaches ${a.network}` : "no network");
+  out.push(a.network ? `reaches ${a.network}` : dsh?.host ? "its page has no network" : "no network");
   return out.join(" · ");
 }
 export const sizeWords = (kb: number) => (kb >= 1024 && kb % 1024 === 0 ? `${kb / 1024} MB` : `${kb} KB`);
@@ -418,6 +498,11 @@ type Index = { v: 1; addons: Record<string, Entry> };
 
 export class Addons {
   readonly dir: string;
+  /**
+    A ported plugin's tools as a connection every agent tool starts (dsh-hosts.ts): none until the
+    engine has an address for them.
+  */
+  dshTools?: (id: string, name: string) => Connection | null;
   /** This run started without add-ons (Settings › Add-ons): none reach any tool until Liner Code starts again. */
   off = false;
   /** By id, with no prototype: an add-on called constructor is just an add-on. */
@@ -458,7 +543,8 @@ export class Addons {
     // A number, whatever was sent: anything else in the path below could lead out of the add-on's folder.
     if (!ADDON_ID.test(id) || !Number.isInteger(v)) return null;
     try {
-      return checkManifest(JSON.parse(readFileSync(join(this.dir, id, `v${v}`, "addon.json"), "utf8")));
+      // Kept by Liner Code itself, a ported plugin's block included.
+      return checkManifest(JSON.parse(readFileSync(join(this.dir, id, `v${v}`, "addon.json"), "utf8")), { dsh: true });
     } catch {
       return null;
     }
@@ -468,6 +554,21 @@ export class Addons {
     return this.list().find((a) => a.id === id);
   }
 
+  /** A ported plugin that may run now, a page or a connection: on, not removed, with its dsh block. */
+  dshOf(id: string): (PanelManifest & { dsh: DshPlugin }) | DshConnectionManifest | null {
+    const e = this.index.addons[id];
+    if (this.off || !e || !e.enabled || e.removed) return null;
+    const m = this.manifest(id);
+    return m?.dsh ? (m as (PanelManifest & { dsh: DshPlugin }) | DshConnectionManifest) : null;
+  }
+
+  /** A ported plugin's package, as it was added with that version: where its Node half runs from. */
+  packageDir(id: string, version: number) {
+    if (!ADDON_ID.test(id) || !Number.isInteger(version)) return null;
+    const dir = join(this.dir, id, `v${version}`, "package");
+    return existsSync(join(dir, "package.json")) ? dir : null;
+  }
+
   /** A kept version's files, for a panel (the version in use without `version`). */
   files(id: string, version?: number): PanelFiles | null {
     const v = version ?? this.index.addons[id]?.version;
@@ -475,7 +576,7 @@ export class Addons {
     if (!m || m.kind !== "panel") return null;
     const dir = join(this.dir, id, `v${v}`, "files");
     try {
-      return readPanelFiles(dir, m.entry);
+      return readPanelFiles(dir, m.entry, false, m.dsh ? DSH_LIMITS : undefined);
     } catch {
       return null;
     }
@@ -532,7 +633,8 @@ export class Addons {
         ...(e.project ? { project: e.project } : {}),
         by: e.by,
       };
-      if (m.kind === "panel") out.push({ ...base, kind: "panel", reaches: accessWords(m.access, m.place), secrets: [], panel: { place: m.place, access: m.access, entry: m.entry, ...(m.icon ? { icon: m.icon } : {}) } });
+      if (m.kind === "panel") out.push({ ...base, kind: "panel", reaches: accessWords(m.access, m.place, m.dsh), secrets: [], panel: { place: m.place, access: m.access, entry: m.entry, ...(m.icon ? { icon: m.icon } : {}), ...(m.dsh ? { dsh: { package: m.dsh.package, version: m.dsh.version, host: !!m.dsh.host, ...(m.dsh.tools?.length ? { tools: m.dsh.tools.map((t) => t.name) } : {}) } } : {}) } });
+      else if (m.dsh) out.push({ ...base, kind: "connection", transport: "stdio", reaches: reachOf(m), secrets: [], dsh: { package: m.dsh.package, version: m.dsh.version, host: true, tools: m.dsh.tools.map((t) => t.name) } });
       else out.push({ ...base, kind: "connection", transport: "http" in m.server ? "http" : "stdio", reaches: reachOf(m), secrets: m.secrets ?? [] });
     }
     return out.sort((a, b) => a.by.at - b.by.at);
@@ -552,11 +654,15 @@ export class Addons {
     return e ? { version: v, replaces: e.version } : { version: v };
   }
 
-  /** Adds it, as a new version unless one kept is the same, on and in use. A panel brings its files. */
-  install(m: AddonManifest, o: { project?: string; by: AddonInfo["by"] }, files?: PanelFiles) {
+  /**
+    Adds it, as a new version unless one kept is the same, on and in use. A panel brings its files;
+    a ported DeepSeek Harness plugin also its package (`pkg`, a folder), kept beside them.
+  */
+  install(m: AddonManifest, o: { project?: string; by: AddonInfo["by"] }, files?: PanelFiles, pkg?: { dir: string; modules: boolean }) {
     const e = this.index.addons[m.id];
     if (e && this.manifest(m.id)?.kind !== m.kind) throw new Error(`${m.id} is already the id of a ${m.kind === "panel" ? "connection" : "panel"}: give this one an id of its own.`);
     if (m.kind === "panel" && !files) throw new Error("A panel needs its files.");
+    if (m.dsh && !pkg) throw new Error("A DeepSeek Harness plugin needs its package.");
     const { version } = this.wouldBe(m, files);
     if (!e?.versions.some((x) => x.v === version)) {
       const dir = join(this.dir, m.id, `v${version}`);
@@ -568,6 +674,11 @@ export class Addons {
           mkdirSync(dirname(abs), { recursive: true });
           writeFileSync(abs, BINARY.test(path) ? Buffer.from(content, "base64") : content);
         }
+      // Its package as it was checked: plain files and folders, no links, no .git, and node_modules only when its program needs them.
+      if (m.dsh && pkg) {
+        const skip = new Set([join(pkg.dir, ".git"), ...(pkg.modules ? [] : [join(pkg.dir, "node_modules")])]);
+        cpSync(pkg.dir, join(dir, "package"), { recursive: true, filter: (src) => !skip.has(src) && !lstatSync(src).isSymbolicLink() });
+      }
       writeAtomic(join(dir, "addon.json"), `${JSON.stringify(m, null, 2)}\n`);
     }
     const versions = e ? [...e.versions.filter((x) => x.v !== version), { v: version, at: Date.now() }] : [{ v: version, at: Date.now() }];
@@ -607,7 +718,13 @@ export class Addons {
     for (const [id, e] of Object.entries(this.index.addons)) {
       if (!e.enabled || e.removed || (e.project && e.project !== projectId)) continue;
       const m = this.manifest(id);
-      if (!m || m.kind !== "connection") continue;
+      // A ported plugin's tools, a page's or a connection's: its own program, served by Liner Code.
+      if (m?.dsh?.tools?.length && m.dsh.host) {
+        const c = this.dshTools?.(id, m.name);
+        if (c) out.push(c);
+        continue;
+      }
+      if (!m || m.kind !== "connection" || m.dsh) continue;
       const fill = (v: string) => {
         let missing = false;
         const out = v.replace(REF, (_, n: string) => keys.get(addonKey(id, n)) ?? ((missing = true), ""));
@@ -632,7 +749,8 @@ export class Addons {
     const { version: next, replaces } = this.wouldBe(m, files);
     const had = this.index.addons[m.id];
     const was = had && !had.removed ? this.manifest(m.id) : null;
-    const wider = was?.kind === "panel" ? widerAccess(was.access, m.access) : undefined;
+    const newTools = (m.dsh?.tools ?? []).filter((t) => !(was?.kind === "panel" ? (was.dsh?.tools ?? []) : []).some((x) => x.name === t.name));
+    const wider = was?.kind === "panel" ? [...(m.dsh?.host && !was.dsh?.host ? ["Run its own program on this Mac"] : []), ...(newTools.length ? [`Give your agents ${newTools.map((t) => t.name).join(", ")}`] : []), ...widerAccess(was.access, m.access)] : undefined;
     return {
       kind: "panel",
       next,
@@ -655,7 +773,7 @@ export class Addons {
   }
 
   /** What the install card shows for a manifest read from `path`, in the session's project, reaching the tools named. */
-  askOf(m: ConnectionManifest, path: string, project: { id: string; name: string }, reaches: string[]): ConnectionAsk {
+  askOf(m: AnyConnectionManifest, path: string, project: { id: string; name: string }, reaches: string[]): ConnectionAsk {
     const { replaces } = this.wouldBe(m);
     const had = this.index.addons[m.id];
     // Its keys are kept by id: one pointing somewhere new has them typed again rather than sent there.
@@ -664,12 +782,12 @@ export class Addons {
       id: m.id,
       name: m.name,
       ...(m.description ? { description: m.description } : {}),
-      transport: "http" in m.server ? "http" : "stdio",
-      server: reachOf(m),
-      ...("stdio" in m.server ? { env: [...new Set([...Object.keys(m.server.stdio.env ?? {}), ...(m.secrets ?? []).map((x) => x.name)])] } : {}),
+      transport: m.dsh || "stdio" in m.server ? "stdio" : "http",
+      server: m.dsh ? "Its own program, in a process of its own on this Mac" : reachOf(m),
+      ...(!m.dsh && "stdio" in m.server ? { env: [...new Set([...Object.keys(m.server.stdio.env ?? {}), ...(m.secrets ?? []).map((x) => x.name)])] } : {}),
       reaches,
       path,
-      secrets: m.secrets ?? [],
+      secrets: m.dsh ? [] : (m.secrets ?? []),
       project,
       manifest: JSON.stringify(m, null, 2),
       ...(replaces && !had?.removed ? { replaces } : {}),

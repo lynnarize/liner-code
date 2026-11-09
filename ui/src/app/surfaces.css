@@ -793,6 +793,248 @@
   gap: 8px;
   margin-top: 10px;
 }
+/* The first page when launch.json lists servers: the list in the middle, what it is underneath,
+   as Claude Code's New tab shows it. */
+.lc-br-start {
+  display: grid;
+  flex: 1;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+  padding: 24px 16px 18px;
+  overflow: auto;
+}
+.lc-br-start-in {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+}
+.lc-br-start-in .lc-br-first {
+  max-width: none;
+  margin-top: 6px;
+}
+.lc-br-start-in .lc-br-ports {
+  margin: 4px 0 0;
+}
+.lc-br-start-foot {
+  margin: 16px 0 0;
+  color: var(--l-ink-3);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+.lc-br-launch {
+  display: grid;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line);
+  list-style: none;
+}
+.lc-br-lrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 46px;
+  padding-right: 8px;
+}
+.lc-br-lrow + .lc-br-lrow {
+  box-shadow: inset 0 1px 0 var(--l-line);
+}
+.lc-br-lmain {
+  display: flex;
+  flex: 1;
+  align-self: stretch;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px 6px 14px;
+  border: 0;
+  background: none;
+  color: var(--l-ink-3);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-br-lmain:disabled {
+  cursor: default;
+}
+.lc-br-lmain > svg {
+  flex: none;
+}
+.lc-br-ltext {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.lc-br-lname,
+.lc-br-lnote {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-br-lname {
+  color: var(--l-ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+.lc-br-lrow[data-status="running"] .lc-br-lname {
+  color: var(--l-ink);
+}
+.lc-br-lnote {
+  color: var(--l-ink-3);
+  font-size: 11.5px;
+  line-height: 15px;
+}
+.lc-br-lrow[data-bad] .lc-br-lnote {
+  color: var(--l-danger-text);
+}
+.lc-br-lport {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--l-ink-3);
+  font-size: 12px;
+}
+.lc-br-lrow[data-status="running"] .lc-br-lport::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-ok);
+}
+.lc-br-lgo {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.lc-br-lgo[data-quiet] {
+  background: none;
+  color: var(--l-ink-3);
+}
+.lc-br-lgo:disabled {
+  cursor: default;
+}
+.lc-br-lgo:disabled:not(:has(.lc-br-lspin)) {
+  opacity: 0.45;
+}
+.lc-br-lspin {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid color-mix(in oklab, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: l-spin 900ms linear infinite;
+}
+.lc-br-lstop {
+  display: grid;
+}
+/* Starting: the spinner, which a pointer over it turns to Stop. */
+.lc-br-lspin + .lc-br-lstop {
+  display: none;
+}
+.lc-br-seeall {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.lc-br-lfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 8px 2px 0;
+  font-size: 12px;
+}
+.lc-br-more .lc-br-launch {
+  margin-top: 4px;
+  border-radius: 10px;
+}
+/* The page's launch.json server isn't up: why, and Run, where the page would be. */
+.lc-br-down {
+  display: grid;
+  flex: 1;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--l-ink-3);
+  font-size: 13px;
+  line-height: 19px;
+  text-align: center;
+}
+.lc-br-down b {
+  color: var(--l-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.lc-br-down p {
+  max-width: 320px;
+  margin: 0;
+}
+.lc-br-down .lc-btn {
+  gap: 6px;
+  margin-top: 4px;
+}
+.lc-br-tail {
+  max-width: min(100%, 520px);
+  max-height: 160px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line);
+  color: var(--l-ink-2);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+@media (hover: hover) {
+  .lc-br-lmain:not(:disabled):hover .lc-br-lname {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .lc-br-lgo:not(:disabled):hover {
+    background: var(--l-wash-3);
+    color: var(--l-ink);
+  }
+  .lc-br-lgo:not(:disabled):hover .lc-br-lspin {
+    display: none;
+  }
+  .lc-br-lgo:not(:disabled):hover .lc-br-lspin + .lc-br-lstop {
+    display: grid;
+  }
+  .lc-br-seeall:hover {
+    color: var(--l-ink);
+  }
+}
 
 /* ---------- Files ---------- */
 .lc-fsv {

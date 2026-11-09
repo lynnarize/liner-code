@@ -10,7 +10,7 @@
   shows it light or dark. Where an agent clicks, its pointer glides there and pulses.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { LocalServer, Thread } from "@contracts";
+import type { LaunchServer, LocalServer, Thread } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
@@ -18,6 +18,7 @@ import { bridge, isNative } from "./bridge";
 import { onAgentBrowser, useHiddenBrowsers } from "./agentBrowser";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
+import { launchNote, useLaunch } from "./launch";
 import { SurfaceNote } from "./Surfaces";
 import { PanelHead, Pop } from "./ui";
 import * as os from "./os";
@@ -27,8 +28,8 @@ type Picked = { selector: string; path: string; text: string; html: string; rect
 type Width = "desktop" | "tablet" | "phone";
 const WIDTH: Record<Width, number | null> = { desktop: null, tablet: 820, phone: 390 };
 
-/** What the Browser shows: a page of a local port, or (port null) a page of the session's own folder. */
-type Target = { port: number | null; path: string };
+/** What the Browser shows: a page of a local port, or (port null) a page of the session's own folder; `server`, the launch.json server it's of, followed to another port if it moves. */
+type Target = { port: number | null; path: string; server?: string };
 
 /** A browser's zoom steps, as Chrome's (T3 Code: preview/PreviewMoreMenu.tsx). */
 const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
@@ -138,6 +139,15 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const now = useRef({ target, logs, proxy, hidden });
   now.current = { target, logs, proxy, hidden };
   const [driving, setDriving] = useState(0);
+  // The folder's launch.json servers: run from here, stopped by the engine while no one looks, back when you do.
+  const [launch] = useLaunch(thread.id);
+  const servers = launch?.servers ?? [];
+  // One you pressed Run on, to open once it answers (and when you pressed); a row a press is under way for ("*": all of them).
+  const [opening, setOpening] = useState<{ name: string; at: number } | null>(null);
+  const [pressing, setPressing] = useState<string | null>(null);
+  const [allServers, setAllServers] = useState(false);
+  // The launch.json server the page is of: by name once opened from the list, else by the port it runs on.
+  const shownServer = target?.port != null ? (servers.find((s) => s.name === target.server) ?? servers.find((s) => s.at === target.port)) : undefined;
 
   /** What could open: the servers on the Mac (the session's first) and the folder's HTML pages. */
   const look = () =>
@@ -376,9 +386,75 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     }
   };
 
+  /** Opens a launch.json server's page, on the port it runs on now. */
+  const openServer = (s: LaunchServer) => {
+    if (!s.at) return;
+    const same = target?.port === s.at;
+    setOpening(null);
+    setPicked(null);
+    setLogs([]);
+    setFailed(null);
+    setTarget({ port: s.at, path: same && target ? target.path : "/", server: s.name });
+    if (same) {
+      setNonce((n) => n + 1);
+      setRetry((n) => n + 1);
+    }
+  };
+  /** Runs one (again, restarting it, when `again`): it opens once it answers. */
+  const runServer = async (name: string, again = false) => {
+    const at = Date.now();
+    setPressing(name);
+    try {
+      const s = await rpc(again ? "launch.restart" : "launch.start", { threadId: thread.id, name });
+      if (s.status === "running") openServer(s);
+      else setOpening({ name, at });
+    } catch (e) {
+      const [first, ...rest] = (e instanceof Error ? e.message : String(e)).split("\n");
+      toast.error(first, { description: rest.slice(-2).join(" · ") || undefined });
+    } finally {
+      setPressing(null);
+    }
+  };
+  /** Stops one, or (no name) every one in the folder; none of them comes back by itself after that. */
+  const stopServer = async (name?: string) => {
+    setPressing(name ?? "*");
+    try {
+      const n = await rpc("launch.stop", { threadId: thread.id, name });
+      if (!name) toast(n ? `Stopped ${n} ${n === 1 ? "server" : "servers"}` : "No server was running");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPressing(null);
+    }
+  };
+  // Pressed, it opens once it answers; if it ends first, the row says why.
+  useEffect(() => {
+    if (!opening) return;
+    const s = servers.find((x) => x.name === opening.name);
+    if (s?.status === "running") openServer(s);
+    else if (!s || (s.status === "stopped" && (s.ended?.at ?? 0) >= opening.at)) setOpening(null);
+  }, [opening, launch]);
+  // One that moved to another port (taken when it came back) is followed there.
+  useEffect(() => {
+    if (shownServer?.status === "running" && shownServer.at && target && target.port !== shownServer.at) setTarget({ ...target, port: shownServer.at, server: shownServer.name });
+  }, [shownServer?.status, shownServer?.at]);
+  // Back up after it stopped (it slept while you were away, or you ran it again): the page loads afresh.
+  const upBefore = useRef<{ where: unknown; status?: string }>({ where: null });
+  useEffect(() => {
+    const was = upBefore.current;
+    upBefore.current = { where, status: shownServer?.status };
+    if (was.where === where && was.status && was.status !== "running" && shownServer?.status === "running") {
+      setFailed(null);
+      setNonce((n) => n + 1);
+      setRetry((n) => n + 1);
+    }
+  }, [where, shownServer?.status]);
+
   // A server the session started, or one running in its folder, can be stopped from here; no other.
+  // One of launch.json's stops as launch.json's do, and stays on screen to run again.
   const own = target?.port != null ? ports?.find((p) => p.port === target.port && p.owner) : undefined;
   const stopIt = async () => {
+    if (shownServer && shownServer.status !== "stopped") return stopServer(shownServer.name);
     if (!own) return;
     try {
       await rpc("ports.stop", { threadId: thread.id, port: own.port });
@@ -447,6 +523,46 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   if (!target) {
     // Servers elsewhere on the Mac are offered, the ones that serve a page first, never opened by themselves.
     const others = (ports ?? []).filter((p) => !p.owner).sort((a, b) => Number(b.web) - Number(a.web));
+    // launch.json lists servers: each a press from running, as Claude Code's Browser lists them.
+    if (servers.length > 0)
+      return (
+        <div className="lc-br-start">
+          <div className="lc-br-start-in">
+            <LaunchRows servers={allServers ? servers : servers.slice(0, 5)} pressing={pressing} onRun={(n, again) => void runServer(n, again)} onStop={(n) => void stopServer(n)} onOpen={openServer} />
+            {servers.length > 5 && (
+              <button type="button" className="lc-br-seeall l-focus" onClick={() => setAllServers(!allServers)}>
+                {allServers ? "Show fewer" : `See all ${servers.length}`}
+              </button>
+            )}
+            {pages.length > 0 && (
+              <span className="lc-br-ports">
+                {pages.slice(0, 4).map((f) => (
+                  <button key={f} type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setTarget({ port: null, path: `/${f}` })}>
+                    <span className="lc-mono">{f}</span>
+                  </button>
+                ))}
+              </span>
+            )}
+            <form
+              className="lc-br-first"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void go(address);
+              }}
+            >
+              <input className="lc-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="5173, localhost:3000 or index.html" aria-label="Address" />
+              <button type="submit" className="lc-btn" data-kind="primary">
+                Open
+              </button>
+            </form>
+          </div>
+          <p className="lc-br-start-foot">
+            Run a server to preview your app, or enter an address.
+            <br />
+            Edit this list in .claude/launch.json.
+          </p>
+        </div>
+      );
     return (
       <SurfaceNote
         icon={<I.globe size={20} />}
@@ -488,7 +604,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
           </>
         )}
       >
-        {ports === null ? null : <>Start the dev server in the Terminal, or ask {agentName} to build a page. Plain HTML opens without one.</>}
+        {ports === null ? null : launch?.error ? launch.error : <>Start the dev server in the Terminal, or ask {agentName} to build a page. Plain HTML opens without one. Servers in .claude/launch.json run from here.</>}
       </SurfaceNote>
     );
   }
@@ -530,8 +646,26 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         >
           <I.target size={14} />
         </button>
-        {own && (
-          <button type="button" className="lc-ib l-focus" aria-label={`Stop localhost:${own.port}`} title={`Stop localhost:${own.port} (${own.process})`} onClick={() => void stopIt()}>
+        {servers.length > 0 && (
+          <Pop label="Dev servers" align="end" width={320} triggerClass="lc-ib" trigger={<I.server size={14} />}>
+            {(close) => (
+              <div className="lc-br-more">
+                <PanelHead end={servers.some((s) => s.status !== "stopped") ? `${servers.filter((s) => s.status !== "stopped").length} running` : undefined}>Dev servers</PanelHead>
+                <LaunchRows servers={servers} pressing={pressing} onRun={(n, again) => void runServer(n, again)} onStop={(n) => void stopServer(n)} onOpen={(s) => (openServer(s), close())} />
+                <div className="lc-br-lfoot">
+                  <span className="lc-quiet">From .claude/launch.json</span>
+                  {servers.some((s) => s.status !== "stopped" && !s.problem) && (
+                    <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={pressing === "*"} onClick={() => void stopServer()}>
+                      Stop all
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </Pop>
+        )}
+        {(own || (shownServer && shownServer.status !== "stopped")) && (
+          <button type="button" className="lc-ib l-focus" aria-label={shownServer ? `Stop ${shownServer.name}` : `Stop localhost:${own!.port}`} title={shownServer ? `Stop ${shownServer.name}` : `Stop localhost:${own!.port} (${own!.process})`} onClick={() => void stopIt()}>
             <I.stop size={12} />
           </button>
         )}
@@ -597,7 +731,10 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         />
       </div>
       <div ref={stage} className="lc-br-stage" data-width={width}>
-        {src ? (
+        {shownServer && shownServer.status !== "running" ? (
+          // Its server isn't up: why, and a press to run it again, in place of the proxy's "nothing answers".
+          <ServerDown server={shownServer} pressing={pressing === shownServer.name} onRun={() => void runServer(shownServer.name)} />
+        ) : src ? (
           // Zoomed as a browser zooms: the frame lays out 1/zoom as wide and tall as the box it's
           // shown in, then is drawn at zoom, so the page reflows rather than only growing.
           <div className="lc-br-zoom" style={w ? { width: w * fit } : undefined}>
@@ -687,6 +824,73 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The folder's launch.json servers, each a press from running: Run, or once it's on, Restart and Stop; a row that's on opens its page. */
+function LaunchRows({ servers, pressing, onRun, onStop, onOpen }: { servers: LaunchServer[]; pressing: string | null; onRun: (name: string, again?: boolean) => void; onStop: (name: string) => void; onOpen: (s: LaunchServer) => void }) {
+  return (
+    <ul className="lc-br-launch" aria-label="Dev servers">
+      {servers.map((s) => {
+        const on = s.status !== "stopped";
+        const busy = pressing === s.name || pressing === "*";
+        const note = launchNote(s);
+        return (
+          <li key={s.name} className="lc-br-lrow" data-status={s.status} data-bad={(!on && s.ended?.failed) || s.problem ? "" : undefined}>
+            <button type="button" className="lc-br-lmain l-focus" disabled={s.status !== "running"} title={s.status === "running" ? `Open localhost:${s.at}` : undefined} onClick={() => onOpen(s)}>
+              <I.server size={15} />
+              <span className="lc-br-ltext">
+                <span className="lc-br-lname">{s.name}</span>
+                {note && <span className="lc-br-lnote" title={s.ended?.tail?.slice(-6).join("\n")}>{note}</span>}
+              </span>
+              <span className="lc-br-lport lc-mono">:{s.at ?? s.port}</span>
+            </button>
+            {s.status === "running" && (
+              <button type="button" className="lc-br-lgo l-focus" data-quiet={s.changed ? undefined : ""} aria-label={`Restart ${s.name}`} title={s.changed ? "Restart with launch.json as it is now" : "Restart"} disabled={busy} onClick={() => onRun(s.name, true)}>
+                <I.refresh size={13} />
+              </button>
+            )}
+            {on ? (
+              <button type="button" className="lc-br-lgo l-focus" aria-label={`Stop ${s.name}`} title="Stop" disabled={busy} onClick={() => onStop(s.name)}>
+                {s.status === "starting" && <span className="lc-br-lspin" aria-hidden />}
+                <span className="lc-br-lstop" aria-hidden>
+                  <I.stop size={10} />
+                </span>
+              </button>
+            ) : (
+              <button type="button" className="lc-br-lgo l-focus" aria-label={`Run ${s.name}`} title={s.problem ?? "Run"} disabled={busy || Boolean(s.problem)} onClick={() => onRun(s.name)}>
+                {busy ? <span className="lc-br-lspin" aria-hidden /> : <I.play size={14} />}
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Where the page would be while its launch.json server is starting or stopped: why, what it last printed when it failed, and Run. */
+function ServerDown({ server: s, pressing, onRun }: { server: LaunchServer; pressing: boolean; onRun: () => void }) {
+  if (s.status === "starting")
+    return (
+      <div className="lc-diff-wait">
+        <span className="l-shimmer">Starting {s.name}</span>
+      </div>
+    );
+  const why = s.asleep ? "It stopped while no session in this folder was on screen. It starts again in a moment." : (s.ended?.reason.split("\n")[0] ?? "It isn't running.");
+  return (
+    <div className="lc-br-down">
+      <I.server size={20} />
+      <b>{s.name} isn't running</b>
+      <p>{why}</p>
+      {s.ended?.failed && s.ended.tail?.length ? <pre className="lc-br-tail lc-mono">{s.ended.tail.slice(-8).join("\n")}</pre> : null}
+      {!s.asleep && (
+        <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={pressing || Boolean(s.problem)} onClick={onRun}>
+          <I.play size={12} />
+          Run {s.name}
+        </button>
+      )}
     </div>
   );
 }

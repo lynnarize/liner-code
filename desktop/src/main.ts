@@ -664,6 +664,7 @@ function buildMenu() {
         item("Command Menu", "commands", "mod+k"),
         item("Toggle Sidebar", "sidebar", "mod+\\"),
         item("Usage and Cost", "usage", "mod+shift+u"),
+        item("The Wall", "wall", "mod+shift+o"),
         { type: "separator" },
         item("Next Session That Needs You", "next-needs", "mod+alt+down"),
         item("Move to Next Area", "focus.next", "f6"),

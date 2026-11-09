@@ -96,7 +96,7 @@ export type PanelEnv = {
   ai?: {
     model(): { name: string } | null;
     pick(): { name: string } | null;
-    ask(o: { prompt: string; system?: string; call?: string; stream?: boolean }): Promise<{ text: string; model: string }>;
+    ask(o: { prompt: string; system?: string; call?: string; stream?: boolean; onText?: (t: string) => void }): Promise<{ text: string; model: string }>;
   };
 };
 

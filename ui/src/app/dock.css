@@ -897,3 +897,50 @@
 .lc-offer[data-state="dismissed"] {
   opacity: 0.75;
 }
+
+/* A session opened from the Wall: the way back, at the start of its header (Session.tsx). Here, not in wall.css, which loads with the Wall. */
+.lc-wallback {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.lc-wallback-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+@media (hover: hover) {
+  .lc-wallback-b:hover {
+    background: var(--lc-well);
+  }
+}
+.lc-wallback-n {
+  margin: 0 2px 0 4px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wallback .lc-tb:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+@container lc-bar (max-width: 640px) {
+  .lc-wallback-n,
+  .lc-wallback .lc-tb,
+  .lc-wallback-b .lc-kbd {
+    display: none;
+  }
+}

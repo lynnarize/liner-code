@@ -10,7 +10,7 @@
   only that card's yes adds it. It runs where every add-on does: never inside Liner Code itself.
 */
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
-import type { AddonAsk, AddonInfo, ConnectionAsk, PanelAccess, PanelAsk, PanelIcon, PanelPlace } from "@contracts";
+import type { AddonAsk, AddonInfo, ConnectionAsk, DshInfo, PanelAccess, PanelAsk, PanelIcon, PanelPlace } from "@contracts";
 import { addonKey, summaryOf } from "@contracts";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Dialog } from "@liner/components/dialog/dialog";
@@ -65,7 +65,9 @@ const SHOWS: Record<PanelPlace, string> = { page: "Its own page, from the sideba
 const KIND: Record<PanelPlace, string> = { page: "App · its own page", tab: "App · a tab beside Chat", dock: "Panel · beside the session" };
 
 /** What a panel can touch, in a few plain words: "This project's files · no internet". */
-function touches(a: PanelAccess, place: PanelPlace) {
+function touches(a: PanelAccess, place: PanelPlace, dsh?: DshInfo) {
+  // A ported plugin's program reaches what its page can't: its card said how far.
+  if (dsh?.host) return ["Its own program on this Mac: your files and the internet, as its card said", a.ai && "a model you pick"].filter(Boolean).join(" · ");
   const reads = [a.files && "This project's files", a.sessions === "this" && (place === "tab" ? "This session" : "The session it's beside"), a.sessions === "all" && "Your sessions' titles and changes", a.composer && "The composer, to put text in for you"].filter(Boolean) as string[];
   if (a.storage) reads.push(reads.length ? "its own storage" : "Only its own storage");
   if (a.ai) reads.push("a model you pick");
@@ -155,7 +157,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                     {(
                       [
                         { icon: I.sparkle, label: "Make one with an agent", note: "Describe it, and Workshop builds it", pick: onMake },
-                        { icon: I.link, label: "From GitHub or a folder", note: "Add one someone else made", pick: () => setAdding("source") },
+                        { icon: I.link, label: "From GitHub, npm or a folder", note: "One someone else made, or a DeepSeek Harness plugin", pick: () => setAdding("source") },
                         { icon: I.plug, label: "Connect a service", note: "Linear, Sentry and others, with a key", pick: () => setAdding("connect") },
                       ] as const
                     ).map((w) => (
@@ -205,7 +207,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                     Make one with an agent
                   </button>
                   <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setAdding("source")}>
-                    From GitHub or a folder
+                    From GitHub, npm or a folder
                   </button>
                 </span>
               </div>
@@ -279,17 +281,24 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
   const day = a.dates?.[a.version];
   const when = day ? (new Date(day).toDateString() === new Date().toDateString() ? "updated today" : dayOf(day)) : "";
   const where = a.project ? (projects.find((p) => p.id === a.project)?.name ?? "One project") : "Every project";
-  const missing = a.secrets.filter((k) => !keys.includes(addonKey(a.id, k.name)));
+  const missing = a.secrets.filter((k) => !k.optional && !keys.includes(addonKey(a.id, k.name)));
   const facts: [string, ReactNode][] = a.panel
     ? [
         ["Shows", a.panel.place === "page" ? `Its own page, from ${a.name} in the sidebar` : SHOWS[a.panel.place]],
-        ["Can touch", touches(a.panel.access, a.panel.place)],
+        ["Can touch", touches(a.panel.access, a.panel.place, a.panel.dsh)],
+        ...(a.panel.dsh?.tools?.length ? [["Gives your agents", a.panel.dsh.tools.join(", ")] as [string, ReactNode]] : []),
         ["Version", [`v${a.version}`, when, a.version < latest ? `v${latest} is kept` : ""].filter(Boolean).join(" · ")],
         [a.by.from ? "Added by" : "Made by", madeBy(a, threads.some((t) => t.id === a.by.threadId))],
         ["Projects", a.panel.place === "page" ? "Every project" : where],
       ]
     : [
         ["Works with", "Claude Code, Codex, OpenCode and Hermes"],
+        ...(a.dsh
+          ? ([
+              ["Runs", "Its own program on this Mac: your files and the internet, as its card said"],
+              ["Gives your agents", (a.dsh.tools ?? []).join(", ")],
+            ] as [string, ReactNode][])
+          : []),
         ["Signs in", !a.secrets.length ? "It needs no key" : missing.length ? `Its ${missing[0].label} is missing: type it in Settings › Add-ons` : `With your ${a.secrets.map((k) => k.label).join(" and ")}, kept in ${os.keyStore("this Mac's keychain")}`],
         ["Version", [`v${a.version}`, when, a.version < latest ? `v${latest} is kept` : ""].filter(Boolean).join(" · ")],
         ["Added by", madeBy(a, threads.some((t) => t.id === a.by.threadId))],
@@ -343,9 +352,12 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
                 Up to v{latest}
               </button>
             )}
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={change}>
-              Ask an agent to change it
-            </button>
+            {/* Someone else's package: it changes with its next version from npm, not by an agent's edit. */}
+            {!a.panel?.dsh && (
+              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={change}>
+                Ask an agent to change it
+              </button>
+            )}
             <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-expanded={Boolean(files)} onClick={() => void showFiles()}>
               {files ? "Hide its files" : "Show its files"}
             </button>
@@ -445,8 +457,8 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
             if (source.trim() && !busy) void look();
           }}
         >
-          <p>Paste a GitHub address, or choose a folder that has an add-on in it.</p>
-          <input className="lc-input" type="text" aria-label="Where the add-on is" placeholder="for example github.com/someone/liner-pomodoro" spellCheck={false} autoComplete="off" autoFocus value={source} onChange={(e) => (setSource(e.target.value), setWhy(""))} aria-invalid={Boolean(why) || undefined} aria-describedby={why ? "lc-ao-why" : undefined} />
+          <p>Paste a GitHub address or a DeepSeek Harness plugin on npm, or choose a folder that has an add-on in it.</p>
+          <input className="lc-input" type="text" aria-label="Where the add-on is" placeholder="github.com/someone/liner-pomodoro, or dsh-media-desk" spellCheck={false} autoComplete="off" autoFocus value={source} onChange={(e) => (setSource(e.target.value), setWhy(""))} aria-invalid={Boolean(why) || undefined} aria-describedby={why ? "lc-ao-why" : undefined} />
           {why && (
             <p id="lc-ao-why" className="lc-ao-why" role="alert">
               {why}
@@ -463,13 +475,17 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
               Choose a folder…
             </button>
           </div>
-          {about && <p className="lc-ao-about">A connection, which lets your agents work with a service, or a panel or app, which shows beside your sessions or on a page of its own. It's a folder with an addon.json in it. On GitHub, paste the repository's address, or the address of the folder in it that holds the add-on.</p>}
+          {about && (
+            <p className="lc-ao-about">
+              A connection, which lets your agents work with a service, or a panel or app, which shows beside your sessions or on a page of its own. It's a folder with an addon.json in it. On GitHub, paste the repository's address, or the address of the folder in it that holds the add-on. A DeepSeek Harness plugin on npm comes in by its name (dsh-media-desk, or npm i dsh-media-desk) when it has a page, a panel or an MCP server.
+            </p>
+          )}
           <div className="lc-ao-trust">
             <I.alert size={15} />
             <span>Add only what you trust. Before it's turned on, you'll see what it can touch, and it never runs inside Liner Code itself.</span>
           </div>
           <button type="submit" className="lc-btn lc-ao-go" data-kind="primary" disabled={!source.trim() || busy}>
-            {busy ? (/github/i.test(source) ? "Fetching it from GitHub…" : "Reading it…") : "Add"}
+            {busy ? (/github/i.test(source) ? "Fetching it from GitHub…" : /^\s*[~/.]|^\s*[A-Za-z]:\\/.test(source) ? "Reading it…" : "Fetching it from npm…") : "Add"}
           </button>
           <button type="button" className="lc-ao-quiet lc-ao-make l-focus" onClick={onMake}>
             <I.sparkle size={13} />
@@ -478,6 +494,72 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
         </form>
       )}
     </Dialog>
+  );
+}
+
+/**
+  A DeepSeek Harness plugin's card: its package, and when it has a program of its own, exactly what
+  that program may do here and the tools it gives your agents, held to allow like the network. What
+  of it Liner Code doesn't have is said, so nothing half-works by surprise. One that draws nothing
+  and only gives tools is a connection: its program is the server every agent tool gets.
+*/
+function DshCard({ o, p: a, more, aside, yes, no }: { o: Opened; p: PanelAsk | ConnectionAsk; more: boolean; aside: (label: string) => ReactNode; yes: () => Promise<void>; no: () => Promise<void> }) {
+  const d = a.dsh!;
+  const p = a.kind === "panel" ? (a as PanelAsk) : null;
+  const gives = d.gives ?? [];
+  const mb = (n: number) => (n < 1_000_000 ? `${Math.max(1, Math.round(n / 1000))} KB` : `${(n / 1_000_000).toFixed(1)} MB`);
+  const fields = [
+    { label: "Plugin", value: <span className="lc-addon-wrap"><code className="lc-addon-mono">{d.package} {d.version}</code> · {mb(d.size)}</span> },
+    { label: "Program", value: <span className="lc-addon-wrap">{d.host ? (d.sandbox ?? "Runs as you, with no sandbox here: it can read and change your files and reach the internet.") : "None: only its page, in a sealed frame with no network"}</span> },
+    ...(gives.length
+      ? [
+          {
+            label: "Gives your agents",
+            value: (
+              <span className="lc-addon-wrap">
+                {gives.map((t) => (
+                  <span key={t.name} style={{ display: "block" }}>
+                    <code className="lc-addon-mono">{t.name}</code>
+                    {t.description ? ` · ${t.description.length > 140 ? `${t.description.slice(0, 139)}…` : t.description}` : ""}
+                  </span>
+                ))}
+              </span>
+            ),
+          },
+        ]
+      : []),
+    ...(p?.access.ai ? [{ label: "Model", value: "Asks a model you pick, billed to that model's account. Just a model: no tools or files" }] : []),
+    ...(d.host ? [{ label: "Keeps", value: "What it makes, in Liner Code's DeepSeek Harness folder" }] : []),
+    ...(d.left.length ? [{ label: "Left out", value: <span className="lc-addon-wrap">{d.left.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}</span> }] : []),
+    ...(a.replaces ? [{ label: "Replaces", value: `v${a.replaces}, which stays kept` }] : []),
+    { label: "Where", value: !p ? "Every agent tool (Claude Code, Codex, OpenCode and Hermes), in every project" : p.place === "page" ? "Under Apps, in the left sidebar" : p.place === "tab" ? "A tab beside Chat, in every project" : "The right dock, in every project" },
+    ...(more
+      ? [
+          ...(a.description ? [{ label: "About", value: <span className="lc-addon-wrap">{a.description}</span> }] : []),
+          { label: "Manifest", value: <pre className="lc-ask-cmd lc-addon-json">{a.manifest}</pre> },
+        ]
+      : []),
+  ];
+  return (
+    <div className="lc-addon lc-ao-card" data-kind={p ? "panel" : "connection"} data-net={d.host ? true : undefined}>
+      <ApprovalCard
+        agent={`An add-on from ${o.from}`}
+        title={!p ? `${a.name}, tools for your agents` : p.place === "page" ? `${a.name}, a page of its own` : p.place === "tab" ? `${a.name}, a tab beside Chat` : `${a.name}, beside your sessions`}
+        ask={`A DeepSeek Harness plugin${d.host ? " with a program of its own" : ""}`}
+        icon={d.host ? <I.chip size={16} /> : <I.blocks size={16} />}
+        description={!p ? "Its program runs in a process of its own, never in Liner Code's engine, and does each call your agents make to its tools. A program runs as you, so add it only if you trust where it's from." : d.host ? `Its page runs in a sealed frame, and its program in a process of its own, never in Liner Code's engine${gives.length ? "; your agents' calls to its tools run there too" : ""}. A program runs as you, so add it only if you trust where it's from.` : `It runs in a sealed frame ${p.place === "page" ? "of its own" : "beside the session"}, never in Liner Code's engine.`}
+        fields={fields}
+        hold={d.host}
+        aside={aside("Details")}
+        approveLabel={d.host ? "Hold to allow" : "Add it"}
+        denyLabel="Not this"
+        onApprove={yes}
+        onDeny={no}
+        explain={false}
+        approvedText="Added"
+        deniedText="Not added"
+      />
+    </div>
   );
 }
 
@@ -528,6 +610,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
       </code>
     </>
   );
+  if (a.dsh) return <DshCard o={o} p={a} more={more} aside={aside} yes={yes} no={no} />;
   if (a.kind === "panel") {
     const p = a as PanelAsk;
     const net = p.access.network;
@@ -574,7 +657,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
   const c = a as ConnectionAsk;
   // A key kept for the server it pointed at before isn't sent to a new one: it's typed again.
   const kept = (name: string) => !c.moved && keys.includes(addonKey(c.id, name));
-  const missing = c.secrets.filter((k) => !values[k.name]?.trim() && !kept(k.name));
+  const missing = c.secrets.filter((k) => !k.optional && !values[k.name]?.trim() && !kept(k.name));
   const fields = [
     { label: "Server", value: <code className="lc-addon-mono">{os.tilde(c.server)}</code> },
     ...(c.moved ? [{ label: "Was", value: <code className="lc-addon-mono">{os.tilde(c.moved)}</code> }] : []),
@@ -585,7 +668,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
       label: k.label,
       value: (
         <span className="lc-addon-key">
-          <input type="password" autoComplete="off" spellCheck={false} aria-label={k.label} placeholder={kept(k.name) ? "Kept from before · type to replace" : c.moved && keys.includes(addonKey(c.id, k.name)) ? "Type it again for the new server" : k.name} value={values[k.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))} />
+          <input type="password" autoComplete="off" spellCheck={false} aria-label={k.label} placeholder={kept(k.name) ? "Kept from before · type to replace" : c.moved && keys.includes(addonKey(c.id, k.name)) ? "Type it again for the new server" : k.optional ? `${k.name} · optional: it works without one` : k.name} value={values[k.name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [k.name]: e.target.value }))} />
           <small>
             <I.lock size={12} />
             {isNative() ? `Sealed in ${os.keyStore(`${os.here}'s keychain`)}, and never put in a chat.` : "Kept in Liner Code's memory until it quits, and never put in a chat."}
@@ -608,7 +691,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
         title={`${c.name}, for every agent tool`}
         ask={`${from}: a connection`}
         icon={<I.plug size={16} />}
-        description={`Settings only: nothing runs inside Liner Code. Each tool ${c.transport === "http" ? "reaches" : "starts"} ${c.name}'s server itself${c.secrets.length ? ", with the key below" : ""}.`}
+        description={`Settings only: nothing runs inside Liner Code. Each tool ${c.transport === "http" ? "reaches" : "starts"} ${c.name}'s server itself${c.secrets.length ? (c.secrets.every((k) => k.optional) ? ", with the key below if you give one" : ", with the key below") : ""}.`}
         fields={fields}
         aside={aside("Details")}
         approveLabel="Add it"

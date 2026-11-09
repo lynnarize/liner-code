@@ -33,6 +33,7 @@ export const COMMANDS: Command[] = [
   { id: "settings", label: "Settings", group: "Anywhere", keys: ["mod+,"] },
   { id: "sidebar", label: "Show or hide the sidebar", group: "Anywhere", keys: ["mod+\\"] },
   { id: "usage", label: "Usage and cost", group: "Anywhere", keys: ["mod+shift+u"] },
+  { id: "wall", label: "The Wall: every session at once, and back", group: "Anywhere", keys: ["mod+shift+o"] },
   { id: "open-project", label: "Add a project", group: "Anywhere", keys: ["mod+o"] },
   { id: "next-needs", label: "Next session that needs you", group: "Anywhere", keys: ["mod+alt+down"] },
   // T3 Code's workspace areas (docs/user/keyboard-focus.md): the sidebar, the thread, the composer, the panel.
@@ -60,6 +61,11 @@ export const FIXED: { group: string; label: string; keys: string[] }[] = [
   { group: "In the sessions list", label: "Pin, snooze, mark done", keys: ["P", "S", "D"] },
   { group: "In the sessions list", label: "Rename", keys: ["F2"] },
   { group: "In Settings", label: "Back to sessions", keys: ["Esc"] },
+  { group: "On the Wall", label: "Open the session on that tile", keys: ["1–9"] },
+  { group: "On the Wall", label: "Pick a tile", keys: ["←", "↑", "→", "↓"] },
+  { group: "On the Wall", label: "Open the picked tile", keys: ["Enter"] },
+  { group: "On the Wall", label: "Write to the picked tile: start typing", keys: ["A–Z"] },
+  { group: "On the Wall", label: "Back to where you were, and from a session opened on it, back to the Wall", keys: ["Esc"] },
 ];
 
 let mine: KeyBinding[] = [];
@@ -202,5 +208,5 @@ export function readBindings(text: string): { list?: KeyBinding[]; error?: strin
 }
 
 /** Commands whose keys the Mac app's menu also holds, with their keys now (empty: none). */
-export const MENU_COMMANDS = ["new", "commands", "settings", "sidebar", "usage", "open-project", "next-needs", "focus.next", "focus.prev"];
+export const MENU_COMMANDS = ["new", "commands", "settings", "sidebar", "usage", "wall", "open-project", "next-needs", "focus.next", "focus.prev"];
 export const menuKeys = () => Object.fromEntries(MENU_COMMANDS.map((id) => [id, bindingsOf(id)[0]?.key ?? ""]));

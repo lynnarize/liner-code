@@ -52,6 +52,8 @@ export const I = {
   dock: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M9.75 2.75v10.5" /></S>,
   panelBottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M2.25 9.75h11.5" /></S>,
   split: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M8 2.75v10.5" /></S>,
+  /** The Wall: every session at once, four tiles. */
+  wall: (p: P) => <S {...p}><rect x="2.25" y="2.25" width="4.5" height="4.5" rx="1.25" /><rect x="9.25" y="2.25" width="4.5" height="4.5" rx="1.25" /><rect x="2.25" y="9.25" width="4.5" height="4.5" rx="1.25" /><rect x="9.25" y="9.25" width="4.5" height="4.5" rx="1.25" /></S>,
   shrink: (p: P) => <S {...p}><path d="M2.75 9.25h4v4M13.25 6.75h-4v-4M9.25 6.75l4-4M6.75 9.25l-4 4" /></S>,
   /** The New tab guide: four tiles. */
   guide: (p: P) => <S {...p}><rect x="2.75" y="2.75" width="4" height="4" rx="1" /><rect x="9.25" y="2.75" width="4" height="4" rx="1" /><rect x="2.75" y="9.25" width="4" height="4" rx="1" /><rect x="9.25" y="9.25" width="4" height="4" rx="1" /></S>,
@@ -66,6 +68,8 @@ export const I = {
   tab: (p: P) => <S {...p}><path d="M2.25 13.25V5a1 1 0 0 1 1-1h3.5l1.25 1.75h5a1 1 0 0 1 1 1v6.5Z" /></S>,
   bottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 9.5h11.5" /></S>,
   agents: (p: P) => <S {...p}><circle cx="6" cy="5.5" r="2.25" /><path d="M2.25 13a3.75 3.75 0 0 1 7.5 0M10.25 3.35a2.25 2.25 0 0 1 0 4.3M11.6 9.65A3.75 3.75 0 0 1 13.75 13" /></S>,
+  /** Work sent off: a stem with two branches, each ending in an agent. */
+  fanout: (p: P) => <S {...p}><path d="M4.25 2.75v7.5a1.75 1.75 0 0 0 1.75 1.75h2.5M4.25 6.25h4.25" /><circle cx="10.25" cy="6.25" r="1.75" /><circle cx="10.25" cy="12" r="1.75" /></S>,
   changes: (p: P) => <S {...p}><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.75" /><path d="M7.75 4.75v4M5.75 6.75h4M5.75 11.25h4" /></S>,
   branch: (p: P) => <S {...p}><circle cx="4.5" cy="12" r="1.5" /><circle cx="11.5" cy="4.25" r="1.5" /><path d="M4.5 2.75v7.75M11.5 5.75A6.25 6.25 0 0 1 6 12" /></S>,
   attach: (p: P) => <S {...p}><path d="M12.6 7.45 8.05 12a3.1 3.1 0 0 1-4.4-4.4l4.9-4.9a2.05 2.05 0 0 1 2.9 2.9L6.6 10.45a1.02 1.02 0 0 1-1.45-1.45l4.3-4.3" /></S>,
@@ -126,6 +130,8 @@ export const I = {
   /** A pen nib, as design tools draw their pen. */
   design: (p: P) => <S {...p}><path d="M8 13.25 4.25 8.5 6 2.75h4l1.75 5.75Z" /><path d="M8 13.25V9.4" /><circle cx="8" cy="8.25" r="1.15" /></S>,
   play: (p: P) => <S {...p}><path d="M5.25 4.3v7.4a.9.9 0 0 0 1.36.77l6.1-3.7a.9.9 0 0 0 0-1.54l-6.1-3.7a.9.9 0 0 0-1.36.77Z" /></S>,
+  /** A dev server: a box of two racks. */
+  server: (p: P) => <S {...p}><rect x="2.75" y="2.75" width="10.5" height="10.5" rx="2.25" /><path d="M2.75 8h10.5M5.25 5.4h2M5.25 10.6h2" /></S>,
   bolt: (p: P) => <S {...p}><path d="M8.75 1.75 3.75 9h4L7 14.25l5-7.25H8Z" /></S>,
   clock: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.25" /></S>,
   hand: (p: P) => <S {...p}><path d="M5.5 8.5V4.25a.95.95 0 0 1 1.9 0V7.5M7.4 7V3.4a.95.95 0 0 1 1.9 0V7M9.3 7V4.1a.95.95 0 0 1 1.9 0v4.6c0 2.7-1.6 4.55-3.9 4.55-1.5 0-2.4-.8-3.2-2L2.9 8.9a.95.95 0 0 1 1.5-1.1l1.1 1.2" /></S>,

@@ -1,0 +1,553 @@
+/*
+  The Wall (Wall.tsx): every session as a tile on the paper, in as many columns as fit. A tile is
+  paper with a hairline ring, the trail's own steps inside it, and one ring of the accent on the
+  tile you've picked. Nothing animated sits under a blur, a mask or a rounded clip: the steps scroll
+  under a square cut, and the fade at its top is paint over them, so a wall of working sessions
+  costs a frame what their steps do.
+*/
+.lc-wall {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  container: lc-wall / inline-size;
+  animation: lc-paper-in 420ms var(--l-ease-enter) backwards;
+}
+.lc-wall-count {
+  flex: none;
+  margin-right: 4px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.lc-wall-hint {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wall-back .lc-kbd {
+  margin-left: 2px;
+}
+/* A narrower Wall lets go of the hint first, then the count: the filter and Back stay. */
+@container lc-wall (max-width: 960px) {
+  .lc-wall-hint {
+    display: none;
+  }
+}
+@container lc-wall (max-width: 720px) {
+  .lc-wall-count {
+    display: none;
+  }
+}
+
+.lc-wall-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-auto-rows: var(--lc-wall-row, 264px);
+  align-content: start;
+  gap: 12px;
+  padding: 4px 16px 16px;
+}
+.lc-wall-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 360px;
+  text-align: center;
+}
+.lc-wall-empty > svg {
+  color: var(--l-ink-4);
+}
+.lc-wall-empty > b {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--l-ink-2);
+}
+.lc-wall-empty > span {
+  max-width: 360px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-wall-empty > .lc-btn {
+  margin-top: 4px;
+}
+
+/* A tile */
+.lc-wt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair);
+  cursor: pointer;
+  transition: box-shadow 160ms var(--l-ease-out);
+  animation: l-unblur 320ms var(--l-ease-out) backwards;
+}
+/* Its words stay readable and selectable: the text cursor where there's text to select. */
+.lc-wt :is(.lc-wt-brief, .lc-wt-cmd, .lc-wt-q, .lc-wt-why, .lc-wt-error, .lc-wt-field) {
+  cursor: auto;
+}
+@media (hover: hover) {
+  .lc-wt:hover {
+    box-shadow: 0 0 0 1px var(--l-line);
+  }
+}
+.lc-wt[data-picked] {
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--l-accent) 60%, transparent);
+}
+.lc-wt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-wt-n {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--lc-plate);
+  color: var(--l-ink-2);
+  font: 500 11px/1 var(--l-font-mono);
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+.lc-wt[data-picked] .lc-wt-n {
+  background: var(--l-ink);
+  color: var(--lc-paper);
+}
+.lc-wt-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-wt-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wt-state[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-wt-state[data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.lc-wt-state[data-tone="ok"] {
+  color: var(--l-ok-text);
+}
+.lc-wt-check {
+  flex: none;
+}
+.lc-wt-sub {
+  margin-top: -4px;
+  padding-left: 26px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What it's doing: the latest at the bottom, older steps going under the top edge. */
+.lc-wt-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 0;
+  padding-top: 4px;
+  overflow: hidden;
+}
+.lc-wt-body::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 22px;
+  background: linear-gradient(var(--lc-paper), transparent);
+  pointer-events: none;
+}
+.lc-wt[data-kind="done"] .lc-wt-body {
+  justify-content: flex-start;
+}
+.lc-wt[data-kind="done"] .lc-wt-body::before {
+  content: none;
+}
+.lc-wt-wait {
+  align-self: flex-start;
+  font-size: 12.5px;
+}
+.lc-wt-trail {
+  flex: none;
+}
+.lc-wt .lc-trail-list {
+  gap: 7px;
+  margin: 2px 0 0 6px;
+  clip-path: none;
+}
+.lc-wt .lc-tstep {
+  animation: none;
+}
+.lc-wt .lc-tstep-line {
+  font-size: 13px;
+  cursor: default;
+}
+.lc-wt .lc-tstep-dot {
+  top: 6px;
+}
+.lc-wt .lc-tstep-target {
+  font-size: 12px;
+}
+.lc-wt .lc-tstep-res {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-wt .lc-tstep-tail {
+  max-height: 3.4em;
+  overflow: hidden;
+  white-space: pre;
+  text-overflow: ellipsis;
+}
+.lc-wt-error {
+  display: -webkit-box;
+  flex: none;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--l-danger-text);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.lc-wt-error[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+
+/* What it waits on */
+.lc-wt-card {
+  display: grid;
+  flex: none;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--lc-well);
+}
+.lc-wt-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-warn-text);
+}
+.lc-wt-cmd,
+.lc-wt-why,
+.lc-wt-q,
+.lc-wt-what {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.lc-wt-cmd {
+  font: 400 12.5px/1.45 var(--l-font-mono);
+  color: var(--l-ink);
+  overflow-wrap: anywhere;
+}
+.lc-wt-what {
+  font-size: 13px;
+  font-weight: 500;
+}
+.lc-wt-why {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--l-ink-3);
+}
+.lc-wt-q {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lc-wt-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
+}
+.lc-wt-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+.lc-wt-chip {
+  max-width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair);
+  color: var(--l-ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+@media (hover: hover) {
+  .lc-wt-chip:hover:not(:disabled) {
+    box-shadow: 0 0 0 1px var(--l-line);
+    color: var(--l-ink);
+  }
+}
+.lc-wt-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* A done tile's brief: the lead, its points one line each, then the files it changed. */
+.lc-wt-brief {
+  display: grid;
+  flex: none;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 2px;
+}
+.lc-wt-brief code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--lc-plate);
+  font: 400 0.92em/1 var(--l-font-mono);
+}
+.lc-wt-lead-line {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--l-ink);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.lc-wt-points,
+.lc-wt-files {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-wt-points > li {
+  position: relative;
+  min-width: 0;
+  padding-left: 14px;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-wt-points > li::before {
+  content: "";
+  position: absolute;
+  top: 0.68em;
+  left: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+}
+.lc-wt-points b {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-wt-points > li.lc-wt-more::before {
+  content: none;
+}
+.lc-wt-files {
+  gap: 2px;
+  padding-top: 8px;
+  box-shadow: inset 0 1px 0 var(--lc-hair);
+}
+.lc-wt-files > li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 22px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wt-files > li > svg {
+  flex: none;
+  color: var(--l-ink-4);
+}
+.lc-wt-fname {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  font: 400 12px/1 var(--l-font-mono);
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+}
+.lc-wt-fdir {
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+.lc-wt-fnew,
+.lc-wt-fdel {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--l-ok-text);
+}
+.lc-wt-fdel {
+  color: var(--l-danger-text);
+}
+.lc-wt-files > li[data-status="deleted"] .lc-wt-fname {
+  text-decoration: line-through;
+  color: var(--l-ink-3);
+}
+.lc-wt-files .lc-lines {
+  flex: none;
+  font-size: 12px;
+}
+.lc-wt-more {
+  font-size: 12px;
+  color: var(--l-ink-4);
+}
+.lc-wt-files > li.lc-wt-more {
+  padding-left: 19px;
+}
+
+/* Its foot: what changed and Settle, Retry, a line of how it goes, or your words to it. */
+.lc-wt-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wt-foot > .lc-btn {
+  margin-right: -6px;
+}
+.lc-wt-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-wt-vf {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.lc-wt-vf[data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.lc-wt-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 3px 0 10px;
+  border-radius: 10px;
+  background: var(--lc-well);
+  transition: box-shadow 140ms ease;
+}
+.lc-wt-field:focus-within {
+  box-shadow: 0 0 0 1px var(--l-line);
+}
+.lc-wt-field > input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 13px;
+}
+.lc-wt-field > input::placeholder {
+  color: var(--l-ink-4);
+}
+.lc-wt-send {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lc-act);
+  color: var(--lc-act-ink);
+  cursor: pointer;
+  transition: opacity 140ms ease;
+}
+.lc-wt-send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-wall,
+  .lc-wt {
+    animation: none;
+  }
+}

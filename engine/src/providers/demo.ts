@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProviderInfo } from "../../../contracts/src/index.ts";
 import { run } from "../exec.ts";
-import type { OpenOptions, Provider, ProviderSession, TurnSink } from "./types.ts";
+import type { OpenOptions, Provider, ProviderSession, ToolUpdate, TurnSink } from "./types.ts";
 
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -56,6 +56,12 @@ export async function ensureSampleProject(home: string) {
 
 /** A design asked for, or a comment on one (the Design surface's say "the design"); building one is a change like any other. */
 const DESIGN_ASK = /\b(design|mock-?up|wireframe|prototype|screen|landing page)\b/i;
+/** Asks that get the demo's agents: work sent off to three of them at once. */
+const AGENTS_ASK = /\b(sub-?agents?|agents?|in parallel|team)\b/i;
+const HAIKU = "claude:claude-haiku-5-5";
+const SONNET = "claude:claude-sonnet-5-5";
+/** One step of a demo agent's: what it does, and how long it takes. */
+type DemoStep = { title: string; toolKind: "read" | "search" | "exec" | "write" | "fetch"; path?: string; ms: number };
 
 /** The demo's design: a phone screen for the tide tables, in three rounds (a draft, night colours, the week added). */
 export function tideDesign(round: number) {
@@ -148,6 +154,10 @@ class DemoSession implements ProviderSession {
   private o: OpenOptions;
   private turns = 0;
   private designs = 0;
+  /** Its agents at work, those you stopped, and the words you sent them, read at their next step. */
+  private working = new Set<string>();
+  private stops = new Set<string>();
+  private words = new Map<string, string[]>();
   constructor(o: OpenOptions) {
     this.o = o;
   }
@@ -160,6 +170,7 @@ class DemoSession implements ProviderSession {
     const sample = existsSync(file) && readFileSync(file, "utf8").includes("nextHigh");
     if (DESIGN_ASK.test(text) && !/^Build the design\b/i.test(text.trim())) return this.design(text, sink, signal, t);
     if (this.o.planning) return this.plan(text, sink, signal, t);
+    if (AGENTS_ASK.test(text)) return this.agents(text, sink, signal, t);
 
     await stream((d) => sink.reasoning(d, `${t}-r`), `They asked: "${text.slice(0, 80)}". I'll look at how the tide times are read first, then make the smallest change and run the tests.`, signal, 22);
     await wait(300, signal);
@@ -313,6 +324,102 @@ class DemoSession implements ProviderSession {
       signal,
     );
     sink.usage({ inputTokens: 2400 + round * 600, outputTokens: 1900, cacheReadTokens: 1500 * round, costUsd: 0, contextTokens: 7800 + round * 2100, contextWindow: 200000 });
+  }
+
+  /** Stops one of its agents at its next step. */
+  stopAgent(taskId: string) {
+    if (!this.working.has(taskId)) return false;
+    this.stops.add(taskId);
+    return true;
+  }
+
+  /** A word for one of its agents: it takes it in at its next step. */
+  steerAgent(taskId: string, text: string) {
+    if (!this.working.has(taskId)) return false;
+    this.words.set(taskId, [...(this.words.get(taskId) ?? []), text]);
+    return true;
+  }
+
+  /**
+    A turn that sends work off to three agents at once (what Claude Code does with its Agent
+    tool): one looks, one runs the tests, one writes fixtures; the demo waits on them, then answers
+    with what they sent back. Each agent's steps, model and counts show on its row as it goes.
+  */
+  private async agents(text: string, sink: TurnSink, signal: AbortSignal, t: string) {
+    await stream((d) => sink.reasoning(d, `${t}-r`), `"${text.slice(0, 60)}" touches the parser, the tests and the fixtures. Those don't depend on each other, so I'll send an agent to each and wait for what they find.`, signal, 18);
+    const tasks = (done: number) => [
+      { title: "Find where tide heights are parsed", status: done > 0 ? "completed" : "in_progress", owner: "Explore" },
+      { title: "Run the tide tests", status: done > 1 ? "completed" : "in_progress", owner: "Test runner" },
+      { title: "Write spring-tide fixtures", status: done > 2 ? "completed" : "in_progress", owner: "Subagent" },
+      { title: "Add the range check", status: done > 3 ? "completed" : "pending" },
+    ] as const;
+    sink.plan(tasks(0).map((x) => ({ ...x })));
+    const ran = await Promise.all([
+      this.agent(sink, signal, `${t}-ex`, { type: "Explore", name: "Explore", task: "Find where tide heights are parsed", brief: "Find where tide heights are read from the NOAA feed, and where a day's range could be worked out. Report the files and the functions to change.", model: HAIKU }, [
+        { title: "Search for tideHeight", toolKind: "search", ms: 1400 },
+        { title: "Read src/tides.js", toolKind: "read", path: "src/tides.js", ms: 1600 },
+        { title: "Read src/tides.test.js", toolKind: "read", path: "src/tides.test.js", ms: 1500 },
+        { title: "Search for range|highLow", toolKind: "search", ms: 1500 },
+        { title: "Read README.md", toolKind: "read", path: "README.md", ms: 1800 },
+      ], "Heights come from `times` in src/tides.js; nothing works out a day's range yet. The check belongs beside `nextHigh`, which already walks the day's tides.", 0),
+      this.agent(sink, signal, `${t}-tr`, { type: "test-runner", name: "Test runner", task: "Run the tide tests", brief: "Run the tide tests and report any failure with the assertion that broke.", model: HAIKU }, [
+        { title: "Run npm test", toolKind: "exec", ms: 1800 },
+        { title: "Read src/tides.test.js", toolKind: "read", path: "src/tides.test.js", ms: 900 },
+      ], "1 test, 1 passed. Nothing covers a day's range yet.", 300),
+      this.agent(sink, signal, `${t}-fx`, { type: "general-purpose", name: "Subagent", task: "Write spring-tide fixtures", brief: "Write fixtures for spring tides: a week of readings around a new moon, with one day above 4 m. Keep the shape of the times in src/tides.js.", model: SONNET }, [
+        { title: "Read src/tides.js", toolKind: "read", path: "src/tides.js", ms: 1300 },
+        { title: "Fetch tidesandcurrents.noaa.gov", toolKind: "fetch", ms: 2200 },
+        { title: "Write spring fixtures", toolKind: "write", ms: 2600 },
+      ], "A week of spring tides around the new moon, with Wednesday at 4.2 m, in the same shape as `times`.", 1500),
+    ]);
+    sink.plan(tasks(3).map((x) => ({ ...x })));
+    const stopped = ran.filter((r) => r === "stopped").length;
+    await stream(
+      (d) => sink.text(d, `${t}-a`),
+      `${stopped ? `${stopped === 1 ? "One agent was" : `${stopped} agents were`} stopped, so I'll go on with what the others found. ` : ""}Heights are read from \`times\` in src/tides.js, and nothing works out a day's range yet. The tests pass, and none covers a range. The check belongs beside \`nextHigh\`, which already walks the day's tides: a day whose high minus its low tops 4 m gets an alert the day before.`,
+      signal,
+    );
+    sink.usage({ inputTokens: 5200, outputTokens: 640, cacheReadTokens: 3000, costUsd: 0, contextTokens: 9400, contextWindow: 200000 });
+  }
+
+  /** One demo agent at work: its row, its steps one by one, then its report, or "stopped" if you stopped it. */
+  private async agent(sink: TurnSink, signal: AbortSignal, key: string, who: { type: string; name: string; task: string; brief: string; model: string }, steps: DemoStep[], report: string, after: number) {
+    await wait(after, signal);
+    const title = `${who.name}: ${who.task}`;
+    const input = JSON.stringify({ subagent_type: who.type, description: who.task, prompt: who.brief }, null, 2);
+    const agent: NonNullable<ToolUpdate["agent"]> = { name: who.name, task: who.task, brief: who.brief, model: who.model, taskId: key, steerable: true, steps: [], tools: 0, tokens: 0 };
+    const say = (status: "running" | "done") => sink.tool({ key, tool: "Agent", toolKind: "task", title, input, status, agent: { ...agent, steps: [...(agent.steps ?? [])] } });
+    this.working.add(key);
+    say("running");
+    try {
+      for (const step of steps) {
+        if (this.stops.has(key)) break;
+        // What you told it comes in before its next step, as a step of its own.
+        for (const word of this.words.get(key) ?? []) agent.steps = [...(agent.steps ?? []), { title: `Took your word: ${word.length > 60 ? `${word.slice(0, 59)}…` : word}`, toolKind: "think", status: "done" }];
+        this.words.delete(key);
+        agent.steps = [...(agent.steps ?? []), { title: step.title, toolKind: step.toolKind, status: "running", ...(step.path ? { path: step.path } : {}) }];
+        agent.now = step.title;
+        agent.tools = (agent.tools ?? 0) + 1;
+        say("running");
+        await wait(step.ms, signal);
+        agent.steps = agent.steps.map((x, i, all) => (i === all.length - 1 ? { ...x, status: "done" } : x));
+        agent.tokens = (agent.tokens ?? 0) + 1100 + step.ms;
+        say("running");
+      }
+    } finally {
+      this.working.delete(key);
+      this.words.delete(key);
+    }
+    if (this.stops.delete(key)) {
+      agent.state = "stopped";
+      agent.now = undefined;
+      say("done");
+      return "stopped";
+    }
+    agent.report = report;
+    agent.now = undefined;
+    say("done");
+    return "done";
   }
 
   close() {}

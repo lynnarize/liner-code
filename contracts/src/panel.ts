@@ -18,7 +18,8 @@
   The agent's files are inlined: scripts and styles it links by a relative path go in as they are,
   pictures as data: addresses. Nothing it names elsewhere loads.
 */
-import type { PanelAccess } from "./index.ts";
+import type { DshFrame, PanelAccess } from "./index.ts";
+import { DSH_BASE, DSH_TOKENS, dshRuntime } from "./dsh.ts";
 
 /** The bridge's version. A frame that speaks another is answered with an error. */
 export const PANEL_API = 1;
@@ -59,8 +60,15 @@ const scriptText = (js: string) => js.replace(/<\/(script)/gi, "<\\/$1").replace
 
 /** Where a panel's frame loads from, on the app's own origin. */
 export const PANEL_FRAME = "/panel-frame";
-/** A panel's frame for this access: the one host it may reach goes in the address, for the header. */
-export const panelFrameUrl = (access: PanelAccess) => (access.network ? `${PANEL_FRAME}?network=${encodeURIComponent(access.network)}` : PANEL_FRAME);
+/**
+  A panel's frame for this access: the one host it may reach goes in the address, for the header,
+  and for a ported DeepSeek Harness plugin, that it reaches its own half on this Mac (dsh=1). Its
+  token stays out of the address: the path it's given in its document is what lets it in.
+*/
+export const panelFrameUrl = (access: PanelAccess, dsh?: boolean) => {
+  const q = [access.network ? `network=${encodeURIComponent(access.network)}` : "", dsh ? "dsh=1" : ""].filter(Boolean).join("&");
+  return q ? `${PANEL_FRAME}?${q}` : PANEL_FRAME;
+};
 /** Where this Mac's engine says it's served from, if that's a thing to name in a header. */
 const hereOf = (origin?: string) => (origin && /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/.test(origin) ? origin : "");
 /** addon_check's page: it reaches its own addresses, and its srcdoc frame inherits the rest of the refusal. */
@@ -72,14 +80,17 @@ export const checkConnections = (origin?: string) => (hereOf(origin) ? `("${here
   `origin` is where it's served from: the allowlist names this one address, so a panel that
   reloads comes back, and nothing else on this Mac opens to it.
 */
-export function panelFrame(network?: string | null, origin?: string) {
+export function panelFrame(network?: string | null, origin?: string, dsh?: string | null) {
   if (network && !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(network)) return null;
+  if (dsh && dsh !== "1") return null;
   const home = hereOf(origin) ? `"${hereOf(origin)}${PANEL_FRAME}"` : "";
+  // A ported plugin reaches its own half at the engine's path for it: each one's token, which only its document holds, keeps the rest out.
+  const own = dsh && hereOf(origin) ? `"${hereOf(origin)}/dsh/*"` : "";
   const headers = {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
     "content-security-policy": "sandbox allow-scripts; frame-ancestors 'self'",
-    "connection-allowlist": `(${[home, network ? `"https://${network}/*"` : ""].filter(Boolean).join(" ")})`,
+    "connection-allowlist": `(${[home, own, network ? `"https://${network}/*"` : ""].filter(Boolean).join(" ")})`,
   };
   // It asks for its document, as it does each time it loads. Writing it drops this listener too.
   // The port comes with it and stays held: it closes when this frame's process ends, which is how
@@ -99,19 +110,25 @@ export function sealedFrame(at: string | undefined, to: string, appOrigin: strin
   return !!u && u.origin === appOrigin && u.pathname === PANEL_FRAME;
 }
 
-/** The content policy: nothing but inline scripts and styles, pictures in data:, and at most one host over https. */
-export function panelPolicy(access: PanelAccess) {
+/**
+  The content policy: nothing but inline scripts and styles, pictures in data:, and at most one host
+  over https. A ported DeepSeek Harness plugin also reaches `base`, its own path on the engine (its
+  Node half's routes and its package's pictures), which its relative addresses resolve against.
+*/
+export function panelPolicy(access: PanelAccess, base?: string) {
   const host = access.network ? `https://${access.network}` : "";
+  const own = base && DSH_BASE.test(base) ? base : "";
+  const also = [host, own].filter(Boolean).join(" ");
   return [
     "default-src 'none'",
     "script-src 'unsafe-inline'",
     "style-src 'unsafe-inline'",
-    `img-src data: blob:${host ? ` ${host}` : ""}`,
-    "font-src data:",
-    "media-src data: blob:",
-    `connect-src ${host || "'none'"}`,
+    `img-src data: blob:${also ? ` ${also}` : ""}`,
+    `font-src data:${own ? ` ${own}` : ""}`,
+    `media-src data: blob:${own ? ` ${own}` : ""}`,
+    `connect-src ${also || "'none'"}`,
     "form-action 'none'",
-    "base-uri 'none'",
+    `base-uri ${own || "'none'"}`,
   ].join("; ");
 }
 
@@ -155,15 +172,18 @@ Object.defineProperty(window,"liner",{value:liner,writable:false,configurable:fa
   The frame's whole document. `files` are the panel's own (text as it is, pictures in base64),
   `entry` the HTML among them it opens on.
 */
-export function panelDocument(o: { files: Record<string, string>; entry: string; access: PanelAccess; theme: PanelTheme; place: string }) {
+export function panelDocument(o: { files: Record<string, string>; entry: string; access: PanelAccess; theme: PanelTheme; place: string; dsh?: { frame: DshFrame; platform: string; base?: string } }) {
   const html = fileOf(o.files, o.entry) ?? `<p>There's no ${o.entry} among its files.</p>`;
   const root = Object.entries(o.theme)
     .map(([k, v]) => `${k}:${v || "initial"}`)
     .join(";");
+  // A ported DeepSeek Harness plugin: its base, then React and DSH's loader after the bridge, and DSH's tokens from the app's colours.
+  const base = o.dsh?.base && DSH_BASE.test(o.dsh.base) ? o.dsh.base : undefined;
+  const dsh = o.dsh ? `<script>${scriptText(o.dsh.platform)}</script><script>${scriptText(dshRuntime({ package: o.dsh.frame.package, slot: o.dsh.frame.slot, config: o.dsh.frame.config }))}</script><style>${DSH_TOKENS}</style>` : "";
   const head =
-    `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${panelPolicy(o.access)}"><meta http-equiv="x-dns-prefetch-control" content="off">` +
+    `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${panelPolicy(o.access, base)}"><meta http-equiv="x-dns-prefetch-control" content="off">${base ? `<base href="${base}">` : ""}` +
     `<meta name="viewport" content="width=device-width,initial-scale=1"><script>${shim(o.access, o.theme, o.place)}</script>` +
-    `<style>:root{${root};color-scheme:light dark}html,body{margin:0}body{background:var(--surface);color:var(--ink);font:13.5px/1.55 var(--font),system-ui,sans-serif}code,pre{font-family:var(--font-mono),ui-monospace,monospace}</style>`;
+    `<style>:root{${root};color-scheme:light dark}html,body{margin:0}body{background:var(--surface);color:var(--ink);font:13.5px/1.55 var(--font),system-ui,sans-serif}code,pre{font-family:var(--font-mono),ui-monospace,monospace}</style>${dsh}`;
   // Its own scripts, styles and pictures, inlined from its files; anything else it names stays out.
   const body = html
     .replace(/<script\b([^>]*)>\s*<\/script>/gi, (whole, a: string) => {

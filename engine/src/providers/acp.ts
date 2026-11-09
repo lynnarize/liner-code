@@ -19,7 +19,7 @@ import { TOOLS } from "../liner-tools.ts";
 import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
 import { imageType, readUpTo } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
-import { ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
+import { ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
@@ -109,6 +109,56 @@ const OPENCODE_REVIEW = {
 
 /** What ends an OpenCode turn when its own rules can't: a subtask, which `task*` doesn't reach and would wait for good at its first step. */
 const SUBAGENT = "This OpenCode command runs a subagent, which Liner Code can't hold to your access level, so it was stopped.";
+
+/*
+  Hermes sends agents off with its delegate_task tool. Over ACP all it carries of them is its own
+  words: the call starts with "Delegating 3 tasks" and each task's goal (and role), and ends with
+  "Delegation results", a block per task (Hermes: acp_adapter/tools.py, _start_delegate and
+  _format_delegate_result). Each task becomes an agent row from those; its own steps never reach
+  ACP, so a row says only the tools it used, once it's done.
+*/
+/** A delegate_task call that sends agents off (not its list, steer or stop actions). */
+export const isDelegation = (title?: string) => /^delegate_task(?::|$)/.test(title ?? "") && !/^delegate_task:\s*(list|steer|stop)\b/i.test(title ?? "");
+/** The tasks a delegation starts with: each goal, and its role when it has one. */
+export function delegatedTasks(text: string, title?: string): { goal: string; role?: string }[] {
+  const many = /^Delegating \d+ tasks/.test(text.trim());
+  if (many) {
+    const out: { goal: string; role?: string }[] = [];
+    for (const line of text.split("\n")) {
+      const m = /^\s*\d+\.\s+(.*?)(?:\s+\(([\w][\w -]*)\))?\s*$/.exec(line);
+      if (m && m[1]) out.push({ goal: m[1], ...(m[2] ? { role: m[2] } : {}) });
+    }
+    if (out.length) return out;
+  }
+  const one = /^Delegating task:?\s*([\s\S]*)$/.exec(text.trim())?.[1]?.trim() || title?.replace(/^delegate_task:?\s*/, "").trim();
+  return one ? [{ goal: one }] : [];
+}
+export type DelegateResult = { index: number; status: string; model?: string; role?: string; seconds?: number; summary?: string; error?: string; tools: string[] };
+/** What a delegation sent back, task by task; null when it isn't Hermes's results (it was dispatched to the background, or failed whole). */
+export function delegateResults(text: string): DelegateResult[] | null {
+  if (!/^Delegation results:/.test(text.trim())) return null;
+  const out: DelegateResult[] = [];
+  let cur: DelegateResult | null = null;
+  for (const line of text.split("\n")) {
+    const head = /^\S+\s+Task (\d+|\?): (\w+)(?: \((.*)\))?\s*$/.exec(line);
+    if (head) {
+      const bits = (head[3] ?? "").split(", ").map((b) => b.trim()).filter(Boolean);
+      const role = bits.find((b) => b.startsWith("role="))?.slice(5);
+      const secs = bits.find((b) => /^\d+(\.\d+)?s$/.test(b));
+      const model = bits.find((b) => b !== secs && !b.startsWith("role="));
+      cur = { index: head[1] === "?" ? out.length : Number(head[1]) - 1, status: head[2], tools: [], ...(model ? { model } : {}), ...(role ? { role } : {}), ...(secs ? { seconds: Number.parseFloat(secs) } : {}) };
+      out.push(cur);
+      continue;
+    }
+    if (!cur || !line.trim()) continue;
+    if (line.startsWith("Tools: ")) cur.tools = line.slice(7).replace(/\s*\(\+\d+\)$/, "").split(", ").filter(Boolean);
+    else if (line.startsWith("Error: ")) cur.error = line.slice(7).trim();
+    else cur.summary = cur.summary ? `${cur.summary}\n${line}` : line;
+  }
+  return out;
+}
+/** "researcher" is "Researcher"; no role, "Subagent". */
+const roleName = (role?: string) => (role?.trim() ? role.trim().replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase()) : "Subagent");
 /**
   And a model that won't take no. OpenCode goes on after each refusal (continue_loop_on_deny, below), so
   with nobody there to press Stop one that keeps trying would go on for good, where a refusal used to end it.
@@ -393,6 +443,9 @@ class AcpSession implements ProviderSession {
   private later = new Map<string, NodeJS.Timeout>();
   /** When each call's output last reached the app. */
   private shown = new Map<string, number>();
+  /** Hermes's delegations, by call: the tasks each started with, read off its first words. */
+  private delegations = new Map<string, { goal: string; role?: string }[]>();
+  private pid: string;
   private stderr = "";
   private o: OpenOptions;
   private cmd: string[];
@@ -401,11 +454,12 @@ class AcpSession implements ProviderSession {
   /** It's OpenCode, whose subagents can't be answered for. */
   private opencode: boolean;
 
-  constructor(o: OpenOptions, cmd: string[], login = "", opencode = false) {
+  constructor(o: OpenOptions, cmd: string[], login = "", opencode = false, pid = "acp") {
     this.o = o;
     this.cmd = cmd;
     this.login = login;
     this.opencode = opencode;
+    this.pid = pid;
   }
 
   private send(m: Omit<Msg, "jsonrpc">) {
@@ -743,6 +797,7 @@ class AcpSession implements ProviderSession {
       .filter(Boolean)
       .join("\n");
     const status = call.status === "completed" ? "done" : call.status === "failed" ? "failed" : "running";
+    if (isDelegation(call.title)) return this.delegated(call, out, status, sink);
     const path = call.locations?.[0]?.path ?? ((call.content ?? []).find((c) => c.type === "diff")?.path as string | undefined);
     // Liner Code's own tools, under the name the agent gives them ("liner_design_show"): named and titled as every tool names them.
     // By the list, and only with its server there: a name that only looks like one, as a server called liner_notes makes, is that server's.
@@ -758,6 +813,38 @@ class AcpSession implements ProviderSession {
       input: call.rawInput === undefined ? undefined : JSON.stringify(call.rawInput, null, 2),
       output: out.length > OUTPUT_MAX ? `…${out.slice(-OUTPUT_MAX)}` : out || (call.rawOutput === undefined ? undefined : JSON.stringify(call.rawOutput, null, 2).slice(0, OUTPUT_MAX)),
       status,
+    });
+  }
+
+  /** A delegation's tasks as agent rows: running while the call runs, then each as Hermes says it went. */
+  private delegated(call: ToolCall, out: string, status: "running" | "done" | "failed", sink: TurnSink) {
+    const id = call.toolCallId;
+    // Its tasks are named in its first words; its last words are the results, which name them only by number.
+    if (!this.delegations.has(id) || (status === "running" && out)) {
+      const tasks = delegatedTasks(out, call.title);
+      if (tasks.length || !this.delegations.has(id)) this.delegations.set(id, tasks.length ? tasks : [{ goal: "a task" }]);
+    }
+    const tasks = this.delegations.get(id)!;
+    const results = status === "running" ? null : delegateResults(out);
+    tasks.forEach((t, i) => {
+      const r = results?.find((x) => x.index === i);
+      const name = roleName(r?.role ?? t.role);
+      // No taskId: ACP can't stop or steer one task alone.
+      const agent: NonNullable<ToolUpdate["agent"]> = { name, task: t.goal.length > 80 ? `${t.goal.slice(0, 79)}…` : t.goal, brief: t.goal, steps: [] };
+      let rowStatus = status;
+      if (r) {
+        if (r.model) agent.model = `${this.pid}:${r.model}`;
+        agent.steps = r.tools.map((tool) => ({ title: tool, toolKind: "other", status: "done" }));
+        agent.tools = r.tools.length || undefined;
+        agent.report = r.summary ?? r.error;
+        rowStatus = r.status === "completed" ? "done" : r.status === "interrupted" ? "done" : "failed";
+        if (r.status === "interrupted") agent.state = "stopped";
+      } else if (status !== "running") {
+        // No results to read: it went to the background (Hermes reports back later), or failed whole.
+        if (status === "failed") agent.report = out.trim() || undefined;
+        else agent.background = true;
+      }
+      sink.tool({ key: `${id}#${i}`, tool: "delegate_task", toolKind: "task", title: `${name}: ${agent.task}`, input: t.goal, status: rowStatus, agent });
     });
   }
 
@@ -941,7 +1028,7 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
     commands: async (env, cwd) => ({ commands: await acpCommands(cmd, envOf(env), cwd), skills: [] }),
     open: (o) => {
       const env = envOf(o.env);
-      return new AcpSession({ ...o, env: isOpenCode ? { ...env, ...opencodeEnv(o.cwd, env, Boolean(o.mcp)) } : env, dirs: isOpenCode ? [...(o.dirs ?? []), opencodeOutputs(o.env)] : o.dirs }, cmd, spec.login, isOpenCode);
+      return new AcpSession({ ...o, env: isOpenCode ? { ...env, ...opencodeEnv(o.cwd, env, Boolean(o.mcp)) } : env, dirs: isOpenCode ? [...(o.dirs ?? []), opencodeOutputs(o.env)] : o.dirs }, cmd, spec.login, isOpenCode, id);
     },
   };
 }

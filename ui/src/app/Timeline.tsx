@@ -21,6 +21,7 @@ import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
 import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
 import { Badge, Disc, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
+import { Fanout } from "./Crew";
 import { toast } from "@liner/components/toast/toast";
 import { Boundary } from "./Boundary";
 import { bridge, isNative } from "./bridge";
@@ -86,6 +87,8 @@ const CARD_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show
 */
 const DESIGN_TOOLS = new Set(["mcp__liner__design_show", "liner.design_show"]);
 const isCard = (it: Item, designed: boolean) => it.kind === "tool" && (CARD_TOOLS.has(it.tool) || (designed && DESIGN_TOOLS.has(it.tool) && it.status === "done"));
+/** A tool call the trail draws as a step: not a card of its own (a question, a plan, a page, a design shown) nor the PR card's test run. */
+export const isStep = (it: Tool) => !CARD_TOOLS.has(it.tool) && !DESIGN_TOOLS.has(it.tool) && it.tool !== PR_TEST_TOOL && !(it.toolKind === "task" && /^Opus\b/.test(it.title));
 /** A lead wraps the plan it hands over in <plan> tags; the plan card shows it, so the text drops the tags. */
 const untag = (text: string) => text.replace(/<\/?plan\b[^>]*>/g, "");
 
@@ -466,6 +469,8 @@ const Chev = ({ className }: { className?: string }) => (
 
 /** Liner Code's own Browser tools, under either way an agent tool names them. */
 const BROWSER = /^(?:mcp__liner__|liner\.)browser_(\w+)/;
+/** Its dev servers from launch.json, the same way. */
+const SERVER = /^(?:mcp__liner__|liner\.)server_(\w+)/;
 const lastLine = (s?: string) =>
   s
     ?.split("\n")
@@ -494,7 +499,7 @@ function commandOf(t: Tool) {
 
 /** One line of the trail: what it did (a verb and what it touched), how it went, and the fact that matters, under it. */
 /** `diff`: the file in the turn's checkpoint an edit step changed, which a press opens in Changes. */
-type TrailStep = { key: string; tools: Tool[]; verb: string; target?: string; result?: ReactNode; state: "running" | "done" | "failed"; at: number; seconds: number; tail?: string; diff?: string };
+export type TrailStep ={ key: string; tools: Tool[]; verb: string; target?: string; result?: ReactNode; state: "running" | "done" | "failed"; at: number; seconds: number; tail?: string; diff?: string };
 type Row = { kind: "step"; step: TrailStep } | Exclude<Entry, { kind: "tool" }>;
 
 /** A line of output that says what went wrong. */
@@ -548,7 +553,7 @@ const writes = (t: Tool) => t.toolKind === "edit" || t.toolKind === "write";
   file (T3 Code's work log groups them the same way, so a run of edits isn't a stack of rows), and
   so do the agent's turns at the Browser.
 */
-function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
+export function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
   const groups: Tool[][] = [];
   for (const t of tools) {
     const prev = groups.at(-1)?.at(-1);
@@ -574,6 +579,14 @@ function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
       });
       const page = /^(?:Open|Opened)\s+(.+?)\s+in the Browser$/.exec(first.title)?.[1];
       return { ...base, verb: "Checked in the Browser", target: page, result: joined([did.join(", "), ...pageParts(t)]) };
+    }
+    if (SERVER.exec(t.tool)?.[1] === "start") {
+      // "web is running on localhost:5173, …": where it runs, which is what the person needs of it.
+      const at = /\b(?:running|starting)\b[^\n]*?\bon (localhost:\d+)/.exec(t.output ?? "")?.[1];
+      // Failed, why: the line under "didn't stay up", or the one line it said (the person said no).
+      const said = (t.output ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+      const why = /didn't stay up/.test(said[0] ?? "") ? said[1] : said[0];
+      return { ...base, verb: state === "running" ? "Starting" : state === "failed" ? "Couldn't start" : "Started", target: t.title.replace(/^Run\s+|\s+from launch\.json$/g, ""), result: state === "failed" ? (why ? clip(why) : undefined) : at };
     }
     if (t.toolKind === "read") {
       const names = [...new Set(g.map((x) => nameOf(x.path ?? x.title.replace(/^Read\s+/, ""))))];
@@ -616,13 +629,13 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
   const [rows, setRows] = useState<string[]>([]);
   // A running step's clock ticks only where it's seen.
   const [now, setNow] = useState(Date.now());
-  // Agents a model started (Claude Code's Task) and still at it: a line each under the folded row.
-  const agentsAt = entries.filter((e): e is Extract<Entry, { kind: "tool" }> => e.kind === "tool" && e.it.toolKind === "task" && e.it.status === "running").map((e) => e.it);
+  // Agents this part sent off (Claude Code's Agent tool): they fan out under the row, each with what it does (Crew.tsx), not as steps.
+  const sent = useMemo(() => entries.flatMap((e) => (e.kind === "tool" && e.it.toolKind === "task" && isStep(e.it) ? [e.it] : [])), [entries]);
   useEffect(() => {
-    if (!live || (!isOpen && !agentsAt.length)) return;
+    if (!live || !isOpen) return;
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
-  }, [live, isOpen, agentsAt.length]);
+  }, [live, isOpen]);
   // Steps in the order they came, with thinking, what was said and asks between them.
   const list = useMemo(() => {
     const out: Row[] = [];
@@ -632,15 +645,16 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
       tools = [];
     };
     for (const e of entries) {
-      if (e.kind === "tool") tools.push(e.it);
-      else {
+      if (e.kind === "tool") {
+        if (!sent.includes(e.it)) tools.push(e.it);
+      } else {
         flush();
         out.push(e);
       }
     }
     flush();
     return out;
-  }, [entries, cp]);
+  }, [entries, cp, sent]);
   const steps = list.filter((r): r is { kind: "step"; step: TrailStep } => r.kind === "step").map((r) => r.step);
   const failed = steps.filter((s) => s.state === "failed").length;
   // Folded, the row keeps what it changed, ran, read and looked up, and whether it checked its work.
@@ -663,18 +677,19 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
     web && "read the web",
     checked && "checked the Browser",
   ].filter((x): x is string => Boolean(x));
-  if (!said.length) said.push(plural(steps.length, "step"));
-  // Working: the step under way, as the head would say it ("Editing index.html…").
+  if (!said.length) said.push(steps.length ? plural(steps.length, "step") : `sent ${plural(sent.length, "agent")}`);
+  // Working: the step under way, as the head would say it ("Editing index.html…"), or the agents it waits on.
   const current = tools.findLast((t) => t.status === "running");
   const thinking = entries.some((e) => e.kind === "thought" && e.it.streaming);
-  const doing = current ? verb(current).replace(/^is /, "") : thinking ? "thinking" : "working";
+  const waiting = sent.filter((t) => t.status === "running").length;
+  const doing = current ? verb(current).replace(/^is /, "") : thinking ? "thinking" : waiting ? `waiting on ${plural(waiting, "agent")}` : "working";
   return (
     <div className="lc-trail" data-open={isOpen || undefined} data-live={live || undefined}>
       <button type="button" className="lc-trail-sum l-focus" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}>
         {live ? (
           <>
             <LiveLine className="lc-trail-parts" text={`${doing[0].toUpperCase()}${doing.slice(1)}…`} />
-            <span className="lc-quiet l-num">{plural(steps.length, "step")}</span>
+            {steps.length > 0 && <span className="lc-quiet l-num">{plural(steps.length, "step")}</span>}
           </>
         ) : (
           <span className="lc-trail-parts">
@@ -695,17 +710,6 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
         {failed > 0 && <span className="lc-trail-failed">· {failed} failed</span>}
         <Chev className="lc-row-chev" />
       </button>
-      {live && !isOpen && agentsAt.length > 0 && (
-        <ul className="lc-trail-agents" aria-label={`${plural(agentsAt.length, "agent")} working`}>
-          {agentsAt.map((t) => (
-            <li key={t.id}>
-              <Rays size={10} />
-              <span className="lc-trail-agent-t">{t.title}</span>
-              <span className="lc-quiet l-num">Running · {duration(Math.max(0, Math.round((now - t.at) / 1000)))}</span>
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="lc-trail-fold" inert={!isOpen || undefined}>
         <ol className="lc-trail-list">
           {list.map((r, i) => {
@@ -764,6 +768,7 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
           })}
         </ol>
       </div>
+      <Fanout threadId={threadId} tools={sent} live={live} />
     </div>
   );
 }
@@ -785,7 +790,10 @@ function Todo({ it }: { it: Extract<Item, { kind: "plan" }> }) {
               <span className="lc-todo-mk" key={e.status}>
                 {e.status === "completed" ? <I.check size={11} /> : e.status === "in_progress" ? <Rays size={10} /> : null}
               </span>
-              <span className={e.status === "in_progress" ? "l-shimmer" : undefined}>{e.title}</span>
+              <span>
+                <span className={e.status === "in_progress" ? "l-shimmer" : undefined}>{e.title}</span>
+                {e.owner && <span className="lc-todo-own">{e.owner}</span>}
+              </span>
             </li>
           ))}
         </ol>
@@ -893,7 +901,7 @@ function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: stri
   const [details, setDetails] = useState(false);
   // A key kept for the server it pointed at before isn't sent to a new one: it's typed again.
   const kept = (name: string) => !a.moved && keys.includes(addonKey(a.id, name));
-  const missing = a.secrets.filter((k) => !values[k.name]?.trim() && !kept(k.name));
+  const missing = a.secrets.filter((k) => !k.optional && !values[k.name]?.trim() && !kept(k.name));
   const answer = async (allow: boolean, reason?: string) => {
     try {
       // The keys first, so the connection has them the moment it's added.

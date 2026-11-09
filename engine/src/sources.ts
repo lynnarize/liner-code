@@ -1,6 +1,7 @@
 /*
-  Add-ons someone else made: from a GitHub address or a folder on this Mac, added from the Add-ons
-  page. Nothing from outside gets more than an agent's draft does. A GitHub repository is cloned,
+  Add-ons someone else made: from a GitHub address, a folder on this Mac, or a DeepSeek Harness
+  plugin on npm (dsh.ts), added from the Add-ons page. Nothing from outside gets more than an agent's
+  draft does, but for a DSH plugin's Node half, which the card names and holds to allow. A GitHub repository is cloned,
   shallow and without its submodules, LFS files or hooks, into a staging folder of the engine's own;
   the add-on in it (or in the folder) goes through the same manifest and file checks, and is shown
   on the same card, with what it can touch and the network held as before. Only the card's yes copies
@@ -8,11 +9,13 @@
   started by each agent tool, a panel in its sealed frame. A no, or nothing at all, leaves nothing.
 */
 import { randomBytes } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddonAsk, AddonManifest } from "../../contracts/src/index.ts";
 import { ADDON_DIR, checkManifest, readPanelFiles, reachOf, type Addons, type PanelFiles } from "./addons.ts";
+import { isDsh, npmFetch, npmOf, readDsh } from "./dsh.ts";
+import { sandboxWords } from "./dsh-hosts.ts";
 import { run } from "./exec.ts";
 
 /** A GitHub address, as people paste them: owner/repo, maybe a branch and a folder in it. */
@@ -56,7 +59,7 @@ export function readSource(dir: string): { manifest: AddonManifest; files?: Pane
   return manifest.kind === "panel" ? { manifest, files: readPanelFiles(dir, manifest.entry, true) } : { manifest };
 }
 
-type Staged = { manifest: AddonManifest; files?: PanelFiles; from: string; dir?: string; at: number };
+type Staged = { manifest: AddonManifest; files?: PanelFiles; from: string; dir?: string; pkg?: { dir: string; modules: boolean }; at: number };
 
 export class Sources {
   private staged = new Map<string, Staged>();
@@ -82,13 +85,28 @@ export class Sources {
     // A card never answered (the dialog closed while it was fetched) goes after half an hour.
     for (const [k, v] of this.staged) if (Date.now() - v.at > 30 * 60_000) this.drop(k);
     const s = source.trim();
-    if (!s) throw new Error("Paste a GitHub address, or choose a folder.");
+    if (!s) throw new Error("Paste a GitHub address or an npm package, or choose a folder.");
     const gh = githubOf(s);
+    const npm = gh ? null : npmOf(s);
     let dir: string;
     let from: string;
     let clone: string | undefined;
+    let integrity: string | undefined;
     const token = randomBytes(12).toString("hex");
-    if (gh) {
+    if (npm) {
+      // A DeepSeek Harness plugin on npm: its tarball, checked and unpacked, scripts never run.
+      clone = join(this.root, token);
+      mkdirSync(clone, { recursive: true });
+      try {
+        const got = await npmFetch(npm, join(clone, "package"));
+        integrity = got.integrity;
+        from = `npmjs.com/package/${got.name}`;
+      } catch (e) {
+        rmSync(clone, { recursive: true, force: true });
+        throw e;
+      }
+      dir = join(clone, "package");
+    } else if (gh) {
       clone = join(this.root, token);
       mkdirSync(this.root, { recursive: true });
       from = `github.com/${gh.owner}/${gh.repo}${gh.path ? `/${gh.path}` : ""}`;
@@ -114,12 +132,13 @@ export class Sources {
         } catch {
           throw new Error("That file:// address isn't a folder on this Mac.");
         }
-      if (!isAbsolute(path)) throw new Error("That isn't a GitHub address or a folder: paste github.com/owner/repo, or choose a folder.");
+      if (!isAbsolute(path)) throw new Error("That isn't a GitHub address, an npm package or a folder: paste github.com/owner/repo or a package's name, or choose a folder.");
       if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error("There's no folder there.");
       dir = path;
       from = `the folder ${basename(path)}`;
     }
     try {
+      if (npm || (isDsh(dir) && !existsSync(join(dir, "addon.json")))) return await this.openDsh({ token, dir, from, clone, integrity, npm: !!npm });
       const at = findAddon(dir);
       const { manifest, files } = readSource(at);
       if (manifest.kind === "panel" && manifest.access.network && this.network() === "never") throw new Error(`It reaches ${manifest.access.network}, and panels may never reach the internet (Settings › Add-ons).`);
@@ -144,13 +163,77 @@ export class Sources {
     }
   }
 
+  /**
+    A DeepSeek Harness plugin, unpacked in `dir`: read into the add-on it makes, its Node half's
+    dependencies installed (npm's scripts off), and its card, which says what of it is left out.
+  */
+  private async openDsh(o: { token: string; dir: string; from: string; clone?: string; integrity?: string; npm: boolean }): Promise<{ token: string; from: string; ask: AddonAsk }> {
+    const read = readDsh(o.dir, { integrity: o.integrity });
+    const { manifest } = read;
+    const have = this.addons.get(manifest.id);
+    if (have && have.kind !== manifest.kind) throw new Error(`You already have a ${have.kind} called ${manifest.id}; this one is a ${manifest.kind} with the same id.`);
+    if (have && have.by.from?.toLowerCase() !== o.from.toLowerCase()) {
+      const who = have.by.from ? `from ${have.by.from}` : have.by.agent === "You" ? "that you added" : `made by ${have.by.agent}`;
+      throw new Error(`You already have an add-on called ${manifest.id}${have.removed ? " (removed, but kept)" : ""}, ${who}; its keys and storage stay with that id. This one is from ${o.from}.`);
+    }
+    // A folder you chose is copied on the yes, its node_modules only when its program needs them; one from npm is ours to finish here.
+    if (read.deps.length) {
+      if (!o.clone) {
+        if (!existsSync(join(o.dir, "node_modules"))) throw new Error(`Its program needs ${read.deps.slice(0, 3).join(", ")}${read.deps.length > 3 ? "…" : ""}: run npm install in that folder first.`);
+      } else await this.dependencies(o.dir, read.deps);
+    }
+    this.staged.set(o.token, { manifest, files: read.files, from: o.from, dir: o.clone, pkg: manifest.dsh ? { dir: o.dir, modules: read.deps.length > 0 } : undefined, at: Date.now() });
+    const shown = { id: "", name: "Every project" };
+    const path = o.npm ? `${manifest.dsh ? manifest.dsh.package : o.from.replace(/^npmjs\.com\/package\//, "")}` : o.dir;
+    // Its card: its package, what its program may do here, the tools it gives your agents, and what of it is left out.
+    const dsh = manifest.dsh ? { package: manifest.dsh.package, version: manifest.dsh.version, host: !!manifest.dsh.host, ...(manifest.dsh.host && sandboxWords() ? { sandbox: sandboxWords()! } : {}), ...(manifest.dsh.tools?.length ? { tools: manifest.dsh.tools.map((t) => t.name), gives: manifest.dsh.tools } : {}), left: read.left, size: read.size } : undefined;
+    if (manifest.kind === "panel") return { token: o.token, from: o.from, ask: { ...this.addons.panelAsk(manifest, path, shown, read.files!), scope: "all", ...(dsh ? { dsh } : {}) } };
+    return { token: o.token, from: o.from, ask: { ...this.addons.askOf(manifest, path, shown, ["Claude Code", "Codex", "OpenCode", "Hermes"]), scope: "all", ...(dsh ? { dsh } : {}) } };
+  }
+
+  /**
+    A Node half's dependencies, installed beside it with npm, scripts off: in a clean folder of the
+    engine's own first (never one of the package's, whose .npmrc npm would obey), with only versions
+    from npm's registry (no git, file or web addresses), none of your npm settings, and nothing of the
+    engine's environment; then moved in. Only the ones it names, and DeepSeek Harness's public ones.
+  */
+  private async dependencies(dir: string, deps: string[]) {
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as Record<"dependencies" | "peerDependencies" | "devDependencies", Record<string, string> | undefined>;
+    const want = Object.fromEntries(deps.map((d) => [d, pkg.dependencies?.[d] ?? pkg.peerDependencies?.[d] ?? pkg.devDependencies?.[d] ?? "*"]));
+    const odd = Object.entries(want).filter(([, v]) => typeof v !== "string" || /[:/#\\]/.test(v) || v.length > 100);
+    if (odd.length) throw new Error(`Its program needs ${odd[0][0]} from ${String(odd[0][1]).slice(0, 60)}, not npm's registry, which Liner Code doesn't install from.`);
+    mkdirSync(this.root, { recursive: true });
+    const side = mkdtempSync(join(this.root, "deps-"));
+    try {
+      // Two empty files: npm 11 refuses one file read as both the user's settings and the global ones.
+      const empty = join(side, "npmrc");
+      const none = join(side, "npmrc-global");
+      writeFileSync(empty, "");
+      writeFileSync(none, "");
+      writeFileSync(join(side, "package.json"), JSON.stringify({ name: "liner-dsh-deps", private: true, dependencies: want }));
+      const e = this.env;
+      const env = Object.fromEntries(Object.entries({ PATH: e.PATH, HOME: e.HOME, TMPDIR: e.TMPDIR, LANG: e.LANG, SystemRoot: e.SystemRoot, APPDATA: e.APPDATA, LOCALAPPDATA: e.LOCALAPPDATA, USERPROFILE: e.USERPROFILE, npm_config_ignore_scripts: "true" }).filter(([, v]) => v !== undefined)) as NodeJS.ProcessEnv;
+      const r = await run("npm", ["install", "--omit=dev", "--omit=peer", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", "--loglevel=error", `--userconfig=${empty}`, `--globalconfig=${none}`, "--registry=https://registry.npmjs.org/"], { cwd: side, env, timeout: 180_000 });
+      if (r.code !== 0) {
+        const why = (r.stderr || r.stdout).trim().split("\n").filter(Boolean).pop() ?? "";
+        throw new Error(/ENOENT|not found|command not found/i.test(why) || r.code === 127 ? "Its program needs packages from npm, and npm isn't on this Mac's PATH." : `Its program's packages didn't install${why ? `: ${why}` : "."}`);
+      }
+      if (existsSync(join(side, "node_modules"))) {
+        rmSync(join(dir, "node_modules"), { recursive: true, force: true });
+        renameSync(join(side, "node_modules"), join(dir, "node_modules"));
+      }
+    } finally {
+      rmSync(side, { recursive: true, force: true });
+    }
+  }
+
   /** The card's yes: the checked snapshot goes into the store, as a new version unless it's the same as one kept. */
   adopt(token: string) {
     const s = this.staged.get(token);
     if (!s) throw new Error("That's gone: add it again.");
     this.staged.delete(token);
     try {
-      const version = this.addons.install(s.manifest, { by: { agent: "You", from: s.from, at: Date.now() } }, s.files);
+      const version = this.addons.install(s.manifest, { by: { agent: "You", from: s.from, at: Date.now() } }, s.files, s.pkg);
       return { id: s.manifest.id, version, kind: s.manifest.kind, reaches: s.manifest.kind === "connection" ? reachOf(s.manifest) : undefined };
     } finally {
       if (s.dir) rmSync(s.dir, { recursive: true, force: true });

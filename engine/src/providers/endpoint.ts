@@ -131,7 +131,7 @@ export function endpointProvider(base: Provider, e: Endpoint, key: () => string 
       const x = endpointOptions(e, model, key(), o.env);
       // Claude Code's subagents name Claude models; here they run on the endpoint's.
       const subagents = o.subagents && Object.fromEntries(Object.entries(o.subagents).map(([n, a]) => [n, { ...a, model: undefined }]));
-      const s = base.open({ ...o, env: x.env, model: x.model, subagents, config: { ...o.config, ...x.config } });
+      const s = base.open({ ...o, provider: id, env: x.env, model: x.model, subagents, config: { ...o.config, ...x.config } });
       // Another model reopens the session: the endpoint's model is set in its environment and config, not
       // only in the tool, and OpenCode knows it by a name of its own. Effort and access change in place.
       const update = s.update?.bind(s);

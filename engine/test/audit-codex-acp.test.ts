@@ -10,7 +10,7 @@ import { createServer, get, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { acpProvider, setCancelMs } from "../src/providers/acp.ts";
+import { acpProvider, delegatedTasks, delegateResults, setCancelMs } from "../src/providers/acp.ts";
 import { CodexServer, CodexServerSession } from "../src/providers/codex-server.ts";
 import { codex } from "../src/providers/codex.ts";
 import { askEndpoint } from "../src/providers/plain.ts";
@@ -106,6 +106,46 @@ function cx(on: string, extra: Partial<OpenOptions> = {}, head = "") {
 }
 
 /* ------------------------------------------- ACP ------------------------------------------- */
+
+test("acp: Hermes's delegation words read as tasks, and its results as each task's outcome", () => {
+  assert.deepEqual(delegatedTasks("Delegating 2 tasks\n\n1. Find where heights are parsed (researcher)\n2. Run the tests"), [{ goal: "Find where heights are parsed", role: "researcher" }, { goal: "Run the tests" }]);
+  assert.deepEqual(delegatedTasks("Delegating task:\nWrite fixtures for spring tides"), [{ goal: "Write fixtures for spring tides" }]);
+  assert.deepEqual(delegatedTasks("", "delegate_task: Write fixtures"), [{ goal: "Write fixtures" }]);
+  const r = delegateResults("Delegation results: 2 tasks in 42s\n\n✅ Task 1: completed (gpt-5.5, role=researcher, 12s)\nHeights are parsed in noaa.ts.\nThe range goes in forecast.ts.\nTools: read_file, search_files (+3)\n\n✗ Task 2: failed (8s)\nError: npm isn't installed");
+  assert.deepEqual(r, [
+    { index: 0, status: "completed", model: "gpt-5.5", role: "researcher", seconds: 12, summary: "Heights are parsed in noaa.ts.\nThe range goes in forecast.ts.", tools: ["read_file", "search_files"] },
+    { index: 1, status: "failed", seconds: 8, error: "npm isn't installed", tools: [] },
+  ]);
+  assert.equal(delegateResults("Dispatched 2 tasks to the background"), null);
+});
+
+test("acp: a delegate_task call is an agent row per task, from its first words to its results", async () => {
+  const { s } = acp(acpAgent(`if (m.method === "session/prompt") {
+    const up = (u) => send({ method: "session/update", params: { sessionId: "s-1", update: { toolCallId: "d1", title: "delegate_task: 2 tasks", kind: "execute", ...u } } });
+    up({ sessionUpdate: "tool_call", status: "in_progress", content: [{ type: "content", content: { type: "text", text: "Delegating 2 tasks\\n\\n1. Find the parser (researcher)\\n2. Run the tests" } }] });
+    setTimeout(() => {
+      up({ sessionUpdate: "tool_call_update", status: "completed", content: [{ type: "content", content: { type: "text", text: "Delegation results: 2 tasks in 20s\\n\\n✅ Task 1: completed (gpt-5.5, role=researcher, 12s)\\nHeights are parsed in noaa.ts.\\nTools: read_file\\n\\n⚠ Task 2: interrupted (3s)" } }] });
+      send({ id: m.id, result: { stopReason: "end_turn" } });
+    }, 40);
+    continue;
+  }`));
+  const { r, sink } = recorder();
+  await s.turn("split it up", sink, live());
+  s.close();
+  assert.ok(!r.tools.some((u) => u.key === "d1"), "the call itself isn't a row: its tasks are");
+  const one = r.tools.filter((u) => u.key === "d1#0");
+  const two = r.tools.filter((u) => u.key === "d1#1");
+  assert.equal(one[0].status, "running");
+  assert.equal(one[0].toolKind, "task");
+  assert.equal(one[0].agent?.name, "Researcher");
+  assert.equal(one[0].agent?.task, "Find the parser");
+  assert.equal(one.at(-1)?.status, "done");
+  assert.equal(one.at(-1)?.agent?.report, "Heights are parsed in noaa.ts.");
+  assert.equal(one.at(-1)?.agent?.model, "acp.fake:gpt-5.5");
+  assert.deepEqual(one.at(-1)?.agent?.steps, [{ title: "read_file", toolKind: "other", status: "done" }]);
+  assert.equal(two.at(-1)?.agent?.name, "Subagent");
+  assert.equal(two.at(-1)?.agent?.state, "stopped");
+});
 
 test("acp: a session that failed to open starts again on the next turn, not on the same failure for good", async () => {
   const { fake, s } = acp(acpAgent(`if (m.method === "session/new" && seen("session/new") === 1) { send({ id: m.id, error: { code: -32603, message: "try later" } }); continue; }`));
@@ -529,6 +569,69 @@ const SPAWN = (receiver: string) => `send({ method: "item/completed", params: { 
 const KID_ENDS = (kid: string, status = "completed") => `
   send({ method: "item/completed", params: { threadId: "${kid}", turnId: "t-${kid}", item: { type: "agentMessage", id: "w-${kid}", text: "${kid} found 2 failures" } } });
   send({ method: "turn/completed", params: { threadId: "${kid}", turn: { id: "t-${kid}", status: "${status}" } } });`;
+
+test("codex: an agent it sends off gets a row: who it is, what it was asked, its own steps, tokens and report; it can be steered and stopped alone", async () => {
+  const { fake, s } = cx(codexServer(`if (m.method === "turn/start" && seen("turn/start") === 1) {
+    send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    send({ method: "thread/started", params: { thread: { id: "kid", parentThreadId: "root", agentRole: "explorer", agentNickname: "Ada" } } });
+    send({ method: "turn/started", params: { threadId: "kid", turn: { id: "t-kid" } } });
+    ${SPAWN("kid")}
+    send({ method: "item/started", params: { threadId: "kid", turnId: "t-kid", item: { type: "commandExecution", id: "c1", command: '/bin/zsh -lc "npm test"', status: "inProgress" } } });
+    send({ method: "thread/tokenUsage/updated", params: { threadId: "kid", tokenUsage: { total: { totalTokens: 1800, inputTokens: 1500, outputTokens: 300 }, last: {} } } });
+    setTimeout(() => {
+      send({ method: "item/completed", params: { threadId: "kid", turnId: "t-kid", item: { type: "commandExecution", id: "c1", command: "npm test", status: "completed", exitCode: 0 } } });
+      ${KID_ENDS("kid")}
+      send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } });
+    }, 300);
+    continue;
+  }`));
+  const { r, sink } = recorder();
+  const turn = s.turn("work", sink, live());
+  await until(() => r.tools.some((u) => (u.agent?.tokens ?? 0) > 0), "its tokens");
+  const live1 = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
+  assert.equal(live1.toolKind, "task");
+  assert.equal(live1.status, "running");
+  assert.equal(live1.agent?.name, "Explorer");
+  assert.equal(live1.agent?.task, "check the kid tests");
+  assert.equal(live1.agent?.taskId, "kid");
+  assert.equal(live1.agent?.steerable, true);
+  assert.deepEqual(live1.agent?.steps, [{ title: "Run npm test", toolKind: "exec", status: "running" }]);
+  assert.equal(live1.agent?.tokens, 1800);
+  // A word for it, and Stop, reach its own thread's turn.
+  assert.equal(await s.steerAgent!("kid", "only src"), true);
+  assert.equal(await s.stopAgent!("kid"), true);
+  assert.equal(await s.stopAgent!("nobody"), false);
+  await turn;
+  s.close();
+  const steer = fake.read().find((m) => m.method === "turn/steer");
+  assert.equal(steer?.params.threadId, "kid");
+  assert.equal(steer?.params.expectedTurnId, "t-kid");
+  assert.equal(steer?.params.input[0].text, "only src");
+  assert.ok(fake.read().some((m) => m.method === "turn/interrupt" && m.params.threadId === "kid"), "its turn alone was interrupted");
+  const end = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
+  assert.equal(end.status, "done");
+  assert.equal(end.agent?.report, "kid found 2 failures");
+  assert.equal(end.agent?.steps?.[0].status, "done");
+  // Its steps are its row's, not the turn's.
+  assert.ok(!r.tools.some((u) => u.key === "c1"));
+});
+
+test("codex: an agent still at work when the turn ends is shown as sent to the background, and its thread's later work writes nothing", async () => {
+  const { s } = cx(codexServer(`if (m.method === "turn/start" && seen("turn/start") === 1) {
+    send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    send({ method: "turn/started", params: { threadId: "kid", turn: { id: "t-kid" } } });
+    ${SPAWN("kid")}
+    send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } });
+    continue;
+  }`));
+  const { r, sink } = recorder();
+  await s.turn("work", sink, live());
+  s.close();
+  const end = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
+  assert.equal(end.status, "done");
+  assert.equal(end.agent?.background, true);
+  assert.equal(end.agent?.state, undefined);
+});
 
 test("codex: a subagent that finishes after the parent's turn wakes it with what it found", async () => {
   const wakes: WakeTurn[] = [];

@@ -13,7 +13,7 @@
   states. A preview (a panel whose install card is up) wears a ring and says nothing is kept yet.
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AddonInfo, Item, PanelAsk, PanelIcon, PanelPlace, Thread } from "@contracts";
+import type { AddonInfo, DshFrame, Item, PanelAsk, PanelIcon, PanelPlace, Thread } from "@contracts";
 import { panelDocument, panelFrameUrl, PANEL_API } from "@contracts";
 import { HoldToConfirm } from "@liner/components/hold-to-confirm/hold-to-confirm";
 import { toast } from "@liner/components/toast/toast";
@@ -38,9 +38,12 @@ export const isPanelAsk = (it: Item) => it.kind === "approval" && it.addon?.kind
 export const appsFor = (addons: AddonInfo[], projectId?: string) => addons.filter((a) => a.panel && a.enabled && !a.removed && (!a.project || !projectId || a.project === projectId));
 export const dayOf = (at: number) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-/** What a panel's strip says it is: "Add-on by Opus 5.5 · v2 · reads this project's files · no network". */
-const stripOf = (a: { by?: string; version?: number; reaches: string; place: PanelPlace; preview?: boolean }) =>
-  [`${a.preview ? "Preview" : a.place === "dock" ? "Add-on" : "App"} by ${a.by ?? "an agent"}`, a.version ? `v${a.version}` : "", a.reaches].filter(Boolean).join(" · ");
+/**
+  What a panel's strip says it is: "Add-on by Opus 5.5 · v2 · reads this project's files · no
+  network"; a ported DeepSeek Harness plugin, its package: "dsh-media-desk 2.6.2 · DeepSeek Harness plugin · …".
+*/
+const stripOf = (a: { by?: string; version?: number; reaches: string; place: PanelPlace; preview?: boolean; dsh?: { package: string; version: string } }) =>
+  (a.dsh ? [`${a.dsh.package} ${a.dsh.version}`, "DeepSeek Harness plugin", a.reaches] : [`${a.preview ? "Preview" : a.place === "dock" ? "Add-on" : "App"} by ${a.by ?? "an agent"}`, a.version ? `v${a.version}` : "", a.reaches]).filter(Boolean).join(" · ");
 
 /** A panel's access in words, for a preview whose add-on isn't kept yet (the engine words a kept one). */
 export function accessLine(a: PanelAsk["access"], place: PanelPlace) {
@@ -56,7 +59,12 @@ export function accessLine(a: PanelAsk["access"], place: PanelPlace) {
 }
 const kb = (n: number) => (n >= 1024 && n % 1024 === 0 ? `${n / 1024} MB` : `${n} KB`);
 
-type Loaded = { files: Record<string, string>; entry: string; access: PanelAsk["access"]; place: PanelPlace; name: string };
+type Loaded = { files: Record<string, string>; entry: string; access: PanelAsk["access"]; place: PanelPlace; name: string; dsh?: DshFrame };
+/** Ported plugins whose model picker opened once in this window: it doesn't come back on each open. */
+const askedModel = new Set<string>();
+/** React for a ported DeepSeek Harness plugin's frame, fetched the first time one opens (it's 200 KB), then kept. */
+let dshPlatform: Promise<string> | null = null;
+const platformOnce = () => (dshPlatform ??= import("virtual:dsh-platform").then((m) => m.default));
 /** A preview's card says it stopped with this, so a preview that comes back can take it away. */
 const STOPPED_PREVIEW = "It stopped running.";
 
@@ -93,7 +101,7 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
   const strip = (
     <div className="lc-addon-strip">
       <I.shield size={13} />
-      <span>{info.enabled && !info.removed ? stripOf({ by: info.by.agent, version: info.version, reaches: info.reaches, place: info.panel.place }) : `${info.panel.place === "dock" ? "Add-on" : "App"} by ${info.by.agent} · off`}</span>
+      <span>{info.enabled && !info.removed ? stripOf({ by: info.by.agent, version: info.version, reaches: info.reaches, place: info.panel.place, dsh: info.panel.dsh }) : `${info.panel.dsh ? info.panel.dsh.package : `${info.panel.place === "dock" ? "Add-on" : "App"} by ${info.by.agent}`} · off`}</span>
       {info.panel.access.ai && info.enabled && !info.removed && <AppModelChip addon={info.id} name={info.name} />}
       <AddonMenu a={info} thread={thread} agentName={agentName} onOpenElsewhere={onOpenElsewhere} />
     </div>
@@ -139,6 +147,8 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   const [crash, setCrash] = useState<{ message: string; stack?: string } | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
   const [run, setRun] = useState(0);
+  // Asked again for its files: a ported plugin whose program didn't start tries it again.
+  const [tries, setTries] = useState(0);
   // Its process ended (panelFrame's port closed): the frame steps aside, as DeepSeek Harness's slot
   // does, and its tab and the Add-ons page say so and offer Retry. Its other frames may be fine. It
   // stands until a frame says it's back, here or one that came up to retry it from the Add-ons page,
@@ -167,15 +177,28 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
     let live = true;
     setLoaded(null);
     void rpc("addons.files", source)
-      .then((r) => live && setLoaded({ files: r.files, entry: r.entry, access: r.access, place: r.place, name: r.name }))
+      .then((r) => live && setLoaded({ files: r.files, entry: r.entry, access: r.access, place: r.place, name: r.name, dsh: r.dsh }))
       .catch((e) => live && setLoaded({ error: e instanceof Error ? e.message : String(e) }));
     return () => {
       live = false;
     };
-  }, [JSON.stringify(source)]);
+  }, [JSON.stringify(source), tries]);
 
   const ok = loaded && !("error" in loaded) ? loaded : null;
-  const doc = useMemo(() => (ok ? panelDocument({ files: ok.files, entry: ok.entry, access: ok.access, theme: theme(), place: ok.place }) : ""), [ok, run]);
+  // A ported DeepSeek Harness plugin: its loader and React go in with it, and its base is this window's own address for its token.
+  const [platform, setPlatform] = useState<string | null>(null);
+  useEffect(() => {
+    if (!ok?.dsh || platform) return;
+    let live = true;
+    void platformOnce().then((p) => live && setPlatform(p), (e: unknown) => live && setLoaded({ error: `React for its page didn't load: ${e instanceof Error ? e.message : String(e)}` }));
+    return () => {
+      live = false;
+    };
+  }, [ok?.dsh, platform]);
+  const doc = useMemo(
+    () => (ok && (!ok.dsh || platform) ? panelDocument({ files: ok.files, entry: ok.entry, access: ok.access, theme: theme(), place: ok.place, ...(ok.dsh && platform ? { dsh: { frame: ok.dsh, platform, ...(ok.dsh.base ? { base: new URL(ok.dsh.base, location.origin).href } : {}) } } : {}) }) : ""),
+    [ok, run, platform],
+  );
   const written = useRef(doc);
   written.current = doc;
 
@@ -257,6 +280,11 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
       }
     };
     window.addEventListener("message", onMsg);
+    // A ported plugin's own program asks its model by itself, so its picker opens once, when it first shows.
+    if (ok.dsh && ok.access.ai && !preview && !appModelOf(addon) && !askedModel.has(addon)) {
+      askedModel.add(addon);
+      void pickOnce();
+    }
     // Light and dark, and the accent, follow the app without reloading the panel.
     const mo = new MutationObserver(() => post({ event: "theme", data: theme() }));
     mo.observe(document.documentElement, { attributes: true, attributeFilter: THEME_ATTRS });
@@ -274,11 +302,12 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
     return () => clearTimeout(t);
   }, [count, ok?.access.sessions]);
 
-  if (!loaded) return <div className="lc-addon-frame" data-wait aria-busy />;
+  if (!loaded || (ok?.dsh && !platform)) return <div className="lc-addon-frame" data-wait aria-busy />;
   if ("error" in loaded) return <PanelNote icon={<I.alert size={20} />} title="Its files didn't open" body={loaded.error} />;
   const name = loaded.name;
   const earlier = info ? info.versions.filter((v) => v < info.version).at(-1) : undefined;
   const reach = loaded.access.network;
+  const hostDown = loaded.dsh?.error;
   // A new frame in this one's place. What stopped stays said until it's back (`frame`, above).
   const again = () => (setCrash(null), setRun((n) => n + 1));
   return (
@@ -294,6 +323,17 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
           </button>
         </div>
       )}
+      {hostDown && !crash && (
+        <div className="lc-addon-blocked" role="alert">
+          <I.alert size={13} />
+          <span>
+            Its own program didn't start, so {name} can't load what it keeps: {hostDown}
+          </span>
+          <button type="button" className="lc-btn" data-size="sm" data-kind="ghost" onClick={() => (setTries((n) => n + 1), setRun((n) => n + 1))}>
+            Try again
+          </button>
+        </div>
+      )}
       {crash && (
         <div className="lc-addon-crash" role="alert">
           <span className="lc-addon-crash-i">
@@ -305,7 +345,7 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
           </div>
           <pre>{crash.stack && crash.stack.includes(crash.message) ? crash.stack.split("\n").slice(0, 6).join("\n") : [crash.message, ...(crash.stack ?? "").split("\n").slice(0, 4)].filter(Boolean).join("\n")}</pre>
           <div className="lc-addon-crash-acts">
-            {thread && (
+            {thread && !loaded.dsh && (
               <button
                 type="button"
                 className="lc-btn"
@@ -357,7 +397,7 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
         className="lc-addon-frame"
         title={name}
         sandbox="allow-scripts"
-        src={panelFrameUrl(loaded.access)}
+        src={panelFrameUrl(loaded.access, Boolean(loaded.dsh?.base))}
         hidden={Boolean(crash) || ended}
         // Out of sight it keeps running, but takes no keys.
         tabIndex={visible ? 0 : -1}
@@ -392,7 +432,7 @@ export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass 
             <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ")} on={v === a.version} onPick={() => (set({ version: v }), close())} />
           ))}
           <Sep />
-          {thread && <Row title={`Change it with ${agentName}`} icon={<I.edit size={13} />} onPick={() => (close(), toComposer(thread.id, `Change the ${a.name} ${page ? "app" : "panel"} so `))} />}
+          {thread && !a.panel?.dsh && <Row title={`Change it with ${agentName}`} icon={<I.edit size={13} />} onPick={() => (close(), toComposer(thread.id, `Change the ${a.name} ${page ? "app" : "panel"} so `))} />}
           <Row title="Show its files" icon={<I.folder size={13} />} onPick={() => (close(), void rpc("addons.read", { id: a.id }).then((r) => bridge.reveal(`${r.dir}/v${a.version}`)).catch(fail))} />
           {onOpenElsewhere && <Row title={page ? "Open it in the dock" : "Open it on its own"} icon={<I.dock size={13} />} onPick={() => (close(), onOpenElsewhere())} />}
           {!page && (a.project ? <Row title="Show it in every project" icon={<I.globe size={13} />} onPick={() => (close(), set({ project: null }))} /> : here && <Row title={`Show it only in ${here.name}`} icon={<I.folder size={13} />} onPick={() => (close(), set({ project: here.id }))} />)}

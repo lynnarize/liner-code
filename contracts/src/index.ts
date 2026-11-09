@@ -616,9 +616,50 @@ export type QueuedMessage = { id: string; text: string; at: number; files?: stri
 export type Question = { question: string; header?: string; options: { label: string; description?: string; suggested?: boolean }[]; multiSelect?: boolean };
 
 export type ToolKind = "read" | "edit" | "write" | "exec" | "search" | "fetch" | "think" | "task" | "web" | "other";
+/** One step of an agent's own: what it did, as its row in the timeline would say it. */
+export type AgentStep = { title: string; toolKind: ToolKind; status: "running" | "done" | "failed"; path?: string };
+/**
+  An agent a model sent off to do part of the work (Claude Code's Agent tool), on that call's row:
+  who it is, what it was asked, what it does now and what it sent back. The model that sent it
+  waits for its report, unless it runs in the background.
+*/
+export type AgentRun = {
+  /** What kind of agent: "Explore", "Test runner", "Subagent". */
+  name: string;
+  /** What it was sent to do, in a few words. */
+  task?: string;
+  /** The whole brief it was given. */
+  brief?: string;
+  /** The model it runs on, as a model ref ("claude:claude-haiku-5-5"), once it's known. */
+  model?: string;
+  /** The tool's id for its run: what stopping it stops. */
+  taskId?: string;
+  /** The row of the agent that sent this one, when an agent sent it. */
+  parent?: string;
+  /** What it's doing now, in words: its own one-line summary, or its last step. */
+  now?: string;
+  /** Its steps so far, the latest last (the last 40). */
+  steps?: AgentStep[];
+  tools?: number;
+  tokens?: number;
+  /** The model that sent it didn't wait for it. */
+  background?: boolean;
+  /** It takes a word from you while it works (Codex's agents do; Claude Code's don't). */
+  steerable?: boolean;
+  /**
+    How the agent stands, when that isn't its call's: one in the background goes on after its call
+    returned, and one stopped ended without failing its call. Unset, it's the row's status.
+  */
+  state?: "running" | "done" | "failed" | "stopped";
+  /** What it sent back. */
+  report?: string;
+};
+/** How an agent stands: its own word, else its call's. */
+export const agentState = (it: { status: "running" | "done" | "failed"; agent?: AgentRun }) => it.agent?.state ?? it.status;
 /** rel: the paths are already the project's own (every change written since they were), so none is stripped of its folder again. */
 export type FileChange = { path: string; status: "added" | "modified" | "deleted" | "renamed"; added: number; removed: number; from?: string; rel?: true };
-export type PlanEntry = { title: string; status: "pending" | "in_progress" | "completed" };
+/** `owner`: who took it on, where the tool says (Claude Code's tasks carry an agent's name). */
+export type PlanEntry = { title: string; status: "pending" | "in_progress" | "completed"; owner?: string };
 export type Risk = "low" | "medium" | "high";
 /** What a design is drawn for: the frame the Design surface shows it in, and its picture's size. */
 export type DesignSize = "desktop" | "tablet" | "phone";
@@ -637,10 +678,21 @@ export type DesignInfo = { design: string; title: string; path: string; size: De
 */
 /** How a connection's server is reached: a command on this Mac (stdio), or an address (streamable HTTP). */
 export type AddonServer = { stdio: { command: string; args?: string[]; env?: Record<string, string> } } | { http: { url: string; headers?: Record<string, string> } };
-/** A key a connection needs, named only: you type it on the install card, and it's sealed in the keychain. */
-export type AddonSecret = { name: string; label: string };
+/**
+  A key a connection needs, named only: you type it on the install card, and it's sealed in the
+  keychain. `optional`: its server works without one, and what names it is left out until you type it.
+*/
+export type AddonSecret = { name: string; label: string; optional?: boolean };
 /** A connection's manifest, version 1. A secret is never written in: `${NAME}` in env or a header stands for it. */
-export type ConnectionManifest = { apiVersion: 1; id: string; kind: "connection"; name: string; description?: string; summary?: string; server: AddonServer; secrets?: AddonSecret[] };
+export type ConnectionManifest = { apiVersion: 1; id: string; kind: "connection"; name: string; description?: string; summary?: string; server: AddonServer; secrets?: AddonSecret[]; dsh?: undefined };
+/**
+  A ported DeepSeek Harness plugin that gives tools to an agent and draws nothing: a connection
+  whose server is its own program (engine/src/dsh-hosts.ts), which Liner Code serves to every
+  agent tool as an MCP server. Only Liner Code writes one, like any `dsh` block.
+*/
+export type DshConnectionManifest = { apiVersion: 1; id: string; kind: "connection"; name: string; description?: string; summary?: string; dsh: DshToolsPlugin; secrets?: undefined };
+/** A connection of either kind: a server it names, or a ported plugin's own program. */
+export type AnyConnectionManifest = ConnectionManifest | DshConnectionManifest;
 /**
   What a panel may touch: each is nothing unless its manifest says so, and the install card says
   every one. The panel's bridge (apiVersion 1) refuses whatever isn't here.
@@ -666,9 +718,44 @@ export type PanelAccess = {
 export type PanelPlace = "dock" | "tab" | "page";
 export const PANEL_ICONS = ["app", "blocks", "list", "notes", "chart", "check", "clock", "globe", "flask", "star", "bolt", "inbox"] as const;
 export type PanelIcon = (typeof PANEL_ICONS)[number];
+/**
+  A DeepSeek Harness plugin, ported (engine/src/dsh.ts): the npm package it came from and its two
+  halves. Its browser half is the panel's client.js, run in the sealed frame under a DSH-shaped
+  loader (contracts/src/dsh.ts); its Node half, when it has one, runs in a process of its own beside
+  the engine, never in it (engine/src/dsh-hosts.ts). Only Liner Code writes this block, from a
+  package you chose: an agent's draft or an addon.json that has one is refused.
+*/
+export type DshPlugin = {
+  package: string;
+  version: string;
+  /** The tarball's sha512, as npm gave it; a folder you chose has none. */
+  integrity?: string;
+  /** Its Node half: the file in the package that exports its plugin, run with `config`. */
+  host?: string;
+  config?: Record<string, unknown>;
+  /**
+    The tools its Node half gives DeepSeek Harness's agent (ctx.tools.register), as read from its
+    code before it's added: what the card says it gives your agents, and all its program may give them.
+  */
+  tools?: DshTool[];
+  /** The DSH slot its browser half draws in, which made `place`. */
+  slot: DshSlot;
+};
+/** A tool a ported plugin gives your agents: its name, and what it says it does when that's plain text in its code. */
+export type DshTool = { name: string; description?: string };
+/** The `dsh` block of a plugin that only gives tools: no slot, a program, and the tools it gives. */
+export type DshToolsPlugin = Omit<DshPlugin, "slot" | "host" | "tools"> & { host: string; tools: DshTool[] };
+/** The DeepSeek Harness slots a ported plugin can draw in: a sidebar page, a right-pane tab, a conversation view. */
+export type DshSlot = "sidebar.panellist" | "sidebar.right.pane.tab" | "conversation.view";
+/**
+  What a ported plugin's frame needs beside its files: which package and slot to start, its config,
+  and `base`, the engine's path for this run that reaches its Node half and its package's pictures
+  (/dsh/<token>/), or `error`, why its Node half didn't start.
+*/
+export type DshFrame = { package: string; slot: DshSlot; config?: Record<string, unknown>; base?: string; error?: string };
 /** A panel's manifest, version 1. `entry` is its HTML file, beside the manifest. */
-export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; summary?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess };
-export type AddonManifest = ConnectionManifest | PanelManifest;
+export type PanelManifest = { apiVersion: 1; id: string; kind: "panel"; name: string; description?: string; summary?: string; place: PanelPlace; entry: string; icon?: PanelIcon; access: PanelAccess; dsh?: DshPlugin };
+export type AddonManifest = ConnectionManifest | DshConnectionManifest | PanelManifest;
 /** A session's mode: Standard ("standard", or unset), Workshop ("creator", once called Creator mode), or a custom one (`agent:<id>`, one of your named agents' instructions). */
 export type SessionMode = "standard" | "creator" | `agent:${string}`;
 /**
@@ -747,7 +834,9 @@ export const modeName = (mode: SessionMode | undefined, agents: { id: string; na
 /** Where an offer to make an app stands: offered, being made and added, settled, or replaced by a newer offer. */
 export type OfferState = "proposed" | "creating" | "installing" | "installed" | "kept" | "removed" | "dismissed" | "cancelled" | "failed" | "replaced";
 /** A panel as Settings and the dock know it. */
-export type PanelInfo = { place: PanelPlace; access: PanelAccess; icon?: PanelIcon; entry: string };
+export type PanelInfo = { place: PanelPlace; access: PanelAccess; icon?: PanelIcon; entry: string; dsh?: DshInfo };
+/** A ported DeepSeek Harness plugin as the window knows it: its package, whether it runs a program of its own, and the tools it gives your agents. */
+export type DshInfo = { package: string; version: string; host: boolean; tools?: string[] };
 /** An add-on you have, as Settings lists it. */
 export type AddonInfo = {
   id: string;
@@ -773,6 +862,8 @@ export type AddonInfo = {
   secrets: AddonSecret[];
   /** A panel's place, access, icon and entry file. */
   panel?: PanelInfo;
+  /** A connection that's a ported DeepSeek Harness plugin's own program: its package and tools. */
+  dsh?: DshInfo;
   /** Each kept version's date, by version. */
   dates?: Record<number, number>;
 };
@@ -811,7 +902,13 @@ type AskBase = {
   in use, what it asks for that that one didn't (`wider`). One that asks for nothing more is put in
   without a card (`same`), and its line says so.
 */
-export type PanelAsk = AskBase & { kind: "panel"; place: PanelPlace; access: PanelAccess; icon?: PanelIcon; entry: string; files: { path: string; size: number }[]; checked?: string; wider?: string[]; same?: boolean; next: number };
+export type PanelAsk = AskBase & { kind: "panel"; place: PanelPlace; access: PanelAccess; icon?: PanelIcon; entry: string; files: { path: string; size: number }[]; checked?: string; wider?: string[]; same?: boolean; next: number; dsh?: DshAsk };
+/**
+  A DeepSeek Harness plugin's card: its package, and when it runs a program of its own, what that
+  program may do here (`sandbox`, in words). `left` is what of it Liner Code doesn't have, said plainly.
+  `gives`: the tools it gives your agents, with what each says it does.
+*/
+export type DshAsk = DshInfo & { sandbox?: string; left: string[]; size: number; gives?: DshTool[] };
 export type ConnectionAsk = AskBase & {
   kind?: "connection";
   transport: "stdio" | "http";
@@ -824,6 +921,8 @@ export type ConnectionAsk = AskBase & {
   /** The agent tools on this Mac it reaches ("Claude Code", "Codex"…). */
   reaches: string[];
   secrets: AddonSecret[];
+  /** A ported DeepSeek Harness plugin whose own program is the server: its card says what that program gives your agents. */
+  dsh?: DshAsk;
 };
 
 type Base = { id: string; turn: number; at: number };
@@ -880,6 +979,8 @@ export type Item =
       status: "running" | "done" | "failed";
       seconds?: number;
       path?: string;
+      /** The agent this call sent off, on a "task" row. */
+      agent?: AgentRun;
     })
   | (Base & { kind: "plan"; entries: PlanEntry[] })
   /** A page the agent showed you: a chart, a table, a mockup. It runs sandboxed, in the app's colours. */
@@ -1359,6 +1460,8 @@ export type EngineEvent =
   | { type: "term"; id: string; data: string; at?: number }
   | { type: "term.exit"; id: string; code: number }
   | { type: "devlog"; udid: string; lines: string[] }
+  /** A launch.json server in `root` started, became ready, stopped or ended: Browsers list theirs again. */
+  | { type: "launch"; root: string }
   | { type: "settled"; threadId: string; reason: string }
   | { type: "updates"; updates: Updates }
   /** Every tool's plan windows, after one was asked again (a turn on it ended, you pressed Look again). */
@@ -1380,6 +1483,25 @@ export type TermInfo = { id: string; title: string; cwd: string; at: number; com
 
 /** A server listening on this Mac, as the Browser sees it. */
 export type LocalServer = { port: number; process: string; url: string; owner: "session" | "project" | null; web: boolean };
+
+/**
+  A dev server of the session folder's .claude/launch.json (Claude Code's file, in its format),
+  which the engine runs for the Browser. `port` is the entry's; `at` the port it runs on, or last
+  ran on (another, when the entry's was taken). `ended` says why it isn't running; `asleep`, that
+  it stopped while no one looked and starts again when a session in its folder is opened.
+  `changed`: launch.json's entry isn't what it runs now. `problem`: an entry that can't run here.
+*/
+export type LaunchServer = {
+  name: string;
+  port: number;
+  at?: number;
+  status: "stopped" | "starting" | "running";
+  startedAt?: number;
+  ended?: { reason: string; at: number; failed?: boolean; tail?: string[] };
+  asleep?: boolean;
+  changed?: boolean;
+  problem?: string;
+};
 
 /** App → engine. Each method's params and result. */
 export type Rpc = {
@@ -1426,6 +1548,10 @@ export type Rpc = {
   /** The session's side chat, started now if it has none; `fresh` starts it again from where the session is. */
   "thread.side": [{ id: string; fresh?: boolean }, Thread];
   "thread.stop": [{ id: string }, null];
+  /** Stops one agent a model sent off (`item`: its row), leaving the turn running. False when the tool can't stop it alone. */
+  "thread.stopAgent": [{ id: string; item: string }, boolean];
+  /** A word for one agent at work, read at its next step without stopping it. False when it couldn't take it (it had ended). */
+  "thread.steerAgent": [{ id: string; item: string; text: string }, boolean];
   /** `scope`, for an add-on's install card: every project, or only the session's. */
   "approval.answer": [{ threadId: string; itemId: string; allow: boolean; reason?: string; always?: boolean; scope?: "all" | "project" }, null];
   /** Switches an add-on on or off, moves it to a kept version, removes it (it stays on disk) or restores it. */
@@ -1433,7 +1559,12 @@ export type Rpc = {
   /** A connection you add by hand: its manifest, checked as an agent's would be. Its keys go to the keychain first, as on the card. */
   "addons.add": [{ manifest: string; project?: string }, AddonInfo[]];
   /** A panel's files to draw: one in use (or a kept `version`), or the draft on a card that's up (`threadId`, `itemId`), for its preview. */
-  "addons.files": [{ id: string; version?: number } | { threadId: string; itemId: string }, { id: string; name: string; place: PanelPlace; entry: string; access: PanelAccess; files: Record<string, string>; version?: number }];
+  /**
+    A panel's files for its frame. A ported DeepSeek Harness plugin also gets `dsh`: its slot, its
+    host config, and with a Node half, where the frame reaches it (`base`, a path of the engine's
+    made for this run) or why it couldn't start (`error`).
+  */
+  "addons.files": [{ id: string; version?: number } | { threadId: string; itemId: string }, { id: string; name: string; place: PanelPlace; entry: string; access: PanelAccess; files: Record<string, string>; version?: number; dsh?: DshFrame }];
   /**
     A panel's bridge call, passed on by the window for the frame that made it: the panel by id, the
     session it's beside (none on a page), or the card it's a preview on. The engine answers only
@@ -1448,9 +1579,10 @@ export type Rpc = {
   */
   "offer.answer": [{ threadId: string; itemId: string; act: "create" | "dismiss" | "cancel" | "keep" | "undo" | "restore"; place?: PanelPlace; custom?: string }, null];
   /**
-    An add-on someone else made, from a GitHub address (cloned, shallow, into a staging folder) or a
-    folder on this Mac: checked as an agent's draft is, and shown on the same card. Nothing is added
-    until addons.adopt; addons.drop lets it go.
+    An add-on someone else made, from a GitHub address (cloned, shallow, into a staging folder), a
+    folder on this Mac, or a DeepSeek Harness plugin on npm ("dsh-media-desk", "npm i …"): checked as
+    an agent's draft is, and shown on the same card. Nothing is added until addons.adopt;
+    addons.drop lets it go.
   */
   "addons.source": [{ source: string }, { token: string; from: string; ask: AddonAsk }];
   "addons.adopt": [{ token: string }, AddonInfo[]];
@@ -1568,6 +1700,15 @@ export type Rpc = {
   "ports.list": [{ threadId?: string }, LocalServer[]];
   /** Stops a dev server of the session's (never another app's); answers with the ports it stopped. */
   "ports.stop": [{ threadId: string; port: number }, number[]];
+  /** The session folder's .claude/launch.json servers, and whether the file is there (`error`: it couldn't be read). */
+  "launch.list": [{ threadId: string }, { servers: LaunchServer[]; file: boolean; error?: string }];
+  /** Runs one (the one that runs already, if it does); answers once it has got past starting up, or throws with why it didn't. */
+  "launch.start": [{ threadId: string; name: string }, LaunchServer];
+  /** Stops one, or (no name) every one in the session's folder; answers with how many stopped. */
+  "launch.stop": [{ threadId: string; name?: string }, number];
+  "launch.restart": [{ threadId: string; name: string }, LaunchServer];
+  /** The app shows this session: its folder's servers stay up, and those stopped while no one looked start again. */
+  "launch.seen": [{ threadId: string }, null];
   /** A proxy onto a local port, for the Browser surface: the page reports its console and answers picks. */
   "browser.proxy": [{ port: number }, { url: string }];
   /** The session folder's own files, served for the Browser (no dev server needed): `path` as asked, in the folder, and its HTML pages. */
@@ -1631,3 +1772,4 @@ export function newerVersion(a?: string, b?: string) {
   return false;
 }
 export * from "./panel.ts";
+export * from "./dsh.ts";

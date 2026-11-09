@@ -4,7 +4,7 @@
   Claude Code, Codex, Hermes and OpenCode. A provider that can't do something (approvals in
   Codex exec, say) simply never calls that part of the sink.
 */
-import type { Access, CommandInfo, ContextUse, Effort, LimitWindow, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
+import type { Access, AgentRun, CommandInfo, ContextUse, Effort, LimitWindow, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
 import { homedir } from "node:os";
 import type { Connection } from "../addons.ts";
 
@@ -36,6 +36,11 @@ export type ToolUpdate = {
   output?: string;
   status: "running" | "done" | "failed";
   path?: string;
+  /**
+    The agent a "task" call sent off, as it stands now (the whole of it each time). `parentKey`: the
+    call of the agent that sent it, when an agent did; the runtime makes it that row's id.
+  */
+  agent?: Omit<AgentRun, "parent"> & { parentKey?: string };
 };
 
 export type ApprovalRequest = {
@@ -102,6 +107,8 @@ export type WakeTurn = {
 export class ResumeFailed extends Error {}
 
 export type OpenOptions = {
+  /** The tool as the picker knows it, when it isn't the tool itself ("claude.api-deepseek": an endpoint through Claude Code): its agents' models are named under it. */
+  provider?: string;
   cwd: string;
   model: string;
   effort: Effort;
@@ -150,6 +157,10 @@ export interface ProviderSession {
   turn(text: string, sink: TurnSink, signal: AbortSignal, files?: string[]): Promise<void>;
   /** A message for the running turn, read at the agent's next step. False (or a promise of it) if it couldn't take it. */
   steer?(text: string, files?: string[]): boolean | Promise<boolean>;
+  /** Stops one agent it sent off (`taskId`: its AgentRun's), the turn going on without it. False if it couldn't. */
+  stopAgent?(taskId: string): boolean | Promise<boolean>;
+  /** A word for one agent it sent off, read at that agent's next step. False if it couldn't take it. */
+  steerAgent?(taskId: string, text: string): boolean | Promise<boolean>;
   /** Settings changed between turns. Return false to be reopened instead. */
   update?(o: Pick<OpenOptions, "model" | "effort" | "access">): Promise<boolean>;
   /** Something update() took and couldn't apply yet: the runtime calls it again next turn, rather than counting it as done. */

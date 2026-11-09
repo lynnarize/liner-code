@@ -446,6 +446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             item("Command Menu", "k", command: "commands"),
             item("Toggle Sidebar", "\\", command: "sidebar"),
             item("Usage and Cost", "u", [.command, .shift], command: "usage"),
+            item("The Wall", "o", [.command, .shift], command: "wall"),
             .separator(),
             item("Enter Full Screen", "f", [.command, .control], action: #selector(NSWindow.toggleFullScreen(_:))),
         ])

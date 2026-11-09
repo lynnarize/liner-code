@@ -16,7 +16,7 @@
 import type { Access, Effort, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, Settings, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { castOf, checkerOf, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, plainWay, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
+import { agentState, castOf, checkerOf, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, plainWay, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
 import { capture, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { killTree, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
@@ -473,6 +473,11 @@ export class Runtime {
   readOnly(threadId: string) {
     const t = this.store.thread(threadId);
     return t.access === "read" || Boolean(t.sideOf) || Boolean(this.turns.get(threadId)?.planning);
+  }
+
+  /** Nobody is there to answer a card for this thread: a routine's step, or a cost test. */
+  unwatched(threadId: string) {
+    return this.unattended.has(threadId) || Boolean(this.store.thread(threadId).trial);
   }
 
   /** The tool a thread's turn runs on now (or would next), by its label and family ("Claude Code", "claude"). */
@@ -1348,6 +1353,28 @@ export class Runtime {
   }
 
   /**
+    Stops one agent a model sent off, from its row; the turn goes on without it (the model is told
+    it was stopped). Asks the session at work, then any of the thread's, since one in the
+    background outlives its turn.
+  */
+  async stopAgent(threadId: string, itemId: string) {
+    const it = this.store.item(threadId, itemId);
+    if (it.kind !== "tool" || !it.agent?.taskId || agentState(it) !== "running") return false;
+    const sessions = new Set([this.turns.get(threadId)?.session, ...[...this.live].filter(([k]) => k.startsWith(`${threadId}:`)).map(([, l]) => l.session)]);
+    for (const s of sessions) if (s?.stopAgent && (await s.stopAgent(it.agent.taskId))) return true;
+    return false;
+  }
+
+  /** A word for one agent at work, from its row, where its tool takes one (AgentRun.steerable). */
+  async steerAgent(threadId: string, itemId: string, text: string) {
+    const it = this.store.item(threadId, itemId);
+    if (it.kind !== "tool" || !it.agent?.taskId || !it.agent.steerable || agentState(it) !== "running" || !text.trim()) return false;
+    const sessions = new Set([this.turns.get(threadId)?.session, ...[...this.live].filter(([k]) => k.startsWith(`${threadId}:`)).map(([, l]) => l.session)]);
+    for (const s of sessions) if (s?.steerAgent && (await s.steerAgent(it.agent.taskId, text.trim()))) return true;
+    return false;
+  }
+
+  /**
     The spending cap (Settings › General): a session, or a routine run's, that has spent its cap
     stops where it is and says so; your next message lets it go on for another cap's worth.
   */
@@ -1777,6 +1804,13 @@ export class Runtime {
         }
         const prev = store.timeline(threadId).find((x) => x.id === rec!.id);
         const base = prev?.kind === "tool" ? prev : undefined;
+        // An agent's row keeps what it knew (its brief, its model) when a later word leaves it out; the agent that sent it is named by its row.
+        let agent = base?.agent;
+        if (u.agent) {
+          const { parentKey, ...said } = u.agent;
+          const parent = parentKey ? tools.get(parentKey)?.id : undefined;
+          agent = { ...base?.agent, ...said, ...(parent ? { parent } : {}) };
+        }
         // Saved when it starts and when it ends; what it prints meanwhile only goes to the window.
         store.putItem(
           threadId,
@@ -1793,8 +1827,10 @@ export class Runtime {
             path: u.path ?? base?.path,
             status: u.status,
             seconds: u.status === "running" ? undefined : (Date.now() - rec.started) / 1000,
+            ...(agent ? { agent } : {}),
           },
-          !base || u.status !== "running",
+          // An agent that ended (in the background, after its call) is saved as it ended too.
+          !base || u.status !== "running" || (agent?.state !== undefined && agent.state !== "running" && base.agent?.state !== agent.state),
         );
       },
       plan: (entries: PlanEntry[]) => {
@@ -1995,6 +2031,7 @@ export function toolsNote(n: (tool: string) => string) {
   return [
     "Liner Code runs this session. Its own tools (the `liner` MCP server) reach what the person sees beside this chat:",
     `- ${n("browser_open")} opens a page of what you build in their Browser: a dev server on this Mac (localhost:5173, or just a port) or an HTML file in this folder (index.html), which needs no server. ${["browser_read", "browser_click", "browser_type", "browser_press"].map(n).join(", ")} and ${n("browser_screenshot")} then use that page, and report its console errors. On a canvas (a game), click a point with x and y, or press keys.`,
+    `- ${n("server_start")} runs a dev server named in .claude/launch.json (the file Claude Code reads; write it first when it's missing) and opens it in their Browser. Use it rather than starting a dev server from your shell: Liner Code stops it when nobody needs it and starts it again when they come back. ${n("server_logs")} reads what it printed, ${n("server_stop")} stops it.`,
     `- ${n("show_page")} shows them a chart or a table in the chat.`,
     `- ${n("design_show")} shows a screen, page or prototype you design in their Design surface, version by version: write it as one HTML file under .liner/designs/ and call it with the path (or pass the page as html). They comment on parts of it there, and ask for it to be built.`,
     `- ${n("memory_add")} saves a fact about this project that later sessions start with; ${n("sessions_search")} looks through earlier sessions here.`,

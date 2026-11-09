@@ -17,13 +17,13 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type K
 import { createPortal } from "react-dom";
 import type { AgentProfile, ProviderInfo, Thread } from "@contracts";
 import { bridge } from "./bridge";
-import { rpc, useEngine } from "./engine";
+import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
 import { I, ModelMark } from "./icons";
-import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, plural, since, type Bucket } from "./model";
+import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
 import { ContextMenu, Disc, LimitRow, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
 import { appNotice, updates } from "./Updates";
-import { updateModes } from "@contracts";
+import { agentState, updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
 import * as os from "./os";
 import { toast } from "@liner/components/toast/toast";
@@ -38,6 +38,9 @@ type Props = {
   usageOn: boolean;
   onRoutines: () => void;
   routinesOn: boolean;
+  /** The Wall: every session at once. */
+  onWall?: () => void;
+  wallOn?: boolean;
   onSearch: () => void;
   onHide: () => void;
   /** An app's page of its own (an add-on panel placed "page"), and the one on screen. */
@@ -132,7 +135,7 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onCreateAddon, onBeside, onPutAway }: Props) {
+export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onCreateAddon, onBeside, onPutAway }: Props) {
   const addons = useEngine((s) => s.addons);
   const pages = addons.filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
   const limits = useEngine((s) => s.limits);
@@ -148,6 +151,14 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   const projects = useEngine((s) => s.projects);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
+  // The agents at work in each working session ("Sonnet 5.5 + 3 agents"), from the sessions whose timeline is here; read as one line so a streamed word redraws nothing.
+  const sentLine = useEngine((s) =>
+    s.threads
+      .filter((t) => t.status === "running")
+      .map((t) => `${t.id}=${itemsWhere(s, t.id, isSubagent).filter((x) => x.kind === "tool" && agentState(x) === "running").length}`)
+      .join(","),
+  );
+  const sent = useMemo(() => new Map(sentLine.split(",").filter(Boolean).map((x) => [x.split("=")[0], Number(x.split("=")[1])] as const)), [sentLine]);
   const [query, setQuery] = useState("");
   const [view, setView] = useStored<View>("lc:sb-view", "all", ["all", "folder", "snoozed", "settled", "archive"]);
   const [order, setOrder] = useStored<Order>("lc:sb-order", "activity", ["activity", "started"]);
@@ -200,6 +211,9 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
   // Routines handed back to you wait on their icon as a dot; otherwise its tip says how many run.
   const handed = runs.filter((r) => r.status === "handed" && !r.test).length;
   const routinesNote = handed ? `${handed} waiting` : routines.length ? `${routines.filter((r) => r.on).length} on` : "";
+  // The Wall's row: how many sessions are on it, and a dot while one asks, failed or hit a limit.
+  const onWallNow = threads.filter((t) => onTheWall(t, now));
+  const wallWaits = onWallNow.filter((t) => t.status === "waiting" || t.status === "error" || t.status === "limited").length;
   const me = window.__LINER__?.user ?? "You";
   const machine = window.__LINER__?.machine ?? "This computer";
   const addProject = () =>
@@ -520,7 +534,9 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
     const builds = coder.name === model ? model : `${coder.name}${lead ? " builds" : ""} on ${model}`;
     const team = lead ? `${lead} plans, ${coder.name === model ? `${model} builds` : builds}` : builds;
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
-    const state = cardState(t, bucket, on.who, on.leadOn ? lead : undefined, now, run);
+    const sentNow = t.status === "running" ? (sent.get(t.id) ?? 0) : 0;
+    const said = cardState(t, bucket, on.who, on.leadOn ? lead : undefined, now, run);
+    const state = sentNow ? { ...said, text: `${said.text} with ${plural(sentNow, "agent")}` } : said;
     const changes = [(t.toReview ?? 0) > 0 ? `${plural(t.toReview!, "file")} changed, not committed` : "", t.pr ? `pull request #${t.pr.number}${t.pr.state ? `, ${t.pr.state.toLowerCase()}` : ""}` : ""].filter(Boolean).join(" · ");
     const u = t.usage;
     const ctx = u?.contextTokens && u.contextWindow ? Math.round((u.contextTokens / u.contextWindow) * 100) : null;
@@ -629,7 +645,8 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
       ) : (
         <b>{t.title}</b>
       );
-    const state = two ? rowState(t, bucket, Boolean(on.leadOn && t.lead), now, run) : null;
+    const working = t.status === "running" ? (sent.get(t.id) ?? 0) : 0;
+    const state = two ? (working ? { text: `${on.who} + ${plural(working, "agent")}` } : rowState(t, bucket, Boolean(on.leadOn && t.lead), now, run)) : null;
     const dot = t.archived ? undefined : t.status === "running" || run?.status === "running" ? "work" : t.status === "error" ? "danger" : bucket === "needs" || t.status === "limited" ? "warn" : undefined;
     return (
       <div
@@ -872,6 +889,21 @@ export function Sidebar({ current, onOpen, onNew, onUsage, onSettings, onAgent, 
             <I.search size={16} />
           </button>
         </div>
+        {onWall && (
+          <button
+            type="button"
+            className="lc-sb-nav l-focus"
+            aria-current={wallOn ? "page" : undefined}
+            aria-label={`The Wall, ${plural(onWallNow.length, "session")}${wallWaits ? `, ${wallWaits} waiting on you` : ""}`}
+            title={`The Wall: every session at once${key("wall")}`}
+            onClick={onWall}
+          >
+            <I.wall size={16} />
+            <span>The Wall</span>
+            {wallWaits > 0 && <span className="lc-sb-ndot" data-k="warn" />}
+            {onWallNow.length > 0 && <span className="lc-sb-nend">{onWallNow.length}</span>}
+          </button>
+        )}
         <button type="button" className="lc-sb-nav l-focus" aria-current={routinesOn ? "page" : undefined} aria-label={`Routines${routinesNote ? `, ${routinesNote}` : ""}`} title={`Routines${routinesNote ? ` · ${routinesNote}` : ""}`} onClick={onRoutines}>
           <I.routines size={16} />
           <span>Routines</span>

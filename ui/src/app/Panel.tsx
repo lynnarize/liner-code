@@ -22,9 +22,10 @@ import { CommitButton } from "./Commit";
 import { closeOthers, closeTab, GUIDE, moveTab, openTab, pickTab, toggleFull, type DockState } from "./dock";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, plural } from "./model";
-import { ContextMenu, Disc, ModelTag, Num, PanelHead, Pop, Row, Sep } from "./ui";
+import { checkpointsOf } from "./model";
+import { ContextMenu, PanelHead, Pop, Row, Sep } from "./ui";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
+import { AgentsSurface } from "./Crew";
 import { pin, usePins } from "./TopBar";
 import { BrowserSurface } from "./Browser";
 import { DesignSurface } from "./Design";
@@ -108,7 +109,7 @@ export function Panel({
 
   const body = (t: Tab, visible: boolean) => {
     if (t === "changes") return wideReview ? <Review thread={thread} items={items} focus={focus} onFocus={onFocus} onBack={() => onDock({ ...dock, full: false })} /> : <Changes thread={thread} items={items} focus={focus} onFocus={onFocus} />;
-    if (t === "agents") return <Agents thread={thread} items={items} />;
+    if (t === "agents") return <AgentsSurface thread={thread} items={items} />;
     if (t === "session")
       return (
         <Suspense fallback={null}>
@@ -513,156 +514,3 @@ function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Ite
   );
 }
 
-function Agents({ thread, items }: { thread: Thread; items: Item[] }) {
-  const agents = useEngine((s) => s.agents);
-  const providers = useEngine((s) => s.providers);
-  const turns = items.filter((x): x is Extract<Item, { kind: "turn" }> => x.kind === "turn");
-  const who = [...new Set([thread.lead, thread.agent, ...turns.map((t) => t.agent)].filter(Boolean) as string[])];
-  const tools = items.filter((x) => x.kind === "tool");
-  const subs = tools.filter((x): x is Extract<Item, { kind: "tool" }> => x.kind === "tool" && x.toolKind === "task");
-  const reviews = items.filter((x): x is Extract<Item, { kind: "review" }> => x.kind === "review");
-  const coder = agentOf(thread.agent, agents, providers);
-  const haiku = providers.find((p) => p.id === "claude")?.models.find((m) => m.id.includes("haiku"));
-  const opus = providers.find((p) => p.id === "claude")?.models.find((m) => m.id.includes("opus"));
-  // Which model a subagent ran on: the agent's own choice, else the cheap default.
-  const subModel = (name: string) => {
-    if (name === "Explorer") return coder.subagents?.explorer ?? (haiku ? `claude:${haiku.id}` : undefined);
-    if (name === "Test runner") return coder.subagents?.tests ?? (haiku ? `claude:${haiku.id}` : undefined);
-    if (name === "Opus") return opus ? `claude:${opus.id}` : undefined;
-    return undefined;
-  };
-  const u = thread.usage;
-  // No cost reported: say who pays, as the engine bills it (runtime.ts gives Claude Code the Anthropic
-  // key when it bills to the key, and Codex the OpenAI key whenever one is saved).
-  const settings = useEngine((s) => s.settings);
-  const keys = useEngine((s) => s.keys);
-  const ran = [...new Set([...turns.map((t) => t.model), thread.model ?? coder.model].filter(Boolean).map((m) => m!.replace(/^@/, "").split(":")[0]))];
-  const payer = (id: string) => {
-    if (id === "demo") return "Nothing: a scripted run";
-    const p = providers.find((x) => x.id === id);
-    if (p?.endpoint) return `Billed by ${p.label}`;
-    if (id === "claude" && settings.claudeBilling === "key" && keys.includes("anthropic")) return "Billed to your Anthropic key";
-    if (id === "codex" && keys.includes("openai")) return "Billed to your OpenAI key";
-    return "Included in your plan";
-  };
-  const unpriced = [...new Set(ran.map(payer))].join("; ") || "Included in your plan";
-  return (
-    <div className="lc-agents-panel">
-      <PanelHead>In this session</PanelHead>
-      {who.map((id) => {
-        const a = agentOf(id, agents, providers);
-        const mine = turns.filter((t) => t.agent === id);
-        const last = mine[mine.length - 1];
-        const model = last?.model ?? (id === thread.agent ? (thread.model ?? a.model) : a.model);
-        const isLead = id === thread.lead;
-        return (
-          <div key={id} className="lc-agent-card">
-            <Disc agent={a} size={30} lead={isLead || undefined} />
-            <span className="lc-agent-card-t">
-              <b>
-                {a.name} <span className="lc-quiet">{isLead ? "Plans" : a.role || "Agent"}</span>
-              </b>
-              <small>
-                {mine.length === 0
-                  ? isLead
-                    ? "Plans first, when you send a message"
-                    : "Hasn't worked yet"
-                  : last?.status === "running"
-                    ? "Working now"
-                    : `${isLead ? "Planned" : "Worked"} ${plural(mine.length, "turn")}`}
-              </small>
-            </span>
-            <span className="lc-agent-card-m">
-              <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} />
-              <small>{(id === thread.agent ? thread.effort : undefined) ?? a.effort}</small>
-            </span>
-          </div>
-        );
-      })}
-      {(subs.length > 0 || reviews.length > 0) && (
-        <>
-          <PanelHead end={<span className="lc-quiet">answer to {coder.name}</span>}>Subagents</PanelHead>
-          {[...new Map(subs.map((x) => [x.title.split(":")[0], x])).values()].map((first) => {
-            const name = first.title.split(":")[0].trim();
-            const mine = subs.filter((x) => x.title.split(":")[0].trim() === name);
-            const last = mine[mine.length - 1];
-            const model = subModel(name);
-            const secs = mine.reduce((n, x) => n + (x.seconds ?? 0), 0);
-            return (
-              <div key={name} className="lc-agent-card" data-sub>
-                <span className="lc-tile lc-sub-tile">{name === "Opus" ? <I.sparkle size={12} /> : <I.agents size={12} />}</span>
-                <span className="lc-agent-card-t">
-                  <b>
-                    {name} <span className="lc-quiet">subagent</span>
-                  </b>
-                  <small>
-                    {last.status === "running" ? "Working now" : mine.length > 1 ? `${mine.length} runs` : last.title.split(":").slice(1).join(":").trim() || "Done"}
-                    {secs > 0 && last.status !== "running" ? ` · ${duration(secs)}` : ""}
-                  </small>
-                </span>
-                {model && (
-                  <span className="lc-agent-card-m">
-                    <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} />
-                  </span>
-                )}
-              </div>
-            );
-          })}
-          {reviews.length > 0 && (() => {
-            const r = reviews[reviews.length - 1];
-            return (
-              <div className="lc-agent-card" data-sub>
-                <span className="lc-tile lc-sub-tile">
-                  <I.shield size={12} />
-                </span>
-                <span className="lc-agent-card-t">
-                  <b>
-                    Reviewer <span className="lc-quiet">subagent</span>
-                  </b>
-                  <small>
-                    {r.status === "running" ? "Reading the changes" : r.status === "passed" ? (r.findings.length ? `${plural(r.findings.length, "note")}, nothing blocking` : "Nothing to note") : r.status === "blocked" ? `Blocked in round ${r.round}` : "No verdict"}
-                    {r.seconds ? ` · ${duration(r.seconds)}` : ""}
-                  </small>
-                </span>
-                <span className="lc-agent-card-m">
-                  <ModelTag kind={markOf(r.reviewer)} label={modelLabel(r.reviewer, providers)} />
-                </span>
-              </div>
-            );
-          })()}
-        </>
-      )}
-      <PanelHead>This session</PanelHead>
-      <dl className="lc-fields lc-fields-quiet">
-        <div>
-          <dt>Tokens</dt>
-          <dd>
-            <Num as="compact" value={u.inputTokens + u.outputTokens + u.cacheReadTokens} />
-          </dd>
-        </div>
-        <div>
-          <dt>From cache</dt>
-          <dd>{u.inputTokens + u.cacheReadTokens ? <Num as="percent" value={u.cacheReadTokens / (u.inputTokens + u.cacheReadTokens)} /> : "–"}</dd>
-        </div>
-        <div>
-          <dt>Cost</dt>
-          <dd>{u.costUsd ? <Num as="money" value={u.costUsd} /> : unpriced}</dd>
-        </div>
-        {u.contextWindow ? (
-          <div>
-            <dt>Context</dt>
-            <dd>
-              <Num as="compact" value={u.contextTokens ?? 0} /> of {compact(u.contextWindow)}
-            </dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Tools used</dt>
-          <dd>
-            <Num value={tools.length} />
-          </dd>
-        </div>
-      </dl>
-    </div>
-  );
-}

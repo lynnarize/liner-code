@@ -23,10 +23,12 @@ import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
 import { readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
+import { useSeen } from "./launch";
 import { closeTab, closeWhere, openTab, paneOf, replaceTab, toggleTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, SideKeys, TopBar } from "./TopBar";
 import { ModeChip } from "./Modes";
+import { CrewChip, CrewStrip } from "./Crew";
 import { Timeline } from "./Timeline";
 import { Disc, Kbd, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
@@ -44,6 +46,12 @@ type Props = {
   onCloseSide?: () => void;
   /** Whether the window's keys are this session's (false for the side you aren't in). */
   keys?: boolean;
+  /**
+    Opened from the Wall: the way back at the start of the header, where it is among the Wall's
+    tiles (`at` of `of`, 0 when it's no longer among them) and the tiles either side. The composer
+    waits for a click, so Esc goes back to the Wall rather than stopping the turn.
+  */
+  wall?: { at: number; of: number; onBack: () => void; onPrev?: () => void; onNext?: () => void };
 };
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -79,10 +87,12 @@ const openedPreviews = new Set<string>();
   subagents, how many items there are), so a streaming reply redraws the timeline and not the
   composer, the header and the rest; the timeline and the panel read the whole of it themselves.
 */
-export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession, onRoutine, onBeside, onCloseSide, keys = true }: Props) {
+export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession, onRoutine, onBeside, onCloseSide, keys = true, wall }: Props) {
   // Beside another session only the side you're in takes the window's keys.
   const keysOn = useRef(keys);
   keysOn.current = keys;
+  // On screen: its folder's launch.json servers stay up, and those stopped while you were away start again.
+  useSeen(thread.id);
   const cps = useItemsWhere(thread.id, isCheckpoint);
   const prompts = useItemsWhere(thread.id, isPrompt);
   const count = useEngine((s) => s.items[thread.id]?.length ?? 0);
@@ -525,6 +535,29 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             <I.sidebar size={16} />
           </button>
         )}
+        {wall && (
+          <div className="lc-wallback" role="group" aria-label="The Wall">
+            <button type="button" className="lc-wallback-b l-focus" title="Back to the Wall (Esc)" onClick={wall.onBack}>
+              <I.chevL size={14} />
+              The Wall
+              <Kbd>Esc</Kbd>
+            </button>
+            {wall.at > 0 && (
+              <>
+                <span className="lc-wallback-n l-num">
+                  {wall.at} of {wall.of}
+                </span>
+                <button type="button" className="lc-tb l-focus" aria-label="The tile before it on the Wall" title="The tile before it" disabled={!wall.onPrev} onClick={wall.onPrev}>
+                  <I.chevU size={14} />
+                </button>
+                <button type="button" className="lc-tb l-focus" aria-label="The tile after it on the Wall" title="The tile after it" disabled={!wall.onNext} onClick={wall.onNext}>
+                  <I.chevD size={14} />
+                </button>
+              </>
+            )}
+            <span className="lc-sbar-sep" aria-hidden />
+          </div>
+        )}
         {renaming ? (
           <input
             className="lc-title-edit"
@@ -569,6 +602,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           </h1>
         )}
         <ModeChip thread={thread} />
+        <CrewChip thread={thread} />
         {tabApps.length > 0 && (
           <div className="lc-views" role="tablist" aria-label="Session views">
             {[{ id: "chat", name: "Chat", Icon: I.comment }, ...tabApps.map((a) => ({ id: a.id, name: a.name, Icon: appIcon(a.panel?.icon) }))].map((v) => (
@@ -666,7 +700,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                   onNewAgent={onNewAgent}
                   busy={busy}
                   placeholder={busy ? `Write while it works: it goes when the turn ends` : placeholder}
-                  autoFocus
+                  autoFocus={!wall}
+                  top={<CrewStrip thread={thread} />}
                 />
               </div>
             )}

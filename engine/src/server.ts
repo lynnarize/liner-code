@@ -6,6 +6,8 @@
                    own key (x-liner-surface), which reaches its surfaces and nothing else
   - POST /outside  { tool, args } from an agent outside Liner Code (outside.ts), with the key in
                    outside.json (x-liner-outside), only while that's on in Settings
+  - ANY  /dsh/<token>/…  a ported DeepSeek Harness plugin's own program and pictures, for its
+                   frame alone: the token, made for this run, stands in for the app's (dsh-hosts.ts)
   - GET  /*        the built app, when there is one
   Every other request carries the token the shell made (x-liner-token), so other apps and web
   pages on this machine can't drive your agents.
@@ -25,8 +27,10 @@ type Surface = (key: string, tool: string, args: Record<string, unknown>) => Pro
 type Outside = Surface;
 /** A panel being checked out of sight (agent-tools.ts): its page, its bridge's calls, its report, and word once it has settled. */
 type Check = { page(token: string): string | null; call(token: string, body: Record<string, unknown>): Promise<unknown>; report(token: string, body: unknown): void; settle(token: string): Promise<void> };
+/** A ported plugin's request: true when it was its to answer. */
+type Dsh = (token: string, rest: string, search: string, req: IncomingMessage, res: ServerResponse) => boolean;
 
-export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; check?: Check }) {
+export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; check?: Check; dsh?: Dsh }) {
   const { store, api, token } = o;
   const clients = new Set<ServerResponse>();
   /** Clients whose snapshot is being taken: what's sent meanwhile waits, numbered, until it's written. */
@@ -177,9 +181,15 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       res.writeHead(ok ? 200 : 404, { "content-type": "application/json" }).end(JSON.stringify({ ok }));
       return;
     }
+    // A ported DeepSeek Harness plugin's frame reaching its own program or pictures, by its token.
+    const dsh = /^\/dsh\/([a-f0-9]{32})\/(.*)$/.exec(url.pathname);
+    if (dsh && o.dsh) {
+      if (o.dsh(dsh[1], dsh[2], url.search, req, res)) return;
+      return void res.writeHead(404).end("Not found");
+    }
     // The empty frame a panel is written into: it's asked for by the page, so without the token.
     if (url.pathname === PANEL_FRAME && req.method === "GET") {
-      const frame = panelFrame(url.searchParams.get("network"), `http://${req.headers.host}`);
+      const frame = panelFrame(url.searchParams.get("network"), `http://${req.headers.host}`, url.searchParams.get("dsh"));
       if (!frame) return void res.writeHead(400).end("Bad request");
       return void res.writeHead(200, frame.headers).end(frame.html);
     }

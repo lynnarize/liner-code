@@ -53,6 +53,36 @@ export const TOOLS: ToolDef[] = [
     },
   },
   { name: "browser_screenshot", description: "A screenshot of the page in the Browser, as the person sees it.", inputSchema: none },
+  {
+    name: "server_start",
+    description: [
+      "Starts a dev server named in .claude/launch.json in the session's folder (the file Claude Code reads for its previews) and opens it in Liner Code's Browser. Returns its port and the page, as browser_open does.",
+      "Use it instead of starting a dev server from your shell: Liner Code stops it when no session in the folder needs it and starts it again when the person comes back. One that runs already is used as it is.",
+      'When the file is missing, or lacks the server, write it first: {"version": "0.0.1", "configurations": [{"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173}]}. runtimeExecutable is the command and runtimeArgs its arguments (or program, a script for node, with args); port is where it listens (3000 when left out), and it gets PORT too; cwd, env and autoPort (true: it may move to a free port when its own is taken) are optional.',
+      "A command the person hasn't run from this file before may wait for their yes.",
+    ].join(" "),
+    inputSchema: { type: "object", properties: { name: { type: "string", description: "The server's name in .claude/launch.json" } }, required: ["name"] },
+  },
+  {
+    name: "server_stop",
+    description: "Stops a dev server started from .claude/launch.json (server_start, or the person's Run), or all of the folder's when you leave out name.",
+    inputSchema: { type: "object", properties: { name: { type: "string", description: "The server's name; all of them when left out" } } },
+  },
+  { name: "server_list", description: "The dev servers in this folder's .claude/launch.json: which run, on what port, and why one that stopped did.", inputSchema: none },
+  {
+    name: "server_logs",
+    description: "What a dev server from .claude/launch.json printed, its output and errors, newest last: the one running, or the last run if it ended. To find a build error, or why it stopped.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The server's name" },
+        lines: { type: "number", description: "How many of the last lines, up to 200; 50 when left out" },
+        search: { type: "string", description: "Only lines with this text" },
+        errors: { type: "boolean", description: "Only lines that look like errors" },
+      },
+      required: ["name"],
+    },
+  },
   { name: "device_list", description: "The iOS simulators on this Mac, and which one is booted.", inputSchema: none },
   { name: "device_screenshot", description: "A screenshot of a simulator's screen (the booted one, unless you name its udid).", inputSchema: { type: "object", properties: { udid: { type: "string", description: "Which simulator; the booted one when left out" } } } },
   {

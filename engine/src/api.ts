@@ -26,6 +26,7 @@ import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from 
 import { picture } from "./prflow.ts";
 import { uid, type Store } from "./store.ts";
 import { appearance, boot, devices, ghState, htmlPages, listeningPorts, pagePath, stopServers, prCreate, prFor, prList, prMerge, readFile, screenshot, type DeviceLogs, type Terminals } from "./surfaces.ts";
+import type { Launcher } from "./launch.ts";
 import type { Proxies } from "./proxy.ts";
 import type { AgentTools } from "./agent-tools.ts";
 import type { Designs } from "./designs.ts";
@@ -34,6 +35,7 @@ import { checkManifest } from "./addons.ts";
 import { refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
 import type { Offers } from "./offers.ts";
 import type { Sources } from "./sources.ts";
+import type { DshHosts } from "./dsh-hosts.ts";
 import { Updater } from "./updates.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
@@ -152,7 +154,7 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void }; offers?: Offers; sources?: Sources };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings, runtime.keys);
@@ -382,7 +384,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       pick: () => {
         throw new Error("The window opens the model picker: liner.ai.pick() only works in Liner Code's window.");
       },
-      ask: async ({ prompt, system, call, stream }) => {
+      ask: async ({ prompt, system, call, stream, onText }) => {
         const ref = picked();
         if (!ref) throw new Error(`No model is allowed for ${name} yet: the person picks one when it first asks.`);
         if ((aiBusy.get(addon) ?? 0) >= 2) throw new Error(`${name} is already waiting on two answers: ask one at a time.`);
@@ -395,7 +397,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         aiAsking.set(key, ctl);
         const timer = setTimeout(() => ctl.abort(), 180_000);
         try {
-          const text = await runtime.plain(ref, { prompt, system, signal: ctl.signal, as: `addon:${addon}`, onText: call && stream ? (t) => store.emit({ type: "panel.ai", call, text: t }) : undefined });
+          const text = await runtime.plain(ref, { prompt, system, signal: ctl.signal, as: `addon:${addon}`, onText: onText ?? (call && stream ? (t) => store.emit({ type: "panel.ai", call, text: t }) : undefined) });
           return { text, model: runtime.labelOf(ref) };
         } catch (e) {
           if (ctl.signal.aborted) throw new Error("The model took too long, or the app closed, so it was stopped.");
@@ -411,8 +413,25 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
   const snapshot = (): Snapshot => ({ version: updates.state.app.current, seq: store.seq, keys: keyList(), home: store.home, projects: store.projects, threads: store.threads, agents: store.agents, providers: shown(), settings: store.settings, groups: store.groups, routines: x.routines.routines, runs: x.routines.recent, updates: updates.state, limits: [...limits.values()], addons: runtime.addons?.list() ?? [], addonsOff: runtime.addons?.off ?? false });
 
-  // Each change to your add-ons reaches the app; the sessions get theirs from the runtime (relink).
-  if (runtime.addons) runtime.addons.onChange = (addons) => store.emit({ type: "addons", addons, off: runtime.addons?.off ?? false });
+  // Each change to your add-ons reaches the app; the sessions get theirs from the runtime (relink), and a
+  // ported DeepSeek Harness plugin whose add-on went off, or to another version, has its program stopped.
+  if (runtime.addons)
+    runtime.addons.onChange = (addons) => {
+      store.emit({ type: "addons", addons, off: runtime.addons?.off ?? false });
+      x.dsh?.changed();
+    };
+  // A ported plugin's program asks its model as an app does, and hears when you pick another.
+  if (x.dsh) {
+    x.dsh.ask = (addon, name, o) => aiFor(addon, name).ask(o);
+    x.dsh.cancel = (call) => aiAsking.get(call)?.abort();
+    x.dsh.modelOf = (addon) => aiFor(addon, addon).model()?.name ?? null;
+    let picks = JSON.stringify(store.settings.addonModels ?? {});
+    store.on((e) => {
+      if (e.type !== "settings") return;
+      const now = JSON.stringify(store.settings.addonModels ?? {});
+      if (now !== picks) (picks = now), x.dsh?.models();
+    });
+  }
   const addons = () => {
     if (!runtime.addons) throw new Error("Add-ons aren't available here.");
     return runtime.addons;
@@ -1028,6 +1047,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       runtime.stop(id);
       return null;
     },
+    "thread.stopAgent": ({ id, item }) => runtime.stopAgent(id, item),
+    "thread.steerAgent": ({ id, item, text }) => runtime.steerAgent(id, item, text),
     /*
       A side chat: a fork of the session that only reads and answers. Who you talk to there is who
       you talk to in the session (the lead, if it has one), continuing that conversation where the
@@ -1098,7 +1119,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (!m) throw new Error("There's no such add-on, or no such version of it.");
       return { manifest: JSON.stringify(m, null, 2), dir: join(addons().dir, id) };
     },
-    "addons.files": (p) => {
+    "addons.files": async (p) => {
       // A panel whose card is up: the draft exactly as it was asked about.
       if ("itemId" in p) {
         const d = x.tools?.pending.get(p.itemId);
@@ -1112,7 +1133,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const m = a.manifest(p.id, p.version);
       const files = a.files(p.id, p.version);
       if (!m || m.kind !== "panel" || !files) throw new Error("There's no such panel, or no such version of it.");
-      return { id: m.id, name: m.name, place: m.place, entry: m.entry, access: m.access, files, version: p.version ?? a.get(p.id)?.version };
+      const version = p.version ?? a.get(p.id)?.version;
+      // A ported DeepSeek Harness plugin's frame also gets its path on the engine, and its program started (or why it didn't).
+      const dsh = m.dsh && version !== undefined && x.dsh && a.panel(m.id) ? await x.dsh.frame(m, version) : m.dsh ? { package: m.dsh.package, slot: m.dsh.slot, ...(m.dsh.config ? { config: m.dsh.config } : {}) } : undefined;
+      return { id: m.id, name: m.name, place: m.place, entry: m.entry, access: m.access, files, version, ...(dsh ? { dsh } : {}) };
     },
     "panel.call": async ({ addon, threadId, preview, method, args, apiVersion }) => {
       // Whatever the frame says, its access is read here: the panel in use, or the draft on its card.
@@ -1604,6 +1628,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "ports.list": ({ threadId }) => (threadId ? listeningPorts(env, mine(threadId)) : listeningPorts(env)),
     "ports.stop": ({ threadId, port }) => stopServers(env, mine(threadId), { port }),
+    "launch.list": ({ threadId }) => launcher().list(threadId),
+    "launch.start": ({ threadId, name }) => launcher().start(threadId, name),
+    "launch.stop": ({ threadId, name }) => launcher().stop(threadId, name),
+    "launch.restart": ({ threadId, name }) => launcher().restart(threadId, name),
+    "launch.seen": ({ threadId }) => (x.launch?.seen(threadId), null),
     "browser.proxy": async ({ port }) => ({ url: await x.proxies.url(port) }),
     "browser.files": async ({ threadId, path }) => {
       const root = cwdOf(threadId);
@@ -1647,7 +1676,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   function leftBehind(threadId: string) {
     // Its Terminal's shells too: they outlive the surface, not the session. (Tests pass no Terminals.)
     x.terms.closeThread?.(threadId);
+    // Its launch.json servers first, so they end saying why (they'd be among the scan's below too).
+    x.launch?.forget(threadId);
     void stopServers(env, mine(threadId), { only: "session" }).catch(() => {});
+  }
+  function launcher() {
+    if (!x.launch) throw new Error("This engine runs no launch.json servers.");
+    return x.launch;
   }
   /** A diff card's files, and how many there are past the ones it holds. */
   async function diffOf(cwd: string, from: string, to: string, files: FileChange[]) {

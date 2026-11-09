@@ -14,13 +14,15 @@ import { Runtime } from "./runtime.ts";
 import { startServer } from "./server.ts";
 import { Store } from "./store.ts";
 import { Proxies } from "./proxy.ts";
-import { DeviceLogs, Terminals } from "./surfaces.ts";
+import { DeviceLogs, listeningPorts, Terminals } from "./surfaces.ts";
+import { Launcher } from "./launch.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
 import { Addons } from "./addons.ts";
 import { Offers } from "./offers.ts";
 import { Sources } from "./sources.ts";
+import { DshHosts } from "./dsh-hosts.ts";
 import type { Thread } from "../../contracts/src/index.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
@@ -76,8 +78,33 @@ designs.cwdOf = (id) => tools.cwdOf(id);
 designs.turnOf = (id) => tools.turnOf(id);
 tools.designs = designs;
 tools.filesUrl = (root) => proxies.files(root);
+// The servers of each folder's .claude/launch.json: they stop when no one has looked for a while, and come back when you do.
+const folderOf = (id: string) => {
+  const t = store.thread(id);
+  return t.worktree?.path ?? store.project(t.projectId).path;
+};
+const launch = new Launcher({
+  env,
+  emit: (e) => store.emit(e),
+  cwdOf: folderOf,
+  sessionsIn: (root) =>
+    store.threads.flatMap((t) => {
+      if (t.archived) return [];
+      try {
+        return folderOf(t.id) === root ? [{ id: t.id, busy: t.status === "running" || t.status === "waiting" || runtime.isRunning(t.id) }] : [];
+      } catch {
+        return [];
+      }
+    }),
+  file: join(store.home, "servers-asleep.json"),
+  holder: (port) => listeningPorts(env).then((l) => l.find((s) => s.port === port)?.process),
+});
+launch.watch();
+tools.launch = launch;
 const outside: { now?: Outside } = {};
-const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, outside: { apply: () => outside.now?.apply() } };
+// Ported DeepSeek Harness plugins' own programs: each in a process of its own, never in the engine.
+const dsh = new DshHosts(addons, env, store.home);
+const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, launch, dsh, outside: { apply: () => outside.now?.apply() } };
 const api = createApi(store, runtime, env, extras);
 // "Make it an app": the card's Create starts a session of its own, through the same door the app uses.
 const offers = new Offers({
@@ -117,9 +144,12 @@ const server = await startServer({
   },
   outside: (key, tool, args) => (outside.now?.allows(key) ? outside.now.call(tool, args) : null),
   check: { page: (t) => tools.checkPage(t), call: (t, b) => tools.checkCall(t, b), report: (t, b) => tools.checkReport(t, b as never), settle: (t) => tools.checkSettle(t) },
+  dsh: (token, rest, search, req, res) => dsh.serve(token, rest, search, req, res),
 });
 tools.url = `http://127.0.0.1:${server.port}`;
 outside.now.url = tools.url;
+// Where a ported plugin's tools bring your agents' calls (dsh-mcp.ts).
+dsh.url = tools.url;
 outside.now.apply();
 // No idle sleep while a session or a routine run works.
 const awake = new Awake(store, () => routines.busy || store.threads.some((t) => t.status === "running"));
@@ -137,7 +167,7 @@ process.stdout.write(`LINER_READY ${JSON.stringify({ port: server.port, home: st
 const quit = () => {
   // Each on its own, so one that fails (the last save, on a full disk) doesn't leave the rest undone
   // and the engine running with nothing to stop it: its signal has been sent, and its stdin has closed.
-  const steps = [() => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => proxies.closeAll(), () => logs.stopAll(), () => runtime.shutdown(), () => store.keepStreaming(), () => store.flush(), () => server.close()];
+  const steps = [() => dsh.stopAll(), () => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => launch.quit(), () => proxies.closeAll(), () => logs.stopAll(), () => runtime.shutdown(), () => store.keepStreaming(), () => store.flush(), () => server.close()];
   for (const step of steps) {
     try {
       step();

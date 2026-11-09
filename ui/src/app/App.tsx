@@ -13,7 +13,7 @@ import { bridge, onCommand } from "./bridge";
 import { EngineAway, getState, onNotify, onStream, RpcError, rpc, startEngine, useEngine } from "./engine";
 import { Home } from "./Home";
 import { I } from "./icons";
-import { ACCESS_LEVELS, agentOf } from "./model";
+import { ACCESS_LEVELS, agentOf, wallShown } from "./model";
 import { Session, showAppTab, showBelow } from "./Session";
 import { applyLook, readLook } from "./look";
 import { Sidebar, waitsOnYou } from "./Sidebar";
@@ -24,6 +24,7 @@ const Settings = lazy(() => import("./Settings").then((m) => ({ default: m.Setti
 // The Add-ons page shows Settings › Add-ons' own list.
 const Setup = lazy(() => import("./Setup").then((m) => ({ default: m.Setup })));
 const Usage = lazy(() => import("./Usage").then((m) => ({ default: m.Usage })));
+const Wall = lazy(() => import("./Wall").then((m) => ({ default: m.Wall })));
 const RoutinesPage = lazy(() => import("./Routines").then((m) => ({ default: m.RoutinesPage })));
 const Compare = lazy(() => import("./Compare").then((m) => ({ default: m.Compare })));
 import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
@@ -38,7 +39,8 @@ import { HiddenBrowsers } from "./Browser";
 import { matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 import * as os from "./os";
 
-type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string; beside?: string } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
+/** `wall` on a session: opened from the Wall, so its header has the way back and Esc goes there. */
+type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string; beside?: string; wall?: true } | { kind: "wall" } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
 
 const readView = (): View => {
   try {
@@ -249,6 +251,55 @@ export function App() {
       window.removeEventListener("lc:open-session", session);
     };
   }, []);
+  /*
+    The Wall, and back. Back is where you were before it: a session you opened from the Wall
+    doesn't count, so stepping in and out of tiles still comes back to where you started.
+  */
+  const wallBack = useRef<View>({ kind: "home" });
+  const showWall = () => {
+    if (view.kind === "wall") return setSettings(false);
+    if (!(view.kind === "session" && view.wall)) wallBack.current = view;
+    go({ kind: "wall" });
+  };
+  const leaveWall = () => go(wallBack.current);
+  const openFromWall = (id: string) => {
+    wallShown.picked = id;
+    go({ kind: "session", id, wall: true });
+  };
+  const wallRef = useRef(showWall);
+  wallRef.current = showWall;
+  useEffect(() => {
+    const on = () => wallRef.current();
+    window.addEventListener("lc:wall", on);
+    return () => window.removeEventListener("lc:wall", on);
+  }, []);
+  // A session opened from the Wall: where it stands among the tiles the Wall showed, and the way back.
+  const wallIds = wallShown.ids.filter((id) => threads.some((t) => t.id === id && !t.archived));
+  const fromWall = view.kind === "session" && Boolean(view.wall) && !besideThread;
+  const wallAt = fromWall && view.kind === "session" ? wallIds.indexOf(view.id) : -1;
+  const wallStrip = fromWall
+    ? {
+        at: wallAt + 1,
+        of: wallIds.length,
+        onBack: () => go({ kind: "wall" }),
+        onPrev: wallAt > 0 ? () => openFromWall(wallIds[wallAt - 1]) : undefined,
+        onNext: wallAt >= 0 && wallAt < wallIds.length - 1 ? () => openFromWall(wallIds[wallAt + 1]) : undefined,
+      }
+    : undefined;
+  // There, Esc goes back to the Wall, unless something it was pressed in has a use for it (a field, a menu, the composer, a terminal).
+  useEffect(() => {
+    if (!fromWall) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (document.querySelector("dialog[open], .lc-st-side")) return;
+      const t = e.target instanceof Element ? e.target : null;
+      if (t?.closest("input, textarea, select, [contenteditable='true'], [contenteditable=''], .xterm, [role='menu'], [role='listbox'], [role='dialog']")) return;
+      e.preventDefault();
+      setView({ kind: "wall" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fromWall]);
   const openRun = (run: RoutineRun) => (run.threadId ? openSession(run.threadId, `run:${run.id}`) : go({ kind: "routines" }));
   const editRoutine = (id?: string, projectId?: string) => go({ kind: "routine", id, projectId: projectId ?? (here?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
   const newSession = (projectId?: string) => {
@@ -328,6 +379,7 @@ export function App() {
     }
     else if (name === "sidebar") setSidebar((s) => !s);
     else if (name === "usage") go({ kind: "usage" });
+    else if (name === "wall") view.kind === "wall" && !settings ? leaveWall() : showWall();
     else if (name === "open-project") addProject();
     else if (name === "next-needs") nextNeeds();
     else if (name === "focus.next") moveFocus(1, sideEl());
@@ -424,6 +476,7 @@ export function App() {
     const items: CommandItem[] = [
       { id: "new", label: "New session", group: "Actions", icon: <I.compose size={15} />, shortcut: shortcutOf("new"), onSelect: () => newSession() },
       { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={15} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
+      { id: "wall", label: "The Wall", group: "Actions", icon: <I.wall size={15} />, keywords: ["every session", "all sessions", "grid", "overview"], shortcut: shortcutOf("wall"), onSelect: showWall },
       { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={15} />, onSelect: () => go({ kind: "usage" }) },
       { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={15} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
       { id: "routine-new", label: "New routine", group: "Actions", icon: <I.plus size={15} />, onSelect: () => editRoutine() },
@@ -542,7 +595,7 @@ export function App() {
       ) : (
         <>
           <div className="lc-side" inert={!sidebar || undefined}>
-            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
@@ -558,8 +611,10 @@ export function App() {
                   ))}
                 </div>
               ) : (
-              <Session key={current.id} thread={current} sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, current.projectId)} onBeside={() => pickBeside(0)} />
+              <Session key={current.id} thread={current} sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, current.projectId)} onBeside={() => pickBeside(0)} wall={wallStrip} />
               )
+            ) : view.kind === "wall" ? (
+              <Wall sidebar={sidebar} onSidebar={() => setSidebar(true)} onOpen={openFromWall} onBack={leaveWall} onNew={() => newSession()} />
             ) : view.kind === "routines" ? (
               <RoutinesPage sidebar={sidebar} onSidebar={() => setSidebar(true)} onNew={() => editRoutine()} onEdit={(id) => editRoutine(id)} onOpenRun={openRun} />
             ) : view.kind === "routine" ? (

@@ -19,7 +19,7 @@ import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { inFolder } from "./acp.ts";
 import { dataUrl, imageType } from "./attachments.ts";
-import { ResumeFailed, scrub, type OpenOptions, type ProviderSession, type TurnSink, type WakeTurn } from "./types.ts";
+import { ResumeFailed, scrub, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink, type WakeTurn } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
@@ -48,6 +48,11 @@ const short = (s: unknown, n = 80) => {
   const t = String(s ?? "").replace(/\s+/g, " ").trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 };
+
+/** An agent's name from what Codex says of its thread: its role ("explorer" is "Explorer"), else its nickname. */
+const agentNameOf = (role: unknown, nickname: unknown) => (typeof role === "string" && role.trim() ? role.trim().replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase()) : typeof nickname === "string" && nickname.trim() ? nickname.trim() : "Subagent");
+/** One running agent row of Codex's (a spawnAgent call): its thread's own steps by item id, what it last said, whether its turn has passed. */
+type CodexAgent = { key: string; title: string; status: "running" | "done" | "failed"; agent: NonNullable<ToolUpdate["agent"]>; calls: string[]; said: string; parked?: boolean };
 
 /** Codex wraps commands in a login shell: `/bin/zsh -lc "npm test"` reads as `npm test`. */
 export const unwrap = (cmd: string) => {
@@ -297,6 +302,10 @@ export class CodexServerSession implements ProviderSession {
   private stopping = false;
   /** The subagents this thread started: the prompt each was given, and its last words. */
   private kids = new Map<string, { prompt: string; said: string }>();
+  /** Their rows, by each agent's thread: who it is, its steps and counts, kept up while a turn of yours shows them. */
+  private agents = new Map<string, CodexAgent>();
+  /** What Codex said of each agent's thread as it started: its name. */
+  private agentNames = new Map<string, string>();
   /** What's waiting to wake the parent, if anything is; a subagent finishing meanwhile joins it. */
   private waking: { pending: boolean; details: string[] } | null = null;
   /** The model the thread opened on: a plan turn has to name one, and you may have left it to Codex. */
@@ -436,6 +445,14 @@ export class CodexServerSession implements ProviderSession {
       await finished;
     } finally {
       signal.removeEventListener("abort", stop);
+      // Agents still at work go on past this turn, where no row of it can be updated: they're shown as sent to the background.
+      for (const [kid, a] of this.agents)
+        if (a.status === "running" && !a.parked) {
+          a.status = "done";
+          a.agent.background = true;
+          this.agentSays(sink, kid);
+          a.parked = true;
+        }
       this.turnId = null;
       this.sink = null;
       this.signal = null;
@@ -466,6 +483,24 @@ export class CodexServerSession implements ProviderSession {
   steer(text: string, files: string[] = []) {
     if (!this.thread || !this.turnId) return false;
     return this.server.request("turn/steer", { threadId: this.thread, input: input(text, files), expectedTurnId: this.turnId }).then(
+      () => true,
+      () => false,
+    );
+  }
+
+  /** Stops one agent: its own thread's turn, the rest going on (T3 Code interrupts the whole lineage only on Stop). */
+  stopAgent(taskId: string) {
+    const turnId = this.others.get(taskId);
+    if (!turnId) return false;
+    void this.server.request("turn/interrupt", { threadId: taskId, turnId }).catch(() => {});
+    return true;
+  }
+
+  /** A word for one agent, steering its own thread's turn as a steer does yours. */
+  steerAgent(taskId: string, text: string) {
+    const turnId = this.others.get(taskId);
+    if (!turnId) return false;
+    return this.server.request("turn/steer", { threadId: taskId, input: input(text), expectedTurnId: turnId }).then(
       () => true,
       () => false,
     );
@@ -521,6 +556,19 @@ export class CodexServerSession implements ProviderSession {
     const threadId = typeof p.threadId === "string" ? p.threadId : undefined;
     const item = p.item as Json | undefined;
     const own = !threadId || threadId === this.thread;
+    // An agent's thread starting: what it's called (its role, or the nickname Codex gave it).
+    if (method === "thread/started") {
+      const t = p.thread as Json | undefined;
+      if (t?.parentThreadId && typeof t.id === "string") {
+        this.agentNames.set(t.id, agentNameOf(t.agentRole, t.agentNickname));
+        const a = this.agents.get(t.id);
+        if (a && this.sink && !a.parked && a.agent.name !== this.agentNames.get(t.id)) {
+          a.agent.name = this.agentNames.get(t.id)!;
+          a.title = `${a.agent.name}: ${a.agent.task ?? "a task"}`;
+          this.agentSays(this.sink, t.id);
+        }
+      }
+    }
     if (method === "turn/started") {
       const turnId = String((p.turn as Json | undefined)?.id ?? "");
       if (own) {
@@ -587,6 +635,8 @@ export class CodexServerSession implements ProviderSession {
     // Another thread on this connection (a subagent Codex started) is at work: it counts its tokens,
     // but its words, steps and turn ends aren't this turn's (T3 Code: CodexAdapterV2.ts keeps them apart by thread).
     const other = typeof p.threadId === "string" && Boolean(this.thread) && p.threadId !== this.thread;
+    // What an agent does in its own thread goes on its row.
+    if (other) this.agentWork(method, p, sink);
     if (other && method !== "thread/tokenUsage/updated") return void sink.heard?.();
     // Codex is back after retrying: its line stops saying it's trying (T3 Code: CodexAdapterV2.ts resolves the retry on the next activity).
     if (this.retry && (method === "item/started" || method === "item/agentMessage/delta" || method === "item/reasoning/summaryTextDelta" || method === "item/reasoning/textDelta" || method === "turn/completed")) {
@@ -726,6 +776,18 @@ export class CodexServerSession implements ProviderSession {
       case "webSearch":
         sink.tool({ key: id, tool: "web_search", toolKind: "web", title: `Search the web for ${short(it.query, 50)}`, status: done ? "done" : "running" });
         return;
+      case "collabAgentToolCall":
+        this.collab(it, sink);
+        return;
+      // Which model an agent runs on, once Codex has made it.
+      case "subAgentActivity": {
+        const a = this.agents.get(String(it.agentThreadId));
+        if (a && typeof it.model === "string" && it.model && !a.parked) {
+          a.agent.model = `${this.o.provider ?? "codex"}:${it.model}`;
+          this.agentSays(sink, String(it.agentThreadId));
+        }
+        return;
+      }
       // A plan written the way Codex's plan mode has it comes out of the message and only here, so it's handed over as any other (see PLAN_MODE).
       case "plan":
         if (done && it.text) sink.text(`<plan>\n${String(it.text).trim()}\n</plan>`, id);
@@ -738,6 +800,131 @@ export class CodexServerSession implements ProviderSession {
         sink.tool({ key: id, tool: "image_generation", toolKind: "other", title: "Make an image", input: (it.revisedPrompt as string | null | undefined) ?? undefined, output: (it.savedPath as string | null | undefined) ?? undefined, status: !done ? "running" : failed ? "failed" : "done" });
         return;
       }
+    }
+  }
+
+  /**
+    An agent call of Codex's (collabAgentToolCall). spawnAgent sends one off: a row for each new
+    thread, named when its thread says who it is, under the agent that sent it when one did. The
+    others (wait, sendInput, closeAgent…) say how those agents stand, which goes on their rows.
+  */
+  private collab(it: Json, sink: TurnSink) {
+    const kids = ((it.receiverThreadIds as string[] | undefined) ?? []).filter((k) => typeof k === "string");
+    if (it.tool === "spawnAgent") {
+      const prompt = typeof it.prompt === "string" ? it.prompt.trim() : "";
+      const parentKey = this.agents.get(String(it.senderThreadId))?.key;
+      for (const kid of kids) {
+        if (this.agents.has(kid)) continue;
+        const name = this.agentNames.get(kid) ?? "Subagent";
+        const task = prompt ? short(prompt, 80) : undefined;
+        this.agents.set(kid, {
+          key: kids.length > 1 ? `${String(it.id)}:${kid}` : String(it.id),
+          title: `${name}: ${task ?? "a task"}`,
+          status: "running",
+          agent: { name, task, brief: prompt ? prompt.slice(0, 4000) : undefined, model: typeof it.model === "string" && it.model ? `${this.o.provider ?? "codex"}:${it.model}` : undefined, taskId: kid, steerable: true, steps: [], ...(parentKey ? { parentKey } : {}) },
+          calls: [],
+          said: "",
+        });
+        this.agentSays(sink, kid);
+      }
+    }
+    // Where Codex says how they stand (a wait that returned, a close), what they said comes with it.
+    const states = (it.agentsStates ?? {}) as Record<string, { status?: string; message?: string | null } | undefined>;
+    for (const [kid, st] of Object.entries(states)) {
+      const a = this.agents.get(kid);
+      if (!a || !st || a.parked) continue;
+      if (st.message) a.said = st.message;
+      const ended = st.status === "completed" ? "done" : st.status === "errored" ? "failed" : st.status === "interrupted" || st.status === "shutdown" ? "stopped" : null;
+      if (ended && a.status === "running") this.agentEnded(sink, kid, ended);
+    }
+  }
+
+  /** An agent's own thread at work: its steps, its words, its tokens, its turn's end. */
+  private agentWork(method: string, p: Json, sink: TurnSink) {
+    const kid = String(p.threadId);
+    const a = this.agents.get(kid);
+    if (!a || a.parked) return;
+    if (method === "item/started" || method === "item/completed") {
+      const it = p.item as Json | undefined;
+      if (!it) return;
+      const done = method === "item/completed";
+      // An agent it sends off in turn: a row of its own, under this one.
+      if (it.type === "collabAgentToolCall") return this.collab(it, sink);
+      if (it.type === "agentMessage") {
+        if (done && it.text) {
+          a.said = String(it.text);
+          a.agent.now = short(String(it.text).split("\n").find((l) => l.trim()) ?? "", 120);
+          this.agentSays(sink, kid);
+        }
+        return;
+      }
+      const step = this.stepOf(it, done);
+      if (!step) return;
+      const id = String(it.id);
+      const steps = [...(a.agent.steps ?? [])];
+      const i = a.calls.indexOf(id);
+      if (i >= 0) steps[i] = { ...steps[i], status: step.status };
+      else {
+        steps.push(step);
+        a.calls.push(id);
+        a.agent.tools = (a.agent.tools ?? 0) + 1;
+        if (steps.length > 40) {
+          steps.splice(0, steps.length - 40);
+          a.calls.splice(0, a.calls.length - 40);
+        }
+      }
+      a.agent.steps = steps;
+      if (!done) a.agent.now = step.title;
+      this.agentSays(sink, kid);
+    } else if (method === "thread/tokenUsage/updated") {
+      const t = ((p.tokenUsage as Json | undefined)?.total ?? {}) as { totalTokens?: number; inputTokens?: number; outputTokens?: number };
+      const tokens = t.totalTokens ?? (t.inputTokens ?? 0) + (t.outputTokens ?? 0);
+      if (tokens > 0) {
+        a.agent.tokens = tokens;
+        this.agentSays(sink, kid);
+      }
+    } else if (method === "turn/completed") {
+      const status = (p.turn as { status?: string } | undefined)?.status;
+      this.agentEnded(sink, kid, status === "failed" ? "failed" : status === "interrupted" ? "stopped" : "done");
+    }
+  }
+
+  /** An agent's work ended: what it last said is its report. Stopped, its call didn't fail. */
+  private agentEnded(sink: TurnSink, kid: string, how: "done" | "failed" | "stopped") {
+    const a = this.agents.get(kid);
+    if (!a || a.status !== "running") return;
+    a.status = how === "failed" ? "failed" : "done";
+    if (how === "stopped") a.agent.state = "stopped";
+    if (a.said.trim()) a.agent.report = a.said.trim().slice(0, 8000);
+    a.agent.now = undefined;
+    a.agent.steps = (a.agent.steps ?? []).map((x) => (x.status === "running" ? { ...x, status: how === "failed" ? "failed" : "done" } : x));
+    this.agentSays(sink, kid);
+  }
+
+  /** An agent's row as it stands now. */
+  private agentSays(sink: TurnSink, kid: string) {
+    const a = this.agents.get(kid);
+    if (!a || a.parked) return;
+    sink.tool({ key: a.key, tool: "spawn_agent", toolKind: "task", title: a.title, input: a.agent.brief, status: a.status, agent: { ...a.agent } });
+  }
+
+  /** An agent's own call as one of its steps, said the way its row would say it. */
+  private stepOf(it: Json, done: boolean): { title: string; toolKind: "exec" | "edit" | "other" | "web"; status: "running" | "done" | "failed"; path?: string } | null {
+    const failed = done && (it.status === "failed" || it.status === "declined" || (typeof it.exitCode === "number" && it.exitCode !== 0));
+    const status = !done ? "running" : failed ? "failed" : "done";
+    switch (it.type) {
+      case "commandExecution":
+        return { title: `Run ${short(unwrap(String(it.command ?? "")), 60)}`, toolKind: "exec", status };
+      case "fileChange": {
+        const paths = this.pathsOf(it);
+        return { title: `Edit ${paths.slice(0, 2).join(", ")}${paths.length > 2 ? ` and ${paths.length - 2} more` : ""}`, toolKind: "edit", status, ...(paths[0] ? { path: paths[0] } : {}) };
+      }
+      case "mcpToolCall":
+        return { title: it.server === "liner" ? linerTitle(String(it.tool), it.arguments) : `${it.server} · ${it.tool}`, toolKind: "other", status };
+      case "webSearch":
+        return { title: `Search the web for ${short(it.query, 50)}`, toolKind: "web", status };
+      default:
+        return null;
     }
   }
 

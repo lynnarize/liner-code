@@ -1,0 +1,783 @@
+/*
+  Who's on a session's work (Crew.tsx): the header's crew chip and its list, the fan-out under a
+  turn's work, the composer's "waiting on" line and the Agents surface. Liner 2.0: no borders or
+  fills, hairline branches, grey words, the accent only for what's at work.
+*/
+
+/* ---------- marks ---------- */
+.lc-cr-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--l-ink-3);
+}
+.lc-cr-mark > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+}
+.lc-cr-mark[data-state="running"] > i {
+  background: var(--l-accent);
+  animation: lc-cr-breathe 1.6s ease-in-out infinite;
+}
+.lc-cr-mark[data-state="waiting"] > i {
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--l-ink-4);
+  background: none;
+}
+.lc-cr-mark[data-state="stopped"] > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--l-warn);
+}
+.lc-cr-mark[data-state="done"] {
+  color: var(--l-ok-text);
+}
+.lc-cr-mark[data-state="failed"] {
+  color: var(--l-danger-text);
+}
+@keyframes lc-cr-breathe {
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+/* Stacked marks: the lead, then the agents it sent. */
+.lc-cr-faces {
+  display: inline-flex;
+  flex: none;
+}
+.lc-cr-faces > span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--lc-plate);
+  box-shadow: 0 0 0 2px var(--lc-paper);
+  color: var(--l-ink-2);
+}
+.lc-cr-faces > span:first-child {
+  margin-left: 0;
+}
+.lc-cr-faces > span[data-lead] {
+  animation: lc-cr-ring 1.6s ease-in-out infinite;
+}
+@keyframes lc-cr-ring {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px var(--lc-paper),
+      0 0 0 3.5px var(--l-accent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--lc-paper),
+      0 0 0 3.5px color-mix(in oklab, var(--l-accent) 25%, transparent);
+  }
+}
+
+/* ---------- the header's chip ---------- */
+.lc-crew {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.lc-crew:hover,
+.lc-crew[aria-expanded="true"] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lc-crew > svg:last-child {
+  color: var(--l-ink-4);
+}
+.lc-crew-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-crew-t .lc-quiet {
+  font-weight: 400;
+}
+
+/* Its list. */
+.lc-crp {
+  display: grid;
+  padding: 2px 0 0;
+}
+.lc-crp-h {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px 8px;
+  font-size: 13px;
+}
+.lc-crp-h b {
+  font-weight: 600;
+}
+.lc-crp-r {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--l-ink-2);
+}
+.lc-crp-r > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+button.lc-crp-r {
+  cursor: pointer;
+}
+button.lc-crp-r:hover {
+  background: var(--l-wash-2);
+}
+.lc-crp-r b {
+  flex: none;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-crp-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-3);
+}
+.lc-crp-role {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-crp-n {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-3);
+}
+.lc-crp-sep {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--lc-hair);
+}
+.lc-crp-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 2px;
+}
+
+/* ---------- the fan-out under a turn's work ---------- */
+.lc-fan {
+  margin: 6px 0 2px 30px;
+  animation: lc-row-in 180ms ease-out backwards;
+}
+.lc-fan-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-fan-h > svg {
+  color: var(--l-ink-3);
+}
+.lc-fan-kids {
+  position: relative;
+  margin-left: 7px;
+}
+.lc-fan-kid {
+  position: relative;
+  padding-left: 22px;
+}
+/* A branch for each: the stem goes on past all but the last, and each bends into its row. */
+.lc-fan-kid::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--l-line);
+}
+.lc-fan-kid::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 13px;
+  height: 17px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--l-line);
+  border-left: 1px solid var(--l-line);
+  border-bottom-left-radius: 8px;
+}
+.lc-fan-kid[data-last]::before {
+  display: none;
+}
+.lc-fan-ag {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 10px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-fan-ag:hover {
+  background: var(--l-wash);
+}
+.lc-fan-1,
+.lc-fan-2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lc-fan-1 {
+  height: 24px;
+  font-size: 13.5px;
+}
+.lc-fan-1 b {
+  flex: none;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-fan-task {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+}
+.lc-fan-ag:not([data-on]) .lc-fan-task {
+  color: var(--l-ink-3);
+}
+.lc-fan-m {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-3);
+}
+.lc-fan-2 {
+  padding-left: 22px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-fan-now {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- the composer's line ---------- */
+.lc-crs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  margin: -14px -12px 4px -18px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--lc-hair);
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-crs-faces > span {
+  width: 18px;
+  height: 18px;
+  margin-left: -5px;
+  box-shadow: 0 0 0 2px var(--lc-field);
+}
+.lc-crs-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-crs-stop {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-crs-stop:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+
+/* ---------- the Agents surface ---------- */
+.lc-agents-panel.lc-cr {
+  display: block;
+  padding: 2px 14px 16px;
+}
+.lc-cr-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-cr-h:first-child {
+  margin-top: 2px;
+}
+.lc-cr-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--lc-hair);
+}
+.lc-cr-empty {
+  margin: 10px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+}
+.lc-cr-row,
+.lc-cr-bg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+button.lc-cr-row,
+button.lc-cr-bg {
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+button.lc-cr-row:hover,
+button.lc-cr-bg:hover {
+  background: var(--l-wash);
+}
+.lc-cr-bg > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-cr-av,
+.lc-cr-disc {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--lc-plate);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--l-ink-2);
+}
+.lc-cr-disc[data-on] {
+  animation: lc-cr-ring 1.6s ease-in-out infinite;
+}
+.lc-cr-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--lc-plate);
+  color: var(--l-ink-2);
+}
+.lc-cr-tile[data-big] {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+.lc-cr-t {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.lc-cr-t b {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink);
+}
+.lc-cr-t b span {
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-cr-t small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--l-ink-3);
+}
+.lc-cr-t small > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-cr-n {
+  flex: none;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+/* The tree: you, then who worked, then the agents each sent. */
+.lc-cr-kids {
+  position: relative;
+  margin-left: 18px;
+}
+.lc-cr-kid {
+  position: relative;
+  padding-left: 16px;
+}
+.lc-cr-kid::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--l-line);
+}
+.lc-cr-kid::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 20px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--l-line);
+  border-left: 1px solid var(--l-line);
+  border-bottom-left-radius: 8px;
+}
+.lc-cr-kid[data-last]::before {
+  display: none;
+}
+
+/* Who worked when. */
+.lc-cr-lanes {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 2px;
+}
+.lc-cr-ll {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+}
+.lc-cr-axis {
+  position: relative;
+  height: 16px;
+  font-size: 11px;
+  color: var(--l-ink-4);
+}
+.lc-cr-axis > span {
+  position: absolute;
+  top: 0;
+}
+.lc-cr-track {
+  position: relative;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--l-wash);
+}
+.lc-cr-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 3px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--l-ink) 26%, transparent);
+}
+.lc-cr-bar[data-live] {
+  background: var(--l-accent);
+}
+.lc-cr-bar[data-wait] {
+  background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--l-accent) 55%, var(--lc-card)) 0 3px, color-mix(in oklab, var(--l-accent) 18%, var(--lc-card)) 3px 6px);
+}
+
+/* The tasks, with who took each. */
+.lc-cr-task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-cr-task[data-state="pending"] {
+  color: var(--l-ink-3);
+}
+.lc-cr-task-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-cr-own {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+}
+.lc-cr-none {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+
+/* One agent. */
+.lc-cr-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  margin: 4px 0 0 -6px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-cr-back:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.lc-cr-ah {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.lc-cr-ah b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.lc-cr-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 12px;
+  color: var(--l-ink-2);
+}
+.lc-cr-astat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-cr-stats {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.lc-cr-stats > span {
+  display: grid;
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--l-wash);
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-cr-stats b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-cr-brief,
+.lc-cr-report {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--l-wash);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--l-ink-2);
+  -webkit-user-select: text;
+  user-select: text;
+}
+.lc-cr-report[data-empty] {
+  padding: 0;
+  background: none;
+  color: var(--l-ink-3);
+}
+.lc-cr-steps {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-cr-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-cr-steps li > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-cr-steer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  margin-top: 14px;
+  padding: 0 10px 0 12px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--l-line);
+}
+.lc-cr-steer:focus-within {
+  box-shadow: 0 0 0 1.5px var(--l-accent);
+}
+.lc-cr-steer input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+  outline: none;
+}
+.lc-cr-steer input::placeholder {
+  color: var(--l-ink-4);
+}
+.lc-cr-heard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  margin-top: 6px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--l-wash);
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.lc-cr-heard > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-cr-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--l-ink-3);
+}
+
+/* Who took a task on, in the turn's plan card: kept out of a done task's line-through. */
+.lc-todo-own {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  vertical-align: 1px;
+  color: var(--l-ink-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-cr-mark[data-state="running"] > i,
+  .lc-cr-faces > span[data-lead],
+  .lc-cr-disc[data-on] {
+    animation: none;
+  }
+}

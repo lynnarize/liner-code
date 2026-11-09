@@ -32,7 +32,7 @@ import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { subagentName } from "../review.ts";
 import { effortOf, skillsIn, ULTRACODE, ULTRATHINK } from "./models.ts";
-import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
+import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 /** The SDK's query() and transcript reader, held here so tests can stand in a Claude Code of their own. */
@@ -193,7 +193,8 @@ export function applyTaskTool(tasks: TaskList, tool: string, input: unknown, res
       const id = word(t, "id");
       const title = word(t, "subject");
       const status = taskStatus(field(t, "status"));
-      if (id && title && status) next.set(id, { title, status });
+      const owner = word(t, "owner");
+      if (id && title && status) next.set(id, { title, status, ...(owner ? { owner } : {}) });
     }
     return next.size || tasks.size ? next : undefined;
   }
@@ -215,7 +216,9 @@ export function applyTaskTool(tasks: TaskList, tool: string, input: unknown, res
   }
   const title = word(input, "subject") ?? task.title;
   const status = taskStatus(field(input, "status")) ?? task.status;
-  return title === task.title && status === task.status ? undefined : new Map(tasks).set(id, { title, status });
+  // Who took it on: an agent's name, the way Claude Code's teams hand tasks out.
+  const owner = word(input, "owner") ?? task.owner;
+  return title === task.title && status === task.status && owner === task.owner ? undefined : new Map(tasks).set(id, { title, status, ...(owner ? { owner } : {}) });
 }
 
 /** Claude Code's folder for this session's account: its own CLAUDE_CONFIG_DIR, or the usual one. */
@@ -262,7 +265,8 @@ export function storedTasks(env: NodeJS.ProcessEnv, cwd: string, session: string
         const id = word(t, "id");
         const title = word(t, "subject");
         const status = taskStatus(field(t, "status"));
-        if (id && title && status && !field(field(t, "metadata"), "_internal")) out.set(id, { title, status });
+        const owner = word(t, "owner");
+        if (id && title && status && !field(field(t, "metadata"), "_internal")) out.set(id, { title, status, ...(owner ? { owner } : {}) });
       } catch {
         // One half written: the rest still say.
       }
@@ -452,7 +456,7 @@ const TOOL_SOURCES: [RegExp, string, ContextSource["group"]][] = [
   [/^(?:Bash|BashOutput|KillShell|KillBash)$/, "Commands", "runs"],
   [/^WebFetch$/, "Web pages", "web"],
   [/^WebSearch$/, "Web searches", "web"],
-  [/^mcp__liner__browser_/, "Browser", "web"],
+  [/^mcp__liner__(?:browser|server)_/, "Browser", "web"],
   [/^(?:Task|Agent)$/, "Subagents", "tools"],
   [/^TodoWrite$/, "Plan", "tools"],
   [/^ToolSearch$/, "Tool search", "tools"],
@@ -606,6 +610,11 @@ class ClaudeSession implements ProviderSession {
   private fail: ((e: Error) => void) | null = null;
   private blocks = new Map<number, { kind: "text" | "thinking" | "tool"; key: string }>();
   private tools = new Map<string, { name: string; input: Record<string, unknown> }>();
+  /**
+    The agents this session sent off (its Agent and Task calls), by call: their rows' title and what
+    they say of the agent, kept up as it works. `steps` are its own calls, by their ids (`calls`).
+  */
+  private runs = new Map<string, { title: string; path?: string; agent: NonNullable<ToolUpdate["agent"]>; calls: string[]; status: "running" | "done" | "failed" }>();
   /** Main-thread messages whose text came as a stream; one that didn't (Claude Code's non-streaming fallback) is shown whole from its assistant message. */
   private streamed = new Set<string>();
   private streamId: string | null = null;
@@ -958,6 +967,7 @@ class ClaudeSession implements ProviderSession {
     this.inbox.end();
     this.inbox = new Inbox();
     this.tasks.clear();
+    this.runs.clear();
     this.hushed.clear();
     this.hushedNotes = 0;
     this.release(null);
@@ -1075,9 +1085,10 @@ class ClaudeSession implements ProviderSession {
       return;
     }
     if (m.type === "system") return this.onSystem(m, sink);
-    // A subagent's own stream and steps stay inside its Task row; they still show it's at work.
+    // A subagent's own stream and steps stay inside its Task row: they say what it does, and they show it's at work.
     if ((m.type === "stream_event" || m.type === "assistant" || m.type === "user") && m.parent_tool_use_id) {
       sink.heard?.();
+      if (m.type !== "stream_event") this.agentSaid(m, m.parent_tool_use_id, sink);
       return;
     }
     if (m.type === "stream_event") {
@@ -1157,7 +1168,7 @@ class ClaudeSession implements ProviderSession {
           );
         }
         const { title, path } = titleOf(b.name, input, this.o.cwd);
-        sink.tool({ key: b.id, tool: b.name, toolKind: kindOf(b.name), title, path, input: JSON.stringify(input, null, 2), status: "running" });
+        sink.tool({ key: b.id, tool: b.name, toolKind: kindOf(b.name), title, path, input: JSON.stringify(input, null, 2), status: "running", agent: this.sentOff(b.id, b.name, input, title, path) });
       }
       return;
     }
@@ -1173,7 +1184,7 @@ class ClaudeSession implements ProviderSession {
         this.untail(b.tool_use_id);
         const out = typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((c) => (c.type === "text" ? c.text : `[${c.type}]`)).join("\n") : "";
         const { title, path } = titleOf(call.name, call.input, this.o.cwd);
-        sink.tool({ key: b.tool_use_id, tool: call.name, toolKind: kindOf(call.name), title, path, output: out.slice(0, 20000), status: b.is_error ? "failed" : "done" });
+        sink.tool({ key: b.tool_use_id, tool: call.name, toolKind: kindOf(call.name), title, path, output: out.slice(0, 20000), status: b.is_error ? "failed" : "done", agent: this.reported(b.tool_use_id, results.length === 1 ? m.tool_use_result : undefined, out, Boolean(b.is_error)) });
         // The task list changed: the plan shows it as it is now. A lone result carries its structured form.
         if (TASK_TOOLS.has(call.name) && !b.is_error) {
           const said = (results.length === 1 ? m.tool_use_result : undefined) ?? out;
@@ -1268,15 +1279,27 @@ class ClaudeSession implements ProviderSession {
   private onSystem(m: Extract<SDKMessage, { type: "system" }>, sink: TurnSink) {
     switch (m.subtype) {
       case "task_started":
+        // An agent's run has an id now: what stopping it alone stops.
+        if (m.tool_use_id && this.runs.has(m.tool_use_id)) this.agentSays(sink, m.tool_use_id, { taskId: m.task_id });
         // A command's output only comes with its result: read it as it's written instead.
         if (m.task_type === "local_bash" && m.is_backgrounded !== true && m.tool_use_id && this.tools.has(m.tool_use_id)) this.tail(m.task_id, m.tool_use_id, m.session_id);
         sink.heard?.();
         return;
       case "task_progress":
         sink.heard?.();
+        // Its own counts, and its one-line word on what it's doing when it gives one.
+        if (m.tool_use_id && this.runs.has(m.tool_use_id))
+          this.agentSays(sink, m.tool_use_id, { tokens: m.usage.total_tokens, tools: m.usage.tool_uses, ...(m.summary?.trim() ? { now: m.summary.trim() } : {}) });
         return;
       case "task_notification": {
         sink.heard?.();
+        // An agent stopped (by you, or by the model that sent it) ended without failing its call.
+        if (m.tool_use_id && this.runs.has(m.tool_use_id)) {
+          const said = m.summary?.trim() ? { report: m.summary.trim() } : {};
+          if (m.status === "stopped") this.agentSays(sink, m.tool_use_id, { state: "stopped", ...said });
+          // One in the background ends after its call returned: this is its word.
+          else if (this.runs.get(m.tool_use_id)!.agent.background) this.agentSays(sink, m.tool_use_id, { state: m.status === "failed" ? "failed" : "done", ...said });
+        }
         // A subagent's or command's own row says how it went; work left in the background has no row any more.
         const t = this.tasks.get(m.task_id) ?? this.ended.get(m.task_id);
         const row = m.tool_use_id && this.tools.has(m.tool_use_id) && !t?.background;
@@ -1512,6 +1535,122 @@ class ClaudeSession implements ProviderSession {
       this.woke = false;
       this.finish = this.fail = null;
     }
+  }
+
+  /** Stops one agent, by its run's id; the turn goes on, and the model that sent it reads that it was stopped. */
+  stopAgent(taskId: string) {
+    const q = this.q;
+    const t = this.tasks.get(taskId);
+    if (!q || !t) return false;
+    // One in the background would wake a turn of Claude Code's own just to say so.
+    if (t.background) this.hushed.add(taskId);
+    void q.stopTask(taskId).catch(() => {});
+    return true;
+  }
+
+  /** An Agent or Task call: the agent it sends off, as its row starts. Nothing for any other call. */
+  private sentOff(key: string, name: string, input: Record<string, unknown>, title: string, path?: string, parentKey?: string) {
+    if (name !== "Agent" && name !== "Task") return undefined;
+    const agent: NonNullable<ToolUpdate["agent"]> = {
+      name: subagentName(String(input.subagent_type ?? "general-purpose")),
+      ...(typeof input.description === "string" && input.description.trim() ? { task: short(input.description, 80) } : {}),
+      ...(typeof input.prompt === "string" && input.prompt.trim() ? { brief: input.prompt.trim().slice(0, 4000) } : {}),
+      ...(input.run_in_background === true ? { background: true } : {}),
+      ...(parentKey ? { parentKey } : {}),
+      steps: [],
+    };
+    this.runs.set(key, { title, path, agent, calls: [], status: "running" });
+    return { ...agent };
+  }
+
+  /** What's new about an agent, on its row, its call as it stands (one in the background has returned already). */
+  private agentSays(sink: TurnSink, key: string, said: Partial<NonNullable<ToolUpdate["agent"]>>) {
+    const run = this.runs.get(key);
+    const call = this.tools.get(key);
+    if (!run || !call) return;
+    Object.assign(run.agent, said);
+    sink.tool({ key, tool: call.name, toolKind: "task", title: run.title, path: run.path, status: run.status, agent: { ...run.agent } });
+  }
+
+  /**
+    A subagent's own message (parent_tool_use_id): its model, the calls it makes as steps of its
+    row, an agent it sends off in turn (a row of its own, under this one), and its steps' results.
+  */
+  private agentSaid(m: SDKMessage, key: string, sink: TurnSink) {
+    const run = this.runs.get(key);
+    if (!run) return;
+    if (m.type === "assistant") {
+      const said: Partial<NonNullable<ToolUpdate["agent"]>> = {};
+      if (m.message.model && m.message.model !== "<synthetic>") said.model = `${this.o.provider ?? "claude"}:${m.message.model}`;
+      const steps = [...(run.agent.steps ?? [])];
+      for (const b of m.message.content) {
+        if (b.type !== "tool_use") continue;
+        const input = (b.input ?? {}) as Record<string, unknown>;
+        const { title, path } = titleOf(b.name, input, this.o.cwd);
+        steps.push({ title, toolKind: kindOf(b.name), status: "running", ...(path ? { path } : {}) });
+        run.calls.push(b.id);
+        said.now = title;
+        said.tools = Math.max(run.agent.tools ?? 0, run.calls.length);
+        if (b.name === "Agent" || b.name === "Task") {
+          this.tools.set(b.id, { name: b.name, input });
+          sink.tool({ key: b.id, tool: b.name, toolKind: "task", title, path, input: JSON.stringify(input, null, 2), status: "running", agent: this.sentOff(b.id, b.name, input, title, path, key) });
+        }
+      }
+      // The last 40, and the ids they go by with them.
+      if (steps.length > 40) run.calls.splice(0, steps.length - 40);
+      said.steps = steps.slice(-40);
+      this.agentSays(sink, key, said);
+      return;
+    }
+    if (m.type !== "user" || !Array.isArray(m.message.content)) return;
+    let changed = false;
+    const steps = [...(run.agent.steps ?? [])];
+    for (const b of m.message.content) {
+      if (typeof b !== "object" || b.type !== "tool_result") continue;
+      const i = run.calls.indexOf(b.tool_use_id);
+      if (i >= 0 && steps[i]) {
+        steps[i] = { ...steps[i], status: b.is_error ? "failed" : "done" };
+        changed = true;
+      }
+      // An agent this one sent off has its answer.
+      const call = this.tools.get(b.tool_use_id);
+      if (call && this.runs.has(b.tool_use_id)) {
+        const out = typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((c) => (c.type === "text" ? c.text : "")).join("\n") : "";
+        const done = this.runs.get(b.tool_use_id)!;
+        sink.tool({ key: b.tool_use_id, tool: call.name, toolKind: "task", title: done.title, path: done.path, output: out.slice(0, 20000), status: b.is_error ? "failed" : "done", agent: this.reported(b.tool_use_id, undefined, out, Boolean(b.is_error)) });
+      }
+    }
+    if (changed) this.agentSays(sink, key, { steps });
+  }
+
+  /**
+    An agent's call returned: what it sent back, from the structured result where there is one
+    (its report without the agentId and usage lines meant for the model), and its totals. Sent to
+    the background, it only launched: it goes on, and Claude Code says so when it ends.
+  */
+  private reported(key: string, result: unknown, out: string, failed: boolean) {
+    const run = this.runs.get(key);
+    if (!run) return undefined;
+    run.status = failed ? "failed" : "done";
+    const a = run.agent;
+    const status = word(result, "status");
+    // Its word may come after this turn is over, when there's no row to update: it's shown as sent off, and its end is a notice.
+    if (status === "async_launched" || status === "remote_launched") a.background = true;
+    else {
+      const texts = field(result, "content");
+      const report = Array.isArray(texts) ? texts.map((c) => word(c, "text") ?? "").join("\n").trim() : out.replace(/\n*<usage>[\s\S]*?<\/usage>\s*$/, "").replace(/\n+agentId:[\s\S]*$/, "").trim();
+      if (report) a.report = report.slice(0, 8000);
+      const tools = field(result, "totalToolUseCount");
+      const tokens = field(result, "totalTokens");
+      const model = word(result, "resolvedModel");
+      if (typeof tools === "number") a.tools = tools;
+      if (typeof tokens === "number") a.tokens = tokens;
+      if (model) a.model = `${this.o.provider ?? "claude"}:${model}`;
+      // Its steps are over, whichever way they went.
+      a.steps = (a.steps ?? []).map((s) => (s.status === "running" ? { ...s, status: failed ? "failed" : "done" } : s));
+      if (a.state !== "stopped") delete a.state;
+    }
+    return { ...a };
   }
 
   /** Stops every task Claude Code still runs, in the background or not; their notifications then wake nothing. */

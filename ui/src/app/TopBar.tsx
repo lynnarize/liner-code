@@ -149,6 +149,13 @@ export function TopBar({ dock, onDock, below, onBelow, files, lines, run, projec
           )}
         </Pop>
       </div>
+      {/* The Wall isn't one of the session's panels: it sits apart, after them. App.tsx hears the event. */}
+      <span className="lc-sbar-sep" aria-hidden />
+      <Tooltip content="The Wall: every session at once" shortcut={keys("wall")}>
+        <button type="button" className="lc-tb l-focus" aria-label="The Wall" onClick={() => window.dispatchEvent(new CustomEvent("lc:wall"))}>
+          <I.wall size={16} />
+        </button>
+      </Tooltip>
     </>
   );
 }

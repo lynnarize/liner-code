@@ -123,6 +123,7 @@ function doingOf(items: Item[]) {
   const t = items.findLast((x): x is Extract<Item, { kind: "tool" }> => x.kind === "tool" && x.status === "running");
   if (items.some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) return "waiting for you";
   if (t) {
+    if (/^(?:mcp__liner__|liner\.)server_start/.test(t.tool)) return "starting a server";
     if (/^(?:mcp__liner__|liner\.)browser_/.test(t.tool) || t.toolKind === "web" || t.toolKind === "fetch") return "on the web";
     return t.toolKind === "read" ? "reading" : t.toolKind === "edit" || t.toolKind === "write" ? "editing" : t.toolKind === "search" ? "searching" : t.toolKind === "exec" ? "running a command" : t.toolKind === "task" ? "with a subagent" : "working";
   }

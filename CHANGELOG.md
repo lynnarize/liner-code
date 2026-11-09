@@ -77,7 +77,9 @@ too. A live page in the Browser now costs about what it costs on its own.
   - Claude Code's agents show their steps, model, tokens and report as they work. Claude Code 2.1.319
     runs them in the background by default: they carry on after the turn, still on show with a Stop,
     and end on their own row, even turns later. A word for one goes to the model that sent it, since
-    Claude Code's agents can't take one mid-run.
+    Claude Code's agents can't take one mid-run. A session whose turn is over while its agents
+    still work counts as working: on the Wall ("2 agents at work"), in the sidebar ("+ 2 agents"),
+    for auto-settling, and when you quit, which asks first.
   - Codex's agents (spawnAgent) go by their Codex names and show their thread's own steps, model,
     tokens and last words, also after the turn that sent them; a word for one goes straight to it,
     read at its next step.

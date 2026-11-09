@@ -1,20 +1,25 @@
 # Changelog
 
-## 0.2.4 (alpha), 2026-11-08
+## 0.2.4 (beta), 2026-11-09
 
-**The Wall:** every live session at once, as tiles you can answer from. And a live page in the
-Browser now costs about what it costs on its own.
+**The first beta.** Update from 0.2.3 if you have it: on a Mac Liner Code does it by itself (Restart
+to update), or download the new DMG; on Windows, run the new setup. **The Wall:** every live session
+at once, as tiles you can answer from. **Who sent whom:** a model's agents fan out under its work.
+**DeepSeek Harness plugins from npm**, and dev servers from `.claude/launch.json` that agents start
+too. A live page in the Browser now costs about what it costs on its own.
 
 ### Added
 
 - **The Wall** (⌘⇧O, "The Wall" in the sidebar, or the grid icon in a session's header) shows each
-  session that isn't settled as a tile: its title, project and model, how it stands, and its latest
+  live session as a tile (not one snoozed, settled or not yet started): its title, project and model, how it stands, and its latest
   steps, or once it's done, its answer in brief: the first sentence, its main points and the files it
   changed. What waits on you comes first, then what's working, then what's done, and All, Needs you,
   Working and Done filter them. From a tile you can allow a request or say no, pick an answer, retry
   a turn that stopped, settle what's done, or write to it: while it works your words steer it, and
-  while it asks they're your reason or your answer. High-risk requests and plans open the session.
-  1–9 open a tile, the arrows pick one, typing writes to it, and Esc goes back. A session you open
+  while it asks one thing they're your reason or your answer. High-risk requests, plans and a card
+  of several questions open the session. 1–9 open a tile, the arrows pick one, typing writes to the
+  one you picked (with an input method too), your words stay with that session however the tiles
+  move, and Esc goes back; in the composer Esc first stops a running turn. A session you open
   from the Wall says where it sits ("3 of 7"), steps to the next tile, and Esc takes you back.
 - **Dev servers from `.claude/launch.json`**, the file Claude Code reads, are listed in the Browser,
   each a press from running, and the server icon in its bar restarts or stops them. As Claude Code's
@@ -27,21 +32,37 @@ Browser now costs about what it costs on its own.
   stops and starts again on the same rules. `server_logs` reads what it printed, `server_list` and
   `server_stop` do what they say. An entry you ran, or allowed once, runs again without asking;
   a command nobody has run from the file asks you first (in Full access, only one that can't be
-  undone), and never runs in a routine.
+  undone, or one whose environment changes what runs), and never runs in a routine. The card shows
+  the command, its folder, its environment and its port, and any change to them asks again. Run in
+  the Browser does the same for an entry Liner Code hasn't run as it is now: it shows what it runs,
+  and only your yes trusts it. An entry an agent ran unasked in Full access isn't trusted for later.
 - **DeepSeek Harness plugins from npm.** In Add add-on, type a DSH plugin's name (`dsh-media-desk`,
   or `npm i dsh-media-desk`) and it comes in as an add-on. A plugin with a sidebar page, a
   right-pane tab or a conversation view becomes a page, a dock panel or a tab. Its page runs in a
   sealed frame under a loader shaped like DSH's, with React and DSH's design tokens drawn in Liner
   Code's colours. If it has a program of its own, that runs in a separate process, never in the
   engine. On a Mac it runs under a sandbox: it can't read your keys, your agents' sign-ins or Liner
-  Code's state, or start other apps, and it writes only in its own folder and your Documents,
-  Downloads, Desktop, Pictures, Movies and Music, and even there never a repository's `.git`, a
-  `package.json` or a script that would run later. It still runs as you, so the card asks you to
-  trust where it's from. Its model calls go to a model you pick for it, as an app's do. A bundle
-  that only connects an MCP server becomes a connection, and a key DSH would read from your
-  environment is a key you type on its card. The card says what the plugin's program may do, holds
-  to allow, and lists anything of DSH's that Liner Code doesn't have. A plugin with nothing Liner
-  Code can show, like one that only adds to DSH's own agent, is refused, with the reason.
+  Code's state, start other apps, or connect to another program's socket (ssh-agent's, Docker's),
+  and it writes as it likes only in a folder of its own. A plugin with a page also gets a folder
+  Liner Code makes for it in your Documents (Media Desk saves to ~/Documents/Media Desk), where it can
+  save and save again pictures, sound, video, PDFs and plain text, but never code, settings, a file
+  whose name starts with a dot, or a file that steers an agent like CLAUDE.md or AGENTS.md; Liner
+  Code makes the folders inside it, never a bundle or a package's folder. If a folder of that name is
+  already yours, it doesn't get it, and says so. Everywhere else in your Documents, Downloads,
+  Desktop, Pictures, Movies and Music it may only add new pictures, sound, video and PDFs: no
+  folders, nothing moved or cloned in, and never a change to a file that's already there, so nothing
+  it leaves behind runs the next time you run tests, a build or a dev server. It still reaches the
+  internet and every port on this Mac, and runs as you, so the card asks you to trust where it's from.
+  On Windows and Linux there's no sandbox: a plugin's program runs as you, with your files and the
+  internet, and its card and the Add-ons page say so. Its model calls go to a model you pick for it,
+  as an app's do. A bundle that only connects an MCP server becomes a connection, and a key DSH would
+  read from your environment is a key you type on its card. The card says what the plugin's program
+  may do, holds to allow, and lists anything of DSH's that Liner Code doesn't have. A plugin with
+  nothing Liner Code can show or give your agents is refused, with the reason.
+- **A plugin's tools reach your agents.** The tools a DSH plugin gives DeepSeek Harness's agent come
+  to Claude Code, Codex, OpenCode and Hermes as an MCP server run from the plugin's own process. The
+  card lists them under "Gives your agents", read from the plugin's code, and they're the only ones
+  offered; what it tells your agents is on the card too.
 - **Who sent whom.** When a model sends agents off (Claude Code's Explore, Test runner and
   Subagent), they fan out under its work, each on a branch under the one that sent it: what it was
   sent to do, what it's doing now, its model, its tools, tokens and time, and once it's done, what it
@@ -51,16 +72,28 @@ Browser now costs about what it costs on its own.
   tree (you, the mode, each model's part, the agents each sent, the Reviewer), a timeline of who
   worked when, with a model's wait on its agents hatched, the tasks with who took each, and what
   runs in the background. Open an agent to read its brief, its steps and its report; Stop it stops
-  that agent alone and the turn goes on. The same goes for each tool's agents:
-  - Claude Code's agents show their steps, model, tokens and report as they work. A word for one
-    goes to the model that sent it, since Claude Code's agents can't take one mid-run.
-  - Codex's agents (spawnAgent) show their thread's own steps, model, tokens and last words, and
-    a word for one goes straight to it, read at its next step.
+  that agent alone, the model that sent it is told, and the turn goes on. The same goes for each
+  tool's agents:
+  - Claude Code's agents show their steps, model, tokens and report as they work. Claude Code 2.1.319
+    runs them in the background by default: they carry on after the turn, still on show with a Stop,
+    and end on their own row, even turns later. A word for one goes to the model that sent it, since
+    Claude Code's agents can't take one mid-run.
+  - Codex's agents (spawnAgent) go by their Codex names and show their thread's own steps, model,
+    tokens and last words, also after the turn that sent them; a word for one goes straight to it,
+    read at its next step.
   - Hermes's delegations become a row per task, with its goal, role, model, report and the tools it
     used, from what Hermes says over ACP; ACP can't show their steps live, or stop one alone.
   - OpenCode's subagents stay off, as before: its ACP drops their permission requests, so they'd
     get past your access level.
   The Demo agent sends three when you mention agents, and they take a word as Codex's do.
+
+### Changed
+
+- **The sidebar shows sessions by how they stand**, in grey: what needs you, what's working and
+  the rest, with a view menu (All, By folder, Snoozed, Settled, Archive) in place of the shelves, and
+  Add-ons a group of its own. A pinned session that waits on you is marked as such.
+- Home's composer matches the session's: attach first, then the choices, then Send. Standard, Auto
+  and Solo each have an icon of their own.
 
 ### Fixed
 

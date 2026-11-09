@@ -15,11 +15,11 @@ so the expensive model only works when the job needs it.
 
 [![Release](https://img.shields.io/github/v/release/lynnarize/liner-code?include_prereleases&label=release&color=2f6fe4&style=flat-square)](https://github.com/lynnarize/liner-code/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/lynnarize/liner-code/total?color=1f9d55&style=flat-square)](https://github.com/lynnarize/liner-code/releases)
-[![Status](https://img.shields.io/badge/status-alpha-de8a12?style=flat-square)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-beta-2f6fe4?style=flat-square)](CHANGELOG.md)
 [![License](https://img.shields.io/github/license/lynnarize/liner-code?color=4a4f59&style=flat-square)](LICENSE)
 <br>
-[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-1b1d22?logo=apple&logoColor=white&style=flat-square)](#install-the-alpha)
-[![Windows](https://img.shields.io/badge/Windows-x64-1b1d22?logo=windows&logoColor=white&style=flat-square)](#install-the-alpha)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-1b1d22?logo=apple&logoColor=white&style=flat-square)](#install-the-beta)
+[![Windows](https://img.shields.io/badge/Windows-x64-1b1d22?logo=windows&logoColor=white&style=flat-square)](#install-the-beta)
 [![Electron](https://img.shields.io/badge/Electron-47848f?logo=electron&logoColor=white&style=flat-square)](desktop/)
 [![React 19](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white&style=flat-square)](ui/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?logo=typescript&logoColor=white&style=flat-square)](engine/)
@@ -29,7 +29,7 @@ so the expensive model only works when the job needs it.
 &nbsp;
 [![Download for Windows](https://img.shields.io/badge/Download_for_Windows-.exe-1b1d22?logo=windows&logoColor=white&style=for-the-badge)](https://github.com/lynnarize/liner-code/releases/latest)
 
-[Install](#install-the-alpha) · [Features](#features) · [How agents share the work](#how-agents-share-the-work) · [Designs](#designs) · [API endpoints](#api-endpoints) · [Run from source](#run-it-from-source) · [Changelog](CHANGELOG.md)
+[Install](#install-the-beta) · [Features](#features) · [How agents share the work](#how-agents-share-the-work) · [Designs](#designs) · [API endpoints](#api-endpoints) · [Run from source](#run-it-from-source) · [Changelog](CHANGELOG.md)
 
 <br>
 
@@ -164,12 +164,12 @@ Ideas came from [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Design mode
 (PolyForm Noncommercial), and from T3 Code's HTML previews; no code was copied from them either.
 
-## Install the alpha
+## Install the beta
 
-Liner Code is in **alpha** (0.2.x): for Macs with Apple Silicon, tried on macOS 27, and expect
-rough edges. Download `Liner-Code-<version>-mac-arm64.dmg` from
+Liner Code is in **beta** (since 0.2.4): for Macs with Apple Silicon, tried on macOS 27, and still
+with rough edges. Download `Liner-Code-<version>-mac-arm64.dmg` from
 [Releases](https://github.com/lynnarize/liner-code/releases), open it and drag Liner Code to
-Applications. The alphas aren't notarized by Apple yet, so the first open is blocked: open
+Applications. It isn't notarized by Apple yet, so the first open is blocked: open
 System Settings › Privacy & Security, press **Open Anyway** beside Liner Code, and confirm. (Or, in
 Terminal: `xattr -dr com.apple.quarantine "/Applications/Liner Code.app"`.) After that it updates
 itself from this repository's releases.

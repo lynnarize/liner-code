@@ -7,7 +7,7 @@
 import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import type { Access, AgentProfile, EngineEvent, Item, LimitWindow, Mode, ModelPicks, Project, ProviderId, RouteCast, RouteLevel, Settings, SidebarGroup, Thread, UsageRecord } from "../../contracts/src/index.ts";
+import type { Access, AgentProfile, EngineEvent, Item, LimitWindow, ModelPicks, Project, ProviderId, Settings, SidebarGroup, Thread, UsageRecord } from "../../contracts/src/index.ts";
 import { defaultAgents, modelAgent } from "./agents.ts";
 
 type State = { projects: Project[]; threads: Thread[]; agents: AgentProfile[]; settings: Settings; groups: SidebarGroup[] };
@@ -74,7 +74,7 @@ export function loadState<T = State>(file: string): Partial<T> {
   }
 }
 
-export const defaultSettings: Settings = { onboarded: false, mode: "solo", claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "auto", worktrees: false, branchPrefix: "liner/", badge: true, budgetUsd: 0, settleOnMerge: false, settleOnRoutine: false, settleVersion: 2, accessVersion: 2 };
+export const defaultSettings: Settings = { onboarded: false, claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "auto", worktrees: false, branchPrefix: "liner/", badge: true, budgetUsd: 0, settleOnMerge: false, settleOnRoutine: false, settleVersion: 2, accessVersion: 2, pairVersion: 1 };
 
 /**
   Settings and sessions from before permissions came down to four, moved once: a default that was
@@ -89,30 +89,99 @@ export function fourLevels(s: Pick<State, "settings" | "threads">): Pick<State, 
   };
 }
 
+/** Where the state from before pairs is kept, beside state.json: written once, never over an earlier copy. */
+export const BEFORE_PAIRS = "state.before-pairs.json";
+
+/** Settings as they were saved before pairs: read once by `toPairs`, and what `fromWorkStyle` makes. */
+type OldPicks = { frontier?: string; cheaper?: string; second?: string; lead?: string; sidekick?: string; checker?: string };
+export type OldSettings = Omit<Settings, "picks"> & { mode?: "solo" | "plan" | "auto"; picks?: OldPicks; dual?: boolean; after?: "check" | "refine" | "off"; route?: { level?: string }; approvePlans?: boolean };
+/** A session as it was saved before pairs: a Plan session's planner (`lead`), an Auto session's cast, After and the rest. */
+type OldThread = Thread & {
+  lead?: string;
+  leadSession?: string;
+  route?: { cast?: { strong?: string; everyday?: string } };
+  dual?: boolean;
+  after?: "check" | "refine" | "off";
+  checks?: { by: string | null; rounds: number };
+  trial?: unknown;
+};
+
+/**
+  Plan and Auto from before pairs, moved once. A Plan session's planner leads it and its builder
+  becomes the sidekick, as a bare model (a builder that was one of your agents is that agent's
+  model, or the session's own model when it had one). An Auto session is led by its cast's strong
+  model with its everyday one as the sidekick. Two of the same model make no pair. Both drop their
+  tools' saved sessions (a fork's too), so the next turn starts from the conversation as text. After "off" (or a
+  checker of nobody) turns the Reviewer off for the session; any other After follows Settings. A
+  cost test is archived. Settings' Solo starts new sessions fast, Plan and Auto as a pair; your
+  frontier model is your lead and your cheaper one your sidekick (Dual frontier's second goes),
+  and the old fields are dropped once read. This is the one place that still reads them.
+*/
+export function toPairs(s: { settings: OldSettings; threads: OldThread[]; agents: AgentProfile[] }): Pick<State, "settings" | "threads"> {
+  const bare = (id: string) => (id.startsWith("@") ? id.slice(1) : s.agents.find((a) => a.id === id)?.model);
+  const threads = s.threads.map((old) => {
+    const { lead, leadSession: _ls, route, dual: _d, after, checks, trial, ...t } = old;
+    const moved: Thread = { ...t };
+    let pair: { agent: string; sidekick?: string } | undefined;
+    // The Demo played planner and builder both: it stays one model.
+    if (lead && lead !== t.agent) {
+      const sidekick = t.model ?? bare(t.agent);
+      pair = { agent: lead, sidekick: sidekick && sidekick !== bare(lead) ? sidekick : undefined };
+      // The model and effort were the builder's; the lead goes by its own.
+      delete moved.model;
+      delete moved.effort;
+    } else if (route?.cast?.strong) {
+      const { strong, everyday } = route.cast;
+      pair = { agent: `@${strong}`, sidekick: everyday && everyday !== strong ? everyday : undefined };
+      delete moved.model;
+    }
+    if (pair) {
+      moved.agent = pair.agent;
+      if (pair.sidekick) moved.sidekick = pair.sidekick;
+      else delete moved.sidekick;
+      delete moved.providerSession;
+      delete moved.sessions;
+      // A fork that never ran its first turn would branch the old builder's own conversation as the lead's (Runtime.realFork):
+      // it starts from the conversation as text instead.
+      if (moved.forkSession !== undefined) moved.forkSession = "";
+      if (moved.turnBy && moved.turnBy !== moved.agent) delete moved.turnBy;
+    }
+    if ((after === "off" || checks?.by === null) && moved.review === undefined) moved.review = false;
+    if (trial) moved.archived = true;
+    return moved;
+  });
+  const { mode, dual: _d, after, route: _r, approvePlans: _a, picks: old = {}, ...rest } = s.settings;
+  const start = rest.start ?? (mode === "solo" ? "fast" : mode ? "pair" : undefined);
+  const picks = Object.fromEntries(Object.entries({ lead: old.lead ?? old.frontier, sidekick: old.sidekick ?? old.cheaper, checker: old.checker }).filter(([, v]) => v)) as ModelPicks;
+  const settings: Settings = { ...rest, ...(Object.keys(picks).length ? { picks } : {}), ...(start ? { start } : {}), ...(after === "off" && rest.review === undefined ? { review: false } : {}), pairVersion: 1 };
+  return { settings, threads };
+}
+
 /** What settings said before modes, read once by `fromWorkStyle`. */
 type Legacy = {
   workStyle?: "model" | "lead" | "team";
   team?: unknown;
   setups?: { id: string; lead: string | null; stages: { who: string; job: string }[] }[];
   setup?: string;
-  route?: { level?: RouteLevel; cast?: Partial<RouteCast> };
+  route?: { level?: string; cast?: { everyday?: string; strong?: string; judge?: string; critics?: string[] } };
 };
 
 /**
-  Settings from before modes, read once. A lead and a coder (or a setup with a lead) becomes Plan,
-  the rest Solo. Your picks for routed sessions become your models (everyday the cheaper, strong
-  the frontier, the judge the checker). Without them, a setup that wrote in stages with bare models
-  (DeepSeek builds, Opus improves) makes its first your cheaper model and its last your frontier
-  one; when it was the way you worked, its frontier model refines each change, as it did.
+  Settings from before modes, read once, into the shape `toPairs` reads next. A lead and a coder
+  (or a setup with a lead) becomes Plan, the rest Solo. Your picks for routed sessions become your
+  models (everyday the cheaper, strong the frontier, the judge the checker). Without them, a setup
+  that wrote in stages with bare models (DeepSeek builds, Opus improves) makes its first your
+  cheaper model and its last your frontier one; when it was the way you worked, its frontier
+  model refined each change, as it did.
 */
-export function fromWorkStyle(old: Partial<Settings> & Legacy): Partial<Settings> {
+export function fromWorkStyle(old: Partial<OldSettings> & Legacy): Partial<OldSettings> {
   const { workStyle, team: _team, setups = [], setup, route, ...rest } = old;
   const active = setups.find((x) => x.id === setup) ?? setups[0];
-  const mode: Mode = workStyle === "lead" || (workStyle === "team" && active?.lead) ? "plan" : "solo";
+  const mode = workStyle === "lead" || (workStyle === "team" && active?.lead) ? "plan" : "solo";
   const routed = route?.cast ?? {};
   const staged = setups.find((x) => x.stages.length > 1 && x.stages.every((st) => st.who.startsWith("@")));
-  const picks: ModelPicks = routed.everyday || routed.strong || routed.judge ? { cheaper: routed.everyday, frontier: routed.strong, checker: routed.judge } : staged ? { cheaper: staged.stages[0].who.slice(1), frontier: staged.stages[staged.stages.length - 1].who.slice(1) } : {};
-  const kept = Object.fromEntries(Object.entries(picks).filter(([, v]) => v)) as ModelPicks;
+  const picks: OldPicks = routed.everyday || routed.strong || routed.judge ? { cheaper: routed.everyday, frontier: routed.strong, checker: routed.judge } : staged ? { cheaper: staged.stages[0].who.slice(1), frontier: staged.stages[staged.stages.length - 1].who.slice(1) } : {};
+  const kept = Object.fromEntries(Object.entries(picks).filter(([, v]) => v)) as OldPicks;
   const refined = workStyle === "team" && staged && active?.id === staged.id && !active.lead;
   return { ...rest, mode, ...(Object.keys(kept).length ? { picks: kept } : {}), ...(refined ? { after: "refine" as const } : {}), route: route?.level ? { level: route.level } : undefined };
 }
@@ -128,15 +197,25 @@ export class Store {
     this.home = home;
     mkdirSync(join(home, "threads"), { recursive: true });
     const file = join(home, "state.json");
-    const saved = loadState(file);
+    const saved = loadState<Omit<State, "settings"> & { settings: OldSettings & Legacy }>(file);
+    // Before anything is moved to pairs, the state as it was is kept once beside it, for the owner to find.
+    const pairsDue = Boolean(saved.settings && !saved.settings.pairVersion);
+    // Settings from before modes had neither a mode nor pairs.
+    const beforeModes = Boolean(pairsDue && saved.settings && !saved.settings.mode);
+    const before = join(home, BEFORE_PAIRS);
+    if (pairsDue && !existsSync(before)) {
+      if (existsSync(file)) copyFileSync(file, before);
+      else writeFileSync(before, JSON.stringify(saved, null, 2));
+    }
     this.state = {
       projects: saved.projects ?? [],
       threads: saved.threads ?? [],
       agents: saved.agents?.length ? saved.agents : defaultAgents(),
-      settings: { ...defaultSettings, ...(saved.settings && !saved.settings.mode ? fromWorkStyle(saved.settings) : saved.settings) },
+      // Read as it was saved; `toPairs` below moves what's from before pairs.
+      settings: { ...defaultSettings, ...(beforeModes ? fromWorkStyle(saved.settings!) : saved.settings) } as Settings,
       groups: saved.groups ?? [],
     };
-    if (saved.settings && !saved.settings.mode) this.flush();
+    if (beforeModes) this.flush();
     // Settling became yours to do: the rules that used to be on by default are switched off once.
     if (saved.settings && (saved.settings.settleVersion ?? 1) < 2) {
       this.state.settings = { ...this.state.settings, settleDays: 0, settleOnMerge: false, settleOnRoutine: false, settleVersion: 2 };
@@ -147,11 +226,16 @@ export class Store {
       Object.assign(this.state, fourLevels(this.state));
       this.flush();
     }
+    // Plan and Auto became pairs, and After the Reviewer's switch.
+    if (pairsDue) {
+      Object.assign(this.state, toPairs(this.state));
+      this.flush();
+    }
     // A thread that was working when the engine stopped is not working any more. One whose question
-    // or planner's plan still asks stays in Needs you: those outlive the turn that asked (timeline()).
+    // still asks stays in Needs you: it outlives the turn that asked (timeline()).
     for (const t of this.state.threads)
       if (t.status === "running" || t.status === "waiting") {
-        const asking = t.status === "waiting" && this.timeline(t.id).some((x) => (x.kind === "question" || x.kind === "proposal") && x.state === "asking");
+        const asking = t.status === "waiting" && this.timeline(t.id).some((x) => x.kind === "question" && x.state === "asking");
         t.status = asking ? "waiting" : "idle";
         t.unread = true;
         // A review it was in the middle of ended with it (its item settles as an error when read).
@@ -206,7 +290,7 @@ export class Store {
     if (!t) throw new Error(`No thread ${id}`);
     return t;
   }
-  /** The model that stands in for an agent that's gone, until `repairAgents` points its sessions elsewhere: the everyday one, once tools are found. */
+  /** The model that stands in for an agent that's gone, until `repairAgents` points its sessions elsewhere: the quicker of your two, once tools are found. */
   standIn = "claude:claude-sonnet-5-5";
 
   /** An agent by id, or a bare model ("@claude:claude-opus-5-5"). One that's gone is the stand-in model, never another of your agents. */
@@ -217,8 +301,8 @@ export class Store {
 
   /**
     Sessions that name an agent that's gone carry on with the model it ran on: from `models` (the
-    agents you just removed), else its last turn in the session, else `fallback`. A planner with no
-    model to go on leaves the session in Solo. A project that started with it starts as usual.
+    agents you just removed), else its last turn in the session, else `fallback`. A project that
+    started with it starts as usual.
   */
   repairAgents(models: Map<string, string>, fallback: string) {
     const known = new Set(this.state.agents.map((a) => a.id));
@@ -229,12 +313,10 @@ export class Store {
     };
     let changed = false;
     for (const t of this.state.threads) {
-      if (live(t.agent) && live(t.lead) && live(t.turnBy)) continue;
+      if (live(t.agent) && live(t.turnBy)) continue;
       const agent = live(t.agent) ? t.agent : `@${modelOf(t, t.agent) ?? fallback}`;
-      const was = t.lead && !live(t.lead) ? modelOf(t, t.lead) : undefined;
-      const lead = live(t.lead) ? t.lead : was && `@${was}` !== agent ? `@${was}` : undefined;
       // Moved in place, so the session keeps its spot in the sidebar.
-      Object.assign(t, { agent, lead, turnBy: live(t.turnBy) ? t.turnBy : t.turnBy === t.lead ? lead : agent, leadSession: lead ? t.leadSession : undefined });
+      Object.assign(t, { agent, turnBy: live(t.turnBy) ? t.turnBy : agent });
       this.emit({ type: "thread", thread: t });
       changed = true;
     }
@@ -348,17 +430,15 @@ export class Store {
     }
     const list = order.map((id) => byId.get(id)!);
     // Anything left mid-stream or mid-step by a stopped engine is settled. A question stays: its
-    // answer goes as your next message (Runtime.answerQuestion). So does a planner's plan, which never
-    // waited in its turn: approving it starts the builder (Runtime.answerProposal). A plan a writer
-    // waited on in its turn, or a step to allow, has nobody to answer to any more.
-    const planned = new Set(list.flatMap((x) => (x.kind === "turn" && x.planning ? [x.turn] : [])));
+    // answer goes as your next message (Runtime.answerQuestion). A plan or a step to allow has nobody
+    // to answer to any more: its turn waited on it, a planner's plan from before pairs included.
     for (const it of list) {
       if ((it.kind === "text" || it.kind === "reasoning") && it.streaming) it.streaming = false;
       if (it.kind === "tool" && it.status === "running") it.status = "failed";
       // An agent still at work in the background went with the engine's tool process.
       if (it.kind === "tool" && it.agent?.state === "running") it.agent = { ...it.agent, state: "stopped", now: undefined };
       if (it.kind === "approval" && it.state === "asking") it.state = "expired";
-      if (it.kind === "proposal" && it.state === "asking" && !planned.has(it.turn)) it.state = "expired";
+      if (it.kind === "proposal" && it.state === "asking") it.state = "expired";
       if (it.kind === "turn" && it.status === "running") it.status = "stopped";
       if (it.kind === "review" && it.status === "running") it.status = "error";
     }
@@ -366,14 +446,6 @@ export class Store {
     // Rewrite the log once it holds many more lines than items.
     if (lines > list.length * 3 + 50) this.rewrite(threadId);
     return list;
-  }
-
-  /**
-    A thread's checkpoints and reviews, read from its log without keeping the timeline in memory:
-    for numbers across many sessions. Later lines replace earlier ones with the same id.
-  */
-  marks(threadId: string): Item[] {
-    return this.peek(threadId, ["checkpoint", "review"]);
   }
 
   /** A thread's items of these kinds, read from its log without keeping the timeline in memory: for numbers and search across many sessions. */

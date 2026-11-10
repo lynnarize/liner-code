@@ -10,14 +10,13 @@
 */
 import { useState, type ReactNode } from "react";
 import type { AgentProfile, SessionMode, Thread } from "@contracts";
-import { BUILTIN_MODES, modeName } from "@contracts";
+import { BUILTIN_MODES, modeName, startOf } from "@contracts";
 import { Dialog } from "@liner/components/dialog/dialog";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { toast } from "@liner/components/toast/toast";
 import { openSession } from "./Addon";
 import { getState, rpc, useEngine } from "./engine";
 import { Glyph, I } from "./icons";
-import { startOf } from "./model";
 import { Pop, Row, Sep } from "./ui";
 import "./modes.css";
 
@@ -44,8 +43,9 @@ export async function startCreator(o: { projectId?: string; text?: string; title
   try {
     const { projects, settings, providers } = getState();
     const projectId = o.projectId ?? projects.find((p) => p.agent !== "demo")?.id ?? (await rpc("project.scratch", {})).id;
-    const start = startOf(settings.mode, settings, providers);
-    const t = await rpc("thread.create", { projectId, mode: "creator", ...(start ? { agent: start.agent, lead: start.lead, route: start.route, dual: start.dual } : {}), ...(o.title ? { title: o.title } : {}) });
+    // Who works starts as Settings say a new session starts: a pair, the best model or the fast one.
+    const start = startOf(settings, providers);
+    const t = await rpc("thread.create", { projectId, mode: "creator", ...(start ? { agent: start.agent, sidekick: start.sidekick } : {}), ...(o.title ? { title: o.title } : {}) });
     if (o.text) await rpc("thread.send", { id: t.id, text: o.text });
     openSession(t.id);
     return t;

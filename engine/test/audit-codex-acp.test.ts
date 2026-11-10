@@ -16,7 +16,6 @@ import { codex } from "../src/providers/codex.ts";
 import { askEndpoint } from "../src/providers/plain.ts";
 import { fromRegistry } from "../src/providers/added.ts";
 import { Proxies } from "../src/proxy.ts";
-import { takePlan } from "../src/runtime.ts";
 import { ResumeFailed, type ApprovalRequest, type OpenOptions, type ToolUpdate, type TurnSink, type WakeTurn } from "../src/providers/types.ts";
 import type { Endpoint, ProviderInfo } from "../../contracts/src/index.ts";
 
@@ -832,7 +831,7 @@ test("codex: an edit outside the project, or one granting a folder outside it, i
   assert.equal(legacy.risk, "high");
 });
 
-test("codex: a planner's question can go unanswered, so a routine's turn never waits for good on one", async () => {
+test("codex: its question can go unanswered, so a routine's turn never waits for good on one", async () => {
   const ask = { method: "item/tool/requestUserInput", params: { questions: [{ id: "q", header: "Pick", question: "Which?", options: [{ label: "A", description: "a" }] }] } };
   const { s } = cx(codexServer(`if (m.method === "turn/start") {
     send({ id: m.id, result: { turn: { id: "turn-1" } } });
@@ -905,33 +904,16 @@ test("codex: a server called liner asks like any other unless Liner Code gave th
   assert.equal(await codexCard(ask, { mcp: { command: "node", args: [], env: {} } }), undefined, "its own goes without a card");
 });
 
-test("codex: a planner's turn runs in plan mode, with Liner Code's words for it, on the model the thread opened with", async () => {
-  const { fake, s } = cx(codexServer(`if (m.method === "thread/start") { send({ id: m.id, result: { thread: { id: "root" }, model: "gpt-9" } }); continue; }`), { planning: true, effort: "high" });
-  await s.turn("plan it", recorder().sink, live());
-  s.close();
-  const { mode, settings } = fake.read().find((m) => m.method === "turn/start").params.collaborationMode;
-  assert.equal(mode, "plan");
-  assert.equal(settings.model, "gpt-9");
-  assert.equal(settings.reasoning_effort, "high");
-  assert.match(settings.developer_instructions, /request_user_input/);
-  assert.doesNotMatch(settings.developer_instructions, /proposed_plan/, "null would bring Codex's own words, which end every turn in a plan of its kind");
+test("codex: no turn asks for Codex's plan mode, Read only included: a plan, when there is one, is the model's own words", async () => {
   for (const extra of [{}, { access: "read" as const }]) {
     const other = cx(codexServer(), { model: "gpt-9", ...extra });
     await other.s.turn("build it", recorder().sink, live());
     other.s.close();
-    assert.equal(other.fake.read().find((m) => m.method === "turn/start").params.collaborationMode, undefined, "only a planner's");
+    assert.equal(other.fake.read().find((m) => m.method === "turn/start").params.collaborationMode, undefined);
   }
-  const named = cx(codexServer(), { planning: true, model: "gpt-8" });
-  await named.s.turn("plan it", recorder().sink, live());
-  named.s.close();
-  assert.equal(named.fake.read().find((m) => m.method === "turn/start").params.collaborationMode.settings.model, "gpt-8", "the model you chose");
-  const none = cx(codexServer(), { planning: true });
-  await none.s.turn("plan it", recorder().sink, live());
-  none.s.close();
-  assert.equal(none.fake.read().find((m) => m.method === "turn/start").params.collaborationMode, undefined, "with no model to name, it isn't sent: Codex would refuse the turn");
 });
 
-test("codex: a plan that came out of the message as Codex's own plan item is handed over the way a planner's is", async () => {
+test("codex: a plan that came out of the message as Codex's own plan item reads as what the model said", async () => {
   const { s } = cx(codexServer(`if (m.method === "turn/start") {
     send({ id: m.id, result: { turn: { id: "turn-1" } } });
     send({ method: "item/started", params: { threadId: "root", turnId: "turn-1", item: { type: "plan", id: "p1", text: "" } } });
@@ -939,11 +921,11 @@ test("codex: a plan that came out of the message as Codex's own plan item is han
     send({ method: "item/completed", params: { threadId: "root", turnId: "turn-1", item: { type: "plan", id: "p1", text: "# Paint it\\n- Buy paint\\n" } } });
     send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } });
     continue;
-  }`), { planning: true, model: "gpt-9" });
+  }`), { model: "gpt-9" });
   const { r, sink } = recorder();
   await s.turn("plan it", sink, live());
   s.close();
-  assert.deepEqual(takePlan(r.text), { title: undefined, plan: "# Paint it\n- Buy paint", before: "", after: "" });
+  assert.equal(r.text, "# Paint it\n- Buy paint");
 });
 
 test("codex: a stopped turn's late request is refused, not put to you in the next turn", async () => {

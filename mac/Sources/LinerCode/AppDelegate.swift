@@ -83,6 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         // Apple Intelligence suggestions over its fields (the page also says writingsuggestions="false").
         if #available(macOS 15.0, *) { config.writingToolsBehavior = .none }
         config.allowsInlinePredictions = false
+        // A web view tabs only between text fields unless the Mac's Keyboard navigation is on, so the
+        // app's buttons, menus and tabs were out of reach of Tab. With this on, WebKit's Tab takes in
+        // every control, as it does in the Electron shell (Option-Tab then skips them, as in Safari).
+        config.preferences.tabFocusesLinks = true
         web = AppWebView(frame: .zero, configuration: config)
         web.setValue(false, forKey: "drawsBackground")
         web.underPageBackgroundColor = .clear

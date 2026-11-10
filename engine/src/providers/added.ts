@@ -68,6 +68,8 @@ export function accountProvider(base: Provider, a: ToolAccount): Provider {
     models: base.models && ((env, scratch) => base.models!(envOf(env), scratch)),
     commands: base.commands && ((env, cwd) => base.commands!(envOf(env), cwd)),
     limits: base.limits && ((env, scratch) => base.limits!(envOf(env), scratch)),
+    // Read in the account's own home: a second Hermes has a config of its own.
+    toolWait: base.toolWait && ((env) => base.toolWait!(envOf(env))),
     open: (o) => base.open({ ...o, env: envOf(o.env) }),
   };
 }

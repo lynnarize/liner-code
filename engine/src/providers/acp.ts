@@ -19,7 +19,7 @@ import { TOOLS } from "../liner-tools.ts";
 import { acpCommands, acpModelRequest, acpModels } from "./models.ts";
 import { imageType, readUpTo } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
-import { ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
@@ -229,7 +229,9 @@ function opencodeOwn(cwd: string, env: NodeJS.ProcessEnv, content: Json) {
   What OpenCode is told for a session in `cwd`. OPENCODE_CONFIG_CONTENT comes last of its settings and
   may hold an endpoint's already, so it's added to. continue_loop_on_deny: OpenCode ends the whole turn
   on any refusal otherwise, and every step can be refused now: a Reviewer would lose its verdict, a
-  routine the rest of its step, and a person's No the agent's chance to adapt.
+  routine the rest of its step, and a person's No the agent's chance to adapt. mcp_timeout: OpenCode gives
+  up on an MCP call after a minute, and a sidekick's brief runs up to 10; the servers Liner Code hands over
+  ACP carry no wait of their own, so this one setting is theirs, and it covers your add-on connections too.
 */
 export function opencodeEnv(cwd: string, env: NodeJS.ProcessEnv, linerServer = true) {
   const had = jsonc(env.OPENCODE_CONFIG_CONTENT || "{}");
@@ -237,8 +239,135 @@ export function opencodeEnv(cwd: string, env: NodeJS.ProcessEnv, linerServer = t
   const rules = opencodeAsks(permission, linerServer);
   // One that won't parse is OpenCode's to say, which it does as it starts: writing over it would hide that.
   if (!had) return { OPENCODE_PERMISSION: rules };
-  const config = { ...had, experimental: { ...(had.experimental as Json | undefined), continue_loop_on_deny: true }, ...(review ? {} : { command: { ...(had.command as Json | undefined), review: OPENCODE_REVIEW } }) };
+  const experimental = (had.experimental as Json | undefined) ?? {};
+  // A longer wait given before stays: it's in milliseconds.
+  const wait = Math.max(Number(experimental.mcp_timeout) || 0, LINER_WAIT_SEC * 1000);
+  const config = { ...had, experimental: { ...experimental, continue_loop_on_deny: true, mcp_timeout: wait }, ...(review ? {} : { command: { ...(had.command as Json | undefined), review: OPENCODE_REVIEW } }) };
   return { OPENCODE_PERMISSION: rules, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) };
+}
+
+/** How long a turn's end waits for OpenCode to say what the turn used (opencodeTurnUsage); ~0.3 s warm, a few cold. */
+export let OPENCODE_USAGE_MS = 4000;
+/** For tests: a shorter wait. */
+export const setOpencodeUsageMs = (ms: number) => void (OPENCODE_USAGE_MS = ms);
+
+/**
+  What an OpenCode turn used, step by step from its own store: its ACP prompt result carries only the last step's
+  tokens, and a stopped turn's none, so a turn of many steps read 10 to 30 times too low. `opencode export` is its
+  documented way to read a session (it only reads; --pure leaves your plugins out, which this needs none of). The
+  turn's steps are its session's assistant messages after its prompt (the first user message from `since` on).
+  Input is the uncached part with the cache it wrote; output takes the reasoning. Cost isn't here: usage_update
+  says it as it goes. Null when it can't say in time or in a form it knows, and the turn keeps ACP's numbers.
+*/
+export async function opencodeTurnUsage(cmd: string[], session: string | null | undefined, since: number, o: { cwd: string; env?: NodeJS.ProcessEnv }) {
+  if (!session) return null;
+  const started = Date.now();
+  // The command it runs as, without its "acp": `opencode`, or whatever starts it.
+  const at = cmd.lastIndexOf("acp");
+  const [bin, ...pre] = at > 0 ? cmd.slice(0, at) : cmd.slice(0, 1);
+  // In a group of its own with no input, so one that doesn't exit (or a fake that speaks ACP whatever it's asked) is
+  // ended with everything it started at the wait, and the turn ends then whatever its pipes do.
+  const out = await new Promise<{ code: number | null; stdout: string; stderr: string }>((done) => {
+    let stdout = "", stderr = "", over = false;
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(bin, [...pre, "export", "--pure", session], { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" }) as unknown as ChildProcessWithoutNullStreams;
+    } catch (e) {
+      return done({ code: null, stdout: "", stderr: e instanceof Error ? e.message : String(e) });
+    }
+    const end = (code: number | null, why = "") => {
+      clearTimeout(timer);
+      done({ code, stdout: over ? "" : stdout, stderr: why || stderr });
+    };
+    const timer = setTimeout(() => (killTree(child), end(null, `no answer in ${OPENCODE_USAGE_MS} ms`)), OPENCODE_USAGE_MS);
+    child.stdout.on("data", (d: Buffer) => {
+      stdout += d;
+      // A session too big to read in time isn't read at all.
+      if (stdout.length > 128 * 1024 * 1024 && !over) (over = true), killTree(child);
+    });
+    child.stderr.on("data", (d: Buffer) => void (stderr = (stderr + d).slice(-2000)));
+    child.on("error", (e) => end(null, e.message));
+    child.on("close", (code) => end(code));
+  });
+  type Tokens = { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } };
+  type Message = { info?: { role?: string; time?: { created?: number }; tokens?: Tokens } };
+  let messages: Message[] | undefined;
+  try {
+    const start = out.stdout.indexOf("{");
+    const j = start >= 0 ? (JSON.parse(out.stdout.slice(start)) as { info?: { id?: string }; messages?: Message[] }) : null;
+    if (j?.info?.id === session && Array.isArray(j.messages)) messages = j.messages;
+  } catch {
+    // not an export it knows
+  }
+  // A second of slack: OpenCode stamps the prompt as it takes it, on the same clock.
+  const from = messages?.findIndex((m) => m.info?.role === "user" && (m.info.time?.created ?? 0) >= since - 1000) ?? -1;
+  if (!messages || from < 0) {
+    console.error(`[opencode] couldn't read what the turn used from \`opencode export\` (${out.code !== 0 ? `${out.code === null ? "" : `exit ${out.code}: `}${out.stderr.trim().split("\n").at(-1)?.slice(0, 160) ?? ""}` : "no such turn in it"}, ${Date.now() - started} ms): its last step's count stands`);
+    return null;
+  }
+  const u = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
+  for (const m of messages.slice(from + 1)) {
+    const t = m.info?.role === "assistant" ? m.info.tokens : undefined;
+    if (!t) continue;
+    u.inputTokens += (t.input ?? 0) + (t.cache?.write ?? 0);
+    u.outputTokens += (t.output ?? 0) + (t.reasoning ?? 0);
+    u.cacheReadTokens += t.cache?.read ?? 0;
+  }
+  return u;
+}
+
+/**
+  Which of Liner Code's tools a call is, by the name the agent gives it, and its own input: liner_design_show (OpenCode), liner.x
+  or liner:x, and Hermes's mcp__editor_liner_<8 hex>__x, its name for a server handed over ACP, tagged per session. Hermes
+  keeps those in a catalog the model calls through tool_call, so a call that comes wrapped in one is read for the one inside.
+  By the list: a name that only looks like one of ours isn't.
+*/
+export function linerCall(title: string | undefined, raw: unknown): { name: string; input: unknown } | undefined {
+  const named = /^(?:(?:mcp__)?liner(?:__|[_.:])|mcp__editor_liner_[0-9a-f]{8}__)([a-z_]+)$/.exec(title ?? "")?.[1];
+  if (named) return TOOLS.some((t) => t.name === named) ? { name: named, input: raw } : undefined;
+  const calls = /^tool_call\b/.test(title ?? "") ? (raw as { calls?: { name?: unknown; arguments?: unknown }[] } | undefined)?.calls : undefined;
+  // One call inside: several are one row the agent's, which no single tool of ours can stand for.
+  if (!Array.isArray(calls) || calls.length !== 1 || typeof calls[0]?.name !== "string") return undefined;
+  const inner = linerCall(calls[0].name, calls[0].arguments);
+  return inner && /^tool_call\b/.test(calls[0].name) ? undefined : inner;
+}
+
+/** The scalars of a YAML file by their dotted path ("timeouts.mcp.tool_call"): enough for a settings file, not YAML at large. */
+function yamlScalars(text: string) {
+  const out = new Map<string, string>();
+  const stack: { indent: number; key: string }[] = [];
+  for (const line of text.split("\n")) {
+    const m = /^(\s*)([A-Za-z0-9_.-]+)\s*:\s*(.*?)\s*$/.exec(line.replace(/\s+#.*$/, ""));
+    if (!m || /^\s*#/.test(line)) continue;
+    const indent = m[1].length;
+    while (stack.length && stack.at(-1)!.indent >= indent) stack.pop();
+    const path = [...stack.map((s) => s.key), m[2]].join(".");
+    if (m[3]) out.set(path, m[3].replace(/^(["'])(.*)\1$/, "$2"));
+    else stack.push({ indent, key: m[2] });
+  }
+  return out;
+}
+
+/**
+  How long Hermes waits on one call to Liner Code's tools, in ms; null when nothing bounds it. Two limits hold, read from the
+  config.yaml in its HERMES_HOME, which Liner Code only reads: the MCP call's own (timeouts.mcp.tool_call, 300 s unset) and
+  any one tool's (timeouts.tools.sequential_call, unset the batch's: timeouts.tools.concurrent_batch, else
+  HERMES_CONCURRENT_TOOL_TIMEOUT_S, else 420 s). 0 or less is no limit, and what isn't a number is passed over, as Hermes
+  does (agent/deadline.py resolve_timeout; tools/mcp_tool_common.py; agent/tool_executor.py). An MCP server's own
+  `timeout` doesn't count: the servers come over ACP, which carries none.
+*/
+export function hermesWait(env: NodeJS.ProcessEnv, read: (path: string) => string = (p) => readFileSync(p, "utf8")): number | null {
+  const home = env.HERMES_HOME || join(env.HOME || homedir(), ".hermes");
+  let config = new Map<string, string>();
+  try {
+    config = yamlScalars(read(join(home, "config.yaml")));
+  } catch {
+    // No config: the defaults hold.
+  }
+  const num = (v: string | undefined) => (v === undefined || v === "" || /^(true|false|yes|no|on|off)$/i.test(v) || !Number.isFinite(Number(v)) ? undefined : Number(v));
+  const batch = num(config.get("timeouts.tools.concurrent_batch")) ?? num(env.HERMES_CONCURRENT_TOOL_TIMEOUT_S) ?? 420;
+  const limits = [num(config.get("timeouts.mcp.tool_call")) ?? 300, num(config.get("timeouts.tools.sequential_call")) ?? batch, batch].filter((s) => s > 0);
+  return limits.length ? Math.min(...limits) * 1000 : null;
 }
 
 /** Where OpenCode saves a long output, for the agent to read back. */
@@ -431,6 +560,12 @@ class AcpSession implements ProviderSession {
   private canLoad = false;
   /** The session's cost as the agent last said it; unknown until it says, in a session loaded from before. */
   private spent: number | null = 0;
+  /**
+    Hermes's prompt result carries its session's counters, not the turn's (acp_adapter/gateway_session_meta.py, turn_usage):
+    the last ones, so a turn counts what they grew by. Zero for a session it opened; null for one it loaded, whose
+    first turn counts whole, as nothing says how much of that was before.
+  */
+  private counted: { input: number; output: number; reads: number } | null = { input: 0, output: 0, reads: 0 };
   /** The agent's own modes: its plan-like one Read only puts it in, the one it works in otherwise, and the config option that sets them, if one does. */
   private modes: { read?: string; work?: string; via?: string } = {};
   /** A mode it didn't switch to: tried again before the next prompt. */
@@ -535,6 +670,7 @@ class AcpSession implements ProviderSession {
         if (s) {
           this.session = this.o.resume;
           this.spent = null;
+          this.counted = null;
           // A session it loads already holds its instructions, from the turn that first sent them.
           this.soulSent = true;
           // It couldn't a start ago (the process went), and can now.
@@ -550,6 +686,7 @@ class AcpSession implements ProviderSession {
         // Started again after its process ended, it loads this session rather than the one it opened with.
         this.o.resume = this.session;
         this.spent = 0;
+        this.counted = { input: 0, output: 0, reads: 0 };
       }
       // A loaded session gets the model and the mode too: a model you switched to reopens the session to
       // load it, on the model it had (T3 Code: provider-acp adapter.ts sets the model after start or load).
@@ -563,7 +700,7 @@ class AcpSession implements ProviderSession {
       const { via, now, ids } = modesOf(s);
       const read = ids.find(readMode);
       this.modes = { read, via, work: typeof now === "string" && now !== read ? now : ids.find((m) => m !== read) };
-      const want = this.o.access === "read" || this.o.planning ? read : read && now === read ? this.modes.work : undefined;
+      const want = this.o.access === "read" ? read : read && now === read ? this.modes.work : undefined;
       this.wanted = want === now ? undefined : want;
       if (this.wanted) await this.setMode(this.wanted).catch(() => {});
     })().catch((e) => {
@@ -696,7 +833,27 @@ class AcpSession implements ProviderSession {
       // would have asked about itself.
       const reads = (step === "read" ? scoped : (step === "search" || reader) && !away) && !secret;
       // Edits go ahead from Edits on its own up; Auto and Reviewer decides hand the rest to Liner Code.
-      const free = this.o.access === "full" || reads || ((this.o.access === "edits" || this.o.access === "auto" || this.o.access === "review") && kind === "edit" && scoped);
+      // Liner Code's own tools only reach this session's surfaces and go without a card, as in Claude Code. Neither agent should ask
+      // for one (OpenCode's rules allow them; Hermes asks only about commands and edits), and a title is the agent's to write, from
+      // what the model wrote at times (OpenCode titles its ask to go outside with the model's description): so the name alone isn't
+      // enough. The ask has to be an MCP call in every other way too: no command or edit as either agent marks one (its kind, a
+      // command, a file it names, a diff, Hermes's perm-check ids for commands), and nothing in its input that tool of ours doesn't
+      // take. In doubt, the card.
+      const mine = this.o.mcp ? linerCall(call.title, call.rawInput) : undefined;
+      const takes = mine ? (TOOLS.find((t) => t.name === mine.name)?.inputSchema.properties ?? {}) : {};
+      const fits = (input: unknown) => input === undefined || (typeof input === "object" && input !== null && !Array.isArray(input) && Object.keys(input).every((k) => Object.hasOwn(takes, k)));
+      const wrapped = /^tool_call\b/.test(call.title ?? "");
+      const liner =
+        Boolean(mine) &&
+        [(p.toolCall as ToolCall | undefined)?.kind, known?.kind].every((k) => k === undefined || k === "other") &&
+        !command &&
+        !reaching &&
+        !files.length &&
+        !(call.content ?? []).some((c) => c.type === "diff") &&
+        !String(call.toolCallId ?? "").startsWith("perm-check-") &&
+        fits(mine?.input) &&
+        (!wrapped || Object.keys((call.rawInput ?? {}) as Json).every((k) => k === "calls"));
+      const free = this.o.access === "full" || reads || liner || ((this.o.access === "edits" || this.o.access === "auto" || this.o.access === "review") && kind === "edit" && scoped);
       // Allowed, with no way offered to say so: not a yes with nothing in it.
       if (free && !(this.o.guard && isDestructive(command))) {
         const id = pick(true);
@@ -800,17 +957,18 @@ class AcpSession implements ProviderSession {
     if (isDelegation(call.title)) return this.delegated(call, out, status, sink);
     const path = call.locations?.[0]?.path ?? ((call.content ?? []).find((c) => c.type === "diff")?.path as string | undefined);
     // Liner Code's own tools, under the name the agent gives them ("liner_design_show"): named and titled as every tool names them.
-    // By the list, and only with its server there: a name that only looks like one, as a server called liner_notes makes, is that server's.
-    const said = /^(?:mcp__)?liner(?:__|[_.:])([a-z_]+)$/.exec(call.title ?? "")?.[1];
-    const ours = this.o.mcp && TOOLS.some((t) => t.name === said) ? said : undefined;
+    // Only with its server there: a name that only looks like one, as a server called liner_notes makes, is that server's.
+    const mine = this.o.mcp ? linerCall(call.title, call.rawInput) : undefined;
+    const ours = mine?.name;
+    const input = mine ? mine.input : call.rawInput;
     sink.tool({
       key: call.toolCallId,
       // OpenCode's question tool is the question card, as AskUserQuestion is: not a row of its own as well.
       tool: ours ? `liner.${ours}` : call.title === "question" ? "AskUserQuestion" : (call.kind ?? "tool"),
       toolKind: KIND[call.kind ?? ""] ?? "other",
-      title: ours ? linerTitle(ours, call.rawInput) : (call.title ?? "Use a tool"),
+      title: ours ? linerTitle(ours, input) : (call.title ?? "Use a tool"),
       path: path ? this.rel(path) : undefined,
-      input: call.rawInput === undefined ? undefined : JSON.stringify(call.rawInput, null, 2),
+      input: input === undefined ? undefined : JSON.stringify(input, null, 2),
       output: out.length > OUTPUT_MAX ? `…${out.slice(-OUTPUT_MAX)}` : out || (call.rawOutput === undefined ? undefined : JSON.stringify(call.rawOutput, null, 2).slice(0, OUTPUT_MAX)),
       status,
     });
@@ -913,22 +1071,41 @@ class AcpSession implements ProviderSession {
         const bytes = mimeType ? readUpTo(f, 20 * 1024 * 1024) : null;
         return mimeType && bytes ? [{ type: "image", mimeType, data: bytes.toString("base64") }] : [];
       }) : [];
-      const r = await Promise.race([this.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: said }, ...images] }), gaveUp]).catch((e) => {
-        if (cut) return null;
-        throw e;
-      });
+      const session = this.session;
+      const since = Date.now();
+      let r: Json | null = null;
+      try {
+        r = await Promise.race([this.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: said }, ...images] }), gaveUp]).catch((e) => {
+          if (cut) return null;
+          throw e;
+        });
+      } finally {
+        // However the prompt ended (done, stopped, failed), its use is said once, before the turn is handed back.
+        // OpenCode's result carries only its last step's tokens, and a stopped one's none: the turn's come from its own store.
+        const real = this.opencode ? await opencodeTurnUsage(this.cmd, session, since, { cwd: this.o.cwd, env: this.o.env }) : null;
+        if (real) sink.usage(real);
+        else {
+          const usage = r?.usage as { totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number | null; cachedReadTokens?: number | null } | undefined;
+          if (usage) {
+            // ACP leaves open whether inputTokens counts cache reads: most agents do, OpenCode doesn't (Kun: acp-event-mapper.ts, applyPromptResult).
+            // Liner's input is the uncached part, so reads come off it unless the numbers show they were never in it.
+            const input = usage.inputTokens ?? 0, output = usage.outputTokens ?? 0, reads = usage.cachedReadTokens ?? 0;
+            const total = usage.totalTokens ?? input + output;
+            const excludes = reads > input || total >= input + output + (usage.thoughtTokens ?? 0) + reads;
+            const now = { input: excludes ? input : Math.max(0, input - reads), output, reads };
+            if (this.pid === "hermes") {
+              const was = this.counted;
+              this.counted = { ...now };
+              // Counters that went down started again (its gateway did): what they say is all this turn's.
+              if (was && now.input >= was.input && now.output >= was.output && now.reads >= was.reads) Object.assign(now, { input: now.input - was.input, output: now.output - was.output, reads: now.reads - was.reads });
+            }
+            sink.usage({ inputTokens: now.input, outputTokens: now.output, cacheReadTokens: now.reads });
+          }
+        }
+      }
       // An error, not a notice: this turn didn't do what was asked, and a routine's step mustn't read as done.
       if (cut && !signal.aborted) sink.error(cut);
       if (!r) return;
-      const usage = r.usage as { totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number | null; cachedReadTokens?: number | null } | undefined;
-      if (usage) {
-        // ACP leaves open whether inputTokens counts cache reads: most agents do, OpenCode doesn't (Kun: acp-event-mapper.ts, applyPromptResult).
-        // Liner's input is the uncached part, so reads come off it unless the numbers show they were never in it.
-        const input = usage.inputTokens ?? 0, output = usage.outputTokens ?? 0, reads = usage.cachedReadTokens ?? 0;
-        const total = usage.totalTokens ?? input + output;
-        const excludes = reads > input || total >= input + output + (usage.thoughtTokens ?? 0) + reads;
-        sink.usage({ inputTokens: excludes ? input : Math.max(0, input - reads), outputTokens: output, cacheReadTokens: reads });
-      }
       if (r.stopReason === "refusal") sink.notice("The agent declined this one.");
       if (r.stopReason === "max_tokens") sink.notice("The agent ran out of room in this turn.");
     } finally {
@@ -947,7 +1124,7 @@ class AcpSession implements ProviderSession {
   async update(o: Pick<OpenOptions, "model" | "effort" | "access">) {
     const reopen = o.model !== this.o.model;
     // Into Read only or out of it: the agent's own mode goes with it, or it would go on planning (or editing) as it was.
-    const mode = this.o.planning || (o.access === "read") === (this.o.access === "read") ? undefined : o.access === "read" ? this.modes.read : this.modes.work;
+    const mode = (o.access === "read") === (this.o.access === "read") ? undefined : o.access === "read" ? this.modes.read : this.modes.work;
     Object.assign(this.o, o);
     // Not waited on: it reaches the agent before the next prompt all the same, and one slow to answer doesn't hold that turn.
     if (mode && !reopen && this.child && this.session) void this.setMode(mode).catch(() => {});
@@ -1037,6 +1214,8 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
 
 export const hermes: Provider = {
   ...acpProvider("hermes", { label: "Hermes", cmd: ["hermes", "acp"], install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash", login: "hermes model" }),
+  // Its limits are in your own config, which Liner Code doesn't change: a sidekick's brief is cut to fit them instead.
+  toolWait: (env) => hermesWait(env),
   // OpenCode Go's windows, when Hermes has a Go key: they count for its opencode-go models only.
   async limits(env) {
     const key = hermesGoKey(env);

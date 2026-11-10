@@ -2,18 +2,20 @@
   First launch. The mark draws itself in the middle of the window, glides left as "Liner Code"
   comes into focus, the line under it says what this is, and the lockup docks in the corner as
   the first step arrives. Then three steps: connect the models you already pay for, add the
-  projects you work in, and pick how you'll work (optional).
+  projects you work in, and pick who works on a new session: a pair, the best model or the fast one (optional).
 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { FoundRepo, Mode, ProviderInfo, SystemCheck } from "@contracts";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import type { FoundRepo, ProviderInfo, Settings, SystemCheck } from "@contracts";
 import { castOf } from "@contracts";
 import { Alert } from "@liner/components/alert/alert";
 import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { Glyph, I } from "./icons";
-import { modelLabel, plural, since } from "./model";
+import { Glyph, I, ModelMark } from "./icons";
+import { markOf, modelLabel, pairReady, plural, since } from "./model";
+
+type Start = NonNullable<Settings["start"]>;
 import * as os from "./os";
 
 const TOOLS: { id: ProviderInfo["id"]; tile: string; name: string; beta?: boolean }[] = [
@@ -52,7 +54,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
       <header className="lc-setup-top" data-drag>
         <Lockup intro={intro} />
         <ol className="lc-stepper" aria-label="Setup steps">
-          {["Connect models", "Add projects", "How you'll work"].map((s, i) => (
+          {["Connect models", "Add projects", "Who works"].map((s, i) => (
             <li key={s} data-state={i < step ? "done" : i === step ? "now" : "next"}>
               <span className="lc-step-n">{i < step ? <I.check size={11} /> : i + 1}</span>
               {s}
@@ -460,54 +462,55 @@ function Projects({ onBack, onNext }: { onBack: () => void; onNext: () => void }
 }
 
 function Work({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
-  // Starts on the mode you have, so running the setup again doesn't put you back on Solo.
-  const mode = useEngine((s) => s.settings.mode);
-  const [pick, setPick] = useState<Mode>(() => mode ?? "solo");
   const providers = useEngine((s) => s.providers);
-  // Who'd do what with the tools found: a cheaper model for most work, a frontier one for the hard parts.
-  const cast = useMemo(() => castOf(providers), [providers]);
-  const quick = cast ? modelLabel(cast.everyday, providers) : "a cheaper model";
-  const strong = cast ? modelLabel(cast.strong, providers) : "a frontier model";
-  // The fallbacks open sentences too; a model's own name keeps its spelling.
-  const Quick = cast ? quick : "A cheaper model";
-  const Strong = cast ? strong : "A frontier model";
+  const settings = useEngine((s) => s.settings);
+  // Who'd work, from the tools found: the lead and its sidekick, your own picks first.
+  const pair = useMemo(() => castOf(providers, { picks: settings.picks }), [providers, settings.picks]);
+  const two = pairReady(pair);
+  // Starts on what you have, so running the setup again doesn't change it; unset, a pair when there can be one.
+  const [pick, setPick] = useState<Start>(() => settings.start ?? (two ? "pair" : "best"));
+  const shown: Start = pick === "pair" && !two ? "best" : pick;
+  const lead = pair ? modelLabel(pair.lead, providers) : "The best model you connect";
+  const side = pair ? modelLabel(pair.sidekick, providers) : "a quicker, cheaper one";
   const finish = async () => {
     try {
-      await rpc("settings.save", { onboarded: true, mode: pick });
+      await rpc("settings.save", { onboarded: true, start: shown });
       onDone();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
   };
-  const cards = [
-    { id: "solo" as const, title: "Solo", sub: "Simplest", body: `One model does it all, as you allow. ${Quick} by default; pick any model for each session.`, icon: <span className="lc-disc" style={{ width: 32, height: 32 }}><Glyph glyph="spark" size={15} /></span> },
+  const disc = (ref: string | undefined, glyph: ReactNode) => (
+    <span className="lc-disc" style={{ width: 32, height: 32 }}>
+      {ref ? <ModelMark kind={markOf(ref)} size={15} /> : glyph}
+    </span>
+  );
+  const cards: { id: Start; title: string; sub: string; body: string; icon: ReactNode; off?: boolean }[] = [
     {
-      id: "plan" as const,
-      title: "Plan, then build",
-      sub: "For bigger changes",
-      body: `${Strong} reads and plans, you approve, ${quick} builds. Questions go straight to ${quick}.`,
+      id: "pair",
+      title: "Pair",
+      sub: "For most work",
+      body: two ? `${lead} leads: it plans, decides and reviews. ${side} does the work it hands over.` : "Needs two different models ready. Connect another tool and it's yours.",
       icon: (
         <span className="lc-stack">
-          <span className="lc-disc" data-filled style={{ width: 32, height: 32 }}>
-            <Glyph glyph="sun" size={15} />
-          </span>
-          <span className="lc-disc" style={{ width: 32, height: 32 }}>
-            <Glyph glyph="moon" size={15} />
-          </span>
+          {disc(two ? pair?.lead : undefined, <Glyph glyph="sun" size={15} />)}
+          {disc(two ? pair?.sidekick : undefined, <Glyph glyph="moon" size={15} />)}
         </span>
       ),
+      off: !two,
     },
-    { id: "auto" as const, title: "Auto", sub: "Least work per message", body: `Each message gets what it needs: ${quick} alone, checked by another maker, or ${strong} for the hard ones.`, icon: <span className="lc-disc" style={{ width: 32, height: 32 }}><I.branchIf size={15} /></span> },
+    { id: "best", title: "Best", sub: "One model, the strongest", body: `${lead} alone, on everything you ask.`, icon: disc(pair?.lead, <I.star size={15} />) },
+    { id: "fast", title: "Fast", sub: "One model, quick and cheaper", body: two ? `${side} alone. Good for small, clear asks.` : `${lead} alone too, with one model ready.`, icon: disc(pair?.sidekick, <I.bolt size={15} />), off: !two },
   ];
   return (
-    <section className="lc-step" aria-label="How do you want to work?">
-      <h1>How do you want to work?</h1>
-      <p className="lc-step-sub">One model writes at a time in all three. You can make agents with instructions of their own later, if a job calls for one.</p>
+    <section className="lc-step" aria-label="Who works on your sessions?">
+      <h1>Who works on your sessions?</h1>
+      <p className="lc-step-sub">What a new session starts with. Each session can change it, or pick any other model, from its composer.</p>
       <div className="lc-step-body">
-        <div className="lc-rcs" role="radiogroup" aria-label="How you'll work">
+        <div className="lc-rcs" role="radiogroup" aria-label="Who works on your sessions">
           {cards.map((c, i) => (
-            <button key={c.id} type="button" role="radio" aria-checked={pick === c.id} className="lc-rc l-focus" data-on={pick === c.id || undefined} style={{ ["--i" as string]: i }} onClick={() => setPick(c.id)}>
-              {pick === c.id && (
+            <button key={c.id} type="button" role="radio" aria-checked={shown === c.id} className="lc-rc l-focus" data-on={shown === c.id || undefined} disabled={c.off} style={{ ["--i" as string]: i }} onClick={() => setPick(c.id)}>
+              {shown === c.id && (
                 <span className="lc-rc-tick">
                   <I.check size={12} />
                 </span>
@@ -523,7 +526,7 @@ function Work({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
         </div>
       </div>
       <div className="lc-step-foot">
-        <span className="lc-quiet">Any session can switch modes from its composer.</span>
+        <span className="lc-quiet">Settings › Agentic features changes who leads and who's the sidekick.</span>
         <span className="lc-grow" />
         <button type="button" className="lc-btn" data-kind="ghost" data-size="lg" onClick={onBack}>
           Back

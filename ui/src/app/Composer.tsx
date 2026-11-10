@@ -5,10 +5,9 @@
   you (files to commit, agents at work); on Home its foot says where the session runs. What's
   queued sits above it.
 
-  - Who works on this: Solo (one model, or one of your agents), Plan then build (a stronger model
-    plans, a cheaper one builds), or Auto (the engine picks per message, at the level you choose);
-    Dual frontier; and what happens after each change (another maker checks it, the frontier model
-    refines it, or nothing).
+  - Who works on this: a pair (the lead, with a sidekick it hands work to), the best model alone,
+    the fast one alone, or any model a tool runs, or one of your agents. Picking the pair shows
+    who leads and who's its sidekick, each changeable for this session.
   - Effort and access open glass menus; access is Auto, Manual or Reviewer decides, with Full access last.
   - @ finds a file in the project; files come from the clip, a paste or a drop.
   - While an agent works, Enter queues the message for when the turn ends; ⌘Enter steers the
@@ -16,23 +15,27 @@
     (⌘⇧Enter for the first), or edited where it waits.
   - A paste of 32 KiB or more comes as a text file. Drafts outlast a restart.
 */
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { Access, After, CommandInfo, SkillInfo, Effort, Mode, Project, QueuedMessage, RouteLevel, RpcResult, Thread } from "@contracts";
-import { AFTER, castOf, checkerOf, familyOf, frontiersOf, MODES, ROUTE_LEVELS, splitModel } from "@contracts";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
+import type { Access, CommandInfo, SkillInfo, Effort, Project, ProviderInfo, QueuedMessage, RpcResult, Thread } from "@contracts";
+import { castOf, familyOf, splitModel } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
 import { isPrompt, rpc, useEngine, useItemsWhere } from "./engine";
-import { I, ModelMark } from "./icons";
-import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, isModelAgent, markOf, modeOf, modelLabel, plural, since, startOf } from "./model";
+import { I, ModelMark, type MarkKind } from "./icons";
+import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, isModelAgent, markOf, modelLabel, pairReady, plural, shortName, since, wayOf, whoOf, type Way } from "./model";
 import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
 import { SideKeys } from "./TopBar";
 import { ContextMeter, Disc, LimitMeter, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
-/** Who works on a session and how: `lead` plans (Plan), `route` is Auto's level; `dual` and `after` unset follow Settings. */
-export type RunSettings = { agent: string; lead?: string; model?: string; effort: Effort; access: Access; route?: RouteLevel; dual?: boolean; after?: After };
+/**
+  Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
+  your agents); `sidekick`, set, makes it a pair: the model the lead hands work to. `review` is the
+  session's own word on the Reviewer, unset following Settings.
+*/
+export type RunSettings = { agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; review?: boolean };
 export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" };
 
 type Props = {
@@ -214,6 +217,8 @@ function pastedName(taken: string[]) {
 const COLD_TOKENS = 200_000;
 /** The model picker's tab for your agents (no tool has this id). */
 const AGENTS_TAB = "@agents";
+/** The tools whose models the picker lists: ready, with models, the Demo apart (it has a row of its own). */
+const toolsOf = (providers: ProviderInfo[]) => providers.filter((p) => p.available && p.adapter && p.models.length && p.id !== "demo");
 
 const toBase64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
@@ -253,10 +258,10 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const tray = useRef<HTMLDivElement>(null);
   useTrayFit(tray);
 
-  const talkTo = agentOf(settings.lead ?? settings.agent, agents, providers);
+  // The lead: who you talk to, whose model the effort is for.
   const coder = agentOf(settings.agent, agents, providers);
   const model = settings.model ?? coder.model;
-  const shownModel = settings.lead ? talkTo.model : model;
+  const shownModel = model;
   const lev = accessOf(settings.access);
   // The plan windows of the tools this runs on (who you talk to first), when they report any.
   const limits = useEngine((s) => s.limits);
@@ -354,7 +359,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   }, [autoFocus, thread?.id]);
 
   // What / and $ offer: the tool's own commands and skills, asked once per tool and folder.
-  const who = settings.lead ?? settings.agent;
+  const who = settings.agent;
   useEffect(() => {
     if (mention?.kind !== "/" && mention?.kind !== "$") return;
     if (tools) return;
@@ -668,252 +673,35 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const thumbs = useMemo(() => files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : null)), [files]);
   useEffect(() => () => thumbs.forEach((u) => u && URL.revokeObjectURL(u)), [thumbs]);
 
-  const engineSettings = useEngine((s) => s.settings);
-  const way = modeOf(settings);
-  const dual = settings.dual ?? engineSettings.dual ?? false;
-  // Who'd do what in Plan and Auto: your two models (automatic where you haven't picked) from what's ready.
-  const cast = useMemo(() => castOf(providers, { dual, picks: engineSettings.picks }), [providers, dual, engineSettings.picks]);
-  const second = useMemo(() => frontiersOf(providers, engineSettings.picks).second, [providers, engineSettings.picks]);
-  const routed = settings.route;
-  // The Demo stays out of the list until it's shown (six taps on your name in the sidebar).
-  const showDemo = engineSettings.showDemo === true;
-  // Agents you made, with instructions of their own; a session can run on one instead of a bare model.
-  const yours = agents.filter((a) => a.id !== "demo");
-  // They (and the demo) are the model picker's last tab; each row closes the panel once picked.
-  const agentRows = [
-    ...yours.map((a) => (close: () => void) => (
-      <WayRow
-        key={a.id}
-        on={!settings.lead && !routed && settings.agent === a.id}
-        icon={<Disc agent={a} size={16} />}
-        title={a.name}
-        note={`${modelLabel(a.model, providers)}, own instructions`}
-        onPick={() => {
-          onSettings({ route: undefined, lead: undefined, agent: a.id, model: undefined });
-          close();
-        }}
-      />
-    )),
-    ...(showDemo && agents.some((a) => a.id === "demo")
-      ? [
-          (close: () => void) => (
-            <WayRow
-              key="demo"
-              on={!routed && settings.agent === "demo"}
-              icon={<I.sparkle size={13} />}
-              title="Demo run"
-              note="a scripted run, no account"
-              onPick={() => {
-                onSettings({ route: undefined, lead: undefined, agent: "demo", model: undefined });
-                close();
-              }}
-            />
-          ),
-        ]
-      : []),
-  ];
-  // Which of the picker's tabs is open, so the column's label can say models or agents.
-  const [pickerTab, setPickerTab] = useState<string>();
-  const label = (ref: string) => modelLabel(ref, providers);
-  // After each change: this session's own word, else Settings'. Who checks is another maker than the writer's; who refines, your frontier model.
-  const after = settings.after ?? engineSettings.after ?? "check";
-  const checker = cast ? checkerOf(model, cast) : null;
-  const refiner = cast && cast.strong !== model ? cast.strong : null;
-  const afterNote = after === "off" ? "Changes are yours as they are." : after === "refine" && refiner ? `${label(refiner)} takes each change on and finishes it, the way you'd have a senior polish a first pass.` : checker ? `${label(checker)} reads each change before it's yours, and sends back what must be fixed.${after === "refine" ? " (Refining needs a stronger model than the writer.)" : ""}` : "Nobody else is ready to read changes yet.";
-  /** The makers of everyone in a way, as small marks. */
-  const marksOf = (ids: string[]) => [...new Set(ids.map((id) => markOf(agentOf(id, agents, providers).model)))].map((k) => <ModelMark key={k} kind={k} size={11} />);
-  /** A mode, with who's in it from your two models (and Dual frontier). Solo keeps the model it has. */
-  const pickMode = (m: Mode) => {
-    if (m === "solo") return onSettings({ lead: undefined, route: undefined });
-    const s = startOf(m, engineSettings, providers, dual);
-    if (s) onSettings({ ...s, model: undefined });
-  };
-  const pickDual = (on: boolean) => {
-    const s = startOf(way, engineSettings, providers, on);
-    // Solo keeps a model you picked yourself; otherwise who builds follows Dual frontier.
-    if (way === "solo" && !isModelAgent(settings.agent)) return onSettings({ dual: on });
-    if (s) onSettings({ ...s, route: routed ?? s.route, model: undefined });
-  };
-
-  const whoChip = routed ? (
+  // Who works, as the chip names them: a pair's two marks and "Opus 5.5 + Sol", else the one model or agent.
+  const whoNow = whoOf(settings, agents, providers);
+  const whoChip = (
     <>
-      <span className="lc-way-chip-i">
-        <I.branchIf size={12} />
-      </span>
-      <span className="lc-chip-name">Auto · {ROUTE_LEVELS.find((l) => l.id === routed)?.label}</span>
-      {cast && <span className="lc-way-marks">{marksOf([`@${cast.everyday}`, `@${cast.strong}`])}</span>}
-      <I.chevD size={11} />
-    </>
-  ) : settings.lead ? (
-    <>
-      <span className="lc-way-chip-i">
-        <I.flow size={12} />
-      </span>
-      <span className="lc-chip-name">Plan, then build</span>
-      <span className="lc-way-marks">{marksOf([settings.lead, settings.agent])}</span>
-      <I.chevD size={11} />
-    </>
-  ) : (
-    <>
-      {/* A model on its own is Solo's node, as Plan shows its flow; a named agent keeps its own glyph. */}
-      {isModelAgent(settings.agent) ? (
-        <span className="lc-way-chip-i">
-          <I.node size={12} />
-        </span>
+      {whoNow.agent ? (
+        <Disc agent={whoNow.agent} size={22} />
       ) : (
-        <Disc agent={talkTo} size={22} />
+        <span className="lc-who-marks" data-two={whoNow.marks.length > 1 || undefined}>
+          {whoNow.marks.map((k, i) => (
+            <span key={`${k}${i}`} className="lc-who-tile">
+              <ModelMark kind={k} size={12} />
+            </span>
+          ))}
+        </span>
       )}
-      <span className="lc-chip-name" title={isModelAgent(settings.agent) || settings.agent === "demo" ? undefined : modelLabel(shownModel, providers)}>
-        {isModelAgent(settings.agent) ? modelLabel(model, providers) : settings.agent === "demo" ? "Demo run" : coder.name}
+      <span className="lc-chip-name" title={whoNow.full !== whoNow.name ? whoNow.full : undefined}>
+        {whoNow.name}
       </span>
+      {whoNow.agent && settings.sidekick && (
+        <span className="lc-way-marks">
+          <ModelMark kind={markOf(settings.sidekick)} size={11} />
+        </span>
+      )}
       {compare.length > 0 && <span className="lc-chip-more">· {compare.length + 1} models</span>}
       <I.chevD size={11} />
     </>
   );
-
-  // Dual frontier, how far Auto goes, what happens after each change, and how to compare: under the modes, in
-  // the room the model list leaves there, so the panel is only as tall as its taller column.
-  const teamExtras = (close: () => void) => (
-    <>
-      {cast && (
-        <div className="lc-team-help">
-          <div className="lc-team-lab">Models</div>
-          <div className="lc-team-chips">
-            <button type="button" className="lc-mchip l-focus" data-on={!dual || undefined} aria-pressed={!dual} onClick={() => pickDual(false)}>
-              Frontier + cheaper
-            </button>
-            <button type="button" className="lc-mchip l-focus" data-on={dual || undefined} aria-pressed={dual} disabled={!second} title={second ? "A second frontier model builds in the cheaper one's place" : "Needs a frontier model from another maker: add one in Settings › Models"} onClick={() => pickDual(true)}>
-              Dual frontier
-            </button>
-          </div>
-          <p className="lc-quiet lc-team-note">
-            {way === "auto" ? `${label(cast.everyday)} does most of it, ${label(cast.strong)} the hard parts and repairs, ${label(cast.judge)} judges.` : `${label(cast.strong)} plans, ${label(cast.everyday)} builds.`} Settings › Agentic features picks them.
-          </p>
-        </div>
-      )}
-      {routed && cast && (
-        <div className="lc-team-help">
-          <div className="lc-team-lab">How far it goes</div>
-          <div className="lc-team-chips">
-            {ROUTE_LEVELS.map((l) => (
-              <button key={l.id} type="button" className="lc-mchip l-focus" data-on={routed === l.id || undefined} aria-pressed={routed === l.id} title={l.note} onClick={() => onSettings({ route: l.id })}>
-                {l.label}
-              </button>
-            ))}
-          </div>
-          <p className="lc-quiet lc-team-note">{ROUTE_LEVELS.find((l) => l.id === routed)?.note}.</p>
-        </div>
-      )}
-      {!routed && settings.agent !== "demo" && (
-        <div className="lc-team-help">
-          <div className="lc-team-lab">After each change</div>
-          <div className="lc-team-chips">
-            {AFTER.map((x) => (
-              <button key={x.id} type="button" className="lc-mchip l-focus" data-on={after === x.id || undefined} aria-pressed={after === x.id} title={x.note} onClick={() => onSettings({ after: x.id })}>
-                {x.label}
-              </button>
-            ))}
-          </div>
-          <p className="lc-quiet lc-team-note">{afterNote}</p>
-        </div>
-      )}
-      {onCompare && (
-        <p className="lc-quiet lc-team-note lc-team-cmp">
-          {compare.length ? `Sending to ${compare.length + 1}: each gets its own session and worktree from ${project.branch ?? "main"}. When they finish, compare and keep one.` : "Shift-click more models to give them the same ask, side by side."}
-        </p>
-      )}
-      <div className="lc-team-foot">
-        <button
-          type="button"
-          className="lc-link l-focus"
-          onClick={() => {
-            close();
-            window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "agentic" }));
-          }}
-        >
-          <I.flow size={13} />
-          Modes and models
-        </button>
-        {onNewAgent && (
-          <button
-            type="button"
-            className="lc-link l-focus"
-            onClick={() => {
-              close();
-              onNewAgent();
-            }}
-          >
-            <I.plus size={13} />
-            New agent
-          </button>
-        )}
-      </div>
-    </>
-  );
-
-  const teamPanel = (close: () => void) => (
-    <div className="lc-team">
-      <PanelHead end={project.name}>Who works on this</PanelHead>
-      {/* Two columns side by side, as tall as the taller one, so the panel opens where it's asked. */}
-      <div className="lc-team-cols">
-        <div className="lc-team-col">
-          <div className="lc-team-lab">How it works</div>
-          {/* The three modes, with who's in each underneath. Your agents are a tab of the model picker. */}
-          {MODES.map((m) => {
-            const on = way === m.id && settings.agent !== "demo" && (m.id !== "solo" || isModelAgent(settings.agent));
-            const note = m.id === "solo" ? `${isModelAgent(settings.agent) ? modelLabel(model, providers) : cast ? label(cast.everyday) : "a model"} alone${way === "solo" && after === "refine" && refiner ? `, ${label(refiner)} refines` : way === "solo" && after === "check" && checker ? `, ${label(checker)} checks` : ""}` : !cast ? "No model is ready yet" : m.id === "plan" ? `${label(cast.strong)} plans, ${label(cast.everyday)} builds` : `${label(cast.everyday)} for most, ${label(cast.strong)} for hard jobs`;
-            const marks = m.id === "solo" ? marksOf([isModelAgent(settings.agent) ? settings.agent : `@${cast?.everyday ?? model}`]) : cast ? marksOf([`@${cast.strong}`, `@${cast.everyday}`]) : undefined;
-            return (
-              <WayRow
-                key={m.id}
-                on={on}
-                icon={m.id === "solo" ? <I.node size={13} /> : m.id === "plan" ? <I.flow size={13} /> : <I.branchIf size={13} />}
-                title={m.label}
-                note={note}
-                marks={marks}
-                onPick={() => {
-                  if (m.id === "solo" && !isModelAgent(settings.agent) && cast) onSettings({ lead: undefined, route: undefined, agent: `@${cast.everyday}`, model: undefined });
-                  else pickMode(m.id);
-                  close();
-                }}
-              />
-            );
-          })}
-          <div className="lc-team-extras">{teamExtras(close)}</div>
-        </div>
-        <div className="lc-team-col">
-          <div className="lc-team-lab">{pickerTab === AGENTS_TAB ? "Or one of your agents" : way === "solo" ? "The model" : "Or just a model"}</div>
-          {/* The models each tool said it runs: a rail of tools, a search, ⌘1 to ⌘9; your agents (and
-              the demo) on a tab of their own at the rail's foot, open when the session runs on one. */}
-          <ModelPicker
-            value={isModelAgent(settings.agent) && !settings.lead && !routed ? settings.agent.slice(1) : undefined}
-            also={compare.map((c) => c.slice(1))}
-            autoFocus={false}
-            height={330}
-            onTab={setPickerTab}
-            extra={
-              agentRows.length
-                ? { id: AGENTS_TAB, label: "Your agents", icon: <I.agents size={15} />, open: !settings.lead && !routed && !isModelAgent(settings.agent), body: agentRows.map((r) => r(close)) }
-                : undefined
-            }
-            onPick={(ref, how) => {
-              const id = `@${ref}`;
-              const on = isModelAgent(settings.agent) && !settings.lead && !routed && settings.agent === id;
-              // Shift-click gives the same ask to this model too, to compare and keep one.
-              if (how.shiftKey && onCompare) {
-                if (on) return;
-                onCompare(compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id].slice(0, 3));
-                return;
-              }
-              onSettings({ route: undefined, lead: undefined, agent: id, model: undefined });
-              onCompare?.(compare.filter((x) => x !== id));
-              close();
-            }}
-          />
-        </div>
-      </div>
-    </div>
-  );
+  // A pair shows its Lead and Sidekick beside the rows, so the panel is wider then.
+  const pairShown = Boolean(settings.sidekick) && settings.agent !== "demo";
 
   // The levels the coder's model takes; Claude Code's Ultracode and Ultrathink sit after them.
   // On Home they open downward, off the heading, and scroll in what room there is rather than flip.
@@ -1272,8 +1060,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           <div className="lc-card-row" ref={tray}>
             {attach}
             <span className="lc-seg">
-              <Pop label="Who works on this" side={variant === "home" ? "bottom" : "top"} width={640} keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
-                {teamPanel}
+              <Pop label={`Who works on this: ${whoNow.full}. Change it`} side={variant === "home" ? "bottom" : "top"} width={pairShown ? 620 : 320} keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
+                {(close) => <WhoPanel project={project} settings={settings} onSettings={onSettings} compare={compare} onCompare={onCompare} onNewAgent={onNewAgent} close={close} />}
               </Pop>
               {effortPick && <span className="lc-seg-div" aria-hidden />}
               {effortPick}
@@ -1379,18 +1167,297 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   );
 }
 
-/** A way of working in the panel: what it does, who's in it underneath, and their makers' marks. */
-function WayRow({ on, icon, title, note, marks, onPick }: { on: boolean; icon: ReactNode; title: string; note: string; marks?: ReactNode; onPick: () => void }) {
-  return (
-    <button type="button" className="lc-agent-row lc-way-row l-focus" data-on={on || undefined} aria-pressed={on} onClick={onPick}>
-      <span className="lc-radio" data-on={on || undefined} />
-      <span className="lc-way-i">{icon}</span>
-      <span className="lc-agent-row-t">
-        <b>{title}</b>
-        <span>{note}</span>
-      </span>
-      {marks && <span className="lc-way-marks">{marks}</span>}
+/** Two rings overlapping: a pair. */
+const PairIcon = ({ size = 14 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+    <circle cx="9" cy="12" r="5" />
+    <circle cx="15" cy="12" r="5" />
+  </svg>
+);
+
+/**
+  The arrow keys walk a column's rows (Home and End to its ends), as Tab does; from the search
+  field only down leaves it. A list that takes the arrows itself (the model list) has used them first.
+*/
+function rove(e: KeyEvent<HTMLElement>) {
+  if (e.defaultPrevented || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+  if (e.target instanceof HTMLInputElement && e.key !== "ArrowDown") return;
+  const rows = [...e.currentTarget.querySelectorAll<HTMLElement>("[data-rove]:not(:disabled)")];
+  if (!rows.length) return;
+  const i = rows.indexOf(document.activeElement as HTMLElement);
+  const to = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : i < 0 ? 0 : (i + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+  rows[to]?.focus();
+  e.preventDefault();
+}
+
+type PanelProps = { project: Project; settings: RunSettings; onSettings: (patch: Partial<RunSettings>) => void; compare: string[]; onCompare?: (refs: string[]) => void; onNewAgent?: () => void; close: () => void };
+
+/*
+  Who works on this: a search on top; Pair, Best and Fast, filled in from what's ready (your picks
+  first); then every model by tool, your agents, and the Demo when it's shown. Picking Pair shows
+  its Lead and Sidekick beside the rows, each opening the model list; a choice there is this
+  session's own and leaves Settings as they are. A tool's row opens the model list on that tool.
+*/
+function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgent, close }: PanelProps) {
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
+  const picks = useEngine((s) => s.settings.picks);
+  const showDemo = useEngine((s) => s.settings.showDemo === true) && agents.some((a) => a.id === "demo");
+  const pair = useMemo(() => castOf(providers, { picks }), [providers, picks]);
+  const two = pairReady(pair);
+  const way: Way | "demo" = settings.agent === "demo" ? "demo" : wayOf(settings, pair);
+  const tools = useMemo(() => toolsOf(providers), [providers]);
+  const yours = agents.filter((a) => a.id !== "demo");
+  const [query, setQuery] = useState("");
+  // What the column shows: the rows (""), a tool's models (its id), or your agents.
+  const [view, setView] = useState("");
+  const [open, setOpen] = useState<"" | "lead" | "side">("");
+  const find = useRef<HTMLInputElement>(null);
+  const col = useRef<HTMLDivElement>(null);
+  const leadBtn = useRef<HTMLButtonElement>(null);
+  const sideBtn = useRef<HTMLButtonElement>(null);
+  /** Across the two columns by the arrows: Right from the Pair row to the Lead, Left from Lead or Sidekick back to it. */
+  const across = (e: KeyEvent<HTMLElement>) => {
+    if (e.defaultPrevented || !(e.target instanceof HTMLButtonElement)) return;
+    const to = e.key === "ArrowRight" && e.target.dataset.way === "pair" ? leadBtn.current : e.key === "ArrowLeft" && e.target.classList.contains("lc-who-pick") ? col.current?.querySelector<HTMLElement>("[data-way='pair']") : null;
+    if (!to) return;
+    e.preventDefault();
+    to.focus();
+  };
+  const label = (ref: string) => modelLabel(ref, providers);
+  // A list or a view that goes takes the focus it had back to what opened it, not to the page.
+  const refocus = (el: () => HTMLElement | null | undefined) => requestAnimationFrame(() => el()?.focus({ preventScroll: true }));
+  const shut = () => (setOpen(""), refocus(() => (open === "side" ? sideBtn : leadBtn).current));
+  const leave = () => (setView(""), refocus(() => col.current?.querySelector<HTMLElement>(`[data-view="${view}"]`) ?? find.current));
+  const enter = (id: string) => (setView(id), id === AGENTS_TAB && refocus(() => col.current?.querySelector<HTMLElement>(".lc-who-opt[data-on], .lc-who-opt")));
+  /** Escape closes the innermost first: an open Lead or Sidekick list, then a tool's models, and only then the panel (Pop). */
+  const escape = (e: KeyEvent<HTMLElement>, out: () => void) => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    e.preventDefault();
+    out();
+  };
+
+  // The pair: this session's own when it is one, else the one Pair would start.
+  const own = way === "pair";
+  const lead = own ? settings.agent : pair ? `@${pair.lead}` : undefined;
+  const side = own ? settings.sidekick : pair?.sidekick;
+  const leadWho = lead ? agentOf(lead, agents, providers) : undefined;
+  const leadName = !lead || !leadWho ? "" : isModelAgent(lead) ? label(lead.slice(1)) : leadWho.name;
+  const leadShort = lead && isModelAgent(lead) ? shortName(leadName) : leadName;
+
+  /** One model or agent, from the lists: no sidekick, and the panel closes. Shift-click adds a model to compare instead. */
+  const pickOne = (ref: string, how: { shiftKey: boolean }) => {
+    const id = `@${ref}`;
+    if (how.shiftKey && onCompare) {
+      if (settings.agent === id && !settings.sidekick) return;
+      onCompare(compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id].slice(0, 3));
+      return;
+    }
+    onSettings({ agent: id, sidekick: undefined, model: undefined });
+    onCompare?.(compare.filter((x) => x !== id));
+    close();
+  };
+  const pickAgent = (id: string, sidekick?: string) => {
+    onSettings({ agent: id, sidekick, model: undefined });
+    close();
+  };
+  const pickWay = (w: "pair" | "best" | "fast") => {
+    if (!pair) return;
+    // Picking Pair keeps the panel open on its Lead and Sidekick; a pair already picked stays as it is.
+    if (w === "pair") return void (way !== "pair" && onSettings({ agent: `@${pair.lead}`, sidekick: pair.sidekick, model: undefined }));
+    onSettings({ agent: `@${w === "best" ? pair.lead : pair.sidekick}`, sidekick: undefined, model: undefined });
+    close();
+  };
+  // A pair is two models: the lead's sidekick can't be the lead's own model.
+  const leadModel = leadWho?.model;
+  const pickLead = (id: string) => {
+    if (agentOf(id, agents, providers).model === side) return toast("The lead and its sidekick are two different models", { description: "Pick another sidekick first, or another lead." });
+    onSettings({ agent: id, model: undefined });
+    shut();
+  };
+  const pickSide = (ref: string) => {
+    if (ref === leadModel) return toast("The lead and its sidekick are two different models", { description: `${leadName} leads: pick another model to work for it.` });
+    onSettings({ sidekick: ref });
+    shut();
+  };
+
+  const rows: { id: "pair" | "best" | "fast"; title: string; icon: ReactNode; note: string; marks: MarkKind[]; off: boolean }[] = [
+    {
+      id: "pair",
+      title: "Pair",
+      icon: <PairIcon size={14} />,
+      note: own || two ? `${leadShort} leads, ${shortName(label(side!))} works` : pair ? "Needs two different models ready" : "No model is ready yet",
+      marks: own || two ? [markOf(leadModel ?? ""), markOf(side!)] : [],
+      off: !two && !own,
+    },
+    { id: "best", title: "Best", icon: <I.star size={14} />, note: pair ? `${label(pair.lead)} alone` : "No model is ready yet", marks: pair ? [markOf(pair.lead)] : [], off: !pair },
+    { id: "fast", title: "Fast", icon: <I.bolt size={14} />, note: !pair ? "No model is ready yet" : two ? `${label(pair.sidekick)} alone` : "The same model as Best, with one ready", marks: two && pair ? [markOf(pair.sidekick)] : [], off: !two },
+  ];
+  const back = (
+    <button type="button" className="lc-who-back l-focus" data-rove aria-label="Back to all models" onClick={leave}>
+      <I.chevL size={12} />
+      All models
     </button>
+  );
+  const compareLine = onCompare && (
+    <p className="lc-who-note lc-who-foot">
+      {compare.length ? `Sending to ${compare.length + 1}: each gets its own session and worktree from ${project.branch ?? "main"}. When they finish, compare and keep one.` : "Shift-click more models to give them the same ask, side by side."}
+    </p>
+  );
+  const oneValue = isModelAgent(settings.agent) && !settings.sidekick ? settings.agent.slice(1) : undefined;
+  const agentRow = (a: (typeof agents)[number], on: boolean, onPick: () => void) => (
+    <button key={a.id} type="button" className="lc-who-opt l-focus" data-rove data-on={on || undefined} aria-pressed={on} onClick={onPick}>
+      <Disc agent={a} size={16} />
+      <span className="lc-who-opt-t">{a.name}</span>
+      <span className="lc-who-opt-n">{label(a.model)}</span>
+    </button>
+  );
+
+  let main: ReactNode;
+  if (view === AGENTS_TAB)
+    main = (
+      <>
+        {back}
+        <div className="lc-who-scroll">
+          <div className="lc-team-lab">Your agents</div>
+          {yours.map((a) => agentRow(a, !settings.sidekick && settings.agent === a.id, () => pickAgent(a.id)))}
+          {onNewAgent && (
+            <button type="button" className="lc-who-opt l-focus" data-rove onClick={() => (close(), onNewAgent())}>
+              <I.plus size={13} />
+              <span className="lc-who-opt-t">New agent</span>
+            </button>
+          )}
+        </div>
+      </>
+    );
+  else if (view)
+    main = (
+      <>
+        {back}
+        <ModelPicker value={oneValue} also={compare.map((c) => c.slice(1))} tab={view} autoFocus height={330} onPick={pickOne} />
+        {compareLine}
+      </>
+    );
+  else
+    main = (
+      <>
+        <label className="lc-mp-find lc-who-find">
+          <I.search size={13} />
+          <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && query && (e.preventDefault(), setQuery(""))} placeholder="Find a model" aria-label="Find a model" spellCheck={false} />
+        </label>
+        {query.trim() ? (
+          <ModelPicker value={oneValue} also={compare.map((c) => c.slice(1))} query={query} keysFrom={find} height={330} onPick={pickOne} />
+        ) : (
+          <>
+            {rows.map((r) => {
+              const on = way === r.id;
+              return (
+                <button key={r.id} type="button" className="lc-who-row l-focus" data-rove data-way={r.id} data-on={on || undefined} aria-pressed={on} aria-label={`${r.title}, ${r.note}`} disabled={r.off} onClick={() => pickWay(r.id)}>
+                  <span className="lc-who-i">{r.icon}</span>
+                  <span className="lc-agent-row-t">
+                    <b>{r.title}</b>
+                    <span>{r.note}</span>
+                  </span>
+                  <span className="lc-way-marks">
+                    {r.marks.map((k, i) => (
+                      <ModelMark key={`${k}${i}`} kind={k} size={12} />
+                    ))}
+                  </span>
+                  <span className="lc-who-chev">{r.id === "pair" && !r.off && <I.chevR size={13} />}</span>
+                </button>
+              );
+            })}
+            {/* The search and the three rows stay put; what's under them scrolls when the room the panel opened into is short. */}
+            <div className="lc-who-scroll">
+              <div className="lc-who-sep" />
+              <div className="lc-team-lab">All models</div>
+              {tools.map((p) => (
+                <button key={p.id} type="button" className="lc-who-tool l-focus" data-rove data-view={p.id} data-on={(oneValue && oneValue.startsWith(`${p.id}:`)) || undefined} aria-label={`${p.label}${p.account ? `, ${p.account}` : ""}: its models`} onClick={() => enter(p.id)}>
+                  <span className="lc-who-i">
+                    <ModelMark kind={markOf(`${p.id}:`)} size={13} />
+                  </span>
+                  <span className="lc-who-tool-t">
+                    {p.label}
+                    {p.account && <small> · {p.account}</small>}
+                  </span>
+                  <I.chevR size={13} />
+                </button>
+              ))}
+              {tools.length === 0 && <p className="lc-who-note">No tool is signed in yet. Settings › Models connects one.</p>}
+              {(yours.length > 0 || onNewAgent) && (
+                <button type="button" className="lc-who-tool l-focus" data-rove data-view={AGENTS_TAB} data-on={(!settings.sidekick && yours.some((a) => a.id === settings.agent)) || undefined} onClick={() => enter(AGENTS_TAB)}>
+                  <span className="lc-who-i">
+                    <I.agents size={13} />
+                  </span>
+                  <span className="lc-who-tool-t">Your agents</span>
+                  <I.chevR size={13} />
+                </button>
+              )}
+              {showDemo && (
+                <button type="button" className="lc-who-tool l-focus" data-rove data-on={way === "demo" || undefined} aria-pressed={way === "demo"} onClick={() => pickAgent("demo", "demo:demo")}>
+                  <span className="lc-who-i">
+                    <ModelMark kind="demo" size={13} />
+                  </span>
+                  <span className="lc-who-tool-t">
+                    Demo run<small> · a scripted pair, no account</small>
+                  </span>
+                  <span />
+                </button>
+              )}
+            </div>
+            {compareLine}
+          </>
+        )}
+      </>
+    );
+
+  return (
+    <div className="lc-team lc-who-panel" data-pair={way === "pair" || undefined}>
+      <div className="lc-team-cols">
+        <div ref={col} className="lc-team-col" role="group" aria-label="Who works on this" onKeyDown={(e) => (rove(e), across(e), view && escape(e, leave))}>
+          {main}
+        </div>
+        {way === "pair" && lead && side && (
+          <div className="lc-team-col lc-who-pair" role="group" aria-label="Pair" onKeyDown={(e) => (rove(e), across(e))}>
+            <div className="lc-who-h">Pair</div>
+            <p className="lc-who-note lc-who-lede">The lead plans, decides and reviews. The sidekick does the work the lead hands it.</p>
+            <div className="lc-who-part">
+              <span>Lead</span>
+              <button ref={leadBtn} type="button" className="lc-who-pick l-focus" data-rove aria-expanded={open === "lead"} aria-label={`Lead: ${leadName}. Change it`} onClick={() => setOpen(open === "lead" ? "" : "lead")}>
+                {isModelAgent(lead) ? <ModelMark kind={markOf(leadModel ?? "")} size={12} /> : leadWho && <Disc agent={leadWho} size={16} />}
+                <span>{leadName}</span>
+                <I.chevD size={12} />
+              </button>
+            </div>
+            {open === "lead" && (
+              <div className="lc-who-list" onKeyDown={(e) => escape(e, shut)}>
+                <ModelPicker
+                  value={isModelAgent(lead) ? lead.slice(1) : undefined}
+                  autoFocus
+                  height={260}
+                  extra={yours.length ? { id: AGENTS_TAB, label: "Your agents", icon: <I.agents size={15} />, open: !isModelAgent(lead), body: yours.map((a) => agentRow(a, settings.agent === a.id, () => pickLead(a.id))) } : undefined}
+                  onPick={(ref) => pickLead(`@${ref}`)}
+                />
+              </div>
+            )}
+            <div className="lc-who-part">
+              <span>Sidekick</span>
+              <button ref={sideBtn} type="button" className="lc-who-pick l-focus" data-rove aria-expanded={open === "side"} aria-label={`Sidekick: ${label(side)}. Change it`} onClick={() => setOpen(open === "side" ? "" : "side")}>
+                <ModelMark kind={markOf(side)} size={12} />
+                <span>{label(side)}</span>
+                <I.chevD size={12} />
+              </button>
+            </div>
+            {open === "side" && (
+              <div className="lc-who-list" onKeyDown={(e) => escape(e, shut)}>
+                <ModelPicker value={side} autoFocus height={260} onPick={pickSide} />
+              </div>
+            )}
+            <p className="lc-who-note lc-who-foot">Filled in from the models you have ready. Your own picks stay until you change them.</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

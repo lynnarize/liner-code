@@ -2761,12 +2761,6 @@ html[data-native="mac"] .lc-sb-head {
   box-shadow: inset 1.5px 0 0 var(--l-line);
   font-size: 13.5px;
 }
-/* Plan and Auto in the session's header: their models' marks, then the mode's name. */
-.lc-chain-marks {
-  display: inline-flex;
-  gap: 4px;
-  color: var(--l-ink-2);
-}
 /* Permissions: a heading, then each level a row (its name, what it does, a tick when it's on,
    its number), and Full access last, a plain row you enable. */
 .lc-perm {
@@ -4136,19 +4130,10 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-team-col > .lc-mp {
   flex: 0 1 auto;
 }
-/* Who the lead brings in, comparing and New agent sit at the foot of the agents' column. */
-.lc-team-extras {
-  display: grid;
-  margin-top: auto;
-  padding-top: 8px;
-}
-.lc-team-extras:empty {
-  display: none;
-}
-/* Side by side when there's room; stacked in a narrow window. */
+/* Side by side when there's room (a pair's Lead and Sidekick beside the rows); stacked in a narrow window. */
 @container (min-width: 560px) {
   .lc-team-cols {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     gap: 0;
   }
@@ -4169,129 +4154,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-size: 12px;
   color: var(--l-ink-3);
 }
-.lc-team-models {
-  display: grid;
-  gap: 2px;
-  padding: 0 4px 4px;
-}
-.lc-team-prov {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  align-items: start;
-  column-gap: 8px;
-  padding: 3px 0;
-}
-.lc-team-prov-n {
-  padding: 6px 0 0 5px;
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-team-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.lc-mchip {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 9px;
-  background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
-  cursor: pointer;
-  transition: background 140ms ease, box-shadow 140ms ease;
-}
-.lc-mchip .lc-model {
-  font-size: 12.5px;
-  color: var(--l-ink-2);
-}
-.lc-mchip[data-on] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-accent),
-    0 1px 2px var(--l-drop);
-}
-.lc-mchip[data-on] .lc-model {
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-mchip:not([data-on]):hover {
-    background: var(--l-wash-2);
-  }
-}
-.lc-team-foot {
-  display: flex;
-  align-items: center;
-  margin-top: 4px;
-  padding: 6px 4px 2px;
-  border-top: 1px solid var(--l-line);
-}
-.lc-team-extras .lc-team-help {
-  padding: 8px 9px 4px;
-}
-.lc-team-extras .lc-team-cmp {
-  padding: 6px 9px 0;
-}
-.lc-team-extras .lc-team-foot {
-  padding: 6px 5px 0;
-}
-.lc-agent-row {
-  display: grid;
-  grid-template-columns: 16px 22px minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 10px;
-  width: 100%;
-  min-height: 46px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 12px;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-.lc-agent-row[data-on] {
-  background: var(--lc-plate);
-  box-shadow: none;
-}
-@media (hover: hover) {
-  .lc-agent-row:not([data-on]):hover {
-    background: var(--l-wash-2);
-  }
-}
-/* A way of working in the composer's panel: its tile, what it does, and the makers' marks of who's in it. */
-.lc-way-row {
-  grid-template-columns: 16px 22px minmax(0, 1fr) auto;
-}
-.lc-way-i,
-.lc-way-chip-i {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: var(--l-wash-2);
-  color: var(--l-ink-2);
-}
-.lc-way-row[data-on] .lc-way-i {
-  background: var(--l-accent-soft);
-  color: var(--l-accent-text);
-}
-.lc-way-chip-i {
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-}
-.lc-way-marks {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--l-ink-3);
-}
 .lc-agent-row-t {
   display: grid;
   min-width: 0;
@@ -4310,12 +4172,298 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-size: 12px;
   color: var(--l-ink-3);
 }
-.lc-agent-row-m {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--l-wash);
-  font-size: 12px;
+/*
+  The picker's rows (the mockup "one model or a pair"): Pair, Best and Fast with their tile, who's
+  in each and their makers' marks; then each tool, your agents and the Demo as rows that open.
+*/
+/*
+  The panel is no taller than the room it opened into (Pop caps it): each column holds to that
+  height, and inside it the search, the three rows and the compare line stay put while the lists
+  between them scroll. The Pair column scrolls as one, its open model list with it. The columns
+  clip rather than scroll, with room left for the focus rings at their edges.
+*/
+.lc-who-panel,
+.lc-who-panel .lc-team-cols {
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+.lc-who-panel .lc-team-col {
+  margin: 0;
+  padding: 0;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+}
+.lc-who-panel .lc-team-col > * {
+  flex: none;
+}
+.lc-who-panel .lc-team-col > :is(.lc-who-scroll, .lc-mp) {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.lc-who-panel .lc-team-col.lc-who-pair {
+  overflow: hidden auto;
+  scroll-padding: 6px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+@container (min-width: 560px) {
+  .lc-who-panel .lc-team-col + .lc-team-col {
+    margin-left: 6px;
+    padding-left: 6px;
+  }
+}
+.lc-who-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: calc(var(--lc-ring) * -1);
+  padding: var(--lc-ring);
+  overflow: hidden auto;
+  /* A row the keyboard scrolls to stops a ring's width in from the edge, and below the line that stays at the top, so its ring isn't cut off. */
+  scroll-padding: calc(var(--lc-ring) * 2 + 6px) var(--lc-ring) var(--lc-ring);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lc-who-scroll > * {
+  flex: none;
+}
+.lc-who-find {
+  margin-bottom: 4px;
+}
+.lc-who-row,
+.lc-who-tool {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto 14px;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-who-tool {
+  grid-template-columns: 22px minmax(0, 1fr) 14px;
+  min-height: 40px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.lc-who-tool > svg:last-child {
+  color: var(--l-ink-3);
+}
+.lc-who-row[data-on] {
+  background: var(--lc-plate);
+}
+.lc-who-row:disabled {
+  cursor: default;
+}
+/* Quiet but still readable: the title takes the note's grey (4.5:1 and more in both themes) rather than fading, and only the icon fades. */
+.lc-who-row:disabled b {
+  color: var(--l-ink-3);
+}
+.lc-who-row:disabled .lc-who-i {
+  opacity: 0.55;
+}
+@media (hover: hover) {
+  .lc-who-row:not([data-on], :disabled):hover,
+  .lc-who-tool:hover,
+  .lc-who-opt:not([data-on]):hover,
+  .lc-who-back:hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-who-i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--l-wash-2);
   color: var(--l-ink-2);
+}
+.lc-who-row[data-on] .lc-who-i {
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+.lc-who-chev {
+  display: grid;
+  place-items: center;
+  color: var(--l-ink-3);
+}
+.lc-who-tool-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-who-tool-t small {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-who-sep {
+  height: 1px;
+  margin: 5px 4px 0;
+  background: var(--l-line);
+}
+/*
+  In the scrolling part the line stays put at its top, and its shadow, in the panel's own colour,
+  covers the band above it: what scrolls up goes under the line rather than showing through under
+  the Fast row. The rows scroll to stop clear of it (scroll-padding), so no ring goes under it.
+*/
+.lc-who-scroll > .lc-who-sep {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-shadow: 0 -6px 0 5px var(--l-float);
+}
+.lc-way-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--l-ink-3);
+}
+.lc-who-note {
+  margin: 0;
+  padding: 8px 9px 4px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+.lc-who-foot {
+  margin-top: 4px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-who-back {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+/* An agent or a choice in a short list: its disc or mark, its name, and what it runs on. */
+.lc-who-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.lc-who-opt[data-on] {
+  background: var(--lc-plate);
+}
+.lc-who-opt-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-who-opt-n {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+/* The pair beside the rows: who leads and who's its sidekick, each a button that opens the model list. */
+.lc-who-h {
+  padding: 7px 9px 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--l-ink-2);
+}
+.lc-who-lede {
+  padding-top: 0;
+}
+.lc-who-part {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 4px 0 9px;
+  color: var(--l-ink-2);
+}
+.lc-who-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 190px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-who-pick > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-who-pick > svg:last-child {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-who-pick[aria-expanded="true"] {
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px var(--l-drop);
+}
+@media (hover: hover) {
+  .lc-who-pick:not([aria-expanded="true"]):hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-who-list {
+  display: grid;
+  margin: 0 4px 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--l-wash);
+}
+/* The composer's chip: the marks of who works, each on a small tile, a pair's two overlapping. */
+.lc-who-marks {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+.lc-who-tile {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--l-surface);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.lc-who-tile + .lc-who-tile {
+  margin-left: -5px;
+  box-shadow:
+    inset 0 0 0 1px var(--l-line),
+    0 0 0 1.5px var(--l-surface);
 }
 .lc-quiet + .lc-quiet {
   margin-left: 4px;
@@ -5904,6 +6052,10 @@ html[data-native="mac"] .lc-lockup {
   font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1.15;
+}
+/* Focus lands on the heading when Settings opens, for a screen reader; it isn't a control, so no ring. */
+.lc-st-hero h1:focus {
+  outline: none;
 }
 .lc-st-hero p {
   margin: 3px 0 0;
@@ -7637,4 +7789,108 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-beside + .lc-beside {
   border-left: 1px solid var(--l-line);
+}
+
+/* ---------- The Reviewer's switch: its word in the session's bar, and its menu ---------- */
+/* The word is a button now, still quiet text in its colour (surfaces.css .lc-verdict), with a plate only when you reach for it. */
+.lc-pick.lc-rvw {
+  gap: 5px;
+  height: 30px;
+  padding: 0 7px 0 8px;
+  border-radius: 9px;
+  transition: background 140ms ease;
+}
+@media (hover: hover) {
+  .lc-pick.lc-rvw:hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-pick.lc-rvw[aria-expanded="true"] {
+  background: var(--l-wash-2);
+}
+.lc-rvw > svg:last-child {
+  flex: none;
+  color: var(--l-ink-4);
+}
+/* Off reads quieter than on by losing its shield, not its ink: ink-4 is under 4.5:1 on the paper, so the words keep ink-3. */
+.lc-rvw[data-state="off"] {
+  color: var(--l-ink-3);
+}
+.lc-rvm {
+  display: grid;
+  gap: 1px;
+}
+.lc-rvm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 4px 0 9px;
+  font-size: 13px;
+}
+.lc-rvm-k {
+  color: var(--l-ink-2);
+}
+.lc-rvm-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.lc-rvm-who > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-rvm-who > svg {
+  flex: none;
+}
+.lc-rvm-who > svg:last-child {
+  color: var(--l-ink-4);
+}
+.lc-rvm-pick {
+  display: grid;
+  gap: 1px;
+  margin: 0 4px 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--l-wash);
+}
+.lc-rvm-note {
+  margin: 0;
+  padding: 4px 9px 6px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+.lc-rvm-foot {
+  display: flex;
+  margin-top: 4px;
+  padding: 8px 9px 4px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-rvm-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-rvm-link:hover {
+    color: var(--l-ink);
+  }
 }

@@ -1,6 +1,6 @@
 /*
-  The engine's pure parts: what the Reviewer's answer means, who checks whom, who fills the parts
-  of each pairing, how a Claude writer's helpers are set up, how settings from before modes and
+  The engine's pure parts: what the Reviewer's answer means, who reviews whom, who leads a pair and
+  who is its sidekick, how a Claude writer's helpers are set up, how settings from before modes and
   sessions of a deleted agent carry on, when a routine fires next and what its prompt says, the Browser
   surface's proxy, and the secrets the engine keeps from what it starts. Run with `npm test -w engine`.
 */
@@ -8,12 +8,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import type { Access, AgentProfile, ProviderInfo, Thread } from "../../contracts/src/index.ts";
-import { castOf, checkerOf, emptyUsage, frontiersOf, makerOf, smallChange } from "../../contracts/src/index.ts";
-import { claudeTeam, parseFindings, quickOf, subagentName } from "../src/review.ts";
+import { castOf, emptyUsage, frontierClass, makerOf, reviewerOf, smallChange, startOf } from "../../contracts/src/index.ts";
+import { claudeTeam, parseFindings, quickOf, reviewPrompt, subagentName } from "../src/review.ts";
 import { contextSources } from "../src/providers/claude.ts";
 import { describeTrigger, fill, nextRun, sameSecret } from "../src/routines.ts";
 import { Proxies } from "../src/proxy.ts";
-import { compareWays, githubName } from "../src/api.ts";
+import { githubName } from "../src/api.ts";
 import { clean, isPrAsk } from "../src/runtime.ts";
 import { testCommand, testSummary } from "../src/prflow.ts";
 import { defaultSettings, fourLevels, fromWorkStyle, Store } from "../src/store.ts";
@@ -75,108 +75,132 @@ test("permissions: four levels, Auto by default; the old default and the levels 
   assert.equal(new Store(home).settings.defaultAccess, "ask");
 });
 
-test("checks: another maker than the writer's reads it, from the cast", () => {
-  const cast = { everyday: "codex:gpt-6-luna", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["codex:gpt-6-sol"] };
-  assert.equal(checkerOf("codex:gpt-6-luna", cast), "claude:claude-opus-5-5");
-  assert.equal(checkerOf("claude:claude-sonnet-5-5", cast), "codex:gpt-6-sol");
-  assert.equal(checkerOf("opencode:opencode/deepseek-v4.1-flash-free", cast), "claude:claude-opus-5-5");
-  // One maker only: another model of it, never the writer itself.
-  assert.equal(checkerOf("claude:claude-opus-5-5", { everyday: "claude:claude-sonnet-5-5", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: [] }), "claude:claude-sonnet-5-5");
-  assert.equal(checkerOf("claude:claude-opus-5-5", null), null);
+test("reviewer: another maker than the writer's reads it; one maker only, another of its models, never the writer", () => {
+  const both = [provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5"]), provider("codex", ["gpt-6-sol", "gpt-6-luna"])];
+  assert.equal(reviewerOf(["codex:gpt-6-luna"], both), "claude:claude-opus-5-5");
+  assert.equal(reviewerOf(["claude:claude-sonnet-5-5"], both), "codex:gpt-6-sol");
+  assert.equal(reviewerOf(["opencode:opencode/deepseek-v4.1-flash-free"], both), "claude:claude-opus-5-5");
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [both[0]]), "claude:claude-sonnet-5-5");
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], []), null);
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [provider("claude", ["claude-opus-5-5"])]), null, "nobody but the writer");
 });
 
-test("checks: the checker you picked reads it, even of the writer's own maker; never the writer itself", () => {
+test("reviewer: in a pair the sidekick wrote too: it never reads its own edits, and a third maker reads when there is one", () => {
+  const claude = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5"]);
+  const codex = provider("codex", ["gpt-6-sol", "gpt-6-luna"]);
+  const gemini = provider("acp.gemini", ["gemini-3-pro", "gemini-3-flash"]);
+  // Opus leads, Sol works: with only the two makers, Sol (the lead's other maker's best) would read; it wrote, so Luna does.
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [claude, codex]), "codex:gpt-6-sol");
+  assert.equal(reviewerOf(["claude:claude-opus-5-5", "codex:gpt-6-sol"], [claude, codex]), "codex:gpt-6-luna");
+  // A third maker ready: neither the lead's nor the sidekick's maker reads.
+  assert.equal(reviewerOf(["claude:claude-opus-5-5", "codex:gpt-6-sol"], [claude, codex, gemini]), "acp.gemini:gemini-3-pro");
+  // Your pick loses when it's the sidekick.
+  assert.equal(reviewerOf(["claude:claude-opus-5-5", "codex:gpt-6-sol"], [claude, codex], { checker: "codex:gpt-6-sol" }), "codex:gpt-6-luna");
+  // Both of one maker: another of its models, never one of the two.
+  assert.equal(reviewerOf(["claude:claude-opus-5-5", "claude:claude-sonnet-5-5"], [claude]), null);
+  assert.equal(reviewerOf(["claude:claude-opus-5-5", "claude:claude-sonnet-5-5"], [provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"])]), "claude:claude-haiku-5-5");
+});
+
+test("reviewer: the one you picked reads it, even of the writer's own maker; never the writer itself", () => {
   const claude = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5"]);
   const hermes = provider("hermes", ["nous:openai/gpt-6-astra"]);
-  const picks = { frontier: "claude:claude-opus-5-5", cheaper: "claude:claude-sonnet-5-5", checker: "claude:claude-opus-5-5" };
-  const cast = castOf([claude, hermes], { picks });
-  // Sonnet builds, Opus checks, as Settings says; Astra in Hermes is only for when there's no pick.
-  assert.equal(checkerOf("claude:claude-sonnet-5-5", cast), "claude:claude-opus-5-5");
-  assert.equal(checkerOf("claude:claude-sonnet-5-5", castOf([claude, hermes], { picks: { ...picks, checker: undefined } })), "hermes:nous:openai/gpt-6-astra");
-  // Opus wrote it: it doesn't check itself; another maker's model does.
-  assert.equal(checkerOf("claude:claude-opus-5-5", cast), "hermes:nous:openai/gpt-6-astra");
+  const picks = { lead: "claude:claude-opus-5-5", sidekick: "claude:claude-sonnet-5-5", checker: "claude:claude-opus-5-5" };
+  // Sonnet writes, Opus reads, as Settings says; Astra in Hermes is only for when there's no pick.
+  assert.equal(reviewerOf(["claude:claude-sonnet-5-5"], [claude, hermes], picks), "claude:claude-opus-5-5");
+  assert.equal(reviewerOf(["claude:claude-sonnet-5-5"], [claude, hermes], { ...picks, checker: undefined }), "hermes:nous:openai/gpt-6-astra");
+  // Opus wrote it: it doesn't read itself; another maker's model does.
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [claude, hermes], picks), "hermes:nous:openai/gpt-6-astra");
   // A pick whose tool went away is automatic again.
-  assert.equal(checkerOf("claude:claude-sonnet-5-5", castOf([claude, hermes], { picks: { ...picks, checker: "codex:gpt-6-sol" } })), "hermes:nous:openai/gpt-6-astra");
+  assert.equal(reviewerOf(["claude:claude-sonnet-5-5"], [claude, hermes], { ...picks, checker: "codex:gpt-6-sol" }), "hermes:nous:openai/gpt-6-astra");
 });
 
-test("your models: frontier + cheaper, dual frontier with Astra wherever it runs, your picks with Chinese models", () => {
+test("reviewer: minds the cost, as it reads every change: Go's capped frontier models come last", () => {
+  const claude = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+  const codex = provider("codex", ["gpt-6-astra", "gpt-6.1-sol"]);
+  const go = provider("opencode", ["opencode-go:deepseek-v4-pro", "opencode-go:deepseek-v4.1-flash", "opencode-go:kimi-k3", "opencode-go:glm-5.3", "opencode-go:glm-5.3-flash", "opencode-go:gemini-4-argon"]);
+  // Go only: DeepSeek Flash's change is read by GLM Flash, not GLM-5.3 or Argon.
+  assert.equal(reviewerOf(["opencode:opencode-go:deepseek-v4.1-flash"], [go]), "opencode:opencode-go:glm-5.3-flash");
+  // Claude only: Opus is read by another Claude model, Sonnet as before; Sonnet by Opus.
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [claude]), "claude:claude-sonnet-5-5");
+  assert.equal(reviewerOf(["claude:claude-sonnet-5-5"], [claude]), "claude:claude-opus-5-5");
+  // Claude Code and Codex, both ways: Astra reads Opus, Opus reads Sol.
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [claude, codex]), "codex:gpt-6-astra");
+  assert.equal(reviewerOf(["codex:gpt-6.1-sol"], [claude, codex]), "claude:claude-opus-5-5");
+  // Claude Code and Go: Opus is read by Go's DeepSeek Flash, a quicker model, not by Argon or GLM-5.3; DeepSeek's change by Opus.
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [claude, go]), "opencode:opencode-go:deepseek-v4.1-flash");
+  assert.equal(reviewerOf(["opencode:opencode-go:deepseek-v4.1-flash"], [claude, go]), "claude:claude-opus-5-5");
+});
+
+test("your pair: a frontier lead and a quicker sidekick, from any tool; your picks, a frontier sidekick too", () => {
   const claude = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
   const codex = provider("codex", ["gpt-6-luna", "gpt-5.6-terra"]);
   const hermes = provider("hermes", ["nous:openai/gpt-6-astra-pro", "nous:openai/gpt-6-astra", "nous:openai/gpt-6-luna", "nous:anthropic/claude-opus-5.5"]);
   const opencode = provider("opencode", ["opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free"]);
   const all = [claude, codex, hermes, opencode];
-  // Automatic: DeepSeek Flash does the everyday work (ahead of GPT Luna), Opus in Claude Code the hard jobs.
-  assert.deepEqual(castOf(all), { everyday: "opencode:opencode/deepseek-v4.1-flash-free", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["hermes:nous:openai/gpt-6-astra", "opencode:opencode/deepseek-v4.1-flash-free"] });
-  // Without DeepSeek or Sol, Sonnet builds: the workers of the tier list come before Terra and Luna.
-  assert.equal(castOf([claude, codex, hermes])!.everyday, "claude:claude-sonnet-5-5");
-  // Codex alone: Astra plans, Sol builds; without Astra, Sol plans and Terra builds.
+  // Automatic: Opus in Claude Code leads, DeepSeek Flash is the sidekick (ahead of GPT Luna).
+  assert.deepEqual(castOf(all), { lead: "claude:claude-opus-5-5", sidekick: "opencode:opencode/deepseek-v4.1-flash-free" });
+  // Without DeepSeek or Sol, Sonnet: the workers of the tier list come before Terra and Luna.
+  assert.equal(castOf([claude, codex, hermes])!.sidekick, "claude:claude-sonnet-5-5");
+  // Codex alone: Astra leads, Sol works; without Astra, Sol leads and Terra works.
   const full = provider("codex", ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]);
-  assert.deepEqual([castOf([full])!.strong, castOf([full])!.everyday], ["codex:gpt-6-astra", "codex:gpt-6.1-sol"]);
+  assert.deepEqual(castOf([full]), { lead: "codex:gpt-6-astra", sidekick: "codex:gpt-6.1-sol" });
   const noAstra = provider("codex", ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]);
-  assert.deepEqual([castOf([noAstra])!.strong, castOf([noAstra])!.everyday], ["codex:gpt-6.1-sol", "codex:gpt-6.1-terra"]);
-  // Claude Code and Codex: Opus plans, Sol builds (an eighth of Sonnet's cost a task), Opus judges.
-  const pair = castOf([claude, full])!;
-  assert.deepEqual([pair.strong, pair.everyday, pair.judge], ["claude:claude-opus-5-5", "codex:gpt-6.1-sol", "claude:claude-opus-5-5"]);
-  // Dual: your frontier model (Opus) still plans; Astra, the best of another maker (here through Hermes, not its Pro), builds.
-  assert.deepEqual(frontiersOf(all), { frontier: "claude:claude-opus-5-5", second: "hermes:nous:openai/gpt-6-astra" });
-  assert.deepEqual(castOf(all, { dual: true }), { everyday: "hermes:nous:openai/gpt-6-astra", strong: "claude:claude-opus-5-5", judge: "claude:claude-opus-5-5", critics: ["hermes:nous:openai/gpt-6-astra", "opencode:opencode/deepseek-v4.1-flash-free"] });
-  // Opus building instead: pick Astra as your frontier model and Opus as the second.
-  const swapped = castOf(all, { dual: true, picks: { frontier: "hermes:nous:openai/gpt-6-astra", second: "claude:claude-opus-5-5" } })!;
-  assert.deepEqual([swapped.strong, swapped.everyday], ["hermes:nous:openai/gpt-6-astra", "claude:claude-opus-5-5"]);
-  // Dual with no other maker's frontier model ready is frontier + cheaper.
-  assert.deepEqual(castOf([claude, codex], { dual: true }), castOf([claude, codex]));
-  // Your picks: DeepSeek builds, Opus takes the hard jobs; the checker follows from them.
-  const mine = castOf(all, { picks: { cheaper: "opencode:opencode/deepseek-v4.1-flash-free" } })!;
-  assert.deepEqual([mine.everyday, mine.strong, mine.judge], ["opencode:opencode/deepseek-v4.1-flash-free", "claude:claude-opus-5-5", "claude:claude-opus-5-5"]);
+  assert.deepEqual(castOf([noAstra]), { lead: "codex:gpt-6.1-sol", sidekick: "codex:gpt-6.1-terra" });
+  // Claude Code and Codex: Opus leads, Sol works (an eighth of Sonnet's cost a task), Astra reads Opus's change.
+  assert.deepEqual(castOf([claude, full]), { lead: "claude:claude-opus-5-5", sidekick: "codex:gpt-6.1-sol" });
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [claude, full]), "codex:gpt-6-astra");
+  // A frontier sidekick, as you pick it: Astra (through Hermes) leads and Opus works.
+  assert.deepEqual(castOf(all, { picks: { lead: "hermes:nous:openai/gpt-6-astra", sidekick: "claude:claude-opus-5-5" } }), { lead: "hermes:nous:openai/gpt-6-astra", sidekick: "claude:claude-opus-5-5" });
+  // Your sidekick pick, with the lead automatic.
+  assert.deepEqual(castOf(all, { picks: { sidekick: "opencode:opencode/deepseek-v4.1-flash-free" } }), { lead: "claude:claude-opus-5-5", sidekick: "opencode:opencode/deepseek-v4.1-flash-free" });
   // A pick counts while its tool is ready.
-  assert.equal(castOf([claude], { picks: { cheaper: "opencode:opencode/deepseek-v4.1-flash-free" } })!.everyday, "claude:claude-sonnet-5-5");
+  assert.equal(castOf([claude], { picks: { sidekick: "opencode:opencode/deepseek-v4.1-flash-free" } })!.sidekick, "claude:claude-sonnet-5-5");
+  assert.equal(castOf([]), null);
   // The quick step-checker stays with the reviewer's maker in a tool that runs many.
   assert.equal(quickOf("hermes:nous:openai/gpt-6-astra", [provider("hermes", ["nous:anthropic/claude-haiku-5.5", "nous:openai/gpt-5.4-mini"])]), "hermes:nous:openai/gpt-5.4-mini");
 });
 
-test("without Claude Code or Codex: the parts fill from any maker, Chinese models too", () => {
-  // OpenCode Go only: DeepSeek Flash does it all (so Plan is Solo), GLM-5.3 Flash judges, GLM-5.3 and Kimi critique; Go's caps leave Dual nothing to build with.
+test("without Claude Code or Codex: the pair fills from any maker, Chinese models too", () => {
+  // OpenCode Go only: DeepSeek Flash is both (Go's caps keep its frontier models from leading), so it's one model; GLM Flash reads, not Go's dear GLM-5.3.
   const go = [provider("opencode", ["opencode-go:deepseek-v4-pro", "opencode-go:deepseek-v4.1-flash", "opencode-go:kimi-k3", "opencode-go:glm-5.3", "opencode-go:glm-5.3-flash", "opencode-go:qwen3.8-max", "opencode-go:qwen3.8-flash"])];
-  assert.deepEqual(castOf(go), { everyday: "opencode:opencode-go:deepseek-v4.1-flash", strong: "opencode:opencode-go:deepseek-v4.1-flash", judge: "opencode:opencode-go:glm-5.3-flash", critics: ["opencode:opencode-go:glm-5.3", "opencode:opencode-go:kimi-k3"] });
-  // Go's whole lineup: DeepSeek V4.1 Flash builds ahead of GPT Luna, and MiMo V2.6 Pro and GLM-5.3 are the critics.
+  assert.deepEqual(castOf(go), { lead: "opencode:opencode-go:deepseek-v4.1-flash", sidekick: "opencode:opencode-go:deepseek-v4.1-flash" });
+  assert.equal(reviewerOf(["opencode:opencode-go:deepseek-v4.1-flash"], go), "opencode:opencode-go:glm-5.3-flash");
+  // Go's whole lineup: DeepSeek V4.1 Flash, ahead of GPT Luna, does it all; a quicker model of another maker reads (Luna, ahead of GLM Flash in the table), never Gemini 4 Argon.
   const lineup = [provider("opencode", ["opencode-go/grok-4.7", "opencode-go/glm-5.3-flash", "opencode-go/glm-5.3", "opencode-go/glm-5.2", "opencode-go/gpt-6-luna", "opencode-go/gpt-5.6-luna", "opencode-go/claude-haiku-5.5", "opencode-go/gemini-4-argon", "opencode-go/kimi-k3.1-pro", "opencode-go/kimi-k3", "opencode-go/kimi-k2.7-code", "opencode-go/mimo-v2.6-flash", "opencode-go/mimo-v2.6-pro", "opencode-go/mimo-v2.5-pro", "opencode-go/minimax-m3", "opencode-go/qwen3.8-max", "opencode-go/deepseek-v4.1-flash", "opencode-go/deepseek-v4-pro"])];
-  // V4.1 Flash is the frontier model too, ahead of Grok 4.7 and V4 Pro.
-  const full = castOf(lineup)!;
-  assert.deepEqual([full.everyday, full.strong, full.critics], ["opencode:opencode-go/deepseek-v4.1-flash", "opencode:opencode-go/deepseek-v4.1-flash", ["opencode:opencode-go/mimo-v2.6-pro", "opencode:opencode-go/glm-5.3"]]);
-  // GLM-5.3 Flash judges and checks, but never takes the hard work; with Go's caps, Dual has no second model to build.
-  assert.equal(full.judge, "opencode:opencode-go/glm-5.3-flash");
-  assert.equal(checkerOf(full.everyday, full), "opencode:opencode-go/glm-5.3-flash");
-  const dual = castOf(lineup, { dual: true })!;
-  assert.deepEqual([dual.everyday, dual.strong, dual.judge], ["opencode:opencode-go/deepseek-v4.1-flash", "opencode:opencode-go/deepseek-v4.1-flash", "opencode:opencode-go/glm-5.3-flash"]);
-  // Outside Go (no caps), the same lineup plans by the tier list: Gemini 4 Argon plans, DeepSeek Flash builds.
-  const zen = castOf([provider("opencode", lineup[0].models.map((m) => m.id.replace("opencode-go/", "zen/")))])!;
-  assert.deepEqual([zen.strong, zen.everyday], ["opencode:zen/gemini-4-argon", "opencode:zen/deepseek-v4.1-flash"]);
-  // A newer GLM takes over on its own, wherever it's listed: its Flash judges, its frontier model critiques.
-  const later = castOf([provider("opencode", [...lineup[0].models.map((m) => m.id), "opencode-go/glm-5.10", "opencode-go/glm-5.10-flash"])])!;
-  assert.deepEqual([later.judge, later.critics], ["opencode:opencode-go/glm-5.10-flash", ["opencode:opencode-go/mimo-v2.6-pro", "opencode:opencode-go/glm-5.10"]]);
-  // The checker you picked still wins over Argon.
-  assert.equal(castOf(lineup, { picks: { checker: "opencode:opencode-go/glm-5.3" } })!.judge, "opencode:opencode-go/glm-5.3");
-  // With Opus doing the hard work, Astra critiques it, not MiMo or GLM; DeepSeek Flash builds and reads second.
+  assert.deepEqual(castOf(lineup), { lead: "opencode:opencode-go/deepseek-v4.1-flash", sidekick: "opencode:opencode-go/deepseek-v4.1-flash" });
+  assert.equal(reviewerOf(["opencode:opencode-go/deepseek-v4.1-flash"], lineup), "opencode:opencode-go/gpt-6-luna");
+  // Only Go's frontier-class models of another maker left: one of them reads, rather than nobody.
+  assert.equal(reviewerOf(["opencode:opencode-go/deepseek-v4.1-flash"], [provider("opencode", ["opencode-go/deepseek-v4.1-flash", "opencode-go/glm-5.3"])]), "opencode:opencode-go/glm-5.3");
+  // The Reviewer you picked wins.
+  assert.equal(reviewerOf(["opencode:opencode-go/deepseek-v4.1-flash"], lineup, { checker: "opencode:opencode-go/glm-5.3" }), "opencode:opencode-go/glm-5.3");
+  // Outside Go (no caps), the same lineup leads by the tier list: Gemini 4 Argon leads, DeepSeek Flash works.
+  assert.deepEqual(castOf([provider("opencode", lineup[0].models.map((m) => m.id.replace("opencode-go/", "zen/")))]), { lead: "opencode:zen/gemini-4-argon", sidekick: "opencode:zen/deepseek-v4.1-flash" });
+  // With Opus leading, Astra reads its change, not one of Go's.
   const opus = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5"]);
   const codex = provider("codex", ["gpt-6-astra", "gpt-6.1-sol"]);
-  assert.deepEqual(castOf([opus, codex, lineup[0]])!.critics, ["codex:gpt-6-astra", "opencode:opencode-go/deepseek-v4.1-flash"]);
-  // With Astra doing it, its best reader would be Go's Gemini 4 Argon: MiMo and GLM read instead, for less of Go's allowance.
-  assert.deepEqual(castOf([codex, lineup[0]])!.critics, ["opencode:opencode-go/mimo-v2.6-pro", "opencode:opencode-go/glm-5.3"]);
-  // MiMo V2.6 Flash stands in for the Pro; a critic of the strong model's own maker is left out.
-  const noPro = lineup[0].models.filter((m) => m.id !== "opencode-go/mimo-v2.6-pro").map((m) => m.id);
-  assert.equal(castOf([provider("opencode", noPro)])!.critics[0], "opencode:opencode-go/mimo-v2.6-flash");
-  assert.ok(!castOf(lineup, { picks: { frontier: "opencode:opencode-go/glm-5.3" } })!.critics.includes("opencode:opencode-go/glm-5.3"));
-  assert.deepEqual(castOf(go, { dual: true }), castOf(go));
-  assert.deepEqual(frontiersOf(go), { frontier: undefined, second: undefined });
-  // Gemini alone: Flash builds, Pro plans; one maker is no dual pair.
-  const gemini = [provider("acp.gemini", ["gemini-3-pro", "gemini-3-flash"])];
-  assert.deepEqual([castOf(gemini)!.everyday, castOf(gemini)!.strong], ["acp.gemini:gemini-3-flash", "acp.gemini:gemini-3-pro"]);
-  assert.equal(frontiersOf(gemini).second, undefined);
-  // Free models only: no frontier model to plan, so Plan is Solo, but another maker still checks.
-  const free = castOf([provider("opencode", ["default", "opencode/big-pickle", "opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free"])])!;
-  assert.deepEqual([free.everyday, free.strong, checkerOf(free.everyday, free)], ["opencode:opencode/deepseek-v4.1-flash-free", "opencode:opencode/deepseek-v4.1-flash-free", "opencode:opencode/glm-5.3-flash-free"]);
-  // Flash, Turbo and Fast models are never taken as frontier ones.
-  assert.equal(frontiersOf([provider("grok", ["grok-4-fast", "grok-code-fast"])]).frontier, undefined);
+  assert.equal(reviewerOf(["claude:claude-opus-5-5"], [opus, codex, lineup[0]]), "codex:gpt-6-astra");
+  // Gemini alone: Pro leads, Flash works.
+  assert.deepEqual(castOf([provider("acp.gemini", ["gemini-3-pro", "gemini-3-flash"])]), { lead: "acp.gemini:gemini-3-pro", sidekick: "acp.gemini:gemini-3-flash" });
+  // Free models only: no frontier model to lead, so it's one model, but another maker still reads.
+  const free = [provider("opencode", ["default", "opencode/big-pickle", "opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free"])];
+  assert.deepEqual(castOf(free), { lead: "opencode:opencode/deepseek-v4.1-flash-free", sidekick: "opencode:opencode/deepseek-v4.1-flash-free" });
+  assert.equal(reviewerOf(["opencode:opencode/deepseek-v4.1-flash-free"], free), "opencode:opencode/glm-5.3-flash-free");
+  // Flash, Turbo and Fast models never lead beside another: Grok's fast models make one model.
+  const grok = castOf([provider("grok", ["grok-4-fast", "grok-code-fast"])])!;
+  assert.equal(grok.lead, grok.sidekick);
+  assert.ok(!frontierClass("grok:grok-4-fast") && frontierClass("claude:claude-opus-5-5") && !frontierClass("opencode:opencode-go/glm-5.3"));
+});
+
+test("start: a new session starts as Settings say, a pair when two models are ready, else one model", () => {
+  const both = [provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5"]), provider("codex", ["gpt-6.1-sol"])];
+  assert.deepEqual(startOf({}, both), { agent: "@claude:claude-opus-5-5", sidekick: "codex:gpt-6.1-sol" });
+  assert.deepEqual(startOf({ start: "best" }, both), { agent: "@claude:claude-opus-5-5" });
+  assert.deepEqual(startOf({ start: "fast" }, both), { agent: "@codex:gpt-6.1-sol" });
+  assert.deepEqual(startOf({ picks: { sidekick: "claude:claude-sonnet-5-5" } }, both), { agent: "@claude:claude-opus-5-5", sidekick: "claude:claude-sonnet-5-5" });
+  // One model ready: a pair asked for is that model.
+  const one = [provider("opencode", ["opencode/deepseek-v4.1-flash-free"])];
+  assert.deepEqual(startOf({ start: "pair" }, one), { agent: "@opencode:opencode/deepseek-v4.1-flash-free" });
+  assert.equal(startOf({}, []), null);
 });
 
 test("claude team: helpers by default, for an agent or a bare model; none alone", () => {
@@ -187,8 +211,18 @@ test("claude team: helpers by default, for an agent or a bare model; none alone"
   const old = claudeTeam(agent({ runMode: "escalate" as never }), "claude-sonnet-5-5");
   assert.deepEqual([old.model, Object.keys(old.agents)], ["claude-sonnet-5-5", ["explorer", "test-runner"]]);
   assert.deepEqual(claudeTeam(agent({ runMode: "single" }), "claude-sonnet-5-5").agents, {});
-  assert.equal(subagentName("opus-planner"), "Opus");
+  assert.equal(subagentName("explorer"), "Explorer");
   assert.equal(subagentName("test-runner"), "Test runner");
+  assert.equal(subagentName("opus-planner"), "Opus", "an agent row of an old timeline reads as it did");
+});
+
+test("reviewer: it's told it can't run commands or see what was run, and that what must be undone is blocking", () => {
+  const p = reviewPrompt("add a toggle", "diff --git a/x b/x", 1);
+  assert.match(p, /You can open files, but every command you try will be refused, so don't try one\./);
+  assert.match(p, /You don't see what was run while it worked: judge from the diff and the files\./);
+  assert.match(p, /Whether the checks were run is for the agent that did the work to answer, so say nothing about it, even when the ask mentions running them\./);
+  assert.match(p, /Tests cover the change, or it says why they can't/, "the criterion about tests stays: it's about the diff");
+  assert.match(p, /Anything that must be undone or changed before this ships is "blocking"; a "note" is something the change is fine without/);
 });
 
 test("routines: weekdays skip the weekend, and the words say when", () => {
@@ -496,37 +530,6 @@ test("settling is yours: old defaults that settled sessions by themselves are sw
   assert.equal(new Store(mkdtempSync(join(tmpdir(), "lc-home-"))).settings.settleOnMerge, false);
 });
 
-test("modes compared: sessions sorted by how they ran, undone changes not kept, demo and routines left out", () => {
-  const home = mkdtempSync(join(tmpdir(), "lc-home-"));
-  const now = Date.now();
-  const thread = (id: string, p: Record<string, unknown>) => ({ id, projectId: "p", title: id, status: "done", access: "ask", turns: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 }, createdAt: now, updatedAt: now, ...p });
-  const threads = [
-    thread("alone", { agent: "@claude:claude-opus-5-5" }),
-    thread("planned", { agent: "forge", lead: "helm" }),
-    thread("routed", { agent: "@codex:gpt-6-luna", route: { level: "high", cast: {}, root: "codex:gpt-6-luna" } }),
-    thread("direct", { agent: "forge" }),
-    thread("demo", { agent: "demo" }),
-    thread("routine", { agent: "forge", routine: { id: "r", run: "x" } }),
-  ];
-  writeFileSync(join(home, "state.json"), JSON.stringify({ settings: { onboarded: true }, threads }));
-  const use = (threadId: string, costUsd: number, seconds: number) => JSON.stringify({ at: now, threadId, projectId: "p", agent: "a", provider: "claude", model: "m", inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd, seconds });
-  writeFileSync(join(home, "usage.jsonl"), [use("alone", 1, 10), use("alone", 1, 20), use("planned", 3, 30), use("demo", 9, 9), use("routine", 9, 9)].join("\n") + "\n");
-  const cp = (id: string, reverted = false) => JSON.stringify({ kind: "checkpoint", id, turn: 1, at: now, files: [{ path: "a.ts", status: "modified", added: 1, removed: 0 }], reverted });
-  const review = (id: string, status: string) => JSON.stringify({ kind: "review", id, turn: 1, at: now, reviewer: "codex:x", round: 1, status, findings: [] });
-  const log = (id: string, lines: string[]) => writeFileSync(join(home, "threads", `${id}.jsonl`), lines.join("\n") + "\n");
-  new Store(home); // makes the threads folder
-  log("alone", [cp("c1"), cp("c2", true)]);
-  // A later line replaces an earlier one with the same id: the review ran, then passed.
-  log("planned", [cp("c3"), review("r1", "running"), review("r1", "passed")]);
-  log("routed", [cp("c4"), review("r2", "blocked")]);
-  log("demo", [cp("c5")]);
-  const by = Object.fromEntries(compareWays(new Store(home), 30).map((w) => [w.way, w]));
-  // A bare model and your agent alone are both Solo; demo and routine runs don't count anywhere.
-  assert.deepEqual([by.solo.sessions, by.solo.changed, by.solo.kept, by.solo.turns, by.solo.costUsd, by.solo.seconds], [2, 2, 1, 2, 2, 30]);
-  assert.deepEqual([by.plan.sessions, by.plan.kept, by.plan.reviewed, by.plan.firstPass, by.plan.costUsd], [1, 1, 1, 1, 3]);
-  assert.deepEqual([by.auto.sessions, by.auto.changed, by.auto.reviewed, by.auto.firstPass, by.auto.costUsd], [1, 1, 1, 0, 0]);
-});
-
 test("before modes: a lead and a coder is Plan, a staged setup's models are your models, and refine when it was your way", () => {
   const staged = { id: "s", lead: null, stages: [{ who: "@opencode:opencode/deepseek-v4.1-flash-free", job: "Build the core" }, { who: "@claude:claude-opus-5-5", job: "Improve it" }] };
   const lead = fromWorkStyle({ onboarded: true, workStyle: "lead", setups: [staged], setup: "mine", team: { lead: "helm" } });
@@ -539,10 +542,11 @@ test("before modes: a lead and a coder is Plan, a staged setup's models are your
   assert.equal(fromWorkStyle({ workStyle: "team", setups: [{ id: "x", lead: "helm", stages: [{ who: "forge", job: "" }] }], setup: "x" }).mode, "plan");
   const routed = fromWorkStyle({ workStyle: "model", route: { level: "max", cast: { judge: "codex:gpt-6-sol", critics: [] } } });
   assert.deepEqual([routed.picks, routed.route], [{ checker: "codex:gpt-6-sol" }, { level: "max" }]);
-  // A saved state from before modes is read that way once.
+  // A saved state from before modes is read that way once, then moved to pairs: Plan starts as a pair, the frontier model leads.
   const home = mkdtempSync(join(tmpdir(), "lc-home-"));
-  writeFileSync(join(home, "state.json"), JSON.stringify({ settings: { onboarded: true, workStyle: "lead" } }));
-  assert.equal(new Store(home).settings.mode, "plan");
+  writeFileSync(join(home, "state.json"), JSON.stringify({ settings: { onboarded: true, workStyle: "lead", setups: [staged], setup: "mine" } }));
+  const moved = new Store(home).settings;
+  assert.deepEqual([moved.start, moved.picks, "mode" in moved], ["pair", { lead: "claude:claude-opus-5-5", sidekick: "opencode:opencode/deepseek-v4.1-flash-free" }, false]);
   assert.equal(new Store(mkdtempSync(join(tmpdir(), "lc-home-"))).agents.map((a) => a.id).join(), "demo", "a fresh install has no named agents");
 });
 
@@ -553,21 +557,21 @@ test("a deleted agent: its sessions carry on with its model, never with another 
   const forge = agent({});
   writeFileSync(
     join(home, "state.json"),
-    JSON.stringify({ settings: { onboarded: true, mode: "plan" }, agents: [forge], projects: [{ id: "p", name: "p", path: "/p", agent: "helm", git: false, createdAt: now }], threads: [thread("a", { agent: "forge", lead: "helm", turnBy: "helm", leadSession: "claude:s1" }), thread("b", { agent: "quill", lead: "leader" }), thread("c", { agent: "forge", lead: "gone" })] }),
+    JSON.stringify({ settings: { onboarded: true, pairVersion: 1 }, agents: [forge], projects: [{ id: "p", name: "p", path: "/p", agent: "helm", git: false, createdAt: now }], threads: [thread("a", { agent: "helm", turnBy: "helm" }), thread("b", { agent: "quill" }), thread("c", { agent: "forge" })] }),
   );
   new Store(home);
-  const turn = (agentId: string, model: string) => JSON.stringify({ kind: "turn", id: `t-${agentId}`, turn: 1, at: now, agent: agentId, model, planning: false, status: "done" });
+  const turn = (agentId: string, model: string) => JSON.stringify({ kind: "turn", id: `t-${agentId}`, turn: 1, at: now, agent: agentId, model, status: "done" });
   writeFileSync(join(home, "threads", "a.jsonl"), turn("helm", "claude:claude-opus-5-5") + "\n");
-  writeFileSync(join(home, "threads", "b.jsonl"), turn("leader", "hermes:anthropic:claude-fable-5.1") + "\n");
   const store = new Store(home);
   // Before it's repaired, a gone agent is the stand-in model, not your first agent.
   assert.equal(store.agent("helm").model, store.standIn);
   store.repairAgents(new Map([["quill", "codex:gpt-6-luna"]]), "claude:claude-sonnet-5-5");
   const [a, b, c] = store.threads;
-  assert.deepEqual([a.agent, a.lead, a.turnBy, a.leadSession, a.updatedAt], ["forge", "@claude:claude-opus-5-5", "@claude:claude-opus-5-5", "claude:s1", 5]);
-  assert.deepEqual([b.agent, b.lead], ["@codex:gpt-6-luna", "@hermes:anthropic:claude-fable-5.1"]);
-  // A planner with nothing to go on leaves the session in Solo.
-  assert.deepEqual([c.agent, c.lead], ["forge", undefined]);
+  // From its last turn, kept in place.
+  assert.deepEqual([a.agent, a.turnBy, a.updatedAt], ["@claude:claude-opus-5-5", "@claude:claude-opus-5-5", 5]);
+  // From the agents you just removed; one you still have stays.
+  assert.equal(b.agent, "@codex:gpt-6-luna");
+  assert.equal(c.agent, "forge");
   assert.equal(store.projects[0].agent, undefined);
 });
 
@@ -818,7 +822,7 @@ test("context meter: another model, or going back, leaves no window or count fro
   assert.equal(store.thread("t").usage.contextTokens, undefined);
 });
 
-test("going back: every part's own session starts fresh, the refiner's too, so none resumes the turns that came off", async () => {
+test("going back: every part's own session starts fresh, the sidekick's too, so none resumes the turns that came off", async () => {
   const { createApi } = await import("../src/api.ts");
   const { Runtime } = await import("../src/runtime.ts");
   const store = new Store(mkdtempSync(join(tmpdir(), "lc-back-")));

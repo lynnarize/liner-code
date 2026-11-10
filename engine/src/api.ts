@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, endpointKey, splitModel, VOUCHER } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Mode, RouteLevel, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary, WayStats } from "../../contracts/src/index.ts";
+import { castOf, endpointKey, ROUTINES_ON, splitModel, startOf, VOUCHER } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
 import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
@@ -57,6 +57,10 @@ export function settledCopy(it: Item, keepAsks = false): Item {
 }
 
 const git = (cwd: string, args: string[]) => run("git", ["-c", "log.showSignature=false", ...args], { cwd, timeout: 120000 });
+/** What Run now and Test answer while routines are switched off (contracts, ROUTINES_ON). */
+const routinesOff = (): never => {
+  throw new Error("Routines are switched off for now, so nothing runs. Your routines and their past runs are kept.");
+};
 
 /** Git and Python, for real: Apple's stubs in /usr/bin only work once the command line tools are in. */
 export async function systemCheck(env: NodeJS.ProcessEnv): Promise<SystemCheck> {
@@ -169,8 +173,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   const shown = () => detected.map(withCustom);
   const publish = () => {
     runtime.providerInfo = shown();
-    // An agent that's gone stands in as the everyday model, never as another of your agents.
-    store.standIn = castOf(runtime.providerInfo, { picks: store.settings.picks })?.everyday ?? store.standIn;
+    // An agent that's gone stands in as your sidekick's model, the quicker of your two, never as another of your agents.
+    store.standIn = castOf(runtime.providerInfo, { picks: store.settings.picks })?.sidekick ?? store.standIn;
     store.emit({ type: "providers", providers: runtime.providerInfo });
   };
 
@@ -485,21 +489,6 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return store.putProject({ id: uid("pr"), name: name ?? basename(abs), path: abs, agent, git: isGit, ...info, createdAt: Date.now() });
   };
 
-  /**
-    What a session takes on to run in Auto at a level: the cast from your models and what's ready
-    (with Dual frontier, the session's own when it says), starting on the everyday model. An Auto
-    session keeps its cast and the model working now, unless Dual frontier changes. null lets it
-    go, and the model working now carries on alone.
-  */
-  const routeFields = (level: RouteLevel | null, now?: Thread, dual?: boolean): Partial<Thread> => {
-    if (level === null) return now?.route ? { route: undefined, agent: `@${now.route.root}`, model: undefined } : {};
-    if (now?.route && (dual === undefined || dual === Boolean(now.dual))) return { route: { ...now.route, level } };
-    const on = dual ?? store.settings.dual ?? false;
-    const cast = castOf(shown(), { dual: on, picks: store.settings.picks });
-    if (!cast) throw new Error("Auto needs a model ready: connect one in Settings, Models.");
-    return { route: { level, cast, root: cast.everyday }, agent: `@${cast.everyday}`, model: undefined, lead: undefined, leadSession: undefined, dual: on };
-  };
-
   /** A folder that's a Git repository with one commit of these files, made once. */
   const seedRepo = async (dir: string, files: Record<string, string>, message: string) => {
     if (existsSync(join(dir, ".git"))) return;
@@ -625,7 +614,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(resolve(path.replace(/^~(?=\/|$)/, homedir())), undefined, agent);
     },
     // An empty agent clears it: new sessions there start with whoever Home would pick.
-    "sessions.importable": ({ projectId }) => importable(store.project(projectId).path, env, new Set(store.threads.flatMap((t) => [t.providerSession, t.leadSession, ...Object.values(t.sessions ?? {})].filter((s): s is string => Boolean(s))))),
+    "sessions.importable": ({ projectId }) => importable(store.project(projectId).path, env, new Set(store.threads.flatMap((t) => [t.providerSession, ...Object.values(t.sessions ?? {})].filter((s): s is string => Boolean(s))))),
     "sessions.import": async ({ projectId, tool, id }) => {
       const project = store.project(projectId);
       const taken = store.threads.find((t) => t.providerSession === `${tool}:${id}`);
@@ -786,21 +775,18 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, lead, route, dual, after, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode }) => {
+    "thread.create": async ({ projectId, agent, sidekick, review, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode }) => {
       const project = store.project(projectId);
       // It goes to git as an argument of its own: one starting with - would be an option.
       if (base?.startsWith("-")) throw new Error("That base isn't a branch or a commit.");
       // A mode is set once, as the session starts; a custom one is one of your named agents.
       if (mode !== undefined && mode !== "standard" && mode !== "creator" && !(mode.startsWith("agent:") && store.agents.some((a) => `agent:${a.id}` === mode))) throw new Error("There's no mode by that name.");
       const parent = forkOf ? store.thread(forkOf) : undefined;
-      const who = agent ?? parent?.agent ?? project.agent ?? defaultAgent();
+      const who = agent ?? parent?.agent ?? project.agent;
       const now = Date.now();
       // An id the app picked (a side chat or a comparison it names ahead) names files too: one of its own, never another's.
       if (id !== undefined && (!/^[\w-]{1,64}$/.test(id) || store.threads.some((t) => t.id === id))) throw new Error("That session id can't be used.");
       const tid = id ?? uid("th");
-      // Auto decides who works on it; a fork keeps its parent's route. Asked first: a session Auto can't
-      // cast (no model ready) goes no further, so no worktree or branch is left behind for it.
-      const routed = route ? routeFields(route, undefined, dual) : parent?.route ? { route: parent.route } : {};
       let tree: Thread["worktree"];
       let notice: string | undefined;
       if (inWorktree && project.git) {
@@ -837,11 +823,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           if (steps.length || mods) setups.set(tid, prep().finally(() => setups.delete(tid)));
         }
       }
-      // A model, or an agent you have; one that's gone (a project's, an outside agent's guess) is the everyday model.
-      const known = (id?: string) => Boolean(id && (id.startsWith("@") || store.agents.some((a) => a.id === id)));
-      const writer = known(who) ? who : defaultAgent();
-      // A planner that is also the builder would share its session: that's Solo. The Demo plays both.
-      const planner = lead ?? parent?.lead;
+      // A model, or an agent you have. With none, or one that's gone (a project's, an outside agent's guess), it starts as Settings say a new session starts (startOf).
+      const known = (id?: string): id is string => Boolean(id && (id.startsWith("@") || store.agents.some((a) => a.id === id)));
+      const start = known(who) ? undefined : defaultStart();
+      const writer = start ? start.agent : who!;
       // A fork of a session at work branches from its last turn that ended, not from one half done
       // (T3 Code: ThreadForkService.ts forks from the last stable run), and gets the conversation as text.
       // Half done is its last turn still running, by that turn's own status: one the Reviewer reads now has ended.
@@ -851,10 +836,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         projectId,
         title: title ?? parent?.title ?? "New session",
         agent: writer,
-        lead: known(planner) && (planner !== writer || writer === "demo") ? planner : undefined,
-        dual: dual ?? parent?.dual,
-        after: after ?? parent?.after,
-        checks: parent?.checks,
+        // A pair's sidekick, as a model ref; a fork keeps its parent's, and a session started as Settings say gets theirs.
+        ...((sidekick ?? parent?.sidekick ?? start?.sidekick) ? { sidekick: (sidekick ?? parent?.sidekick ?? start!.sidekick)!.replace(/^@/, "") } : {}),
+        // The session's own word on the Reviewer; a fork keeps its parent's.
+        ...((review ?? parent?.review) !== undefined ? { review: review ?? parent?.review } : {}),
         status: "idle",
         access: access ?? parent?.access ?? store.settings.defaultAccess,
         model: model ?? parent?.model,
@@ -868,7 +853,6 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         usage: emptyUsage(),
         createdAt: now,
         updatedAt: now,
-        ...routed,
       };
       store.putThread(t);
       if (notice) store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: now, text: notice });
@@ -899,24 +883,16 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       }
       return t;
     },
-    "thread.update": ({ id, route, dual, ...patch }) => {
+    "thread.update": ({ id, ...patch }) => {
       // null clears a field; undefined leaves it.
-      const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : v]));
+      const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : k === "sidekick" ? String(v).replace(/^@/, "") : v]));
       const t = store.thread(id);
       if (patch.archived && !t.archived) leftBehind(id);
       // Opened again: a worktree a clean-up took is put back.
       if (patch.archived === false && t.archived) void ensureWorktree(id).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "Its worktree didn't come back", body: String(e?.message ?? e) }));
-      // Auto brings who works on it; letting it go comes before whoever you picked instead.
-      if (route) return store.patchThread(id, { ...clean, ...routeFields(route, t, dual) });
-      // Picking someone else to work on it, or a planner, ends Auto.
-      const unroute = route === null || (t.route && ((clean.agent && clean.agent !== t.agent) || clean.lead));
-      const off = unroute ? routeFields(null, t) : {};
-      const next = { ...off, ...clean, ...(dual !== undefined ? { dual } : {}) };
-      // A planner that is also the builder would share its session: that's Solo.
-      const writer = next.agent ?? t.agent;
-      if ("lead" in next && next.lead === writer && writer !== "demo") next.lead = undefined;
+      const next = clean;
       // Another model: the last one's context window says nothing about this one's, until its first turn reports.
-      const moved = (clean.model !== undefined && clean.model !== t.model) || (clean.agent !== undefined && clean.agent !== t.agent);
+      const moved = ("model" in clean && clean.model !== t.model) || (clean.agent !== undefined && clean.agent !== t.agent);
       return store.patchThread(id, moved ? { ...next, usage: { ...t.usage, contextWindow: undefined } } : next);
     },
     "thread.items": ({ id }) => store.timeline(store.thread(id).id),
@@ -1037,7 +1013,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         // and gets the conversation that's left as text.
         // Taken back to before a turn, the conversation starts again: how full the old one was no longer holds.
         // What waits in the queue stays, held for your next message: going back is no reason to lose it.
-        store.patchThread(threadId, { usage: { ...store.thread(threadId).usage, contextTokens: undefined, contextWindow: undefined }, turns: from - 1, status: "idle", providerSession: undefined, leadSession: undefined, sessions: undefined, forkSession: undefined, verdict: undefined, toReview: runtime.toReview(threadId), unread: false, done: false });
+        store.patchThread(threadId, { usage: { ...store.thread(threadId).usage, contextTokens: undefined, contextWindow: undefined }, turns: from - 1, status: "idle", providerSession: undefined, sessions: undefined, forkSession: undefined, verdict: undefined, reviewSince: undefined, toReview: runtime.toReview(threadId), unread: false, done: false });
         return { turn: from, files: undone };
       });
     },
@@ -1051,9 +1027,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "thread.steerAgent": ({ id, item, text }) => runtime.steerAgent(id, item, text),
     /*
       A side chat: a fork of the session that only reads and answers. Who you talk to there is who
-      you talk to in the session (the lead, if it has one), continuing that conversation where the
-      tool can branch it (Claude Code) and given it as text otherwise. A plan, a route or a setup
-      doesn't come along: it's one agent answering.
+      you talk to in the session (its lead), continuing that conversation where the tool can branch
+      it (Claude Code) and given it as text otherwise. A sidekick doesn't come along: it's one
+      agent answering.
     */
     "thread.side": ({ id, fresh }) => {
       const parent = store.thread(id);
@@ -1066,13 +1042,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         id: uid("th"),
         projectId: parent.projectId,
         title: `Side chat · ${parent.title}`,
-        agent: parent.lead ?? parent.agent,
+        agent: parent.agent,
         status: "idle",
         access: "read",
-        model: parent.lead ? undefined : parent.model,
+        model: parent.model,
         effort: parent.effort,
         forkOf: id,
-        forkSession: (parent.lead ? parent.leadSession : parent.providerSession) ?? "",
+        forkSession: parent.providerSession ?? "",
         sideOf: id,
         sideFrom: parent.turns,
         worktree: parent.worktree,
@@ -1366,7 +1342,6 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
 
     "usage.summary": ({ days = 30, projectId }) => summarize(store, days, projectId, (id) => runtime.addons?.get(id)?.name),
-    "ways.compare": ({ days = 30 }) => compareWays(store, days),
     "keys.set": ({ provider, key }) => {
       if (key) runtime.keys.set(provider, key);
       else runtime.keys.delete(provider);
@@ -1569,7 +1544,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (!paths.length) throw new Error("Nothing to commit.");
       const diff = (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(paths)], { cwd, timeout: 30000 })).stdout || (await run("git", ["diff", "--relative", ...PATCH, "--cached", "-U2", "--", ...literal(paths)], { cwd, timeout: 30000 })).stdout;
       const by = runtime.writerFor(t);
-      const out = await runtime.quiet(threadId, by, cwd, writePrompt("commit", asksOf(threadId), diff, paths), new AbortController().signal);
+      // A few lines of text: three minutes is plenty, and a model that never answers says so rather than spinning for good.
+      const out = await runtime.quiet(threadId, by, cwd, writePrompt("commit", asksOf(threadId), diff, paths), new AbortController().signal, "reviewer", 3 * 60_000);
       const m = /<message>([\s\S]*?)<\/message>/.exec(out)?.[1]?.trim() || out.trim().split("\n\n")[0];
       if (!m) throw new Error("The model didn't write a message.");
       return { message: m, by };
@@ -1583,7 +1559,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // What the session checked: the commands it ran that passed, like the tests.
       const checks = store.timeline(threadId).flatMap((x) => (x.kind === "tool" && x.toolKind === "exec" && x.status === "done" && /test|lint|check|build|tsc/i.test(x.title) ? [x.title.replace(/^Run /, "")] : []));
       const by = runtime.writerFor(t);
-      const out = await runtime.quiet(threadId, by, cwd, writePrompt("pr", asksOf(threadId), diff.stdout, [], log.stdout, [...new Set(checks)].slice(0, 8)), new AbortController().signal);
+      const out = await runtime.quiet(threadId, by, cwd, writePrompt("pr", asksOf(threadId), diff.stdout, [], log.stdout, [...new Set(checks)].slice(0, 8)), new AbortController().signal, "reviewer", 3 * 60_000);
       const title = /<title>([\s\S]*?)<\/title>/.exec(out)?.[1]?.trim();
       const body = /<body>([\s\S]*?)<\/body>/.exec(out)?.[1]?.trim();
       if (!title) throw new Error("The model didn't write a title.");
@@ -1599,7 +1575,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const open = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? x.files.map((f) => local(f.path, prefix, f.rel)) : [])))];
       const diff = open.length ? (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(open)], { cwd, timeout: 30000 }).catch(() => null))?.stdout ?? "" : "";
       const by = runtime.writerFor(t);
-      const out = await runtime.quiet(threadId, by, cwd, deskPrompt(t.title, asksOf(threadId), said, files, context, question.slice(0, 1000), diff), new AbortController().signal, "desk");
+      const out = await runtime.quiet(threadId, by, cwd, deskPrompt(t.title, asksOf(threadId), said, files, context, question.slice(0, 1000), diff), new AbortController().signal, "desk", 5 * 60_000);
       const answer = out.trim();
       if (!answer) throw new Error("The model didn't answer. Ask again in a moment.");
       return { answer, by };
@@ -1656,8 +1632,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
     "routine.save": ({ routine }) => x.routines.put(routine),
     "routine.remove": ({ id }) => (x.routines.remove(id), null),
-    "routine.run": ({ id }) => x.routines.fire(id, "You ran it by hand"),
-    "routine.test": ({ id, number }) => x.routines.test(id, number),
+    // Switched off (contracts, ROUTINES_ON): nothing starts a run, by hand or as a test.
+    "routine.run": ({ id }) => (ROUTINES_ON ? x.routines.fire(id, "You ran it by hand") : routinesOff()),
+    "routine.test": ({ id, number }) => (ROUTINES_ON ? x.routines.test(id, number) : routinesOff()),
     "routine.stop": ({ runId }) => (x.routines.stopRun(runId), null),
   };
 
@@ -1716,11 +1693,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return inside(cwd, there) || inside(there, cwd);
     });
   }
-  function defaultAgent() {
-    // A bare model: your cheaper one, else the first that's ready.
-    const cast = castOf(shown(), { picks: store.settings.picks });
+  /** Who a session started without an agent gets: what Settings say a new session starts with, else the first tool that's there, else the Demo. */
+  function defaultStart(): { agent: string; sidekick?: string } {
+    const start = startOf(store.settings, shown());
     const p = detected.find((x) => x.available && x.adapter && x.id !== "demo");
-    return cast ? `@${cast.everyday}` : p ? `@${p.id}:${p.models[0]?.id ?? "default"}` : "demo";
+    return start ?? { agent: p ? `@${p.id}:${p.models[0]?.id ?? "default"}` : "demo" };
   }
 
   return {
@@ -1784,42 +1761,4 @@ function summarize(store: Store, days: number, projectId?: string, appName?: (id
     byAgent,
     byModel,
   };
-}
-
-/**
-  How each mode went in your own sessions over `days`: sessions sorted by how they ran
-  (see WayStats), with their turns, cost and time from the usage log, the changed turns you kept,
-  and how often the Reviewer passed a change the first time. Demo, routine and cost-test sessions don't count.
-*/
-export function compareWays(store: Store, days: number): WayStats[] {
-  const from = Date.now() - days * 86400000;
-  const out = new Map<string, WayStats>();
-  const of = (way: Mode) => out.get(way) ?? out.set(way, { way, sessions: 0, turns: 0, changed: 0, kept: 0, costUsd: 0, seconds: 0, reviewed: 0, firstPass: 0 }).get(way)!;
-  for (const way of ["solo", "plan", "auto"] as const) of(way);
-  const wayOf = (t: Thread): Mode => (t.route ? "auto" : t.lead ? "plan" : "solo");
-  const threads = new Map(store.threads.filter((t) => t.agent !== "demo" && t.lead !== "demo" && !t.routine && !t.trial && t.updatedAt >= from).map((t) => [t.id, t]));
-  for (const r of store.usage(from)) {
-    const t = threads.get(r.threadId);
-    if (!t) continue;
-    const s = of(wayOf(t));
-    s.turns += 1;
-    s.costUsd += r.costUsd;
-    s.seconds += r.seconds;
-  }
-  for (const t of threads.values()) {
-    const s = of(wayOf(t));
-    s.sessions += 1;
-    for (const m of store.marks(t.id)) {
-      if (m.at < from) continue;
-      if (m.kind === "checkpoint" && m.files.length) {
-        s.changed += 1;
-        if (!m.reverted) s.kept += 1;
-      }
-      if (m.kind === "review" && m.round === 1 && (m.status === "passed" || m.status === "blocked")) {
-        s.reviewed += 1;
-        if (m.status === "passed") s.firstPass += 1;
-      }
-    }
-  }
-  return [...out.values()];
 }

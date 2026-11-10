@@ -23,7 +23,8 @@ import { I, ModelMark } from "./icons";
 import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
 import { ContextMenu, Disc, LimitRow, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
 import { appNotice, updates } from "./Updates";
-import { agentState, updateModes } from "@contracts";
+import { pairOf } from "./Crew";
+import { agentState, ROUTINES_ON, updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
 import * as os from "./os";
 import { toast } from "@liner/components/toast/toast";
@@ -535,13 +536,12 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const coder = agentOf(t.agent, agents, providers);
     const ref = t.model ?? coder.model;
     const model = modelLabel(ref, providers);
-    const lead = t.lead ? agentOf(t.lead, agents, providers).name : undefined;
-    // "Helm plans, Forge builds on Sonnet 5.5"; "Forge on Sonnet 5.5"; a model on its own is named once.
-    const builds = coder.name === model ? model : `${coder.name}${lead ? " builds" : ""} on ${model}`;
-    const team = lead ? `${lead} plans, ${coder.name === model ? `${model} builds` : builds}` : builds;
+    // "Opus 5.5 + Sol" for a pair; "Forge on Sonnet 5.5"; a model on its own is named once.
+    const team = on.pair ? `${on.pair.name}: ${on.pair.lead} leads, ${on.pair.side} works` : coder.name === model ? model : `${coder.name} on ${model}`;
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
-    const sentNow = sent.get(t.id) ?? 0;
-    const said = cardState(t, bucket, on.who, on.leadOn ? lead : undefined, now, run);
+    // A pair's sidekick is in its name already; the agents besides it are counted.
+    const sentNow = Math.max(0, (sent.get(t.id) ?? 0) - (on.pair ? 1 : 0));
+    const said = cardState(t, bucket, on.who, now, run);
     const state = sentNow ? { ...said, text: `${said.text} with ${plural(sentNow, "agent")}` } : said;
     const changes = [(t.toReview ?? 0) > 0 ? `${plural(t.toReview!, "file")} changed, not committed` : "", t.pr ? `pull request #${t.pr.number}${t.pr.state ? `, ${t.pr.state.toLowerCase()}` : ""}` : ""].filter(Boolean).join(" · ");
     const u = t.usage;
@@ -654,7 +654,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         <b>{t.title}</b>
       );
     const working = sent.get(t.id) ?? 0;
-    const state = two ? (working ? { text: `${on.who} + ${plural(working, "agent")}` } : rowState(t, bucket, Boolean(on.leadOn && t.lead), now, run)) : null;
+    // A pair is named as one, its sidekick at work or not; one model counts the agents it sent.
+    const state = two ? (working ? { text: on.pair ? (working > 1 ? `${on.who} + ${plural(working - 1, "agent")}` : on.who) : `${on.who} + ${plural(working, "agent")}` } : rowState(t, bucket, now, run)) : null;
     const dot = t.archived ? undefined : t.status === "running" || run?.status === "running" || (working && bucket !== "needs") ? "work" : t.status === "error" ? "danger" : bucket === "needs" || t.status === "limited" ? "warn" : undefined;
     return (
       <div
@@ -912,11 +913,14 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
             {onWallNow.length > 0 && <span className="lc-sb-nend">{onWallNow.length}</span>}
           </button>
         )}
+        {/* Routines switched off (contracts, ROUTINES_ON): no row for them. */}
+        {ROUTINES_ON && (
         <button type="button" className="lc-sb-nav l-focus" aria-current={routinesOn ? "page" : undefined} aria-label={`Routines${routinesNote ? `, ${routinesNote}` : ""}`} title={`Routines${routinesNote ? ` · ${routinesNote}` : ""}`} onClick={onRoutines}>
           <I.routines size={16} />
           <span>Routines</span>
           {handed > 0 ? <span className="lc-sb-ndot" data-k="warn" /> : routines.some((r) => r.on) && <span className="lc-sb-nend">{routinesNote}</span>}
         </button>
+        )}
       </div>
 
       {/* Add-ons, apart from your places: its ··· makes a new one or opens their settings, and your apps sit under it (DeepSeek Harness's sidebar entry). */}
@@ -1321,13 +1325,13 @@ const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase();
 
-/** Who's on a session now (the lead while it plans and its plan waits on you, else the coder), and the model they run on. */
+/** Who's on a session (a pair as one: "Opus 5.5 + Sol"), and the model its lead runs on. */
 function onIt(t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) {
-  const leadOn = Boolean(t.lead && (t.turns === 0 || t.turnBy === t.lead));
-  const a = agentOf(leadOn ? t.lead : t.agent, agents, providers);
-  // A thread's own model stands in for its coder's; a lead keeps its own.
-  const ref = leadOn ? a.model : (t.model ?? a.model);
-  return { who: a.name, model: modelLabel(ref, providers), ref, leadOn };
+  const a = agentOf(t.agent, agents, providers);
+  // A thread's own model stands in for its agent's.
+  const ref = t.model ?? a.model;
+  const pair = pairOf(t, agents, providers);
+  return { who: pair?.name ?? a.name, model: modelLabel(ref, providers), ref, pair };
 }
 
 /** "Liner Code" → LC, "my-app" → MA, "Firefly" → FI. */
@@ -1354,11 +1358,11 @@ function ProjectBadge({ name, none, dot }: { name: string; none?: boolean; dot?:
 }
 
 /** How a session stands, said short after its project on its row's second line: nothing when it's simply done. */
-function rowState(t: Thread, bucket: Bucket, lead: boolean, now: number, run?: { status: string }): { text: string; tone?: "warn" | "danger" } | null {
+function rowState(t: Thread, bucket: Bucket, now: number, run?: { status: string }): { text: string; tone?: "warn" | "danger" } | null {
   if (t.archived) return null;
   if (run?.status === "running" || t.status === "running") return { text: "working" };
   if (bucket === "snoozed") return t.wake ? { text: t.wake.kind === "checks" ? `until #${t.wake.pr}'s checks finish` : `until a reply on #${t.wake.pr}` } : t.snoozedUntil ? { text: `until ${clock(t.snoozedUntil, now)}` } : null;
-  if (t.status === "waiting") return { text: lead ? "plan waits for your OK" : "waits for your answer", tone: "warn" };
+  if (t.status === "waiting") return { text: "waits for your answer", tone: "warn" };
   if (t.status === "error") return { text: "ran into a problem", tone: "danger" };
   if (t.status === "limited") return { text: "hit its plan's limit", tone: "warn" };
   if (t.turns === 0) return { text: "not started" };
@@ -1373,7 +1377,7 @@ const agoLong = (at: number, now: number) => {
 };
 
 /** How a session stands, in the card: the row's words, said in full. */
-function cardState(t: Thread, bucket: Bucket, who: string, lead: string | undefined, now: number, run?: { status: string; steps: unknown[]; subject?: { number: number } }): { text: string; tone?: "warn" | "danger" } {
+function cardState(t: Thread, bucket: Bucket, who: string, now: number, run?: { status: string; steps: unknown[]; subject?: { number: number } }): { text: string; tone?: "warn" | "danger" } {
   if (run?.status === "running") return { text: `Working · a routine's run${run.subject ? ` on #${run.subject.number}` : ""}, step ${run.steps.length}` };
   if (bucket === "snoozed") {
     if (t.wake) return { text: t.wake.kind === "checks" ? `Snoozed · back when the checks on #${t.wake.pr} finish` : `Snoozed · back when someone replies on #${t.wake.pr}` };
@@ -1381,9 +1385,9 @@ function cardState(t: Thread, bucket: Bucket, who: string, lead: string | undefi
   }
   if (t.status === "running") {
     if (t.goal?.status === "active") return { text: `Working · ${who} works toward its goal, turn ${t.goal.turns} of ${t.goal.max}` };
-    return { text: lead ? `Working · ${lead} draws up a plan` : `Working · ${who} is at it` };
+    return { text: `Working · ${who} ${who.includes(" + ") ? "are" : "is"} at it` };
   }
-  if (t.status === "waiting") return { text: lead ? `Needs you · ${lead}'s plan waits for your OK` : `Needs you · ${who} waits for your answer`, tone: "warn" };
+  if (t.status === "waiting") return { text: `Needs you · ${who} ${who.includes(" + ") ? "wait" : "waits"} for your answer`, tone: "warn" };
   if (t.status === "error") return { text: `Ran into a problem · ${who} stopped short`, tone: "danger" };
   if (t.status === "limited") return { text: `Limited · ${who}'s plan ran out${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" };
   if (t.turns === 0) return { text: "Not started · nothing asked yet" };

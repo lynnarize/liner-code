@@ -4,7 +4,7 @@
   signed in as you), which clone with one press. Picking one that isn't here yet adds it.
 */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { FoundRepo, GitHubRepo, Project } from "@contracts";
+import { ROUTINES_ON, type FoundRepo, type GitHubRepo, type Project } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { bridge, ghInstall } from "./bridge";
@@ -139,7 +139,7 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
           ) : gh.gh === "signed-out" ? (
             <div className="lc-pc-note">
               <b>Connect GitHub</b>
-              <p>Sign the GitHub CLI in once; your repositories show here, and routines can watch their pull requests.</p>
+              <p>Sign the GitHub CLI in once; your repositories show here{ROUTINES_ON ? ", and routines can watch their pull requests" : ""}.</p>
               <span className="lc-noproj-acts">
                 <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal("gh auth login")}>
                   Sign in in Terminal

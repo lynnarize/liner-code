@@ -5,7 +5,7 @@
   the list of tools, which is only data.
 */
 import { createInterface } from "node:readline";
-import { TOOLS } from "./liner-tools.ts";
+import { toolsFor } from "./liner-tools.ts";
 import { VERSION } from "./version.ts";
 
 const url = process.env.LINER_SURFACE_URL ?? "";
@@ -15,13 +15,14 @@ type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Rec
 const send = (m: Record<string, unknown>) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);
 
 /**
-  A call that waits for the person (an install card) says so every 20 seconds, when its tool asked
+  A call that waits for the person (an install card) or on a sidekick's brief says so every 20 seconds, when its tool asked
   for progress: one that resets its wait on progress (the MCP SDK's resetTimeoutOnProgress) then
   doesn't give up after a minute.
 */
 async function call(name: string, args: unknown, progress?: string | number) {
   let n = 0;
-  const beat = progress === undefined ? undefined : setInterval(() => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: progress, progress: ++n, message: "Waiting for the person to answer" } })}\n`), 20_000);
+  const message = name === "sidekick" ? "The sidekick is working on the brief" : "Waiting for the person to answer";
+  const beat = progress === undefined ? undefined : setInterval(() => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: progress, progress: ++n, message } })}\n`), 20_000);
   try {
     const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": key }, body: JSON.stringify({ tool: name, args: args ?? {} }) });
     const b = (await r.json()) as { ok: boolean; result?: unknown; error?: string };
@@ -52,7 +53,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design. To connect a service through MCP for every agent tool, or to make a panel or small app inside Liner Code, read liner_inspect, then ask with addon_install.",
       },
     });
-  } else if (m.method === "tools/list") send({ id: m.id, result: { tools: TOOLS } });
+  } else if (m.method === "tools/list") send({ id: m.id, result: { tools: toolsFor(process.env) } });
   else if (m.method === "tools/call") {
     const token = (m.params?._meta as { progressToken?: string | number } | undefined)?.progressToken;
     void call(String(m.params?.name ?? ""), m.params?.arguments, token).then((result) => send({ id: m.id, result }));

@@ -24,6 +24,7 @@ import { Offers } from "./offers.ts";
 import { Sources } from "./sources.ts";
 import { DshHosts } from "./dsh-hosts.ts";
 import type { Thread } from "../../contracts/src/index.ts";
+import { ROUTINES_ON } from "../../contracts/src/index.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
 import { firstLine, linkHelpers, secretsFrom, takeSecrets, withPath } from "./exec.ts";
@@ -140,7 +141,8 @@ const server = await startServer({
   port: Number(arg("port") ?? 0),
   ui: arg("ui"),
   snapshot: () => api.call("state.get", {}) as never,
-  hooks: (id, key, body, headers) => routines.webhook(id, key, body, headers),
+  // Routines switched off: a webhook finds nothing (404) and fires nothing.
+  hooks: ROUTINES_ON ? (id, key, body, headers) => routines.webhook(id, key, body, headers) : undefined,
   surface: (key, tool, args) => {
     const threadId = key ? tools.threadOf(key) : undefined;
     return threadId ? tools.call(threadId, tool, args) : null;
@@ -159,7 +161,8 @@ const awake = new Awake(store, () => routines.busy || store.threads.some((t) => 
 void api.ready.then(() => {
   // Sessions stopped mid-turn when Liner Code last quit or crashed carry on, now that the tools are known.
   offers.resume(runtime.continueAfterRestart());
-  routines.start();
+  // Switched off, no schedule ticks and no GitHub watch polls; what's saved stays as it is.
+  if (ROUTINES_ON) routines.start();
   watch.start();
   api.updates.start();
   awake.start();

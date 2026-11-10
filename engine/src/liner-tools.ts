@@ -7,6 +7,10 @@ type Schema = { type: "object"; properties: Record<string, { type: string; descr
 type ToolDef = { name: string; description: string; inputSchema: Schema };
 
 const none: Schema = { type: "object", properties: {} };
+/** Set in the server's environment only for a pair's lead: no one else is offered `sidekick`. */
+export const PAIR_ENV = "LINER_SIDEKICK";
+/** The tools a session is offered: all of them for a pair's lead, all but `sidekick` for anyone else. */
+export const toolsFor = (env: Record<string, string | undefined>) => TOOLS.filter((t) => t.name !== "sidekick" || env[PAIR_ENV] === "1");
 export const TOOLS: ToolDef[] = [
   {
     name: "browser_open",
@@ -177,6 +181,23 @@ export const TOOLS: ToolDef[] = [
     description:
       "Asks the person to add a connection or a panel you drafted at .liner/addons/<id>/addon.json in this folder (liner_inspect has the manifests' shapes). They see a card (and a panel live, as a preview) and say yes or no; this waits for them. Returns applied, saved, starts in the next turn (a connection: its tools arrive with the next turn), or denied (don't ask again unless they do). A changed panel that asks for nothing more than the version in use goes in without a card. Never put a key in a manifest: name it in secrets.",
     inputSchema: { type: "object", properties: { id: { type: "string", description: "The draft's id, for .liner/addons/<id>/addon.json; or its path in this folder" } }, required: ["id"] },
+  },
+  {
+    name: "sidekick",
+    description: [
+      "Hands one bounded piece of work to your sidekick, a quicker model working in this same folder under the same access, and waits until it's done (10 minutes at most, less where your tool won't wait that long on one call: the result says when the cap stopped it). One brief at a time: a second call waits for the first.",
+      "Write the brief with the goal, the constraints and how to tell it's done; it knows nothing of this conversation but your briefs. It remembers your earlier briefs in this session, so send corrections to it; fresh starts it over.",
+      "Returns how it went, its report, and the files it changed as Liner Code measured them. The report is its claim: read the diff before you build on it.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        brief: { type: "string", description: "The work: the goal, the files and constraints that matter, what to leave alone" },
+        done_when: { type: "string", description: "How it can tell it's done: the check to run, the behaviour to see" },
+        fresh: { type: "boolean", description: "Start it over, forgetting your earlier briefs" },
+      },
+      required: ["brief"],
+    },
   },
   {
     name: "addon_remove",

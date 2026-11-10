@@ -154,7 +154,8 @@ export function Pop({
             // Placed here, not by Liner's anchored rules: those (bottom, translate) would fight the fixed layer.
             style={{ width: width === "trigger" ? at.w : Math.min(width, document.documentElement.clientWidth - EDGE * 2), maxHeight: at.max, top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none" }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") {
+              // Something inside that took the Escape first (a list open in the panel) has closed itself; the panel stays.
+              if (e.key === "Escape" && !e.defaultPrevented) {
                 e.preventDefault();
                 close();
               }
@@ -249,7 +250,7 @@ export const PanelHead = ({ children, end }: { children: ReactNode; end?: ReactN
 );
 export const Sep = () => <span className="lc-sep" role="separator" />;
 
-/** An agent's disc: a planner's is filled (when the caller says so), the rest are outlined. */
+/** An agent's disc: a planner's from before pairs is filled (when the caller says so), the rest are outlined. */
 export function Disc({ agent, size = 22, lead }: { agent: Pick<AgentProfile, "glyph" | "role" | "name">; size?: number; lead?: boolean }) {
   const filled = Boolean(lead);
   return (

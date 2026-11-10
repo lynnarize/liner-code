@@ -11,6 +11,10 @@
   min-height: 0;
   max-height: var(--lc-mp-max, 320px);
 }
+/* Search results under a field that sits outside it: the list alone, no rail. */
+.lc-mp[data-bare] {
+  grid-template-columns: minmax(0, 1fr);
+}
 .lc-mp-rail {
   display: flex;
   flex-direction: column;
@@ -123,6 +127,8 @@
   margin: calc(var(--lc-ring) * -1);
   padding: var(--lc-ring);
   overflow: auto;
+  /* A row the keyboard scrolls to stops a ring's width in from the edge, so its ring isn't cut off. */
+  scroll-padding: var(--lc-ring);
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }

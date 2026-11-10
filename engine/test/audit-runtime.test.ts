@@ -12,7 +12,7 @@ import type { Item, ProviderInfo, Thread } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { capture, diffFiles } from "../src/checkpoints.ts";
 import { jsonLines, run } from "../src/exec.ts";
-import { critiquePrompt, fixPrompt, parseFindings, repairPrompt } from "../src/review.ts";
+import { fixPrompt, parseFindings } from "../src/review.ts";
 import { commandRisk, readsOnly, ruleFor } from "../src/risk.ts";
 import { handoff, providers, Runtime } from "../src/runtime.ts";
 import { Routines } from "../src/routines.ts";
@@ -196,19 +196,19 @@ test("queue: what waited on a question left open goes once you skip it", async (
   }
 });
 
-test("queue: what waited on a planner's plan goes once you turn the plan down", async () => {
-  const { texts: sent, restore } = fake(async (text, sink) => {
-    if (/Add/.test(text)) sink.text('<plan title="Theme">1. Do it</plan>');
+test("queue: what waited on a tool's plan goes once you turn the plan down", async () => {
+  const { texts: sent, restore } = fake(async (text, sink, signal) => {
+    if (/Add/.test(text)) await sink.propose("Theme", "1. Do it", signal);
   });
   try {
-    const { store, runtime } = session({ lead: "@claude:claude-opus-5-5" });
-    store.setSettings({ approvePlans: true });
+    const { store, runtime } = session();
     const first = runtime.send("t", "Add a theme system with a store, migrations, a settings page, tests and docs across the whole app");
+    await until(() => asks(store.timeline("t")).length === 1, "the plan asks");
     await runtime.send("t", "queued");
-    await first;
     const plan = asks(store.timeline("t"))[0];
     assert.equal(plan?.kind, "proposal");
     runtime.answerProposal("t", plan.id, false);
+    await first;
     await until(() => sent.length === 2 && !runtime.isRunning("t"), "it goes");
     assert.match(sent[1], /queued/);
   } finally {
@@ -383,7 +383,7 @@ test("approvals: Stop while the Reviewer reads a step: the step doesn't go ahead
     sink.text("ALLOW: routine");
   }, "codex");
   try {
-    const { store, runtime } = session({ access: "review", checks: { by: "codex:gpt-6", rounds: 2 } });
+    const { store, runtime } = session({ access: "review" });
     const go = runtime.send("t", "build");
     await until(() => reading, "the Reviewer reads the step");
     runtime.stop("t");
@@ -551,7 +551,7 @@ test("queue: a /reviewer sent while a turn runs reads the change when it ends", 
   const r = fake(async (_t, sink) => sink.text('<findings>{"verdict":"pass","summary":"Fine","findings":[]}</findings>'), "codex");
   try {
     const dir = await repo();
-    const { store, runtime } = session({ turns: 1, checks: { by: "codex:gpt-6", rounds: 2 } }, undefined, dir);
+    const { store, runtime } = session({ turns: 1 }, undefined, dir);
     store.setSettings({ reviewSmall: true });
     await changed(store, dir);
     const first = runtime.send("t", "first");
@@ -569,11 +569,11 @@ test("queue: a /reviewer sent while a turn runs reads the change when it ends", 
 test("compact: a /compact goes to the tool as it is, with nothing put in front of it", async () => {
   const { texts: sent, restore } = fake(async () => {});
   try {
-    const { store, runtime } = session({ agent: "@claude:claude-sonnet-5-5", lead: "@claude:claude-opus-5-5" });
+    const { store, runtime } = session({ agent: "@claude:claude-sonnet-5-5" });
     await runtime.send("t", "explain this");
-    // The other agent spoke since, and a Reviewer's note waits to be heard: neither goes in front of the command.
+    // Another model spoke since: nothing of it goes in front of the command.
     store.putItem("t", { kind: "turn", id: "other", turn: 2, at: 1, agent: "@claude:claude-opus-5-5", model: "claude:claude-opus-5-5", status: "done" });
-    store.putItem("t", { kind: "text", id: "said", turn: 2, at: 1, text: "the planner spoke", streaming: false });
+    store.putItem("t", { kind: "text", id: "said", turn: 2, at: 1, text: "another model spoke", streaming: false });
     store.patchThread("t", { turns: 2 });
     await runtime.send("t", "/compact");
     assert.equal(sent.at(-1), "/compact");
@@ -609,7 +609,7 @@ test("reviewer: Stop as the read ends, with a verdict in hand, doesn't leave the
   }, "codex");
   try {
     const dir = await repo();
-    const s = session({ turns: 1, checks: { by: "codex:gpt-6", rounds: 2 } }, undefined, dir);
+    const s = session({ turns: 1 }, undefined, dir);
     runtime = s.runtime;
     s.store.setSettings({ reviewSmall: true });
     await changed(s.store, dir);
@@ -630,12 +630,10 @@ test("reviewer: a verdict that isn't a pass doesn't pass", () => {
   assert.equal(parseFindings('<findings>{"findings":[{"file":"a","severity":"note","note":"n"}]}</findings>')?.verdict, "pass", "no verdict and nothing blocking still passes");
 });
 
-test("reviewer: a fail with nothing marked blocking still tells the coder what's wrong", () => {
+test("reviewer: a fail with nothing marked blocking still tells the lead what's wrong", () => {
   const f = [{ file: "a.ts", line: 3, severity: "note" as const, note: "this drops the last row" }];
   assert.match(fixPrompt("GPT", f, "Rows go missing"), /a\.ts:3: this drops the last row/);
   assert.match(fixPrompt("GPT", [], "Rows go missing"), /Rows go missing/);
-  assert.match(repairPrompt("GPT", "Haiku", [], "Rows go missing"), /Rows go missing/);
-  assert.match(critiquePrompt(["GPT"], [], ["Rows go missing", undefined]), /Rows go missing/);
 });
 
 /* Restarts and limits. */
@@ -695,23 +693,6 @@ test("restart: what's in the queue stays held when nothing carries on; an edit o
     assert.equal(sent.length, 0, "taking one out doesn't send the other");
     await runtime.send("t", "now");
     await until(() => sent.length === 2 && !runtime.isRunning("t"), "your next message does");
-  } finally {
-    restore();
-  }
-});
-
-test("restart: a refiner on the planner's model carries on as a refiner, able to edit", async () => {
-  const { opened, restore } = fake(async () => {});
-  try {
-    const home = mkdtempSync(join(tmpdir(), "lc-audit-"));
-    const lead = "@claude:claude-opus-5-5";
-    const a = session({ turns: 1, status: "running", lead, turnBy: lead, agent: "@claude:claude-sonnet-5-5" }, home);
-    a.store.putItem("t", { kind: "turn", id: "m", turn: 1, at: 1, agent: lead, model: "claude:claude-opus-5-5", planning: false, part: "refine", status: "running" });
-    a.store.flush();
-    const b = session({}, home);
-    b.runtime.continueAfterRestart();
-    await until(() => opened.length === 1 && !b.runtime.isRunning("t"), "it carries on");
-    assert.equal(opened[0].planning, false);
   } finally {
     restore();
   }

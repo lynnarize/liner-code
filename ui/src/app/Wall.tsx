@@ -20,6 +20,7 @@ import { getState, loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf, ago, bucketOf, clock, duration, isModelAgent, markOf, mergeFiles, modelLabel, onTheWall, plural, providerLabel, sumLines, threadModel, turnsOf, wallShown } from "./model";
 import { isStep, trailSteps, type TrailStep } from "./Timeline";
+import { pairOf } from "./Crew";
 import { Kbd, Lines, StatusMark } from "./ui";
 import * as os from "./os";
 import "./wall.css";
@@ -494,7 +495,9 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
 
   const ref = info.model || threadModel(t, agents, providers);
   const model = ref ? modelLabel(ref, providers) : "";
-  const who = isModelAgent(info.agent) ? [ref && providerLabel(ref, providers), model] : [agentOf(info.agent, agents, providers).name, model];
+  // A pair as one ("Opus 5.5 + Sol"); a model on its own by its tool and name; your agent by its name and model.
+  const pair = pairOf(t, agents, providers);
+  const who = pair ? [pair.name] : isModelAgent(info.agent) ? [ref && providerLabel(ref, providers), model] : [agentOf(info.agent, agents, providers).name, model];
   // A named agent on a model of the same name (Demo on Demo) says it once.
   const sub = [project, ...who].filter((x, i, all) => x && x !== all[i - 1]).join(" · ");
   const when = ago(info.since, now) === "now" ? "just now" : ago(info.since, now);

@@ -677,7 +677,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
   const { width: W, height: H } = FRAME[it.size];
   const size = SIZES.find((x) => x.id === it.size)?.label ?? it.size;
   const open = () => openInDesign(threadId, it.design, undefined);
-  const agentName = thread ? agentOf(thread.lead ?? thread.agent, agents, providers).name : "the agent";
+  const agentName = thread ? agentOf(thread.agent, agents, providers).name : "the agent";
 
   if (inline) {
     // A desktop design takes the width; a tablet or phone keeps its screen, no taller than 640.

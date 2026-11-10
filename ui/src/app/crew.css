@@ -786,3 +786,72 @@ button.lc-cr-bg:hover {
     animation: none;
   }
 }
+
+/* ---------- a pair's sidekick ---------- */
+/* Its row in the fan-out: its model's mark beside the name, a quiet "Sidekick" tag, and once it's back, what it changed as measured. */
+.lc-fan-1 > svg {
+  flex: none;
+}
+.lc-fan-tag {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-fan-ag[data-side] .lc-fan-now .lc-lines {
+  margin-left: 4px;
+}
+/* The files a brief changed, measured: a status letter, the path, its lines; each opens in Files. */
+.lc-cr-files {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-cr-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+@media (hover: hover) {
+  .lc-cr-file:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-cr-fs {
+  flex: none;
+  width: 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--l-ink-3);
+}
+.lc-cr-fs[data-s="added"] {
+  color: var(--l-ok-text);
+}
+.lc-cr-fs[data-s="deleted"] {
+  color: var(--l-danger-text);
+}
+.lc-cr-fp {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

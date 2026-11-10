@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.2.5 (beta)
+
+**Lead + sidekick.** A session is one model or a pair: the lead talks to you, plans, and hands
+bounded work to a quicker model beside it, then reads what it did. It takes the place of Plan, then
+build and Auto, and your sessions from before move over by themselves. **The picker is about models
+only**, and the Reviewer has a switch of its own in the session's bar.
+
+### Added
+
+- **A pair:** the lead hands its sidekick one piece of work at a time (an edit it can spell out, the
+  same change in many files, a slow test or build run) and waits for it. The sidekick works in the
+  same folder under the session's access level, and its work shows as a row under the lead's turn:
+  its steps, its tokens, its report and the files it changed, as Liner Code measured them, not as it
+  said. Stop on its row stops it alone; the session's Stop stops both. Its use counts toward the
+  session's spending cap. It remembers earlier briefs, so the lead can correct it rather than start
+  over. It can't ask you anything, and it may not send agents of its own: one that tries is stopped,
+  and the lead is told why. It works with Claude Code, Codex, OpenCode and Hermes, in any mix.
+- **The Demo plays a pair**, so you can watch a lead hand work over with no account.
+
+### Changed
+
+- **Plan, then build and Auto are gone**, replaced by the pair. A Plan session's planner is now its
+  lead and its builder the sidekick; an Auto session is led by its strongest model with its everyday
+  one beside it. Each picks up from the conversation so far.
+- **The model picker:** Pair, Best (the lead alone) and Fast (the sidekick alone), filled in from what's
+  ready, then every model by tool, then your agents. Picking Pair shows who leads and who works, and
+  each model has its maker's mark.
+- **The Reviewer leaves the picker:** its word in the session's bar opens a menu to read each change
+  or not, and who reads. Settings › Agentic features is down to two parts: your pair and the Reviewer.
+- **The Reviewer is never one of the models that wrote the change**, the sidekick included. A change
+  whose check was skipped because you'd queued a message is read afterwards, from where it started.
+  A fix that changed nothing isn't read a second time: it's yours, and it says so.
+- **Routines are switched off for now.** What you saved stays as it is, and comes back with them.
+
+### Fixed
+
+- A model whose tool is gone says so, instead of answering as the Demo.
+- Picking another model after a usage limit really switches to it; before, the session kept running
+  on the model it had fallen back to, while the picker showed your pick.
+- ⌘K no longer drops what you type while it opens.
+- The panel's tabs keep their names wherever they fit.
+- Long tool calls no longer time out on OpenCode.
+- A Codex session on Read only can use Liner Code's own tools.
+- OpenCode's token counts were far too low on turns of several steps; they're right now.
+
 ## 0.2.4 (beta), 2026-11-09
 
 **The first beta.** Update from 0.2.3 if you have it: on a Mac Liner Code does it by itself (Restart

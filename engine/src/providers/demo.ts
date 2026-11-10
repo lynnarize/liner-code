@@ -3,13 +3,16 @@
   search, an approval, a real edit, the summary) with no provider installed. It edits files only
   inside the sample project the engine makes for it; anywhere else it says what it would do.
   Asked for a design, it draws a tide screen through Liner Code's own design_show, the same call
-  any agent makes, and draws it again for each comment.
+  any agent makes, and draws it again for each comment. Asked for a plan first, it proposes one
+  inside its turn and waits for your answer, as Claude Code's plan mode does, then carries it out.
+  In a pair it leads (hands the change to its sidekick) or works a brief as the sidekick.
 */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProviderInfo } from "../../../contracts/src/index.ts";
 import { run } from "../exec.ts";
 import type { OpenOptions, Provider, ProviderSession, ToolUpdate, TurnSink } from "./types.ts";
+import { PAIR_ENV } from "../liner-tools.ts";
 
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -56,6 +59,16 @@ export async function ensureSampleProject(home: string) {
 
 /** A design asked for, or a comment on one (the Design surface's say "the design"); building one is a change like any other. */
 const DESIGN_ASK = /\b(design|mock-?up|wireframe|prototype|screen|landing page)\b/i;
+/** Asks for a change, which a pair's lead hands to its sidekick. */
+const CHANGE_ASK = /\b(fix|add|change|make|build|update|remove|delete|rename|refactor|move|write|implement|handle|show|support)\b/i;
+/** The demo's change to its sample project: past the last high tide, wrap round to tomorrow's first; done already, it changes the label instead. */
+function wrapRound(before: string, n: number) {
+  return before.includes("tomorrow")
+    ? before.replace("return `High tide at ${t.at}`;", n % 2 ? "return `High tide at ${t.at}${t.tomorrow ? \" tomorrow\" : \"\"}`;" : "return `High tide at ${t.at}`;")
+    : before.replace("  return null;\n}", "  // Past the last high tide: wrap round to tomorrow's first one.\n  const first = times.find((t) => t.kind === \"high\");\n  return first ? { ...first, tomorrow: true } : null;\n}");
+}
+/** A message that asks for a plan to see before anything's built ("plan it first", "show me a plan", "before you change anything"). */
+export const PLAN_ASK = /\b(make|write|draft|propose|show|give|come up with)\b[^.?!\n]{0,24}\bplan\b|\bplan\b[^.?!\n]{0,24}\b(first|before)\b|\bplan (it|this|that) out\b|\blet me (approve|review|see|check) (it|the plan)\b|\bbefore (you|making any|any) (change|edit|build|start)/i;
 /** Asks that get the demo's agents: work sent off to three of them at once. */
 const AGENTS_ASK = /\b(sub-?agents?|agents?|in parallel|team)\b/i;
 const HAIKU = "claude:claude-haiku-5-5";
@@ -168,9 +181,13 @@ class DemoSession implements ProviderSession {
     sink.session(`demo-session`);
     const file = join(this.o.cwd, "src/tides.js");
     const sample = existsSync(file) && readFileSync(file, "utf8").includes("nextHigh");
+    // A pair's sidekick works the brief, whatever it says; a pair's lead hands a change to it and reads what comes back.
+    if (this.o.sidekick) return this.brief(text, sink, signal, t, n);
     if (DESIGN_ASK.test(text) && !/^Build the design\b/i.test(text.trim())) return this.design(text, sink, signal, t);
-    if (this.o.planning) return this.plan(text, sink, signal, t);
-    if (AGENTS_ASK.test(text)) return this.agents(text, sink, signal, t);
+    // Asked for a plan first: it proposes one and waits; turned down, the turn ends there.
+    if (PLAN_ASK.test(text) && !(await this.plan(text, sink, signal, t))) return;
+    else if (this.o.mcp?.env[PAIR_ENV] === "1" && CHANGE_ASK.test(text) && !AGENTS_ASK.test(text)) return this.lead(text, sink, signal, t);
+    else if (AGENTS_ASK.test(text)) return this.agents(text, sink, signal, t);
 
     await stream((d) => sink.reasoning(d, `${t}-r`), `They asked: "${text.slice(0, 80)}". I'll look at how the tide times are read first, then make the smallest change and run the tests.`, signal, 22);
     await wait(300, signal);
@@ -197,16 +214,7 @@ class DemoSession implements ProviderSession {
     if (this.o.access !== "read") {
       sink.tool({ key: `${t}-3`, tool: "Edit", toolKind: "edit", title: "Edit src/tides.js", path: "src/tides.js", status: "running" });
       await wait(600, signal);
-      if (sample) {
-        const before = readFileSync(file, "utf8");
-        const after = before.includes("tomorrow")
-          ? before.replace("return `High tide at ${t.at}`;", n % 2 ? "return `High tide at ${t.at}${t.tomorrow ? \" tomorrow\" : \"\"}`;" : "return `High tide at ${t.at}`;")
-          : before.replace(
-              "  return null;\n}",
-              "  // Past the last high tide: wrap round to tomorrow's first one.\n  const first = times.find((t) => t.kind === \"high\");\n  return first ? { ...first, tomorrow: true } : null;\n}",
-            );
-        writeFileSync(file, after);
-      }
+      if (sample) writeFileSync(file, wrapRound(readFileSync(file, "utf8"), n));
       sink.tool({ key: `${t}-3`, tool: "Edit", toolKind: "edit", title: "Edit src/tides.js", path: "src/tides.js", status: "done", output: sample ? "Wrapped round to tomorrow's first high tide" : "(skipped: the demo only edits its sample project)" });
     }
 
@@ -240,46 +248,30 @@ class DemoSession implements ProviderSession {
     // Each turn's own use: what one turn of the work reads and writes (not running totals, which the work and design turns counted differently).
     sink.usage({ inputTokens: 1800 + n * 420, outputTokens: 260, cacheReadTokens: 1200 * n, costUsd: 0, contextTokens: 6200 + n * 900, contextWindow: 200000 });
   }
-  /** A planner's turn: talk is answered; a change gets a look, one question, and a plan to approve. */
+  /**
+    A plan first, inside the turn: a look at the code, then the plan as a card that waits for you
+    (sink.propose, as Claude Code's plan mode asks). Approved (your edits and all), it says so and
+    the turn goes on to do the work; turned down, it says what it would do with your note, and
+    the turn ends. True when it goes on.
+  */
   private async plan(text: string, sink: TurnSink, signal: AbortSignal, t: string) {
-    if (!/\b(fix|add|change|make|build|update|remove|delete|rename|refactor|move|write|implement|handle|show|support)\b/i.test(text)) {
-      await stream((d) => sink.text(d, `${t}-a`), "Hi, Demo here. I'm a scripted planner, so I can't really chat, but I answer like a real one: talk gets a reply, and a change gets a plan. Ask me to fix the tide time after midnight to see the plan.", signal);
-      sink.usage({ inputTokens: 300, outputTokens: 60, cacheReadTokens: 0, costUsd: 0, contextTokens: 1400, contextWindow: 200000 }, false);
-      return;
-    }
-    await stream((d) => sink.reasoning(d, `${t}-r`), `Before planning "${text.slice(0, 60)}", I'll read how tide times are compared and what the tests cover.`, signal, 22);
-    sink.tool({ key: `${t}-1`, tool: "Read", toolKind: "read", title: "Read src/tides.js", path: "src/tides.js", status: "running" });
+    await stream((d) => sink.reasoning(d, `${t}-p`), `They want a plan before anything changes: "${text.slice(0, 60)}". I'll read how tide times are compared and what the tests cover, then propose it.`, signal, 22);
+    sink.tool({ key: `${t}-p1`, tool: "Read", toolKind: "read", title: "Read src/tides.js", path: "src/tides.js", status: "running" });
     await wait(600, signal);
-    sink.tool({ key: `${t}-1`, tool: "Read", toolKind: "read", title: "Read src/tides.js", path: "src/tides.js", status: "done" });
-    sink.tool({ key: `${t}-2`, tool: "Read", toolKind: "read", title: "Read src/tides.test.js", path: "src/tides.test.js", status: "running" });
+    sink.tool({ key: `${t}-p1`, tool: "Read", toolKind: "read", title: "Read src/tides.js", path: "src/tides.js", status: "done" });
+    sink.tool({ key: `${t}-p2`, tool: "Read", toolKind: "read", title: "Read src/tides.test.js", path: "src/tides.test.js", status: "running" });
     await wait(500, signal);
-    sink.tool({ key: `${t}-2`, tool: "Read", toolKind: "read", title: "Read src/tides.test.js", path: "src/tides.test.js", status: "done" });
-    const answers = await sink.ask(
-      [
-        {
-          question: "After the last high tide of the day, what should it show?",
-          header: "Past midnight",
-          options: [
-            { label: "Tomorrow's first high tide", description: "Marked as tomorrow, so the label can say so.", suggested: true },
-            { label: "Nothing until the next table loads", description: "The simplest, but the card goes blank at night." },
-            { label: "The last high tide that passed", description: "Never blank, but it can look like an error." },
-          ],
-        },
-      ],
-      signal,
-    ).catch(() => null);
-    const pick = answers ? Object.values(answers)[0] : "Tomorrow's first high tide";
-    await stream((d) => sink.text(d, `${t}-a`), `Times are compared as strings, so after the last high tide it returns nothing. You picked: ${pick}. Here's the plan for the coder.\n\n`, signal);
-    // Handed over the way a real planner does it, in <plan> tags the turn turns into a card when it ends.
-    await stream(
-      (d) => sink.text(d, `${t}-a`),
-      `<plan title="Wrap round to tomorrow's first high tide">\n1. Fall back to the first high tide of the list when none is left today — src/tides.js\n2. Mark it as tomorrow so the label can say so — src/tides.js\n3. Add a test for a time after the last high tide — src/tides.test.js\n4. Run npm test\n</plan>`,
-      signal,
-      90,
-    );
-    // A real planner often says a word after the plan too; it reads below the card.
-    await stream((d) => sink.text(d, `${t}-a`), "\n\nIt's a small change in one file plus a test. Approve it and the builder starts, or tell me what to change.", signal);
-    sink.usage({ inputTokens: 900, outputTokens: 180, cacheReadTokens: 400, costUsd: 0, contextTokens: 4100, contextWindow: 200000 }, false);
+    sink.tool({ key: `${t}-p2`, tool: "Read", toolKind: "read", title: "Read src/tides.test.js", path: "src/tides.test.js", status: "done" });
+    await stream((d) => sink.text(d, `${t}-p`), "Times are compared as strings, so after the last high tide `nextHigh` returns nothing. Here's the plan; I'll start once you approve it.", signal);
+    const plan = "1. Fall back to the first high tide of the list when none is left today — src/tides.js\n2. Mark it as tomorrow so the label can say so — src/tides.js\n3. Run npm test";
+    const answer = await sink.propose("Wrap round to tomorrow's first high tide", plan, signal);
+    if (!answer.approve) {
+      await stream((d) => sink.text(d, `${t}-q`), answer.note ? `\n\nI'll change the plan: ${answer.note}. Ask for it again and I'll show you the new one.` : "\n\nI've left everything as it was. Tell me what to change and I'll plan it again.", signal);
+      sink.usage({ inputTokens: 900, outputTokens: 180, cacheReadTokens: 400, costUsd: 0, contextTokens: 4100, contextWindow: 200000 }, false);
+      return false;
+    }
+    await stream((d) => sink.text(d, `${t}-q`), answer.plan ? "\n\nApproved, with your changes to the steps. Starting on it now.\n\n" : "\n\nApproved. Starting on it now.\n\n", signal);
+    return true;
   }
 
   /**
@@ -324,6 +316,88 @@ class DemoSession implements ProviderSession {
       signal,
     );
     sink.usage({ inputTokens: 2400 + round * 600, outputTokens: 1900, cacheReadTokens: 1500 * round, costUsd: 0, contextTokens: 7800 + round * 2100, contextWindow: 200000 });
+  }
+
+  /**
+    A pair's lead: it reads enough to decide the change, hands the edit and the test run to its
+    sidekick through Liner Code's own sidekick tool (the call any lead makes), then reads the diff
+    that comes back measured and answers.
+  */
+  private async lead(text: string, sink: TurnSink, signal: AbortSignal, t: string) {
+    await stream((d) => sink.reasoning(d, `${t}-r`), `"${text.slice(0, 60)}" is a small change once it's decided. I'll read the code to decide it, hand the edit and the test run to my sidekick, then check its diff myself.`, signal, 18);
+    sink.tool({ key: `${t}-1`, tool: "Read", toolKind: "read", title: "Read src/tides.js", path: "src/tides.js", status: "running" });
+    await wait(700, signal);
+    sink.tool({ key: `${t}-1`, tool: "Read", toolKind: "read", title: "Read src/tides.js", path: "src/tides.js", status: "done" });
+    await stream((d) => sink.text(d, `${t}-a`), "Times are compared as strings, so after the last high tide `nextHigh` returns nothing. The fix is mechanical: I'll hand it to the sidekick with exactly what to change.", signal);
+    const args = {
+      brief: "In src/tides.js, change nextHigh so that when no high tide is left after `from`, it returns the first high tide of `times` with `tomorrow: true` added (a copy, not the original object). Don't change label() or the tests.",
+      done_when: "npm test passes.",
+    };
+    const call = { key: `${t}-sk`, tool: "mcp__liner__sidekick", toolKind: "task" as const, title: "Sidekick: In src/tides.js, change nextHigh so that when no high tide is left…", input: JSON.stringify(args) };
+    sink.tool({ ...call, status: "running" });
+    let said = "";
+    let failed = false;
+    try {
+      if (!this.o.mcp) throw new Error("Liner Code's tools aren't with this session.");
+      const r = await fetch(this.o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": this.o.mcp.env.LINER_SURFACE_KEY }, body: JSON.stringify({ tool: "sidekick", args }), signal });
+      const b = (await r.json()) as { ok: boolean; result?: { content: { type: string; text?: string }[]; isError?: boolean }; error?: string };
+      said = b.result?.content.find((c) => c.type === "text")?.text ?? b.error ?? "";
+      failed = !b.ok || Boolean(b.result?.isError);
+    } catch (e) {
+      if (signal.aborted) throw e;
+      said = e instanceof Error ? e.message : String(e);
+      failed = true;
+    }
+    sink.tool({ ...call, status: failed ? "failed" : "done", output: said.slice(0, 4000) });
+    const changed = /src\/tides\.js/.test(said.split("Files changed")[1] ?? "");
+    const finished = /finished the brief/.test(said);
+    if (finished && changed) {
+      sink.tool({ key: `${t}-2`, tool: "Bash", toolKind: "exec", title: "Run git diff src/tides.js", input: "git diff src/tides.js", status: "running" });
+      await wait(600, signal);
+      sink.tool({ key: `${t}-2`, tool: "Bash", toolKind: "exec", title: "Run git diff src/tides.js", input: "git diff src/tides.js", status: "done", output: "+  // Past the last high tide: wrap round to tomorrow's first one.\n+  const first = times.find((t) => t.kind === \"high\");\n+  return first ? { ...first, tomorrow: true } : null;" });
+    }
+    await stream(
+      (d) => sink.text(d, `${t}-b`),
+      finished && changed
+        ? "\n\nI read its diff: `nextHigh` now falls back to the day's first high tide, as a copy marked `tomorrow`, and it ran the tests, which pass. That's the whole change; it's on the right if you'd rather not keep it."
+        : finished
+          ? "\n\nThe sidekick finished, but the measured diff shows no change to src/tides.js, so its report doesn't hold up. I'd make the change myself next."
+          : `\n\nThe sidekick didn't finish, so nothing is done yet: ${said.split("\n")[0] || "it stopped"}`,
+      signal,
+    );
+    sink.usage({ inputTokens: 3100, outputTokens: 420, cacheReadTokens: 1800, costUsd: 0, contextTokens: 7400, contextWindow: 200000 });
+  }
+
+  /** A pair's sidekick on a brief: a few steps, each a moment long, then a tight report. */
+  private async brief(text: string, sink: TurnSink, signal: AbortSignal, t: string, n: number) {
+    const file = join(this.o.cwd, "src/tides.js");
+    const sample = existsSync(file) && readFileSync(file, "utf8").includes("nextHigh");
+    const step = async (key: string, u: Omit<ToolUpdate, "key" | "status">, ms: number, output?: string) => {
+      sink.tool({ key: `${t}-${key}`, ...u, status: "running" });
+      await wait(ms, signal);
+      sink.tool({ key: `${t}-${key}`, ...u, status: "done", ...(output ? { output } : {}) });
+    };
+    await stream((d) => sink.reasoning(d, `${t}-r`), `The brief: ${text.split("\n")[0].slice(0, 80)}. Read, change, test, report.`, signal, 18);
+    await step("1", { tool: "Read", toolKind: "read", title: "Read src/tides.js", path: "src/tides.js" }, 1100);
+    await step("2", { tool: "Grep", toolKind: "search", title: "Search for nextHigh(", path: "src" }, 800);
+    const writes = this.o.access !== "read" && sample;
+    if (writes) {
+      sink.tool({ key: `${t}-3`, tool: "Edit", toolKind: "edit", title: "Edit src/tides.js", path: "src/tides.js", status: "running" });
+      await wait(1300, signal);
+      writeFileSync(file, wrapRound(readFileSync(file, "utf8"), n));
+      sink.tool({ key: `${t}-3`, tool: "Edit", toolKind: "edit", title: "Edit src/tides.js", path: "src/tides.js", status: "done" });
+    }
+    // The same card as the lead's: in Ask, a command waits for the person.
+    const ran = this.o.access === "read" ? false : this.o.access !== "ask" || (await sink.approve({ key: `${t}-4`, tool: "Bash", title: "Run npm test", description: "Runs the project's tests to check the change.", risk: "low", fields: [{ label: "Command", value: "npm test" }, { label: "Where", value: this.o.cwd }] }, signal)).allow;
+    if (ran) await step("4", { tool: "Bash", toolKind: "exec", title: "Run npm test", input: "npm test" }, 1600, "✔ finds the next high tide (0.6ms)\nℹ tests 1\nℹ pass 1\nℹ fail 0");
+    sink.usage({ inputTokens: 2600, outputTokens: 310, cacheReadTokens: 900, costUsd: 0 });
+    await stream(
+      (d) => sink.text(d, `${t}-a`),
+      writes
+        ? `Done. nextHigh in src/tides.js now returns a copy of the day's first high tide with tomorrow: true when none is left after \`from\`.\n\nFiles: src/tides.js.\nChecks: ${ran ? "npm test, 1 passed, 0 failed." : "none; running npm test wasn't allowed."}\nLeft: no test covers a time after the last high tide.`
+        : `Not done: ${sample ? "this session only reads, so I couldn't edit src/tides.js" : "this isn't the demo's sample project, so I left it alone"}.\n\nFiles: none.\nChecks: none.\nLeft: the whole change.`,
+      signal,
+    );
   }
 
   /** Stops one of its agents at its next step. */

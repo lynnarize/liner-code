@@ -7,8 +7,8 @@
   keeps running and a page stays loaded, and each session keeps its own dock.
 */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AddonInfo, Item, Thread } from "@contracts";
-import { emptyDock, readDock, type DockState, type DockTab } from "./dock";
+import { ROUTINES_ON, type AddonInfo, type Item, type Thread } from "@contracts";
+import { closeWhere, emptyDock, readDock, type DockState, type DockTab } from "./dock";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { checkpointsOf, plural, sumLines } from "./model";
@@ -20,7 +20,8 @@ export type SurfaceId = "session" | "side" | "changes" | "agents" | "files" | "t
 /** A tab: a surface, the New tab guide, one routine run (`run:<id>`), a panel (`app:<id>`) or the preview of one on its card (`preview:<item>`). */
 export type Tab = DockTab;
 
-export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { size?: number }) => ReactNode }[] = [
+type Surface = { id: SurfaceId; label: string; key: string; icon: (p: { size?: number }) => ReactNode };
+const EVERY_SURFACE: Surface[] = [
   { id: "session", label: "Session", key: "I", icon: I.details },
   { id: "side", label: "Side chat", key: "C", icon: I.comment },
   { id: "browser", label: "Browser", key: "B", icon: I.globe },
@@ -34,6 +35,8 @@ export const SURFACES: { id: SurfaceId; label: string; key: string; icon: (p: { 
   { id: "routines", label: "Routines", key: "R", icon: I.routines },
   { id: "agents", label: "Agents", key: "A", icon: I.agents },
 ];
+// Routines switched off (contracts, ROUTINES_ON): no tab, no key, no place in the + menu, the guide or ⌘K.
+export const SURFACES = EVERY_SURFACE.filter((s) => ROUTINES_ON || s.id !== "routines");
 
 export const surfaceOf = (id: Tab) => SURFACES.find((s) => s.id === id);
 
@@ -49,7 +52,8 @@ export function keptDock(threadId: string): DockState {
   if (have) return have;
   try {
     const read = readDock(JSON.parse(localStorage.getItem(DOCK_KEY(threadId)) || "null"));
-    if (read) return read;
+    // Routines switched off: a kept Routines tab, or one of a run, doesn't come back.
+    if (read) return ROUTINES_ON ? read : closeWhere(read, (t) => t === "routines" || t.startsWith("run:"));
   } catch {
     // none kept, or not readable: a fresh one
   }

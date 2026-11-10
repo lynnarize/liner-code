@@ -4,7 +4,7 @@
 */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentProfile, PanelPlace, RoutineRun, SessionMode } from "@contracts";
-import { CREATE_ADDON_ASK } from "@contracts";
+import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
 import { Toaster, toast } from "@liner/components/toast/toast";
 import { AgentDialog } from "./AgentDialog";
@@ -180,7 +180,7 @@ export function App() {
   useEffect(() => bridge.badge(badgeOn ? needs : 0), [needs, badgeOn]);
   // The menu bar item says the same, with which sessions, while the window is out of sight.
   const menuBar = useEngine((s) => s.settings.menuBar !== false);
-  const live = threads.filter((t) => !t.archived && !t.routine && !t.trial);
+  const live = threads.filter((t) => !t.archived && !t.routine);
   const traySay = JSON.stringify({
     show: menuBar,
     working: live.filter((t) => t.status === "running" || t.agentsAtWork).map((t) => ({ id: t.id, title: t.title })),
@@ -307,7 +307,8 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [fromWall]);
-  const openRun = (run: RoutineRun) => (run.threadId ? openSession(run.threadId, `run:${run.id}`) : go({ kind: "routines" }));
+  // Routines switched off (contracts, ROUTINES_ON): a run's session still opens, to read, without the run's tab.
+  const openRun = (run: RoutineRun) => (!ROUTINES_ON ? run.threadId && openSession(run.threadId) : run.threadId ? openSession(run.threadId, `run:${run.id}`) : go({ kind: "routines" }));
   const editRoutine = (id?: string, projectId?: string) => go({ kind: "routine", id, projectId: projectId ?? (here?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
   const newSession = (projectId?: string) => {
     go({ kind: "home", projectId: projectId ?? (here?.projectId || lastProject) });
@@ -434,8 +435,11 @@ export function App() {
       // A page of its own (Change what it may do) searches only its own items.
       setAsked(document.querySelector(".l-cmd__crumb") ? "" : el.value.trim());
     };
-    document.addEventListener("input", on, true);
-    return () => document.removeEventListener("input", on, true);
+    // Heard as the event bubbles out, after the menu's own onChange. Caught on the way in (capture),
+    // this set state before React's listener ran: App re-rendered in between, the field was put back
+    // to the menu's old query, and every keystroke but the last was lost.
+    document.addEventListener("input", on);
+    return () => document.removeEventListener("input", on);
   }, [menu]);
   // Timelines already loaded answer at once; the engine's search over every session follows,
   // a moment after you stop typing, one hit a session.
@@ -485,8 +489,12 @@ export function App() {
       { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={15} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
       { id: "wall", label: "The Wall", group: "Actions", icon: <I.wall size={15} />, keywords: ["every session", "all sessions", "grid", "overview"], shortcut: shortcutOf("wall"), onSelect: showWall },
       { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={15} />, onSelect: () => go({ kind: "usage" }) },
-      { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={15} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
-      { id: "routine-new", label: "New routine", group: "Actions", icon: <I.plus size={15} />, onSelect: () => editRoutine() },
+      ...(ROUTINES_ON
+        ? [
+            { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={15} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
+            { id: "routine-new", label: "New routine", group: "Actions", icon: <I.plus size={15} />, onSelect: () => editRoutine() },
+          ]
+        : []),
       { id: "settings", label: "Settings", group: "Actions", icon: <I.settings size={15} />, shortcut: shortcutOf("settings"), onSelect: () => setSettings(true) },
       { id: "sidebar", label: sidebar ? "Hide the sidebar" : "Show the sidebar", group: "Actions", icon: <I.sidebar size={15} />, shortcut: shortcutOf("sidebar"), onSelect: () => setSidebar((s) => !s) },
       { id: "agent", label: "New agent", group: "Actions", icon: <I.plus size={15} />, onSelect: () => setAgentDialog({ open: true }) },
@@ -622,9 +630,9 @@ export function App() {
               )
             ) : view.kind === "wall" ? (
               <Wall sidebar={sidebar} onSidebar={() => setSidebar(true)} onOpen={openFromWall} onBack={leaveWall} onNew={() => newSession()} />
-            ) : view.kind === "routines" ? (
+            ) : ROUTINES_ON && view.kind === "routines" ? (
               <RoutinesPage sidebar={sidebar} onSidebar={() => setSidebar(true)} onNew={() => editRoutine()} onEdit={(id) => editRoutine(id)} onOpenRun={openRun} />
-            ) : view.kind === "routine" ? (
+            ) : ROUTINES_ON && view.kind === "routine" ? (
               <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening the routine</span></div>}>
                 <RoutineBuilder key={view.id ?? "new"} id={view.id} projectId={view.projectId} onClose={() => setView(view.back ?? { kind: "routines" })} onOpenRun={openRun} />
               </Suspense>

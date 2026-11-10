@@ -152,7 +152,7 @@ export class Designs {
       if (!a.html.trim()) throw new Error("The design is empty.");
       if (a.html.length > MAX) throw new Error("That design is too large; keep it under 2 MB, with big pictures as files beside it.");
       // A page passed as html is written only among the designs. Any other file is the agent's to edit with
-      // its own tools, which ask first where the session asks: a planner or a side chat, which only read, or
+      // its own tools, which ask first where the session asks: a side chat or a Read only session, which only read, or
       // a session on Manual, can't overwrite the project's files through here. A link out of that folder isn't followed.
       // A version you put back goes to its own design's file, wherever in the folder that is.
       const among = `${path}`.startsWith(`${DESIGN_DIR}/`);

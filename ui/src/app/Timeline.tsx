@@ -21,7 +21,7 @@ import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
 import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
 import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
-import { Fanout, stateOf } from "./Crew";
+import { Fanout, isSidekick, onWhom, stateOf } from "./Crew";
 import { toast } from "@liner/components/toast/toast";
 import { Boundary } from "./Boundary";
 import { bridge, isNative } from "./bridge";
@@ -387,7 +387,7 @@ function verb(t: Tool) {
   if (t.toolKind === "search") return "is searching the code";
   if (t.toolKind === "exec") return `is running ${t.title.replace(/^Run /, "").slice(0, 40)}`;
   if (t.toolKind === "web" || t.toolKind === "fetch") return "is reading the web";
-  if (t.toolKind === "task") return "is working with a subagent";
+  if (t.toolKind === "task") return isSidekick(t) ? "is waiting on its sidekick" : "is working with a subagent";
   return `is using ${t.tool}`;
 }
 
@@ -677,13 +677,13 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
     web && "read the web",
     checked && "checked the Browser",
   ].filter((x): x is string => Boolean(x));
-  if (!said.length) said.push(steps.length ? plural(steps.length, "step") : `sent ${plural(sent.length, "agent")}`);
+  if (!said.length) said.push(steps.length ? plural(steps.length, "step") : sent.every(isSidekick) ? "handed work to its sidekick" : `sent ${onWhom(sent)}`);
   // Working: the step under way, as the head would say it ("Editing index.html…"), or the agents it waits on.
   const current = tools.findLast((t) => t.status === "running");
   const thinking = entries.some((e) => e.kind === "thought" && e.it.streaming);
-  // Held up by the agents still at work, as the composer's line counts them (one you stopped isn't).
-  const waiting = sent.filter((t) => stateOf(t) === "running" && t.status === "running").length;
-  const doing = current ? verb(current).replace(/^is /, "") : thinking ? "thinking" : waiting ? `waiting on ${plural(waiting, "agent")}` : "working";
+  // Held up by the agents still at work, as the composer's line counts them (one you stopped isn't): a pair's lead waits on its sidekick.
+  const waiting = sent.filter((t) => stateOf(t) === "running" && t.status === "running");
+  const doing = current ? verb(current).replace(/^is /, "") : thinking ? "thinking" : waiting.length ? `waiting on ${onWhom(waiting)}` : "working";
   return (
     <div className="lc-trail" data-open={isOpen || undefined} data-live={live || undefined}>
       <button type="button" className="lc-trail-sum l-focus" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}>
@@ -1333,7 +1333,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
   const providers = useEngine((s) => s.providers);
   const [note, setNote] = useState("");
   const coder = agentOf(thread?.agent, agents, providers);
-  // Steps an older plan handed to someone else still show who; new plans are all the builder's.
+  // Steps an older plan handed to someone else still show who; new plans are all the lead's.
   const team = [coder];
   const names = team.map((a) => a.name);
   const parsed = useMemo(() => stepsOf(it.plan).map((s, i) => ({ ...s, id: `s${i}`, text: unfiled(ownerOf(s.text, names).text), who: ownerOf(s.text, names).who })), [it.plan, names.join()]);
@@ -1352,7 +1352,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
     };
   }, []);
   const n = Math.max(1, steps.length);
-  // How the builder runs is an agent's own setting; a bare model in Claude Code always brings its helpers.
+  // How the lead runs is an agent's own setting; a bare model in Claude Code always brings its helpers.
   const claude = onClaude(coder.model) && !coder.id.startsWith("@");
   const mode = RUN_MODES.find((m) => m.id === (coder.runMode === "single" ? "single" : "helpers")) ?? RUN_MODES[0];
   const setMode = (runMode: (typeof RUN_MODES)[number]["id"]) => void rpc("agents.save", { agents: agents.map((a) => (a.id === coder.id ? { ...a, runMode } : a)) }).catch(fail);

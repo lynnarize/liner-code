@@ -54,7 +54,7 @@ let state: EngineState = {
   sides: [],
   agents: [],
   providers: [],
-  settings: { onboarded: true, mode: "solo", claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "ask", worktrees: false, branchPrefix: "liner/", badge: true },
+  settings: { onboarded: true, claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "ask", worktrees: false, branchPrefix: "liner/", badge: true },
   keys: [],
   groups: [],
   routines: [],

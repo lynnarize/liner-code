@@ -8,7 +8,7 @@
   models, so a long list is two short steps instead of one long scroll. The effort menu offers the levels the chosen model takes,
   with the tool's own default marked.
 */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { ProviderInfo } from "@contracts";
 import { familyOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
@@ -38,6 +38,15 @@ type Props = {
   extra?: { id: string; label: string; icon: ReactNode; open?: boolean; body: ReactNode };
   /** Told which tab is open: "fav", a tool's id, or the extra tab's. */
   onTab?: (id: string) => void;
+  /** The tab it opens on (a tool's id), rather than the picked model's tool. */
+  tab?: string;
+  /**
+    A search typed somewhere else (the composer's panel has its field on top): the picker then shows
+    only what matches, with no rail and no field of its own, and takes the arrows, Enter and the
+    number keys from `keysFrom`.
+  */
+  query?: string;
+  keysFrom?: RefObject<HTMLElement | null>;
 };
 
 type Line = { kind: "row"; m: ModelChoice; sub: string } | { kind: "head"; text: string } | { kind: "fold"; provider: string; n: number; open: boolean } | { kind: "source"; name: string; n: number; refs: string[] } | { kind: "back"; tool: string; name: string };
@@ -57,17 +66,19 @@ function sourceOf(m: ModelChoice) {
   return SOURCE_NAMES[key] ?? key.replace(/(^|[-_])(\w)/g, (_, sep: string, c: string) => `${sep ? " " : ""}${c.toUpperCase()}`);
 }
 
-export function ModelPicker({ value, also = [], onPick, only, height = 320, autoFocus, foot, extra, onTab }: Props) {
+export function ModelPicker({ value, also = [], onPick, only, height = 320, autoFocus, foot, extra, onTab, tab, query: asked, keysFrom }: Props) {
   const providers = useEngine((s) => s.providers);
   const favs = useEngine((s) => s.settings.favoriteModels) ?? [];
   const showDemo = useEngine((s) => s.settings.showDemo === true);
   const tools = useMemo(() => providers.filter((p) => p.available && p.adapter && p.models.length && (showDemo || p.id !== "demo") && (!only || only(p))), [providers, only, showDemo]);
   const models = useMemo(() => allModels(tools), [tools]);
   const start = value ? value.slice(0, value.indexOf(":")) : undefined;
-  const [rail, setRail] = useState<string>(() => (extra?.open ? extra.id : favs.length && !value ? "fav" : (tools.find((p) => p.id === start)?.id ?? tools[0]?.id ?? "fav")));
+  const [rail, setRail] = useState<string>(() => (extra?.open ? extra.id : tab && tools.some((p) => p.id === tab) ? tab : favs.length && !value ? "fav" : (tools.find((p) => p.id === start)?.id ?? tools[0]?.id ?? "fav")));
   const onExtra = extra !== undefined && rail === extra.id;
   useEffect(() => onTab?.(rail), [rail]);
-  const [query, setQuery] = useState("");
+  const [typed, setQuery] = useState("");
+  const bare = asked !== undefined;
+  const query = asked ?? typed;
   // The source open in a tool with several: the picked model's, else none yet (the sources show).
   const [source, setSource] = useState<string | null>(() => {
     const m = value ? models.find((x) => x.ref === value) : undefined;
@@ -77,6 +88,8 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
   const [hl, setHl] = useState(0);
   const field = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  // The lit row is said from the field the arrows are pressed in (aria-activedescendant): focus stays in the field.
+  const ids = useId();
   useEffect(() => {
     if (autoFocus) field.current?.focus({ preventScroll: true });
   }, []);
@@ -127,7 +140,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
     const next = favs.includes(ref) ? favs.filter((x) => x !== ref) : [...favs, ref];
     void rpc("settings.save", { favoriteModels: next }).catch((e) => toast.error(String(e?.message ?? e)));
   };
-  const keys = (e: KeyboardEvent) => {
+  const keys = (e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "target" | "preventDefault">) => {
     if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
       const m = rows[Number(e.key) - 1];
       if (m) {
@@ -147,11 +160,31 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
     }
   };
 
+  // Keys typed in a field outside the picker reach it as if typed in its own.
+  const live = useRef(keys);
+  live.current = keys;
+  useEffect(() => {
+    const el = keysFrom?.current;
+    if (!el) return;
+    const on = (e: KeyboardEvent) => live.current(e);
+    el.addEventListener("keydown", on);
+    return () => el.removeEventListener("keydown", on);
+  }, [keysFrom]);
+  const lit = rows[hl] ? `${ids}-${hl}` : undefined;
+  useEffect(() => {
+    const el = keysFrom?.current;
+    if (!el) return;
+    el.setAttribute("aria-controls", `${ids}-list`);
+    if (lit) el.setAttribute("aria-activedescendant", lit);
+    else el.removeAttribute("aria-activedescendant");
+    return () => (el.removeAttribute("aria-activedescendant"), el.removeAttribute("aria-controls"));
+  }, [keysFrom, lit]);
+
   if (!tools.length) return <p className="lc-quiet lc-mp-none">No tool is signed in yet. Settings, Models connects one.</p>;
   let n = 0;
   return (
-    <div className="lc-mp" style={{ "--lc-mp-max": `${height}px` } as CSSProperties} onKeyDown={keys}>
-      <div className="lc-mp-rail" role="tablist" aria-label="Tools">
+    <div className="lc-mp" data-bare={bare || undefined} style={{ "--lc-mp-max": `${height}px` } as CSSProperties} onKeyDown={(e) => keys(e)}>
+      {!bare && <div className="lc-mp-rail" role="tablist" aria-label="Tools">
         <button type="button" role="tab" className="lc-mp-tool l-focus" aria-selected={rail === "fav" && !query} title="Starred models" onClick={() => (setRail("fav"), setQuery(""))}>
           <I.star size={14} />
         </button>
@@ -177,7 +210,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
             </button>
           </>
         )}
-      </div>
+      </div>}
       <div className="lc-mp-main">
         {onExtra ? (
           <>
@@ -187,12 +220,12 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
           </>
         ) : (
           <>
-            <div className="lc-mp-find">
+            {!bare && <div className="lc-mp-find">
               <I.search size={13} />
-              <input ref={field} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={rail === "fav" || query ? "Find a model" : `Find a model in ${toolOf(rail)?.label ?? "all tools"}`} aria-label="Find a model" spellCheck={false} />
+              <input ref={field} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={rail === "fav" || query ? "Find a model" : `Find a model in ${toolOf(rail)?.label ?? "all tools"}`} aria-label="Find a model" aria-controls={`${ids}-list`} aria-activedescendant={lit} spellCheck={false} />
               {rail !== "fav" && !query && toolOf(rail)?.modelsFrom === "cli" && <span className="lc-mp-src" title="Asked of the tool itself">{toolOf(rail)?.models.length}</span>}
-            </div>
-            <div ref={list} className="lc-mp-list" role="listbox" aria-label="Models">
+            </div>}
+            <div ref={list} id={`${ids}-list`} className="lc-mp-list" role="listbox" aria-label="Models">
               {lines.length === 0 && <p className="lc-quiet lc-mp-none">{query ? "No model matches that." : rail === "fav" ? "Star a model and it waits here, in every picker." : "This tool reported no models."}</p>}
               {lines.map((l, i) => {
                 if (l.kind === "head") return <div key={`h${i}`} className="lc-mp-head">{l.text}</div>;
@@ -241,7 +274,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
                 const fav = favs.includes(l.m.ref);
                 return (
                   <div key={l.m.ref} className="lc-mp-row" data-on={on || undefined} data-also={also.includes(l.m.ref) || undefined} data-hl={k === hl || undefined} onMouseEnter={() => setHl(k)}>
-                    <button type="button" role="option" aria-selected={on} className="lc-mp-pick l-focus" onClick={(e) => onPick(l.m.ref, { shiftKey: e.shiftKey })} title={l.m.description || undefined}>
+                    <button type="button" role="option" id={`${ids}-${k}`} aria-selected={on} className="lc-mp-pick l-focus" onClick={(e) => onPick(l.m.ref, { shiftKey: e.shiftKey })} title={l.m.description || undefined}>
                       <span className="lc-mp-t">
                         <b>
                           <ModelTag kind={markOf(l.m.ref)} label={l.m.label} size={12} />
@@ -275,9 +308,11 @@ export function ModelPop({ label, value, onPick, only, choices = [], width = 400
   const providers = useEngine((s) => s.providers);
   const choice = choices.find((c) => c.id === value);
   const model = !choice && value ? allModels(providers).find((m) => m.ref === value) : undefined;
+  // Named with what it holds, as the composer's chips are ("Effort: high. Change it"): its own name alone would hide the pick.
+  const now = choice ? [choice.title, choice.note].filter(Boolean).join(", ") : value ? (model?.label ?? value.slice(value.indexOf(":") + 1)) : "none picked";
   return (
     <Pop
-      label={label}
+      label={`${label}: ${now}. Change it`}
       width={width}
       align={align}
       triggerClass="lc-mpop"

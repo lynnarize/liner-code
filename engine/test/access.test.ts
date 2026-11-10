@@ -12,7 +12,7 @@ import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Access, Item, ProviderId, ProviderInfo, Thread } from "../../contracts/src/index.ts";
-import { castOf, emptyUsage } from "../../contracts/src/index.ts";
+import { castOf, emptyUsage, reviewerOf } from "../../contracts/src/index.ts";
 import { parseStep, quickOf, stepPrompt } from "../src/review.ts";
 import { readsOnly } from "../src/risk.ts";
 import { providers, QUIET_MS, Runtime } from "../src/runtime.ts";
@@ -254,13 +254,14 @@ test("reviewer: a later turn is read against every ask, the latest marked, not o
 
 test("your models: picks win while their tool is ready; one that isn't falls back", () => {
   const auto = castOf(ready)!;
-  const mine = castOf(ready, { picks: { cheaper: "claude:claude-haiku-5-5", checker: "codex:gpt-6-sol" } })!;
-  assert.deepEqual([mine.everyday, mine.strong, mine.judge], ["claude:claude-haiku-5-5", auto.strong, "codex:gpt-6-sol"]);
-  assert.equal(castOf(ready, { picks: { cheaper: "cursor:fast", frontier: "grok:x" } })!.everyday, auto.everyday, "Cursor isn't ready here");
-  assert.equal(castOf(ready, { picks: { frontier: "grok:x" } })!.strong, auto.strong, "nor Grok");
+  const picks = { sidekick: "claude:claude-haiku-5-5", checker: "codex:gpt-6-sol" };
+  const mine = castOf(ready, { picks })!;
+  assert.deepEqual([mine.sidekick, mine.lead, reviewerOf([mine.lead], ready, picks)], ["claude:claude-haiku-5-5", auto.lead, "codex:gpt-6-sol"]);
+  assert.equal(castOf(ready, { picks: { sidekick: "cursor:fast", lead: "grok:x" } })!.sidekick, auto.sidekick, "Cursor isn't ready here");
+  assert.equal(castOf(ready, { picks: { lead: "grok:x" } })!.lead, auto.lead, "nor Grok");
 });
 
-test("limits: another account of the same tool carries on first, on the same model; else another family's everyday pick", () => {
+test("limits: another account of the same tool carries on first, on the same model; else the sidekick another family's tools give", () => {
   const runtime = new Runtime(new Store(mkdtempSync(join(tmpdir(), "lc-limit-"))), process.env);
   runtime.providerInfo = ready;
   assert.equal(runtime.fallbackFor("claude", "claude-sonnet-5-5"), "codex:gpt-6-luna-mini");
@@ -305,7 +306,7 @@ test("limits: a session that runs out carries on with the other tool, the conver
   }
 });
 
-test("read only: a write command in a planner's turn or a side chat comes to you, whatever the Reviewer or an earlier rule says", async () => {
+test("read only: a write command in a Read only session or a side chat comes to you, whatever the Reviewer or an earlier rule says", async () => {
   const reviewed: string[] = [];
   const make = (id: ProviderId): Provider => ({
     id,
@@ -323,28 +324,29 @@ test("read only: a write command in a planner's turn or a side chat comes to you
   const saved = { claude: providers.claude, codex: providers.codex };
   providers.claude = make("claude");
   providers.codex = make("codex");
-  const raw = (r: Runtime) => r as unknown as { rules: Map<string, Set<string>>; unattended: Set<string>; turn(id: string, text: string, agent: string, planning: boolean): Promise<void> };
+  const raw = (r: Runtime) => r as unknown as { rules: Map<string, Set<string>>; unattended: Set<string>; turn(id: string, text: string, agent: string): Promise<unknown> };
   const waitAsk = async (store: Store) => {
     for (let i = 0; i < 100 && !asks(store.timeline("t")).some((x) => x.state === "asking"); i++) await new Promise((r) => setTimeout(r, 10));
     return asks(store.timeline("t")).find((x) => x.state === "asking");
   };
   try {
-    // A planner on Reviewer decides, with a rule from an earlier turn: neither lets it through.
+    // A side chat of a session on Reviewer decides, with a rule from an earlier turn: neither lets it through.
     const a = session("review");
+    a.store.patchThread("t", { sideOf: "other" });
     raw(a.runtime).rules.set("t", new Set(["npm install"]));
-    const planning = raw(a.runtime).turn("t", "plan it", "forge", true);
+    const side = raw(a.runtime).turn("t", "look", "forge");
     const card = await waitAsk(a.store);
     assert.ok(card, "it came to you");
     assert.deepEqual(reviewed, [], "the Reviewer wasn't asked");
     a.runtime.answer("t", card!.id, false);
-    await planning;
+    await side;
 
     // A session you made Read only, and a side chat, the same.
     for (const patch of [{ access: "read" as Access }, { sideOf: "other" }]) {
       const b = session("edits");
       b.store.patchThread("t", patch);
       raw(b.runtime).rules.set("t", new Set(["npm install"]));
-      const turn = raw(b.runtime).turn("t", "look", "forge", false);
+      const turn = raw(b.runtime).turn("t", "look", "forge");
       const asked = await waitAsk(b.store);
       assert.ok(asked, `it came to you: ${JSON.stringify(patch)}`);
       b.runtime.answer("t", asked!.id, false);
@@ -353,15 +355,16 @@ test("read only: a write command in a planner's turn or a side chat comes to you
 
     // Nobody's there to ask in a routine: it's declined.
     const c = session("full");
+    c.store.patchThread("t", { access: "read" });
     raw(c.runtime).unattended.add("t");
-    await raw(c.runtime).turn("t", "plan it", "forge", true);
+    await raw(c.runtime).turn("t", "look", "forge");
     assert.equal(asks(c.store.timeline("t")).length, 0);
     assert.ok(c.store.timeline("t").some((x) => x.kind === "text" && /Didn't run it/.test(x.text)), "declined, not run");
 
-    // A builder's turn still uses the rule.
+    // A turn that may write still uses the rule.
     const d = session("ask");
     raw(d.runtime).rules.set("t", new Set(["npm install"]));
-    await raw(d.runtime).turn("t", "build it", "forge", false);
+    await raw(d.runtime).turn("t", "build it", "forge");
     assert.equal(asks(d.store.timeline("t")).length, 0);
     assert.ok(d.store.timeline("t").some((x) => x.kind === "text" && /Ran it/.test(x.text)));
   } finally {

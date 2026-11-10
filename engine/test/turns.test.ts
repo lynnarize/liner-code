@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderInfo, Thread } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
-import { asksForPlan, providers, Runtime } from "../src/runtime.ts";
+import { providers, Runtime } from "../src/runtime.ts";
 import type { OpenOptions, Provider, TurnSink } from "../src/providers/types.ts";
 import { Store } from "../src/store.ts";
 import { createApi } from "../src/api.ts";
@@ -223,15 +223,15 @@ test("routines: its own step runs unattended, never what leaves this Mac; afterw
   }
 });
 
-test("plan: questions and everyday changes go straight to the builder; a hard job is planned, then built without a stop", async () => {
-  const seen: { model: string; planning: boolean; text: string }[] = [];
+test("one writer: a question, a change and a hard job each go to the lead as one turn of its own, with no plan in between", async () => {
+  const seen: { model: string; text: string }[] = [];
   const make: Provider = {
     id: "claude",
     detect: async () => info("claude", []),
     open: (o: OpenOptions) => ({
       turn: async (text, sink) => {
-        seen.push({ model: o.model, planning: Boolean(o.planning), text });
-        sink.text(o.planning ? 'I read the code: settings live in one store.\n<plan title="Theme system">\n1. Add a theme store\n2. Move every screen onto it\n</plan>' : "It resets the tide table.");
+        seen.push({ model: o.model, text });
+        sink.text("It resets the tide table.");
       },
       close() {},
     }),
@@ -239,47 +239,56 @@ test("plan: questions and everyday changes go straight to the builder; a hard jo
   const saved = providers.claude;
   providers.claude = make;
   try {
-    const { store, runtime } = session({ agent: "@claude:claude-sonnet-5-5", lead: "@claude:claude-opus-5-5" });
-    const who = () => seen.map((x) => `${x.model}${x.planning ? " plans" : ""}`);
+    const { store, runtime } = session({ agent: "@claude:claude-sonnet-5-5" });
     await runtime.send("t", "what does reset do?");
     await runtime.send("t", "add a reset button");
-    assert.deepEqual(who(), ["claude-sonnet-5-5", "claude-sonnet-5-5"], "a question and an everyday change start at once, on the builder");
-    // A hard job: Opus plans, and Sonnet builds the plan straight after, as part of the same turn.
     await runtime.send("t", "refactor the settings architecture across every screen into one consistent theme system, with a migration for saved preferences and tests for each screen");
-    assert.deepEqual(who().slice(2), ["claude-opus-5-5 plans", "claude-sonnet-5-5"]);
-    const items = store.timeline("t");
-    const plan = items.findLast((x) => x.kind === "proposal");
-    assert.deepEqual(plan?.kind === "proposal" && [plan.state, plan.auto, plan.title], ["approved", true, "Theme system"]);
-    const marks = items.filter((x) => x.kind === "turn").slice(-2) as { part?: string; why?: string; planning?: boolean }[];
-    assert.deepEqual(marks.map((m) => m.part), [undefined, "build"]);
-    assert.match(marks[0].why ?? "", /A hard job/);
-    // The planner starts with the conversation so far; the builder gets the plan with what it missed.
-    assert.match(seen[2].text, /what does reset do\?[\s\S]*It resets the tide table/);
-    assert.match(seen[3].text, /^Since your last turn, this conversation went on with another model:[\s\S]*settings live in one store[\s\S]*Here is the plan that was approved/);
-    assert.equal(store.thread("t").status, "done");
-    // Asking for a plan: Opus plans and the plan waits for you.
     await runtime.send("t", "plan it first: add a high-contrast mode");
-    assert.deepEqual(who().slice(4), ["claude-opus-5-5 plans"]);
-    const asked = store.timeline("t").findLast((x) => x.kind === "proposal");
-    assert.deepEqual(asked?.kind === "proposal" && [asked.state, asked.auto], ["asking", undefined]);
-    assert.equal(store.thread("t").status, "waiting");
+    assert.deepEqual(seen.map((x) => x.model), ["claude-sonnet-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5"]);
+    // Each went as you wrote it: nobody else's words came first.
+    assert.equal(seen[3].text, "plan it first: add a high-contrast mode");
+    const items = store.timeline("t");
+    assert.ok(!items.some((x) => x.kind === "proposal"), "no plan card unless the tool proposes one");
+    assert.deepEqual(items.flatMap((x) => (x.kind === "turn" ? [x.part ?? "", x.agent] : [])), ["", "@claude:claude-sonnet-5-5", "", "@claude:claude-sonnet-5-5", "", "@claude:claude-sonnet-5-5", "", "@claude:claude-sonnet-5-5"]);
+    assert.equal(store.thread("t").status, "done");
   } finally {
     providers.claude = saved;
   }
 });
 
-test("asking for a plan, in so many words", () => {
-  for (const yes of ["plan it first", "show me a plan before you change anything", "Write up a plan for the migration", "let me approve the plan", "before you edit anything, think it through"]) assert.ok(asksForPlan(yes), yes);
-  for (const no of ["add a reset button", "the plan card looks wrong", "fix the planner's prompt"]) assert.ok(!asksForPlan(no), no);
+test("a plan the tool proposes in its turn waits there: approved, the turn goes on; one whose turn is gone can't be answered", async () => {
+  const answers: { approve: boolean; plan?: string }[] = [];
+  const { restore } = fake(async (_text, sink, signal) => {
+    answers.push(await sink.propose("Theme system", "1. Add a theme store", signal));
+    sink.text("Built it.");
+  });
+  try {
+    const { store, runtime } = session();
+    const working = runtime.send("t", "add a theme system");
+    await until(() => store.timeline("t").some((x) => x.kind === "proposal" && x.state === "asking"), "the plan asks");
+    assert.equal(store.thread("t").status, "waiting");
+    const plan = store.timeline("t").find((x) => x.kind === "proposal")!;
+    runtime.answerProposal("t", plan.id, true, undefined, "1. Add a theme store\n2. Test it");
+    await working;
+    assert.deepEqual(answers, [{ approve: true, note: undefined, plan: "1. Add a theme store\n2. Test it" }]);
+    assert.equal(store.thread("t").status, "done");
+    assert.equal(store.thread("t").access, "auto", "it carries on on Auto, as Claude Code's plan mode does");
+    // A card left over with nobody waiting (its turn ended): answering it says so and it expires.
+    store.putItem("t", { kind: "proposal", id: "old", turn: 1, at: 1, title: "Old", plan: "1. Old", state: "asking" });
+    assert.throws(() => runtime.answerProposal("t", "old", true), /stopped waiting/);
+    assert.equal((store.item("t", "old") as { state: string }).state, "expired");
+  } finally {
+    restore();
+  }
 });
 
-test("after a restart: a planner's plan and a question still ask, and answering them works; a step to allow expires", async () => {
+test("after a restart: a question still asks and answering it works; a plan from before, a planner's included, and a step to allow expire", async () => {
   const home = mkdtempSync(join(tmpdir(), "lc-turns-"));
   const dir = mkdtempSync(join(tmpdir(), "lc-turns-dir-"));
   const before = new Store(home);
   before.putProject({ id: "p", name: "p", path: dir, git: false, createdAt: Date.now() });
   for (const id of ["a", "b"]) before.putThread({ id, projectId: "p", title: "New session", agent: "forge", status: "waiting", access: "ask", turns: 1, usage: emptyUsage(), createdAt: Date.now(), updatedAt: Date.now() });
-  // a: a planner's plan, waiting for your OK. b: a question and a step, from a turn the engine stopped in.
+  // a: a planner's plan from before pairs, waiting for your OK. b: a question and a step, from a turn the engine stopped in.
   before.putItem("a", { kind: "turn", id: "m", turn: 1, at: 1, agent: "forge", model: "claude:claude-opus-5-5", planning: true, status: "done" });
   before.putItem("a", { kind: "proposal", id: "x-plan", turn: 1, at: 1, title: "Theme system", plan: "1. Add a theme store", state: "asking" });
   before.putItem("b", { kind: "turn", id: "m", turn: 1, at: 1, agent: "forge", model: "claude:claude-sonnet-5-5", status: "running" });
@@ -293,12 +302,11 @@ test("after a restart: a planner's plan and a question still ask, and answering 
     const runtime = new Runtime(store, process.env);
     runtime.providerInfo = ready;
     const state = (t: string, id: string) => store.timeline(t).find((x) => x.id === id) as { state?: string };
-    assert.deepEqual([state("a", "x-plan").state, state("b", "q").state, state("b", "s").state], ["asking", "asking", "expired"]);
-    assert.deepEqual([store.thread("a").status, store.thread("b").status], ["waiting", "waiting"], "both still need you");
-    runtime.answerProposal("a", "x-plan", true);
+    assert.deepEqual([state("a", "x-plan").state, state("b", "q").state, state("b", "s").state], ["expired", "asking", "expired"]);
+    assert.deepEqual([store.thread("a").status, store.thread("b").status], ["idle", "waiting"], "only the question still needs you");
+    assert.throws(() => runtime.answerProposal("a", "x-plan", true), /already answered/);
     runtime.answerQuestion("b", "q", { "Which database?": "SQLite" });
-    await until(() => seen.texts.length === 2 && !runtime.isRunning("a") && !runtime.isRunning("b"), "the plan is built and the answer goes");
-    assert.ok(seen.texts.some((t) => /Carry it out[\s\S]*Add a theme store/.test(t)));
+    await until(() => seen.texts.length === 1 && !runtime.isRunning("b"), "the answer goes");
     assert.ok(seen.texts.some((t) => /Which database\?\nSQLite/.test(t)));
   } finally {
     restore();

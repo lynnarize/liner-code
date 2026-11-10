@@ -8,7 +8,7 @@
   Each part of the app asks `pressed(e)` (or `is(e, id)`) instead of reading keys itself, and
   the Mac app's menu takes the same keys, so a menu item and its shortcut never disagree.
 */
-import type { KeyBinding } from "@contracts";
+import { ROUTINES_ON, type KeyBinding } from "@contracts";
 
 export type Command = { id: string; label: string; group: string; keys: string[]; when?: string };
 
@@ -25,7 +25,7 @@ const SURFACE_KEYS: [string, string, string][] = [
   ["device", "Device", "m"],
   ["routines", "Routines", "r"],
   ["agents", "Agents", "a"],
-];
+].filter(([id]) => ROUTINES_ON || id !== "routines") as [string, string, string][];
 
 export const COMMANDS: Command[] = [
   { id: "new", label: "New session", group: "Anywhere", keys: ["mod+n"] },

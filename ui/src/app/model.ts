@@ -2,8 +2,8 @@
   What the screens work out from the engine's state: who an agent is, what a model is called,
   which bucket a session sits in, and the one line under its title.
 */
-import type { Access, AgentProfile, EffortInfo, FileChange, Item, Mode, ModelInfo, ProviderInfo, RouteLevel, Settings, Thread } from "@contracts";
-import { castOf, familyOf, splitModel } from "@contracts";
+import type { Access, AgentProfile, EffortInfo, FileChange, Item, ModelInfo, ProviderInfo, Thread } from "@contracts";
+import { familyOf, splitModel } from "@contracts";
 import type { MarkKind } from "./icons";
 
 type Level = { id: Access; label: string; short: string; note: string };
@@ -154,22 +154,53 @@ export function agentOf(id: string | undefined, agents: AgentProfile[], provider
 }
 export const isModelAgent = (id?: string) => Boolean(id?.startsWith("@"));
 
-/** How a session (or a new one) runs, from who's in it: a route is Auto, a planner is Plan, the rest Solo. */
-export const modeOf = (s: { lead?: string; route?: unknown }): Mode => (s.route ? "auto" : s.lead ? "plan" : "solo");
+/** Whether a pair can be made from your pair (castOf): two different models ready. */
+export const pairReady = (pair: { lead: string; sidekick: string } | null) => Boolean(pair && pair.lead !== pair.sidekick);
 
 /**
-  Who a new session in a mode starts with, from your two models: Solo on the cheaper one (or with
-  Dual frontier the second frontier one), Plan with the frontier model planning and the other
-  building, Auto at your level. Plan with one model in both parts would share its session, so
-  that's Solo. Null with no model ready.
+  Which of the picker's rows a session sits on: a pair, the lead alone (Best), the sidekick alone
+  (Fast), or one model or agent picked from the lists.
 */
-export function startOf(mode: Mode, settings: Pick<Settings, "picks" | "dual" | "route">, providers: ProviderInfo[], dual = settings.dual ?? false): { agent: string; lead?: string; route?: RouteLevel; dual: boolean } | null {
-  const cast = castOf(providers, { dual, picks: settings.picks });
-  if (!cast) return null;
-  const agent = `@${cast.everyday}`;
-  if (mode === "auto") return { agent, lead: undefined, route: settings.route?.level ?? "high", dual };
-  if (mode === "plan" && cast.strong !== cast.everyday) return { agent, lead: `@${cast.strong}`, route: undefined, dual };
-  return { agent, lead: undefined, route: undefined, dual };
+export type Way = "pair" | "best" | "fast" | "one";
+export function wayOf(s: { agent: string; sidekick?: string }, pair: { lead: string; sidekick: string } | null): Way {
+  if (s.sidekick) return "pair";
+  if (pair && s.agent === `@${pair.lead}`) return "best";
+  if (pair && s.agent === `@${pair.sidekick}`) return "fast";
+  return "one";
+}
+
+/**
+  A model's name made short enough to sit beside another in a chip: its maker's family and version
+  go where a name is left without them ("GPT-6.1 Sol" is "Sol", "DeepSeek V4.1 Flash" is
+  "DeepSeek Flash"), and a version at the end stays ("Opus 5.5").
+*/
+export function shortName(label: string) {
+  const words = label.split(" ");
+  if (words.length < 2) return label;
+  const kept = words.flatMap((w, i) => {
+    if (i === words.length - 1 || !/\d/.test(w)) return [w];
+    const stem = /^([A-Za-z]+)-[\d.]+$/.exec(w)?.[1];
+    return stem ? [stem] : [];
+  });
+  const out = kept[0] === "GPT" && kept.length > 1 ? kept.slice(1) : kept;
+  return out.length ? out.join(" ") : label;
+}
+
+/**
+  Who works on a session, as the chip and its tooltips name them: a pair's two ("Opus 5.5 + Sol"),
+  else the one model or agent. `marks` are the makers' marks, the lead's first.
+*/
+export function whoOf(s: { agent: string; sidekick?: string; model?: string }, agents: AgentProfile[], providers: ProviderInfo[]): { name: string; full: string; marks: MarkKind[]; agent?: AgentProfile } {
+  const lead = agentOf(s.agent, agents, providers);
+  if (s.agent === "demo") return { name: "Demo run", full: s.sidekick ? "The Demo, as a scripted pair" : "The Demo, a scripted run", marks: ["demo"] };
+  const named = isModelAgent(s.agent) ? undefined : lead;
+  const leadName = named ? named.name : modelLabel(s.model ?? lead.model, providers);
+  const leadMark = markOf(s.model ?? lead.model);
+  if (s.sidekick) {
+    const side = modelLabel(s.sidekick, providers);
+    return { name: `${named ? leadName : shortName(leadName)} + ${shortName(side)}`, full: `${leadName} leads, ${side} works`, marks: [leadMark, markOf(s.sidekick)], agent: named };
+  }
+  return { name: leadName, full: named ? `${leadName}, on ${modelLabel(lead.model, providers)}` : leadName, marks: [leadMark], agent: named };
 }
 
 /** The model a thread's agent runs on. */
@@ -202,9 +233,9 @@ export function bucketOf(t: Thread, now = Date.now()): Bucket {
 
 /**
   On the Wall: a session you've started that works, waits on you, or has finished and isn't settled
-  yet. Snoozed, settled and archived ones stay off it, and so do routines' runs and the cost test's.
+  yet. Snoozed, settled and archived ones stay off it, and so do routines' runs.
 */
-export const onTheWall = (t: Thread, now = Date.now()) => !t.archived && !t.routine && !t.trial && !t.done && t.turns > 0 && !(t.snoozedUntil && t.snoozedUntil > now);
+export const onTheWall = (t: Thread, now = Date.now()) => !t.archived && !t.routine && !t.done && t.turns > 0 && !(t.snoozedUntil && t.snoozedUntil > now);
 /**
   What the Wall showed last, in its order, and the tile picked: a session opened from it says where
   it is among them and steps to the one before or after, and coming back picks the tile you left.

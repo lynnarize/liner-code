@@ -14,8 +14,8 @@
   with Undo for the turn and Commit for everything that's left.
   Agents says who worked in this session, on what, and how much of the budget they used.
 */
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import type { FileDiff, Item, Thread } from "@contracts";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { ROUTINES_ON, type FileDiff, type Item, type Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { toast } from "@liner/components/toast/toast";
@@ -269,8 +269,8 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
   const pinnedApps = i === 0 ? appsFor(addons, projectId).filter((a) => pins.includes(a.id) && !dock.panes.some((x) => x.tabs.includes(`app:${a.id}`))) : [];
   const row = useRef<HTMLDivElement>(null);
   const [plate, setPlate] = useState<{ x: number; w: number; moved: boolean } | null>(null);
-  /** The names don't all fit: every tab but the open one is down to its icon. */
-  const [icons, setIcons] = useState(false);
+  /** How many tabs are down to their icons, counted from the row's start; the open one keeps its name. */
+  const [icons, setIcons] = useState(0);
   const [menu, setMenu] = useState<{ t: Tab; x: number; y: number } | null>(null);
   /** Too many even as icons, the row scrolls: it fades out at an end with tabs beyond it, so a tab cut
       at the edge reads as more to come (surfaces.css). Set on the element, not in state: it follows
@@ -281,6 +281,15 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
     el.toggleAttribute("data-fade-l", el.scrollLeft > 1);
     el.toggleAttribute("data-fade-r", el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
   };
+  /** A tab scrolled clear of the fades, whole: the open one as the row is measured, the focused one as the keyboard reaches it (under a fade its ring and icon were faded out). */
+  const clear = (tab: HTMLElement) => {
+    const el = row.current;
+    if (!el) return;
+    const left = tab.offsetLeft;
+    const right = left + tab.offsetWidth;
+    if (left < el.scrollLeft + 16) el.scrollLeft = left - 16;
+    else if (right > el.scrollLeft + el.clientWidth - 16) el.scrollLeft = right - el.clientWidth + 16;
+  };
   // One white plate glides to the tab that's up (Liner's rule: one highlight moves between targets).
   useLayoutEffect(() => {
     const el = row.current;
@@ -288,35 +297,61 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
     const place = () => {
       const tab = el.querySelector<HTMLElement>(".lc-stab[data-on]");
       setPlate((was) => (tab ? { x: tab.offsetLeft, w: tab.offsetWidth, moved: Boolean(was) } : null));
-      // All or none, measured from the names' own widths: shrinking each tab in turn left "C" and "Se...".
+      /*
+        Names wherever they fit: as few tabs as it takes go down to their icons, from the row's start,
+        and the open one never does. All or none dropped every name for want of a few pixels and left
+        the rest of a wide row empty (the owner's screenshot, 2026-11-10); a tab is a whole name or a
+        whole icon, never "C" or "Se...". Every width comes from the names themselves, the same in
+        either state, so a measure never flips what it measured and the row can't flicker at the edge.
+      */
       const strip = el.parentElement;
       if (strip) {
         // The strip's spacer holds what's spare: that's the room, so it isn't counted as taken; nor is
         // what the CSS hides (the session header's start, beside the thread), nor the strip's padding.
-        const pad = parseFloat(getComputedStyle(strip).paddingLeft) + parseFloat(getComputedStyle(strip).paddingRight);
-        const others = [...strip.children].reduce((n, c) => (c === el || c.classList.contains("lc-grow") || !c.checkVisibility() ? n : n + c.getBoundingClientRect().width + 2), pad);
-        const names = [...el.querySelectorAll<HTMLElement>(".lc-stab")].reduce((n, t) => {
+        const cs = getComputedStyle(strip);
+        const gap = parseFloat(cs.columnGap) || 0;
+        const shown = [...strip.children].filter((c) => c === el || c.classList.contains("lc-grow") || c.checkVisibility());
+        const room = strip.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - gap * (shown.length - 1) - shown.reduce((n, c) => (c === el || c.classList.contains("lc-grow") ? n : n + c.getBoundingClientRect().width), 0);
+        const rowGap = parseFloat(getComputedStyle(el).columnGap) || 0;
+        const tabs = [...el.querySelectorAll<HTMLElement>(".lc-stab")].map((t) => {
           const name = t.querySelector<HTMLElement>(".lc-stab-b > span");
           const tag = t.querySelector<HTMLElement>(".lc-stab-tag, .lc-stab-n");
-          return n + Math.min(180, 37 + (name?.scrollWidth ?? 0) + (tag ? tag.offsetWidth + 6 : 0)) + 2;
-        }, -2);
-        setIcons(names > strip.clientWidth - others);
+          // surfaces.css: a named tab is 8 + icon 14 + 6 + its name (+ 6 and its tag) + 9; one down to its icon is 8 + 14 + 8 (+ 5 and its count).
+          return { on: t.hasAttribute("data-on"), named: Math.min(180, 37 + (name?.scrollWidth ?? 0) + (tag ? tag.offsetWidth + 6 : 0)), icon: 30 + (tag ? tag.offsetWidth + 5 : 0) };
+        });
+        let need = tabs.reduce((n, t) => n + t.named, 0) + rowGap * Math.max(0, tabs.length - 1);
+        let k = 0;
+        for (const t of tabs) {
+          if (need <= room) break;
+          k++;
+          if (!t.on) need -= t.named - t.icon;
+        }
+        setIcons(k);
       }
       // Too many even as icons, the row scrolls: the open tab stays in view, clear of the fades.
-      if (tab) {
-        const left = tab.offsetLeft;
-        const right = left + tab.offsetWidth;
-        if (left < el.scrollLeft + 16) el.scrollLeft = left - 16;
-        else if (right > el.scrollLeft + el.clientWidth - 16) el.scrollLeft = right - el.clientWidth + 16;
-      }
+      if (tab) clear(tab);
       edges();
     };
     place();
+    // Measured again whenever the room or a name can have changed: the strip, each tab, each button
+    // beside them (a pinned app, the sidebar's button), a name's text (an add-on's arrives later), and
+    // the fonts. A tab down to its icon keeps its size when its name changes, so its size alone can't say.
     const ro = new ResizeObserver(place);
     for (const t of el.querySelectorAll(".lc-stab")) ro.observe(t);
-    if (el.parentElement) ro.observe(el.parentElement);
-    return () => ro.disconnect();
-  }, [p.tab, p.tabs.join(), files > 0, Boolean(lead), dock.full]);
+    const strip = el.parentElement;
+    if (strip) {
+      ro.observe(strip);
+      for (const c of strip.children) if (c !== el) ro.observe(c);
+    }
+    const mo = new MutationObserver(place);
+    mo.observe(el, { subtree: true, characterData: true, childList: true });
+    document.fonts?.addEventListener("loadingdone", place);
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      document.fonts?.removeEventListener("loadingdone", place);
+    };
+  }, [p.tab, p.tabs.join(), files > 0, Boolean(lead), dock.full, pinnedApps.length]);
   // Manual activation, as WAI-ARIA tabs: the arrows, Home and End move between chips; Enter or Space picks one.
   const onKey = (e: ReactKeyboardEvent) => {
     const chips = [...(row.current?.querySelectorAll<HTMLButtonElement>(".lc-stab-b") ?? [])];
@@ -326,6 +361,10 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
     if (to < 0) return;
     e.preventDefault();
     chips[to].focus();
+  };
+  const onFocus = (e: ReactFocusEvent<HTMLElement>) => {
+    const tab = e.target.closest<HTMLElement>(".lc-stab");
+    if (tab) clear(tab);
   };
   return (
     <div className="lc-panel-top lc-stabs" role="presentation" style={style} data-pane={i} data-drag data-drop={dropping || undefined} onDragOver={onDragOver} onDrop={(e) => onDrop(e)}>
@@ -340,7 +379,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
           </Tooltip>
         );
       })}
-      <div ref={row} className="lc-stabs-row" role="tablist" aria-label={label} data-plate={plate ? "" : undefined} data-icons={icons || undefined} onKeyDown={onKey} onScroll={edges}>
+      <div ref={row} className="lc-stabs-row" role="tablist" aria-label={label} data-plate={plate ? "" : undefined} onKeyDown={onKey} onScroll={edges} onFocus={onFocus}>
         {plate && <span className="lc-stab-plate" data-moved={plate.moved || undefined} style={{ transform: `translateX(${plate.x}px)`, width: plate.w }} aria-hidden />}
         {p.tabs.map((t, k) => {
           const m = meta(t);
@@ -355,6 +394,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
               key={t}
               className="lc-stab"
               data-on={on || undefined}
+              data-icon={(!on && k < icons) || undefined}
               data-preview={m.preview || undefined}
               onDragOver={onDragOver}
               onDrop={(e) => {
@@ -455,7 +495,8 @@ function AddMenu({ dock, onDock, pane, projectId, agentName, onMake }: { dock: D
   const shut = (t: Tab) => paneOf(dock, t) < 0;
   const keys = (id: string) => os.keys(shortcutOf(id) ?? []) || undefined;
   const surfaces = ADD_ORDER.filter((id) => id === "terminal" || shut(id)).map((id) => surfaceOf(id)!);
-  const waiting = runs.filter((r) => r.status === "handed" && !r.test && shut(`run:${r.id}`)).slice(0, 5);
+  // Routines switched off (contracts, ROUTINES_ON): no runs offered here.
+  const waiting = ROUTINES_ON ? runs.filter((r) => r.status === "handed" && !r.test && shut(`run:${r.id}`)).slice(0, 5) : [];
   const apps = appsFor(addons, projectId).filter((a) => shut(`app:${a.id}`));
   const open = (t: Tab) => onDock(openTab(dock, t, pane));
   return (

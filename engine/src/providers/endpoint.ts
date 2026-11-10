@@ -117,6 +117,7 @@ export function endpointProvider(base: Provider, e: Endpoint, key: () => string 
       };
     },
     commands: base.commands,
+    toolWait: base.toolWait,
     // OpenCode Go added as an endpoint shows its plan's windows, read with the endpoint's key; the
     // voucher's, its five hours and its week, come from Liner Code's site with the voucher.
     ...((isGo(e.url) || isVoucher(e)) && {

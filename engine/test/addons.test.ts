@@ -15,7 +15,7 @@ import { AgentTools, type AddonHost } from "../src/agent-tools.ts";
 import { claudeMcp } from "../src/providers/claude.ts";
 import { codexMcp, CodexServerSession } from "../src/providers/codex-server.ts";
 import { acpMcp, acpProvider } from "../src/providers/acp.ts";
-import type { OpenOptions, TurnSink } from "../src/providers/types.ts";
+import { LINER_WAIT_SEC, type OpenOptions, type TurnSink } from "../src/providers/types.ts";
 import { Store } from "../src/store.ts";
 
 const linear = (): AddonManifest => ({
@@ -185,11 +185,18 @@ const conns: Connection[] = [
 
 test("injection: Claude Code gets liner and each connection as its MCP servers", () => {
   assert.deepEqual(claudeMcp({ mcp }, conns), {
-    liner: { type: "stdio", ...mcp },
+    liner: { type: "stdio", ...mcp, timeout: LINER_WAIT_SEC * 1000 },
     linear: { type: "http", url: "https://mcp.linear.app/mcp", headers: { Authorization: "Bearer lin_api_secret" } },
     ping: { type: "stdio", command: "/usr/bin/node", args: ["/x/ping-mcp.mjs"], env: { PING_KEY: "pk-123" } },
   });
   assert.deepEqual(Object.keys(claudeMcp({ mcp })), ["liner"]);
+});
+
+test("waits: Claude Code waits on Liner Code's own server as long as Codex does, whatever MCP_TOOL_TIMEOUT says, and on yours as you set it", () => {
+  const servers = claudeMcp({ mcp }, conns) as Record<string, { timeout?: number }>;
+  assert.equal(servers.liner.timeout, LINER_WAIT_SEC * 1000);
+  assert.ok(servers.liner.timeout! > 10 * 60_000 + 60_000, "a 10-minute brief and then some");
+  assert.equal(servers.ping.timeout, undefined, "a connection of yours keeps its own wait");
 });
 
 test("injection: a connection called liner doesn't take the place of Liner Code's own server, in Claude, Codex or an ACP agent", () => {
@@ -213,6 +220,7 @@ test("injection: Codex gets them as config, liner waiting long enough for a card
     "mcp_servers.liner.args": mcp.args,
     "mcp_servers.liner.env": mcp.env,
     "mcp_servers.liner.tool_timeout_sec": 1800,
+    "mcp_servers.liner.default_tools_approval_mode": "approve",
     "mcp_servers.linear.url": "https://mcp.linear.app/mcp",
     "mcp_servers.linear.http_headers": { Authorization: "Bearer lin_api_secret" },
     "mcp_servers.ping.command": "/usr/bin/node",

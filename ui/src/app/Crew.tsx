@@ -1,10 +1,12 @@
 /*
-  Who's on a session's work, and who sent whom. Liner Code puts models on a message (a planner and
-  a builder, Auto's writer, the Reviewer), and those models send agents off to do parts of it
+  Who's on a session's work, and who sent whom. Liner Code puts models on a message (the lead, the
+  Reviewer, and in a session from before pairs a planner and a builder), and those models send agents off to do parts of it
   (Claude Code's Agent tool: Explore, the Test runner, a general Subagent), each under the one that
   sent it, agents of agents included. All of it is read from the timeline: the turn items say who
   worked, the "task" rows say which agents were sent and carry what each was asked, does now and
-  sent back (AgentRun). Shown four ways: the header's crew chip and its popover, the fan-out under
+  sent back (AgentRun). A pair's sidekick is one of them: the lead's call to Liner Code's sidekick
+  tool is its row, named after its model, with the files it changed as Liner Code measured them;
+  and it's named as the pair's even before its first brief. Shown four ways: the header's crew chip and its popover, the fan-out under
   a turn's work, a line on the composer while the work waits on agents, and the Agents surface
   (the tree, a timeline of who worked when, the tasks with who took them, what runs in the
   background), where one agent opens on its own. An agent in the background (Claude Code's by
@@ -13,13 +15,13 @@
 */
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { toast } from "@liner/components/toast/toast";
-import { agentState, ROUTE_LEVELS, type AgentProfile, type Item, type PlanEntry, type ProviderInfo, type Thread } from "@contracts";
+import { agentState, isPair, type AgentProfile, type FileChange, type Item, type PlanEntry, type ProviderInfo, type Thread } from "@contracts";
 import { rpc, useEngine, useItemsWhere } from "./engine";
 import { I, ModelMark } from "./icons";
 import { useLaunch } from "./launch";
-import { agentOf, compact, duration, isModelAgent, markOf, modelLabel, plural } from "./model";
+import { agentOf, compact, duration, isModelAgent, markOf, modelLabel, plural, sumLines } from "./model";
 import { openSurface } from "./TopBar";
-import { Num, Pop } from "./ui";
+import { Lines, Num, Pop } from "./ui";
 import "./crew.css";
 
 type Tool = Extract<Item, { kind: "tool" }>;
@@ -38,6 +40,36 @@ export const isAgent = (it: Item): it is Tool => it.kind === "tool" && it.toolKi
 export const agentName = (t: Tool) => t.agent?.name ?? (t.title.split(":")[0].trim() || "Agent");
 export const agentTask = (t: Tool) => t.agent?.task ?? t.title.split(":").slice(1).join(":").trim();
 export const stateOf = (t: Tool): State => agentState(t);
+/** A path's last part: "src/tides.js" is tides.js. */
+const nameOf = (path: string) => path.split("/").pop() || path;
+/** "+3 −1" in words, for a screen reader: "3 lines added, 1 removed". */
+const linesSaid = ({ added, removed }: { added: number; removed: number }) => [added > 0 && `${plural(added, "line")} added`, removed > 0 && `${added > 0 ? removed : plural(removed, "line")} removed`].filter(Boolean).join(", ");
+const FILE_WORD: Record<string, string> = { added: "Added", deleted: "Deleted", renamed: "Renamed" };
+/** A pair's sidekick on a brief: the lead's call to Liner Code's sidekick tool, by any tool's name for it (mcp__liner__sidekick, liner.sidekick, liner_sidekick). */
+export const isSidekick = (t: Tool) => /(?:^|[._])sidekick$/.test(t.tool);
+/** A brief stopped while it waited its turn: the sidekick never started on it. */
+const unstarted = (t: Tool) => isSidekick(t) && stateOf(t) === "stopped" && !t.agent?.tools && !t.agent?.steps?.length;
+/** Who an agent is, by name: a sidekick by its model ("GPT-6.1 Sol"), the rest by their kind ("Explore"). */
+export const whoIs = (t: Tool, providers: ProviderInfo[]) => (isSidekick(t) ? (t.agent?.model ? modelLabel(t.agent.model, providers) : "Sidekick") : agentName(t));
+/**
+  A model's name, short, for a pair said in one breath: "GPT-6.1 Sol" is Sol, "DeepSeek V4.1 Flash"
+  DeepSeek Flash, "GLM-5.3 Flash" GLM Flash; a name with nothing after its version ("Opus 5.5") stays.
+*/
+export const shortModel = (label: string) => label.replace(/^GPT-[\d.]+\s+(?=\S)/i, "").replace(/^(\S+?)[\s-]+v?\d[\d.]*\s+(?=\S)/i, "$1 ");
+/**
+  A pair, by name: its lead (the model, or your agent) and its sidekick, and the two in one breath
+  ("Opus 5.5 + Sol"). Null for a session of one model.
+*/
+export function pairOf(t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) {
+  if (!isPair(t)) return null;
+  const a = agentOf(t.agent, agents, providers);
+  const bare = isModelAgent(t.agent) || t.agent === "demo";
+  const leadRef = t.model ?? a.model;
+  const lead = bare ? modelLabel(leadRef, providers) : a.name;
+  const side = modelLabel(t.sidekick!, providers);
+  return { lead, leadRef, side, sideRef: t.sidekick!, name: `${bare ? shortModel(lead) : lead} + ${shortModel(side)}` };
+}
+export type PairNames = NonNullable<ReturnType<typeof pairOf>>;
 /** Its first line said plainly: no list marks, headings, code ticks or bold. */
 const firstLine = (s?: string) => s?.split("\n").map((x) => x.replace(/^[#>*\-\s]+/, "").replace(/`|\*\*/g, "").trim()).find(Boolean);
 /** A step's title as what it's doing: "Read a.ts" is "reading a.ts". */
@@ -50,6 +82,7 @@ export function doing(title: string) {
 export function agentNow(t: Tool) {
   const s = stateOf(t);
   if (s === "running") return t.agent?.now ?? "Starting";
+  if (unstarted(t)) return "Stopped before it started";
   if (s === "stopped") return "Stopped before it finished";
   if (s === "failed") return firstLine(t.output) ?? "Didn't finish";
   // A row from before agents said how they ended: its call returned and nothing more was heard.
@@ -69,12 +102,13 @@ export function agentStats(t: Tool, now: number) {
 export type AgentNode = { it: Tool; kids: AgentNode[] };
 export type Member = { key: string; agent: string; model: string; name: string; tag?: string; role?: string; status: Turn["status"]; at: number; seconds?: number; agents: AgentNode[] };
 /** `earlier`: agents an earlier message sent that are still at work, in the background past their turn. */
-export type Crew = { turn: number; mode: string; members: Member[]; reviews: Review[]; agents: Tool[]; earlier: Tool[]; plan?: PlanEntry[]; start: number; lead?: Member };
+export type Crew = { turn: number; mode: string; members: Member[]; reviews: Review[]; agents: Tool[]; earlier: Tool[]; plan?: PlanEntry[]; start: number; lead?: Member; pair: PairNames | null };
 
+/** What a part of a turn did, for a session from before too (a planner, a builder, a refiner). */
 const ROLE: Record<string, string> = { build: "Builder", refine: "Refiner", repair: "Fixer", fix: "Fixer", revise: "Reviser", takeover: "Took over" };
 
 /**
-  Who worked on your latest message: each model's part (a planner, then a builder), with the
+  Who worked on your latest message: each model's part (the lead, its fix after the Reviewer), with the
   agents it sent (in order, under the one that sent each), and the Reviewer's rounds. The model
   at work, or the last one, leads. With them, the agents of earlier messages still at work: a new
   turn (one Claude Code starts by itself when one of them ends, too) doesn't make them leave.
@@ -90,13 +124,14 @@ export function crewOf(items: Item[], thread: Thread, profiles: AgentProfile[], 
   const nodes = new Map<string, AgentNode>();
   let plan: PlanEntry[] | undefined;
   let cur: Member | undefined;
+  const pair = pairOf(thread, profiles, providers);
   for (const it of items) {
     if (it.turn !== turn) {
       if (isAgent(it) && stateOf(it) === "running") earlier.push(it);
       continue;
     }
     if (it.kind === "turn") {
-      const role = it.planning ? "Planner" : it.part ? ROLE[it.part] : thread.lead ? "Builder" : thread.route ? "Writes" : undefined;
+      const role = it.planning ? "Planner" : it.part ? ROLE[it.part] : pair && it.agent === thread.agent ? "Lead" : undefined;
       // A part goes on after an answer of yours as another turn item: it's the same member.
       const same = members.find((m) => m.agent === it.agent && m.model === it.model && m.role === role);
       if (same) {
@@ -121,8 +156,8 @@ export function crewOf(items: Item[], thread: Thread, profiles: AgentProfile[], 
     else if (it.kind === "plan") plan = it.entries;
   }
   if (!members.length) return null;
-  const mode = thread.route ? `Auto · ${ROUTE_LEVELS.find((l) => l.id === thread.route!.level)?.label ?? "Standard"}` : thread.lead ? "Plan, then build" : "Solo";
-  return { turn, mode, members, reviews, agents, earlier, plan, start: members[0].at, lead: members.findLast((m) => m.status === "running") ?? members.at(-1) };
+  const mode = pair ? "Pair" : "One model";
+  return { turn, mode, members, reviews, agents, earlier, plan, start: members[0].at, lead: members.findLast((m) => m.status === "running") ?? members.at(-1), pair };
 }
 
 /** The crew of a session, read from only the items that make it (not every streamed word). */
@@ -130,7 +165,7 @@ export function useCrew(thread: Thread) {
   const items = useItemsWhere(thread.id, isCrewItem);
   const profiles = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  return useMemo(() => crewOf(items, thread, profiles, providers), [items, thread.lead, thread.route?.level, thread.agent, profiles, providers]);
+  return useMemo(() => crewOf(items, thread, profiles, providers), [items, thread.sidekick, thread.sideOf, thread.agent, thread.model, profiles, providers]);
 }
 
 /** A clock that ticks each second while `on`. */
@@ -154,9 +189,16 @@ const behind = (t: Tool) => running(t) && !holding(t);
 const everyAgent = (nodes: AgentNode[]): Tool[] => nodes.flatMap((n) => [n.it, ...everyAgent(n.kids)]);
 /** Every agent at work now: the latest message's, and those earlier ones left in the background. */
 const atWork = (crew: Crew) => [...crew.agents.filter(running), ...crew.earlier];
-/** "waiting on 1 agent · 2 in the background", or either half, or nothing. */
-const waitWords = (waited: number, back: number) => [waited ? `waiting on ${plural(waited, "agent")}` : "", back ? `${back} in the background` : ""].filter(Boolean).join(" · ");
-const countOf = (crew: Crew) => crew.members.length + crew.agents.length + crew.earlier.length + new Set(crew.reviews.map((r) => r.reviewer)).size;
+/** Who's held up on, said as the work is: "its sidekick", "2 agents", "its sidekick and an agent". */
+export function onWhom(tools: Tool[]) {
+  const side = tools.some(isSidekick);
+  const rest = tools.filter((t) => !isSidekick(t)).length;
+  return side ? (rest ? `its sidekick and ${plural(rest, "agent")}` : "its sidekick") : plural(rest, "agent");
+}
+/** "waiting on its sidekick · 2 in the background", "waiting on 1 agent", or either half, or nothing. */
+const waitWords = (waited: Tool[], back: number) => [waited.length ? `waiting on ${onWhom(waited)}` : "", back ? `${back} in the background` : ""].filter(Boolean).join(" · ");
+/** Everyone on it: the models, the agents (a pair's sidekick once, however many briefs), the Reviewers. */
+const countOf = (crew: Crew) => crew.members.length + crew.agents.filter((t) => !isSidekick(t)).length + crew.earlier.length + (crew.pair ? 1 : 0) + new Set(crew.reviews.map((r) => r.reviewer)).size;
 const stopAll = (threadId: string, tools: Tool[]) => {
   for (const t of tools.filter((x) => running(x) && x.agent?.taskId)) void rpc("thread.stopAgent", { id: threadId, item: t.id }).catch(fail);
 };
@@ -188,6 +230,10 @@ function Kind({ name, size = 12 }: { name: string; size?: number }) {
   const Icon = /^explor/i.test(name) ? I.search : /^test/i.test(name) ? I.flask : I.sparkle;
   return <Icon size={size} />;
 }
+/** An agent's face: a sidekick's is its model's mark, the rest their kind's. */
+function Face({ t, size = 12 }: { t: Tool; size?: number }) {
+  return isSidekick(t) && t.agent?.model ? <ModelMark kind={markOf(t.agent.model)} size={size} /> : <Kind name={agentName(t)} size={size} />;
+}
 const STATE_WORD: Record<State, string> = { running: "Working", done: "Done", failed: "Didn't finish", stopped: "Stopped" };
 /** How it stands, as a mark: a breathing dot at work, a tick when done, a square when stopped, a ring when it hasn't started. */
 export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
@@ -202,15 +248,22 @@ export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
 
 /**
   Who leads your latest message and how many work for it ("Sonnet 5.5 + 3 agents"); once it's
-  over, how many worked on it. Opens the crew as a list. Nothing when one model works alone.
+  over, how many worked on it. A pair is named as one ("Opus 5.5 + Sol"), from before its first
+  message on. Opens the crew as a list. Nothing when one model works alone.
 */
 export function CrewChip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
-  if (!crew || (crew.members.length < 2 && !crew.agents.length && !crew.reviews.length && !crew.earlier.length)) return null;
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
+  const pair = crew?.pair ?? pairOf(thread, agents, providers);
+  if (!crew) return pair ? <PairChip thread={thread} pair={pair} /> : null;
+  if (!pair && crew.members.length < 2 && !crew.agents.length && !crew.reviews.length && !crew.earlier.length) return null;
   const working = atWork(crew);
   // Live while a turn runs or waits, and while an agent works on in the background after it.
   const live = thread.status === "running" || thread.status === "waiting" || working.length > 0;
   const lead = crew.lead!;
+  // A pair's sidekick is in its name; the agents besides it are counted.
+  const others = [...crew.agents, ...crew.earlier].filter((t) => !isSidekick(t)).length;
   return (
     <Pop
       label="Who's on this session"
@@ -222,15 +275,28 @@ export function CrewChip({ thread }: { thread: Thread }) {
         <>
           <span className="lc-cr-faces" aria-hidden>
             <span data-lead={live || undefined}>
-              <ModelMark kind={markOf(lead.model)} size={11} />
+              <ModelMark kind={markOf(pair ? pair.leadRef : lead.model)} size={11} />
             </span>
-            {(working.length ? working : crew.agents).slice(0, 2).map((t) => (
-              <span key={t.id}>
-                <Kind name={agentName(t)} size={11} />
+            {pair && (
+              <span data-lead={(live && working.some(isSidekick)) || undefined}>
+                <ModelMark kind={markOf(pair.sideRef)} size={11} />
               </span>
-            ))}
+            )}
+            {(working.length ? working : crew.agents)
+              .filter((t) => !pair || !isSidekick(t))
+              .slice(0, pair ? 1 : 2)
+              .map((t) => (
+                <span key={t.id}>
+                  <Face t={t} size={11} />
+                </span>
+              ))}
           </span>
-          {live ? (
+          {pair ? (
+            <span className="lc-crew-t">
+              {pair.name}
+              {live && others > 0 && <span className="lc-quiet"> + {plural(others, "agent")}</span>}
+            </span>
+          ) : live ? (
             <span className="lc-crew-t">
               {lead.name}
               {crew.agents.length + crew.earlier.length > 0 && <span className="lc-quiet"> + {plural(crew.agents.length + crew.earlier.length, "agent")}</span>}
@@ -247,6 +313,59 @@ export function CrewChip({ thread }: { thread: Thread }) {
   );
 }
 
+/** A pair before its first message: its two, and what each waits for. */
+function PairChip({ thread, pair }: { thread: Thread; pair: PairNames }) {
+  return (
+    <Pop
+      label="Who's on this session"
+      width={400}
+      className="lc-crew-pop"
+      triggerClass="lc-crew l-focus"
+      trigger={
+        <>
+          <span className="lc-cr-faces" aria-hidden>
+            <span>
+              <ModelMark kind={markOf(pair.leadRef)} size={11} />
+            </span>
+            <span>
+              <ModelMark kind={markOf(pair.sideRef)} size={11} />
+            </span>
+          </span>
+          <span className="lc-crew-t">{pair.name}</span>
+          <I.chevD size={11} />
+        </>
+      }
+    >
+      {(close) => (
+        <div className="lc-crp">
+          <div className="lc-crp-h">
+            <b>Pair</b>
+            <span className="lc-quiet">· nothing asked yet</span>
+          </div>
+          <div className="lc-crp-r">
+            <Mark state="running" waiting />
+            <b>{pair.lead}</b>
+            <span className="lc-crp-role">Lead</span>
+            <span className="lc-crp-t">takes your message, plans and reviews</span>
+          </div>
+          <div className="lc-crp-r">
+            <Mark state="running" waiting />
+            <b>{pair.side}</b>
+            <span className="lc-crp-role">Sidekick</span>
+            <span className="lc-crp-t">does the work {pair.lead} hands it</span>
+          </div>
+          <div className="lc-crp-sep" />
+          <div className="lc-crp-foot">
+            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => (close(), showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
+              Show in the panel
+            </button>
+          </div>
+        </div>
+      )}
+    </Pop>
+  );
+}
+
 /** The crew as a list, in the chip's popover: who leads, who works for it, what runs in the background. */
 function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: () => void }) {
   const providers = useEngine((s) => s.providers);
@@ -259,7 +378,8 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
     nodes.flatMap((n) => [
       <button key={n.it.id} type="button" className="lc-crp-r l-focus" style={{ paddingLeft: 8 + depth * 22 }} onClick={() => open(n.it)}>
         <Mark state={stateOf(n.it)} />
-        <b>{agentName(n.it)}</b>
+        <b>{whoIs(n.it, providers)}</b>
+        {isSidekick(n.it) && <span className="lc-crp-role">Sidekick</span>}
         <span className={running(n.it) ? "lc-crp-t l-shimmer" : "lc-crp-t"}>{agentNow(n.it)}</span>
         <span className="lc-crp-n">{duration(secsOf(n.it, now))}</span>
       </button>,
@@ -281,6 +401,14 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
             <span className="lc-crp-n">{duration(m.status === "running" ? (now - m.at) / 1000 : m.seconds)}</span>
           </div>
           {rows(m.agents, 1)}
+          {crew.pair && m === crew.lead && !crew.agents.some(isSidekick) && (
+            <div className="lc-crp-r" style={{ paddingLeft: 30 }}>
+              <Mark state="running" waiting />
+              <b>{crew.pair.side}</b>
+              <span className="lc-crp-role">Sidekick</span>
+              <span className="lc-crp-t">{m.status === "running" ? "waits for a brief" : "no brief this message"}</span>
+            </div>
+          )}
         </div>
       ))}
       {crew.earlier.length > 0 && (
@@ -323,7 +451,7 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
         <span className="lc-grow" />
         {atWork(crew).some((t) => t.agent?.taskId) && (
           <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => stopAll(thread.id, atWork(crew))}>
-            Stop all agents
+            {stopWord(atWork(crew), "Stop all agents")}
           </button>
         )}
       </div>
@@ -340,13 +468,15 @@ function memberWord(m: Member, now: number, earlier = 0) {
   const all = everyAgent(m.agents);
   const back = all.filter(behind).length + earlier;
   const also = back ? ` · ${back} in the background` : "";
-  const waited = all.filter(holding).length;
-  if (m.status === "running") return waited ? waitWords(waited, back) : `${m.role === "Planner" ? "planning" : "working"}${also}`;
+  const waited = all.filter(holding);
+  if (m.status === "running") return waited.length ? waitWords(waited, back) : `${m.role === "Planner" ? "planning" : "working"}${also}`;
   if (m.status === "stopped") return `stopped${also}`;
   if (m.status === "error") return `stopped with a problem${also}`;
   void now;
-  return (m.role === "Planner" ? "planned it" : m.agents.length ? `worked with ${plural(m.agents.length, "agent")}` : "done") + also;
+  return (m.role === "Planner" ? "planned it" : m.agents.length ? `worked with ${onWhom(m.agents.map((n) => n.it))}` : "done") + also;
 }
+/** Stop for what's at work: a pair's sidekick alone is "Stop the sidekick". */
+const stopWord = (tools: Tool[], many: string) => (tools.filter(running).every(isSidekick) ? "Stop the sidekick" : many);
 function reviewWord(r: Review) {
   if (r.status === "running") return "reading the change";
   if (r.status === "passed") return r.findings.length ? `verified, ${plural(r.findings.length, "note")}` : "verified";
@@ -361,7 +491,8 @@ function reviewWord(r: Review) {
   the one that sent it, with what it's doing now, its model and its counts; once they're done,
   what each sent back. Pressing one opens it in the Agents surface. Whether they're at work is
   theirs to say, not the trail's: a trail the model has gone on past (a plan, a word) is no longer
-  live, while the agents it sent still are.
+  live, while the agents it sent still are. A pair's sidekick reads as itself: its model, its brief,
+  its steps live, and once it's back its report and the files it changed, as Liner Code measured them.
 */
 export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] }) {
   const providers = useEngine((s) => s.providers);
@@ -386,17 +517,33 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
     nodes.map((n, i) => {
       const t = n.it;
       const st = stateOf(t);
+      const side = isSidekick(t);
       const model = t.agent?.model ? modelLabel(t.agent.model, providers) : undefined;
       const task = agentTask(t);
       const on = st === "running";
+      const files = side && !on ? t.agent?.files : undefined;
+      // Said as one sentence: read from its parts, the mark and a report that starts "Done." said it twice, and "measured" hung on the end.
+      const doing = agentNow(t);
+      const word = STATE_WORD[st];
+      const said = [
+        `${whoIs(t, providers)}${side ? ", the sidekick" : ""}`,
+        on ? `${word} on: ${task}. Now: ${doing}` : doing.toLowerCase().startsWith(word.toLowerCase()) ? doing : `${word}: ${doing}`,
+        on ? agentStats(t, now) : duration(secsOf(t, now)),
+        files && !unstarted(t) ? (files.length ? `Changed ${files.length <= 2 ? files.map((f) => nameOf(f.path)).join(" and ") : plural(files.length, "file")}, ${linesSaid(sumLines(files))}` : "Changed no file") : null,
+      ]
+        .filter((x): x is string => Boolean(x))
+        .map((x) => x.replace(/[.\s]+$/, ""))
+        .join(". ");
       return (
         <div key={t.id} className="lc-fan-kid" data-last={i === nodes.length - 1 || undefined}>
-          <button type="button" className="lc-fan-ag l-focus" data-on={on || undefined} onClick={() => showAgent(threadId, t.id)} title={`Open ${agentName(t)}`}>
+          <button type="button" className="lc-fan-ag l-focus" data-on={on || undefined} data-side={side || undefined} onClick={() => showAgent(threadId, t.id)} aria-label={said} title={`Open ${side ? "the sidekick's" : `${whoIs(t, providers)}'s`} brief, steps and report`}>
             <span className="lc-fan-1">
               <Mark state={st} />
-              <b>{agentName(t)}</b>
+              {side && <Face t={t} size={12} />}
+              <b>{whoIs(t, providers)}</b>
+              {side && <span className="lc-fan-tag">Sidekick</span>}
               <span className="lc-fan-task">{on ? task : agentNow(t)}</span>
-              {on ? model && <span className="lc-fan-m">{model}</span> : <span className="lc-fan-m l-num">{duration(secsOf(t, now))}</span>}
+              {on ? !side && model && <span className="lc-fan-m">{model}</span> : <span className="lc-fan-m l-num">{duration(secsOf(t, now))}</span>}
             </span>
             {on && (
               <span className="lc-fan-2">
@@ -404,17 +551,26 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
                 <span className="lc-fan-m l-num">{agentStats(t, now)}</span>
               </span>
             )}
+            {files && !unstarted(t) && (
+              <span className="lc-fan-2">
+                <span className="lc-fan-now">{files.length ? <>Changed {files.length <= 2 ? files.map((f) => nameOf(f.path)).join(" and ") : plural(files.length, "file")} <Lines {...sumLines(files)} /></> : "Changed no file"}</span>
+                <span className="lc-fan-m">measured</span>
+              </span>
+            )}
           </button>
           {n.kids.length > 0 && <div className="lc-fan-kids">{branch(n.kids)}</div>}
         </div>
       );
     });
+  // A pair's lead hands work over; it doesn't start "1 agent".
+  const whom = onWhom(tools);
+  const handed = tools.every(isSidekick);
   return (
-    <div className="lc-fan" aria-label={`${plural(tools.length, "agent")} sent`}>
+    <div className="lc-fan" role="group" aria-label={handed ? "Handed to its sidekick" : `${plural(tools.length, "agent")} sent`}>
       <div className="lc-fan-h">
         <I.fanout size={14} />
-        {ongoing ? `Started ${plural(tools.length, "agent")}` : `With ${plural(tools.length, "agent")}`}
-        <span className="lc-quiet">· {ongoing ? [done && `${done} done`, working && `${working} working`, back && `${back} in the background`].filter(Boolean).join(", ") : "what each sent back"}</span>
+        {ongoing ? (handed ? "Handed work to its sidekick" : `Started ${whom}`) : handed ? `Handed ${plural(tools.length, "brief")} to its sidekick` : `With ${whom}`}
+        <span className="lc-quiet">· {ongoing ? (handed && tools.length === 1 ? "at work" : [done && `${done} done`, working && `${working} working`, back && `${back} in the background`].filter(Boolean).join(", ")) : tools.length === 1 ? "what it sent back" : "what each sent back"}</span>
       </div>
       <div className="lc-fan-kids">{branch(roots)}</div>
     </div>
@@ -426,28 +582,36 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
 /**
   While agents work: who waits on how many, how many go on in the background, and what one of
   them is doing, with Stop. Up while any is at work, an earlier message's and with no turn running too.
+  A pair's lead waits on its sidekick, which is named by its model.
 */
 export function CrewStrip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
+  const providers = useEngine((s) => s.providers);
   const working = crew ? atWork(crew) : [];
   if (!crew || !working.length) return null;
   const waited = working.filter(holding);
   const back = working.length - waited.length;
   const latest = working.reduce((a, b) => (b.at > a.at ? b : a));
+  const waitLine = waited.length ? `${crew.lead!.name} is ${waitWords(waited, back)}` : `${plural(back, "agent")} at work in the background`;
   return (
-    <div className="lc-crs" role="status">
+    // Only who waits on whom is live: what the agent is doing changes at every step, and read out each time it would drown the session.
+    <div className="lc-crs">
       <span className="lc-cr-faces lc-crs-faces" aria-hidden>
         {working.slice(0, 3).map((t) => (
           <span key={t.id}>
-            <Kind name={agentName(t)} size={10} />
+            <Face t={t} size={10} />
           </span>
         ))}
       </span>
+      {/* The live words sit in a block of their own: as a span beside the step, WebKit joined the two into one text and read out every step. */}
+      <div className="l-sr-only" aria-live="polite">
+        {waitLine}
+      </div>
       <span className="lc-crs-t">
-        {waited.length ? `${crew.lead!.name} is ${waitWords(waited.length, back)}` : `${plural(back, "agent")} at work in the background`}
+        <span aria-hidden>{waitLine}</span>
         <span className="lc-quiet">
           {" "}
-          · {agentName(latest)} is {doing(agentNow(latest))}
+          · {isSidekick(latest) ? shortModel(whoIs(latest, providers)) : agentName(latest)} is {doing(agentNow(latest))}
         </span>
       </span>
       <button type="button" className="lc-ib l-focus" aria-label="Who's on this session" title="Who's on this session" onClick={() => (showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
@@ -455,7 +619,7 @@ export function CrewStrip({ thread }: { thread: Thread }) {
       </button>
       {working.some((t) => t.agent?.taskId) && (
         <button type="button" className="lc-crs-stop l-focus" onClick={() => stopAll(thread.id, working)}>
-          Stop agents
+          {stopWord(working, "Stop agents")}
         </button>
       )}
     </div>
@@ -476,31 +640,76 @@ export function AgentsSurface({ thread, items }: { thread: Thread; items: Item[]
 
 function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; items: Item[] }) {
   const providers = useEngine((s) => s.providers);
+  const profiles = useEngine((s) => s.agents);
   const live = Boolean(crew && (crew.members.some((m) => m.status === "running") || atWork(crew).length));
   const now = useNow(live);
   const [launch, again] = useLaunch(thread.id);
   const servers = launch?.servers.filter((s) => s.status !== "stopped") ?? [];
+  const pair = crew?.pair ?? pairOf(thread, profiles, providers);
+  /** A pair's sidekick with no brief in this message: it's the pair's all the same, and waits for one. */
+  const idle = (p: PairNames, last: boolean, working: boolean) => (
+    <div className="lc-cr-kid" data-last={last || undefined}>
+      <div className="lc-cr-row">
+        <span className="lc-cr-disc">
+          <ModelMark kind={markOf(p.sideRef)} size={12} />
+        </span>
+        <span className="lc-cr-t">
+          <b>
+            {p.side} <span>· Sidekick</span>
+          </b>
+          <small>
+            <Mark state="running" waiting />
+            {working ? `Waits for a brief from ${p.lead}` : `No brief from ${p.lead} this message`}
+          </small>
+        </span>
+      </div>
+    </div>
+  );
   if (!crew)
     return (
       <>
-        <p className="lc-cr-empty">Nobody has worked here yet. When a model takes your message, and when it sends agents off, they show here with who sent whom.</p>
+        {pair ? (
+          <>
+            <div className="lc-cr-h">
+              Your pair<span className="lc-cr-rule" />
+              <span>nothing asked yet</span>
+            </div>
+            <div className="lc-cr-tree">
+              <div className="lc-cr-row" data-root>
+                <span className="lc-cr-disc">
+                  <ModelMark kind={markOf(pair.leadRef)} size={12} />
+                </span>
+                <span className="lc-cr-t">
+                  <b>
+                    {pair.lead} <span>· Lead</span>
+                  </b>
+                  <small>Takes your message, plans, and reviews what its sidekick does</small>
+                </span>
+              </div>
+              <div className="lc-cr-kids">{idle(pair, true, true)}</div>
+            </div>
+          </>
+        ) : (
+          <p className="lc-cr-empty">Nobody has worked here yet. When a model takes your message, and when it sends agents off, they show here with who sent whom.</p>
+        )}
         <SessionUse thread={thread} items={items} />
       </>
     );
   const working = crew.members.filter((m) => m.status === "running").length + atWork(crew).length;
   // At work and not waited on, this message's and earlier ones': each opens on its own, with Stop it.
   const background = atWork(crew).filter(behind);
-  const tree = (nodes: AgentNode[]): ReactNode =>
+  // `more`: a row follows these under the same branch (a pair's sidekick that has no brief yet).
+  const tree = (nodes: AgentNode[], more = false): ReactNode =>
     nodes.map((n, i) => (
-      <div key={n.it.id} className="lc-cr-kid" data-last={i === nodes.length - 1 || undefined}>
+      <div key={n.it.id} className="lc-cr-kid" data-last={(i === nodes.length - 1 && !more) || undefined}>
         <button type="button" className="lc-cr-row l-focus" onClick={() => showAgent(thread.id, n.it.id)}>
           <span className="lc-cr-tile">
-            <Kind name={agentName(n.it)} size={13} />
+            <Face t={n.it} size={13} />
           </span>
           <span className="lc-cr-t">
             <b>
-              {agentName(n.it)}
-              {n.it.agent?.model && <span> · {modelLabel(n.it.agent.model, providers)}</span>}
+              {whoIs(n.it, providers)}
+              {isSidekick(n.it) ? <span> · Sidekick</span> : n.it.agent?.model && <span> · {modelLabel(n.it.agent.model, providers)}</span>}
             </b>
             <small>
               <Mark state={stateOf(n.it)} />
@@ -549,7 +758,12 @@ function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; 
                 </span>
                 <span className="lc-cr-n l-num">{duration(m.status === "running" ? (now - m.at) / 1000 : m.seconds)}</span>
               </div>
-              {m.agents.length > 0 && <div className="lc-cr-kids">{tree(m.agents)}</div>}
+              {(m.agents.length > 0 || (pair && m === crew.lead && !crew.agents.some(isSidekick))) && (
+                <div className="lc-cr-kids">
+                  {tree(m.agents, Boolean(pair && m === crew.lead && !crew.agents.some(isSidekick)))}
+                  {pair && m === crew.lead && !crew.agents.some(isSidekick) && idle(pair, true, m.status === "running")}
+                </div>
+              )}
             </div>
           ))}
           {review && (
@@ -642,7 +856,7 @@ function Lanes({ crew, now }: { crew: Crew; now: number }) {
     for (const n of nodes) {
       // Live while it works, in the background too: the engine keeps its seconds as it goes and at its end.
       const live = running(n.it);
-      lanes.push({ key: n.it.id, label: agentName(n.it), from: n.it.at, to: Math.max(n.it.at + 500, endOf(n.it.at, live, n.it.seconds)), live });
+      lanes.push({ key: n.it.id, label: whoIs(n.it, providers), from: n.it.at, to: Math.max(n.it.at + 500, endOf(n.it.at, live, n.it.seconds)), live });
       walk(n.kids);
     }
   };
@@ -702,7 +916,11 @@ const LaneRow = ({ label, children }: { label: string; children: ReactNode }) =>
   </>
 );
 
-/** One agent: who sent it, what it was asked, its steps, what it sent back; stop it, or tell the model that sent it. */
+/**
+  One agent: who sent it, what it was asked, its steps, what it sent back; stop it, or tell the
+  model that sent it. A pair's sidekick, by its model, with the files its brief changed as Liner
+  Code measured them, not as it said.
+*/
 function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | null; it: Tool; items: Item[] }) {
   const providers = useEngine((s) => s.providers);
   const profiles = useEngine((s) => s.agents);
@@ -710,7 +928,8 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
   const now = useNow(st === "running");
   const [say, setSay] = useState("");
   const a = it.agent;
-  const name = agentName(it);
+  const side = isSidekick(it);
+  const name = whoIs(it, providers);
   // Who sent it: the agent above it, else the model whose part it came in.
   const parent = a?.parent ? items.find((x): x is Tool => x.id === a.parent && isAgent(x)) : undefined;
   const owner = crew?.members.find((m) => {
@@ -733,11 +952,12 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
       void rpc("thread.steerAgent", { id: thread.id, item: it.id, text })
         .then((ok) => (ok ? setHeard((x) => [...x, text]) : toast.error(`${name} had finished, so it didn't hear that.`)))
         .catch(fail);
-    else void rpc("thread.send", { id: thread.id, text: `About the ${name} agent you sent${a?.task ? ` (${a.task})` : ""}: ${text}`, mode: "steer" }).catch(fail);
+    else void rpc("thread.send", { id: thread.id, text: side ? `About the brief you gave your sidekick${a?.task ? ` (${a.task})` : ""}: ${text}` : `About the ${name} agent you sent${a?.task ? ` (${a.task})` : ""}: ${text}`, mode: "steer" }).catch(fail);
   };
   return (
     <>
-      <button type="button" className="lc-cr-back l-focus" onClick={() => showAgent(thread.id, null)}>
+      {/* Named for where it goes: "Agents" alone was also the panel tab's name. */}
+      <button type="button" className="lc-cr-back l-focus" aria-label="Back to all agents" onClick={() => showAgent(thread.id, null)}>
         <I.chevL size={13} />
         Agents
         {parent && (
@@ -749,10 +969,10 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
       </button>
       <div className="lc-cr-ah">
         <span className="lc-cr-tile" data-big>
-          <Kind name={name} size={15} />
+          <Face t={it} size={15} />
         </span>
         <b>{name}</b>
-        {a?.model && <span className="lc-cr-pill">{modelLabel(a.model, providers)}</span>}
+        {side ? <span className="lc-cr-pill">Sidekick</span> : a?.model && <span className="lc-cr-pill">{modelLabel(a.model, providers)}</span>}
         <span className="lc-grow" />
         {st === "running" && a?.taskId && (
           <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("thread.stopAgent", { id: thread.id, item: it.id }).then((ok) => !ok && toast.error(`${name} has already stopped.`)).catch(fail)}>
@@ -763,12 +983,14 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
       </div>
       <div className="lc-cr-astat">
         <Mark state={st} />
-        {[st === "running" && it.status !== "running" ? "In the background" : STATE_WORD[st], duration(secsOf(it, now)), `sent by ${sender}`].filter(Boolean).join(" · ")}
+        {[unstarted(it) ? "Never started" : st === "running" && it.status !== "running" ? "In the background" : STATE_WORD[st], duration(secsOf(it, now)), side ? `briefed by ${sender}` : `sent by ${sender}`].filter(Boolean).join(" · ")}
       </div>
       {(a?.tools || a?.tokens) && (
         <div className="lc-cr-stats">
+          {/* The figures as words for a screen reader: the rolling digits below aren't read in Chromium, so they're hidden and said here (a p, which the cards' span rule leaves alone). */}
+          <p className="l-sr-only">{[a?.tools ? plural(a.tools, "tool") : null, a?.tokens ? `${compact(a.tokens)} tokens` : null].filter(Boolean).join(", ")}</p>
           {a?.tools ? (
-            <span>
+            <span aria-hidden>
               <b>
                 <Num value={a.tools} />
               </b>
@@ -776,7 +998,7 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
             </span>
           ) : null}
           {a?.tokens ? (
-            <span>
+            <span aria-hidden>
               <b>
                 <Num as="compact" value={a.tokens} />
               </b>
@@ -786,12 +1008,13 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
         </div>
       )}
 
-      <div className="lc-cr-h">Asked to</div>
+      {/* Its parts are headings, so a screen reader can go from the brief to the report to the files. */}
+      <div className="lc-cr-h" role="heading" aria-level={3}>{side ? "The brief" : "Asked to"}</div>
       <div className="lc-cr-brief">{a?.brief ?? agentTask(it) ?? "Nothing said."}</div>
 
       {kids.length > 0 && (
         <>
-          <div className="lc-cr-h">It sent {plural(kids.length, "agent")}</div>
+          <div className="lc-cr-h" role="heading" aria-level={3}>It sent {plural(kids.length, "agent")}</div>
           {kids.map((k) => (
             <button key={k.id} type="button" className="lc-cr-row l-focus" onClick={() => showAgent(thread.id, k.id)}>
               <span className="lc-cr-tile">
@@ -809,12 +1032,13 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
         </>
       )}
 
-      <div className="lc-cr-h">
+      <div className="lc-cr-h" role="heading" aria-level={3}>
         Steps<span className="lc-cr-rule" />
         <span>{steps.length || ""}</span>
       </div>
       {steps.length ? (
-        <ul className="lc-cr-steps">
+        // role="list": WebKit drops a list's role once its bullets are styled away, and VoiceOver stops saying "list, 4 items".
+        <ul className="lc-cr-steps" role="list">
           {steps.map((s, i) => (
             <li key={i} data-state={s.status}>
               <Mark state={s.status === "running" ? "running" : s.status === "failed" ? "failed" : "done"} />
@@ -823,13 +1047,15 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
           ))}
         </ul>
       ) : (
-        <p className="lc-cr-none">{st === "running" ? "None yet." : "Its tool doesn't say what it did, step by step."}</p>
+        <p className="lc-cr-none">{st === "running" ? "None yet." : unstarted(it) ? "None: the brief was stopped while it waited its turn." : "Its tool doesn't say what it did, step by step."}</p>
       )}
 
-      <div className="lc-cr-h">Report</div>
+      <div className="lc-cr-h" role="heading" aria-level={3}>Report</div>
       <div className="lc-cr-report" data-empty={!a?.report || undefined}>
-        {a?.report ?? (st === "running" ? (it.status !== "running" ? `It works in the background; ${sender} hears when it ends.` : `Goes back to ${sender} when it finishes, and shows here.`) : st === "stopped" ? `Stopped before it reported. ${sender} was told.` : (it.output ?? "Nothing came back."))}
+        {unstarted(it) ? `It never started on this brief: it was stopped while it waited its turn, so nothing was done. ${sender} was told.` : (a?.report ?? (st === "running" ? (it.status !== "running" ? `It works in the background; ${sender} hears when it ends.` : `Goes back to ${sender} when it finishes, and shows here.`) : st === "stopped" ? `Stopped before it reported. ${sender} was told.` : (it.output ?? "Nothing came back.")))}
       </div>
+
+      {side && !unstarted(it) && <Measured threadId={thread.id} files={st === "running" ? undefined : a?.files} running={st === "running"} />}
 
       {st === "running" && (direct || (thread.status === "running" && !parent)) && (
         <>
@@ -859,6 +1085,42 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
               : `${name}'s tool can't take a word mid-run, so this goes to ${sender} now, without stopping it; it can stop ${name} and send a new one.${a?.taskId ? " Stop it works on the agent directly." : ""}`}
           </p>
         </>
+      )}
+    </>
+  );
+}
+
+/**
+  What a sidekick's brief changed, as Liner Code measured it from snapshots before and after (its
+  report is its own claim). A file opens in Files; unmeasured (no git here), it says so.
+*/
+function Measured({ threadId, files, running }: { threadId: string; files?: FileChange[]; running: boolean }) {
+  return (
+    <>
+      <div className="lc-cr-h" role="heading" aria-level={3}>
+        Files it changed<span className="lc-cr-rule" />
+        <span>{files?.length ? <Lines {...sumLines(files)} /> : "measured"}</span>
+      </div>
+      {running ? (
+        <p className="lc-cr-none">Measured when it finishes, from the folder as it was before and after.</p>
+      ) : !files ? (
+        <p className="lc-cr-none">Not measured: this folder couldn't be snapshotted.</p>
+      ) : !files.length ? (
+        <p className="lc-cr-none">None. Measured from the folder before and after its brief.</p>
+      ) : (
+        <ul className="lc-cr-files" role="list">
+          {files.map((f) => (
+            <li key={f.path}>
+              <button type="button" className="lc-cr-file l-focus" title={`Open ${f.path}`} aria-label={`${[`${FILE_WORD[f.status] ?? "Modified"}: ${f.path}`, linesSaid(f)].filter(Boolean).join(", ")}. Open it`} onClick={() => window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: f.path, threadId } }))}>
+                <span className="lc-cr-fs" data-s={f.status}>
+                  {f.status === "added" ? "A" : f.status === "deleted" ? "D" : f.status === "renamed" ? "R" : "M"}
+                </span>
+                <span className="lc-cr-fp lc-mono">{f.path}</span>
+                <Lines added={f.added} removed={f.removed} />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </>
   );

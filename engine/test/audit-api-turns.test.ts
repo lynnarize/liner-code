@@ -79,7 +79,7 @@ async function setup() {
 }
 type Setup = Awaited<ReturnType<typeof setup>>;
 
-const session = (s: Setup, extra: Record<string, unknown> = {}) => s.call<Thread>("thread.create", { projectId: "p", agent: "@claude:claude-opus-5-5", after: "off", ...extra });
+const session = (s: Setup, extra: Record<string, unknown> = {}) => s.call<Thread>("thread.create", { projectId: "p", agent: "@claude:claude-opus-5-5", review: false, ...extra });
 const rootOf = (t: Thread) => t.worktree!.root ?? t.worktree!.path;
 const said = (s: Setup, id: string, text: string) => s.store.timeline(id).some((x) => x.kind === "user" && x.text === text);
 const cpOf = (s: Setup, id: string) => s.store.timeline(id).find((x): x is Extract<Item, { kind: "checkpoint" }> => x.kind === "checkpoint");

@@ -23,7 +23,7 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
   const all = useItems(side?.id);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const who = agentOf(side?.agent ?? thread.lead ?? thread.agent, agents, providers);
+  const who = agentOf(side?.agent ?? thread.agent, agents, providers);
   const from = side?.sideFrom ?? thread.turns;
   // Its own turns: the session's, copied in when it started, stay out of sight.
   const items = useMemo(() => all.filter((x) => x.turn > from), [all, from]);

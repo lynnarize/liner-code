@@ -20,7 +20,7 @@ import { emptyUsage } from "../../contracts/src/index.ts";
 import { askRuleNames, claude, claudeMcp, sdk, waits, withFiles } from "../src/providers/claude.ts";
 import { acpModels } from "../src/providers/models.ts";
 import { Outside } from "../src/outside-tools.ts";
-import type { ApprovalRequest, OpenOptions, TurnSink, WakeTurn } from "../src/providers/types.ts";
+import { LINER_WAIT_SEC, type ApprovalRequest, type OpenOptions, type TurnSink, type WakeTurn } from "../src/providers/types.ts";
 import type { Store } from "../src/store.ts";
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
@@ -311,7 +311,7 @@ test("liner's tools go without a card only from Liner Code's own server", async 
 test("a connection named liner can't take the place of Liner Code's own server", () => {
   const mcp = { command: "node", args: ["mcp.ts"], env: { LINER_SURFACE_KEY: "k" } };
   const out = claudeMcp({ mcp }, [{ name: "liner", http: { url: "https://x.example/mcp", headers: {} } }]);
-  assert.deepEqual(out.liner, { type: "stdio", ...mcp });
+  assert.deepEqual(out.liner, { type: "stdio", ...mcp, timeout: LINER_WAIT_SEC * 1000 });
   assert.deepEqual(out["liner-addon"], { type: "http", url: "https://x.example/mcp", headers: {} });
 });
 

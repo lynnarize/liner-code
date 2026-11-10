@@ -28,6 +28,8 @@ import { commandLine, launchRisk, riskyEnv, shownEnv, type Launcher } from "./la
 import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
 import { remember, searchSessions } from "./memory.ts";
 import { uid, type Store } from "./store.ts";
+import { PAIR_ENV } from "./liner-tools.ts";
+import { AS_SIDEKICK, sidekickTitle } from "./sidekick.ts";
 
 export type McpContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 export type McpResult = { content: McpContent[]; isError?: boolean };
@@ -87,6 +89,8 @@ export function linerTitle(tool: string, input: unknown): string {
       return `Offer to make ${s(a.name) || "an app"}`;
     case "mode_add":
       return `Ask to add the mode ${s(a.name) || ""}`.trim();
+    case "sidekick":
+      return sidekickTitle(raw.brief);
     default:
       return `Liner Code · ${tool}`;
   }
@@ -167,10 +171,12 @@ export type AddonHost = {
   askLiner(threadId: string, ask: { tool: string; title: string; description?: string; risk: Risk; fields: { label: string; value: string }[]; addon?: Extract<Item, { kind: "approval" }>["addon"] }): { id: string; answer: Promise<{ allow: boolean; reason?: string; scope?: "all" | "project" }> };
   relink(): Promise<Map<string, "now" | "next">>;
   readOnly(threadId: string): boolean;
-  /** Nobody is there to answer a card: a routine's step, or a cost test. */
+  /** Nobody is there to answer a card: a routine's step. */
   unwatched?(threadId: string): boolean;
   whoIs(threadId: string): string;
   toolOf(threadId: string): { label: string; family: string };
+  /** A pair's lead hands its sidekick a brief: the runtime runs it and says how it went (sidekick.ts). */
+  delegate?(threadId: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }>;
 };
 
 /** The agent tools a connection reaches, by family, and whether each takes one in mid-session. */
@@ -250,17 +256,22 @@ export class AgentTools {
     this.env = env;
   }
 
-  /** How an agent tool starts Liner Code's tools for one session. Null until the server is up. */
-  serverFor(threadId: string): { command: string; args: string[]; env: Record<string, string> } | null {
+  /**
+    How an agent tool starts Liner Code's tools for one session. Null until the server is up.
+    `pair`: it's a pair's lead, offered `sidekick` too. `sidekick`: it's that pair's sidekick, with
+    a key of its own, so a call it makes is told apart from the lead's (it may not hand work on).
+  */
+  serverFor(threadId: string, o: { pair?: boolean; sidekick?: boolean } = {}): { command: string; args: string[]; env: Record<string, string> } | null {
     if (!this.url) return null;
-    let key = [...this.keys].find(([, t]) => t === threadId)?.[0];
+    const who = o.sidekick ? `${threadId}${AS_SIDEKICK}` : threadId;
+    let key = [...this.keys].find(([, t]) => t === who)?.[0];
     if (!key) {
       key = randomBytes(18).toString("hex");
-      this.keys.set(key, threadId);
+      this.keys.set(key, who);
     }
     // Under the Electron shell process.execPath is the app itself, which is a Node only when told so.
     const electron: Record<string, string> = process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {};
-    return { command: process.execPath, args: [fileURLToPath(new URL("./mcp.ts", import.meta.url))], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY: key } };
+    return { command: process.execPath, args: [fileURLToPath(new URL("./mcp.ts", import.meta.url))], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY: key, ...(o.pair && !o.sidekick ? { [PAIR_ENV]: "1" } : {}) } };
   }
 
   threadOf(key: string) {
@@ -320,9 +331,19 @@ export class AgentTools {
   }
 
 
+  /** `threadId` as threadOf gave it: a sidekick's key names its thread with AS_SIDEKICK after it. */
   async call(threadId: string, tool: string, args: Record<string, unknown>): Promise<McpResult> {
+    const sidekick = threadId.endsWith(AS_SIDEKICK);
+    if (sidekick) threadId = threadId.slice(0, -AS_SIDEKICK.length);
     try {
       switch (tool) {
+        case "sidekick": {
+          // The sidekick never hands work on: it would wait on itself.
+          if (sidekick) return fail("You are the sidekick here: do the brief yourself.");
+          if (!this.host?.delegate) return fail("This session has no sidekick to hand work to.");
+          const r = await this.host.delegate(threadId, args);
+          return r.isError ? fail(r.text) : text(r.text);
+        }
         case "browser_open": {
           const url = urlOf(args);
           if (!url) return fail("Say which page, as url: localhost:5173/settings, a port, or an HTML file in this folder (index.html).");
@@ -538,7 +559,7 @@ export class AgentTools {
   private refusal(threadId: string) {
     if (!this.addons || !this.host) return "Add-ons aren't available in this session.";
     if (this.store.settings.addonOffers === "never") return "The person turned this off: in Settings › Add-ons, agents may never offer add-ons. Nothing was added. They can still add one by hand there.";
-    if (this.host.readOnly(threadId)) return "This session only reads (Read only, a side chat, or a planner's turn), so it can't add or remove an add-on. Say what you'd add; the person can ask for it in a session that makes changes.";
+    if (this.host.readOnly(threadId)) return "This session only reads (Read only, or a side chat), so it can't add or remove an add-on. Say what you'd add; the person can ask for it in a session that makes changes.";
     return null;
   }
 
@@ -811,7 +832,7 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
   */
   private async addMode(threadId: string, args: Record<string, unknown>): Promise<McpResult> {
     // A mode isn't an add-on: Settings › Add-ons' "never offer" doesn't reach it, only a session that reads.
-    const no = !this.host ? "Modes aren't available in this session." : this.host.readOnly(threadId) ? "This session only reads (Read only, a side chat, or a planner's turn), so it can't add a mode. Say what you'd add; the person can ask for it in a session that makes changes." : null;
+    const no = !this.host ? "Modes aren't available in this session." : this.host.readOnly(threadId) ? "This session only reads (Read only, or a side chat), so it can't add a mode. Say what you'd add; the person can ask for it in a session that makes changes." : null;
     if (no) return fail(no);
     const name = String(args.name ?? "").trim();
     const description = String(args.description ?? "").trim();

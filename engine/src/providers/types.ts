@@ -122,7 +122,7 @@ export type OpenOptions = {
   fork?: boolean;
   /** Turn on the destructive-command guard even in Full access. */
   guard: boolean;
-  /** A one-off read (a review, a judge, a commit message): the tool keeps no transcript of it. */
+  /** A one-off read (a review, a commit message): the tool keeps no transcript of it. */
   ephemeral?: boolean;
   /**
     Just a model, for an app (access.ai): no tools of any kind, none of your settings, hooks or
@@ -130,10 +130,10 @@ export type OpenOptions = {
     (Claude Code); the runtime asks no other (plainWay).
   */
   plain?: boolean;
-  /** This turn is a lead's plan: read only, ending in a plan to approve rather than in edits. */
-  planning?: boolean;
   /** A side chat beside a session: read only, and it answers rather than plans. */
   side?: boolean;
+  /** A pair's sidekick: it works the lead's briefs, and sends no agents of its own. */
+  sidekick?: boolean;
   /** Folders that exist outside `cwd` the tool may read as its own: where your attachments are saved. */
   dirs?: string[];
   /** Claude Code subagents this agent brings (Explorer, Test runner, Opus for hard parts). */
@@ -189,5 +189,18 @@ export interface Provider {
   limits?(env: NodeJS.ProcessEnv, scratch: string): Promise<Omit<ToolLimits, "provider" | "label" | "at"> | null>;
   /** Asks the tool which models it runs, in a scratch folder. Slower than detect; the engine caches it. */
   models?(env: NodeJS.ProcessEnv, scratch: string): Promise<ModelInfo[]>;
+  /**
+    How long, in milliseconds, the tool waits on one call to Liner Code's tools before it gives up on it, when that's less
+    than LINER_WAIT_SEC and Liner Code can't raise it (Hermes reads its limits from your own config). A sidekick's brief is
+    cut to fit it. Unset or null: it waits as long as Liner Code asks.
+  */
+  toolWait?(env: NodeJS.ProcessEnv): number | null;
   open(o: OpenOptions): ProviderSession;
 }
+
+/**
+  How long a tool is told to wait on one call to Liner Code's tools, in seconds: a card waits for you, and a sidekick's
+  brief runs up to 10 minutes. Left to themselves Codex gives up after 5 minutes, OpenCode after one, and a low
+  MCP_TOOL_TIMEOUT of yours would cut Claude Code short (T3 Code: CodexAdapterV2.ts sets tool_timeout_sec on its own server too).
+*/
+export const LINER_WAIT_SEC = 1800;

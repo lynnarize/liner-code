@@ -45,7 +45,7 @@ const parse = (line: string): Json | null => {
 };
 /** Words you wrote, not the tool's own wrappers (<command-name>, <environment_context>, caveats, Codex's AGENTS.md, interrupt markers). */
 const yours = (text: string) => Boolean(text.trim()) && !/^\s*(<[a-z_-]+>|Caveat:|# AGENTS\.md instructions for |\[Request interrupted by user)/i.test(text);
-/** Liner Code's own one-off reads (a review, a judge, a commit message, a Desk answer), from before they stopped leaving transcripts. */
+/** Liner Code's own one-off reads (a review, a commit message, a Desk answer), from before they stopped leaving transcripts. */
 const linerOwn = (text: string) =>
   /^(You review a change another agent|You check another agent's work|You decide, for a person,|What was asked in the session:|Write the (commit message for these changes|pull request for this branch)|Someone is deciding on a coding session's work)/.test(text.trim());
 const titleOf = (text: string) => {

@@ -1,13 +1,13 @@
 /*
   An open session: its name, which opens its menu (where it works, its branch, rename and pin), the
-  Reviewer's word, and at the header's right Run, the bottom panel's toggle and the right panel's,
+  Reviewer's word (its own menu: read each change or not, who reads), and at the header's right Run, the bottom panel's toggle and the right panel's,
   then the timeline and the composer. The header heads the thread's column only: the dock beside it
   is a full-height column of the paper, its tab row on the header's line (one top row, Panel.tsx),
   with a hairline from the paper's top to its bottom between them that is the resize grip. The full
   canvas gives the dock the whole paper (on the diff, that's the full-width Review).
 */
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
-import type { Item, Project, ProjectScript, Thread } from "@contracts";
+import { isPair, makerOf, reviewOn, type Item, type Project, type ProjectScript, type Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
 import { MarkdownLinks, type FileLink } from "@liner/pro/ai-kit/markdown";
@@ -17,8 +17,10 @@ import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
 import { EnvMenu } from "./Env";
 import { ShipCard } from "./Ship";
-import { I } from "./icons";
-import { agentOf, checkpointsOf, modeOf, modelLabel, plural, sumLines } from "./model";
+import { I, ModelMark } from "./icons";
+import { agentOf, checkpointsOf, markOf, modelLabel, plural, sumLines, threadModel } from "./model";
+import { ModelPicker } from "./Models";
+import { myPicks, reviewerFor, savePick } from "./Agentic";
 import { Panel } from "./Panel";
 import { FindBar, onComposerInsert, toComposer } from "./Find";
 import { revealFile } from "./Files";
@@ -31,9 +33,9 @@ import { closeTab, closeWhere, openTab, paneOf, replaceTab, showDock, toggleTab,
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, SideKeys, TopBar } from "./TopBar";
 import { ModeChip } from "./Modes";
-import { CrewChip, CrewStrip } from "./Crew";
+import { CrewChip, CrewStrip, pairOf } from "./Crew";
 import { Timeline } from "./Timeline";
-import { Disc, Kbd, Lines, PanelHead, Pop, Row, Sep } from "./ui";
+import { Disc, Kbd, Lines, NamedSwitch, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
 type Props = {
@@ -268,9 +270,12 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     return () => window.removeEventListener("focus", clear);
   }, [thread.id, thread.unread]);
 
-  const lead = thread.lead ? agentOf(thread.lead, agents, providers) : undefined;
   const coder = agentOf(thread.agent, agents, providers);
-  const settings: RunSettings = { agent: thread.agent, lead: thread.lead, route: thread.route?.level, dual: thread.dual, after: thread.after, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access };
+  // A pair, by name ("Opus 5.5 + Sol"); null for one model.
+  const pair = pairOf(thread, agents, providers);
+  // The composer's settings: who leads, the sidekick of a pair, the model, effort and access (the
+  // sidekick goes in by a spread, so this compiles before and after the composer's type has it).
+  const settings: RunSettings = { agent: thread.agent, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, ...(thread.sidekick ? { sidekick: thread.sidekick } : {}) };
   const open = checkpointsOf(cps).filter((c) => !c.reverted && !c.committed);
   const lines = sumLines(open.flatMap((c) => c.files));
   const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
@@ -482,23 +487,19 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const update = (patch: Partial<RunSettings>) => {
     const p: Parameters<typeof rpc<"thread.update">>[1] = { id: thread.id };
     if ("agent" in patch) p.agent = patch.agent;
-    if ("lead" in patch) p.lead = patch.lead ?? null;
-    if ("model" in patch) p.model = patch.model;
+    // One model again is no sidekick (null), a pair its sidekick's model.
+    if ("sidekick" in patch) p.sidekick = (patch as { sidekick?: string | null }).sidekick ?? null;
+    // Picking who works clears the session's own model (one a usage limit moved it to): undefined would leave it.
+    if ("model" in patch) p.model = patch.model ?? null;
     if ("effort" in patch) p.effort = patch.effort;
     if ("access" in patch) p.access = patch.access;
-    if ("route" in patch) p.route = patch.route ?? null;
-    if ("dual" in patch) p.dual = patch.dual;
-    if ("after" in patch) p.after = patch.after ?? null;
     void rpc("thread.update", p).catch(fail);
   };
 
   // The dock beside the thread, rather than over the whole paper.
   const beside = dock.open && !dock.full;
-  // Plan and Auto are one session to you, whoever works in it at the moment; Solo is the model (or agent) you picked.
-  const way = modeOf(thread);
-  const wayName = way === "auto" ? "Auto" : "Plan, then build";
-  const wayNote = way === "auto" && thread.route ? `${modelLabel(thread.route.cast.everyday, providers)} for most, ${modelLabel(thread.route.cast.strong, providers)} for hard jobs` : lead ? `${lead.name} plans the hard jobs, ${coder.name} builds` : "";
-  const placeholder = way === "solo" ? `Ask ${coder.name} for changes, or point at a file with @` : "Ask for changes, or point at a file with @";
+  // A pair is spoken to through its lead, which hands its sidekick the work.
+  const placeholder = `Ask ${pair?.lead ?? coder.name} for changes, or point at a file with @`;
   const empty = loaded && count === 0;
 
   // ⌥↑ and ⌥↓ go to the prompt before or after the one you're reading (in the composer, only while it's empty).
@@ -624,7 +625,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               </div>
             )}
             <span className="lc-grow" data-drag />
-            {thread.verdict && <Verdict v={thread.verdict} />}
+            <ReviewerSwitch thread={thread} />
             {onCloseSide && (
               <button type="button" className="lc-tb l-focus" aria-label="Close this side" title="Close this side" onClick={onCloseSide}>
                 <I.close size={14} />
@@ -637,9 +638,9 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               <div ref={contentRef} className="lc-scroll-in">
                 {empty ? (
                   <div className="lc-fresh">
-                    <Disc agent={lead ?? coder} size={34} lead={Boolean(lead) || undefined} />
-                    <b>{way === "solo" ? `A new session with ${coder.name}` : `${wayName}: ${wayNote}`}</b>
-                    <span>Say what you need below. Anything that needs you will wait here as a card.</span>
+                    <Disc agent={coder} size={34} />
+                    <b>A new session with {pair?.name ?? coder.name}</b>
+                    <span>{pair ? `${pair.lead} leads and hands ${pair.side} the work it can spell out. ` : ""}Say what you need below. Anything that needs you will wait here as a card.</span>
                   </div>
                 ) : (
                   <Timeline threadId={thread.id} seen={seen.current ?? NONE_SEEN} onReview={review} reviewing={dock.open && dock.panes.some((p) => p.tab === "changes") ? focus : null} onGrow={follow} />
@@ -649,7 +650,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             </div>
             <PromptMap prompts={prompts} scroller={scroller} />
           </div>
-          <Announcer status={thread.status} turns={thread.turns} who={(lead && thread.turnBy === lead.id ? lead : coder).name} />
+          <Announcer status={thread.status} turns={thread.turns} who={pair?.lead ?? coder.name} />
           {finding > 0 && view === "chat" && <FindBar root={contentRef} asked={finding} onClose={() => setFinding(0)} onMove={() => scroller.current && letGo(scroller.current)} />}
           {cite && (
             <button
@@ -670,7 +671,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           {tabApps.map((a) =>
             seenViews.has(a.id) ? (
               <div key={a.id} className="lc-apptab" role="tabpanel" aria-label={a.name} hidden={view !== a.id}>
-                <AddonView addon={a.id} thread={thread} agentName={(lead ?? coder).name} visible={view === a.id} />
+                <AddonView addon={a.id} thread={thread} agentName={pair?.lead ?? coder.name} visible={view === a.id} />
               </div>
             ) : null,
           )}
@@ -737,7 +738,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             onDock={fromPanel}
             focus={focus}
             onFocus={setFocus}
-            agentName={(lead ?? coder).name}
+            agentName={pair?.lead ?? coder.name}
             onOpenSession={onOpenSession}
             onRoutine={onRoutine}
             leaving={!dock.open}
@@ -922,22 +923,113 @@ function Announcer({ status, turns, who }: { status: Thread["status"]; turns: nu
   return <div ref={region} className="l-sr-only" aria-live="polite" />;
 }
 
-/** The Reviewer's last word on this session's changes, in the bar: quiet text in its colour, no pill. */
-function Verdict({ v }: { v: NonNullable<Thread["verdict"]> }) {
-  if (v.state === "checking")
-    return (
-      <span className="lc-verdict" title="The Reviewer is reading the changes">
-        <span className="l-shimmer">Reviewing</span>
-      </span>
-    );
-  const ok = v.state === "verified";
+/**
+  The Reviewer in the bar: its last word on this session's changes (Reviewing, Verified, Blocked) as
+  quiet text in its colour, else "Reviewer", or "Reviewer off" when it doesn't read here; it stays in
+  sight either way. Pressed, its own menu: read each change or not, for this session
+  (thread.update's review), who reads (your pick for every session, or Automatic), what it does,
+  and the way to its settings. Its findings stay on each turn's last line.
+*/
+function ReviewerSwitch({ thread }: { thread: Thread }) {
+  const settings = useEngine((s) => s.settings);
+  const on = reviewOn(thread, settings);
+  const v = thread.verdict;
+  const state = v?.state === "checking" ? "checking" : !on ? "off" : v?.state;
+  const word = state === "checking" ? "Reviewing" : state === "verified" ? "Verified" : state === "blocked" ? "Blocked" : state === "off" ? "Reviewer off" : "Reviewer";
+  const tip = state === "checking" ? "The Reviewer is reading the changes" : state === "off" ? "The Reviewer doesn't read this session's changes" : v?.note && state ? v.note : "The Reviewer reads each change before it's yours";
   return (
-    <span className="lc-verdict" data-state={v.state} title={v.note}>
-      <span key={v.state}>
-        {ok ? <I.verified size={14} /> : <I.alert size={14} />}
-        {ok ? "Verified" : "Blocked"}
-      </span>
-    </span>
+    <Pop
+      // Its name carries the word in sight (Verified, Reviewer off), which a bare "Reviewer" would hide.
+      label={state === "off" ? "Reviewer off. Change it" : `Reviewer: ${word === "Reviewer" ? "on" : word}. Change it`}
+      align="end"
+      width={330}
+      className="lc-rvw-pop"
+      triggerClass="lc-verdict lc-rvw"
+      triggerAttrs={{ "data-state": state, title: tip }}
+      trigger={
+        <>
+          <span key={state ?? "on"} className={state === "checking" ? "l-shimmer" : undefined}>
+            {state === "verified" ? <I.verified size={14} /> : state === "blocked" ? <I.alert size={14} /> : state === "off" || state === "checking" ? null : <I.shield size={13} />}
+            {word}
+          </span>
+          <I.chevD size={11} />
+        </>
+      }
+    >
+      {() => <ReviewerMenu thread={thread} on={on} />}
+    </Pop>
+  );
+}
+
+function ReviewerMenu({ thread, on }: { thread: Thread; on: boolean }) {
+  const settings = useEngine((s) => s.settings);
+  const providers = useEngine((s) => s.providers);
+  const agents = useEngine((s) => s.agents);
+  const [choosing, setChoosing] = useState(false);
+  const who = useRef<HTMLButtonElement>(null);
+  const pickList = useRef<HTMLDivElement>(null);
+  // The list opening takes the focus in, as the composer's Lead list does: to Automatic while it's the choice, else to the models' search.
+  useEffect(() => {
+    if (!choosing) return;
+    const box = pickList.current;
+    (mine ? box?.querySelector<HTMLElement>(".lc-mp-find input") : box?.querySelector<HTMLElement>(".lc-row"))?.focus({ preventScroll: true });
+  }, [choosing]);
+  // The list closing takes the focus it had back to Who reads (a pick unmounts the row that had it).
+  const shut = () => (setChoosing(false), requestAnimationFrame(() => who.current?.focus({ preventScroll: true })));
+  const picks = myPicks(settings);
+  // The lead writes the change, and in a pair its sidekick too: the Reviewer is chosen against both, the lead first.
+  const lead = threadModel(thread, agents, providers);
+  const writers = lead ? [lead, ...(isPair(thread) ? [thread.sidekick!] : [])] : [];
+  const now = writers.length ? reviewerFor(writers, providers, picks) : null;
+  const auto = writers.length ? reviewerFor(writers, providers, picks, true) : null;
+  const mine = picks.checker && now === picks.checker ? picks.checker : undefined;
+  const label = (ref: string) => modelLabel(ref, providers);
+  const pick = (ref: string | undefined) => (savePick(settings, "checker", ref), shut());
+  return (
+    <div className="lc-rvm">
+      <PanelHead>Reviewer</PanelHead>
+      <div className="lc-rvm-row">
+        <span>Read each change</span>
+        <NamedSwitch name="Read each change" checked={on} onCheckedChange={(review) => void rpc("thread.update", { id: thread.id, review }).catch(fail)} />
+      </div>
+      {on && (
+        <div className="lc-rvm-row">
+          <span className="lc-rvm-k">Who reads</span>
+          <button ref={who} type="button" className="lc-rvm-who l-focus" aria-expanded={choosing} aria-label={`Who reads: ${now ? (mine ? label(now) : `Automatic, ${label(now)}`) : "nobody ready"}. Change it`} onClick={() => setChoosing(!choosing)}>
+            {now && <ModelMark kind={markOf(now)} size={12} />}
+            <span>{now ? (mine ? label(now) : `Automatic: ${label(now)}`) : "Nobody ready"}</span>
+            <I.chevD size={11} />
+          </button>
+        </div>
+      )}
+      {on && choosing && (
+        // Escape closes this list first, then the menu (Pop).
+        <div
+          ref={pickList}
+          className="lc-rvm-pick"
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && !e.defaultPrevented) (e.preventDefault(), shut());
+            // Down from Automatic goes on into the models, whose search then moves the lit row.
+            if (e.key === "ArrowDown" && e.target instanceof HTMLElement && e.target.classList.contains("lc-row")) (e.preventDefault(), pickList.current?.querySelector<HTMLElement>(".lc-mp-find input")?.focus());
+          }}
+        >
+          <Row title="Automatic" note={auto ? (lead && makerOf(auto) === makerOf(lead) ? `${label(auto)} now: nothing of another maker is ready` : `${label(auto)} now: another maker than the lead's`) : "Nobody else is ready"} on={!mine} onPick={() => pick(undefined)} />
+          <ModelPicker value={mine} height={260} onPick={(ref) => pick(ref)} />
+        </div>
+      )}
+      <p className="lc-rvm-note">
+        {on && !now
+          ? "Nobody else is ready to read changes yet: sign in to another tool, or pick one here."
+          : on
+          ? `${now && lead && makerOf(now) === makerOf(lead) ? label(now) : "Another maker than the lead's"} reads each change before it's yours, and sends back what must be fixed.${settings.reviewSmall ? "" : " A few lines, or docs alone, go through."}`
+          : "Changes are yours as they are."}
+      </p>
+      <div className="lc-rvm-foot">
+        <button type="button" className="lc-rvm-link l-focus" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "agentic" }))}>
+          Reviewer settings
+        </button>
+      </div>
+    </div>
   );
 }
 

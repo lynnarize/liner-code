@@ -3,7 +3,7 @@
   stdio. Unlike `codex exec`, it can stop and ask: commands and edits come back as approval
   cards, Codex's own questions as question cards, and a message written mid-turn steers the
   running turn. Access maps onto Codex's sandbox and approval policy:
-  - read:  read-only sandbox, never asks (a lead planning, or a session that only reads)
+  - read:  read-only sandbox, never asks (a session that only reads)
   - ask:   read-only sandbox, asks to do anything more (every edit and write comes to you)
   - edits: workspace-write sandbox, asks before commands it doesn't trust
   - auto:  workspace-write sandbox, Codex decides when to ask
@@ -19,7 +19,7 @@ import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { inFolder } from "./acp.ts";
 import { dataUrl, imageType } from "./attachments.ts";
-import { ResumeFailed, scrub, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink, type WakeTurn } from "./types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, scrub, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink, type WakeTurn } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
@@ -75,14 +75,6 @@ export const reasoning = new Set<string>();
 const IN_USE = /already has an active writer/i;
 const IN_USE_TEXT = "This conversation is open in another Codex client, such as the Codex CLI or an IDE extension. Codex lets one client write to it at a time. Quit that client, then send your message again.";
 
-/**
-  A planner's words for Codex's plan mode, the only mode request_user_input answers in ("unavailable
-  in Default mode"). They stand in for Codex's built-in ones, which would end every turn in a plan
-  or a question, even "hello" (why a lead stays out of Claude Code's plan mode too: claude.ts), and
-  put a plan in <proposed_plan> rather than the <plan> tags the runtime's planRules ask for.
-*/
-const PLAN_MODE = "Your other instructions say when to plan and how to hand a plan over: follow them. When a decision only the user can make would change the plan, ask it with the request_user_input tool; find out everything else for yourself.";
-
 /** How long a closed app server gets to end by itself. */
 const KILL_AFTER_MS = 2000;
 /** When to look for a stopped command on Codex's list of what's running: at once, then twice more. */
@@ -117,18 +109,14 @@ export async function codexAsk<T>(env: NodeJS.ProcessEnv, cwd: string, method: s
 }
 
 /**
-  How long Codex waits on a call to Liner Code's tools (60 seconds unless told): an add-on's install
-  card waits for you, and you may take a while (T3 Code: CodexAdapterV2.ts sets tool_timeout_sec on its own server too).
-*/
-const LINER_WAIT_SEC = 1800;
-
-/**
   Liner Code's own server and the connections you added, as Codex's config takes MCP servers. They
   go with the thread (thread/start, thread/resume) over stdin, never on the app server's command line.
 */
 export function codexMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = []): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  if (o.mcp) Object.assign(out, { "mcp_servers.liner.command": o.mcp.command, "mcp_servers.liner.args": o.mcp.args, "mcp_servers.liner.env": o.mcp.env, "mcp_servers.liner.tool_timeout_sec": LINER_WAIT_SEC });
+  // Its tools approved by themselves: they only reach this session's surfaces, and under a policy of never (Read only), Codex
+  // otherwise refuses every MCP call ("MCP tool call requires approval, but approval policy is never"), the sidekick's too.
+  if (o.mcp) Object.assign(out, { "mcp_servers.liner.command": o.mcp.command, "mcp_servers.liner.args": o.mcp.args, "mcp_servers.liner.env": o.mcp.env, "mcp_servers.liner.tool_timeout_sec": LINER_WAIT_SEC, "mcp_servers.liner.default_tools_approval_mode": "approve" });
   // `liner` is ours, and its tools go without a card: a connection of that name is any other server (as claudeMcp has it).
   for (const c of connections) {
     const at = `mcp_servers.${c.name === "liner" ? "liner-addon" : c.name}`;
@@ -314,8 +302,6 @@ export class CodexServerSession implements ProviderSession {
   private halted = new Set<string>();
   /** What's waiting to wake the parent, if anything is; a subagent finishing meanwhile joins it. */
   private waking: { pending: boolean; details: string[] } | null = null;
-  /** The model the thread opened on: a plan turn has to name one, and you may have left it to Codex. */
-  private openedOn: string | null = null;
   private o: OpenOptions;
 
   constructor(o: OpenOptions) {
@@ -337,11 +323,14 @@ export class CodexServerSession implements ProviderSession {
   private async open() {
     await this.server.ready();
     if (this.opened) return;
-    const p = POLICY[this.o.planning ? "read" : this.o.access];
+    const p = POLICY[this.o.access];
     // Liner Code's own tools and your connections, as config overrides the way `codex -c` takes them.
     const mcp = codexMcp(this.o, this.o.connections);
     // An API endpoint's model provider, when this Codex runs one.
-    const config = Object.keys(mcp).length || this.o.config ? { ...mcp, ...this.o.config } : null;
+    // A sidekick sends no agents of its own. Both keys are booleans codex-cli 0.167.0 takes (its config load
+    // rejects any other type for either): agents.enabled is the one OpenAI documents, features.multi_agent the feature flag.
+    const alone = this.o.sidekick ? { "agents.enabled": false, "features.multi_agent": false } : {};
+    const config = Object.keys(mcp).length || this.o.config || this.o.sidekick ? { ...mcp, ...alone, ...this.o.config } : null;
     const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: this.o.model && this.o.model !== "default" ? this.o.model : null, developerInstructions: this.o.soul || null, config };
     let r: Json | null = null;
     if (this.thread) {
@@ -359,7 +348,6 @@ export class CodexServerSession implements ProviderSession {
     }
     if (!r) r = await this.server.request("thread/start", { ...common, ephemeral: this.o.ephemeral || null });
     this.thread = String((r.thread as Json).id);
-    this.openedOn = typeof r.model === "string" ? r.model : null;
     this.sink?.session(this.thread);
     this.opened = true;
   }
@@ -398,7 +386,7 @@ export class CodexServerSession implements ProviderSession {
         this.lost = undefined;
         throw new ResumeFailed(`Codex couldn't resume its thread ${lost}.`);
       }
-      const p = POLICY[this.o.planning ? "read" : this.o.access];
+      const p = POLICY[this.o.access];
       const effort = this.o.effort && !/^ultra(code|think)$/.test(this.o.effort) ? this.o.effort : null;
       const finished = new Promise<void>((resolve) => {
         this.done = resolve;
@@ -411,7 +399,6 @@ export class CodexServerSession implements ProviderSession {
           if (!(await Promise.race([this.server.request("thread/compact/start", { threadId: this.thread }), aborted]))) return;
         } else {
           const model = this.o.model && this.o.model !== "default" ? this.o.model : null;
-          const named = model ?? this.openedOn;
           this.early = new Map();
           const start = this.server.request("turn/start", {
             threadId: this.thread,
@@ -423,8 +410,6 @@ export class CodexServerSession implements ProviderSession {
             sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
             model: this.o.model && this.o.model !== "default" ? this.o.model : null,
             effort,
-            // T3 Code: CodexAdapterV2.ts sends the mode the same way, and also "default" to leave it; a planner's thread is only ever a planner's.
-            ...(this.o.planning && named ? { collaborationMode: { mode: "plan", settings: { model: named, reasoning_effort: effort, developer_instructions: PLAN_MODE } } } : {}),
           });
           const r = await Promise.race([start, aborted]);
           // Stopped before Codex answered: a turn it starts after all is stopped as soon as it says which, and what it sends is dropped.
@@ -807,9 +792,9 @@ export class CodexServerSession implements ProviderSession {
         }
         return;
       }
-      // A plan written the way Codex's plan mode has it comes out of the message and only here, so it's handed over as any other (see PLAN_MODE).
+      // A plan written the way Codex's plan mode has it comes out of the message and only here: it reads as what the model said.
       case "plan":
-        if (done && it.text) sink.text(`<plan>\n${String(it.text).trim()}\n</plan>`, id);
+        if (done && it.text) sink.text(String(it.text).trim(), id);
         return;
       case "contextCompaction":
         if (done) sink.notice("Codex compacted the conversation to make room.");
@@ -1046,7 +1031,7 @@ export class CodexServerSession implements ProviderSession {
     if (method === "item/tool/requestUserInput") {
       const qs = (p.questions as { id: string; header: string; question: string; options: { label: string; description: string }[] | null }[] | undefined) ?? [];
       const questions: Question[] = qs.map((q) => ({ question: q.question, header: q.header, options: (q.options ?? []).map((o) => ({ label: o.label, description: o.description })) }));
-      // Optional: a routine has nobody to answer, and a planner left waiting would hold it for good.
+      // Optional: a routine has nobody to answer, and a question left waiting would hold it for good.
       const answers = await sink.ask(questions, signal, { optional: true });
       return { answers: Object.fromEntries(qs.map((q) => [q.id, { answers: answers?.[q.question] ? [answers[q.question]] : [] }])) };
     }

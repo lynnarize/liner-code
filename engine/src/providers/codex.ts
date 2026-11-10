@@ -13,7 +13,7 @@ import { closesOnExit, jsonLines, killTree, run, spawn, versionOf, which, withCo
 import { codexAsk, CodexServerSession, isLimit, reasoning, toml } from "./codex-server.ts";
 import { imageType } from "./attachments.ts";
 import { effortOf, skillsIn } from "./models.ts";
-import { ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
 
 /**
   Whether each Codex binary has the app server, by its path: every Codex account and endpoint detects at
@@ -106,7 +106,7 @@ class CodexSession implements ProviderSession {
     // Liner Code's own tools (the Browser, designs) and an API endpoint's model provider, as the
     // app server gets them.
     // Your connections don't come this way: settings go on `codex exec`'s command line, where their keys could be read. The app server takes them.
-    if (o.mcp) common.push("-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`);
+    common.push(...execMcp(o));
     for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
     const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, ...(o.ephemeral ? ["--ephemeral"] : []), "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {
@@ -225,6 +225,14 @@ class CodexSession implements ProviderSession {
     }
   }
 }
+
+/**
+  Liner Code's own server as `codex exec` takes it, with the wait and the approval the app server gets (codexMcp): left to
+  itself this Codex gives up on a call after 5 minutes, which a sidekick's brief can outlast, and under exec's approval
+  policy of never it refuses every MCP call that would need one.
+*/
+export const execMcp = (o: Pick<OpenOptions, "mcp">) =>
+  o.mcp ? ["-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`, "-c", `mcp_servers.liner.tool_timeout_sec=${LINER_WAIT_SEC}`, "-c", `mcp_servers.liner.default_tools_approval_mode="approve"`] : [];
 
 /** How long Stop waits for `codex exec` to end by itself. */
 const STOP_MS = 3000;

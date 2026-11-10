@@ -8,8 +8,8 @@
   returns to the sessions.
 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Mode, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
-import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, updateModes, VOUCHER } from "@contracts";
+import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
+import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, ROUTINES_ON, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
@@ -62,7 +62,7 @@ const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string;
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai voucher promo code redeem" },
-  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Solo, Plan then build, or Auto; your frontier and cheaper models; check or refine each change; and how each mode went in your sessions.", words: "agentic mode solo plan build auto routed lead planner coder builder model frontier cheaper dual astra opus sonnet luna deepseek glm kimi qwen chinese opencode go hermes check refine reviewer judge critic compare cost" },
+  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Your pair, the lead and its sidekick, and what a new session starts with; and the Reviewer, which reads each change before it's yours.", words: "agentic pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes" },
   { id: "modes", label: "Modes", icon: <I.idea />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
   { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "What a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
@@ -86,15 +86,22 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
   const scroller = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
   const nav = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const place = PLACES.find((p) => p.id === page) ?? PLACES[0];
   const archived = useEngine((s) => s.threads.filter((t) => t.archived).length);
   const secs = useSections(scroller, page);
   const me = window.__LINER__?.user?.trim() || "You";
 
   useEffect(() => sessionStorage.setItem("lc:settings", page), [page]);
-  // Asked for a place while already open (Check for Updates…, a notice's Details).
+  // Opened with focus nowhere (the link or button that opened it went away with what it was in), the
+  // page's heading takes it, so a screen reader is moved to the page rather than left on nothing.
   useEffect(() => {
-    const on = (e: Event) => setPage(((e as CustomEvent).detail as SettingsPage) ?? "general");
+    const a = document.activeElement;
+    if (!a || a === document.body) heading.current?.focus({ preventScroll: true });
+  }, []);
+  // Asked for a place while already open (Check for Updates…, a notice's Details); the place's heading takes the focus.
+  useEffect(() => {
+    const on = (e: Event) => (setPage(((e as CustomEvent).detail as SettingsPage) ?? "general"), requestAnimationFrame(() => heading.current?.focus({ preventScroll: true })));
     window.addEventListener("lc:open-settings", on);
     return () => window.removeEventListener("lc:open-settings", on);
   }, []);
@@ -193,7 +200,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
       save({ notify: true, badge: true, menuBar: true });
       feedback.setEnabled(false);
     },
-    agentic: () => save({ dual: false, after: "check", reviewRounds: 2, reviewSmall: false, route: { level: "high" } }),
+    agentic: () => save({ review: true, reviewRounds: 2, reviewSmall: false }),
     safety: () => save({ defaultAccess: "auto", guardDestructive: true }),
     git: () => save({ branchPrefix: "liner/" }),
   };
@@ -310,12 +317,14 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
           )}
         </header>
         <div ref={scroller} className="lc-st-scroll">
-          <div className="lc-st-col" key={page} data-wide={page === "agentic" || undefined}>
+          <div className="lc-st-col" key={page}>
             <div className="lc-st-hero">
               <span className="lc-st-hero-i" aria-hidden>
                 {place.icon}
               </span>
-              <h1>{place.label}</h1>
+              <h1 ref={heading} tabIndex={-1}>
+                {place.label}
+              </h1>
               <p>{place.blurb}</p>
             </div>
             {page === "general" && <General go={setPage} onSetup={onClose} enter={enter} setEnter={setEnter} />}
@@ -529,27 +538,29 @@ function Field({ title, note, children, below, lead, off }: { title: ReactNode; 
 function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => void; onSetup: () => void; enter: "queue" | "steer"; setEnter: (v: "queue" | "steer") => void }) {
   const s = useEngine((x) => x.settings);
   const providers = useEngine((x) => x.providers);
-  // Who'd do what, from your two models.
-  const cast = castOf(providers, { dual: s.dual, picks: s.picks });
+  // Who'd do what, from your picks (Agentic.tsx writes them).
+  const cast = castOf(providers, { picks: s.picks });
   const label = (ref?: string) => (ref ? modelLabel(ref, providers) : "");
+  const two = Boolean(cast && cast.lead !== cast.sidekick);
+  const start = s.start ?? (two ? "pair" : "best");
   return (
     <>
       <Group title="New sessions" note="What Home starts with. Each session can still change it.">
-        <Field title="How they work" below>
+        <Field title="What they start with" below>
           <RadioCards
-            label="How they work"
+            label="What they start with"
             columns={3}
-            value={s.mode}
-            onValueChange={(v) => save({ mode: v as Mode })}
+            value={start === "pair" && !two ? "best" : start}
+            onValueChange={(v) => save({ start: v as EngineSettings["start"] })}
             options={[
-              { value: "solo", title: "Solo", description: `One model does it all, as you allow${cast ? `: ${label(cast.everyday)}` : ""}.`, icon: <I.node size={16} /> },
-              { value: "plan", title: "Plan, then build", description: cast ? `${label(cast.strong)} plans, you approve, ${label(cast.everyday)} builds.` : "A stronger model plans, you approve, a cheaper one builds.", icon: <I.flow size={16} /> },
-              { value: "auto", title: "Auto", description: cast ? `Each message gets the least work: ${label(cast.everyday)} for most, ${label(cast.strong)} for hard jobs.` : "Each message gets the least work likely to do it well.", icon: <I.branchIf size={16} /> },
+              { value: "pair", title: "Pair", description: two ? `${label(cast!.lead)} leads, ${label(cast!.sidekick)} does the work it hands over.` : "A pair needs two models ready: a lead and a quicker sidekick.", icon: <I.agents size={16} />, disabled: !two },
+              { value: "best", title: "Best", description: cast ? `${label(cast.lead)} alone, for the hardest work.` : "Your lead model alone.", icon: <I.star size={16} /> },
+              { value: "fast", title: "Fast", description: cast ? `${label(cast.sidekick)} alone: the quickest, and the least it costs.` : "Your sidekick model alone.", icon: <I.bolt size={16} />, disabled: !two },
             ]}
           />
           <span className="lc-st-more">
             <button type="button" className="lc-st-link l-focus" onClick={() => go("agentic")}>
-              Which models, and how each mode works
+              Your pair, and the Reviewer
               <I.chevR size={12} />
             </button>
           </span>
@@ -589,7 +600,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             aria-label="What Enter does"
           />
         </Field>
-        <Field title={`Keep the ${os.machine} awake`} note="No idle sleep while a session or a routine run works, so a long run isn't cut off. The display still sleeps.">
+        <Field title={`Keep the ${os.machine} awake`} note={`No idle sleep while a session${ROUTINES_ON ? " or a routine run" : ""} works, so a long run isn't cut off. The display still sleeps.`}>
           <NamedSwitch name={`Keep the ${os.machine} awake`} checked={s.keepAwake !== false} onCheckedChange={(keepAwake) => save({ keepAwake })} />
         </Field>
       </Group>
@@ -597,9 +608,12 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
         <Field title="When its pull request merges">
           <NamedSwitch name="When its pull request merges" checked={s.settleOnMerge ?? false} onCheckedChange={(settleOnMerge) => save({ settleOnMerge })} />
         </Field>
-        <Field title="When a routine run handled everything itself" note="A run that waits for you stays in its project.">
-          <NamedSwitch name="When a routine run handled everything itself" checked={s.settleOnRoutine ?? false} onCheckedChange={(settleOnRoutine) => save({ settleOnRoutine })} />
-        </Field>
+        {/* Only about routine runs, so it goes while routines are switched off (contracts, ROUTINES_ON). */}
+        {ROUTINES_ON && (
+          <Field title="When a routine run handled everything itself" note="A run that waits for you stays in its project.">
+            <NamedSwitch name="When a routine run handled everything itself" checked={s.settleOnRoutine ?? false} onCheckedChange={(settleOnRoutine) => save({ settleOnRoutine })} />
+          </Field>
+        )}
         <Field title="When nothing has happened for a while" note="Only sessions that wait on nothing from you.">
           <Segmented
             size="sm"
@@ -656,7 +670,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             />
           </span>
         </Field>
-        <Field title="A cap per session" note="A session, or a routine run, that spends this much stops where it is and tells you; your next message lets it go on for another cap's worth. Claude Code reports cost; other tools can't be held to it.">
+        <Field title="A cap per session" note={`A session${ROUTINES_ON ? ", or a routine run," : ""} that spends this much stops where it is and tells you; your next message lets it go on for another cap's worth. Claude Code reports cost; other tools can't be held to it.`}>
           <span className="lc-st-budget">
             <span className="lc-quiet">$</span>
             <input
@@ -1945,7 +1959,7 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
       }
     >
       {agents.filter((a) => a.id !== "demo" || showDemo).map((a) => {
-        const used = threads.filter((t) => t.agent === a.id || t.lead === a.id).length;
+        const used = threads.filter((t) => t.agent === a.id).length;
         return (
           <Field key={a.id} lead={<Disc agent={a} size={28} />} title={a.name} note={[a.role, a.id === "demo" ? "scripted, no account" : `${a.effort} effort`, plural(used, "session")].filter(Boolean).join(" · ")}>
             <ModelTag kind={markOf(a.model)} label={modelLabel(a.model, providers)} />

@@ -59,25 +59,26 @@
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
   mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
 }
-/* Every tab keeps its name (TasteCode v0.5): when the strip runs short they give way to their
-   icons, and the open one keeps its own. Panel.tsx decides, from the names' widths. */
-.lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-b {
+/* Every tab keeps its name (TasteCode v0.5): when the strip runs short, as few as it takes give way
+   to their icons, from the row's start, and the open one keeps its own. Panel.tsx decides, from the
+   names' widths. */
+.lc-stab[data-icon] .lc-stab-b {
   gap: 0;
   padding: 0 8px;
 }
 /* Down to its icon a tab has no close of its own (the close sat on the icon, so a press on the tab
    closed it): a middle click or its right-click menu closes it (Panel.tsx). */
-.lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-x {
+.lc-stab[data-icon] .lc-stab-x {
   display: none;
 }
-.lc-stabs-row[data-icons] .lc-stab:not([data-on]):hover .lc-stab-b > svg {
+.lc-stab[data-icon]:hover .lc-stab-b > svg {
   opacity: 1;
 }
 /* Down to its icon, Changes keeps its count beside it. */
-.lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-n {
+.lc-stab[data-icon] .lc-stab-n {
   margin-left: 5px;
 }
-.lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-b > span {
+.lc-stab[data-icon] .lc-stab-b > span {
   max-width: 0;
 }
 .lc-stab {
@@ -2946,36 +2947,7 @@
   height: 24px;
 }
 
-/* The composer's helpers and comparing. */
-.lc-team-help {
-  display: grid;
-  gap: 6px;
-  padding: 10px 12px 4px;
-  border-top: 1px solid var(--l-line);
-}
-.lc-team-help .lc-team-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.lc-team-help .lc-mchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-/* Dual frontier with one of its models missing: its title says what's needed. */
-.lc-team-help .lc-mchip:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.lc-team-note {
-  margin: 0;
-  font-size: 12px;
-  line-height: 17px;
-}
-.lc-team-cmp {
-  padding: 8px 12px 0;
-}
+/* The composer's comparing. */
 .lc-mchip[data-also] {
   box-shadow:
     0 0 0 1.5px color-mix(in oklab, var(--l-accent) 60%, transparent),

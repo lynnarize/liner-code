@@ -9,7 +9,7 @@
   away, and what comes back on its own.
 */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { AgentProfile, Item, PrInfo, PrPicture, Project, ProviderInfo, Routine, RoutineRun, Thread } from "@contracts";
+import { ROUTINES_ON, type AgentProfile, type Item, type PrInfo, type PrPicture, type Project, type ProviderInfo, type Routine, type RoutineRun, type Thread } from "@contracts";
 import { AgentPlan, type PlanTask } from "@liner/pro/agent-plan/agent-plan";
 import { AgentFeed, type FeedCheck, type FeedDecision, type FeedQuestion } from "@liner/pro/agent-feed/agent-feed";
 import type { Agent } from "@liner/pro/agents/agents";
@@ -170,12 +170,6 @@ function doingOf(items: Item[] | undefined): string {
   return "Working";
 }
 
-/** Who works the running turn: the lead while it plans, else the coder. */
-function workerOf(t: Thread, items: Item[] | undefined) {
-  const turn = lastOf(items, "turn");
-  return turn?.planning && t.lead ? t.lead : t.agent;
-}
-
 const toAgent = (id: string, agents: AgentProfile[], providers: ProviderInfo[]): Agent => {
   const p = agentOf(id, agents, providers);
   return { id, name: p.name, role: p.role || "Model", glyph: p.glyph };
@@ -221,10 +215,10 @@ export function Desk({ project, settings, worktree, onOpen }: Props) {
       const turn = lastOf(its, "turn");
       const total = plan && turn && plan.turn === turn.turn ? plan.entries.length : 0;
       const doneSteps = total ? plan!.entries.filter((e) => e.status === "completed").length : 0;
-      return { t, wait: null, task: { ...base, agent: workerOf(t, its), note: doingOf(its), progress: total ? ([doneSteps, total] as [number, number]) : undefined } };
+      return { t, wait: null, task: { ...base, agent: t.agent, note: doingOf(its), progress: total ? ([doneSteps, total] as [number, number]) : undefined } };
     }
     if (t.turns === 0) return { t, wait: null, task: base };
-    const asker = lastOf(its, "proposal", (x) => x.state === "asking") && t.lead ? t.lead : t.agent;
+    const asker = t.agent;
     const wait = waitOf(t, its, run, agentOf(asker, agents, providers).name, !!p?.git);
     if (wait) return { t, wait, task: { ...base, agent: asker, note: wait.note, action: { label: wait.label, done: "" } } };
     return { t, wait: null, task: { ...base, agent: t.agent, note: `Finished ${since(t.updatedAt, now)}`, done: true } };
@@ -249,10 +243,10 @@ export function Desk({ project, settings, worktree, onOpen }: Props) {
       .catch((e) => toast.error(msg(e)));
     if (open?.id === task.id) setOpen(null);
   };
-  // Handing a task over: whoever you give it to works on it on their own (Solo).
+  // Handing a task over: whoever you give it to works on it alone, without a sidekick, on its own model.
   const give = async (task: PlanTask, a: Agent) => {
     try {
-      await rpc("thread.update", { id: task.id, agent: a.id, lead: null });
+      await rpc("thread.update", { id: task.id, agent: a.id, sidekick: null, model: null });
       await rpc("thread.send", { id: task.id, text: task.title });
     } catch (e) {
       toast.error(msg(e));
@@ -261,7 +255,7 @@ export function Desk({ project, settings, worktree, onOpen }: Props) {
   const add = async (title: string) => {
     if (!project) return;
     try {
-      await rpc("thread.create", { projectId: project.id, agent: settings.agent, lead: settings.lead, route: settings.route, dual: settings.dual, after: settings.after, model: settings.model, effort: settings.effort, access: settings.access, title, worktree: worktree && project.git });
+      await rpc("thread.create", { projectId: project.id, agent: settings.agent, sidekick: settings.sidekick, review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, title, worktree: worktree && project.git });
     } catch (e) {
       toast.error(msg(e));
     }
@@ -328,7 +322,8 @@ export function Desk({ project, settings, worktree, onOpen }: Props) {
 /** Routine runs that finished on their own today, and sessions a rule settled, newest first. */
 function useNotices(runs: RoutineRun[], routines: Routine[], settled: Settled[], threads: Thread[], seen: string[], onOpen: (id: string) => void): Notice[] {
   const day = Date.now() - 86_400_000;
-  const fromRuns = runs
+  // Routines switched off (contracts, ROUTINES_ON): their runs aren't news here; a session one handed back still shows as a case.
+  const fromRuns = (ROUTINES_ON ? runs : [])
     .filter((r) => (r.status === "merged" || r.status === "done" || r.status === "failed") && r.at > day)
     .map((r) => {
       const name = routines.find((x) => x.id === r.routineId)?.name ?? "A routine";
@@ -393,7 +388,8 @@ export function DeskPresence() {
       .filter((t) => t.status === "running" && !t.archived)
       .reduce<Presence[]>((list, t) => {
         const its = items[t.id];
-        const id = workerOf(t, its);
+        // The lead, who answers for its sidekick's work too.
+        const id = t.agent;
         if (list.some((p) => p.id === id)) return list;
         const last = its?.[its.length - 1];
         const activity: Presence["activity"] = last?.kind === "tool" && (last.toolKind === "edit" || last.toolKind === "write") ? "editing" : last?.kind === "text" && last.streaming ? "typing" : "viewing";
@@ -554,7 +550,7 @@ function planCase(c: Ctx): Case {
   const { t, items, project } = c;
   const prop = lastOf(items, "proposal", (x) => x.state === "asking") ?? lastOf(items, "proposal");
   const coder = agentOf(t.agent, c.agents, c.providers);
-  const lead = agentOf(t.lead ?? t.agent, c.agents, c.providers);
+  const lead = coder;
   const steps = prop ? stepsOf(prop.plan) : [];
   const files = [...new Set(steps.flatMap((s) => s.files))];
   const access = accessOf(t.access);
@@ -566,7 +562,7 @@ function planCase(c: Ctx): Case {
     { id: "you", claim: "You approve it", proof: "", mark: "waiting", yours: { ask: `${coder.name} waits for your word`, then: `Approved by you at ${at()}` } },
   ];
   return {
-    agent: t.lead ?? t.agent,
+    agent: t.agent,
     checks,
     decision: { title: `Start: ${prop?.title ?? t.title}`, amount: plural(steps.length, "step"), sub: `${lead.name} planned it · ${coder.name} builds it${project ? ` · ${project.name}` : ""}`, act: "Approve and start", again: "Start now instead" },
     questions: [

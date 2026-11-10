@@ -10,11 +10,11 @@
   - auto:  auto (Claude Code's classifier approves routine steps and asks about the rest)
   - full:  acceptEdits, and every other call is allowed, except destructive commands while the
            guard is on and what your own Claude settings said to ask about, which still come back to you.
-  AskUserQuestion and ExitPlanMode are caught in canUseTool and shown as cards.
+  AskUserQuestion and ExitPlanMode are caught in canUseTool and shown as cards: a plan from plan
+  mode waits in its turn for your answer.
 
-  A lead doesn't run in plan mode: Claude Code's plan mode makes every turn end in a plan or a
-  question, even "hello". It runs in the default mode with the editing tools taken away, answers
-  talk directly, and wraps a plan in <plan> tags when you ask for a change (see the runtime).
+  A side chat doesn't run in plan mode, which makes every turn end in a plan or a question, even
+  "hello": it runs in the default mode with the editing tools taken away, and answers directly.
 */
 import { getSessionMessages, query, type ElicitationRequest, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKPermissionRuleEntry, type SDKResultMessage, type SDKUserMessage, type SessionStore, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
@@ -32,7 +32,7 @@ import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { subagentName } from "../review.ts";
 import { effortOf, skillsIn, ULTRACODE, ULTRATHINK } from "./models.ts";
-import { ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 /** The SDK's query() and transcript reader, held here so tests can stand in a Claude Code of their own. */
@@ -59,7 +59,9 @@ const sdkEffort = (e: string) => (e === "ultracode" ? "xhigh" : LEVELS.has(e) ? 
 /** Liner Code's own server and the connections you added, as Claude Code takes MCP servers. */
 export function claudeMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = []): Record<string, McpServerConfig> {
   const out: Record<string, McpServerConfig> = {};
-  if (o.mcp) out.liner = { type: "stdio", command: o.mcp.command, args: o.mcp.args, env: o.mcp.env };
+  // Its own wait, in ms: Claude Code waits on a call for good unless MCP_TOOL_TIMEOUT says otherwise, and a low one in your
+  // shell would cut a sidekick's brief short. Progress notifications don't extend it.
+  if (o.mcp) out.liner = { type: "stdio", command: o.mcp.command, args: o.mcp.args, env: o.mcp.env, timeout: LINER_WAIT_SEC * 1000 };
   // `liner` is ours, and its tools go without a card: a connection of that name is any other server.
   for (const c of connections) out[c.name === "liner" ? "liner-addon" : c.name] = c.http ? { type: "http", url: c.http.url, headers: c.http.headers } : { type: "stdio", command: c.stdio!.command, args: c.stdio!.args, env: c.stdio!.env };
   return out;
@@ -403,8 +405,8 @@ async function listModels(env: NodeJS.ProcessEnv, scratch: string): Promise<Mode
 const TASK_TOOLS = new Set(["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]);
 
 const MODE: Record<Access, PermissionMode> ={ read: "plan", ask: "default", edits: "acceptEdits", auto: "auto", review: "acceptEdits", full: "acceptEdits" };
-/** A lead reads and plans, and a side chat reads and answers; these stay with the coder. */
-const LEAD_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
+/** A side chat reads and answers: editing, and plan mode's way in and out, stay with the session. */
+const SIDE_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
 /** Just a model, for an app (plain): every built-in that reaches this Mac, denied by rule as well as left out. */
 const PLAIN_DENIED = ["Read", "Glob", "Grep", "LS", "Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"];
 
@@ -741,8 +743,10 @@ class ClaudeSession implements ProviderSession {
       // Ultracode: standing multi-agent workflows on top of extra high effort.
       settings: o.effort === "ultracode" ? { ultracode: true } : undefined,
       thinking: { type: "adaptive", display: "summarized" },
-      permissionMode: o.planning || o.side ? "default" : MODE[this.access],
-      disallowedTools: o.planning || o.side ? LEAD_DENIED : undefined,
+      permissionMode: o.side ? "default" : MODE[this.access],
+      // A sidekick sends no agents of its own: the lead waits on it, and nobody would see theirs. Workflow runs a script of agents
+      // (Claude Code 2.1.322 offers it beside Agent), so it goes too.
+      disallowedTools: o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : undefined,
       includePartialMessages: true,
       agents: o.subagents && Object.keys(o.subagents).length ? o.subagents : undefined,
       resume: o.resume,

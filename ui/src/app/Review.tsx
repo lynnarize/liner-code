@@ -17,7 +17,8 @@ import { prefersReducedMotion } from "@liner/lib/spring";
 import { CommitButton } from "./Commit";
 import { is } from "./keymap";
 import { rpc, useEngine } from "./engine";
-import { I } from "./icons";
+import { I, ModelMark } from "./icons";
+import { agentTask, isSidekick, whoIs } from "./Crew";
 import { agentOf, ago, checkpointsOf, markOf, modelLabel, plural, sumLines } from "./model";
 import { baseOf, dirOf, langOf, linesOf, tokensOf, Toks } from "./code";
 import { Lines, ModelTag, Pop, Row as PickRow, Sep } from "./ui";
@@ -438,14 +439,13 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
           {diff && total > diff.length && <MoreFiles n={total - diff.length} turn={Boolean(cp)} pick={pick} />}
           {(subs.length > 0 || findings.reviewer) && (
             <div className="lc-rv-checked">
-              <span className="lc-rv-navh">{coder.name}'s subagents checked</span>
+              <span className="lc-rv-navh">{subs.some(isSidekick) ? "Who else worked on it" : `${coder.name}'s subagents checked`}</span>
               {subs.map((s) => (
                 <div key={s.id} className="lc-rv-sub-a">
-                  <span className="lc-tile">
-                    <I.agents size={11} />
-                  </span>
+                  <span className="lc-tile">{isSidekick(s) && s.agent?.model ? <ModelMark kind={markOf(s.agent.model)} size={11} /> : <I.agents size={11} />}</span>
                   <span>
-                    <b>{s.title.split(":")[0]}</b> <small className="lc-quiet">{s.status === "running" ? "working" : (s.title.split(":").slice(1).join(":").trim() || s.status)}</small>
+                    {/* A pair's sidekick by its model, with its brief. */}
+                    <b>{isSidekick(s) ? whoIs(s, providers) : s.title.split(":")[0]}</b> <small className="lc-quiet">{s.status === "running" ? "working" : isSidekick(s) ? `Sidekick · ${agentTask(s) || s.status}` : (s.title.split(":").slice(1).join(":").trim() || s.status)}</small>
                   </span>
                 </div>
               ))}

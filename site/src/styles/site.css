@@ -138,7 +138,6 @@ html[data-sea='dark'] .stage__ground img { filter: invert(1) hue-rotate(180deg) 
 /* At night the blue fields go to a night blue and the dark ones a step deeper, so sections still
    take turns. */
 html[data-sea='dark'] .dl, html[data-sea='dark'] .data { background: #0f1736; }
-html[data-sea='dark'] .auto { background: #070913; }
 /* The ink buttons turn over at night, so they still read as buttons on the dark. */
 html[data-sea='dark'] .btn--ink { background: var(--paper); color: var(--night); }
 html[data-sea='dark'] .btn--ink:hover { background: #fff; }
@@ -267,32 +266,6 @@ html.gl-on.motion .intro__home { display: none; }
   .how__say { margin-bottom: 20px; }
 }
 @media (max-width: 767px) { .how__answer { margin-left: 0; } }
-
-/* ---------- Auto: the headline you can type ---------- */
-.auto { background: var(--night); color: var(--paper); padding: clamp(120px, 13vw, 200px) var(--m) clamp(96px, 10vw, 160px); }
-.auto__title { font-size: var(--t-lead); font-weight: 500; line-height: 1.12; letter-spacing: -0.025em; max-width: 20em; margin-bottom: clamp(24px, 3vw, 44px); }
-.auto__line { position: relative; }
-.auto__input {
-  width: 100%; border: 0; background: none; padding: 0.05em 0 0.12em;
-  font-size: var(--t-head); font-weight: 700; letter-spacing: -0.04em; line-height: 1;
-  color: var(--paper); caret-color: var(--send); text-overflow: ellipsis;
-}
-.auto__input:focus-visible { outline: none; }
-.auto__line:focus-within { box-shadow: 0 6px 0 -3px var(--tide); }
-.auto__grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--g); margin-top: clamp(36px, 4vw, 56px); align-items: start; }
-.auto__answer { grid-column: 1 / span 7; }
-.auto__side { grid-column: 9 / span 4; display: grid; gap: 20px; }
-.auto__note, .auto__cast { color: color-mix(in oklab, var(--paper) 82%, var(--night)); }
-.auto__note code { font-size: 0.9em; color: var(--paper); }
-.auto__try { font-weight: 600; margin-bottom: 6px; }
-.auto__examples button {
-  display: block; text-align: left; padding: 7px 0; color: var(--paper);
-  text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--paper) 35%, transparent);
-  text-underline-offset: 4px; text-decoration-thickness: 1.5px; transition: text-decoration-color 0.2s;
-}
-.auto__examples button:hover { text-decoration-color: var(--send); }
-@media (max-width: 1023px) { .auto__answer, .auto__side { grid-column: 1 / -1; } }
-@media (max-width: 767px) { .auto__input { font-size: 11vw; } }
 
 /* ---------- Surfaces: the giant command list ---------- */
 .surfaces { background: var(--ground-2); padding: clamp(96px, 11vw, 180px) var(--m); }
@@ -669,6 +642,8 @@ html.gl-on.motion .intro__home { display: none; }
   font-family: var(--f); font-size: 0.5em; font-weight: 600; letter-spacing: 0; background: color-mix(in oklab, var(--text) 9%, transparent);
 }
 .card--span { grid-column: 1 / -1; min-height: 0; }
+/* The pair in words: its three parts as the crew card's bands, at the card's foot. */
+.card--pair .card__show { padding-bottom: var(--pad); }
 .card__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px calc(var(--g) * 3); flex-wrap: wrap; }
 .card__lead { display: flex; flex-direction: column; max-width: 38em; }
 .card__aside { max-width: 25em; font-size: var(--t-small); color: var(--text-2); }

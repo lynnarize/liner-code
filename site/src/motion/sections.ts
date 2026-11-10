@@ -1,7 +1,5 @@
 // The working fragments: each control does what the app's does, with the app's words.
 import { gsap } from 'gsap';
-import { decide, hintOf, scoreAsk } from '../../../engine/src/route.ts';
-import { autoCast } from '../data/auto';
 import { onPage, prefersReducedMotion } from '../engine';
 import { release } from './release';
 
@@ -81,63 +79,6 @@ function how() {
   undo?.addEventListener('click', onUndo);
   commit?.addEventListener('click', onCommit);
   offs.push(() => { undo?.removeEventListener('click', onUndo); commit?.removeEventListener('click', onCommit); });
-  return () => offs.forEach((f) => f());
-}
-
-const LABELS: Record<string, string> = { reasoning: 'Reasoning', codeGen: 'Writing code', debugging: 'Debugging', toolUse: 'Tools', breadth: 'Reach' };
-const WEIGHT: Record<string, string> = { light: 'Light job', medium: 'Medium job', heavy: 'Heavy job' };
-
-function auto() {
-  const input = $<HTMLInputElement>('[data-auto-input]');
-  const answer = $('[data-auto-answer]');
-  if (!input || !answer) return;
-  let level: 'standard' | 'high' | 'max' = 'high';
-  const cast = { everyday: autoCast.everyday, strong: autoCast.strong, judge: autoCast.judge, critics: autoCast.critics };
-  const plate = $('[data-plate]', answer);
-  const levels = $$<HTMLButtonElement>('[data-level]', answer);
-  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-
-  const render = () => {
-    const text = input.value.trim() || 'Hello';
-    const d = decide(text, { level, cast, root: cast.everyday });
-    const s = scoreAsk(text);
-    $('[data-weight]', answer)!.textContent = WEIGHT[d.weight];
-    const rule = $('[data-rule]', answer); if (rule) rule.textContent = d.rule;
-    const steps: string[] = [];
-    if (d.pattern === 'single') steps.push(`<li><b>${esc(d.writer)}</b> ${d.talk ? 'answers' : 'does it'}</li>`);
-    if (d.pattern === 'cascade') steps.push(`<li><b>${esc(d.writer)}</b> does it</li>`, `<li><b>${esc(d.judge!)}</b> judges the change</li>`, `<li><b>${esc(d.repair!)}</b> repairs it if it fails</li>`);
-    if (d.pattern === 'critique') steps.push(`<li><b>${esc(d.writer)}</b> does it</li>`, ...d.critics.map((c) => `<li><b>${esc(c)}</b> reads it</li>`), `<li><b>${esc(d.writer)}</b> revises once</li>`);
-    $('[data-flow]', answer)!.innerHTML = steps.join('');
-    $('[data-flow]', answer)!.dataset.pattern = d.pattern;
-    const hint = $('[data-hint-line]', answer); if (hint) hint.textContent = hintOf(d, (r) => r);
-    const scores = $('[data-scores]', answer); if (scores) scores.innerHTML = Object.entries(LABELS)
-      .map(([k, l]) => `<div><dt>${l}</dt><dd><span style="--v:${(s as Record<string, number>)[k]}"></span>${((s as Record<string, number>)[k]).toFixed(2)}</dd></div>`).join('');
-  };
-  const setLevel = (b: HTMLButtonElement, instant = false) => {
-    level = b.dataset.level as typeof level;
-    levels.forEach((x) => x.setAttribute('aria-checked', String(x === b)));
-    glide(plate, b, instant);
-    render();
-  };
-  const offs: (() => void)[] = [];
-  levels.forEach((b) => { const fn = () => setLevel(b); b.addEventListener('click', fn); offs.push(() => b.removeEventListener('click', fn)); });
-  const onInput = () => render();
-  input.addEventListener('input', onInput);
-  offs.push(() => input.removeEventListener('input', onInput));
-  $$<HTMLButtonElement>('[data-example]').forEach((b) => {
-    const fn = () => {
-      input.value = b.dataset.example!;
-      render();
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-      input.scrollLeft = input.scrollWidth;
-      pop(answer);
-    };
-    b.addEventListener('click', fn);
-    offs.push(() => b.removeEventListener('click', fn));
-  });
-  requestAnimationFrame(() => setLevel(levels.find((b) => b.dataset.level === level)!, true));
-  document.fonts.ready.then(() => glide(plate, levels.find((b) => b.dataset.level === level)!, true));
   return () => offs.forEach((f) => f());
 }
 
@@ -487,7 +428,7 @@ function tone() {
 
 export function startSections() {
   onPage(() => {
-    const offs = [how(), auto(), commands(), tabs(), download(), copies(), workshop(), nav(), seas(), tone(), release()].filter(Boolean) as (() => void)[];
+    const offs = [how(), commands(), tabs(), download(), copies(), workshop(), nav(), seas(), tone(), release()].filter(Boolean) as (() => void)[];
     return () => offs.forEach((f) => f());
   });
 }

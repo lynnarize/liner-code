@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const files = [
-  'engine/src/route.ts',
+  'engine/src/sidekick.ts',
   'contracts/src/index.ts',
   'engine/src/review.ts',
   'ui/src/app/Surfaces.tsx',
@@ -59,7 +59,7 @@ for (const f of files) {
     lines.push(line);
   }
 }
-// Keep the start of route.ts in order (the first rings you read), then sample the rest evenly.
+// Keep the start of sidekick.ts in order (the first rings you read), then sample the rest evenly.
 const head = lines.slice(0, 64);
 const rest = lines.slice(64);
 const step = Math.max(1, Math.floor(rest.length / 192));

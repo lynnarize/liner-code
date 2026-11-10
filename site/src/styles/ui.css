@@ -25,7 +25,6 @@
   letter-spacing: 0;
   color: var(--ink);
 }
-.auto [data-ui],
 .bento [data-ui],
 html[data-sea='dark'] [data-ui] {
   --surface: #141a31;
@@ -38,7 +37,6 @@ html[data-sea='dark'] [data-ui] {
   --hair: color-mix(in oklab, var(--paper) 10%, transparent);
   --accent: #7ea4ff;
 }
-.auto__line[data-ui] { color: var(--paper); font-size: inherit; }
 .cmd[data-ui] { color: inherit; font-size: inherit; line-height: inherit; }
 
 .ui-note { color: var(--ink-3); font-size: 12.5px; }
@@ -159,26 +157,7 @@ html[data-sea='dark'] [data-ui] {
 .turnbar__send:hover { background: color-mix(in oklab, var(--act) 88%, black); }
 .turnbar__send:active { scale: 0.92; }
 
-/* Auto's answer */
-.auto__answer { background: var(--surface); border-radius: 16px; padding: 18px 20px 20px; }
-.auto__levels { position: relative; display: inline-flex; padding: 3px; border-radius: 11px; background: var(--well); margin-bottom: 16px; }
-.auto__levels button { position: relative; z-index: 1; height: 28px; padding: 0 14px; border-radius: 9px; font-size: 13px; color: var(--ink-2); font-weight: 500; transition: color 0.2s; }
-.auto__levels button[aria-checked='true'] { color: var(--ink); }
-.auto__plate, .ui-seg__plate { position: absolute; left: 0; top: 3px; height: calc(100% - 6px); border-radius: 9px; background: var(--plate); }
-.auto__weight { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.auto__weight > span:first-child { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
-.auto__rule { font-size: 13px; color: var(--ink-3); }
-.auto__flow { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.auto__flow li { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px; background: var(--well); font-size: 13px; color: var(--ink-2); }
-.auto__flow li b { color: var(--ink); font-weight: 600; }
-.auto__flow li + li::before { content: ''; width: 10px; height: 1.5px; background: var(--ink-4); margin: 0 4px 0 -2px; }
-.auto__hint { font-size: 13.5px; color: var(--ink-2); margin-bottom: 14px; max-width: 60ch; }
-.auto__scores { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-.auto__scores dt { font-size: 12px; color: var(--ink-3); }
-.auto__scores dd { font-family: var(--mono); font-size: 12px; color: var(--ink-2); display: grid; gap: 5px; }
-.auto__scores dd span { display: block; height: 4px; border-radius: 4px; background: var(--well); position: relative; overflow: hidden; }
-.auto__scores dd span::after { content: ''; position: absolute; inset: 0; background: var(--accent); scale: var(--v) 1; transform-origin: left; transition: scale 0.5s var(--ease); }
-@media (max-width: 600px) { .auto__scores { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.ui-seg__plate { position: absolute; left: 0; top: 3px; height: calc(100% - 6px); border-radius: 9px; background: var(--plate); }
 
 /* The download dialog: the one thing that floats */
 .ui-dialog { background: var(--surface); border-radius: 18px; padding: 22px; box-shadow: 0 30px 70px -28px rgb(4 12 60 / 0.55); }
@@ -224,7 +203,7 @@ html[data-sea='dark'] [data-ui] {
 .ws-mode__icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--well); color: var(--ink-2); flex: none; }
 .ws-mode__icon--ws { color: oklch(0.5 0.17 292); background: color-mix(in oklab, oklch(0.6 0.2 292) 12%, var(--surface)); }
 /* Workshop's purple, lighter on the dark surfaces, so its words still read. */
-html[data-sea='dark'] .ui-chip--ws, html[data-sea='dark'] .ws-mode__icon--ws, .auto .ui-chip--ws, .bento .ui-chip--ws { color: oklch(0.8 0.12 292); background: color-mix(in oklab, oklch(0.6 0.2 292) 24%, var(--surface)); }
+html[data-sea='dark'] .ui-chip--ws, html[data-sea='dark'] .ws-mode__icon--ws, .bento .ui-chip--ws { color: oklch(0.8 0.12 292); background: color-mix(in oklab, oklch(0.6 0.2 292) 24%, var(--surface)); }
 .ws-modes__foot { padding: 6px 10px 2px; }
 
 /* ---------- What came in 0.2.4, drawn from the app (Wall.tsx, Crew.tsx, Browser.tsx, AddonsPage.tsx)

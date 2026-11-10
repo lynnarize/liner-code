@@ -1,9 +1,8 @@
 // Every word on the site. Facts come from the README, the changelog and the source; nothing here
 // is a claim the app doesn't make about itself. Server only: the version and the files come from
-// GitHub's latest release at build time (./release). The browser's scripts import ./auto instead.
+// GitHub's latest release at build time (./release).
 import { release, stars } from './release';
 import { longDate, shortCount } from '../lib/release';
-export { autoCast } from './auto';
 
 export const VERSION = release.version;
 const REPO = 'https://github.com/lynnarize/liner-code';
@@ -33,7 +32,6 @@ export const site = {
 
 export const nav = [
   { href: '/#features', label: 'Features' },
-  { href: '/#auto', label: 'Auto' },
   { href: '/workshop/', label: 'Workshop' },
   { href: '/changelog/', label: 'Changelog' },
 ];
@@ -51,7 +49,7 @@ export const home = {
 };
 
 export const intro =
-  'It runs Claude Code, Codex, OpenCode and Hermes together: one plans, one builds, one from another maker checks. What it lacks, they make as add-ons you say yes to.';
+  'It runs Claude Code, Codex, OpenCode and Hermes together: one leads, a quicker one takes the routine work, one from another maker checks. What it lacks, they make as add-ons you say yes to.';
 
 // One turn of the Demo's tide app, as the app shows it. Wording from the app and the Demo.
 export const turn = {
@@ -89,14 +87,6 @@ export const turn = {
   },
 };
 
-// Auto, with Claude Code, Codex and OpenCode Go signed in: the cast castOf() picks from them.
-export const autoExamples = [
-  'Why does the build fail on Windows?',
-  'Fix the typo in the onboarding title',
-  'Refactor the cache layer so a phone that changes time zone never shows yesterday',
-  'Migrate auth to the new session schema across every service',
-];
-
 // The surfaces beside a session, with their keys (ui/src/app/Surfaces.tsx: ⌘⇧ and the letter).
 export const surfaces = [
   { key: 'B', name: 'Browser', note: 'Your app on localhost beside the session, with its console, and an element you pick goes to the agent.' },
@@ -106,7 +96,6 @@ export const surfaces = [
   { key: 'D', name: 'Diff', note: 'Every turn as a diff: undo it, commit it, or ask about a line.' },
   { key: 'P', name: 'Pull request', note: 'Open one from the session through your own gh sign-in, and follow it from there.' },
   { key: 'M', name: 'Device', note: 'The iOS Simulator beside the session, for apps that run on a phone.' },
-  { key: 'R', name: 'Routines', note: 'Work that runs on a schedule, or when a pull request comes in.' },
 ];
 
 export const data = {
@@ -146,17 +135,6 @@ export const features = [
     pic: { src: '/media/app-design.jpg', w: 1800, h: 1125, alt: 'A session that asked for a home screen for the tide tables, with the Design surface beside it showing the phone screen: the next high tide at 21:52, its curve and today’s tides.', cap: 'The Design surface beside a session.' },
   },
   {
-    id: 'modes', name: 'Modes', tag: 'Solo, Plan, Auto',
-    title: 'Pick how a session works, and who checks each change.',
-    items: [
-      { label: 'Solo', title: 'One model in one loop', note: 'It reads, answers and edits as you allow. Pick any model, or one of your agents.' },
-      { label: 'Plan', title: 'Plan, then build', note: 'Most messages go straight to the builder; a hard job goes to the frontier model first, which reads and plans.' },
-      { label: 'Auto', title: 'Least work per message', note: 'Each message is weighed on your Mac at no cost: light work to the cheaper model, a hard one to the frontier model with a critic.' },
-      { label: 'Check', title: 'After each change', note: 'Check by another maker, Refine by the frontier model, or Off.' },
-    ],
-    pic: { src: '/media/app-agentic.jpg', w: 1800, h: 1125, alt: 'Settings, Agentic features: Solo, Plan then build and Auto, each with the models it uses, and below them the frontier and cheaper models.', cap: 'Settings, Agentic features.' },
-  },
-  {
     id: 'addons', name: 'Add-ons', tag: 'Workshop',
     title: "Ask for what Liner Code doesn't have, and an agent makes it.",
     items: [
@@ -175,6 +153,17 @@ export const features = [
 // The facts are the 0.2.4 changelog's; the sessions are the Demo's tide project.
 export const news = {
   since: 'New in 0.2.4',
+  // Lead + sidekick, which took the place of Plan, then build and Auto in 0.2.5. In words only: the
+  // picture of the old Settings went with them. The facts are the 0.2.5 changelog's.
+  pair: {
+    title: 'One model, or a pair',
+    text: 'Your best model leads. It hands the edits and test runs to a quicker one, then reads what came back. Any mix of Claude Code, Codex, OpenCode and Hermes.',
+    roles: [
+      { name: 'Lead', note: 'Talks to you and plans. It hands over one bounded piece of work at a time, and waits for it.' },
+      { name: 'Sidekick', note: 'Works in the same folder at your access level. Its steps and the files it changed show under the lead’s turn.' },
+      { name: 'Reviewer', note: 'A model from another maker reads each change before it’s yours, and is never one that wrote it.' },
+    ],
+  },
   wall: {
     title: 'The Wall',
     text: "Every live session at once, as tiles you can answer from. What waits on you comes first, then what's working, then what's done.",
@@ -250,7 +239,7 @@ export const news = {
 
 export const download = {
   close: ['Stand in', 'the middle.'],
-  after: 'Open it, connect the tools you have, add a project, and pick how you will work: Solo, Plan then build, or Auto.',
+  after: 'Open it, connect the tools you have, add a project, and pick one model or a pair.',
   mac: {
     label: 'Mac', file: release.mac.file, needs: 'Apple Silicon, tried on macOS 27', short: 'Apple Silicon · DMG',
     first: "The beta isn't notarized yet. The first time, open System Settings, Privacy & Security, and press Open Anyway, or run:",

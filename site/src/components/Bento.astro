@@ -7,7 +7,6 @@ import { data, news } from '../data/site';
 const shots = [
   { id: 'desk', title: 'The Desk', text: 'Sessions sort themselves by what they need from you. Press what waits, and one press decides.', src: '/media/mac-desk.webp', alt: 'Home with the Desk open: the tide fix back with you with one file to review, and the tide screen design done.', pos: 'left' },
   { id: 'design', title: 'Designs', text: 'Any agent draws the screen beside the session. Point at a part to change it, then Build it.', src: '/media/mac-design.webp', alt: 'A session that asked for a home screen for the tide tables, with the Design surface beside it showing the phone screen.', pos: 'right' },
-  { id: 'modes', title: 'Solo, Plan, Auto', text: "Pick how a session works. A model from another maker checks each change before it's yours.", src: '/media/mac-agentic.webp', alt: 'Settings, Agentic features: Solo, Plan then build and Auto, each with the models it uses.', pos: 'left' },
   { id: 'addons', title: 'Add-ons, made in Workshop', text: "Ask for what Liner Code doesn't have, and an agent makes it. Nothing goes in until you say yes.", src: '/media/mac-addons-page.webp', alt: 'The Add-ons page with nothing added yet, and Make one with an agent.', pos: 'left', link: { href: '/workshop/', label: 'About Workshop' } },
 ];
 
@@ -39,7 +38,7 @@ const stop = (s = 10) => `<svg viewBox="0 0 16 16" width="${s}" height="${s}" ar
 const rays = (s = 11) => `<svg viewBox="0 0 10 10" width="${s}" height="${s}" aria-hidden="true"><circle cx="5" cy="5" r="2" fill="currentColor"/><path d="M5 .5v1.4M5 8.1v1.4M.5 5h1.4M8.1 5h1.4M1.8 1.8l1 1M7.2 7.2l1 1M8.2 1.8l-1 1M2.8 7.2l-1 1" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>`;
 // The words a card's text writes as code.
 const coded = (s: string) => s.split(/(\.claude\/launch\.json|server_start)/);
-const w = news.wall, c = news.crew, sv = news.servers, pl = news.plugins;
+const w = news.wall, c = news.crew, sv = news.servers, pl = news.plugins, pr = news.pair;
 const tone = { needs: 'warn', working: undefined, done: 'ok' } as Record<string, string | undefined>;
 ---
 <section class="bento" id="features" data-tone="paper" aria-labelledby="bento-title">
@@ -249,6 +248,16 @@ const tone = { needs: 'warn', working: undefined, done: 'ok' } as Record<string,
         </div>
       </article>
     ))}
+
+    <article class="card card--pair" id="pair" data-reveal="up" data-delay="0.06">
+      <h3 class="card__title">{pr.title}</h3>
+      <p class="card__text">{pr.text}</p>
+      <div class="card__show">
+        <dl class="crew__tools">
+          {pr.roles.map((r) => <div><dt>{r.name}</dt><dd>{r.note}</dd></div>)}
+        </dl>
+      </div>
+    </article>
 
     <article class="card card--wide" id="data" data-reveal="up">
       <div class="card__body">

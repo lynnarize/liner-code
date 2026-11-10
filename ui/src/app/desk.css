@@ -61,23 +61,22 @@
 }
 
 /* ---------- The cue between the areas ---------- */
+/* A quiet word, as the other text buttons are: a chevron and "Desk", no pill and no shadow, the
+   same wash on hover. */
 .lc-desk-cue {
   --nod: 3px;
   position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 14px 0 4px;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
   overflow: hidden;
   border: 0;
-  border-radius: 99px;
-  background: var(--lc-float);
-  box-shadow:
-    0 0 0 1px var(--lc-hair),
-    var(--lc-lift);
-  color: var(--l-ink-2);
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
   font: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -85,6 +84,7 @@
   cursor: pointer;
   transition:
     transform 420ms var(--l-ease-out),
+    background-color 160ms ease,
     color 200ms ease;
 }
 .lc-desk-cue[data-dir="up"] {
@@ -92,7 +92,7 @@
 }
 .lc-desk-page-ask > .lc-desk-cue {
   position: absolute;
-  bottom: 20px;
+  bottom: 14px;
   left: 50%;
   translate: -50% 0;
   animation: lc-cue-in 520ms 700ms var(--l-ease-out) backwards;
@@ -105,8 +105,8 @@
 }
 @media (hover: hover) {
   .lc-desk-cue:hover {
+    background: var(--l-wash-2);
     color: var(--l-ink);
-    transform: translateY(calc(var(--nod) * -0.4));
   }
 }
 .lc-desk-cue[data-armed] {
@@ -117,19 +117,16 @@
 .lc-desk-cue-chev {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 99px;
-  background: var(--lc-well);
-  color: var(--l-ink-2);
+  width: 14px;
+  height: 14px;
+  color: inherit;
   animation: lc-cue-nod 1.5s var(--l-ease-in-out) 1.2s 3;
   transition:
     background-color 200ms ease,
     color 200ms ease;
 }
 .lc-desk-cue[data-armed] .lc-desk-cue-chev {
-  background: var(--l-ink);
-  color: var(--l-surface);
+  color: var(--l-ink);
   animation: lc-cue-nod 700ms var(--l-ease-in-out) infinite;
 }
 @keyframes lc-cue-nod {
@@ -143,7 +140,6 @@
   }
 }
 .lc-desk-cue-t {
-  color: var(--l-ink);
   animation: l-swap-in 280ms var(--l-ease-out) backwards;
 }
 .lc-desk-cue-n {
@@ -179,12 +175,12 @@
   }
 }
 /* Armed: a line under the words drains for as long as the second scroll counts. It starts where
-   the words do (the pill's 4px, the chevron's 30px, the 8px gap), clear of the chevron's disc. */
+   the words do (the button's 10px, the chevron's 14px, the 6px gap). */
 .lc-desk-cue-bar {
   position: absolute;
-  right: 14px;
-  bottom: 5px;
-  left: 42px;
+  right: 10px;
+  bottom: 3px;
+  left: 30px;
   height: 2px;
   border-radius: 2px;
   background: var(--l-ink-4);

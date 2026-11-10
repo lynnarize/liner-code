@@ -4,7 +4,8 @@
   the agent about those lines; its answer stays on those lines. The Reviewer's findings sit on
   the lines they name. Step through the changes with the arrows, or J and K. Long lines wrap, and
   test files step aside, if you ask; both are remembered, and so is what you've viewed, until the
-  file changes again.
+  file changes again. It sits under the panel's tab row, which is the paper's header in the full
+  canvas: the row's shrink button is the way back to the session, so it has no header of its own.
 */
 import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff, Finding, Item, Thread } from "@contracts";
@@ -161,7 +162,7 @@ export function MoreFiles({ n, turn, pick }: { n: number; turn: boolean; pick: s
   );
 }
 
-export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thread; items: Item[]; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void; onBack: () => void }) {
+export function Review({ thread, items, focus, onFocus }: { thread: Thread; items: Item[]; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void }) {
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
@@ -412,23 +413,6 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
 
   return (
     <div className="lc-rv">
-      <header className="lc-rv-top">
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onBack}>
-          <I.chevL size={13} />
-          Session
-        </button>
-        <b className="lc-rv-title">{thread.title}</b>
-        <span className="lc-quiet lc-rv-sub">
-          {coder.name}'s changes{openFiles ? ", ready for you" : ""}
-        </span>
-        <span className="lc-grow" />
-        {(thread.worktree?.branch ?? project?.branch) && (
-          <span className="lc-branch lc-mono" title={thread.worktree?.branch ?? project?.branch}>
-            <I.branch size={12} />
-            <span>{thread.worktree?.branch ?? project?.branch}</span>
-          </span>
-        )}
-      </header>
       <div className="lc-rv-body">
         <nav className="lc-rv-nav" aria-label="Files in this turn">
           <div className="lc-rv-navh">
@@ -516,6 +500,13 @@ export function Review({ thread, items, focus, onFocus, onBack }: { thread: Thre
               ]}
               aria-label="Diff view"
             />
+            {/* The branch, which the Review's own header carried: the panel's tab row is the header now. */}
+            {(thread.worktree?.branch ?? project?.branch) && (
+              <span className="lc-branch lc-mono" title={thread.worktree?.branch ?? project?.branch}>
+                <I.branch size={12} />
+                <span>{thread.worktree?.branch ?? project?.branch}</span>
+              </span>
+            )}
           </div>
           {finding && (
             <FindBar

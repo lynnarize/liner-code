@@ -11,11 +11,12 @@
   min-width: 0;
   height: 100%;
   box-sizing: border-box;
-  padding: 10px 8px 6px 12px;
+  /* As the sidebar's (app.css, .lc-sb): its 32px head centred on the 44px top row. */
+  padding: calc(var(--lc-head) / 2 - 16px) 8px 6px 12px;
   animation: l-unblur 320ms var(--l-ease-out) backwards;
 }
 html[data-native="mac"] .lc-st-side {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
+  padding-top: max(0px, calc(var(--lc-lights-y, 28px) - var(--lc-gap) - 17px));
 }
 /* Settings' name sits where Liner Code's does, in the same type; the way back is beside it. */
 .lc-st-head {

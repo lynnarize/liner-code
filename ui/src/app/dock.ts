@@ -10,6 +10,9 @@
   it; closing the last tab hides the dock. Ours is a list rather than their split tree.
   Since 0.2.2 the panel holds one pane: nothing makes a second (split, and moveTab past the last
   pane, are kept for their tests), and readDock folds a two-pane layout 0.2.1 kept into one.
+  Since the one-row header (0.2.5) the session's header has no button for Files or the Browser, so
+  a panel that opens with nothing in it comes up with Changes, Files and the Browser as its tabs
+  (STARTERS), the one asked for in front, rather than on the guide: each stays one click away.
 */
 
 /** A tab: a built-in surface, the New tab guide, one routine run, an add-on's panel (`app:<id>`), or one an agent asks to add (`preview:<item>`). */
@@ -18,6 +21,8 @@ export type Pane = { tabs: DockTab[]; tab: DockTab };
 export type DockState = { open: boolean; full: boolean; panes: Pane[]; at: number };
 
 export const GUIDE = "guide";
+/** What an empty panel opens with: the surfaces the session's header no longer has a button for. */
+export const STARTERS: readonly DockTab[] = ["changes", "files", "browser"];
 /** Two panes side by side at most. */
 export const MAX_PANES = 2;
 
@@ -40,10 +45,14 @@ function settle(d: DockState): DockState {
   return { ...d, panes, at: Math.max(0, Math.min(d.at, panes.length - 1)) };
 }
 
-/** Shows the dock. One with nothing in it opens on the guide. */
-export function showDock(d: DockState): DockState {
+/**
+  Shows the dock. One with nothing in it opens with the starters, `first` in front: one of them where
+  it stands, anything else after them (the guide too, though nothing asks for it on an empty dock).
+*/
+export function showDock(d: DockState, first: DockTab = STARTERS[0]): DockState {
   if (d.panes.length) return { ...d, open: true };
-  return { open: true, full: false, panes: [{ tabs: [GUIDE], tab: GUIDE }], at: 0 };
+  const tabs = STARTERS.includes(first) ? [...STARTERS] : [...STARTERS, first];
+  return { open: true, full: false, panes: [{ tabs, tab: first }], at: 0 };
 }
 export const hideDock = (d: DockState): DockState => ({ ...d, open: false, full: false });
 export const toggleDock = (d: DockState) => (d.open ? hideDock(d) : showDock(d));
@@ -51,9 +60,11 @@ export const toggleFull = (d: DockState): DockState => (d.open ? { ...d, full: !
 
 /**
   Opens a tab and shows the dock. One open already comes up where it is; a new one goes in the
-  pane asked for, else the focused one, in place of a guide that's up there.
+  pane asked for, else the focused one, in place of a guide that's up there. An empty dock opens
+  with the starters and this one in front (showDock).
 */
 export function openTab(d0: DockState, tab: DockTab, pane?: number): DockState {
+  if (!d0.panes.length) return showDock(d0, tab);
   const d = clone(showDock(d0));
   const where = paneOf(d, tab);
   if (where >= 0 && tab !== GUIDE) {

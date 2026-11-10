@@ -453,12 +453,28 @@ test("addon_install, a panel: one that reaches the internet holds, and Never in 
 
 /* ---------- The right dock ---------- */
 
+/** A shown dock of one pane holding these tabs, this one up: a layout to start from, past the starters. */
+const one = (tabs: string[], tab = tabs[tabs.length - 1]): dock.DockState => ({ open: true, full: false, panes: [{ tabs, tab }], at: 0 });
+
+test("dock: an empty dock opens with Changes, Files and the Browser, the one asked for in front", () => {
+  assert.deepEqual(dock.showDock(dock.emptyDock()).panes, [{ tabs: ["changes", "files", "browser"], tab: "changes" }], "shown, Changes is up");
+  assert.deepEqual(dock.openTab(dock.emptyDock(), "files").panes, [{ tabs: ["changes", "files", "browser"], tab: "files" }], "a starter asked for comes up where it stands");
+  assert.deepEqual(dock.toggleTab(dock.emptyDock(), "browser").panes, [{ tabs: ["changes", "files", "browser"], tab: "browser" }], "its key does the same");
+  const design = dock.openTab(dock.emptyDock(), "design");
+  assert.deepEqual([design.open, design.panes], [true, [{ tabs: ["changes", "files", "browser", "design"], tab: "design" }]], "anything else goes after them, in front");
+  assert.deepEqual(dock.toggleFull(dock.emptyDock()), { ...dock.openTab(dock.emptyDock(), "changes"), full: true }, "the full canvas from nothing opens the same, filling the paper");
+  const closed = dock.hideDock(design);
+  assert.deepEqual(dock.showDock(closed).panes, design.panes, "a hidden dock comes back as it was, not with the starters again");
+  const emptied = ["changes", "files", "browser", "design"].reduce(dock.closeTab, design);
+  assert.deepEqual(dock.showDock(emptied).panes[0].tabs, ["changes", "files", "browser"], "every tab closed, it starts over");
+});
+
 test("dock: opening, toggling and closing tabs", () => {
-  let d = dock.emptyDock();
-  d = dock.showDock(d);
-  assert.deepEqual(d.panes, [{ tabs: ["guide"], tab: "guide" }], "an empty dock opens on the guide");
+  let d = dock.openTab(dock.emptyDock(), "changes");
+  d = dock.openTab(d, "guide");
+  assert.deepEqual(d.panes, [{ tabs: ["changes", "files", "browser", "guide"], tab: "guide" }], "the guide comes after the open tabs");
   d = dock.openTab(d, "terminal");
-  assert.deepEqual(d.panes, [{ tabs: ["terminal"], tab: "terminal" }], "the guide gives way to what you open");
+  assert.deepEqual(d.panes, [{ tabs: ["changes", "files", "browser", "terminal"], tab: "terminal" }], "the guide gives way to what you open");
   d = dock.openTab(d, "browser");
   assert.equal(dock.onScreen(d, "browser"), true);
   assert.equal(dock.behind(d, "terminal"), true);
@@ -469,12 +485,14 @@ test("dock: opening, toggling and closing tabs", () => {
   assert.deepEqual([d.open, d.panes[0].tab], [true, "terminal"]);
   d = dock.closeTab(d, "terminal");
   assert.equal(d.panes[0].tab, "browser");
-  d = dock.closeTab(d, "browser");
+  d = ["browser", "files"].reduce(dock.closeTab, d);
+  assert.equal(d.panes[0].tab, "changes");
+  d = dock.closeTab(d, "changes");
   assert.deepEqual(d, dock.emptyDock(), "the last tab hides the dock");
 });
 
 test("dock: two panes at most, chips move between them, and an emptied pane merges away", () => {
-  let d = dock.openTab(dock.openTab(dock.emptyDock(), "terminal"), "app:todos");
+  let d = dock.openTab(one(["terminal"]), "app:todos");
   d = dock.split(d, 0);
   assert.deepEqual(d.panes, [{ tabs: ["terminal"], tab: "terminal" }, { tabs: ["app:todos"], tab: "app:todos" }], "the tab that's up moves into the new pane");
   assert.equal(dock.canSplit(d), false);
@@ -486,7 +504,7 @@ test("dock: two panes at most, chips move between them, and an emptied pane merg
   d = dock.moveTab(d, "terminal", 1);
   assert.deepEqual(d.panes, [{ tabs: ["browser", "app:todos", "terminal"], tab: "terminal" }], "the pane it left empty merged away");
   assert.equal(d.at, 0);
-  d = dock.split(dock.openTab(dock.emptyDock(), "files"), 0);
+  d = dock.split(one(["files"]), 0);
   assert.deepEqual(d.panes.map((p) => p.tabs), [["files"], ["guide"]], "a lone tab stays; the new pane gets the guide");
   d = dock.openTab(d, "guide", 0);
   d = dock.moveTab(d, "guide", 1);
@@ -494,7 +512,7 @@ test("dock: two panes at most, chips move between them, and an emptied pane merg
 });
 
 test("dock: a preview becomes its add-on in place, and a kept layout is read back only if it makes sense", () => {
-  let d = dock.openTab(dock.openTab(dock.emptyDock(), "terminal"), "preview:it-1");
+  let d = dock.openTab(one(["terminal"]), "preview:it-1");
   d = dock.replaceTab(d, "preview:it-1", "app:todos");
   assert.deepEqual(d.panes[0], { tabs: ["terminal", "app:todos"], tab: "app:todos" });
   d = dock.closeWhere(d, (t) => t.startsWith("app:"));

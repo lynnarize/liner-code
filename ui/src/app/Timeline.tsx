@@ -777,29 +777,28 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
 function Todo({ it }: { it: Extract<Item, { kind: "plan" }> }) {
   const done = it.entries.filter((e) => e.status === "completed").length;
   return (
-    <div className="lc-todo lc-frame">
-      <div className="lc-fcard">
-        <div className="lc-todo-h">
-          <b>Plan</b>
-          <span className="lc-quiet">
-            <Num value={done} /> of {it.entries.length} done
-          </span>
-        </div>
-        <ol>
-          {it.entries.map((e, i) => (
-            <li key={i} data-s={e.status}>
-              <span className="lc-todo-mk" key={e.status}>
-                {e.status === "completed" ? <I.check size={11} /> : e.status === "in_progress" ? <Rays size={10} /> : null}
-              </span>
-              <span>
-                <span className={e.status === "in_progress" ? "l-shimmer" : undefined}>{e.title}</span>
-                {e.owner && <span className="lc-todo-own">{e.owner}</span>}
-              </span>
-            </li>
-          ))}
-        </ol>
+    // A labelled list on the paper, not a card: "Plan" and its count, then a line a task.
+    <section className="lc-todo" aria-label="Plan">
+      <div className="lc-todo-h">
+        <b>Plan</b>
+        <span className="lc-quiet">
+          <Num value={done} /> of {it.entries.length} done
+        </span>
       </div>
-    </div>
+      <ol>
+        {it.entries.map((e, i) => (
+          <li key={i} data-s={e.status}>
+            <span className="lc-todo-mk" key={e.status}>
+              {e.status === "completed" ? <I.check size={14} /> : e.status === "in_progress" ? <Rays size={11} /> : null}
+            </span>
+            <span>
+              <span className={e.status === "in_progress" ? "l-shimmer" : undefined}>{e.title}</span>
+              {e.owner && <span className="lc-todo-own">{e.owner}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -1846,9 +1845,9 @@ function TurnFoot({ cp, all, review, providers, onReview, reviewing }: { cp?: Ch
             </span>
           ) : (
             <button type="button" className="lc-foot-chip lc-foot-changes l-focus" aria-current={here || undefined} onClick={() => onReview(all ? "all" : cp.id, cp.files[0]?.path)}>
+              {/* The words "View changes" went (the chevron says it opens); a reader still hears them. */}
               {plural(cp.files.length, "file")} changed <Lines {...sumLines(cp.files)} />
-              <span className="lc-quiet">·</span>
-              <span className="lc-foot-link">{here ? "In the panel" : "View changes"}</span>
+              <span className="l-sr-only">{here ? ", in the panel" : ", view changes"}</span>
               <Chev className="lc-row-chev" />
             </button>
           ))}

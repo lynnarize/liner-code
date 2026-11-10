@@ -1,7 +1,10 @@
 /*
   An open session: its name, which opens its menu (where it works, its branch, rename and pin), the
-  Reviewer's word and the panels' row at the top right, the timeline, and the composer. The dock beside it holds the surfaces as tabs, in one or
-  two panes; the full canvas gives it the whole paper (on the diff, that's the full-width Review).
+  Reviewer's word, and at the header's right Run, the bottom panel's toggle and the right panel's,
+  then the timeline and the composer. The header heads the thread's column only: the dock beside it
+  is a full-height column of the paper, its tab row on the header's line (one top row, Panel.tsx),
+  with a hairline from the paper's top to its bottom between them that is the resize grip. The full
+  canvas gives the dock the whole paper (on the diff, that's the full-width Review).
 */
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
 import type { Item, Project, ProjectScript, Thread } from "@contracts";
@@ -15,7 +18,7 @@ import { Composer, type RunSettings } from "./Composer";
 import { EnvMenu } from "./Env";
 import { ShipCard } from "./Ship";
 import { I } from "./icons";
-import { agentOf, checkpointsOf, modeOf, modelLabel, sumLines } from "./model";
+import { agentOf, checkpointsOf, modeOf, modelLabel, plural, sumLines } from "./model";
 import { Panel } from "./Panel";
 import { FindBar, onComposerInsert, toComposer } from "./Find";
 import { revealFile } from "./Files";
@@ -24,13 +27,13 @@ import { glyphs, is, matches } from "./keymap";
 import { readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
 import { useSeen } from "./launch";
-import { closeTab, closeWhere, openTab, paneOf, replaceTab, toggleTab, type DockState } from "./dock";
+import { closeTab, closeWhere, openTab, paneOf, replaceTab, showDock, toggleTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, SideKeys, TopBar } from "./TopBar";
 import { ModeChip } from "./Modes";
 import { CrewChip, CrewStrip } from "./Crew";
 import { Timeline } from "./Timeline";
-import { Disc, Kbd, PanelHead, Pop, Row, Sep } from "./ui";
+import { Disc, Kbd, Lines, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
 type Props = {
@@ -533,102 +536,102 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
       data-resizing={resizing || undefined}
       style={panelW ? ({ "--lc-panel-w": `${panelW}px` } as CSSProperties) : undefined}
     >
-      <header className="lc-top" data-drag>
-        {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
-        )}
-        {wall && (
-          <div className="lc-wallback" role="group" aria-label="The Wall">
-            <button type="button" className="lc-wallback-b l-focus" title={busy ? "Back to the Wall (Esc). In the composer, Esc stops the turn first" : "Back to the Wall (Esc)"} onClick={wall.onBack}>
-              <I.chevL size={14} />
-              The Wall
-              {/* Not while you write in the composer and a turn runs: there Esc stops it. */}
-              {!(writing && busy) && <Kbd>Esc</Kbd>}
-            </button>
-            {wall.at > 0 && (
-              <>
-                <span className="lc-wallback-n l-num">
-                  {wall.at} of {wall.of}
-                </span>
-                <button type="button" className="lc-tb l-focus" aria-label="The tile before it on the Wall" title="The tile before it" disabled={!wall.onPrev} onClick={wall.onPrev}>
-                  <I.chevU size={14} />
-                </button>
-                <button type="button" className="lc-tb l-focus" aria-label="The tile after it on the Wall" title="The tile after it" disabled={!wall.onNext} onClick={wall.onNext}>
-                  <I.chevD size={14} />
-                </button>
-              </>
-            )}
-            <span className="lc-sbar-sep" aria-hidden />
-          </div>
-        )}
-        {renaming ? (
-          <input
-            className="lc-title-edit"
-            defaultValue={thread.title}
-            aria-label="Session name"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              if (e.key === "Escape") setRenaming(false);
-            }}
-            onBlur={(e) => {
-              const v = e.target.value.trim();
-              if (v && v !== thread.title) void rpc("thread.update", { id: thread.id, title: v }).catch(fail);
-              setRenaming(false);
-            }}
-          />
-        ) : project ? (
-          // The title is the menu's button, as Claude Code's is: where it works, its branch, rename, pin.
-          <>
-            <h1 className="l-sr-only">{thread.title}</h1>
-            <EnvMenu
-              thread={thread}
-              project={project}
-              files={openFiles}
-              lines={lines}
-              onRename={() => setRenaming(true)}
-              onChanges={() => setDock((d) => openTab(d, "changes"))}
-              actions={(close) => (
-                <>
-                  <Row title="Rename" icon={<I.edit size={13} />} onPick={() => (close(), setRenaming(true))} />
-                  <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={13} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }).catch(fail))} />
-                  {onBeside && <Row title="Open another session beside it" icon={<I.split size={13} />} onPick={() => (close(), onBeside())} />}
-                  <Sep />
-                </>
-              )}
-            />
-          </>
-        ) : (
-          <h1 className="lc-title" key={thread.title} onDoubleClick={() => setRenaming(true)} title="Double-click to rename">
-            {thread.title}
-          </h1>
-        )}
-        <ModeChip thread={thread} />
-        <CrewChip thread={thread} />
-        {tabApps.length > 0 && (
-          <div className="lc-views" role="tablist" aria-label="Session views">
-            {[{ id: "chat", name: "Chat", Icon: I.comment }, ...tabApps.map((a) => ({ id: a.id, name: a.name, Icon: appIcon(a.panel?.icon) }))].map((v) => (
-              <button key={v.id} type="button" role="tab" className="lc-view-b l-focus" aria-selected={view === v.id} onClick={() => setView(v.id)}>
-                <v.Icon size={13} />
-                <span>{v.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        <span className="lc-grow" data-drag />
-        {thread.verdict && <Verdict v={thread.verdict} />}
-        {onCloseSide && (
-          <button type="button" className="lc-tb l-focus" aria-label="Close this side" title="Close this side" onClick={onCloseSide}>
-            <I.close size={14} />
-          </button>
-        )}
-        <TopBar dock={dock} onDock={setDock} below={below} onBelow={() => setBelow(!below)} files={openFiles} lines={lines} projectId={thread.projectId} run={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
-      </header>
       <div ref={body} className="lc-body">
         <section ref={threadRef} className="lc-thread" aria-label="Session" data-below={below || undefined}>
+          <header className="lc-top" data-drag>
+            {!sidebar && (
+              <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
+                <I.sidebar size={16} />
+              </button>
+            )}
+            {wall && (
+              <div className="lc-wallback" role="group" aria-label="The Wall">
+                <button type="button" className="lc-wallback-b l-focus" title={busy ? "Back to the Wall (Esc). In the composer, Esc stops the turn first" : "Back to the Wall (Esc)"} onClick={wall.onBack}>
+                  <I.chevL size={14} />
+                  The Wall
+                  {/* Not while you write in the composer and a turn runs: there Esc stops it. */}
+                  {!(writing && busy) && <Kbd>Esc</Kbd>}
+                </button>
+                {wall.at > 0 && (
+                  <>
+                    <span className="lc-wallback-n l-num">
+                      {wall.at} of {wall.of}
+                    </span>
+                    <button type="button" className="lc-tb l-focus" aria-label="The tile before it on the Wall" title="The tile before it" disabled={!wall.onPrev} onClick={wall.onPrev}>
+                      <I.chevU size={14} />
+                    </button>
+                    <button type="button" className="lc-tb l-focus" aria-label="The tile after it on the Wall" title="The tile after it" disabled={!wall.onNext} onClick={wall.onNext}>
+                      <I.chevD size={14} />
+                    </button>
+                  </>
+                )}
+                <span className="lc-sbar-sep" aria-hidden />
+              </div>
+            )}
+            {renaming ? (
+              <input
+                className="lc-title-edit"
+                defaultValue={thread.title}
+                aria-label="Session name"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") setRenaming(false);
+                }}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== thread.title) void rpc("thread.update", { id: thread.id, title: v }).catch(fail);
+                  setRenaming(false);
+                }}
+              />
+            ) : project ? (
+              // The title is the menu's button, as Claude Code's is: where it works, its branch, rename, pin.
+              <>
+                <h1 className="l-sr-only">{thread.title}</h1>
+                <EnvMenu
+                  thread={thread}
+                  project={project}
+                  files={openFiles}
+                  lines={lines}
+                  onRename={() => setRenaming(true)}
+                  onChanges={() => setDock((d) => openTab(d, "changes"))}
+                  actions={(close) => (
+                    <>
+                      <Row title="Rename" icon={<I.edit size={13} />} onPick={() => (close(), setRenaming(true))} />
+                      <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={13} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }).catch(fail))} />
+                      {onBeside && <Row title="Open another session beside it" icon={<I.split size={13} />} onPick={() => (close(), onBeside())} />}
+                      <Sep />
+                    </>
+                  )}
+                />
+              </>
+            ) : (
+              <h1 className="lc-title" key={thread.title} onDoubleClick={() => setRenaming(true)} title="Double-click to rename">
+                {thread.title}
+              </h1>
+            )}
+            <ModeChip thread={thread} />
+            <CrewChip thread={thread} />
+            {tabApps.length > 0 && (
+              <div className="lc-views" role="tablist" aria-label="Session views">
+                {[{ id: "chat", name: "Chat", Icon: I.comment }, ...tabApps.map((a) => ({ id: a.id, name: a.name, Icon: appIcon(a.panel?.icon) }))].map((v) => (
+                  <button key={v.id} type="button" role="tab" className="lc-view-b l-focus" aria-selected={view === v.id} onClick={() => setView(v.id)}>
+                    <v.Icon size={13} />
+                    <span>{v.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="lc-grow" data-drag />
+            {thread.verdict && <Verdict v={thread.verdict} />}
+            {onCloseSide && (
+              <button type="button" className="lc-tb l-focus" aria-label="Close this side" title="Close this side" onClick={onCloseSide}>
+                <I.close size={14} />
+              </button>
+            )}
+            <TopBar panel={dock.open} onPanel={() => setDock(showDock)} below={below} onBelow={() => setBelow(!below)} run={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
+          </header>
           <div className="lc-stage" hidden={view !== "chat"}>
             <div ref={scroller} className="lc-scroll">
               <div ref={contentRef} className="lc-scroll-in">
@@ -706,7 +709,14 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                   busy={busy}
                   placeholder={busy ? `Write while it works: it goes when the turn ends` : placeholder}
                   autoFocus={!wall}
-                  top={<CrewStrip thread={thread} />}
+                  // The tray's head: who the work waits on, over what's waiting to commit (the row that
+                  // stays sits next to the card, so the one that comes and goes doesn't move it).
+                  top={
+                    <>
+                      <CrewStrip thread={thread} />
+                      {openFiles > 0 && <ToCommit files={openFiles} lines={lines} onView={() => setDock((d) => openTab(d, "changes"))} />}
+                    </>
+                  }
                 />
               </div>
             )}
@@ -720,11 +730,60 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           )}
         </section>
         {beside && <PanelGrip body={body} width={panelW} onWidth={setPanelW} onDrag={setResizing} />}
-        {(dock.open || leaving) && <SessionPanel thread={thread} dock={dock.open ? dock : leaving!} onDock={fromPanel} focus={focus} onFocus={setFocus} agentName={(lead ?? coder).name} onOpenSession={onOpenSession} onRoutine={onRoutine} leaving={!dock.open} />}
+        {(dock.open || leaving) && (
+          <SessionPanel
+            thread={thread}
+            dock={dock.open ? dock : leaving!}
+            onDock={fromPanel}
+            focus={focus}
+            onFocus={setFocus}
+            agentName={(lead ?? coder).name}
+            onOpenSession={onOpenSession}
+            onRoutine={onRoutine}
+            leaving={!dock.open}
+            files={openFiles}
+            lead={
+              // Over the whole paper (the full canvas, or a session too narrow for both) the panel's row is
+              // the paper's header, so what starts the session's header starts it too (dock.css shows it only then).
+              (!sidebar || onCloseSide) && (
+                <span className="lc-stabs-lead">
+                  {!sidebar && (
+                    <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
+                      <I.sidebar size={16} />
+                    </button>
+                  )}
+                  {onCloseSide && (
+                    <button type="button" className="lc-tb l-focus" aria-label="Close this side" title="Close this side" onClick={onCloseSide}>
+                      <I.close size={14} />
+                    </button>
+                  )}
+                </span>
+              )
+            }
+          />
+        )}
       </div>
     </div>
     </SideKeys.Provider>
     </MarkdownLinks.Provider>
+  );
+}
+
+/**
+  What's waiting to commit, as a row of the composer tray's head, so it stays in sight with the
+  panel closed (the header's red badge said it before). View changes opens the Changes surface.
+*/
+function ToCommit({ files, lines, onView }: { files: number; lines: { added: number; removed: number }; onView: () => void }) {
+  return (
+    <div className="lc-trow">
+      <I.changes size={15} />
+      <span className="lc-trow-t">{plural(files, "file")} to commit</span>
+      <Lines {...lines} />
+      <span className="lc-grow" />
+      <button type="button" className="lc-trow-lk l-focus" onClick={onView}>
+        View changes
+      </button>
+    </div>
   );
 }
 

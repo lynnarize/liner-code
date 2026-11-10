@@ -61,7 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         window.isOpaque = true
         window.backgroundColor = .windowBackgroundColor
         window.minSize = NSSize(width: 880, height: 580)
-        // An empty unified toolbar gives the traffic lights a 52px row, the height of the page's top bar.
+        // An empty unified toolbar gives the traffic lights a 52px row to sit in; placeLights then moves
+        // them onto the page's 44px top row (centre 28 from the top), which that row no longer matches.
         let toolbar = NSToolbar(identifier: "main")
         toolbar.showsBaselineSeparator = false
         window.toolbar = toolbar
@@ -114,6 +115,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
             NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.syncLights() }
         }
+        // AppKit lays the buttons out again as the window resizes (and as it becomes key), back on the
+        // toolbar's row: they go back to the page's each time, as Electron's trafficLightPosition does.
+        for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didBecomeKeyNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.placeLights() }
+        }
+        placeLights()
+    }
+
+    /// The traffic lights' centre from the window's top: the page's top row is 44 high and starts at
+    /// the window's 6px gap (app.css, --lc-head and --lc-gap), so 28. Electron puts them there too
+    /// (desktop/src/main.ts, LIGHTS).
+    private let lightsCentre: CGFloat = 28
+
+    /// Moves each window button so its centre is on the page's top row, keeping its x.
+    private func placeLights() {
+        guard !window.styleMask.contains(.fullScreen), let height = window.contentView?.bounds.height else { return }
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = window.standardWindowButton(kind), let row = button.superview else { continue }
+            // The centre in the row's own coordinates, flipped or not; the origin is half a button from it either way.
+            let mid = row.convert(NSPoint(x: 0, y: height - lightsCentre), from: nil).y
+            let y = (mid - button.frame.height / 2).rounded()
+            if button.frame.origin.y != y { button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: y)) }
+        }
     }
 
     /// Where the traffic lights sit, as CSS variables, so the sidebar's name lines up with them:
@@ -130,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     private func syncLights() {
+        placeLights()
         web.evaluateJavaScript(lightsScript())
     }
 

@@ -23,6 +23,8 @@
   visibility: hidden;
   pointer-events: none;
 }
+/* The panel's header (the one top row): its tabs are 30 high, as the session header's buttons, with
+   13px names, an icon and a name each while they fit (Panel.tsx decides). */
 .lc-stabs {
   gap: 2px;
   padding: 0 8px 0 8px;
@@ -43,11 +45,37 @@
 .lc-stabs-row::-webkit-scrollbar {
   display: none;
 }
+/* Scrolled, the row fades over 16px at an end with tabs beyond it, and only there (Panel.tsx sets
+   which). The mask is on the tab list alone, so the buttons round it are never faded. */
+.lc-stabs-row[data-fade-l] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px);
+  mask-image: linear-gradient(90deg, transparent, #000 16px);
+}
+.lc-stabs-row[data-fade-r] {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+}
+.lc-stabs-row[data-fade-l][data-fade-r] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+}
 /* Every tab keeps its name (TasteCode v0.5): when the strip runs short they give way to their
    icons, and the open one keeps its own. Panel.tsx decides, from the names' widths. */
 .lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-b {
   gap: 0;
   padding: 0 8px;
+}
+/* Down to its icon a tab has no close of its own (the close sat on the icon, so a press on the tab
+   closed it): a middle click or its right-click menu closes it (Panel.tsx). */
+.lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-x {
+  display: none;
+}
+.lc-stabs-row[data-icons] .lc-stab:not([data-on]):hover .lc-stab-b > svg {
+  opacity: 1;
+}
+/* Down to its icon, Changes keeps its count beside it. */
+.lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-n {
+  margin-left: 5px;
 }
 .lc-stabs-row[data-icons] .lc-stab:not([data-on]) .lc-stab-b > span {
   max-width: 0;
@@ -58,7 +86,7 @@
   flex: none;
   align-items: center;
   max-width: 180px;
-  height: 28px;
+  height: 30px;
   border-radius: 8px;
   transition:
     background 160ms ease,
@@ -80,8 +108,8 @@
   position: absolute;
   top: 50%;
   left: 0;
-  height: 28px;
-  margin-top: -14px;
+  height: 30px;
+  margin-top: -15px;
   border-radius: 8px;
   background: var(--l-wash-2);
   box-shadow: none;
@@ -110,12 +138,12 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 28px;
-  padding: 0 10px 0 8px;
+  height: 30px;
+  padding: 0 9px 0 8px;
   border: 0;
   border-radius: 8px;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-3);
   cursor: pointer;
@@ -137,7 +165,7 @@
 .lc-stab-x {
   position: absolute;
   top: 50%;
-  left: 6.5px;
+  left: 7px;
   display: grid;
   place-items: center;
   width: 16px;
@@ -165,8 +193,8 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 0;
   border-radius: 8px;
@@ -286,33 +314,45 @@
   color: var(--l-ink-3);
 }
 
-/* ---------- Session: environment, context, changes ---------- */
+/* ---------- Session: environment, context, changes ----------
+   Labelled groups of rows on the paper, no wells: a quiet 32px label (its tools at the right), then
+   28px rows, 16px in from the column's edges. */
 .lc-sinfo {
   display: grid;
   align-content: start;
-  gap: 10px;
   min-height: 0;
-  padding: 2px 10px 16px;
+  padding: 2px 0 16px;
   overflow: auto;
 }
 .lc-sinfo-card {
   display: grid;
-  gap: 2px;
-  padding: 2px 12px 10px;
-  border-radius: 14px;
-  background: var(--lc-card);
-  box-shadow: var(--lc-card-ring);
+  min-width: 0;
+  padding: 2px 16px 12px;
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
 }
 .lc-sinfo-card .lc-pop-head {
-  padding-inline: 0;
+  min-height: 32px;
+  padding: 0;
+  font-size: 12px;
+}
+.lc-sinfo-card .lc-pop-head > span:first-child {
+  color: var(--l-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+}
+.lc-sinfo-card .lc-pop-head .lc-ib {
+  margin-right: -6px;
+}
+/* Its buttons are the panel's: an 8px corner. */
+.lc-sinfo .lc-btn {
+  border-radius: 8px;
 }
 .lc-sinfo-line {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
-  min-height: 30px;
+  min-height: 28px;
   font-size: 13px;
 }
 .lc-sinfo-ic {
@@ -369,18 +409,22 @@
 .lc-cx [data-g="tools"] { background: var(--lc-cx-tools); }
 .lc-cx-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding: 10px 0 0;
-  font-size: 13px;
+  min-height: 32px;
+  font-size: 12px;
+  color: var(--l-ink-3);
 }
 .lc-cx-head b {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
+}
+.lc-cx-head .l-num {
+  color: var(--l-ink-2);
 }
 .lc-cx-bar {
   position: relative;
-  margin: 12px 0 12px;
+  margin: 4px 0 12px;
 }
 /* The ticks: one bar cut into 3px slivers, so each source's share stays exact to the token. */
 .lc-cx-ticks {
@@ -457,7 +501,7 @@
   justify-content: space-between;
   gap: 10px;
   min-height: 30px;
-  margin-top: 10px;
+  margin-top: 6px;
   font-size: 12.5px;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -470,9 +514,9 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  min-height: 30px;
-  margin-inline: -6px;
-  padding: 0 6px;
+  min-height: 28px;
+  margin-inline: -8px;
+  padding: 0 8px;
   border: 0;
   border-radius: 8px;
   background: none;
@@ -487,18 +531,16 @@
     background: var(--l-wash);
   }
 }
+/* The status letter, plain where the icons stand in the rows above. */
 .lc-sinfo-st {
   display: grid;
   flex: none;
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 5px;
-  background: var(--l-wash-2);
-  color: var(--l-ink-2);
-  font-family: var(--l-font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
+  color: var(--l-ink-3);
+  font-size: 11px;
+  font-weight: 500;
 }
 .lc-sinfo-st[data-status="added"] {
   color: var(--l-ok-text);
@@ -515,11 +557,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Asking, or a failed ask, outside a group: at the groups' inset. */
+.lc-sinfo > .lc-sinfo-note {
+  margin: 8px 16px 0;
+}
 .lc-sinfo-export {
-  justify-self: center;
+  justify-self: start;
+  margin-left: 8px;
 }
 .lc-sinfo-note {
-  margin: 4px 0 2px;
+  margin: 2px 0 0;
   font-size: 12.5px;
   line-height: 1.45;
 }
@@ -781,17 +828,71 @@
   flex: none;
   color: var(--l-ink-4);
 }
+/* What else could open: a labelled list of plain rows, as wide as the note, not pills. */
 .lc-br-ports {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin: 12px 0 4px;
+  display: grid;
+  justify-self: center;
+  width: 100%;
+  margin: 10px 0 0;
+  text-align: left;
 }
+.lc-br-ports-h {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-br-port {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-br-port:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+/* The address: a field with a hairline ring on the paper, and Open in ink, both 30 high. */
 .lc-br-first {
   display: flex;
-  gap: 8px;
+  justify-self: center;
+  gap: 6px;
   margin-top: 10px;
+}
+.lc-br-first .lc-input {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--l-line);
+  font-size: 13px;
+}
+.lc-br-first .lc-input:focus {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+.lc-br-first .lc-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
 }
 /* The first page when launch.json lists servers: the list in the middle, what it is underneath,
    as Claude Code's New tab shows it. */
@@ -1082,25 +1183,21 @@
   }
 }
 
-/* ---------- Files ---------- */
+/* ---------- Files ----------
+   Rows on the paper, no well: the find field (a wash), All and Changed as text-button segments, the
+   tree in 28px rows, and the open file edge to edge: its path row with Show changes, the code, and
+   what the marks mean at the foot. With room (over 520px: a panel dragged wide, the full canvas) the
+   tree and the file sit side by side, a hairline between; in the usual panel the file is under the
+   tree, a hairline over it, the tree taking what it needs up to 45% and scrolling past that. */
 .lc-fsv {
   display: grid;
   flex: 1;
   grid-template-columns: minmax(170px, 0.36fr) minmax(0, 1fr);
-  gap: 8px;
   min-height: 0;
-  padding: 0 10px 10px;
-}
-@container (max-width: 520px) {
-  .lc-fsv {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(140px, 0.4fr) minmax(0, 1fr);
-  }
 }
 .lc-files-side {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   min-width: 0;
   min-height: 0;
 }
@@ -1108,11 +1205,12 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 30px;
+  margin: 2px 12px 6px;
   padding: 0 10px;
-  border-radius: 10px;
-  background: var(--l-wash-2);
+  border-radius: 8px;
+  background: var(--l-wash);
   color: var(--l-ink-3);
 }
 .lc-files-find input {
@@ -1122,50 +1220,126 @@
   outline: none;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink);
 }
+.lc-files-find input::placeholder {
+  color: var(--l-ink-3);
+}
+/* All and Changed: text buttons, a wash under the one that's on (Segmented, without its well). */
 .lc-files-side > .l-seg {
+  --sg-r: 8px;
+  --sg-pad: 0px;
   flex: none;
+  align-self: flex-start;
+  margin: 0 12px 4px;
+  background: none;
+  box-shadow: none;
+}
+.lc-files-side > .l-seg .l-seg__track {
+  gap: 2px;
+}
+.lc-files-side > .l-seg .l-seg__pill {
+  background: var(--l-wash-2);
+  box-shadow: none;
+}
+.lc-files-side > .l-seg :is(.l-seg__text, .l-seg__text-on) {
+  font-weight: 500;
 }
 .lc-files-n {
-  margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--l-wash-2);
-  font-size: 11px;
+  margin-left: 2px;
+  font-weight: 400;
+  color: var(--l-ink-3);
 }
 .lc-files-tree {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding: 0 8px 8px;
   scrollbar-width: thin;
-  font-size: 12.5px;
+  font-size: 13px;
+}
+.lc-files-tree .l-tree {
+  width: 100%;
+  font-size: 13px;
+}
+.lc-files-tree .l-tree__row {
+  gap: 8px;
+  height: 28px;
+  border-radius: 8px;
+}
+.lc-files-tree .l-tree__row[data-selected] {
+  font-weight: 400;
+}
+.lc-files-tree .l-tree__icon {
+  color: var(--l-ink-3);
+}
+.lc-files-tree .l-tree__icon svg {
+  width: 15px;
+  height: 15px;
+}
+.lc-files-tree .l-tree__chev svg {
+  width: 12px;
+  height: 12px;
+}
+.lc-files-tree .l-tree__meta {
+  font-size: 11px;
+  font-weight: 500;
 }
 .lc-files-wait,
 .lc-files-none {
   display: block;
-  margin: 10px 4px;
+  margin: 10px 8px;
   font-size: 12.5px;
 }
+/* The open file: one hairline beside it (or over it, stacked), then its rows on the paper. */
 .lc-files-view {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-radius: 14px;
-  background: var(--lc-card);
-  box-shadow: var(--lc-card-ring);
-  overflow: hidden;
+  /* A border, not an inset shadow: the code's pinned numbers take the paper and would cover a shadow. */
+  border-left: 1px solid var(--l-line);
+}
+@container (max-width: 520px) {
+  .lc-fsv {
+    display: flex;
+    flex-direction: column;
+  }
+  .lc-files-side {
+    flex: 0 1 auto;
+    max-height: 45%;
+  }
+  .lc-files-tree {
+    flex: 0 1 auto;
+  }
+  .lc-files-view {
+    border-top: 1px solid var(--l-line);
+    border-left: 0;
+  }
 }
 .lc-files-head {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   height: 40px;
-  padding: 0 6px 0 12px;
-  border-bottom: 1px solid var(--l-line);
+  padding: 0 10px 0 16px;
+}
+.lc-files-head .lc-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: none;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+@media (hover: hover) {
+  .lc-files-head .lc-btn:hover:not(:disabled) {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
 }
 .lc-files-path {
   overflow: hidden;
@@ -1182,25 +1356,45 @@
 .lc-code-view {
   min-width: max-content;
   margin: 0;
-  padding: 6px 0 10px;
+  padding: 0 0 10px;
   font-size: 12px;
-  line-height: 19px;
+  line-height: 22px;
   -webkit-user-select: text;
   user-select: text;
 }
+/* Syntax as the panel's diff draws it (code-diff.css): ink and one accent. The tokens read these, and
+   outside a diff they were never set, so an open file and the full-width Review showed no keywords. */
+.lc-code-view,
+.lc-rv-code {
+  --t-k: var(--l-accent-text);
+  --t-s: var(--l-ink-3);
+  --t-t: var(--l-ink);
+  --t-n: var(--l-ink-2);
+  --t-f: var(--l-ink);
+  --t-y: var(--l-ink);
+  --t-a: var(--l-ink-3);
+}
+/* A line the latest turn touched is tinted, number and all, with no bar down its edge. */
 .lc-cl {
   display: flex;
   position: relative;
+  background: var(--lc-cl-bg, transparent);
+}
+.lc-cl[data-mark] {
+  --lc-cl-bg: var(--lc-add);
+}
+.lc-cl[data-mark="changed"] {
+  --lc-cl-bg: color-mix(in oklab, var(--l-warn) 14%, transparent);
 }
 .lc-cl-n {
   position: sticky;
   left: 0;
   flex: none;
-  width: 44px;
-  padding-right: 12px;
+  width: 64px;
+  padding-right: 18px;
   box-sizing: border-box;
-  background: var(--l-surface);
-  color: var(--l-ink-4);
+  background: linear-gradient(var(--lc-cl-bg, transparent) 0 0), var(--lc-paper);
+  color: var(--l-ink-3);
   text-align: right;
   -webkit-user-select: none;
   user-select: none;
@@ -1209,26 +1403,13 @@
   padding-right: 16px;
   white-space: pre;
 }
-.lc-cl[data-mark] .lc-cl-t {
-  background: var(--lc-add);
-}
-.lc-cl[data-mark="changed"] .lc-cl-t {
-  background: color-mix(in oklab, var(--l-warn) 12%, transparent);
-}
-.lc-cl[data-mark] .lc-cl-n {
-  box-shadow: inset -2px 0 0 var(--l-ok);
-}
-.lc-cl[data-mark="changed"] .lc-cl-n {
-  box-shadow: inset -2px 0 0 var(--l-warn);
-}
 .lc-files-foot {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 12px;
-  height: 34px;
-  padding: 0 12px;
-  border-top: 1px solid var(--l-line);
+  gap: 14px;
+  height: 36px;
+  padding: 0 16px;
   font-size: 12px;
 }
 .lc-cl-key {
@@ -1239,15 +1420,13 @@
 }
 .lc-cl-key::before {
   content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--lc-add);
-  box-shadow: inset 2px 0 0 var(--l-ok);
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--l-ok);
 }
 .lc-cl-key[data-mark="changed"]::before {
-  background: color-mix(in oklab, var(--l-warn) 14%, transparent);
-  box-shadow: inset 2px 0 0 var(--l-warn);
+  background: var(--l-warn);
 }
 
 /* ---------- Device ---------- */
@@ -2161,28 +2340,8 @@
   flex-direction: column;
   min-height: 0;
 }
-.lc-rv-top {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  min-height: var(--lc-head);
-  padding: 8px 12px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--l-line);
-}
-.lc-rv-title {
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-rv-sub {
-  flex: none;
-  font-size: 13px;
-}
+/* Under the panel's tab row, which is the paper's header in the full canvas (Panel.tsx): the files
+   and what you've viewed down the left, the diff as rows on the paper beside them, no cards. */
 .lc-rv-body {
   display: grid;
   flex: 1;
@@ -2259,9 +2418,6 @@
   display: grid;
   gap: 4px;
   margin-top: 14px;
-  padding: 8px;
-  border-radius: 14px;
-  background: var(--l-wash);
 }
 .lc-rv-sub-a {
   display: flex;
@@ -2283,14 +2439,18 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 10px 12px 0;
 }
+/* The diff's own row, as the panel's: the picker as a text button 16px in, the tools at the right. */
 .lc-rv-strip {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
-  padding-bottom: 10px;
+  gap: 4px;
+  height: 44px;
+  padding: 0 10px 0 8px;
+}
+.lc-rv-strip > .lc-lines {
+  margin-left: 4px;
 }
 .lc-rv-count {
   font-size: 12.5px;
@@ -2299,18 +2459,18 @@
 .lc-rv-files {
   display: grid;
   align-content: start;
-  gap: 12px;
   flex: 1;
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
 }
-/* clip, not hidden: hidden would make the card the sticky header's scroll container, and it never scrolls. */
+/* A file is its row and its lines on the paper, a hairline between files. clip, not hidden: hidden
+   would make the file the sticky row's scroll container, and it never scrolls. */
 .lc-rv-file {
   overflow: clip;
-  border-radius: 14px;
-  background: var(--lc-card);
-  box-shadow: var(--lc-card-ring);
+}
+.lc-rv-file + .lc-rv-file {
+  border-top: 1px solid var(--l-line);
 }
 .lc-rv-fh {
   position: sticky;
@@ -2319,12 +2479,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 38px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--l-line);
-  background: color-mix(in oklab, var(--l-surface) 92%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  height: 32px;
+  padding: 0 16px;
+  background: var(--lc-paper);
+  color: var(--l-ink-2);
   font-size: 12px;
 }
 /* A grid, so every row is as wide as the widest line and its fill reaches the end when scrolled sideways. */
@@ -2332,9 +2490,8 @@
   display: grid;
   container-type: inline-size;
   overflow-x: auto;
-  padding: 4px 0;
   font-size: 12px;
-  line-height: 20px;
+  line-height: 22px;
 }
 .lc-rv-l {
   display: grid;
@@ -2385,6 +2542,7 @@
   -webkit-user-select: text;
   user-select: text;
 }
+/* An unchanged run is a quiet row, no band: its words brighten under the pointer. */
 .lc-rv-fold {
   display: flex;
   align-items: center;
@@ -2393,12 +2551,18 @@
   height: 28px;
   padding: 0 12px 0 52px;
   border: 0;
-  background: var(--l-wash);
+  background: none;
   font: inherit;
-  font-family: var(--l-font-sans, inherit);
-  font-size: 12px;
+  /* The body's face: --l-font-sans isn't one of the tokens, so this fell back to the code's mono. */
+  font-family: var(--l-font-body);
+  font-size: 12.5px;
   color: var(--l-ink-3);
   cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-rv-fold:hover {
+    color: var(--l-ink);
+  }
 }
 /* They stay the visible width and in view, at their indent, while the code beside them is scrolled sideways. */
 .lc-rv-thread,
@@ -3450,19 +3614,8 @@
   min-width: 240px;
 }
 
-/* Committing, with a written message. */
-.lc-pick.lc-commit-b {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: var(--l-accent-fill);
-  color: var(--l-accent-ink);
-  font-size: 13px;
-  font-weight: 500;
-}
-.lc-pick.lc-commit-b:disabled {
-  opacity: 0.5;
-}
+/* Committing, with a written message. Its button is ink on the paper, beside Undo in the diff's foot
+   (app.css, .lc-panel-foot). */
 /* The commit form, as the session tray opens it: who wrote the message, the files with a tick
    each, the message in a well, Write it again and Commit and push. */
 .lc-commit {
@@ -5164,12 +5317,12 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   -webkit-user-select: text;
   user-select: text;
 }
-.lc-cl[data-hl] .lc-cl-t {
-  background: color-mix(in oklab, var(--l-accent) 14%, transparent);
+/* The line a link asked for: the row in the accent's tint, its number in the accent. */
+.lc-cl[data-hl] {
+  --lc-cl-bg: color-mix(in oklab, var(--l-accent) 14%, transparent);
 }
 .lc-cl[data-hl] .lc-cl-n {
   color: var(--l-accent);
-  box-shadow: inset -2px 0 0 var(--l-accent);
 }
 
 /* ---------- Review: wrapped lines, and the hidden tests' note ---------- */
@@ -5336,24 +5489,15 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   box-shadow: none;
   color: var(--l-ink-3);
 }
-.lc-foot-link {
-  color: var(--l-ink-2);
-  text-decoration: underline;
-  text-decoration-color: var(--l-line-2);
-  text-underline-offset: 3px;
-}
+/* The line reads "1 file changed +3 −1 ›": the chevron says it opens that turn's changes. */
 @media (hover: hover) {
   .lc-foot-chip.lc-foot-changes:hover {
     background: none;
-    color: var(--l-ink-2);
-  }
-  .lc-foot-chip.lc-foot-changes:hover .lc-foot-link {
     color: var(--l-ink);
-    text-decoration-color: currentColor;
   }
 }
-.lc-foot-chip.lc-foot-changes[aria-current] .lc-foot-link {
-  text-decoration: none;
+.lc-foot-chip.lc-foot-changes[aria-current] {
+  color: var(--l-ink-2);
 }
 .lc-trail-agents {
   display: grid;
@@ -5404,15 +5548,15 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
 .lc-rv-fh > :not(.lc-path, .lc-grow) {
   flex: none;
 }
-.lc-rv-top .lc-branch {
+.lc-rv-strip .lc-branch {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 40%;
 }
-.lc-rv-top .lc-branch > svg {
+.lc-rv-strip .lc-branch > svg {
   flex: none;
 }
-.lc-rv-top .lc-branch > span {
+.lc-rv-strip .lc-branch > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5448,9 +5592,11 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
 .lc-br-ports {
   max-width: 300px;
 }
-.lc-br-first {
+/* The rows and the address are one column, the note's width or a little over. */
+.lc-br-first,
+.lc-panel-empty > .lc-br-ports {
   width: 100%;
-  max-width: 300px;
+  max-width: 340px;
 }
 .lc-br-first .lc-input {
   flex: 1;

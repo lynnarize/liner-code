@@ -2,8 +2,8 @@
   Surfaces beside a session. The right dock holds them as tabs (dock.ts has its rules, Panel.tsx
   draws it): Diff and Agents, Browser, Design, Terminal, Files, Pull request, Linked pull requests,
   Device, Routines, a routine's run, and the add-on panels you have. Each has a key (⌘⇧ and its
-  letter) and a button in the session's top-right row, or a place in its ⋯ menu; the New tab guide
-  (the + on a pane's strip) lists them all. Tabs keep their state while you switch, so a terminal
+  letter) and a place in the + menu on the panel's tab row (Panel.tsx); the New tab guide (that
+  menu's Every surface) lists them all with what each holds. Tabs keep their state while you switch, so a terminal
   keeps running and a page stays loaded, and each session keeps its own dock.
 */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -151,7 +151,7 @@ export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HT
 }
 
 /**
-  The New tab guide, a pane's +: every built-in surface with what it holds right now and its key,
+  The New tab guide, the + menu's Every surface: every built-in surface with what it holds right now and its key,
   then the panels you have, then Make one…, which asks the agent for one (DeepSeek Harness's guide
   page, ui-sidebar-right). Picking one puts it in this pane in the guide's place.
 */

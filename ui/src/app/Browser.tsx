@@ -559,9 +559,9 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               </button>
             )}
             {pages.length > 0 && (
-              <span className="lc-br-ports">
+              <span className="lc-br-ports" aria-label="Pages in this folder">
                 {pages.slice(0, 4).map((f) => (
-                  <button key={f} type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setTarget({ port: null, path: `/${f}` })}>
+                  <button key={f} type="button" className="lc-br-port l-focus" onClick={() => setTarget({ port: null, path: `/${f}` })}>
                     <span className="lc-mono">{f}</span>
                   </button>
                 ))}
@@ -575,7 +575,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               }}
             >
               <input className="lc-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="5173, localhost:3000 or index.html" aria-label="Address" />
-              <button type="submit" className="lc-btn" data-kind="primary">
+              <button type="submit" className="lc-btn" data-kind="ink">
                 Open
               </button>
             </form>
@@ -593,10 +593,12 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         title={ports === null ? "Looking for a dev server" : "Nothing of this session's is running yet"}
         action={ports === null ? undefined : (
           <>
+            {/* Labelled lists of plain rows, as the panel's other surfaces are: no pills. */}
             {pages.length > 0 && (
-              <span className="lc-br-ports">
+              <span className="lc-br-ports" aria-label="Pages in this folder">
+                <span className="lc-br-ports-h">Pages in this folder</span>
                 {pages.slice(0, 6).map((f) => (
-                  <button key={f} type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setTarget({ port: null, path: `/${f}` })}>
+                  <button key={f} type="button" className="lc-br-port l-focus" onClick={() => setTarget({ port: null, path: `/${f}` })}>
                     <span className="lc-mono">{f}</span>
                   </button>
                 ))}
@@ -604,9 +606,9 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
             )}
             {others.length > 0 && (
               <span className="lc-br-ports" aria-label={`Other servers on ${os.here}`}>
-                <span className="lc-quiet">Elsewhere on {os.here}</span>
+                <span className="lc-br-ports-h">Elsewhere on {os.here}</span>
                 {others.slice(0, 6).map((p) => (
-                  <button key={p.port} type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setTarget({ port: p.port, path: "/" })}>
+                  <button key={p.port} type="button" className="lc-br-port l-focus" onClick={() => setTarget({ port: p.port, path: "/" })}>
                     <span className="lc-mono">:{p.port}</span>
                     <span className="lc-quiet">{p.process}</span>
                   </button>
@@ -621,7 +623,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               }}
             >
               <input className="lc-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="5173, localhost:3000 or index.html" aria-label="Address" />
-              <button type="submit" className="lc-btn" data-kind="primary">
+              <button type="submit" className="lc-btn" data-kind="ink">
                 Open
               </button>
             </form>

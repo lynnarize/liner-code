@@ -1,7 +1,9 @@
 /*
-  The composer. A glass frame around a white card: what's queued sits on the glass above, you
-  write in the card, and the run's settings sit on the glass below. On Home the strip says where
-  the session runs instead.
+  The composer. One card, the same on Home and in a session: you write in it, and the run's
+  settings sit on its lower edge as plain text buttons. Round it, the tray (Devin's): a tinted
+  holder that is there only when it has a row to carry. In a session its head says what waits on
+  you (files to commit, agents at work); on Home its foot says where the session runs. What's
+  queued sits above it.
 
   - Who works on this: Solo (one model, or one of your agents), Plan then build (a stronger model
     plans, a cheaper one builds), or Auto (the engine picks per message, at the level you choose);
@@ -63,7 +65,11 @@ type Props = {
   stripUnder?: ReactNode;
   /** Home: the box's text as it changes, so an add-on ask can switch the task's mode. */
   onText?: (text: string) => void;
-  /** A session: a line at the box's top edge, inside it (who the work waits on). */
+  /**
+    A session: the tray's head, rows over the card (what's waiting to commit, who the work waits
+    on). A row that renders nothing leaves the head empty, and with nothing in it the tray isn't
+    drawn (app.css reads that with :has, so a row coming or going needs no word from here).
+  */
   top?: ReactNode;
 };
 
@@ -1018,7 +1024,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       </button>
     );
   const attach = (
-    <button type="button" className="lc-ctl-round l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
+    <button type="button" className="lc-ctl-attach l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
       <I.attach size={16} />
     </button>
   );
@@ -1099,210 +1105,211 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         </div>
       )}
 
-      <div className="lc-card" data-top={top ? true : undefined}>
-        {top}
-        {files.length > 0 && (
-          <div className="lc-files">
-            {files.map((f, i) => (
-              <span key={`${f.name}${i}`} className="lc-file-chip" data-image={thumbs[i] ? true : undefined}>
-                {thumbs[i] ? <img src={thumbs[i]!} alt="" className="lc-file-thumb" /> : <I.file size={13} />}
-                <span className="lc-file-n" title={f.name}>{f.name}</span>
-                <span>{f.size < 1024 ? `${f.size} B` : `${Math.round(f.size / 1024)} KB`}</span>
-                <button type="button" className="l-focus" aria-label={`Remove ${f.name}`} onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>
-                  <I.close size={11} />
-                </button>
-              </span>
-            ))}
+      <div className="lc-tray" data-variant={variant}>
+        {variant === "session" && <div className="lc-tray-head">{top}</div>}
+        <div className="lc-card">
+          {files.length > 0 && (
+            <div className="lc-files">
+              {files.map((f, i) => (
+                <span key={`${f.name}${i}`} className="lc-file-chip" data-image={thumbs[i] ? true : undefined}>
+                  {thumbs[i] ? <img src={thumbs[i]!} alt="" className="lc-file-thumb" /> : <I.file size={13} />}
+                  <span className="lc-file-n" title={f.name}>{f.name}</span>
+                  <span>{f.size < 1024 ? `${f.size} B` : `${Math.round(f.size / 1024)} KB`}</span>
+                  <button type="button" className="l-focus" aria-label={`Remove ${f.name}`} onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>
+                    <I.close size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="lc-field-box">
+          <div ref={mirrorRef} className="lc-field lc-field-md" aria-hidden>
+            {md}
           </div>
-        )}
-        <div className="lc-field-box">
-        <div ref={mirrorRef} className="lc-field lc-field-md" aria-hidden>
-          {md}
-        </div>
-        <textarea
-          ref={field}
-          className="lc-field"
-          data-md=""
-          onScroll={(e) => mirrorRef.current && (mirrorRef.current.scrollTop = e.currentTarget.scrollTop)}
-          rows={variant === "home" ? 3 : 1}
-          value={text}
-          placeholder={placeholder}
-          aria-label="Message"
-          onChange={(e) => {
-            onType(e.target.value, e.target.selectionStart);
-            setStashOpen(false);
-          }}
-          // A list open on a word you've left is no use: it goes when the caret leaves the word, or the field.
-          onSelect={(e) => mention && e.currentTarget.selectionEnd !== mention.start + 1 + mention.query.length && setMention(null)}
-          onBlur={() => (setStashOpen(false), setMention(null))}
-          onPaste={(e) => {
-            if (e.clipboardData.files.length) {
+          <textarea
+            ref={field}
+            className="lc-field"
+            data-md=""
+            onScroll={(e) => mirrorRef.current && (mirrorRef.current.scrollTop = e.currentTarget.scrollTop)}
+            rows={variant === "home" ? 3 : 1}
+            value={text}
+            placeholder={placeholder}
+            aria-label="Message"
+            onChange={(e) => {
+              onType(e.target.value, e.target.selectionStart);
+              setStashOpen(false);
+            }}
+            // A list open on a word you've left is no use: it goes when the caret leaves the word, or the field.
+            onSelect={(e) => mention && e.currentTarget.selectionEnd !== mention.start + 1 + mention.query.length && setMention(null)}
+            onBlur={() => (setStashOpen(false), setMention(null))}
+            onPaste={(e) => {
+              if (e.clipboardData.files.length) {
+                e.preventDefault();
+                addFiles(e.clipboardData.files);
+                return;
+              }
+              // A big paste (a log, a file's worth) comes as a text file instead, to keep the message
+              // readable; the toast puts it in the message after all if that's what you meant.
+              const plain = e.clipboardData.getData("text/plain");
+              if (!plain || bytesOf(plain) < PASTE_AS_FILE || files.length >= MAX_FILES) return;
               e.preventDefault();
-              addFiles(e.clipboardData.files);
-              return;
-            }
-            // A big paste (a log, a file's worth) comes as a text file instead, to keep the message
-            // readable; the toast puts it in the message after all if that's what you meant.
-            const plain = e.clipboardData.getData("text/plain");
-            if (!plain || bytesOf(plain) < PASTE_AS_FILE || files.length >= MAX_FILES) return;
-            e.preventDefault();
-            const el = e.currentTarget;
-            const at = { start: el.selectionStart, end: el.selectionEnd };
-            const file = new File([plain], pastedName(files.map((f) => f.name)), { type: "text/plain" });
-            addFiles([file]);
-            toast(`Pasted as ${file.name}`, {
-              description: `${Math.round(file.size / 1024)} KB of text, sent as a file`,
-              action: {
-                label: "Put it in the message",
-                onClick: () => {
-                  setFiles((list) => list.filter((f) => f !== file));
-                  setText((cur) => `${cur.slice(0, Math.min(at.start, cur.length))}${plain}${cur.slice(Math.min(at.end, cur.length))}`);
+              const el = e.currentTarget;
+              const at = { start: el.selectionStart, end: el.selectionEnd };
+              const file = new File([plain], pastedName(files.map((f) => f.name)), { type: "text/plain" });
+              addFiles([file]);
+              toast(`Pasted as ${file.name}`, {
+                description: `${Math.round(file.size / 1024)} KB of text, sent as a file`,
+                action: {
+                  label: "Put it in the message",
+                  onClick: () => {
+                    setFiles((list) => list.filter((f) => f !== file));
+                    setText((cur) => `${cur.slice(0, Math.min(at.start, cur.length))}${plain}${cur.slice(Math.min(at.end, cur.length))}`);
+                  },
                 },
-              },
-            });
-          }}
-          onKeyDown={(e) => {
-            // Enter, Tab, Escape and the arrows belong to the input method while it composes (T3 Code: ComposerPromptEditorTiptap.tsx).
-            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-            if (mention && found.length) {
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                e.preventDefault();
-                setHl((h) => (h + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
-                return;
+              });
+            }}
+            onKeyDown={(e) => {
+              // Enter, Tab, Escape and the arrows belong to the input method while it composes (T3 Code: ComposerPromptEditorTiptap.tsx).
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (mention && found.length) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setHl((h) => (h + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  pickFile(found[hl]);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setMention(null);
+                  return;
+                }
               }
-              if (e.key === "Enter" || e.key === "Tab") {
-                e.preventDefault();
-                pickFile(found[hl]);
-                return;
-              }
-              if (e.key === "Escape") {
+              // A list still showing (commands on their way, nothing matching, stashed drafts) closes first; Escape stops the turn only after.
+              if (e.key === "Escape" && ((mention && mention.kind !== "@") || stashOpen)) {
                 e.preventDefault();
                 setMention(null);
+                setStashOpen(false);
                 return;
               }
-            }
-            // A list still showing (commands on their way, nothing matching, stashed drafts) closes first; Escape stops the turn only after.
-            if (e.key === "Escape" && ((mention && mention.kind !== "@") || stashOpen)) {
-              e.preventDefault();
-              setMention(null);
-              setStashOpen(false);
-              return;
-            }
-            // Escape leaves a queued message as it was, and brings back the draft it pushed aside.
-            if (e.key === "Escape" && editing) {
-              e.preventDefault();
-              stopEditing();
-              return;
-            }
-            if (is(e.nativeEvent, "stash")) {
-              e.preventDefault();
-              stash();
-              return;
-            }
-            // ↑ recalls only when the caret is on the first line, so editing a long draft still moves up.
-            // ⌥↑/⌥↓ pass through to the session's prompt navigation.
-            if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.altKey && !mention && sent.length && (!text || recall.current >= 0) && !(e.key === "ArrowUp" && !text && queue.length)) {
-              const el = e.currentTarget;
-              const firstLine = !el.value.slice(0, el.selectionStart).includes("\n");
-              if (e.key === "ArrowUp" && firstLine && recall.current < sent.length - 1) {
+              // Escape leaves a queued message as it was, and brings back the draft it pushed aside.
+              if (e.key === "Escape" && editing) {
                 e.preventDefault();
-                recall.current += 1;
-                setText(sent[sent.length - 1 - recall.current]);
+                stopEditing();
                 return;
               }
-              if (e.key === "ArrowDown" && recall.current >= 0) {
+              if (is(e.nativeEvent, "stash")) {
                 e.preventDefault();
-                recall.current -= 1;
-                setText(recall.current >= 0 ? sent[sent.length - 1 - recall.current] : "");
+                stash();
                 return;
               }
-            }
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send(busy && (e.metaKey || e.ctrlKey) ? "steer" : busy ? mode : "queue");
-            } else if (e.key === "Escape" && busy) {
-              // Taken: a session opened from the Wall goes back to it on an Escape nothing here used (App.tsx).
-              e.preventDefault();
-              onStop?.();
-            } else if (e.key === "ArrowUp" && !e.altKey && !text && queue.length) {
-              // The last queued message, to edit where it is.
-              e.preventDefault();
-              editQueued(queue[queue.length - 1]);
-            }
-          }}
-        />
-        </div>
-        {stashOpen && (
-          <div className="lc-mention l-glass" role="listbox" aria-label="Stashed drafts">
-            <span className="lc-quiet lc-mention-wait">Stashed drafts</span>
-            {readStash().map((x, i) => (
-              <button key={x.at} type="button" role="option" aria-selected={false} className="lc-mention-row l-focus" onMouseDown={(e) => (e.preventDefault(), unstash(i))}>
-                <I.edit size={12} />
-                <span className="lc-mention-d lc-stash-t">{x.text.split("\n")[0]}</span>
-                <span className="lc-quiet">{ago(x.at)}</span>
-              </button>
-            ))}
+              // ↑ recalls only when the caret is on the first line, so editing a long draft still moves up.
+              // ⌥↑/⌥↓ pass through to the session's prompt navigation.
+              if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.altKey && !mention && sent.length && (!text || recall.current >= 0) && !(e.key === "ArrowUp" && !text && queue.length)) {
+                const el = e.currentTarget;
+                const firstLine = !el.value.slice(0, el.selectionStart).includes("\n");
+                if (e.key === "ArrowUp" && firstLine && recall.current < sent.length - 1) {
+                  e.preventDefault();
+                  recall.current += 1;
+                  setText(sent[sent.length - 1 - recall.current]);
+                  return;
+                }
+                if (e.key === "ArrowDown" && recall.current >= 0) {
+                  e.preventDefault();
+                  recall.current -= 1;
+                  setText(recall.current >= 0 ? sent[sent.length - 1 - recall.current] : "");
+                  return;
+                }
+              }
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send(busy && (e.metaKey || e.ctrlKey) ? "steer" : busy ? mode : "queue");
+              } else if (e.key === "Escape" && busy) {
+                // Taken: a session opened from the Wall goes back to it on an Escape nothing here used (App.tsx).
+                e.preventDefault();
+                onStop?.();
+              } else if (e.key === "ArrowUp" && !e.altKey && !text && queue.length) {
+                // The last queued message, to edit where it is.
+                e.preventDefault();
+                editQueued(queue[queue.length - 1]);
+              }
+            }}
+          />
           </div>
-        )}
-        {mention && (found.length > 0 || (mention.kind !== "@" && !tools)) && (
-          <div ref={list} className="lc-mention l-glass" role="listbox" aria-label={mention.kind === "@" ? "Files" : mention.kind === "/" ? "Commands" : "Skills"} onMouseDown={(e) => e.preventDefault()}>
-            {mention.kind !== "@" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
-            {found.map((f, i) => (
-              <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
-                {f.kind === "@" ? <I.file size={13} /> : f.kind === "/" ? <span className="lc-mention-k">/</span> : <I.sparkle size={13} />}
-                <span className="lc-mono lc-mention-n">
-                  {f.label}
-                  {f.hint && <span className="lc-quiet"> {f.hint}</span>}
-                </span>
-                {f.note && <span className="lc-mention-d">{f.note}</span>}
-                {f.liner && <span className="lc-mp-def">Liner Code</span>}
-              </button>
-            ))}
-            {mention.kind !== "@" && tools && found.length === 0 && <span className="lc-quiet lc-mention-wait">No {mention.kind === "/" ? "command" : "skill"} matches that.</span>}
-          </div>
-        )}
-        {/* The controls sit in a tray of their own inside the text box, the same on Home and in a session: attach, then the choices, then Send. */}
-        <div className="lc-card-row" ref={tray}>
-          {attach}
-          <span className="lc-seg">
-            <Pop label="Who works on this" side={variant === "home" ? "bottom" : "top"} width={640} keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
-              {teamPanel}
-            </Pop>
-            {effortPick && <span className="lc-seg-div" aria-hidden />}
-            {effortPick}
-            {variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow && (
-              <>
-                <span className="lc-seg-div" aria-hidden />
-                <ContextMeter used={usage.contextTokens} max={usage.contextWindow} running={busy} onCompact={canCompact ? compactNow : undefined} limits={planOf} />
-              </>
-            )}
-            {/* The plan's windows join the context ring's pop; with no ring (Home) they keep a meter of their own. */}
-            {planOf.length > 0 && !(variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow) && (
-              <>
-                <span className="lc-seg-div" aria-hidden />
-                <LimitMeter tools={planOf} />
-              </>
-            )}
-            <span className="lc-seg-div" aria-hidden />
-            {accessPick}
-          </span>
-          <span className="lc-grow" />
-          {editing ? (
-            <span className="lc-tray-note">Editing a queued message · Enter saves · Esc leaves it</span>
-          ) : (
-            variant === "session" && !busy && queue.length > 0 && <span className="lc-tray-note">{plural(queue.length, "message")} waiting</span>
+          {stashOpen && (
+            <div className="lc-mention l-glass" role="listbox" aria-label="Stashed drafts">
+              <span className="lc-quiet lc-mention-wait">Stashed drafts</span>
+              {readStash().map((x, i) => (
+                <button key={x.at} type="button" role="option" aria-selected={false} className="lc-mention-row l-focus" onMouseDown={(e) => (e.preventDefault(), unstash(i))}>
+                  <I.edit size={12} />
+                  <span className="lc-mention-d lc-stash-t">{x.text.split("\n")[0]}</span>
+                  <span className="lc-quiet">{ago(x.at)}</span>
+                </button>
+              ))}
+            </div>
           )}
-          {sendButton}
+          {mention && (found.length > 0 || (mention.kind !== "@" && !tools)) && (
+            <div ref={list} className="lc-mention l-glass" role="listbox" aria-label={mention.kind === "@" ? "Files" : mention.kind === "/" ? "Commands" : "Skills"} onMouseDown={(e) => e.preventDefault()}>
+              {mention.kind !== "@" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
+              {found.map((f, i) => (
+                <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
+                  {f.kind === "@" ? <I.file size={13} /> : f.kind === "/" ? <span className="lc-mention-k">/</span> : <I.sparkle size={13} />}
+                  <span className="lc-mono lc-mention-n">
+                    {f.label}
+                    {f.hint && <span className="lc-quiet"> {f.hint}</span>}
+                  </span>
+                  {f.note && <span className="lc-mention-d">{f.note}</span>}
+                  {f.liner && <span className="lc-mp-def">Liner Code</span>}
+                </button>
+              ))}
+              {mention.kind !== "@" && tools && found.length === 0 && <span className="lc-quiet lc-mention-wait">No {mention.kind === "/" ? "command" : "skill"} matches that.</span>}
+            </div>
+          )}
+          {/* The controls sit in a tray of their own inside the text box, the same on Home and in a session: attach, then the choices, then Send. */}
+          <div className="lc-card-row" ref={tray}>
+            {attach}
+            <span className="lc-seg">
+              <Pop label="Who works on this" side={variant === "home" ? "bottom" : "top"} width={640} keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
+                {teamPanel}
+              </Pop>
+              {effortPick && <span className="lc-seg-div" aria-hidden />}
+              {effortPick}
+              {variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow && (
+                <>
+                  <span className="lc-seg-div" aria-hidden />
+                  <ContextMeter used={usage.contextTokens} max={usage.contextWindow} running={busy} onCompact={canCompact ? compactNow : undefined} limits={planOf} />
+                </>
+              )}
+              {/* The plan's windows join the context ring's pop; with no ring (Home) they keep a meter of their own. */}
+              {planOf.length > 0 && !(variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow) && (
+                <>
+                  <span className="lc-seg-div" aria-hidden />
+                  <LimitMeter tools={planOf} />
+                </>
+              )}
+              <span className="lc-seg-div" aria-hidden />
+              {accessPick}
+            </span>
+            <span className="lc-grow" />
+            {editing ? (
+              <span className="lc-tray-note">Editing a queued message · Enter saves · Esc leaves it</span>
+            ) : (
+              variant === "session" && !busy && queue.length > 0 && <span className="lc-tray-note">{plural(queue.length, "message")} waiting</span>
+            )}
+            {sendButton}
+          </div>
+          <input ref={clip} type="file" multiple hidden onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />
         </div>
-        <input ref={clip} type="file" multiple hidden onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />
-      </div>
 
-      {/*
-        Home's strip holds only how this task runs: where on the left (the branch gives way first),
-        the mode at the right edge, both inside the box's width. Starting another way is the line under it.
-      */}
-      {variant === "home" ? (
-        <>
+        {/*
+          Home's strip, the tray's foot, holds only how this task runs: where on the left (the branch
+          gives way first), the mode at the right edge, both inside the tray. Starting another way is
+          the line under the tray.
+        */}
+        {variant === "home" && (
           <div className="lc-strip">
             {project.git ? (
               <Pop
@@ -1365,9 +1372,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             <span className="lc-grow" />
             {stripEnd}
           </div>
-          {stripUnder && <div className="lc-strip-under">{stripUnder}</div>}
-        </>
-      ) : null}
+        )}
+      </div>
+      {variant === "home" && stripUnder && <div className="lc-strip-under">{stripUnder}</div>}
     </div>
   );
 }

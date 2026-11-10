@@ -107,8 +107,10 @@ function visibleBounds(b?: Rectangle) {
 
 // ---------- The window ----------
 
-// Where the traffic lights go: centred in the page's 52px top row, as the Swift shell's unified toolbar put them.
-const LIGHTS = { x: 20, y: 19 };
+// Where the traffic lights go: centred on the page's 44px top row, which starts at the window's 6px
+// gap, so their centre is 28px from the top (y is their top edge; they're 14px high). The Swift shell
+// puts them there too (AppDelegate.swift, placeLights).
+const LIGHTS = { x: 20, y: 21 };
 // The line sits where the page's own boot screen keeps it, under the name, so it doesn't jump when that loads.
 const BOOT_PAGE = `<html><body style="margin:0;height:100vh;background:transparent;font:13px -apple-system,system-ui,sans-serif;color:#8a8f98"><span style="position:fixed;top:calc(50% + 30px);left:50%;translate:-50% 0;white-space:nowrap">Starting the engine</span></body></html>`;
 
@@ -143,7 +145,7 @@ function applyMaterial() {
 */
 let lastLights = { x: LIGHTS.x + 54, y: LIGHTS.y + 7 };
 function lights() {
-  if (!isMac) return { x: 0, y: 26 };
+  if (!isMac) return { x: 0, y: 28 };
   if (win?.isFullScreen()) return { x: 0, y: lastLights.y };
   const real = win && mac?.lights(win.getNativeWindowHandle());
   if (real) lastLights = real;

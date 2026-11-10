@@ -12,7 +12,10 @@
   --l-font-display: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --l-font-body: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --lc-side: 244px;
-  --lc-head: 52px;
+  /* The one top row: the sidebar's head, the session's header and the panel's tabs share it (44, as
+     the approved one-row header has it; 52 before 0.2.5). Its centre, the window's gap plus half of
+     it, is where both shells put the traffic lights: 28px from the window's top. */
+  --lc-head: 44px;
   /* How far a ring reaches past its control: Liner's focus ring (2px, 2px out) and a picked row's
      halo. A list that clips its rows (it scrolls, or folds) keeps this much room inside its edge
      and gives it back with a negative margin, so the rows stay put and no ring is cut. */
@@ -307,19 +310,34 @@ html[data-shell="electron"] body > :not(#root) {
   -webkit-app-region: no-drag;
 }
 /*
-  With the sidebar away, the paper's top bar starts after the traffic lights, and its row moves up
-  by the window's gap so its centre sits on theirs; the bar keeps its height. In full screen the
-  lights are hidden (their x is 0), so the cap is 0 and the row stays put. With a session open
-  beside another, only the left one's bar is under the lights.
+  With the sidebar away, the paper's top bar starts after the traffic lights. Both shells put their
+  centre on the row's (28px: the gap and half the 44px row), so it stays put; were they higher, as
+  the Swift shell's toolbar row once had them, the row moves up by the difference to sit on theirs,
+  keeping its height. In full screen the lights are hidden (their x is 0), so the cap is 0 and the
+  row stays put. With a session open beside another, only the left one's bar is under the lights.
+  The panel's row is the paper's header when it fills the paper (the full canvas, or a session too
+  narrow for both), and then it's the one under the lights.
 */
-html[data-native="mac"] .lc-top {
+html[data-native="mac"] :is(.lc-top, .lc-panel-top) {
   transition: padding 520ms var(--l-spring-smooth);
 }
-html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc-beside .lc-top) {
-  --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 26px)), min(8px, var(--lc-lights-x, 70px)));
-  padding-top: calc(8px - var(--lc-up));
-  padding-bottom: calc(8px + var(--lc-up));
+html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc-beside .lc-top),
+html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.lc-beside + .lc-beside .lc-session) .lc-panel-top {
+  --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 28px)), min(6px, var(--lc-lights-x, 70px)));
+  padding-top: calc(6px - var(--lc-up));
+  padding-bottom: calc(6px + var(--lc-up));
   padding-left: max(20px, calc(var(--lc-lights-x, 70px) + 4px));
+}
+html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.lc-beside + .lc-beside .lc-session) .lc-panel-top {
+  padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
+}
+@container lc-session (max-width: 700px) {
+  html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel]:not(.lc-beside + .lc-beside .lc-session) .lc-panel-top {
+    --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 28px)), min(6px, var(--lc-lights-x, 70px)));
+    padding-top: calc(6px - var(--lc-up));
+    padding-bottom: calc(6px + var(--lc-up));
+    padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
+  }
 }
 
 /* ---------- Shared bits ---------- */
@@ -582,6 +600,12 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
 .lc-btn[data-kind="secondary"] {
   background: var(--lc-well);
 }
+/* Ink on the paper, inverted in dark (where "primary", the tray's control, stays dark): a panel's
+   main action that isn't the action colour, so Send is the one colour on screen. */
+.lc-btn[data-kind="ink"] {
+  background: var(--l-ink);
+  color: var(--lc-paper);
+}
 .lc-btn[data-kind="ghost"] {
   padding: 0 12px;
   background: none;
@@ -599,6 +623,9 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   }
   .lc-btn[data-kind="accent"]:hover:not(:disabled) {
     filter: brightness(1.08);
+  }
+  .lc-btn[data-kind="ink"]:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--l-ink) 84%, var(--lc-paper));
   }
 }
 .lc-btn[data-size="sm"] {
@@ -699,7 +726,8 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   overflow: auto;
   overscroll-behavior: contain;
   padding: 6px;
-  border-radius: 20px;
+  /* One menu corner in the app: 14, its rows 8 (6 in, so they sit concentric). */
+  border-radius: 14px;
   text-align: left;
 }
 /* Panels sit in the layer above the window: placed by script, so nothing they open from clips them. */
@@ -750,7 +778,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   width: 100%;
   padding: 8px 9px;
   border: 0;
-  border-radius: 11px;
+  border-radius: 8px;
   background: none;
   text-align: left;
   cursor: pointer;
@@ -926,18 +954,20 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
 }
 
 /* ---------- Sidebar ---------- */
+/* With no lights to follow (Windows, a browser), the head row's 32px sit centred on the top row's 44,
+   which starts at the window's gap like the sidebar does. */
 .lc-sb {
   display: flex;
   flex-direction: column;
   gap: 10px;
   height: 100%;
   box-sizing: border-box;
-  padding: 10px 8px 6px 12px;
+  padding: calc(var(--lc-head) / 2 - 16px) 8px 6px 12px;
 }
 /* The head row's centre sits on the traffic lights' centre, which the shell reports from the
    window's top: the window's gap is above the sidebar already. */
 html[data-native="mac"] .lc-sb {
-  padding-top: max(0px, calc(var(--lc-lights-y, 26px) - var(--lc-gap) - 17px));
+  padding-top: max(0px, calc(var(--lc-lights-y, 28px) - var(--lc-gap) - 17px));
 }
 .lc-sb-head {
   display: flex;
@@ -2203,6 +2233,7 @@ html[data-native="mac"] .lc-sb-head {
     transform: translateY(6px);
   }
 }
+/* The 44px top row: its 32px buttons with 6px over and under. */
 .lc-top {
   display: flex;
   flex: none;
@@ -2211,11 +2242,16 @@ html[data-native="mac"] .lc-sb-head {
   gap: 10px;
   min-height: var(--lc-head);
   box-sizing: border-box;
-  padding: 8px 10px 8px 20px;
+  padding: 6px 10px 6px 20px;
 }
-/* What the bar has room for: its own width less its padding, which grows under the traffic lights. */
-.lc-session > .lc-top {
+/* What the bar has room for: its own width less its padding, which grows under the traffic lights.
+   The session's heads the thread's column only; the panel beside it has a row of its own. */
+.lc-thread > .lc-top {
   container: lc-bar / inline-size;
+}
+/* The find bar sits under the header, which is in the thread's column now. */
+.lc-thread > .lc-top ~ .lc-find {
+  top: calc(var(--lc-head) + 8px);
 }
 .lc-title {
   flex: 0 1 auto;
@@ -2336,11 +2372,12 @@ html[data-native="mac"] .lc-sb-head {
   font-size: 11.5px;
   color: var(--l-ink-3);
 }
-/* The session's bar spans the paper, over the thread and the dock: narrow, it keeps the title and
-   turns who works on it to its discs and the mode to its icon, then drops those discs and the
-   Reviewer's word to its icon (⋯ still has Agents), so the buttons on the right keep their room.
-   The branch isn't in the bar: it's in the title's menu. */
-@container lc-session (max-width: 1000px) {
+/* The session's bar heads the thread's column: narrow, it keeps the title and turns who works on it
+   to its discs and the mode to its icon, then drops those discs and the Reviewer's word to its icon
+   (the panel's + still has Agents), so the buttons on the right keep their room. The branch isn't in
+   the bar: it's in the title's menu. (Measured on the session before the one-row header, when the
+   bar spanned the paper and held the panels' buttons: 1000 and 780 then, less those buttons now.) */
+@container lc-bar (max-width: 760px) {
   .lc-chain {
     gap: 2px;
     font-size: 0;
@@ -2353,7 +2390,7 @@ html[data-native="mac"] .lc-sb-head {
     font-size: 0;
   }
 }
-@container lc-session (max-width: 780px) {
+@container lc-bar (max-width: 560px) {
   .lc-top {
     gap: 6px;
   }
@@ -2380,28 +2417,6 @@ html[data-native="mac"] .lc-sb-head {
   .lc-top .lc-mode-chip {
     display: none;
   }
-}
-.lc-crumb {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 14.5px;
-  color: var(--l-ink-3);
-  white-space: nowrap;
-}
-.lc-crumb > :not(.lc-crumb-n) {
-  flex: none;
-}
-/* A long project name gives way; New session and what's after it in the bar stay. */
-.lc-crumb-n {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lc-crumb b {
-  font-weight: 500;
-  color: var(--l-ink);
 }
 
 /* ---------- Session ---------- */
@@ -2450,12 +2465,13 @@ html[data-native="mac"] .lc-sb-head {
   cursor: col-resize;
   touch-action: none;
 }
-/* A hairline shows where it holds, on hover, while dragging, and from the keyboard. */
+/* A hairline shows where it holds, on hover, while dragging, and from the keyboard: over the panel's
+   own, from the paper's top to its bottom, as the panel is a full-height column now. */
 .lc-grip::after {
   content: "";
   position: absolute;
-  top: 10px;
-  bottom: 10px;
+  top: 0;
+  bottom: 0;
   left: 0;
   width: 2px;
   border-radius: 1px;
@@ -2566,13 +2582,15 @@ html[data-native="mac"] .lc-sb-head {
   /* Room at the end to scroll the last answer clear of the composer floating over it. */
   padding: 24px 24px calc(var(--lc-dock-h, 132px) + 18px);
 }
+/* The tray round the card takes 4px a side, so the card keeps the measure (712) and its bottom
+   edge sits 12px over the paper's (8 under the tray, 4 in it): the panel's foot lines up with it. */
 .lc-compose {
   flex: none;
   width: 100%;
-  max-width: calc(var(--lc-measure) + 28px);
+  max-width: calc(var(--lc-measure) + 28px + 8px);
   margin: 0 auto;
   box-sizing: border-box;
-  padding: 0 14px 12px;
+  padding: 0 14px 8px;
 }
 /* The composer floats over the conversation: the text scrolls on beneath it and only the sliver
    under it fades out. The foot lets clicks through beside it. */
@@ -2663,7 +2681,7 @@ html[data-native="mac"] .lc-sb-head {
   max-width: 82%;
   margin: 0;
   padding: 10px 14px;
-  border-radius: 18px;
+  border-radius: 14px;
   background: var(--l-wash-2);
   font-size: 14px;
   line-height: 22px;
@@ -2970,35 +2988,34 @@ html[data-native="mac"] .lc-sb-head {
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
 }
-.lc-todo .lc-fcard {
-  padding: 12px 14px;
-}
 /* In the chat and the panel, a card is a soft tint with no edge drawn round it: one sheet. The
    tint is dark's card in both themes: light's card is the paper's white, so without its ring it
    would vanish and leave only its padding, an indent with nothing round it. */
 .lc-tl .lc-fcard,
 .lc-tl .lc-prc,
-.lc-panel :is(.lc-sinfo-card, .lc-files-view, .lc-linked-card, .lc-rt-card, .lc-rv-file, .lc-rv-thread, .lc-limits-tool, .lc-sc-compose) {
+.lc-panel :is(.lc-linked-card, .lc-rt-card, .lc-rv-thread, .lc-limits-tool, .lc-sc-compose) {
   background: color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper));
   box-shadow: none;
 }
-/* The sticky bits on a panel card take its tint, or they show as a strip of paper. */
-.lc-panel .lc-files-view .lc-cl-n {
-  background: color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper));
-}
-.lc-panel .lc-rv-fh {
-  background: color-mix(in oklab, color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper)) 92%, transparent);
+/* Session info, the open file and a Review file aren't cards at all any more: rows and lists on the
+   paper (SessionInfo.tsx, Files.tsx, Review.tsx), so their sticky bits take the paper. */
+/* The turn's plan is a labelled list on the paper, not a card: "Plan" and its count on a 28px
+   line, then a 28px line a task, its mark where a bullet would be. */
+.lc-todo {
+  display: grid;
 }
 .lc-todo-h {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  min-height: 28px;
   font-size: 13px;
+}
+.lc-todo-h b {
+  font-weight: 600;
 }
 .lc-todo ol {
   display: grid;
-  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3007,8 +3024,9 @@ html[data-native="mac"] .lc-sb-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 24px;
-  font-size: 13px;
+  min-height: 28px;
+  font-size: 14px;
+  color: var(--l-ink-2);
 }
 .lc-todo li > span:last-child {
   min-width: 0;
@@ -3017,23 +3035,21 @@ html[data-native="mac"] .lc-sb-head {
 .lc-todo li[data-s="completed"] > span:last-child {
   color: var(--l-ink-3);
   text-decoration: line-through;
-  text-decoration-color: var(--l-line-strong);
+  text-decoration-color: var(--l-ink-4);
 }
+/* Waiting: a small ring; done: the tick alone; at work: the rays, in the accent. */
 .lc-todo-mk {
   display: grid;
   flex: none;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1.5px var(--l-ink-5);
   color: var(--l-ink-3);
-  transition:
-    box-shadow 260ms ease,
-    background 260ms ease;
+  transition: box-shadow 260ms ease;
 }
 .lc-todo li[data-s="completed"] .lc-todo-mk {
-  background: var(--l-wash-2);
   box-shadow: none;
 }
 .lc-todo li[data-s="in_progress"] .lc-todo-mk {
@@ -3048,6 +3064,16 @@ html[data-native="mac"] .lc-sb-head {
   display: grid;
   gap: 12px;
   padding: 14px 16px 12px;
+}
+/* A plan that waits for you is a labelled list on the paper too, not a filled card: its label and
+   count, the numbered steps, who builds it, and the answer row, straight on the sheet. */
+.lc-tl .lc-plan > .lc-fcard,
+.lc-plan > .lc-fcard {
+  gap: 10px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 .lc-ask,
 .lc-q,
@@ -3338,10 +3364,12 @@ html[data-native="mac"] .lc-sb-head {
 
 /* ---------- The composer ---------- */
 /*
-  One solid text box (radius 24, the field tone) lifted off the paper by a soft shadow, with no
-  glass. Its controls sit inside it under what you type: the choices in one light bar split by
-  hairlines, attach as a light round. Send is the accent; while a turn runs, Stop (red) sits
-  beside it.
+  One card, on Home and in a session: a 14px corner, a hairline ring and a 1px soft shadow, no
+  lift. Its controls sit on its lower edge as plain text buttons (8px corners on hover), attach a
+  plain icon; Send is the one round, coloured button, and while a turn runs Stop sits beside it.
+  Round the card, the tray: a tinted holder (18px corner, 4px in) drawn only while it carries a
+  row, its head in a session, its foot on Home. With no row it keeps its 4px, untinted, so the
+  card never moves when a row comes or goes.
 */
 .lc-composer {
   position: relative;
@@ -3351,22 +3379,92 @@ html[data-native="mac"] .lc-sb-head {
   min-width: 0;
   container: lc-composer / inline-size;
 }
+.lc-tray {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  padding: 4px;
+  border-radius: 18px;
+  transition: background-color 200ms ease;
+}
+/* Tinted only while it carries a row: a head row that renders (CrewStrip, what's to commit), or Home's strip. */
+.lc-tray:has(> .lc-tray-head > *, > .lc-strip) {
+  background: var(--l-wash);
+}
+.lc-tray-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.lc-tray-head:empty {
+  display: none;
+}
+/* A row of the tray's head: an icon, what waits, and at its right end what to do about it. */
+.lc-trow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 4px 0 10px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.lc-trow > svg {
+  flex: none;
+  margin-right: 6px;
+  color: var(--l-ink-3);
+}
+.lc-trow-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-trow .lc-lines {
+  flex: none;
+  margin-left: 8px;
+  font-size: 12px;
+}
+.lc-trow-lk {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--l-ink);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+@media (hover: hover) {
+  .lc-trow-lk:hover {
+    background: var(--l-wash-2);
+  }
+}
 .lc-card {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  gap: 4px;
-  padding: 14px 12px 12px 18px;
-  border-radius: 24px;
+  /* 13 over the text, 16 before it; the control row (46 high) starts 13 under the last line. */
+  padding: 13px 8px 0 16px;
+  border-radius: 14px;
   background: var(--lc-field);
   box-shadow:
-    0 0 0 1px var(--lc-hair),
-    var(--lc-lift);
+    0 0 0 1px var(--l-line-2),
+    0 1px 2px oklch(0.3 0.04 265 / 0.05);
   transition: box-shadow 200ms ease;
 }
-.lc-composer[data-variant="home"] .lc-card {
-  padding: 16px 12px 12px 18px;
+.lc-card > .lc-field-box {
+  margin-right: 8px;
 }
 /* In a session the composer is glass: the thread scrolling under it shows through, blurred
    (Settings › Appearance › Glass). Its choices sit straight on it, with no bar of their own.
@@ -3391,6 +3489,35 @@ html:not([data-composer="solid"]) .lc-thread-foot .lc-card::before {
 html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   background: color-mix(in oklab, var(--lc-field) 36%, transparent);
 }
+/* With its head showing, the tray floats over the thread too, so it is the glass: the blur moves
+   to a layer under the tray (never onto the tray or the card themselves, for the reason above),
+   and the card's own layer keeps only its tint over it. One blur either way. Solid, the tray is
+   the wash laid on the paper, opaque, so the thread never shows through its head. */
+html:not([data-composer="solid"]) .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
+  isolation: isolate;
+  background: none;
+}
+html:not([data-composer="solid"]) .lc-thread-foot .lc-tray:has(> .lc-tray-head > *)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklab, color-mix(in oklab, var(--l-ink) 4%, var(--lc-paper)) 72%, transparent);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  pointer-events: none;
+}
+html[data-composer="clear"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *)::before {
+  background: color-mix(in oklab, color-mix(in oklab, var(--l-ink) 5%, var(--lc-paper)) 46%, transparent);
+}
+html:not([data-composer="solid"]) .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) > .lc-card::before {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
+  background: color-mix(in oklab, var(--l-ink) 4%, var(--lc-paper));
+}
 @media (hover: hover) {
   .lc-thread-foot .lc-seg-b:hover {
     background: var(--l-wash-2);
@@ -3399,8 +3526,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 .lc-composer[data-drag] .lc-card {
   box-shadow:
     0 0 0 1.5px var(--l-accent),
-    0 0 0 5px var(--l-accent-soft),
-    var(--lc-lift);
+    0 0 0 5px var(--l-accent-soft);
 }
 .lc-field {
   width: 100%;
@@ -3417,20 +3543,23 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   color: var(--l-ink);
   transition: height 200ms var(--l-ease-out);
 }
+/* Home's box is three lines tall before you write (76 with the 13s above and below). */
 .lc-composer[data-variant="home"] .lc-field {
-  min-height: 66px;
+  min-height: 50px;
   font-size: 15px;
 }
 .lc-field::placeholder {
   color: var(--l-ink-4);
 }
-/* The controls sit straight in the text box, a row under what you type. */
+/* The controls sit straight in the text box, a row under what you type: 46 high, 8 in from
+   the card's edges (the card's left padding is 16, hence the -8). */
 .lc-card-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
-  margin: 8px 0 0 -6px;
+  min-height: 46px;
+  margin: 13px 0 0 -8px;
 }
 .lc-card-row > * {
   flex-shrink: 0;
@@ -3438,18 +3567,18 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 .lc-card-row > .lc-grow {
   flex-shrink: 1;
 }
-/* The choices are one row with dividers and nothing behind it, each drawn small beside its word
-   (Home and the session alike); attach is a light round before them, and Send and Stop the solid
-   ones. The row never shrinks: what doesn't fit gives way in steps instead (below). */
+/* The choices are plain text buttons in one row, nothing behind them and no rules between,
+   each drawn small beside its word (Home and the session alike); attach is a plain icon before
+   them, and Send and Stop the solid rounds. The row never shrinks: what doesn't fit gives way in
+   steps instead (below). */
 .lc-seg {
   display: inline-flex;
   align-items: center;
+  gap: 2px;
   min-width: 0;
-  height: 34px;
-  padding: 0 3px;
+  height: 30px;
   overflow: hidden;
-  border-radius: 999px;
-  color: var(--l-ink);
+  color: var(--l-ink-2);
 }
 .lc-seg > .lc-pop {
   display: flex;
@@ -3459,13 +3588,13 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 .lc-seg-b {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
-  height: 28px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 8px;
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: none;
   font-size: 13px;
   font-weight: 500;
@@ -3476,48 +3605,42 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 }
 .lc-seg-b.lc-who {
   max-width: 260px;
-  padding-left: 3px;
 }
 .lc-seg-b > svg {
   flex: none;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
 }
 .lc-seg-b > svg:last-child,
 .lc-card-row .lc-way-marks,
 .lc-chip-more {
   color: var(--l-ink-3);
 }
+/* No rules between the choices any more: their gaps and hovers part them. */
 .lc-seg-div {
-  flex: none;
-  width: 1px;
-  height: 14px;
-  background: var(--lc-hair);
-}
-.lc-seg-div:last-child,
-.lc-seg-div + .lc-seg-div {
   display: none;
 }
 .lc-seg .lc-ring {
-  padding: 0 10px;
+  padding: 0 8px;
   font-size: 12.5px;
   font-weight: 500;
 }
 .lc-seg .lc-effort-word {
   display: none;
 }
-/* The who's icon (an agent's disc, a team's or a route's mark) rests on a small raised tile. */
+/* The who's icon (a team's or a route's mark, an agent's disc) is drawn plain, as the other
+   controls' icons are: no tile behind it. */
 .lc-card-row .lc-way-chip-i,
 .lc-card-row .lc-disc,
 .lc-card-row .lc-disc[data-filled] {
   display: grid;
   flex: none;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--lc-bar-tile);
-  box-shadow: 0 1px 2px oklch(0.3 0.04 265 / 0.12);
-  color: var(--l-ink);
+  background: none;
+  box-shadow: none;
+  color: var(--l-ink-3);
 }
 .lc-chip-name {
   overflow: hidden;
@@ -3528,14 +3651,14 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lc-ctl-round,
+.lc-ctl-attach,
 .lc-send,
 .lc-stop {
   display: grid;
   flex: none;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -3546,11 +3669,11 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
     box-shadow 240ms ease,
     transform 200ms var(--l-spring-snappy);
 }
-.lc-ctl-round {
-  width: 34px;
-  height: 34px;
-  background: var(--lc-bar);
-  color: var(--l-ink);
+/* Attach: a plain icon button, as the header's are. */
+.lc-ctl-attach {
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
 }
 /* Send is the composer's main button: in the action colour, a shade deeper until there's
    something to send, then lifted. */
@@ -3588,16 +3711,18 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 }
 .lc-send:not(:disabled):active,
 .lc-stop:active,
-.lc-ctl-round:active {
+.lc-ctl-attach:active {
   transform: scale(0.95);
 }
 .lc-seg-b[data-open] {
-  background: var(--lc-bar-hover);
+  background: var(--l-wash-2);
+  color: var(--l-ink);
 }
 @media (hover: hover) {
   .lc-seg-b:hover,
-  .lc-ctl-round:hover {
-    background: var(--lc-bar-hover);
+  .lc-ctl-attach:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
   }
   .lc-send:not([data-ready]):not(:disabled):hover {
     background: color-mix(in oklab, var(--lc-act) 88%, var(--lc-ctl));
@@ -3616,11 +3741,11 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 32px;
+  height: 30px;
   padding: 0 6px;
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   font-size: 12px;
@@ -3655,7 +3780,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 }
 .lc-card-row[data-give~="note"] button.lc-tray-note {
   justify-content: center;
-  width: 32px;
+  width: 30px;
   padding: 0;
 }
 .lc-card-row[data-give~="access"] .lc-access .lc-ctl-label,
@@ -3666,7 +3791,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 .lc-card-row[data-give~="access"] .lc-access,
 .lc-card-row[data-give~="effort"] .lc-effort {
   gap: 4px;
-  padding: 0 8px;
+  padding: 0 7px;
 }
 .lc-card-row[data-give~="who"] .lc-who {
   gap: 4px;
@@ -3697,7 +3822,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   height: 30px;
   padding: 0 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   font-size: 13px;
@@ -3705,6 +3830,9 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   white-space: nowrap;
   cursor: pointer;
   transition: background 160ms ease;
+}
+.lc-pb > svg {
+  color: var(--l-ink-3);
 }
 .lc-pb > svg:last-child {
   color: var(--l-ink-4);
@@ -3717,15 +3845,22 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
     background: var(--lc-well);
   }
 }
+/* Home's strip is the tray's foot: one 36px row under the card, 4px in from the tray's edges. */
 .lc-strip {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
   min-height: 36px;
-  padding: 0 8px;
-  font-size: 12.5px;
-  color: var(--l-ink-3);
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+@media (hover: hover) {
+  .lc-strip .lc-pb:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
 }
 /* When the column is narrow, the note at the end steps aside; the pickers keep their size. */
 /*
@@ -3756,21 +3891,26 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   }
 }
 .lc-strip .lc-pb {
-  height: 28px;
-  font-size: 12.5px;
+  height: 30px;
+  font-size: 13px;
   color: var(--l-ink-2);
 }
 .lc-strip-note {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   padding: 0 4px;
-  font-size: 12.5px;
-  color: var(--l-ink-3);
+  font-size: 13px;
+  color: var(--l-ink-2);
   white-space: nowrap;
 }
-/* Under the strip, quietly: the other ways to start, which aren't settings of this task. */
+.lc-strip-note > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+/* Under the tray, quietly: the other ways to start, which aren't settings of this task. */
 .lc-strip-under {
+  margin-top: 12px;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -3921,7 +4061,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   height: 30px;
   padding: 0 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: none;
   font-size: 12.5px;
   text-align: left;
@@ -4244,8 +4384,9 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
     text-decoration-color: var(--l-accent);
   }
 }
+/* The tray's 720, so the card in it is the session's 712. */
 .lc-home-compose {
-  width: min(700px, 100%);
+  width: min(720px, 100%);
   animation: lc-focus-in 520ms 120ms var(--l-ease-enter) backwards;
 }
 .lc-hints {
@@ -4324,16 +4465,27 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
     color: var(--l-ink);
   }
 }
-/* Beside the thread, one sheet split by a hairline: the panel's header sits on the session's line. */
+/* Beside the thread, one sheet split by a hairline from the paper's top to its bottom: the panel is a
+   full-height column, its header on the session header's line. */
 .lc-session[data-beside] .lc-panel {
   box-shadow: inset 1px 0 0 var(--l-line);
 }
+/* The surfaces start past that hairline: a diff's tinted lines and pinned rows run edge to edge of
+   the column, and would paint over it. */
+.lc-session[data-beside] .lc-panel > .lc-surface {
+  margin-left: 1px;
+}
+/*
+  Changes in the panel: rows on the paper, no card. A quiet row of its own (the turn picker as a text
+  button, then previous, next and wrap), each file's row (chevron, path, its numbers), then the diff
+  edge to edge of the column: added and removed lines keep a tint and their sign, with no bar down
+  their edge, and an unchanged run is a quiet row. The foot lines up with the composer's controls.
+*/
 .lc-changes-panel {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  padding: 0 10px 10px;
 }
 .lc-diff {
   flex: 1;
@@ -4341,15 +4493,107 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   overflow: auto;
   scrollbar-width: thin;
 }
-/* The diff sits in a well only as tall as its content. */
 .lc-diff .l-cdiff {
   min-height: 0;
 }
 /* One scroller, the panel's: the card grows to its content (over CodeDiff's own max-height, set
-   inline) and clips its corners without scrolling, so its pinned file headers hold to the panel. */
+   inline) and clips without scrolling, so its pinned rows hold to the panel. No corner, edge or fill:
+   the column is the only container. */
 .lc-diff .l-cdiff__card {
   max-height: none !important;
   overflow: clip;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+/* The diff's own row, pinned over the lines as they pass: 36 high, the picker 16px in (its text
+   button starts 8px in, its text 8px further), the icons 10px from the column's edge. */
+.lc-diff .l-cdiff__top {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  gap: 2px;
+  min-height: 36px;
+  padding: 0 10px 0 8px;
+  background: var(--lc-paper);
+}
+/* The picker stays at any width (CodeDiff drops its title under 380px, when the title was only words),
+   and its plate isn't clipped. The total is on each file's row, so the row doesn't say it twice. */
+.lc-diff .l-cdiff__label {
+  display: inline-flex;
+  overflow: visible;
+}
+.lc-diff .l-cdiff__tally {
+  display: none;
+}
+.lc-diff .l-cdiff__icon svg {
+  width: 16px;
+  height: 16px;
+}
+/* A file's row: pinned under the diff's own, on the paper, with no rule under it. */
+.lc-diff .l-cdiff__head {
+  top: 36px;
+  min-height: 32px;
+  padding: 0 16px 0 8px;
+  background: var(--lc-paper);
+  box-shadow: none;
+}
+.lc-diff .l-cdiff__name {
+  gap: 8px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--l-ink-2);
+}
+.lc-diff .l-cdiff__chev {
+  width: 12px;
+  height: 12px;
+  color: var(--l-ink-3);
+}
+.lc-diff .l-cdiff__path {
+  font-size: 12px;
+}
+.lc-diff .l-cdiff__path b {
+  font-weight: 400;
+}
+.lc-diff .l-cdiff__file + .l-cdiff__file {
+  border-top-color: var(--l-line);
+}
+/* The lines: 12px on 22, the numbers right-aligned 10px short of the sign. */
+.lc-diff .l-cdiff__rows {
+  --cd-gut: calc(var(--cd-digits, 3) * 1ch + 30px);
+  font-size: 12px;
+  line-height: 22px;
+}
+.lc-diff .l-cdiff__line {
+  min-height: 22px;
+}
+.lc-diff .l-cdiff__scroll {
+  padding: 0;
+}
+/* No bar down a changed line's edge: its tint and sign say it. The gutter takes the paper under its
+   tint, so the numbers hold still over code scrolled sideways. */
+.lc-diff .l-cdiff__n {
+  background: linear-gradient(var(--cd-bg, transparent) 0 0), var(--lc-paper);
+  box-shadow: none;
+}
+/* An unchanged run is a quiet row: no band, its words brighten under the pointer. */
+.lc-diff .l-cdiff__unfold,
+.lc-diff .l-cdiff__unfold > span {
+  min-height: 28px;
+}
+.lc-diff .l-cdiff__unfold {
+  background: none;
+  font-size: 12.5px;
+}
+.lc-diff .l-cdiff__unfold svg {
+  width: 12px;
+  height: 12px;
+  color: var(--l-ink-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-diff .l-cdiff__unfold:hover {
+    background: none;
+  }
 }
 .lc-diff-wait {
   display: grid;
@@ -4358,34 +4602,74 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   font-size: 13px;
   color: var(--l-ink-3);
 }
+/* The turn picker: a text button, "Turn 1 of 1" and its chevron, a wash only under the pointer. */
 .lc-turnpick {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 8px 0 10px;
-  border-radius: 999px;
-  background: var(--lc-plate);
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: none;
   font-size: 13px;
   font-weight: 500;
+  color: var(--l-ink);
 }
 .lc-turnpick .lc-quiet {
   font-weight: 400;
 }
+.lc-turnpick > svg {
+  color: var(--l-ink-3);
+}
+@media (hover: hover) {
+  .lc-turnpick:hover,
+  .lc-turnpick[data-open] {
+    background: var(--l-wash-2);
+  }
+}
+/* What you've looked at, Undo and Commit: 70 high from the paper's bottom, so its controls' centre
+   is 35px up, on the composer's control row beside it (its card 12px up, the row 46 high). */
 .lc-panel-foot {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
-  min-height: 48px;
-  padding: 8px 4px 0;
+  gap: 6px;
+  height: 70px;
+  box-sizing: border-box;
+  padding: 0 14px 0 16px;
+}
+/* Its buttons are the panel's: 30 high, an 8px corner. */
+.lc-panel-foot .lc-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+/* Commit is ink on the paper (inverted in dark), so the composer's Send is the one colour on screen. */
+.lc-pick.lc-commit-b {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--l-ink);
+  color: var(--lc-paper);
+  font-size: 13px;
+  font-weight: 500;
+}
+@media (hover: hover) {
+  .lc-pick.lc-commit-b:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--l-ink) 84%, var(--lc-paper));
+  }
+}
+.lc-pick.lc-commit-b:disabled {
+  opacity: 0.45;
 }
 .lc-viewed {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 13px;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
   white-space: nowrap;
 }
 /* Beside Undo and Commit in a narrow panel the count shortens, then its bar goes, rather than wrap. */
@@ -4407,7 +4691,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 }
 .lc-viewed-bar {
   width: 56px;
-  height: 4px;
+  height: 3px;
   overflow: hidden;
   border-radius: 2px;
   background: var(--l-wash-3);

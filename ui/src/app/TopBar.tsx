@@ -1,24 +1,17 @@
 /*
-  The right end of the session's header, the way Claude Code draws its own: Run a script, then a
-  row of icon buttons of one size that are the panels' tabs. Session, Changes, Browser and Files
-  come up in the right panel and go away when pressed again (dock.ts, toggleTab); Terminal shows
-  the bottom panel, with its shells and runs. Changes carries a small count of the files waiting to
-  be committed and pushed. The ··· holds the other surfaces, your apps, and hiding the panel, and in
-  a narrow bar the buttons that gave way to it (the Wall's too). Every surface also has its key (⌘⇧ and a letter),
-  which does what its button does, and ⌘K finds them all; the apps you pin keep a tab at the start
-  of the panel's strip.
+  The right end of the session's header, since the one-row header (Devin Desktop's, measured in
+  docs/research/devin-desktop.md): Run a script, the bottom panel's toggle, and the right panel's
+  while it's shut. The surfaces themselves are the panel's tabs, in its own row on the same line
+  (Panel.tsx), with a + for the ones that aren't open. Every surface also has its key (⌘⇧ and a
+  letter), which shows it and puts the panel away when it's up, and ⌘K finds them all; the apps you
+  pin keep a tab at the start of the panel's row.
 */
 import { createContext, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
-import { appIcon, appsFor } from "./Addon";
-import { behind, onScreen, openTab, toggleDock, toggleTab, type DockState } from "./dock";
-import { useEngine } from "./engine";
 import { I } from "./icons";
 import { shortcutOf } from "./keymap";
-import { plural } from "./model";
 import * as os from "./os";
-import { SURFACES, surfaceOf, type SurfaceId, type Tab } from "./Surfaces";
-import { PanelHead, Pop, Row, Sep } from "./ui";
+import { type Tab } from "./Surfaces";
 
 
 /*
@@ -71,23 +64,18 @@ export function pin(id: string, on: boolean) {
   for (const f of pinWatch) f();
 }
 
-/** The surfaces with a button of their own in the row; the rest are in its ···. */
-const ROW: SurfaceId[] = ["session", "terminal", "changes", "browser", "files"];
-/** The step of a narrowing bar at which each gives way to the ··· (dock.css, lc-bar). The Terminal stays. */
-const GIVES_WAY: Partial<Record<SurfaceId, number>> = { files: 1, browser: 2, session: 3, changes: 4 };
-
 /*
-  The steps a bar takes past those its width takes (dock.css): what it holds comes and goes (the
-  Wall's way back, the crew, the apps' tabs, the Wall's button), which a width can't know. So it
-  measures, as T3 Code's header measures its breadcrumb (chat/ChatHeader.tsx: on a resize, and again
-  once fonts load): with nothing squeezed but the title, a step at a time in this order until what
-  it holds ends inside it. The Wall's button goes first (the sidebar and its key reach the Wall
-  too), then the way back's count and arrows, then the crew down to its faces (chips give before
-  buttons, app.css), then the row's buttons as the width's steps take them, then the crew (the ···
-  has Agents), the way back to its arrow, and last the room between them all. `data-give` on the
-  bar names the steps taken; the ··· asks what they hid.
+  The steps a bar takes when what it holds doesn't fit its column (the panel beside it, or another
+  session): what it holds comes and goes (the Wall's way back, the crew, the apps' tabs), which a
+  width can't know. So it measures, as T3 Code's header measures its breadcrumb
+  (chat/ChatHeader.tsx: on a resize, and again once fonts load): with nothing squeezed but the
+  title, a step at a time in this order until what it holds ends inside it. The way back's count
+  and arrows go first, then the crew down to its faces, the mode chip, the crew (the panel's + has
+  Agents), the way back to its arrow, and last the room between them all. `data-give` on the bar
+  names the steps taken. (Before the one-row header the panels' buttons gave way here too; they are
+  the panel's tabs now, Panel.tsx, and the Wall's button went to the sidebar and ⌘⇧O.)
 */
-const GIVE = ["wall", "count", "faces", "1", "2", "3", "4", "crew", "back", "tight"];
+const GIVE = ["count", "faces", "mode", "crew", "back", "tight"];
 function useGiveWay(row: RefObject<HTMLElement | null>) {
   useLayoutEffect(() => {
     const top = row.current?.closest<HTMLElement>(".lc-top");
@@ -130,91 +118,32 @@ function useGiveWay(row: RefObject<HTMLElement | null>) {
   }, []);
 }
 
-export function TopBar({ dock, onDock, below, onBelow, files, lines, run, projectId }: { dock: DockState; onDock: (f: (d: DockState) => DockState) => void; below: boolean; onBelow: () => void; files: number; lines: { added: number; removed: number }; run?: ReactNode; projectId?: string }) {
-  const addons = useEngine((s) => s.addons);
-  const apps = appsFor(addons, projectId).filter((a) => a.panel?.place !== "tab");
+/*
+  The right end of the session's header (Devin Desktop's, docs/research/devin-desktop.md): Run a
+  script, the bottom panel's toggle (the Terminal), and, only while the right panel is shut, the
+  button that shows it. Open, the panel's own row ends with the button that hides it (Panel.tsx),
+  in the same place on screen, so the toggle never moves.
+*/
+export function TopBar({ panel, onPanel, below, onBelow, run }: { panel: boolean; onPanel: () => void; below: boolean; onBelow: () => void; run?: ReactNode }) {
   const keys = (id: string) => os.keys(shortcutOf(id) ?? []) || undefined;
-  const changed = lines.added || lines.removed ? `+${lines.added} −${lines.removed}` : "";
-  const waiting = files ? `${plural(files, "file")} waiting to commit and push` : "";
   const row = useRef<HTMLDivElement>(null);
-  const wall = useRef<HTMLButtonElement>(null);
   useGiveWay(row);
-  const openWall = () => window.dispatchEvent(new CustomEvent("lc:wall"));
   return (
-    <>
+    <div ref={row} className="lc-sbar" role="toolbar" aria-label="Session tools">
       {run}
-      <span className="lc-sbar-sep" aria-hidden />
-      <div ref={row} className="lc-sbar" role="toolbar" aria-label="Panels">
-        {ROW.map((id) => {
-          const s = surfaceOf(id)!;
-          if (id === "terminal")
-            return (
-              <Tooltip key={id} content={below ? "Hide the Terminal" : "Terminal"} shortcut={keys("surface.terminal")}>
-                <button type="button" className="lc-tb lc-sbar-b l-focus" aria-label="Terminal" aria-pressed={below} onClick={onBelow}>
-                  <s.icon size={16} />
-                </button>
-              </Tooltip>
-            );
-          const on = onScreen(dock, id);
-          const tip = id === "changes" ? ["Changes", changed, waiting].filter(Boolean).join(" · ") : s.label;
-          return (
-            <Tooltip key={id} className={`lc-sbar-step${GIVES_WAY[id]}`} content={on ? `Hide ${s.label}` : tip} shortcut={keys(`surface.${id}`)}>
-              <button
-                type="button"
-                className="lc-tb lc-sbar-b l-focus"
-                data-surface={id}
-                aria-label={id === "changes" && files ? `Changes, ${waiting}` : s.label}
-                aria-pressed={on}
-                data-behind={behind(dock, id) || undefined}
-                onClick={() => onDock((d) => toggleTab(d, id))}
-              >
-                <s.icon size={16} />
-                {id === "changes" && files > 0 && (
-                  <span key={files} className="lc-tb-count l-num" aria-hidden>
-                    {files > 99 ? "99+" : files}
-                  </span>
-                )}
-              </button>
-            </Tooltip>
-          );
-        })}
-        <Pop label="More panels" align="end" width={260} menu triggerClass="lc-tb lc-sbar-b" trigger={<I.more size={16} />}>
-          {(close) => (
-            <>
-              <PanelHead>Open in the panel</PanelHead>
-              {/* The steps are the CSS's to take, so the buttons it hid say which. */}
-              {ROW.filter((id) => row.current?.querySelector(`[data-surface="${id}"]`)?.checkVisibility() === false).map((id) => {
-                const s = surfaceOf(id)!;
-                return <Row key={id} title={onScreen(dock, id) ? `Hide ${s.label}` : s.label} note={id === "changes" ? waiting || undefined : undefined} icon={<s.icon size={14} />} end={keys(`surface.${id}`)} onPick={() => (close(), onDock((d) => toggleTab(d, id)))} />;
-              })}
-              {SURFACES.filter((s) => !ROW.includes(s.id)).map((s) => (
-                <Row key={s.id} title={s.label} icon={<s.icon size={14} />} end={keys(`surface.${s.id}`)} onPick={() => (close(), onDock((d) => openTab(d, s.id)))} />
-              ))}
-              {apps.length > 0 && (
-                <>
-                  <Sep />
-                  <PanelHead>Your apps</PanelHead>
-                  {apps.map((a) => {
-                    const Icon = appIcon(a.panel?.icon);
-                    return <Row key={a.id} title={a.name} icon={<Icon size={14} />} onPick={() => (close(), onDock((d) => openTab(d, `app:${a.id}`)))} />;
-                  })}
-                </>
-              )}
-              <Sep />
-              {wall.current?.checkVisibility() === false && <Row title="The Wall" note="Every session at once" icon={<I.wall size={14} />} end={keys("wall")} onPick={() => (close(), openWall())} />}
-              <Row title={dock.open ? "Hide the panel" : "Show the panel"} icon={<I.dock size={14} />} onPick={() => (close(), onDock(toggleDock))} />
-            </>
-          )}
-        </Pop>
-      </div>
-      {/* The Wall isn't one of the session's panels: it sits apart, after them, and gives way first. App.tsx hears the event. */}
-      <span className="lc-sbar-sep lc-sbar-wall" aria-hidden />
-      <Tooltip className="lc-sbar-wall" content="The Wall: every session at once" shortcut={keys("wall")}>
-        <button ref={wall} type="button" className="lc-tb l-focus" aria-label="The Wall" onClick={openWall}>
-          <I.wall size={16} />
+      <Tooltip content={below ? "Hide the Terminal" : "Terminal, the bottom panel"} shortcut={keys("surface.terminal")}>
+        <button type="button" className="lc-tb lc-sbar-b l-focus" aria-label="Terminal" aria-pressed={below} onClick={onBelow}>
+          <I.panelBottom size={16} />
         </button>
       </Tooltip>
-    </>
+      {!panel && (
+        <Tooltip content="Show the panel">
+          <button type="button" className="lc-tb lc-sbar-b l-focus" data-panel-toggle aria-label="Show the panel" aria-pressed={false} onClick={onPanel}>
+            <I.dock size={16} />
+          </button>
+        </Tooltip>
+      )}
+    </div>
   );
 }
 

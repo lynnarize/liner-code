@@ -17,7 +17,7 @@
   color: var(--lc-creator-ink);
 }
 .lc-strip .lc-pb.lc-mode-creator {
-  height: 26px;
+  height: 28px;
   background: var(--lc-creator-fill);
 }
 @media (hover: hover) {

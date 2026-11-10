@@ -3,10 +3,11 @@
   as the rest: white paper, washes for grouping, one accent, nothing drawn round what isn't a card.
 */
 
-/* ---------- The row, at the top right of the session's bar ----------
+/* ---------- The row, at the right end of the session's header ----------
    Claude Code's: icon buttons of one size, grey, a wash under the one you point at and a plate
-   under the one that's open. Each icon is 16px at a whole-pixel offset (7px into 30), so its
-   strokes stay on the device pixels icons.tsx drew them for. */
+   under the one that's open: Run, the bottom panel's toggle and the right panel's (TopBar.tsx).
+   The panel's row ends with the same buttons (Panel.tsx). Each icon is 16px at a whole-pixel offset
+   (7px into 30), so its strokes stay on the device pixels icons.tsx drew them for. */
 .lc-sbar {
   display: inline-flex;
   flex: none;
@@ -24,44 +25,12 @@
   background: var(--l-line-2);
 }
 /*
-  In a narrow bar (two sessions beside each other) the row gives way to its ··· a button at a time,
-  which lists them (TopBar.tsx). Each step keeps 40px over what the title's least and the buttons
-  need, for a chip or the sidebar's button.
+  A bar that holds more than its column allows for (the Wall's way back, the crew, the apps' tabs)
+  takes its steps itself, measured (TopBar.tsx, useGiveWay): the way back's count, the crew down to
+  its faces, the mode chip, the crew, and the room between. While it measures, nothing in it
+  squeezes but the title, so what each part holds is what it needs.
 */
-@container lc-bar (max-width: 425px) {
-  .lc-sbar .lc-sbar-step1 {
-    display: none;
-  }
-}
-@container lc-bar (max-width: 391px) {
-  .lc-sbar .lc-sbar-step2 {
-    display: none;
-  }
-}
-@container lc-bar (max-width: 357px) {
-  .lc-sbar .lc-sbar-step3 {
-    display: none;
-  }
-}
-@container lc-bar (max-width: 323px) {
-  .lc-sbar .lc-sbar-step4,
-  .lc-sbar-sep {
-    display: none;
-  }
-}
-/*
-  A bar that holds more than its width allows for (the Wall's way back, the crew, the apps' tabs, the
-  Wall's button) takes the next steps itself, measured (TopBar.tsx, useGiveWay): a numbered one as
-  the width's step of that number does it, and the Wall's, the crew's and the room's between. While
-  it measures, nothing in it squeezes but the title, so what each part holds is what it needs.
-*/
-.lc-top[data-give~="wall"] .lc-sbar-wall,
-.lc-top[data-give~="1"] .lc-sbar .lc-sbar-step1,
-.lc-top[data-give~="1"] .lc-mode-chip,
-.lc-top[data-give~="2"] .lc-sbar .lc-sbar-step2,
-.lc-top[data-give~="3"] .lc-sbar .lc-sbar-step3,
-.lc-top[data-give~="4"] .lc-sbar .lc-sbar-step4,
-.lc-top[data-give~="4"] .lc-sbar-sep,
+.lc-top[data-give~="mode"] .lc-mode-chip,
 .lc-top[data-give~="faces"] .lc-crew-t,
 .lc-top[data-give~="crew"] .lc-crew-pop {
   display: none;
@@ -90,67 +59,15 @@
   background: var(--l-wash-2);
   color: var(--l-ink);
 }
-/* Open in the dock but not on screen: a dot under its icon. */
-.lc-sbar-b[data-behind]::after {
-  content: "";
-  position: absolute;
-  bottom: 3px;
-  left: 50%;
-  width: 3px;
-  height: 3px;
-  margin-left: -1.5px;
-  border-radius: 999px;
-  background: var(--l-ink-3);
+/* The panel's toggle says which way it goes by its place, not by a plate: shut, it's the session
+   header's last button; open, the panel row's, on the same spot. */
+.lc-sbar-b[data-panel-toggle][aria-pressed="true"] {
+  background: none;
 }
-/* The files waiting to be committed and pushed, in the action colour, on Changes' corner, cut out
-   of the paper by a ring so it reads apart from the icon. */
-.lc-tb-count {
-  position: absolute;
-  top: 1px;
-  right: 0;
-  min-width: 14px;
-  height: 14px;
-  box-sizing: border-box;
-  padding: 0 3.5px;
-  border-radius: 999px;
-  background: var(--lc-act);
-  box-shadow: 0 0 0 2px var(--lc-paper);
-  color: var(--lc-act-ink);
-  font-size: 9.5px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  line-height: 14px;
-  text-align: center;
-  pointer-events: none;
-  animation: lc-count-in 320ms var(--l-ease-enter) backwards;
-}
-@keyframes lc-count-in {
-  from {
-    opacity: 0;
-    filter: blur(3px);
-    scale: 0.8;
+@media (hover: hover) {
+  .lc-sbar-b[data-panel-toggle]:hover {
+    background: var(--l-wash);
   }
-}
-.lc-sbar-menu .lc-row-end {
-  font-size: 11.5px;
-}
-.lc-sbar-app {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.lc-sbar-app > .lc-row {
-  flex: 1;
-  min-width: 0;
-}
-.lc-sbar-pin {
-  flex: none;
-  margin-right: 4px;
-  color: var(--l-ink-4);
-}
-.lc-sbar-pin[aria-pressed="true"] {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
 }
 
 /* ---------- The dock: one or two panes, a strip over each ---------- */
@@ -159,9 +76,36 @@
   grid-template-columns: repeat(var(--panes, 1), minmax(0, 1fr));
   grid-template-rows: auto minmax(0, 1fr);
 }
+/* The strip is the panel's header, on the top row: 44 high, its last button 10px in from the
+   paper's edge, as the session header's is, so the panel's toggle keeps its place open or shut. */
 .lc-dockpanes > .lc-stabs {
   grid-row: 1;
   min-width: 0;
+  padding: 0 10px;
+}
+/* What starts the session's header (the sidebar's button), there only while the panel's row is the
+   paper's header: the full canvas, or a session too narrow for both (app.css, 700px). */
+.lc-stabs-lead {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+}
+.lc-session[data-wide] .lc-stabs-lead {
+  display: inline-flex;
+}
+@container lc-session (max-width: 700px) {
+  .lc-session[data-panel] .lc-stabs-lead {
+    display: inline-flex;
+  }
+}
+/* Changes' count of files to commit: quiet text beside its name, or its icon when the names give way. */
+.lc-stab-n {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--l-ink-3);
 }
 /* Each pane is what a surface's own narrow layouts measure, not the whole dock. */
 .lc-dockpanes > .lc-surface {
@@ -526,8 +470,8 @@
 .lc-view-b > svg {
   flex: none;
 }
-/* A narrow bar keeps the tabs' icons, and their row scrolls; so does one that measured itself to its
-   second step (no weightier than the width's, so a narrower bar's padding below still wins). */
+/* A narrow bar keeps the tabs' icons, and their row scrolls; so does one that measured itself to the
+   mode chip's step (no weightier than the width's, so a narrower bar's padding below still wins). */
 @container lc-bar (max-width: 391px) {
   .lc-view-b {
     flex: none;
@@ -536,7 +480,7 @@
     font-size: 0;
   }
 }
-:where(.lc-top[data-give~="2"]) .lc-view-b {
+:where(.lc-top[data-give~="mode"]) .lc-view-b {
   flex: none;
   gap: 0;
   padding: 0 7px;

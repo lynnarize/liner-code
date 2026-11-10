@@ -1,8 +1,8 @@
 /*
   Home: start a session. One question, the project it's about, and the composer with who works
-  on it, how hard they think and what they may do. Under it, one line of how it runs: this
-  checkout or a new worktree and the branch on the left, the mode (Standard, Workshop, yours) at
-  the right edge. Under that, quietly, the other ways to start: a scratch folder, a session to
+  on it, how hard they think and what they may do. In its tray, under the box, one line of how it
+  runs: this checkout or a new worktree and the branch on the left, the mode (Standard, Workshop,
+  yours) at the right edge. Under the tray, quietly, the other ways to start: a scratch folder, a session to
   carry on from Claude Code or Codex, and what the box takes. Behind it, two scrolls down, the
   Desk: every open session on one line, and the case for each decision that waits on you. In the
   corner, what's new: Liner Code's own update and the agent tools'.
@@ -209,14 +209,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
             <I.sidebar size={16} />
           </button>
         )}
-        <span className="lc-crumb">
-          <I.folder size={13} />
-          <span className="lc-crumb-n" title={project?.name}>
-            {project?.name ?? "No project"}
-          </span>
-          <span className="lc-quiet">/</span>
-          <b>New session</b>
-        </span>
+        {/* No breadcrumb: the headline names the project. The row stays, as the window's drag region. */}
         <span className="lc-grow" data-drag />
         <DeskPresence />
       </header>

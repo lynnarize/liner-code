@@ -25,6 +25,11 @@ export const isSidekickTool = (tool: string) => /^(?:mcp__liner__|liner[._]|mcp_
 */
 export const BRIEF_MARGIN_MS = 60_000;
 /**
+  The least time a brief is started with. One with less left on its call (the briefs before it in line used that up, or
+  the tool never waits long enough) isn't started at all: it would be cut as soon as it began.
+*/
+export const BRIEF_MIN_MS = 15_000;
+/**
   How long the lead's turn waits, once it ends, for a brief it stopped to wind down (its tool cancelling, its last edits,
   its after snapshot, its use logged) before the turn takes its own after snapshot. An ACP agent gets 15 seconds to cancel;
   one that never answers can't hold the turn past this.

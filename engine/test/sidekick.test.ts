@@ -7,7 +7,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,9 +19,10 @@ import { PAIR_ENV, toolsFor } from "../src/liner-tools.ts";
 import { providers, Runtime } from "../src/runtime.ts";
 import { ensureSampleProject } from "../src/providers/demo.ts";
 import type { OpenOptions, Provider, TurnSink } from "../src/providers/types.ts";
-import { BRIEF_MARGIN_MS, briefCap, isSidekickTool, leadRules, SIDEKICK_MS, sidekickResult, sidekickRules } from "../src/sidekick.ts";
+import { BRIEF_MARGIN_MS, BRIEF_MIN_MS, briefCap, isSidekickTool, leadRules, SIDEKICK_MS, sidekickResult, sidekickRules } from "../src/sidekick.ts";
 import { linerName, toolsNote } from "../src/runtime.ts";
 import { Store } from "../src/store.ts";
+import { startServer } from "../src/server.ts";
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 async function until(ok: () => boolean, what: string, ms = 3000) {
@@ -405,7 +406,9 @@ test("sidekick: it keeps its own session from brief to brief and across a restar
     assert.equal(side.opened[0].resume, undefined);
     assert.equal(first.store.thread("t").sessions?.[`@${SIDE}`], "codex:side-1");
     // Liner Code restarts: the next brief resumes the sidekick's session.
+    // As main.ts quits: the runtime stops, then the store's last save is written at once, not 120 ms on (over the next start's).
     first.runtime.shutdown();
+    first.store.flush();
     const second = pair({}, first.home);
     tools2 = second.tools;
     await second.runtime.send("t", "two");
@@ -496,6 +499,7 @@ test("sidekick: a lead whose tool waits less on a call than the cap gets a brief
   let asked: NodeJS.ProcessEnv | undefined;
   providers.claude.toolWait = (env) => ((asked = env), BRIEF_MARGIN_MS + 500);
   const { runtime, tools } = pair();
+  runtime.briefMinMs = 0;
   try {
     const t0 = Date.now();
     await runtime.send("t", "go");
@@ -645,6 +649,159 @@ test("sidekick: the first agent it tries to send of its own (Hermes's delegate_t
     await runtime.send("t", "again");
     assert.match(said[1], /finished the brief/);
     assert.equal(rows(store.timeline("t"))[1].agent?.state, "done");
+  } finally {
+    side.restore();
+    lead.restore();
+  }
+});
+
+test("sidekick: a brief that waited in line gets only what's left of the lead's wait on its call, so none outlives it (Claude Code: no toolWait)", async () => {
+  const side = fake("codex", async (_o, _t, sink, signal) => {
+    sink.text("Working.");
+    await nap(60_000, signal);
+  });
+  const done: { text: string; at: number }[] = [];
+  let t0 = 0;
+  const lead = fake("claude", async (o, _t, sink) => {
+    t0 = Date.now();
+    const call = (k: string) => hand(tools, o, sink, k, { brief: `brief ${k}` }).then((r) => (done.push({ text: r.text, at: Date.now() - t0 }), r));
+    await Promise.all([call("k1"), call("k2"), call("k3")]);
+  });
+  const { runtime, tools } = pair();
+  // Three briefs of up to 3 s each, in line behind one another, on a call the tool waits 4 s on (past the margin) at most.
+  runtime.sidekickMs = 3000;
+  runtime.linerWaitMs = BRIEF_MARGIN_MS + 4000;
+  runtime.briefMinMs = 0;
+  assert.equal(providers.claude.toolWait, undefined, "as Claude Code, Codex and OpenCode: Liner Code sets their wait");
+  try {
+    await runtime.send("t", "three things");
+    assert.equal(done.length, 3);
+    const [first, ...later] = done.sort((a, b) => a.at - b.at);
+    assert.match(first.text, /cap for one brief/);
+    // The ones that waited are cut to what's left, or don't start: before, each got its own full cap after its wait.
+    for (const r of later) assert.match(r.text, /the cap for one brief here: your tool gives up on a call|didn't start on it: nothing was done/, r.text);
+    assert.ok(done.at(-1)!.at < 4000 + 2500, `every answer came within the call's wait (the last at ${done.at(-1)!.at} ms), not 9 s on`);
+    assert.equal(side.seen.most, 1, "still one at a time");
+  } finally {
+    side.restore();
+    lead.restore();
+  }
+});
+
+test("sidekick: a brief whose session lost its sidekick while it waited in line is refused in plain words, and the one at work finishes", async () => {
+  let go = () => {};
+  const going = new Promise<void>((r) => (go = r));
+  const side = fake("codex", async (_o, text, sink) => {
+    await going;
+    sink.text(`did ${text}`);
+  });
+  const got: { text: string; isError: boolean }[] = [];
+  const lead = fake("claude", async (o, _t, sink) => {
+    got.push(...(await Promise.all([hand(tools, o, sink, "k1", { brief: "first" }), hand(tools, o, sink, "k2", { brief: "second" })])));
+  });
+  const { store, runtime, tools } = pair();
+  try {
+    const turn = runtime.send("t", "two things");
+    await until(() => rows(store.timeline("t"))[1]?.agent?.now === "Waiting for the brief before this one", "the second waits in line");
+    store.patchThread("t", { sidekick: undefined });
+    go();
+    await turn;
+    assert.match(got[0].text, /did first/);
+    assert.equal(got[1].isError, true);
+    assert.match(got[1].text, /^This session has no sidekick now/);
+    assert.doesNotMatch(got[1].text, /TypeError|undefined/);
+    assert.equal(side.opened.length, 1, "the second never opened a session");
+    const second = rows(store.timeline("t"))[1];
+    assert.equal(second.agent?.state, "stopped");
+    assert.equal(second.agent?.report, "This session has no sidekick now.");
+  } finally {
+    side.restore();
+    lead.restore();
+  }
+});
+
+test("sidekick: when the lead's tool cancels its call (it gave up waiting), the brief at work is stopped through Liner Code's MCP server", async () => {
+  let started = false;
+  const side = fake("codex", async (_o, _t, sink, signal) => {
+    started = true;
+    sink.text("Working.");
+    await nap(60_000, signal);
+  });
+  let replies: { id?: number; result?: unknown }[] = [];
+  const lead = fake("claude", async (o, _t, sink) => {
+    sink.tool({ key: "k1", tool: "mcp__liner__sidekick", toolKind: "other", title: "Sidekick", input: JSON.stringify({ brief: "long" }), status: "running" });
+    // The tool's own MCP client, as Claude Code runs it: a call, then notifications/cancelled for it once it gives up.
+    const child = spawn(o.mcp!.command, o.mcp!.args, { env: { ...process.env, ...o.mcp!.env }, stdio: ["pipe", "pipe", "inherit"] });
+    try {
+      let out = "";
+      child.stdout.on("data", (d: Buffer) => void (out += d));
+      const lines = () => out.split("\n").filter(Boolean).map((l) => JSON.parse(l) as { id?: number; result?: unknown });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "sidekick", arguments: { brief: "long" } } })}\n`);
+      await until(() => started, "the brief is at work", 10_000);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 7, reason: "timed out" } })}\n`);
+      await until(() => side.seen.stopped === 1, "the brief is stopped", 10_000);
+      // A ping after: its answer comes, and nothing ever came for the call it cancelled.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 8, method: "ping" })}\n`);
+      await until(() => lines().some((m) => m.id === 8), "the ping is answered", 10_000);
+      await tick(100);
+      replies = lines().filter((m) => m.id !== undefined);
+    } finally {
+      child.kill();
+    }
+    sink.tool({ key: "k1", tool: "mcp__liner__sidekick", toolKind: "other", title: "Sidekick", status: "failed" });
+  });
+  const { store, runtime, tools } = pair();
+  // The engine's /surface, as main.ts serves it.
+  const server = await startServer({ store, api: { call: async () => null, ready: Promise.resolve() }, snapshot: async () => ({}) as never, token: "t", port: 0, surface: (key, tool, args, gone) => {
+    const id = tools.threadOf(key);
+    return id ? tools.call(id, tool, args, gone) : null;
+  } });
+  tools.url = `http://127.0.0.1:${server.port}`;
+  try {
+    const t0 = Date.now();
+    await runtime.send("t", "go");
+    assert.ok(Date.now() - t0 < 20_000, "not the 10 minutes");
+    assert.equal(side.seen.stopped, 1, "the brief was stopped");
+    assert.deepEqual(replies.map((m) => m.id), [8], "no answer to a cancelled call, as MCP has it");
+    assert.equal(rows(store.timeline("t"))[0].agent?.state, "stopped");
+  } finally {
+    server.close();
+    side.restore();
+    lead.restore();
+  }
+});
+
+test("sidekick: a brief whose call has less than the least time left once it's out of line (BRIEF_MIN_MS) isn't started, and is refused before then", async () => {
+  assert.equal(new Runtime(new Store(mkdtempSync(join(tmpdir(), "lc-sk-"))), process.env).briefMinMs, BRIEF_MIN_MS);
+  assert.equal(BRIEF_MIN_MS, 15_000);
+  let ran = 0;
+  const side = fake("codex", async (_o, text, sink, signal) => {
+    ran++;
+    await nap(2000, signal);
+    sink.text(`did ${text}`);
+  });
+  const got: { text: string; isError: boolean; at: number }[] = [];
+  let t0 = 0;
+  const lead = fake("claude", async (o, _t, sink) => {
+    t0 = Date.now();
+    const call = (k: string, brief: string) => hand(tools, o, sink, k, { brief }).then((r) => (got.push({ ...r, at: Date.now() - t0 }), r));
+    await Promise.all([call("k1", "first"), call("k2", "second")]);
+  });
+  const { store, runtime, tools } = pair();
+  // Each call has 3 s, and a brief needs 1.5 s of it: the first takes 2 s, so the second, in line, would start with 1 s.
+  runtime.linerWaitMs = BRIEF_MARGIN_MS + 3000;
+  runtime.briefMinMs = 1500;
+  try {
+    await runtime.send("t", "two things");
+    const [refused, done] = got.sort((a, b) => a.at - b.at);
+    assert.equal(done.isError, false, done.text);
+    assert.match(done.text, /did first/);
+    assert.equal(refused.isError, true);
+    assert.match(refused.text, /didn't start on it: nothing was done/);
+    assert.ok(refused.at < 1900, `refused once too little was left (at ${refused.at} ms), not after the first brief`);
+    assert.equal(ran, 1, "the second never ran");
+    const row = rows(store.timeline("t"))[1];
+    assert.deepEqual([row.agent?.state, row.agent?.report], ["stopped", "No time was left for it."]);
   } finally {
     side.restore();
     lead.restore();

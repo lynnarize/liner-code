@@ -1245,11 +1245,15 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const leadName = !lead || !leadWho ? "" : isModelAgent(lead) ? label(lead.slice(1)) : leadWho.name;
   const leadShort = lead && isModelAgent(lead) ? shortName(leadName) : leadName;
 
-  /** One model or agent, from the lists: no sidekick, and the panel closes. Shift-click adds a model to compare instead. */
+  /**
+    One model or agent, from the lists: no sidekick, and the panel closes. Shift-click adds a model to
+    compare instead: a comparison gives each model the ask alone, so a pair's lead goes on without its sidekick.
+  */
   const pickOne = (ref: string, how: { shiftKey: boolean }) => {
     const id = `@${ref}`;
     if (how.shiftKey && onCompare) {
-      if (settings.agent === id && !settings.sidekick) return;
+      if (settings.sidekick) onSettings({ sidekick: undefined });
+      if (settings.agent === id) return;
       onCompare(compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id].slice(0, 3));
       return;
     }
@@ -1301,7 +1305,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   );
   const compareLine = onCompare && (
     <p className="lc-who-note lc-who-foot">
-      {compare.length ? `Sending to ${compare.length + 1}: each gets its own session and worktree from ${project.branch ?? "main"}. When they finish, compare and keep one.` : "Shift-click more models to give them the same ask, side by side."}
+      {compare.length ? `Sending to ${compare.length + 1}: each gets its own session and worktree from ${project.branch ?? "main"}. When they finish, compare and keep one.` : settings.sidekick ? "Shift-click more models to give them the same ask, side by side: each works alone, without the sidekick." : "Shift-click more models to give them the same ask, side by side."}
     </p>
   );
   const oneValue = isModelAgent(settings.agent) && !settings.sidekick ? settings.agent.slice(1) : undefined;

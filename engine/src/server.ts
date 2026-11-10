@@ -23,7 +23,8 @@ const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".j
 
 type Api = { call(method: string, params: unknown): Promise<unknown>; ready: Promise<unknown> };
 type Hooks = (id: string, key: string, body: unknown, headers: Record<string, string>) => boolean;
-type Surface = (key: string, tool: string, args: Record<string, unknown>) => Promise<unknown> | null;
+/** `gone`: the caller let go of the call before its answer (its tool cancelled it, or its MCP server went away). */
+type Surface = (key: string, tool: string, args: Record<string, unknown>, gone?: AbortSignal) => Promise<unknown> | null;
 type Outside = Surface;
 /** A panel being checked out of sight (agent-tools.ts): its page, its bridge's calls, its report, and word once it has settled. */
 type Check = { page(token: string): string | null; call(token: string, body: Record<string, unknown>): Promise<unknown>; report(token: string, body: unknown): void; settle(token: string): Promise<void> };
@@ -122,7 +123,9 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       if (!take) return void res.writeHead(404).end();
       try {
         const { tool, args } = (await body(req)) as { tool?: string; args?: Record<string, unknown> };
-        const work = take(String(req.headers[outside ? "x-liner-outside" : "x-liner-surface"] ?? ""), String(tool ?? ""), args ?? {});
+        const gone = new AbortController();
+        res.on("close", () => res.writableEnded || gone.abort());
+        const work = take(String(req.headers[outside ? "x-liner-outside" : "x-liner-surface"] ?? ""), String(tool ?? ""), args ?? {}, gone.signal);
         if (!work) return void res.writeHead(401).end("Unauthorized");
         // A call can wait on you (an add-on's install card) for minutes: the answer starts at once and a
         // space goes every 20 seconds, which JSON reads past, so the caller's fetch doesn't give up on it.

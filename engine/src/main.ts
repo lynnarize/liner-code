@@ -143,9 +143,9 @@ const server = await startServer({
   snapshot: () => api.call("state.get", {}) as never,
   // Routines switched off: a webhook finds nothing (404) and fires nothing.
   hooks: ROUTINES_ON ? (id, key, body, headers) => routines.webhook(id, key, body, headers) : undefined,
-  surface: (key, tool, args) => {
+  surface: (key, tool, args, gone) => {
     const threadId = key ? tools.threadOf(key) : undefined;
-    return threadId ? tools.call(threadId, tool, args) : null;
+    return threadId ? tools.call(threadId, tool, args, gone) : null;
   },
   outside: (key, tool, args) => (outside.now?.allows(key) ? outside.now.call(tool, args) : null),
   check: { page: (t) => tools.checkPage(t), call: (t, b) => tools.checkCall(t, b), report: (t, b) => tools.checkReport(t, b as never), settle: (t) => tools.checkSettle(t) },

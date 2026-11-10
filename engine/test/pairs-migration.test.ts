@@ -163,3 +163,72 @@ test("pairs: the state from before is kept once beside state.json, and a later r
   new Store(fresh);
   assert.equal(existsSync(join(fresh, BEFORE_PAIRS)), false);
 });
+
+test("pairs: a session that can't be moved is left as it was and logged, and the rest still move; saved picks of null are none", (t) => {
+  const logged = t.mock.method(console, "error", () => {});
+  const h = home({
+    settings: { onboarded: true, mode: "plan", picks: null },
+    threads: [
+      // A planner with no builder: led by its planner, one model.
+      thread("nobuilder", { lead: "@claude:claude-opus-5-5", agent: undefined }),
+      // Saved oddly enough that moving it throws.
+      thread("odd", { lead: "@claude:claude-opus-5-5", agent: 42, ...saved }),
+      thread("bare", { lead: "@claude:claude-opus-5-5", agent: "@codex:gpt-6-sol", ...saved }),
+    ],
+  });
+  const store = h.store();
+  assert.deepEqual([of(store, "nobuilder").agent, of(store, "nobuilder").sidekick], ["@claude:claude-opus-5-5", undefined]);
+  const odd = of(store, "odd") as Thread & { lead?: string; leadSession?: string };
+  assert.deepEqual([odd.agent, odd.lead, odd.leadSession, odd.sessions], [42, "@claude:claude-opus-5-5", "claude:l1", saved.sessions], "left as it was");
+  assert.ok(logged.mock.calls.some((c) => /session "odd" didn't move to pairs/.test(String(c.arguments[0]))), "and said so");
+  assert.deepEqual([of(store, "bare").agent, of(store, "bare").sidekick], ["@claude:claude-opus-5-5", "codex:gpt-6-sol"]);
+  assert.equal("picks" in store.settings, false);
+  assert.deepEqual([store.settings.start, store.settings.pairVersion], ["pair", 1]);
+  // On disk too: the next start doesn't move them again.
+  const disk = JSON.parse(readFileSync(join(h.dir, "state.json"), "utf8")) as { settings: { pairVersion?: number } };
+  assert.equal(disk.settings.pairVersion, 1);
+});
+
+test("pairs: the state is marked moved only once it has moved: the saves before (settling, the four levels) leave it unmarked on disk", () => {
+  // Settling and the four levels each save the state before the move to pairs; the .bak beside state.json is the last of
+  // those saves, what a start that failed in toPairs would have left. It must not say pairs were done, or they never would be.
+  const h = home({ settings: { onboarded: true, mode: "plan", defaultAccess: "ask" }, threads: [thread("bare", { lead: "@claude:claude-opus-5-5", agent: "@codex:gpt-6-sol" })] });
+  const store = h.store();
+  const before = JSON.parse(readFileSync(join(h.dir, "state.json.bak"), "utf8")) as { settings: Record<string, unknown>; threads: Record<string, unknown>[] };
+  assert.deepEqual([before.settings.settleVersion, before.settings.accessVersion], [2, 2], "the saves before it ran");
+  assert.equal(before.settings.pairVersion, undefined);
+  assert.equal(before.threads[0].lead, "@claude:claude-opus-5-5", "nothing moved yet");
+  // Started again from that state, it moves.
+  writeFileSync(join(h.dir, "state.json"), JSON.stringify(before));
+  const again = h.store();
+  assert.deepEqual([of(again, "bare").agent, of(again, "bare").sidekick, again.settings.pairVersion], ["@claude:claude-opus-5-5", "codex:gpt-6-sol", 1]);
+  assert.equal(store.settings.pairVersion, 1);
+});
+
+test("pairs: a Refine's own conversation goes from every session, so a sidekick of that model never resumes it; the lead's stays", () => {
+  const store = home({
+    settings: { onboarded: true, mode: "solo" },
+    threads: [
+      thread("refined", { after: "refine", providerSession: "claude:s1", sessions: { "@claude:claude-opus-5-5": "claude:r1", forge: "codex:f1" } }),
+      thread("only", { after: "refine", providerSession: "claude:s2", sessions: { "@claude:claude-opus-5-5": "claude:r2" } }),
+    ],
+  }).store();
+  assert.deepEqual([of(store, "refined").providerSession, of(store, "refined").sessions], ["claude:s1", { forge: "codex:f1" }]);
+  assert.equal(of(store, "only").providerSession, "claude:s2");
+  assert.ok(!("sessions" in of(store, "only")), "none left, none kept");
+});
+
+test("pairs: a saved session that isn't one (null, a number, a list) is left out, and the engine still starts and moves the rest", (t) => {
+  const logged = t.mock.method(console, "error", () => {});
+  // From before the four levels and before settling too, so every move reads the sessions.
+  const h = home({ settings: { onboarded: true, mode: "plan", accessVersion: 1, settleVersion: 1 }, threads: [null, 42, "odd", [], thread("bare", { lead: "@claude:claude-opus-5-5", agent: "@codex:gpt-6-sol", status: "running" })] });
+  const store = h.store();
+  assert.deepEqual(store.threads.map((x) => x.id), ["bare"]);
+  const bare = of(store, "bare");
+  assert.deepEqual([bare.agent, bare.sidekick, bare.status, bare.unread], ["@claude:claude-opus-5-5", "codex:gpt-6-sol", "idle", true]);
+  assert.equal(store.settings.pairVersion, 1);
+  assert.ok(logged.mock.calls.some((c) => /4 saved session\(s\) that weren't sessions left out/.test(String(c.arguments[0]))), "and said so");
+  // Saved without them: the next start reads only sessions.
+  assert.deepEqual((JSON.parse(readFileSync(join(h.dir, "state.json"), "utf8")) as { threads: { id: string }[] }).threads.map((x) => x.id), ["bare"]);
+  assert.deepEqual(h.store().threads.map((x) => x.id), ["bare"]);
+});

@@ -6,7 +6,7 @@
 */
 import { useEffect, useId, useMemo, useRef, type ReactNode, type Ref } from "react";
 import type { ModelPicks, ProviderInfo, Settings as EngineSettings } from "@contracts";
-import { castOf, makerOf, reviewerOf, SMALL_CHANGE, startOf } from "@contracts";
+import { castOf, frontierClass, makerOf, reviewerOf, SMALL_CHANGE, startOf } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
@@ -47,11 +47,12 @@ function usePair() {
   return useMemo(() => {
     const picks = myPicks(settings);
     const cast = castOf(providers, { picks });
-    // What each part is when you leave it to Liner Code.
-    const auto = castOf(providers);
     const lead = cast?.lead;
     const side = cast?.sidekick;
-    return { providers, settings, picks, cast, auto, lead, side, two: Boolean(lead && side && lead !== side), label: (ref: string) => modelLabel(ref, providers) };
+    // What a part lands on left automatic, beside your pick for the other (a sidekick for a picked lead isn't it; with no frontier model ready a lead is the sidekick).
+    const fall = { lead: castOf(providers, { picks: { ...picks, lead: undefined } })?.lead, sidekick: castOf(providers, { picks: { ...picks, sidekick: undefined } })?.sidekick };
+    const models = providers.filter((p) => p.available && p.adapter && p.id !== "demo").reduce((n, p) => n + p.models.length, 0);
+    return { providers, settings, picks, cast, fall, models, lead, side, two: Boolean(lead && side && lead !== side), label: (ref: string) => modelLabel(ref, providers) };
   }, [providers, settings]);
 }
 type Pair = ReturnType<typeof usePair>;
@@ -121,7 +122,26 @@ function Pick({ c, title, part, fallback, disabled }: { c: Pair; title: string; 
     ),
   };
   if (disabled) return <span className="lc-ag-who lc-quiet">{fallback ? c.label(fallback) : "None"}</span>;
-  return <ModelPop label={title} value={c.picks[part] ?? "auto"} choices={[automatic]} width={440} onPick={(v) => savePick(c.settings, part, v === "auto" ? undefined : v)} />;
+  const pick = (v: string) => {
+    const ref = v === "auto" ? undefined : v;
+    if (part !== "checker" && oneModelPair(c, part, ref)) return part === "lead" ? toast("The lead and its sidekick are two different models", { description: "Pick another sidekick first, or another lead." }) : toast("The lead and its sidekick are two different models", { description: `${c.lead ? c.label(c.lead) : "The lead"} leads: pick another model to work for it.` });
+    savePick(c.settings, part, ref);
+  };
+  return <ModelPop label={title} value={c.picks[part] ?? "auto"} choices={[automatic]} width={440} onPick={pick} />;
+}
+
+/**
+  A pair is two models, as the composer holds it: a pick that would make the lead and the sidekick the same
+  model is refused, while more than one model is ready (with one, both are it, and the page says so).
+  An automatic lead with no frontier model to take is the sidekick, whichever it is (castOf): that's Liner
+  Code's one model, not a clash, so then a sidekick you pick is held to the lead shown now.
+*/
+function oneModelPair(c: Pair, part: "lead" | "sidekick", ref: string | undefined) {
+  const picks = { ...c.picks, [part]: ref };
+  const next = castOf(c.providers, { picks });
+  if (!next || next.lead !== next.sidekick || c.models < 2) return false;
+  if ((!picks.lead || gone(c, picks.lead)) && !frontierClass(next.lead)) return part === "sidekick" && ref === c.lead;
+  return true;
 }
 
 /** A pick whose tool went away is automatic until it's back. */
@@ -160,12 +180,12 @@ function YourPair({ c }: { c: Pair }) {
       <div className="lc-frame">
         <div className="lc-fcard lc-st-card lc-ag-pair">
           <Line title="Lead" note={<>Plans, takes the judgment calls and reviews the sidekick's work.{gone(c, picks.lead) ? " Your pick's tool isn't ready, so it's automatic for now." : ""}</>}>
-            <Pick c={c} title="Lead model" part="lead" fallback={c.auto?.lead} />
+            <Pick c={c} title="Lead model" part="lead" fallback={c.fall.lead} />
           </Line>
           <Line title="Sidekick" note={<>Does the work the lead hands it: edits it can specify, the same change across files, slow test runs.{gone(c, picks.sidekick) ? " Your pick's tool isn't ready, so it's automatic for now." : ""}</>}>
-            <Pick c={c} title="Sidekick model" part="sidekick" fallback={c.auto?.sidekick} />
+            <Pick c={c} title="Sidekick model" part="sidekick" fallback={c.fall.sidekick} />
           </Line>
-          <Line title="New sessions start with" note={two ? lines[shown] : lead ? `A pair needs a second model, and ${label(lead)} is the only one ready. Sign in to another tool, or add an API endpoint in Settings › Models.` : "No model is ready yet."} below>
+          <Line title="New sessions start with" note={two ? lines[shown] : lead && c.models > 1 ? `No model of a lead's class is ready, so ${label(lead)} does it all. Pick a lead above for a pair.` : lead ? `A pair needs a second model, and ${label(lead)} is the only one ready. Sign in to another tool, or add an API endpoint in Settings › Models.` : "No model is ready yet."} below>
             <Segmented
               size="sm"
               value={shown}

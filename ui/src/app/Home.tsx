@@ -63,9 +63,20 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   const pick = (m: SessionMode) => setSessionMode(m);
   const [worktree, setWorktree] = useState(worktrees);
   const [compare, setCompare] = useState<string[]>([]);
+  // A comparison gives each model the ask alone: a sidekick set (Pair picked) drops the models picked to compare.
+  useEffect(() => {
+    if (settings.sidekick) setCompare([]);
+  }, [settings.sidekick]);
   const [base, setBase] = useState<string | undefined>();
   const [inWorktree, setInWorktree] = useState<{ path: string; branch?: string } | undefined>();
-  useEffect(() => setSettings(initial), [initial]);
+  // A new default (a tool done detecting, a pick in Settings) replaces who's picked here, but not a comparison you're building in this project.
+  const building = useRef({ project: project?.id, compare });
+  useEffect(() => void (building.current.compare = compare));
+  useEffect(() => {
+    const same = building.current.project === project?.id;
+    building.current.project = project?.id;
+    if (!same || !building.current.compare.length) setSettings(initial);
+  }, [initial]);
   useEffect(() => {
     setCompare([]);
     setBase(undefined);

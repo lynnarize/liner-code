@@ -29,7 +29,7 @@ import { codex } from "./providers/codex.ts";
 import { demo } from "./providers/demo.ts";
 import { endpointProvider } from "./providers/endpoint.ts";
 import { askEndpoint, PLAIN_SOUL } from "./providers/plain.ts";
-import { ResumeFailed, type Provider, type ProviderSession, type TurnSink, type ToolUpdate, type WakeTurn } from "./providers/types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, type Provider, type ProviderSession, type TurnSink, type ToolUpdate, type WakeTurn } from "./providers/types.ts";
 import { attachNote } from "./providers/attachments.ts";
 import type { AgentTools } from "./agent-tools.ts";
 import { fingerprint, type Addons, type Connection } from "./addons.ts";
@@ -38,7 +38,7 @@ import { modeNote } from "./creator.ts";
 import { memoryNote } from "./memory.ts";
 import { commandRisk, plainGit, readsOnly, ruleFor } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
-import { BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, type BriefOutcome } from "./sidekick.ts";
+import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, type BriefOutcome } from "./sidekick.ts";
 
 export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, demo };
 
@@ -212,6 +212,10 @@ export class Runtime {
   private lined = new Map<string, { threadId: string; stop: AbortController }>();
   /** How long one brief may run (SIDEKICK_MS), here so a test can shorten it. */
   sidekickMs = SIDEKICK_MS;
+  /** The least time a brief is started with (BRIEF_MIN_MS), here so a test can shorten it. */
+  briefMinMs = BRIEF_MIN_MS;
+  /** How long a lead's tool waits on a call to Liner Code's tools unless it says less (LINER_WAIT_SEC), here so a test can shorten it. */
+  linerWaitMs = LINER_WAIT_SEC * 1000;
   /** How long a turn waits for the briefs it stopped to wind down (BRIEF_WIND_MS), here so a test can shorten it. */
   briefWindMs = BRIEF_WIND_MS;
   /** How long the Reviewer may take over one read (REVIEW_MS), here so a test can shorten it. */
@@ -1361,9 +1365,10 @@ export class Runtime {
     The lead's `sidekick` call (agent-tools.ts): the brief runs as one turn of the sidekick's own
     session (runBrief), one brief at a time in a thread, and the lead reads back how it went
     (sidekickResult). Only in the lead's own running turn, which waits on the call: Stop stops the
-    brief too, waiting or at work, and so does the turn ending, since nothing would read it then.
+    brief too, waiting or at work, and so does the turn ending, since nothing would read it then, and
+    so does `gone`: the lead's tool cancelling the call (it gave up on it), or its MCP server going away.
   */
-  async delegate(threadId: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }> {
+  async delegate(threadId: string, args: Record<string, unknown>, gone?: AbortSignal): Promise<{ text: string; isError?: boolean }> {
     const t = this.store.threads.find((x) => x.id === threadId);
     if (!t || !this.pairOf(t)) return { text: "This session has no sidekick, so there's no one to hand this to. Do it yourself.", isError: true };
     const lead = this.turns.get(threadId);
@@ -1371,16 +1376,20 @@ export class Runtime {
     const brief = String(args.brief ?? "").trim();
     if (!brief) return { text: "Write the brief: the goal, the constraints and how to tell it's done.", isError: true };
     const doneWhen = String(args.done_when ?? "").trim() || undefined;
-    // The lead's tool may give up on this call before the cap (Hermes takes its limit from your config, which stays yours): the
-    // brief then ends in time for the answer to reach it, counted from now, since the call's wait has begun, in line or not.
+    // The lead's tool gives up on this call after its wait: Liner Code's (LINER_WAIT_SEC), which it sets in Claude Code, Codex
+    // and OpenCode, or less where it can't (Hermes takes its limit from your config, which stays yours). The brief ends in time
+    // for the answer to reach it, counted from now, since the call's wait has begun, in line or not: one that waited behind
+    // others gets what's left of it, so the lead never gives up on a brief that then goes on writing beside it.
     const { provider } = this.resolve(t);
-    const tight = briefCap(providers[provider]?.toolWait?.(this.envFor(provider)), this.sidekickMs);
-    const by = tight < this.sidekickMs ? Date.now() + tight : undefined;
+    const wait = providers[provider]?.toolWait?.(this.envFor(provider));
+    const by = Date.now() + briefCap(wait && wait > 0 ? wait : this.linerWaitMs, Infinity);
     const row = await this.sidekickRow(threadId, lead, brief);
     const stop = new AbortController();
     this.lined.set(row.taskId, { threadId, stop });
     const end = () => stop.abort();
     lead.abort.signal.addEventListener("abort", end, { once: true });
+    if (gone?.aborted) stop.abort();
+    else gone?.addEventListener("abort", end, { once: true });
     (lead.ends ??= new Set()).add(end);
     // Its own end, for the lead's turn to wait on once it has stopped it.
     let wound = () => {};
@@ -1394,17 +1403,29 @@ export class Runtime {
     const mine = new Promise<void>((r) => (release = r));
     const line = before.then(() => mine);
     this.briefLine.set(threadId, line);
+    // Waiting in line ends when the time this call has left gets too short for a brief (BRIEF_MIN_MS): then none starts.
+    let late: NodeJS.Timeout | undefined;
     try {
       if (waits) row.paint({ state: "running", now: "Waiting for the brief before this one" }, true);
-      if (!stop.signal.aborted) await Promise.race([before, new Promise((r) => stop.signal.addEventListener("abort", r, { once: true }))]);
-      const capMs = by === undefined ? this.sidekickMs : by - Date.now();
-      if (capMs <= 0 && !stop.signal.aborted) {
-        row.paint({ name: "Sidekick", task: taskOf(brief), brief, model: t.sidekick, state: "stopped", now: undefined, report: "No time was left for it.", files: [] }, true, "failed");
-        return { text: "Your tool gives up on a call to Liner Code's tools sooner than this brief could run (or the brief before it used that time up), so the sidekick didn't start on it: nothing was done. Do it yourself, or call it again with a smaller brief.", isError: true };
+      if (!stop.signal.aborted) await Promise.race([before, new Promise((r) => stop.signal.addEventListener("abort", r, { once: true })), new Promise((r) => (late = setTimeout(r, Math.max(0, by - this.briefMinMs - Date.now()))))]);
+      // The sidekick may have been taken off the session while this brief waited (runBrief runs the one it has now).
+      const now = this.store.threads.find((x) => x.id === threadId);
+      if (!now?.sidekick || !this.pairOf(now)) {
+        row.paint({ name: "Sidekick", task: taskOf(brief), brief, state: "stopped", now: undefined, report: "This session has no sidekick now.", files: [] }, true, "failed");
+        return { text: "This session has no sidekick now (it was taken off while this brief waited), so nothing was done. Do it yourself.", isError: true };
       }
-      const out = await this.runBrief(threadId, lead.turn, row, { brief, doneWhen, fresh: args.fresh === true, ...(by === undefined ? {} : { capMs }) }, stop.signal);
+      const left = by - Date.now();
+      if (left < this.briefMinMs && !stop.signal.aborted) {
+        row.paint({ name: "Sidekick", task: taskOf(brief), brief, model: now.sidekick, state: "stopped", now: undefined, report: "No time was left for it.", files: [] }, true, "failed");
+        return { text: "Your tool gives up on a call to Liner Code's tools sooner than this brief could run (or the briefs before it used that time up), so the sidekick didn't start on it: nothing was done. Do it yourself, or call it again with a smaller brief.", isError: true };
+      }
+      // The usual cap, or the time this call has left when that's less: the lead is then told the cap that held.
+      const capMs = left < this.sidekickMs ? left : undefined;
+      const out = await this.runBrief(threadId, lead.turn, row, { brief, doneWhen, fresh: args.fresh === true, ...(capMs === undefined ? {} : { capMs }) }, stop.signal);
       return { text: sidekickResult(out), isError: out.how === "failed" };
     } finally {
+      clearTimeout(late);
+      gone?.removeEventListener("abort", end);
       lead.abort.signal.removeEventListener("abort", end);
       lead.ends?.delete(end);
       lead.winding?.delete(winding);

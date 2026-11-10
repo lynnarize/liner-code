@@ -176,7 +176,7 @@ export type AddonHost = {
   whoIs(threadId: string): string;
   toolOf(threadId: string): { label: string; family: string };
   /** A pair's lead hands its sidekick a brief: the runtime runs it and says how it went (sidekick.ts). */
-  delegate?(threadId: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }>;
+  delegate?(threadId: string, args: Record<string, unknown>, gone?: AbortSignal): Promise<{ text: string; isError?: boolean }>;
 };
 
 /** The agent tools a connection reaches, by family, and whether each takes one in mid-session. */
@@ -331,8 +331,8 @@ export class AgentTools {
   }
 
 
-  /** `threadId` as threadOf gave it: a sidekick's key names its thread with AS_SIDEKICK after it. */
-  async call(threadId: string, tool: string, args: Record<string, unknown>): Promise<McpResult> {
+  /** `threadId` as threadOf gave it: a sidekick's key names its thread with AS_SIDEKICK after it. `gone`: its caller let go of the call. */
+  async call(threadId: string, tool: string, args: Record<string, unknown>, gone?: AbortSignal): Promise<McpResult> {
     const sidekick = threadId.endsWith(AS_SIDEKICK);
     if (sidekick) threadId = threadId.slice(0, -AS_SIDEKICK.length);
     try {
@@ -341,7 +341,7 @@ export class AgentTools {
           // The sidekick never hands work on: it would wait on itself.
           if (sidekick) return fail("You are the sidekick here: do the brief yourself.");
           if (!this.host?.delegate) return fail("This session has no sidekick to hand work to.");
-          const r = await this.host.delegate(threadId, args);
+          const r = await this.host.delegate(threadId, args, gone);
           return r.isError ? fail(r.text) : text(r.text);
         }
         case "browser_open": {

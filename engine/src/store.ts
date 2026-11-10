@@ -74,7 +74,7 @@ export function loadState<T = State>(file: string): Partial<T> {
   }
 }
 
-export const defaultSettings: Settings = { onboarded: false, claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "auto", worktrees: false, branchPrefix: "liner/", badge: true, budgetUsd: 0, settleOnMerge: false, settleOnRoutine: false, settleVersion: 2, accessVersion: 2, pairVersion: 1 };
+export const defaultSettings: Settings = { onboarded: false, claudeBilling: "plan", settleDays: 0, notify: true, guardDestructive: true, defaultAccess: "auto", worktrees: false, branchPrefix: "liner/", badge: true, budgetUsd: 0, settleOnMerge: false, settleOnRoutine: false, settleVersion: 2, accessVersion: 2 };
 
 /**
   Settings and sessions from before permissions came down to four, moved once: a default that was
@@ -116,10 +116,22 @@ type OldThread = Thread & {
   cost test is archived. Settings' Solo starts new sessions fast, Plan and Auto as a pair; your
   frontier model is your lead and your cheaper one your sidekick (Dual frontier's second goes),
   and the old fields are dropped once read. This is the one place that still reads them.
+  A session saved so oddly that moving it fails is left as it was and logged, so one odd session
+  can't stop the engine (a planner with no builder just leads alone). Every session's saved conversations of other models ("@<ref>", a
+  Refine's) go too: a sidekick is kept under that same key and would resume one as its own.
 */
 export function toPairs(s: { settings: OldSettings; threads: OldThread[]; agents: AgentProfile[] }): Pick<State, "settings" | "threads"> {
-  const bare = (id: string) => (id.startsWith("@") ? id.slice(1) : s.agents.find((a) => a.id === id)?.model);
-  const threads = s.threads.map((old) => {
+  const bare = (id?: string) => (!id ? undefined : id.startsWith("@") ? id.slice(1) : s.agents.find((a) => a.id === id)?.model);
+  const threads = s.threads.map((old): Thread => {
+    try {
+      return pairOf(old);
+    } catch (e) {
+      // Its id as JSON: whatever was saved as one, saying so can't throw too.
+      console.error(`[store] session ${JSON.stringify(old?.id)} didn't move to pairs (${e instanceof Error ? e.message : String(e)}); left as it was`);
+      return old;
+    }
+  });
+  function pairOf(old: OldThread): Thread {
     const { lead, leadSession: _ls, route, dual: _d, after, checks, trial, ...t } = old;
     const moved: Thread = { ...t };
     let pair: { agent: string; sidekick?: string } | undefined;
@@ -135,6 +147,12 @@ export function toPairs(s: { settings: OldSettings; threads: OldThread[]; agents
       pair = { agent: `@${strong}`, sidekick: everyday && everyday !== strong ? everyday : undefined };
       delete moved.model;
     }
+    // A Refine's own conversation, under the key a sidekick of that model keeps its own: it would resume it. The lead's is providerSession.
+    if (moved.sessions) {
+      const kept = Object.fromEntries(Object.entries(moved.sessions).filter(([k]) => !k.startsWith("@")));
+      if (Object.keys(kept).length) moved.sessions = kept;
+      else delete moved.sessions;
+    }
     if (pair) {
       moved.agent = pair.agent;
       if (pair.sidekick) moved.sidekick = pair.sidekick;
@@ -149,8 +167,10 @@ export function toPairs(s: { settings: OldSettings; threads: OldThread[]; agents
     if ((after === "off" || checks?.by === null) && moved.review === undefined) moved.review = false;
     if (trial) moved.archived = true;
     return moved;
-  });
-  const { mode, dual: _d, after, route: _r, approvePlans: _a, picks: old = {}, ...rest } = s.settings;
+  }
+  // Saved as null, picks are none: a default in the pattern only stands in for undefined.
+  const { mode, dual: _d, after, route: _r, approvePlans: _a, picks: was, ...rest } = s.settings;
+  const old: OldPicks = was ?? {};
   const start = rest.start ?? (mode === "solo" ? "fast" : mode ? "pair" : undefined);
   const picks = Object.fromEntries(Object.entries({ lead: old.lead ?? old.frontier, sidekick: old.sidekick ?? old.cheaper, checker: old.checker }).filter(([, v]) => v)) as ModelPicks;
   const settings: Settings = { ...rest, ...(Object.keys(picks).length ? { picks } : {}), ...(start ? { start } : {}), ...(after === "off" && rest.review === undefined ? { review: false } : {}), pairVersion: 1 };
@@ -207,12 +227,17 @@ export class Store {
       if (existsSync(file)) copyFileSync(file, before);
       else writeFileSync(before, JSON.stringify(saved, null, 2));
     }
+    // A session saved as null (or anything else that isn't one) is no session: dropped here, before anything below reads it.
+    const all: unknown[] = Array.isArray(saved.threads) ? saved.threads : [];
+    const threads = all.filter((t): t is Thread => t !== null && typeof t === "object" && !Array.isArray(t));
+    if (threads.length < all.length) console.error(`[store] ${all.length - threads.length} saved session(s) that weren't sessions left out`);
     this.state = {
       projects: saved.projects ?? [],
-      threads: saved.threads ?? [],
+      threads,
       agents: saved.agents?.length ? saved.agents : defaultAgents(),
-      // Read as it was saved; `toPairs` below moves what's from before pairs.
-      settings: { ...defaultSettings, ...(beforeModes ? fromWorkStyle(saved.settings!) : saved.settings) } as Settings,
+      // Read as it was saved; `toPairs` below moves what's from before pairs, and only then is it on pairs: a save before
+      // that (the moves above it) mustn't mark it moved. A fresh install has nothing to move, so it's on pairs at once.
+      settings: { ...defaultSettings, ...(!saved.settings ? { pairVersion: 1 } : beforeModes ? fromWorkStyle(saved.settings) : saved.settings) } as Settings,
       groups: saved.groups ?? [],
     };
     if (beforeModes) this.flush();
@@ -227,9 +252,15 @@ export class Store {
       this.flush();
     }
     // Plan and Auto became pairs, and After the Reviewer's switch.
+    // One that fails as a whole leaves the state as it was and unmarked, to be tried again on the next start, rather than
+    // keeping the engine from starting at all.
     if (pairsDue) {
-      Object.assign(this.state, toPairs(this.state));
-      this.flush();
+      try {
+        Object.assign(this.state, toPairs(this.state));
+        this.flush();
+      } catch (e) {
+        console.error(`[store] the sessions didn't move to pairs (${e instanceof Error ? e.message : String(e)}); they'll be tried again on the next start`);
+      }
     }
     // A thread that was working when the engine stopped is not working any more. One whose question
     // still asks stays in Needs you: it outlives the turn that asked (timeline()).

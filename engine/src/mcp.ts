@@ -13,24 +13,34 @@ const key = process.env.LINER_SURFACE_KEY ?? "";
 type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Record<string, unknown> };
 
 const send = (m: Record<string, unknown>) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);
+/** The calls at work, by their request's id: one its tool cancels (it gave up on it) is let go, which ends a brief at work for it too. */
+const calls = new Map<string | number, AbortController>();
+/** What a call its tool cancelled comes to: no answer at all, as MCP has it (the tool has stopped waiting for one). */
+const CANCELLED = Symbol("cancelled");
 
 /**
   A call that waits for the person (an install card) or on a sidekick's brief says so every 20 seconds, when its tool asked
   for progress: one that resets its wait on progress (the MCP SDK's resetTimeoutOnProgress) then
   doesn't give up after a minute.
 */
-async function call(name: string, args: unknown, progress?: string | number) {
+async function call(id: string | number, name: string, args: unknown, progress?: string | number) {
   let n = 0;
+  const ac = new AbortController();
+  calls.set(id, ac);
   const message = name === "sidekick" ? "The sidekick is working on the brief" : "Waiting for the person to answer";
   const beat = progress === undefined ? undefined : setInterval(() => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: progress, progress: ++n, message } })}\n`), 20_000);
   try {
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": key }, body: JSON.stringify({ tool: name, args: args ?? {} }) });
+    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": key }, body: JSON.stringify({ tool: name, args: args ?? {} }), signal: ac.signal });
     const b = (await r.json()) as { ok: boolean; result?: unknown; error?: string };
+    // Only the tool's cancel aborts it, so an answer that came in just after one goes unsent too.
+    if (ac.signal.aborted) return CANCELLED;
     return b.ok ? b.result : { content: [{ type: "text", text: b.error ?? "Liner Code didn't answer." }], isError: true };
   } catch {
-    return { content: [{ type: "text", text: "Liner Code isn't running, so its tools aren't there." }], isError: true };
+    return ac.signal.aborted ? CANCELLED : { content: [{ type: "text", text: "Liner Code isn't running, so its tools aren't there." }], isError: true };
   } finally {
     clearInterval(beat);
+    // A later call may have taken its id by now: that one stays.
+    if (calls.get(id) === ac) calls.delete(id);
   }
 }
 
@@ -39,6 +49,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   try {
     m = JSON.parse(line) as Msg;
   } catch {
+    return;
+  }
+  if (m?.method === "notifications/cancelled") {
+    const of = m.params?.requestId;
+    if (typeof of === "string" || typeof of === "number") calls.get(of)?.abort();
     return;
   }
   // Valid JSON needn't be a message: null, say.
@@ -56,7 +71,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   } else if (m.method === "tools/list") send({ id: m.id, result: { tools: toolsFor(process.env) } });
   else if (m.method === "tools/call") {
     const token = (m.params?._meta as { progressToken?: string | number } | undefined)?.progressToken;
-    void call(String(m.params?.name ?? ""), m.params?.arguments, token).then((result) => send({ id: m.id, result }));
+    const id = m.id;
+    void call(id, String(m.params?.name ?? ""), m.params?.arguments, token).then((result) => result === CANCELLED || send({ id, result }));
   }
   else if (m.method === "ping") send({ id: m.id, result: {} });
   else send({ id: m.id, error: { code: -32601, message: `No method ${m.method}` } });

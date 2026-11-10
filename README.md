@@ -10,8 +10,8 @@
 **Your coding agents, with a real app around them.**
 
 Claude Code, Codex, OpenCode and Hermes on your desktop, with your own sign-ins:
-plans you approve, a diff for every turn, a check from another maker, and the work split
-so the expensive model only works when the job needs it.
+plans you approve, a diff for every turn, a check from another maker, and a quicker model
+beside the lead for the work it can hand over.
 
 [![Release](https://img.shields.io/github/v/release/lynnarize/liner-code?include_prereleases&label=release&color=2f6fe4&style=flat-square)](https://github.com/lynnarize/liner-code/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/lynnarize/liner-code/total?color=1f9d55&style=flat-square)](https://github.com/lynnarize/liner-code/releases)
@@ -35,7 +35,7 @@ so the expensive model only works when the job needs it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/readme/hero-dark.jpg">
-  <img src=".github/readme/hero-light.jpg" width="100%" alt="Liner Code: a session where the planner asks a question as a card before it changes anything">
+  <img src=".github/readme/hero-light.jpg" width="100%" alt="Liner Code: a session where the agent asks a question as a card before it changes anything">
 </picture>
 
 </div>
@@ -45,10 +45,10 @@ so the expensive model only works when the job needs it.
 A desktop agent harness for macOS and Windows, on Electron. It drives the coding agents already on your
 machine (Claude Code, Codex CLI, OpenCode, Hermes) with your own sign-ins, and shows their work
 as GUI instead of a log: plans you approve, questions you answer, requests that wait as cards,
-a diff for every turn that you can undo or commit or question line by line, a Reviewer from
-another model family, surfaces beside the session (Terminal, Browser, Design, Files, Pull request,
-Device, Routines), models compared side by side, and sessions that sort themselves by what they
-need from you. It's built from [Liner UI](https://linerui.sorafel.com), so it has Liner's look and motion:
+a diff for every turn that you can undo or commit or question line by line, a lead that can hand
+bounded work to a quicker model beside it, a Reviewer from another model family, surfaces in a
+panel beside the session (Changes, Files, Browser, Terminal, Design, Pull request, Device), models
+compared side by side, and sessions that sort themselves by what they need from you. It's built from [Liner UI](https://linerui.sorafel.com), so it has Liner's look and motion:
 white paper on one solid ground, glass only on the session tray, one accent, text that comes into
 focus, springs that never overshoot.
 
@@ -68,9 +68,9 @@ focus, springs that never overshoot.
 <table>
   <tr>
     <td width="33%" valign="top">
-      <img src=".github/readme/plan.svg" width="100%" alt="Wireframe: a planner's plan with Approve and build">
-      <b>Plan, then build</b><br>
-      <sub>A hard job goes to the frontier model to plan; a cheaper one builds it in the same turn.</sub>
+      <img src=".github/readme/pair.svg" width="100%" alt="Wireframe: a lead's brief worked by its sidekick, then verified by the Reviewer">
+      <b>Lead + sidekick</b><br>
+      <sub>The lead plans and hands bounded work to a quicker model beside it, then reads what it did.</sub>
     </td>
     <td width="33%" valign="top">
       <img src=".github/readme/diff.svg" width="100%" alt="Wireframe: a turn's diff with Undo turn and Commit">
@@ -80,15 +80,10 @@ focus, springs that never overshoot.
     <td width="33%" valign="top">
       <img src=".github/readme/check.svg" width="100%" alt="Wireframe: the Reviewer's five criteria, one sent back">
       <b>Checked by another maker</b><br>
-      <sub>GPT reads Claude's change (and Claude the rest) against five fixed criteria.</sub>
+      <sub>A model of another maker reads each change against five fixed criteria. It never wrote it.</sub>
     </td>
   </tr>
   <tr>
-    <td width="33%" valign="top">
-      <img src=".github/readme/auto.svg" width="100%" alt="Wireframe: Auto scoring a message and picking critique">
-      <b>Auto routing</b><br>
-      <sub>Each message is weighed on your machine, then gets one model, a cascade or a critique.</sub>
-    </td>
     <td width="33%" valign="top">
       <img src=".github/readme/design.svg" width="100%" alt="Wireframe: the Design surface with a comment on a part">
       <b>Designs beside the session</b><br>
@@ -97,15 +92,15 @@ focus, springs that never overshoot.
     <td width="33%" valign="top">
       <img src=".github/readme/surfaces.svg" width="100%" alt="Wireframe: the surfaces tabs with the Terminal open">
       <b>Surfaces</b><br>
-      <sub>Terminal, Browser, Design, Files, Pull request, Device and Routines, one click away.</sub>
+      <sub>Changes, Files, Browser, Terminal, Design, Pull request and Device, in the panel beside the session.</sub>
     </td>
-  </tr>
-  <tr>
     <td width="33%" valign="top">
       <img src=".github/readme/desk.svg" width="100%" alt="Wireframe: the Desk, sessions grouped by what they need">
       <b>The Desk</b><br>
       <sub>Sessions sort themselves: back with you, out with agents, done.</sub>
     </td>
+  </tr>
+  <tr>
     <td width="33%" valign="top">
       <img src=".github/readme/compare.svg" width="100%" alt="Wireframe: two models' answers side by side">
       <b>Models side by side</b><br>
@@ -116,6 +111,7 @@ focus, springs that never overshoot.
       <b>Workshop</b><br>
       <sub>Ask for what Liner Code doesn't have; an agent makes it as an add-on.</sub>
     </td>
+    <td width="33%" valign="top"></td>
   </tr>
 </table>
 
@@ -203,12 +199,14 @@ Found something? **Help › Report a Problem…** makes a zip with the log and v
 - **Nothing in between.** Model traffic goes from each tool to its own provider and is billed to
   your account. Liner Code has no server, no telemetry and no analytics. Besides its own releases from GitHub and
   the tools' versions on npm, it fetches the Agent Client Protocol registry when you look for
-  agents to add, and reaches GitHub through your `gh` sign-in for pull requests and routines
-  (which look every 5 minutes while one is on). Hermes's own update check runs a `git fetch`.
-- **Changes are checked by another maker.** Each change in Solo and Plan is read by another maker's
-  model by default: GPT for Claude's work, Claude for the rest. So with Claude Code and Codex both
-  here, diffs Claude writes also go to OpenAI through Codex, billed to that account. Set After each
-  change to Refine or Off in Settings › Agentic features, or for one session from its composer.
+  agents to add, and reaches GitHub through your `gh` sign-in for pull requests. Hermes's own
+  update check runs a `git fetch`.
+- **Changes are checked by another maker.** By default the Reviewer reads each change, and it's a
+  model of another maker than the ones that wrote it whenever one is ready. So with Claude Code and
+  Codex both here, diffs Claude writes also go to OpenAI through Codex, billed to that account. A
+  pair's sidekick can be another maker's model too, and then its briefs and what it reads go to
+  that maker. Turn the Reviewer off in Settings › Agentic features, or for one session from its
+  word in the session's bar.
 - **Everything else is on this Mac**: sessions, snapshots and settings in `~/.liner-code` (see
   Where things live).
 
@@ -233,130 +231,104 @@ on Electron's own Node, so it needs no Node installed; building it needs Node 24
 command line tools (for the Mac addon and the icon).
 
 The first launch plays the intro, then three steps: connect models (it finds the CLIs you have),
-add projects (it finds your Git repositories), and how you'll work (Solo, Plan then build, or
-Auto). The **Demo**, a scripted agent with its own **Sample project**, runs
-every flow with no account at all. It's hidden: tap your name at the foot of the sidebar six times
-to show it (and six more to hide it again).
+add projects (it finds your Git repositories), and who works on a new session (a pair, the best
+model alone, or the fast one alone). The **Demo**, a scripted agent with its own **Sample project**,
+runs every flow with no account at all, a pair included. It's hidden: tap your name at the foot
+of the sidebar six times to show it (and six more to hide it again).
 
 ## How agents share the work
 
-A session works in one of three **modes**, and in all three one model writes at a time
-(`engine/src/runtime.ts`, `route.ts`, `review.ts`). Agents are optional: every part is a bare
-model unless you pick one of your agents, which you make when a model should carry instructions
-of its own (a soul.md, a prompt, skills, context files).
+A session is one model or a pair, and in both one model writes at a time (`engine/src/runtime.ts`,
+`sidekick.ts`, `review.ts`; who is picked, `contracts/src/cast.ts`). Agents are optional: every
+part is a bare model unless you pick one of your agents, which you make when a model should carry
+instructions of its own (a soul.md, a prompt, skills, context files).
 
 ```
- Solo             You ──► one model (or one of your agents) ──► check or refine ──► yours
+ One model   You ──► the model, or one of your agents ──────────────► Reviewer ──► yours
 
- Plan, then build You ──► a hard job? ──► Planner (reads only) ──► plan ──► Builder builds it
-                    │                        (waits for your OK only if you asked)      │
-                    └──► anything else ──► Builder, at once                             │
-                                         check (another maker) or refine (frontier) ──► yours
-
- Auto             You ──► weigh the message ──► single · cascade · critique (below)
+ A pair      You ──► Lead: talks to you, plans, decides ────────────► Reviewer ──► yours
+                      │                  ▲                               │
+                      │ one brief        │ its report, and the files     │ blocking findings go back
+                      ▼ at a time        │ it changed, measured          │ to the lead, up to 2 rounds
+                     Sidekick ───────────┘                               ▼
+                     same folder, same access level             the lead fixes them
 ```
 
-**Plan, then build.** Most messages go straight to the builder, so work starts at once. A hard
-job (weighed from its words, on this Mac) goes to the planner first, which reads and ends its reply
-with a plan, and the builder builds it straight after, in the same turn. A plan waits for your OK
-only when you ask for one ("plan it first") or turn on Approve plans first. The
-two keep sessions of their own, and each turn starts with what the other said since its last
-one, so neither works from a conversation that moved on.
+**The lead and the sidekick.** In a pair the lead owns the session: it talks to you, does the
+reading that decides the plan, takes the judgment calls, and hands bounded work to a quicker model
+beside it through Liner Code's own `sidekick` tool: an edit it can spell out, the same change in
+many files, a test or build run it would otherwise wait on. It hands over one brief at a time and
+waits for it. The sidekick works in the same folder under the session's access level, and runs
+each brief as a turn of a session of its own, which it keeps between briefs, so the lead can
+correct it rather than start over. A brief runs ten minutes at most, less when the lead's tool
+gives up on a call sooner. The sidekick's report is a claim: the lead gets it with the files it
+changed as Liner Code measured them, and reads them before it builds on them or tells you it's
+done. A frontier-class sidekick gets lighter briefs and may push back; a quicker one gets
+prescriptive ones.
 
-**Hand-offs you don't see.** A plan built, a draft refined, a fix after a check: each carries your
-turn on rather than starting one of its own, so the timeline shows one turn with one footer for
-all its changes, and the other models only as small marks on its head (point at them to see who
-did what, and why). Nothing on the timeline announces a switch; "done" is said once, when
-everything your message set off is done.
+**What you see.** A brief shows as a row under the lead's turn: its steps, its tokens, its report
+and the files it changed. Stop on its row stops the sidekick alone; the session's Stop stops both.
+Its approvals use the same cards as the lead's. It can't ask you anything, and it may not send
+agents of its own: one that tries is stopped, and the lead is told why. A pair works with Claude
+Code, Codex, OpenCode and Hermes, in any mix. A fix the Reviewer sends back carries your turn on
+rather than starting one of its own, so the timeline shows one turn with one footer for all its
+changes, and "done" is said once, when everything your message set off is done.
 
-**Which models.** You pick two, and everything else follows from them:
+**Picking who works.** The model picker starts with **Pair**, **Best** (the lead alone) and
+**Fast** (the sidekick alone), filled in from what's ready, then every model by tool, then your
+agents. Picking Pair shows who leads and who works beside it. Settings › Agentic features has two
+parts: your pair (the lead, the sidekick, and what new sessions start with) and the Reviewer.
 
-| | Frontier | Cheaper |
-| --- | --- | --- |
-| Plan, then build | plans | builds, answers questions |
-| Auto | hard jobs, repairs | most messages |
-| Solo | | starts on it |
-| After each change | refines (Refine) | |
-
-Each starts on Automatic, which says what it lands on: for frontier, Opus, else GPT Astra or Sol,
-Gemini Pro, Grok, DeepSeek V4 Pro, Kimi K3, Qwen Max, GLM or MiniMax; for cheaper, GPT Luna, else
-Sonnet, Gemini Flash, DeepSeek Flash, GLM Flash or Qwen Flash. Models are told apart by who made
-them, from their names, so GPT Astra counts as OpenAI's whether it runs in Codex, Hermes or an API
-endpoint, and each maker's models come from its own tool first (Claude Code for Claude, Codex for
-GPT). Any model a tool here runs can be picked, Chinese ones through OpenCode, Hermes or an
-endpoint included, and none of it needs a Claude or ChatGPT subscription: with only OpenCode Go,
-DeepSeek Flash builds, DeepSeek V4 Pro plans and Kimi checks. The picker goes tool, then source
-(Hermes's Nous Portal or OpenCode Go), then model, so a tool with a hundred models is two short
-lists. **Dual frontier** puts a second frontier model from another maker in the cheaper one's
-place (GPT Astra building next to Opus), for the hardest work.
-
-**After each change.** In Solo and Plan, a change goes one of three ways before it's yours:
-
-- **Check** (the default): another maker reads it against five fixed criteria; blocking findings
-  go back to the writer, up to 2 rounds (3 at most), then it's yours.
-- **Refine**: the frontier model takes the cheaper one's draft on and finishes it, in a session of
-  its own: a Chinese model builds the first pass, Opus fine-tunes it. When the frontier model
-  wrote the change itself, it's checked instead.
-- **Off**: yours as it is.
-
-A few lines, or docs alone, go through as they are unless you turn that on. Auto has its own
-judge and critics.
-
-**Inside Claude Code**, a writer (an agent or a bare model) brings two helpers on Haiku: an
-Explorer that reads, greps and maps the code, and a Test runner that runs the tests and reports
-the first useful line. One of your agents can run alone instead.
-
-**Auto** (`engine/src/route.ts`) has no fixed team: each message is scored from its own words
-(reasoning, writing code, debugging, tools, how far it reaches) and weighed light, medium or
-heavy. That happens on this Mac with no model call, so it costs nothing. The first rule that fits
-picks the pattern:
-
-```
- message ─► score its words ─► light / medium / heavy ─► rule ─► pattern
-                                                                   │
-   single    ┌──────────┐                                          │
-             │ everyday │  or the strong model alone, for a hard job
-             └──────────┘
-   cascade   ┌──────────┐    ┌───────┐  pass ─► done
-             │ everyday │ ─► │ judge │
-             └──────────┘    └───────┘  fail ─► strong model repairs ─► judge once more
-   critique  ┌────────┐    ┌──────────┐ ┌──────────┐
-             │ strong │ ─► │ critic 1 │ │ critic 2 │ ─► strong revises once
-             └────────┘    └──────────┘ └──────────┘
-```
-
-| Level | Light job | Medium job | Heavy job |
+| | Lead | Sidekick | Reviewer |
 | --- | --- | --- | --- |
-| Standard | everyday alone | everyday alone | strong alone |
-| High | everyday alone | cascade | critique, 1 critic |
-| Max | cascade | critique, 1 critic | critique, 2 critics |
+| Does | talks to you, plans, decides, reads the sidekick's work, fixes what the Reviewer sends back | the briefs the lead hands it | reads each change against five fixed criteria |
+| Automatic | the best frontier model ready: Opus, else GPT Astra, Fable, Gemini, Sol, GLM… | the best quicker model that isn't the lead: DeepSeek Flash, else Sol, Sonnet, Terra, Luna… | the best model of another maker than the writers' |
+| Alone | Best | Fast | – |
 
-Questions go to the everyday model at every level (the strong one for a hard question on High
-and Max).
+Each starts on Automatic, which says what it lands on. Models are told apart by who made them,
+from their names, so GPT Astra counts as OpenAI's whether it runs in Codex, Hermes or an API
+endpoint, and each maker's models come from its own tool first (Claude Code for Claude, Codex for
+GPT). Any model a tool here runs can be picked for any part, Chinese ones through OpenCode, Hermes
+or an endpoint included, and none of it needs a Claude or ChatGPT subscription. With only OpenCode
+Go there's no pair: DeepSeek Flash does it all (Go's frontier-class models never lead, as they draw
+down the plan's capped allowance at many times the price) and GLM Flash reads its changes. The
+picker goes tool, then source (Hermes's Nous Portal or OpenCode Go), then model, so a tool with a
+hundred models is two short lists.
+
+**The Reviewer.** When a turn changed files, the Reviewer reads the change against five fixed
+criteria before it's yours; blocking findings go back to the lead, up to 2 rounds by default (3 at
+most), then it's yours. It's a model of another maker than the ones that wrote the change whenever
+one is ready, so they don't share blind spots, and it's never one of the writers, the sidekick
+included. It's on by default. Its word in the session's bar (Reviewing, Verified, Blocked, or
+Reviewer off) opens a menu: read each change or not, and who reads. A change whose check was
+skipped because you'd queued a message is read afterwards, from where it started. A fix that
+changed nothing isn't read a second time: it's yours, and it says so. A read is given up after ten
+minutes. A few lines, or docs alone, go through as they are unless you turn on Small changes too.
+
+**Inside Claude Code**, a lead (an agent or a bare model) brings two helpers on Haiku: an Explorer
+that reads, greps and maps the code, and a Test runner that runs the tests and reports the first
+useful line. One of your agents can run alone instead.
 
 ### What keeps the cost down
 
-- **The expensive model works only when the job needs it.** In Plan it only reads and plans; in
-  Auto the everyday model takes light and medium jobs and the strong one comes in for heavy jobs,
-  or to repair what the judge failed.
-- **Questions skip the planner.** A greeting or a question in Plan goes to the builder, so the
-  frontier model isn't paid to say hello.
-- **A judge reads instead of rewriting.** In a cascade the judge only reads the diff (or, when
-  nothing changed, the answer) and passes it; the strong model writes only when it fails.
+- **The lead hands over what it can spell out.** Edits it can specify, the same change in many
+  files, and slow test or build runs go to the quicker sidekick; the lead keeps the reading that
+  decides the plan, and the judgment calls.
+- **Checks aren't run twice.** The lead is told not to run a check again that the sidekick ran and
+  reported, unless the report or the diff gives it a reason to doubt it.
 - **Haiku does the reading.** Explorer and Test runner keep long file reads and test output out
-  of the writer's context, so the writer's model never pays for them.
-- **Warm caches are kept.** A follow-up within five minutes of the last turn stays with the model
-  already working, so it reads its prompt cache instead of the whole thread at full price. The
-  composer shows when Claude's cache for the session is likely to run out.
+  of the lead's context, so the lead's model never pays for them.
+- **You see when the cache runs out.** The composer shows when Claude's prompt cache for the
+  session is likely to run out (an hour after the last turn on a plan, five minutes with an API
+  key); past it a long thread is read again at full price.
 - **Small things go to the quickest model.** Commit messages, pull request text and Reviewer
   decides (ALLOW or ASK for one step) run on Haiku or a mini model, not the session's own.
 - **Checks have a limit.** At most 2 fix rounds by default (3 at most); after that it's yours.
 - **A spending cap.** Settings › General › Spending can stop a session at a dollar amount; your
-  next message is the go-ahead for another cap's worth. (Claude Code reports cost; other tools
-  can't be held to it.)
+  next message is the go-ahead for another cap's worth. A sidekick's use counts toward it. (Claude
+  Code reports cost; other tools can't be held to it.)
 - **You can see it all.** Every turn's tokens, cache reads and cost, by agent and model, go to
-  `~/.liner-code/usage.jsonl`, the Usage page adds them up, and Settings › Agentic features
-  compares the modes in your own sessions.
+  `~/.liner-code/usage.jsonl`, and the Usage page adds them up.
 
 ## Designs
 
@@ -390,8 +362,8 @@ model from an API endpoint (see API endpoints below):
   and as tall as it is (up to 2400 px), at its own pixels, with the errors it logged, so the agent
   can fix what's off before it says it's done.
 - **No way into the app.** A version is drawn on its own with no origin; the live file comes from
-  the session folder's own address on 127.0.0.1. A planner (which never edits) draws a design by
-  handing over the page; asking for it to be built is a change it plans like any other.
+  the session folder's own address on 127.0.0.1. An agent that can't write files (on Read only,
+  say) draws a design by handing over the page; asking for it to be built is a change like any other.
 
 ## What's in it
 
@@ -400,31 +372,35 @@ model from an API endpoint (see API endpoints below):
 
 ```
 contracts/src/index.ts     everything that crosses the wire: items, threads, events, RPC methods
+contracts/src/cast.ts      who leads, who is the sidekick and who reviews, from your picks and what's ready
+contracts/src/tiers.ts     the model lists casting reads: who made a model, and the frontier and quicker tiers
 engine/                    the local backend (Node, TypeScript run directly, one dependency)
   src/main.ts              starts the server; prints LINER_READY {"port":…} for the shell
   src/server.ts            127.0.0.1 only: GET /events (NDJSON stream), POST /rpc, the built app
   src/api.ts               one handler per command
-  src/runtime.ts           runs turns: Solo, Plan (planner → plan → builder), Auto; approvals, questions, queue and steer, check or refine
-  src/review.ts            the Reviewer's prompt and findings, who reviews whom, Claude run modes and subagents
-  src/route.ts             routed sessions: each message scored and given one model, a cascade with a judge, or a critique
-  src/routines.ts          routines: triggers, AI steps, the code gate, actions, test runs
+  src/runtime.ts           runs turns: the lead's turn, a pair's briefs to its sidekick, approvals, questions, queue and steer, the Reviewer's rounds
+  src/sidekick.ts          lead + sidekick: what each is told, a brief's time cap, what the lead reads back
+  src/review.ts            the Reviewer's prompt and findings, the fix the lead is sent, Reviewer decides, Claude run modes and subagents
+  src/routines.ts          routines (switched off for now: ROUTINES_ON in contracts): triggers, AI steps, the code gate, actions, test runs
   src/watch.ts             auto-settle and snooze until checks finish or someone replies
   src/updates.ts           Liner Code's releases on GitHub (download, check, stage) and the agent tools' own updaters
   src/surfaces.ts          files, the terminal (a Python pty bridge), gh pull requests, ports, the iOS Simulator
   src/proxy.ts             the Browser surface's proxy: console, element picking, offline
   src/designs.ts           designs: versions, the file each lives in, watching it, keeping .liner/ out of git
   src/agent-tools.ts       what agents reach of the app through mcp.ts: the Browser, the simulator, pages, designs, memory
+  src/liner-tools.ts       Liner Code's own tools as agents are told of them, `sidekick` offered to a pair's lead only
   src/checkpoints.ts       a git snapshot before and after every turn (undo, diff, commit)
   src/store.ts             state.json plus an append-only log per thread
   src/providers/claude.ts  Claude Code through the Claude Agent SDK (canUseTool, resume, fork)
   src/providers/codex.ts   Codex through `codex app-server` (`codex exec --json` for an older Codex), models from its own catalog
   src/providers/acp.ts     any Agent Client Protocol agent: Hermes, OpenCode, Cursor and Grok Build (those two in beta), the ACP registry
-  src/providers/demo.ts    a scripted planner and builder, and the sample project it edits
+  src/providers/demo.ts    a scripted agent that leads a pair or works a brief, and the sample project it edits
   src/providers/endpoint.ts  an API endpoint as a tool: Claude Code, Codex or OpenCode pointed at it, by protocol
 ui/                        the app (React 19 + Vite), built from Liner UI
   src/liner/               the Liner UI library, copied in (npm run sync-liner refreshes it)
   src/app/                 Setup, Sidebar, Home, Session, Timeline cards, Composer, Panel and its surfaces
-                           (Review, Files, Terminal, Browser, Design, Pr, Device, Routines, RoutineBuilder), Compare, Usage, Settings
+                           (Review, Files, Terminal, Browser, Design, Pr, Device; Routines and RoutineBuilder, off for now),
+                           Compare, Usage, Settings, Agentic (your pair and the Reviewer)
 desktop/                   the Electron shell
   src/main.ts              the window, the bridge the page calls, menus with your keys, notifications, the Dock badge
   src/engine.ts            the engine as a child process on Electron's own Node (ELECTRON_RUN_AS_NODE), restarts, your login PATH
@@ -450,7 +426,8 @@ docs/BACKEND.md            what the backend needs, now and later
 | What | Where |
 | --- | --- |
 | Projects, threads, agents, settings, groups | `~/.liner-code/state.json` |
-| Routines and their runs | `~/.liner-code/routines.json` |
+| That state as it was before sessions moved over to pairs (0.2.5), copied once | `~/.liner-code/state.before-pairs.json` |
+| Routines and their runs (kept while routines are off) | `~/.liner-code/routines.json` |
 | Scratch sessions with no project | `~/.liner-code/Scratch` (a Git repo) |
 | Each thread's timeline | `~/.liner-code/threads/<id>.jsonl` |
 | Tokens and cost per turn | `~/.liner-code/usage.jsonl` |

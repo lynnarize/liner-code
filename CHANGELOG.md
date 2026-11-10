@@ -1,11 +1,13 @@
 # Changelog
 
-## 0.2.5 (beta)
+## 0.2.5 (beta), 2026-11-11
 
-**Lead + sidekick.** A session is one model or a pair: the lead talks to you, plans, and hands
-bounded work to a quicker model beside it, then reads what it did. It takes the place of Plan, then
-build and Auto, and your sessions from before move over by themselves. **The picker is about models
-only**, and the Reviewer has a switch of its own in the session's bar.
+Update from 0.2.4: on a Mac Liner Code does it by itself (Restart to update), or download the new
+DMG; on Windows, run the new setup. **Lead + sidekick.** A session is one model or a pair: the lead
+talks to you, plans, and hands bounded work to a quicker model beside it, then reads what it did. It
+takes the place of Plan, then build and Auto, and your sessions from before move over by themselves.
+**The picker is about models only**, and the Reviewer has a switch of its own in the session's bar.
+**One top row** for the window, with the panel as a full column.
 
 ### Added
 
@@ -27,6 +29,12 @@ only**, and the Reviewer has a switch of its own in the session's bar.
 - **The model picker:** Pair, Best (the lead alone) and Fast (the sidekick alone), filled in from what's
   ready, then every model by tool, then your agents. Picking Pair shows who leads and who works, and
   each model has its maker's mark.
+- **One top row:** the sidebar's head, the session's header and the panel's tabs share one row. The
+  panel is a full-height column beside the thread; its tabs say their names while they fit, a + holds
+  what isn't open, and an empty panel opens with Changes, Files and the Browser. Inside it are rows
+  and lists rather than cards. The Wall's button moved to the sidebar; its key still opens it.
+- **The composer sits in a tray:** in a session it says what waits to commit and who the work waits
+  on; on Home it says where the work will run.
 - **The Reviewer leaves the picker:** its word in the session's bar opens a menu to read each change
   or not, and who reads. Settings › Agentic features is down to two parts: your pair and the Reviewer.
 - **The Reviewer is never one of the models that wrote the change**, the sidekick included. A change

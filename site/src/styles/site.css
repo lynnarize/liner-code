@@ -11,6 +11,8 @@
 .btn--line { background: color-mix(in oklab, var(--paper) 14%, transparent); color: var(--paper); }
 .btn--line:hover { background: color-mix(in oklab, var(--paper) 24%, transparent); }
 .btn--ink { background: var(--night); color: var(--paper); }
+.btn--soft { background: var(--ground-2); color: var(--text); }
+.btn--soft:hover { background: color-mix(in oklab, var(--text) 12%, var(--ground)); }
 .btn--ink:hover { background: var(--sky); }
 .btn--nav { height: 38px; padding: 0 16px; font-size: var(--t-small); background: var(--nav-btn-bg); color: var(--nav-btn-fg); }
 .btn--nav:hover { background: var(--nav-btn-hover); }
@@ -56,11 +58,17 @@ html[data-nav-tone='night'] { --nav-fg: var(--paper); --nav-bg: var(--night); --
 .seas svg { width: 14px; height: 14px; flex: none; }
 .seas__dot { width: 11px; height: 11px; border-radius: 50%; background: var(--tide); box-shadow: 0 0 0 1.5px var(--paper); flex: none; }
 html:not([data-sea='blue']) .seas [data-pick='dark'], html[data-sea='blue'] .seas [data-pick='blue'] { background: var(--nav-fg); color: var(--nav-bg); }
+/* In the nav the two are one round button: only the look a press turns to shows. */
+.seas--flip { padding: 0; gap: 0; background: none; }
+.seas--flip button { width: 38px; height: 38px; padding: 0; justify-content: center; background: color-mix(in oklab, currentColor 12%, transparent); }
+.seas--flip button:hover { background: color-mix(in oklab, currentColor 20%, transparent); }
+.seas--flip svg { width: 16px; height: 16px; }
+html:not([data-sea='blue']) .seas--flip [data-pick='dark'], html[data-sea='blue'] .seas--flip [data-pick='blue'] { display: none; }
 .seas--sheet { display: none; margin-top: 14px; width: max-content; color: var(--paper); }
 html:not([data-sea='blue']) .seas--sheet [data-pick='dark'], html[data-sea='blue'] .seas--sheet [data-pick='blue'] { background: var(--paper); color: var(--night); }
 /* GitHub, with the repository's stars: a pill in the nav's own ink, beside Download. */
 .stars {
-  display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px 0 12px; border-radius: 999px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; min-width: 38px; padding: 0 11px; border-radius: 999px; flex: none;
   font-size: var(--t-small); font-weight: 500; background: color-mix(in oklab, currentColor 12%, transparent);
   transition: background-color 0.25s var(--ease);
 }
@@ -77,29 +85,29 @@ html:not([data-sea='blue']) .seas--sheet [data-pick='dark'], html[data-sea='blue
 .get__menu {
   position: absolute; z-index: 1; top: calc(100% + 10px); right: 0; width: 300px;
   padding: 6px; border-radius: 18px; background: var(--night); color: var(--paper);
-  box-shadow: 0 0 0 1px rgb(244 235 220 / 0.1), 0 24px 60px -20px rgb(0 0 0 / 0.6);
+  box-shadow: 0 0 0 1px rgb(248 249 251 / 0.1), 0 24px 60px -20px rgb(0 0 0 / 0.6);
   transform-origin: top right;
 }
-.get__title { padding: 10px 12px 6px; font-size: 13px; color: rgb(244 235 220 / 0.68); }
+.get__title { padding: 10px 12px 6px; font-size: 13px; color: rgb(248 249 251 / 0.68); }
 .get__list { display: flex; flex-direction: column; }
 .get__os {
   display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px;
   padding: 10px 10px 10px 12px; border-radius: 13px; transition: background-color 0.2s var(--ease);
 }
 .get__os[data-yours] { order: -1; }
-.get__os:hover, .get__os:focus-visible { background: rgb(244 235 220 / 0.09); }
+.get__os:hover, .get__os:focus-visible { background: rgb(248 249 251 / 0.09); }
 .get__os:focus-visible { outline-offset: -2px; outline-color: var(--paper); }
 .get__os:active { scale: 0.985; }
 .get__name { font-size: 1rem; font-weight: 600; letter-spacing: -0.015em; }
-.get__sub { grid-column: 1; font-size: 13px; color: rgb(244 235 220 / 0.68); }
+.get__sub { grid-column: 1; font-size: 13px; color: rgb(248 249 251 / 0.68); }
 .get__arrow {
   grid-column: 2; grid-row: 1 / span 2; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
-  background: rgb(244 235 220 / 0.1); transition: background-color 0.2s var(--ease), color 0.2s var(--ease), translate 0.3s var(--ease);
+  background: rgb(248 249 251 / 0.1); transition: background-color 0.2s var(--ease), color 0.2s var(--ease), translate 0.3s var(--ease);
 }
 .get__os[data-yours] .get__arrow, .get__os:hover .get__arrow { background: var(--paper); color: var(--night); }
 .get__os:hover .get__arrow { translate: 0 2px; }
 .get__foot { display: flex; justify-content: space-between; gap: 12px; padding: 6px 12px 8px; }
-.get__foot a { display: inline-flex; align-items: center; min-height: 32px; font-size: 13px; font-weight: 500; color: rgb(244 235 220 / 0.82); }
+.get__foot a { display: inline-flex; align-items: center; min-height: 32px; font-size: 13px; font-weight: 500; color: rgb(248 249 251 / 0.82); }
 .get__foot a:hover { color: var(--paper); text-decoration: underline; text-underline-offset: 3px; }
 .get__foot a:focus-visible { outline-color: var(--paper); }
 .nav__menu { display: none; height: 38px; padding: 0 14px; border-radius: 999px; font-size: var(--t-small); font-weight: 500; background: color-mix(in oklab, currentColor 14%, transparent); }
@@ -109,9 +117,7 @@ html:not([data-sea='blue']) .seas--sheet [data-pick='dark'], html[data-sea='blue
   box-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.5);
 }
 .sheet a { display: block; padding: 10px 4px; font-size: var(--t-lead); font-weight: 600; letter-spacing: -0.02em; }
-/* Below 1080 the nav's links and sea toggle go into the Menu: with the stars beside Download, the
-   full row no longer fits. Below 1240 the stars pill drops its word. */
-@media (max-width: 1239px) { .stars__label { display: none; } }
+/* Below 1080 the nav's links and the look's button go into the Menu. */
 @media (max-width: 1080px) {
   .nav__links { display: none; }
   .nav { grid-template-columns: 1fr auto; column-gap: 10px; }
@@ -159,16 +165,14 @@ html[data-sea='dark'] .btn--ink:hover { background: #fff; }
 .sea-slot { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 .sea-canvas { width: 100%; height: 100%; display: block; }
 .stage.is-over-sea { cursor: pointer; }
-/* Under the sea: the app's home window. The sea parts in its shape and then lies along its frame,
-   so the window looks laid on the water. Hidden until the sea parts; without WebGL or motion it stays
-   hidden and the window sits above the statement. */
-.floor { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; visibility: hidden; pointer-events: none; }
+/* The app's window, lying on the sea (the home page's hero). The sea parts in its shape, lies along
+   its frame and shades the water round it; the window itself sits above the canvas, so it shows the
+   moment it has loaded. Without WebGL it sits on the picture of the sea. */
+.floor { position: relative; z-index: 3; display: grid; place-items: start center; }
 .floor img {
-  --floor-w: min(84vw, 1180px, calc((100svh - 2 * var(--nav-h) - 48px) * 1.697));
+  --floor-w: calc(100cqw - 2 * var(--lay-pad));
   width: var(--floor-w); height: auto; max-width: none; border-radius: calc(var(--floor-w) * 12 / 1360);
-  will-change: transform;
 }
-html:not(.gl-on) .floor, html:not(.motion) .floor { display: none; }
 
 .figure { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; color: var(--night); }
 .figure svg { max-width: none; }
@@ -178,41 +182,54 @@ html:not(.gl-on) .stage--tile .figure__side { --side: 34; }
 .figure__side { position: absolute; left: 0; bottom: 0; height: calc(var(--side, 58) * 1px); width: calc(var(--side, 58) * 0.357px); translate: -50% 4%; opacity: var(--sv, 1); }
 .figure__top { position: absolute; left: 0; top: 0; width: calc(var(--top, 28) * 1px); height: calc(var(--top, 28) * 1px); translate: -50% -50%; opacity: var(--tv, 0); }
 
-/* ---------- Hero ---------- */
-.hero { position: relative; height: 300svh; background: var(--ground); }
-html:not(.motion) .hero { height: auto; }
-.stage--hero { position: sticky; top: 0; height: 100svh; min-height: 560px; }
-.hero__top {
-  position: absolute; z-index: 4; top: calc(var(--nav-h) + clamp(12px, 3svh, 40px)); left: var(--m); right: var(--m);
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--g); align-items: start;
-}
-.hero__lead { grid-column: 1 / span 5; font-size: var(--t-lead); line-height: 1.1; font-weight: 500; letter-spacing: -0.025em; max-width: 15em; }
-.hero__act { grid-column: 9 / span 4; justify-self: end; max-width: 25rem; }
-.hero__note { font-size: var(--t-small); line-height: 1.45; color: var(--sky-soft); margin-bottom: 14px; }
+/* ---------- The hero's words and buttons (and the earlier hero's card, HeroCard.astro) ---------- */
+.hero { position: relative; background: var(--ground); color: var(--text); padding: calc(var(--nav-h) + clamp(28px, 6svh, 76px)) var(--m) 0; }
+.hero__top { display: grid; gap: 14px; justify-items: start; }
+.hero__title { font-size: var(--t-hero); font-weight: 600; line-height: 1.05; letter-spacing: -0.032em; max-width: 16em; }
+.hero__lead { max-width: 34em; color: var(--text-2); }
+.hero__act { display: grid; gap: 14px; margin-top: 8px; }
 .hero__buttons { display: flex; gap: 10px; flex-wrap: wrap; }
-.hero__foot {
-  position: absolute; z-index: 4; left: var(--m); right: var(--m); bottom: calc(var(--m) + env(safe-area-inset-bottom));
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; pointer-events: none;
-}
-.hero__foot > * { pointer-events: auto; }
-.hero__hint { font-size: var(--t-small); font-weight: 500; color: var(--night); background: var(--paper); height: 40px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 999px; }
+.hero__note { font-size: var(--t-small); line-height: 1.45; color: var(--text-2); }
+.hero__card { margin-top: clamp(32px, 5vw, 72px); container-type: inline-size; }
+/* The sea from overhead, the window laid on it: it stands in from the card's top and sides with the
+   water showing round it, and runs off the card's foot, between the agents and the composer. */
+.stage--lay { --lay-pad: 5.8cqw; aspect-ratio: 1248 / 640; min-height: 0; padding: var(--lay-pad) var(--lay-pad) 0; }
+.stage--lay .stage__word, .stage--lay .figure { display: none; }
+.stage--lay .stage__ground { inset: 0; }
+.stage--lay .stage__ground img { object-position: center; }
+/* Under the card: what a click on the sea does, and the turn bar that counts it. */
+.hero__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 12px; }
+.hero__hint { font-size: var(--t-small); color: var(--text-2); }
+.hero__foot .turnbar { height: 40px; background: var(--ground-2); }
 html:not(.gl-on) .hero__hint, html:not(.gl-on) .turnbar { display: none; }
 /* A phone or a tablet can't install the app, so the hero offers no downloads there: the nav's
-   Download still leads to the section with both links. Narrow screens lose the note as well. */
-@media (hover: none) and (pointer: coarse) {
-  .hero__buttons { display: none; }
-  .hero__note { margin-bottom: 0; }
+   Download still leads to the section with both links. */
+@media (hover: none) and (pointer: coarse) { .hero__buttons { display: none; } }
+@media (max-width: 767px) {
+  /* The window larger than the card, its left in view: the sessions and the turn at work. */
+  .stage--lay { aspect-ratio: 1 / 1.04; }
+  .floor { place-items: start; }
+  .floor img { --floor-w: 240cqw; }
 }
 
+/* ---------- The hero: the first screen is the sea at rest, lit by a lamp the pointer carries ---------- */
+.hero--torch { padding: 0; }
+.stage--lay.stage--torch {
+  aspect-ratio: auto; background: var(--ground); color: var(--text);
+  padding: calc(var(--nav-h) + clamp(36px, 11svh, 116px)) var(--m) clamp(64px, 7vw, 104px); display: grid; justify-items: center;
+}
+.stage--torch .stage__ground { opacity: 0.12; }
+/* The sea thins out to the page at the stage's foot, so the hero has no edge. */
+.stage--torch .sea-slot, .stage--torch .stage__ground { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 150px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 150px), transparent); /* taste-skill-ignore: a mask, not a fill */ }
+.stage--torch .hero__top { position: relative; z-index: 4; justify-items: center; text-align: center; }
+/* Nothing is painted behind the words: the sea itself keeps calm under them (motion/stage.ts). */
+.stage--torch .hero__lead { color: color-mix(in oklab, var(--text) 80%, var(--ground)); text-wrap: balance; }
+.stage--torch .hero__act { justify-items: center; }
+.stage--torch .hero__buttons { justify-content: center; }
+/* The window stands 88% of the column wide, whole, with the sea round it. */
+.stage--torch .floor { container-type: inline-size; width: 100%; margin-top: clamp(36px, 8svh, 84px); }
 @media (max-width: 767px) {
-  .hero { height: 260svh; }
-  .hero__top { grid-template-columns: 1fr; row-gap: 14px; }
-  .hero__lead, .hero__act { grid-column: 1; justify-self: start; }
-  .hero__lead { max-width: 14em; }
-  .hero__act { display: none; }
-  .word { flex-direction: column; align-items: center; gap: 0; font-size: 34vw; line-height: 0.8; letter-spacing: -0.055em; margin-bottom: -0.25em; }
-  .hero__foot { flex-direction: column; align-items: stretch; }
-  .hero__hint { align-self: flex-start; }
+  .stage--lay.stage--torch { aspect-ratio: auto; }
 }
 
 /* ---------- Intro statement ---------- */
@@ -372,7 +389,7 @@ html.gl-on.motion .intro__home { display: none; }
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--g); align-items: end;
 }
 .dl__close { grid-column: 1 / span 6; }
-.dl__title { font-size: clamp(3.5rem, 1rem + 8vw, 9.5rem); font-weight: 700; line-height: 0.9; letter-spacing: -0.05em; margin-bottom: 24px; max-width: 6em; }
+.dl__title { font-size: clamp(2.75rem, 1.25rem + 4.4vw, 5.25rem); font-weight: 700; line-height: 0.94; letter-spacing: -0.045em; margin-bottom: 20px; max-width: 7.2em; }
 .dl__after { max-width: 30em; color: var(--sky-soft); }
 .dl__dialog { grid-column: 8 / span 5; justify-self: end; align-self: center; width: min(100%, 460px); }
 @media (max-width: 1023px) {
@@ -586,6 +603,7 @@ html.gl-on.motion .intro__home { display: none; }
 /* ---------- Everything around the session: one grid of cards. The page stays light; the app in
    each card is the real macOS window, in dark mode. ---------- */
 .bento { background: var(--ground); color: var(--text); padding: clamp(110px, 11vw, 180px) var(--m) clamp(96px, 9vw, 150px); }
+.bento--page { padding-top: clamp(64px, 8vw, 120px); }
 .bento__title { font-size: var(--t-head); font-weight: 700; line-height: 0.98; letter-spacing: -0.04em; max-width: 12em; margin-bottom: clamp(40px, 5vw, 72px); }
 .bento__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--g); }
 .card {
@@ -642,8 +660,6 @@ html.gl-on.motion .intro__home { display: none; }
   font-family: var(--f); font-size: 0.5em; font-weight: 600; letter-spacing: 0; background: color-mix(in oklab, var(--text) 9%, transparent);
 }
 .card--span { grid-column: 1 / -1; min-height: 0; }
-/* The pair in words: its three parts as the crew card's bands, at the card's foot. */
-.card--pair .card__show { padding-bottom: var(--pad); }
 .card__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px calc(var(--g) * 3); flex-wrap: wrap; }
 .card__lead { display: flex; flex-direction: column; max-width: 38em; }
 .card__aside { max-width: 25em; font-size: var(--t-small); color: var(--text-2); }
@@ -669,3 +685,96 @@ html.gl-on.motion .intro__home { display: none; }
 /* A real macOS window capture: its own corners and shadow, no frame of ours. */
 .new__frame--mac { aspect-ratio: 1800 / 1160; background: none; border-radius: 0; }
 .new__frame--mac img { object-fit: contain; scale: 1; }
+
+/* ---------- The app's pictures. Each is the app in the look the page is in. ---------- */
+html[data-sea='blue'] .shot--night, html:not([data-sea='blue']) .shot--blue { display: none; }
+
+/* ---------- A scene: the sea out of focus, with a window of the app on it ---------- */
+.scene {
+  --px: 6.6%; --py: 8.8%; --scene: #e3e8f4; --win: #ffffff; --win-line: rgb(18 24 44 / 0.1); --win-shade: rgb(28 40 84 / 0.34);
+  position: relative; overflow: hidden; min-width: 0; background: var(--scene); transition: background-color 0.6s var(--ease);
+}
+html[data-sea='dark'] .scene { --scene: #111728; --win: #17181c; --win-line: rgb(255 255 255 / 0.1); --win-shade: rgb(0 0 0 / 0.62); }
+.scene::before {
+  content: ''; position: absolute; inset: -48px; background: url('/media/sea-above.jpg') 50% 50% / 170% auto;
+  filter: blur(22px) saturate(0.6) brightness(1.1); opacity: 0.7;
+}
+html[data-sea='dark'] .scene::before { filter: invert(1) hue-rotate(180deg) blur(22px) saturate(0.75) brightness(0.85); opacity: 0.75; }
+.scene--b::before { background-position: 14% 76%; }
+.scene--c::before { background-position: 86% 24%; }
+.scene--d::before { background-position: 30% 18%; }
+.scene--e::before { background-position: 72% 84%; }
+.scene--f::before { background-position: 6% 40%; }
+/* A window: it stands in from the scene's top and left and runs off its foot (and, when it is wider
+   than the scene, off its right), cut only along an edge the app has. */
+/* taste-skill-ignore: the app's own window, which does float over the scene */
+.win { position: absolute; overflow: hidden; background: var(--win); border-radius: 10px 10px 0 0; box-shadow: /* taste-skill-ignore */ 0 0 0 1px var(--win-line), 0 28px 64px -26px var(--win-shade); }
+.win img { position: absolute; top: 0; left: 0; width: 100%; max-width: none; height: auto; }
+.win--fit { inset: var(--py) var(--px) 0 var(--px); }
+.win--corner { inset: var(--py) 0 0 var(--px); border-radius: 10px 0 0 0; }
+.win--rise { inset: var(--py) auto 0 50%; width: min(74%, 330px); translate: -50% 0; }
+/* The Wall's own window: its bar, then the tiles that wait on you. */
+.win--wall img { width: 137%; }
+/* Settings, from the panel's left side: After each change, and how each mode works. */
+.win--check img { width: 150%; transform: translate(-27.6%, -31.5%); }
+/* The Add-ons page, past the sidebar. */
+.win--addons img { width: 190%; transform: translate(-22.4%, -0.6%); }
+/* The Design panel alone, from its tabs down: three tenths of the window's width. */
+.win--design img { width: 333.4%; transform: translate(-70.05%, -5.6%); }
+@media (max-width: 767px) {
+  .win--wall img { width: 250%; }
+  .win--check img { width: 215%; }
+  .win--addons img { width: 250%; }
+}
+
+/* ---------- One turn, in three steps: a picture, a line beside it ---------- */
+.turn { background: var(--ground); color: var(--text); padding: clamp(88px, 9vw, 140px) var(--m) 0; }
+.sec-title { font-size: var(--t-title); font-weight: 600; line-height: 1.08; letter-spacing: -0.03em; max-width: 16em; margin-bottom: clamp(28px, 3.4vw, 48px); }
+.dim { color: color-mix(in oklab, var(--text) 46%, var(--ground)); }
+.steps { display: grid; gap: clamp(44px, 7vw, 104px); }
+.step { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(20px, 2.6vw, 32px); align-items: end; }
+.step--flip > .scene { order: 2; }
+.step .scene { aspect-ratio: 4 / 3; }
+.step__title { font-size: var(--t-step); font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 8px; }
+.step__d { max-width: 28em; font-size: 1rem; color: var(--text-2); }
+@media (max-width: 899px) {
+  .step { grid-template-columns: minmax(0, 1fr); row-gap: 16px; align-items: start; }
+  .step--flip > .scene { order: 0; }
+}
+
+/* ---------- Everything around the session: two pictures, then three, a line under each ---------- */
+.around { background: var(--ground); color: var(--text); padding: clamp(88px, 9vw, 140px) var(--m) clamp(88px, 8vw, 130px); }
+/* Each picture, its title and its line share the rows of the grid, so neighbours line up. */
+.vigs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); column-gap: clamp(8px, 1vw, 12px); }
+.vig { grid-column: span 2; grid-row: span 3; display: grid; grid-template-rows: subgrid; row-gap: 0; min-width: 0; scroll-margin-top: calc(var(--nav-h) + 24px); }
+.vig--half { grid-column: span 3; }
+.vig .scene { --px: 7%; --py: 8.2%; aspect-ratio: 408 / 340; }
+.vig--half .scene { --px: 6.6%; --py: 8.8%; aspect-ratio: 4 / 3; }
+.vig__title { margin-top: 16px; font-size: var(--t-cap); font-weight: 600; line-height: 1.2; letter-spacing: -0.015em; }
+.vig__text { margin-top: 6px; padding-bottom: clamp(40px, 5vw, 72px); max-width: 30em; font-size: 1rem; color: var(--text-2); }
+.vig .card__keys { margin-left: 10px; }
+.around__more { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+@media (max-width: 1023px) {
+  .vig, .vig--half { grid-column: span 3; }
+  .vig .scene, .vig--half .scene { --px: 6.6%; --py: 8.8%; aspect-ratio: 4 / 3; }
+}
+@media (max-width: 639px) { .vig, .vig--half { grid-column: 1 / -1; } }
+
+/* ---------- Nothing in between, beside the download ---------- */
+.dl__priv { grid-column: 1 / -1; align-self: start; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--g); row-gap: 28px; margin-bottom: clamp(72px, 9vw, 150px); }
+.dl__pleft { grid-column: 1 / span 4; }
+.dl__ptitle { font-size: var(--t-lead); font-weight: 600; line-height: 1.12; letter-spacing: -0.025em; margin-bottom: 10px; }
+.dl__plead { max-width: 26em; color: var(--sky-soft); }
+.dl__pright { grid-column: 6 / span 7; display: grid; gap: 24px; }
+.dl__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--g); }
+.dl__facts dt { font-weight: 600; }
+.dl__facts dd { margin-top: 4px; font-size: var(--t-small); color: var(--sky-soft); }
+.dl__code { margin: 0; }
+.dl__code pre { padding: 18px 22px; font-size: var(--t-small); line-height: 1.8; overflow-x: auto; }
+.dl__code .c-com { color: #8a93b8; }
+.dl__code .c-prompt { color: #8fb5ff; }
+/* A phone can't install it: there the dialog offers the link to open on a computer. */
+.dl__phone { display: none; width: 100%; height: 40px; margin-top: 12px; }
+@media (hover: none) and (pointer: coarse) { .dl__phone { display: inline-flex; } }
+@media (max-width: 1023px) { .dl__pleft, .dl__pright { grid-column: 1 / -1; } }
+@media (max-width: 767px) { .dl__facts { grid-template-columns: minmax(0, 1fr); } }

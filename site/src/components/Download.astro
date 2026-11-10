@@ -1,15 +1,32 @@
 ---
-import { download, site } from '../data/site';
+// The close: what stays between you and your tools (nothing), said where the question comes up,
+// then the download itself. A phone can't install it, so there the dialog offers the link instead.
+import { data, download, site } from '../data/site';
 const d = download;
 ---
 <section class="dl" id="download" data-tone="sky" aria-labelledby="dl-title">
+  <div class="dl__priv" id="private">
+    <div class="dl__pleft">
+      <h2 class="dl__ptitle" data-split="words">{data.title}</h2>
+      <p class="dl__plead" data-reveal="focus">{data.short}</p>
+    </div>
+    <div class="dl__pright" data-reveal="up">
+      <dl class="dl__facts">
+        {data.facts.map((f) => <div><dt>{f.title}</dt><dd>{f.note}</dd></div>)}
+      </dl>
+      <figure class="dl__code mini">
+        <pre><code><span class="c-com"># All it asks each tool</span>
+{data.commands.map((c) => <span><span class="c-prompt">$</span> {c}{'\n'}</span>)}</code></pre>
+      </figure>
+    </div>
+  </div>
   <div class="dl__close">
     <h2 class="dl__title" id="dl-title" data-split="words">{d.close[0]} {d.close[1]}</h2>
     <p class="dl__after" data-reveal="focus">{d.after}</p>
   </div>
   <div class="ui ui-dialog dl__dialog" data-ui data-reveal="up" data-dl role="group" aria-labelledby="dl-dialog-title">
     <p class="ui-dialog__title" id="dl-dialog-title">Download Liner Code <span data-rel="version">{site.version}</span></p>
-    <p class="ui-note">A beta. Expect a few rough edges, and tell us on GitHub.</p>
+    <p class="ui-note">A beta. Tell us what breaks on GitHub.</p>
     <div class="ui-seg" role="radiogroup" aria-label="Your computer" data-seg>
       <span class="ui-seg__plate" aria-hidden="true" data-seg-plate></span>
       <button type="button" role="radio" aria-checked="true" data-os="mac">{d.mac.label}</button>
@@ -28,5 +45,6 @@ const d = download;
       <a class="ui-link" href={site.releases}>All releases</a>
       <a class="ui-btn ui-btn--act ui-btn--big" href={site.mac} data-dl-main data-mac={site.mac} data-win={site.win} data-win-action={site.winAction}>Download the DMG</a>
     </div>
+    <button class="ui-btn dl__phone" type="button" data-copy={site.url} data-copy-label="Copy the link for your computer">Copy the link for your computer</button>
   </div>
 </section>

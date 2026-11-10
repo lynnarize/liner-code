@@ -42,6 +42,12 @@ export class Sea {
   private cam: Camera = { height: 3.2, back: 4.2, pitch: 0.55, fovY: 0.84 };
   private basis = { pos: [0, 0, 0], right: [1, 0, 0], up: [0, 1, 0], fwd: [0, 0, -1], tx: 1, ty: 1 };
   private pointer = { x: 0, y: 0, s: 0, target: 0 };
+  /** A light over the sea at rest: it follows where it is sent with a little lag, the way a lamp swings. */
+  private lamp = { x: 0, y: 0, s: 0, tx: 0, ty: 0, target: 0 };
+  torch = 0;
+  /** The words' block (drawing-buffer px: centre x, y from the bottom, half w, h) and how the sea keeps quiet under it. */
+  hushRect = new Float32Array(4);
+  hush: [number, number, number] = [0, 0, 0];
   private scale = 1;
   private frameTimes: number[] = [];
   quiet = 0;
@@ -97,11 +103,12 @@ export class Sea {
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     for (const name of ['uRes', 'uCamPos', 'uCamRight', 'uCamUp', 'uCamFwd', 'uTan', 'uRs', 'uTime', 'uQuiet', 'uWin', 'uWinR', 'uPxQ', 'uGrow', 'uDark', 'uHorizon', 'uAtlas', 'uLines',
-      'uRowGen', 'uLineCount', 'uRip', 'uRipId', 'uRipCount', 'uPointer', 'uPaper', 'uTide', 'uDeep', 'uInk']) {
+      'uRowGen', 'uLineCount', 'uRip', 'uRipId', 'uRipCount', 'uPointer', 'uLamp', 'uTorch', 'uHush', 'uHushK', 'uGround', 'uPaper', 'uTide', 'uDeep', 'uInk']) {
       this.u[name] = gl.getUniformLocation(p, name);
     }
     gl.uniform1f(this.u.uRs, RS);
-    gl.uniform3fv(this.u.uPaper, hex('#F4EBDC'));
+    gl.uniform3fv(this.u.uPaper, hex('#F8F9FB'));
+    gl.uniform3fv(this.u.uGround, hex('#0B0E1C'));
     gl.uniform3fv(this.u.uTide, hex('#2557E3'));
     gl.uniform3fv(this.u.uDeep, hex('#0B33B4'));
     gl.uniform3fv(this.u.uInk, hex('#0B0E1C'));
@@ -244,6 +251,15 @@ export class Sea {
     return !!q;
   }
 
+  /** Carry the lamp to a point on screen, or put it out. */
+  setLamp(clientX: number, clientY: number, on: boolean) {
+    const q = on ? this.ray(clientX, clientY) : null;
+    this.lamp.target = q ? 1 : 0;
+    if (!q) return;
+    this.lamp.tx = q.x; this.lamp.ty = q.y;
+    if (this.lamp.s < 0.02) { this.lamp.x = q.x; this.lamp.y = q.y; }
+  }
+
   /** Send a turn from a point on screen; on the sky (or with no point) it starts at your feet. */
   ripple(clientX?: number, clientY?: number) {
     const q = clientX === undefined ? null : this.ray(clientX, clientY!);
@@ -305,6 +321,9 @@ export class Sea {
     this.resize();
     if (!this.frozen) this.time += dt;
     this.pointer.s += (this.pointer.target - this.pointer.s) * Math.min(1, dt * 6);
+    const lk = this.frozen ? 1 : 1 - Math.exp(-dt * 7);
+    this.lamp.x += (this.lamp.tx - this.lamp.x) * lk; this.lamp.y += (this.lamp.ty - this.lamp.y) * lk;
+    this.lamp.s += (this.lamp.target - this.lamp.s) * (this.frozen ? 1 : Math.min(1, dt * 3.5));
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.useProgram(this.prog);
     const { pos, right, up, fwd, tx, ty } = this.basis;
@@ -323,6 +342,10 @@ export class Sea {
     gl.uniform1f(this.u.uDark, this.dark);
     gl.uniform1f(this.u.uHorizon, Math.sqrt((RS + this.cam.height) ** 2 - RS * RS) + 0.5);
     gl.uniform3f(this.u.uPointer, this.pointer.x, this.pointer.y, this.pointer.s);
+    gl.uniform3f(this.u.uLamp, this.lamp.x, this.lamp.y, this.lamp.s);
+    gl.uniform1f(this.u.uTorch, this.torch);
+    gl.uniform4fv(this.u.uHush, this.hushRect);
+    gl.uniform3f(this.u.uHushK, this.hush[0], this.hush[1], this.hush[2]);
     const rip = new Float32Array(MAX_RIPPLES * 4), ids = new Int32Array(MAX_RIPPLES);
     this.ripples.forEach((r, i) => { rip.set([r.x, r.y, r.r, r.w], i * 4); ids[i] = r.id; });
     gl.uniform4fv(this.u.uRip, rip);

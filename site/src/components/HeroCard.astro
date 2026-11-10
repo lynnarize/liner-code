@@ -1,0 +1,50 @@
+---
+// The earlier hero: the sea in a card under the promise. Not used: Hero.astro replaced it on
+// 10 Nov 2026. Kept until the owner settles on the hero, then it goes.
+// The promise in a line, then the app itself in a wide card: its window lying on the sea, seen
+// from overhead, running off the card's foot. The sea is live (it parts in the window's shape, and
+// a click sends a turn, counted in the bar under the card); without WebGL it is a picture under
+// the window.
+import SeaStage from './SeaStage.astro';
+import Shot from './Shot.astro';
+import { hero, home, site } from '../data/site';
+const [noteA, noteB] = hero.note.split('{v}');
+---
+<section class="hero" data-hero data-tone="paper" aria-labelledby="hero-title">
+  <div class="hero__top">
+    <h1 id="hero-title" class="hero__title" data-split="words" data-intro data-delay="0.2">{hero.title}</h1>
+    <p class="hero__lead" data-reveal="focus" data-intro data-delay="0.45">{hero.lead}</p>
+    <div class="hero__act" data-reveal="focus" data-intro data-delay="0.6">
+      <div class="hero__buttons">
+        <a class="btn btn--ink" href={site.mac} data-rel="mac">Download for Mac</a>
+        <a class="btn btn--soft" href={site.win} data-rel="win">{site.winLabel}</a>
+      </div>
+      <p class="hero__note">{noteA}<span data-rel="version">{site.version}</span>{noteB}</p>
+    </div>
+  </div>
+  <div class="hero__card" data-reveal="up" data-intro data-delay="0.7">
+    <SeaStage kind="lay" label="A sea of code in rings, made of lines from Liner Code's own source, with the app lying on it. Click the sea to send a ripple.">
+      <div class="floor" data-floor>
+        <Shot name="agents" alt={home.alt} w={2000} h={1250} eager wide sizes="(max-width: 767px) 205vw, min(74vw, 1104px)" />
+      </div>
+    </SeaStage>
+    <div class="hero__foot" data-hero-foot>
+      <p class="hero__hint" data-hint data-fine={hero.hint.fine} data-touch={hero.hint.touch}>{hero.hint.fine}</p>
+      <div class="turnbar" data-ui data-turnbar>
+        <span class="turnbar__changes" aria-live="polite" data-changes>
+          <span class="turnbar__label">Changes</span>
+          <span class="turnbar__add" data-add>+0</span>
+          <span class="turnbar__del" data-del>&minus;0</span>
+        </span>
+        <button class="turnbar__btn" type="button" data-undo disabled>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+          Undo turn
+        </button>
+        <button class="turnbar__send" type="button" data-send aria-label="Send a turn from the middle">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+        </button>
+      </div>
+      <p class="sr-only" aria-live="polite" data-announce></p>
+    </div>
+  </div>
+</section>

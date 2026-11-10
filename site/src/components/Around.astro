@@ -1,0 +1,59 @@
+---
+// Everything around the session: two pictures, then three, a line under each. Every one is the
+// app itself in the look the page is in (scripts/demo-shots.mjs): a small window of its own,
+// or one panel of the window, cut along an edge the app has.
+import Shot from './Shot.astro';
+import { around as a, site } from '../data/site';
+const keys = (k: string) => `<span class="card__keys" aria-label="Command Shift ${k}"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>${k}</kbd></span>`;
+---
+<section class="around" id="features" data-tone="paper" aria-labelledby="around-title">
+  <h2 class="sec-title" id="around-title" data-reveal="focus"><span class="dim">Everything</span> around the session</h2>
+  <div class="vigs">
+
+    <article class="vig vig--half" id="wall">
+      <div class="scene scene--f" data-reveal="up">
+        <div data-ui class="win win--corner win--wall"><Shot name="wall" alt={a.wall.alt} w={1800} h={1020} /></div>
+      </div>
+      <h3 class="vig__title" data-reveal="focus">{a.wall.title}<Fragment set:html={keys('O')} /></h3>
+      <p class="vig__text" data-reveal="focus" data-delay="0.08">{a.wall.text}</p>
+    </article>
+
+    <article class="vig vig--half" id="agents">
+      <div class="scene scene--c" data-reveal="up" data-delay="0.06">
+        <div data-ui class="win win--fit"><Shot name="crew" alt={a.crew.alt} w={1440} h={1448} /></div>
+      </div>
+      <h3 class="vig__title" data-reveal="focus">{a.crew.title}<Fragment set:html={keys('A')} /></h3>
+      <p class="vig__text" data-reveal="focus" data-delay="0.08">{a.crew.text}</p>
+    </article>
+
+    <article class="vig" id="sidekick">
+      <div class="scene scene--d" data-reveal="up">
+        <div data-ui class="win win--fit"><Shot name="sidekick" alt={a.sidekick.alt} w={1440} h={1448} /></div>
+      </div>
+      <h3 class="vig__title" data-reveal="focus">{a.sidekick.title}</h3>
+      <p class="vig__text" data-reveal="focus" data-delay="0.08">{a.sidekick.text}</p>
+    </article>
+
+    <article class="vig">
+      <div class="scene scene--e" data-reveal="up" data-delay="0.06">
+        <div data-ui class="win win--rise win--design"><Shot name="design" alt={a.design.alt} w={2000} h={1250} /></div>
+      </div>
+      <h3 class="vig__title" data-reveal="focus">{a.design.title}<Fragment set:html={keys('E')} /></h3>
+      <p class="vig__text" data-reveal="focus" data-delay="0.08">{a.design.text}</p>
+    </article>
+
+    <article class="vig">
+      <div class="scene scene--b" data-reveal="up" data-delay="0.12">
+        <div data-ui class="win win--corner win--addons"><Shot name="addons" alt={a.addons.alt} w={1700} h={1236} /></div>
+      </div>
+      <h3 class="vig__title" data-reveal="focus">{a.addons.title}</h3>
+      <p class="vig__text" data-reveal="focus" data-delay="0.08">{a.addons.text}</p>
+    </article>
+
+  </div>
+  <p class="around__more" data-reveal="focus">
+    <a class="card__link" href="/features/">All features</a>
+    <a class="card__link" href={`/changelog/#v${site.version}`}><span>What's new in <span data-rel="version">{site.version}</span></span></a>
+    <a class="card__link" href="/workshop/">How Workshop makes add-ons</a>
+  </p>
+</section>

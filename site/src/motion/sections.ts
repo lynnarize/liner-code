@@ -61,13 +61,15 @@ function how() {
   const undo = $<HTMLButtonElement>('[data-undo-turn]');
   const commit = $<HTMLButtonElement>('[data-commit]');
   const state = $('[data-diff-state]');
+  // What the part says at rest is its own (one file in a diff, two under the Reviewer's check).
+  const rest = { commit: commit?.textContent ?? 'Commit 1 file', state: state?.textContent ?? '1 of 1 file viewed' };
   const onUndo = () => {
     if (!diff) return;
     const undone = diff.classList.toggle('is-undone');
     diff.classList.remove('is-committed');
-    if (commit) { commit.textContent = 'Commit 1 file'; commit.disabled = undone; }
+    if (commit) { commit.textContent = rest.commit; commit.disabled = undone; }
     undo!.querySelector('span')!.textContent = undone ? 'Redo turn 1' : 'Undo turn 1';
-    if (state) state.textContent = undone ? 'Turn 1 undone: the file is as it was' : '1 of 1 file viewed';
+    if (state) state.textContent = undone ? state.dataset.undone ?? 'Turn 1 undone: the file is as it was' : rest.state;
   };
   const onCommit = () => {
     if (!diff) return;
@@ -182,8 +184,8 @@ function copies() {
   const offs: (() => void)[] = [];
   $$<HTMLButtonElement>('[data-copy]').forEach((b) => {
     const fn = async () => {
-      try { await navigator.clipboard.writeText(b.dataset.copy!); b.textContent = 'Copied'; } catch { b.textContent = 'Select and copy'; }
-      setTimeout(() => { b.textContent = 'Copy'; }, 1800);
+      try { await navigator.clipboard.writeText(b.dataset.copy!); b.textContent = 'Copied'; } catch { b.textContent = b.dataset.copyLabel ? b.dataset.copy! : 'Select and copy'; }
+      setTimeout(() => { b.textContent = b.dataset.copyLabel ?? 'Copy'; }, 1800);
     };
     b.addEventListener('click', fn);
     offs.push(() => b.removeEventListener('click', fn));
@@ -416,10 +418,21 @@ function tone() {
       const dy = scrollY - lastY;
       if (Math.abs(dy) > 4) { bar.classList.toggle('is-away', dy > 0 && scrollY > innerHeight * 0.6 && !document.querySelector('[data-sheet]:not([hidden]), [data-get-menu]:not([hidden])')); lastY = scrollY; }
       const heroR = hero?.getBoundingClientRect();
-      bar.classList.toggle('is-solid', !(heroR && heroR.top <= 0 && heroR.bottom > innerHeight * 0.5) && !document.querySelector('.stage--page'));
+      // Over a pinned hero the bar is clear until the sky has gone; over the home page's hero it is
+      // clear only at the very top, since the app's window scrolls up under it.
+      const pinned = !!hero?.querySelector('.stage--hero');
+      const clear = hero && !pinned ? scrollY < 8 : !!(heroR && heroR.top <= 0 && heroR.bottom > innerHeight * 0.5);
+      bar.classList.toggle('is-solid', !clear && !document.querySelector('.stage--page'));
     }
     const under = sections.filter((s) => { const r = s.getBoundingClientRect(); return r.top <= y && r.bottom > y; }).pop();
-    if (hero) { const r = hero.getBoundingClientRect(); if (r.top <= y && r.bottom > y) return; } // the hero's driver decides
+    if (hero) {
+      const r = hero.getBoundingClientRect();
+      if (r.top <= y && r.bottom > y) {
+        // A pinned hero's driver decides; the home page's hero is on the page's own ground.
+        if (!hero.querySelector('.stage--hero')) document.documentElement.dataset.navTone = 'paper';
+        return;
+      }
+    }
     document.documentElement.dataset.navTone = under?.dataset.tone ?? 'paper';
   };
   gsap.ticker.add(update);

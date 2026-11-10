@@ -1,0 +1,13 @@
+---
+// A picture of the app, taken in both of its looks (scripts/demo-shots.mjs): the dark one shows
+// with the night sea, the light one with the blue. Only the look on screen is fetched, but for
+// the hero's, where the night picture is the page's first.
+interface Props { name: string; alt: string; w: number; h: number; eager?: boolean; wide?: boolean; sizes?: string }
+const { name, alt, w, h, eager = false, wide = false, sizes } = Astro.props;
+const src = (t: string) => `/media/shot-${name}-${t}.webp`;
+const set = (t: string) => (wide ? `/media/shot-${name}-${t}-1200.webp 1200w, ${src(t)} 2000w` : undefined);
+---
+<img class="shot shot--night" src={wide ? `/media/shot-${name}-dark-1200.webp` : src('dark')} srcset={set('dark')} sizes={wide ? sizes : undefined} alt={alt} width={w} height={h}
+  loading={eager ? 'eager' : 'lazy'} decoding={eager ? 'sync' : 'async'} fetchpriority={eager ? 'high' : undefined} />
+<img class="shot shot--blue" src={wide ? `/media/shot-${name}-light-1200.webp` : src('light')} srcset={set('light')} sizes={wide ? sizes : undefined} alt={alt} width={w} height={h}
+  loading="lazy" decoding={eager ? 'sync' : 'async'} fetchpriority={eager ? 'high' : undefined} />

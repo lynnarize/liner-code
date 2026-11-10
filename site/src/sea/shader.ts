@@ -43,7 +43,12 @@ uniform vec4 uRip[${MAX_RIPPLES}];   // centre q.x, q.y, front radius, strength
 uniform int uRipId[${MAX_RIPPLES}];
 uniform int uRipCount;
 uniform vec3 uPointer;       // q.x, q.y, strength
+uniform vec3 uLamp;          // q.x, q.y, strength: a light carried over the sea at rest
+uniform float uTorch;        // 0 the sea as it is, 1 the lamp and a turn's wake bring the code up out of the quiet
 uniform vec3 uPaper;
+uniform vec4 uHush;          // the words' block on screen, in drawing-buffer px: centre x, y (from the bottom), half w, h
+uniform vec3 uHushK;         // how the sea keeps quiet under them: its characters fade (x), the lamp dims (y), over this many px (z)
+uniform vec3 uGround;        // the page's ground at night: a sea at rest under a lamp lies on it, with no edge
 uniform vec3 uTide;
 uniform vec3 uDeep;
 uniform vec3 uInk;
@@ -137,6 +142,8 @@ void main() {
   vec2 pv = qd - uPointer.xy;
   float pf = exp(-dot(pv, pv) / 1.1) * uPointer.z;
   qd = uPointer.xy + pv * (1.0 - 0.22 * pf);
+  vec2 lv = q - uLamp.xy;
+  float lit = exp(-dot(lv, lv) / 1.5) * uLamp.z;
 
   // Ripples bend the rings near their front.
   float front = 0.0, wake = 0.0, scramble = 0.0, swell = 0.0;
@@ -236,6 +243,15 @@ void main() {
     glyph = textureGrad(uAtlas, uv, gradX, gradY).r;
   }
 
+  // Under the words the sea keeps quiet: its characters thin out (the bands flow on) and the lamp
+  // dims, each as far as uHushK says. Nothing is painted over it.
+  float hush = 0.0;
+  if (uHushK.z > 0.0) {
+    vec2 hp = abs(gl_FragCoord.xy - uHush.xy) - uHush.zw;
+    hush = 1.0 - smoothstep(-uHushK.z * 0.3, uHushK.z, length(max(hp, 0.0)) + min(max(hp.x, hp.y), 0.0));
+  }
+  glyph *= 1.0 - hush * uHushK.x;
+
   // Bands: ultramarine flowing outward, their edges brushed.
   float brush = vnoiseW(vec2(theta * 260.0, r * 2.2), 260.0) * 0.12 + vnoiseW(vec2(theta * 36.0, r * 0.6), 36.0) * 0.22;
   float bc = r / BAND - uTime * 0.045 + brush;
@@ -271,8 +287,11 @@ void main() {
   col3 = mix(col3, mix(uPaper, vec3(1.0), 0.35), haze * 0.55);
 
   // Quiet: the sea settles into paper.
+  // Under a lamp (uTorch) the code near it comes back up, and so do the lines a turn has just written.
   vec3 calm = mix(uPaper, ink, glyph * 0.16 * inner);
-  col3 = mix(col3, calm, uQuiet);
+  float up = uTorch * max(lit * 0.62, clamp(wake * 0.45 + front, 0.0, 1.0) * 0.7) * (1.0 - hush * uHushK.y);
+  float rest = uQuiet * (1.0 - up);
+  col3 = mix(col3, calm, rest);
 
   // The rim of the parting: a dark line of bunched code, then foam, after the quiet so it holds.
   if (uGrow > 0.0) {
@@ -287,6 +306,8 @@ void main() {
   }
   vec3 under = mix(uDeep, uInk, 0.55);
   if (uDark > 0.0) { col3 = mix(col3, night(col3), uDark); under = mix(under, mix(uPaper, vec3(1.0), 0.3), uDark); }
+  // Night paper is a step bluer than the page: where the torch's sea is at rest it takes the page's own ground.
+  if (uTorch > 0.0 && uDark > 0.0) col3 += (uGround - night(uPaper)) * (uDark * uTorch * rest);
   // The window's shadow on the water, below and around its frame: after the night, so it stays a shadow.
   // (q.y runs down the screen when the camera looks straight down.)
   if (uGrow > 0.0) {

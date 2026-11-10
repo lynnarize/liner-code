@@ -1,6 +1,6 @@
 // Every word on the site. Facts come from the README, the changelog and the source; nothing here
 // is a claim the app doesn't make about itself. Server only: the version and the files come from
-// GitHub's latest release at build time (./release).
+// GitHub's latest release at build time (./release). 
 import { release, stars } from './release';
 import { longDate, shortCount } from '../lib/release';
 
@@ -10,7 +10,7 @@ const REPO = 'https://github.com/lynnarize/liner-code';
 export const site = {
   name: 'Liner Code',
   url: 'https://linercode.dev',
-  title: 'Liner Code: a home for the coding agents you already use',
+  title: 'Liner Code: one app for your coding agents',
   description:
     'A free, open-source app for Mac and Windows that drives Claude Code, Codex, OpenCode and Hermes, with plans, cards and a diff for every turn.',
   version: VERSION,
@@ -31,25 +31,57 @@ export const site = {
 };
 
 export const nav = [
+  { href: '/#how', label: 'How it works' },
   { href: '/#features', label: 'Features' },
   { href: '/workshop/', label: 'Workshop' },
   { href: '/changelog/', label: 'Changelog' },
 ];
 
 export const hero = {
-  lead: 'A home for the coding agents you already use.',
+  title: 'One app for your coding agents',
+  lead: 'Run Claude Code, Codex, OpenCode and Hermes together. One plans, one builds, another checks.',
   // {v} is the version, kept in its own element so the browser can bring it up to date.
   note: 'Free and open source. Version {v}, a beta, for Apple Silicon Macs and Windows.',
   hint: { fine: 'Click the code to send a turn.', touch: 'Tap the code to send a turn.' },
 };
 
-// The app at work, under the sea in the hero (and above the statement without WebGL or motion).
+// The app itself, lying on the sea in the hero: Liner Code 0.2.5 with the Demo on its sample project
+// (scripts/demo-shots.mjs).
 export const home = {
-  alt: "Liner Code in dark mode, at work on Fix the tide time after midnight: Sonnet 5.5 on a second turn with two helper agents exploring the code, the Reviewer's Verified verdict on the first, and the Changes panel open on src/tides.js, three lines added and one removed.",
+  alt: 'Liner Code, six seconds into a turn that sent three agents off. In the session: the plan, then Started 3 agents, 1 done and 2 working, and Stop agents over the composer. Beside it the Agents panel: who is on it as a tree, a timeline with a bar for each agent, the tasks, and the session in numbers.',
 };
 
-export const intro =
-  'It runs Claude Code, Codex, OpenCode and Hermes together: one leads, a quicker one takes the routine work, one from another maker checks. What it lacks, they make as add-ons you say yes to.';
+// One turn in two steps, each said in a line beside a picture of the app.
+export const steps = [
+  { title: 'Waits for your yes', text: 'You read the steps and the files first. Approve the plan, or edit it.',
+    alt: "The same session with its plan: Wrap round to tomorrow's first high tide, three steps in one file, a box to say what to change, and Edit steps and Approve and start. Nothing runs until you approve." },
+  { title: 'Has another maker check it', text: "A model from another maker reads each change against five fixed criteria. What it blocks goes back before it's yours.",
+    alt: "Settings, Agentic features, The Reviewer: it reads each change before it's yours and sends back what must be fixed. Read each change is on, and GPT Astra reads what Opus 5.5 and its sidekick change. Who reads: best from another maker than the pair's. Rounds before it's yours, set to 2." },
+];
+
+// Everything around the session, a picture of the app and a line each (scripts/demo-shots.mjs).
+export const around = {
+  wall: {
+    title: 'Shows every session on one wall', text: 'Approve, answer or steer each one from its tile. What waits on you comes first.',
+    alt: 'The Wall with six sessions as tiles. One needs you: it has a plan for you, with Read the plan. Five are done, each with its answer in brief and Settle.',
+  },
+  crew: {
+    title: 'Shows who sent whom', text: 'When a model sends agents off, see what each is doing, and stop any one.',
+    alt: 'Four seconds into a turn that sent three agents off: the plan, then Started 3 agents, 1 done and 2 working. Explore, on Haiku 5.5, is reading src/tides.test.js. The Test runner is done: 1 test, 1 passed. The Subagent, on Sonnet 5.5, is fetching tidesandcurrents.noaa.gov. Over the composer: Stop agents.',
+  },
+  sidekick: {
+    title: 'Hands the routine work to a sidekick', text: 'Your best model leads. It hands the edits and test runs to a quicker one, then reads what came back.',
+    alt: 'A session run by a pair. The lead reads a file and says the fix is mechanical, so it hands it to the sidekick. Under it: Handed 1 brief to its sidekick, and the sidekick done in 5.8 seconds, Changed tides.js, plus 3 minus 1, measured. Then the lead: I read its diff, and the tests pass.',
+  },
+  design: {
+    title: 'Draws the screen beside the session', text: 'Ask any agent for a screen. The Browser, Terminal, Files and Diff open beside it the same way.',
+    alt: "The Design surface beside a session, showing the phone screen an agent drew: Today's tides, the next high tide at 21:52, and its curve.",
+  },
+  addons: {
+    title: 'Makes the add-ons it lacks', text: "Say what you'd like, and an agent makes it in Workshop. Nothing goes in until you say yes.",
+    alt: 'The Add-ons page with nothing added yet: say what you would like and an agent makes it in Workshop, with Make one with an agent, and From GitHub, npm or a folder.',
+  },
+};
 
 // One turn of the Demo's tide app, as the app shows it. Wording from the app and the Demo.
 export const turn = {
@@ -100,10 +132,11 @@ export const surfaces = [
 
 export const data = {
   title: 'Nothing in between',
+  short: 'No server, no telemetry. Each tool talks straight to its own provider.',
   lead: 'Model traffic goes from each tool to its own provider and is billed to your account. Liner Code has no server, no telemetry and no analytics.',
   facts: [
-    { title: 'Sign-ins stay with each tool', note: 'It asks only whether you are signed in, and "Sign in" opens the tool\'s own login.' },
-    { title: 'Keys go to the keychain', note: "An API key you add is sealed in this Mac's keychain and handed to the tool in memory." },
+    { title: 'Sign-ins stay with each tool', note: 'It asks only whether you are signed in.' },
+    { title: 'Keys go to the keychain', note: 'Sealed there, and handed to the tool in memory.' },
     { title: 'Everything else is on this Mac', note: 'Sessions, snapshots and settings live in ~/.liner-code.' },
   ],
   commands: ['claude auth status', 'codex login status'],
@@ -135,6 +168,17 @@ export const features = [
     pic: { src: '/media/app-design.jpg', w: 1800, h: 1125, alt: 'A session that asked for a home screen for the tide tables, with the Design surface beside it showing the phone screen: the next high tide at 21:52, its curve and today’s tides.', cap: 'The Design surface beside a session.' },
   },
   {
+    id: 'modes', name: 'Pair', tag: 'Lead and sidekick',
+    title: 'Run a session on one model or a pair, and pick who checks each change.',
+    items: [
+      { label: 'Pair', title: 'A lead and its sidekick', note: 'The lead talks to you, plans and decides. It hands bounded work to a quicker model beside it: an edit it can spell out, the same change in many files, a slow test run.' },
+      { label: 'Best', title: 'The lead alone', note: 'Your strongest model does all of it.' },
+      { label: 'Fast', title: 'The sidekick alone', note: 'The quicker model does all of it, for small jobs.' },
+      { label: 'Reviewer', title: 'Reads each change', note: "A model from another maker than the pair's reads each change and sends back what must be fixed." },
+    ],
+    pic: { src: '/media/app-agentic.jpg', w: 1800, h: 1125, alt: 'Settings, Agentic features: your pair, with the lead and its sidekick, and the Reviewer.', cap: 'Settings, Agentic features.' },
+  },
+  {
     id: 'addons', name: 'Add-ons', tag: 'Workshop',
     title: "Ask for what Liner Code doesn't have, and an agent makes it.",
     items: [
@@ -153,17 +197,6 @@ export const features = [
 // The facts are the 0.2.4 changelog's; the sessions are the Demo's tide project.
 export const news = {
   since: 'New in 0.2.4',
-  // Lead + sidekick, which took the place of Plan, then build and Auto in 0.2.5. In words only: the
-  // picture of the old Settings went with them. The facts are the 0.2.5 changelog's.
-  pair: {
-    title: 'One model, or a pair',
-    text: 'Your best model leads. It hands the edits and test runs to a quicker one, then reads what came back. Any mix of Claude Code, Codex, OpenCode and Hermes.',
-    roles: [
-      { name: 'Lead', note: 'Talks to you and plans. It hands over one bounded piece of work at a time, and waits for it.' },
-      { name: 'Sidekick', note: 'Works in the same folder at your access level. Its steps and the files it changed show under the lead’s turn.' },
-      { name: 'Reviewer', note: 'A model from another maker reads each change before it’s yours, and is never one that wrote it.' },
-    ],
-  },
   wall: {
     title: 'The Wall',
     text: "Every live session at once, as tiles you can answer from. What waits on you comes first, then what's working, then what's done.",
@@ -239,10 +272,10 @@ export const news = {
 
 export const download = {
   close: ['Stand in', 'the middle.'],
-  after: 'Open it, connect the tools you have, add a project, and pick one model or a pair.',
+  after: 'Open it, connect your tools, add a project.',
   mac: {
     label: 'Mac', file: release.mac.file, needs: 'Apple Silicon, tried on macOS 27', short: 'Apple Silicon · DMG',
-    first: "The beta isn't notarized yet. The first time, open System Settings, Privacy & Security, and press Open Anyway, or run:",
+    first: 'Not notarized yet. The first time, press Open Anyway in System Settings, Privacy & Security, or run:',
     command: 'xattr -dr com.apple.quarantine "/Applications/Liner Code.app"',
     after: 'After that it updates itself.',
   },
@@ -250,14 +283,14 @@ export const download = {
   win: release.win.kind === 'setup'
     ? {
         label: 'Windows', file: release.win.file, needs: 'x64, installs for you alone, no administrator', short: 'x64 · Setup',
-        first: "It isn't signed yet, so SmartScreen asks the first time: More info, then Run anyway.",
+        first: 'Not signed yet. SmartScreen asks once: More info, then Run anyway.',
         command: '',
-        after: "Then it's in the Start menu. It doesn't update itself yet: run the next setup over it.",
+        after: 'No auto-update yet: run the next setup over it.',
         zip: release.win.zip,
       }
     : {
         label: 'Windows', file: release.win.file, needs: 'x64, unzip it anywhere', short: 'x64 · Zip',
-        first: "It isn't signed yet, so SmartScreen asks the first time: More info, then Run anyway.",
+        first: 'Not signed yet. SmartScreen asks once: More info, then Run anyway.',
         command: 'Liner Code.exe',
         after: "It doesn't update itself yet: download the next zip.",
         zip: undefined,

@@ -1,15 +1,15 @@
 /* Liner 2.0: the app's own parts, at their true size, inside [data-ui] fragments.
-   Tokens from ui/src/liner/foundation.css and ui/src/app/app.css (light, and dark for Auto). */
+   Tokens from ui/src/liner/foundation.css and ui/src/app/app.css (light, and dark). */
 [data-ui] {
   /* Liner 2.0's roles (surface < well < plate, ink in four steps, one accent, the red act),
      set in this page's paper and ink so the parts sit in it instead of on it. */
-  --surface: #fbf6ee;
-  --well: #efe6d6;
-  --plate: #e5dac6;
+  --surface: #ffffff;
+  --well: #f1f2f5;
+  --plate: #e4e6ec;
   --ink: var(--night);
-  --ink-2: #39362f;
-  --ink-3: #635e55;
-  --ink-4: #958e80;
+  --ink-2: #33363e;
+  --ink-3: #5b5f6a;
+  --ink-4: #8a8e99;
   --hair: color-mix(in oklab, var(--night) 9%, transparent);
   --accent: var(--tide);
   --act: var(--send);
@@ -31,9 +31,9 @@ html[data-sea='dark'] [data-ui] {
   --well: #1c2341;
   --plate: #262e52;
   --ink: var(--paper);
-  --ink-2: #d9d2c4;
-  --ink-3: #a8a293;
-  --ink-4: #7c776d;
+  --ink-2: #d4d6dc;
+  --ink-3: #a1a5b0;
+  --ink-4: #777b86;
   --hair: color-mix(in oklab, var(--paper) 10%, transparent);
   --accent: #7ea4ff;
 }

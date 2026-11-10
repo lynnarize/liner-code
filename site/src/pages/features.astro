@@ -1,0 +1,19 @@
+---
+// Every feature as a card: what the home page says in a line each, at full length.
+import Base from '../layouts/Base.astro';
+import SeaStage from '../components/SeaStage.astro';
+import Bento from '../components/Bento.astro';
+import Footer from '../components/Footer.astro';
+---
+<Base title="Features" description="Everything around a Liner Code session: the Wall, who sent whom, surfaces, designs, the pair, add-ons and what stays on your Mac.">
+  <section class="cl-top" aria-labelledby="ft-title">
+    <SeaStage kind="page" class="stage--short" label="The sea of code under the word Features.">
+      <p slot="word" class="word word--page" aria-hidden="true">Features</p>
+      <div class="page-top">
+        <h1 id="ft-title" class="page-title">Everything around the session, card by card.</h1>
+      </div>
+    </SeaStage>
+  </section>
+  <Bento page />
+  <Footer slot="footer" />
+</Base>

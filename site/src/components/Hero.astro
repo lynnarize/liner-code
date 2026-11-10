@@ -1,45 +1,28 @@
 ---
+// The whole first screen is the sea of code at rest, almost the page's ground, and the pointer
+// carries a lamp that brings the code up under it (after usemono.dev's torch). The promise sits in
+// the middle with the sea calm under it, and the app's window rises from the foot of the screen,
+// the sea parted round it. A click sends a ripple that lights the lines it crosses.
 import SeaStage from './SeaStage.astro';
+import Shot from './Shot.astro';
 import { hero, home, site } from '../data/site';
 const [noteA, noteB] = hero.note.split('{v}');
 ---
-<section class="hero" data-hero aria-labelledby="hero-title">
-  <SeaStage kind="hero" label="A sea of code in rings around a figure, made of lines from Liner Code's own source. Click it to send a ripple.">
-    <!-- Under the sea: what shows when it parts, seen from overhead. -->
-    <div class="floor" data-floor>
-      <img src="/media/mac-working.webp" srcset="/media/mac-working-1400.webp 1400w, /media/mac-working.webp 2400w" sizes="min(84vw, 1180px)"
-        alt={home.alt} width="2400" height="1414" decoding="async" fetchpriority="low" />
-    </div>
-    <h1 slot="word" id="hero-title" class="word" data-word>
-      <span class="word__line">Liner</span> <span class="word__line">Code</span>
-    </h1>
-    <div class="hero__top" data-hero-top>
-      <p class="hero__lead" data-split="words" data-intro data-delay="0.3">{hero.lead}</p>
-      <div class="hero__act" data-reveal="focus" data-intro data-delay="0.55">
-        <p class="hero__note">{noteA}<span data-rel="version">{site.version}</span>{noteB}</p>
+<section class="hero hero--torch" data-hero data-tone="paper" aria-labelledby="hero-title">
+  <SeaStage kind="lay" class="stage--torch" torch label="A sea of code in rings, made of lines from Liner Code's own source, at rest. The pointer lights the code under it, and a click sends a ripple.">
+    <div class="hero__top" data-words>
+      <h1 id="hero-title" class="hero__title" data-split="words" data-intro data-delay="0.2">{hero.title}</h1>
+      <p class="hero__lead" data-reveal="focus" data-intro data-delay="0.45">{hero.lead}</p>
+      <div class="hero__act" data-reveal="focus" data-intro data-delay="0.6">
         <div class="hero__buttons">
-          <a class="btn btn--paper" href={site.mac} data-rel="mac">Download for Mac</a>
-          <a class="btn btn--line" href={site.win} data-rel="win">{site.winLabel}</a>
+          <a class="btn btn--ink" href={site.mac} data-rel="mac">Download for Mac</a>
+          <a class="btn btn--soft" href={site.win} data-rel="win">{site.winLabel}</a>
         </div>
+        <p class="hero__note">{noteA}<span data-rel="version">{site.version}</span>{noteB}</p>
       </div>
     </div>
-    <div class="hero__foot" data-hero-foot>
-      <p class="hero__hint" data-hint data-fine={hero.hint.fine} data-touch={hero.hint.touch}>{hero.hint.fine}</p>
-      <div class="turnbar" data-ui data-turnbar>
-        <span class="turnbar__changes" aria-live="polite" data-changes>
-          <span class="turnbar__label">Changes</span>
-          <span class="turnbar__add" data-add>+0</span>
-          <span class="turnbar__del" data-del>&minus;0</span>
-        </span>
-        <button class="turnbar__btn" type="button" data-undo disabled>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
-          Undo turn
-        </button>
-        <button class="turnbar__send" type="button" data-send aria-label="Send a turn from the middle">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
-        </button>
-      </div>
-      <p class="sr-only" aria-live="polite" data-announce></p>
+    <div class="floor" data-floor data-reveal="up" data-intro data-delay="0.7">
+      <Shot name="agents" alt={home.alt} w={2000} h={1250} eager wide sizes="(max-width: 767px) 205vw, min(74vw, 1104px)" />
     </div>
   </SeaStage>
 </section>

@@ -168,10 +168,120 @@ FOOTER         tiles: statement | nav | version | GitHub
 - Surfaces' sentence says a live page in the Browser costs about what it costs on its own.
 - The changelog page reads a list inside a list item ("  - ", as in 0.2.4's tools), with open dots.
 
+## Changes for the picture-first page (10 Nov 2026)
+
+The owner asked whether the page was good enough to make someone try the app, gave devin.ai as the
+example to lean toward, and approved a mockup built in three rounds. What changed, and why:
+
+- **The app is on the first screen.** The old hero showed the name for two and a half screens before
+  the sea parted for the window. Now the promise is the headline ("One app for your coding agents"),
+  one sentence says what it does, and the window lies on the sea straight under it. The sea is a
+  "lay" stage (motion/stage.ts): the end of the old move held still, camera overhead, the sea lying
+  along the window's frame. No pin. Clicking the sea still sends a turn, and the turn bar still
+  counts it. The wordmark on the horizon stays in the footer's tile.
+- **Every claim sits under a piece of the app.** One turn is three steps (an ordered list, no index
+  numbers), each a working part on a scene with a line beside it. Everything around the session is
+  five pictures with a line under each: Auto (route.ts running), Designs, the Wall, agents at work,
+  and the add-on's card. The scene is the sea toned to one blue (sea-above.jpg multiplied with the
+  sky), so the dark app never sinks into the night page.
+- **The pictures are the current app.** scripts/demo-shots.mjs takes them headlessly at 2x from a
+  dev build that can only reach the Demo: the hero's window, Designs, the Wall and the agents are
+  Liner Code 0.2.4 on its sample project. They are browser renders, so they carry no traffic lights.
+  Each capture is zoomed to the part that matters inside a box the scene frames (.crop).
+- **Shorter words.** A headline of one line, one sentence under it, captions that start with a verb
+  and leave "Liner Code" unsaid ("Asks before it guesses", "Shows every session on one wall").
+- **The cards moved.** The full cards (what 0.2.4 brought, surfaces, the Desk, modes, add-ons) are
+  the Features page now (/features/), linked from under the five pictures. The statement is gone:
+  the hero's sentence says it.
+- **Nothing in between sits beside the download,** where the question comes up, and on a phone the
+  dialog offers the link to open on a computer.
+- **The star count shows from a hundred up** (Nav.astro). Below that the number argues against the app.
+- **No line about the Demo.** 0.2.4 hides the Demo until you tap your name six times, so the page
+  can't promise a first run without a sign-in. Showing the Demo on a fresh install with nothing
+  connected would make that line true.
+
+## Changes after the owner's look at the build (10 Nov 2026, later)
+
+- **The pictures are smaller, in Devin's proportions:** two, then three, about 400px tall, the
+  parts drawn at 84% of their size in the app (full size on a phone). Section titles and captions
+  step down (`--t-title`, `--t-cap`) so the pictures lead.
+- **No capture is cut through its words.** The first Designs picture was a box whose left edge
+  sliced the session's text. Each capture is now cut along an edge the app has: the Wall from its
+  own top left corner, running off the scene (`.crop--corner`); the Design panel alone, rising from
+  the scene's foot (`.crop--rise`); the agents' column whole, in a box (`.crop--box`).
+- **The third step is the Reviewer, not the diff.** A diff you can undo is in every harness; a
+  model from another maker reading each change against five fixed criteria is not. The step draws
+  the check with the engine's own criteria (engine/src/review.ts, read at build time), one sent
+  back once. The title became "One turn, checked before it's yours" and the hero's sentence ends
+  on the check.
+- **The hero's window is agents at work,** with the Agents panel beside the session, for the same
+  reason: it is the picture other harnesses can't show.
+
+## Changes for one look, in Devin Desktop's presentation (10 Nov 2026, third look)
+
+The owner's words: "change every card into screenshot (example devin)", "when in light mode just
+use light instead of dark", "background instead of paper brown. change into light. the goal was
+make consistent design", "make it style design screenshot, and presentation like devin.ai"
+(devin.ai/desktop), and "make it smaller. create a empty space in right and left".
+
+- **Every picture is the app itself.** The parts redrawn in HTML (the question, the plan, the
+  check, the router pane) are gone from the home page; each card is a capture of 0.2.4
+  (`scripts/demo-shots.mjs`). The live router moved to `/features/#auto`.
+- **Each capture exists twice,** light and dark, taken from one app state by two browsers.
+  `Shot.astro` puts both in the page and the look shows one: light pictures in the Blue look,
+  dark ones at Night. No dark window on a light page any more.
+- **The ground is a neutral light** (`--paper: #f8f9fb`), not cream; the sea's paper colour and
+  the interface tokens follow it.
+- **One column, with the margins left empty.** `--m` is now the page's margin on every page: 96px
+  at 1440, 16px on a phone, and the column stops at 1248px, as on Devin Desktop. The nav, the
+  download section and the other pages sit in the same column. The footer's tiles still run edge
+  to edge.
+- **Smaller.** The headline is 46px (was 60), section titles 32, step titles 26, captions 20, the
+  closing line 84 (was 131). The hero's card is 1248 by 640 and the window runs off its foot,
+  between the agents and the composer; the turn bar sits under the card. Steps are two equal
+  columns with a 4:3 picture and the text on the picture's foot line; the cards are two 4:3
+  pictures, then three.
+- **A scene and a window.** Each picture is a scene (the sea from overhead, out of focus, in the
+  look's colours) with the app's window on it: a hairline, a soft shadow, standing in from the top
+  and the left and running off the foot. Insets are percentages of the scene, so a window is cut
+  at the same place at every width. The session pictures were retaken in a 720px window so their
+  text stays readable in a 528px one. Windows wider than their scene (the Wall, Settings,
+  Add-ons) run off its right as well; that cut does go through words, the way Devin's does.
+
+## The hero in usemono.dev's manner (10 Nov 2026)
+
+The owner, on the sea of code: "how about making something like this https://www.usemono.dev/".
+Mono's page is one black screen with the app as a 12% ghost across it and a soft torch on the
+pointer that lights it up. The home page's hero now does that with our own material
+(`components/Hero.astro`; the earlier hero, the sea in a card, is `HeroCard.astro`, unused and
+kept only until the owner settles).
+
+- **The first screen is the sea at rest:** almost the page's ground (`quiet` 0.94; at night the
+  resting sea takes the ground's own colour), thinning out to the page at the hero's foot, so the
+  hero has no edge. The pointer carries a lamp (`uLamp`, `uTorch` in sea/shader.ts) that brings
+  the code up under it, with a little lag; with no pointer it drifts by itself. A click sends a
+  ripple that lights the lines it crosses.
+- **The promise is centred, and the app's window rises from the foot of the screen,** whole, the
+  sea parted round it, so the product is still on the first screen (Mono shows none of it).
+- **Calm water, not a light behind the words.** The first try let the ground through in a soft
+  patch behind them; the owner asked for "alternative to improve readability instead of using
+  black/white light background" and, of four ways tried on a switch, chose calm water: under the
+  words the sea's characters thin out while its bands flow on, and the lamp dims (`uHush`,
+  `CALM` in motion/stage.ts). Nothing is painted behind the text.
+- **No hint and no turn bar.** The owner: "remove 'click the code to send a turn' and it's button
+  (undo turn, changes)". The click still ripples; nothing counts it or undoes it.
+
 ## Inspector results we keep on purpose
 
 - `covered-text`: the wordmark lies under the sea. That is the concept and the owner's request.
-- `palette-cream`: the cream ground is the owner's reference picture.
-- `pinned-over-picture`: the hero's lead sits on the sky over the canvas and fades in the first
-  16% of the hero's scroll.
 - `no-footage`: the moving picture is the live sea itself.
+- `size-count`: thirteen sizes at 1440. Five steps carry the page (46, 32, 26, 20, 16); the rest are
+  the nav, the keys beside a caption, the closing line and the footer's figures and wordmark.
+- The lint's remaining hits (monospace for code, the interface fragments' own shadows) are the
+  live site's too: the count matches `site/`.
+
+## 11 Nov: the nav slimmed, and Auto became the sidekick
+
+- **Nav** (the user picked option 1 of three, "and drop auto"): four links centred over the headline (How it works, Features, Workshop, Changelog), then one round look button (it shows the look a press turns to), the GitHub mark alone, and Download.
+- **Auto is gone from the app** (0.2.5: Lead + sidekick), so the live router on Features is removed with its code and styles, and nothing on the site imports from `engine/` any more.
+- The home card is now "Hands the routine work to a sidekick", with a picture of the Demo pair (`demo-shots.mjs sidekick`; the sample project's `src/tides.js` must be as committed first). The third step's picture is Settings, The Reviewer, and the Features card shows Settings, Your pair. All the home page's pictures were then retaken from the 0.2.5 tree at the user's ask, but the question card: the Demo no longer asks a question of its own, so the user had that step dropped: one turn is now two steps, the plan and the check (`shot-question-*.webp` is left in `public/media`, unused). The plan comes from "Show me a plan first". The rig's Wall was tidied by settling the old duplicate sessions.

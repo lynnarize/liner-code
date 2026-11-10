@@ -1,6 +1,8 @@
 // The sea's driver. One canvas for the whole site, moved into the stage on screen; one variable
 // per stage (the hero's scroll progress) decides the camera, the word, the figure, the quiet and,
 // once the camera is overhead, the sea parting for the app's home window, which then lies on it.
+// The home page's hero is a "lay" stage: the end of that move held still, the camera overhead and
+// the sea already lying along the window, with no scroll to drive it.
 import { gsap } from 'gsap';
 import { SplitText } from 'gsap/SplitText';
 import { Sea, type Camera } from '../sea/sea';
@@ -31,7 +33,14 @@ type Stage = {
   progress: number;
   floor: HTMLElement | null; // under the sea: the app's home window
   grow: number;
+  torch: boolean;  // the sea at rest, lit by a lamp the pointer carries
+  lampAt: number;  // when the pointer last carried it (ms); it drifts by itself after a while
+  words: HTMLElement | null; // the words that stand on a torch's sea
 };
+
+// Calm water: under a torch stage's words the sea's characters fade out (its bands flow on) and the
+// lamp dims this far, so no code ever sits under a sentence and nothing is painted behind it.
+const CALM = { glyph: 1, lamp: 0.72, feather: 96 };
 
 // The hero's scroll, in phases. The camera tips overhead, then the sea parts for the window and
 // stays open to its frame for the rest of the hero.
@@ -72,6 +81,7 @@ function wordAbove(word: HTMLElement) {
 }
 
 function measure(st: Stage) {
+  if (st.kind === 'lay') return; // overhead: no horizon to sit a word on
   const h = st.el.clientHeight;
   let horizon = h * (st.kind === 'tile' ? 0.58 : 0.5);
   if (st.kind === 'hero') {
@@ -90,6 +100,8 @@ function measure(st: Stage) {
 function cameraFor(st: Stage): Camera {
   const base = baseCamera(st);
   const w = st.el.clientWidth, h = st.el.clientHeight;
+  // Overhead, and lower over a wide stage, so the view never runs past the sea's rim.
+  if (st.kind === 'lay') return { ...base, height: 7.2 * Math.min(1, 1.9 / (w / Math.max(1, h))), back: 0.0001, pitch: Math.PI / 2 - 0.0001 };
   const frac = 1 - st.horizon / h;
   const pitch0 = Sea.pitchFor(base, frac, w / h);
   if (st.kind !== 'hero') return { ...base, pitch: pitch0 };
@@ -110,14 +122,15 @@ export function startStage() {
 
   const place = () => {
     const s = getSea();
-    const next = stages.filter((st) => st.visible).sort((a, b) => (a.kind === 'hero' ? -1 : b.kind === 'hero' ? 1 : 0))[0] ?? null;
+    const first = (st: Stage) => st.kind === 'hero' || st.kind === 'lay';
+    const next = stages.filter((st) => st.visible).sort((a, b) => (first(a) ? -1 : first(b) ? 1 : 0))[0] ?? null;
     if (!s || next === active) return;
     active = next;
     if (active && s.canvas.parentElement !== active.slot) active.slot.appendChild(s.canvas);
   };
 
   const figure = (st: Stage, s: Sea) => {
-    if (!st.figure) return;
+    if (!st.figure || st.kind === 'lay') return; // the window lies where the figure stands
     const feet = s.project(0, 0, 0);
     const head = s.project(0, 0, 0.36);
     const side = Math.max(4, feet.y - head.y);
@@ -143,12 +156,25 @@ export function startStage() {
       st.progress = reduced ? 0 : clamp01(-r.top / span);
       applyHero(st);
     }
-    s.quiet = st.kind === 'hero' ? smooth(0.3, 0.46, st.progress) * 0.55 : 0;
+    const lay = st.kind === 'lay';
+    if (lay) st.progress = 1;
+    s.quiet = st.kind === 'hero' ? smooth(0.3, 0.46, st.progress) * 0.55 : lay ? (st.torch ? 0.94 : 0.55) : 0;
+    s.torch = st.torch ? 1 : 0;
+    if (st.torch && st.words) {
+      const w = st.words!.getBoundingClientRect(), c = s.canvas.getBoundingClientRect(), k = s.density;
+      s.hushRect.set([((w.left + w.right) / 2 - c.left) * k, (c.bottom - (w.top + w.bottom) / 2) * k, (w.width / 2 + 28) * k, (w.height / 2 + 10) * k]);
+      s.hush = [CALM.glyph, CALM.lamp, CALM.feather * k];
+    } else s.hush = [0, 0, 0];
+    // With no pointer on it (a phone, or a mouse gone still elsewhere) the lamp drifts over the words.
+    if (st.torch && now - st.lampAt > 2600) {
+      const r = st.el.getBoundingClientRect(), t = reduced ? 0 : now / 1000;
+      s.setLamp(r.left + r.width * (0.5 + 0.34 * Math.sin(t * 0.21)), r.top + Math.min(r.height * 0.22, 230) + 70 * Math.sin(t * 0.33), true);
+    }
     // The night sea or the blue one, as <html data-sea> says; a change eases over, never cuts.
     const night = document.documentElement.dataset.sea === 'blue' ? 0 : 1;
     s.dark = reduced ? night : s.dark + (night - s.dark) * (1 - Math.exp(-dt * 4));
     s.setCamera(cameraFor(st));
-    s.grow = st.kind === 'hero' ? part(st, s, dt) : 0;
+    s.grow = st.kind === 'hero' || lay ? part(st, s, dt) : 0;
     s.render(dt);
     if (!drawn) { drawn = true; document.documentElement.classList.add('sea-drawn'); }
     figure(st, s);
@@ -166,7 +192,8 @@ export function startStage() {
     st.grow = Math.min(st.grow, smooth(PH.tilt, PH.part[0], p));
     if (target === 0 && st.grow < 0.002) st.grow = 0;
     if (target === 1 && st.grow > 0.998) st.grow = 1;
-    const img = st.floor?.querySelector('img');
+    // The window's picture in the look on screen (the other look's is there too, not shown).
+    const img = [...(st.floor?.querySelectorAll('img') ?? [])].find((i) => i.getClientRects().length);
     if (!st.floor || !img) return 0;
     const shown = st.grow > 0;
     gsap.set(st.floor, { visibility: shown ? 'visible' : 'hidden' });
@@ -215,7 +242,8 @@ export function startStage() {
     stages = els.map((el) => ({
       el, kind: el.dataset.seaStage!, slot: el.querySelector<HTMLElement>('[data-sea-slot]')!,
       word: el.querySelector<HTMLElement>('[data-stage-word]'), figure: el.querySelector<HTMLElement>('[data-figure]'),
-      horizon: 0, visible: false, progress: 0, floor: el.querySelector<HTMLElement>('[data-floor]'), grow: 0,
+      horizon: 0, visible: false, progress: 0, floor: el.querySelector<HTMLElement>('[data-floor]'), grow: el.dataset.seaStage === 'lay' ? 1 : 0,
+      torch: el.dataset.torch !== undefined, lampAt: -1e9, words: el.querySelector<HTMLElement>('[data-words]'),
     }));
     active = null;
     const relayout = () => { stages.forEach(measure); };
@@ -233,13 +261,16 @@ export function startStage() {
     // Clicks send a turn; the pointer is a lens.
     const offs: (() => void)[] = [];
     for (const st of stages) {
+      const carry = (e: PointerEvent) => { if (st.torch && active === st) { s.setLamp(e.clientX, e.clientY, true); st.lampAt = performance.now(); } };
       const down = (e: PointerEvent) => {
+        carry(e);
         if ((e.target as HTMLElement).closest('a, button, input, [data-ui]')) return;
         if (active !== st) return;
         send(e.clientX, e.clientY);
       };
       const move = (e: PointerEvent) => {
         if (active !== st || e.pointerType !== 'mouse') return;
+        carry(e);
         const over = !(e.target as HTMLElement).closest('a, button, input, [data-ui]');
         const on = s.setPointer(e.clientX, e.clientY, over);
         st.el.classList.toggle('is-over-sea', on);

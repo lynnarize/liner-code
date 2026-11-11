@@ -4154,24 +4154,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-size: 12px;
   color: var(--l-ink-3);
 }
-.lc-agent-row-t {
-  display: grid;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 17px;
-}
-.lc-agent-row-t > * {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-agent-row-t b {
-  font-weight: 500;
-}
-.lc-agent-row-t span {
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
 /*
   The picker's rows (the mockup "one model or a pair"): Pair, Best and Fast with their tile, who's
   in each and their makers' marks; then each tool, your agents and the Demo as rows that open.
@@ -4206,6 +4188,10 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
+/* Showing every model, the list scrolls itself, as it does in the first column: the column round it holds still. */
+.lc-who-panel .lc-team-col.lc-who-pair[data-full] {
+  overflow: clip;
+}
 @container (min-width: 560px) {
   .lc-who-panel .lc-team-col + .lc-team-col {
     margin-left: 6px;
@@ -4219,17 +4205,25 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   margin: calc(var(--lc-ring) * -1);
   padding: var(--lc-ring);
   overflow: hidden auto;
-  /* A row the keyboard scrolls to stops a ring's width in from the edge, and below the line that stays at the top, so its ring isn't cut off. */
-  scroll-padding: calc(var(--lc-ring) * 2 + 6px) var(--lc-ring) var(--lc-ring);
+  /* A row the keyboard scrolls to stops a ring's width in from the edge, so its ring isn't cut off. */
+  scroll-padding: var(--lc-ring);
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
 .lc-who-scroll > * {
   flex: none;
 }
+/* Space, not a line, sets the tools apart from the three rows. */
+.lc-who-scroll > .lc-team-lab {
+  padding-top: 11px;
+}
 .lc-who-find {
   margin-bottom: 4px;
 }
+/*
+  Kept short so the whole first view fits the room it opens into: Pair, Best and Fast are one line
+  each (the name, then who's in it), and the tools sit two to a row.
+*/
 .lc-who-row,
 .lc-who-tool {
   display: grid;
@@ -4237,19 +4231,44 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   align-items: center;
   column-gap: 10px;
   width: 100%;
-  min-height: 46px;
+  min-height: 34px;
   padding: 0 10px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 11px;
   background: none;
   text-align: left;
   color: inherit;
   cursor: pointer;
   transition: background 140ms ease;
 }
+.lc-who-row-t {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 17px;
+  white-space: nowrap;
+}
+.lc-who-row-t b {
+  flex: none;
+  font-weight: 500;
+}
+.lc-who-row-t span {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+}
+.lc-who-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+}
 .lc-who-tool {
-  grid-template-columns: 22px minmax(0, 1fr) 14px;
-  min-height: 40px;
+  grid-template-columns: 22px minmax(0, 1fr) 13px;
+  column-gap: 8px;
+  padding: 0 8px 0 10px;
   border-radius: 10px;
   font-size: 13px;
 }
@@ -4300,25 +4319,31 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-who-tool-t small {
+/* A tool's own list: the way back, and the account it's signed in with at the other end. */
+.lc-who-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.lc-who-top > .lc-who-back {
+  margin-bottom: 0;
+}
+.lc-who-acct {
+  min-width: 0;
+  overflow: hidden;
+  padding-right: 9px;
   font-size: 12px;
   color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-who-sep {
+  flex: none;
   height: 1px;
-  margin: 5px 4px 0;
+  margin: 5px 4px;
   background: var(--l-line);
-}
-/*
-  In the scrolling part the line stays put at its top, and its shadow, in the panel's own colour,
-  covers the band above it: what scrolls up goes under the line rather than showing through under
-  the Fast row. The rows scroll to stop clear of it (scroll-padding), so no ring goes under it.
-*/
-.lc-who-scroll > .lc-who-sep {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  box-shadow: 0 -6px 0 5px var(--l-float);
 }
 .lc-way-marks {
   display: inline-flex;
@@ -4426,23 +4451,121 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   flex: none;
   color: var(--l-ink-3);
 }
-.lc-who-pick[aria-expanded="true"] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
-}
 @media (hover: hover) {
-  .lc-who-pick:not([aria-expanded="true"]):hover {
+  .lc-who-pick:hover {
     background: var(--l-wash-2);
   }
 }
-.lc-who-list {
-  display: grid;
-  margin: 0 4px 4px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--l-wash);
+/*
+  What the pair is likely to cost: a dot on a bar from green to red, named "Pair" above it, with a
+  mark under the bar where its sidekick alone (Fast) and its lead alone (Best) would sit. A place,
+  never a number. The dot is white in both themes, so it reads on every part of the bar.
+*/
+.lc-cost {
+  padding: 10px 9px 0;
+}
+.lc-cost-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-2);
+}
+.lc-cost-h > span:last-child {
+  color: var(--l-ink-3);
+}
+.lc-cost-bar {
+  position: relative;
+  height: 48px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  line-height: 14px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-cost-bar > * {
+  position: absolute;
+}
+.lc-cost-track,
+.lc-cost-mini > i {
+  background: linear-gradient(90deg, var(--l-ok), var(--l-warn) 55%, var(--l-danger));
+}
+.lc-cost-track {
+  top: 19px;
+  right: 0;
+  left: 0;
+  height: 6px;
+  border-radius: 3px;
+}
+.lc-cost-dot {
+  top: 16px;
+  left: var(--pair);
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: oklch(1 0 0);
+  box-shadow:
+    0 0 0 1px oklch(0.25 0.02 265 / 0.18),
+    0 1px 3px oklch(0.2 0.02 265 / 0.35);
+  transition: left 320ms var(--l-ease-out);
+}
+.lc-cost-pair {
+  top: 0;
+  left: clamp(12px, var(--pair), calc(100% - 12px));
+  translate: -50%;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  transition: left 320ms var(--l-ease-out);
+}
+.lc-cost-tick {
+  top: 27px;
+  width: 2px;
+  height: 4px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--l-ink-3);
+  transition: left 320ms var(--l-ease-out);
+}
+.lc-cost-lab {
+  top: 33px;
+}
+.lc-cost-lab[data-side="after"] {
+  left: calc(var(--at) + 4px);
+}
+.lc-cost-lab[data-side="before"] {
+  right: calc(100% - var(--at) + 4px);
+}
+.lc-who-note.lc-cost-note {
+  padding: 2px 0 4px;
+}
+/* The same scale, small, at the end of a choice in a list: the bar is cut where the pair would land with it. */
+.lc-cost-mini {
+  flex: none;
+  width: 36px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--lc-plate);
+}
+.lc-cost-mini[data-none] {
+  background: none;
+}
+.lc-cost-mini > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background-size: 36px 100%;
+  background-repeat: no-repeat;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-cost-dot,
+  .lc-cost-pair,
+  .lc-cost-tick {
+    transition: none;
+  }
 }
 /* The composer's chip: the marks of who works, each on a small tile, a pair's two overlapping. */
 .lc-who-marks {
@@ -7893,4 +8016,22 @@ html[data-native="mac"] .lc-lockup {
   .lc-rvm-link:hover {
     color: var(--l-ink);
   }
+}
+
+/* ---------- Motion: Full and Quick ----------
+   Settings › Appearance › Motion, put on html[data-motion] by look.ts. Full is the motion as it was
+   drawn: a view comes in with its fade, slide and unblur each time it opens, one you have seen too.
+   Quick, the default, shows a view you open as it is and keeps every move for what arrives while you
+   watch: entering() in look.ts ends what a view starts as it opens, before its first frame. That is
+   done from script, not from a rule here, because a rule on the view's root has to come off again,
+   and both putting it on and taking it off restyle everything in the view (about twice what Full
+   costs a switch, measured). What you open by pressing keeps its move, shorter: the panel (and its
+   column) and a sheet take 180ms.
+   The system's Reduce motion turns all of it off at either level (foundation.css, at the end). */
+html[data-motion="quick"] .lc-panel:not([data-leaving]),
+html[data-motion="quick"] .lc-sheet[open] .lc-sheet-frame {
+  animation-duration: 180ms;
+}
+html[data-motion="quick"] .lc-session .lc-body {
+  transition-duration: 180ms;
 }

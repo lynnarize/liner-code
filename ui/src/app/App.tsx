@@ -2,7 +2,7 @@
   Liner Code. The window is one ground: the sidebar beside Home, a session or Usage, with
   nothing drawn between them. ⌘K reaches everything; the shell's menu bar sends the same commands.
 */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import type { AgentProfile, PanelPlace, RoutineRun, SessionMode } from "@contracts";
 import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
@@ -15,16 +15,33 @@ import { Home } from "./Home";
 import { I } from "./icons";
 import { ACCESS_LEVELS, agentOf, wallShown } from "./model";
 import { Session, showAppTab, showBelow } from "./Session";
-import { applyLook, readLook } from "./look";
+import { applyLook, entering, readLook } from "./look";
 import { Sidebar, waitsOnYou } from "./Sidebar";
 // The builder brings Liner's workflow canvas; it loads when you first edit a routine.
 const RoutineBuilder = lazy(() => import("./RoutineBuilder").then((m) => ({ default: m.RoutineBuilder })));
-// Screens you open now and then load when you first do, so launch has less to read.
-const Settings = lazy(() => import("./Settings").then((m) => ({ default: m.Settings })));
+/*
+  Settings, Usage and the Wall load once the app has started and is idle (App, below), so launch has
+  no more to read and their first open has nothing to wait for. A chunk that's here is handed over
+  in the same turn: React's lazy takes even a finished import a turn later, shows the fallback, and
+  then holds it for its 300ms.
+*/
+function early<T extends ComponentType<any>>(load: () => Promise<T>) {
+  let got: T | undefined;
+  let going: Promise<T> | undefined;
+  // One that failed (the engine restarting) before the screen was opened is asked for again when it
+  // opens. Once the screen has asked, it waits on the same fetch, and a failure then is kept by lazy for good.
+  const fetch = () => (going ??= load().then((c) => (got = c), (e) => ((going = undefined), Promise.reject(e))));
+  const View = lazy(() => (got ? ({ then: (ok: (m: { default: T }) => void) => ok({ default: got! }) } as unknown as Promise<{ default: T }>) : fetch().then((c) => ({ default: c }))));
+  return { View, fetch };
+}
+const SettingsScreen = early(() => import("./Settings").then((m) => m.Settings));
+const UsageScreen = early(() => import("./Usage").then((m) => m.Usage));
+const WallScreen = early(() => import("./Wall").then((m) => m.Wall));
+const Settings = SettingsScreen.View;
 // The Add-ons page shows Settings › Add-ons' own list.
 const Setup = lazy(() => import("./Setup").then((m) => ({ default: m.Setup })));
-const Usage = lazy(() => import("./Usage").then((m) => ({ default: m.Usage })));
-const Wall = lazy(() => import("./Wall").then((m) => ({ default: m.Wall })));
+const Usage = UsageScreen.View;
+const Wall = WallScreen.View;
 const RoutinesPage = lazy(() => import("./Routines").then((m) => ({ default: m.RoutinesPage })));
 const Compare = lazy(() => import("./Compare").then((m) => ({ default: m.Compare })));
 import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
@@ -122,6 +139,13 @@ export function App() {
   const [lastProject, setLastProject] = useState<string | undefined>(() => localStorage.getItem("lc:project") ?? undefined);
 
   useEffect(() => startAgentBrowser(), []);
+  // Settings, Usage and the Wall, fetched while nothing else is going on, a moment after the app is up.
+  useEffect(() => {
+    if (!ready) return;
+    const idle = (fn: () => void) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 4000 }) : window.setTimeout(fn, 0));
+    const t = window.setTimeout(() => idle(() => void Promise.all([SettingsScreen.fetch(), UsageScreen.fetch(), WallScreen.fetch()]).catch(() => {})), 1500);
+    return () => clearTimeout(t);
+  }, [ready]);
   useEffect(() => startDesigns(), []);
   useEffect(() => {
     startEngine();
@@ -155,6 +179,13 @@ export function App() {
   const here = besideThread && sideFocus === 1 ? besideThread : current;
   // The two sides' boxes: F6 moves through the areas of the side you're in.
   const besides = useRef<HTMLDivElement>(null);
+  // At Quick motion a view you open shows as it is, in its first frame (look.ts, entering): another
+  // session, Home, the Wall, Usage, a page. The sidebar too, when you come back to it from Settings.
+  const paper = useRef<HTMLElement>(null);
+  const side = useRef<HTMLDivElement>(null);
+  const opened = `${view.kind}:${current?.id ?? ("id" in view ? view.id : "")}:${besideThread?.id ?? ""}`;
+  useLayoutEffect(() => entering(paper.current), [opened, settings, ready, onboarded]);
+  useLayoutEffect(() => entering(side.current), [settings, ready, onboarded]);
   const sideEl = () => (besideThread ? besides.current?.children[sideFocus] : undefined) ?? document;
   // A press or focus in a side gives it your keys. A menu or a Pop opened from a side is portaled out
   // of both (React still passes its events up through here): it leaves the keys where they are.
@@ -609,10 +640,10 @@ export function App() {
         </Suspense>
       ) : (
         <>
-          <div className="lc-side" inert={!sidebar || undefined}>
+          <div ref={side} className="lc-side" inert={!sidebar || undefined}>
             <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
-          <main className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
+          <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
             <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening</span></div>}>
             {view.kind === "session" && current ? (

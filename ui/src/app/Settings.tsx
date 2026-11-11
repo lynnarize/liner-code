@@ -34,7 +34,7 @@ import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./theme
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
-import { applyLook, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Glass, type Look } from "./look";
+import { applyLook, entering, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -58,7 +58,7 @@ export type SettingsPage = "general" | "appearance" | "notifications" | "keyboar
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "How new sessions start, and what Enter does while an agent works.", words: "work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, how much moves, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai voucher promo code redeem" },
@@ -87,6 +87,9 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
   const find = useRef<HTMLInputElement>(null);
   const nav = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  // At Quick motion each place shows as it is when you open it, its header's crumbs too (look.ts, entering).
+  const paper = useRef<HTMLElement>(null);
+  useLayoutEffect(() => entering(paper.current), [page]);
   const place = PLACES.find((p) => p.id === page) ?? PLACES[0];
   const archived = useEngine((s) => s.threads.filter((t) => t.archived).length);
   const secs = useSections(scroller, page);
@@ -208,7 +211,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
 
   return (
     <>
-      <div className="lc-side lc-st-side">
+      <div ref={entering} className="lc-side lc-st-side">
         <div className="lc-sb-head lc-st-head" data-drag>
           <span className="lc-brand" data-drag>
             <button type="button" className="lc-ib l-focus" aria-label="Back to sessions" title="Back to sessions (Esc)" onClick={onClose}>
@@ -268,7 +271,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
                           )}
                         </button>
                         {on && showSecs && (
-                          <div className="lc-st-secs" style={{ "--at": secs.at } as CSSProperties}>
+                          <div ref={entering} className="lc-st-secs" style={{ "--at": secs.at } as CSSProperties}>
                             <span className="lc-st-bar" aria-hidden />
                             <ul aria-label={`${p.label}, its sections`}>
                               {secs.titles.map((t, i) => (
@@ -296,7 +299,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
           <span className="lc-sb-key">esc</span>
         </button>
       </div>
-      <main className="lc-paper lc-st-paper">
+      <main ref={paper} className="lc-paper lc-st-paper">
         <Backdrop />
         <header className="lc-top" data-drag>
           <Breadcrumb
@@ -821,6 +824,12 @@ const DESIGNS: { value: DesignsWhere; title: string; note: string; picture: Reac
   },
 ];
 
+/** What each level of Motion does, under its control. */
+const MOTION_NOTES: Record<Motion, string> = {
+  full: "Every view slides in and comes into focus each time you open it.",
+  quick: "A view you open is there at once. What arrives while you watch still comes into focus.",
+};
+
 function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) {
   // One of your themes holds the mode and the accent; choosing either goes back to Liner's own.
   const own = look.custom ? readThemes().find((t) => t.id === look.custom) : undefined;
@@ -889,6 +898,20 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
               { value: "solid", label: "Solid" },
             ]}
             aria-label="Composer glass"
+          />
+        </Field>
+      </Group>
+      <Group title="Motion" note="Your system's Reduce motion turns all of it off, at either setting.">
+        <Field title="How much moves" note={MOTION_NOTES[look.motion]}>
+          <Segmented
+            size="sm"
+            value={look.motion}
+            onValueChange={(motion) => set({ motion: motion as Motion })}
+            options={[
+              { value: "full", label: "Full" },
+              { value: "quick", label: "Quick" },
+            ]}
+            aria-label="Motion"
           />
         </Field>
       </Group>

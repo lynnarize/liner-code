@@ -44,6 +44,7 @@ import { ship } from "./Ship";
 import { SideChat } from "./SideChat";
 import { Guide, SURFACES, surfaceOf, type SurfaceId, type Tab } from "./Surfaces";
 import { undoTurn } from "./undo";
+import { entering } from "./look";
 import "./dock.css";
 // The terminal brings xterm.js; it loads the first time you open one.
 const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
@@ -114,6 +115,21 @@ export function Panel({
   useEffect(() => setMounted((m) => new Set([...m].filter((t) => all.includes(t)))), [all.join()]);
   const [dragging, setDragging] = useState<Tab | null>(null);
   const [drop, setDrop] = useState<{ pane: number } | null>(null);
+  // A tab you change to, or the panel you open, shows what it holds as it is at Quick motion (look.ts,
+  // entering); the panel itself still slides in. Each tab's box stays mounted, so the ones that were
+  // showing are known by their element. A tab opened for the first time gets its box a render later,
+  // once it is in mounted, so that change is watched too.
+  const box = useRef<HTMLElement>(null);
+  const showing = useRef(new WeakSet<Element>());
+  const tabsShown = dock.panes.map((p) => p.tab).join("\n");
+  useLayoutEffect(() => {
+    const now = new WeakSet<Element>();
+    for (const el of box.current?.querySelectorAll(":scope > .lc-surface:not([hidden])") ?? []) {
+      now.add(el);
+      if (!showing.current.has(el)) entering(el);
+    }
+    showing.current = now;
+  }, [tabsShown, mounted]);
   const open = (t: Tab, pane?: number) => onDock(openTab(dock, t, pane));
   const wideReview = dock.full && dock.panes.length === 1 && dock.panes[0].tab === "changes";
   const make = () => toComposer(thread.id, "Make me a panel that ");
@@ -167,6 +183,7 @@ export function Panel({
 
   return (
     <aside
+      ref={box}
       className="lc-panel lc-dockpanes"
       aria-label="Dock"
       style={{ "--panes": dock.panes.length } as CSSProperties}

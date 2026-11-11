@@ -6,7 +6,7 @@
     <title>Liner Code</title>
     <meta name="color-scheme" content="light dark" />
     <script>
-      // Theme before first paint, so nothing flashes.
+      // Theme and motion before first paint, so nothing flashes or moves that shouldn't.
       (function () {
         try {
           var s = JSON.parse(localStorage.getItem("liner-code:look") || "{}");
@@ -15,6 +15,8 @@
           h.dataset.theme = dark ? "dark" : "light";
           if (s.accent) h.dataset.accent = s.accent;
           if (s.glass) h.style.setProperty("--l-glass-opacity", s.glass);
+          // Motion too (look.ts): Quick unless the look says Full.
+          h.dataset.motion = s.motion === "full" ? "full" : "quick";
         } catch (e) {}
         // The shell: Electron's preload put linerShell here; the Swift shell has a WebKit handler.
         var root = document.documentElement;

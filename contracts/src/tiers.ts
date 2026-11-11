@@ -67,6 +67,33 @@ export const QUICKER: Tier[] = [
 ];
 
 /**
+  What a model costs for a typical task, in dollars: Artificial Analysis's cost per Intelligence
+  Index task (November 2026, each model at its highest effort; Opus and Astra from the Index v5
+  article of 27 October). Only what was measured is here: a model with no row has no estimate, and
+  the picker says so rather than guess. The picker draws these as a place on a bar, never as a
+  number: a tool on a subscription doesn't bill by the task, but a dearer model still uses more of it.
+  Gemini's figure is taken to be Carbon's, the one the tier list was read with. A row is a family,
+  as in the tier list: a newer or older model of the same name takes its family's figure.
+*/
+export const COST: [Maker, RegExp, number][] = [
+  ["anthropic", /fable/i, 12.99],
+  ["anthropic", /opus/i, 10.04],
+  ["anthropic", /sonnet/i, 10.02],
+  ["google", /gemini.*carbon/i, 7.77],
+  ["xai", /grok-[\d.]+(?!.*(fast|mini|code))/i, 7.77],
+  ["openai", /astra(?!.*(pro|fast|flex))/i, 6.24],
+  ["openai", /sol(?!.*pro)/i, 1.27],
+  ["openai", /terra/i, 0.96],
+  ["deepseek", /deepseek.*flash/i, 0.6],
+  ["openai", /luna(?!.*pro)/i, 0.15],
+];
+/**
+  How a pair shares a task, for its estimate: the lead plans, hands over and reads what comes back,
+  the sidekick does the rest. An assumption until it's measured from real pairs' usage.
+*/
+export const LEAD_SHARE = 0.35;
+
+/**
   OpenCode Go's models, through OpenCode or Hermes, by their model id. Each counts against the
   plan's allowance at its own monthly limit: DeepSeek V4.1 Flash $100, the Flash models $60, every
   frontier-class model $15 to $30 at many times the price. So none of them leads (the heaviest

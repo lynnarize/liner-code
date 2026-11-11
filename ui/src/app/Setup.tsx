@@ -12,31 +12,32 @@ import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { Glyph, I, ModelMark } from "./icons";
+import { Glyph, I, ModelMark, type MarkKind } from "./icons";
 import { markOf, modelLabel, pairReady, plural, since } from "./model";
 
 type Start = NonNullable<Settings["start"]>;
 import * as os from "./os";
 
-const TOOLS: { id: ProviderInfo["id"]; tile: string; name: string; beta?: boolean }[] = [
-  { id: "claude", tile: "CC", name: "Claude Code" },
-  { id: "codex", tile: "CX", name: "Codex CLI" },
-  { id: "opencode", tile: "OC", name: "OpenCode" },
-  { id: "hermes", tile: "HE", name: "Hermes" },
-  { id: "cursor", tile: "CU", name: "Cursor", beta: true },
-  { id: "grok", tile: "GR", name: "Grok Build", beta: true },
+/** Each tool and each maker shows its own mark, in the same ink on the same tile as in the model picker. */
+const TOOLS: { id: ProviderInfo["id"]; mark: MarkKind; name: string; beta?: boolean }[] = [
+  { id: "claude", mark: "claudecode", name: "Claude Code" },
+  { id: "codex", mark: "codex", name: "Codex CLI" },
+  { id: "opencode", mark: "opencode", name: "OpenCode" },
+  { id: "hermes", mark: "hermes", name: "Hermes" },
+  { id: "cursor", mark: "cursor", name: "Cursor", beta: true },
+  { id: "grok", mark: "grok", name: "Grok Build", beta: true },
 ];
 /** The API key that stands in for a tool's own sign-in. */
 const KEY_OF: Partial<Record<string, string>> = { claude: "anthropic", codex: "openai" };
-const KEYS: { id: string; tile: string; name: string; note: string; live: boolean }[] = [
-  { id: "anthropic", tile: "A", name: "Anthropic", note: "Claude models, as Anthropic asks apps to use them", live: true },
-  { id: "openai", tile: "O", name: "OpenAI", note: "GPT models, through Codex", live: true },
-  { id: "google", tile: "G", name: "Google", note: "Gemini models", live: false },
-  { id: "xai", tile: "X", name: "xAI", note: "Grok models", live: false },
-  { id: "mistral", tile: "M", name: "Mistral", note: "Mistral and Codestral", live: false },
-  { id: "deepseek", tile: "D", name: "DeepSeek", note: "DeepSeek models", live: false },
-  { id: "openrouter", tile: "R", name: "OpenRouter", note: "Hundreds of models, one key", live: false },
-  { id: "local", tile: "L", name: "Local", note: `Ollama or LM Studio, on ${os.here}`, live: false },
+const KEYS: { id: string; mark: MarkKind; name: string; note: string; live: boolean }[] = [
+  { id: "anthropic", mark: "claude", name: "Anthropic", note: "Claude models, as Anthropic asks apps to use them", live: true },
+  { id: "openai", mark: "openai", name: "OpenAI", note: "GPT models, through Codex", live: true },
+  { id: "google", mark: "gemini", name: "Google", note: "Gemini models", live: false },
+  { id: "xai", mark: "grok", name: "xAI", note: "Grok models", live: false },
+  { id: "mistral", mark: "mistral", name: "Mistral", note: "Mistral and Codestral", live: false },
+  { id: "deepseek", mark: "deepseek", name: "DeepSeek", note: "DeepSeek models", live: false },
+  { id: "openrouter", mark: "openrouter", name: "OpenRouter", note: "Hundreds of models, one key", live: false },
+  { id: "local", mark: "ollama", name: "Local", note: `Ollama or LM Studio, on ${os.here}`, live: false },
 ];
 
 export function Setup({ onDone }: { onDone: () => void }) {
@@ -202,7 +203,9 @@ function Models({ onNext }: { onNext: () => void }) {
                 const p = providers.find((x) => x.id === t.id);
                 return (
                   <div key={t.id} style={{ ["--i" as string]: i }}>
-                    <span className="lc-tile-av">{t.tile}</span>
+                    <span className="lc-tile-av">
+                      <ModelMark kind={t.mark} size={16} />
+                    </span>
                     <span>
                       <b>
                         {t.name}
@@ -248,7 +251,7 @@ function Models({ onNext }: { onNext: () => void }) {
                 return (
                   <div key={k.id}>
                     <span className="lc-tile-av" data-round>
-                      {k.tile}
+                      <ModelMark kind={k.mark} size={16} />
                     </span>
                     <span>
                       <b>{k.name}</b>

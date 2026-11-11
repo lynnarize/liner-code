@@ -26,7 +26,7 @@ import { FindBar, onComposerInsert, toComposer } from "./Find";
 import { revealFile } from "./Files";
 import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
-import { readLook } from "./look";
+import { entering, readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
 import { useSeen } from "./launch";
 import { closeTab, closeWhere, openTab, paneOf, replaceTab, showDock, toggleTab, type DockState } from "./dock";
@@ -326,6 +326,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   useEffect(() => {
     if (view !== "chat" && !tabApps.some((a) => a.id === view)) setView("chat");
   }, [view, tabApps.map((a) => a.id).join()]);
+  // Chat again, or an app's tab: what it holds shows as it is at Quick motion (look.ts, entering).
+  useLayoutEffect(() => entering(threadRef.current), [view]);
   useEffect(() => {
     // Each preview comes up once by itself; closed, it stays closed (its card opens it again), even after you've been to another session.
     const fresh = panelAsks.filter((a) => a.state === "asking" && !openedPreviews.has(`preview:${a.id}`)).map((a) => `preview:${a.id}`);
@@ -723,7 +725,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
             )}
           </div>
           {below && (
-            <div className="lc-below" role="region" aria-label="Bottom panel">
+            <div ref={entering} className="lc-below" role="region" aria-label="Bottom panel">
               <Suspense fallback={null}>
                 <TerminalSurface thread={thread} visible onHide={() => setBelow(false)} />
               </Suspense>
@@ -824,10 +826,19 @@ function blockAt(el: HTMLElement) {
 function promptAt(el: HTMLElement, prompts: Item[]) {
   const end = el.scrollHeight - el.clientHeight - el.scrollTop < 4;
   const line = el.scrollTop + (end ? el.clientHeight * 0.6 : PROMPT_PAD + 24);
+  const zero = el.getBoundingClientRect().top - el.scrollTop;
   let at = -1;
   prompts.forEach((p, i) => {
-    const t = topOf(el, p.id);
-    if (t !== null && t <= line) at = i;
+    const b = el.querySelector<HTMLElement>(`[data-item="${CSS.escape(p.id)}"]`);
+    if (!b) return;
+    // A turn far from the view skips its layout (surfaces.css, content-visibility), and measuring a
+    // block inside it lays the turn out again, every frame of a scroll. The turn's own box answers
+    // whenever the line is outside it; only the turn the line crosses, which is drawn, is measured inside.
+    const turn = b.closest(".lc-turn")?.getBoundingClientRect();
+    if (turn && turn.bottom - zero <= line) at = i;
+    else if (!turn || turn.top - zero <= line) {
+      if (b.getBoundingClientRect().top - zero <= line) at = i;
+    }
   });
   return at;
 }

@@ -273,7 +273,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       if (!row) return setPlate(null);
       const a = inner.getBoundingClientRect();
       const b = row.getBoundingClientRect();
-      setPlate({ x: b.left - a.left, y: b.top - a.top, w: b.width, h: b.height });
+      const next = { x: b.left - a.left, y: b.top - a.top, w: b.width, h: b.height };
+      // The same place again (the list's first resize report, a row that didn't move) keeps the plate as it is, rather than drawing the whole sidebar again for it.
+      setPlate((was) => (was && was.x === next.x && was.y === next.y && was.w === next.w && was.h === next.h ? was : next));
     };
     measure();
     const ro = new ResizeObserver(measure);

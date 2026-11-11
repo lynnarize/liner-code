@@ -4,7 +4,7 @@
 */
 import type { ModelPicks, ProviderInfo, Settings } from "./index.ts";
 import { familyOf, splitModel } from "./index.ts";
-import { CAPPED, FRONTIER, HOME, MAKERS, QUICKER, type Maker, type Tier } from "./tiers.ts";
+import { CAPPED, COST, FRONTIER, HOME, LEAD_SHARE, MAKERS, QUICKER, type Maker, type Tier } from "./tiers.ts";
 
 export type { Maker } from "./tiers.ts";
 
@@ -44,6 +44,49 @@ function firstOf(ready: ProviderInfo[], kind: "frontier" | "quicker", o: { not?:
     if (ref) return ref;
   }
   return undefined;
+}
+
+/**
+  The models to offer first for a pair's lead ("frontier") or its sidekick ("quicker"): the best one
+  ready from each row of its table, down the table, `n` at most and none of `except`. The lead's
+  never include OpenCode Go's, as they never lead.
+*/
+export function shortlistOf(providers: ProviderInfo[], kind: "frontier" | "quicker", o: { n?: number; except?: string[] } = {}): string[] {
+  const ready = readyOf(providers);
+  const out: string[] = [];
+  for (const row of kind === "frontier" ? FRONTIER : QUICKER) {
+    if (out.length >= (o.n ?? 4)) break;
+    const ref = bestOf(ready, row, (r) => out.includes(r) || Boolean(o.except?.includes(r)) || (kind === "frontier" && capped(r)));
+    if (ref) out.push(ref);
+  }
+  return out;
+}
+
+/** What a model costs for a typical task, in dollars (tiers.ts, COST); undefined when it hasn't been measured. */
+export function costOf(ref: string): number | undefined {
+  const { model } = splitModel(ref);
+  const maker = makerOf(ref);
+  return COST.find(([m, re]) => m === maker && re.test(model))?.[2];
+}
+
+/**
+  A pair's estimate for the same task, and each one's part of it: the lead's share at the lead's
+  price, the rest at the sidekick's (tiers.ts, LEAD_SHARE). Undefined when either has no figure.
+*/
+export function pairCostOf(lead: string, sidekick: string): { lead: number; sidekick: number; total: number } | undefined {
+  const l = costOf(lead);
+  const s = costOf(sidekick);
+  if (l === undefined || s === undefined) return undefined;
+  const mine = l * LEAD_SHARE;
+  const theirs = s * (1 - LEAD_SHARE);
+  return { lead: mine, sidekick: theirs, total: mine + theirs };
+}
+
+/** The dearest model with a figure among those ready: what a cost bar's far end stands for. 0 when none has one. */
+export function dearestOf(providers: ProviderInfo[]): number {
+  let top = 0;
+  for (const p of readyOf(providers)) for (const m of p.models) if (!m.legacy) top = Math.max(top, costOf(`${p.id}:${m.id}`) ?? 0);
+  return top;
 }
 
 /** A model whose tool is ready, or nothing (a pick whose tool went away falls back to automatic). */

@@ -8,7 +8,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
 import type { Access, AgentProfile, ProviderInfo, Thread } from "../../contracts/src/index.ts";
-import { castOf, emptyUsage, frontierClass, makerOf, reviewerOf, smallChange, startOf } from "../../contracts/src/index.ts";
+import { castOf, costOf, dearestOf, emptyUsage, frontierClass, makerOf, pairCostOf, reviewerOf, shortlistOf, smallChange, startOf } from "../../contracts/src/index.ts";
+import { LEAD_SHARE } from "../../contracts/src/tiers.ts";
 import { claudeTeam, parseFindings, quickOf, reviewPrompt, subagentName } from "../src/review.ts";
 import { contextSources } from "../src/providers/claude.ts";
 import { describeTrigger, fill, nextRun, sameSecret } from "../src/routines.ts";
@@ -129,6 +130,36 @@ test("reviewer: minds the cost, as it reads every change: Go's capped frontier m
   // Claude Code and Go: Opus is read by Go's DeepSeek Flash, a quicker model, not by Argon or GLM-5.3; DeepSeek's change by Opus.
   assert.equal(reviewerOf(["claude:claude-opus-5-5"], [claude, go]), "opencode:opencode-go:deepseek-v4.1-flash");
   assert.equal(reviewerOf(["opencode:opencode-go:deepseek-v4.1-flash"], [claude, go]), "claude:claude-opus-5-5");
+});
+
+test("a pair's estimate: only from measured figures, the lead's share and the sidekick's; the short lists down the tiers", () => {
+  const claude = provider("claude", ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+  const codex = provider("codex", ["gpt-6-astra-pro", "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]);
+  const go = provider("opencode", ["opencode-go:deepseek-v4.1-flash", "opencode-go:glm-5.3"]);
+  // A figure by the model's name and maker, through any tool; none for a model nobody measured (Haiku, Astra Pro, GLM).
+  assert.equal(costOf("claude:claude-opus-5-5"), 10.04);
+  assert.equal(costOf("hermes:nous:anthropic/claude-opus-5.5"), 10.04);
+  assert.equal(costOf("codex:gpt-6.1-sol"), 1.27);
+  assert.equal(costOf("opencode:opencode-go:deepseek-v4.1-flash"), 0.6);
+  for (const none of ["claude:claude-haiku-5-5", "codex:gpt-6-astra-pro", "opencode:opencode-go:glm-5.3", "demo:demo"]) assert.equal(costOf(none), undefined, none);
+  // A pair: the lead's share at its price, the rest at the sidekick's. Opus with Sol comes to under half of Opus alone.
+  const withSol = pairCostOf("claude:claude-opus-5-5", "codex:gpt-6.1-sol")!;
+  assert.ok(Math.abs(withSol.total - (10.04 * LEAD_SHARE + 1.27 * (1 - LEAD_SHARE))) < 1e-9);
+  assert.ok(Math.abs(withSol.lead + withSol.sidekick - withSol.total) < 1e-9);
+  assert.ok(withSol.total < 10.04 / 2 && withSol.total > 1.27);
+  // Opus with Sonnet saves next to nothing: the two cost the same a task.
+  assert.ok(pairCostOf("claude:claude-opus-5-5", "claude:claude-sonnet-5-5")!.total / 10.04 > 0.99);
+  // No estimate when either has no figure, rather than a guess.
+  assert.equal(pairCostOf("claude:claude-opus-5-5", "claude:claude-haiku-5-5"), undefined);
+  assert.equal(pairCostOf("opencode:opencode-go:glm-5.3", "codex:gpt-6.1-sol"), undefined);
+  // The dearest ready model with a figure sets the bar's far end; none ready, nothing.
+  assert.equal(dearestOf([claude, codex, go]), 10.04);
+  assert.equal(dearestOf([codex]), 6.24);
+  assert.equal(dearestOf([provider("opencode", ["opencode-go:glm-5.3"])]), 0);
+  // The short lists: the best ready of each row, down the table. Go's never lead; `except` keeps the other part's model out.
+  assert.deepEqual(shortlistOf([claude, codex, go], "frontier"), ["claude:claude-opus-5-5", "codex:gpt-6-astra", "codex:gpt-6.1-sol"]);
+  assert.deepEqual(shortlistOf([claude, codex, go], "quicker"), ["opencode:opencode-go:deepseek-v4.1-flash", "codex:gpt-6.1-sol", "claude:claude-sonnet-5-5", "codex:gpt-6.1-terra"]);
+  assert.deepEqual(shortlistOf([claude, codex, go], "quicker", { n: 2, except: ["codex:gpt-6.1-sol"] }), ["opencode:opencode-go:deepseek-v4.1-flash", "claude:claude-sonnet-5-5"]);
 });
 
 test("your pair: a frontier lead and a quicker sidekick, from any tool; your picks, a frontier sidekick too", () => {

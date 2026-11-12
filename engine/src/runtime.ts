@@ -17,30 +17,32 @@
 import type { Access, AgentRun, AgentStep, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, Settings, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { agentState, castOf, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, frontierClass, isPair, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
+import { agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, frontierClass, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
 import { capture, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { killTree, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
 import { claudeTeam, fixPrompt, parseFindings, parseStep, quickOf, reviewPrompt, stepPrompt } from "./review.ts";
-import { cursor, grok, hermes, opencode } from "./providers/acp.ts";
+import { antigravity, cursor, grok, hermes, opencode } from "./providers/acp.ts";
+import { effortOf } from "./providers/models.ts";
 import { accountProvider, addedProvider } from "./providers/added.ts";
 import { claude } from "./providers/claude.ts";
 import { codex } from "./providers/codex.ts";
 import { demo } from "./providers/demo.ts";
 import { endpointProvider } from "./providers/endpoint.ts";
 import { askEndpoint, PLAIN_SOUL } from "./providers/plain.ts";
-import { LINER_WAIT_SEC, ResumeFailed, type Provider, type ProviderSession, type TurnSink, type ToolUpdate, type WakeTurn } from "./providers/types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, type ApprovalRequest, type Provider, type ProviderSession, type TurnSink, type ToolUpdate, type WakeTurn } from "./providers/types.ts";
 import { attachNote } from "./providers/attachments.ts";
 import type { AgentTools } from "./agent-tools.ts";
 import { fingerprint, type Addons, type Connection } from "./addons.ts";
 import { briefOf } from "./agents.ts";
 import { modeNote } from "./creator.ts";
+import { designNote, type DesignMark } from "./lean.ts";
 import { memoryNote } from "./memory.ts";
 import { commandRisk, plainGit, readsOnly, ruleFor } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, type BriefOutcome } from "./sidekick.ts";
 
-export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, demo };
+export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, antigravity, demo };
 
 /**
   Your other accounts, the agents you added and your API endpoints, as tools beside the known
@@ -76,9 +78,9 @@ const liveKeyOf = (threadId: string, agentId: string) => `${threadId}:${agentId}
 type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean; agentId?: string; liner?: Set<string>; ends?: Set<() => void>; winding?: Set<Promise<void>> };
 /** A sidekick's brief at work in a thread: how to stop it, its session (for a steer), and the row it shows on. */
 /** by: who stopped it, when it was stopped: you from its row, the cap, or Liner Code when it tried to send an agent of its own. */
-type Brief = { abort: AbortController; row: string; taskId: string; session?: ProviderSession; by?: "row" | "cap" | "agent" };
+type Brief = { abort: AbortController; row: string; taskId: string; session?: ProviderSession; by?: "row" | "cap" | "agent" | "replaced" };
 /** An answer to a request; `scope` is where an add-on goes, from its install card. */
-type Answer = { allow: boolean; reason?: string; scope?: "all" | "project" };
+type Answer = { allow: boolean; reason?: string; scope?: "all" | "project"; level?: boolean };
 /** How long a turn may say nothing before the watchdog says so: longer while one of its commands runs (a build, the tests). */
 export const QUIET_MS = 4 * 60_000;
 export const QUIET_STEP_MS = 12 * 60_000;
@@ -91,7 +93,7 @@ const aboutLines = (a: NonNullable<QueuedMessage["anchor"]>, text: string) => `A
   part: a turn that carries on yours (a fix the Reviewer sent back), shown as part of it. why: why it went, said when you ask.
   review: false when nothing it changes goes to the Reviewer (a side chat, a goal's turns, a fix, which its round reads).
 */
-type TurnOptions = { show?: boolean; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string; note?: string; files?: string[]; wake?: { session: ProviderSession; w: WakeTurn }; part?: TurnPart; why?: string };
+type TurnOptions = { design?: DesignMark; show?: boolean; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string; note?: string; files?: string[]; wake?: { session: ProviderSession; w: WakeTurn }; part?: TurnPart; why?: string };
 /**
   How a turn ended, from runTurn: done, stopped (by you, or by the spending cap), error, waiting
   (something asks you), limited (out of usage); and whether it left a checkpoint.
@@ -114,6 +116,18 @@ const LIMIT_UNKNOWN_MS = 3_600_000;
 const LIMIT_STALE_MS = 24 * 3_600_000;
 /** The tools that only edit files in the project, by the name each provider asks with (Claude Code's, Codex's apply_patch, ACP's "edit" kind). */
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit", "apply_patch", "edit"]);
+/**
+  What Read only forbids of what a tool asks to do, by the ask itself: a command that changes things (one that only reads is
+  allowed), a file edit (Claude Code's Edit and Write, Codex's apply_patch, an ACP agent's edit, delete or move), and more access
+  for Codex's sandbox. Other asks (a connection's tool, a fetch) aren't the level's to refuse: they still come as a card.
+*/
+export function readForbids(req: Pick<ApprovalRequest, "tool" | "rule" | "fields">) {
+  const command = req.fields.find((f) => f.label === "Command")?.value;
+  if (command !== undefined) return !readsOnly(command);
+  return EDIT_TOOLS.has(req.tool) || req.rule === "Edit" || ["delete", "move", "execute", "shell", "permissions"].includes(req.tool);
+}
+/** What the model hears when Read only refused its step outright. */
+const READ_REFUSED = (command: boolean) => `This session is Read only, so Liner Code refused this ${command ? "command" : "change"} without asking anyone. Don't try to change files or run commands that change anything; read, and say what you would change instead.`;
 type Waiter<T> = { resolve: (v: T) => void; reject: (e: Error) => void };
 /** A compaction: a command to the session the tool has, so nothing can go in front of it. */
 const COMPACT = /^\/compact\s*$/;
@@ -156,6 +170,8 @@ export class Runtime {
   private turns = new Map<string, Turn>();
   private watchdog: NodeJS.Timeout;
   private approvals = new Map<string, Waiter<Answer>>();
+  /** The access level each open card of a tool's was asked at. */
+  private cardLevel = new Map<string, Access>();
   private questions = new Map<string, Waiter<Record<string, string> | null>>();
   private proposals = new Map<string, Waiter<{ approve: boolean; note?: string; plan?: string }>>();
   /** "Don't ask again for … this session", per thread. */
@@ -171,10 +187,19 @@ export class Runtime {
   private busy = new Map<string, number>();
   /** Threads you stopped while work was in flight: nothing more starts, and the queue waits for you. */
   private halted = new Set<string>();
+  /** Threads whose turn Liner Code stopped, not you: for a lower access level it couldn't hold the turn to (accessChanged), or a tool it no longer runs on (retool). */
+  private levelStops = new Set<string>();
   /** Threads whose queue Stop kept for you: an edit of it doesn't send it, your next message does. */
   private kept = new Set<string>();
   /** Threads you sent a message to after Stop, as the stopped turn wound down: that's your next message, and the queue goes when it has. */
   private released = new Set<string>();
+  /**
+    The design mark of a message sent from Liner Design (thread.send's `design`) that waits in the queue, by the queued message's
+    id: it goes with that message when the message becomes a turn, and nowhere else (a command or a removed message drops it).
+    Kept in memory only, on purpose: a message still queued when the engine restarts goes without its note, and the agent reads
+    the design through design_files and design_selection instead. Accepted for now.
+  */
+  private queuedDesign = new Map<string, DesignMark>();
   /** Threads a routine is working in right now, with nobody watching. */
   private unattended = new Set<string>();
   private quitting = false;
@@ -323,6 +348,9 @@ export class Runtime {
     const going = at > 0 ? queued.slice(0, at) : at === 0 ? queued.slice(0, 1) : queued;
     this.store.patchThread(threadId, { queue: queued.slice(going.length) });
     for (const q of going) this.drained.add(q.id);
+    // The newest design mark among what goes: it rides with them only if they become a turn (a command drops it).
+    const design = going.map((q) => this.queuedDesign.get(q.id)).filter(Boolean).at(-1);
+    for (const q of going) this.queuedDesign.delete(q.id);
     const command = at === 0 ? commandOf(queued[0]) : null;
     if (command && !command.compact) {
       void (command.goal ? this.startGoal(threadId, command.goal) : this.review(threadId, t.turns, 1)).catch(() => {});
@@ -332,12 +360,14 @@ export class Runtime {
     // On its own it goes as it would have; joined with others, a message about lines says so in words.
     const only = going.length === 1 ? going[0] : undefined;
     const text = only ? only.text : going.map((q) => (q.anchor ? aboutLines(q.anchor, q.text) : q.text)).join("\n\n");
-    void this.send(threadId, text, "queue", only?.anchor, files.length ? files : undefined).catch(() => {});
+    void this.send(threadId, text, "queue", only?.anchor, files.length ? files : undefined, design).catch(() => {});
   }
 
-  private enqueue(threadId: string, text: string, files?: string[], anchor?: TurnOptions["anchor"]) {
+  private enqueue(threadId: string, text: string, files?: string[], anchor?: TurnOptions["anchor"], design?: DesignMark) {
     const t = this.store.thread(threadId);
-    this.store.patchThread(threadId, { queue: [...(t.queue ?? []), { id: uid("q"), text, at: Date.now(), ...(files?.length ? { files } : {}), ...(anchor ? { anchor } : {}) }] });
+    const id = uid("q");
+    if (design) this.queuedDesign.set(id, design);
+    this.store.patchThread(threadId, { queue: [...(t.queue ?? []), { id, text, at: Date.now(), ...(files?.length ? { files } : {}), ...(anchor ? { anchor } : {}) }] });
   }
 
   /** A message that didn't start waits in the queue, where you can edit, send or drop it, like one Stop kept. */
@@ -384,15 +414,24 @@ export class Runtime {
     this.wakes.delete(threadId);
   }
 
+  /** Said when a turn runs at another effort than the one picked: the model doesn't take it, and this is the nearest it has. */
+  private effortNote(t: Thread, agentId = t.agent) {
+    const r = this.resolve(t, agentId);
+    const asked = (agentId === t.agent ? t.effort : undefined) ?? this.store.agent(agentId).effort;
+    if (!asked || r.effort === asked) return "";
+    const word = (id: string) => effortOf(id).label;
+    return `${this.labelOf(`${r.provider}:${r.model}`)} has no ${word(asked)} effort, so this turn runs at ${word(r.effort)}, the nearest it has.`;
+  }
+
   /** What an agent runs on in a thread: the thread's own model if set, else the agent's. */
   resolve(t: Thread, agentId = t.agent) {
     const agent = this.store.agent(agentId);
     const own = agentId === t.agent ? t.model : undefined;
     const { provider, model } = splitModel(own ?? agent.model);
     const asked: Effort = (agentId === t.agent ? t.effort : undefined) ?? agent.effort;
-    // A level this model doesn't take (picked for another model) becomes the model's own default.
+    // A level this model doesn't take (picked for another model) becomes the nearest it has (the turn says so, effortNote).
     const info = this.providerInfo.find((p) => p.id === provider)?.models.find((m) => m.id === model);
-    const effort = info?.efforts?.length && !info.efforts.some((e) => e.id === asked) ? (info.defaultEffort ?? asked) : asked;
+    const effort = info?.efforts?.length ? nearestEffort(asked, info.efforts, info.defaultEffort) : asked;
     // A bare model goes by its label ("Sonnet 5.5"), in what the timeline and notifications say.
     const named = agent.id.startsWith("@") || !this.store.agents.some((a) => a.id === agent.id) ? { ...agent, name: this.labelOf(`${provider}:${model}`) } : agent;
     return { agent: named, provider, model, effort, access: t.access };
@@ -429,19 +468,23 @@ export class Runtime {
     const links = fingerprint(connections);
     // The lead of a pair gets the sidekick tool and its words; the sidekick gets its own words and no such tool.
     const pair = !sidekick && agentId === t.agent && this.pairOf(t);
-    const kit = sidekick ? "sidekick" : pair ? `pair:${t.sidekick}` : "";
+    // An endpoint's model that takes pictures or not is declared to OpenCode when it opens: a change in Settings reopens it (resuming).
+    const kit = `${sidekick ? "sidekick" : pair ? `pair:${t.sidekick}` : ""}${picturesOf(r.provider, r.model, this.store.settings) ? "" : "|text"}`;
+    // A session of this thread's still being ended (another tool took over, it broke): nothing of it opens beside that.
+    await this.closing.get(t.id);
     let cur = this.live.get(liveKey);
+    // Each session this one replaces ends by the one close (ending), checked gone before the new one starts.
     if (cur && cur.kit !== kit) {
-      cur.session.close();
       this.live.delete(liveKey);
+      await this.ending(t.id, [cur.session]);
       cur = undefined;
     }
     // Connections changed since it opened: taken in place where the tool can, else it reopens below and resumes.
     if (cur && cur.links !== links) {
       if (await cur.session.connect?.(connections).catch(() => false)) cur.links = links;
       else {
-        cur.session.close();
         this.live.delete(liveKey);
+        await this.ending(t.id, [cur.session]);
         cur = undefined;
       }
     }
@@ -455,15 +498,21 @@ export class Runtime {
         return { session: cur.session, fresh: false, switched: false };
       }
     }
-    cur?.session.close();
-    this.live.delete(liveKey);
+    if (cur) {
+      this.live.delete(liveKey);
+      await this.ending(t.id, [cur.session]);
+    }
     // A model whose tool is gone (an account or an endpoint you removed) doesn't quietly become the Demo.
     const p = providers[r.provider];
     if (!p) throw new Error(toolGone(this.labelOf(`${r.provider}:${r.model}`), "Pick another model for this session."));
     const forking = !sidekick && this.realFork(t) && agentId === t.agent;
     // A provider session id is kept as "<provider>:<id>" per part (the lead, the sidekick), so it only resumes into the one that made it.
     const saved = (sidekick ? t.sessions?.[agentId] : savedSession(t, agentId)) ?? "";
-    const n = linerName(familyOf(r.provider));
+    // A tool that lets a server of the person's own take `liner`'s place (Antigravity) gets Liner Code's under a name of its own,
+    // made new by the session each time the tool's process starts (acp.ts AcpSession.server) and told to the model in the
+    // conversation then: what's written here once names it liner_<tag>.
+    const family = familyOf(r.provider);
+    const n = linerName(family);
     const resume = saved.startsWith(`${r.provider}:`) ? saved.slice(r.provider.length + 1) : undefined;
     const session = p.open({
       cwd,
@@ -477,7 +526,7 @@ export class Runtime {
           : sidekick
             ? [briefOf(r.agent, cwd), sidekickRules(this.nameOf(t, t.agent))].filter(Boolean).join("\n\n")
             : briefOf(r.agent, cwd),
-        this.tools ? toolsNote(n) : "",
+        this.tools ? toolsNote(n, family) : "",
         pair ? leadRules(this.labelOf(t.sidekick!), frontierClass(t.sidekick!), n) : "",
         // A session's mode (Workshop, a custom one) is the lead's way of working, not the sidekick's.
         sidekick ? "" : modeNote(t, this.store.agents, cwd, n, Boolean(this.tools)),
@@ -531,8 +580,8 @@ export class Runtime {
       }
       // Reopened for the next turn, resuming where it was; one working now is left to finish.
       if (!now && !this.turns.has(threadId)) {
-        l.session.close();
         this.live.delete(key);
+        void this.ending(threadId, [l.session]);
       }
       if (this.turns.get(threadId)?.session === l.session || !out.has(threadId)) out.set(threadId, now ? "now" : "next");
     }
@@ -543,6 +592,13 @@ export class Runtime {
   readOnly(threadId: string) {
     const t = this.store.thread(threadId);
     return t.access === "read" || Boolean(t.sideOf);
+  }
+
+  /** Whether the model a thread's lead (or its sidekick) runs on takes pictures: an API endpoint's as Settings says or its name suggests, any other yes. */
+  seesPictures(threadId: string, sidekick = false) {
+    const t = this.store.thread(threadId);
+    const { provider, model } = sidekick && t.sidekick ? splitModel(t.sidekick) : this.resolve(t);
+    return picturesOf(provider, model, this.store.settings);
   }
 
   /** Nobody is there to answer a card for this thread: a routine's step. */
@@ -607,29 +663,43 @@ export class Runtime {
   }
 
   /** You sent a message. While a turn runs it waits in the queue, or steers the running turn. */
-  async send(threadId: string, text: string, mode: "queue" | "steer" = "queue", anchor?: TurnOptions["anchor"], files?: string[]) {
+  async send(threadId: string, text: string, mode: "queue" | "steer" = "queue", anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark) {
     const store = this.store;
     const running = this.turns.get(threadId);
+    // From Liner Design: the message carries its mark to the turn it becomes (a steer, at once), and only there.
+    if (!design?.file) design = undefined;
     if (running || this.busy.has(threadId)) {
       // A steer the tool couldn't take (its request failed, or the turn ended first) isn't lost: it goes
       // next, from the queue (T3 Code: SteeringCompletion.integration.test.ts).
       // After Stop nothing is left of that turn to read a steer: it goes next, like any message. So does a command, which is no word to the agent.
-      if (mode === "steer" && !this.halted.has(threadId) && !commandOf({ text, files, anchor }) && running?.session?.steer && (await running.session.steer([anchor ? aboutLines(anchor, text) : text, attachNote(files ?? [])].filter(Boolean).join("\n\n"), files))) {
+      if (mode === "steer" && !this.halted.has(threadId) && !commandOf({ text, files, anchor }) && running?.session?.steer && (await running.session.steer([this.designOf(threadId, design), anchor ? aboutLines(anchor, text) : text, attachNote(files ?? [])].filter(Boolean).join("\n\n"), files))) {
         store.putItem(threadId, { kind: "user", id: uid("it"), turn: running.turn, at: Date.now(), text, steer: true, ...(anchor ? { anchor } : {}), ...(files?.length ? { files } : {}) });
         return;
       }
-      this.enqueue(threadId, text, files, anchor);
+      this.enqueue(threadId, text, files, anchor, design);
       // Sent after Stop: it isn't one more for Stop to keep, it's your next message.
       if (this.halted.has(threadId)) this.released.add(threadId);
       // The turn ended while the steer was tried: nothing in flight will send the queue now.
       if (!this.isRunning(threadId)) this.drain(threadId);
       return;
     }
-    return this.hold(threadId, () => this.dispatch(threadId, text, anchor, files));
+    return this.hold(threadId, () => this.dispatch(threadId, text, anchor, files, design));
+  }
+
+  /** The "## Design" note of a message sent from Liner Design; "" for any other. A note that can't be read is left out, never the message. */
+  private designOf(threadId: string, mark: DesignMark | undefined, cwd?: string) {
+    if (!mark) return "";
+    try {
+      const t = this.store.thread(threadId);
+      return designNote(cwd ?? t.worktree?.path ?? this.store.project(t.projectId).path, mark, this.env);
+    } catch (e) {
+      console.error("[engine] design note", e);
+      return "";
+    }
   }
 
   /** A message to a thread with nothing in flight: a side chat answers it, a pull request ask opens the PR card, and anything else is one turn of the session's lead. */
-  private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"], files?: string[]) {
+  private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark) {
     const store = this.store;
     const t = store.thread(threadId);
     this.settleAsks(threadId);
@@ -639,10 +709,10 @@ export class Runtime {
       store.patchThread(threadId, { spendLimit: t.usage.costUsd + cap });
       store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `Going on: another $${cap} for this session before it stops again.` });
     }
-    // A side chat only answers: no pull request, and nothing for the Reviewer.
+    // A side chat only answers: no pull request, nothing for the Reviewer, and no design note (it changes nothing).
     if (t.sideOf) return void (await this.turn(threadId, text, t.agent, { review: false, files }));
     if (!anchor && !files?.length && isPrAsk(text)) return this.openPr(threadId, text);
-    await this.turn(threadId, text, t.agent, { anchor, review: !anchor, files });
+    await this.turn(threadId, text, t.agent, { anchor, review: !anchor, files, ...(design ? { design } : {}) });
   }
 
   /** "codex:gpt-6-luna" as its tool calls it ("GPT-6 Luna"), for the lines reviews and the timeline write. */
@@ -837,6 +907,9 @@ export class Runtime {
     store.putItem(threadId, marker);
 
     let prompt = o.prompt ? o.prompt : o.anchor ? aboutLines(o.anchor, text) : text;
+    // Sent from Liner Design: where the design is, its frames, the lean and what's selected, before the words. A side chat and a fix round don't take it.
+    const designed = o.design && show && !o.wake && !o.prompt && !t.sideOf && !COMPACT.test(text) ? this.designOf(threadId, o.design, cwd) : "";
+    if (designed) prompt = `${designed}\n\n${prompt}`;
     // Your attachments are named only in what the agent is sent; the timeline shows them as files.
     if (o.files?.length) prompt = `${prompt}\n\n${attachNote(o.files)}`;
 
@@ -856,6 +929,8 @@ export class Runtime {
       // A turn the tool began by itself runs on the session that began it, as it is.
       const { session, fresh, switched } = o.wake ? { session: o.wake.session, fresh: false, switched: false } : await this.session(t, agentId, cwd);
       live.session = session;
+      const fit = this.effortNote(t, agentId);
+      if (fit) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: fit });
       // Stopped while the snapshot was taken or the tool was opening: the turn never starts.
       if (abort.signal.aborted) {
         // The tool's own turn stops too, or it goes on by itself with nobody running it.
@@ -935,12 +1010,14 @@ export class Runtime {
     }
     // The session was deleted while the turn wound down: nothing of it is written back.
     if (!store.threads.some((x) => x.id === threadId)) return null;
+    // Its tool changed while the turn was opening it (the session it opened is the old tool's): that one ends now too.
+    if (store.thread(threadId).agent !== t.agent || store.thread(threadId).model !== t.model || store.thread(threadId).sidekick !== t.sidekick) void this.retool(threadId).catch(() => {});
     // When Claude's prompt cache for this thread likely runs out: an hour after its last turn on a plan,
     // five minutes with an API key. Past it a long thread is read again at full price (T3 Code: IdleCompaction.ts).
     if (ran && familyOf(r.provider) === "claude") store.patchThread(threadId, { cacheUntil: Date.now() + (r.provider === "claude" && store.settings.claudeBilling === "key" && this.keys.get("anthropic") ? 5 : 60) * 60_000 });
 
     const stopped = abort.signal.aborted;
-    if (stopped) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: "You stopped this turn." });
+    if (stopped && !this.levelStops.delete(threadId)) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: "You stopped this turn." });
     const seconds = (Date.now() - live.started) / 1000;
     let changed = false;
     if (git && from) {
@@ -1312,6 +1389,32 @@ export class Runtime {
     if ((t.agentsAtWork ?? 0) !== n) this.store.patchThread(threadId, { agentsAtWork: n || undefined });
   }
 
+  /**
+    A thread's access level changed. A turn under way is held to it at once: each live session of the thread takes it now
+    (Liner Code's own answers read it from then on, and the tool's mode follows). One that can't be held to a lower level
+    part-way, or has no way to take one, has its turn stopped with a line saying why; the next turn starts at the new level.
+    A higher level never stops a turn.
+  */
+  async accessChanged(threadId: string, was: Access) {
+    const t = this.store.thread(threadId);
+    const now = t.access;
+    if (now === was || !this.turns.get(threadId)) return;
+    for (const [key, l] of [...this.live]) {
+      if (key.slice(0, key.indexOf(":")) !== threadId) continue;
+      const took = l.session.setAccess ? await l.session.setAccess(now).catch(() => false) : rank(now) >= rank(was);
+      if (took === true || !this.turns.get(threadId)) continue;
+      // The level that stopped it, and only what happened: by the time the tool answered, the level may have moved on again.
+      const level = ACCESS_WORDS[now];
+      const why = typeof took === "string" ? `: ${took}` : "";
+      // Nothing about the next turn: the level may change again before it (a quick drop and raise), and that turn says its own.
+      this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `Access went down to ${level} during this turn, which ${this.providerInfo.find((p) => p.id === l.provider)?.label ?? l.provider} can't be held to part-way${why}, so Liner Code stopped the turn.` });
+      // Liner Code stopped it, not you: the turn doesn't say you did.
+      this.levelStops.add(threadId);
+      this.stop(threadId);
+      return;
+    }
+  }
+
   stop(threadId: string) {
     if (this.busy.has(threadId)) this.halted.add(threadId);
     this.turns.get(threadId)?.abort.abort();
@@ -1555,7 +1658,7 @@ export class Runtime {
           abort.abort();
           return;
         }
-        const step: AgentStep = { title: u.title || u.tool, toolKind: u.toolKind, status: u.status, ...(u.path ? { path: u.path } : {}) };
+        const step: AgentStep = { title: u.title || u.tool, toolKind: u.toolKind, status: u.status === "stopped" ? "failed" : u.status, ...(u.path ? { path: u.path } : {}) };
         const at = keys.get(u.key);
         if (at === undefined) {
           keys.set(u.key, steps.length);
@@ -1660,7 +1763,7 @@ export class Runtime {
       files = to ? await changes(cwd, from, to, { turn: true }).catch(() => null) : null;
     }
     const seconds = (Date.now() - started) / 1000;
-    const how: BriefOutcome["how"] = brief.by === "cap" ? "capped" : brief.by === "agent" ? "agent" : abort.signal.aborted ? "stopped" : limited ? "limited" : problem ? "failed" : "done";
+    const how: BriefOutcome["how"] = brief.by === "cap" ? "capped" : brief.by === "agent" ? "agent" : brief.by === "replaced" ? "replaced" : abort.signal.aborted ? "stopped" : limited ? "limited" : problem ? "failed" : "done";
     const report = said.filter((x) => x.trim()).at(-1)?.trim() ?? "";
     store.logUsage({ at: Date.now(), threadId, projectId: t.projectId, agent: "sidekick", provider, model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, cacheReadTokens: spent.cacheReadTokens, costUsd: spent.costUsd, seconds });
     for (const s of steps) if (s.status === "running") s.status = how === "done" ? "done" : "failed";
@@ -1692,6 +1795,17 @@ export class Runtime {
       throw new Error("The agent stopped waiting for this answer.");
     }
     this.approvals.delete(itemId);
+    // Judged by the level as it is now: a card asked at Ask and allowed once the session went to Read only is refused, as Read
+    // only would have refused it outright (readForbids), with one line saying so.
+    const t = this.store.thread(threadId);
+    const opened = this.cardLevel.get(itemId);
+    if (allow && opened && opened !== "read" && t.access === "read" && !t.sideOf && readForbids(item)) {
+      const why = READ_REFUSED(item.fields.some((f) => f.label === "Command"));
+      this.store.putItem(threadId, { ...item, state: "denied", reason: "The session went to Read only." });
+      this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: item.turn, at: Date.now(), text: `Access went to Read only while “${item.title}” waited for you, so Liner Code refused it.` });
+      this.settleWaiting(threadId);
+      return waiter.resolve({ allow: false, reason: why, level: true });
+    }
     if (allow && always && item.rule) this.rules.set(threadId, new Set([...(this.rules.get(threadId) ?? []), item.rule]));
     this.store.putItem(threadId, { ...item, state: allow ? "approved" : "denied", reason, ...(item.addon && scope ? { addon: { ...item.addon, scope } } : {}) });
     this.settleWaiting(threadId);
@@ -1768,20 +1882,113 @@ export class Runtime {
     for (const end = Date.now() + ms; working() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
   }
 
-  /** Closes a live session and forgets it, so its next turn opens it again. */
+  /** Closes a live session and forgets it, so its next turn opens it again (once this one has ended: ending). */
   private drop(key: string) {
-    this.live.get(key)?.session.close();
+    const l = this.live.get(key);
     this.live.delete(key);
+    if (l) void this.ending(key.slice(0, key.indexOf(":")), [l.session]);
   }
 
-  closeThread(threadId: string) {
+  /**
+    `cause`: what put the thread away while a turn worked ("You kept another take of this comparison"), said in one line with what
+    was ended, and the turn isn't said to have been stopped by you. A delete needs none: the thread is gone.
+  */
+  closeThread(threadId: string, cause?: string) {
+    const turn = this.turns.get(threadId);
+    if (turn && cause && !turn.abort.signal.aborted) {
+      const l = [...this.live.values()].find((x) => x.session === turn.session);
+      const tool = l ? this.providerInfo.find((p) => p.id === l.provider)?.label ?? l.provider : "its tool";
+      this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: turn.turn, at: Date.now(), text: `${cause}, so Liner Code stopped this turn and ended ${tool} and what it started.` });
+      this.levelStops.add(threadId);
+    }
     this.stop(threadId);
+    const sessions: ProviderSession[] = [];
     for (const [key, l] of this.live) {
       if (!key.startsWith(`${threadId}:`)) continue;
-      l.session.close();
+      sessions.push(l.session);
       this.live.delete(key);
     }
     this.rules.delete(threadId);
+    return this.ending(threadId, sessions);
+  }
+
+  /** The closes under way in each thread: none of its sessions opens until they're done (session). */
+  private closing = new Map<string, Promise<void>>();
+  /**
+    The one way a thread's session ends, whatever replaces it: its close (ProviderSession.close), which ends its tool and
+    everything marked as its own and checks they're gone (acp.ts close), kept in `closing` until then, so the thread's next
+    session waits for it rather than starting beside what's still ending. Resolves when they're all gone.
+  */
+  private ending(threadId: string, sessions: ProviderSession[]) {
+    if (!sessions.length) return this.closing.get(threadId) ?? Promise.resolve();
+    const done = Promise.allSettled([this.closing.get(threadId), ...sessions.map((s) => s.close())]).then(() => undefined);
+    this.closing.set(threadId, done);
+    void done.then(() => this.closing.get(threadId) === done && this.closing.delete(threadId));
+    return done;
+  }
+
+  /**
+    A thread's settings changed: its tool or its model (to another tool's), its account, its pair's lead or sidekick, an agent of
+    yours it runs as (agents.save), or the model it carries on with when one ran out (carryOn). Each live session of the thread
+    they no longer name ends by the one close (ending) at once, rather than staying up beside the next one: a turn at work on it
+    (the lead's, or a sidekick's brief) is stopped first, and the timeline says so in one line; the session it opens next waits
+    for the close (session). One on the same tool that only goes under another name (a bare model's id changed) moves to that
+    name, as it is, and takes the change in place as its next turn opens. (T3 Code: orchestration-v2/ProviderSwitchService.ts plans
+    which provider sessions a new selection releases; there they go as the next message starts, here as the setting changes.)
+  */
+  async retool(threadId: string) {
+    const t = this.store.threads.find((x) => x.id === threadId);
+    if (!t) return;
+    const lead = this.resolve(t);
+    const leadKey = liveKeyOf(threadId, t.agent);
+    const sideRef = this.pairOf(t) ? t.sidekick : undefined;
+    const sideKey = sideRef ? `${liveKeyOf(threadId, `@${sideRef}`)}#sidekick` : undefined;
+    const stale: { key: string; l: Live; side: boolean }[] = [];
+    for (const [key, l] of this.live) {
+      if (!key.startsWith(`${threadId}:`)) continue;
+      const side = key.endsWith("#sidekick");
+      if (side ? key === sideKey && l.provider === splitModel(sideRef!).provider : key === leadKey && l.provider === lead.provider) continue;
+      // The lead on the same tool under its new name: moved, not ended.
+      if (!side && l.provider === lead.provider && !this.live.has(leadKey) && !stale.some((x) => !x.side && x.l.provider === lead.provider)) {
+        this.live.delete(key);
+        this.live.set(leadKey, l);
+        continue;
+      }
+      stale.push({ key, l, side });
+    }
+    if (!stale.length) return;
+    for (const { key } of stale) this.live.delete(key);
+    const label = (provider: string) => this.providerInfo.find((p) => p.id === provider)?.label ?? provider;
+    // As the picker shows it: the tool, and its model unless that's the tool's own default ("Claude Code, Sonnet 5.5").
+    const picked = (provider: string, model: string) => {
+      const m = this.providerInfo.find((p) => p.id === provider)?.models.find((x) => x.id === model);
+      return model === "default" || !model ? label(provider) : `${label(provider)}, ${m?.label ?? model}`;
+    };
+    const turn = this.turns.get(threadId);
+    // A turn of the lead's on a tool it no longer runs on (or one still opening it), or a sidekick's brief on one it no longer is.
+    const leadStale = stale.find((x) => !x.side);
+    const leadBusy = turn && leadStale && (turn.session === leadStale.l.session || (!turn.session && turn.agentId !== t.agent));
+    const brief = this.briefs.get(threadId);
+    const sideBusy = brief && stale.some((x) => x.side && x.l.session === brief.session);
+    if (leadBusy) {
+      this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: turn.turn, at: Date.now(), text: `This session moved to ${picked(lead.provider, lead.model)} while ${label(leadStale.l.provider)} worked, so Liner Code stopped its turn and ended ${label(leadStale.l.provider)} and what it started.` });
+      // Liner Code stopped it, not you: the turn doesn't say you did.
+      this.levelStops.add(threadId);
+      this.stop(threadId);
+    } else if (sideBusy) {
+      this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `The sidekick changed while ${label(stale.find((x) => x.side)!.l.provider)} worked on a brief, so Liner Code stopped the brief and ended it.` });
+      brief.by ??= "replaced";
+      brief.abort.abort();
+    }
+    // Stopped first: the turn winds down (its tool cancels, what it left running is ended and named), then the close.
+    if (leadBusy) for (const end = Date.now() + 5000; this.turns.get(threadId) === turn && Date.now() < end; ) await new Promise((r) => setTimeout(r, 25));
+    await this.ending(threadId, stale.map((x) => x.l.session));
+  }
+
+  /** retool for every thread with a live session: an agent's settings, which many sessions may run as, changed. */
+  retoolAll() {
+    const ids = new Set([...this.live.keys()].map((k) => k.slice(0, k.indexOf(":"))));
+    return Promise.all([...ids].map((id) => this.retool(id))).then(() => undefined);
   }
 
   /** How many running turns are on a tool ("claude", "codex"…), its other accounts included. */
@@ -1798,8 +2005,8 @@ export class Runtime {
   restartIdle(family: string) {
     for (const [key, l] of this.live) {
       if (familyOf(l.provider) !== family || this.turns.has(key.slice(0, key.indexOf(":")))) continue;
-      l.session.close();
       this.live.delete(key);
+      void this.ending(key.slice(0, key.indexOf(":")), [l.session]);
     }
   }
 
@@ -1830,6 +2037,8 @@ export class Runtime {
     // model (thread.update): the next model reports its own.
     this.store.patchThread(threadId, { model: to, usage: { ...t.usage, contextWindow: undefined }, ...(t.status === "limited" ? { status: "idle" as const, limit: undefined } : {}) });
     this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `${this.labelOf(`${from.provider}:${from.model}`)} is out of usage, so ${this.labelOf(to)} carries on with the conversation so far.` });
+    // The tool that ran out ends now, by the one close, not at the next turn's opening.
+    await this.retool(threadId);
     await this.send(threadId, CONTINUE);
   }
 
@@ -1940,13 +2149,16 @@ export class Runtime {
     }
   }
 
-  shutdown() {
+  /** Stops everything; settles once every live session's tool, and what it started, has ended (the engine waits on it as it quits). */
+  shutdown(): Promise<void> {
     this.quitting = true;
     clearInterval(this.watchdog);
     for (const id of this.turns.keys()) this.stop(id);
     // A pull request's test suite runs outside any turn, in a process group of its own.
     for (const s of this.prStops.values()) s.abort();
-    for (const l of this.live.values()) l.session.close();
+    const closing = [...this.live.values()].map((l) => l.session.close());
+    // And the closes already under way (a session another tool took over from).
+    return Promise.allSettled([...closing, ...this.closing.values()]).then(() => undefined);
   }
 
   /** The sink a provider writes one turn into, and what it built. */
@@ -1967,6 +2179,8 @@ export class Runtime {
     let over = false;
     /** Keyed notices (see TurnSink.notice) → their items. */
     const notices = new Map<string, string>();
+    /** Read only's refusal has been said on the timeline this turn. */
+    let readSaid = false;
     const reasonStart = new Map<string, number>();
 
     const settle = () => {
@@ -2077,7 +2291,9 @@ export class Runtime {
           input: u.input ?? base?.input,
           output: u.output ?? base?.output,
           path: u.path ?? base?.path,
-          status: u.status,
+          // A call still running when you pressed Stop was stopped, however its tool words its end after that (Claude Code's
+          // interrupted command comes back failed, OpenCode's done): the same on every tool.
+          status: signal.aborted && base?.status === "running" && u.status !== "running" ? "stopped" : u.status,
           seconds: u.status === "running" ? undefined : (Date.now() - rec.started) / 1000,
           ...(agent ? { agent } : {}),
         };
@@ -2104,6 +2320,14 @@ export class Runtime {
         // Read only means it, here as in the tool: in a side chat or Read only, what writes never goes
         // ahead by itself, whatever the access or an earlier "don't ask again". It comes to you.
         const writes = command !== undefined ? !readsOnly(command) : EDIT_TOOLS.has(req.tool) || req.rule === "Edit";
+        // Read only refuses what it forbids outright, on every tool, with no card (readForbids): the tool's own edit, a command
+        // that changes things, more access. One sentence for the model, one quiet line on the timeline a turn. A side chat isn't
+        // changed by this: what it asks still comes to you.
+        if (now.access === "read" && !now.sideOf && readForbids(req)) {
+          if (!readSaid) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `This session is Read only, so Liner Code refused “${req.title}” without asking.` });
+          readSaid = true;
+          return Promise.resolve({ allow: false, level: true, reason: READ_REFUSED(command !== undefined) });
+        }
         const held = writes && (now.access === "read" || Boolean(now.sideOf));
         // Allowed for the rest of the session already. Not what can't be undone (a rule from `rm a.txt` is `rm`, and `rm -rf ~` is `rm` too),
         // nor in a routine's step, whose limits are its own whatever you said in its session.
@@ -2125,8 +2349,10 @@ export class Runtime {
           settle();
           const id = uid("it");
           store.putItem(threadId, { kind: "approval", id, turn, at: Date.now(), tool: req.tool, title: req.title, description: [note, req.description].filter(Boolean).join("\n\n") || undefined, risk: req.risk, fields: req.fields, rule: req.rule, state: "asking", toolId });
+          // The level it was asked at: an answer is judged by the level when it's given (answer).
+          this.cardLevel.set(id, store.thread(threadId).access);
           needsYou(req.title);
-          return wait(this.approvals, id, sig);
+          return wait(this.approvals, id, sig).finally(() => this.cardLevel.delete(id));
         };
         // Reviewer decides: reading goes ahead, what can't be undone comes to you, the Reviewer calls the rest.
         if (!held && access === "review" && req.risk !== "high") {
@@ -2191,13 +2417,13 @@ export class Runtime {
         if (agentId === t.agent) store.patchThread(threadId, { providerSession: ref });
         else store.patchThread(threadId, { sessions: { ...t.sessions, [agentId]: ref } });
       },
-      notice: (text, key) => {
+      notice: (text, key, o) => {
         settle();
         // A keyed notice says the same thing again as it changes (a retry's count): one line, kept up to date.
         const id = (key && notices.get(key)) || uid("it");
         if (key) notices.set(key, id);
         const prev = store.timeline(threadId).find((x) => x.id === id);
-        store.putItem(threadId, { kind: "notice", id, turn, at: prev?.at ?? Date.now(), text });
+        store.putItem(threadId, { kind: "notice", id, turn, at: prev?.at ?? Date.now(), text, ...(o?.stop ? { stop: true } : {}) });
       },
       heard: () => void (!over && heard()),
       error: (message) => {
@@ -2234,7 +2460,7 @@ export class Runtime {
         // A call with no result at the end didn't finish: stopped, or the tool broke off.
         for (const [, rec] of tools) {
           const it = store.timeline(threadId).find((x) => x.id === rec.id);
-          if (it?.kind === "tool" && it.status === "running") store.putItem(threadId, { ...it, status: signal.aborted || errored ? "failed" : "done", seconds: (Date.now() - rec.started) / 1000 });
+          if (it?.kind === "tool" && it.status === "running") store.putItem(threadId, { ...it, status: signal.aborted ? "stopped" : errored ? "failed" : "done", seconds: (Date.now() - rec.started) / 1000 });
         }
         // A request or plan the turn can no longer act on (the tool's process ended) expires, so it doesn't hold the session in Needs you.
         for (const id of pending) {
@@ -2266,22 +2492,33 @@ export class Runtime {
   name. A model told one name and offered another can call the one it was told (GPT-OSS did,
   through an API endpoint), so it's told the one it's offered. Hermes offers a server handed over
   ACP as mcp__editor_liner_<8 hex>__<tool>, the tag new each session, so the tag stays a placeholder.
+  Antigravity (1.5.6) offers a server handed over ACP as mcp_<server>_<tool>, each with its schema, up front: Liner Code's is
+  handed over as liner_<tag> there, the tag new each time agy starts (acp.ts namesNote says the current one), so the tag stays a
+  placeholder here too, unless `server` names one.
 */
-export const linerName = (family: string) => (tool: string) => (family === "claude" ? `mcp__liner__${tool}` : family === "opencode" ? `liner_${tool}` : family === "hermes" ? `mcp__editor_liner_<tag>__${tool}` : tool);
+/** An access level as the app names it. */
+const ACCESS_WORDS: Record<Access, string> = { read: "Read only", ask: "Ask", edits: "Edits", auto: "Auto", review: "Reviewer decides", full: "Full access" };
+
+export const linerName = (family: string, server = "liner") => (tool: string) => (family === "claude" ? `mcp__liner__${tool}` : family === "opencode" ? `liner_${tool}` : family === "hermes" ? `mcp__editor_liner_<tag>__${tool}` : family === "antigravity" ? `mcp_${server === "liner" ? "liner_<tag>" : server}_${tool}` : tool);
 
 /**
   What every agent is told when Liner Code's tools come with it. Without it, a tool with a
   computer-use plugin of its own (Codex, say) reached for that to check a page, outside the app.
 */
-export function toolsNote(n: (tool: string) => string) {
+export function toolsNote(n: (tool: string) => string, family?: string, server = "liner") {
   return [
-    "Liner Code runs this session. Its own tools (the `liner` MCP server) reach what the person sees beside this chat:",
+    `Liner Code runs this session. Its own tools (the \`${family === "antigravity" && server === "liner" ? "liner_<tag>" : server}\` MCP server) reach what the person sees beside this chat:`,
+    // Antigravity gets them under a tag made new each time it starts, said in the conversation (acp.ts namesNote).
+    ...(family === "antigravity" && n("x").includes("<tag>") ? ["(<tag> is a short code Liner Code makes new each time the agent starts; the conversation names the current one, and only that one is Liner Code's.)"] : []),
     // Hermes keeps them in its catalog of tools loaded on demand, under a tag of its own.
-    ...(n("x").includes("<tag>") ? ["(<tag> is a short code that changes from session to session. When one isn't in your tool list, find it with tool_search and call it through tool_call.)"] : []),
+    ...(family !== "antigravity" && n("x").includes("<tag>") ? ["(<tag> is a short code that changes from session to session. When one isn't in your tool list, find it with tool_search and call it through tool_call.)"] : []),
+    // Liner's server asks Codex for them up front (codexMcp, omit_tools_from); a Codex too old for that keeps them behind its tool search.
+    ...(family === "codex" ? ["(If these aren't in your tool list, find them with tool_search, searching \"liner design browser\", and call them from what it returns.)"] : []),
     `- ${n("browser_open")} opens a page of what you build in their Browser: a dev server on this Mac (localhost:5173, or just a port) or an HTML file in this folder (index.html), which needs no server. ${["browser_read", "browser_click", "browser_type", "browser_press"].map(n).join(", ")} and ${n("browser_screenshot")} then use that page, and report its console errors. On a canvas (a game), click a point with x and y, or press keys.`,
     `- ${n("server_start")} runs a dev server named in .claude/launch.json (the file Claude Code reads; write it first when it's missing) and opens it in their Browser. Use it rather than starting a dev server from your shell: Liner Code stops it when nobody needs it and starts it again when they come back. ${n("server_logs")} reads what it printed, ${n("server_stop")} stops it.`,
     `- ${n("show_page")} shows them a chart or a table in the chat.`,
     `- ${n("design_show")} shows a screen, page or prototype you design in their Design surface, version by version: write it as one HTML file under .liner/designs/ and call it with the path (or pass the page as html). They comment on parts of it there, and ask for it to be built.`,
+    `- ${["design_files", "design_frame", "design_tree", "design_node", "design_selection", "design_shot"].map(n).join(", ")} work on Liner Design's canvas: the design files of this folder (.liner/designs/<file>/), each frame one HTML file there that you may also edit with your own tools. ${n("design_built")} records a frame you built as a file of the project; ${n("design_picture")} asks the person's picture model for a picture.`,
     `- ${n("memory_add")} saves a fact about this project that later sessions start with; ${n("sessions_search")} looks through earlier sessions here.`,
     "Check web pages you build or change with these tools, not with any other browser or computer-use tool, and open the page again after each edit.",
   ].join("\n");

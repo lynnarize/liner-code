@@ -314,8 +314,8 @@ test("sidekick: a brief that runs past the cap is stopped, and the lead is told 
   }
 });
 
-test("sidekick: in a Read only session its sidekick works read only, and an edit comes to the person as the lead's would", async () => {
-  let asked: Promise<{ allow: boolean }> | undefined;
+test("sidekick: in a Read only session its sidekick works read only, and its edit is refused outright as the lead's would be", async () => {
+  let asked: Promise<{ allow: boolean; level?: boolean }> | undefined;
   const side = fake("codex", async (_o, _t, sink, signal) => {
     asked = sink.approve({ key: "e", tool: "Edit", title: "Edit a.txt", risk: "low", fields: [], rule: "Edit" }, signal);
     await asked;
@@ -324,11 +324,12 @@ test("sidekick: in a Read only session its sidekick works read only, and an edit
   const { store, runtime, tools } = pair({ access: "read" });
   try {
     const going = runtime.send("t", "edit");
-    await until(() => store.timeline("t").some((x) => x.kind === "approval" && x.state === "asking"), "the edit came to the person as a card");
+    await until(() => asked !== undefined, "the sidekick asked");
     assert.equal(side.opened[0].access, "read");
-    const card = store.timeline("t").find((x) => x.kind === "approval")!;
-    runtime.answer("t", card.id, false);
-    assert.equal((await asked!).allow, false);
+    const answer = await asked!;
+    assert.equal(answer.allow, false);
+    assert.equal(answer.level, true, "Read only's no, with no card");
+    assert.ok(!store.timeline("t").some((x) => x.kind === "approval"));
     await going;
   } finally {
     side.restore();

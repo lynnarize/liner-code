@@ -3,7 +3,8 @@
   search, an approval, a real edit, the summary) with no provider installed. It edits files only
   inside the sample project the engine makes for it; anywhere else it says what it would do.
   Asked for a design, it draws a tide screen through Liner Code's own design_show, the same call
-  any agent makes, and draws it again for each comment. Asked for a plan first, it proposes one
+  any agent makes, and draws it again for each comment. Sent a message from Liner Design, it draws
+  Foreshore's tide tables on the canvas instead, a frame at a time (demo-canvas.ts). Asked for a plan first, it proposes one
   inside its turn and waits for your answer, as Claude Code's plan mode does, then carries it out.
   In a pair it leads (hands the change to its sidekick) or works a brief as the sidekick.
 */
@@ -13,6 +14,7 @@ import type { ProviderInfo } from "../../../contracts/src/index.ts";
 import { run } from "../exec.ts";
 import type { OpenOptions, Provider, ProviderSession, ToolUpdate, TurnSink } from "./types.ts";
 import { PAIR_ENV } from "../liner-tools.ts";
+import { drawTides } from "./demo-canvas.ts";
 
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -183,6 +185,8 @@ class DemoSession implements ProviderSession {
     const sample = existsSync(file) && readFileSync(file, "utf8").includes("nextHigh");
     // A pair's sidekick works the brief, whatever it says; a pair's lead hands a change to it and reads what comes back.
     if (this.o.sidekick) return this.brief(text, sink, signal, t, n);
+    // Sent from Liner Design (its "## Design" note leads the message): Foreshore's tide tables, drawn frame by frame on the canvas.
+    if (/^## Design$/m.test(text)) return drawTides(this.o, text, sink, signal, t);
     if (DESIGN_ASK.test(text) && !/^Build the design\b/i.test(text.trim())) return this.design(text, sink, signal, t);
     // Asked for a plan first: it proposes one and waits; turned down, the turn ends there.
     if (PLAN_ASK.test(text) && !(await this.plan(text, sink, signal, t))) return;

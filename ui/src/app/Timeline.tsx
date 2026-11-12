@@ -83,9 +83,12 @@ type Entry = { kind: "tool"; it: Tool } | { kind: "thought"; it: Extract<Item, {
 const CARD_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show_page", "liner.show_page"]);
 /**
   Showing a design: its card stands for it once the turn has one. One that failed, or that kept
-  the version before (nothing changed), stays a step, with what it said.
+  the version before (nothing changed), stays a step, with what it said. Under each way a tool
+  names it (OpenCode's is liner_design_show). Liner Design's tools (design_frame, design_node and
+  the rest) aren't here on purpose: they draw on the canvas, which has no card, so each stays a
+  step with the words canvas.ts's titleOf gives it.
 */
-const DESIGN_TOOLS = new Set(["mcp__liner__design_show", "liner.design_show"]);
+const DESIGN_TOOLS = new Set(["mcp__liner__design_show", "liner.design_show", "liner_design_show"]);
 const isCard = (it: Item, designed: boolean) => it.kind === "tool" && (CARD_TOOLS.has(it.tool) || (designed && DESIGN_TOOLS.has(it.tool) && it.status === "done"));
 /** A tool call the trail draws as a step: not a card of its own (a question, a plan, a page, a design shown) nor the PR card's test run. */
 export const isStep = (it: Tool) => !CARD_TOOLS.has(it.tool) && !DESIGN_TOOLS.has(it.tool) && it.tool !== PR_TEST_TOOL && !(it.toolKind === "task" && /^Opus\b/.test(it.title));
@@ -276,7 +279,21 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
             </p>
           ),
         });
-      else if (it.kind === "notice") blocks.push({ key: it.id, node: <p className="lc-notice">{it.text}</p> });
+      // A notice that a tool has gone silent carries Stop beside it while its turn runs.
+      else if (it.kind === "notice")
+        blocks.push({
+          key: it.id,
+          node: (
+            <p className="lc-notice">
+              {it.text}
+              {it.stop && running && (
+                <button type="button" className="lc-notice-stop l-focus" onClick={() => void rpc("thread.stop", { id: threadId })}>
+                  Stop
+                </button>
+              )}
+            </p>
+          ),
+        });
       else if (it.kind === "offer") offers.push(it);
     }
   }
@@ -614,6 +631,10 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
     }
     const line = lastLine(t.output);
     return { ...base, verb: t.title, result: line && state !== "running" ? clip(line) : undefined };
+  }).map((step) => {
+    // A call that was still going when its turn was stopped says so, rather than how far its output got.
+    const t = step.tools[step.tools.length - 1];
+    return t.status === "stopped" ? { ...step, result: <span className="lc-quiet">stopped</span> } : step;
   });
 }
 

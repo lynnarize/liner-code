@@ -26,7 +26,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
 import type { EngineEvent, LaunchAsk, LaunchServer, Risk } from "../../contracts/src/index.ts";
-import { closesOnExit, killTree, spawn, THREAD_ENV } from "./exec.ts";
+import { closesOnExit, killTree, marking, spawn, THREAD_ENV, threadMark } from "./exec.ts";
 import { commandRisk } from "./risk.ts";
 
 const win = process.platform === "win32";
@@ -666,7 +666,13 @@ export class Launcher {
     let child: ChildProcess;
     try {
       // A group of its own, so stopping it stops what it started (npm and the server under it).
-      child = spawn(e.command, args, { cwd: e.cwd, env: { ...this.host.env, FORCE_COLOR: "1", ...e.env, PORT: String(port), LINER_CODE: "1", [THREAD_ENV]: threadId }, detached: !win, stdio: ["ignore", "pipe", "pipe"] });
+      // Marked as the session's both ways (exec.ts Mark): in its environment, and holding the session's marker file.
+      const { stdio, done } = marking(["ignore", "pipe", "pipe"], [threadMark(threadId)]);
+      try {
+        child = spawn(e.command, args, { cwd: e.cwd, env: { ...this.host.env, FORCE_COLOR: "1", ...e.env, PORT: String(port), LINER_CODE: "1", [THREAD_ENV]: threadId }, detached: !win, stdio: stdio as ["ignore", "pipe", "pipe"] });
+      } finally {
+        done();
+      }
     } catch (err) {
       return refuse(`${e.name} didn't start: ${err instanceof Error ? err.message : String(err)}`, port);
     }

@@ -7,9 +7,9 @@
   window (localStorage) and apply at once; the rest lives in the engine. Escape, ⌘, or Back
   returns to the sessions.
 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
-import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, ROUTINES_ON, updateModes, VOUCHER } from "@contracts";
+import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, picturesGuess, ROUTINES_ON, toolPicturesKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
@@ -27,6 +27,8 @@ import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, agentOf, ago, dollars, markOf, modelLabel, plural, providerLabel, since } from "./model";
 import { appIcon, dayOf } from "./Addon";
+// Liner Design's picture model settings load when that page of Settings is shown.
+const PicturesSettings = lazy(() => import("./design/Pictures").then((m) => ({ default: m.PicturesSettings })));
 import { ModesPlace } from "./Modes";
 import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop, Row } from "./ui";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
@@ -61,7 +63,7 @@ const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string;
   { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, how much moves, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
-  { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok install sign in key api billing anthropic openai voucher promo code redeem" },
+  { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem" },
   { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Your pair, the lead and its sidekick, and what a new session starts with; and the Reviewer, which reads each change before it's yours.", words: "agentic pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes" },
   { id: "modes", label: "Modes", icon: <I.idea />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
@@ -492,7 +494,11 @@ const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String
 /** One empty list, so a store read of a missing one doesn't change every time. */
 const NONE: never[] = [];
 /** Tools with a driver that hasn't been run against the real tool yet. */
-const UNTRIED = new Set(["cursor", "grok"]);
+const UNTRIED = new Set(["cursor", "grok", "antigravity"]);
+/** The models a tool listed, as its chips show them: its "default" stands for one of them, so it isn't counted. */
+const listedCount = (p: ProviderInfo) => p.models.filter((m) => m.id !== "default").length;
+/** Where Google says how Antigravity may be used, which the tool's row points to. */
+const ANTIGRAVITY_TERMS = "https://antigravity.google/terms";
 const save = (patch: Partial<EngineSettings>) => void rpc("settings.save", patch).catch(fail);
 const tilde = os.tilde;
 
@@ -1367,6 +1373,7 @@ function Models() {
                   }
                   note={p.available ? [p.version ?? "Installed", p.adapter ? p.detail : "Liner Code can't drive it yet"].filter(Boolean).join(" · ") : (p.detail ?? "Not installed")}
                 >
+                  {p.available && p.adapter && <ToolPictures p={p} />}
                   {p.available && p.adapter ? (
                     <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.runInTerminal(p.login)}>
                       {p.signedIn === false ? "Sign in" : "Sign in again"}
@@ -1377,6 +1384,21 @@ function Models() {
                     </button>
                   ) : null}
                 </Field>
+                {p.id === "antigravity" && (
+                  <p className="lc-st-terms lc-quiet">
+                    Liner Code runs Google's own <code>agy</code>, and Google's terms for Antigravity restrict third-party tools.{" "}
+                    <a
+                      href={ANTIGRAVITY_TERMS}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        bridge.openExternal(ANTIGRAVITY_TERMS);
+                      }}
+                    >
+                      Google's terms
+                    </a>
+                  </p>
+                )}
+                {p.id === "antigravity" && <p className="lc-st-terms lc-quiet">Your own connections reach it only at Full access, never in a side chat: it runs their tools without asking. Only connections that run as a command on this Mac reach it at all; one at an address never does.</p>}
                 {p.available && p.adapter && p.models.length > 0 && (
                   <div className="lc-st-models">
                     {p.models
@@ -1389,7 +1411,7 @@ function Models() {
                       ))}
                     {p.models.filter((m) => !m.legacy && m.id !== "default").length > 8 && <span className="lc-st-model lc-quiet">{p.models.filter((m) => !m.legacy && m.id !== "default").length - 8} more</span>}
                     <span className="lc-st-src lc-quiet">
-                      {p.modelsFrom === "cli" ? `${p.label} listed ${p.models.length === 1 ? "this" : `these ${p.models.length}`}${p.models.some((m) => m.legacy) ? `, ${p.models.filter((m) => m.legacy).length} older` : ""}${p.modelsAt ? `, ${since(p.modelsAt)}` : ""}` : `Asking ${p.label} for its models`}
+                      {p.modelsFrom === "cli" ? `${p.label} listed ${listedCount(p) === 1 ? "this" : `these ${listedCount(p)}`}${p.models.some((m) => m.legacy) ? `, ${p.models.filter((m) => m.legacy).length} older` : ""}${p.modelsAt ? `, ${since(p.modelsAt)}` : ""}` : `Asking ${p.label} for its models`}
                     </span>
                   </div>
                 )}
@@ -1400,6 +1422,9 @@ function Models() {
       <Accounts />
       <AddedAgents />
       <Endpoints />
+      <Suspense fallback={null}>
+        <PicturesSettings Group={Group} Field={Field} />
+      </Suspense>
       <CustomModels />
       <Group title="Billing and keys" note={`Keys stay in ${os.keyStore("the login keychain")}. The engine only holds them in memory.`}>
         <Field title="Claude Code bills to" note={keys.includes("anthropic") ? "Your plan through Claude Code's own sign-in, or the Anthropic key you added" : "Anthropic asks apps built on its Agent SDK to use an API key: add one below"}>
@@ -1641,7 +1666,9 @@ function AddedAgents() {
       }
     >
       {added.map((a) => (
-        <ProviderRow key={a.id} p={providers.find((x) => x.id === `acp.${a.id}`)} fallback={a.label} onRemove={() => remove(a.id, a.label)} />
+        <ProviderRow key={a.id} p={providers.find((x) => x.id === `acp.${a.id}`)} fallback={a.label} onRemove={() => remove(a.id, a.label)}>
+          {providers.some((x) => x.id === `acp.${a.id}` && x.available) && <ToolPictures p={providers.find((x) => x.id === `acp.${a.id}`)!} />}
+        </ProviderRow>
       ))}
       {!added.length && <p className="lc-st-none lc-quiet">None yet. Gemini CLI, Goose, Amp and many more are in the registry.</p>}
     </Group>
@@ -1686,15 +1713,107 @@ function Endpoints() {
       {adding && <EndpointForm taken={endpoints} onDone={() => setAdding(false)} />}
       {endpoints.map((e) => (
         <ProviderRow key={e.id} p={providers.find((x) => x.id === `${ENDPOINT_TOOL[e.protocol]}.${e.id}`)} fallback={e.label} onRemove={() => remove(e)}>
-          <span className="lc-quiet" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-            {e.models.length === 1 ? e.models[0] : `${e.models.length} models`}
-          </span>
+          <EndpointModels e={e} all={endpoints} />
         </ProviderRow>
       ))}
       {!adding && !endpoints.length && <p className="lc-st-none lc-quiet">None yet. A DeepSeek or Kimi key, OpenRouter, or a model running on {os.here} in LM Studio or Ollama.</p>}
     </Group>
   );
 }
+
+/**
+  An endpoint's models, and whether each takes pictures: what you set, or the guess from its name
+  (PICTURE_GUESS), said apart. A model that takes none gets a frame's outline and console errors in
+  words instead of its picture (agent-tools.ts wordsOnly); OpenCode is told which kind it is.
+*/
+function EndpointModels({ e, all }: { e: Endpoint; all: Endpoint[] }) {
+  const set = (m: string, v: boolean | null) => {
+    const { [m]: _was, ...rest } = e.pictures ?? {};
+    const pictures = v === null ? rest : { ...rest, [m]: v };
+    save({ endpoints: all.map((x) => (x === e ? { ...e, pictures: Object.keys(pictures).length ? pictures : undefined } : x)) });
+  };
+  return (
+    <Pop label={`Models of ${e.label}`} align="end" width={340} triggerClass="lc-st-ver" trigger={<>{e.models.length === 1 ? e.models[0] : `${e.models.length} models`}<I.chevD size={11} /></>}>
+      {() => (
+        <div className="lc-st-form lc-st-keys lc-st-pics">
+          <div className="lc-st-pics-h">Takes pictures</div>
+          {e.models.map((m) => {
+            const mine = e.pictures?.[m];
+            const guess = picturesGuess(e.protocol, m);
+            return (
+              <div key={m} className="lc-st-pics-r">
+                <span className="lc-st-pics-t">
+                  <span className="lc-mono">{m}</span>
+                  <small>
+                    {mine === undefined ? "A guess from its name" : "You set this"}
+                    {mine !== undefined && mine !== guess && (
+                      <>
+                        {" · "}
+                        <button type="button" className="lc-link" onClick={() => set(m, null)}>
+                          Use the guess
+                        </button>
+                      </>
+                    )}
+                  </small>
+                </span>
+                <NamedSwitch name={`${m} takes pictures`} checked={mine ?? guess} onCheckedChange={(v) => set(m, v)} />
+              </div>
+            );
+          })}
+          <p className="lc-quiet lc-st-pics-n">A model that doesn't take pictures gets a frame's outline and console errors in words instead.</p>
+        </div>
+      )}
+    </Pop>
+  );
+}
+
+/**
+  A tool's own models, and whether each takes pictures: yes unless you say otherwise (Settings.toolPictures,
+  read by picturesOf). A model that takes none gets a frame's outline and console errors in words instead of
+  its picture (agent-tools.ts wordsOnly).
+*/
+function ToolPictures({ p }: { p: ProviderInfo }) {
+  const mine = useEngine((x) => x.settings.toolPictures) ?? NO_PICS;
+  const models = p.models.filter((m) => !m.legacy);
+  if (!models.length) return null;
+  const set = (m: string, v: boolean | null) => {
+    const { [toolPicturesKey(p.id, m)]: _was, ...rest } = mine;
+    save({ toolPictures: v === null ? rest : { ...rest, [toolPicturesKey(p.id, m)]: v } });
+  };
+  return (
+    <Pop label={`Pictures for ${p.label}`} align="end" width={340} triggerClass="lc-st-ver" trigger={<>Pictures<I.chevD size={11} /></>}>
+      {() => (
+        <div className="lc-st-form lc-st-keys lc-st-pics">
+          <div className="lc-st-pics-h">Takes pictures</div>
+          {models.map((m) => {
+            const set_ = mine[toolPicturesKey(p.id, m.id)];
+            return (
+              <div key={m.id} className="lc-st-pics-r">
+                <span className="lc-st-pics-t">
+                  <span className="lc-mono">{m.id === "default" ? m.label : m.id}</span>
+                  <small>
+                    {set_ === undefined ? "Takes pictures unless you say otherwise" : "You set this"}
+                    {set_ === false && (
+                      <>
+                        {" · "}
+                        <button type="button" className="lc-link" onClick={() => set(m.id, null)}>
+                          Use the default
+                        </button>
+                      </>
+                    )}
+                  </small>
+                </span>
+                <NamedSwitch name={`${m.id === "default" ? m.label : m.id} takes pictures`} checked={set_ ?? true} onCheckedChange={(v) => set(m.id, v ? null : false)} />
+              </div>
+            );
+          })}
+          <p className="lc-quiet lc-st-pics-n">A model that doesn't take pictures gets a frame's outline and console errors in words instead.</p>
+        </div>
+      )}
+    </Pop>
+  );
+}
+const NO_PICS: Record<string, boolean> = {};
 
 function EndpointForm({ taken, onDone }: { taken: Endpoint[]; onDone: () => void }) {
   const [service, setService] = useState<string>("other");
@@ -2818,7 +2937,7 @@ function UpdatesPlace() {
         <Field title="Updates" note={toolMode === "auto" ? "Runs a tool's updater as soon as a new version is out and nothing is working on it." : toolMode === "notify" ? "Tells you on Home when a tool has a new version, and you update it." : "Doesn't look for new versions. Look now still does."}>
           <Segmented size="sm" value={toolMode} onValueChange={(v) => save({ updateTools: v as UpdateMode })} options={UPDATE_MODES} aria-label="The agent tools' updates" />
         </Field>
-        {u.tools.length ? u.tools.map((t) => <ToolRow key={t.id} t={t} />) : <Field title="No agent tools yet" note={u.checkedAt ? `None of Claude Code, Codex, OpenCode, Hermes or Grok Build is on ${os.here}. Install one in Models.` : "They show here after the first look."} />}
+        {u.tools.length ? u.tools.map((t) => <ToolRow key={t.id} t={t} />) : <Field title="No agent tools yet" note={u.checkedAt ? `None of Claude Code, Codex, OpenCode, Hermes, Grok Build or Antigravity CLI is on ${os.here}. Install one in Models.` : "They show here after the first look."} />}
       </Group>
     </>
   );

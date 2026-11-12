@@ -21,7 +21,7 @@ import { castOf, costOf, familyOf, pairCostOf, shortlistOf, splitModel } from "@
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
-import { isPrompt, rpc, useEngine, useItemsWhere } from "./engine";
+import { isPrompt, rpc, useEngine, useItems, useItemsWhere } from "./engine";
 import { I, ModelMark, type MarkKind } from "./icons";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, isModelAgent, markOf, modelLabel, pairReady, plural, providerLabel, shortName, since, wayOf, whoOf, type Way } from "./model";
 import { onComposerInsert } from "./Find";
@@ -30,6 +30,7 @@ import { CostMini, costScale, PairCost } from "./PairCost";
 import { SideKeys } from "./TopBar";
 import { ContextMeter, Disc, LimitMeter, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
+import { drawingOf, setFace } from "./face";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -75,7 +76,22 @@ type Props = {
     drawn (app.css reads that with :has, so a row coming or going needs no word from here).
   */
   top?: ReactNode;
+  /**
+    Liner Design's dock (design/Dock.tsx) passes these. `chips`: what's selected on the canvas, in
+    the input row before the text. `whoName`: the who chip's words in place of the model's (G's
+    "Pair + pictures"). `trayEnd`: more chips after the choices (E's skills). `canvas`: this
+    composer is the canvas's own, so it doesn't offer "Watch on the canvas".
+  */
+  chips?: ReactNode;
+  /** Home's strip: what stands at its left in place of where it runs (Design Home's lean chip). */
+  stripStart?: ReactNode;
+  whoName?: ReactNode;
+  trayEnd?: ReactNode;
+  canvas?: boolean;
+  /** More rows for the `/` list, first (Liner Design's skills): picking one runs `onPick` and takes the typed `/…` away. */
+  slashRows?: SlashRow[];
 };
+export type SlashRow = { name: string; hint?: string; note?: string; tag?: string; onPick: () => void };
 
 /*
   What gives way, in order, when the tray's controls don't fit on one line: the queue-or-steer
@@ -108,7 +124,7 @@ function useTrayFit(tray: RefObject<HTMLDivElement | null>) {
   }, [tray]);
 }
 
-type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$"; hint?: string; note?: string; path?: string; liner?: boolean };
+type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$"; hint?: string; note?: string; path?: string; liner?: boolean; tag?: string; pick?: () => void };
 const commandCache = new Map<string, Promise<{ commands: CommandInfo[]; skills: SkillInfo[] }>>();
 const commandsFor = (projectId: string, agent: string, threadId?: string) => {
   const key = `${projectId}|${agent}`;
@@ -229,7 +245,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, top }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, top, chips, stripStart, whoName, trayEnd, canvas, slashRows }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -264,6 +280,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const model = settings.model ?? coder.model;
   const shownModel = model;
   const lev = accessOf(settings.access);
+  // Claude Code through another maker's API: its Auto can't run there, so it runs as Edits on its own (engine: claude.ts modeOf).
+  const noAuto = model ? providers.find((p) => p.id === splitModel(model).provider)?.supports.auto === false : false;
   // The plan windows of the tools this runs on (who you talk to first), when they report any.
   const limits = useEngine((s) => s.limits);
   const planOf = useMemo(
@@ -389,10 +407,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         setFound(r.map((f) => ({ key: f.path, insert: `@${f.path}`, label: f.path, kind: "@" })));
         setHl(0);
       }, () => live && setFound([]));
-    else if (tools) {
-      const list =
+    else if (tools || (mention.kind === "/" && slashRows?.length)) {
+      const extra = mention.kind === "/" ? (slashRows ?? []).filter((r) => `${r.name} ${r.note ?? ""}`.toLowerCase().includes(q)).map((r): Choice => ({ key: `+${r.name}`, insert: "", label: `/${r.name}`, hint: r.hint, note: r.note, kind: "/", tag: r.tag, pick: r.onPick })) : [];
+      const list = !tools ? extra :
         mention.kind === "/"
-          ? tools.commands.filter((c) => `${c.name} ${c.description}`.toLowerCase().includes(q)).sort((a, b) => rank(a.name) - rank(b.name)).map((c): Choice => ({ key: c.name, insert: `/${c.name}`, label: `/${c.name}`, hint: c.hint, note: c.description, kind: "/", liner: c.source === "liner" }))
+          ? [...extra, ...tools.commands.filter((c) => `${c.name} ${c.description}`.toLowerCase().includes(q)).sort((a, b) => rank(a.name) - rank(b.name)).map((c): Choice => ({ key: c.name, insert: `/${c.name}`, label: `/${c.name}`, hint: c.hint, note: c.description, kind: "/", liner: c.source === "liner" }))]
           : tools.skills.filter((x) => `${x.name} ${x.description}`.toLowerCase().includes(q)).sort((a, b) => rank(a.name) - rank(b.name)).map((x): Choice => ({ key: x.name, insert: `$${x.name}`, label: `$${x.name}`, note: x.description, kind: "$", path: x.path }));
       setFound(list.slice(0, 12));
       setHl(0);
@@ -400,7 +419,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     return () => {
       live = false;
     };
-  }, [mention, project.id, thread?.id, tools]);
+  }, [mention, project.id, thread?.id, tools, slashRows]);
 
   // The row under ↑ and ↓ stays in view in a list that scrolls (a short window).
   useEffect(() => {
@@ -425,6 +444,12 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const pickFile = (c: Choice) => {
     if (!mention) return;
     const end = mention.start + 1 + mention.query.length;
+    if (c.pick) {
+      setText(`${text.slice(0, mention.start)}${text.slice(end)}`.trimStart());
+      setMention(null);
+      c.pick();
+      return void requestAnimationFrame(() => field.current?.focus());
+    }
     const next = `${text.slice(0, mention.start)}${c.insert} ${text.slice(end)}`;
     if (c.kind === "$") skillsUsed.current.set(c.key, c.path);
     setText(next);
@@ -690,7 +715,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         </span>
       )}
       <span className="lc-chip-name" title={whoNow.full !== whoNow.name ? whoNow.full : undefined}>
-        {whoNow.name}
+        {whoName ?? whoNow.name}
       </span>
       {whoNow.agent && settings.sidekick && (
         <span className="lc-way-marks">
@@ -748,7 +773,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               <button key={l.id} type="button" role="radio" aria-checked={settings.access === l.id} className="lc-perm-r l-focus" onClick={() => pick(l.id)}>
                 <span className="lc-perm-t">
                   <b>{l.label}</b>
-                  <small>{l.note}</small>
+                  <small>{l.id === "auto" && noAuto ? "With this model it edits on its own and asks before commands: the safety check Auto relies on only runs on Anthropic's own models." : l.note}</small>
                 </span>
                 {settings.access === l.id && <I.check size={16} />}
                 <kbd className="lc-perm-k">{i + 1}</kbd>
@@ -895,7 +920,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       )}
 
       <div className="lc-tray" data-variant={variant}>
-        {variant === "session" && <div className="lc-tray-head">{top}</div>}
+        {variant === "session" && (
+          <div className="lc-tray-head">
+            {top}
+            {/* An agent drawing on a design file of this session's folder: the canvas is a press away. */}
+            {thread && !canvas && <WatchCanvas thread={thread} />}
+          </div>
+        )}
         <div className="lc-card">
           {files.length > 0 && (
             <div className="lc-files">
@@ -911,6 +942,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               ))}
             </div>
           )}
+          {chips && <div className="lc-chips">{chips}</div>}
           <div className="lc-field-box">
           <div ref={mirrorRef} className="lc-field lc-field-md" aria-hidden>
             {md}
@@ -1051,7 +1083,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                     {f.hint && <span className="lc-quiet"> {f.hint}</span>}
                   </span>
                   {f.note && <span className="lc-mention-d">{f.note}</span>}
-                  {f.liner && <span className="lc-mp-def">Liner Code</span>}
+                  {(f.tag || f.liner) && <span className="lc-mp-def">{f.tag ?? "Liner Code"}</span>}
                 </button>
               ))}
               {mention.kind !== "@" && tools && found.length === 0 && <span className="lc-quiet lc-mention-wait">No {mention.kind === "/" ? "command" : "skill"} matches that.</span>}
@@ -1082,6 +1114,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               <span className="lc-seg-div" aria-hidden />
               {accessPick}
             </span>
+            {trayEnd}
             <span className="lc-grow" />
             {editing ? (
               <span className="lc-tray-note">Editing a queued message · Enter saves · Esc leaves it</span>
@@ -1100,6 +1133,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         */}
         {variant === "home" && (
           <div className="lc-strip">
+            {stripStart ?? (<>
             {project.git ? (
               <Pop
                 label="Where it runs"
@@ -1158,6 +1192,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 </span>
               )
             )}
+            </>)}
             <span className="lc-grow" />
             {stripEnd}
           </div>
@@ -1538,6 +1573,27 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** "Watch on the canvas": while the running turn draws on a design file of this session's folder (face.ts says when). */
+function WatchCanvas({ thread }: { thread: Thread }) {
+  const items = useItems(thread.id);
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
+  const now = thread.status === "running" ? drawingOf(items) : undefined;
+  if (!now) return null;
+  return (
+    <div className="lc-trow ld-watch" role="status">
+      <span className="ld-pd" data-lead aria-hidden />
+      <span className="lc-trow-t">
+        <b>{agentOf(thread.agent, agents, providers).name}</b> is drawing{now.frame ? ` ${now.frame}` : " on the canvas"}
+      </span>
+      <span className="lc-grow" />
+      <button type="button" className="lc-trow-lk l-focus" onClick={() => setFace("design")}>
+        Watch on the canvas
+      </button>
     </div>
   );
 }

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Foreshore, today running down the screen, phone</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900;1,62..125,100..900&family=Newsreader:ital,opsz,wght@1,6..72,300..600&display=block">
+<style>
+/* Foreshore: the sample tide-tables app shown inside the Liner Design mockup.
+   Concept: the day is drawn the way a sea chart draws a coast. Buff land above high water,
+   green foreshore that dries, blue shallows, white deep water, magenta for marks.
+   On a chart the names of water slope and the names of land stand upright: so do these. */
+:root{
+  --paper:#F7F8F5;--ink:#11181B;--muted:#56646A;--line:rgba(17,24,27,.16);
+  --shallows:#BFE0EA;--foreshore:#B5D3A0;--land:#F0DA9C;--mark:#C4127A;--tint:rgba(240,218,156,.6);--on-mark:#fff
+}
+.night{
+  --paper:#0C1315;--ink:#E7ECE8;--muted:#8C9B9E;--line:rgba(231,236,232,.2);
+  --shallows:#143A4A;--foreshore:#27452E;--land:#463C1B;--mark:#FF5FB0;--tint:rgba(70,60,27,.75);--on-mark:#0C1315
+}
+*{box-sizing:border-box;margin:0}
+body{position:relative;overflow:hidden;background:var(--paper);color:var(--ink);font:400 15px/1.4 "Archivo",system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;font-kerning:normal}
+svg{display:block;overflow:visible}
+svg text{font-family:"Archivo",sans-serif;font-variant-numeric:tabular-nums}
+.abs{position:absolute}
+.sea{font-family:"Newsreader",Georgia,serif;font-style:italic;font-weight:400;letter-spacing:-0.005em}
+.fig{font-style:italic;font-stretch:62%;font-weight:800;letter-spacing:-0.015em;line-height:.8;white-space:nowrap}
+.t{font-style:italic;font-stretch:80%;font-weight:700;letter-spacing:-0.01em}
+.lab{font-size:11px;font-weight:600;font-stretch:125%;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.mut{color:var(--muted)}
+.wm{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:650;font-stretch:112%;letter-spacing:-0.025em;white-space:nowrap}
+.wm svg{width:26px;height:26px}
+.flag{display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 9px;background:var(--mark);color:var(--on-mark);font-size:12.5px;font-weight:600;white-space:nowrap}
+.flag i{font-style:italic;font-weight:500;opacity:.92}
+.tabs{left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;justify-content:space-around;border-top:1px solid var(--line);background:var(--paper);font-size:14px;font-weight:500;color:var(--muted)}
+.tabs b{font-weight:650;color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:7px}
+.row{display:flex;align-items:baseline;gap:12px;height:57px;padding:17px 16px 0;border-top:1px solid var(--line)}
+.row .sea{width:128px;font-size:20px}
+.row .t{font-size:26px}
+.row .h{margin-left:auto;font-size:15px;color:var(--muted)}
+.row.hi{background:var(--tint)}
+</style>
+<style>
+body{width:390px;height:844px}
+</style>
+</head>
+<body>
+<!-- A third take: the day runs down the phone, the shore to the right. You scroll through time. -->
+<svg class="abs" style="left: 0; top: 0" width="390" height="844" viewBox="0 0 390 844">
+  <rect x="100" y="110" width="200" height="678" fill="var(--foreshore)"/>
+  <rect x="300" y="110" width="90" height="678" fill="var(--land)"/>
+  <path d="M251,110 C270,128 288,146 288,166 S100,270 100,329 S300,440 300,498 S108,600 108,662 S170,728 210,750 L232,788 L0,788 L0,110 Z" fill="var(--shallows)"/>
+  <line x1="300" y1="110" x2="300" y2="788" stroke="var(--ink)" stroke-width="1" stroke-dasharray="1 6" stroke-linecap="round" opacity=".6"/>
+  <line x1="100" y1="110" x2="100" y2="788" stroke="var(--ink)" stroke-width="1" stroke-dasharray="1 6" stroke-linecap="round" opacity=".6"/>
+  <path d="M251,110 C270,128 288,146 288,166 S100,270 100,329 S300,440 300,498 S108,600 108,662 S170,728 210,750 L232,788" fill="none" stroke="var(--ink)" stroke-width="2.25"/>
+  <g fill="var(--ink)"><circle cx="288" cy="166" r="3.5"/><circle cx="100" cy="329" r="3.5"/><circle cx="300" cy="498" r="5"/><circle cx="108" cy="662" r="3.5"/></g>
+  <line x1="0" y1="438" x2="300" y2="438" stroke="var(--mark)" stroke-width="1.5"/>
+  <circle cx="242" cy="438" r="6.5" fill="var(--mark)" stroke="var(--paper)" stroke-width="2.5"/>
+  <line x1="0" y1="110" x2="390" y2="110" stroke="var(--ink)" stroke-width="1"/>
+  <g id="scale"></g>
+</svg>
+
+<div class="abs wm" style="left: 24px; top: 26px; font-size: 18px"><svg viewBox="0 0 48 48" style="width: 23px; height: 23px"><defs><clipPath id="r"><circle cx="24" cy="24" r="21"/></clipPath></defs><path d="M-2,31 C10,11 18,11 24,24 S38,37 50,17" fill="none" stroke="currentColor" stroke-width="3.8" clip-path="url(#r)"/><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="3.8"/><circle cx="24" cy="24" r="4.8" fill="var(--mark)"/></svg>Foreshore</div>
+<div class="abs" style="right: 24px; top: 28px; font-size: 14px; font-weight: 600">Sample Harbour</div>
+<div class="abs sea" style="left: 25px; top: 68px; font-size: 24px; line-height: 1">High water in 2 h 14 min</div>
+
+<div class="abs" style="left: 310px; top: 150px; line-height: 1.1"><span class="t mut" style="font-size: 19px">02:05</span></div>
+<div class="abs" style="left: 20px; top: 300px; line-height: 1.05"><span class="sea" style="font-size: 17px">Low</span><br><span class="t" style="font-size: 26px">08:12</span><br><span style="font-size: 13px">0.9 m</span></div>
+<div class="abs" style="left: 306px; top: 452px; line-height: 1.05"><span class="sea" style="font-size: 17px">High</span><br><span class="fig" style="font-size: 44px; line-height: 1">14:32</span><br><span style="font-size: 13px">5.8 m</span></div>
+<div class="abs" style="left: 20px; top: 634px; line-height: 1.05"><span class="sea" style="font-size: 17px">Low</span><br><span class="t" style="font-size: 26px">20:41</span><br><span style="font-size: 13px">1.1 m</span></div>
+<div class="abs flag" style="left: 14px; top: 446px; height: 22px; font-size: 12px">Now 12:18</div>
+<div class="abs lab" style="left: 312px; top: 122px; color: var(--ink); opacity: .7">Shore</div>
+
+<div class="abs tabs"><b>Today</b><span>Week</span><span>Stations</span></div>
+
+<script>
+const S = "http://www.w3.org/2000/svg", sc = document.getElementById("scale"), h = 678 / 24;
+for (let i = 0; i < 24; i += 2) { const r = document.createElementNS(S, "rect"); r.setAttribute("x", 0); r.setAttribute("y", 110 + i * h); r.setAttribute("width", 6); r.setAttribute("height", h); r.setAttribute("fill", "var(--ink)"); sc.append(r); }
+</script>
+</body>
+</html>

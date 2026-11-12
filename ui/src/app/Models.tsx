@@ -3,7 +3,7 @@
   runs, not a list kept in the app: a rail of tools (and the models you starred, and in the
   composer your agents), a search
   across all of them, each tool's current models first with its older ones folded under them,
-  and ⌘1 to ⌘9 for the first nine. A tool that runs models from several sources (Hermes's Nous
+  and the arrows and Enter from the search. A tool that runs models from several sources (Hermes's Nous
   Portal and OpenCode Go, an OpenCode with OpenRouter) shows its sources first, then a source's
   models, so a long list is two short steps instead of one long scroll. The effort menu offers the levels the chosen model takes,
   with the tool's own default marked.
@@ -16,10 +16,9 @@ import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
 import { allModels, effortName, effortsFor, EXTRA_EFFORTS, markOf, sourceMarkOf, type ModelChoice } from "./model";
 import { ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
-import * as os from "./os";
 import "./models.css";
 
-const INITIALS: Record<string, string> = { claude: "C", codex: "X", opencode: "O", hermes: "H", demo: "D", cursor: "Cu", grok: "G" };
+const INITIALS: Record<string, string> = { claude: "C", codex: "X", opencode: "O", hermes: "H", demo: "D", cursor: "Cu", grok: "G", antigravity: "Ag" };
 
 type Props = {
   /** The model picked now, as "<provider>:<model>". */
@@ -42,14 +41,14 @@ type Props = {
   tab?: string;
   /**
     A search typed somewhere else (the composer's panel has its field on top): the picker then shows
-    only what matches, with no rail and no field of its own, and takes the arrows, Enter and the
-    number keys from `keysFrom`.
+    only what matches, with no rail and no field of its own, and takes the arrows and Enter
+    from `keysFrom`.
   */
   query?: string;
   keysFrom?: RefObject<HTMLElement | null>;
 };
 
-type Line = { kind: "row"; m: ModelChoice; sub: string } | { kind: "head"; text: string } | { kind: "fold"; provider: string; n: number; open: boolean } | { kind: "source"; name: string; n: number; refs: string[] } | { kind: "back"; tool: string; name: string };
+type Line = { kind: "row"; m: ModelChoice; sub: string } | { kind: "head"; text: string } | { kind: "fold"; provider: string; n: number; open: boolean } | { kind: "source"; name: string; n: number; refs: string[]; via?: string } | { kind: "back"; tool: string; name: string; via?: string };
 
 /** A tool with two sources or more shows them first (OpenCode's Zen and Go); one with a source and models of no source does past this many. */
 const SOURCES_FROM = 14;
@@ -72,7 +71,15 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
   const showDemo = useEngine((s) => s.settings.showDemo === true);
   const tools = useMemo(() => providers.filter((p) => p.available && p.adapter && p.models.length && (showDemo || p.id !== "demo") && (!only || only(p))), [providers, only, showDemo]);
   const models = useMemo(() => allModels(tools), [tools]);
-  const start = value ? value.slice(0, value.indexOf(":")) : undefined;
+  /**
+    The tab a model is listed on: its own tool's, except OpenCode Go's models, which sit on
+    OpenCode's tab whichever tool reports them (Hermes runs them from a Go plan too). They still run
+    in the tool that reported them, and their source says so ("through Hermes").
+  */
+  const goTab = tools.find((p) => familyOf(p.id) === "opencode")?.id;
+  const tabOf = (m: ModelChoice) => (goTab && sourceOf(m) === "OpenCode Go" ? goTab : m.providerId);
+  const picked = value ? models.find((m) => m.ref === value) : undefined;
+  const start = picked ? tabOf(picked) : value ? value.slice(0, value.indexOf(":")) : undefined;
   const [rail, setRail] = useState<string>(() => (extra?.open ? extra.id : tab && tools.some((p) => p.id === tab) ? tab : favs.length && !value ? "fav" : (tools.find((p) => p.id === start)?.id ?? tools[0]?.id ?? "fav")));
   const onExtra = extra !== undefined && rail === extra.id;
   useEffect(() => onTab?.(rail), [rail]);
@@ -95,6 +102,11 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
   }, []);
 
   const toolOf = (id: string) => tools.find((p) => p.id === id);
+  /** The tool some of a tab's models run in, when it isn't the tab's own. */
+  const viaOf = (of: ModelChoice[]) => {
+    const other = [...new Set(of.filter((m) => m.providerId !== rail).map((m) => m.provider))];
+    return other.length ? other.join(", ") : undefined;
+  };
   const lines = useMemo((): Line[] => {
     const q = query.trim().toLowerCase();
     if (q) {
@@ -102,7 +114,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
       return hit.map((m) => ({ kind: "row", m, sub: [m.provider, m.group].filter(Boolean).join(" · ") }));
     }
     if (rail === "fav") return favs.flatMap((ref) => models.filter((m) => m.ref === ref)).map((m) => ({ kind: "row", m, sub: [m.provider, m.group].filter(Boolean).join(" · ") }));
-    const all = models.filter((m) => m.providerId === rail);
+    const all = models.filter((m) => tabOf(m) === rail);
     // The biggest sources first; models no source claims come last, as Other.
     const count = (name: string) => all.filter((m) => !m.legacy && sourceOf(m) === name).length;
     const sources = [...new Set(all.filter((m) => !m.legacy).map(sourceOf))].sort((x, y) => Number(!x) - Number(!y) || count(y) - count(x));
@@ -110,12 +122,12 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
     if (stepped && (source === null || !sources.includes(source)))
       return sources.map((name): Line => {
         const of = all.filter((m) => sourceOf(m) === name && !m.legacy);
-        return { kind: "source", name, n: of.length, refs: of.map((m) => m.ref) };
+        return { kind: "source", name, n: of.length, refs: of.map((m) => m.ref), via: viaOf(of) };
       });
     const mine = stepped ? all.filter((m) => sourceOf(m) === source) : all;
     const now = mine.filter((m) => !m.legacy);
     const old = mine.filter((m) => m.legacy);
-    const out: Line[] = stepped ? [{ kind: "back", tool: toolOf(rail)?.label ?? rail, name: source || "Other" }] : [];
+    const out: Line[] = stepped ? [{ kind: "back", tool: toolOf(rail)?.label ?? rail, name: source || "Other", via: viaOf(mine) }] : [];
     // A tool that reports models from several places (Hermes's providers) gets a heading for each.
     let group: string | undefined;
     for (const m of [...now].sort((a, b) => (a.group ?? "").localeCompare(b.group ?? "") || 0)) {
@@ -141,14 +153,9 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
     void rpc("settings.save", { favoriteModels: next }).catch((e) => toast.error(String(e?.message ?? e)));
   };
   const keys = (e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "target" | "preventDefault">) => {
-    if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
-      const m = rows[Number(e.key) - 1];
-      if (m) {
-        e.preventDefault();
-        onPick(m.ref, { shiftKey: e.shiftKey });
-      }
-      return;
-    }
+    // No number keys for the rows (their hints crowded the names). The press stops here all the same,
+    // so ⌘1 to ⌘9 don't open a session from the sidebar while a model is being picked (App).
+    if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) return void e.preventDefault();
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       setHl((h) => Math.max(0, Math.min(rows.length - 1, h + (e.key === "ArrowDown" ? 1 : -1))));
@@ -194,7 +201,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
               setRail(p.id);
               setQuery("");
               // Into this tool at the picked model's source, if it's this tool's; else at its sources.
-              const picked = models.find((m) => m.ref === value && m.providerId === p.id);
+              const picked = models.find((m) => m.ref === value && tabOf(m) === p.id);
               setSource(picked ? sourceOf(picked) : null);
             }}>
             {/* Each tool by its maker's mark; an added agent nobody's list knows keeps its initial. */}
@@ -238,7 +245,10 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
                       </span>
                       <span className="lc-mp-t">
                         <b>{l.name || "Other"}</b>
-                        <small>{l.n === 1 ? "1 model" : `${l.n} models`}</small>
+                        <small>
+                          {l.n === 1 ? "1 model" : `${l.n} models`}
+                          {l.via && `, through ${l.via}`}
+                        </small>
                       </span>
                       {/* Whose models it runs, as marks. */}
                       <span className="lc-mp-marks">
@@ -255,7 +265,10 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
                       <I.chevL size={12} />
                       <ModelMark kind={sourceMarkOf(l.name)} size={12} />
                       <span>
-                        {l.tool} <b>{l.name}</b>
+                        {/* A source that runs in another tool says that in the tab's name's place, so the line stays one line. */}
+                        {!l.via && `${l.tool} `}
+                        <b>{l.name}</b>
+                        {l.via && `, through ${l.via}`}
                       </span>
                     </button>
                   );
@@ -282,7 +295,6 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
                         </b>
                         {l.sub && <small>{l.sub}</small>}
                       </span>
-                      {k < 9 && <kbd className="lc-kbd lc-mp-key">{os.mod}{k + 1}</kbd>}
                     </button>
                     <button type="button" className="lc-mp-star l-focus" data-on={fav || undefined} aria-label={fav ? `Unstar ${l.m.label}` : `Star ${l.m.label}`} aria-pressed={fav} onClick={() => star(l.m.ref)}>
                       <I.star size={13} />

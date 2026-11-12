@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Foreshore, the identity on one board</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900;1,62..125,100..900&family=Newsreader:ital,opsz,wght@1,6..72,300..600&display=block">
+<style>
+/* Foreshore: the sample tide-tables app shown inside the Liner Design mockup.
+   Concept: the day is drawn the way a sea chart draws a coast. Buff land above high water,
+   green foreshore that dries, blue shallows, white deep water, magenta for marks.
+   On a chart the names of water slope and the names of land stand upright: so do these. */
+:root{
+  --paper:#F7F8F5;--ink:#11181B;--muted:#56646A;--line:rgba(17,24,27,.16);
+  --shallows:#BFE0EA;--foreshore:#B5D3A0;--land:#F0DA9C;--mark:#C4127A;--tint:rgba(240,218,156,.6);--on-mark:#fff
+}
+.night{
+  --paper:#0C1315;--ink:#E7ECE8;--muted:#8C9B9E;--line:rgba(231,236,232,.2);
+  --shallows:#143A4A;--foreshore:#27452E;--land:#463C1B;--mark:#FF5FB0;--tint:rgba(70,60,27,.75);--on-mark:#0C1315
+}
+*{box-sizing:border-box;margin:0}
+body{position:relative;overflow:hidden;background:var(--paper);color:var(--ink);font:400 15px/1.4 "Archivo",system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;font-kerning:normal}
+svg{display:block;overflow:visible}
+svg text{font-family:"Archivo",sans-serif;font-variant-numeric:tabular-nums}
+.abs{position:absolute}
+.sea{font-family:"Newsreader",Georgia,serif;font-style:italic;font-weight:400;letter-spacing:-0.005em}
+.fig{font-style:italic;font-stretch:62%;font-weight:800;letter-spacing:-0.015em;line-height:.8;white-space:nowrap}
+.t{font-style:italic;font-stretch:80%;font-weight:700;letter-spacing:-0.01em}
+.lab{font-size:11px;font-weight:600;font-stretch:125%;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.mut{color:var(--muted)}
+.wm{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:650;font-stretch:112%;letter-spacing:-0.025em;white-space:nowrap}
+.wm svg{width:26px;height:26px}
+.flag{display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 9px;background:var(--mark);color:var(--on-mark);font-size:12.5px;font-weight:600;white-space:nowrap}
+.flag i{font-style:italic;font-weight:500;opacity:.92}
+.tabs{left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;justify-content:space-around;border-top:1px solid var(--line);background:var(--paper);font-size:14px;font-weight:500;color:var(--muted)}
+.tabs b{font-weight:650;color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:7px}
+.row{display:flex;align-items:baseline;gap:12px;height:57px;padding:17px 16px 0;border-top:1px solid var(--line)}
+.row .sea{width:128px;font-size:20px}
+.row .t{font-size:26px}
+.row .h{margin-left:auto;font-size:15px;color:var(--muted)}
+.row.hi{background:var(--tint)}
+</style>
+<style>
+body{width:1280px;height:800px;background:#15191A}
+.board{position:absolute;inset:28px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:14px}
+.p{position:relative;overflow:hidden;background:var(--paper);color:var(--ink)}
+.p.dark{--paper:#0D1416;--ink:#E7ECE8;--muted:#8C9B9E;--line:rgba(231,236,232,.2);background:#0D1416}
+.foot{position:absolute;left:16px;right:16px;bottom:12px;display:flex;justify-content:space-between}
+.foot .lab{font-size:8.5px}
+.c{position:absolute;inset:0;display:grid;place-items:center}
+.sw{position:absolute;top:0;bottom:44px;width:16.667%}
+.swl{position:absolute;bottom:14px;width:16.667%;padding-left:8px;font-size:8px;font-weight:600;font-stretch:100%;letter-spacing:.05em;text-transform:uppercase;line-height:1.5}
+.swl span{display:block;font-weight:400;letter-spacing:.02em;color:var(--muted)}
+.card{position:absolute;left:92px;top:34px;width:214px;height:156px;padding:14px 16px;background:#F7F8F5;color:#11181B;transform:rotate(-5deg);box-shadow:0 18px 30px -18px rgba(17,24,27,.55)}
+.card .r{display:flex;align-items:baseline;gap:10px;height:21px;border-top:1px solid rgba(17,24,27,.16);font-size:11px}
+.card .r b{width:30px;font-weight:650}
+.card .r i{font-stretch:80%;font-weight:700;font-size:13px}
+.card .r span{margin-left:auto;font-style:italic;color:#56646A}
+</style>
+</head>
+<body>
+<div class="board">
+
+  <!-- 01 the mark and the name -->
+  <div class="p">
+    <div class="c"><div class="wm" style="gap: 18px; font-size: 48px"><svg viewBox="0 0 48 48" style="width: 62px; height: 62px"><defs><clipPath id="r1"><circle cx="24" cy="24" r="21"/></clipPath></defs><path d="M-2,31 C10,11 18,11 24,24 S38,37 50,17" fill="none" stroke="currentColor" stroke-width="3.4" clip-path="url(#r1)"/><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="3.4"/><circle cx="24" cy="24" r="4.6" fill="var(--mark)"/></svg>Foreshore</div></div>
+    <div class="foot"><span class="lab">Tide tables</span><span class="lab">01</span></div>
+  </div>
+
+  <!-- 02 how the mark is made: a ring, one tide, and the moment you are in -->
+  <div class="p dark">
+    <svg class="abs" style="left: 0; top: 0" width="399" height="239" viewBox="0 0 399 239">
+      <g stroke="rgba(231,236,232,.16)" stroke-width="1"><path d="M0 119.5h399M199.5 0v239M129.5 0v239M269.5 0v239M0 49.5h399M0 189.5h399"/></g>
+      <path d="M96,151 C150,45 180,45 199.5,119.5 S250,194 303,88" fill="none" stroke="rgba(231,236,232,.35)" stroke-width="1" stroke-dasharray="3 4"/>
+      <defs><clipPath id="r2"><circle cx="199.5" cy="119.5" r="70"/></clipPath></defs>
+      <path d="M96,151 C150,45 180,45 199.5,119.5 S250,194 303,88" fill="none" stroke="#E7ECE8" stroke-width="5" clip-path="url(#r2)"/>
+      <circle cx="199.5" cy="119.5" r="70" fill="none" stroke="#E7ECE8" stroke-width="5"/>
+      <circle cx="199.5" cy="119.5" r="8" fill="#FF5FB0"/>
+      <g font-size="9" font-weight="500" fill="#8C9B9E" letter-spacing=".06em"><text x="278" y="44">HIGH WATER</text><text x="278" y="203">LOW WATER</text><text x="212" y="112" fill="#FF5FB0">NOW</text></g>
+    </svg>
+    <div class="foot"><span class="lab">A ring, one tide, the moment</span><span class="lab">02</span></div>
+  </div>
+
+  <!-- 03 on a phone -->
+  <div class="p" style="background: var(--shallows)">
+    <div class="abs" style="left: 44px; top: 62px; width: 96px; height: 96px; display: grid; place-items: center; border-radius: 22px; background: #11181B; color: #F7F8F5"><svg viewBox="0 0 48 48" style="width: 58px; height: 58px"><defs><clipPath id="r3"><circle cx="24" cy="24" r="21"/></clipPath></defs><path d="M-2,31 C10,11 18,11 24,24 S38,37 50,17" fill="none" stroke="currentColor" stroke-width="3.6" clip-path="url(#r3)"/><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="3.6"/><circle cx="24" cy="24" r="4.8" fill="#FF5FB0"/></svg></div>
+    <div class="abs" style="left: 168px; top: 70px; width: 196px; padding: 13px 14px 14px; border-radius: 4px; background: var(--paper)">
+      <div class="lab" style="font-size: 8.5px">Foreshore, now</div>
+      <div class="sea" style="margin-top: 7px; font-size: 19px; line-height: 1">High water</div>
+      <div class="fig" style="margin-top: 8px; font-size: 44px">14:32</div>
+    </div>
+    <div class="foot"><span class="lab" style="color: var(--ink)">Icon and notice</span><span class="lab" style="color: var(--ink)">03</span></div>
+  </div>
+
+  <!-- 04 the line -->
+  <div class="p" style="background: var(--land)">
+    <div class="abs sea" style="left: 28px; top: 62px; font-size: 54px; line-height: .98; letter-spacing: -0.015em">Twice a day,<br>exactly.</div>
+    <div class="foot"><span class="lab" style="color: var(--ink)">What it promises</span><span class="lab" style="color: var(--ink)">04</span></div>
+  </div>
+
+  <!-- 05 colour, taken from the chart -->
+  <div class="p">
+    <div class="sw" style="left: 0; background: #F7F8F5; border-right: 1px solid var(--line)"></div>
+    <div class="sw" style="left: 16.667%; background: #BFE0EA"></div>
+    <div class="sw" style="left: 33.333%; background: #B5D3A0"></div>
+    <div class="sw" style="left: 50%; background: #F0DA9C"></div>
+    <div class="sw" style="left: 66.667%; background: #11181B"></div>
+    <div class="sw" style="left: 83.333%; background: #C4127A"></div>
+    <div class="swl" style="left: 0">Deep<span>F7F8F5</span></div>
+    <div class="swl" style="left: 16.667%">Shallows<span>BFE0EA</span></div>
+    <div class="swl" style="left: 33.333%">Foreshore<span>B5D3A0</span></div>
+    <div class="swl" style="left: 50%">Land<span>F0DA9C</span></div>
+    <div class="swl" style="left: 66.667%">Ink<span>11181B</span></div>
+    <div class="swl" style="left: 83.333%">Mark<span>C4127A</span></div>
+  </div>
+
+  <!-- 06 two voices: land stands upright, water slopes -->
+  <div class="p">
+    <div class="abs" style="left: 28px; top: 30px; font-size: 104px; font-weight: 750; font-stretch: 88%; letter-spacing: -0.04em; line-height: 1">Aa</div>
+    <div class="abs sea" style="left: 208px; top: 30px; font-size: 108px; line-height: 1">Aa</div>
+    <div class="abs lab" style="left: 30px; top: 150px; font-size: 8.5px; color: var(--ink)">Land stands upright<br><span style="color: var(--muted)">Archivo</span></div>
+    <div class="abs lab" style="left: 210px; top: 150px; font-size: 8.5px; color: var(--ink)">Water slopes<br><span style="color: var(--muted)">Newsreader italic</span></div>
+    <div class="foot"><span class="lab">Two voices, as on a chart</span><span class="lab">06</span></div>
+  </div>
+
+  <!-- 07 in print: the card that lives in a coat pocket -->
+  <div class="p" style="background: var(--foreshore)">
+    <div class="card">
+      <div style="display: flex; align-items: baseline; margin-bottom: 9px"><b style="font-size: 12.5px; font-weight: 700; font-stretch: 110%; letter-spacing: -0.01em">Sample Harbour</b><span class="sea" style="margin-left: auto; font-size: 12.5px">high water</span></div>
+      <div class="r"><b>Tue</b><i>14:32</i><span>5.8 m</span></div>
+      <div class="r"><b>Wed</b><i>15:21</i><span>6.0 m</span></div>
+      <div class="r"><b>Thu</b><i>16:08</i><span>6.2 m</span></div>
+      <div class="r"><b>Fri</b><i>16:54</i><span>6.4 m</span></div>
+      <div class="r"><b>Sat</b><i>17:41</i><span>6.1 m</span></div>
+    </div>
+    <div class="foot"><span class="lab" style="color: var(--ink)">The pocket card</span><span class="lab" style="color: var(--ink)">07</span></div>
+  </div>
+
+  <!-- 08 the picture: every image is a chart -->
+  <div class="p">
+    <svg class="abs" style="left: 0; top: 0" width="399" height="239" viewBox="0 36 390 234" preserveAspectRatio="xMidYMid slice">
+      <rect y="0" width="390" height="500" fill="#F7F8F5"/>
+      <path d="M-10,150 C70,150 120,70 210,60 S340,40 400,-30 L400,500 L-10,500 Z" fill="#BFE0EA"/>
+      <path d="M-10,262 C70,262 128,196 208,180 S336,150 400,84 L400,500 L-10,500 Z" fill="#B5D3A0"/>
+      <path d="M-10,352 C70,352 132,300 206,280 S332,244 400,186 L400,500 L-10,500 Z" fill="#F0DA9C"/>
+      <g fill="none" stroke="#11181B">
+        <path d="M-10,78 C66,80 112,10 204,-6" stroke-width=".8" opacity=".35"/>
+        <path d="M-10,150 C70,150 120,70 210,60 S340,40 400,-30" stroke-width=".8" opacity=".45"/>
+        <path d="M-10,262 C70,262 128,196 208,180 S336,150 400,84" stroke-width=".9" stroke-dasharray="1 5" stroke-linecap="round" opacity=".7"/>
+        <path d="M-10,352 C70,352 132,300 206,280 S332,244 400,186" stroke-width="2.25"/>
+        <path d="M252,262 L196,150" stroke-width="5" stroke-linecap="square"/><path d="M196,150 l-22,10" stroke-width="5" stroke-linecap="square"/>
+      </g>
+      <g font-size="11.5" font-style="italic" font-weight="500" fill="#11181B" opacity=".75" text-anchor="middle"><text x="96" y="62">12</text><text x="40" y="112">7.4</text><text x="286" y="122">2.2</text><text x="346" y="96">1.6</text><text x="318" y="198" text-decoration="underline">1.4</text></g>
+      <path d="M188,140 q-30,-46 -4,-74 q8,40 10,70 z" fill="#C4127A" opacity=".92"/>
+      <circle cx="196" cy="150" r="5" fill="#F7F8F5" stroke="#11181B" stroke-width="2"/>
+    </svg>
+    <div class="foot"><span class="lab" style="color: var(--ink)">Every picture is a chart</span><span class="lab" style="color: var(--ink)">08</span></div>
+  </div>
+
+  <!-- 09 the small parts -->
+  <div class="p dark">
+    <div class="abs flag" style="left: 28px; top: 34px; background: #FF5FB0; color: #0D1416">Now 12:18 <i>rising, 4.4 m</i></div>
+    <div class="abs" style="left: 28px; right: 28px; top: 82px; display: flex; align-items: baseline; gap: 14px; padding: 11px 0 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line)"><span class="sea" style="font-size: 19px">High water</span><span class="t" style="font-size: 25px">14:32</span><span style="margin-left: auto; font-size: 14px; color: var(--muted)">5.8 m</span></div>
+    <svg class="abs" style="left: 28px; top: 158px" width="343" height="8" viewBox="0 0 343 8" id="sc9"></svg>
+    <div class="abs" style="left: 28px; top: 182px; display: flex; gap: 26px; font-size: 13px; font-weight: 500; color: var(--muted)"><b style="font-weight: 650; color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px">Today</b><span>Week</span><span>Stations</span></div>
+    <div class="foot"><span class="lab">The small parts</span><span class="lab">09</span></div>
+  </div>
+</div>
+<script>
+const S = "http://www.w3.org/2000/svg", sc = document.getElementById("sc9"), w = 343 / 24;
+for (let h = 0; h < 24; h += 2) { const r = document.createElementNS(S, "rect"); r.setAttribute("x", h * w); r.setAttribute("y", 0); r.setAttribute("width", w); r.setAttribute("height", 8); r.setAttribute("fill", "#E7ECE8"); sc.append(r); }
+const o = document.createElementNS(S, "rect"); o.setAttribute("x", 0.5); o.setAttribute("y", 0.5); o.setAttribute("width", 342); o.setAttribute("height", 7); o.setAttribute("fill", "none"); o.setAttribute("stroke", "#E7ECE8"); sc.append(o);
+</script>
+</body>
+</html>

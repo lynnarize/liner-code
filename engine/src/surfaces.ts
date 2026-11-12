@@ -7,7 +7,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Device, LocalServer, PrInfo } from "../../contracts/src/index.ts";
-import { outside, run, THREAD_ENV, which } from "./exec.ts";
+import { marking, markedPids, outside, processes, run, THREAD_ENV, threadMark, which } from "./exec.ts";
 import { uid, type Store } from "./store.ts";
 import { endShell, winShell } from "./winterm.ts";
 
@@ -248,13 +248,21 @@ export class Terminals {
     const env = { ...this.env, TERM: "xterm-256color", COLORTERM: "truecolor", LINER_CODE: "1", ...(threadId ? { [THREAD_ENV]: threadId } : {}) };
     // Windows has no pty a script can open: PowerShell on pipes, with the line editing done here.
     const win = process.platform === "win32" ? winShell(cwd, cols, env, (s) => push(s)) : null;
-    const child =
-      win?.child ??
-      (spawn(which("python3", this.env) ?? "/usr/bin/python3", ["-I", "-c", PTY, String(Math.max(20, cols || 80)), String(Math.max(5, rows || 24))], {
-        cwd,
-        env,
-        stdio: ["pipe", "pipe", "pipe", "pipe"],
-      }) as unknown as ChildProcessWithoutNullStreams);
+    // Its shell holds the session's marker (after the helper's four pipes: it talks on 3) as well as naming it: what it starts is the session's where the
+    // environment can't be read (exec.ts Mark).
+    const { stdio, done } = marking(["pipe", "pipe", "pipe", "pipe"], threadId && !win ? [threadMark(threadId)] : []);
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child =
+        win?.child ??
+        (spawn(which("python3", this.env) ?? "/usr/bin/python3", ["-I", "-c", PTY, String(Math.max(20, cols || 80)), String(Math.max(5, rows || 24))], {
+          cwd,
+          env,
+          stdio: stdio as ["pipe", "pipe", "pipe", "pipe"],
+        }) as unknown as ChildProcessWithoutNullStreams);
+    } finally {
+      done();
+    }
     const ctl = win ? null : (child as unknown as { stdio: NodeJS.WritableStream[] }).stdio[3];
     const t: Term = { id, threadId, title: title?.trim() || (command ? command : "Shell"), command, cwd, at: Date.now(), child, ctl, backlog: new Backlog(), input: win?.input };
     this.terms.set(id, t);
@@ -492,6 +500,32 @@ export function parseThreads(out: string) {
   return threads;
 }
 
+/**
+  Which of these listeners are the session's: marked as its own (exec.ts markedPids: THREAD_ENV in the environment where that
+  can be read, the session's marker file held where it's handed on), or started by a process that is. The second rule is for
+  what drops inherited descriptors as it starts its children (Node does: `npm run dev` holds the marker, the vite under it
+  doesn't), while its parent is still there to say whose it is. Each way is one call for all of them, with the old timeouts.
+*/
+async function sessionsOwn(threadId: string, listeners: number[]) {
+  const mark = threadMark(threadId);
+  const direct = await markedPids(mark, listeners);
+  const rest = listeners.filter((p) => !direct.has(p));
+  if (!rest.length) return direct;
+  // Their parents, up the tree: the same two looks, for all of those at once.
+  // (processes(): ps, or lsof and pgrep where ps can't run, as in a sandbox.)
+  const table = new Map((await processes()).map((p) => [p.pid, p.ppid]));
+  const up = new Map<number, number[]>();
+  for (const p of rest) {
+    const chain: number[] = [];
+    for (let q = table.get(p); q && q > 1 && q !== process.pid && chain.length < 32; q = table.get(q)) chain.push(q);
+    up.set(p, chain);
+  }
+  const ancestors = [...new Set([...up.values()].flat())];
+  const marked = await markedPids(mark, ancestors);
+  for (const [p, chain] of up) if (chain.some((q) => marked.has(q))) direct.add(p);
+  return direct;
+}
+
 /** pid → its working folder, from `lsof -d cwd -Fn`. */
 function parseCwds(out: string) {
   const cwds = new Map<number, string>();
@@ -533,17 +567,14 @@ async function scan(env: NodeJS.ProcessEnv, mine?: { threadId: string; folders: 
   const skip = /^(rapportd|ControlCe|ControlCenter|sharingd|AirPlay|figma_age|Dropbox|Spotify|Adobe|com\.docke|postgres|mysqld|redis-ser|mongod|ollama|LM Studio)/i;
   const found = [...listeners].filter(([port, l]) => port >= 1024 && l.pid !== process.pid && !skip.test(l.process));
   const pids = [...new Set(found.map(([, l]) => l.pid))].join(",");
-  const [threads, cwds] = mine && pids && !win
-    ? await Promise.all([
-        run("ps", ["-E", "-ww", "-o", "pid=,command=", "-p", pids], { env, timeout: 5000 }).then((x) => parseThreads(x.stdout)),
-        run("lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids], { env, timeout: 5000 }).then((x) => parseCwds(x.stdout)),
-      ])
-    : [new Map<number, string>(), new Map<number, string>()];
+  const [ours, cwds] = mine && pids && !win
+    ? await Promise.all([sessionsOwn(mine.threadId, [...new Set(found.map(([, l]) => l.pid))]), run("lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids], { env, timeout: 5000 }).then((x) => parseCwds(x.stdout))])
+    : [new Set<number>(), new Map<number, string>()];
   const inside = (dir?: string) => Boolean(dir && mine?.folders.some((f) => dir === f || dir.startsWith(`${f}/`)));
   const web = await Promise.all(found.map(([port]) => servesPage(port)));
   const rank = { session: 0, project: 1, none: 2 };
   return found
-    .map(([port, l], i) => ({ port, pid: l.pid, process: l.process, url: `http://localhost:${port}`, owner: mine && threads.get(l.pid) === mine.threadId ? ("session" as const) : inside(cwds.get(l.pid)) ? ("project" as const) : null, web: web[i] }))
+    .map(([port, l], i) => ({ port, pid: l.pid, process: l.process, url: `http://localhost:${port}`, owner: mine && ours.has(l.pid) ? ("session" as const) : inside(cwds.get(l.pid)) ? ("project" as const) : null, web: web[i] }))
     .sort((a, b) => rank[a.owner ?? "none"] - rank[b.owner ?? "none"] || a.port - b.port);
 }
 
@@ -604,7 +635,8 @@ export async function stopServers(env: NodeJS.ProcessEnv, mine: { threadId: stri
   const found = (await scan(env, mine)).filter((s) => (o.port === undefined || s.port === o.port) && (o.only ? s.owner === o.only : s.owner));
   if (o.port !== undefined && !found.length) throw new Error(`localhost:${o.port} isn't this session's, so Liner Code leaves it alone.`);
   if (!found.length) return [];
-  const table = parseTable((await run("ps", ["-A", "-o", "pid=,ppid=,pgid="], { env, timeout: 5000 })).stdout);
+  // processes(): ps, or lsof where ps can't run (it's setuid, and a sandbox refuses it).
+  const table = new Map((await processes()).map((p) => [p.pid, { ppid: p.ppid, pgid: p.pgid ?? 0 }]));
   for (const pid of new Set(found.map((s) => s.pid))) await stop(pid, stoppableGroup(table, pid, process.pid));
   return found.map((s) => s.port);
 }

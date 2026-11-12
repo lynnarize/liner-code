@@ -20,7 +20,7 @@ import type { Provider } from "./types.ts";
 
 /** The variable that moves each tool's config folder, so a second account signs in apart. */
 const HOME_VAR = ACCOUNT_HOME;
-const BIN: Partial<Record<BuiltinProvider, string>> = { claude: "claude", codex: "codex", hermes: "hermes", opencode: "opencode", cursor: "cursor-agent", grok: "grok" };
+const BIN: Partial<Record<BuiltinProvider, string>> = { claude: "claude", codex: "codex", hermes: "hermes", opencode: "opencode", cursor: "cursor-agent", grok: "grok", antigravity: "agy" };
 
 const win = process.platform === "win32";
 const expand = (p: string) => resolve(p.trim().replace(/^~(?=[\\/]|$)/, homedir()));

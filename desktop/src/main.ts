@@ -703,7 +703,7 @@ function releasesRepo(): string | undefined {
 }
 
 /** The agent tools Liner Code drives, and gh, by the name each has on PATH. */
-const REPORT_TOOLS = ["claude", "codex", "opencode", "hermes", "cursor-agent", "grok", "gh"];
+const REPORT_TOOLS = ["claude", "codex", "opencode", "hermes", "cursor-agent", "grok", "agy", "gh"];
 
 /** Each tool's version as it says it, for the report: "codex: codex-cli 0.165.0 (~/.local/bin/codex)". */
 async function toolVersions(env: NodeJS.ProcessEnv) {

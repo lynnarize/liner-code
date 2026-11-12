@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { CommandInfo, EffortInfo, ModelInfo, SkillInfo } from "../../../contracts/src/index.ts";
-import { jsonLines, killTree, spawn, which } from "../exec.ts";
+import { jsonLines, killTree, run, spawn, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 
 const LEVELS: Record<string, { label: string; description: string }> = {
@@ -110,6 +110,63 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
     clearTimeout(timer);
     killTree(child);
   }
+}
+
+/** Thinking levels as a tool may name them in a model's id ("gemini-3.8-flash-high"), lowest first. */
+const LEVEL_ORDER = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+  Antigravity's models and its sign-in, from `agy models`, which opens no session (a session would stay in the person's
+  Antigravity history, closed or not). Signed in, it lists "<id>\t<label>" lines, each Gemini model once per thinking level
+  ("gemini-3.8-flash-high\tGemini 3.8 Flash (High)"), the older form of its ids, which it still takes: those become one model
+  whose effort levels they are, as the session's thought_level option takes them. Where a session has listed its base ids
+  (`families`, its model option's values), a line goes with the longest of them it starts with, as T3 Code reads those ids
+  (apps/server/src/provider/acp/AntigravityAcpSupport.ts, legacyAntigravityFamily, MIT); before any session, two or more
+  lines that differ only by a level make one model, and one listed once keeps its whole id ("gpt-oss-120b-medium").
+  Signed out, or with a key it was told to use and doesn't have, it says so and exits 1; anything else is unknown.
+*/
+export async function agyModels(path: string, env: NodeJS.ProcessEnv, families?: string[]): Promise<{ signedIn?: boolean; models: ModelInfo[] }> {
+  const r = await run(path, ["models"], { env, timeout: 30000, input: "" });
+  const said = `${r.stdout}\n${r.stderr}`;
+  if (r.code !== 0) return { signedIn: /sign in|log in|authenticat|api[ _]?key|not set/i.test(said) ? false : undefined, models: [] };
+  const rows = r.stdout.split(/\r?\n/).map((l) => l.split("\t")).filter((c) => c.length >= 2 && c[0].trim() && !/\s/.test(c[0].trim())).map(([id, label]) => ({ id: id.trim(), label: label.trim() }));
+  const LEVEL = /^(minimal|low|medium|high|xhigh|max)$/;
+  // Its base and level: by the session's families where there are some, else by a level at its end.
+  const family = (id: string) => (families ?? []).filter((f) => id === f || id.startsWith(`${f}-`)).sort((a, b) => b.length - a.length)[0];
+  const split = (id: string): { base: string; level?: string } => {
+    const f = family(id);
+    if (f) {
+      const rest = id.slice(f.length + 1);
+      return id === f || !LEVEL.test(rest) ? { base: id } : { base: f, level: rest };
+    }
+    const m = /^(.*)-(minimal|low|medium|high|xhigh|max)$/.exec(id);
+    return m ? { base: m[1], level: m[2] } : { base: id };
+  };
+  const byBase = new Map<string, { label: string; levels: string[] }>();
+  const order: string[] = [];
+  for (const row of rows) {
+    const { base, level } = split(row.id);
+    if (!byBase.has(base)) {
+      byBase.set(base, { label: row.label, levels: [] });
+      order.push(base);
+    }
+    if (level) byBase.get(base)!.levels.push(level);
+  }
+  const out: ModelInfo[] = [];
+  for (const base of order) {
+    const { label, levels } = byBase.get(base)!;
+    // Without a session's families, a level alone at the end of one id is part of its name.
+    if (!levels.length || (!family(base) && levels.length < 2)) {
+      for (const row of rows.filter((x) => split(x.id).base === base)) out.push({ id: row.id, label: row.label, description: "" });
+      continue;
+    }
+    const efforts = [...new Set(levels)].sort((a, b) => LEVEL_ORDER.indexOf(a) - LEVEL_ORDER.indexOf(b)).map((l) => effortOf(l));
+    // Liner Code's default, medium, where the model has it; else the nearest below it, else its lowest.
+    const below = efforts.filter((e) => LEVEL_ORDER.indexOf(e.id) <= LEVEL_ORDER.indexOf("medium"));
+    const defaultEffort = (efforts.find((e) => e.id === "medium") ?? below.at(-1) ?? efforts[0]).id;
+    out.push({ id: base, label: label.replace(/\s*\((minimal|low|medium|high|extra high|xhigh|max)\)\s*$/i, ""), description: "", efforts, defaultEffort });
+  }
+  return { signedIn: true, models: out };
 }
 
 /** How to pick one of those models in a session that's already open. */

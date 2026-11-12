@@ -47,7 +47,7 @@ test("plainWay: an endpoint's model over HTTP, Claude Code's with its tools off,
   assert.equal(plainWay("codex.ds", s), null);
   assert.deepEqual(plainWay("claude", s), { kind: "claude" });
   assert.deepEqual(plainWay("claude.work", s), { kind: "claude" }, "another Claude Code account");
-  for (const id of ["codex", "opencode", "hermes", "cursor", "grok", "acp.goose", "codex.work"] as ProviderId[]) assert.equal(plainWay(id, s), null, `${id} brings tools of its own`);
+  for (const id of ["codex", "opencode", "hermes", "cursor", "grok", "antigravity", "acp.goose", "codex.work"] as ProviderId[]) assert.equal(plainWay(id, s), null, `${id} brings tools of its own`);
   assert.equal(plainWay("opencode.voucher", {}), null, "the promo only once redeemed");
   assert.equal(plainWay("opencode.voucher", { voucher: true })?.kind, "http");
 });

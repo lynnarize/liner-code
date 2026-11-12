@@ -1,0 +1,927 @@
+/*
+  Liner Design's face, in Liner 2.0: the sidebar's Code | Design switch and its Design body, the
+  canvas's top row, rail, frames and what's drawn over them, the say bar, the dock and Design Home.
+  The app's tokens only; the one colour of its own is each agent's on the canvas (lead and
+  sidekick), so you can tell who is drawing where. No blur or rounded clip goes round a frame:
+  frames are iframes that redraw, and either would make every frame of them cost the window.
+*/
+/* ---------- the Design sidebar's body ---------- */
+.ld-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 0 2px 8px;
+}
+.ld-lab {
+  margin-top: 10px;
+}
+.ld-lab > span {
+  margin-left: auto;
+}
+.lc-sb-lab .ld-lab-b {
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  margin-right: -6px;
+}
+.ld-ell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-lean {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--l-ink);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.ld-lean:hover {
+  background: var(--l-wash);
+}
+.ld-lean > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-q4 {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--l-wash-2);
+  box-shadow: 0 0 0 1px var(--lc-hair);
+}
+.ld-q4[data-small] {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+.ld-q4 > i {
+  display: block;
+}
+.ld-lean-t {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.ld-lean-t b {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-lean-t small {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-tr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--l-ink-2);
+}
+button.ld-tr {
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+button.ld-tr:hover {
+  background: var(--l-wash);
+}
+.ld-tr[data-on] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.ld-tr[data-rest] {
+  color: var(--l-ink-3);
+}
+.ld-tr > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-sl {
+  width: 16px;
+  text-align: center;
+  color: var(--l-ink-3);
+}
+.ld-m {
+  margin-left: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-3);
+}
+.ld-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ld-ly {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+  cursor: default;
+  transition: background 140ms ease;
+}
+.ld-ly:hover {
+  background: var(--l-wash);
+}
+.ld-ly[data-on] {
+  background: color-mix(in oklab, var(--l-accent) 14%, transparent);
+  color: var(--l-ink);
+}
+.ld-ly > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-ly b {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-ly-tw {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.ld-ly .ld-pd {
+  margin-left: auto;
+}
+.ld-none {
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.ld-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin: 8px 0 4px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--lc-well);
+  color: var(--l-ink-3);
+}
+.ld-filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+}
+.ld-filter input::placeholder {
+  color: var(--l-ink-4);
+}
+.ld-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.ld-file:hover {
+  background: var(--l-wash);
+}
+.ld-file-k {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+}
+.ld-file-t {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.ld-file-t b {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-file-t small,
+.ld-file-e {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.ld-file-e {
+  align-self: flex-end;
+}
+
+/* ---------- the face ---------- */
+.ld-face {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  animation: lc-paper-in 420ms var(--l-ease-enter) backwards;
+}
+html[data-motion="quick"] .ld-face {
+  animation: none;
+}
+.ld-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.ld-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--lc-head);
+  padding: 6px 10px 6px 16px;
+}
+.ld-bar .lc-pop {
+  min-width: 0;
+}
+.ld-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--l-ink);
+}
+.ld-title > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-crumb {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-who {
+  display: inline-flex;
+  margin-right: 6px;
+}
+.ld-who > i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: var(--ld-side);
+  box-shadow: 0 0 0 2px var(--lc-paper);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  color: #fff;
+}
+.ld-who > i[data-lead] {
+  background: var(--ld-lead);
+}
+.ld-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.ld-num {
+  font-variant-numeric: tabular-nums;
+}
+.ld-k {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.ld-cv {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 0 0 0 0;
+  overflow: hidden;
+  background: var(--ld-cv);
+}
+.ld-insp-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 292px;
+  min-width: 0;
+  min-height: 0;
+  box-shadow: -1px 0 0 var(--lc-hair);
+}
+.ld-insp-col > * {
+  flex: 1;
+  min-height: 0;
+}
+.ld-empty {
+  position: absolute;
+  inset: 0 0 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--l-ink-3);
+}
+.ld-empty > svg {
+  color: var(--l-ink-4);
+}
+.ld-empty b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.ld-empty span {
+  max-width: 340px;
+  font-size: 12.5px;
+}
+.ld-empty .lc-btn {
+  margin-top: 10px;
+}
+
+/* ---------- the canvas ---------- */
+.ld-cv-hit {
+  position: absolute;
+  outline: none;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ld-plane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.ld-frame {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--l-ink) 10%, transparent), 0 2px 8px color-mix(in oklab, var(--l-ink) 6%, transparent);
+}
+.ld-frame[hidden] {
+  display: block;
+  visibility: hidden;
+}
+.ld-iframe {
+  display: block;
+  border: 0;
+  background: #fff;
+}
+.ld-over {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ld-label[hidden] {
+  display: none;
+}
+.ld-label {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: 0 8px;
+  height: 18px;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: default;
+}
+/* Every chip keeps its words whole; only the name shrinks (to an ellipsis) when it alone is too wide. */
+.ld-label > * {
+  flex: none;
+  height: 18px;
+  line-height: 18px;
+}
+.ld-label > b {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ld-label b {
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  text-overflow: ellipsis;
+}
+.ld-label[data-on] b {
+  color: var(--l-accent-text, var(--l-accent));
+}
+.ld-name {
+  width: 160px;
+  height: 18px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  outline: 1.5px solid var(--l-accent);
+  background: var(--lc-paper);
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--l-ink);
+}
+.ld-ptag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--ld-side);
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+}
+.ld-ptag[data-lead] {
+  background: var(--ld-lead);
+}
+.ld-pres {
+  position: absolute;
+  box-shadow: 0 0 0 1.5px var(--ld-side);
+}
+.ld-pres[data-lead] {
+  box-shadow: 0 0 0 1.5px var(--ld-lead);
+}
+.ld-hover {
+  position: absolute;
+  box-shadow: 0 0 0 1px var(--l-accent);
+}
+.ld-sel {
+  position: absolute;
+  z-index: 2;
+  box-shadow: 0 0 0 1.5px var(--l-accent);
+}
+.ld-sel > i {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--l-accent);
+  border-radius: 2px;
+  background: #fff;
+  pointer-events: auto;
+}
+.ld-sel > i[data-edge="nw"] { left: -4px; top: -4px; cursor: nwse-resize; }
+.ld-sel > i[data-edge="ne"] { right: -4px; top: -4px; cursor: nesw-resize; }
+.ld-sel > i[data-edge="sw"] { left: -4px; bottom: -4px; cursor: nesw-resize; }
+.ld-sel > i[data-edge="se"] { right: -4px; bottom: -4px; cursor: nwse-resize; }
+/* An edge pulls along its whole length: a thin strip, with a handle drawn only at its middle. */
+.ld-sel > i[data-edge="n"],
+.ld-sel > i[data-edge="s"] { left: 8px; right: 8px; width: auto; height: 8px; border: 0; background: none; cursor: ns-resize; }
+.ld-sel > i[data-edge="e"],
+.ld-sel > i[data-edge="w"] { top: 8px; bottom: 8px; width: 8px; height: auto; border: 0; background: none; cursor: ew-resize; }
+.ld-sel > i[data-edge="n"] { top: -4px; }
+.ld-sel > i[data-edge="s"] { bottom: -4px; }
+.ld-sel > i[data-edge="e"] { right: -4px; }
+.ld-sel > i[data-edge="w"] { left: -4px; }
+.ld-sel:not([data-frame]) > i[data-edge="e"]::after,
+.ld-sel:not([data-frame]) > i[data-edge="s"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  translate: -50% -50%;
+  border: 1.5px solid var(--l-accent);
+  border-radius: 2px;
+  background: #fff;
+}
+.ld-draw {
+  position: absolute;
+  background: color-mix(in oklab, var(--l-accent) 8%, transparent);
+  box-shadow: 0 0 0 1px var(--l-accent);
+}
+
+/* ---------- the rail ---------- */
+.ld-rail {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair), 0 2px 8px oklch(0 0 0 / 0.06);
+}
+.ld-rail hr {
+  width: 18px;
+  height: 1px;
+  margin: 3px auto;
+  border: 0;
+  background: var(--lc-hair);
+}
+.ld-rail .lc-tb:hover,
+.ld-rail .lc-pick:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.ld-rail .lc-tb:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- the say bar ---------- */
+.ld-say {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 4px;
+  translate: -50% 0;
+  border-radius: 12px;
+  background: var(--lc-paper);
+  box-shadow: var(--ld-pop);
+  white-space: nowrap;
+  animation: l-swap-in 200ms var(--l-ease-out) backwards;
+}
+.ld-say-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.ld-say-b:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.ld-say-b > svg {
+  color: var(--l-accent);
+}
+.ld-say-b[data-strong] {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-say-b[data-strong] > svg {
+  color: var(--l-ink-2);
+}
+.ld-say-v {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--lc-hair);
+}
+
+/* ---------- the dock ---------- */
+.ld-dock {
+  position: absolute;
+  z-index: 6;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.ld-dock > * {
+  pointer-events: auto;
+}
+.ld-dock-in {
+  width: min(560px, calc(100% - 96px));
+}
+/* Solid, not glass: a blur over the frames would redraw with each of theirs. */
+.ld-dock .lc-tray {
+  background: color-mix(in oklab, var(--l-ink) 4%, var(--lc-paper));
+  box-shadow: 0 0 0 1px var(--lc-hair), 0 16px 40px -18px oklch(0 0 0 / 0.3);
+}
+.ld-head {
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  gap: 8px;
+}
+.ld-head:hover {
+  background: var(--l-wash);
+}
+.ld-head b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.ld-head > svg {
+  margin: 0 4px 0 2px;
+}
+.ld-q {
+  flex: none;
+  max-width: 40%;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 8px;
+}
+.lc-chips:empty {
+  display: none;
+}
+.ld-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  height: 26px;
+  padding: 0 6px 0 8px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--l-accent) 13%, transparent);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-chip > svg {
+  flex: none;
+  color: var(--l-ink-2);
+}
+.ld-chip button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.ld-chip button:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.ld-sheet {
+  width: min(568px, calc(100% - 88px));
+  max-height: 46vh;
+  margin-bottom: 8px;
+  padding: 4px 16px 14px;
+  overflow: auto;
+  border-radius: 14px;
+  background: var(--lc-paper);
+  box-shadow: var(--ld-pop);
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}
+.ld-sheet-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  margin-right: -8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.ld-lk {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.ld-lk:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.ld-bubble {
+  width: fit-content;
+  max-width: 85%;
+  margin: 2px 0 10px auto;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--l-wash-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.ld-tl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.ld-tl > svg {
+  flex: none;
+}
+.ld-tl[data-live] {
+  color: var(--l-ink);
+}
+.ld-tl .ld-pd {
+  margin: 0 3.5px;
+}
+
+/* ---------- Design Home ---------- */
+.ld-home-in {
+  padding-bottom: 48px;
+}
+.ld-lean-chip .ld-q4 {
+  margin-right: 2px;
+}
+.ld-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 56px;
+}
+.ld-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 220px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ld-tile-pic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 134px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--ld-cv);
+  box-shadow: 0 0 0 1px var(--lc-hair);
+  transition: box-shadow 140ms ease;
+}
+.ld-tile:hover .ld-tile-pic {
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+.ld-tile-frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--lc-hair);
+  pointer-events: none;
+}
+.ld-tile-frame iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  background: #fff;
+  transform-origin: 0 0;
+}
+.ld-tile b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-tile small {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ld-say,
+  .ld-sheet,
+  .ld-face {
+    animation: none;
+  }
+  .lc-sb-face::before {
+    transition: none;
+  }
+}
+
+/* A frame whose file is gone: an empty box at its place, its name and one line. */
+.ld-frame[data-gone] {
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair);
+}
+.ld-gone {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  padding: 1.2em;
+  color: var(--l-ink-3);
+}
+.ld-gone b {
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.ld-ly-gone {
+  flex: none;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.ld-empty .ld-mono {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+
+/* A part of the face that hit a fault: its sentence in its own place, the canvas's clear of the rail. */
+.ld-cv > .ld-broke {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  right: 10px;
+  left: 64px;
+}
+.ld-cv > .ld-broke[data-what="dock"] {
+  top: auto;
+  bottom: 10px;
+  left: 50%;
+  right: auto;
+  width: min(560px, calc(100% - 96px));
+  translate: -50% 0;
+}

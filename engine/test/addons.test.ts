@@ -221,6 +221,7 @@ test("injection: Codex gets them as config, liner waiting long enough for a card
     "mcp_servers.liner.env": mcp.env,
     "mcp_servers.liner.tool_timeout_sec": 1800,
     "mcp_servers.liner.default_tools_approval_mode": "approve",
+    "mcp_servers.liner.omit_tools_from": ["deferred"],
     "mcp_servers.linear.url": "https://mcp.linear.app/mcp",
     "mcp_servers.linear.http_headers": { Authorization: "Bearer lin_api_secret" },
     "mcp_servers.ping.command": "/usr/bin/node",

@@ -56,6 +56,11 @@ type Props = {
   onBeside?: (id: string) => void;
   /** A session was archived from here: if it's on screen, the window moves off it. */
   onPutAway?: (id: string) => void;
+  /** Liner Code or Liner Design: the switch under the name, the same in both. */
+  face?: "code" | "design";
+  onFace?: (face: "code" | "design") => void;
+  /** In Design, what the sidebar holds in place of the sessions (design/Layers.tsx, design/DesignHome.tsx). */
+  designBody?: ReactNode;
 };
 
 /** A command's keys for a tip, like " (⌘B)". */
@@ -142,7 +147,7 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onCreateAddon, onBeside, onPutAway }: Props) {
+export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onCreateAddon, onBeside, onPutAway, face = "code", onFace, designBody }: Props) {
   const addons = useEngine((s) => s.addons);
   const pages = addons.filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
   const limits = useEngine((s) => s.limits);
@@ -281,7 +286,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const ro = new ResizeObserver(measure);
     ro.observe(sc.firstElementChild as HTMLElement);
     return () => ro.disconnect();
-  }, [current, list, archivedList, view, shutProjects, shutForks, renaming, groups]);
+  }, [current, list, archivedList, view, shutProjects, shutForks, renaming, groups, Boolean(designBody)]);
 
   useEffect(() => {
     const sc = scroller.current;
@@ -300,7 +305,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       sc.removeEventListener("scroll", look);
       ro.disconnect();
     };
-  }, []);
+    // Again when the list comes back from Design's body.
+  }, [Boolean(designBody)]);
 
   const act = async (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => {
     const settled = bucketOf(t, now) === "settled";
@@ -882,12 +888,30 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   return (
     <nav ref={nav} className="lc-sb" aria-label="Sessions">
       <div className="lc-sb-head" data-drag>
-        <span className="lc-brand">Liner Code</span>
+        <span className="lc-brand">{face === "design" ? "Liner Design" : "Liner Code"}</span>
         <button type="button" className="lc-ib l-focus" aria-label="Hide the sidebar" title={`Hide the sidebar${key("sidebar")}`} onClick={onHide}>
           <I.sidebar size={16} />
         </button>
       </div>
 
+      {/* The two faces of the same sessions: one plate glides between them (⌥⌘E). */}
+      {onFace && (
+        <div className="lc-sb-face" role="radiogroup" aria-label="Liner Code or Liner Design" data-face={face}>
+          <button type="button" role="radio" aria-checked={face === "code"} className="lc-sb-face-b l-focus" title={`Liner Code${key("face")}`} onClick={() => onFace("code")}>
+            <I.code size={15} />
+            Code
+          </button>
+          <button type="button" role="radio" aria-checked={face === "design"} className="lc-sb-face-b l-focus" title={`Liner Design${key("face")}`} onClick={() => onFace("design")}>
+            <I.edit size={15} />
+            Design
+          </button>
+        </div>
+      )}
+
+      {designBody ? (
+        <div className="lc-sb-design">{designBody}</div>
+      ) : (
+      <>
       {/* Your places, one row each: New session (search at its end), Routines and Add-ons. */}
       <div className="lc-sb-top">
         <div className="lc-sb-navrow">
@@ -1190,6 +1214,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           )
         }
       </ContextMenu>
+
+      </>
+      )}
 
       {/* A new Liner Code, ready or on its way: a card over the foot, until it goes in or you put it away (until a newer one). */}
       {(() => {

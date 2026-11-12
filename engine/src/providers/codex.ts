@@ -8,8 +8,10 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, PlanEntry, ProviderInfo } from "../../../contracts/src/index.ts";
+import { rank } from "../../../contracts/src/index.ts";
 import { linerTitle } from "../agent-tools.ts";
-import { closesOnExit, jsonLines, killTree, run, spawn, versionOf, which, withCodexPath } from "../exec.ts";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { closesOnExit, jsonLines, killTree, marking, run, spawn, THREAD_ENV, threadMark, versionOf, which, withCodexPath } from "../exec.ts";
 import { codexAsk, CodexServerSession, isLimit, reasoning, toml } from "./codex-server.ts";
 import { imageType } from "./attachments.ts";
 import { effortOf, skillsIn } from "./models.ts";
@@ -110,7 +112,15 @@ class CodexSession implements ProviderSession {
     for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
     const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, ...(o.ephemeral ? ["--ephemeral"] : []), "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {
-      const child = spawn(bin, args, { cwd: o.cwd, env: withCodexPath(bin, o.env), stdio: ["pipe", "pipe", "pipe"] });
+      // Its session's marker, as codex-server.ts hands it.
+      const thread = o.env[THREAD_ENV];
+      const { stdio, done } = marking(["pipe", "pipe", "pipe"], thread ? [threadMark(thread)] : []);
+      let child: ChildProcessWithoutNullStreams;
+      try {
+        child = spawn(bin, args, { cwd: o.cwd, env: withCodexPath(bin, o.env), stdio: stdio as ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+      } finally {
+        done();
+      }
       this.child = child;
       let err = "";
       const resuming = this.thread;
@@ -215,6 +225,12 @@ class CodexSession implements ProviderSession {
     Object.assign(this.o, o);
     return true;
   }
+  /** Mid-turn: its sandbox went with the turn's command line, so a lower level stops the turn; a higher one is the next turn's. */
+  async setAccess(access: Access) {
+    const lower = rank(access) < rank(this.o.access);
+    this.o.access = access;
+    return lower ? "Codex runs this turn in the sandbox it started with" : true;
+  }
   close() {
     const child = this.child;
     this.child = null;
@@ -229,10 +245,11 @@ class CodexSession implements ProviderSession {
 /**
   Liner Code's own server as `codex exec` takes it, with the wait and the approval the app server gets (codexMcp): left to
   itself this Codex gives up on a call after 5 minutes, which a sidekick's brief can outlast, and under exec's approval
-  policy of never it refuses every MCP call that would need one.
+  policy of never it refuses every MCP call that would need one. Why they may go without a card (Liner Design's writes
+  included, and refused by the engine in a session that only reads): claude.ts, canUseTool.
 */
 export const execMcp = (o: Pick<OpenOptions, "mcp">) =>
-  o.mcp ? ["-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`, "-c", `mcp_servers.liner.tool_timeout_sec=${LINER_WAIT_SEC}`, "-c", `mcp_servers.liner.default_tools_approval_mode="approve"`] : [];
+  o.mcp ? ["-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`, "-c", `mcp_servers.liner.tool_timeout_sec=${LINER_WAIT_SEC}`, "-c", `mcp_servers.liner.default_tools_approval_mode="approve"`, "-c", `mcp_servers.liner.omit_tools_from=["deferred"]`] : [];
 
 /** How long Stop waits for `codex exec` to end by itself. */
 const STOP_MS = 3000;

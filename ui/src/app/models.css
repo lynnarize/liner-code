@@ -218,10 +218,6 @@
   line-height: 17px;
   color: var(--l-ink-3);
 }
-.lc-mp-key {
-  flex: none;
-  opacity: 0.8;
-}
 .lc-mp-star {
   display: grid;
   flex: none;

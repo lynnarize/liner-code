@@ -19,7 +19,7 @@ import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { langOf, linesOf, tokensOf, Toks } from "./code";
-import { onStream, rpc, useEngine } from "./engine";
+import { getState, onStream, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { agentOf } from "./model";
 import { updateLook, useLook } from "./look";
@@ -109,6 +109,24 @@ async function buildDesign(thread: Thread, d: DesignItem, agentName: string) {
     return null;
   }
   return rpc("design.built", { threadId: thread.id, design: d.design, version: d.version }).catch(() => null);
+}
+
+/**
+  "Open in Liner Design": the design as a frame of the folder's design file named after it (made the
+  first time, its frame's HTML replaced after that), shown on the canvas in the same session.
+*/
+export async function openInLinerDesign(thread: Thread, d: { design: string; title: string; size: DesignSize; version?: number }) {
+  try {
+    const html = d.version ? await versionHtml(thread.id, d.design, d.version) : (await rpc("design.read", { threadId: thread.id, design: d.design })).html;
+    const cwd = thread.worktree?.path ?? getState().projects.find((p) => p.id === thread.projectId)?.path;
+    if (!cwd) return;
+    // Liner Design's store loads only now, when it's asked for.
+    const { design } = await import("./design/store");
+    const file = await design.adopt(cwd, { title: d.title, html, size: d.size });
+    window.dispatchEvent(new CustomEvent("lc:open-liner-design", { detail: { threadId: thread.id, cwd, file } }));
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : String(e));
+  }
 }
 
 /** Designs open beside the chat or in it; a design's own menu changes it for all of them. */
@@ -475,6 +493,9 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
           {(close) => (
             <div className="lc-br-more">
               <div className="lc-dz-acts">
+                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (void openInLinerDesign(thread, latest), close())}>
+                  <I.edit size={13} /> Open in Liner Design
+                </button>
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!base} onClick={() => (base && bridge.openExternal(served(base, latest.path)), close())}>
                   <I.external size={13} /> Open in your browser
                 </button>
@@ -721,6 +742,11 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
             </button>
           )}
           {thread && (
+            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void openInLinerDesign(thread, it)} title="Put it on the canvas, as a frame of this folder's design file">
+              Open in Liner Design
+            </button>
+          )}
+          {thread && (
             <button type="button" className="lc-btn lc-dz-buildsm" data-kind="plain" data-size="sm" onClick={() => void buildDesign(thread, it, agentName)} title={`Ask ${agentName} to build version ${it.version} into the app`}>
               <I.play size={10} /> Build it
             </button>
@@ -753,6 +779,11 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
           {it.note ? ` · ${it.note}` : ""}
         </span>
         <span className="lc-grow" />
+        {thread && (
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void openInLinerDesign(thread, it)} title="Put it on the canvas, as a frame of this folder's design file">
+            Open in Liner Design
+          </button>
+        )}
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setHere(true)}>
           Show it here
         </button>

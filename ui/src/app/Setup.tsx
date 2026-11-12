@@ -26,6 +26,7 @@ const TOOLS: { id: ProviderInfo["id"]; mark: MarkKind; name: string; beta?: bool
   { id: "hermes", mark: "hermes", name: "Hermes" },
   { id: "cursor", mark: "cursor", name: "Cursor", beta: true },
   { id: "grok", mark: "grok", name: "Grok Build", beta: true },
+  { id: "antigravity", mark: "antigravity", name: "Antigravity CLI", beta: true },
 ];
 /** The API key that stands in for a tool's own sign-in. */
 const KEY_OF: Partial<Record<string, string>> = { claude: "anthropic", codex: "openai" };

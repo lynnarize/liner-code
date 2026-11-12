@@ -19,6 +19,7 @@ import { Launcher } from "./launch.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
+import { designCtx } from "./canvas.ts";
 import { Addons } from "./addons.ts";
 import { Offers } from "./offers.ts";
 import { Sources } from "./sources.ts";
@@ -27,13 +28,16 @@ import type { Thread } from "../../contracts/src/index.ts";
 import { ROUTINES_ON } from "../../contracts/src/index.ts";
 import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
-import { firstLine, linkHelpers, secretsFrom, takeSecrets, withPath } from "./exec.ts";
+import { dropMarks, firstLine, linkHelpers, marksKept, secretsFrom, sweepMarks, takeSecrets, withPath } from "./exec.ts";
+import { devWaits } from "./providers/acp.ts";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
   return i < 0 ? undefined : process.argv[i + 1];
 };
 const dev = process.argv.includes("--dev");
+// A dev run only: shorter waits for Antigravity's quiet watchdog and silence hint (LINER_DEV_QUIET_MS, LINER_DEV_HINT_MS), for checks.
+if (dev) devWaits(process.env);
 
 // The Electron shell runs the engine on its own Node with ELECTRON_RUN_AS_NODE. Nothing the engine
 // starts may inherit that: an agent's `npm run dev` on an Electron project would get a bare Node.
@@ -79,6 +83,24 @@ designs.cwdOf = (id) => tools.cwdOf(id);
 designs.turnOf = (id) => tools.turnOf(id);
 tools.designs = designs;
 tools.filesUrl = (root) => proxies.files(root);
+// Liner Design: what its modules (canvas.ts, lean.ts, buildlinks.ts, pictures.ts) are handed, for the api and the agent tools alike.
+const design = designCtx(store, {
+  env,
+  cwdOf: (id) => tools.cwdOf(id) ?? folderOf(id),
+  turnOf: (id) => tools.turnOf(id),
+  filesUrl: (root) => proxies.files(root),
+  proxyUrl: (port) => proxies.url(port),
+  shot: (id, page, wait) => tools.shot(id, page, wait),
+  designs,
+  keys: runtime.keys,
+  whoIs: (id, sidekick) => {
+    const t = store.thread(id);
+    return sidekick && t.sidekick ? runtime.labelOf(t.sidekick) : runtime.whoIs(id);
+  },
+  readOnly: (id) => runtime.readOnly(id),
+  ask: (id, ask) => runtime.askLiner(id, ask),
+});
+tools.design = design;
 // The servers of each folder's .claude/launch.json: they stop when no one has looked for a while, and come back when you do.
 const folderOf = (id: string) => {
   const t = store.thread(id);
@@ -108,7 +130,7 @@ const outside: { now?: Outside } = {};
 // Ported DeepSeek Harness plugins' own programs: each in a process of its own, never in the engine.
 const dsh = new DshHosts(addons, env, store.home);
 dsh.projects = () => [...store.projects.map((p) => p.path), ...store.threads.flatMap((t) => (t.worktree?.path ? [t.worktree.path] : []))];
-const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, launch, dsh, outside: { apply: () => outside.now?.apply() } };
+const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, design, launch, dsh, outside: { apply: () => outside.now?.apply() } };
 const api = createApi(store, runtime, env, extras);
 // "Make it an app": the card's Create starts a session of its own, through the same door the app uses.
 const offers = new Offers({
@@ -158,7 +180,13 @@ dsh.url = tools.url;
 outside.now.apply();
 // No idle sleep while a session or a routine run works.
 const awake = new Awake(store, () => routines.busy || store.threads.some((t) => t.status === "running"));
-void api.ready.then(() => {
+// What an engine that died hard (a crash, a SIGKILL) left running, found by the markers in its folder, ends before anything here
+// starts again; the markers of an engine that still runs (another copy of the app) are left alone (exec.ts sweepMarks).
+const swept = sweepMarks().then(
+  (r) => void ((r.ended || r.left.length) && console.error(`[engine] ended ${r.ended} process${r.ended === 1 ? "" : "es"} an engine that stopped left running${r.left.length ? `; still running: ${r.left.map((p) => p.command).join(", ")}` : ""}`)),
+  (e) => console.error("[engine] marker sweep:", e),
+);
+void Promise.all([api.ready, swept]).then(() => {
   // Sessions stopped mid-turn when Liner Code last quit or crashed carry on, now that the tools are known.
   offers.resume(runtime.continueAfterRestart());
   // Switched off, no schedule ticks and no GitHub watch polls; what's saved stays as it is.
@@ -176,12 +204,13 @@ let quitting = false;
 const quit = () => {
   if (quitting) return;
   quitting = true;
-  // However the waits below go, the engine is gone in a few seconds.
-  setTimeout(() => process.exit(0), QUIT_WAIT + 2500);
+  // However the waits below go, the engine is gone in a few seconds: then what it marked may still run, so its markers stay for
+  // the next engine to end (exec.ts sweepMarks).
+  setTimeout(() => (marksKept(), process.exit(0)), QUIT_WAIT + 2500);
   // Each on its own, so one that fails (the last save, on a full disk) doesn't leave the rest undone
   // and the engine running with nothing to stop it: its signal has been sent, and its stdin has closed.
   const waits: Promise<void>[] = [];
-  const steps = [() => waits.push(dsh.stopAll(QUIT_WAIT)), () => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => waits.push(launch.quit(QUIT_WAIT)), () => proxies.closeAll(), () => logs.stopAll(), () => runtime.shutdown(), () => store.keepStreaming(), () => store.flush(), () => server.close()];
+  const steps = [() => waits.push(dsh.stopAll(QUIT_WAIT)), () => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => waits.push(launch.quit(QUIT_WAIT)), () => design.close(), () => proxies.closeAll(), () => logs.stopAll(), () => waits.push(runtime.shutdown()), () => store.keepStreaming(), () => store.flush(), () => server.close()];
   for (const step of steps) {
     try {
       step();
@@ -190,7 +219,8 @@ const quit = () => {
     }
   }
   // Servers and programs asked to stop get a moment to, then what's left of their groups is killed (SIGKILL), then out.
-  void Promise.allSettled(waits).then(() => process.exit(0));
+  // All of it ended: this engine's markers go with it.
+  void Promise.allSettled(waits).then(() => (dropMarks(), process.exit(0)));
 };
 process.on("SIGTERM", quit);
 process.on("SIGINT", quit);

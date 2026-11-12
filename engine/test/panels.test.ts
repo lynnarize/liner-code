@@ -619,7 +619,7 @@ test("offer: one that asks for more than the card said isn't added, Cancel stops
   assert.deepEqual([x.card().state, x.stopped.length], ["cancelled", 1]);
   await assert.rejects(x.offers.answer("t", x.card().id, "create", undefined, "x".repeat(1001)), /up to 1,000 characters/);
   const ro = offering({ access: "read" });
-  assert.throws(() => ro.offers.offer("t", OFFER), /only reads/);
+  assert.throws(() => ro.offers.offer("t", OFFER), /is at Read only now/);
 });
 
 test("offer: Never in Settings keeps an app that reaches the internet out, offered or made after the setting changed", async () => {

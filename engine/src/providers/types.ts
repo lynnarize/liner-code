@@ -34,7 +34,8 @@ export type ToolUpdate = {
   title: string;
   input?: string;
   output?: string;
-  status: "running" | "done" | "failed";
+  /** stopped: ended by Stop, or with its turn, before it finished. */
+  status: "running" | "done" | "failed" | "stopped";
   path?: string;
   /**
     The agent a "task" call sent off, as it stands now (the whole of it each time). `parentKey`: the
@@ -63,8 +64,12 @@ export type TurnSink = {
   reasoning(delta: string, block?: string): void;
   tool(update: ToolUpdate): void;
   plan(entries: PlanEntry[]): void;
-  /** Asks you; resolves with your answer. Rejects if the turn is stopped first. */
-  approve(req: ApprovalRequest, signal: AbortSignal): Promise<{ allow: boolean; reason?: string }>;
+  /**
+    Asks you; resolves with your answer. Rejects if the turn is stopped first. `level`: no card was shown, since the session's
+    access level forbids the step (Read only refuses an edit, or a command that changes things, outright); `reason` is then the
+    sentence for the model, said as it is.
+  */
+  approve(req: ApprovalRequest, signal: AbortSignal): Promise<{ allow: boolean; reason?: string; level?: boolean }>;
   /** Asks you to pick between options; resolves with an answer per question, or null if you skipped. */
   /** `optional`: fine to go unanswered, so nobody being there (a routine) answers it with null rather than waiting. */
   ask(questions: Question[], signal: AbortSignal, o?: { optional?: boolean }): Promise<Record<string, string> | null>;
@@ -75,7 +80,7 @@ export type TurnSink = {
   /** The provider's own session id, kept for resume. */
   session(id: string): void;
   /** A line on the timeline. A later notice with the same `key` replaces it (a retry's count, a compaction that finished). */
-  notice(text: string, key?: string): void;
+  notice(text: string, key?: string, o?: { stop?: boolean }): void;
   error(message: string): void;
   /** The tool's plan ran out of usage; `until` is when its window reopens, if it said. */
   limited(message: string, until?: number): void;
@@ -138,10 +143,17 @@ export type OpenOptions = {
   dirs?: string[];
   /** Claude Code subagents this agent brings (Explorer, Test runner, Opus for hard parts). */
   subagents?: Record<string, { description: string; prompt: string; tools?: string[]; model?: string }>;
+  /** Auto can't run here (Claude Code through another maker's API, whose safety check runs only with Anthropic): it runs as Edits on its own. */
+  noAuto?: boolean;
   /** PATH and friends, from the shell that launched the app. */
   env: NodeJS.ProcessEnv;
   /** Liner Code's own tools for this session (its Browser, the Simulator, pages), as an MCP server on stdio. */
   mcp?: { command: string; args: string[]; env: Record<string, string> };
+  /**
+    The name `mcp` is handed over under where it isn't `liner` (Antigravity: liner_<tag>, the tag made for the session and kept for
+    its life, so a resumed conversation's tool names still hold): a server of the person's own can't take its place by that name.
+  */
+  mcpName?: string;
   /** The connections you added (add-ons), beside `liner`, their keys filled in: never written to disk or a command line. */
   connections?: Connection[];
   /** Settings for the tool itself, the way Codex takes them with -c ("model_provider"): an API endpoint's, for one. */
@@ -171,13 +183,21 @@ export interface ProviderSession {
   /** Something update() took and couldn't apply yet: the runtime calls it again next turn, rather than counting it as done. */
   owes?(): boolean;
   /**
+    The access level changed, a turn perhaps under way: every answer it gives from now on is at the new level, and the tool's
+    own mode follows, waited on. False (or why, in words) where the turn under way can't be held to the new level (the tool runs
+    it with what it was given as it started): the runtime then stops that turn, and the next starts at the new level. A session without this
+    is held to a lower level by being stopped, and takes a higher one from its next turn.
+  */
+  setAccess?(access: Access): Promise<boolean | string>;
+  /**
     The connections changed: take them in now, even mid-turn, where the tool can. A session without
     this (or that answers false) is reopened for its next turn, resuming where it was.
   */
   connect?(connections: Connection[]): Promise<boolean>;
   /** What fills the context now, by the tool's own count; null when it can't say. */
   context?(): Promise<ContextUse | null>;
-  close(): void;
+  /** Ends the tool's process and what it started, whatever is in flight; a promise where ending all of it takes a moment (acp.ts). */
+  close(): void | Promise<void>;
 }
 
 export interface Provider {

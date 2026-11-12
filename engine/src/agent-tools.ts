@@ -30,6 +30,14 @@ import { remember, searchSessions } from "./memory.ts";
 import { uid, type Store } from "./store.ts";
 import { PAIR_ENV } from "./liner-tools.ts";
 import { AS_SIDEKICK, sidekickTitle } from "./sidekick.ts";
+import * as canvas from "./canvas.ts";
+import * as lean from "./lean.ts";
+import * as buildlinks from "./buildlinks.ts";
+import * as pictures from "./pictures.ts";
+import type { DesignCtx, Shot } from "./canvas.ts";
+
+/** Liner Design's modules, one line each: their tools (TOOLS), answered by their call, titled by their titleOf. */
+const DESIGN = [canvas, lean, buildlinks, pictures];
 
 export type McpContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 export type McpResult = { content: McpContent[]; isError?: boolean };
@@ -92,6 +100,10 @@ export function linerTitle(tool: string, input: unknown): string {
     case "sidekick":
       return sidekickTitle(raw.brief);
     default:
+      for (const m of DESIGN) {
+        const title = m.titleOf(tool, raw);
+        if (title) return title;
+      }
       return `Liner Code · ${tool}`;
   }
 }
@@ -101,6 +113,15 @@ const NOT_HERE = /isn't open in Liner Code/;
 
 const text = (t: string): McpResult => ({ content: [{ type: "text", text: t }] });
 const fail = (t: string): McpResult => ({ content: [{ type: "text", text: t }], isError: true });
+/** What a model that takes no pictures is told in a picture's place. */
+export const NO_PICTURE =
+  "The picture was left out: the model this session runs on doesn't take pictures (Settings › Models says so for it), so sending it would fail or be lost. What it shows is said in words above, so work from that; to know how it looks to the eye, ask the person to look at it.";
+/** A result as a model that takes no pictures gets it: its words, the pictures out, and why. */
+export function wordsOnly(r: McpResult): McpResult {
+  const content = r.content;
+  if (!content.some((c) => c.type === "image")) return r;
+  return { ...r, content: [...content.filter((c) => c.type !== "image"), { type: "text", text: NO_PICTURE }] };
+}
 
 /** The page browser_open was asked for: url, or the name a model guessed for it (target, like the other browser tools, or path, file…). */
 const urlOf = (args: Record<string, unknown>) => String(args.url ?? args.target ?? args.path ?? args.file ?? args.page ?? args.href ?? "").trim();
@@ -171,6 +192,8 @@ export type AddonHost = {
   askLiner(threadId: string, ask: { tool: string; title: string; description?: string; risk: Risk; fields: { label: string; value: string }[]; addon?: Extract<Item, { kind: "approval" }>["addon"] }): { id: string; answer: Promise<{ allow: boolean; reason?: string; scope?: "all" | "project" }> };
   relink(): Promise<Map<string, "now" | "next">>;
   readOnly(threadId: string): boolean;
+  /** Whether the model the session (its sidekick: `sidekick`) runs on takes pictures. Unset: it does. */
+  seesPictures?(threadId: string, sidekick: boolean): boolean;
   /** Nobody is there to answer a card: a routine's step. */
   unwatched?(threadId: string): boolean;
   whoIs(threadId: string): string;
@@ -185,6 +208,7 @@ const REACHED: { family: string; label: string; now: boolean }[] = [
   { family: "codex", label: "Codex", now: false },
   { family: "opencode", label: "OpenCode", now: false },
   { family: "hermes", label: "Hermes", now: false },
+  { family: "antigravity", label: "Antigravity CLI", now: false },
 ];
 /**
   A model, as a check sees it: nobody has picked one, and nothing is billed, so its answer is a
@@ -237,6 +261,8 @@ export class AgentTools {
   designs?: Designs;
   /** Where a session folder's files are served (proxy.ts), for drawing a design to look at. */
   filesUrl: (root: string) => Promise<string> = async () => "";
+  /** What Liner Design's modules are handed (canvas.ts); their tools say they aren't there without it. */
+  design?: DesignCtx;
   /** Your add-ons, and the runtime they're handed to sessions through. */
   addons?: Addons;
   host?: AddonHost;
@@ -333,6 +359,19 @@ export class AgentTools {
 
   /** `threadId` as threadOf gave it: a sidekick's key names its thread with AS_SIDEKICK after it. `gone`: its caller let go of the call. */
   async call(threadId: string, tool: string, args: Record<string, unknown>, gone?: AbortSignal): Promise<McpResult> {
+    // A model that takes no pictures never gets one (OpenCode would put "Cannot read image" in its place, another API may refuse the request).
+    const sidekick = threadId.endsWith(AS_SIDEKICK);
+    let sees = true;
+    try {
+      sees = this.host?.seesPictures?.(sidekick ? threadId.slice(0, -AS_SIDEKICK.length) : threadId, sidekick) ?? true;
+    } catch {
+      // a thread that's gone: its call fails below as it would have
+    }
+    const r = await this.answer(threadId, tool, args, gone, sees);
+    return sees ? r : wordsOnly(r);
+  }
+
+  private async answer(threadId: string, tool: string, args: Record<string, unknown>, gone: AbortSignal | undefined, sees: boolean): Promise<McpResult> {
     const sidekick = threadId.endsWith(AS_SIDEKICK);
     if (sidekick) threadId = threadId.slice(0, -AS_SIDEKICK.length);
     try {
@@ -367,6 +406,8 @@ export class AgentTools {
         case "browser_type":
           return text(described(await this.browser<PageRead>(threadId, "type", { target: targetOf(args), text: String(args.text ?? args.value ?? ""), submit: Boolean(args.submit) })));
         case "browser_screenshot": {
+          // In words for a model that takes no pictures: the page's text, its controls and console errors.
+          if (!sees) return text(`${described(await this.browser<PageRead>(threadId, "read", {}))}\n\n${NO_PICTURE}`);
           const png = await this.browser<string>(threadId, "screenshot", {});
           return { content: [{ type: "image", data: png, mimeType: "image/png" }] };
         }
@@ -455,8 +496,12 @@ export class AgentTools {
         case "addon_offer":
           if (!this.offers) return fail("Offers aren't available in this session.");
           return text(this.offers.offer(threadId, args));
-        default:
-          return fail(`Liner Code has no tool called ${tool}.`);
+        default: {
+          const m = DESIGN.find((d) => d.TOOLS.some((t) => t.name === tool));
+          if (!m) return fail(`Liner Code has no tool called ${tool}.`);
+          if (!this.design) return fail("Liner Design isn't available in this session.");
+          return await m.call(tool, args, { ...this.design, threadId, sidekick, gone });
+        }
       }
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
@@ -886,6 +931,11 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
     this.addons!.update(id, { removed: true });
     const now = (await this.host!.relink()).get(threadId) === "now";
     return text(`removed: ${have.name} is gone from every agent tool${now ? ", this session included" : "; this session lets go of it from its next turn"}. The person can restore it in Settings › Add-ons.`);
+  }
+
+  /** A page drawn out of sight by the app at this size: its picture, console errors and full height (Liner Design's frames). */
+  shot(threadId: string, page: { url: string; width: number; height: number }, wait = 30000) {
+    return this.browser<Shot>(threadId, "shot", page, wait);
   }
 
   /** A design drawn out of sight at its size, by the app: its picture, console errors and full height. */

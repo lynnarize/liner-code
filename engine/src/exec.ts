@@ -2,9 +2,9 @@
   Small process helpers. Apps launched from the Dock don't get your shell's PATH, so the shell
   passes it in and everything here runs with it.
 */
-import { execFile, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
-import { accessSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
-import { homedir } from "node:os";
+import { execFile, execFileSync, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
+import { accessSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, extname, isAbsolute, join, sep } from "node:path";
 
 const win = process.platform === "win32";
@@ -302,6 +302,334 @@ export function closesOnExit(child: ChildProcess) {
 
 /** How long a process group gets to end by itself. */
 const KILL_AFTER_MS = 2000;
+
+/**
+  Named in the environment of one agent's process, a value new for each process (AcpSession): every process it starts
+  inherits it, and keeps it once it has left the agent's tree (a command the agent sent to the background, `nohup … &`, a
+  double fork), so all of them can be found and ended with the turn. The idea is THREAD_ENV's, for processes instead of ports.
+*/
+export const RUN_ENV = "LINER_RUN_ID";
+
+export type Proc = { pid: number; ppid: number; command: string; pgid?: number };
+/**
+  What marks a process and all it starts as someone's: `name`=`value` in its environment (RUN_ENV for an agent's run, THREAD_ENV
+  for a session), and `file`, which it holds open (marking: at whatever descriptor follows its own stdio), and so does everything
+  it starts that keeps its inherited descriptors. Either is found (marked): the environment where it can be read, the file, by
+  its path, where it's held. Never by a descriptor's number, which says nothing once a process has moved it.
+*/
+export type Mark = { name?: string; value: string; file?: string };
+
+/**
+  Where every engine keeps its marker files: a folder each in the temp folder, named for the engine process that made it, its pid
+  and when it started (`<pid>-<start>`), with an `engine` file it holds open for as long as it runs. An engine that died hard (a
+  SIGKILL, a crash) leaves its folder, and what it started may still hold the markers in it: the next engine to start ends those
+  and removes the folder (sweepMarks), and never touches a folder whose engine still runs (two copies of the app may), told by its
+  pid and start time together, not its pid alone, which the system gives out again.
+*/
+const MARKS = join(tmpdir(), "liner-marks");
+let own: { dir: string; fd: number } | undefined;
+/** Kept on quitting (marksKept): what the folder's markers are held by may still run, and the next engine ends it. */
+let keep = false;
+
+/** This engine's own marker folder, made the first time it's needed. Windows: none. */
+export function markDir() {
+  if (own) return own.dir;
+  const start = startedAt(process.pid) ?? Math.round(performance.timeOrigin);
+  const dir = join(MARKS, `${process.pid}-${start}`);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "engine");
+  writeFileSync(file, JSON.stringify({ pid: process.pid, start }));
+  // Held for this engine's life (Node opens it close-on-exec, so nothing it starts holds it): while it's held, the engine runs.
+  own = { dir, fd: openSync(file, "r") };
+  // Gone as the engine goes, unless something it marked may still be running (marksKept), or a run's marker is still there,
+  // which only its close removes, once all that held it has ended: then the next engine's sweep ends that first.
+  process.once("exit", () => {
+    if (keep || !own) return;
+    try {
+      if (readdirSync(own.dir).some((f) => f.startsWith("liner-run-"))) return;
+      rmSync(own.dir, { recursive: true, force: true });
+    } catch {
+      // already gone
+    }
+  });
+  return dir;
+}
+
+/** On an orderly quit, once all this engine started has ended: its marker folder goes. */
+export function dropMarks() {
+  if (!own) return;
+  try {
+    closeSync(own.fd);
+  } catch {
+    // closed already
+  }
+  rmSync(own.dir, { recursive: true, force: true });
+  own = undefined;
+}
+/** On a quit that didn't wait for everything to end: the folder stays for the next engine's sweep. */
+export const marksKept = () => void (keep = true);
+
+/** A file for a marker in this engine's folder: `liner-<kind>-<id>`. */
+export const markFile = (kind: "run" | "thread", id: string) => join(win ? tmpdir() : markDir(), `liner-${kind}-${id.replace(/[^\w-]/g, "_")}`);
+
+/** A session's marker, held by what is started for it (its Terminal's shell, its agent, a server from its launch.json). */
+export const threadMark = (threadId: string): Mark => ({ name: THREAD_ENV, value: threadId, file: win ? undefined : markFile("thread", threadId) });
+
+/**
+  When a process started, in ms, as `ps` says it (to the second): for telling an engine that still runs from another process the
+  system has given its pid since. Linux: /proc. Undefined where neither answers (`ps` is setuid, and a sandbox may refuse it).
+*/
+function startedAt(pid: number): number | undefined {
+  if (win) return undefined;
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const ticks = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
+      const boot = Number(/^btime (\d+)$/m.exec(readFileSync("/proc/stat", "utf8"))?.[1]);
+      return Number.isFinite(ticks) && boot ? boot * 1000 + Math.round((ticks / 100) * 1000) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  try {
+    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" }, timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const at = Date.parse(out);
+    return Number.isFinite(at) ? at : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether the engine that made a marker folder still runs: its pid is up, and it's the same process (its start, or its `engine` file held). */
+async function engineAlive(pid: number, start: number, dir: string) {
+  try {
+    process.kill(pid, 0);
+  } catch (e) {
+    // No such process. (EPERM: one of another user's, which no engine of this user's is.)
+    if ((e as NodeJS.ErrnoException).code === "ESRCH" || (e as NodeJS.ErrnoException).code === "EPERM") return false;
+  }
+  const now = startedAt(pid);
+  // `ps` reads to the second; an engine's own start (performance.timeOrigin) is a moment after its exec.
+  if (now !== undefined) return Math.abs(now - start) < 3000;
+  // Where its start can't be read: the engine holds its folder's `engine` file for as long as it runs.
+  return (await markedPids({ value: "", file: join(dir, "engine") })).has(pid);
+}
+
+/**
+  On starting: the marker folders of engines that no longer run. Whatever still holds a marker of theirs (a command agy sent to the
+  background, a server one of its sessions started) is ended the same way a session's close ends it (endAll), children first, and
+  checked gone; then the folder goes. A folder whose engine runs (another copy of the app) is left alone, and so is this one's own.
+  Markers from before these folders, straight in the temp folder, say no engine: only those nothing holds are removed.
+  Resolves with how many processes were ended and how many were still running after.
+*/
+export async function sweepMarks(): Promise<{ ended: number; left: Proc[]; folders: number }> {
+  const out = { ended: 0, left: [] as Proc[], folders: 0 };
+  if (win) return out;
+  let names: string[] = [];
+  try {
+    names = readdirSync(MARKS);
+  } catch {
+    // none yet
+  }
+  for (const name of names) {
+    const m = /^(\d+)-(\d+)$/.exec(name);
+    const dir = join(MARKS, name);
+    if (!m || dir === own?.dir || (await engineAlive(Number(m[1]), Number(m[2]), dir))) continue;
+    let files: string[] = [];
+    try {
+      files = readdirSync(dir).filter((f) => /^liner-(?:run|thread)-/.test(f)).map((f) => join(dir, f));
+    } catch {
+      continue;
+    }
+    let stuck = false;
+    for (const file of files) {
+      const mark: Mark = { value: "", file };
+      const holding = await marked(mark);
+      if (!holding.length) continue;
+      const still = await endAll(holding, () => marked(mark));
+      out.ended += holding.length - still.length;
+      out.left.push(...still);
+      stuck ||= still.length > 0;
+    }
+    // One whose holders didn't all end stays, for the next look.
+    if (stuck) continue;
+    rmSync(dir, { recursive: true, force: true });
+    out.folders++;
+  }
+  for (const f of readdirSync(tmpdir()).filter((x) => /^liner-run-[0-9a-f]+$/.test(x))) {
+    const file = join(tmpdir(), f);
+    if (!(await markedPids({ value: "", file })).size) rmSync(file, { force: true });
+  }
+  return out;
+}
+
+/**
+  stdio for a spawn that carries marks: `base` as it is, then each mark's file open as the next descriptors after it (3 and 4 for
+  an agent on three pipes; 4 for a Terminal, whose helper talks on 3), made if it isn't there. Never at fixed high numbers: once the
+  engine had forty-odd descriptors open, Node's own pipes for the child landed on the 42 and 43 the markers were handed at, and the
+  child was wired wrongly (V3: "agy stopped reading: write EPIPE" from the ninth session on). The parent's copies are kept above
+  every number the child is handed at, so none is a source for one slot and the target of another. Call `done` once the process
+  is spawned: the parent's copies close, the child keeps its own. Windows: `base` alone.
+*/
+export function marking<T>(base: readonly T[], marks: Mark[]) {
+  const held = win ? [] : marks.filter((m) => m.file);
+  const slots = base.length + held.length;
+  const fds: number[] = [];
+  const low: number[] = [];
+  for (const mark of held) {
+    if (!existsSync(mark.file!)) writeFileSync(mark.file!, "");
+    let fd = openSync(mark.file!, "r");
+    while (fd < slots) {
+      low.push(fd);
+      fd = openSync(mark.file!, "r");
+    }
+    fds.push(fd);
+  }
+  for (const fd of low) closeSync(fd);
+  const stdio: (T | number)[] = [...base, ...fds];
+  return { stdio, done: () => fds.forEach((fd) => closeSync(fd)) };
+}
+
+/** run(), never throwing: a program the sandbox it runs in won't start (EPERM) is a failed run like any other. */
+const tryRun = (cmd: string, args: string[], o: Parameters<typeof run>[2] = {}) => run(cmd, args, o).catch((e): RunResult => ({ code: 1, stdout: "", stderr: String(e) }));
+
+/**
+  Whether `ps -E` prints a process's environment here, asked of what it says for this one (whose PATH is always set). macOS 27
+  prints none for Apple's own programs (/bin/zsh, /bin/sleep, the system python), and still does for others (Node, Homebrew's
+  Python); an older macOS does for all. Asked once, by what it answers, never by a version number.
+*/
+let envShown: Promise<boolean> | undefined;
+const envReadable = () => (envShown ??= tryRun("ps", ["-E", "-ww", "-o", "command=", "-p", String(process.pid)], { timeout: 5000 }).then((r) => /(?:^|\s)PATH=/.test(r.stdout)));
+
+/**
+  This user's processes, with their parents and commands, ended ones (zombies) left out. `ps` where it runs; where it can't (it's
+  setuid, and a sandbox may refuse it) lsof for each process's parent and pgrep for its command, which need no privilege.
+*/
+export async function processes(): Promise<Proc[]> {
+  if (win) return [];
+  const uid = process.getuid?.();
+  const listed = await tryRun("ps", ["-A", "-ww", "-o", "pid=", "-o", "ppid=", "-o", "pgid=", "-o", "uid=", "-o", "stat=", "-o", "command="], { timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
+  if (listed.code === 0)
+    return listed.stdout.split("\n").flatMap((l): Proc[] => {
+      const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s(.*)$/.exec(l);
+      // An ended process its parent hasn't heard of yet (a zombie) runs nothing.
+      return m && (uid === undefined || Number(m[4]) === uid) && !m[5].startsWith("Z") ? [{ pid: Number(m[1]), ppid: Number(m[2]), pgid: Number(m[3]), command: m[6].trim() }] : [];
+    });
+  const [tree, names] = await Promise.all([
+    tryRun("lsof", ["-w", "-n", "-P", ...(uid === undefined ? [] : ["-u", String(uid), "-a"]), "-d", "cwd", "-F", "pRg"], { timeout: 8000, maxBuffer: 64 * 1024 * 1024 }),
+    tryRun("pgrep", ["-l", "-f", ...(uid === undefined ? [] : ["-U", String(uid)]), "."], { timeout: 5000, maxBuffer: 64 * 1024 * 1024 }),
+  ]);
+  const command = new Map<number, string>();
+  for (const l of names.stdout.split("\n")) {
+    const m = /^(\d+)\s(.*)$/.exec(l);
+    if (m) command.set(Number(m[1]), m[2].trim());
+  }
+  const out = new Map<number, Proc>();
+  let pid = 0;
+  for (const l of tree.stdout.split("\n")) {
+    if (l[0] === "p") pid = Number(l.slice(1));
+    else if (l[0] === "R" && pid) out.set(pid, { ...out.get(pid), pid, ppid: Number(l.slice(1)), command: command.get(pid) ?? "" });
+    else if (l[0] === "g" && pid) out.set(pid, { ppid: 0, command: command.get(pid) ?? "", ...out.get(pid), pid, pgid: Number(l.slice(1)) });
+  }
+  return [...out.values()];
+}
+
+/**
+  This user's processes that carry `mark`, the engine left out: by the environment where it can be read, and by the marker
+  file where it's held, whichever answers (markedPids). Linux: /proc/<pid>/environ, readable for one's own. macOS: `ps -E`
+  where it prints environments (macOS 27 prints none for Apple's own programs, /bin/zsh and /bin/sleep among them, so a shell
+  agy runs a command in is found only by the file), and lsof for every process holding the file. Windows has neither: none,
+  and killTree's taskkill /T, which ends the agent and what is still below it, is all there is there.
+*/
+export async function marked(mark: Mark): Promise<Proc[]> {
+  const pids = await markedPids(mark);
+  if (!pids.size) return [];
+  return (await processes()).filter((r) => pids.has(r.pid));
+}
+
+/**
+  marked()'s pids alone, without listing every process: a look cheap enough for every turn's start and end. `among`: only these
+  pids are asked about (the listeners the Browser lists), each way in one call for all of them, never one per pid.
+*/
+export async function markedPids(mark: Mark, among?: number[]): Promise<Set<number>> {
+  const has = new Set<number>();
+  if (win || (!mark.value && !mark.file) || (among && !among.length)) return has;
+  const tag = `${mark.name ?? RUN_ENV}=${mark.value}`;
+  // A marker known only by its file (a dead engine's, swept) has no environment to look for.
+  if (mark.value && process.platform === "linux") {
+    let pids = among?.map(String) ?? [];
+    if (!among)
+      try {
+        pids = readdirSync("/proc").filter((d) => /^\d+$/.test(d));
+      } catch {
+        // no /proc
+      }
+    for (const pid of pids) {
+      try {
+        if (readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").includes(tag)) has.add(Number(pid));
+      } catch {
+        // gone, or not ours to read
+      }
+    }
+  } else if (mark.value && process.platform !== "linux" && (await envReadable())) {
+    const env = await tryRun("ps", ["-E", "-ww", "-o", "pid=", "-o", "command=", ...(among ? ["-p", among.join(",")] : ["-A"])], { timeout: 5000, maxBuffer: 256 * 1024 * 1024 });
+    for (const l of env.stdout.split("\n")) {
+      const m = /^\s*(\d+)\s(.*)$/.exec(l);
+      if (m && ` ${m[2]} `.includes(` ${tag} `)) has.add(Number(m[1]));
+    }
+  }
+  if (mark.file && existsSync(mark.file)) {
+    const holding = await tryRun("lsof", ["-w", "-t", ...(among ? ["-a", "-p", among.join(",")] : []), "--", mark.file], { timeout: 8000 });
+    for (const l of holding.stdout.split("\n")) if (/^\d+$/.test(l.trim())) has.add(Number(l.trim()));
+  }
+  has.delete(process.pid);
+  return has;
+}
+
+/**
+  Ends these processes, children before their parents, and checks they are gone: SIGTERM, then SIGKILL for any still there
+  after `graceMs` (KILL_AFTER_MS unless the caller says), then a last look. `again` finds them again (marked, say) for what started meanwhile (a double fork
+  caught between the two). Resolves with those still running, which the caller says by command rather than claiming them ended.
+*/
+export async function endAll(procs: Proc[], again?: () => Promise<Proc[]>, graceMs = KILL_AFTER_MS): Promise<Proc[]> {
+  // Which of them still run: an ended one whose parent hasn't heard yet (a zombie) still answers a signal, and is ended all the same.
+  const living = async (list: Proc[]) => {
+    if (!list.length) return [];
+    const up = new Set((await processes()).map((p) => p.pid));
+    return list.filter((p) => up.has(p.pid));
+  };
+  const depth = (p: Proc, all: Proc[]) => {
+    let d = 0;
+    for (let q = all.find((x) => x.pid === p.ppid); q && d < 64; q = all.find((x) => x.pid === q!.ppid)) d++;
+    return d;
+  };
+  const signal = (list: Proc[], s: NodeJS.Signals) => {
+    for (const p of [...list].sort((a, b) => depth(b, list) - depth(a, list))) {
+      try {
+        process.kill(p.pid, s);
+      } catch {
+        // gone already
+      }
+    }
+  };
+  const wait = async (list: Proc[], ms: number) => {
+    let left = await living(list);
+    for (const end = Date.now() + ms; Date.now() < end && left.length; left = await living(left)) await new Promise((r) => setTimeout(r, 100));
+    return left;
+  };
+  let todo = procs;
+  for (let round = 0; round < 3 && todo.length; round++) {
+    signal(todo, "SIGTERM");
+    const stubborn = await wait(todo, graceMs);
+    if (stubborn.length) {
+      signal(stubborn, "SIGKILL");
+      await wait(stubborn, 500);
+    }
+    // What is still there, and what started while these ended (marked, found again), goes the same way.
+    todo = again ? await again() : await living(todo);
+  }
+  return living(todo);
+}
 
 /** Stops a process started in a group of its own, and everything in that group; the process alone if that fails. */
 export function killTree(child: { pid?: number; kill: (s?: NodeJS.Signals) => boolean }) {

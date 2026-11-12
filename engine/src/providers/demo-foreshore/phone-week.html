@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Foreshore, the week, phone</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900;1,62..125,100..900&family=Newsreader:ital,opsz,wght@1,6..72,300..600&display=block">
+<style>
+/* Foreshore: the sample tide-tables app shown inside the Liner Design mockup.
+   Concept: the day is drawn the way a sea chart draws a coast. Buff land above high water,
+   green foreshore that dries, blue shallows, white deep water, magenta for marks.
+   On a chart the names of water slope and the names of land stand upright: so do these. */
+:root{
+  --paper:#F7F8F5;--ink:#11181B;--muted:#56646A;--line:rgba(17,24,27,.16);
+  --shallows:#BFE0EA;--foreshore:#B5D3A0;--land:#F0DA9C;--mark:#C4127A;--tint:rgba(240,218,156,.6);--on-mark:#fff
+}
+.night{
+  --paper:#0C1315;--ink:#E7ECE8;--muted:#8C9B9E;--line:rgba(231,236,232,.2);
+  --shallows:#143A4A;--foreshore:#27452E;--land:#463C1B;--mark:#FF5FB0;--tint:rgba(70,60,27,.75);--on-mark:#0C1315
+}
+*{box-sizing:border-box;margin:0}
+body{position:relative;overflow:hidden;background:var(--paper);color:var(--ink);font:400 15px/1.4 "Archivo",system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;font-kerning:normal}
+svg{display:block;overflow:visible}
+svg text{font-family:"Archivo",sans-serif;font-variant-numeric:tabular-nums}
+.abs{position:absolute}
+.sea{font-family:"Newsreader",Georgia,serif;font-style:italic;font-weight:400;letter-spacing:-0.005em}
+.fig{font-style:italic;font-stretch:62%;font-weight:800;letter-spacing:-0.015em;line-height:.8;white-space:nowrap}
+.t{font-style:italic;font-stretch:80%;font-weight:700;letter-spacing:-0.01em}
+.lab{font-size:11px;font-weight:600;font-stretch:125%;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.mut{color:var(--muted)}
+.wm{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:650;font-stretch:112%;letter-spacing:-0.025em;white-space:nowrap}
+.wm svg{width:26px;height:26px}
+.flag{display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 9px;background:var(--mark);color:var(--on-mark);font-size:12.5px;font-weight:600;white-space:nowrap}
+.flag i{font-style:italic;font-weight:500;opacity:.92}
+.tabs{left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;justify-content:space-around;border-top:1px solid var(--line);background:var(--paper);font-size:14px;font-weight:500;color:var(--muted)}
+.tabs b{font-weight:650;color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:7px}
+.row{display:flex;align-items:baseline;gap:12px;height:57px;padding:17px 16px 0;border-top:1px solid var(--line)}
+.row .sea{width:128px;font-size:20px}
+.row .t{font-size:26px}
+.row .h{margin-left:auto;font-size:15px;color:var(--muted)}
+.row.hi{background:var(--tint)}
+</style>
+<style>
+body{width:390px;height:844px}
+.day{position:absolute;left:0;right:0;height:84px;border-top:1px solid var(--line)}
+.day .d{position:absolute;left:24px;top:20px;font-size:16px;font-weight:650;line-height:1.15}
+.day .d small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
+.day .hw{position:absolute;right:24px;top:16px;text-align:right;line-height:1.05}
+.day .hw .t{display:block;font-size:24px}
+.day .hw small{font-size:13px;font-style:italic;color:var(--muted)}
+.day svg{position:absolute;left:86px;top:14px}
+</style>
+</head>
+<body>
+<div class="abs wm" style="left: 24px; top: 26px; font-size: 18px"><svg viewBox="0 0 48 48" style="width: 23px; height: 23px"><defs><clipPath id="r"><circle cx="24" cy="24" r="21"/></clipPath></defs><path d="M-2,31 C10,11 18,11 24,24 S38,37 50,17" fill="none" stroke="currentColor" stroke-width="3.8" clip-path="url(#r)"/><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="3.8"/><circle cx="24" cy="24" r="4.8" fill="var(--mark)"/></svg>Foreshore</div>
+<div class="abs" style="right: 24px; top: 28px; font-size: 14px; font-weight: 600">Sample Harbour</div>
+
+<div class="abs" style="left: 24px; top: 84px; font-size: 44px; font-weight: 750; font-stretch: 88%; letter-spacing: -0.03em; line-height: 1">The week</div>
+<div class="abs sea" style="left: 25px; top: 134px; font-size: 19px">springs on Friday, then easing</div>
+
+<div id="days"></div>
+<div class="abs tabs"><span>Today</span><b>Week</b><span>Stations</span></div>
+
+<script>
+// One strip a day: the same section as Today, small. The range grows to springs on Friday.
+const days = [["Tue", "11", "14:32", "02:05", 4.9], ["Wed", "12", "15:21", "02:55", 5.3], ["Thu", "13", "16:08", "03:42", 5.7], ["Fri", "14", "16:54", "04:29", 6.0], ["Sat", "15", "17:41", "05:15", 5.6], ["Sun", "16", "18:30", "06:03", 5.0], ["Mon", "17", "19:22", "06:54", 4.4]];
+const W = 196, H = 56, host = document.getElementById("days");
+days.forEach(([d, n, hw, hw2, range], i) => {
+  const amp = (range / 6.0) * 21, mid = 30, shift = i * 0.82;
+  let p = "";
+  for (let x = 0; x <= W; x += 2) {
+    const hour = (x / W) * 24, y = mid - amp * Math.cos(((hour - 2.08 - shift) / 12.42) * 2 * Math.PI);
+    p += (x ? "L" : "M") + x + "," + y.toFixed(1);
+  }
+  const row = document.createElement("div");
+  row.className = "day";
+  row.style.top = 176 + i * 84 + "px";
+  row.innerHTML = `<div class="d">${d}<small>${n} Nov</small></div>
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+      <rect width="${W}" height="${H}" fill="var(--foreshore)"/><rect width="${W}" height="${(mid - 21).toFixed(1)}" fill="var(--land)"/>
+      <path d="${p} L${W},${H} L0,${H} Z" fill="var(--shallows)"/><path d="${p}" fill="none" stroke="var(--ink)" stroke-width="1.6"/>
+      ${i === 0 ? `<line x1="${(12.3 / 24) * W}" y1="0" x2="${(12.3 / 24) * W}" y2="${H}" stroke="var(--mark)" stroke-width="1.5"/>` : ""}
+      ${i === 3 ? `<circle cx="${W - 9}" cy="9" r="4.5" fill="var(--mark)"/>` : ""}
+    </svg>
+    <div class="hw"><span class="t">${hw}</span><small>${hw2}</small></div>`;
+  host.append(row);
+});
+</script>
+</body>
+</html>

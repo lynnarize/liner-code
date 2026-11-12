@@ -8,6 +8,7 @@ import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
 import { Toaster, toast } from "@liner/components/toast/toast";
 import { AgentDialog } from "./AgentDialog";
+import { Boundary } from "./Boundary";
 import { Backdrop, Scene } from "./Backdrop";
 import { bridge, onCommand } from "./bridge";
 import { EngineAway, getState, onNotify, onStream, RpcError, rpc, startEngine, useEngine } from "./engine";
@@ -53,7 +54,16 @@ import { AddonsPage } from "./AddonsPage";
 import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
-import { matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
+import { is, matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
+import { setFace, toggleFace, useFace } from "./face";
+// Liner Design's store and sidebar body load with the face, never for someone who stays in Code.
+const DesignSide = lazy(() => import("./design/Layers").then((m) => ({ default: m.DesignSide })));
+// Liner Design's face: the canvas and Design Home load the first time the window shows them.
+const DesignFace = lazy(() => import("./design/DesignFace").then((m) => ({ default: m.DesignFace })));
+const DesignHome = lazy(() => import("./design/DesignHome").then((m) => ({ default: m.DesignHome })));
+const DesignFiles = lazy(() => import("./design/DesignHome").then((m) => ({ default: m.DesignFiles })));
+// Its first-open sheet, over whichever of the two shows.
+const DesignIntro = lazy(() => import("./design/Intro").then((m) => ({ default: m.DesignIntro })));
 import * as os from "./os";
 
 /** `wall` on a session: opened from the Wall, so its header has the way back and Esc goes there. */
@@ -132,6 +142,8 @@ export function App() {
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const [view, setView] = useState<View>(readView);
+  // Liner Code or Liner Design: the same sessions under either, remembered per window.
+  const face = useFace();
   const [sidebar, setSidebar] = useState(() => localStorage.getItem("lc:sidebar") !== "0");
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
@@ -183,7 +195,7 @@ export function App() {
   // session, Home, the Wall, Usage, a page. The sidebar too, when you come back to it from Settings.
   const paper = useRef<HTMLElement>(null);
   const side = useRef<HTMLDivElement>(null);
-  const opened = `${view.kind}:${current?.id ?? ("id" in view ? view.id : "")}:${besideThread?.id ?? ""}`;
+  const opened = `${face}:${view.kind}:${current?.id ?? ("id" in view ? view.id : "")}:${besideThread?.id ?? ""}`;
   useLayoutEffect(() => entering(paper.current), [opened, settings, ready, onboarded]);
   useLayoutEffect(() => entering(side.current), [settings, ready, onboarded]);
   const sideEl = () => (besideThread ? besides.current?.children[sideFocus] : undefined) ?? document;
@@ -276,11 +288,20 @@ export function App() {
       if (panel?.place === "tab") showAppTab(id, panel.id);
       openSession(id, panel?.place === "dock" ? `app:${panel.id}` : undefined);
     };
+    // "Open in Liner Design" (the timeline's design card, the Design surface): the canvas, on that session's folder and design file.
+    const inDesign = (e: Event) => {
+      const d = (e as CustomEvent<{ threadId?: string; cwd?: string; file?: string }>).detail ?? {};
+      setFace("design");
+      if (d.threadId) openSession(d.threadId);
+      if (d.cwd) void import("./design/store").then((m) => m.design.open(d.cwd!, d.file));
+    };
     window.addEventListener("lc:open-app", app);
     window.addEventListener("lc:open-session", session);
+    window.addEventListener("lc:open-liner-design", inDesign);
     return () => {
       window.removeEventListener("lc:open-app", app);
       window.removeEventListener("lc:open-session", session);
+      window.removeEventListener("lc:open-liner-design", inDesign);
     };
   }, []);
   /*
@@ -431,6 +452,11 @@ export function App() {
   useEffect(() => onCommand((name) => runRef.current(name)), []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // ⌥⌘E: Liner Code and Liner Design, the same session under either.
+      if (is(e, "face") && getState().settings.onboarded && !document.querySelector("dialog[open]")) {
+        e.preventDefault();
+        return toggleFace();
+      }
       const name = pressed(e, MENU_COMMANDS);
       if (name) {
         e.preventDefault();
@@ -520,6 +546,7 @@ export function App() {
       { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={15} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
       { id: "wall", label: "The Wall", group: "Actions", icon: <I.wall size={15} />, keywords: ["every session", "all sessions", "grid", "overview"], shortcut: shortcutOf("wall"), onSelect: showWall },
       { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={15} />, onSelect: () => go({ kind: "usage" }) },
+      { id: "face", label: face === "design" ? "Switch to Liner Code" : "Switch to Liner Design", group: "Actions", icon: face === "design" ? <I.code size={15} /> : <I.edit size={15} />, keywords: ["design", "canvas", "code", "face"], shortcut: shortcutOf("face"), onSelect: () => toggleFace() },
       ...(ROUTINES_ON
         ? [
             { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={15} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
@@ -606,7 +633,7 @@ export function App() {
     for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
     return items;
     // New session and New routine read where you are and your last project, so they're here too.
-  }, [threads, projects, agents, providers, current, here, sidebar, view, lastProject, found, asked, keysSeen]);
+  }, [threads, projects, agents, providers, current, here, sidebar, view, lastProject, found, asked, keysSeen, face]);
   const besidePicks = useMemo<CommandItem[]>(
     () =>
       besideOf === null
@@ -641,12 +668,50 @@ export function App() {
       ) : (
         <>
           <div ref={side} className="lc-side" inert={!sidebar || undefined}>
-            <Sidebar current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+            <Sidebar
+              face={face}
+              onFace={(f) => setFace(f)}
+              designBody={
+                face !== "design" ? undefined : view.kind === "session" && current ? (
+                  <Boundary label="Layers" quiet>
+                    <Suspense fallback={null}>
+                      <DesignSide cwd={current.worktree?.path ?? projects.find((p) => p.id === current.projectId)?.path ?? ""} />
+                    </Suspense>
+                  </Boundary>
+                ) : (
+                  <Suspense fallback={null}>
+                    <DesignFiles onNew={() => newSession()} onSearch={() => (setBesideOf(null), setMenu(true))} onOpen={(id) => openSession(id)} />
+                  </Suspense>
+                )
+              }
+              current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
             <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening</span></div>}>
-            {view.kind === "session" && current ? (
+            {face === "design" && view.kind === "session" && current ? (
+              // The same session, on the canvas: one side (the one your keys are in) when two are open beside each other.
+              // A fault in Liner Design stays in it: the sidebar and the Code face go on working.
+              <Boundary label="Liner Design">
+                <DesignFace key={(here ?? current).id} thread={here ?? current} sidebar={sidebar} onSidebar={() => setSidebar(true)} />
+              </Boundary>
+            ) : face === "design" && view.kind === "home" ? (
+              <DesignHome
+                projectId={view.projectId ?? lastProject}
+                onProject={(id) => {
+                  setLastProject(id);
+                  setView({ kind: "home", projectId: id });
+                }}
+                onStarted={(id) => {
+                  const t = getState().threads.find((x) => x.id === id);
+                  if (t) setLastProject(t.projectId);
+                  openSession(id);
+                }}
+                sidebar={sidebar}
+                onSidebar={() => setSidebar(true)}
+                onNewAgent={() => setAgentDialog({ open: true })}
+              />
+            ) : view.kind === "session" && current ? (
               besideThread ? (
                 // Two sessions side by side (TasteCode's Open beside): each has its header, its composer and its panels; keys go to the one you're in.
                 <div ref={besides} className="lc-besides" onFocusCapture={(e) => pickSide(e.currentTarget, e.target)} onPointerDownCapture={(e) => pickSide(e.currentTarget, e.target)}>
@@ -705,6 +770,11 @@ export function App() {
             )}
             </Suspense>
           </main>
+          {face === "design" && (view.kind === "home" || (view.kind === "session" && current)) && (
+            <Suspense fallback={null}>
+              <DesignIntro agent={view.kind === "session" && current ? agentOf((here ?? current).agent, agents, providers).name : undefined} />
+            </Suspense>
+          )}
         </>
       )}
       {!connected && (

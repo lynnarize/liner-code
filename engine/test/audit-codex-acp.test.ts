@@ -18,6 +18,10 @@ import { fromRegistry } from "../src/providers/added.ts";
 import { Proxies } from "../src/proxy.ts";
 import { ResumeFailed, type ApprovalRequest, type OpenOptions, type ToolUpdate, type TurnSink, type WakeTurn } from "../src/providers/types.ts";
 import type { Endpoint, ProviderInfo } from "../../contracts/src/index.ts";
+import { noLeaks } from "./leaks.ts";
+
+// Every test ends with no process of its own still running (leaks.ts).
+noLeaks();
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 async function until(ok: () => boolean, what: string) {

@@ -1,0 +1,627 @@
+/*
+  Build, live frames, compare and the turns (BuildTab.tsx, Live.tsx, Compare.tsx, Versions.tsx).
+  The app's own colours: ok for in step and for what's live, the accent for a frame ahead of its
+  code, warn for code ahead of its frame, quiet ink for what isn't built. Flat, on hairlines.
+*/
+
+/* A frame's state beside its name, on the canvas and in Layers. */
+.ld-bmark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.ld-bmark[data-state="step"] > svg {
+  color: var(--l-ok-text, var(--l-ok));
+}
+.ld-bmark[data-state="design-ahead"] {
+  color: var(--l-accent-text, var(--l-accent));
+}
+.ld-bmark[data-state="code-ahead"] > svg {
+  color: var(--l-warn-text, var(--l-warn));
+}
+.ld-bmark-i {
+  margin-left: auto;
+}
+.ld-ly .ld-bmark-i + .ld-pd,
+.ld-ly .ld-bdot + .ld-pd {
+  margin-left: 6px;
+}
+.ld-ly .ld-bdot {
+  margin-left: auto;
+}
+.ld-bdot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--l-ok);
+}
+.ld-bdot[data-off] {
+  background: var(--l-ink-4);
+}
+.ld-lmark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  color: var(--l-ink-2);
+}
+
+/* The Build tab. */
+.ld-build {
+  padding-bottom: 12px;
+}
+.ld-bt-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  font-size: 13.5px;
+  color: var(--l-ink-3);
+}
+.ld-bt-top > svg {
+  flex: none;
+}
+.ld-bt-top b {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-bt-top > span {
+  flex: none;
+  font-size: 12.5px;
+}
+.ld-bt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--lc-hair, var(--l-line));
+}
+.ld-bt-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+.ld-bt-i {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  color: var(--l-ink-3);
+}
+.ld-bt-i[data-state="step"] {
+  color: var(--l-ok-text, var(--l-ok));
+}
+.ld-bt-i[data-state="design-ahead"] {
+  color: var(--l-accent-text, var(--l-accent));
+}
+.ld-bt-i[data-state="code-ahead"] {
+  color: var(--l-warn-text, var(--l-warn));
+}
+.ld-bt-n {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink);
+}
+button.ld-bt-n {
+  cursor: pointer;
+}
+.ld-bt-s {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.ld-bt-f {
+  padding-left: 24px;
+  overflow: hidden;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-bt-l {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 2px 0 0;
+  padding: 0 0 0 24px;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--l-ink-2);
+}
+.ld-bt-l li {
+  position: relative;
+  padding-left: 10px;
+}
+.ld-bt-l li::before {
+  content: "";
+  position: absolute;
+  top: 0.62em;
+  left: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+}
+.ld-bt-l li[data-warn] {
+  color: var(--l-warn-text, var(--l-warn));
+}
+.ld-bt-p {
+  margin: 0;
+  padding-left: 24px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--l-ink-3);
+}
+.ld-bt-live {
+  padding: 12px 16px 0;
+}
+.ld-bt-a {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  padding-left: 24px;
+}
+.ld-bt-empty {
+  padding: 16px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+
+/* The foot: what waits, and the ink action. */
+.ld-bfoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+.ld-bfoot > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The dock's head row. */
+.ld-wait {
+  gap: 8px;
+}
+.ld-wait b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.ld-wait .ld-q {
+  max-width: none;
+}
+
+/* A live frame's layer, at the top of Style. */
+.ld-live {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 16px 12px;
+}
+.ld-live-src {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+  color: var(--l-ink-3);
+}
+.ld-live-src > svg {
+  flex: none;
+}
+.ld-live-src code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  color: var(--l-ink);
+}
+.ld-live-lk {
+  flex: none;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--l-ink-4);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ld-live-lk:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (hover: hover) {
+  .ld-live-lk:hover:not(:disabled) {
+    background: var(--l-wash);
+  }
+}
+.ld-live-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--l-wash);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--l-ink-2);
+}
+.ld-live-was {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+
+/* Putting the running app on the canvas. */
+.ld-lpick {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px;
+}
+.ld-lpick-float {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  z-index: 40;
+  width: 340px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair, var(--l-line)), 0 16px 40px -18px oklch(0 0 0 / 0.3);
+  transform: translateX(-50%);
+}
+.ld-lpick-float > .ld-lpick {
+  padding: 0;
+}
+.ld-lpick-h {
+  padding: 2px 4px 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.ld-lpick-n {
+  padding: 4px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--l-ink-3);
+}
+.ld-lpick-l {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ld-lpick-r {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.ld-lpick-r b {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-lpick-r[data-on] {
+  background: var(--l-wash-2);
+}
+@media (hover: hover) {
+  .ld-lpick-r:hover:not([data-on]) {
+    background: var(--l-wash);
+  }
+}
+.ld-lpick-r .ld-ell {
+  flex: 1;
+  min-width: 0;
+}
+.ld-lpick-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--l-wash);
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.ld-lpick-ask code {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  color: var(--l-ink);
+  word-break: break-all;
+}
+.ld-lpick-ask .ld-bt-a,
+.ld-lpick-go {
+  padding-left: 0;
+}
+.ld-lpick-go {
+  justify-content: flex-end;
+}
+.ld-lpick-f {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.ld-lpick-in {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  background: var(--l-wash);
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  color: var(--l-ink);
+}
+.ld-lpick-in:focus-visible {
+  box-shadow: 0 0 0 1.5px var(--l-accent);
+}
+.ld-lpick-s {
+  display: flex;
+  gap: 6px;
+  padding: 0 4px;
+}
+.ld-lpick-c {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--l-wash);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.ld-lpick-c[aria-pressed="true"] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+
+/* The server chip and the turns, in the canvas's top row. */
+.ld-srv,
+.ld-ver-t {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+}
+.ld-srv > svg,
+.ld-ver-t > svg {
+  color: var(--l-ink-3);
+}
+.ld-ver {
+  display: inline-flex;
+  align-items: center;
+}
+.ld-ver .lc-ib:disabled {
+  opacity: 0.35;
+}
+.ld-scrub {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(720px, calc(100% - 120px));
+  height: 44px;
+  padding: 0 6px 0 14px;
+  border-radius: 14px;
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair, var(--l-line)), 0 12px 32px -16px oklch(0 0 0 / 0.3);
+  font-size: 13px;
+  color: var(--l-ink-2);
+  transform: translateX(-50%);
+}
+.ld-scrub > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-scrub b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.ld-scrub .ld-ell {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Compare: the app over the frame, a slider between them. */
+.ld-cmp {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ld-cmp-app {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #fff;
+}
+.ld-cmp-if {
+  display: block;
+  border: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.ld-cmp-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  box-shadow: 0 0 0 1px var(--l-accent);
+}
+.ld-cmp-knob {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--l-accent);
+  box-shadow: 0 0 0 3px var(--lc-paper);
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+.ld-cmp-knob:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 4px;
+}
+.ld-cmp-tag {
+  position: absolute;
+  bottom: 8px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: oklch(0.2 0 0 / 0.82);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 22px;
+  white-space: nowrap;
+  color: #fff;
+}
+.ld-cmp-head {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  height: 20px;
+  font-size: 11.5px;
+  pointer-events: auto;
+}
+.ld-cmp-head .ld-q {
+  font-size: 11.5px;
+}
+.ld-cmp-head .ld-live-lk {
+  height: 20px;
+  font-size: 11.5px;
+}
+.ld-cmp-head .lc-ib {
+  width: 20px;
+  height: 20px;
+}
+.ld-cmp-addr {
+  width: 90px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  outline: none;
+  background: var(--l-wash);
+  font-family: var(--l-font-mono);
+  font-size: 11px;
+  color: var(--l-ink-2);
+}
+.ld-cmp-addr:focus-visible {
+  box-shadow: 0 0 0 1.5px var(--l-accent);
+}
+
+/* On a frame's name row the name comes first; a mark gives way when the frame is drawn small. */
+.ld-label:has(.ld-bmark, .ld-lmark) > b {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.ld-label > .ld-bmark,
+.ld-label > .ld-lmark {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ld-bmark > svg {
+  flex: none;
+}
+
+/* A kept turn shown: the parts that change the file are out of reach (inert) and say so. */
+[data-ld-scrub] :is(.ld-insp-col, .ld-dock, .ld-rail) {
+  opacity: 0.45;
+}
+[data-ld-scrub] :is(.ld-say, .ld-way-keep) {
+  display: none;
+}
+
+/* Each unbuilt frame, or each sheet, with its quiet action: Not for code, This is a screen. */
+.ld-bt-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0 0 0 24px;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.ld-bt-rows li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+.ld-bt-rows li:only-child {
+  justify-content: flex-start;
+}
+.ld-bt-rows .ld-live-lk {
+  margin-left: auto;
+  color: var(--l-ink-3);
+}
+.ld-bt-rows li:only-child .ld-live-lk {
+  margin-left: -6px;
+}
+/* A "before" copy's name is long: the trigger keeps to a width. */
+.ld-ver-t .ld-ell {
+  max-width: 200px;
+}

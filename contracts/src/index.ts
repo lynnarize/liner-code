@@ -12,9 +12,10 @@
   - item: one thing on a thread's timeline: your message, the agent's text, a tool call, a plan,
     an approval it is waiting on, the checkpoint that closed a turn.
 */
+import type { CanvasVersion, FrameOp, FramePlaced, DesignFile, DesignFileInfo, DesignPatch, DesignPresence, DesignSelection, DesignSkill, FrameBuild, Lean, NewFrame, PictureAdd, PictureEndpoint, PictureModel } from "./design.ts";
 
 /** The tools Liner Code knows by name. */
-export type BuiltinProvider = "claude" | "codex" | "hermes" | "opencode" | "cursor" | "grok" | "demo";
+export type BuiltinProvider = "claude" | "codex" | "hermes" | "opencode" | "cursor" | "grok" | "antigravity" | "demo";
 /**
   A tool Liner Code drives. Besides the built-in ones: another account of one ("claude.work", its
   own config folder and sign-in) and an ACP agent you added ("acp.gemini"), from the registry or
@@ -39,6 +40,25 @@ export function familyOf(id: ProviderId): BuiltinProvider | "acp" {
 */
 export type Access = "read" | "ask" | "edits" | "auto" | "review" | "full";
 export const ACCESS: Access[] = ["read", "ask", "edits", "auto", "review", "full"];
+/** Effort levels from least to most, as tools name them: how near one is to another. */
+const EFFORT_ORDER = ["minimal", "low", "medium", "high", "xhigh", "max"];
+/**
+  The effort a model runs at when the one asked for isn't one it takes (picked for another model): the nearest it has, by
+  that order, the model's default where two are as near, else the lower; its default when the ask isn't one of the order.
+*/
+export function nearestEffort(asked: string, efforts: { id: string }[], fallback?: string): string {
+  if (!efforts.length || efforts.some((e) => e.id === asked)) return asked;
+  const at = EFFORT_ORDER.indexOf(asked);
+  const ranked = efforts.filter((e) => EFFORT_ORDER.includes(e.id));
+  if (at < 0 || !ranked.length) return fallback ?? asked;
+  const gap = (id: string) => Math.abs(EFFORT_ORDER.indexOf(id) - at);
+  const best = Math.min(...ranked.map((e) => gap(e.id)));
+  const near = ranked.filter((e) => gap(e.id) === best).map((e) => e.id);
+  return near.includes(fallback ?? "") ? fallback! : near.sort((a, b) => EFFORT_ORDER.indexOf(a) - EFFORT_ORDER.indexOf(b))[0];
+}
+
+/** How much a level lets through, for telling a lower one from a higher: Auto and Reviewer decides stand level with each other. */
+export const rank = (a: Access) => ({ read: 0, ask: 1, edits: 2, auto: 3, review: 3, full: 4 })[a];
 /** How hard it thinks, by the tool's own name for it: low, medium, high, xhigh, max, and Claude Code's ultracode and ultrathink. */
 export type Effort = string;
 export type EffortInfo = { id: string; label: string; description?: string };
@@ -84,7 +104,8 @@ export type ProviderInfo = {
   /** "cli" when the tool itself listed them (then `modelsAt` says when), "builtin" when it couldn't. */
   modelsFrom?: "cli" | "builtin";
   modelsAt?: number;
-  supports: { approvals: boolean; resume: boolean; effort: boolean; plan: boolean };
+  /** auto: false where the tool's Auto can't run (Claude Code through another maker's API): Auto runs as Edits on its own there. */
+  supports: { approvals: boolean; resume: boolean; effort: boolean; plan: boolean; auto?: boolean };
   /** Another account of a tool: its name ("Work"), beside the tool's own label. */
   account?: string;
   /** An ACP agent you added: from the registry, or a command of your own. */
@@ -113,8 +134,45 @@ export type EndpointProtocol = "anthropic" | "responses" | "chat";
   they get that tool's files, commands and approvals and Liner Code's own tools. Its key is kept
   in the keychain as endpointKey(id); a local one needs none.
 */
-export type Endpoint = { id: string; label: string; url: string; protocol: EndpointProtocol; models: string[] };
+export type Endpoint = {
+  id: string;
+  label: string;
+  url: string;
+  protocol: EndpointProtocol;
+  models: string[];
+  /** Per model id, whether it takes pictures, as you set it in Settings. Unset: guessed from its name (PICTURE_GUESS). */
+  pictures?: Record<string, boolean>;
+};
 export const ENDPOINT_TOOL: Record<EndpointProtocol, BuiltinProvider> = { anthropic: "claude", responses: "codex", chat: "opencode" };
+/**
+  Whether an endpoint's model takes pictures, guessed from its name: the first row that matches
+  answers. Each row says where the fact comes from; checked against the models.dev catalogue
+  OpenCode 1.19.5 ships (its input modalities). A wrong "no" only leaves a picture out (its words
+  still go); a wrong "yes" may fail the request, so models known to read only text say no on every
+  protocol. A name no row knows: no through Chat Completions, yes through the other two.
+*/
+export const PICTURE_GUESS: { re: RegExp; sees: boolean; from: string }[] = [
+  { re: /transcribe|tts|embed|search|deep-research/i, sees: false, from: "audio, embedding and search models (gpt-4o-transcribe, o3-deep-research): text in, by the catalogue" },
+  { re: /(^|[^a-z0-9])o[13]-mini/i, sees: false, from: "OpenAI o1-mini and o3-mini: text only, by OpenAI's model pages" },
+  { re: /qwen[\d.]*-coder/i, sees: false, from: "Qwen coder models: 0 of 39 take images in the catalogue" },
+  { re: /gpt-oss/i, sees: false, from: "gpt-oss: 0 of 74 take images in the catalogue" },
+  { re: /deepseek-(chat|reasoner|v3|coder)/i, sees: false, from: "DeepSeek V3, chat and reasoner: text only in the catalogue and DeepSeek's docs" },
+  { re: /glm-4(\.\d+)?(?![\d.-]*v)(\b|-|$)|glm-5(\.[0-2])?(?![\d.-]*v)(\b|-|$)/i, sees: false, from: "GLM 4.x and 5.0 to 5.2 without a v: text only in the catalogue (the v models see)" },
+  { re: /minimax-m[12]/i, sees: false, from: "MiniMax M1 and M2.x: text only in the catalogue" },
+  { re: /kimi-k2(?![.-][5-9])/i, sees: false, from: "Kimi K2 before 2.5 (k2, k2-thinking, k2-0905): text only in the catalogue" },
+  { re: /claude/i, sees: true, from: "Claude 3 and later: 314 of 318 in the catalogue" },
+  { re: /gpt-?(4o|4\.1|4-turbo|5)/i, sees: true, from: "GPT-4o, 4.1 and 5.x: 236 of 255 in the catalogue" },
+  { re: /(^|[^a-z0-9])(o3(?!-mini)|o4-mini)/i, sees: true, from: "OpenAI o3 and o4-mini: OpenAI's model pages" },
+  { re: /gemini|gemma-?3|llama-?4/i, sees: true, from: "Gemini, Gemma 3 and Llama 4: 159 of 160, most, and 25 of 25 in the catalogue" },
+  { re: /vision|(^|[-_.])vl($|[-_.:])|\dv($|[-_.:])|llava|pixtral|moondream|minicpm-?v/i, sees: true, from: "vision, -VL and -v models, LLaVA, Pixtral, Moondream, MiniCPM-V: 119 of 121 in the catalogue" },
+  { re: /mistral-(small|medium)-3|grok-?4|omni|kimi-k2[.-][5-9]/i, sees: true, from: "Mistral Small and Medium 3, Grok 4, Omni models, Kimi K2.5 and later: about nine in ten in the catalogue" },
+];
+/** The guess for a model with nothing set: a row of PICTURE_GUESS, else no through Chat Completions and yes through the others. */
+export function picturesGuess(protocol: EndpointProtocol, model: string): boolean {
+  return PICTURE_GUESS.find((r) => r.re.test(model))?.sees ?? protocol !== "chat";
+}
+/** Whether an endpoint's model takes pictures: what you set, else the guess. */
+export const takesPictures = (e: Endpoint, model: string) => e.pictures?.[model] ?? picturesGuess(e.protocol, model);
 export const endpointKey = (id: string) => `endpoint.${id}`;
 /**
   How a model can answer an app (access.ai) as just a model, with no tools of any kind: an API
@@ -129,6 +187,19 @@ export function plainWay(provider: ProviderId, s: { endpoints?: Endpoint[]; vouc
     if (e) return { kind: "http", endpoint: e };
   }
   return tool === "claude" ? { kind: "claude" } : null;
+}
+/**
+  Whether a session's model takes pictures: an API endpoint's model as takesPictures says ("default"
+  is its first); a tool's own model as you set it in Settings (toolPictures), else yes (the tool knows
+  its models: OpenCode's catalogue decides there, Hermes turns a picture into a saved file).
+*/
+/** A tool's own model as Settings.toolPictures keys it: "hermes:default", "acp.goose:default", "claude:claude-opus-5-5". */
+export const toolPicturesKey = (provider: ProviderId, model: string | undefined) => `${provider}:${model || "default"}`;
+export function picturesOf(provider: ProviderId, model: string | undefined, s: { endpoints?: Endpoint[]; voucher?: boolean; toolPictures?: Record<string, boolean> }): boolean {
+  const way = plainWay(provider, s);
+  if (way?.kind !== "http") return s.toolPictures?.[toolPicturesKey(provider, model)] ?? true;
+  const e = way.endpoint;
+  return takesPictures(e, !model || model === "default" ? (e.models[0] ?? "") : model);
 }
 /**
   The voucher: a code from Liner Code's site that runs one model, DeepSeek V4.1 Flash, on the site's
@@ -382,7 +453,7 @@ export type AgentRun = {
   files?: FileChange[];
 };
 /** How an agent stands: its own word, else its call's. */
-export const agentState = (it: { status: "running" | "done" | "failed"; agent?: AgentRun }) => it.agent?.state ?? it.status;
+export const agentState = (it: { status: "running" | "done" | "failed" | "stopped"; agent?: AgentRun }) => it.agent?.state ?? it.status;
 /** rel: the paths are already the project's own (every change written since they were), so none is stripped of its folder again. */
 export type FileChange = { path: string; status: "added" | "modified" | "deleted" | "renamed"; added: number; removed: number; from?: string; rel?: true };
 /** `owner`: who took it on, where the tool says (Claude Code's tasks carry an agent's name). */
@@ -723,7 +794,8 @@ export type Item =
       title: string;
       input?: string;
       output?: string;
-      status: "running" | "done" | "failed";
+      /** stopped: you stopped the turn (or it was ended for you) before the call finished. */
+      status: "running" | "done" | "failed" | "stopped";
       seconds?: number;
       path?: string;
       /** The agent this call sent off, on a "task" row. */
@@ -802,7 +874,7 @@ export type Item =
   | (Base & { kind: "error"; message: string })
   /** `fallback`: another ready tool's model that can carry on (another account of the same tool first). */
   | (Base & { kind: "limit"; message: string; until?: number; provider: string; fallback?: string })
-  | (Base & { kind: "notice"; text: string });
+  | (Base & { kind: "notice"; text: string; stop?: boolean });
 
 export type ItemKind = Item["kind"];
 /** The PR card's own tool: its run of the project's tests on this Mac, and the request to run them. */
@@ -886,6 +958,10 @@ export type Settings = {
   customModels?: CustomModel[];
   /** API endpoints you added, each run through the tool that speaks its protocol. */
   endpoints?: Endpoint[];
+  /** Per tool model ("<provider>:<model>", toolPicturesKey), whether it takes pictures, as you set it. Unset: it does. API endpoints keep theirs on Endpoint.pictures. */
+  toolPictures?: Record<string, boolean>;
+  /** Liner Design's picture models (Settings › Models › Pictures), OpenAI-Images-compatible endpoints; their keys are in the keychain (pictureKey). */
+  pictures?: PictureEndpoint[];
   /** A voucher was redeemed: its model (VOUCHER) is in the picker. */
   voucher?: boolean;
   /** The model each app that asks for one (access.ai) uses, by the app's id, as "<provider>:<model>": picked in the window when it first asks. */
@@ -1218,7 +1294,13 @@ export type EngineEvent =
   /** An add-on was added, switched, moved to another version, removed or restored. */
   | { type: "addons"; addons: AddonInfo[]; off: boolean }
   /** A piece of a model's answer to an app (liner.ai.ask with onText), for the window to pass to its frame. */
-  | { type: "panel.ai"; call: string; text: string };
+  | { type: "panel.ai"; call: string; text: string }
+  /** Liner Design: a design file of a folder changed (a frame, when `frame`), by you in the editor or by an agent. The canvas draws it again, keeping the selection by data-l. */
+  | { type: "canvas.changed"; cwd: string; file: string; frame?: string; by: "you" | "agent"; threadId?: string; at: number; /** The frame file's revision now (FrameRev), when it names a frame whose file is there. */ rev?: string }
+  /** An agent is writing a frame (on), or stopped (off): its outline and tag go on the frame, lead and sidekick each in their colour. */
+  | ({ type: "canvas.presence" } & DesignPresence)
+  /** A picture the picture model is making: `done` of `count`, for the pictures.make call `call`; `error` when it failed. */
+  | { type: "pictures.progress"; threadId: string; call: string; done: number; count: number; at: number; error?: string };
 
 /** `shot` isn't the Browser's: the app draws a page of this Mac out of sight and answers with its picture (a design's, for its agent). */
 export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot" | "shot";
@@ -1296,7 +1378,7 @@ export type Rpc = {
   "sessions.search": [{ projectId: string; query: string }, { threadId: string; title: string; at: number; who: "you" | "agent"; snippet: string }[]];
   /** A limited session carries on with another tool's model (`model`, else the one its limit card offers). */
   "thread.carryOn": [{ id: string; model?: string }, null];
-  "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number } }, null];
+  "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number }; /** Sent from Liner Design: the design file (its slug) and what is selected, for the turn's "## Design" note (lean.ts designNote). */ design?: { file: string; sel?: DesignSelection } }, null];
   "thread.queue": [{ id: string; queue: QueuedMessage[] }, Thread];
   /** Rewinds to just before a message you sent: the turns from there come off, and with `files`, so do their changes. */
   "thread.rewind": [{ threadId: string; itemId: string; files: boolean; force?: boolean }, { turn: number; files: number }];
@@ -1489,6 +1571,63 @@ export type Rpc = {
   "design.built": [{ threadId: string; design: string; version: number }, DesignInfo[]];
   /** While a Design surface is open: tell it when a design's file changes. */
   "design.watch": [{ threadId: string; on: boolean }, null];
+  /** Liner Design (contracts/src/design.ts). `cwd` is a project's folder or a session's worktree; `file`, a design file's slug in .liner/designs/. */
+  "canvas.list": [{ cwd: string }, DesignFileInfo[]];
+  /** `base`: where the design's folder is served (the files proxy), for a frame's <base>. */
+  "canvas.open": [{ cwd: string; file: string }, { file: DesignFile; base: string; /** Each drawn frame's revision, by id. */ revs: Record<string, string> }];
+  /** A new design file; with `size`, it starts with one empty frame of that size. */
+  "canvas.create": [{ cwd: string; title: string; size?: DesignSize }, DesignFile];
+  "canvas.save": [{ cwd: string; file: string; patch: DesignPatch }, DesignFile];
+  /** A new frame, never on top of another: `placed` says where it went (FramePlaced). */
+  "canvas.frame.add": [{ cwd: string; file: string; frame: NewFrame; html?: string }, DesignFile & { placed: FramePlaced }];
+  /** Takes a frame off the canvas into a trash under Liner Code's home (its entry and its HTML), from which canvas.frame.unremove puts it back. */
+  "canvas.frame.remove": [{ cwd: string; file: string; frame: string }, DesignFile];
+  /** Puts the frame removed last with this id back, with the same id, place and HTML. */
+  "canvas.frame.unremove": [{ cwd: string; file: string; frame: string }, DesignFile];
+  /** A copy of a frame beside it (or at x, y), with its HTML. */
+  "canvas.frame.copy": [{ cwd: string; file: string; frame: string; x?: number; y?: number }, DesignFile];
+  /** A frame's HTML, stamped with data-l ids, and its revision (FrameRev). */
+  "canvas.frame.read": [{ cwd: string; file: string; frame: string }, { html: string; rev: string }];
+  /**
+    The editor writes a frame whole: stamped, and canvas.changed goes out with by "you". With `base`,
+    refused when the file's revision isn't that one any more (an error starting "changed:", FRAME_CHANGED).
+    `from`: the revision of the bytes it wrote over ("" when there were none); when they weren't what
+    the app was last told of, canvas.changed by "agent" went out for them first.
+  */
+  "canvas.frame.write": [{ cwd: string; file: string; frame: string; html: string; threadId?: string; base?: string }, { at: number; rev: string; from: string }];
+  /**
+    Changes to a frame's source, all or nothing, each touching only its element's bytes; refused, as
+    canvas.frame.write is, when `base` isn't the file's revision. `undo`: the ops that put it back;
+    `ids`: the data-l ids of the elements it added; `from`: the revision it started from, as for write.
+  */
+  "canvas.frame.apply": [{ cwd: string; file: string; frame: string; ops: FrameOp[]; base?: string; threadId?: string }, { at: number; rev: string; from: string; undo: FrameOp[]; ids: string[] }];
+  /** While the canvas shows a design file: tell it when its files change. */
+  "canvas.watch": [{ cwd: string; file: string; on: boolean }, null];
+  /** A design file's kept states in a session, a copy per turn. */
+  "canvas.versions": [{ threadId: string; file: string }, CanvasVersion[]];
+  /** A kept copy as it was, to look at: its index and its drawn frames' HTML by id. By `key` (CanvasVersion.key), else by `turn`. Reads the session's copy only; one never kept is refused. */
+  "canvas.version.read": [{ threadId: string; file: string; turn?: number; key?: string }, { file: DesignFile; html: Record<string, string> }];
+  /** Puts the design file back as that copy (by `key`, else `turn`) has it, after keeping what's there now as a copy of its own ("before"). */
+  "canvas.restore": [{ threadId: string; file: string; turn?: number; key?: string }, DesignFile];
+  /** What is selected on the canvas now (null: nothing), for the session's design_selection. */
+  "canvas.selection": [{ threadId: string; sel: DesignSelection | null }, null];
+  /** The lean a design file follows (the folder's, without `file`). */
+  "lean.read": [{ cwd: string; file?: string }, Lean];
+  /** Writes the project's DESIGN.md. */
+  /** With `base` (a Lean's `rev`), refused (an error starting FRAME_CHANGED) when the file changed since it was read; nothing written. */
+  "lean.write": [{ cwd: string; text: string; base?: string; /** The design file whose lean this is: written where lean.read with it read (Lean.writes). */ file?: string }, Lean];
+  /** The design skills there are, each `loaded` or not for `file`. */
+  "lean.skills": [{ cwd: string; file?: string }, DesignSkill[]];
+  "build.state": [{ cwd: string; file: string }, FrameBuild[]];
+  /** Ties a frame to a project file (a path from the folder) as built now. */
+  "build.link": [{ cwd: string; file: string; frame: string; path: string }, FrameBuild[]];
+  "build.unlink": [{ cwd: string; file: string; frame: string }, FrameBuild[]];
+  /** The picture models Settings has. */
+  "pictures.models": [Record<string, never>, PictureModel[]];
+  /** Asks the picture model for `count` pictures (1 when left out) into the design's assets/: their paths from the design's folder. */
+  "pictures.make": [{ threadId: string; cwd: string; file: string; prompt: string; size: { w: number; h: number }; count?: number; model?: string; /** false: the lean's colours are left out of the ask. */ lean?: boolean }, { paths: string[]; cost?: number; ms: number }];
+  /** A picture file of the person's own into the design's assets/: its path from the design's folder, as pictures.make's. */
+  "pictures.add": [PictureAdd, { path: string }];
   "device.list": [Record<string, never>, { devices: Device[]; ready: boolean; detail?: string }];
   "device.boot": [{ udid: string }, null];
   "device.shot": [{ udid: string }, { png: string }];
@@ -1536,3 +1675,4 @@ export function newerVersion(a?: string, b?: string) {
 export * from "./cast.ts";
 export * from "./panel.ts";
 export * from "./dsh.ts";
+export * from "./design.ts";

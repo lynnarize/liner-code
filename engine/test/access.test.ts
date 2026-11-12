@@ -306,7 +306,7 @@ test("limits: a session that runs out carries on with the other tool, the conver
   }
 });
 
-test("read only: a write command in a Read only session or a side chat comes to you, whatever the Reviewer or an earlier rule says", async () => {
+test("read only: a write command in a side chat comes to you, and in a Read only session is refused outright, whatever the Reviewer or an earlier rule says", async () => {
   const reviewed: string[] = [];
   const make = (id: ProviderId): Provider => ({
     id,
@@ -341,8 +341,8 @@ test("read only: a write command in a Read only session or a side chat comes to 
     a.runtime.answer("t", card!.id, false);
     await side;
 
-    // A session you made Read only, and a side chat, the same.
-    for (const patch of [{ access: "read" as Access }, { sideOf: "other" }]) {
+    // A side chat, the same.
+    for (const patch of [{ sideOf: "other" }]) {
       const b = session("edits");
       b.store.patchThread("t", patch);
       raw(b.runtime).rules.set("t", new Set(["npm install"]));
@@ -351,6 +351,15 @@ test("read only: a write command in a Read only session or a side chat comes to 
       assert.ok(asked, `it came to you: ${JSON.stringify(patch)}`);
       b.runtime.answer("t", asked!.id, false);
       await turn;
+    }
+    // A session you made Read only: refused outright, with no card, whatever an earlier rule says (readonly.test.ts).
+    {
+      const b = session("edits");
+      b.store.patchThread("t", { access: "read" as Access });
+      raw(b.runtime).rules.set("t", new Set(["npm install"]));
+      await raw(b.runtime).turn("t", "look", "forge");
+      assert.equal(asks(b.store.timeline("t")).length, 0, "no card at Read only");
+      assert.ok(b.store.timeline("t").some((x) => x.kind === "text" && /Didn't run it/.test(x.text)), "refused");
     }
 
     // Nobody's there to ask in a routine: it's declined.

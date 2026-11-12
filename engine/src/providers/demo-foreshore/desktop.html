@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Foreshore, today</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900;1,62..125,100..900&family=Newsreader:ital,opsz,wght@1,6..72,300..600&display=block">
+<style>
+/* Foreshore: the sample tide-tables app shown inside the Liner Design mockup.
+   Concept: the day is drawn the way a sea chart draws a coast. Buff land above high water,
+   green foreshore that dries, blue shallows, white deep water, magenta for marks.
+   On a chart the names of water slope and the names of land stand upright: so do these. */
+:root{
+  --paper:#F7F8F5;--ink:#11181B;--muted:#56646A;--line:rgba(17,24,27,.16);
+  --shallows:#BFE0EA;--foreshore:#B5D3A0;--land:#F0DA9C;--mark:#C4127A;--tint:rgba(240,218,156,.6);--on-mark:#fff
+}
+.night{
+  --paper:#0C1315;--ink:#E7ECE8;--muted:#8C9B9E;--line:rgba(231,236,232,.2);
+  --shallows:#143A4A;--foreshore:#27452E;--land:#463C1B;--mark:#FF5FB0;--tint:rgba(70,60,27,.75);--on-mark:#0C1315
+}
+*{box-sizing:border-box;margin:0}
+body{position:relative;overflow:hidden;background:var(--paper);color:var(--ink);font:400 15px/1.4 "Archivo",system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;font-kerning:normal}
+svg{display:block;overflow:visible}
+svg text{font-family:"Archivo",sans-serif;font-variant-numeric:tabular-nums}
+.abs{position:absolute}
+.sea{font-family:"Newsreader",Georgia,serif;font-style:italic;font-weight:400;letter-spacing:-0.005em}
+.fig{font-style:italic;font-stretch:62%;font-weight:800;letter-spacing:-0.015em;line-height:.8;white-space:nowrap}
+.t{font-style:italic;font-stretch:80%;font-weight:700;letter-spacing:-0.01em}
+.lab{font-size:11px;font-weight:600;font-stretch:125%;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.mut{color:var(--muted)}
+.wm{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:650;font-stretch:112%;letter-spacing:-0.025em;white-space:nowrap}
+.wm svg{width:26px;height:26px}
+.flag{display:inline-flex;align-items:center;gap:8px;height:24px;padding:0 9px;background:var(--mark);color:var(--on-mark);font-size:12.5px;font-weight:600;white-space:nowrap}
+.flag i{font-style:italic;font-weight:500;opacity:.92}
+.tabs{left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;justify-content:space-around;border-top:1px solid var(--line);background:var(--paper);font-size:14px;font-weight:500;color:var(--muted)}
+.tabs b{font-weight:650;color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:7px}
+.row{display:flex;align-items:baseline;gap:12px;height:57px;padding:17px 16px 0;border-top:1px solid var(--line)}
+.row .sea{width:128px;font-size:20px}
+.row .t{font-size:26px}
+.row .h{margin-left:auto;font-size:15px;color:var(--muted)}
+.row.hi{background:var(--tint)}
+</style>
+<style>
+body{width:1280px;height:800px}
+.col{left:820px;top:0;width:460px;height:800px;border-left:1px solid var(--line)}
+.nav{left:852px;top:30px;display:flex;gap:28px;font-size:15px;font-weight:500;color:var(--muted)}
+.nav b{font-weight:650;color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:8px}
+.find{right:40px;top:24px;width:150px;height:32px;display:flex;align-items:center;padding:0 12px;border:1px solid var(--line);border-radius:4px;font-size:13px;color:var(--muted)}
+.next{left:852px;top:96px;width:388px;height:148px;padding:20px 24px;border-radius:4px;background:var(--shallows)}
+.list{left:852px;top:260px;width:388px;height:300px}
+.week{left:852px;top:584px;width:388px;height:176px}
+.kv{display:flex;flex-direction:column;gap:5px}
+.kv b{font-size:15px;font-weight:600}
+</style>
+</head>
+<body>
+<svg class="abs" style="left: 0; top: 0" width="820" height="800" viewBox="0 0 820 800">
+  <rect width="820" height="300" fill="var(--land)"/>
+  <rect y="300" width="820" height="300" fill="var(--foreshore)"/>
+  <path d="M0,378 C24,340 48,318 71,318 S200,600 280,600 S420,300 497,300 S630,588 707,588 S790,480 820,440 L820,664 L0,664 Z" fill="var(--shallows)"/>
+  <line x1="0" y1="300" x2="820" y2="300" stroke="var(--ink)" stroke-width="1" stroke-dasharray="1 6" stroke-linecap="round" opacity=".6"/>
+  <line x1="0" y1="600" x2="820" y2="600" stroke="var(--ink)" stroke-width="1" stroke-dasharray="1 6" stroke-linecap="round" opacity=".6"/>
+  <path d="M0,378 C24,340 48,318 71,318 S200,600 280,600 S420,300 497,300 S630,588 707,588 S790,480 820,440" fill="none" stroke="var(--ink)" stroke-width="2.5"/>
+  <g fill="var(--ink)"><circle cx="71" cy="318" r="4"/><circle cx="280" cy="600" r="4"/><circle cx="497" cy="300" r="5.5"/><circle cx="707" cy="588" r="4"/></g>
+  <g font-size="13" font-style="italic" font-weight="500" fill="var(--ink)" opacity=".72" text-anchor="middle">
+    <text x="102.5" y="640">5.2</text><text x="205" y="640">2.4</text><text x="307.5" y="640">1.1</text><text x="512.5" y="640">5.7</text><text x="615" y="640">3.0</text><text x="717.5" y="640">1.2</text>
+  </g>
+  <line x1="420" y1="226" x2="420" y2="664" stroke="var(--mark)" stroke-width="1.5"/>
+  <circle cx="420" cy="385" r="7" fill="var(--mark)" stroke="var(--paper)" stroke-width="2.5"/>
+  <g id="scale"></g>
+  <g font-size="11.5" font-weight="500" fill="var(--muted)" text-anchor="middle" id="hours"></g>
+</svg>
+
+<div class="abs wm" style="left: 40px; top: 28px"><svg viewBox="0 0 48 48"><defs><clipPath id="r"><circle cx="24" cy="24" r="21"/></clipPath></defs><path d="M-2,31 C10,11 18,11 24,24 S38,37 50,17" fill="none" stroke="currentColor" stroke-width="3.6" clip-path="url(#r)"/><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="3.6"/><circle cx="24" cy="24" r="4.6" fill="var(--mark)"/></svg>Foreshore</div>
+<div class="abs" style="right: 484px; top: 32px; font-size: 15px; font-weight: 500">Tuesday 11 November</div>
+
+<div class="abs sea" style="left: 42px; top: 112px; font-size: 36px; line-height: 1">High water</div>
+<div class="abs fig" style="left: 34px; top: 166px; font-size: 172px">14:32</div>
+<div class="abs t" style="left: 516px; top: 262px; font-size: 22px">5.8 m</div>
+<div class="abs flag" style="left: 420px; top: 204px">Now 12:18 <i>rising, 4.4 m</i></div>
+<div class="abs" style="left: 280px; top: 556px; transform: translateX(-50%); white-space: nowrap; font-size: 15px"><span class="sea" style="font-size: 17px">Low</span> <span class="t" style="font-size: 17px">08:12</span></div>
+<div class="abs" style="left: 707px; top: 544px; transform: translateX(-50%); white-space: nowrap; font-size: 15px"><span class="sea" style="font-size: 17px">Low</span> <span class="t" style="font-size: 17px">20:41</span></div>
+
+<div class="abs" style="left: 40px; top: 688px; width: 740px; display: grid; grid-template-columns: repeat(4, 1fr)">
+  <div class="kv"><span class="lab">Sunrise</span><b>07:24</b></div>
+  <div class="kv"><span class="lab">Sunset</span><b>16:18</b></div>
+  <div class="kv"><span class="lab">Moon</span><b>Waxing gibbous</b></div>
+  <div class="kv"><span class="lab">Springs</span><b>Friday</b></div>
+</div>
+
+<div class="abs col"></div>
+<div class="abs nav"><b>Today</b><span>Week</span><span>Stations</span></div>
+<div class="abs find">Find a station</div>
+
+<div class="abs next">
+  <div class="lab" style="color: var(--ink); opacity: .7">Next</div>
+  <div class="sea" style="margin-top: 12px; font-size: 26px; line-height: 1">Low water</div>
+  <div style="margin-top: 14px; font-size: 15px">1.1 m, in 8 h 23 min</div>
+  <div class="abs fig" style="right: 22px; bottom: 26px; font-size: 92px">20:41</div>
+</div>
+
+<div class="abs list">
+  <div class="lab" style="height: 56px; padding: 22px 16px 0">Sample Harbour today</div>
+  <div class="row"><span class="sea">Low water</span><span class="t">08:12</span><span class="h">0.9 m</span></div>
+  <div class="row hi"><span class="sea">High water</span><span class="t">14:32</span><span class="h" style="color: var(--ink)">5.8 m</span></div>
+  <div class="row"><span class="sea">Low water</span><span class="t">20:41</span><span class="h">1.1 m</span></div>
+  <div class="row"><span class="sea">High water</span><span class="t">02:55</span><span class="lab">Wed</span><span class="h">5.6 m</span></div>
+</div>
+
+<div class="abs week">
+  <div class="lab" style="padding: 0 16px">The week, range in metres</div>
+  <svg class="abs" style="left: 16px; top: 34px" width="356" height="130" viewBox="0 0 356 130" id="wk"></svg>
+</div>
+
+<script>
+// The hour scale along the foot, as a chart's border is graduated: one block an hour.
+const S = "http://www.w3.org/2000/svg", el = (n, a, t) => { const e = document.createElementNS(S, n); for (const k in a) e.setAttribute(k, a[k]); if (t) e.textContent = t; return e; };
+const sc = document.getElementById("scale"), hr = document.getElementById("hours"), w = 820 / 24;
+for (let h = 0; h < 24; h++) if (h % 2 === 0) sc.append(el("rect", { x: h * w, y: 750, width: w, height: 7, fill: "var(--ink)" }));
+sc.append(el("rect", { x: 0.5, y: 750, width: 819, height: 7, fill: "none", stroke: "var(--ink)", "stroke-width": 1 }));
+for (let h = 3; h <= 21; h += 3) hr.append(el("text", { x: h * w, y: 778 }, String(h).padStart(2, "0")));
+// The week: one bar a day, as tall as the day's range. Friday is springs, so it carries the mark.
+const wk = document.getElementById("wk"), days = ["Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Mon"], range = [4.9, 5.3, 5.7, 6.0, 5.6, 5.0, 4.4];
+days.forEach((d, i) => {
+  const x = i * 51 + 3, h = range[i] * 13;
+  wk.append(el("rect", { x, y: 96 - h, width: 38, height: h, fill: i === 0 ? "var(--ink)" : "var(--shallows)" }));
+  wk.append(el("text", { x: x + 19, y: 118, "text-anchor": "middle", "font-size": 12.5, "font-weight": i === 0 ? 700 : 500, fill: i === 0 ? "var(--ink)" : "var(--muted)" }, d));
+  wk.append(el("text", { x: x + 19, y: 96 - h - 7, "text-anchor": "middle", "font-size": 12.5, "font-style": "italic", "font-weight": 600, fill: "var(--ink)" }, range[i].toFixed(1)));
+  if (i === 3) wk.append(el("circle", { cx: x + 19, cy: 96 - h + 12, r: 4.5, fill: "var(--mark)" }));
+});
+</script>
+</body>
+</html>

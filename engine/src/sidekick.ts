@@ -90,7 +90,7 @@ export const briefPrompt = (brief: string, doneWhen?: string) => (doneWhen ? `${
   capMs: the cap it ran under, when the lead's own tool set it below the usual one (Provider.toolWait).
   how "agent": Liner Code stopped it as it tried to send an agent of its own, which a sidekick may not; `agent` is that agent's task.
 */
-export type BriefOutcome = { how: "done" | "failed" | "stopped" | "capped" | "limited" | "agent"; who: string; seconds: number; report: string; files: FileChange[] | null; problem?: string; unstarted?: boolean; capMs?: number; agent?: string };
+export type BriefOutcome = { how: "done" | "failed" | "stopped" | "capped" | "limited" | "agent" | "replaced"; who: string; seconds: number; report: string; files: FileChange[] | null; problem?: string; unstarted?: boolean; capMs?: number; agent?: string };
 
 const took = (s: number) => (s < 60 ? `${Math.max(1, Math.round(s))} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
 /** Its report as the lead reads it: whole unless it's long, when the end (where a report sums up) stays. */
@@ -112,6 +112,8 @@ export function sidekickResult(o: BriefOutcome) {
     failed: `The sidekick (${o.who}) didn't finish the brief (${took(o.seconds)}): ${o.problem ?? "its tool stopped with a problem"}.`,
     stopped: `The person stopped ${who} after ${took(o.seconds)}. This is what it did so far.`,
     capped: `Liner Code stopped ${who} at ${capOf(o.capMs)}. This is what it did so far.`,
+    // The person picked another sidekick (runtime.retool): nobody pressed Stop.
+    replaced: `The sidekick changed, so Liner Code stopped ${who} after ${took(o.seconds)} and ended it and what it started. This is what it did so far.`,
     limited: `The sidekick (${o.who}) ran out of usage after ${took(o.seconds)}${o.problem ? ` (${o.problem})` : ""}. This is what it did so far.`,
     agent: `Liner Code stopped ${who} after ${took(o.seconds)}: it tried to send an agent of its own${o.agent ? ` ("${o.agent}")` : ""}, and a sidekick may not. This is what it had done. If the brief is still needed, send it again and say to do the work itself.`,
   }[o.how];

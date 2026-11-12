@@ -1,0 +1,590 @@
+/*
+  Liner Design's inspector, in Liner 2.0: one flat column on the paper, sections told apart by
+  space and a quiet label, choices on a well with the picked one on a raised plate (as the app's
+  Segmented draws it, which the inspector also uses), fields on a well with a quiet prefix, and
+  the one tinted thing, the "Off the lean" note. Sizes are the approved mockup's.
+*/
+
+.ld-insp {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 292px;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  color: var(--l-ink);
+  font-size: 12.5px;
+  container-type: inline-size;
+}
+.ld-insp-top {
+  padding: 0 10px;
+}
+.ld-insp-top .lc-stabs-row {
+  flex: 1 1 auto;
+}
+.ld-insp-end {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+}
+.ld-insp-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.ld-insp-foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px 14px;
+}
+.ld-insp-slot:empty {
+  display: none;
+}
+
+/* The selected layer: its glyph, its name, its kind. */
+.ld-ish {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.ld-ish > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-ish-n {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-ish small {
+  flex: none;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+
+/* The body scrolls; 4px kept inside its edge so no focus ring is cut. */
+.ld-body {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 16px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* ---------- Sections */
+.ld-sec {
+  padding: 0 16px 8px;
+}
+.ld-sech {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  margin-right: -8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.ld-ib {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+@media (hover: hover) {
+  .ld-ib:hover {
+    background: var(--lc-well);
+    color: var(--l-ink);
+  }
+}
+.ld-sec[data-open] .ld-ib {
+  background: var(--lc-plate);
+  color: var(--l-ink);
+}
+.ld-more {
+  animation: ld-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes ld-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ld-more {
+    animation-name: ld-fade;
+  }
+  @keyframes ld-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+/* A row: a quiet label, then the control. */
+.ld-r {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  margin-bottom: 6px;
+}
+.ld-r[data-top] {
+  align-items: flex-start;
+}
+.ld-r[data-top] > .ld-l {
+  line-height: 28px;
+}
+.ld-l {
+  flex: none;
+  width: 62px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.ld-col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* ---------- Choices: a well, the picked one raised (the Segmented's look) */
+.ld-stops {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--lc-well);
+}
+.ld-stops > button {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--l-ink-3);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+/* Regular and medium share a cell, so picking never shifts the width (as Segmented does). */
+.ld-stop-t,
+.ld-stop-on {
+  grid-area: 1 / 1;
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-stop-on {
+  font-weight: 500;
+  opacity: 0;
+}
+.ld-stops > button[aria-pressed="true"] {
+  background: var(--l-raised-fill);
+  box-shadow: var(--l-raised-shadow);
+  color: var(--l-ink);
+}
+.ld-stops > button[aria-pressed="true"] .ld-stop-t {
+  opacity: 0;
+}
+.ld-stops > button[aria-pressed="true"] .ld-stop-on {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .ld-stops > button:not([aria-pressed="true"]):hover {
+    color: var(--l-ink);
+  }
+}
+/* The app's Segmented at the inspector's size, on the same well. */
+.ld-insp .ld-seg {
+  --sg-h: 24px;
+  --sg-px: 6px;
+  --sg-fs: 12px;
+  --sg-r: 8px;
+  --sg-pad: 2px;
+  flex: 1;
+  min-width: 0;
+  background: var(--lc-well);
+}
+.ld-insp .ld-seg .l-seg__track {
+  gap: 2px;
+}
+@media (hover: none) and (pointer: coarse) {
+  .ld-insp .ld-seg {
+    --sg-h: 32px;
+  }
+}
+
+/* ---------- Fields */
+.ld-fld {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--lc-well);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: left;
+  transition: box-shadow 140ms ease;
+}
+.ld-fld:focus-within {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 0;
+}
+.ld-fld[data-disabled] {
+  color: var(--l-ink-3);
+}
+.ld-fld[data-mono] .ld-in {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.ld-pre {
+  flex: none;
+  color: var(--l-ink-3);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ld-pre[data-scrub] {
+  cursor: ew-resize;
+}
+.ld-pre:empty {
+  display: none;
+}
+.ld-suf {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-in {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.ld-in::placeholder {
+  color: var(--l-ink-4);
+}
+.ld-in:disabled {
+  color: inherit;
+  cursor: default;
+}
+/* A select drawn as a field: its own chevron, the native one hidden. */
+.ld-sel {
+  position: relative;
+}
+.ld-sel select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 18px;
+  cursor: pointer;
+}
+.ld-sel-c {
+  position: absolute;
+  right: 8px;
+  color: var(--l-ink-3);
+  pointer-events: none;
+}
+.ld-tog {
+  cursor: pointer;
+}
+.ld-tog:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 0;
+}
+
+/* ---------- Swatches */
+.ld-sws {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.ld-sws > .ld-fld {
+  flex: 1;
+}
+.ld-swt {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  cursor: pointer;
+}
+span.ld-swt {
+  cursor: default;
+}
+.ld-swt[aria-pressed="true"] {
+  box-shadow:
+    inset 0 0 0 1px var(--l-line),
+    0 0 0 2px var(--lc-paper),
+    0 0 0 3.5px var(--l-accent);
+}
+.ld-nm {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--l-ink-2);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Off the lean: the one tinted thing, quiet */
+.ld-off {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--l-warn) 14%, transparent);
+  color: var(--l-ink-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.ld-off > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--l-ink);
+}
+.ld-off b {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-off button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--l-ink-4);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* ---------- Alignment, nine dots */
+.ld-g9 {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(3, 1fr);
+  width: 62px;
+  height: 62px;
+  border-radius: 8px;
+  background: var(--lc-well);
+}
+.ld-g9 > button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+.ld-g9 > button::after {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+  transition:
+    width 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 140ms ease;
+}
+@media (hover: hover) {
+  .ld-g9 > button:hover::after {
+    background: var(--l-ink-2);
+  }
+}
+/* The picked place is a bar: across a flow down (the children's width), down a flow across. */
+.ld-g9 > button[aria-pressed="true"]::after {
+  width: 12px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--l-ink);
+}
+.ld-g9 > button[aria-pressed="true"][data-across]::after {
+  width: 4px;
+  height: 12px;
+}
+
+/* ---------- Notes and the empty column */
+.ld-note {
+  margin: 0;
+  padding: 10px 16px 0;
+  color: var(--l-ink-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.ld-mono {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.ld-empty {
+  display: grid;
+  flex: 1;
+  justify-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 24px 28px 80px;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+.ld-empty > svg {
+  color: var(--l-ink-4);
+}
+.ld-empty b {
+  color: var(--l-ink-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.ld-empty p {
+  max-width: 240px;
+  margin: 0;
+}
+
+/* ---------- The Code tab */
+.ld-code-tab {
+  display: flex;
+  flex-direction: column;
+}
+.ld-segs {
+  display: flex;
+  flex: none;
+  padding: 4px 12px 8px;
+}
+.ld-code-tab .ld-seg {
+  flex: none;
+  background: none;
+}
+.ld-code-tab .ld-seg .l-seg__pill {
+  background: var(--lc-plate);
+  box-shadow: none;
+}
+.ld-code-tab .ld-seg {
+  --sg-h: 30px;
+  --sg-px: 10px;
+  --sg-fs: 13px;
+}
+.ld-code {
+  flex: none;
+  max-height: 60vh;
+  overflow: auto;
+  scrollbar-width: thin;
+  padding: 0;
+  font-family: var(--l-font-mono);
+}
+.ld-code .lc-cl-n {
+  width: 34px;
+  padding-right: 8px;
+}
+.ld-code .lc-cl-t {
+  padding-right: 16px;
+}
+.ld-code-in {
+  position: relative;
+  min-width: max-content;
+}
+/* The text you type sits over the coloured lines, letter for letter: its own ink is clear. */
+.ld-code-ta {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 34px;
+  box-sizing: border-box;
+  width: calc(100% - 34px);
+  margin: 0;
+  padding: 0 16px 0 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow: hidden;
+  background: none;
+  color: transparent;
+  caret-color: var(--l-ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 22px;
+  white-space: pre;
+  tab-size: 2;
+}
+.ld-code-ta::selection {
+  background: color-mix(in oklab, var(--l-accent) 22%, transparent);
+  color: transparent;
+}
+.ld-code:focus-within {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-accent) 40%, transparent);
+}
+.ld-code[data-bad] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-danger) 50%, transparent);
+}
+/* Layout on a plain box: spacing is offered once it's a stack. */
+.ld-plainbox {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}

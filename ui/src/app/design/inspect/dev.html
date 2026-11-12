@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-accent="blue">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inspector test page</title>
+    <script>
+      // The inspector's own test page (dev only): ?theme=dark, ?open (every section open), ?tab=code, ?none (nothing selected), ?several, ?raw.
+      (function () {
+        var q = new URLSearchParams(location.search);
+        document.documentElement.dataset.theme = q.get("theme") === "dark" ? "dark" : "light";
+        try {
+          sessionStorage.setItem("liner.ld.open", JSON.stringify(q.has("open") ? ["size", "layout", "fill", "corners", "text"] : []));
+          sessionStorage.setItem("liner.ld.tab", q.get("tab") || "style");
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./dev.tsx"></script>
+  </body>
+</html>

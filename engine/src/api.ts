@@ -30,6 +30,10 @@ import type { Launcher } from "./launch.ts";
 import type { Proxies } from "./proxy.ts";
 import type { AgentTools } from "./agent-tools.ts";
 import type { Designs } from "./designs.ts";
+import * as canvas from "./canvas.ts";
+import * as lean from "./lean.ts";
+import * as buildlinks from "./buildlinks.ts";
+import * as pictures from "./pictures.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
 import { checkManifest } from "./addons.ts";
 import { refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
@@ -158,7 +162,7 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings, runtime.keys);
@@ -891,8 +895,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // Opened again: a worktree a clean-up took is put back.
       if (patch.archived === false && t.archived) void ensureWorktree(id).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "Its worktree didn't come back", body: String(e?.message ?? e) }));
       const next = clean;
+      // A lower (or higher) level reaches a turn under way at once, not from the next turn.
+      if (clean.access !== undefined && clean.access !== t.access) queueMicrotask(() => void runtime.accessChanged(id, t.access));
       // Another model: the last one's context window says nothing about this one's, until its first turn reports.
       const moved = ("model" in clean && clean.model !== t.model) || (clean.agent !== undefined && clean.agent !== t.agent);
+      // Another tool, account, lead or sidekick: what the session ran on ends now, a turn at work on it stopped first (runtime.retool).
+      if (moved || ("sidekick" in clean && clean.sidekick !== t.sidekick)) queueMicrotask(() => void runtime.retool(id).catch(() => {}));
+      // Put away: its sessions end as a deleted one's do, by the one close (runtime.closeThread).
+      if (patch.archived && !t.archived) queueMicrotask(() => void runtime.closeThread(id, "You archived this session").catch(() => {}));
       return store.patchThread(id, moved ? { ...next, usage: { ...t.usage, contextWindow: undefined } } : next);
     },
     "thread.items": ({ id }) => store.timeline(store.thread(id).id),
@@ -945,7 +955,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "memory.forget": ({ projectId, fact }) => forgetFact(store.home, store.project(projectId).id, fact),
     "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query),
     "thread.carryOn": async ({ id, model }) => (await ensureWorktree(id), await runtime.carryOn(id, model), null),
-    "thread.send": ({ id, text, files, mode, anchor }) => {
+    "thread.send": ({ id, text, files, mode, anchor, design }) => {
       const t = store.thread(id);
       // Liner Code's own commands, whichever tool the session runs on.
       const goal = /^\/goal(?:\s+([\s\S]*))?$/.exec(text.trim());
@@ -978,7 +988,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         }
         // A goal with work in flight waits in the queue, like any message, and starts from there.
         if (goal && !runtime.isRunning(id)) return void (await runtime.startGoal(id, what).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "The goal didn't start", body: String(e?.message ?? e) })));
-        await runtime.send(id, c.text, mode, anchor, c.files);
+        // Sent from Liner Design: the turn hears where the design is and what's selected (runtime.ts, lean.ts designNote).
+        await runtime.send(id, c.text, mode, anchor, c.files, design?.file ? { file: String(design.file), ...(design.sel ? { sel: design.sel } : {}) } : undefined);
       })().catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
       return null;
     },
@@ -1375,6 +1386,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const gone = new Map(store.agents.filter((a) => !agents.some((b) => b.id === a.id)).map((a) => [a.id, a.model]));
       const saved = store.setAgents(agents);
       if (gone.size) store.repairAgents(gone, store.standIn);
+      // An agent that runs on another tool now: its sessions' old tool ends (runtime.retool).
+      void runtime.retoolAll().catch(() => {});
       return saved;
     },
     "skills.list": ({ projectId }) => {
@@ -1387,6 +1400,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { yours, project };
     },
     "settings.save": (patch) => {
+      // A picture model's key goes only to an https address (or one on this Mac): refused before anything is kept.
+      if (patch.pictures) for (const e of patch.pictures) pictures.checkEndpointUrl(e?.url);
       const settings = store.setSettings(patch);
       if (patch.outside !== undefined) x.outside?.apply();
       // A new or changed account or endpoint is a tool to find; a model id you added only changes the lists.
@@ -1491,7 +1506,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // The others are put away, as archiving each would: a turn still running stops, and their shells
       // and servers go. Their worktrees stay until you delete them.
       for (const o of store.threads.filter((x) => x.compare?.id === t.compare!.id && x.id !== t.id)) {
-        runtime.stop(o.id);
+        void runtime.closeThread(o.id, `You kept another take of this comparison (${t.title})`).catch(() => {});
         leftBehind(o.id);
         store.patchThread(o.id, { archived: true });
       }
@@ -1624,6 +1639,12 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "design.built": ({ threadId, design, version }) => designs(threadId).built(threadId, design, version),
     "design.watch": ({ threadId, on }) => (x.designs?.watch(threadId, on), null),
 
+    // Liner Design, one line per module: each fills in its own handlers.
+    ...canvas.rpc(design),
+    ...lean.rpc(design),
+    ...buildlinks.rpc(design),
+    ...pictures.rpc(design),
+
     "device.list": () => devices(env),
     "device.boot": async ({ udid }) => (await boot(udid, env), null),
     "device.shot": async ({ udid }) => ({ png: await screenshot(udid, env) }),
@@ -1669,6 +1690,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   function cwdOf(threadId: string) {
     const t = store.thread(threadId);
     return t.worktree?.path ?? store.project(t.projectId).path;
+  }
+  /** What Liner Design's modules are handed (canvas.ts), asked for only when a design RPC is called. */
+  function design() {
+    if (!x.design) throw new Error("Liner Design isn't available here.");
+    return x.design;
   }
   /** The designs, for a session that's there: an id from the app is never a path of its own (designs/<id>/…). */
   function designs(threadId: string) {

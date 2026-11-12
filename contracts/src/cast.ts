@@ -13,7 +13,7 @@ export function makerOf(ref: string): Maker {
   const { provider, model } = splitModel(ref);
   for (const [maker, re] of MAKERS) if (re.test(model)) return maker;
   const tool = familyOf(provider);
-  return tool === "claude" ? "anthropic" : tool === "codex" ? "openai" : tool === "grok" ? "xai" : "other";
+  return tool === "claude" ? "anthropic" : tool === "codex" ? "openai" : tool === "grok" ? "xai" : tool === "antigravity" ? "google" : "other";
 }
 
 /** One of OpenCode Go's, which never leads (tiers.ts, CAPPED). */

@@ -11,7 +11,7 @@
   only, under a name of its own.
 */
 import type { Endpoint, EndpointProtocol, ModelInfo, ProviderId } from "../../../contracts/src/index.ts";
-import { ENDPOINT_TOOL, VOUCHER } from "../../../contracts/src/index.ts";
+import { ENDPOINT_TOOL, takesPictures, VOUCHER } from "../../../contracts/src/index.ts";
 import type { OpenOptions, Provider } from "./types.ts";
 import { goUsage, isGo } from "./opencode-go.ts";
 
@@ -65,11 +65,19 @@ export function endpointOptions(e: Endpoint, model: string, key: string | undefi
   }
   const id = nameOf(e);
   const config = {
-    provider: { [id]: { npm: "@ai-sdk/openai-compatible", name: e.label, options: { baseURL: url, ...(key ? { apiKey: `{env:${KEY_VAR}}` } : {}) }, models: Object.fromEntries(e.models.map((m) => [m, { name: m }])) } },
+    provider: { [id]: { npm: "@ai-sdk/openai-compatible", name: e.label, options: { baseURL: url, ...(key ? { apiKey: `{env:${KEY_VAR}}` } : {}) }, models: Object.fromEntries(e.models.map((m) => [m, modelEntry(e, m)])) } },
     model: `${id}/${model}`,
   };
   return { model: `${id}/${model}`, env: { ...env, ...(key ? { [KEY_VAR]: key } : {}), OPENCODE_CONFIG_CONTENT: JSON.stringify(config) } };
 }
+
+/**
+  A model as OpenCode's config declares it. A model OpenCode doesn't know from its catalogue is text
+  only unless its modalities say otherwise (1.19.5: image is `modalities.input.includes("image")`,
+  else false, and each picture becomes "ERROR: Cannot read image"); text is off too once input is
+  given without it. So a model that takes pictures says so, and one that doesn't says text.
+*/
+export const modelEntry = (e: Endpoint, m: string) => (takesPictures(e, m) ? { name: m, attachment: true, modalities: { input: ["text", "image"], output: ["text"] } } : { name: m, attachment: false, modalities: { input: ["text"], output: ["text"] } });
 
 /**
   The models an endpoint lists, for picking when you add it: its /models in OpenAI's shape (and
@@ -110,6 +118,8 @@ export function endpointProvider(base: Provider, e: Endpoint, key: () => string 
         endpoint: hostOf(e.url),
         login: "",
         signedIn: keyed ? true : undefined,
+        // Claude Code's Auto needs its safety check, which runs only with Anthropic: here Auto runs as Edits on its own (claude.ts modeOf).
+        supports: e.protocol === "anthropic" ? { ...d.supports, auto: false } : d.supports,
         models: models(),
         modelsFrom: "builtin",
         modelsAt: undefined,
@@ -132,7 +142,7 @@ export function endpointProvider(base: Provider, e: Endpoint, key: () => string 
       const x = endpointOptions(e, model, key(), o.env);
       // Claude Code's subagents name Claude models; here they run on the endpoint's.
       const subagents = o.subagents && Object.fromEntries(Object.entries(o.subagents).map(([n, a]) => [n, { ...a, model: undefined }]));
-      const s = base.open({ ...o, provider: id, env: x.env, model: x.model, subagents, config: { ...o.config, ...x.config } });
+      const s = base.open({ ...o, provider: id, env: x.env, model: x.model, subagents, config: { ...o.config, ...x.config }, ...(e.protocol === "anthropic" ? { noAuto: true } : {}) });
       // Another model reopens the session: the endpoint's model is set in its environment and config, not
       // only in the tool, and OpenCode knows it by a name of its own. Effort and access change in place.
       const update = s.update?.bind(s);

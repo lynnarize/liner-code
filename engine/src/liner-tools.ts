@@ -1,10 +1,17 @@
 /*
   Liner Code's own tools, as an agent is told of them: what mcp.ts lists, and the one place their
   names are written. acp.ts goes by the same list to tell them from anyone else's, so it's data
-  with no imports: importing mcp.ts itself would start its server.
+  with no imports: importing mcp.ts itself would start its server. Liner Design's tools are data
+  too, each area's in a file of its own beside its module (canvas-tools.ts for canvas.ts, and so on),
+  so this file still pulls in nothing that does anything.
 */
-type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>; required?: string[] };
-type ToolDef = { name: string; description: string; inputSchema: Schema };
+import { TOOLS as CANVAS_TOOLS } from "./canvas-tools.ts";
+import { TOOLS as LEAN_TOOLS } from "./lean-tools.ts";
+import { TOOLS as BUILD_TOOLS } from "./buildlinks-tools.ts";
+import { TOOLS as PICTURE_TOOLS } from "./pictures-tools.ts";
+
+export type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>; required?: string[] };
+export type ToolDef = { name: string; description: string; inputSchema: Schema };
 
 const none: Schema = { type: "object", properties: {} };
 /** Set in the server's environment only for a pair's lead: no one else is offered `sidekick`. */
@@ -132,6 +139,11 @@ export const TOOLS: ToolDef[] = [
       required: ["title"],
     },
   },
+  // Liner Design, one line per area.
+  ...CANVAS_TOOLS,
+  ...LEAN_TOOLS,
+  ...BUILD_TOOLS,
+  ...PICTURE_TOOLS,
   {
     name: "liner_inspect",
     description:

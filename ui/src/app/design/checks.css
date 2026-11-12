@@ -1,0 +1,277 @@
+/* The checks: the Checks tab, its marks on the canvas, the frame's word on how it stands, the dock's row. */
+
+/* Where the checks lay frames out: off the screen, laid out at their own widths, never seen or pressed. */
+.ld-chk-host {
+  position: fixed;
+  top: 0;
+  left: -30000px;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  contain: layout style;
+}
+.ld-chk-host > iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+}
+
+.ld-ck {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+}
+.ld-ck-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 0;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.ld-ck-top b {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-ck-q {
+  font-size: 12px;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.ld-ck-lede {
+  margin: 10px 16px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--lc-well);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--l-ink-2);
+}
+.ld-ck-seg {
+  padding: 12px 16px 4px;
+}
+.ld-ck-card {
+  padding: 12px 16px 14px;
+  box-shadow: 0 1px 0 var(--lc-hair);
+}
+.ld-ck-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.ld-ck-h b {
+  font-weight: 500;
+}
+.ld-ck-h small {
+  flex: none;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.ld-ck-n {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--l-warn);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.ld-ck-t {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--l-ink-2);
+}
+.ld-ck-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+/* The evidence: the top of the frame where it runs off, the page's edge drawn as a line. */
+.ld-ck-ev {
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--lc-well);
+  box-shadow: inset 0 0 0 1px var(--lc-hair);
+}
+.ld-ck-ev-in {
+  position: relative;
+  height: 96px;
+  overflow: hidden;
+}
+.ld-ck-ev iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  background: #fff;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.ld-ck-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1.5px dashed var(--l-warn);
+}
+.ld-ck-edge::after {
+  content: "";
+  position: absolute;
+  inset: 0 -200px 0 0;
+  background: color-mix(in oklab, var(--l-ink) 18%, transparent);
+}
+.ld-ck-pass {
+  padding: 6px 8px 12px;
+}
+.ld-ck-pr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.ld-ck-pr > svg {
+  flex: none;
+  color: var(--l-ok);
+}
+.ld-ck-pr small {
+  flex: none;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.ld-ck-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 12px 16px 14px;
+  background: var(--lc-paper);
+  box-shadow: 0 -1px 0 var(--lc-hair);
+}
+
+/* On the canvas: the word after a frame's name, and the numbered marks. */
+.ld-ck-lab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--l-ink-3);
+}
+.ld-ck-lab[data-bad] {
+  color: var(--l-warn-text, var(--l-warn));
+}
+.ld-ck-lab[data-ok] > svg {
+  color: var(--l-ok);
+}
+/* A spot on a frame: one mark, or several folded into one ("4 +3") that opens to their list. */
+.ld-ck-spot {
+  position: absolute;
+  z-index: 3;
+  pointer-events: auto;
+}
+.ld-ck-spot:has([aria-expanded="true"]) {
+  z-index: 7;
+}
+.ld-ck-spot-list {
+  position: absolute;
+  top: 22px;
+  right: 0;
+  width: 260px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--lc-paper);
+  box-shadow: var(--ld-pop);
+}
+.ld-ck-spot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--l-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.ld-ck-spot-row:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.ld-ck-mark[data-more] {
+  width: auto;
+  min-width: 18px;
+  padding: 0 6px 0 5px;
+  border-radius: 9px;
+  gap: 2px;
+  grid-auto-flow: column;
+}
+.ld-ck-mark small {
+  font-size: 9.5px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.ld-ck-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-warn);
+  box-shadow: 0 0 0 2px var(--lc-paper);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* Layers: the count beside a frame. */
+.ld-ck-ly {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-warn-text, var(--l-warn));
+}
+.ld-ck-ly[data-ok] {
+  display: inline-flex;
+  color: var(--l-ok);
+}
+
+/* The dock's row. */
+.ld-ck-row .ld-ck-n {
+  margin-right: 2px;
+}

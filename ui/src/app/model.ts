@@ -84,7 +84,7 @@ const MAKERS: [RegExp, MarkKind][] = [
   [/hermes|nous/, "hermes"],
 ];
 /** Each tool's own logo, for its place on the rail and for a model it runs whose name doesn't say whose it is ("auto", "default"). */
-const TOOL_MARK: Partial<Record<ReturnType<typeof familyOf>, MarkKind>> = { claude: "claudecode", codex: "codex", grok: "grok", cursor: "cursor", opencode: "opencode", hermes: "hermes", demo: "demo" };
+const TOOL_MARK: Partial<Record<ReturnType<typeof familyOf>, MarkKind>> = { claude: "claudecode", codex: "codex", grok: "grok", cursor: "cursor", antigravity: "antigravity", opencode: "opencode", hermes: "hermes", demo: "demo" };
 /** Where a tool's models come from (Hermes's Nous Portal, OpenCode Go, an endpoint's service), by its name. */
 const SOURCES: [RegExp, MarkKind][] = [
   [/nous/, "hermes"],

@@ -36,6 +36,8 @@ export const COMMANDS: Command[] = [
   { id: "wall", label: "The Wall: every session at once, and back", group: "Anywhere", keys: ["mod+shift+o"] },
   { id: "open-project", label: "Add a project", group: "Anywhere", keys: ["mod+o"] },
   { id: "next-needs", label: "Next session that needs you", group: "Anywhere", keys: ["mod+alt+down"] },
+  // ⌥⌘E: ⌥⌘D is macOS's own (Dock hiding), ⌘⇧D is Changes; E is the Design surface's letter too.
+  { id: "face", label: "Switch between Liner Code and Liner Design", group: "Anywhere", keys: ["mod+alt+e"] },
   // T3 Code's workspace areas (docs/user/keyboard-focus.md): the sidebar, the thread, the composer, the panel.
   { id: "focus.next", label: "Move to the next area: sidebar, thread, composer, panel", group: "Anywhere", keys: ["f6"] },
   { id: "focus.prev", label: "Move to the area before", group: "Anywhere", keys: ["shift+f6"] },

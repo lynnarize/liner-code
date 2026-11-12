@@ -405,6 +405,14 @@ async function listModels(env: NodeJS.ProcessEnv, scratch: string): Promise<Mode
 const TASK_TOOLS = new Set(["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]);
 
 const MODE: Record<Access, PermissionMode> ={ read: "plan", ask: "default", edits: "acceptEdits", auto: "auto", review: "acceptEdits", full: "acceptEdits" };
+/**
+  The permission mode for an access level. Auto needs Claude Code's safety check, which runs only with Anthropic's own models:
+  through another maker's API (noAuto) every call would be refused, so Auto runs as Edits on its own there (acceptEdits,
+  with Liner Code's own answers: commands ask). The session keeps its level; another model gets Auto again.
+*/
+export const modeOf = (access: Access, noAuto?: boolean): PermissionMode => (access === "auto" && noAuto ? "acceptEdits" : MODE[access]);
+/** What Claude Code says when its Auto can't run here: in a notice, or as each refused call's result. */
+const NO_AUTO = /Auto mode (?:can't|cannot|is unavailable|isn't available)/i;
 /** A side chat reads and answers: editing, and plan mode's way in and out, stay with the session. */
 const SIDE_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
 /** Just a model, for an app (plain): every built-in that reaches this Mac, denied by rule as well as left out. */
@@ -646,6 +654,8 @@ class ClaudeSession implements ProviderSession {
   /** Whether this turn showed any answer text, so a result whose words never came another way still shows them. */
   private said = false;
   private access: Access;
+  /** Auto runs as Edits on its own here: an API endpoint's said so when it opened, or Claude Code said its check can't run. */
+  private noAuto: boolean;
   private o: OpenOptions;
   private path: string | null;
   private limited = false;
@@ -722,6 +732,7 @@ class ClaudeSession implements ProviderSession {
   constructor(o: OpenOptions) {
     this.o = o;
     this.access = o.access;
+    this.noAuto = Boolean(o.noAuto);
     this.path = which("claude", o.env);
     this.uncounted = o.resume;
     for (const dir of o.dirs ?? []) this.attached.add(dir);
@@ -743,7 +754,7 @@ class ClaudeSession implements ProviderSession {
       // Ultracode: standing multi-agent workflows on top of extra high effort.
       settings: o.effort === "ultracode" ? { ultracode: true } : undefined,
       thinking: { type: "adaptive", display: "summarized" },
-      permissionMode: o.side ? "default" : MODE[this.access],
+      permissionMode: o.side ? "default" : modeOf(this.access, this.noAuto),
       // A sidekick sends no agents of its own: the lead waits on it, and nobody would see theirs. Workflow runs a script of agents
       // (Claude Code 2.1.322 offers it beside Agent), so it goes too.
       disallowedTools: o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : undefined,
@@ -768,7 +779,7 @@ class ClaudeSession implements ProviderSession {
         // Your own ask rule wants a person's answer, whatever would answer for you here (the SDK says so of
         // hosts that approve by themselves; T3 Code: ClaudeAdapterV2.ts, claudeApprovalPresentation).
         const forced = await this.ruleCaught(name, input, ask);
-        // Liner Code's own tools only reach this session's Browser, the Simulator and its timeline.
+        // Liner Code's own tools are allowed here without a card. Most only reach this session's Browser, the Simulator, its timeline, or read Liner Design's canvas. Those that write (design_frame, design_node with html, design_built) only write inside .liner/designs/ of this folder, on a canvas the person is watching, with a copy kept each turn to go back to; the engine refuses them in a session that only reads (Read only, a side chat: plan mode and Codex's read-only sandbox are how those run), whatever the tool. design_picture, which spends money, asks on its own card.
         if (name.startsWith("mcp__liner__") && !forced && handedOver(mcpServer?.source)) return { behavior: "allow", updatedInput: input };
         // The agent asks you to choose: shown as a question card, answered in its input.
         if (name === "AskUserQuestion" && Array.isArray(input.questions)) {
@@ -789,7 +800,7 @@ class ClaudeSession implements ProviderSession {
           const answer = await sink.propose(title, plan, signal).catch((): { approve: boolean; note?: string; plan?: string } => ({ approve: false }));
           if (!answer.approve) return { behavior: "deny", message: answer.note ? `Change the plan: ${answer.note}` : "The user didn't approve the plan. Ask what to change." };
           this.access = "auto";
-          void this.q?.setPermissionMode(MODE.auto).catch(() => {});
+          void this.q?.setPermissionMode(modeOf("auto", this.noAuto)).catch(() => {});
           // The plan as you left it: you may have edited its steps before approving.
           return { behavior: "allow", updatedInput: { ...input, plan: answer.plan ?? input.plan } };
         }
@@ -822,7 +833,8 @@ class ClaudeSession implements ProviderSession {
           },
           signal,
         );
-        return answer.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: answer.reason ? `The user said no, and asks instead: ${answer.reason}` : "The user said no to this step." };
+        // Refused by the level with no card (Read only): its own sentence, as it is. (answer.level)
+        return answer.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: answer.level && answer.reason ? answer.reason : answer.reason ? `The user said no, and asks instead: ${answer.reason}` : "The user said no to this step." };
       },
       onElicitation: (request, { signal }) => this.elicit(request, signal),
       ...plain,
@@ -1209,6 +1221,7 @@ class ClaudeSession implements ProviderSession {
         // Its output is all here now: the file it was read from as it ran is done with.
         this.untail(b.tool_use_id);
         const out = typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((c) => (c.type === "text" ? c.text : `[${c.type}]`)).join("\n") : "";
+        if (b.is_error && NO_AUTO.test(out)) this.autoGone(sink);
         const { title, path } = titleOf(call.name, call.input, this.o.cwd);
         // An agent's call says what the agent sent back, or that it went on in the background.
         if (!this.returned(b.tool_use_id, results.length === 1 ? m.tool_use_result : undefined, out, Boolean(b.is_error)))
@@ -1357,6 +1370,7 @@ class ClaudeSession implements ProviderSession {
         return;
       }
       case "informational":
+        if (NO_AUTO.test(m.content) && this.autoGone(sink)) return;
         if (m.level !== "info") sink.notice(m.content);
         return;
       case "model_refusal_fallback":
@@ -1807,6 +1821,25 @@ class ClaudeSession implements ProviderSession {
     return this.owed;
   }
 
+  /**
+    Claude Code said its Auto can't run in this session (its safety check runs only with Anthropic, and this one goes
+    elsewhere: someone's own ANTHROPIC_BASE_URL, say), so it refuses every call. The session goes on as Edits on its own,
+    said once. False when it isn't at Auto, or already went.
+  */
+  private autoGone(sink: TurnSink) {
+    if (this.access !== "auto" || this.noAuto) return false;
+    this.noAuto = true;
+    void this.q?.setPermissionMode(modeOf("auto", true)).catch(() => {});
+    sink.notice("Auto can't run in this session: the safety check it relies on only runs with Anthropic's own models, and this one goes through another service. So it goes on as Edits on its own: it edits files by itself and asks before commands. Send again what was refused.");
+    return true;
+  }
+
+  /** Mid-turn: Claude Code takes a new permission mode in place, its turn under way too (setPermissionMode); its refusal stops the turn. */
+  async setAccess(access: Access) {
+    if (access === this.access) return true;
+    return this.update({ model: this.o.model, effort: this.o.effort, access }).catch(() => false);
+  }
+
   async update(o: Pick<OpenOptions, "model" | "effort" | "access">) {
     const q = this.q;
     this.owed = false;
@@ -1831,7 +1864,7 @@ class ClaudeSession implements ProviderSession {
         }
       }
       if (o.model !== this.o.model) await q.setModel(o.model || undefined);
-      if (o.access !== this.access) await q.setPermissionMode(MODE[o.access]);
+      if (o.access !== this.access) await q.setPermissionMode(modeOf(o.access, this.noAuto));
     } catch {
       // Claude Code refused (auto mode isn't there for this account or model, say). Reopened with it, the turn in hand goes on.
       return false;

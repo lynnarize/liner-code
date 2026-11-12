@@ -7,14 +7,67 @@
   click or type in it. Only ports on this machine, only on its loopback (127.0.0.1, and ::1 for
   localhost), and only requests addressed to the proxy itself. A page that needs no dev server (an index.html with its scripts) is served
   from the session's folder the same way, probe and all.
+
+  A live frame of Liner Design's canvas is the same proxied page with Liner Design's frame agent
+  (contracts/src/frame-agent.js) in it too, so it speaks the canvas's bridge. Only a request that
+  carries the frame's marker gets it: ?__liner_frame=1 on the frame's address (taken off before the
+  dev server sees it), the header x-liner-frame: 1, or a page reached from a marked one (its Referer
+  has the marker). The Browser panel never sends it, so its pages are as they were.
 */
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server } from "node:http";
 import { connect } from "node:net";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { DESIGN_FRAME_STYLE } from "../../contracts/src/index.ts";
+import { COMPUTED, DESIGN_FRAME_STYLE } from "../../contracts/src/index.ts";
+import { FRAME_AGENT } from "./canvas.ts";
 
 const PROBE_PATH = "/__liner/probe.js";
+const FRAME_AGENT_PATH = "/__liner/frame-agent.js";
+/** The query a live frame's address carries (FRAME_MARK=1), for its page to get the frame agent. */
+export const FRAME_MARK = "__liner_frame";
+
+/** A request from a live frame on the canvas: the marker in its address, its header, or the address of the page it came from. */
+export function fromFrame(req: Pick<IncomingMessage, "url" | "headers">) {
+  if (req.headers["x-liner-frame"] === "1") return true;
+  const marked = (u: string | undefined) => {
+    try {
+      return new URL(u ?? "/", "http://x").searchParams.get(FRAME_MARK) === "1";
+    } catch {
+      return false;
+    }
+  };
+  return marked(req.url) || marked(typeof req.headers.referer === "string" ? req.headers.referer : undefined);
+}
+
+/**
+  The address without the frame's marker, as the dev server is asked for it: only the marker's own
+  part of the query is cut out of the raw string, every other byte stays as it came (x=1;y=2, a bare
+  ?flag, ~, %20), since re-serialising would ask the dev server something else.
+*/
+export function unmarked(url: string) {
+  const q = url.indexOf("?");
+  if (q < 0 || !url.includes(FRAME_MARK, q)) return url;
+  const h = url.indexOf("#", q);
+  const query = url.slice(q + 1, h < 0 ? undefined : h);
+  const kept = query.split("&").filter((p) => p !== FRAME_MARK && !p.startsWith(`${FRAME_MARK}=`));
+  return `${url.slice(0, q)}${kept.length ? `?${kept.join("&")}` : ""}${h < 0 ? "" : url.slice(h)}`;
+}
+
+/** The frame agent, read from disk each time: it's one file the app and the engine share. */
+const frameAgent = () => {
+  try {
+    return readFileSync(FRAME_AGENT, "utf8");
+  } catch {
+    return "";
+  }
+};
+
+/**
+  A live frame's agent, as one inline <script data-liner-agent> tag that starts by setting the
+  computed properties it reads (contracts' COMPUTED), as a drawn frame's tag does (Frame.tsx), so
+  the list lives in one place. A "</script" in its text can't end the tag early.
+*/
+const agentTag = () => `<script data-liner-agent>window.__linerComputed=${JSON.stringify(COMPUTED)};${frameAgent().replace(/<\/script/gi, "<\\/script")}</script>`;
 
 /**
   A request for the proxy itself. A web page that points a name of its own at 127.0.0.1 (DNS
@@ -162,10 +215,13 @@ export class Proxies {
         res.writeHead(200, { "content-type": "text/javascript", "cache-control": "no-store" }).end(PROBE);
         return;
       }
-      const headers = { ...req.headers, host: `localhost:${target}`, "accept-encoding": "identity" };
+      if (req.url === FRAME_AGENT_PATH) return void res.writeHead(200, { "content-type": "text/javascript", "cache-control": "no-store" }).end(frameAgent());
+      const frame = fromFrame(req);
+      const headers: import("node:http").OutgoingHttpHeaders = { ...req.headers, host: `localhost:${target}`, "accept-encoding": "identity" };
       if (fromItself(req)) delete headers.origin;
       delete headers.referer;
-      const up = request({ host: "localhost", port: target, method: req.method, path: req.url, headers }, (r) => this.answer(r, res, target, own()));
+      delete headers["x-liner-frame"];
+      const up = request({ host: "localhost", port: target, method: req.method, path: frame ? unmarked(req.url ?? "/") : req.url, headers }, (r) => this.answer(r, res, target, own(), frame));
       up.on("error", () => {
         // Partway through an answer, a page of ours would land in the middle of it.
         if (res.headersSent) return void res.destroy();
@@ -205,7 +261,7 @@ export class Proxies {
     return address;
   }
 
-  private answer(r: IncomingMessage, res: import("node:http").ServerResponse, target: number, own: string) {
+  private answer(r: IncomingMessage, res: import("node:http").ServerResponse, target: number, own: string, frame = false) {
     // The dev server died partway: without this the page's request waits for an end that never comes.
     r.once("close", () => void (r.complete || res.destroy()));
     const headers = { ...r.headers };
@@ -223,7 +279,8 @@ export class Proxies {
     const chunks: Buffer[] = [];
     r.on("data", (c: Buffer) => chunks.push(c));
     r.on("end", () => {
-      const body = withProbe(Buffer.concat(chunks).toString("utf8"));
+      // A live frame's page gets the frame agent after the probe, tagged data-liner-agent (the agent leaves its own tag out of what it serialises); the Browser's gets the probe alone.
+      const body = withProbe(Buffer.concat(chunks).toString("utf8"), frame ? agentTag() : "");
       delete headers["content-length"];
       delete headers["content-encoding"];
       res.writeHead(r.statusCode ?? 200, headers);

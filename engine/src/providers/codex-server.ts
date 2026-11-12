@@ -13,7 +13,8 @@
 import { existsSync } from "node:fs";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Access, PlanEntry, Question } from "../../../contracts/src/index.ts";
-import { closesOnExit, jsonLines, killTree, spawn, which, withCodexPath } from "../exec.ts";
+import { rank } from "../../../contracts/src/index.ts";
+import { closesOnExit, jsonLines, killTree, marking, spawn, THREAD_ENV, threadMark, which, withCodexPath } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
@@ -114,9 +115,13 @@ export async function codexAsk<T>(env: NodeJS.ProcessEnv, cwd: string, method: s
 */
 export function codexMcp(o: Pick<OpenOptions, "mcp">, connections: Connection[] = []): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  // Its tools approved by themselves: they only reach this session's surfaces, and under a policy of never (Read only), Codex
-  // otherwise refuses every MCP call ("MCP tool call requires approval, but approval policy is never"), the sidekick's too.
-  if (o.mcp) Object.assign(out, { "mcp_servers.liner.command": o.mcp.command, "mcp_servers.liner.args": o.mcp.args, "mcp_servers.liner.env": o.mcp.env, "mcp_servers.liner.tool_timeout_sec": LINER_WAIT_SEC, "mcp_servers.liner.default_tools_approval_mode": "approve" });
+  // Its tools approved by themselves, and under a policy of never (Read only) Codex otherwise refuses every MCP call ("MCP tool
+  // call requires approval, but approval policy is never"), the sidekick's too. Most only reach this session's surfaces; Liner
+  // Design's that write only write inside .liner/designs/ of this folder, on a canvas the person watches, with a copy kept each
+  // turn, and the engine refuses them in a session that only reads. design_picture asks on its own card (claude.ts canUseTool).
+  // In the model's first tool list, not behind Codex's tool_search: Codex 0.159 and later defer every MCP tool for an OpenAI
+  // model unless the server omits them from the "deferred" surface (an older Codex ignores the key and keeps deferring).
+  if (o.mcp) Object.assign(out, { "mcp_servers.liner.command": o.mcp.command, "mcp_servers.liner.args": o.mcp.args, "mcp_servers.liner.env": o.mcp.env, "mcp_servers.liner.tool_timeout_sec": LINER_WAIT_SEC, "mcp_servers.liner.default_tools_approval_mode": "approve", "mcp_servers.liner.omit_tools_from": ["deferred"] });
   // `liner` is ours, and its tools go without a card: a connection of that name is any other server (as claudeMcp has it).
   for (const c of connections) {
     const at = `mcp_servers.${c.name === "liner" ? "liner-addon" : c.name}`;
@@ -163,7 +168,15 @@ export class CodexServer {
     const bin = which("codex", this.env);
     if (!bin) return Promise.reject(new Error("Codex isn't installed."));
     const args = ["app-server", ...Object.entries(this.config).flatMap(([k, v]) => ["-c", `${k}=${toml(v)}`])];
-    const child = spawn(bin, args, { cwd: this.cwd, env: withCodexPath(bin, this.env), stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    // Its session's marker, for the Browser to know a dev server Codex starts as the session's (surfaces.ts).
+    const thread = this.env[THREAD_ENV];
+    const { stdio, done } = marking(["pipe", "pipe", "pipe"], thread ? [threadMark(thread)] : []);
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(bin, args, { cwd: this.cwd, env: withCodexPath(bin, this.env), stdio: stdio as ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    } finally {
+      done();
+    }
     this.child = child;
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d: string) => (this.stderr = (this.stderr + d).slice(-4000)));
@@ -512,6 +525,16 @@ export class CodexServerSession implements ProviderSession {
     // Model, effort and access go with each turn, so they change in place.
     Object.assign(this.o, o);
     return true;
+  }
+
+  /**
+    Mid-turn: the sandbox and approval policy went with the turn as it started (turn/start), so a turn under way can't be held
+    to a lower level, and is stopped; a higher one is taken, Liner Code's own answers going by it from now on.
+  */
+  async setAccess(access: Access) {
+    const lower = rank(access) < rank(this.o.access);
+    this.o.access = access;
+    return lower ? "Codex runs this turn in the sandbox it started with" : true;
   }
 
   close() {

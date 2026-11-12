@@ -130,7 +130,7 @@ export class Offers {
   offer(threadId: string, args: Record<string, unknown>): string {
     const store = this.h.store;
     if (store.settings.addonOffers === "never") throw new Error("The person turned this off: in Settings › Add-ons, agents may never offer add-ons. Answer as you would without one.");
-    if (this.h.readOnly(threadId)) throw new Error("This session only reads, so it can't offer to make an app. Say what you'd make instead.");
+    if (this.h.readOnly(threadId)) throw new Error("This session is at Read only now (or it's a side chat), so it can't offer to make an app. Say what you'd make instead.");
     const name = String(args.name ?? "").trim();
     const brief = String(args.brief ?? "").trim();
     const place = String(args.place ?? "");

@@ -22,7 +22,7 @@ import { pairOf } from "../Crew";
 import { attach, frames, onReady, reloading } from "./bridge";
 import { srcDocOf } from "./Frame";
 import { leanNow } from "./lean";
-import { design, getDesign, isGone, selectionOf, subscribeDesign, type DesignState } from "./store";
+import { blankHtml, design, getDesign, isGone, selectionOf, subscribeDesign, type DesignState } from "./store";
 
 export type Kind = CheckFinding["kind"];
 export const KIND_NAME: Record<Kind, string> = { fit: "Fit", contrast: "Contrast", touch: "Touch", name: "Name" };
@@ -251,7 +251,7 @@ async function checkFrame(f: DesignFrame): Promise<FrameChecks> {
   const started = performance.now();
   // The page as the file holds it now (the store's copy can trail an edit the engine made).
   const html = s.mock || !s.cwd || !s.file || f.kind === "live" ? s.html[f.id] : ((await rpc("canvas.frame.read", { cwd: s.cwd, file: s.file.id, frame: f.id }).catch(() => undefined))?.html ?? s.html[f.id]);
-  const skipped = notAScreen(f, html);
+  const skipped = notAScreen(f, html) ?? (f.kind === "drawn" && blankHtml(html) ? "nothing in it yet" : undefined);
   if (skipped) return { frame: f.id, findings: [], passed: [], ran: Date.now(), ms: 0, skipped };
   const lean = leanNow()?.tokens ?? (await leanOf(s.cwd, s.file?.id));
   try {
@@ -470,10 +470,13 @@ const frameName = (id: string) => getDesign().file?.frames.find((f) => f.id === 
 export async function ask(text: string, frameIds: string[]) {
   const s = getDesign();
   if (s.scrub !== undefined) return void toast("An old turn is shown", { description: "Go back to now before asking for a fix." });
-  if (s.mock || !s.threadId || !s.file) return void toast("Fixes go to the session's agent", { description: "The sample canvas has no session to ask." });
+  if (s.mock || !s.file) return void toast("Fixes go to the session's agent", { description: "The sample canvas has no session to ask." });
   const sel = selectionOf({ ...s, sel: frameIds.map((frame) => ({ frame })), node: undefined });
   try {
-    await rpc("thread.send", { id: s.threadId, text, mode: "queue", design: { file: s.file.id, ...(sel ? { sel } : {}) } });
+    // A design with no session yet gets it here, begun from this design.
+    const id = await design.session();
+    if (!id) return;
+    await rpc("thread.send", { id, text, mode: "queue", design: { file: s.file.id, ...(sel ? { sel } : {}) } });
     toast(`Asked ${fixerName()}`, { description: frameIds.length > 1 ? `${frameIds.length} frames` : frameName(frameIds[0]), duration: 2500 });
   } catch (e) {
     toast.error((e as Error).message);

@@ -164,7 +164,7 @@
 }
 .ld-pic-who {
   display: grid;
-  grid-template-columns: 10px 70px minmax(0, 1fr) auto;
+  grid-template-columns: 10px 84px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   height: 34px;
@@ -192,4 +192,24 @@
 }
 .ld-pic-pop .ld-note {
   padding: 8px 10px 0;
+}
+/* Adding a model is a quiet link, never a prompt. */
+.ld-pic-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 6px 2px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.ld-pic-add:hover {
+  background: var(--l-wash-2);
 }

@@ -9,7 +9,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "design_picture",
     description:
-      "Asks the picture model the person set up in Settings for a picture (a photograph, an illustration, a texture) and saves it under the design file's assets/. With into, it goes straight into that element of a frame. The design file says whether the person is asked first; this waits for their answer. Returns the file's path, from the design's folder, to use in a frame's HTML.",
+      "Asks for an AI picture, one a model generates from words (a photograph, an illustration, a texture), from the AI pictures model the person set up, and saves it under the design file's assets/. AI pictures are optional: with none set up, or off for the design file, it makes nothing and says so, and you leave a labelled empty box where the picture goes. With into, it goes straight into that element of a frame. The design file says whether the person is asked first; this waits for their answer. Returns the file's path, from the design's folder, to use in a frame's HTML.",
     inputSchema: {
       type: "object",
       properties: {

@@ -2,7 +2,7 @@
   What the screens work out from the engine's state: who an agent is, what a model is called,
   which bucket a session sits in, and the one line under its title.
 */
-import type { Access, AgentProfile, EffortInfo, FileChange, Item, ModelInfo, ProviderInfo, Thread } from "@contracts";
+import type { Access, AgentProfile, EffortInfo, FileChange, Item, ModelInfo, Project, ProviderInfo, Thread } from "@contracts";
 import { familyOf, splitModel } from "@contracts";
 import type { MarkKind } from "./icons";
 
@@ -353,3 +353,10 @@ export function checkpointsOf(items: Item[]) {
 export const sumLines = (files: { added: number; removed: number }[]) => files.reduce((s, f) => ({ added: s.added + f.added, removed: s.removed + f.removed }), { added: 0, removed: 0 });
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** The Code face's projects: every one but a design on its own (Project.kind "design"), which lives in Liner Design only. */
+export const codeProjects = (ps: Project[]) => ps.filter((p) => p.kind !== "design");
+/** Where a session begun from a design is, in words: "A design, on its own" or "A design in Sample project". */
+export const designWhere = (t: Thread, ps: Project[]) => {
+  const p = ps.find((x) => x.id === t.projectId);
+  return !p || p.kind === "design" ? "A design, on its own" : `A design in ${p.name}`;
+};

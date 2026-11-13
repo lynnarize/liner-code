@@ -17,7 +17,7 @@ import { DeskPresence } from "./Desk";
 import { DeskStage } from "./DeskStage";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { ago } from "./model";
+import { ago, codeProjects } from "./model";
 import { PanelHead, Pop, Row, Sep, Kbd } from "./ui";
 import { ProjectChooser } from "./Projects";
 import { ModePick } from "./Modes";
@@ -27,7 +27,9 @@ import * as os from "./os";
 type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (threadId: string) => void; onCompare: (compareId: string) => void; sidebar: boolean; onSidebar: () => void; onNewAgent: () => void; startMode?: SessionMode; startPrompt?: { text: string; at: number } };
 
 export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSidebar, onNewAgent, startMode, startPrompt }: Props) {
-  const projects = useEngine((s) => s.projects);
+  // A design on its own (Project.kind "design") is never a project Home starts a session in.
+  const all = useEngine((s) => s.projects);
+  const projects = useMemo(() => codeProjects(all), [all]);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const engineSettings = useEngine((s) => s.settings);

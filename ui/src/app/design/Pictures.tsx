@@ -1,11 +1,11 @@
 /*
   The picture model: a third role beside the lead and its sidekick. The lead designs; when a frame
   needs a picture it asks the picture model through Liner's design_picture tool, the way it asks
-  its sidekick, and only when one is set up (Settings › Models › Pictures, an endpoint that speaks
+  its sidekick, and only when one is set up (Settings › Models › AI pictures, an endpoint that speaks
   OpenAI's Images API) and you allow it (the design file's `pictures.ask`: before the first, before
   each, or never). You can also ask it yourself from a picture's Style tab.
 
-  Here: the Settings section, the dock's "Pair + pictures" chip with who does what, a picture
+  Here: the Settings section, the dock's "AI pictures" chip with who does what, a picture
   layer's Made by / Asked for at the top of Style (who made it, what it cost and took when the
   model said, the words, Make again, 3 more), the shimmer and the maker's tag on a picture being
   made, the dock's row while one is, and the rail's Picture tool (ask the model, a file, a picture
@@ -125,7 +125,7 @@ function fromTimeline(items: Item[], path: string): Made | undefined {
       // no input to read
     }
     const m = /by (.+?) in ([\d.]+) s(?:, \$([\d.]+))?/.exec(it.output);
-    return { prompt, model: m?.[1] ?? "the picture model", ms: m ? Number(m[2]) * 1000 : 0, cost: m?.[3] ? Number(m[3]) : undefined, asker: "lead" };
+    return { prompt, model: m?.[1] ?? "the model for AI pictures", ms: m ? Number(m[2]) * 1000 : 0, cost: m?.[3] ? Number(m[3]) : undefined, asker: "lead" };
   }
   return undefined;
 }
@@ -135,14 +135,17 @@ async function makeFor(frame: string, node: { id: string; tag: string; rect: Rec
   const s = getDesign();
   if (shownOld()) return;
   const e = modelFor(s.file, getState().settings.pictures ?? []);
-  if (!e) return void toast("No one makes pictures for this design", { description: "Pick a picture model in the dock's Pictures menu, or add one in Settings › Models › Pictures." });
+  if (!e) return void toast("No AI pictures for this design", { description: "Pick a model in the dock's AI pictures menu, or add one in Settings › Models › AI pictures. Your own image files always work." });
   if (!prompt.trim()) return void toast("Say what the picture shows first");
-  if (s.mock || !s.cwd || !s.file || !s.threadId) return void toast("Pictures need a session", { description: "The sample canvas can't ask a picture model." });
+  if (s.mock || !s.cwd || !s.file) return void toast("AI pictures need a design file", { description: "The sample canvas can't ask a model for one." });
+  // A design with no session yet gets its session here, as its first ask would.
+  const threadId = s.threadId ?? (await design.session().catch(() => undefined));
+  if (!threadId) return void toast("AI pictures need the design's session", { description: "Say something in the dock first." });
   const key = `you:${frame}:${node.id}:${Date.now()}`;
   making = { ...making, [key]: { key, frame, node: node.id, rect: node.rect, maker: e.label || e.model, asker: "you", done: 0, count } };
   ping();
   try {
-    const r = await rpc("pictures.make", { threadId: s.threadId, cwd: s.cwd, file: s.file.id, prompt: prompt.trim(), size: { w: Math.max(16, Math.round(node.rect.w)), h: Math.max(16, Math.round(node.rect.h)) }, count, model: e.id, ...(lean ? {} : { lean: false }) });
+    const r = await rpc("pictures.make", { threadId, cwd: s.cwd, file: s.file.id, prompt: prompt.trim(), size: { w: Math.max(16, Math.round(node.rect.w)), h: Math.max(16, Math.round(node.rect.h)) }, count, model: e.id, ...(lean ? {} : { lean: false }) });
     const each = r.cost !== undefined ? r.cost / r.paths.length : undefined;
     for (const p of r.paths) made[p] = { prompt: prompt.trim(), model: e.label || e.model, ms: r.ms, cost: each, asker: "you", lean };
     if (count === 1) await placeIn(frame, node, r.paths[0], e.label || e.model, prompt.trim(), lean);
@@ -247,7 +250,7 @@ function MadeBy({ t }: { t: Target }) {
   const [picking, setPicking] = useState(false);
   useEffect(() => setWords(asked), [asked, t.node.id]);
   useEffect(() => {
-    // The rail's "Ask the picture model" puts the caret here.
+    // The rail's "Ask for an AI picture" puts the caret here.
     if (want === "ask" && !asked) requestAnimationFrame(() => field.current?.focus());
     if (want === "project") setPicking(true);
     want = undefined;
@@ -281,7 +284,7 @@ function MadeBy({ t }: { t: Target }) {
       </Section>
       <Section id="asked-for" title="Asked for" plain>
         {editing || !asked ? (
-          <textarea ref={field} className="lc-input ld-pic-ask" rows={4} value={words} placeholder={model ? "What the picture shows, its light and its style" : "No one makes pictures for this design"} onChange={(e) => setWords(e.target.value)} onBlur={() => setEditing(false)} onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && model && void makeFor(t.frame, node, words, 1, lean)} />
+          <textarea ref={field} className="lc-input ld-pic-ask" rows={4} value={words} placeholder={model ? "What the picture shows, its light and its style" : "No model for AI pictures yet"} onChange={(e) => setWords(e.target.value)} onBlur={() => setEditing(false)} onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && model && void makeFor(t.frame, node, words, 1, lean)} />
         ) : (
           <button type="button" className="ld-pic-words l-focus" title="Change the words" onClick={() => (setEditing(true), requestAnimationFrame(() => field.current?.focus()))}>
             {words}
@@ -299,7 +302,7 @@ function MadeBy({ t }: { t: Target }) {
             {busy && <span className="ld-ck-q l-shimmer">Making</span>}
           </div>
         ) : (
-          <p className="ld-note ld-pic-note">No one makes pictures for this design. The dock's Pictures menu picks a model.</p>
+          <p className="ld-note ld-pic-note">No model makes AI pictures for this design. The dock's AI pictures menu picks one; your own image files always work.</p>
         )}
         {alt && (
           <div className="ld-pic-alt">
@@ -361,11 +364,11 @@ export function PictureTool() {
     <Pop label="Picture: into what's picked" side="left" width={260} triggerClass="lc-tb" triggerAttrs={{ title: "Picture: into what's picked" }} trigger={<D.picture />} menu>
       {(close) => (
         <>
-          {model && <Row title="Ask the picture model" note={model.label || model.model} icon={<I.sparkle size={14} />} onPick={() => (close(), (want = "ask"), void add(() => {}))} />}
+          {model && <Row title="Ask for an AI picture" note={model.label || model.model} icon={<I.sparkle size={14} />} onPick={() => (close(), (want = "ask"), void add(() => {}))} />}
           <Row title="From a file" note="On this Mac" icon={<I.file size={14} />} onPick={() => (close(), void add((f, n) => fromFile(f, n)))} />
           <Row title="From the project" note="A picture it already has" icon={<I.folder size={14} />} onPick={() => (close(), (want = "project"), void add(() => {}))} />
           {!models.length && (
-            <Row title="Add a picture model" note="Settings › Models › Pictures" icon={<I.plus size={14} />} onPick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" })))} />
+            <Row title="Add a model for AI pictures" note="Settings › Models › AI pictures" icon={<I.plus size={14} />} onPick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" })))} />
           )}
         </>
       )}
@@ -388,9 +391,9 @@ function useAgentMaking(threadId?: string) {
     try {
       const into = (JSON.parse(it.input ?? "{}") as { into?: { frame?: string; id?: string } }).into;
       const f = into?.frame ? file?.frames.find((x) => x.id === into.frame || x.name.toLowerCase() === String(into.frame).toLowerCase()) : undefined;
-      return [{ key: it.id, frame: f?.id, node: into?.id, maker: models[0]?.label || models[0]?.model || "The picture model" }];
+      return [{ key: it.id, frame: f?.id, node: into?.id, maker: models[0]?.label || models[0]?.model || "The model for AI pictures" }];
     } catch {
-      return [{ key: it.id, frame: undefined, node: undefined, maker: models[0]?.label || "The picture model" }];
+      return [{ key: it.id, frame: undefined, node: undefined, maker: models[0]?.label || "The model for AI pictures" }];
     }
   });
   const want = list.map((x) => `${x.frame}:${x.node}`).join(",");
@@ -450,20 +453,23 @@ export function PicturesRow() {
 
 // ---------- The dock's chip: who does what
 
-export function PicturesChip({ threadId }: { threadId: string }) {
+/** `lead`: who will lead, for a design with no session yet. `home`: Design Home's, before there's a design file to pick for. */
+export function PicturesChip({ threadId, lead, home }: { threadId?: string; lead?: string; home?: boolean }) {
   const models = usePictureModels();
   const file = useDesign((s) => s.file);
   const cwd = useDesign((s) => s.cwd);
   const mock = useDesign((s) => s.mock);
   const thread = useEngine((s) => s.threads.find((t) => t.id === threadId));
   useEngine((s) => s.providers);
-  const who = whoOf(threadId);
+  const said = whoOf(threadId);
+  const who = threadId || !lead ? said : { ...said, lead };
   const [, redraw] = useState(0);
   // The model this file will really use: its own pick, else Settings' first; null when it's No one.
-  const on = modelFor(file, models);
+  const on = modelFor(home ? undefined : file, models);
   const ask = file?.pictures?.ask ?? "first";
-  const pair = Boolean(thread?.sidekick);
-  const name = on ? (pair ? "Pair + pictures" : "With pictures") : "No pictures";
+  void thread;
+  // "AI pictures": pictures a model makes from words. Optional: with none, the person's own files still go in.
+  const name = on ? `AI pictures: ${on.label || on.model}` : "No AI pictures";
   /** The design file's pictures, saved (canvas.save), and the canvas reads the file again. */
   const save = (pictures: NonNullable<DesignFile["pictures"]>) => {
     if (shownOld()) return;
@@ -476,7 +482,7 @@ export function PicturesChip({ threadId }: { threadId: string }) {
   const pick = (model: string | null) => save({ ask, model });
   const setAsk = (v: "first" | "always" | "never") => save({ ask: v, model: file?.pictures?.model });
   return (
-    <Pop label={`Who does what: ${name}`} side="top" width={360} triggerClass="lc-seg-b ld-pic-chip" trigger={<><span className="lc-chip-name">{name}</span><I.chevD size={11} /></>}>
+    <Pop label={`Who does what: ${name}`} side="top" width={360} triggerClass="lc-seg-b ld-pic-chip" trigger={<>{on && <span className="ld-pd" data-pic aria-hidden />}<span className="lc-chip-name">{name}</span><I.chevD size={11} /></>}>
       {() => (
         <div className="ld-pic-pop">
           <div className="ld-way-mh">Who does what</div>
@@ -496,17 +502,18 @@ export function PicturesChip({ threadId }: { threadId: string }) {
           )}
           <div className="ld-pic-who" data-on>
             <span className="ld-pd" data-pic aria-hidden />
-            <b>Pictures</b>
+            <b>AI pictures</b>
             <span className="ld-ell">{on ? on.label || on.model : "No one"}</span>
-            <small>{on ? `your ${host(on.url)} key` : "picture boxes stay empty"}</small>
+            <small>{on ? `your ${host(on.url)} key` : "optional"}</small>
           </div>
-          {models.length > 0 && (
-            <div role="group" aria-label="Pictures from">
-              <div className="ld-way-mh">Pictures for this design from</div>
+          <p className="ld-note ld-pic-note">This is only for pictures an AI makes from words. Your own image files always work: drop them on a frame or use the Picture tool.</p>
+          {models.length > 0 && !home && (
+            <div role="group" aria-label="AI pictures from">
+              <div className="ld-way-mh">AI pictures for this design from</div>
               {models.map((m) => (
                 <Row key={m.id} title={m.label || m.model} note={host(m.url)} on={on?.id === m.id} onPick={() => pick(m.id)} />
               ))}
-              <Row title="No one" note="picture boxes stay empty" on={!on} onPick={() => pick(null)} />
+              <Row title="No one" note="no AI pictures" on={!on} onPick={() => pick(null)} />
             </div>
           )}
           {on ? (
@@ -519,17 +526,15 @@ export function PicturesChip({ threadId }: { threadId: string }) {
                 <Segmented size="sm" full value={ask} onValueChange={(v) => setAsk(v as "first" | "always" | "never")} aria-label="Ask me" options={[{ value: "first", label: "Ask first" }, { value: "always", label: "Ask each time" }, { value: "never", label: "Don't ask" }]} />
               </div>
             </>
-          ) : models.length ? (
-            <p className="ld-note ld-pic-note">No one makes pictures for this design: {who.lead} leaves picture boxes empty and nothing is charged.</p>
           ) : (
             <>
-              <p className="ld-note ld-pic-note">{who.lead} designs but doesn't make pictures. Add a picture model and it can ask that one for them, the way it asks a sidekick; with none, picture boxes stay empty and nothing is charged.</p>
-              <div className="ld-pic-askw">
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" }))}>
-                  <I.plus size={12} />
-                  Add a picture model
+              <p className="ld-note ld-pic-note">With no one here, {who.lead} leaves a labelled empty box where it would have asked for a picture, and nothing is charged.</p>
+              {!models.length && (
+                <button type="button" className="ld-pic-add l-focus" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" }))}>
+                  <I.plus size={13} />
+                  Add a model for AI pictures
                 </button>
-              </div>
+              )}
             </>
           )}
         </div>
@@ -555,13 +560,13 @@ export function PicturesSettings({ Group, Field }: { Group: GroupT; Field: Field
   };
   return (
     <Group
-      title="Pictures"
-      note="A model that makes pictures, for Liner Design: the lead designs and asks it for the pictures a frame needs, as it asks a sidekick. Any endpoint that speaks OpenAI's Images API."
+      title="AI pictures"
+      note="Optional. A model that makes pictures from words, for Liner Design: the lead designs and asks it for the pictures a frame needs, as it asks a sidekick. Any endpoint that speaks OpenAI's Images API. Your own image files always work without one."
       end={
         !adding && (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setAdding(true)}>
             <I.plus size={12} />
-            Add a picture model
+            Add a model for AI pictures
           </button>
         )
       }
@@ -574,7 +579,7 @@ export function PicturesSettings({ Group, Field }: { Group: GroupT; Field: Field
           </button>
         </Field>
       ))}
-      {!adding && !list.length && <p className="lc-st-none lc-quiet">None yet. With none, Liner Design's picture boxes stay empty and nothing is charged.</p>}
+      {!adding && !list.length && <p className="lc-st-none lc-quiet">None yet. With none, the lead leaves a labelled empty box where it would have asked for a picture, and nothing is charged. Your own image files always work.</p>}
     </Group>
   );
 }
@@ -597,7 +602,7 @@ function PictureForm({ taken, onDone }: { taken: PictureEndpoint[]; onDone: () =
         await rpc("keys.set", { provider: pictureKey(id), key: key.trim() });
       }
       await rpc("settings.save", { pictures: [...taken, { id, label: label.trim() || model.trim(), url: url.trim(), model: model.trim() }] });
-      toast.success(`Added ${label.trim() || model.trim()}`, { description: "The lead can ask it for pictures in Liner Design." });
+      toast.success(`Added ${label.trim() || model.trim()}`, { description: "The lead can ask it for AI pictures in Liner Design." });
       onDone();
     } catch (e) {
       toast.error((e as Error).message);
@@ -624,14 +629,14 @@ function PictureForm({ taken, onDone }: { taken: PictureEndpoint[]; onDone: () =
           <input className="lc-input lc-mono" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Kept in the keychain" autoComplete="off" />
         </label>
       </div>
-      <p className="lc-quiet lc-st-form-n">{clash ? "There's already a picture model by that name." : "Liner asks <address>/images/generations. The key goes only in that request's header, never to an agent."}</p>
+      <p className="lc-quiet lc-st-form-n">{clash ? "There's already a model for AI pictures by that name." : "Liner asks <address>/images/generations. The key goes only in that request's header, never to an agent."}</p>
       <div className="lc-st-form-f">
         <span className="lc-grow" />
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onDone}>
           Cancel
         </button>
         <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!ok || busy} onClick={() => void add()}>
-          Add picture model
+          Add a model for AI pictures
         </button>
       </div>
     </div>

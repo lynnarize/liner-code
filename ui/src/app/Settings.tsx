@@ -25,7 +25,7 @@ import { Backdrop, ownChanged, useBackgroundUrl } from "./Backdrop";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
-import { ACCESS_LEVELS, accessOf, agentOf, ago, dollars, markOf, modelLabel, plural, providerLabel, since } from "./model";
+import { ACCESS_LEVELS, accessOf, agentOf, ago, codeProjects, dollars, markOf, modelLabel, plural, providerLabel, since } from "./model";
 import { appIcon, dayOf } from "./Addon";
 // Liner Design's picture model settings load when that page of Settings is shown.
 const PicturesSettings = lazy(() => import("./design/Pictures").then((m) => ({ default: m.PicturesSettings })));
@@ -59,7 +59,7 @@ export type SettingsPage = "general" | "appearance" | "notifications" | "keyboar
 
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
-  { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "How new sessions start, and what Enter does while an agent works.", words: "work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
+  { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, and what Enter does while an agent works.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
   { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, how much moves, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
@@ -554,6 +554,20 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
   const start = s.start ?? (two ? "pair" : "best");
   return (
     <>
+      <Group title="When Liner starts">
+        <Field title="Liner opens in" note="For someone who only builds front ends: the app starts in the Design tab, and the Code tab stays one press away.">
+          <Segmented
+            size="sm"
+            value={s.openIn ?? "code"}
+            onValueChange={(v) => save({ openIn: v as "code" | "design" })}
+            options={[
+              { value: "code", label: "Code" },
+              { value: "design", label: "Design" },
+            ]}
+            aria-label="Liner opens in"
+          />
+        </Field>
+      </Group>
       <Group title="New sessions" note="What Home starts with. Each session can still change it.">
         <Field title="What they start with" below>
           <RadioCards
@@ -2353,7 +2367,8 @@ function AddonKeys({ a }: { a: AddonInfo }) {
   key it names. The keys go to the keychain and the engine first, as on the install card.
 */
 export function AddByHand({ onDone }: { onDone: () => void }) {
-  const projects = useEngine((x) => x.projects);
+  // Designs on their own are Liner Design's: listed there, not here.
+  const projects = codeProjects(useEngine((x) => x.projects));
   const [text, setText] = useState("");
   const [project, setProject] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -2424,7 +2439,8 @@ export function AddByHand({ onDone }: { onDone: () => void }) {
 /* ---------------------------------- Projects ---------------------------------- */
 
 function Projects() {
-  const projects = useEngine((x) => x.projects);
+  // Designs on their own are Liner Design's: listed there, not here.
+  const projects = codeProjects(useEngine((x) => x.projects));
   const agents = useEngine((x) => x.agents);
   const threads = useEngine((x) => x.threads);
   const showDemo = useEngine((x) => x.settings.showDemo === true);

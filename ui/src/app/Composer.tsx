@@ -31,6 +31,7 @@ import { SideKeys } from "./TopBar";
 import { ContextMeter, Disc, LimitMeter, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 import { drawingOf, setFace } from "./face";
+import type { DockAsk } from "./Ask";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -76,6 +77,11 @@ type Props = {
     drawn (app.css reads that with :has, so a row coming or going needs no word from here).
   */
   top?: ReactNode;
+  /**
+    A session: the ask at the composer (Ask.tsx), which `top` shows. While it's up the box is
+    where you tell the agent what to do instead, and Enter and Esc answer it as askKey says.
+  */
+  ask?: DockAsk;
   /**
     Liner Design's dock (design/Dock.tsx) passes these. `chips`: what's selected on the canvas, in
     the input row before the text. `whoName`: the who chip's words in place of the model's (G's
@@ -245,7 +251,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, top, chips, stripStart, whoName, trayEnd, canvas, slashRows }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -328,6 +334,33 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       // Shut storage: Enter does this for as long as the window is open.
     }
   }, [mode]);
+
+  // The ask at the composer reads the box through this: its words are the reason a no carries.
+  // Words that were there before the ask came are a draft of yours, not a reason: they stay put.
+  const arrivedWith = useRef<{ id: string; text: string } | null>(null);
+  if (ask && arrivedWith.current?.id !== ask.it.id) arrivedWith.current = { id: ask.it.id, text };
+  // Every change to the box (a key, a paste, a message sent out of it) holds Enter back from the ask for a moment.
+  const changedAt = useRef(0);
+  const askNow = useRef(ask);
+  askNow.current = ask;
+  useEffect(() => {
+    changedAt.current = Date.now();
+    if (askNow.current) askNow.current.typedAt.current = changedAt.current;
+  }, [text]);
+  if (ask) {
+    ask.typedAt.current = Math.max(ask.typedAt.current, changedAt.current);
+    ask.box.current = {
+      text: () => text,
+      take: () => {
+        const t = text.trim();
+        if (!t || text === arrivedWith.current?.text) return undefined;
+        setText("");
+        setMention(null);
+        return t;
+      },
+      focus: () => field.current?.focus(),
+    };
+  }
 
   // The field grows with what you write, up to eight lines, then scrolls. It measures again when
   // its width changes, or a height taken while the column was narrow (the placeholder wrapping)
@@ -954,9 +987,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             onScroll={(e) => mirrorRef.current && (mirrorRef.current.scrollTop = e.currentTarget.scrollTop)}
             rows={variant === "home" ? 3 : 1}
             value={text}
-            placeholder={placeholder}
+            placeholder={ask ? (ask.mode === "back" ? `Tell ${ask.who} what to do instead` : `Or tell ${ask.who} what to do instead`) : placeholder}
             aria-label="Message"
             onChange={(e) => {
+              // The first key into an empty box while an ask is up starts sending it back: what you write is what to do instead.
+              if (ask?.mode === "choose" && !text && e.target.value) ask.setMode("back");
               onType(e.target.value, e.target.selectionStart);
               setStashOpen(false);
             }}
@@ -1022,6 +1057,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 stopEditing();
                 return;
               }
+              // An ask at the composer takes Enter and Esc as askKey says (ask-text.ts); else they do what they do below.
+              if (ask?.onKey(e)) return;
               if (is(e.nativeEvent, "stash")) {
                 e.preventDefault();
                 stash();

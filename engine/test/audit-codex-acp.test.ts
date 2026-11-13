@@ -1307,3 +1307,31 @@ test("registry: a version that climbs out of the agents folder deletes nothing",
   }
   assert.ok(existsSync(join(keep, "precious")));
 });
+
+/* What the agent says of its command, and why it came to you, as each tool's ask carries them (approval `says`, `why`). */
+
+test("acp: a command's own description is what the agent says it does, and a place outside the project is why it came to you", async () => {
+  const cards: ApprovalRequest[] = [];
+  const ask = (toolCall: object) => ({ method: "session/request_permission", params: { toolCall: { toolCallId: "c1", status: "pending", ...toolCall }, options: [{ optionId: "yes", kind: "allow_once" }, { optionId: "no", kind: "reject_once" }] } });
+  for (const toolCall of [{ kind: "execute", title: "npm run build", rawInput: { command: "npm run build", description: "  Build the site\nfor the preview " } }, { kind: "read", title: "Read /etc/hosts", locations: [{ path: "/etc/hosts" }], rawInput: {} }]) {
+    const { s } = acp(acpAgent(`if (m.method === "session/prompt") { global.p = m.id; send({ jsonrpc: "2.0", id: 900, ...${JSON.stringify(ask(toolCall))} }); continue; }
+  if (m.id === 900) { send({ id: global.p, result: { stopReason: "end_turn" } }); continue; }`));
+    const { r, sink } = recorder();
+    await s.turn("hi", sink, live());
+    s.close();
+    cards.push(...r.cards);
+  }
+  assert.equal(cards[0].says, "Build the site for the preview");
+  assert.equal(cards[0].why, undefined, "nothing on the tool's side says why: the runtime does");
+  assert.equal(cards[1].says, undefined, "only a command has the agent's words");
+  assert.deepEqual(cards[1].why, [{ kind: "outside", text: "it reaches /etc/hosts, outside the project" }]);
+});
+
+test("codex: its reason is what it says the command does, and a host it asks to reach is why it came to you", async () => {
+  const card = await codexCard({ method: "item/commandExecution/requestApproval", params: { itemId: "x1", command: "npm install", reason: "Install the dependencies", networkApprovalContext: { host: "registry.npmjs.org", protocol: "https" } } });
+  assert.equal(card.says, "Install the dependencies");
+  assert.deepEqual(card.why, [{ kind: "network", text: "it reaches registry.npmjs.org" }]);
+  assert.equal(card.rule, undefined, "more than the command: no rule");
+  const edit = await codexCard({ method: "item/fileChange/requestApproval", params: { itemId: "p1" } }, {}, startedPatch("/etc/hosts"));
+  assert.deepEqual(edit.why, [{ kind: "outside", text: "it changes /etc/hosts, outside the project" }]);
+});

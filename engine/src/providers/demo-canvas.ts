@@ -1,12 +1,14 @@
 /*
   The Demo agent on Liner Design's canvas. A message from the Design face carries the "## Design"
   note (lean.ts designNote); the Demo reads the ask under it and does what it says, with its own
-  file tools as any agent would, and only in its sample project (elsewhere it answers in words, as
-  demo.ts promises for every edit):
+  file tools as any agent would, and only in its sample project or in a design on its own made for
+  it (design.new's folder: OpenOptions.designOnItsOwn); elsewhere it answers in words, as demo.ts
+  promises for every edit:
 
   - the first ask draws Foreshore, the tide tables sample of the approved mockup: seven frames one
-    after another, into empty frames Design Home made where there are some, in two tidy rows, and
-    a DESIGN.md when the project has none;
+    after another, into empty frames Design Home made where there are some, in two tidy rows. It
+    follows the folder's lean when there is one; it writes a DESIGN.md only when the ask says to
+    (the lean is optional);
   - Build writes a small page per named frame under src/pages/, from the frame's own HTML, and
     records each with design_built; Update code writes the frame again into its file; Bring it into
     the frame takes the file's change back into the frame, keeping its data-l ids;
@@ -188,9 +190,9 @@ export async function drawTides(o: OpenOptions, text: string, sink: TurnSink, si
     await think(sink, `${t}-r`, "This session only reads, so I can't change the design.", signal);
     return say(sink, `${t}-a`, `I'd ${whatIdDo(ask)}, but this session only reads. Switch it to Edits and ask again.`, signal);
   }
-  if (!isSample(o.cwd)) {
-    await think(sink, `${t}-r`, "This isn't the Demo's sample project, so I won't write anything here.", signal);
-    return say(sink, `${t}-a`, `I'm the Demo, so I only draw and change files in my sample project (Sample project in the sidebar). Here I'd ${whatIdDo(ask)}.`, signal);
+  if (!isSample(o.cwd) && !o.designOnItsOwn) {
+    await think(sink, `${t}-r`, "This isn't the Demo's sample project or a design on its own, so I won't write anything here.", signal);
+    return say(sink, `${t}-a`, `I'm the Demo, so I only draw and change files in my sample project (Sample project in the sidebar) or in a design on its own. Here I'd ${whatIdDo(ask)}.`, signal);
   }
   const file = readIndex(o.cwd, slug);
   const drawn = Boolean(file) && TIDE_FRAMES.every((s) => file!.frames.some((f) => f.name === s.name));
@@ -201,7 +203,7 @@ export async function drawTides(o: OpenOptions, text: string, sink: TurnSink, si
   if (/^Draw (?:3 more ways|another way) of “/.test(ask)) return takes(c, ask, file);
   if (/^Fix (?:this check in|these \d* ?checks? on the canvas)/.test(ask)) return fix(c, ask, file);
   if (drawn && /\b(?:dark|night|light)\b/i.test(ask)) return light(c, text, ask, file!);
-  if (!drawn) return drawAll(c, file);
+  if (!drawn) return drawAll(c, file, ask);
   await think(sink, `${t}-r`, `"${ask.split("\n")[0].slice(0, 80)}": the tide tables are drawn already, and that's an ask the Demo has no script for.`, signal);
   await say(sink, `${t}-a`, "The tide tables are on the canvas already. I'm the Demo, so I can do what the canvas's own buttons ask: Build frames into the sample project, Update code or Bring it into the frame, Send to code from a live frame, 3 more like this, Fix a check, or turn a frame to night or day. I didn't change anything this time.", signal);
   done(c, 1800, 300);
@@ -220,30 +222,35 @@ function whatIdDo(ask: string) {
 
 // The first drawing.
 
-async function drawAll(c: Ctx, had: DesignFile | null) {
+async function drawAll(c: Ctx, had: DesignFile | null, ask: string) {
   const { o, sink, signal, t, slug, rel, gap } = c;
-  await think(sink, `${t}-r`, "A home screen for the tide tables, on the canvas. I'll read the lean first, then draw the frames one by one: the desktop day, the brand board, the phone screens, the night chart and the launch page.", signal);
+  // The lean: the folder's own when there is one. With none, a DESIGN.md is written only when the ask says to.
+  const lean = leanFile(o.cwd);
+  const write = !lean && /\bDESIGN\.md\b/i.test(ask);
+  const leanRel = lean?.path ?? "DESIGN.md";
+  await think(sink, `${t}-r`, `A home screen for the tide tables, on the canvas. ${lean ? "I'll read the lean first, then draw" : write ? `I'll write ${leanRel} first, as asked, then draw` : "There's no lean here, so I'll draw in Foreshore's own look"} the frames one by one: the desktop day, the brand board, the phone screens, the night chart and the launch page.`, signal);
   const plan = (n: number) =>
     sink.plan([
-      { title: "Read the lean", status: n > 0 ? "completed" : "in_progress" },
+      { title: lean ? "Read the lean" : write ? `Write ${leanRel}` : "Settle the look", status: n > 0 ? "completed" : "in_progress" },
       { title: "Draw the desktop and the brand board", status: n > 2 ? "completed" : n > 0 ? "in_progress" : "pending" },
       { title: "Draw the phone screens and the night chart", status: n > 6 ? "completed" : n > 2 ? "in_progress" : "pending" },
       { title: "Draw the launch page", status: n > 7 ? "completed" : n > 6 ? "in_progress" : "pending" },
     ]);
   plan(0);
-  // The lean: the project's own, else Foreshore's, at its root.
-  const lean = leanFile(o.cwd);
-  const leanRel = lean?.path ?? "DESIGN.md";
-  const leanCall = { key: `${t}-lean`, tool: lean ? "Read" : "Write", toolKind: lean ? ("read" as const) : ("write" as const), title: `${lean ? "Read" : "Write"} ${leanRel}`, path: leanRel };
-  sink.tool({ ...leanCall, status: "running" });
-  await pause(gap * 0.7, signal);
-  if (!lean) {
-    const abs = projectFile(o.cwd, leanRel);
-    if (abs) atomic(abs, readFileSync(join(FORESHORE, "DESIGN.md"), "utf8"));
+  let wrote = false;
+  if (lean || write) {
+    const leanCall = { key: `${t}-lean`, tool: lean ? "Read" : "Write", toolKind: lean ? ("read" as const) : ("write" as const), title: `${lean ? "Read" : "Write"} ${leanRel}`, path: leanRel };
+    sink.tool({ ...leanCall, status: "running" });
+    await pause(gap * 0.7, signal);
+    if (write) {
+      const abs = projectFile(o.cwd, leanRel);
+      if (abs) atomic(abs, readFileSync(join(FORESHORE, "DESIGN.md"), "utf8"));
+      wrote = Boolean(abs);
+    }
+    sink.tool({ ...leanCall, status: "done", output: lean ? "The project's lean" : "Foreshore's lean: the chart's colours, two voices of type, steps of 4, corners 4" });
   }
-  sink.tool({ ...leanCall, status: "done", output: lean ? "The project's lean" : "Foreshore's lean: the chart's colours, two voices of type, steps of 4, corners 4" });
   let file: DesignFile = had ?? fresh(slug);
-  if (!lean) file = { ...file, lean: { ...file.lean, path: leanRel, builtin: undefined } };
+  if (wrote) file = { ...file, lean: { ...file.lean, path: leanRel, builtin: undefined } };
   if (!file.frames.some((f) => TIDE_FRAMES.some((s) => s.name === f.name)) && /^(?:untitled|design)$/i.test(file.title)) file = { ...file, title: "Tide tables" };
   if (!file.pages.length) file = { ...file, pages: [{ id: "p1", name: "Page 1" }] };
   const page = file.pages[0].id;
@@ -284,7 +291,7 @@ async function drawAll(c: Ctx, had: DesignFile | null) {
   await say(
     sink,
     `${t}-a`,
-    `The tide tables are on the canvas: seven frames in “${file.title}”. Desktop / Today leads, the day drawn the way a sea chart draws a coast, with the time of high water standing on the high-water line. Brand / Board has the mark, the colours and the two voices of type; the phones carry Today, a station and the week, and Dark / Today is the night chart. Web / Launch is the launch page.${taken.size ? ` I drew into the empty ${[...taken.values()].map((f) => `“${f.name}”`).join(" and ")} rather than beside ${taken.size === 1 ? "it" : "them"}.` : ""}\n\nI followed ${leanRel}: steps of 4, corners 4, and magenta only for now. Select any part of a frame and say what should change.`,
+    `The tide tables are on the canvas: seven frames in “${file.title}”. Desktop / Today leads, the day drawn the way a sea chart draws a coast, with the time of high water standing on the high-water line. Brand / Board has the mark, the colours and the two voices of type; the phones carry Today, a station and the week, and Dark / Today is the night chart. Web / Launch is the launch page.${taken.size ? ` I drew into the empty ${[...taken.values()].map((f) => `“${f.name}”`).join(" and ")} rather than beside ${taken.size === 1 ? "it" : "them"}.` : ""}\n\n${lean ? `I followed ${leanRel}: steps of 4, corners 4, and magenta only for now.` : wrote ? `I wrote ${leanRel} as you asked, Foreshore's lean, and followed it: steps of 4, corners 4, and magenta only for now.` : "There's no lean here, so I drew it in Foreshore's own look: steps of 4, corners 4, and magenta only for now."} Select any part of a frame and say what should change.`,
     signal,
   );
   done(c, 5200, 14800);

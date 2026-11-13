@@ -186,6 +186,15 @@ export const COMPUTED = [
   "position", "left", "top",
 ] as const;
 
+/**
+  Where designs on their own live: <designs home>/<slug>/, the home being ~/Liner Designs, or
+  LINER_DESIGNS_HOME when set, or "Liner Designs" under LINER_HOME when that isn't the default
+  (an isolated run never touches the real home). engine/src/design-start.ts designsHome.
+*/
+export const DESIGNS_FOLDER = "Liner Designs";
+/** design.new's title when none is given. */
+export const UNTITLED_DESIGN = "Untitled design";
+
 /** The size a new frame is drawn at, by what it's for: the same frames as the Design surface's. */
 export const FRAME_SIZES: Record<DesignSize, { w: number; h: number }> = { desktop: { w: 1280, h: 800 }, tablet: { w: 834, h: 1112 }, phone: { w: 390, h: 844 } };
 

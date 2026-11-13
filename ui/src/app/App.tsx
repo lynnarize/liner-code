@@ -55,13 +55,14 @@ import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
 import { is, matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
-import { setFace, toggleFace, useFace } from "./face";
+import { currentTab, faceKept, getFace, HOME_TAB, openTab as openDesignTab, setFace, showTab, tabKey, toggleFace, useFace, useTabs } from "./face";
 // Liner Design's store and sidebar body load with the face, never for someone who stays in Code.
 const DesignSide = lazy(() => import("./design/Layers").then((m) => ({ default: m.DesignSide })));
-// Liner Design's face: the canvas and Design Home load the first time the window shows them.
-const DesignFace = lazy(() => import("./design/DesignFace").then((m) => ({ default: m.DesignFace })));
-const DesignHome = lazy(() => import("./design/DesignHome").then((m) => ({ default: m.DesignHome })));
+// Liner Design's face: its tabs, Design Home and the canvas load the first time the window shows them.
+const DesignShell = lazy(() => import("./design/Shell").then((m) => ({ default: m.DesignShell })));
 const DesignFiles = lazy(() => import("./design/DesignHome").then((m) => ({ default: m.DesignFiles })));
+/** Liner Design's session helpers, loaded only when the Design face is (or is about to be) up. */
+const designSession = () => import("./design/session");
 // Its first-open sheet, over whichever of the two shows.
 const DesignIntro = lazy(() => import("./design/Intro").then((m) => ({ default: m.DesignIntro })));
 import * as os from "./os";
@@ -151,6 +152,20 @@ export function App() {
   const [lastProject, setLastProject] = useState<string | undefined>(() => localStorage.getItem("lc:project") ?? undefined);
 
   useEffect(() => startAgentBrowser(), []);
+  // Files dropped where nothing takes them (the composer, the canvas and the panel take theirs) do nothing: the window never navigates to them.
+  useEffect(() => {
+    const none = (e: DragEvent) => {
+      if (e.defaultPrevented || !e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      if (e.type === "dragover") e.dataTransfer.dropEffect = "none";
+    };
+    window.addEventListener("dragover", none);
+    window.addEventListener("drop", none);
+    return () => {
+      window.removeEventListener("dragover", none);
+      window.removeEventListener("drop", none);
+    };
+  }, []);
   // Settings, Usage and the Wall, fetched while nothing else is going on, a moment after the app is up.
   useEffect(() => {
     if (!ready) return;
@@ -184,6 +199,10 @@ export function App() {
   }, [lastProject]);
 
   const current = view.kind === "session" ? threads.find((t) => t.id === view.id) : undefined;
+  // The design tab Liner Design shows, and its project (for the sidebar's body).
+  const designTabs = useTabs();
+  const designTab = designTabs.list.find((t) => tabKey(t) === designTabs.at);
+  const designProject = designTab ? projects.find((p) => p.id === designTab.projectId) : undefined;
   // The session open beside it, if any, and which side has your keys.
   const besideThread = view.kind === "session" && view.beside && view.beside !== view.id ? threads.find((t) => t.id === view.beside && !t.archived) : undefined;
   const [sideFocus, setSideFocus] = useState(0);
@@ -216,6 +235,53 @@ export function App() {
       const other = v.id === id ? v.beside : v.id;
       return other && other !== id && getState().threads.some((t) => t.id === other && !t.archived) ? { kind: "session", id: other } : { kind: "home" };
     });
+
+  /*
+    The two faces of the same work. Design from a session begun from a design (Thread.design) shows
+    that design's tab; from another session, its folder's latest design file with that session, as
+    before; from anywhere else, the tab Liner Design last showed. Code from a design's tab shows its
+    session, made on the way if it has none yet; from Design Home, Liner Code's Home.
+  */
+  const lastFace = useRef(face);
+  useEffect(() => bridge.setMenuFace(face), [face]);
+  useEffect(() => {
+    const was = lastFace.current;
+    lastFace.current = face;
+    if (was === face || !ready) return;
+    const s = getState();
+    if (face === "design") {
+      const t = view.kind === "session" ? s.threads.find((x) => x.id === (sideFocus === 1 && view.beside ? view.beside : view.id)) : undefined;
+      if (!t) return;
+      const tab = currentTab();
+      if (tab && tab.projectId === t.projectId && (tab.threadId === t.id || tab.file === t.design?.file)) return;
+      if (t.design) return openDesignTab({ projectId: t.projectId, file: t.design.file, threadId: t.id });
+      const cwd = t.worktree?.path ?? s.projects.find((p) => p.id === t.projectId)?.path;
+      if (!cwd) return;
+      void rpc("canvas.list", { cwd }).then((files) => {
+        const latest = [...files].sort((a, b) => b.updated - a.updated)[0];
+        if (latest && getFace() === "design") openDesignTab({ projectId: t.projectId, file: latest.id, title: latest.title, threadId: t.id });
+        else if (getFace() === "design") showTab(HOME_TAB);
+      }, () => {});
+      return;
+    }
+    const tab = currentTab();
+    if (!tab) return void (view.kind === "session" && s.projects.find((p) => p.id === current?.projectId)?.kind === "design" && setView({ kind: "home" }));
+    void designSession()
+      .then((m) => m.makeSession(tab))
+      .then((t) => getFace() === "code" && go({ kind: "session", id: t.id }))
+      .catch((e: Error) => toast.error(e.message));
+  }, [face]);
+  // Settings' "Liner opens in": a fresh start (not a reload of this window) opens in Liner Design, on Design Home.
+  const openIn = useEngine((s) => s.settings.openIn);
+  const started = useRef(false);
+  useEffect(() => {
+    if (!ready || started.current) return;
+    started.current = true;
+    if (!faceKept() && openIn === "design") {
+      showTab(HOME_TAB);
+      setFace("design");
+    }
+  }, [ready]);
 
   // The Dock says how many sessions need you; notifications say which, while you're elsewhere.
   // Pinned ones too, as the sidebar's Needs you lists them.
@@ -291,9 +357,11 @@ export function App() {
     // "Open in Liner Design" (the timeline's design card, the Design surface): the canvas, on that session's folder and design file.
     const inDesign = (e: Event) => {
       const d = (e as CustomEvent<{ threadId?: string; cwd?: string; file?: string }>).detail ?? {};
-      setFace("design");
+      // That design file in its tab, with that session; the face then has nothing more to find.
+      const t = d.threadId ? getState().threads.find((x) => x.id === d.threadId) : undefined;
+      if (t && d.file) openDesignTab({ projectId: t.projectId, file: d.file, threadId: t.id });
       if (d.threadId) openSession(d.threadId);
-      if (d.cwd) void import("./design/store").then((m) => m.design.open(d.cwd!, d.file));
+      setFace("design");
     };
     window.addEventListener("lc:open-app", app);
     window.addEventListener("lc:open-session", session);
@@ -371,8 +439,8 @@ export function App() {
   // box and not sent, so you go on to say what it should be.
   const createAddon = async () => {
     try {
-      const have = (id?: string) => (id && projects.some((p) => p.id === id) ? id : undefined);
-      const projectId = have(here?.projectId) ?? have(lastProject) ?? projects.find((p) => p.agent !== "demo")?.id ?? (await rpc("project.scratch", {})).id;
+      const have = (id?: string) => (id && projects.some((p) => p.id === id && p.kind !== "design") ? id : undefined);
+      const projectId = have(here?.projectId) ?? have(lastProject) ?? projects.find((p) => p.agent !== "demo" && p.kind !== "design")?.id ?? (await rpc("project.scratch", {})).id;
       setView({ kind: "home", projectId, mode: "creator", prompt: { text: CREATE_ADDON_ASK, at: Date.now() } });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -427,7 +495,8 @@ export function App() {
     // Nothing of the window's while first run is up, or under a dialog that has the keyboard (⌘K toggles itself; a menu-bar item naming a session still opens it).
     if (!getState().settings.onboarded) return;
     if (document.querySelector("dialog[open]") && name !== "commands" && name !== "updates" && !name.startsWith("open:")) return;
-    if (name === "new") newSession();
+    // ⌘N: a new design while Liner Design shows; in Liner Code, a new session as ever.
+    if (name === "new") getFace() === "design" ? void designSession().then((m) => m.newDesign()).catch((e: Error) => toast.error(e.message)) : newSession();
     else if (name === "commands") {
       if (!menu) setBesideOf(null);
       setMenu(!menu);
@@ -629,7 +698,7 @@ export function App() {
     for (const t of threads.filter((x) => !x.archived).slice(0, 200)) items.push({ id: `t-${t.id}`, label: t.title, group: "Sessions", hint: `${projects.find((p) => p.id === t.projectId)?.name ?? ""} · ${agentOf(t.agent, agents, providers).name}`, onSelect: () => openSession(t.id) });
     // Words inside messages: the query itself is a keyword, so a hit stays listed while you type on.
     for (const h of found) items.push({ id: `m-${h.threadId}`, label: h.snippet, group: "In messages", hint: h.title, icon: <I.comment size={15} />, keywords: [asked.toLowerCase()], onSelect: () => openSession(h.threadId) });
-    for (const p of projects) items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={15} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
+    for (const p of projects) if (p.kind !== "design") items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={15} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
     for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
     return items;
     // New session and New routine read where you are and your last project, so they're here too.
@@ -672,15 +741,15 @@ export function App() {
               face={face}
               onFace={(f) => setFace(f)}
               designBody={
-                face !== "design" ? undefined : view.kind === "session" && current ? (
+                face !== "design" ? undefined : designTab && designProject ? (
                   <Boundary label="Layers" quiet>
                     <Suspense fallback={null}>
-                      <DesignSide cwd={current.worktree?.path ?? projects.find((p) => p.id === current.projectId)?.path ?? ""} />
+                      <DesignSide key={tabKey(designTab)} cwd={threads.find((t) => t.id === designTab.threadId && t.projectId === designProject.id)?.worktree?.path ?? designProject.path} />
                     </Suspense>
                   </Boundary>
                 ) : (
                   <Suspense fallback={null}>
-                    <DesignFiles onNew={() => newSession()} onSearch={() => (setBesideOf(null), setMenu(true))} onOpen={(id) => openSession(id)} />
+                    <DesignFiles onSearch={() => (setBesideOf(null), setMenu(true))} />
                   </Suspense>
                 )
               }
@@ -689,28 +758,11 @@ export function App() {
           <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
             <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening</span></div>}>
-            {face === "design" && view.kind === "session" && current ? (
-              // The same session, on the canvas: one side (the one your keys are in) when two are open beside each other.
-              // A fault in Liner Design stays in it: the sidebar and the Code face go on working.
+            {face === "design" && (view.kind === "home" || view.kind === "session") ? (
+              // Liner Design: its tabs, Design Home or a design on its canvas. A fault in it stays in it: the sidebar and the Code face go on working.
               <Boundary label="Liner Design">
-                <DesignFace key={(here ?? current).id} thread={here ?? current} sidebar={sidebar} onSidebar={() => setSidebar(true)} />
+                <DesignShell sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} />
               </Boundary>
-            ) : face === "design" && view.kind === "home" ? (
-              <DesignHome
-                projectId={view.projectId ?? lastProject}
-                onProject={(id) => {
-                  setLastProject(id);
-                  setView({ kind: "home", projectId: id });
-                }}
-                onStarted={(id) => {
-                  const t = getState().threads.find((x) => x.id === id);
-                  if (t) setLastProject(t.projectId);
-                  openSession(id);
-                }}
-                sidebar={sidebar}
-                onSidebar={() => setSidebar(true)}
-                onNewAgent={() => setAgentDialog({ open: true })}
-              />
             ) : view.kind === "session" && current ? (
               besideThread ? (
                 // Two sessions side by side (TasteCode's Open beside): each has its header, its composer and its panels; keys go to the one you're in.

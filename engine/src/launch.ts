@@ -270,20 +270,33 @@ export async function groupsGone(groups: number[], ms: number) {
 /**
   Whether `pid` is still the process that was started by `at`: alive, started no later than that (a
   pid the system gave out again started after), and, given `program`, running it. The start-time
-  check is T3 Code's (apps/server/src/serverOwnership.ts, legacyOwnerIsLive).
+  check is T3 Code's (apps/server/src/serverOwnership.ts, legacyOwnerIsLive). null: it's alive and
+  couldn't be looked at (ps failed or was too slow, three times, under load or in a sandbox), which
+  is never taken for "not ours": the caller keeps it, to look again.
 */
-async function sameProcess(pid: number, at: number, program?: string): Promise<boolean> {
+async function sameProcess(pid: number, at: number, program?: string): Promise<boolean | null> {
   if (!Number.isInteger(pid) || pid <= 1) return false;
-  try {
-    process.kill(pid, 0);
-  } catch {
-    return false;
-  }
+  const up = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      // EPERM: alive, someone else's.
+      return (e as NodeJS.ErrnoException).code === "EPERM";
+    }
+  };
+  if (!up()) return false;
   const script = `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; (Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o'); $p.CommandLine`;
-  const out = await new Promise<string | null>((done) =>
-    execFile(win ? "powershell.exe" : "ps", win ? ["-NoProfile", "-NonInteractive", "-Command", script] : ["-p", String(pid), "-o", "lstart=,command="], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: 4000, windowsHide: true }, (err, stdout) => done(err ? null : String(stdout))),
-  );
-  if (!out) return false;
+  let out: string | null = null;
+  for (const timeout of [4000, 8000, 15000]) {
+    out = await new Promise<string | null>((done) =>
+      execFile(win ? "powershell.exe" : "ps", win ? ["-NoProfile", "-NonInteractive", "-Command", script] : ["-p", String(pid), "-o", "lstart=,command="], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout, windowsHide: true }, (err, stdout) => done(err ? null : String(stdout))),
+    );
+    if (out) break;
+    // ps exits 1 with nothing when the pid went meanwhile: that's an answer.
+    if (!up()) return false;
+  }
+  if (!out) return null;
   const m = win ? /^\s*(\S+)\r?\n([\s\S]*)$/.exec(out) : /^\s*(\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4})\s+([\s\S]*)$/.exec(out);
   if (!m) return false;
   const started = Date.parse(win ? m[1] : `${m[1]} UTC`);
@@ -371,6 +384,17 @@ export class Launcher {
   private seenAt = new Map<string, number>();
   /** Starts under way, so two quick presses start one server. */
   private starting = new Map<string, Promise<LaunchServer>>();
+  /**
+    Starts under way, not yet spawned, with why they were called off when a stop, a session's close or
+    the quit came first: one called off never spawns (a server started after its stop would be no one's).
+  */
+  private pending = new Map<string, { root: string; name: string; threadId: string; off?: string }>();
+  /** Quit: nothing starts after it. */
+  private closed = false;
+  /** Calls off the starts under way that `which` names. */
+  private callOff(why: string, which: (p: { root: string; name: string; threadId: string }) => boolean) {
+    for (const p of this.pending.values()) if (!p.off && which(p)) p.off = why;
+  }
   private timer: NodeJS.Timeout | null = null;
   constructor(host: LaunchHost) {
     this.host = host;
@@ -504,6 +528,7 @@ export class Launcher {
     const woke = this.asleep.length;
     this.asleep = this.asleep.filter((a) => !(a.root === root && (name === undefined || a.name === name)));
     if (this.asleep.length !== woke) (this.save(), this.emit(root));
+    this.callOff("Stopped", (p) => p.root === root && (name === undefined || p.name === name));
     await Promise.all(which.map((r) => this.halt(r, "Stopped")));
     return which.length;
   }
@@ -559,6 +584,7 @@ export class Launcher {
     const before = this.asleep.length;
     this.asleep = this.asleep.filter((a) => a.threadId !== threadId && !(alone && a.root === root));
     if (this.asleep.length !== before) this.save();
+    this.callOff("Stopped with the session that started it", (p) => p.threadId === threadId || (alone && p.root === root));
     for (const r of [...this.runs.values()]) if (r.threadId === threadId || (alone && r.root === root)) void this.halt(r, "Stopped with the session that started it");
   }
 
@@ -569,6 +595,8 @@ export class Launcher {
   quit(ms = 1500) {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.closed = true;
+    this.callOff("Stopped when Liner Code quit", () => true);
     const groups: number[] = [];
     for (const r of this.runs.values()) {
       if (r.child.pid) groups.push(r.child.pid);
@@ -594,8 +622,14 @@ export class Launcher {
     const alive: Running[] = [];
     for (const x of left) {
       // Another engine's, on the same home and still running: its to stop, and kept for when it's gone.
-      if (x.engine && !(x.engine.pid === me.pid && x.engine.at === me.at) && (await sameProcess(x.engine.pid, x.engine.at))) alive.push(x);
-      else if (await stillOurs(x)) killTree({ pid: x.pid, kill: () => false }), n++;
+      // An engine that couldn't be looked at counts as alive: its server is left, and looked at again on the next start.
+      if (x.engine && !(x.engine.pid === me.pid && x.engine.at === me.at) && (await sameProcess(x.engine.pid, x.engine.at)) !== false) alive.push(x);
+      else {
+        const ours = await stillOurs(x);
+        if (ours) killTree({ pid: x.pid, kill: () => false }), n++;
+        // A look that failed is never taken for an empty one: it's kept, said, and looked at again next time.
+        else if (ours === null) alive.push(x), console.error(`[launch] couldn't tell whether pid ${x.pid} (${x.name}: ${x.command}) is still the server it was; left running, to look again on the next start`);
+      }
     }
     this.left = [...alive, ...this.left.filter((x) => !left.includes(x))];
     this.save();
@@ -627,14 +661,18 @@ export class Launcher {
     if (live) return this.state(root, e);
     const under = this.starting.get(key);
     if (under) return under;
-    const p: Promise<LaunchServer> = this.spawn(root, e, threadId).finally(() => {
+    if (this.closed) return Promise.reject(new Error("Liner Code is quitting, so nothing starts now."));
+    const ticket = { root, name: e.name, threadId } as { root: string; name: string; threadId: string; off?: string };
+    this.pending.set(key, ticket);
+    const p: Promise<LaunchServer> = this.spawn(root, e, threadId, ticket).finally(() => {
       if (this.starting.get(key) === p) this.starting.delete(key);
+      if (this.pending.get(key) === ticket) this.pending.delete(key);
     });
     this.starting.set(key, p);
     return p;
   }
 
-  private async spawn(root: string, e: LaunchEntry, threadId: string): Promise<LaunchServer> {
+  private async spawn(root: string, e: LaunchEntry, threadId: string, ticket: { off?: string } = {}): Promise<LaunchServer> {
     const key = keyOf(root, e.name);
     // What didn't start says so in its row too, not only where it was asked for.
     const refuse = (reason: string, port = e.port): never => {
@@ -663,6 +701,8 @@ export class Launcher {
         return refuse(`Port ${port} is taken${who ? ` by ${who}` : ""}. Stop what runs there, or let ${e.name} move with "autoPort": true in .claude/launch.json.`);
       }
     }
+    // Stopped (or its session closed, or Liner Code quit) while the port was looked at: it never starts. Nothing awaits from here to the spawn.
+    if (ticket.off) return refuse(ticket.off, port);
     let child: ChildProcess;
     try {
       // A group of its own, so stopping it stops what it started (npm and the server under it).
@@ -681,6 +721,8 @@ export class Launcher {
     const r: Run = { key, root, entry: e, port, child, status: "starting", startedAt: this.now(), threadId, tail: [], done: false, gone: new Promise<void>((ok) => (gone = ok)), ready: Promise.resolve(), spawnedAt: Date.now() };
     this.runs.set(key, r);
     this.ended.delete(key);
+    // Spawned: from here a stop finds it among the runs.
+    this.pending.delete(key);
     // Kept with its pid, so a crash doesn't leave it running unknown.
     this.save();
     this.emit(root);

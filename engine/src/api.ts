@@ -34,6 +34,8 @@ import * as canvas from "./canvas.ts";
 import * as lean from "./lean.ts";
 import * as buildlinks from "./buildlinks.ts";
 import * as pictures from "./pictures.ts";
+import * as start from "./design-start.ts";
+import { touched as touchedDesign } from "./design-start.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
 import { checkManifest } from "./addons.ts";
 import { refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
@@ -506,6 +508,45 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
   const backgrounds = new Backgrounds(store.home);
 
+  /** A design on its own's design file, for a session made there without one named: the one named like its folder, else the first. */
+  const designOf = (p: { kind?: "design"; path: string }) => {
+    if (p.kind !== "design") return undefined;
+    try {
+      const dir = join(p.path, ".liner", "designs");
+      const own = basename(p.path);
+      const all = readdirSync(dir).filter((n) => /^[a-z0-9][a-z0-9-]{0,63}$/.test(n) && lstatSync(join(dir, n)).isDirectory()).sort();
+      const file = all.includes(own) ? own : all[0];
+      return file ? { file } : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  /** What starting a design (design-start.ts) needs of the engine. */
+  const startHost: start.StartHost = {
+    store,
+    ctx: () => design(),
+    env,
+    busy: (id) => working(id),
+    closeThread: (id) => void runtime.closeThread(id).catch(() => {}),
+    release: (id) => leftBehind(id),
+    addProject: (abs) => addProject(abs),
+    removeProject: async (id) => handlers["project.remove"]({ id }),
+    addons: runtime.addons,
+    routines: {
+      get routines() {
+        return x.routines.routines;
+      },
+      put: (r) => x.routines.put(r as Parameters<Routines["put"]>[0]),
+    },
+  };
+  // Moves a crash cut short are put right, and their staging folders cleared, as the engine starts (design-start.ts).
+  try {
+    start.recoverAttaches(startHost);
+  } catch (e) {
+    console.error("[design.attach] recovery", e);
+  }
+
   /**
     A session going for good, held from start to end: what's sent to it meanwhile starts nothing and
     goes with it. `quiet`: a fork that never was, with nothing to say about the worktree it shared.
@@ -615,7 +656,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
     "project.add": async ({ path, agent }) => {
       if (path === "@sample") return addProject(await ensureSampleProject(store.home), "Sample project", "demo");
-      return addProject(resolve(path.replace(/^~(?=\/|$)/, homedir())), undefined, agent);
+      const abs = resolve(path.replace(/^~(?=\/|$)/, homedir()));
+      // A design on its own is the Design face's, never one of the Code face's projects.
+      if (store.projects.some((p) => p.kind === "design" && resolve(p.path) === abs)) throw new Error("That folder is a design on its own. Open it in Design, or use Build in a project there to move it into a project.");
+      return addProject(abs, undefined, agent);
     },
     // An empty agent clears it: new sessions there start with whoever Home would pick.
     "sessions.importable": ({ projectId }) => importable(store.project(projectId).path, env, new Set(store.threads.flatMap((t) => [t.providerSession, ...Object.values(t.sessions ?? {})].filter((s): s is string => Boolean(s))))),
@@ -779,8 +823,12 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, sidekick, review, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode }) => {
+    "thread.create": async ({ projectId, agent, sidekick, review, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode, design: drawn }) => {
       const project = store.project(projectId);
+      // Begun from a design: its design file, by slug. Every session of a design on its own draws its design, said or not.
+      if (drawn !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(String(drawn?.file ?? ""))) throw new Error("That isn't a design file's name.");
+      // A session in a design on its own makes it the person's: never discarded as untouched after.
+      if (project.kind === "design") touchedDesign(store.home, project.path);
       // It goes to git as an argument of its own: one starting with - would be an option.
       if (base?.startsWith("-")) throw new Error("That base isn't a branch or a commit.");
       // A mode is set once, as the session starts; a custom one is one of your named agents.
@@ -853,6 +901,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         worktree: tree ?? parent?.worktree,
         // A fork keeps its parent's mode, as it keeps its conversation.
         ...((mode && mode !== "standard") || parent?.mode ? { mode: mode && mode !== "standard" ? mode : parent?.mode } : {}),
+        ...((drawn ?? parent?.design ?? designOf(project)) ? { design: { file: (drawn ?? parent?.design ?? designOf(project))!.file } } : {}),
         turns: parent ? parent.turns - (live ? 1 : 0) : 0,
         usage: emptyUsage(),
         createdAt: now,
@@ -1077,8 +1126,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return kept ? { kept } : null;
     },
 
-    "approval.answer": ({ threadId, itemId, allow, reason, always, scope }) => {
-      runtime.answer(threadId, itemId, allow, reason, always, scope);
+    "approval.answer": ({ threadId, itemId, allow, reason, always, scope, grant }) => {
+      runtime.answer(threadId, itemId, allow, reason, always, scope, grant);
+      return null;
+    },
+    "approval.rules": ({ threadId }) => {
+      store.thread(threadId);
+      return runtime.grantsOf(threadId);
+    },
+    "approval.forget": ({ threadId, kind, label }) => {
+      store.thread(threadId);
+      runtime.forget(threadId, kind, label);
       return null;
     },
     "addons.update": ({ id, enabled, version, removed, project }) => {
@@ -1402,6 +1460,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "settings.save": (patch) => {
       // A picture model's key goes only to an https address (or one on this Mac): refused before anything is kept.
       if (patch.pictures) for (const e of patch.pictures) pictures.checkEndpointUrl(e?.url);
+      if (patch.openIn !== undefined && patch.openIn !== "code" && patch.openIn !== "design") throw new Error("Liner opens in Code or Design.");
       const settings = store.setSettings(patch);
       if (patch.outside !== undefined) x.outside?.apply();
       // A new or changed account or endpoint is a tool to find; a model id you added only changes the lists.
@@ -1638,6 +1697,15 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "design.restore": ({ threadId, design, version }) => designs(threadId).restore(threadId, design, version),
     "design.built": ({ threadId, design, version }) => designs(threadId).built(threadId, design, version),
     "design.watch": ({ threadId, on }) => (x.designs?.watch(threadId, on), null),
+
+    // Starting a design (design-start.ts): on its own, or in a project.
+    "design.new": (p) => start.newDesign(startHost, p),
+    "design.all": () => start.allDesigns(startHost),
+    "design.attach": (p) => start.attachDesign(startHost, p),
+    "design.rename": (p) => start.renameDesign(startHost, p),
+    "design.remove": (p) => start.removeDesignFile(startHost, p),
+    "design.unremove": (p) => start.unremoveDesignFile(startHost, p),
+    "design.discard": (p) => start.discardDesign(startHost, p),
 
     // Liner Design, one line per module: each fills in its own handlers.
     ...canvas.rpc(design),

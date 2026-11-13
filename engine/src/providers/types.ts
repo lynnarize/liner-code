@@ -4,7 +4,7 @@
   Claude Code, Codex, Hermes and OpenCode. A provider that can't do something (approvals in
   Codex exec, say) simply never calls that part of the sink.
 */
-import type { Access, AgentRun, CommandInfo, ContextUse, Effort, LimitWindow, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
+import type { Access, AgentRun, ApprovalWhy, CommandInfo, ContextUse, Effort, LimitWindow, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
 import { homedir } from "node:os";
 import type { Connection } from "../addons.ts";
 
@@ -62,7 +62,22 @@ export type ApprovalRequest = {
     where the tool's Auto did run: what that hands over, it meant for you.
   */
   unjudged?: boolean;
+  /** The agent's own words for what the command does (OpenCode's and Claude Code's `description`, Codex's reason), as saysOf makes them. */
+  says?: string;
+  /**
+    Why it comes to you, as far as the tool's side knows: a place outside the project, a host, an edit that names no file.
+    The runtime puts what can't be undone first and what made the level ask after (runtime.ts, approve).
+  */
+  why?: ApprovalWhy[];
 };
+
+/** The agent's words for a step as the card shows them: one line, trimmed, at most 140 characters. None when it said nothing. */
+export function saysOf(text: unknown) {
+  if (typeof text !== "string") return undefined;
+  const line = text.replace(/\s+/g, " ").trim();
+  if (!line) return undefined;
+  return line.length > 140 ? `${line.slice(0, 139).trimEnd()}…` : line;
+}
 
 export type TurnSink = {
   /** Streamed answer text. A new `block` starts a new paragraph item. */
@@ -85,8 +100,13 @@ export type TurnSink = {
   usage(u: Partial<Usage>, total?: boolean): void;
   /** The provider's own session id, kept for resume. */
   session(id: string): void;
-  /** A line on the timeline. A later notice with the same `key` replaces it (a retry's count, a compaction that finished). */
-  notice(text: string, key?: string, o?: { stop?: boolean }): void;
+  /**
+    A line on the timeline. A later notice with the same `key` replaces it (a retry's count, a compaction that finished).
+    `once`: it describes a setting (a thinking level the model hasn't), so it's said once a session, not every turn.
+  */
+  notice(text: string, key?: string, o?: { stop?: boolean; once?: boolean }): void;
+  /** The thinking level the tool really runs the model at, when it isn't the one set; undefined when it is (Thread.effortNow). */
+  effortNow?(level: string | undefined): void;
   error(message: string): void;
   /** The tool's plan ran out of usage; `until` is when its window reopens, if it said. */
   limited(message: string, until?: number): void;
@@ -145,6 +165,8 @@ export type OpenOptions = {
   side?: boolean;
   /** A pair's sidekick: it works the lead's briefs, and sends no agents of its own. */
   sidekick?: boolean;
+  /** `cwd` is a design on its own (a project of kind "design", design.new's folder): the Demo draws there as in its sample project. */
+  designOnItsOwn?: boolean;
   /** Folders that exist outside `cwd` the tool may read as its own: where your attachments are saved. */
   dirs?: string[];
   /** Claude Code subagents this agent brings (Explorer, Test runner, Opus for hard parts). */

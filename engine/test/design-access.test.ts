@@ -71,7 +71,7 @@ test("M2: at ask before edits, the canvas's writes go without a card; design_pic
   await buildlinks.call("design_built", { frame: "phone", file: "src/Today.tsx", design: "tides" }, at("ask"));
   assert.deepEqual(asks, []);
   await pictures.call("design_picture", { prompt: "Sand", width: 100, height: 100, design: "tides" }, at("ask"));
-  assert.deepEqual(asks, ["Make a picture"], "the picture asks on its card (and the no here spends nothing)");
+  assert.deepEqual(asks, ["Make an AI picture"], "the picture asks on its card (and the no here spends nothing)");
 });
 
 test("P1: design_shot's result says what the frame holds in words too, for a model that gets no picture", async () => {

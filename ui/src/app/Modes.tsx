@@ -42,7 +42,7 @@ const customs = (agents: AgentProfile[]) => agents.filter((a) => a.id !== "demo"
 export async function startCreator(o: { projectId?: string; text?: string; title?: string }) {
   try {
     const { projects, settings, providers } = getState();
-    const projectId = o.projectId ?? projects.find((p) => p.agent !== "demo")?.id ?? (await rpc("project.scratch", {})).id;
+    const projectId = o.projectId ?? projects.find((p) => p.agent !== "demo" && p.kind !== "design")?.id ?? (await rpc("project.scratch", {})).id;
     // Who works starts as Settings say a new session starts: a pair, the best model or the fast one.
     const start = startOf(settings, providers);
     const t = await rpc("thread.create", { projectId, mode: "creator", ...(start ? { agent: start.agent, sidekick: start.sidekick } : {}), ...(o.title ? { title: o.title } : {}) });

@@ -72,6 +72,31 @@
 .ld-q4 > i {
   display: block;
 }
+/* No lean: a dashed square, nothing in it. */
+.ld-q4[data-none] {
+  box-sizing: border-box;
+  background: none;
+  box-shadow: none;
+  border: 1px dashed var(--l-ink-4);
+}
+.ld-q4[data-none] > i {
+  display: none;
+}
+.ld-lab-q {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.ld-tr-add,
+.ld-side .lc-pop > .ld-tr-add {
+  color: var(--l-ink-2);
+}
+.ld-side .lc-pop {
+  width: 100%;
+}
+.ld-side .lc-pop > .ld-tr-add {
+  cursor: pointer;
+}
 .ld-lean-t {
   display: flex;
   flex: 1;
@@ -262,6 +287,34 @@ button.ld-tr:hover {
 .ld-file-e {
   align-self: flex-end;
 }
+.ld-file .lc-sb-rename {
+  flex: 1;
+  min-width: 0;
+}
+/* "All designs": which designs the list shows. */
+.ld-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin-top: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.ld-show:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.ld-show > svg {
+  color: var(--l-ink-3);
+}
 
 /* ---------- the face ---------- */
 .ld-face {
@@ -289,6 +342,14 @@ html[data-motion="quick"] .ld-face {
   padding: 6px 10px 6px 16px;
 }
 .ld-bar .lc-pop {
+  flex: none;
+}
+/* The tabs take what room is left: they shrink, then scroll; + stays beside them. */
+.ld-tabs-w {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
   min-width: 0;
 }
 .ld-title {
@@ -411,6 +472,18 @@ html[data-motion="quick"] .ld-face {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+}
+/* Picture files dragged over the canvas: no frame's page takes them (a live page would open the file), the canvas does. */
+.ld-cv-hit[data-drop] iframe {
+  pointer-events: none !important;
+}
+.ld-cv-hit[data-drop]::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--l-accent, var(--l-ink)) 55%, transparent);
+  pointer-events: none;
 }
 .ld-plane {
   position: absolute;
@@ -924,4 +997,190 @@ html[data-motion="quick"] .ld-face {
   right: auto;
   width: min(560px, calc(100% - 96px));
   translate: -50% 0;
+}
+
+/* ---------- the tabs, in the canvas's top row and Design Home's ---------- */
+.ld-tabs {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: -4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ld-tabs::-webkit-scrollbar {
+  display: none;
+}
+.ld-tab {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 64px;
+  max-width: 190px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+.ld-tab[data-home] {
+  flex: none;
+  min-width: 0;
+}
+.ld-tab:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+.ld-tab[aria-selected="true"],
+.ld-tab[aria-selected="true"]:hover {
+  /* The current tab gives way last, and its name still ends in "…" when it has to. */
+  flex-shrink: 0.2;
+  min-width: 96px;
+  /* With room to spare (a lone tab), the current one takes more of it. */
+  max-width: 320px;
+  background: var(--l-wash-2);
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ld-tab > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-tab .ld-pd {
+  flex: none;
+}
+.ld-tab-x {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.ld-tab-x:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.ld-tab-new {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.ld-tab-new:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+
+/* ---------- a design on its own: the top row's chip and its panel ---------- */
+.ld-own {
+  flex: none;
+  gap: 7px;
+}
+.ld-own-pop {
+  padding: 4px 4px 8px;
+}
+.ld-own-note {
+  padding: 8px 10px 0;
+}
+.ld-own-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 0 0 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.ld-own-back:hover {
+  background: var(--l-wash-2);
+}
+.ld-wl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.ld-wl:hover,
+.ld-wl[data-on] {
+  background: var(--l-wash-2);
+}
+.ld-wl > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-wl > svg.ld-ok {
+  margin-left: auto;
+  color: var(--l-ok, var(--l-ink-2));
+}
+.ld-wl > span {
+  display: block;
+  min-width: 0;
+}
+.ld-wl b {
+  display: block;
+  font-weight: 500;
+}
+.ld-wl small {
+  display: block;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+
+/* ---------- an empty canvas: what to do first ---------- */
+.ld-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 168px;
+  z-index: 1;
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+  pointer-events: none;
+}
+.ld-hint b {
+  font-weight: 500;
+  color: var(--l-ink-2);
 }

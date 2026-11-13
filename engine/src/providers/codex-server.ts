@@ -20,7 +20,7 @@ import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { inFolder } from "./acp.ts";
 import { dataUrl, imageType } from "./attachments.ts";
-import { LINER_WAIT_SEC, ResumeFailed, scrub, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink, type WakeTurn } from "./types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, saysOf, scrub, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink, type WakeTurn } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
@@ -1037,7 +1037,10 @@ export class CodexServerSession implements ProviderSession {
       if (p.reason) fields.push({ label: "Why", value: String(p.reason) });
       const extra = Boolean(net || more);
       const title = command ? `Run ${short(command, 60)}` : net ? `Let Codex reach ${net.host ?? "the network"}` : "Run a command";
-      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "shell", title, description: (p.reason as string | undefined) ?? undefined, risk: extra ? "high" : commandRisk(command), fields, rule: extra ? undefined : ruleFor(command) }, signal);
+      // Why, from what it asks beyond the command: a host to reach, more access than its sandbox gives.
+      const why = [...(net ? [{ kind: "network" as const, text: `it reaches ${net.host ?? "the network"}` }] : []), ...(more ? [{ kind: "outside" as const, text: "it asks for more access than its sandbox gives" }] : [])];
+      const says = command ? saysOf(p.reason) : undefined;
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "shell", title, description: (p.reason as string | undefined) ?? undefined, risk: extra ? "high" : commandRisk(command), fields, rule: extra ? undefined : ruleFor(command), ...(says ? { says } : {}), ...(why.length ? { why } : {}) }, signal);
       return method === "execCommandApproval" ? { decision: a.allow ? "approved" : "denied" } : { decision: a.allow ? "accept" : "decline" };
     }
     if (method === "item/fileChange/requestApproval" || method === "applyPatchApproval") {
@@ -1048,7 +1051,8 @@ export class CodexServerSession implements ProviderSession {
       const loose = Boolean(stray) || !paths.length;
       const why = stray ? `${stray} is outside the project.` : !paths.length ? "Codex didn't say which files this changes." : undefined;
       const description = [why, p.reason as string | undefined].filter(Boolean).join("\n\n") || undefined;
-      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "apply_patch", title: `Edit ${paths.slice(0, 3).join(", ") || "files"}`, description, risk: loose ? "high" : "medium", fields: paths.map((x) => ({ label: "File", value: x })).concat(p.grantRoot ? [{ label: "Write access to", value: String(p.grantRoot) }] : []), rule: loose ? undefined : "Edit" }, signal);
+      const because = stray ? [{ kind: "outside" as const, text: `it changes ${stray}, outside the project` }] : !paths.length ? [{ kind: "changes" as const, text: "Codex didn't say which files it changes" }] : [];
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "apply_patch", title: `Edit ${paths.slice(0, 3).join(", ") || "files"}`, description, risk: loose ? "high" : "medium", fields: paths.map((x) => ({ label: "File", value: x })).concat(p.grantRoot ? [{ label: "Write access to", value: String(p.grantRoot) }] : []), rule: loose ? undefined : "Edit", ...(because.length ? { why: because } : {}) }, signal);
       return method === "applyPatchApproval" ? { decision: a.allow ? "approved" : "denied" } : { decision: a.allow ? "accept" : "decline" };
     }
     if (method === "item/tool/requestUserInput") {
@@ -1074,7 +1078,7 @@ export class CodexServerSession implements ProviderSession {
       const fields = listed.length && !odd ? listed : [...listed, { label: "Asked for", value: JSON.stringify(p.permissions ?? {}) }];
       // Writing outside the project is a step out of its sandbox: yours, not the Reviewer's. A glob or a special path can't be told to be inside.
       const wide = !listed.length || odd || write.some((x) => /[*?{[]/.test(x) || !inFolder(this.o.cwd, x));
-      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "permissions", title: "Grant Codex more access", description: (p.reason as string | undefined) ?? undefined, risk: wide ? "high" : "medium", fields }, signal);
+      const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "permissions", title: "Grant Codex more access", description: (p.reason as string | undefined) ?? undefined, risk: wide ? "high" : "medium", fields, why: [{ kind: "outside", text: "it asks for more access than its sandbox gives" }] }, signal);
       return a.allow ? { permissions: p.permissions ?? {}, scope: "turn" } : { permissions: {}, scope: "turn" };
     }
     if (method === "mcpServer/elicitation/request") {

@@ -11,6 +11,10 @@ import { join } from "node:path";
 import type { EngineEvent } from "../../contracts/src/index.ts";
 import { Store } from "../src/store.ts";
 import { Backlog, Terminals } from "../src/surfaces.ts";
+import { noLeaks } from "./leaks.ts";
+
+// A process a test started and didn't end fails that test by name (and is ended), rather than keeping the file from exiting.
+noLeaks();
 
 const until = async (ok: () => boolean, ms = 10_000) => {
   const end = Date.now() + ms;

@@ -408,7 +408,7 @@ test("read only: a write command in a side chat comes to you, and in a Read only
   const saved = { claude: providers.claude, codex: providers.codex };
   providers.claude = make("claude");
   providers.codex = make("codex");
-  const raw = (r: Runtime) => r as unknown as { rules: Map<string, Set<string>>; unattended: Set<string>; turn(id: string, text: string, agent: string): Promise<unknown> };
+  const raw = (r: Runtime) => r as unknown as { grants: Map<string, { kind: string; label: string; parts: string[] }[]>; unattended: Set<string>; turn(id: string, text: string, agent: string): Promise<unknown> };
   const waitAsk = async (store: Store) => {
     for (let i = 0; i < 100 && !asks(store.timeline("t")).some((x) => x.state === "asking"); i++) await new Promise((r) => setTimeout(r, 10));
     return asks(store.timeline("t")).find((x) => x.state === "asking");
@@ -417,7 +417,7 @@ test("read only: a write command in a side chat comes to you, and in a Read only
     // A side chat of a session on Reviewer decides, with a rule from an earlier turn: neither lets it through.
     const a = session("review");
     a.store.patchThread("t", { sideOf: "other" });
-    raw(a.runtime).rules.set("t", new Set(["npm install"]));
+    raw(a.runtime).grants.set("t", [{ kind: "rule", label: "npm install", parts: ["npm install"] }]);
     const side = raw(a.runtime).turn("t", "look", "forge");
     const card = await waitAsk(a.store);
     assert.ok(card, "it came to you");
@@ -429,7 +429,7 @@ test("read only: a write command in a side chat comes to you, and in a Read only
     for (const patch of [{ sideOf: "other" }]) {
       const b = session("edits");
       b.store.patchThread("t", patch);
-      raw(b.runtime).rules.set("t", new Set(["npm install"]));
+      raw(b.runtime).grants.set("t", [{ kind: "rule", label: "npm install", parts: ["npm install"] }]);
       const turn = raw(b.runtime).turn("t", "look", "forge");
       const asked = await waitAsk(b.store);
       assert.ok(asked, `it came to you: ${JSON.stringify(patch)}`);
@@ -440,7 +440,7 @@ test("read only: a write command in a side chat comes to you, and in a Read only
     {
       const b = session("edits");
       b.store.patchThread("t", { access: "read" as Access });
-      raw(b.runtime).rules.set("t", new Set(["npm install"]));
+      raw(b.runtime).grants.set("t", [{ kind: "rule", label: "npm install", parts: ["npm install"] }]);
       await raw(b.runtime).turn("t", "look", "forge");
       assert.equal(asks(b.store.timeline("t")).length, 0, "no card at Read only");
       assert.ok(b.store.timeline("t").some((x) => x.kind === "text" && /Didn't run it/.test(x.text)), "refused");
@@ -456,7 +456,7 @@ test("read only: a write command in a side chat comes to you, and in a Read only
 
     // A turn that may write still uses the rule.
     const d = session("ask");
-    raw(d.runtime).rules.set("t", new Set(["npm install"]));
+    raw(d.runtime).grants.set("t", [{ kind: "rule", label: "npm install", parts: ["npm install"] }]);
     await raw(d.runtime).turn("t", "build it", "forge");
     assert.equal(asks(d.store.timeline("t")).length, 0);
     assert.ok(d.store.timeline("t").some((x) => x.kind === "text" && /Ran it/.test(x.text)));

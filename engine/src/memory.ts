@@ -12,7 +12,7 @@ import { writeAtomic, type Store } from "./store.ts";
 /** At most this many facts per project; the oldest go first. */
 const MAX_FACTS = 60;
 
-const fileOf = (home: string, projectId: string) => join(home, "memory", `${projectId.replace(/[^\w-]/g, "_")}.md`);
+export const fileOf = (home: string, projectId: string) => join(home, "memory", `${projectId.replace(/[^\w-]/g, "_")}.md`);
 
 /** A project's facts, oldest first. */
 export function factsOf(home: string, projectId: string): string[] {

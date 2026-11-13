@@ -10,7 +10,7 @@ import { toast } from "@liner/components/toast/toast";
 import { bridge, ghInstall } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { since } from "./model";
+import { codeProjects, since } from "./model";
 import { Row, Sep } from "./ui";
 import * as os from "./os";
 import "./models.css";
@@ -24,7 +24,9 @@ let github: Promise<GitHub> | null = null;
 const tilde = os.tilde;
 
 export function ProjectChooser({ value, onPick, need, extra }: { value?: string; onPick: (p: Project) => void; need?: "github"; extra?: ReactNode }) {
-  const projects = useEngine((s) => s.projects);
+  // A design on its own is Liner Design's, never one of the projects to choose here.
+  const all = useEngine((s) => s.projects);
+  const projects = useMemo(() => codeProjects(all), [all]);
   const root = useEngine((s) => s.settings.projectsRoot);
   const [tab, setTab] = useState<Tab>("here");
   const [query, setQuery] = useState("");

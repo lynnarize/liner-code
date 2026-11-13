@@ -80,6 +80,10 @@ export const bridge = {
   setMenuKeys(keys: Record<string, string>) {
     if (isNative()) void call("setMenuKeys", { keys }).catch(() => {});
   },
+  /** Which face the window shows: File › New reads "New Design" in Liner Design, "New Session" in Liner Code (the same ⌘N). */
+  setMenuFace(face: "code" | "design") {
+    if (isNative()) void call("setMenuFace", { face }).catch(() => {});
+  },
   /** A part of the window, as a PNG in base64 (the rect in page pixels). */
   snapshot(rect: { x: number; y: number; width: number; height: number }): Promise<string> {
     return call<string>("snapshot", rect);

@@ -8,7 +8,7 @@
   The other side of it, "Watch on the canvas" in Liner Code's own composer, is Composer.tsx's,
   with face.ts, so the Code face loads nothing of Liner Design's.
 */
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { DesignSelection, Item, Project, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { Composer, type RunSettings } from "../Composer";
@@ -16,7 +16,8 @@ import { pairOf } from "../Crew";
 import { rpc, useEngine, useItems } from "../engine";
 import { I } from "../icons";
 import { agentOf } from "../model";
-import { drawingOf } from "../face";
+import { drawingOf, type DesignTab } from "../face";
+import { makeSession, runFor } from "./session";
 import { design, frameOf, getDesign, selectionOf, useDesign } from "./store";
 import "./design-face.css";
 import { DockRows, DockSkills, onDockText, useSlashRows } from "./Skills";
@@ -166,17 +167,25 @@ function Chips() {
   );
 }
 
-/** The dock, for a session on the canvas. */
-export function Dock({ thread, project }: { thread: Thread; project: Project }) {
+/**
+  The dock, for a design on the canvas. A design with no session yet has the same dock: who works
+  is picked here, and the first ask makes the session (session.ts), begun from this design.
+*/
+export function Dock({ thread, project, tab }: { thread?: Thread; project: Project; tab: DesignTab }) {
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const [open, setOpen] = useState(false);
-  const slashRows = useSlashRows(thread.worktree?.path ?? project.path);
-  const coder = agentOf(thread.agent, agents, providers);
-  const settings: RunSettings = { agent: thread.agent, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, ...(thread.sidekick ? { sidekick: thread.sidekick } : {}) };
-  const busy = thread.status === "running";
+  const cwd = thread?.worktree?.path ?? project.path;
+  const slashRows = useSlashRows(cwd);
+  // Before there's a session: who it will start with, as Home would start one, until you pick.
+  const [first, setFirst] = useState<RunSettings>(() => runFor(project));
+  useEffect(() => setFirst(runFor(project)), [project.id]);
+  const coder = agentOf(thread?.agent ?? first.agent, agents, providers);
+  const settings: RunSettings = thread ? { agent: thread.agent, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, ...(thread.sidekick ? { sidekick: thread.sidekick } : {}) } : first;
+  const busy = thread?.status === "running";
   const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
   const update = (patch: Partial<RunSettings>) => {
+    if (!thread) return setFirst((s) => ({ ...s, ...patch }));
     const p: Parameters<typeof rpc<"thread.update">>[1] = { id: thread.id };
     if ("agent" in patch) p.agent = patch.agent;
     if ("sidekick" in patch) p.sidekick = (patch as { sidekick?: string | null }).sidekick ?? null;
@@ -190,7 +199,8 @@ export function Dock({ thread, project }: { thread: Thread; project: Project }) 
     const sel: DesignSelection | null = selectionOf(s);
     // A design turn's mark: which design file, and what is selected (the engine's "## Design" note).
     try {
-      await rpc("thread.send", { id: thread.id, text: m.text, files: m.files, mode: m.mode, ...(s.file ? { design: { file: s.file.id, ...(sel ? { sel } : {}) } } : {}) });
+      const t = thread ?? (await makeSession(tab, first));
+      await rpc("thread.send", { id: t.id, text: m.text, files: m.files, mode: m.mode, design: { file: s.file?.id ?? tab.file, ...(sel ? { sel } : {}) } });
     } catch (e) {
       fail(e);
       throw e;
@@ -198,7 +208,7 @@ export function Dock({ thread, project }: { thread: Thread; project: Project }) 
   };
   return (
     <div className="ld-dock">
-      {open && <Sheet thread={thread} onClose={() => setOpen(false)} />}
+      {open && thread && <Sheet thread={thread} onClose={() => setOpen(false)} />}
       <div className="ld-dock-in">
         <Composer
           variant="session"
@@ -207,13 +217,13 @@ export function Dock({ thread, project }: { thread: Thread; project: Project }) 
           settings={settings}
           onSettings={update}
           onSend={send}
-          onStop={() => void rpc("thread.stop", { id: thread.id }).catch(fail)}
+          onStop={() => thread && void rpc("thread.stop", { id: thread.id }).catch(fail)}
           busy={busy}
           placeholder={busy ? "Write while it draws: it goes when the turn ends" : "Say what to draw or change"}
           canvas
           chips={<Chips />}
-          top={<><Head thread={thread} open={open} onOpen={() => setOpen((o) => !o)} /><DockRows cwd={thread.worktree?.path ?? project.path} /><WaitRow thread={thread} /><PicturesRow /><WaysRow /><ChecksRow /></>}
-          trayEnd={<><PicturesChip threadId={thread.id} /><DockSkills cwd={thread.worktree?.path ?? project.path} /></>}
+          top={<>{thread && <Head thread={thread} open={open} onOpen={() => setOpen((o) => !o)} />}<DockRows cwd={cwd} />{thread && <WaitRow thread={thread} />}<PicturesRow /><WaysRow /><ChecksRow /></>}
+          trayEnd={<><PicturesChip threadId={thread?.id} lead={coder.name} /><DockSkills cwd={cwd} /></>}
           onText={onDockText}
           slashRows={slashRows}
         />

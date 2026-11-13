@@ -14,10 +14,10 @@
   steer reaches the agent at its next step instead. A change whose check the queue went ahead of
   is read with the next check (Thread.reviewSince).
 */
-import type { Access, AgentRun, AgentStep, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, Settings, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
+import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, frontierClass, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
+import { join, resolve, sep } from "node:path";
+import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, frontierClass, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
 import { capture, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { killTree, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
@@ -38,7 +38,7 @@ import { briefOf } from "./agents.ts";
 import { modeNote } from "./creator.ts";
 import { designNote, type DesignMark } from "./lean.ts";
 import { memoryNote } from "./memory.ts";
-import { commandRisk, namesSecret, plainGit, readsOnly, routine, ruleFor } from "./risk.ts";
+import { commandRisk, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, type BriefOutcome } from "./sidekick.ts";
 
@@ -75,7 +75,12 @@ const liveKeyOf = (threadId: string, agentId: string) => `${threadId}:${agentId}
   expire with the turn like the tool's own requests. ends: what waits on the turn (a brief the lead called).
   winding: those briefs' own ends, which the turn waits for once it has stopped them (BRIEF_WIND_MS at most).
 */
-type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean; agentId?: string; liner?: Set<string>; ends?: Set<() => void>; winding?: Set<Promise<void>> };
+type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean; agentId?: string; liner?: Set<string>; ends?: Set<() => void>; winding?: Set<Promise<void>>; marker?: string };
+/**
+  A "don't ask again this session": `rule` a command's rules (ruleParts) or a tool's name (`tool`), `skill` a skill's
+  folder in full. `label` is what the card offered and what forgetting it names.
+*/
+type Grant = { kind: GrantKind; label: string; parts: string[]; tool?: boolean };
 /** A sidekick's brief at work in a thread: how to stop it, its session (for a steer), and the row it shows on. */
 /** by: who stopped it, when it was stopped: you from its row, the cap, or Liner Code when it tried to send an agent of its own. */
 type Brief = { abort: AbortController; row: string; taskId: string; session?: ProviderSession; by?: "row" | "cap" | "agent" | "replaced" };
@@ -106,10 +111,8 @@ const CARRIED = "Liner Code stopped while this turn ran, so it carries on where 
 const GAVE_UP = "Liner Code stopped mid-turn again";
 /** How many times the Reviewer sends work back before it's yours. */
 const ROUNDS = 2;
-/** A command that reaches outside this Mac: a push, a merge or a post, a send, a copy to another machine. */
-const OUTWARD = /\bgit\s+push\b|\bgh\s+(?:\w+\s+)?(?:merge|create|close|edit|comment|review|delete|reopen)\b|\bgh\s+api\b.*(?:-X|--method|-f\b|-F\b|--field|--input)|\b(?:curl|wget)\b.*(?:\s-d\b|--data|\s-F\b|--form|\s-T\b|--upload-file|-X\s*(?:POST|PUT|DELETE|PATCH)|--post-)|\b(?:ssh|scp|rsync|sftp|nc)\s|\b(?:docker|podman)\s+push\b/i;
-/** Whether a command does: as written too, since what the plain text no longer shows (`git -c core.sshCommand='curl -d @.env …' fetch`) still runs. */
-export const leavesMac = (command: string) => [command, plainGit(command)].some((c) => OUTWARD.test(c));
+/** A command that reaches outside this Mac (a push, a merge or a post, a send, a copy to another machine): risk.ts reads it, with why. */
+export { leavesMac };
 /** How long a tool counts as out of usage when it doesn't say when that ends. */
 const LIMIT_UNKNOWN_MS = 3_600_000;
 /** How long after a window reopened a session still carries on by itself (T3 Code: UsageLimitRecoveryWorker.ts): one left a week wakes on a stale job. */
@@ -174,8 +177,12 @@ export class Runtime {
   private cardLevel = new Map<string, Access>();
   private questions = new Map<string, Waiter<Record<string, string> | null>>();
   private proposals = new Map<string, Waiter<{ approve: boolean; note?: string; plan?: string }>>();
-  /** "Don't ask again for … this session", per thread. */
-  private rules = new Map<string, Set<string>>();
+  /** "Don't ask again … this session", per thread. */
+  private grants = new Map<string, Grant[]>();
+  /** "Don't ask again this turn": the turn it was given in, per thread. Cleared as that turn ends, however it ends. */
+  private turnGrants = new Map<string, number>();
+  /** Notices that describe a setting, said once a session (TurnSink.notice's `once`), per thread. */
+  private toldOnce = new Map<string, { setting: string; told: Set<string> }>();
   /** The PR card's test runs, one per thread, and how to stop each. */
   private prTests = new Map<string, Promise<PrTestResult>>();
   private prStops = new Map<string, AbortController>();
@@ -536,6 +543,7 @@ export class Runtime {
         .join("\n\n"),
       side: Boolean(t.sideOf),
       ...(sidekick ? { sidekick: true } : {}),
+      ...(this.store.projects.find((p) => p.id === t.projectId)?.kind === "design" && !t.worktree ? { designOnItsOwn: true } : {}),
       resume: forking ? t.forkSession!.slice(t.forkSession!.indexOf(":") + 1) : resume,
       fork: forking,
       guard: this.store.settings.guardDestructive,
@@ -629,6 +637,7 @@ export class Runtime {
     const turn = this.turns.get(threadId);
     const id = uid("it");
     store.putItem(threadId, { kind: "approval", id, turn: turn?.turn ?? t.turns, at: Date.now(), ...ask, state: "asking" });
+    this.clock(threadId);
     const was = t.status;
     store.patchThread(threadId, { status: "waiting" });
     store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.whoIs(threadId)} needs you`, body: ask.title });
@@ -760,9 +769,14 @@ export class Runtime {
     if (!command) return { state: "skipped", summary: "No tests found" };
 
     const rule = ruleFor(command);
-    if (!(t.access === "auto" || t.access === "review" || t.access === "full" || this.unattended.has(threadId) || (rule && this.rules.get(threadId)?.has(rule)))) {
+    const risk = commandRisk(command);
+    if (!(t.access === "auto" || t.access === "review" || t.access === "full" || this.unattended.has(threadId) || (rule && risk !== "high" && this.ruleAllows(threadId, command)))) {
       const id = uid("it");
-      store.putItem(threadId, { kind: "approval", id, turn, at: Date.now(), tool: PR_TEST_TOOL, title: `Run ${command}`, description: "Runs the project's tests on this Mac before the pull request goes up.", risk: commandRisk(command), fields: [{ label: "Command", value: command }, { label: "Where", value: cwd }], rule, state: "asking" });
+      // Why: the level asks (it isn't one that runs them by itself), and what can't be undone first when it's that.
+      const why = [...(riskOf(command).risk === "high" ? [riskOf(command).why!] : []), { kind: "level" as const, text: `${ACCESS_NAMES[t.access]} asks before running the project's tests` }];
+      const grants: ApprovalGrant[] = rule && risk !== "high" ? [{ kind: "rule", label: rule }] : [];
+      store.putItem(threadId, { kind: "approval", id, turn, at: Date.now(), tool: PR_TEST_TOOL, title: `Run ${command}`, description: "Runs the project's tests on this Mac before the pull request goes up.", risk, fields: [{ label: "Command", value: command }, { label: "Where", value: cwd }], ...(grants.length ? { rule } : {}), why, grants, state: "asking" });
+      this.clock(threadId);
       const was = t.status;
       store.patchThread(threadId, { status: "waiting" });
       store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.resolve(t).agent.name} needs you`, body: `Run ${command}` });
@@ -882,6 +896,7 @@ export class Runtime {
       // A save that fails anywhere around the turn (a full disk) can't leave it looking at work for good,
       // or with every message after it queued behind a turn nobody is running.
       this.turns.delete(threadId);
+      this.turnGrants.delete(threadId);
       if (!this.store.threads.some((x) => x.id === threadId)) return null;
       const t = this.store.patchThread(threadId, { status: "error" });
       this.store.emit({ type: "notify", threadId, kind: "error", title: "This turn couldn't be saved", body: e instanceof Error ? e.message : String(e) });
@@ -905,6 +920,7 @@ export class Runtime {
     if (show) store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}), ...(o.files?.length ? { files: o.files } : {}) });
     if (o.note) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: o.note });
     store.putItem(threadId, marker);
+    live.marker = marker.id;
 
     let prompt = o.prompt ? o.prompt : o.anchor ? aboutLines(o.anchor, text) : text;
     // Sent from Liner Design: where the design is, its frames, the lean and what's selected, before the words. A side chat and a fix round don't take it.
@@ -929,6 +945,8 @@ export class Runtime {
       // A turn the tool began by itself runs on the session that began it, as it is.
       const { session, fresh, switched } = o.wake ? { session: o.wake.session, fresh: false, switched: false } : await this.session(t, agentId, cwd);
       live.session = session;
+      // The level the tool really thinks at is its to say again (TurnSink.effortNow): a session just opened hasn't yet.
+      if (fresh && agentId === t.agent && store.thread(threadId).effortNow !== undefined) store.patchThread(threadId, { effortNow: undefined });
       const fit = this.effortNote(t, agentId);
       if (fit) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: fit });
       // Stopped while the snapshot was taken or the tool was opening: the turn never starts.
@@ -1007,6 +1025,8 @@ export class Runtime {
       }
       this.sideRows.delete(threadId);
       this.turns.delete(threadId);
+      // "Don't ask again this turn" ends with the turn, however it ended (done, stopped, failed).
+      this.turnGrants.delete(threadId);
     }
     // The session was deleted while the turn wound down: nothing of it is written back.
     if (!store.threads.some((x) => x.id === threadId)) return null;
@@ -1031,7 +1051,12 @@ export class Runtime {
       }
     }
     const errored = failed || sink.errored();
-    store.putItem(threadId, { ...marker, status: stopped ? "stopped" : errored ? "error" : "done", seconds });
+    // The turn's clock leaves out the time it waited on you: what was settled, and a wait still open as it ended.
+    const kept = store.timeline(threadId).find((x) => x.id === marker.id);
+    const m = kept?.kind === "turn" ? kept : marker;
+    const waited = (m.waited ?? 0) + (m.waitingSince ? Math.max(0, Date.now() - m.waitingSince) : 0);
+    const { waitingSince: _open, ...settled } = m;
+    store.putItem(threadId, { ...settled, status: stopped ? "stopped" : errored ? "error" : "done", seconds: Math.max(0, seconds - waited / 1000), ...(waited ? { waited } : {}) });
 
     t = store.thread(threadId);
     this.logUsage(t, agentId, sink.spent(), seconds);
@@ -1416,6 +1441,8 @@ export class Runtime {
   }
 
   stop(threadId: string) {
+    // Nothing asked between Stop and the turn's end goes ahead on "don't ask again this turn".
+    this.turnGrants.delete(threadId);
     if (this.busy.has(threadId)) this.halted.add(threadId);
     this.turns.get(threadId)?.abort.abort();
     this.prStops.get(threadId)?.abort();
@@ -1786,7 +1813,8 @@ export class Runtime {
     this.stop(threadId);
   }
 
-  answer(threadId: string, itemId: string, allow: boolean, reason?: string, always?: boolean, scope?: "all" | "project") {
+  /** `grant`: what "don't ask again" you chose with a yes (`always` is the rule's, as older windows send it). */
+  answer(threadId: string, itemId: string, allow: boolean, reason?: string, always?: boolean, scope?: "all" | "project", grant?: GrantKind | "turn") {
     const item = this.store.item(threadId, itemId);
     if (item.kind !== "approval") throw new Error("That isn't a request.");
     const waiter = this.approvals.get(itemId);
@@ -1801,13 +1829,15 @@ export class Runtime {
     const opened = this.cardLevel.get(itemId);
     if (allow && opened && opened !== "read" && t.access === "read" && !t.sideOf && readForbids(item)) {
       const why = READ_REFUSED(item.fields.some((f) => f.label === "Command"));
-      this.store.putItem(threadId, { ...item, state: "denied", reason: "The session went to Read only." });
+      this.store.putItem(threadId, { ...item, state: "denied", reason: "The session went to Read only.", answeredAt: Date.now() });
       this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: item.turn, at: Date.now(), text: `Access went to Read only while “${item.title}” waited for you, so Liner Code refused it.` });
       this.settleWaiting(threadId);
       return waiter.resolve({ allow: false, reason: why, level: true });
     }
-    if (allow && always && item.rule) this.rules.set(threadId, new Set([...(this.rules.get(threadId) ?? []), item.rule]));
-    this.store.putItem(threadId, { ...item, state: allow ? "approved" : "denied", reason, ...(item.addon && scope ? { addon: { ...item.addon, scope } } : {}) });
+    const chosen = grant ?? (always ? "rule" : undefined);
+    // Said on the item only when it was really taken, so a step that later ran with no card traces back to this yes.
+    const granted = allow && chosen ? this.grant(threadId, item, chosen) : undefined;
+    this.store.putItem(threadId, { ...item, state: allow ? "approved" : "denied", reason, answeredAt: Date.now(), ...(granted ? { granted } : {}), ...(item.addon && scope ? { addon: { ...item.addon, scope } } : {}) });
     this.settleWaiting(threadId);
     waiter.resolve({ allow, reason, scope });
   }
@@ -1819,7 +1849,7 @@ export class Runtime {
     if (item.state === "answered" || item.state === "skipped") return;
     const waiter = this.questions.get(itemId);
     this.questions.delete(itemId);
-    this.store.putItem(threadId, { ...item, state: answers ? "answered" : "skipped", answers });
+    this.store.putItem(threadId, { ...item, state: answers ? "answered" : "skipped", answers, answeredAt: Date.now() });
     this.settleWaiting(threadId);
     if (waiter) waiter.resolve(answers ?? null);
     // Asked after its turn ended (an agent that can't wait): the answer goes as your next message.
@@ -1845,11 +1875,115 @@ export class Runtime {
     this.proposals.delete(itemId);
     // You may have edited the steps before approving: the plan that runs is yours.
     const item = edited?.trim() ? { ...original, plan: edited.trim() } : original;
-    this.store.putItem(threadId, { ...item, state: approve ? "approved" : "changed", note });
+    this.store.putItem(threadId, { ...item, state: approve ? "approved" : "changed", note, answeredAt: Date.now() });
     // It carries on in its turn, now on Auto.
     if (approve) this.store.patchThread(threadId, { access: "auto" });
     this.settleWaiting(threadId);
     waiter.resolve({ approve, note, plan: approve && edited?.trim() ? edited.trim() : undefined });
+  }
+
+  /**
+    Takes on what "don't ask again" you chose with a yes, only as the card offered it: what's offered is worked out again
+    from the ask (its command, its folder) and has to say the same, so a grant is never wider than its label. None for
+    what can't be undone, nor in a routine's step, whatever it's sent.
+  */
+  private grant(threadId: string, item: Extract<Item, { kind: "approval" }>, kind: GrantKind | "turn"): { kind: GrantKind | "turn"; label?: string } | undefined {
+    if (item.risk === "high" || this.unattended.has(threadId) || item.addon) return;
+    if (kind === "turn") {
+      // Only where the card said it could be (`turnGrant`), for the turn the ask came in, while it runs.
+      const live = this.turns.get(threadId);
+      if (!item.turnGrant || !this.turnLevel(threadId) || !live || live.abort.signal.aborted || item.turn !== live.turn || item.tool === "permissions") return;
+      this.turnGrants.set(threadId, live.turn);
+      return { kind };
+    }
+    // Cards from before grants offer their rule alone.
+    const offered = (item.grants ?? (item.rule ? [{ kind: "rule" as const, label: item.rule }] : [])).find((g) => g.kind === kind);
+    if (!offered) return;
+    const command = item.fields.find((f) => f.label === "Command")?.value;
+    const t = this.store.thread(threadId);
+    const cwd = t.worktree?.path ?? this.store.project(t.projectId).path;
+    let next: Grant | undefined;
+    if (kind === "rule") {
+      if (command === undefined) next = { kind, label: offered.label, parts: [offered.label], tool: true };
+      else {
+        const parts = ruleParts(command);
+        if (parts && parts.join(", ") === offered.label) next = { kind, label: offered.label, parts };
+      }
+    } else if (kind === "skill") {
+      const skill = command !== undefined ? skillOffer(command, cwd) : undefined;
+      if (skill && skill.label === offered.label) next = { kind, label: offered.label, parts: [skill.folder] };
+    }
+    if (!next) return;
+    const all = (this.grants.get(threadId) ?? []).filter((g) => !(g.kind === next.kind && g.label === next.label));
+    this.grants.set(threadId, [...all, next]);
+    return { kind: next.kind, label: next.label };
+  }
+
+  /** What this session no longer asks about (approval.rules): its grants, and whether this turn goes ahead without asking. */
+  grantsOf(threadId: string): { grants: ApprovalGrant[]; turn: boolean } {
+    const live = this.turns.get(threadId);
+    return { grants: (this.grants.get(threadId) ?? []).map(({ kind, label }) => ({ kind, label })), turn: Boolean(live && this.turnGrants.get(threadId) === live.turn) };
+  }
+
+  /** Takes a grant back (approval.forget); `turn` ends the turn's. */
+  forget(threadId: string, kind: GrantKind | "turn", label: string) {
+    if (kind === "turn") return void this.turnGrants.delete(threadId);
+    this.grants.set(threadId, (this.grants.get(threadId) ?? []).filter((g) => !(g.kind === kind && g.label === label)));
+  }
+
+  /**
+    Whether a command, or a tool by its rule, was allowed for the session: a command when every rule it needs was
+    granted (ruleParts), a tool by its own name only, so a program named like a tool (`Edit`) never rides on it.
+  */
+  private ruleAllows(threadId: string, command: string | undefined, rule?: string) {
+    const rules = (this.grants.get(threadId) ?? []).filter((g) => g.kind === "rule");
+    if (command === undefined) return Boolean(rule && rules.some((g) => g.tool && g.parts[0] === rule));
+    const needs = ruleParts(command);
+    const granted = new Set(rules.filter((g) => !g.tool).flatMap((g) => g.parts));
+    return Boolean(needs?.length && needs.every((r) => granted.has(r)));
+  }
+
+  /**
+    Auto's own rule, the one function both Auto and "don't ask again this turn" go by. Auto passes the tool's own `unjudged`.
+    The turn's grant passes true for every tool: it applies only at the levels below Auto (Manual, Edits on its own; see
+    turnLevel), where it uses Liner Code's own Auto rule for a tool with no check of its own, whatever the tool is. At Auto
+    and above it is neither offered nor taken nor applied, so a step a judging tool (Claude Code's own Auto, Codex) hands
+    over at Auto can't go ahead on it. A tool's own edit goes ahead; a command when it only reads, or when nothing of the tool's
+    own judged it (`unjudged`) and Liner Code's reading would run it: rated low, inside the project or a skill's script you
+    allowed, none of the asks a low rating says too little about, no .env name, sending nothing out (risk.ts, routine,
+    leavesMac). Never what can't be undone.
+  */
+  private autoLets(req: ApprovalRequest, command: string | undefined, cwd: string, skills: string[], unjudged: boolean) {
+    if (req.risk === "high") return false;
+    if (command === undefined) return EDIT_TOOLS.has(req.tool);
+    if (namesSecret(command)) return false;
+    return readsOnly(command) || (unjudged && routine(command, cwd, process.platform, { inside: skills }) && !leavesMac(command));
+  }
+
+  /**
+    What "don't ask again this turn" lets go ahead (see approve): what Auto's rule would run for a tool with no safety check of
+    its own (autoLets), narrowed in two places, never widened: a read-only command must also pass Auto's place check (routine),
+    and an edit must name files, all in the project.
+  */
+  private turnCovers(req: ApprovalRequest, command: string | undefined, cwd: string, skills: string[]) {
+    if (!this.autoLets(req, command, cwd, skills, true)) return false;
+    // A read too only where Auto's place check passes: Auto lets any read-only command a tool hands over go ahead, which at
+    // Manual is just the read outside the project the tool asked about (`cat ~/.ssh/id_rsa`). Never wider than Auto.
+    if (command !== undefined) return routine(command, cwd, process.platform, { inside: skills }) && !leavesMac(command);
+    const files = req.fields.filter((f) => f.label === "File").map((f) => resolve(cwd, f.value));
+    const root = resolve(cwd);
+    return files.length > 0 && files.every((f) => f === root || f.startsWith(root + sep));
+  }
+
+  /** The levels "don't ask again this turn" is for, as the session stands now: below Auto (Manual, Edits on its own). */
+  private turnLevel(threadId: string) {
+    const access = this.store.thread(threadId).access;
+    return access === "ask" || access === "edits";
+  }
+
+  /** The skill folders you let Auto reach this session. */
+  private reach(threadId: string) {
+    return { skills: (this.grants.get(threadId) ?? []).filter((g) => g.kind === "skill").flatMap((g) => g.parts) };
   }
 
   /**
@@ -1865,8 +1999,30 @@ export class Runtime {
 
   /** Back to running once nothing in a running turn waits on you. */
   private settleWaiting(threadId: string) {
+    this.clock(threadId);
     const still = this.store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
     if (!still && this.turns.has(threadId)) this.store.patchThread(threadId, { status: "running" });
+  }
+
+  /**
+    The running turn's clock stops while something waits on you (an ask, a question, a plan) and goes on when nothing
+    does: its marker holds when the wait began (`waitingSince`) and what it waited in all (`waited`), which its
+    `seconds` leave out. Called as each opens and as each is answered or expires.
+  */
+  private clock(threadId: string) {
+    const live = this.turns.get(threadId);
+    if (!live?.marker || !this.store.threads.some((x) => x.id === threadId)) return;
+    const timeline = this.store.timeline(threadId);
+    const m = timeline.find((x) => x.id === live.marker);
+    if (m?.kind !== "turn" || m.status !== "running") return;
+    const from = this.store.thread(threadId).sideFrom ?? 0;
+    // What this turn itself waits on: an ask left open from an earlier one (the PR card's test run) doesn't stop its clock.
+    const open = timeline.some((x) => x.turn === live.turn && x.turn > from && (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
+    if (open && !m.waitingSince) this.store.putItem(threadId, { ...m, waitingSince: Date.now() }, false);
+    else if (!open && m.waitingSince) {
+      const { waitingSince, ...rest } = m;
+      this.store.putItem(threadId, { ...rest, waited: (m.waited ?? 0) + Math.max(0, Date.now() - waitingSince) });
+    }
   }
 
   /** You moved on with a new message: a question or a plan left open from an earlier turn is settled, so it doesn't hold this turn in Needs you. */
@@ -1908,7 +2064,9 @@ export class Runtime {
       sessions.push(l.session);
       this.live.delete(key);
     }
-    this.rules.delete(threadId);
+    this.grants.delete(threadId);
+    this.turnGrants.delete(threadId);
+    this.toldOnce.delete(threadId);
     return this.ending(threadId, sessions);
   }
 
@@ -2226,6 +2384,7 @@ export class Runtime {
           // Quitting isn't Stop: a question outlives its turn, and your answer goes as your next message (answerQuestion).
           const keep = this.quitting && it?.kind === "question";
           if (it && "state" in it && it.state === "asking" && !keep) store.putItem(threadId, { ...it, state: "expired" } as Item);
+          this.clock(threadId);
           reject(new Error("stopped"));
         };
         // A signal that's already aborted never fires again: settle it now.
@@ -2235,6 +2394,7 @@ export class Runtime {
         signal.addEventListener("abort", gone, { once: true });
       });
     const needsYou = (title: string) => {
+      this.clock(threadId);
       const t = store.patchThread(threadId, { status: "waiting" });
       store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.resolve(t, agentId).agent.name} needs you`, body: title });
     };
@@ -2329,9 +2489,13 @@ export class Runtime {
           return Promise.resolve({ allow: false, level: true, reason: READ_REFUSED(command !== undefined) });
         }
         const held = writes && (now.access === "read" || Boolean(now.sideOf));
+        // A command that names a .env file: what it prints goes to the model (risk.ts, namesSecret). Neither a rule nor
+        // Auto lets one through as a plain read, and neither does "don't ask again this turn".
+        const secret = command !== undefined && namesSecret(command);
         // Allowed for the rest of the session already. Not what can't be undone (a rule from `rm a.txt` is `rm`, and `rm -rf ~` is `rm` too),
-        // nor in a routine's step, whose limits are its own whatever you said in its session.
-        if (!held && req.risk !== "high" && !this.unattended.has(threadId) && req.rule && this.rules.get(threadId)?.has(req.rule)) return Promise.resolve({ allow: true });
+        // nor in a routine's step, whose limits are its own whatever you said in its session. A command only when every
+        // rule it needs was granted (risk.ts, ruleParts), so nothing chained after an allowed command rides on it.
+        if (!held && req.risk !== "high" && !this.unattended.has(threadId) && req.rule && !secret && this.ruleAllows(threadId, command, req.rule)) return Promise.resolve({ allow: true });
         // Nobody's there to ask.
         if (held && this.unattended.has(threadId)) return Promise.resolve({ allow: false, reason: "This turn only reads. Leave the change for the person." });
         // A routine runs with nobody watching: it may do what can be undone, never what can't, and
@@ -2339,21 +2503,78 @@ export class Runtime {
         if (this.unattended.has(threadId)) {
           return Promise.resolve(req.risk === "high" || leavesMac(command ?? "") ? { allow: false, reason: "Routines don't run commands that can't be undone or that reach outside this Mac. Leave it for the person." } : { allow: true });
         }
+        const cwd = now.worktree?.path ?? store.project(now.projectId).path;
+        // The skill folders you let Auto reach this session (the skill grants).
+        const reach = this.reach(threadId);
+        // "Don't ask again this turn": until it ends, an ask goes ahead only when Auto's own rule would run it (autoLets,
+        // the same function Auto's path calls below, with the same skill folders), for a tool with no safety check of its
+        // own; an edit only with every file it names in the project. Everything else still asks, and Read only's holds came
+        // first. Add-on cards and questions and plans don't come this way.
+        const forTurn = this.turnGrants.get(threadId) === turn && this.turns.get(threadId)?.turn === turn && !signal.aborted && !sig.aborted;
+        // Only below Auto, as the level stands at this ask: raised mid-turn it stops mattering, lowered again it applies again.
+        if (forTurn && this.turnLevel(threadId) && !held && req.risk !== "high" && this.turnCovers(req, command, cwd, reach.skills)) return Promise.resolve({ allow: true });
         const toolId = req.key ? tools.get(req.key)?.id : undefined;
         const access = now.access;
         // Auto: the tool's own auto mode lets through what it can; of what it hands over, reading and editing go ahead.
         // A tool with no such mode hands over every command, so a routine one goes ahead too: rated low, inside its
-        // folder, sending nothing out (risk.ts, routine). The rest still comes to you.
-        const plain = () => Boolean(req.unjudged && command !== undefined && routine(command, now.worktree?.path ?? store.project(now.projectId).path) && !leavesMac(command));
-        // A command that names a .env file is neither, though it only reads: what it prints goes to the model (risk.ts, namesSecret).
-        const secret = command !== undefined && namesSecret(command);
-        if (!held && access === "auto" && req.risk !== "high" && (command === undefined ? EDIT_TOOLS.has(req.tool) : !secret && (readsOnly(command) || plain()))) return Promise.resolve({ allow: true });
+        // folder (or a skill's you allowed), sending nothing out (risk.ts, routine, leavesMac). The rest still comes to you.
+        if (!held && access === "auto" && this.autoLets(req, command, cwd, reach.skills, Boolean(req.unjudged))) return Promise.resolve({ allow: true });
+        /**
+          Why it comes to you, most important first, each from the check that decided it: what can't be undone (risk.ts's
+          table), what the tool said of its ask (outside the project, a host Codex asks to reach), then what made this level ask. A check that
+          can't name its reason gives none.
+        */
+        const whyOf = (): ApprovalWhy[] => {
+          const why: ApprovalWhy[] = [];
+          const rated = command !== undefined ? riskOf(command) : undefined;
+          if (req.risk === "high" && rated?.risk === "high" && rated.why) why.push(rated.why);
+          why.push(...(req.why ?? []));
+          const level = (text: string) => why.push({ kind: "level", text });
+          if (held) level(`${now.sideOf ? "A side chat" : ACCESS_NAMES.read} asks before anything that changes files`);
+          else if (access === "ask" || access === "edits") {
+            if (command !== undefined) level(`${ACCESS_NAMES[access]} asks before running commands`);
+            else if (access === "ask" && EDIT_TOOLS.has(req.tool)) level(`${ACCESS_NAMES.ask} asks before every edit`);
+          } else if (access === "auto" && req.risk !== "high") {
+            if (command === undefined) {
+              if (!EDIT_TOOLS.has(req.tool)) level(`${ACCESS_NAMES.auto} asks before tools other than reading and editing`);
+            } else if (secret) level(`${ACCESS_NAMES.auto} leaves a command that names a .env file to you`);
+            else if (req.unjudged) {
+              const j = judge(command, cwd, { inside: reach.skills });
+              if (!j.ok && j.why) why.push(j.why);
+              else if (j.ok) {
+                const out = outwardOf(command);
+                if (out) why.push(out);
+              }
+            }
+          }
+          return why.filter((w, i) => why.findIndex((x) => x.kind === w.kind && x.text === w.text) === i);
+        };
+        /**
+          What "don't ask again this session" can be offered for, each exactly what it allows. Nothing for what can't be
+          undone. A rule only when it's the one the command reads as (ruleFor), so what's granted is what the label says;
+          a skill only at Auto, for a tool nothing of its own judged (that's what Auto's rule lets through).
+        */
+        const grantsOf = (): ApprovalGrant[] => {
+          if (req.risk === "high") return [];
+          const grants: ApprovalGrant[] = [];
+          if (req.rule && !secret && (command === undefined || ruleFor(command) === req.rule)) grants.push({ kind: "rule", label: req.rule });
+          if (access === "auto" && req.unjudged && command !== undefined && !secret) {
+            const skill = skillOffer(command, cwd);
+            if (skill) grants.push({ kind: "skill", label: skill.label });
+          }
+          return grants;
+        };
         const ask = (note?: string) => {
           // Stopped while the Reviewer read the step, or the turn ended: nothing to ask about.
           if (sig.aborted || signal.aborted || over) return Promise.resolve({ allow: false });
           settle();
           const id = uid("it");
-          store.putItem(threadId, { kind: "approval", id, turn, at: Date.now(), tool: req.tool, title: req.title, description: [note, req.description].filter(Boolean).join("\n\n") || undefined, risk: req.risk, fields: req.fields, rule: req.rule, state: "asking", toolId });
+          const grants = grantsOf();
+          const rule = grants.find((g) => g.kind === "rule")?.label;
+          // Whether "this turn" can be offered: the turn's grant would have let this very ask go (the same check as above,
+          // at the same level and holds), so the card offers exactly what it will do.
+          const turnGrant = this.turns.get(threadId)?.turn === turn && this.turnLevel(threadId) && !held && req.risk !== "high" && !this.unattended.has(threadId) && this.turnCovers(req, command, cwd, reach.skills);
+          store.putItem(threadId, { kind: "approval", id, turn, at: Date.now(), tool: req.tool, title: req.title, description: [note, req.description].filter(Boolean).join("\n\n") || undefined, risk: req.risk, fields: req.fields, ...(rule ? { rule } : {}), ...(req.says ? { says: req.says } : {}), why: whyOf(), grants, turnGrant, state: "asking", toolId });
           // The level it was asked at: an answer is judged by the level when it's given (answer).
           this.cardLevel.set(id, store.thread(threadId).access);
           needsYou(req.title);
@@ -2368,7 +2589,7 @@ export class Runtime {
             if (sig.aborted || signal.aborted || over) return { allow: false };
             if (!call?.allow) return ask(call ? `${this.labelOf(call.model)}, reviewing: ${call.reason}` : undefined);
             settle();
-            store.putItem(threadId, { kind: "approval", id: uid("it"), turn, at: Date.now(), tool: req.tool, title: req.title, risk: req.risk, fields: req.fields, rule: req.rule, state: "approved", reason: call.reason, toolId, reviewer: call.model });
+            store.putItem(threadId, { kind: "approval", id: uid("it"), turn, at: Date.now(), tool: req.tool, title: req.title, risk: req.risk, fields: req.fields, rule: req.rule, ...(req.says ? { says: req.says } : {}), state: "approved", reason: call.reason, toolId, reviewer: call.model, answeredAt: Date.now() });
             return { allow: true };
           });
         }
@@ -2424,6 +2645,16 @@ export class Runtime {
         else store.patchThread(threadId, { sessions: { ...t.sessions, [agentId]: ref } });
       },
       notice: (text, key, o) => {
+        // Said once a session: a setting's note the tool would repeat each turn it starts. Said again once the model or
+        // its thinking level changed since, so a switch that fails again after switching back is told.
+        if (o?.once) {
+          const r = this.resolve(store.thread(threadId), agentId);
+          const setting = `${r.provider}:${r.model}|${r.effort}`;
+          const was = this.toldOnce.get(threadId);
+          const told = was?.setting === setting ? was.told : new Set<string>();
+          if (told.has(text)) return;
+          this.toldOnce.set(threadId, { setting, told: told.add(text) });
+        }
         settle();
         // A keyed notice says the same thing again as it changes (a retry's count): one line, kept up to date.
         const id = (key && notices.get(key)) || uid("it");
@@ -2432,6 +2663,11 @@ export class Runtime {
         store.putItem(threadId, { kind: "notice", id, turn, at: prev?.at ?? Date.now(), text, ...(o?.stop ? { stop: true } : {}) });
       },
       heard: () => void (!over && heard()),
+      effortNow: (level) => {
+        // The lead's alone: it's the thread's model.
+        if (agentId !== store.thread(threadId).agent || store.thread(threadId).effortNow === level) return;
+        store.patchThread(threadId, { effortNow: level });
+      },
       error: (message) => {
         settle();
         errored = true;
@@ -2524,7 +2760,7 @@ export function toolsNote(n: (tool: string) => string, family?: string, server =
     `- ${n("server_start")} runs a dev server named in .claude/launch.json (the file Claude Code reads; write it first when it's missing) and opens it in their Browser. Use it rather than starting a dev server from your shell: Liner Code stops it when nobody needs it and starts it again when they come back. ${n("server_logs")} reads what it printed, ${n("server_stop")} stops it.`,
     `- ${n("show_page")} shows them a chart or a table in the chat.`,
     `- ${n("design_show")} shows a screen, page or prototype you design in their Design surface, version by version: write it as one HTML file under .liner/designs/ and call it with the path (or pass the page as html). They comment on parts of it there, and ask for it to be built.`,
-    `- ${["design_files", "design_frame", "design_tree", "design_node", "design_selection", "design_shot"].map(n).join(", ")} work on Liner Design's canvas: the design files of this folder (.liner/designs/<file>/), each frame one HTML file there that you may also edit with your own tools. ${n("design_built")} records a frame you built as a file of the project; ${n("design_picture")} asks the person's picture model for a picture.`,
+    `- ${["design_files", "design_frame", "design_tree", "design_node", "design_selection", "design_shot"].map(n).join(", ")} work on Liner Design's canvas: the design files of this folder (.liner/designs/<file>/), each frame one HTML file there that you may also edit with your own tools. ${n("design_built")} records a frame you built as a file of the project; ${n("design_picture")} asks for an AI picture (one a model generates from words) when the person set up AI pictures; without them, leave a labelled empty box.`,
     `- ${n("memory_add")} saves a fact about this project that later sessions start with; ${n("sessions_search")} looks through earlier sessions here.`,
     "Check web pages you build or change with these tools, not with any other browser or computer-use tool, and open the page again after each edit.",
   ].join("\n");

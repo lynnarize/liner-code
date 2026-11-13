@@ -88,7 +88,7 @@ test("pictures: made by the endpoint, saved under assets/, put into a frame, the
     assert.deepEqual([api.seen[0].body.model, api.seen[0].body.size, api.seen[0].body.n, api.seen[0].body.response_format], ["gpt-image-2", "1024x1536", 1, undefined]);
     assert.match(String(api.seen[0].body.prompt), /Keep to this palette: Deep #F7F8F5, Mark #C4127A\./);
     assert.equal(asks.length, 1);
-    assert.match(asks[0].title, /Make a picture/);
+    assert.match(asks[0].title, /Make an AI picture/);
     assert.deepEqual(asks[0].fields.map((f) => f.label), ["Picture", "Size", "Goes into"]);
     assert.ok(events.some((e) => e.type === "pictures.progress" && e.done === 1));
     assert.ok(events.some((e) => e.type === "canvas.changed" && e.frame === "web-launch" && e.by === "agent"));
@@ -131,10 +131,12 @@ test("pictures: with no model set, a plain sentence and nothing made; a failing 
   const none = setup();
   const r = await call("design_picture", { prompt: "Sand", width: 100, height: 100 }, none.at);
   assert.equal(r.isError, undefined);
-  assert.match(said(r), /^No picture model is set up, so no picture was made and nothing was charged\./);
+  // "AI pictures" are optional (the spec's decision 6): a labelled empty box, and never a nudge to add a model.
+  assert.match(said(r), /^There's no AI pictures model, so no picture was made and nothing was charged\. Leave a labelled empty box/);
+  assert.doesNotMatch(said(r), /Settings|add a/i);
   assert.equal(none.asks.length, 0);
   assert.equal(existsSync(join(none.cwd, ".liner/designs/tide-tables/assets")), false);
-  await assert.rejects(async () => rpc(() => none.ctx)["pictures.make"]({ threadId: "t", cwd: none.cwd, file: "tide-tables", prompt: "x", size: { w: 1, h: 1 } }), /No picture model is set up/);
+  await assert.rejects(async () => rpc(() => none.ctx)["pictures.make"]({ threadId: "t", cwd: none.cwd, file: "tide-tables", prompt: "x", size: { w: 1, h: 1 } }), /There's no AI pictures model\. Your own image files always work/);
 
   const api = await fake((s) => ({ status: 401, body: { error: { message: `Incorrect API key provided: ${s.auth?.slice(7)}` } } }));
   try {
@@ -193,7 +195,7 @@ test("pictures: a design file's own model, No one (refused, nobody asked, nothin
     const r = await call("design_picture", { prompt: "Sand", width: 100, height: 100 }, none.at);
     assert.equal(said(r), NO_ONE);
     assert.equal(r.isError, undefined);
-    await assert.rejects(async () => rpc(() => none.ctx)["pictures.make"]({ threadId: "t", cwd: none.cwd, file: "tide-tables", prompt: "x", size: { w: 100, h: 100 } }), /No one/);
+    await assert.rejects(async () => rpc(() => none.ctx)["pictures.make"]({ threadId: "t", cwd: none.cwd, file: "tide-tables", prompt: "x", size: { w: 100, h: 100 } }), /AI pictures are off for this design file/);
     assert.deepEqual([none.asks.length, api.seen.length], [0, 0]);
 
     const stale = setup(api.url, "never", "gone-model");
@@ -373,7 +375,7 @@ test("N7: a picture link on this Mac is followed only when the endpoint itself i
   const link = `http://127.0.0.1:${(local.address() as { port: number }).port}/admin/delete?all=1`;
   try {
     for (const remote of ["https://images.example.com/v1", "https://203.0.113.9/v1"]) {
-      await assert.rejects(fetchLinked(link, new URL(remote), AbortSignal.timeout(5000)), /link to this Mac, which only a picture model on this Mac may do/);
+      await assert.rejects(fetchLinked(link, new URL(remote), AbortSignal.timeout(5000)), /link to this Mac, which only an AI pictures model on this Mac may do/);
       await assert.rejects(fetchLinked(link.replace("http:", "https:"), new URL(remote), AbortSignal.timeout(5000)), /link to this Mac/);
     }
     assert.deepEqual(hits, [], "no request reached the service on this Mac");

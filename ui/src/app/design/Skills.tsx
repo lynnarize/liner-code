@@ -11,7 +11,7 @@
   (sideSlots, homeSlots, offLeanMore) when this module loads; DesignFace, DesignHome and Dock import it.
 */
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { DesignSkill, Lean, Thread } from "@contracts";
+import type { DesignSkill, Lean } from "@contracts";
 import { FRAME_CHANGED } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import type { SlashRow } from "../Composer";
@@ -57,6 +57,8 @@ const MOCK_SKILLS: DesignSkill[] = import.meta.env.DEV
     ]
   : [];
 const lists = new Map<string, DesignSkill[]>();
+/** Design Home's key for a design on its own, which has no folder yet: lean.skills with no cwd, your own skills only. */
+export const OWN_SKILLS = "\u0000own";
 const asking = new Set<string>();
 const listFns = new Set<() => void>();
 
@@ -64,7 +66,7 @@ function askSkills(cwd: string) {
   if (lists.has(cwd) || asking.has(cwd)) return;
   if (getDesign().mock) return void (lists.set(cwd, MOCK_SKILLS), listFns.forEach((f) => f()));
   asking.add(cwd);
-  rpc("lean.skills", { cwd })
+  rpc("lean.skills", cwd === OWN_SKILLS ? {} : { cwd })
     .then((l) => lists.set(cwd, l))
     .catch(() => lists.set(cwd, []))
     .finally(() => (asking.delete(cwd), listFns.forEach((f) => f())));
@@ -85,6 +87,9 @@ export function useLoaded(cwd: string | undefined, home = false) {
   const picked = useOwn((o) => (cwd ? (o.home[cwd] ?? NONE) : NONE));
   return home ? picked : file;
 }
+
+/** The skills picked on Home for the design it's about to make (under the folder they were listed for). */
+export const pickedFor = (cwd: string) => own.home[cwd] ?? NONE;
 
 /** Switches a skill on or off: for the open design file, or for the one Home is about to make. */
 export function setSkill(name: string, on: boolean, cwd?: string, home = false) {
@@ -185,15 +190,26 @@ function SideSkills({ cwd }: { cwd: string }) {
           <span className="ld-ell">{n}</span>
         </button>
       ))}
+      {/* Skills load with or without a DESIGN.md: the list, with how many more there are. */}
       {skills && mine.length > 0 && (
-        <button type="button" className="ld-tr l-focus" data-rest onClick={openLean}>
-          {rest > 0 ? <I.plus size={14} /> : <I.check size={14} />}
-          <span className="ld-ell">{rest === 0 ? `All ${plural(mine.length, "skill")} loaded` : `${plural(rest, "more skill")}`}</span>
-        </button>
+        <Pop label="Add a skill to this design" width={340} triggerClass="ld-tr ld-tr-add" trigger={<><I.plus size={14} /><span className="ld-ell">Add a skill</span>{rest > 0 ? <span className="ld-m">{rest === mine.length ? rest : `${rest} more`}</span> : <span className="ld-m">all loaded</span>}</>} menu>
+          {() => (
+            <>
+              {mine.map((s) => (
+                <Row key={s.name} title={<span className="ld-lp-mono">/{s.name}</span>} note={s.description} on={loaded.includes(s.name)} onPick={() => setSkill(s.name, !loaded.includes(s.name), cwd)} />
+              ))}
+              <Sep />
+              <Row title="Open the lean" icon={<I.forward size={13} />} onPick={openLean} />
+            </>
+          )}
+        </Pop>
       )}
     </>
   );
 }
+
+/** The loaded skills' count, for the lean row's words. */
+export const useLoadedCount = (cwd: string) => useLoaded(cwd).length;
 
 // ---------- Design Home: chips beside the lean, and the row over the box
 
@@ -383,25 +399,15 @@ function AddFromNote({ about }: { about: OffAbout }) {
   );
 }
 
-// ---------- From Home, the lean chip opens the Lean page in the project's latest session
+// ---------- The Lean page opens over a design's canvas
 
 let faces = 0;
 /** LeanPage.tsx: a Design face is up, so the Lean page opens in it. */
 export const faceUp = () => (faces++, () => void faces--);
 
-async function leanFromHome(cwd?: string) {
-  if (faces > 0 || !cwd) return openLean();
-  const s = getState();
-  const project = s.projects.find((p) => p.path === cwd);
-  if (!project) return openLean();
-  try {
-    const latest: Thread | undefined = s.threads.filter((x) => x.projectId === project.id && !x.archived && !x.sideOf).sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    const t = latest ?? (await rpc("thread.create", { projectId: project.id, title: "Design" }));
-    openLean();
-    window.dispatchEvent(new CustomEvent("lc:open-liner-design", { detail: { threadId: t.id, cwd } }));
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : String(e));
-  }
+/** "ld:open-lean": the Lean page, over the design open now. Never a session made for it (it used to open the project's latest, or make one). */
+function leanFromHome() {
+  if (faces > 0) openLean();
 }
 
 // ---------- Plugging in (after the module graph has run, as DesignHome imports this and this imports it)
@@ -416,14 +422,15 @@ function install() {
   homeSlots.above = ({ cwd }) => <FitRow cwd={cwd} place="home" />;
   homeSlots.or = BrandStart;
   homeSlots.onText = (text) => typed("home", text);
-  homeSlots.made = async (cwd, file) => {
+  // What Home picked (kept under the folder Home listed skills for, `cwd`) goes into the design file it made, in `at`, before its first turn.
+  homeSlots.made = async (cwd, at) => {
     const picked = own.home[cwd] ?? [];
-    if (!picked.length || getDesign().file?.id !== file.id) return;
-    await design.setLean({ ...file.lean, skills: [...new Set([...file.lean.skills, ...picked])] });
+    if (!picked.length) return;
+    await rpc("canvas.save", { cwd: at.cwd, file: at.file.id, patch: { lean: { ...at.file.lean, skills: [...new Set([...at.file.lean.skills, ...picked])] } } });
     put({ home: { ...own.home, [cwd]: [] } });
   };
   offLeanMore.render = (about) => <AddFromNote about={about} />;
-  window.addEventListener("ld:open-lean", (e) => void leanFromHome((e as CustomEvent<{ cwd?: string }>).detail?.cwd));
+  window.addEventListener("ld:open-lean", () => leanFromHome());
   followLean();
 }
 

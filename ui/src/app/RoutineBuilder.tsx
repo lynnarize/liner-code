@@ -9,7 +9,7 @@ import { WorkflowBuilder, type WorkflowField, type WorkflowRunRecord, type Workf
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { agentOf, modelLabel, plural, since } from "./model";
+import { agentOf, codeProjects, modelLabel, plural, since } from "./model";
 import { ACTION, DAYS, triggerText } from "./Routines";
 import { Badge, Pop } from "./ui";
 import { ProjectChooser } from "./Projects";
@@ -250,7 +250,7 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
   const providers = useEngine((s) => s.providers);
   const runs = useEngine((s) => s.runs);
   const c: Ctx = { agents, projects, providers };
-  const [draft, setDraft] = useState<Draft>(() => saved ?? BLANK(projectId ?? projects[0]?.id ?? "", agents.find((a) => a.id !== "demo")?.id ?? agents[0]?.id ?? "demo"));
+  const [draft, setDraft] = useState<Draft>(() => saved ?? BLANK(projectId ?? codeProjects(projects)[0]?.id ?? "", agents.find((a) => a.id !== "demo")?.id ?? agents[0]?.id ?? "demo"));
   const [steps, setSteps] = useState<WorkflowStep[]>(() => toSteps(draft, c));
   const [name, setName] = useState(draft.name);
   const [testOn, setTestOn] = useState("");

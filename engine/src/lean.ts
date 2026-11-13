@@ -342,11 +342,12 @@ export function homeOf(env: NodeJS.ProcessEnv) {
 /**
   The skills an agent may be handed with the lean: yours (~/.claude/skills, ~/.codex/skills), the
   folder's own (.claude/skills), and Liner Code's (engine/src/skills); the first of a name wins.
-  Design skills first, then the rest (kind "other"). `loaded`: on for the design file.
+  Design skills first, then the rest (kind "other"). `loaded`: on for the design file. With no
+  folder (Design Home, before a design has one), yours and Liner Code's only.
 */
-export function listSkills(cwd: string, env: NodeJS.ProcessEnv, loaded: string[] = []): DesignSkill[] {
+export function listSkills(cwd: string | undefined, env: NodeJS.ProcessEnv, loaded: string[] = []): DesignSkill[] {
   const home = homeOf(env);
-  const roots = [join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "skills"), join(cwd, ".claude", "skills"), join(env.CODEX_HOME || join(home, ".codex"), "skills"), join(import.meta.dirname, "skills")];
+  const roots = [join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "skills"), ...(cwd ? [join(cwd, ".claude", "skills")] : []), join(env.CODEX_HOME || join(home, ".codex"), "skills"), join(import.meta.dirname, "skills")];
   const seen = new Set<string>();
   const out: DesignSkill[] = [];
   for (const root of roots) {
@@ -399,7 +400,9 @@ export function designNote(cwd: string, mark: DesignMark, env: NodeJS.ProcessEnv
   const sel = mark.sel;
   const picked = sel ? [...sel.frames.map((f) => nameOf(f)), ...sel.nodes.map((n) => `${nameOf(n.frame)} › ${n.id} ${short(n.html)}`)] : [];
   const tail = [
-    read.length ? `Read first: ${read.join("; ")}.` : "There's no lean yet (no DESIGN.md): follow what the frames already do.",
+    read.length ? `Read first: ${read.join("; ")}.` : "",
+    // The lean is optional: with none, the agent goes by the skills and its own judgement, and is never steered to write one.
+    lean.path ? "" : skills.length ? "This design has no lean: go by the skills above, and otherwise your own judgement, keeping to what the frames already do." : "This design has no lean: use any skills you have loaded, and otherwise your own judgement, keeping to what the frames already do.",
     picked.length ? `Selected: ${picked.join("; ")}. design_selection gives all of it, and inspector changes not written yet.` : "Nothing is selected.",
     lean.tokens.rules.length ? `The lean's rules: ${lean.tokens.rules.join("; ")}.` : "",
     "Look at a frame with design_shot before you say it's done.",
@@ -500,6 +503,7 @@ export function rpc(x: () => DesignCtx): DesignRpc<LeanMethod> {
     },
     "lean.skills": ({ cwd, file }) => {
       const c = x();
+      if (cwd === undefined || cwd === null || cwd === "") return listSkills(undefined, c.env);
       const root = c.folder(cwd);
       return listSkills(root, c.env, file ? readFile(c, root, file).lean.skills : []);
     },

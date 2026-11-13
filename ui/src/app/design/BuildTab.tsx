@@ -19,7 +19,7 @@ import { I } from "../icons";
 import { agentOf } from "../model";
 import { compareOn, openCompare } from "./Compare";
 import { pendingCount, sendToCode } from "./Live";
-import { design, getDesign, isGone, subscribeDesign, useDesign } from "./store";
+import { blankHtml, design, getDesign, isGone, subscribeDesign, useDesign } from "./store";
 import { FOOT } from "./inspect/slots";
 import "./build.css";
 
@@ -103,11 +103,14 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 */
 export async function askAgent(text: string, said = "Sent to the agent") {
   const s = getDesign();
-  if (!s.threadId || !s.file) return void toast.error("Open a session's design file first");
+  if (!s.file) return void toast.error("Open a design file first");
   if (s.scrub !== undefined) return void toast("Back to now first", { description: "A kept turn is only looked at.", duration: 2500 });
   if (s.mock) return void toast(said, { description: text.split("\n")[0], duration: 2500 });
   try {
-    await rpc("thread.send", { id: s.threadId, text, mode: "queue", design: { file: s.file.id } });
+    // A design with no session yet gets it here, begun from this design.
+    const id = await design.session();
+    if (!id) return void toast.error("Open the design's session first");
+    await rpc("thread.send", { id, text, mode: "queue", design: { file: s.file.id } });
     toast(said, { duration: 2000 });
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
@@ -253,12 +256,15 @@ export function BuildTab() {
   const file = useDesign((s) => s.file);
   const mock = useDesign((s) => s.mock);
   const builds = useBuilds();
+  // Read so a frame drawn into for the first time joins the counts.
+  useDesign((s) => s.html);
   const cwd = useDesign((s) => s.cwd);
   const project = useEngine((s) => s.projects.find((p) => p.path === cwd)?.name);
   useEffect(() => void refreshBuilds(), []);
   if (!file) return <div className="ld-body"><div className="ld-bt-empty">Open a design file to build it.</div></div>;
   // A frame whose file is gone has nothing to build.
-  const drawn = file.frames.filter((f) => f.kind === "drawn" && !isGone(f));
+  // A frame whose file is gone, or with nothing in it yet, has nothing to build.
+  const drawn = file.frames.filter((f) => f.kind === "drawn" && !isGone(f) && !blankHtml(getDesign().html[f.id]));
   const live = file.frames.filter((f) => f.kind === "live").length;
   const built = drawn.filter((f) => builds[f.id] && builds[f.id].state !== "none");
   const order: FrameBuild["state"][] = ["step", "design-ahead", "code-ahead"];
@@ -337,9 +343,12 @@ function BuildFoot() {
   const sel = useDesign((s) => s.sel);
   const waiting = useDesign(pendingCount);
   const builds = useBuilds();
+  // Read so a frame drawn into for the first time joins the counts.
+  useDesign((s) => s.html);
   if (!file) return null;
   // A frame whose file is gone has nothing to build.
-  const drawn = file.frames.filter((f) => f.kind === "drawn" && !isGone(f));
+  // A frame whose file is gone, or with nothing in it yet, has nothing to build.
+  const drawn = file.frames.filter((f) => f.kind === "drawn" && !isGone(f) && !blankHtml(getDesign().html[f.id]));
   if (waiting) {
     return (
       <div className="ld-bfoot">
@@ -406,6 +415,8 @@ export function WaitRow({ thread }: { thread: Thread }) {
   const file = useDesign((s) => s.file);
   const waiting = useDesign(pendingCount);
   const builds = useBuilds();
+  // Read so a frame drawn into for the first time joins the counts.
+  useDesign((s) => s.html);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   if (!file || thread.status === "running") return null;

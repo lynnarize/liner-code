@@ -327,7 +327,7 @@ test("antigravity: through call_mcp_tool, the design writers are still refused i
   const picture = linerCall("call_mcp_tool", { server: "liner", tool: "design_picture", arguments: { prompt: "Sand", width: 100, height: 100, design: "tides" } })!;
   await assert.rejects(pictures.call(picture.name, picture.input as Record<string, unknown>, at("read")), /This session is at Read only now \(or it.s a side chat\)/);
   await pictures.call(picture.name, picture.input as Record<string, unknown>, at("ask"));
-  assert.deepEqual(asks, ["Make a picture"], "the picture asks on its own card");
+  assert.deepEqual(asks, ["Make an AI picture"], "the picture asks on its own card");
 });
 
 test("antigravity: liner goes to agy over ACP with each session, and nothing is written under agy's home", async () => {

@@ -12,7 +12,7 @@ import { LayerMark } from "./BuildTab";
 import { LayerChecks } from "./ChecksTab";
 import { useLean } from "./lean";
 import { D } from "./Rail";
-import { design, getDesign, isGone, useDesign } from "./store";
+import { design, getDesign, isBlank, isGone, useDesign } from "./store";
 
 /**
   What other builders put in the sidebar: E's skills rows under the lean (in place of the plain
@@ -34,17 +34,21 @@ export async function reorder(dir: -1 | 1) {
   if (dir > 0 && here.i < sib.length - 1) await design.apply(at.frame, [here.i + 2 < sib.length ? { id: at.node!, move: { before: sib[here.i + 2].id } } : { id: at.node!, move: { into: here.parent.id } }]);
 }
 
-/** The lean's swatches and what it holds, in words. */
+/**
+  The lean's swatches and what it holds, in words. The lean is optional, in three states: none at
+  all ("No lean": the agent uses its own taste), skills but no DESIGN.md, and a DESIGN.md.
+*/
 function LeanRow({ cwd }: { cwd: string }) {
   // The one lean the inspector and the Lean page read too (lean.ts), so an edit there shows here.
   const lean = useLean();
+  const skills = useDesign((s) => s.file?.lean.skills.length ?? 0);
   const t = lean?.tokens;
-  const name = lean?.off === "builtin" ? "Liner 2.0" : (lean?.path?.split("/").pop() ?? "No lean yet");
-  const note = t ? [t.colours.length && `${t.colours.length} colours`, t.type.length && `${t.type.length} ${t.type.length === 1 ? "voice" : "voices"}`, t.steps.length && `${t.steps[0]} pt steps`].filter(Boolean).join(" · ") : !lean ? "Make one from a site or your code" : "";
+  const name = lean?.off === "builtin" ? "Liner 2.0" : lean ? (lean.path?.split("/").pop() ?? "DESIGN.md") : skills ? "No DESIGN.md" : "No lean";
+  const note = t && lean ? [t.colours.length && `${t.colours.length} colours`, t.type.length && `${t.type.length} ${t.type.length === 1 ? "voice" : "voices"}`, t.steps.length && `${t.steps[0]} pt steps`].filter(Boolean).join(" · ") : skills ? `${skills} ${skills === 1 ? "skill" : "skills"} loaded` : "Optional. The agent uses its own taste";
   const sw = (t?.colours ?? []).slice(0, 4);
   return (
     <button type="button" className="ld-lean l-focus" aria-label={`The lean: ${name}. Open it`} onClick={() => (sideSlots.openLean ? sideSlots.openLean() : window.dispatchEvent(new CustomEvent("ld:open-lean", { detail: { cwd } })))}>
-      <span className="ld-q4" aria-hidden>
+      <span className="ld-q4" data-none={!lean || undefined} aria-hidden>
         {sw.length ? sw.map((c) => <i key={c.name} style={{ background: c.value }} />) : <i />}
       </span>
       <span className="ld-lean-t">
@@ -110,6 +114,8 @@ function LayerList() {
   const sel = useDesign((s) => s.sel);
   const tree = useDesign((s) => s.tree);
   const presence = useDesign((s) => s.presence);
+  const blanks = useDesign((s) => (s.file?.frames ?? []).filter((f) => isBlank(s, f)).map((f) => f.id).join(","));
+  const blank = (f: { id: string }) => blanks.split(",").includes(f.id);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const frames = (file?.frames ?? []).filter((f) => f.page === page);
   const selKey = sel.map((x) => `${x.frame}:${x.node ?? ""}`).join(",");
@@ -169,8 +175,9 @@ function LayerList() {
                   file gone
                 </span>
               )}
-              {!isGone(f) && <LayerMark frame={f} />}
-              {!isGone(f) && <LayerChecks frame={f.id} />}
+              {!isGone(f) && blank(f) && <span className="ld-m">empty</span>}
+              {!isGone(f) && !blank(f) && <LayerMark frame={f} />}
+              {!isGone(f) && !blank(f) && <LayerChecks frame={f.id} />}
               {p && <span className="ld-pd" data-lead={p.lead || undefined} aria-label={`${p.name} is drawing this`} />}
             </div>
             {on && root && <Nodes frame={f.id} node={root} depth={1} open={open} onToggle={toggle} picked={picked} />}
@@ -181,17 +188,34 @@ function LayerList() {
   );
 }
 
-/** The sidebar's body in Design, for the session's folder. */
+/** Opens the Lean page with DESIGN.md's empty box ready to write in: nothing is written until you write. */
+function addDesignMd() {
+  sideSlots.openLean?.();
+  // The box is there once the page has drawn.
+  window.setTimeout(() => document.querySelector<HTMLTextAreaElement>(".ld-lp-md textarea")?.focus(), 80);
+}
+
+/** The sidebar's body in Design, for the design open in its tab (its folder, `cwd`). */
 export function DesignSide({ cwd }: { cwd: string }) {
   const file = useDesign((s) => s.file);
   const page = useDesign((s) => s.page ?? s.file?.pages[0]?.id);
+  const lean = useLean();
   const Skills = sideSlots.skills;
   const count = (id: string) => file?.frames.filter((f) => f.page === id).length ?? 0;
   return (
     <div className="ld-side">
-      <div className="lc-sb-lab">Lean</div>
+      <div className="lc-sb-lab ld-lab">
+        Lean
+        <span className="ld-lab-q">optional</span>
+      </div>
       <LeanRow cwd={cwd} />
       {Skills ? <Skills cwd={cwd} /> : <SkillRows />}
+      {!lean && file && (
+        <button type="button" className="ld-tr ld-tr-add l-focus" onClick={addDesignMd}>
+          <I.plus size={14} />
+          <span className="ld-ell">Add DESIGN.md</span>
+        </button>
+      )}
       {file && (
         <>
           <div className="lc-sb-lab ld-lab">

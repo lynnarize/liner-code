@@ -20,7 +20,7 @@ import { bridge } from "./bridge";
 import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
 import { I, ModelMark } from "./icons";
-import { agentOf, ago, bucketOf, clock, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
+import { agentOf, ago, bucketOf, clock, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
 import { ContextMenu, Disc, LimitRow, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
 import { appNotice, updates } from "./Updates";
 import { pairOf } from "./Crew";
@@ -71,6 +71,8 @@ const key = (id: string) => {
 
 /** What the list shows: every project's sessions by how they stand, by folder, or a place they're put away in. */
 type View = "all" | "folder" | "snoozed" | "settled" | "archive";
+/** By folder: the one group every design on its own is listed under. */
+const DESIGNS = "designs";
 const VIEWS: Record<View, string> = { all: "All projects", folder: "By folder", snoozed: "Snoozed", settled: "Settled", archive: "Archive" };
 type Order = "activity" | "started";
 
@@ -261,9 +263,13 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     for (const t of [...here].sort((a, b) => a.createdAt - b.createdAt)) if (t.forkOf && ids.has(t.forkOf)) forks.set(t.forkOf, [...(forks.get(t.forkOf) ?? []), t]);
     const top = here.filter((t) => !(t.forkOf && ids.has(t.forkOf)));
     const known = new Set(projects.map((p) => p.id));
-    const sections = [...projects.map((p) => ({ id: p.id, name: p.name, list: top.filter((t) => t.projectId === p.id) })), { id: "", name: "No project", list: top.filter((t) => !known.has(t.projectId)) }]
+    // Designs on their own (Project.kind "design") are one group, "Designs", never a project each, and never Scratch.
+    const designs = new Set(projects.filter((p) => p.kind === "design").map((p) => p.id));
+    const inSection = (id: string) => (t: Thread) => (id === DESIGNS ? designs.has(t.projectId) : id ? t.projectId === id : !known.has(t.projectId));
+    const sections = [...projects.filter((p) => p.kind !== "design").map((p) => ({ id: p.id, name: p.name })), { id: DESIGNS, name: "Designs" }, { id: "", name: "No project" }]
+      .map((x) => ({ ...x, list: top.filter(inSection(x.id)) }))
       .filter((x) => x.list.length > 0)
-      .map((x) => ({ ...x, needs: here.filter((t) => (x.id ? t.projectId === x.id : !known.has(t.projectId)) && place(t) === "needs").length }));
+      .map((x) => ({ ...x, needs: here.filter((t) => inSection(x.id)(t) && place(t) === "needs").length }));
     return { sections, forks };
   }, [byBucket, projects, order]);
 
@@ -436,7 +442,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   */
   const settleProject = async (projectId: string, name: string) => {
     const known = new Set(projects.map((p) => p.id));
-    const mine = [...byBucket.needs, ...byBucket.working, ...byBucket.open].filter((t) => (projectId ? t.projectId === projectId : !known.has(t.projectId)));
+    const designs = new Set(projects.filter((p) => p.kind === "design").map((p) => p.id));
+    const mine = [...byBucket.needs, ...byBucket.working, ...byBucket.open].filter((t) => (projectId === DESIGNS ? designs.has(t.projectId) : projectId ? t.projectId === projectId : !known.has(t.projectId)));
     const go = mine.filter((t) => place(t) === "open");
     const busy = mine.filter((t) => place(t) === "working").length;
     const waiting = mine.length - go.length - busy;
@@ -561,8 +568,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       <>
         <p className="lc-sbc-title">{t.title}</p>
         <p className="lc-sbc-where">
-          <ProjectBadge name={project?.name ?? "No project"} none={!project} />
-          <span className="lc-sbc-pj">{project?.name ?? "No project"}</span>
+          <ProjectBadge name={project?.name ?? "No project"} none={!project} design={Boolean(t.design)} />
+          <span className="lc-sbc-pj">{t.design ? designWhere(t, projects) : (project?.name ?? "No project")}</span>
           {branch && (
             <>
               <span className="lc-sbc-dot">·</span>
@@ -716,7 +723,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         >
           {two ? (
             <>
-              <ProjectBadge name={projectName(t)} none={!projects.some((p) => p.id === t.projectId)} dot={dot} />
+              <ProjectBadge name={projectName(t)} none={!projects.some((p) => p.id === t.projectId)} design={Boolean(t.design)} dot={dot} />
               <span className="lc-sb-tx">
                 <span className="lc-sb-h">
                   {title}
@@ -726,7 +733,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                 </span>
                 <span className="lc-sb-s">
                   <span className="lc-sb-st">
-                    {projectName(t)}
+                    {t.design ? designWhere(t, projects) : projectName(t)}
                     {state && (
                       <>
                         {" · "}
@@ -1090,7 +1097,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                     <div className="lc-sb-lab lc-sb-plab" onContextMenu={(e) => (e.preventDefault(), setProjMenu({ id: x.id, name: x.name, x: e.clientX, y: e.clientY }))}>
                       <button type="button" className="lc-sb-pt l-focus" aria-expanded={!shut} title={shut ? "Show its sessions" : "Fold its sessions"} onClick={() => toggleProject(x.id)}>
                         <span className="lc-sb-picon">
-                          <I.folder size={16} />
+                          {x.id === DESIGNS ? <I.edit size={15} /> : <I.folder size={16} />}
                         </span>
                         <span>{x.name}</span>
                         <I.chevR size={11} />
@@ -1103,7 +1110,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                       <button type="button" className="lc-sb-add l-focus" aria-label={`Settle the finished sessions in ${x.name}`} title="Settle the project: its finished sessions go to Settled" onClick={() => void settleProject(x.id, x.name)}>
                         <I.settle size={12} />
                       </button>
-                      {x.id && (
+                      {x.id && x.id !== DESIGNS && (
                         <button type="button" className="lc-sb-add l-focus" aria-label={`New session in ${x.name}`} title="New session here" onClick={() => onNew(x.id)}>
                           <I.plus size={12} />
                         </button>
@@ -1377,10 +1384,10 @@ function badgeLetters(name: string) {
   row it carries a dot while the session works (the accent), waits on you (warn) or stopped short
   (danger).
 */
-function ProjectBadge({ name, none, dot }: { name: string; none?: boolean; dot?: "work" | "warn" | "danger" }) {
+function ProjectBadge({ name, none, design, dot }: { name: string; none?: boolean; design?: boolean; dot?: "work" | "warn" | "danger" }) {
   return (
-    <span className="lc-pjb" data-none={none || undefined} aria-hidden>
-      {badgeLetters(name)}
+    <span className="lc-pjb" data-none={none || undefined} data-design={design || undefined} aria-hidden>
+      {design ? <I.edit size={13} /> : badgeLetters(name)}
       {dot && <span className="lc-pjb-dot" data-k={dot} />}
     </span>
   );

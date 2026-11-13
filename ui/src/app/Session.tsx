@@ -15,6 +15,7 @@ import { prefersReducedMotion } from "@liner/lib/spring";
 import { getState, isCheckpoint, isPrompt, loadItems, rpc, useEngine, useItems, useItemsWhere } from "./engine";
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
+import { AskDock, useDockAsk } from "./Ask";
 import { EnvMenu } from "./Env";
 import { ShipCard } from "./Ship";
 import { I, ModelMark } from "./icons";
@@ -502,6 +503,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const beside = dock.open && !dock.full;
   // A pair is spoken to through its lead, which hands its sidekick the work.
   const placeholder = `Ask ${pair?.lead ?? coder.name} for changes, or point at a file with @`;
+  // An ask waiting on you sits at the composer, over the rest of the tray's head (Ask.tsx).
+  const asking = useDockAsk(thread, pair?.lead ?? coder.name);
   const empty = loaded && count === 0;
 
   // ⌥↑ and ⌥↓ go to the prompt before or after the one you're reading (in the composer, only while it's empty).
@@ -645,7 +648,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                     <span>{pair ? `${pair.lead} leads and hands ${pair.side} the work it can spell out. ` : ""}Say what you need below. Anything that needs you will wait here as a card.</span>
                   </div>
                 ) : (
-                  <Timeline threadId={thread.id} seen={seen.current ?? NONE_SEEN} onReview={review} reviewing={dock.open && dock.panes.some((p) => p.tab === "changes") ? focus : null} onGrow={follow} />
+                  <Timeline threadId={thread.id} docked seen={seen.current ?? NONE_SEEN} onReview={review} reviewing={dock.open && dock.panes.some((p) => p.tab === "changes") ? focus : null} onGrow={follow} />
                 )}
                 <ShipCard thread={thread} />
               </div>
@@ -712,10 +715,12 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                   busy={busy}
                   placeholder={busy ? `Write while it works: it goes when the turn ends` : placeholder}
                   autoFocus={!wall}
-                  // The tray's head: who the work waits on, over what's waiting to commit (the row that
-                  // stays sits next to the card, so the one that comes and goes doesn't move it).
+                  ask={asking ?? undefined}
+                  // The tray's head: an ask waiting on you, then who the work waits on, over what's waiting
+                  // to commit (the row that stays sits next to the card, so the one that comes and goes doesn't move it).
                   top={
                     <>
+                      {asking && <AskDock dock={asking} />}
                       <CrewStrip thread={thread} />
                       {openFiles > 0 && <ToCommit files={openFiles} lines={lines} onView={() => setDock((d) => openTab(d, "changes"))} />}
                     </>

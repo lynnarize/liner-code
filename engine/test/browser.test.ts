@@ -15,6 +15,10 @@ import { withExit } from "../src/providers/codex-server.ts";
 import { Proxies } from "../src/proxy.ts";
 import { htmlPages, listeningPorts, pagePath, parseListeners, parseThreads } from "../src/surfaces.ts";
 import { AgentTools, isPage, linerTitle } from "../src/agent-tools.ts";
+import { noLeaks } from "./leaks.ts";
+
+// A process a test started and didn't end fails that test by name (and is ended), rather than keeping the file from exiting.
+noLeaks();
 
 const get = (url: string) =>
   new Promise<{ status: number; type: string; body: string }>((resolve, reject) => {

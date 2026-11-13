@@ -28,7 +28,7 @@ const SURFACE_KEYS: [string, string, string][] = [
 ].filter(([id]) => ROUTINES_ON || id !== "routines") as [string, string, string][];
 
 export const COMMANDS: Command[] = [
-  { id: "new", label: "New session", group: "Anywhere", keys: ["mod+n"] },
+  { id: "new", label: "New session (in Liner Design, a new design)", group: "Anywhere", keys: ["mod+n"] },
   { id: "commands", label: "Command menu: sessions, projects, everything", group: "Anywhere", keys: ["mod+k"] },
   { id: "settings", label: "Settings", group: "Anywhere", keys: ["mod+,"] },
   { id: "sidebar", label: "Show or hide the sidebar", group: "Anywhere", keys: ["mod+\\"] },
@@ -59,6 +59,9 @@ export const FIXED: { group: string; label: string; keys: string[] }[] = [
   { group: "Writing a message", label: "A new line", keys: [mac ? "⇧" : "Shift", "Enter"] },
   { group: "Writing a message", label: "Your last messages", keys: ["↑", "↓"] },
   { group: "Writing a message", label: "Point at a file, a command, a skill", keys: ["@", "/", "$"] },
+  { group: "When an agent asks", label: "Run it, while the box is empty and you haven't typed for a moment", keys: ["Enter"] },
+  { group: "When an agent asks", label: "Run it, and don't ask again for the first thing it offers", keys: [MOD, "Enter"] },
+  { group: "When an agent asks", label: "Not this: say what to do instead, or send it back", keys: ["Esc"] },
   { group: "In the sessions list", label: "Move between sessions", keys: ["↑", "↓"] },
   { group: "In the sessions list", label: "Pin, snooze, mark done", keys: ["P", "S", "D"] },
   { group: "In the sessions list", label: "Rename", keys: ["F2"] },

@@ -5,7 +5,7 @@
   you (a request, a question, a plan) waits in place. The answer follows, and the turn ends with
   one line: what changed, and the Reviewer's verdict.
 */
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { addonKey, PR_TEST_TOOL, type ConnectionAsk, type Item, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
 import { appIcon, OfferCard } from "./Addon";
@@ -16,12 +16,13 @@ import { I, ModelMark, Rays } from "./icons";
 import { PageCard } from "./Page";
 import { DesignCard } from "./Design";
 import { PrChatCard } from "./Pr";
+import { commandOf as askCommand, headlineOf } from "./Ask";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
 import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
 import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
-import { Fanout, isSidekick, onWhom, stateOf } from "./Crew";
+import { Fanout, isSidekick, onWhom } from "./Crew";
 import { toast } from "@liner/components/toast/toast";
 import { Boundary } from "./Boundary";
 import { bridge, isNative } from "./bridge";
@@ -50,30 +51,24 @@ function foldedAsks(items: Item[]) {
 }
 
 /** What became of an answered ask, as its call's row says it. */
-const askWord = (a: Ask) => (a.state === "approved" ? (a.reviewer ? "Reviewer allowed" : "You allowed") : a.state === "denied" ? "You said no" : "Not answered");
+const askWord = (a: Ask) => (a.state === "approved" ? (a.reviewer ? "Reviewer allowed" : `You allowed${grantedWords(a)}`) : a.state === "denied" ? "You said no" : "Not answered");
+/** What a yes also took, said after "you allowed": the turn, or what the session stopped asking about. */
+const grantedWords = (a: Ask) => {
+  const g = a.granted;
+  if (!g) return "";
+  if (g.kind === "turn") return ", for this turn";
+  if (!g.label) return ", and stopped asking";
+  return `, and stopped asking for ${g.kind === "skill" ? "this skill's scripts" : g.label === "Edit" ? "edits" : g.label}`;
+};
 
 /**
-  What became of a step's asks: one says why; several (a run of edits) say each answer once, with
-  how many times, as "✓ Reviewer allowed ×3".
+  What became of a step's asks, as tags on its row: "you allowed"; a run of edits says each answer
+  once, with how many times, as "Reviewer allowed ×3".
 */
-function asked(said: Ask[]): ReactNode[] {
-  if (said.length === 1) {
-    const a = said[0];
-    return [
-      <span className={a.state === "approved" ? "lc-good" : "lc-bad"}>
-        {a.state === "approved" ? "✓" : "✕"} {askWord(a)}
-        {a.reason && <span className="lc-quiet">: {a.reason.length > 80 ? `${a.reason.slice(0, 79)}…` : a.reason}</span>}
-      </span>,
-    ];
-  }
+function tagsOf(said: Ask[]) {
   const words = new Map<string, Ask[]>();
   for (const a of said) words.set(askWord(a), [...(words.get(askWord(a)) ?? []), a]);
-  return [...words].map(([word, list]) => (
-    <span className={list[0].state === "approved" ? "lc-good" : "lc-bad"}>
-      {list[0].state === "approved" ? "✓" : "✕"} {word}
-      {list.length > 1 && ` ×${list.length}`}
-    </span>
-  ));
+  return [...words].map(([word, list]) => `${word.replace(/^You /, "you ").replace(/^Not /, "not ")}${list.length > 1 ? ` ×${list.length}` : ""}`);
 }
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
 type Review = Extract<Item, { kind: "review" }>;
@@ -116,6 +111,11 @@ type Props = {
   onReview: (checkpointId: string, path?: string) => void;
   reviewing?: { id: string; path?: string } | null;
   onGrow?: () => void;
+  /**
+    The session shows a plain ask at its composer (Ask.tsx): here it is a row that waits, not a
+    card. Left out (a side chat, which has no such composer), the card stays in the timeline.
+  */
+  docked?: boolean;
 };
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -127,7 +127,7 @@ function useSteady<A extends unknown[]>(fn: ((...a: A) => void) | undefined) {
   return useCallback((...a: A) => ref.current?.(...a), []);
 }
 
-export function Timeline({ threadId, items: given, seen, onReview, reviewing, onGrow }: Props) {
+export function Timeline({ threadId, items: given, seen, onReview, reviewing, onGrow, docked }: Props) {
   const own = useItems(given ? undefined : threadId);
   const items = given ?? own;
   const agents = useEngine((s) => s.agents);
@@ -146,14 +146,14 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewing, on
       {turns.map(({ turn, n, items: list }) => (
         // One turn that can't show says so in its place; the rest of the thread stays (T3 Code's RenderErrorBoundary).
         <Boundary key={turn} label="This turn" quiet>
-          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} />
+          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} docked={docked} />
         </Boundary>
       ))}
     </div>
   );
 }
 
-const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
+const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow, docked }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
   // Your turn, and any parts that carried it on (a build, a refine, a fix): one turn, one foot, and
   // a head for each model's part, so who did what reads in order.
   const marks = items.filter((x): x is Mark => x.kind === "turn");
@@ -166,8 +166,17 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
   // Every part undone, it says what was undone rather than "0 files".
   const undone = cps.every((c) => c.reverted);
   const shownCp = cps.length > 1 && lastCp ? { ...lastCp, files: mergeFiles((undone ? cps : cps.filter((c) => !c.reverted)).flatMap((c) => c.files)), reverted: undone } : lastCp;
-  // `id` is the item a block stands for, when its key isn't one (a trail, a plan's draft).
-  const blocks: { key: string; id?: string; node: ReactNode }[] = [];
+  // `id` is the item a block stands for, when its key isn't one (a trail, a plan's draft). A trail's
+  // node is made once the whole turn is read, when it's known which one is live; `still` blocks
+  // never come in with the block's fade and blur (the work block and its status line), and `said`
+  // marks words, after which a trail before them is done.
+  const blocks: { key: string; id?: string; node?: ReactNode; trail?: TrailIn; still?: boolean; said?: boolean }[] = [];
+  // The turn's steps so far, for its status line.
+  let count = 0;
+  // A tool gone quiet (its notice with Stop, and nothing since) is said on the status line, not as a line of its own.
+  const qi = running ? items.findLastIndex((x) => x.kind === "notice" && Boolean(x.stop)) : -1;
+  const quiet = qi >= 0 && qi > items.findLastIndex((x) => x.kind !== "notice") ? (items[qi] as Extract<Item, { kind: "notice" }>) : undefined;
+  const waiting = running && items.some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
   const asks = useMemo(() => foldedAsks(items), [items]);
   const folded = new Set([...asks.values()].map((a) => a.id));
   const fresh = (id: string) => !seen.has(id);
@@ -195,15 +204,18 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
     const entries = run;
     run = [];
     const key = first ?? entries[0].it.id;
-    // Thinking with no step beside it (before a reply, say) is a row of its own. It takes the key
-    // the trail it starts will have, so when a step joins it the row stays and doesn't come in again.
-    if (!entries.some((e) => e.kind !== "thought")) {
+    // Thinking with no step beside it (before a reply, say) is a row of its own once it's done. It
+    // takes the key the trail it starts will have, so when a step joins it the row stays and doesn't
+    // come in again. While the turn works it is the live work block instead: thinking makes no row then.
+    if (!live && !entries.some((e) => e.kind !== "thought")) {
       for (const [j, e] of entries.entries()) if (e.kind === "thought") blocks.push({ key: `t${j === 0 ? key : e.it.id}`, id: j === 0 ? key : e.it.id, node: <Thought it={e.it} /> });
       return;
     }
     // Its own part's checkpoint (a build after the plan keeps its own), for its lines and its diffs.
     const partCp = cps.find((c) => c.turn === entries[0].it.turn) ?? cp;
-    blocks.push({ key: `t${key}`, id: key, node: <Trail threadId={threadId} entries={entries} asks={asks} cp={partCp} live={live} who={whoOf(at ?? marker, agents, providers)} onReview={onReview} /> });
+    const read = rowsOf(entries, partCp);
+    count += read.rows.filter((r) => r.kind === "step").length;
+    blocks.push({ key: `t${key}`, id: key, still: true, trail: { entries, ...read, cp: partCp, who: whoOf(at ?? marker, agents, providers) } });
   };
   const offers: Extract<Item, { kind: "offer" }>[] = [];
   for (const [i, it] of items.entries()) {
@@ -233,27 +245,28 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
     }
     if (it.kind === "tool") run.push({ kind: "tool", it });
     else if (it.kind === "reasoning") run.push({ kind: "thought", it });
-    // Asking you never folds away: it stands on its own until you answer. An add-on's receipt stays on its own too, with its Undo.
-    else if (it.kind === "approval" && it.state !== "asking" && !it.addon) run.push({ kind: "ask", it });
+    // Asking you never folds away: at the composer it is a row that waits on the trail, else it stands on its own until
+    // you answer. An add-on's receipt stays on its own too, with its Undo.
+    else if (it.kind === "approval" && !it.addon && (it.state !== "asking" || docked)) run.push({ kind: "ask", it });
     else {
       flush();
       if (it.kind === "approval") blocks.push({ key: it.id, node: it.addon?.kind === "panel" ? <PanelAddonCard threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> : it.addon ? <AddonCard threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> : <Approval threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> });
-      else if (it.kind === "user") blocks.push({ key: it.id, node: <You threadId={threadId} it={it} fresh={fresh(it.id)} onReview={onReview} /> });
+      else if (it.kind === "user") blocks.push({ key: it.id, said: true, node: <You threadId={threadId} it={it} fresh={fresh(it.id)} onReview={onReview} /> });
       else if (it.kind === "turn") {
         at = it;
         const part = parts.get(it.id);
-        if (part) blocks.push({ key: it.id, node: <TurnHead it={it} marks={part} n={it === marker ? n : undefined} items={items} agents={agents} providers={providers} /> });
+        if (part) blocks.push({ key: it.id, node: <TurnHead it={it} marks={part} n={it === marker ? n : undefined} items={items} agents={agents} providers={providers} timed={!items.some((x) => x.kind === "tool" && isStep(x))} /> });
       }
       else if (it.kind === "text") {
         const planning = Boolean((at ?? marker)?.planning);
         const draft = planning && unplanned(i) ? draftOf(it.text) : null;
         // A lead's tag still arriving ("<pl") isn't shown: the words before it stay as they were when the plan starts.
-        if (!draft) blocks.push({ key: it.id, node: <StreamedMarkdown className="lc-md" text={planning && it.streaming ? untag(it.text).replace(/<\/?[a-z]*$/i, "") : untag(it.text)} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
+        if (!draft) blocks.push({ key: it.id, said: true, node: <StreamedMarkdown className="lc-md" text={planning && it.streaming ? untag(it.text).replace(/<\/?[a-z]*$/i, "") : untag(it.text)} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
         else {
           // What the lead says around its plan reads in order around this line, and the card and
           // those words take the same keys when the turn ends (the engine's ids), so they settle
           // in place: nothing moves above the card or comes in twice.
-          if (draft.before.trim()) blocks.push({ key: it.id, node: <StreamedMarkdown className="lc-md" text={draft.before} streaming={false} animate={fresh(it.id)} onGrow={onGrow} /> });
+          if (draft.before.trim()) blocks.push({ key: it.id, said: true, node: <StreamedMarkdown className="lc-md" text={draft.before} streaming={false} animate={fresh(it.id)} onGrow={onGrow} /> });
           blocks.push({ key: `${it.id}-plan`, id: it.id, node: <PlanDraft text={draft.plan} title={draft.title} /> });
           if (draft.after) blocks.push({ key: `${it.id}-after`, node: <StreamedMarkdown className="lc-md" text={draft.after} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
         }
@@ -279,7 +292,9 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
             </p>
           ),
         });
-      // A notice that a tool has gone silent carries Stop beside it while its turn runs.
+      // A notice that a tool has gone silent carries Stop beside it while its turn runs; the one that
+      // still holds (nothing came after it) is said on the status line instead.
+      else if (it.kind === "notice" && it === quiet) continue;
       else if (it.kind === "notice")
         blocks.push({
           key: it.id,
@@ -300,12 +315,20 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
   flush(running);
   // An offer to make an app shows once its turn has ended, after the answer (DeepSeek Harness's card).
   if (!running) for (const o of offers) blocks.push({ key: o.id, node: <OfferCard threadId={threadId} it={o} who={whoOf(at ?? marker, agents, providers)} /> });
+  // The trail at work is the turn's last, with nothing said after it: the rest fold to their one line.
+  const lastTrail = blocks.findLastIndex((b) => b.trail);
+  const live = running && lastTrail >= 0 && !blocks.slice(lastTrail + 1).some((b) => b.said) ? lastTrail : -1;
+  // Done, the turn's time goes at the end of its last trail's line, unless a part's head says it ("built it in 46s").
+  const end = marks[marks.length - 1];
+  const took = !running && marker && end?.status === "done" && end.seconds !== undefined && !marks.some((m) => m.part || m.planning) ? (end.at - marker.at) / 1000 + end.seconds - marks.slice(0, -1).reduce((n, m) => n + (m.waited ?? 0), 0) / 1000 : undefined;
+  // While it works, the turn ends on its status line: what it's doing and its clock.
+  if (running && marker) blocks.push({ key: `live-${marker.id}`, still: true, node: <LiveStatus threadId={threadId} marks={marks} items={items} steps={count} quiet={quiet} /> });
   return (
     <section className="lc-turn" data-running={running || undefined}>
-      {blocks.map((b) => (
+      {blocks.map((b, i) => (
         // data-item lets the session find a block: the prompt minimap scrolls to your messages by it.
-        <div key={b.key} className="lc-blk" data-item={b.id ?? b.key} data-fresh={fresh(b.id ?? b.key) || undefined}>
-          {b.node}
+        <div key={b.key} className="lc-blk" data-item={b.id ?? b.key} data-fresh={(!b.still && fresh(b.id ?? b.key)) || undefined}>
+          {b.trail ? <Trail threadId={threadId} {...b.trail} asks={asks} live={i === live} waiting={waiting} took={i === lastTrail ? took : undefined} onReview={onReview} /> : b.node}
         </div>
       ))}
     </section>
@@ -338,32 +361,47 @@ const PART_WORDS: Record<TurnPart, [string, string]> = {
 };
 
 /**
-  Who did a part of the turn, on what model, and how long: "Forge ◑ Sonnet 5.5 · 46s", "Opus 5.5 ·
-  planned in 41s". The first part's head carries the turn's number; a model that carried it on
-  (built the plan, finished the draft) has a head of its own that says what it did. What it's
-  doing right now is the live row under it; while it works, its disc pulses.
+  Who did a part of the turn, on what model, and how long: "Forge ◑ Sonnet 5.5", "Opus 5.5 · planned
+  in 41s". The first part's head carries the turn's number; a model that carried it on (built the
+  plan, finished the draft) has a head of its own that says what it did. What it's doing right now
+  and the running clock are on the turn's status line, at its end where the eye is; the head stays
+  still. A plain turn's time goes on its trail's line once it's done (`timed`: it has none, so the
+  head keeps it).
 */
-function TurnHead({ it, marks, n, items, agents, providers }: { it: Mark; marks: Mark[]; n?: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] }) {
+function TurnHead({ it, marks, n, items, agents, providers, timed }: { it: Mark; marks: Mark[]; n?: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[]; timed: boolean }) {
   const a = agentOf(it.agent, agents, providers);
   // The part's state is its last mark's: working while any of them works.
   const end = marks[marks.length - 1];
   const status = marks.some((m) => m.status === "running") ? "running" : end.status;
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (status !== "running") return;
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, [status]);
   const why = marks.flatMap((m) => (m.why ? [m.why] : [])).join(" ");
-  const asking = items.some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
   // A planner that ended in a plan "planned"; one that only answered worked, like any other.
   const planned = it.planning && items.some((x) => x.kind === "proposal");
-  const [doing, did] = it.part ? PART_WORDS[it.part] : it.planning ? (planned ? ["planning", "planned in"] : ["thinking it through", ""]) : ["working", ""];
-  const took = status === "running" ? (now - it.at) / 1000 : end.seconds === undefined ? undefined : (end.at - it.at) / 1000 + end.seconds;
+  const did = it.part ? PART_WORDS[it.part][1] : it.planning && planned ? "planned in" : "";
+  const took = end.seconds === undefined ? undefined : (end.at - it.at) / 1000 + end.seconds;
+  const meta =
+    status === "running"
+      ? ""
+      : took === undefined
+        ? status === "stopped"
+          ? "stopped"
+          : status === "error"
+            ? "stopped with a problem"
+            : did
+              ? did.replace(/ in$/, "")
+              : ""
+        : status === "stopped"
+          ? `stopped after ${duration(took)}`
+          : status === "error"
+            ? `stopped with a problem after ${duration(took)}`
+            : did
+              ? `${did} ${duration(took)}`
+              : timed
+                ? duration(took)
+                : "";
   // A model on its own is named after the model, so its mark sits on the disc instead of a tag.
   const alone = isModelAgent(it.agent);
   return (
-    <div className="lc-head" data-running={status === "running" || undefined} data-part={n === undefined || undefined} title={why || undefined}>
+    <div className="lc-head" data-part={n === undefined || undefined} title={why || undefined}>
       {alone ? (
         <span className="lc-disc lc-disc-model" style={{ width: 22, height: 22 }} aria-hidden>
           <ModelMark kind={markOf(it.model)} size={13} />
@@ -373,74 +411,117 @@ function TurnHead({ it, marks, n, items, agents, providers }: { it: Mark; marks:
       )}
       <b>{a.name}</b>
       {!alone && <ModelTag kind={markOf(it.model)} label={modelLabel(it.model, providers)} />}
-      <span className="lc-head-meta">
-        ·{" "}
-        {status === "running"
-          ? asking
-            ? "waiting for you"
-            : doing
-          : took === undefined
-            ? status === "stopped"
-              ? "stopped"
-              : status === "error"
-                ? "stopped with a problem"
-                : did
-                  ? did.replace(/ in$/, "")
-                  : "done"
-            : `${status === "stopped" ? "stopped after " : status === "error" ? "stopped with a problem after " : did ? `${did} ` : ""}${duration(took)}`}
-      </span>
+      {meta && <span className="lc-head-meta">· {meta}</span>}
       <span className="lc-grow" />
-      {status === "running" && <span className="lc-head-clock lc-mono">{duration(took)}</span>}
       {n !== undefined && <span className="lc-head-meta">Turn {n}</span>}
     </div>
   );
 }
 
-function verb(t: Tool) {
-  const p = t.path ? nameOf(t.path) : undefined;
-  if (t.tool === "ExitPlanMode") return "is writing the plan";
-  if (t.toolKind === "edit" || t.toolKind === "write") return `is editing ${p ?? "a file"}`;
-  if (t.toolKind === "read") return `is reading ${p ?? "a file"}`;
-  if (t.toolKind === "search") return "is searching the code";
-  if (t.toolKind === "exec") return `is running ${t.title.replace(/^Run /, "").slice(0, 40)}`;
-  if (t.toolKind === "web" || t.toolKind === "fetch") return "is reading the web";
-  if (t.toolKind === "task") return isSidekick(t) ? "is waiting on its sidekick" : "is working with a subagent";
-  return `is using ${t.tool}`;
-}
+/** What a part that is still at work is doing, for the status line: "Building", "Planning". */
+const PART_NOW: Record<TurnPart, string> = { build: "Building", refine: "Finishing it", repair: "Repairing it", fix: "Fixing it", revise: "Revising it", takeover: "Taking it on" };
 
 /**
-  A live line whose words change as the work moves on ("Reading a.ts…", then "Editing b.ts…"). The new
-  words unblur into place while the light passing through them keeps going: it runs on a masked copy
-  that stays mounted, not on the words (T3 Code's ActivityShimmerOverlay, apps/web/src/components/chat/TimelineRowParts.tsx).
+  Clocks that tick by writing their own text, so a running turn doesn't draw its list again every
+  second: one timer for all of them, there only while one is up (T3 Code: apps/web/src/lib/tickTextContent.ts).
 */
-function LiveLine({ text, className }: { text: string; className?: string }) {
+const ticking = new Set<() => void>();
+let ticker: number | undefined;
+function onTick(fn: () => void) {
+  ticking.add(fn);
+  ticker ??= window.setInterval(() => {
+    for (const f of ticking) f();
+  }, 1000);
+  return () => {
+    ticking.delete(fn);
+    if (ticking.size || ticker === undefined) return;
+    window.clearInterval(ticker);
+    ticker = undefined;
+  };
+}
+/** Text that keeps itself up to date each second. React never owns its words, so a redraw and a tick can't fight over them. */
+function Tick({ text, className }: { text: () => string; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const read = useRef(text);
+  read.current = text;
+  const put = useCallback(() => {
+    const el = ref.current;
+    const t = read.current();
+    if (el && el.textContent !== t) el.textContent = t;
+  }, []);
+  useLayoutEffect(put);
+  useEffect(() => onTick(put), [put]);
+  return <span ref={ref} className={className} />;
+}
+/** A clock while it runs: whole seconds, so it doesn't show tenths it never updates. */
+const ticked = (s: number) => (s < 60 ? `${Math.floor(Math.max(0, s))}s` : duration(Math.floor(s)));
+
+/**
+  The turn's one status line, at its end: a pip (the only thing in the turn that moves), what it's
+  doing as one word, its clock and how many steps. Waiting on you, it's amber and says where the
+  clock stopped: time you take isn't the agent's. A tool gone quiet says so here, with Stop.
+*/
+function LiveStatus({ threadId, marks, items, steps, quiet }: { threadId: string; marks: Mark[]; items: Item[]; steps: number; quiet?: Extract<Item, { kind: "notice" }> }) {
+  const first = marks[0];
+  const now = marks.findLast((m) => m.status === "running") ?? marks[marks.length - 1];
+  const asks = items.filter((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
+  const waiting = asks.length > 0;
+  const waited = marks.reduce((n, m) => n + (m.waited ?? 0), 0);
+  // When the wait began: the engine's mark, else the oldest thing still asking.
+  const since = marks.find((m) => m.waitingSince)?.waitingSince ?? (waiting ? Math.min(...asks.map((a) => a.at)) : undefined);
+  const clock = () => ticked((Math.min(Date.now(), since ?? Infinity) - first.at - waited) / 1000);
+  const last = items.findLast((x) => x.kind !== "notice");
+  const word = waiting
+    ? "Waiting for you"
+    : now.part
+      ? PART_NOW[now.part]
+      : now.planning
+        ? "Planning"
+        : !items.some((x) => x.kind === "tool" && x.status === "running") && last?.kind === "reasoning" && last.streaming
+          ? "Thinking"
+          : "Working";
+  // "opencode hasn't said anything new for 1 minute": the notice's first clause; the rest is its title.
+  const hush = quiet && quiet.text.split(/:\s/)[0];
   return (
-    <span className={className ? `lc-live ${className}` : "lc-live"}>
-      <span className="lc-live-t" key={text}>
-        {text}
-      </span>
-      <span className="lc-live-light" aria-hidden>
-        <span className="lc-live-light-in">
-          <span className="lc-live-t" key={text}>
-            {text}
-          </span>
+    <div className="lc-status" role="status" data-wait={waiting || undefined} data-quiet={(!waiting && quiet) || undefined} title={!waiting && quiet ? quiet.text : undefined}>
+      <span className="lc-pip" aria-hidden />
+      <b>{word}</b>
+      {waiting ? (
+        <span className="l-num">
+          the clock stopped at <Tick text={clock} />
         </span>
-      </span>
-    </span>
+      ) : (
+        <span className="lc-status-t l-num">
+          <span aria-hidden>
+            <Tick text={clock} />
+          </span>
+          {steps > 0 && ` · ${plural(steps, "step")}`}
+          {hush && ` · ${hush}`}
+        </span>
+      )}
+      {!waiting && quiet && (
+        <>
+          <span className="lc-grow" />
+          <button type="button" className="lc-notice-stop l-focus" onClick={() => void rpc("thread.stop", { id: threadId })}>
+            Stop
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 
 /** Thinking under 3 seconds isn't worth a line once it's done; nor is a row for it, which would leave a gap. */
 const shown =(it: Extract<Item, { kind: "reasoning" }>) => Boolean(it.text.trim()) && (it.streaming || (it.seconds ?? 0) >= 3);
 
-/** Thinking: a quiet fold that says how long it took, marked like the trail: a dot, then the words and the chevron. On the trail its dot sits on the rail. */
+/** Thinking: a quiet fold that says how long it took, the words and then the chevron. On an open trail it's one of its rows. */
 function Thought({ it }: { it: Extract<Item, { kind: "reasoning" }> }) {
   const [open, setOpen] = useState(false);
   if (!shown(it)) return null;
   return (
     <div className="lc-thought" data-open={open || undefined} data-live={it.streaming || undefined}>
       <button type="button" className="lc-thought-h l-focus" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className={it.streaming ? "l-shimmer" : undefined}>{it.streaming ? "Thinking…" : `Thought for ${duration(it.seconds)}`}</span>
+        <span>{it.streaming ? "Thinking…" : `Thought for ${duration(it.seconds)}`}</span>
         <Chev className="lc-row-chev" />
       </button>
       <div className="lc-fold">
@@ -638,45 +719,135 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
   });
 }
 
-/**
-  A turn's work as a trail of steps: each a line, and the fact that matters under it (what Claude
-  Code shows). While the turn runs the trail is open: the step at work pulses, counts up and shows
-  its last output, new steps slide in, and the rail carries a moving light. When the turn ends it
-  folds by itself to one line that keeps the highlights; it opens again with a press.
-*/
-function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId: string; entries: Entry[]; asks: Map<string, Ask>; cp?: Checkpoint; live: boolean; who: string; onReview: (checkpointId: string, path?: string) => void }) {
-  // Folded, while it works too: its row says what it did, or the step under way; it opens for the steps.
-  const [isOpen, setOpen] = useState(false);
-  const [rows, setRows] = useState<string[]>([]);
-  // A running step's clock ticks only where it's seen.
-  const [now, setNow] = useState(Date.now());
-  // Agents this part sent off (Claude Code's Agent tool): they fan out under the row, each with what it does (Crew.tsx), not as steps.
-  const sent = useMemo(() => entries.flatMap((e) => (e.kind === "tool" && e.it.toolKind === "task" && isStep(e.it) ? [e.it] : [])), [entries]);
-  useEffect(() => {
-    if (!live || !isOpen) return;
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, [live, isOpen]);
-  // Steps in the order they came, with thinking, what was said and asks between them.
-  const list = useMemo(() => {
-    const out: Row[] = [];
-    let tools: Tool[] = [];
-    const flush = () => {
-      for (const step of trailSteps(tools, cp)) out.push({ kind: "step", step });
-      tools = [];
-    };
-    for (const e of entries) {
-      if (e.kind === "tool") {
-        if (!sent.includes(e.it)) tools.push(e.it);
-      } else {
-        flush();
-        out.push(e);
-      }
+/** A trail's rows in the order they came: its steps (as trailSteps groups them), with thinking and answered asks between them. */
+type TrailIn = { entries: Entry[]; rows: Row[]; sent: Tool[]; cp?: Checkpoint; who: string };
+function rowsOf(entries: Entry[], cp?: Checkpoint): { rows: Row[]; sent: Tool[] } {
+  // Agents this part sent off (Claude Code's Agent tool): they fan out under the trail, each with what it does (Crew.tsx), not as steps.
+  const sent = entries.flatMap((e) => (e.kind === "tool" && e.it.toolKind === "task" && isStep(e.it) ? [e.it] : []));
+  const rows: Row[] = [];
+  let tools: Tool[] = [];
+  const flush = () => {
+    for (const step of trailSteps(tools, cp)) rows.push({ kind: "step", step });
+    tools = [];
+  };
+  for (const e of entries) {
+    if (e.kind === "tool") {
+      if (!sent.includes(e.it)) tools.push(e.it);
+    } else {
+      flush();
+      rows.push(e);
     }
-    flush();
-    return out;
-  }, [entries, cp, sent]);
-  const steps = list.filter((r): r is { kind: "step"; step: TrailStep } => r.kind === "step").map((r) => r.step);
+  }
+  flush();
+  return { rows, sent };
+}
+
+/** Markdown as plain words on one line, for the slot: no marks, links as their words, code as its text. */
+const flat = (md: string) =>
+  md
+    .replace(/```[^\n]*\n?/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, "")
+    .replace(/(\*\*|\*|~~)(?=\S)([^\n]*?\S)\1/g, "$2")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** How long a new row takes to come in. Only while you watch, and only its opacity. */
+const ROW_IN = 160;
+
+/**
+  A turn's work. While it runs it is a block that keeps its height: "N earlier steps" once there are
+  more than three (it opens all of them in a box that scrolls and follows the newest, T3 Code's
+  bounded work log), the last three steps a line each, and a slot of two lines that is always there:
+  what the running command last printed, else the newest thinking since the last step. Thinking makes
+  no row while it works and rows are only ever added at the end, so nothing jumps; nothing in it moves
+  either, the status line's pip under it does that. When the turn ends it folds to one line that says
+  what it did, and opens with a press to every row, thinking too, in the same quiet style.
+*/
+function Trail({ threadId, entries, rows, sent, asks, cp, live, waiting, took, onReview }: TrailIn & { threadId: string; asks: Map<string, Ask>; live: boolean; waiting: boolean; took?: number; onReview: (checkpointId: string, path?: string) => void }) {
+  const [isOpen, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
+  const [opened, setOpened] = useState<string[]>([]);
+  const steps = rows.filter((r): r is { kind: "step"; step: TrailStep } => r.kind === "step").map((r) => r.step);
+  // When each row came, so one that arrives while you watch fades in; those there when the trail first drew don't.
+  const came = useRef(new Map<string, number>());
+  const drawn = useRef(false);
+  useEffect(() => {
+    drawn.current = true;
+  }, []);
+  const toggle = (key: string) => setOpened((x) => (x.includes(key) ? x.filter((k) => k !== key) : [...x, key]));
+  const row = (r: Row) => {
+    if (r.kind === "thought")
+      return (
+        <li key={r.it.id} className="lc-trail-note">
+          <Thought it={r.it} />
+        </li>
+      );
+    if (r.kind === "ask") {
+      if (!came.current.has(r.it.id)) came.current.set(r.it.id, drawn.current && live ? Date.now() : 0);
+      return <AskRow key={r.it.id} it={r.it} fresh={live && Date.now() - (came.current.get(r.it.id) ?? 0) < ROW_IN} />;
+    }
+    const key = r.step.key;
+    if (!came.current.has(key)) came.current.set(key, drawn.current && live ? Date.now() : 0);
+    return <StepRow key={key} s={r.step} said={r.step.tools.flatMap((t) => asks.get(t.id) ?? [])} cp={cp} open={opened.includes(key)} onToggle={() => toggle(key)} onReview={onReview} fresh={live && Date.now() - (came.current.get(key) ?? 0) < ROW_IN} />;
+  };
+  // The box of every step follows the newest while you're at its end (T3 Code's bounded scroller).
+  const box = useRef<HTMLDivElement>(null);
+  const stuck = useRef(true);
+  // The slot comes the first time it has something to show and stays for the rest of the live block.
+  const slotOn = useRef(false);
+  const shownRows = live ? rows.filter((r) => r.kind !== "thought") : rows;
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el && stuck.current) el.scrollTop = el.scrollHeight;
+  }, [all, shownRows.length]);
+  if (live) {
+    const last = shownRows.slice(-3);
+    const earlier = shownRows.length - last.length;
+    // The slot: the running command's last two lines; else the newest thinking since the last step.
+    const tail = steps.findLast((s) => s.state === "running")?.tail;
+    const since = entries.slice(entries.findLastIndex((e) => e.kind !== "thought") + 1);
+    const thought = tail ? "" : flat(since.flatMap((e) => (e.kind === "thought" ? [e.it.text] : [])).join(" ")).slice(-360);
+    if (tail || thought) slotOn.current = true;
+    const slot = !waiting && slotOn.current;
+    // Nothing of its own to show yet (a lead waiting on its sidekick): no rail and no empty slot, only who it sent.
+    if (!shownRows.length && !slot)
+      return (
+        <div className="lc-trail" data-live>
+          <Fanout threadId={threadId} tools={sent} />
+        </div>
+      );
+    return (
+      <div className="lc-trail" data-live>
+        <ol className="lc-wk">
+          {earlier > 0 && (
+            <li>
+              <button type="button" className="lc-wk-earlier l-focus" aria-expanded={all} onClick={() => setAll(!all)}>
+                {plural(earlier, "earlier step")}
+                <Chev className="lc-row-chev" />
+              </button>
+            </li>
+          )}
+          {all && earlier > 0 ? (
+            <li>
+              <div className="lc-wk-box" ref={box} onScroll={(e) => (stuck.current = e.currentTarget.scrollHeight - e.currentTarget.scrollTop - e.currentTarget.clientHeight < 24)}>
+                <ol className="lc-wk lc-wk-all">{shownRows.map(row)}</ol>
+              </div>
+            </li>
+          ) : (
+            last.map(row)
+          )}
+          {slot && (
+            <li className="lc-wk-slot" data-mono={tail ? true : undefined} aria-hidden>
+              {tail ? tail.split("\n").map((l, i) => <span key={i}>{l}</span>) : thought && <span>{thought}</span>}
+            </li>
+          )}
+        </ol>
+        <Fanout threadId={threadId} tools={sent} />
+      </div>
+    );
+  }
   const failed = steps.filter((s) => s.state === "failed").length;
   // Folded, the row keeps what it changed, ran, read and looked up, and whether it checked its work.
   const tools = steps.flatMap((s) => s.tools);
@@ -698,100 +869,116 @@ function Trail({ threadId, entries, asks, cp, live, who, onReview }: { threadId:
     web && "read the web",
     checked && "checked the Browser",
   ].filter((x): x is string => Boolean(x));
-  if (!said.length) said.push(steps.length ? plural(steps.length, "step") : sent.every(isSidekick) ? "handed work to its sidekick" : `sent ${onWhom(sent)}`);
-  // Working: the step under way, as the head would say it ("Editing index.html…"), or the agents it waits on.
-  const current = tools.findLast((t) => t.status === "running");
-  const thinking = entries.some((e) => e.kind === "thought" && e.it.streaming);
-  // Held up by the agents still at work, as the composer's line counts them (one you stopped isn't): a pair's lead waits on its sidekick.
-  const waiting = sent.filter((t) => stateOf(t) === "running" && t.status === "running");
-  const doing = current ? verb(current).replace(/^is /, "") : thinking ? "thinking" : waiting.length ? `waiting on ${onWhom(waiting)}` : "working";
+  if (!said.length) said.push(steps.length ? plural(steps.length, "step") : sent.length === 0 ? "thought it through" : sent.every(isSidekick) ? "handed work to its sidekick" : `sent ${onWhom(sent)}`);
   return (
-    <div className="lc-trail" data-open={isOpen || undefined} data-live={live || undefined}>
+    <div className="lc-trail" data-open={isOpen || undefined}>
       <button type="button" className="lc-trail-sum l-focus" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}>
-        {live ? (
-          <>
-            <LiveLine className="lc-trail-parts" text={`${doing[0].toUpperCase()}${doing.slice(1)}…`} />
-            {steps.length > 0 && <span className="lc-quiet l-num">{plural(steps.length, "step")}</span>}
-          </>
-        ) : (
-          <span className="lc-trail-parts">
-            {said.map((p, i) => (
-              <span key={p}>
-                {i > 0 && ", "}
-                {i === 0 ? `${p[0].toUpperCase()}${p.slice(1)}` : p}
-                {i === 0 && edited.length > 0 && lines && (
-                  <>
-                    {" "}
-                    <Lines {...lines} />
-                  </>
-                )}
-              </span>
-            ))}
-          </span>
-        )}
+        <span className="lc-trail-parts">
+          {said.map((p, i) => (
+            <span key={p}>
+              {i > 0 && ", "}
+              {i === 0 ? `${p[0].toUpperCase()}${p.slice(1)}` : p}
+              {i === 0 && edited.length > 0 && lines && (
+                <>
+                  {" "}
+                  <Lines {...lines} />
+                </>
+              )}
+            </span>
+          ))}
+        </span>
         {failed > 0 && <span className="lc-trail-failed">· {failed} failed</span>}
+        {took !== undefined && <span className="lc-trail-took l-num">· {duration(took)}</span>}
         <Chev className="lc-row-chev" />
       </button>
-      <div className="lc-trail-fold" inert={!isOpen || undefined}>
-        <ol className="lc-trail-list">
-          {list.map((r, i) => {
-            if (r.kind === "thought")
-              return (
-                <li key={r.it.id} className="lc-trail-note">
-                  <Thought it={r.it} />
-                </li>
-              );
-            if (r.kind === "ask")
-              return (
-                <li key={r.it.id} className="lc-trail-ask">
-                  <Approval threadId={threadId} it={r.it} who={who} />
-                </li>
-              );
-            const s = r.step;
-            const said = s.tools.flatMap((t) => asks.get(t.id) ?? []);
-            // A step you said no to failed because of it: your no says so, once.
-            const result = said.length && said.every((a) => a.state === "denied") ? undefined : s.result;
-            // An edit with its file in the turn's checkpoint opens Changes at that file; the diff says more than the edit's input.
-            const diff = s.diff && cp ? { id: cp.id, path: s.diff } : null;
-            const has = !diff && (s.tools.some((t) => t.input || t.output) || said.some((a) => a.reason));
-            const rowOpen = rows.includes(s.key);
-            return (
-              <li key={s.key} className="lc-tstep" data-state={s.state} style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
-                <button
-                  type="button"
-                  className="lc-tstep-line l-focus"
-                  data-diff={diff ? true : undefined}
-                  aria-expanded={has ? rowOpen : undefined}
-                  disabled={!has && !diff}
-                  title={diff ? `Show ${nameOf(diff.path)} in Changes` : undefined}
-                  onClick={() => (diff ? onReview(diff.id, diff.path) : setRows((x) => (x.includes(s.key) ? x.filter((k) => k !== s.key) : [...x, s.key])))}
-                >
-                  <span className="lc-tstep-dot" aria-hidden />
-                  <b className={s.state === "running" ? "lc-tstep-verb l-shimmer" : "lc-tstep-verb"}>{s.verb}</b>
-                  {s.target && <code className="lc-tstep-target">{s.target}</code>}
-                  {diff && <span className="lc-tstep-go" aria-hidden>Changes ›</span>}
-                  <span className="lc-grow" />
-                  <span className="lc-tstep-time l-num">{s.state === "running" ? (now - s.at >= 2000 ? duration((now - s.at) / 1000) : "") : s.seconds >= 1 ? duration(s.seconds) : ""}</span>
-                </button>
-                {(result || said.length > 0) && <div className="lc-tstep-res">{joined([result, ...asked(said)])}</div>}
-                {s.tail && <pre className="lc-tstep-tail">{s.tail}</pre>}
-                {has && rowOpen && (
-                  <div className="lc-tstep-more">
-                    {s.tools.map((t) => (
-                      <Fragment key={t.id}>
-                        {t.input && <pre className="lc-pre">{t.input}</pre>}
-                        {t.output && <pre className="lc-pre" data-out>{tailOf(t.output)}</pre>}
-                      </Fragment>
-                    ))}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      </div>
+      {isOpen && <ol className="lc-wk lc-wk-all">{rows.map(row)}</ol>}
       <Fanout threadId={threadId} tools={sent} />
     </div>
+  );
+}
+
+/**
+  One step on a line: its verb, what it touched in mono, how it went in grey, what you said to its
+  ask as a tag, and its time at the right. Finished it's grey; the one at work is in full ink, and it
+  only ever changes its words in place (Reading → Read). A dot only where something needs saying: it
+  failed, or you said no. It opens for its input and output, or an edit opens Changes at its file.
+*/
+function StepRow({ s, said, cp, open, onToggle, onReview, fresh }: { s: TrailStep; said: Ask[]; cp?: Checkpoint; open: boolean; onToggle: () => void; onReview: (checkpointId: string, path?: string) => void; fresh: boolean }) {
+  const refused = said.length > 0 && said.every((a) => a.state === "denied");
+  // A step you said no to failed because of it: your no says so, once, with your words if you gave any.
+  const reason = refused ? said.find((a) => a.reason)?.reason : undefined;
+  const result = refused ? (reason ? `“${clip(reason, 80)}”` : undefined) : s.result;
+  // An edit with its file in the turn's checkpoint opens Changes at that file; the diff says more than the edit's input.
+  const diff = s.diff && cp ? { id: cp.id, path: s.diff } : null;
+  const has = !diff && (s.tools.some((t) => t.input || t.output) || said.some((a) => a.reason));
+  const at = s.at;
+  return (
+    <li className="lc-wk-row" data-state={refused ? "no" : s.state} data-new={fresh || undefined}>
+      <span className="lc-wk-dot" aria-hidden />
+      <button
+        type="button"
+        className="lc-wk-ln l-focus"
+        data-diff={diff ? true : undefined}
+        aria-expanded={has ? open : undefined}
+        disabled={!has && !diff}
+        title={diff ? `Show ${nameOf(diff.path)} in Changes` : undefined}
+        onClick={() => (diff ? onReview(diff.id, diff.path) : onToggle())}
+      >
+        <b className="lc-wk-verb">{s.verb}</b>
+        {s.target && <code className="lc-wk-target">{s.target}</code>}
+        {result && <span className="lc-wk-r">{result}</span>}
+        {tagsOf(said).map((t) => (
+          <span key={t} className="lc-wk-tag">
+            {t}
+          </span>
+        ))}
+        {diff && (
+          <span className="lc-wk-go" aria-hidden>
+            Changes ›
+          </span>
+        )}
+        <span className="lc-grow" />
+        {s.state === "running" ? <Tick className="lc-wk-time l-num" text={() => ((Date.now() - at) / 1000 >= 2 ? ticked((Date.now() - at) / 1000) : "")} /> : <span className="lc-wk-time l-num">{s.seconds >= 1 ? duration(s.seconds) : ""}</span>}
+      </button>
+      {has && open && (
+        <div className="lc-tstep-more">
+          {s.tools.map((t) => (
+            <Fragment key={t.id}>
+              {t.input && <pre className="lc-pre">{t.input}</pre>}
+              {t.output && <pre className="lc-pre" data-out>{tailOf(t.output)}</pre>}
+            </Fragment>
+          ))}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+  An ask on the trail. Waiting, it is a row in full ink with an amber dot, "Asks to …" and "waiting
+  for you": the ask itself is at the composer. Answered without a step to fold into, it says what
+  became of it: refused, a red dot and "Didn't …", with your words if you gave any.
+*/
+function AskRow({ it, fresh }: { it: Ask; fresh: boolean }) {
+  // In the agent's words when it gave any; a command without them is "run" and the command in mono
+  // after it, cut to the row's line, never the command as the verb.
+  const words = headlineOf(it);
+  const command = words === undefined ? askCommand(it) : undefined;
+  const said = words ?? "run";
+  const what = /^[A-Z][a-z]/.test(said) ? said[0].toLowerCase() + said.slice(1) : said;
+  const state = it.state === "asking" ? "wait" : it.state === "denied" ? "no" : "done";
+  const verb = it.state === "asking" ? `Asks to ${what}` : it.state === "denied" ? `Didn't ${what}` : `Asked to ${what}`;
+  return (
+    <li className="lc-wk-row" data-state={state} data-new={fresh || undefined}>
+      <span className="lc-wk-dot" aria-hidden />
+      <button type="button" className="lc-wk-ln" disabled title={it.title}>
+        <b className="lc-wk-verb">{verb}</b>
+        {command !== undefined && <code className="lc-wk-target">{command.replace(/\s+/g, " ").trim()}</code>}
+        {it.reason && <span className="lc-wk-r">“{clip(it.reason, 80)}”</span>}
+        <span className="lc-wk-tag">{it.state === "asking" ? "waiting for you" : tagsOf([it])[0]}</span>
+        <span className="lc-grow" />
+      </button>
+    </li>
   );
 }
 

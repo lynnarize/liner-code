@@ -39,6 +39,11 @@ export function familyOf(id: ProviderId): BuiltinProvider | "acp" {
   model family, which lets routine ones go ahead and passes the rest to you.
 */
 export type Access = "read" | "ask" | "edits" | "auto" | "review" | "full";
+/**
+  Each level by the name the person sees in the composer (ui/src/app/model.ts ACCESS_LEVELS, and the two Liner sets
+  itself), for what the engine says about a level: an ask's `why` ("Manual asks before running commands").
+*/
+export const ACCESS_NAMES: Record<Access, string> = { auto: "Auto", ask: "Manual", review: "Reviewer decides", full: "Full access", read: "Read only", edits: "Edits on its own" };
 export const ACCESS: Access[] = ["read", "ask", "edits", "auto", "review", "full"];
 /** Effort levels from least to most, as tools name them: how near one is to another. */
 const EFFORT_ORDER = ["minimal", "low", "medium", "high", "xhigh", "max"];
@@ -295,6 +300,12 @@ export type Project = {
   /** Its GitHub repository, as "owner/name", when origin points there. */
   remote?: string;
   createdAt: number;
+  /**
+    "design": a design on its own (design.new with no project), its folder in the designs home
+    (~/Liner Designs/<slug>/, see design.ts DESIGNS_HOME). Never Scratch, never one of the Code
+    face's projects or its chooser: the app leaves these out of its project lists. Unset: a project.
+  */
+  kind?: "design";
 };
 
 /** limited: the tool's plan ran out mid-turn; Resume carries on once it resets. */
@@ -342,6 +353,8 @@ export type Thread = {
   /** Overrides the agent's model for this thread. */
   model?: string;
   effort?: Effort;
+  /** The thinking level the tool really runs the model at, when it isn't `effort` (a tool with no such level). */
+  effortNow?: string;
   forkOf?: string;
   archived?: boolean;
   /** Where you put a session: Pinned on top, Snoozed until a time, or settled (`done`), out of the way until it's busy again. Only you settle a session, unless you turned on a rule that does. */
@@ -368,6 +381,11 @@ export type Thread = {
   pr?: { number: number; url: string; state: string };
   /** A routine's run. */
   routine?: { id: string; run: string };
+  /**
+    Begun from a design: the design file (its slug in .liner/designs/) this session draws. Every
+    session of a design project has it (the engine sets it when thread.create leaves it out).
+  */
+  design?: { file: string };
   /**
     How the agent works in it, fixed for the session's life (DeepSeek Harness's agent presets):
     unset is Standard; "creator" is Workshop, which adds to Liner Code itself (its connections,
@@ -744,6 +762,19 @@ export type ConnectionAsk = AskBase & {
   dsh?: DshAsk;
 };
 
+/**
+  Why an ask came to you. `text` completes "… asks because " in lower case with no full stop ("it
+  reaches images.unsplash.com"); `level` stands as its own sentence ("Manual asks before every
+  command"); `undo` stands after "Can't be undone: " ("deletes files for good").
+*/
+export type ApprovalWhy = { kind: "undo" | "outside" | "network" | "changes" | "level"; text: string };
+/**
+  A "don't ask again this session" an ask can offer: `rule` a command (its parts, for a compound
+  one), `skill` scripts in an installed skill's folder (Auto).
+*/
+export type GrantKind = "rule" | "skill";
+export type ApprovalGrant = { kind: GrantKind; label: string };
+
 type Base = { id: string; turn: number; at: number };
 export type Item =
   | (Base & {
@@ -762,6 +793,10 @@ export type Item =
       part?: TurnPart;
       /** Why this turn went to whom (what the Reviewer found), said when you ask, not on the timeline. */
       why?: string;
+      /** Milliseconds this turn spent waiting on you (asks, questions, plans), settled; `seconds` leaves them out. */
+      waited?: number;
+      /** Set while at least one ask, question or plan of this turn is open: when the wait began. */
+      waitingSince?: number;
     })
   | (Base & {
       kind: "user";
@@ -821,8 +856,19 @@ export type Item =
       fields: { label: string; value: string }[];
       state: "asking" | "approved" | "denied" | "expired";
       reason?: string;
-      /** What "Don't ask again" would allow for the rest of the session, like "pnpm test". */
+      /** What "Don't ask again" would allow for the rest of the session, like "pnpm test": the `rule` grant's label, for older paths. */
       rule?: string;
+      /** The agent's own words for what the command does (one line, at most 140 characters). Never Liner's own text. */
+      says?: string;
+      /** Why it came to you, read off the ask by the same checks that decided it, most important first. */
+      why?: ApprovalWhy[];
+      /** What "don't ask again this session" can be offered for, each saying exactly what it allows. None: nothing is offered. */
+      grants?: ApprovalGrant[];
+      /** What your yes stopped asking about, when it really took a grant: a rule or a skill (its label), or the rest of the turn. */
+      granted?: { kind: GrantKind | "turn"; label?: string };
+      /** Whether "don't ask again this turn" can be offered: a yes with `grant: "turn"` would be taken. */
+      turnGrant?: boolean;
+      answeredAt?: number;
       /** The tool call it was for: once answered, it folds into that call's row. */
       toolId?: string;
       /** The Reviewer's model, when it decided instead of you (Reviewer decides). */
@@ -853,9 +899,9 @@ export type Item =
       /** Why it didn't make it, said to the person. */
       error?: string;
     })
-  | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string> })
+  | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string>; answeredAt?: number })
   /** A plan to approve (a tool's own plan mode). `auto`: one from before pairs that nobody asked to see, handed straight on. */
-  | (Base & { kind: "proposal"; title: string; plan: string; state: "asking" | "approved" | "changed" | "expired"; note?: string; auto?: boolean })
+  | (Base & { kind: "proposal"; title: string; plan: string; state: "asking" | "approved" | "changed" | "expired"; note?: string; auto?: boolean; answeredAt?: number })
   | (Base & {
       kind: "checkpoint";
       files: FileChange[];
@@ -980,6 +1026,8 @@ export type Settings = {
   addonNetwork?: "ask" | "never";
   /** The mode a new session starts in, unless you pick another (Settings › Modes): Standard when unset. */
   defaultMode?: SessionMode;
+  /** Liner opens in (Settings › General): the Code face, or the Design face on Design Home. Unset: "code". */
+  openIn?: "code" | "design";
 };
 
 export type UpdateMode = "auto" | "notify" | "off";
@@ -1296,7 +1344,7 @@ export type EngineEvent =
   /** A piece of a model's answer to an app (liner.ai.ask with onText), for the window to pass to its frame. */
   | { type: "panel.ai"; call: string; text: string }
   /** Liner Design: a design file of a folder changed (a frame, when `frame`), by you in the editor or by an agent. The canvas draws it again, keeping the selection by data-l. */
-  | { type: "canvas.changed"; cwd: string; file: string; frame?: string; by: "you" | "agent"; threadId?: string; at: number; /** The frame file's revision now (FrameRev), when it names a frame whose file is there. */ rev?: string }
+  | { type: "canvas.changed"; cwd: string; file: string; frame?: string; by: "you" | "agent"; threadId?: string; at: number; /** The frame file's revision now (FrameRev), when it names a frame whose file is there. */ rev?: string; /** While watched: true when the design file itself went (its folder or design.json removed on disk), false when it came back; once per change, never with `frame`. */ gone?: boolean }
   /** An agent is writing a frame (on), or stopped (off): its outline and tag go on the frame, lead and sidekick each in their colour. */
   | ({ type: "canvas.presence" } & DesignPresence)
   /** A picture the picture model is making: `done` of `count`, for the pictures.make call `call`; `error` when it failed. */
@@ -1360,7 +1408,7 @@ export type Rpc = {
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
-  "thread.create": [{ projectId: string; agent?: string; sidekick?: string; review?: boolean; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode }, Thread];
+  "thread.create": [{ projectId: string; agent?: string; sidekick?: string; review?: boolean; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode; /** Begun from a design (Thread.design); in a design project it defaults to the project's design file. */ design?: { file: string } }, Thread];
   "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string | null; effort?: Effort; agent?: string; sidekick?: string | null; review?: boolean | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
   /**
@@ -1392,7 +1440,12 @@ export type Rpc = {
   /** A word for one agent at work, read at its next step without stopping it. False when it couldn't take it (it had ended). */
   "thread.steerAgent": [{ id: string; item: string; text: string }, boolean];
   /** `scope`, for an add-on's install card: every project, or only the session's. */
-  "approval.answer": [{ threadId: string; itemId: string; allow: boolean; reason?: string; always?: boolean; scope?: "all" | "project" }, null];
+  /** `always: true` is `grant: "rule"`. `grant: "turn"` lets this turn's ordinary asks go ahead until it ends. */
+  "approval.answer": [{ threadId: string; itemId: string; allow: boolean; reason?: string; always?: boolean; grant?: GrantKind | "turn"; scope?: "all" | "project" }, null];
+  /** What this session no longer asks about: its grants, and whether this turn goes ahead without asking. */
+  "approval.rules": [{ threadId: string }, { grants: ApprovalGrant[]; turn: boolean }];
+  /** Takes one grant back (`kind: "turn"` clears the turn's). */
+  "approval.forget": [{ threadId: string; kind: GrantKind | "turn"; label: string }, null];
   /** Switches an add-on on or off, moves it to a kept version, removes it (it stays on disk) or restores it. */
   "addons.update": [{ id: string; enabled?: boolean; version?: number; removed?: boolean; project?: string | null }, AddonInfo[]];
   /** A connection you add by hand: its manifest, checked as an agent's would be. Its keys go to the keychain first, as on the card. */
@@ -1611,13 +1664,51 @@ export type Rpc = {
   "canvas.restore": [{ threadId: string; file: string; turn?: number; key?: string }, DesignFile];
   /** What is selected on the canvas now (null: nothing), for the session's design_selection. */
   "canvas.selection": [{ threadId: string; sel: DesignSelection | null }, null];
+  /**
+    A new design: with `projectId`, a design file in that project (as canvas.create), returning that
+    project; without, a design on its own: a folder of its own in the designs home that is a project
+    of kind "design", with its design file of the same slug. No session is made. Title defaults to
+    "Untitled design"; "desktop+phone" starts with both frames side by side; slugs never collide.
+  */
+  "design.new": [{ title?: string; size?: DesignSize | "desktop+phone"; projectId?: string }, { project: Project; file: DesignFile }];
+  /** Every project that has design files, designs on their own first (always listed, even with none), then the rest; newest first inside each. */
+  "design.all": [Record<string, never>, { project: Project; files: DesignFileInfo[] }[]];
+  /**
+    Build in a project: moves a design on its own (`projectId`, a design project) into a project, an
+    existing one or a folder that becomes one as project.add does. Its design files go into the
+    target's .liner/designs/ (a slug suffixed on a clash), its sessions become the target's (each
+    one's next turn starts from the conversation as text), and the emptied design project goes.
+    `file`: its design file as it is in the target now. `moved`: the ids of the sessions that moved.
+    `left`: said when the old folder stays because it holds files of its own besides the design.
+    Refused with a plain sentence, nothing changed, while a turn runs in it, when the target is a
+    design project, or when the move can't complete.
+  */
+  "design.attach": [{ projectId: string; to: { projectId: string } | { path: string } }, { project: Project; file: DesignFile; moved: string[]; left?: string }];
+  /** Renames a design file; for a design on its own the title is the project's name too (its folder keeps its name). */
+  "design.rename": [{ projectId: string; file: string; title: string }, { project: Project; file: DesignFile }];
+  /**
+    Removes a design file. In a project its folder goes to the trash under Liner Code's home (with
+    its build copies and picture setting), from which design.unremove puts it back. A design on its
+    own goes as project.remove takes a project: the project and its sessions, its folder left on disk.
+    Refused while an agent draws in that file.
+  */
+  "design.remove": [{ projectId: string; file: string }, { ok: true }];
+  /** Puts back the design file removed last with this slug in the project, as it was; refused when one of that slug is there again. */
+  "design.unremove": [{ projectId: string; file: string }, { project: Project; file: DesignFile }];
+  /**
+    An untouched design on its own goes whole, its project and its folder: only when no session was
+    ever made for it and its folder is exactly as design.new made it (title still "Untitled design").
+    Otherwise refused with a plain sentence ("“X” is kept: …"), nothing changed.
+  */
+  "design.discard": [{ projectId: string }, { ok: true }];
   /** The lean a design file follows (the folder's, without `file`). */
   "lean.read": [{ cwd: string; file?: string }, Lean];
   /** Writes the project's DESIGN.md. */
   /** With `base` (a Lean's `rev`), refused (an error starting FRAME_CHANGED) when the file changed since it was read; nothing written. */
   "lean.write": [{ cwd: string; text: string; base?: string; /** The design file whose lean this is: written where lean.read with it read (Lean.writes). */ file?: string }, Lean];
   /** The design skills there are, each `loaded` or not for `file`. */
-  "lean.skills": [{ cwd: string; file?: string }, DesignSkill[]];
+  /** With no `cwd` (Design Home, before a design has a folder): only your own skills and the built-in ones, none loaded. */
+  "lean.skills": [{ cwd?: string; file?: string }, DesignSkill[]];
   "build.state": [{ cwd: string; file: string }, FrameBuild[]];
   /** Ties a frame to a project file (a path from the folder) as built now. */
   "build.link": [{ cwd: string; file: string; frame: string; path: string }, FrameBuild[]];

@@ -9,7 +9,7 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, posix, resolve, win32, type PlatformPath } from "node:path";
+import { dirname, join, posix, resolve, sep, win32, type PlatformPath } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Access, CommandInfo, ModelInfo, ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { randomBytes } from "node:crypto";
@@ -21,7 +21,7 @@ import { TOOLS } from "../liner-tools.ts";
 import { acpCommands, acpModelRequest, acpModels, agyModels } from "./models.ts";
 import { imageType, readUpTo } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
-import { LINER_WAIT_SEC, ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, saysOf, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 type Json = Record<string, unknown>;
@@ -1024,6 +1024,13 @@ class AcpSession implements ProviderSession {
     this.thought = { id: String(option.id), values, now: typeof option.currentValue === "string" ? option.currentValue : undefined };
   }
 
+  /** The level it thinks at when it has none like the session's effort (the thread's effortNow), as far as it said; else undefined. */
+  private effortGap() {
+    const t = this.thought;
+    const effort = this.o.effort;
+    return t && effort && !t.values.includes(effort) && t.now && t.now !== effort ? t.now : undefined;
+  }
+
   /** Puts its thinking at the session's effort, where it has that level: Liner Code's effort picker is its thinking level. */
   private async toEffort(effort: string | undefined) {
     const t = this.thought;
@@ -1228,7 +1235,13 @@ class AcpSession implements ProviderSession {
       const named = kind === "other" && !reaching && call.title !== "doom_loop" && /^[\w.:-]+$/.test(call.title ?? "");
       const rule = loose ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : kind !== "other" ? call.kind : named ? `tool ${call.title}` : undefined;
       const description = loose ? (away ? "This is outside the project." : "The agent didn't say which files this changes.") : undefined;
-      const a: { allow: boolean; reason?: string; level?: boolean } = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: this.titled(call.title ?? "Use a tool"), description, risk: loose ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule, unjudged: true }, signal).catch(() => ({ allow: false }));
+      // Why, from what made it loose: the place it names outside the project, or an edit that names no file.
+      const home = homedir();
+      const at = away ? resolve(this.o.cwd, away) : "";
+      const why = loose ? [away ? { kind: "outside" as const, text: `it reaches ${at === home || at.startsWith(home + sep) ? `~${at.slice(home.length)}` : at}, outside the project` } : { kind: "changes" as const, text: "the agent didn't say which files it changes" }] : undefined;
+      // The agent's own words for its command: OpenCode's bash tool takes a `description` beside it.
+      const says = kind === "exec" ? saysOf(raw.description) : undefined;
+      const a: { allow: boolean; reason?: string; level?: boolean } = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: this.titled(call.title ?? "Use a tool"), description, risk: loose ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule, unjudged: true, ...(says ? { says } : {}), ...(why ? { why } : {}) }, signal).catch(() => ({ allow: false }));
       // Refused by the level (Read only), with no card: ACP's answer carries no words, so the model hears why as its next turn starts.
       if (a.level && a.reason) this.refusedLast = `Last turn Liner Code refused a step: ${a.reason}`;
       // Stopped while it asked: a request open when the prompt is cancelled is answered "cancelled", as ACP
@@ -1405,7 +1418,9 @@ class AcpSession implements ProviderSession {
     // Stopped while the agent was starting: nothing was asked of it yet. A session it couldn't load is said
     // on the next turn instead, so that one still gets the conversation so far.
     if (signal.aborted) return;
-    for (const note of this.notes.splice(0)) sink.notice(note);
+    // What it said while it started describes its settings (a model, a thinking level, connections it hasn't): once a session.
+    for (const note of this.notes.splice(0)) sink.notice(note, undefined, { once: true });
+    sink.effortNow?.(this.effortGap());
     if (!this.session) throw new Error("The agent didn't open a session.");
     sink.session(this.session);
     if (this.lost) {
@@ -1474,7 +1489,8 @@ class AcpSession implements ProviderSession {
         const own = this.levelModes(this.o.access).length ? this.levels?.[this.o.access] : undefined;
         const missed = await Promise.race([own ? this.toLevel(this.o.access).then((ok) => !ok) : this.setMode(mode).then(() => false, () => true), stopped]);
         if (signal.aborted) return;
-        for (const note of this.notes.splice(0)) sink.notice(note);
+        for (const note of this.notes.splice(0)) sink.notice(note, undefined, { once: true });
+        sink.effortNow?.(this.effortGap());
         if (missed)
           sink.notice(
             own && this.o.access !== "read"

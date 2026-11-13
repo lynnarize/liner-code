@@ -1,28 +1,31 @@
 /*
-  Liner Design's face of a session: the same session, its folder's design file on a canvas. The
-  top row names the design file (a menu of the folder's others), the page, who is drawing, the
-  zoom and Play; the rail, the canvas and the dock fill the rest, and the inspector stands at the
-  right. The sidebar's body for this face is Layers.tsx's DesignSide.
+  Liner Design's face of a design, in its tab: its design file on a canvas, and its session (the
+  one begun from it, which it may not have yet: the first ask makes it). The top row holds the
+  tabs (Tabs.tsx), who is drawing, "On its own" for a design on its own, the zoom and Play; the
+  rail, the canvas and the dock fill the rest, and the inspector stands at the right. The
+  sidebar's body for this face is Layers.tsx's DesignSide.
 
   The keys here are the canvas's: V and H, F for a frame, R and T to add, Esc to go up, Delete,
   ⌘D, ⌘[ and ⌘], ⌘Z and ⇧⌘Z, ⌘0 and ⌘1, ⌘+ and ⌘−. They're heard first (before the app's ⌘1 to
   ⌘9) and only while nothing that takes typing has the keyboard.
 */
 import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
-import type { Thread } from "@contracts";
+import type { Project, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { rpc, useEngine } from "../engine";
+import { rpc } from "../engine";
 import { I } from "../icons";
 import { matches } from "../keymap";
 import { Pop, Row, Sep } from "../ui";
 import * as os from "../os";
+import { patchTab, tabKey, type DesignTab } from "../face";
+import { close as closeTabHere, OwnChip, Tabs } from "./Tabs";
 import { editText, frames } from "./bridge";
 import { Canvas, fit, parentIn } from "./Canvas";
 import { Dock } from "./Dock";
 import { Inspector } from "./Inspector";
 import { reorder } from "./Layers";
 import { insert, Rail } from "./Rail";
-import { design, getDesign, useDesign } from "./store";
+import { design, getDesign, isBlank, takeVanished, useDesign } from "./store";
 import { LiveChip } from "./Live";
 import { Versions } from "./Versions";
 import "./design-face.css";
@@ -67,14 +70,16 @@ export class FaceBoundary extends Component<{ children: ReactNode; what: string 
   new one over it. When this session kept a copy of it (a turn's, or one from before a bring-back),
   the newest can be brought back.
 */
-function Unreadable({ thread, cwd, broken }: { thread: Thread; cwd?: string; broken: { file: string; title?: string; why: string } }) {
+function Unreadable({ thread, cwd, broken }: { thread?: Thread; cwd?: string; broken: { file: string; title?: string; why: string } }) {
   const [copies, setCopies] = useState<{ key: string; turn: number; at: number }[] | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let live = true;
+    // A design with no session yet has no kept copies.
+    if (!thread) return void setCopies([]);
     void rpc("canvas.versions", { threadId: thread.id, file: broken.file }).then((v) => live && setCopies([...v].sort((a, b) => b.at - a.at)), () => live && setCopies([]));
     return () => void (live = false);
-  }, [thread.id, broken.file]);
+  }, [thread?.id, broken.file]);
   const last = copies?.[0];
   return (
     <>
@@ -84,7 +89,7 @@ function Unreadable({ thread, cwd, broken }: { thread: Thread; cwd?: string; bro
       <span className="ld-mono">.liner/designs/{broken.file}/design.json</span>
       {last ? (
         <button type="button" className="lc-btn" data-kind="ink" disabled={busy} onClick={() => {
-          if (!cwd) return;
+          if (!cwd || !thread) return;
           setBusy(true);
           void rpc("canvas.restore", { threadId: thread.id, file: broken.file, key: last.key })
             .then(() => design.open(cwd, broken.file))
@@ -160,17 +165,11 @@ function zoomBy(el: HTMLElement | null, k: number) {
   design.view(z, { x: cx - ((cx - s.pan.x) * z) / s.zoom, y: cy - ((cy - s.pan.y) * z) / s.zoom });
 }
 
-function TopRow({ sidebar, onSidebar, cv }: { sidebar: boolean; onSidebar: () => void; cv: React.RefObject<HTMLDivElement | null> }) {
-  const file = useDesign((s) => s.file);
-  const broken = useDesign((s) => s.broken);
-  const files = useDesign((s) => s.files);
-  const cwd = useDesign((s) => s.cwd);
-  const page = useDesign((s) => s.file?.pages.find((p) => p.id === (s.page ?? s.file?.pages[0]?.id))?.name);
+function TopRow({ sidebar, onSidebar, cv, tab, project }: { sidebar: boolean; onSidebar: () => void; cv: React.RefObject<HTMLDivElement | null>; tab: DesignTab; project: Project }) {
   const zoom = useDesign((s) => s.zoom);
   const presence = useDesign((s) => s.presence);
   const play = useDesign((s) => s.tool === "play");
   const who = Object.values(presence);
-  const newFile = () => cwd && void design.create(cwd, "Untitled design").catch((e: Error) => toast.error(e.message));
   return (
     <header className="ld-bar" data-drag>
       {!sidebar && (
@@ -178,19 +177,8 @@ function TopRow({ sidebar, onSidebar, cv }: { sidebar: boolean; onSidebar: () =>
           <I.sidebar size={16} />
         </button>
       )}
-      <Pop label="Design files in this folder" width={280} triggerClass="ld-title" trigger={<>{file?.title ?? broken?.title ?? broken?.file ?? "No design file"}<I.chevD size={13} /></>} menu>
-        {(close) => (
-          <>
-            {files.map((f) => (
-              <Row key={f.id} title={f.title} note={`${f.frames} ${f.frames === 1 ? "frame" : "frames"}`} on={f.id === file?.id} onPick={() => (close(), cwd && void design.open(cwd, f.id))} />
-            ))}
-            {files.length > 0 && <Sep />}
-            <Row title="New design file" icon={<I.plus size={13} />} onPick={() => (close(), newFile())} />
-          </>
-        )}
-      </Pop>
-      {page && <span className="ld-crumb">{page}</span>}
-      <span className="lc-grow" />
+      <Tabs />
+      <span className="lc-grow" data-drag />
       <LiveChip />
       <Versions />
       {who.length > 0 && (
@@ -202,6 +190,7 @@ function TopRow({ sidebar, onSidebar, cv }: { sidebar: boolean; onSidebar: () =>
           ))}
         </span>
       )}
+      {project.kind === "design" && <OwnChip tab={tab} project={project} />}
       <Pop label={`Zoom, ${Math.round(zoom * 100)}%`} width={220} align="end" triggerClass="ld-zoom" trigger={<><span className="ld-num">{Math.round(zoom * 100)}%</span><I.chevD size={12} /></>} menu>
         {(close) => (
           <>
@@ -220,20 +209,51 @@ function TopRow({ sidebar, onSidebar, cv }: { sidebar: boolean; onSidebar: () =>
   );
 }
 
-export function DesignFace({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boolean; onSidebar: () => void }) {
-  const projects = useEngine((s) => s.projects);
-  const project = projects.find((p) => p.id === thread.projectId);
-  const cwd = cwdOf(thread, projects);
+/** Under an empty canvas: what to do first. */
+function EmptyHint() {
+  const empty = useDesign((s) => Boolean(s.file) && s.scrub === undefined && (s.file!.frames.length === 0 || s.file!.frames.every((f) => isBlank(s, f))));
+  if (!empty) return null;
+  return (
+    <p className="ld-hint" aria-live="polite">
+      <b>Nothing here yet.</b> Say what to make, or draw with the tools on the left.
+    </p>
+  );
+}
+
+export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: DesignTab; project: Project; thread?: Thread; sidebar: boolean; onSidebar: () => void }) {
+  const key = tabKey(tab);
+  // The design's folder: its session's worktree when it runs in one, else the project's.
+  const cwd = thread?.worktree?.path ?? project.path;
   const file = useDesign((s) => s.file);
+  const files = useDesign((s) => s.files);
+  // The store holds this tab's file (not still the tab before's): only then is the canvas drawn, so it never fits or draws another tab's.
+  const mine = useDesign((s) => s.cwd === cwd && s.file?.id === tab.file);
   const loading = useDesign((s) => s.loading);
   const broken = useDesign((s) => s.broken);
   const error = useDesign((s) => s.error);
   const cv = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
 
-  useEffect(() => design.bind(thread.id, cwd), [thread.id, cwd]);
+  // This tab's design file on the canvas, with its own view and steps; the tab before is parked.
   useEffect(() => {
-    if (cwd && !getDesign().file && !getDesign().loading) void design.open(cwd);
-  }, [cwd]);
+    let live = true;
+    setShown(false);
+    void design.show(key, cwd, tab.file, thread?.id).finally(() => live && setShown(true));
+    return () => void (live = false);
+  }, [key, cwd, tab.file, thread?.id]);
+  // Its name on the tab, as the file has it.
+  useEffect(() => {
+    if (file && file.id === tab.file && getDesign().cwd === cwd && file.title !== tab.title) patchTab(key, { title: file.title });
+  }, [file?.title, file?.id]);
+  // A design whose file went away (deleted, moved elsewhere) closes its tab, quietly.
+  const gone = shown && !loading && !file && !broken && getDesign().cwd === cwd && !files.some((f) => f.id === tab.file);
+  useEffect(() => {
+    if (!gone) return;
+    // Gone from under it (not closed by you): one quiet line says so.
+    const was = takeVanished(cwd, tab.file);
+    closeTabHere(key);
+    if (was) toast(`${was} is gone`, { description: "Its files are no longer in its folder, so its tab closed.", duration: 4000 });
+  }, [gone]);
   useEffect(() => {
     if (!error) return;
     toast.error(error);
@@ -281,36 +301,28 @@ export function DesignFace({ thread, sidebar, onSidebar }: { thread: Thread; sid
   return (
     <div className="ld-face">
       <section className="ld-main" aria-label="Canvas">
-        <TopRow sidebar={sidebar} onSidebar={onSidebar} cv={cv} />
+        <TopRow sidebar={sidebar} onSidebar={onSidebar} cv={cv} tab={tab} project={project} />
         <div className="ld-cv">
           <Rail />
-          {file ? (
+          {file && mine ? (
             <FaceBoundary what="canvas">
               <Canvas root={cv} />
             </FaceBoundary>
           ) : (
             <div className="ld-empty">
-              {loading ? (
+              {loading || (file && !mine) ? (
                 <span className="l-shimmer">Opening the design file</span>
               ) : broken ? (
                 <Unreadable thread={thread} cwd={cwd} broken={broken} />
               ) : (
-                <>
-                  <I.design size={20} />
-                  <b>No design file in this folder yet</b>
-                  <span>Say what to draw below, and the agent starts one. Or start an empty canvas.</span>
-                  <button type="button" className="lc-btn" data-kind="ink" onClick={() => cwd && void design.create(cwd, "Untitled design", "desktop").catch((e: Error) => toast.error(e.message))}>
-                    New design file
-                  </button>
-                </>
+                <span className="l-shimmer">Opening the design file</span>
               )}
             </div>
           )}
-          {project && (
-            <FaceBoundary what="dock">
-              <Dock thread={thread} project={project} />
-            </FaceBoundary>
-          )}
+          <EmptyHint />
+          <FaceBoundary what="dock">
+            <Dock thread={thread} project={project} tab={tab} />
+          </FaceBoundary>
         </div>
       </section>
       <div className="ld-insp-col">
@@ -318,7 +330,7 @@ export function DesignFace({ thread, sidebar, onSidebar }: { thread: Thread; sid
           <Inspector />
         </FaceBoundary>
       </div>
-      <LeanLayer thread={thread} sidebar={sidebar} onSidebar={onSidebar} />
+      <LeanLayer thread={thread} project={project} sidebar={sidebar} onSidebar={onSidebar} />
     </div>
   );
 }

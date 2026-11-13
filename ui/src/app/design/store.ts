@@ -16,7 +16,7 @@ import { useSyncExternalStore } from "react";
 import type { DesignFile, DesignFileInfo, DesignFrame, DesignPatch, DesignSelection, DesignSize, EngineEvent, FrameOp, NodeRead, TreeNode } from "@contracts";
 import { DESIGN_UNREADABLE, FRAME_CHANGED, FRAME_SIZES } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { getState, onStream, rpc } from "../engine";
+import { EngineAway, getState, onStream, rpc } from "../engine";
 import { agentOf } from "../model";
 import { frames, lockEditing } from "./bridge";
 import { getFace, setFace, subscribeFace } from "../face";
@@ -103,6 +103,10 @@ export function useDesign<T>(pick: (s: DesignState) => T): T {
 }
 
 export const frameOf = (s: DesignState, id: string | undefined): DesignFrame | undefined => (id ? s.file?.frames.find((f) => f.id === id) : undefined);
+/** A page with nothing in its body yet (no element; scripts aside). */
+export const blankHtml = (html?: string) => html !== undefined && !/<body[^>]*>[\s\S]*?<[a-z]/i.test(html.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+/** A drawn frame with nothing in it: it shows its name and size only, and Checks and Build leave it out. */
+export const isBlank = (s: { html: Record<string, string> }, f: DesignFrame) => f.kind === "drawn" && blankHtml(s.html[f.id]);
 /** A drawn frame whose file is gone: the engine keeps its entry and says so (read as optional until it always does). */
 export const isGone = (f: DesignFrame | undefined) => Boolean(f?.missing);
 
@@ -193,6 +197,8 @@ export function onCanvasEvent(e: EngineEvent) {
   const s = state;
   if (e.type === "canvas.changed") {
     if (e.cwd !== s.cwd || e.file !== s.file?.id) return;
+    // Its folder or design.json removed on disk (the engine's `gone`): none is open, and its tab lets go with one line.
+    if (e.gone === true) return void goneNow(s.cwd!, s.file!.id);
     if (s.scrub !== undefined) return void (scrubbed && (scrubbed.stale = true));
     const frame = e.frame;
     if (!frame) return void reloadFile();
@@ -252,10 +258,29 @@ async function reloadFile(frame?: string) {
     setNow({ file, base, html, rev, revs, ...patch });
     void design.refreshNode();
   } catch {
-    // the next change tries again
+    // Gone from its folder (deleted elsewhere, moved): none is open, and its tab lets go (DesignFace). Otherwise the next change tries again.
+    // A folder that's gone altogether lists as nothing; an engine that's away says nothing either way.
+    const files = await rpc("canvas.list", { cwd }).catch((e: unknown) => (e instanceof EngineAway ? undefined : ([] as DesignFileInfo[])));
+    if (files && !files.some((f) => f.id === id)) goneNow(cwd, id, files);
   }
 }
 
+/** The open design's files went from under it: nothing is open, and its tab (DesignFace) closes with one line. */
+function goneNow(cwd: string, id: string, files: DesignFileInfo[] = state.files.filter((f) => f.id !== id)) {
+  if (state.cwd !== cwd || state.file?.id !== id) return;
+  if (state.scrub !== undefined) design.scrub();
+  vanished = { cwd, file: id, title: state.file.title };
+  listenCanvas(false);
+  watchFile();
+  setNow({ files, file: undefined, sel: [], node: undefined, html: {}, tree: {}, presence: {}, pending: {}, broken: undefined, loading: false });
+}
+/** The open design whose files went from under it (deleted elsewhere, its folder removed on disk), for its tab's one line. */
+let vanished: { cwd: string; file: string; title: string } | undefined;
+export function takeVanished(cwd: string, file: string) {
+  const v = vanished?.cwd === cwd && vanished.file === file ? vanished.title : undefined;
+  if (v) vanished = undefined;
+  return v;
+}
 /** Reads a frame's file again, and draws it again from it. */
 /**
   The one place a selection is kept true to a frame's file: whenever the frame is drawn again from
@@ -404,7 +429,95 @@ function watchFile(cwd?: string, file?: string) {
 }
 if (typeof window !== "undefined") window.addEventListener("pagehide", () => watchFile());
 
+/*
+  Tabs. The store holds one open design file; the others open in tabs keep, while hidden, what is
+  theirs alone: the view (zoom, pan, page, tool), the selection, the undo and redo steps, and the
+  changes held for live frames. Showing a tab parks the one before and reads its own file again
+  from disk (its frames' HTML, the checks and the build state follow from that, as on any open);
+  then its parked view and steps come back. A step taken against a frame that changed while the
+  tab was hidden goes (its revision moved), the same as when an agent writes the open file.
+*/
+type Parked = { cwd: string; file: string; zoom: number; pan: { x: number; y: number }; page?: string; tool: Tool; sel: Sel[]; undos: Step[]; redos: Step[]; revs: Record<string, string>; pending: Record<string, FrameOp[]> };
+const parked = new Map<string, Parked>();
+/** The tab whose file the store holds now (set once its file is open), so a park files the right view under the right tab. */
+let parkKey: string | undefined;
+let shownAt: { key: string; cwd: string; file: string } | undefined;
+let showing: { key: string; done: Promise<void> } | undefined;
+/** The file a tab with a view of its own is opening: Canvas.tsx doesn't fit it, as its view comes back. */
+let keepView: string | undefined;
+export const keepsView = (file: string) => keepView === file;
+function park() {
+  const s = state;
+  const at = shownAt;
+  if (!at || !s.cwd || !s.file || s.mock || s.cwd !== at.cwd || s.file.id !== at.file) return;
+  if (s.scrub !== undefined) design.scrub();
+  parked.set(at.key, { cwd: s.cwd, file: s.file.id, zoom: s.zoom, pan: s.pan, page: s.page, tool: s.tool === "play" ? "select" : s.tool, sel: s.sel, undos: [...undos], redos: [...redos], revs: { ...s.revs }, pending: s.pending });
+}
+/** Who makes the session of a tab that has none yet (the shell sets it): a design's first ask makes it. */
+let sessionMaker: (() => Promise<string>) | undefined;
+export const setSessionMaker = (fn: (() => Promise<string>) | undefined) => void (sessionMaker = fn);
+
 export const design = {
+  /**
+    Shows a design file in its tab (`key`, face.ts tabKey): the tab before is parked, this one's
+    file opened, and its own view and steps put back. Asked again for the same tab while it opens,
+    it waits on the same opening.
+  */
+  show(key: string, cwd: string, file: string, threadId?: string): Promise<void> {
+    if (shownAt?.key === key && shownAt.cwd === cwd && shownAt.file === file && state.file?.id === file) return Promise.resolve(void (state.threadId !== threadId && setNow({ threadId })));
+    if (showing?.key === key) return showing.done.then(() => void (state.threadId !== threadId && setNow({ threadId })));
+    const done = (async () => {
+      park();
+      shownAt = undefined;
+      parkKey = key;
+      keepView = parked.get(key)?.file === file ? file : undefined;
+      setNow({ threadId, editing: undefined, scrub: undefined });
+      await design.open(cwd, file);
+      if (parkKey !== key || state.cwd !== cwd || state.file?.id !== file) return;
+      shownAt = { key, cwd, file };
+      const p = parked.get(key);
+      // A tab shown for the first time: the canvas fits it (Canvas.tsx), nothing picked.
+      if (!p || p.cwd !== cwd || p.file !== file) return void setNow({ tool: "select", sel: [], node: undefined });
+      parked.delete(key);
+      // After the canvas has drawn the file (and fitted it, as it does a file it hasn't shown), this tab's own view.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      if (shownAt?.key !== key) return void parked.set(key, p);
+      undos.splice(0, undos.length, ...p.undos);
+      redos.splice(0, redos.length, ...p.redos);
+      // Frames another hand changed while the tab was hidden: their steps go.
+      for (const [frame, rev] of Object.entries(p.revs)) if (state.revs[frame] !== rev && !mine.has(state.revs[frame] ?? "")) forgetFrame(frame);
+      const there = new Set(state.file!.frames.map((f) => f.id));
+      setNow({ zoom: p.zoom, pan: p.pan, tool: p.tool, page: p.page && state.file!.pages.some((x) => x.id === p.page) ? p.page : state.page, sel: p.sel.filter((x) => there.has(x.frame)), pending: Object.fromEntries(Object.entries(p.pending).filter(([f]) => there.has(f))), canUndo: undos.length > 0, canRedo: redos.length > 0 });
+      keepView = undefined;
+      // Held changes are shown again in their live pages, which loaded without them (Canvas.tsx does it for a page that loads later).
+      for (const [frame, ops] of Object.entries(state.pending)) if (ops.length && frameOf(state, frame)?.kind === "live") void frames.apply(frame, ops).catch(() => {});
+      void design.refreshNode();
+    })();
+    showing = { key, done };
+    return done.finally(() => void (showing?.done === done && (showing = undefined)));
+  },
+  /** The design open now moved (Build in a project): its view and steps go with it to its new place, ready for show(). */
+  moved(from: string, to: string, cwd: string, file: string) {
+    if (shownAt?.key !== from) return;
+    park();
+    const p = parked.get(from);
+    parked.delete(from);
+    if (p) parked.set(to, { ...p, cwd, file });
+    shownAt = undefined;
+    parkKey = undefined;
+  },
+  /** A tab closed: what it parked goes. */
+  forget(key: string) {
+    parked.delete(key);
+  },
+  /** The session edits are written for: the bound one, else (a design with none yet) the one its first ask makes. */
+  async session(): Promise<string | undefined> {
+    if (state.threadId) return state.threadId;
+    if (!sessionMaker) return undefined;
+    const id = await sessionMaker();
+    setNow({ threadId: id });
+    return id;
+  },
   /** The face lives in face.ts (so Liner Code knows it without loading this); the store follows it. */
   setFace(face: "code" | "design") {
     setFace(face);
@@ -428,7 +541,8 @@ export const design = {
     try {
       const files = await rpc("canvas.list", { cwd });
       if (state.cwd !== cwd) return;
-      const pick = file ?? [...files].sort((a, b) => b.updated - a.updated)[0]?.id;
+      // A file named that the folder hasn't got (deleted, moved into a project): none is open, and its tab lets go.
+      const pick = file ? (files.some((f) => f.id === file) ? file : undefined) : [...files].sort((a, b) => b.updated - a.updated)[0]?.id;
       if (!pick) {
         listenCanvas(false);
         watchFile();

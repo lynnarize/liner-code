@@ -30,6 +30,7 @@ test("reads: a reader's flags that run a command or write a file don't read", ()
 
 test("rules: a compound command, a shell or a wrapper gets no rule to allow", () => {
   assert.equal(ruleFor("ls & rm -r src"), undefined);
+  // A chain gets no rule (ruleParts), as the base had it.
   assert.equal(ruleFor("ls\nrm -r src"), undefined);
   assert.equal(ruleFor("git status\nrm -r src"), undefined);
   assert.equal(ruleFor("git status\r\nrm -r src"), undefined);

@@ -1,6 +1,7 @@
 /*
-  Liner Design's pictures: the picture model the lead calls (design_picture, or the inspector's
-  Picture pane), an OpenAI-Images-compatible endpoint set up in Settings › Models ("Pictures"):
+  Liner Design's AI pictures (pictures a model generates from words, never the person's own files):
+  the AI pictures model the lead calls (design_picture, or the inspector's Picture pane), an
+  OpenAI-Images-compatible endpoint set up in Settings › Models ("AI pictures"), optional:
   settings.pictures, its key in the keychain as pictureKey(id). A picture is saved as a PNG under
   the design file's assets/; the lean's colours go with every ask, so pictures keep to them, unless
   the ask says lean: false. The design file names its model (pictures.model: an endpoint's id, or
@@ -124,10 +125,10 @@ export function checkEndpointUrl(url: unknown) {
   try {
     u = new URL(String(url ?? "").trim());
   } catch {
-    throw new Error("A picture model's address must be a full URL, starting https://.");
+    throw new Error("An AI pictures model's address must be a full URL, starting https://.");
   }
   if (u.protocol === "https:" || (u.protocol === "http:" && LOOPBACK(u.hostname))) return u;
-  throw new Error("A picture model's address must start https:// (http:// only for one on this Mac), so its key never goes across the network in clear.");
+  throw new Error("An AI pictures model's address must start https:// (http:// only for one on this Mac), so its key never goes across the network in clear.");
 }
 
 /** A response's body, up to max bytes: refused beyond, by its stated length or as it comes. */
@@ -160,23 +161,25 @@ export async function fetchLinked(link: string, endpoint: URL, signal: AbortSign
   try {
     u = new URL(link);
   } catch {
-    throw new Error("The picture model answered with a link that isn't one.");
+    throw new Error("The AI pictures model answered with a link that isn't one.");
   }
   const host = normalIp(u.hostname);
-  if (!(u.protocol === "https:" || (u.protocol === "http:" && LOOPBACK(u.hostname)))) throw new Error("The picture model answered with a link that isn't https, so it wasn't fetched.");
+  if (!(u.protocol === "https:" || (u.protocol === "http:" && LOOPBACK(u.hostname)))) throw new Error("The AI pictures model answered with a link that isn't https, so it wasn't fetched.");
   // A remote endpoint never gets a request sent to a service on this Mac on its behalf.
-  if (LOOPBACK(u.hostname) && !LOOPBACK(endpoint.hostname)) throw new Error("The picture model answered with a link to this Mac, which only a picture model on this Mac may do, so it wasn't fetched.");
+  if (LOOPBACK(u.hostname) && !LOOPBACK(endpoint.hostname)) throw new Error("The AI pictures model answered with a link to this Mac, which only an AI pictures model on this Mac may do, so it wasn't fetched.");
   if (!LOOPBACK(u.hostname) && u.hostname !== endpoint.hostname) {
     const ips = isIP(host) || /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(":") ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((a) => a.address);
-    if (!ips.length || ips.some(privateIp)) throw new Error("The picture model answered with a link into a private network, so it wasn't fetched.");
+    if (!ips.length || ips.some(privateIp)) throw new Error("The AI pictures model answered with a link into a private network, so it wasn't fetched.");
   }
   const r = await fetch(u, { signal, redirect: "error" });
   if (!r.ok) throw new Error(`The picture's link answered ${r.status}.`);
   return readCapped(r, ANSWER_MAX, "The picture");
 }
 
-/** What a design file set "No one" for pictures is answered: one sentence an agent can act on. */
-export const NO_ONE = "This design file has no picture model (Pictures is set to “No one”), so no picture was made and nothing was charged. Draw an empty box where the picture goes and carry on; don't ask for pictures again in this file.";
+/** What a design file with AI pictures off (its model null) is answered: one sentence an agent can act on. */
+export const NO_ONE = "AI pictures are off for this design file, so no picture was made and nothing was charged. Leave a labelled empty box where the picture goes (say in it what it would show) and carry on; don't ask for AI pictures again in this file. The person's own image files always work: they can drop one on the box.";
+/** What design_picture answers when no AI pictures model is set up at all: the same, and never a nudge to add one. */
+export const NO_MODEL = "There's no AI pictures model, so no picture was made and nothing was charged. Leave a labelled empty box where the picture goes (say in it what it would show) and carry on. The person's own image files always work: they can drop one on the box.";
 
 /** The model a design file uses: its own choice, null for no one; unset, or one Settings no longer has, is Settings' first. */
 export function modelFor(ctx: Pick<DesignCtx, "store">, file: DesignFile): PictureEndpoint | null | undefined {
@@ -220,7 +223,7 @@ export async function make(ctx: DesignCtx, o: { threadId?: string; cwd: string; 
   const chosen = o.model ? endpointOf(ctx, o.model) : modelFor(ctx, file);
   if (chosen === null) throw new Error(NO_ONE);
   const e = chosen;
-  if (!e) throw new Error(o.model ? "That picture model isn't in Settings any more." : "No picture model is set up. Add one in Settings › Models › Pictures.");
+  if (!e) throw new Error(o.model ? "That AI pictures model isn't in Settings any more." : "There's no AI pictures model. Your own image files always work: drop one on a frame, or use the Picture tool.");
   const prompt = String(o.prompt ?? "").trim();
   if (!prompt) throw new Error("Say what the picture shows.");
   const count = Math.max(1, Math.min(MAX_COUNT, Math.floor(o.count ?? 1)));
@@ -236,15 +239,15 @@ export async function make(ctx: DesignCtx, o: { threadId?: string; cwd: string; 
   try {
     const signal = o.signal ? AbortSignal.any([o.signal, AbortSignal.timeout(WAIT)]) : AbortSignal.timeout(WAIT);
     const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(body), signal, redirect: "error" });
-    const raw = (await readCapped(r, ANSWER_MAX, `${e.label || "The picture model"}'s answer`)).toString("utf8");
+    const raw = (await readCapped(r, ANSWER_MAX, `${e.label || "The AI pictures model"}'s answer`)).toString("utf8");
     try {
       answer = JSON.parse(raw);
     } catch {
       answer = {};
     }
-    if (!r.ok) throw new Error(`${e.label || "The picture model"} answered ${r.status}${answer.error?.message ? `: ${String(answer.error.message).slice(0, 300)}` : ""}.`);
+    if (!r.ok) throw new Error(`${e.label || "The AI pictures model"} answered ${r.status}${answer.error?.message ? `: ${String(answer.error.message).slice(0, 300)}` : ""}.`);
   } catch (err) {
-    const why = err instanceof Error ? (err.name === "TimeoutError" ? `${e.label || "The picture model"} took too long to answer.` : /fetch failed|ECONNREFUSED|ENOTFOUND/i.test(err.message + String((err as { cause?: unknown }).cause ?? "")) ? `${e.label || "The picture model"} didn't answer at ${new URL(url).host}.` : err.message) : String(err);
+    const why = err instanceof Error ? (err.name === "TimeoutError" ? `${e.label || "The AI pictures model"} took too long to answer.` : /fetch failed|ECONNREFUSED|ENOTFOUND/i.test(err.message + String((err as { cause?: unknown }).cause ?? "")) ? `${e.label || "The AI pictures model"} didn't answer at ${new URL(url).host}.` : err.message) : String(err);
     const said = scrub(why, key);
     progress(0, said);
     throw new Error(said);
@@ -252,7 +255,7 @@ export async function make(ctx: DesignCtx, o: { threadId?: string; cwd: string; 
   const pictures = (answer.data ?? []).slice(0, count);
   if (!pictures.length) {
     progress(0, "No picture came back.");
-    throw new Error(`${e.label || "The picture model"} sent no picture back.`);
+    throw new Error(`${e.label || "The AI pictures model"} sent no picture back.`);
   }
   const paths: string[] = [];
   const named = `${stem(prompt)}-${Date.now().toString(36)}`;
@@ -272,7 +275,7 @@ export async function make(ctx: DesignCtx, o: { threadId?: string; cwd: string; 
     // Saved as what its bytes are, and only if they're a picture.
     const kind = kindOf(bytes);
     if (!kind) {
-      refused = `${e.label || "The picture model"} sent something that isn't a picture, so it wasn't saved.`;
+      refused = `${e.label || "The AI pictures model"} sent something that isn't a picture, so it wasn't saved.`;
       continue;
     }
     const rel = `assets/${named}${pictures.length > 1 ? `-${i + 1}` : ""}.${kind}`;
@@ -281,7 +284,7 @@ export async function make(ctx: DesignCtx, o: { threadId?: string; cwd: string; 
     progress(paths.length);
   }
   if (!paths.length) {
-    const why = refused || `${e.label || "The picture model"} sent nothing that could be saved as a picture.`;
+    const why = refused || `${e.label || "The AI pictures model"} sent nothing that could be saved as a picture.`;
     progress(0, why);
     throw new Error(why);
   }
@@ -381,7 +384,7 @@ export async function call(name: string, args: Record<string, unknown>, at: Desi
   // "No one" for this file: refused at once, nobody asked, the endpoint never called.
   const chosen = modelFor(at, file);
   if (chosen === null) return text(NO_ONE);
-  if (!chosen) return text("No picture model is set up, so no picture was made and nothing was charged. Leave the picture's box empty (or draw it), and tell the person they can add a picture model in Settings › Models › Pictures.");
+  if (!chosen) return text(NO_MODEL);
   if (at.readOnly(at.threadId)) throw new Error("This session is at Read only now (or it's a side chat), so it doesn't make pictures.");
   const lean = args.lean !== false;
   const prompt = String(args.prompt ?? "").trim();
@@ -398,8 +401,8 @@ export async function call(name: string, args: Record<string, unknown>, at: Desi
     if (!at.ask) throw new Error("Liner Code can't ask the person here, so no picture was made.");
     const { answer } = at.ask(at.threadId, {
       tool: "design_picture",
-      title: "Make a picture",
-      description: `${at.whoIs(at.threadId, at.sidekick)} asks ${e.label || e.model} for a picture, which your picture model's account is charged for.${when === "first" ? " A yes covers the rest of this session's pictures." : ""}`,
+      title: "Make an AI picture",
+      description: `${at.whoIs(at.threadId, at.sidekick)} asks ${e.label || e.model} for an AI picture, which your AI pictures model's account is charged for.${when === "first" ? " A yes covers the rest of this session's AI pictures." : ""}`,
       risk: "medium",
       fields: [
         { label: "Picture", value: prompt.slice(0, 2000) },
@@ -423,5 +426,5 @@ export async function call(name: string, args: Record<string, unknown>, at: Desi
 /** A row's title on the timeline for design_picture; undefined for a tool that isn't its own. */
 export function titleOf(tool: string, input: Record<string, unknown>): string | undefined {
   const s = (v: unknown) => String(v ?? "").slice(0, 60);
-  return tool === "design_picture" ? `Make a picture${s(input.prompt) ? ` of “${s(input.prompt)}”` : ""}` : undefined;
+  return tool === "design_picture" ? `Make an AI picture${s(input.prompt) ? ` of “${s(input.prompt)}”` : ""}` : undefined;
 }

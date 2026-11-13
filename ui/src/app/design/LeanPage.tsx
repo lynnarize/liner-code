@@ -7,7 +7,7 @@
   offers, and what in this design file is off the lean, each with one press to bring it back.
 */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Lean, Thread } from "@contracts";
+import type { Lean, Project, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { pairOf } from "../Crew";
 import { rpc, useEngine } from "../engine";
@@ -26,7 +26,7 @@ const MOCK_TEXT = import.meta.env.DEV ? import.meta.glob("../../../../docs/demo/
 const SECTIONS = "Give it a section for each: colour (each colour's name and hex value), type (the styles with their sizes, as “Body 15”), space (the steps as one list, as “4, 8, 12, 16”), shape (the corners) and “## Never” (the rules it never breaks). Keep it short and plain.";
 
 /** The Lean page while it's open, over the canvas; it also tells Skills.tsx that a Design face is up. */
-export function LeanLayer({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boolean; onSidebar: () => void }) {
+export function LeanLayer({ thread, project, sidebar, onSidebar }: { thread?: Thread; project: Project; sidebar: boolean; onSidebar: () => void }) {
   const open = useLeanOpen();
   useEffect(() => faceUp(), []);
   // Changes made outside a turn have no signal: the lean is read again when the page opens and when the window comes back.
@@ -37,18 +37,17 @@ export function LeanLayer({ thread, sidebar, onSidebar }: { thread: Thread; side
     window.addEventListener("focus", back);
     return () => window.removeEventListener("focus", back);
   }, [open]);
-  return open ? <LeanPage thread={thread} sidebar={sidebar} onSidebar={onSidebar} /> : null;
+  return open ? <LeanPage thread={thread} project={project} sidebar={sidebar} onSidebar={onSidebar} /> : null;
 }
 
-function LeanPage({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boolean; onSidebar: () => void }) {
+function LeanPage({ thread, project, sidebar, onSidebar }: { thread?: Thread; project: Project; sidebar: boolean; onSidebar: () => void }) {
   const cwd = useDesign((s) => s.cwd);
   const file = useDesign((s) => s.file);
   const mock = useDesign((s) => s.mock);
-  const projects = useEngine((s) => s.projects);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const project = projects.find((p) => p.id === thread.projectId);
-  const who = pairOf(thread, agents, providers)?.lead ?? agentOf(thread.agent, agents, providers).name;
+  // Before the design has a session: who its first ask will go to, else "the agent".
+  const who = thread ? (pairOf(thread, agents, providers)?.lead ?? agentOf(thread.agent, agents, providers).name) : "the agent";
   const lean = useLean();
   const me = useRef<HTMLDivElement>(null);
 
@@ -71,7 +70,10 @@ function LeanPage({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
 
   const ask = async (text: string, said: string) => {
     try {
-      await rpc("thread.send", { id: thread.id, text, files: [], ...(file ? { design: { file: file.id } } : {}) });
+      // A design with no session yet gets it now, begun from this design.
+      const id = thread?.id ?? (await design.session());
+      if (!id) return;
+      await rpc("thread.send", { id, text, files: [], ...(file ? { design: { file: file.id } } : {}) });
       toast(`Asked ${who} ${said}. The turn is in the dock.`, { duration: 3000 });
       closeLean();
     } catch (e) {
@@ -100,10 +102,10 @@ function LeanPage({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
       <div className="ld-lp-in">
         <SkillTiles cwd={cwd} />
         <div className="ld-lp-cols">
-          <Editor cwd={cwd} lean={lean} mock={mock} where={project?.name ?? "this project"} who={who} onAsk={() => void ask(`Write the project's DESIGN.md: the lean every design here follows. Read the code and the design files first. ${SECTIONS}`, "to write DESIGN.md")} />
+          <Editor cwd={cwd} lean={lean} mock={mock} where={project.kind === "design" ? "this design's folder" : project.name} who={who} onAsk={() => void ask(`Write the project's DESIGN.md: the lean every design here follows. Read the code and the design files first. ${SECTIONS}`, "to write DESIGN.md")} />
           <section className="ld-lp-read" aria-label="What Liner reads from it">
             <Sources lean={lean} who={who} onAsk={ask} />
-            <Read lean={lean} title={file?.title ?? "this design"} threadId={thread.id} />
+            <Read lean={lean} title={file?.title ?? "this design"} threadId={thread?.id ?? ""} />
           </section>
         </div>
       </div>

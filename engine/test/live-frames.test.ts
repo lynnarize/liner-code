@@ -136,7 +136,7 @@ const run = async (o: OpenOptions, text: string) => {
 };
 const frameHtml = (cwd: string, slug: string, id: string) => readFileSync(join(cwd, ".liner/designs", slug, "frames", `${id}.html`), "utf8");
 
-test("the Demo on the canvas: Foreshore's seven frames, one after another, into the file the note names, with a lean, in its sample project", async () => {
+test("the Demo on the canvas: Foreshore's seven frames, one after another, into the file the note names, in its sample project; no DESIGN.md unless asked", async () => {
   const cwd = sampleDir();
   const o = { cwd, access: "edits" } as OpenOptions;
   const empty: DesignFile = { v: 1, id: "untitled", title: "Untitled", pages: [{ id: "p-a", name: "Page 1" }], frames: [], lean: { builtin: "liner-2", skills: ["brandkit"] } };
@@ -156,8 +156,11 @@ test("the Demo on the canvas: Foreshore's seven frames, one after another, into 
     ["Web / Launch", 1280, 800, "p-a"],
   ]);
   assert.deepEqual(file.frames.filter((f) => f.screen === false).map((f) => f.name), ["Brand / Board"], "the board isn't a screen of the app");
-  assert.deepEqual(file.lean, { skills: ["brandkit"], path: "DESIGN.md" });
-  assert.match(readFileSync(join(cwd, "DESIGN.md"), "utf8"), /^# Foreshore, tide tables/);
+  // The lean is optional (the spec's decision 5): with none and no word of one in the ask, none is written.
+  assert.deepEqual(file.lean, { builtin: "liner-2", skills: ["brandkit"] });
+  assert.equal(existsSync(join(cwd, "DESIGN.md")), false, "no DESIGN.md nobody asked for");
+  assert.equal(k.tools.some((t) => /DESIGN\.md/.test(t.title)), false, "no lean row either");
+  assert.match(k.said(), /There's no lean here, so I drew it in Foreshore's own look/);
   for (const f of file.frames) {
     const html = readFileSync(join(cwd, ".liner/designs/untitled", f.path!), "utf8");
     assert.ok(!html.includes('href="foreshore.css"'), `${f.name} is self-contained`);
@@ -287,12 +290,29 @@ test("B2, B3: 3 more like this draws three different takes into the take frames,
   assert.match(k2.said(), /Fixed Phone \/ Week, contrast/);
 });
 
+test("the Demo writes a DESIGN.md only when the ask says so, and follows one that's there", async () => {
+  const cwd = sampleDir();
+  const o = { cwd, access: "edits" } as OpenOptions;
+  const k = await run(o, note("tide-tables", "", "Draw the tide tables, and write a DESIGN.md for them"));
+  assert.match(readFileSync(join(cwd, "DESIGN.md"), "utf8"), /^# Foreshore, tide tables/);
+  assert.equal(designOf(cwd, "tide-tables")!.lean.path, "DESIGN.md");
+  assert.ok(k.tools.some((t) => t.title === "Write DESIGN.md" && t.status === "done"));
+  assert.match(k.said(), /I wrote DESIGN\.md as you asked/);
+  // One the folder has already: read, never written over.
+  const had = sampleDir();
+  writeFileSync(join(had, "DESIGN.md"), "# Ours\n");
+  const k2 = await run({ cwd: had, access: "edits" } as OpenOptions, note("tide-tables"));
+  assert.equal(readFileSync(join(had, "DESIGN.md"), "utf8"), "# Ours\n");
+  assert.ok(k2.tools.some((t) => t.title === "Read DESIGN.md"));
+  assert.match(k2.said(), /I followed DESIGN\.md/);
+});
+
 test("N11: outside its sample project the Demo writes nothing and answers in words; a session that only reads too", async () => {
   const away = mkdtempSync(join(tmpdir(), "lc-demo-away-"));
   const k = await run({ cwd: away, access: "edits" } as OpenOptions, note("tide-tables"));
   assert.equal(existsSync(join(away, ".liner")), false);
   assert.equal(existsSync(join(away, "DESIGN.md")), false);
-  assert.match(k.said(), /only draw and change files in my sample project/);
+  assert.match(k.said(), /only draw and change files in my sample project \(Sample project in the sidebar\) or in a design on its own/);
   const ro = sampleDir();
   const k2 = await run({ cwd: ro, access: "read" } as OpenOptions, note("tide-tables"));
   assert.equal(existsSync(join(ro, ".liner")), false);

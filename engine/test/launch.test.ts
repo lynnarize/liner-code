@@ -14,6 +14,10 @@ import type { EngineEvent } from "../../contracts/src/index.ts";
 import { canMove, commandLine, HIDDEN, Launcher, launchRisk, movePort, plainJson, portFree, readLaunch, riskyEnv, runKey, shownEnv, type LaunchEntry } from "../src/launch.ts";
 import { AgentTools, SERVER_TOOL, type AddonHost } from "../src/agent-tools.ts";
 import type { Access } from "../../contracts/src/index.ts";
+import { noLeaks } from "./leaks.ts";
+
+// A process a test started and didn't end fails that test by name (and is ended), rather than keeping the file from exiting.
+noLeaks();
 
 const SERVER = `require("http").createServer((q, s) => s.end("ok " + process.env.PORT + " " + (process.env.GREETING || ""))).listen(Number(process.env.PORT), "127.0.0.1");`;
 
@@ -598,4 +602,46 @@ test("launch: two engines on one home (npm run dev beside the app): what the oth
     other.kill();
     await theirs.l.stop("th_a");
   }
+});
+
+test("launch: a stop, a session's close or the quit that comes while a start looks at its port calls the start off: nothing is left running", async () => {
+  for (const how of ["stop", "forget", "quit"] as const) {
+    const port = await freePort();
+    const { root } = folder([{ name: "app", runtimeExecutable: process.execPath, runtimeArgs: ["server.js"], port }]);
+    const { l } = launcher(root);
+    // Not awaited: the start is still looking at its port when the stop comes, as a press then an archive at once would.
+    const started = l.start("th_a", "app");
+    if (how === "stop") assert.equal(await l.stop("th_a", "app"), 0, "nothing ran yet to stop");
+    else if (how === "forget") l.forget("th_a");
+    else await l.quit(400);
+    await assert.rejects(started, how === "quit" ? /quit/ : /Stopped/);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await portFree(port), true, `${how}: no server came up after it`);
+    if (how === "quit") await assert.rejects(l.start("th_a", "app"), /quitting/);
+  }
+});
+
+test("launch: when ps can't be asked, a server the last engine left is kept and said, never taken for gone; asked again, it's stopped", async () => {
+  const port = await freePort();
+  const { root } = folder([{ name: "app", runtimeExecutable: process.execPath, runtimeArgs: ["server.js"], port }]);
+  const file = join(root, "asleep.json");
+  const first = launcher(root, { file });
+  await first.l.start("th_a", "app");
+  await until(async () => !(await portFree(port)));
+  // ps that fails, first on the PATH, as a sandbox that refuses it or a machine too loaded to answer would.
+  const bin = mkdtempSync(join(tmpdir(), "liner-noprocs-"));
+  writeFileSync(join(bin, "ps"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    const blind = launcher(root, { file });
+    assert.equal(await blind.l.reap(), 0);
+    assert.equal(await portFree(port), false, "left running");
+    assert.equal((JSON.parse(readFileSync(file, "utf8")) as { running: unknown[] }).running.length, 1, "and still kept, to look again");
+  } finally {
+    process.env.PATH = path;
+  }
+  const next = launcher(root, { file });
+  assert.equal(await next.l.reap(), 1);
+  await until(() => portFree(port));
 });

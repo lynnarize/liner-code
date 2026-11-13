@@ -32,7 +32,7 @@ import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { subagentName } from "../review.ts";
 import { effortOf, skillsIn, ULTRACODE, ULTRATHINK } from "./models.ts";
-import { LINER_WAIT_SEC, ResumeFailed, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
+import { LINER_WAIT_SEC, ResumeFailed, saysOf, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
 /** The SDK's query() and transcript reader, held here so tests can stand in a Claude Code of their own. */
@@ -833,6 +833,8 @@ class ClaudeSession implements ProviderSession {
             rule: forced || suppressAlwaysAllowRule ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" || kind === "write" ? "Edit" : name,
             // Its Auto can't run here, so nothing has read this step: Liner Code lets a routine command through at Auto (risk.ts, routine).
             unjudged: Boolean(this.noAuto),
+            // Bash's own `description`: what the model says the command does.
+            ...(kind === "exec" && saysOf(input.description) ? { says: saysOf(input.description) } : {}),
           },
           signal,
         );

@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as PE } from "react";
 import type { DesignFrame, Rect, TreeNode } from "@contracts";
 import { editText, frames, onEdited, onReady } from "./bridge";
+import { carriesFiles, dropFiles } from "./Drop";
 import { Frame } from "./Frame";
 import { SayBar } from "./SayBar";
 import { FrameMark } from "./BuildTab";
@@ -23,7 +24,7 @@ import { LiveMark } from "./Live";
 import { CheckLabel, CheckMarks } from "./ChecksTab";
 import { WayLabel, WaysOver } from "./Ways";
 import { PictureOver } from "./Pictures";
-import { design, frameOf, getDesign, isGone, useDesign, type Sel } from "./store";
+import { blankHtml, design, frameOf, getDesign, isGone, keepsView, useDesign, type Sel } from "./store";
 
 const DRAG = 3;
 type Box = { x: number; y: number; w: number; h: number };
@@ -83,6 +84,9 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
   const presence = useDesign((s) => s.presence);
   const editing = useDesign((s) => s.editing);
   const play = useDesign((s) => s.tool === "play");
+  const [dropping, setDropping] = useState(false);
+  // Which drawn frames have nothing in them yet, as one string so a typed letter elsewhere redraws nothing here.
+  const blanks = useDesign((s) => (s.file?.frames ?? []).filter((f) => f.kind === "drawn" && blankHtml(s.html[f.id])).map((f) => f.id).join(","));
   const [rects, setRects] = useState<Record<string, Rect>>({});
   const [hover, setHover] = useState<{ frame: string; rect: Rect } | null>(null);
   const [space, setSpace] = useState(false);
@@ -97,7 +101,8 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
   useLayoutEffect(() => {
     if (!file || fitted.current === `${file.id}:${page}`) return;
     fitted.current = `${file.id}:${page}`;
-    fit(root.current);
+    // A tab coming back keeps the view it had (store.ts show).
+    if (!keepsView(file.id)) fit(root.current);
   }, [file?.id, page, onPage.length > 0]);
 
   // Where the selected nodes are, in their frames' pixels, as the frames say while they move.
@@ -124,6 +129,9 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     () =>
       onReady((frame) => {
         const s = getDesign();
+        // A live page loaded again (its tab shown again, or the app reloaded it) shows the changes still held for it.
+        const held = s.pending[frame];
+        if (held?.length && frameOf(s, frame)?.kind === "live") void frames.apply(frame, held).catch(() => {});
         const ids = s.sel.filter((x) => x.frame === frame && x.node).map((x) => x.node!);
         // The bridge watches the picked nodes again by itself once the frame is ready.
         if (ids.length) void design.refreshNode();
@@ -449,7 +457,33 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
   const EDGES: Edge[] = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
   return (
-    <div ref={root} tabIndex={-1} className="ld-cv-hit" style={{ cursor }} onPointerDown={(e) => void onDown(e)} onPointerMove={onMove} onPointerUp={(e) => void onUp(e)} onPointerLeave={() => setHover(null)} data-play={play || undefined}>
+    <div
+      ref={root}
+      tabIndex={-1}
+      className="ld-cv-hit"
+      style={{ cursor }}
+      onPointerDown={(e) => void onDown(e)}
+      onPointerMove={onMove}
+      onPointerUp={(e) => void onUp(e)}
+      onPointerLeave={() => setHover(null)}
+      data-play={play || undefined}
+      data-drop={dropping || undefined}
+      // Your own picture files, dropped on a frame or the empty canvas (Drop.ts).
+      onDragOver={(e) => {
+        if (!carriesFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        setDropping(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setDropping(false)}
+      onDrop={(e) => {
+        setDropping(false);
+        if (!carriesFiles(e)) return;
+        e.preventDefault();
+        const p = world(e);
+        void dropFiles(e.dataTransfer.files, p, frameAt(p));
+      }}
+    >
       <div className="ld-plane" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
         {(file?.frames ?? []).map((f) => (
           <div key={f.id} className="ld-frame" data-gone={isGone(f) || undefined} style={{ left: f.x, top: f.y, width: f.w, height: f.h }} hidden={f.page !== page || undefined}>
@@ -473,6 +507,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
           const room = labelRoom(i);
           const p = presence[f.id];
           const picked = sel.some((x) => x.frame === f.id && !x.node);
+          const blank = blanks.split(",").includes(f.id);
           return (
             <div key={f.id}>
               <div className="ld-label" data-ld-ui hidden={room <= 0 || undefined} style={{ left: b.left, top: b.top - 22, maxWidth: room }} data-on={picked || undefined} onPointerDown={naming === f.id ? (e) => e.stopPropagation() : startLabel(f)} onDoubleClick={() => setNaming(f.id)}>
@@ -506,6 +541,11 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
                 {/* A frame whose file is gone carries its name and that, nothing else: no checks, no build state. */}
                 {isGone(f) ? (
                   <span className="ld-ly-gone">file gone</span>
+                ) : blank ? (
+                  // Nothing drawn in it yet: its name and size, no checks or build state it hasn't earned.
+                  <span className="ld-num">
+                    {f.w} × {f.h}
+                  </span>
                 ) : (
                   <>
                     <WayLabel frame={f} />

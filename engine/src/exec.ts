@@ -579,7 +579,13 @@ export async function markedPids(mark: Mark, among?: number[]): Promise<Set<numb
     }
   }
   if (mark.file && existsSync(mark.file)) {
-    const holding = await tryRun("lsof", ["-w", "-t", ...(among ? ["-a", "-p", among.join(",")] : []), "--", mark.file], { timeout: 8000 });
+    const ask = (timeout: number) => tryRun("lsof", ["-w", "-t", ...(among ? ["-a", "-p", among.join(",")] : []), "--", mark.file!], { timeout });
+    // lsof says 1 with nothing printed when nothing holds the file: an answer. Anything else that isn't 0 (too slow under load,
+    // refused) is a look that failed, never taken for "none": asked again, longer, and said when it fails again.
+    const failed = (r: RunResult) => r.code !== 0 && !(r.code === 1 && !r.stdout.trim() && !r.stderr.trim());
+    let holding = await ask(8000);
+    if (failed(holding)) holding = await ask(20000);
+    if (failed(holding)) console.error(`[marks] couldn't tell what holds ${mark.file}: ${holding.stderr.trim().slice(0, 200) || `lsof answered ${holding.code}`}`);
     for (const l of holding.stdout.split("\n")) if (/^\d+$/.test(l.trim())) has.add(Number(l.trim()));
   }
   has.delete(process.pid);
@@ -595,8 +601,11 @@ export async function endAll(procs: Proc[], again?: () => Promise<Proc[]>, grace
   // Which of them still run: an ended one whose parent hasn't heard yet (a zombie) still answers a signal, and is ended all the same.
   const living = async (list: Proc[]) => {
     if (!list.length) return [];
-    const up = new Set((await processes()).map((p) => p.pid));
-    return list.filter((p) => up.has(p.pid));
+    // A listing always holds this engine: an empty one is a look that failed (ps and lsof refused or too slow), never "all gone".
+    // Then each is asked by its own pid, which needs no program (a zombie answers too, and is ended all the same).
+    const all = await processes();
+    const up = all.length ? new Set(all.map((p) => p.pid)) : null;
+    return list.filter((p) => (up ? up.has(p.pid) : signalled(p.pid)));
   };
   const depth = (p: Proc, all: Proc[]) => {
     let d = 0;
@@ -631,6 +640,16 @@ export async function endAll(procs: Proc[], again?: () => Promise<Proc[]>, grace
   return living(todo);
 }
 
+/** Whether a process answers a signal: it's there (or a zombie not yet reaped). */
+const signalled = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
 /** Stops a process started in a group of its own, and everything in that group; the process alone if that fails. */
 export function killTree(child: { pid?: number; kill: (s?: NodeJS.Signals) => boolean }) {
   // Windows has no process groups: taskkill ends the process and everything it started (T3 Code:
@@ -658,7 +677,17 @@ export function killTree(child: { pid?: number; kill: (s?: NodeJS.Signals) => bo
   } catch {
     // the group is gone already, or it isn't one
   }
+  // The process alone, by its own pid: and killed for good if it ignores that, as the group would have been.
   child.kill();
+  const pid = child.pid;
+  if (pid)
+    setTimeout(() => {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // it went when it was asked
+      }
+    }, KILL_AFTER_MS).unref();
 }
 
 /** First line of `cmd --version`, or undefined. */

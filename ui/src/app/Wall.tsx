@@ -589,6 +589,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
             {kind !== "done" && info.steps.length > 0 && (
               <div className="lc-trail lc-wt-trail" data-live={live || undefined}>
                 <ol className="lc-trail-list">
+                  {live && <li className="lc-trail-light" aria-hidden role="presentation" />}
                   {info.steps.map((s) => (
                     <Step key={s.key} s={s} />
                   ))}
@@ -604,7 +605,8 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                   {shell ? "Wants to run" : "Asks before it goes on"}
                 </span>
                 {command ? <code className="lc-wt-cmd">{os.tilde(command)}</code> : <b className="lc-wt-what">{ask.title}</b>}
-                {ask.description && <p className="lc-wt-why">{ask.description}</p>}
+                {/* The agent's own words for what it does, when it gave any; else what Liner says of it. */}
+                {(ask.says || ask.description) && <p className="lc-wt-why">{ask.says || ask.description}</p>}
                 <div className="lc-wt-acts">
                   {askHere ? (
                     <>

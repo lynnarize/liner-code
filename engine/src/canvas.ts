@@ -213,7 +213,7 @@ function inFolder(cwd: string, asked: string) {
   return rel.split(sep).join("/");
 }
 
-type Watcher = { n: number; fw?: FSWatcher; timers: Map<string, NodeJS.Timeout>; cwd: string; file: string };
+type Watcher = { n: number; fw?: FSWatcher; timers: Map<string, NodeJS.Timeout>; cwd: string; file: string; /** Whether its folder and design.json were there when last looked. */ present?: boolean; /** Looks for the design file going and coming back, once a second. */ poll?: NodeJS.Timeout };
 type State = {
   /** What the engine wrote last to each file, by path: the watcher leaves those changes be. */
   own: Map<string, string>;
@@ -540,7 +540,7 @@ export function listFiles(ctx: DesignCtx, cwd: string): DesignFileInfo[] {
 }
 
 /** A free slug for a new design file or frame. */
-function freeSlug(title: string, taken: (s: string) => boolean) {
+export function freeSlug(title: string, taken: (s: string) => boolean) {
   const base = slugOf(title).slice(0, 56).replace(/-+$/, "") || "design";
   for (let n = 1; ; n++) {
     const s = n > 1 ? `${base}-${n}` : base;
@@ -626,6 +626,17 @@ export function saveFile(ctx: DesignCtx, cwd: string, slug: string, patch: Desig
   if (p.pictures !== undefined && file.pictures) setPicturesPref(ctx.store.home, cwd, slug, file.pictures);
   writeIndex(st, cwd, file);
   return file;
+}
+
+/** The design file a tool means when it names none, in this folder: the one the person opened or made last (canvas.open, canvas.create, design.new). */
+export function setOpened(ctx: DesignCtx, cwd: string, slug: string) {
+  state(ctx).opened.set(resolve(cwd), slugOk(slug));
+}
+
+/** The session an agent draws in this design file with now (canvas.presence), if one does. */
+export function drawingIn(ctx: DesignCtx, cwd: string, slug: string): string | undefined {
+  const at = resolve(cwd);
+  return [...state(ctx).presence.values()].find((p) => resolve(p.cwd) === at && p.file === slug)?.threadId;
 }
 
 /** A frame by its id, else its name (any case). */
@@ -972,6 +983,8 @@ function changedOnDisk(ctx: DesignCtx, cwd: string, slug: string, rel: string) {
   const moved = frameFile && was !== undefined && was !== Boolean(content);
   if (!moved && content && st.own.get(abs) === hash(content)) return;
   if (rel === "design.json") {
+    // design.json removed: the watch's own look says the design file went (canvas.changed with gone), not this.
+    if (!content) return;
     ctx.emit({ type: "canvas.changed", cwd, file: slug, by: "agent", ...withThread(runningIn(ctx, cwd, slug)), at });
     return;
   }
@@ -1003,12 +1016,34 @@ export function watchFile(ctx: DesignCtx, cwd: string, slug: string, on: boolean
   w.n = Math.max(0, w.n + (on ? 1 : -1));
   if (!w.n) {
     w.fw?.close();
+    clearInterval(w.poll);
     for (const t of w.timers.values()) clearTimeout(t);
     st.watchers.delete(dir);
     return;
   }
   st.watchers.set(dir, w);
+  // The design file itself going (its folder or design.json removed on disk) and coming back: told once per change, as
+  // canvas.changed with `gone`, so the app can close its tab. Looked for once a second: a watch on a folder that's gone ends.
+  const here = () => Boolean(lstatSync(dir, { throwIfNoEntry: false })?.isDirectory()) && existsSync(join(dir, "design.json"));
+  if (w.present === undefined) w.present = here();
+  w.poll ??= setInterval(() => {
+    const now = here();
+    if (now === w.present) return;
+    w.present = now;
+    ctx.emit({ type: "canvas.changed", cwd, file: slug, by: "agent", at: Date.now(), gone: !now });
+    if (!now) {
+      w.fw?.close();
+      w.fw = undefined;
+    } else if (!w.fw) listen(ctx, cwd, slug, dir, w);
+  }, 1000);
+  w.poll.unref?.();
   if (w.fw || !existsSync(dir)) return;
+  listen(ctx, cwd, slug, dir, w);
+}
+
+/** The folder's own watch: each changed file, once it settled (changedOnDisk). */
+function listen(ctx: DesignCtx, cwd: string, slug: string, dir: string, w: Watcher) {
+  const st = state(ctx);
   // What's there now, so a file's going and coming back is told.
   try {
     for (const f of readFile(ctx, cwd, slug).frames) if (f.kind === "drawn") st.there.set(join(dir, framePath(f)), !f.missing);
@@ -1436,6 +1471,7 @@ export function attach(ctx: DesignCtx) {
     st.off = undefined;
     for (const w of st.watchers.values()) {
       w.fw?.close();
+      clearInterval(w.poll);
       for (const t of w.timers.values()) clearTimeout(t);
     }
     st.watchers.clear();
@@ -1490,6 +1526,9 @@ export function rpc(x: () => DesignCtx): DesignRpc<CanvasMethod> {
     "canvas.open": async ({ cwd, file }) => {
       const ctx = c();
       const dir = ctx.folder(cwd);
+      // Gone on disk: never made again from what's left of it, behind the person's back.
+      const d = designDir(dir, slugOk(file));
+      if (!lstatSync(d, { throwIfNoEntry: false })?.isDirectory() || (state(ctx).watchers.has(d) && !existsSync(join(d, "design.json")))) throw new Error(`“${slugOk(file)}” isn't there any more: its folder or its design.json was removed on disk.`);
       const f = readFile(ctx, dir, slugOk(file), { drop: true });
       state(ctx).opened.set(dir, f.id);
       return { file: f, base: await baseOf(ctx, dir, f.id), revs: revsOf(ctx, dir, f) };
@@ -1591,7 +1630,7 @@ function leanSaid(cwd: string, file: DesignFile) {
   if (file.lean.path) return file.lean.path;
   if (existsSync(join(cwd, "DESIGN.md"))) return "DESIGN.md";
   if (existsSync(join(cwd, ".liner", "DESIGN.md"))) return ".liner/DESIGN.md";
-  return file.lean.builtin ? `the built-in “${file.lean.builtin}” (no file here)` : "none yet (no DESIGN.md in this folder)";
+  return file.lean.builtin ? `the built-in “${file.lean.builtin}” (no file here)` : "none (it's optional: go by the loaded skills and your own judgement)";
 }
 
 function filesSaid(ctx: DesignCtx, cwd: string, only?: string) {

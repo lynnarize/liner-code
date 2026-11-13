@@ -7,7 +7,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EngineEvent, Item, Thread } from "../../contracts/src/index.ts";
@@ -1173,4 +1173,116 @@ test("canvas: the unreadable sentence says plainly when Liner has no earlier cop
   writeFileSync(join(root, ".liner/designs/lone/design.json"), "{ \"v\": 1, \"ti");
   const [info] = await api["canvas.list"]({ cwd: root });
   assert.match(info.unreadable!, /Liner Code has no earlier copy of it, and has left the broken file as it is: fix it by hand\.$/);
+});
+
+// 0.2.6: a layer's source is the file's, never the page its scripts drew; a refused redraw; broken copies; whole writes.
+
+/** A frame whose own script builds the list's items each time it loads, and sets an attribute on it. */
+const noScript = (html: string) => html.replace(/<script>[\s\S]*?<\/script>/g, "");
+const scripted = page(`<ul class="tides" data-l="a1"></ul>\n<p class="note" data-l="a2">High <b data-l="a3">4:12</b> and <i data-l="a4"></i></p>\n<script>\nconst ul = document.querySelector(".tides");\nfor (const t of ["4:12", "10:30"]) { const li = document.createElement("li"); li.textContent = t; ul.append(li); }\nul.setAttribute("aria-busy", "false");\ndocument.querySelector("i").textContent = "low";\n</script>`);
+
+test("canvas.frame.node: a layer's source is the file's own, so a Code tab edit of a script's container saves no generated children", async () => {
+  const { root, api } = setup();
+  await api["canvas.create"]({ cwd: root, title: "Gen" });
+  const dir = join(root, ".liner/designs/gen");
+  writeFileSync(join(dir, "frames/home.html"), scripted);
+  await api["canvas.open"]({ cwd: root, file: "gen" });
+  const { rev } = await api["canvas.frame.read"]({ cwd: root, file: "gen", frame: "home" });
+  const node = await api["canvas.frame.node"]({ cwd: root, file: "gen", frame: "home", id: "a1" });
+  assert.equal(node.html, `<ul class="tides" data-l="a1"></ul>`, "the file's element: no <li>, no attribute a script set");
+  assert.equal(node.rev, rev);
+  // The Code tab: its text is the source without ids; the person changes the class; it goes back as one html op.
+  const typed = node.html.replace(/\sdata-l="[^"]*"/g, "").replace(`class="tides"`, `class="tides big"`);
+  await api["canvas.frame.apply"]({ cwd: root, file: "gen", frame: "home", ops: [{ id: "a1", html: typed }] });
+  const after = readFileSync(join(dir, "frames/home.html"), "utf8");
+  assert.match(after, /<ul data-l="a1" class="tides big"><\/ul>\n<p class="note"/, "its id first, as any piece that gives none; nothing inside it");
+  assert.doesNotMatch(noScript(after), /<li|aria-busy/, "nothing the script drew is in the file");
+  assert.equal(after.replace(`<ul data-l="a1" class="tides big">`, `<ul class="tides" data-l="a1">`), stamp(scripted).html, "the rest of the file is as it was (stamped when read)");
+  await assert.rejects(async () => api["canvas.frame.node"]({ cwd: root, file: "gen", frame: "home", id: "nope" }), /There's no element with data-l="nope" in “Home”'s file: the page's own script draws it/);
+});
+
+test("canvas.frame.node: duplicating a script's container copies its source, never what the script added", async () => {
+  const { root, api } = setup();
+  await api["canvas.create"]({ cwd: root, title: "Dup" });
+  const dir = join(root, ".liner/designs/dup");
+  writeFileSync(join(dir, "frames/home.html"), scripted);
+  await api["canvas.open"]({ cwd: root, file: "dup" });
+  await api["canvas.frame.read"]({ cwd: root, file: "dup", frame: "home" });
+  // ⌘D: the layer's source, its ids taken out and a new one on its root, inserted after it in its parent.
+  const node = await api["canvas.frame.node"]({ cwd: root, file: "dup", frame: "home", id: "a1" });
+  const body = ids(readFileSync(join(dir, "frames/home.html"), "utf8"))[0];
+  const piece = node.html.replace(/\sdata-l="[^"]*"/g, "").replace(/^<(\w+)/, `<$1 data-l="xcopy1"`);
+  const r = await api["canvas.frame.apply"]({ cwd: root, file: "dup", frame: "home", ops: [{ into: body, insert: piece, before: "a2" }] });
+  assert.deepEqual(r.ids, ["xcopy1"]);
+  const after = readFileSync(join(dir, "frames/home.html"), "utf8");
+  assert.match(after, /<ul class="tides" data-l="a1"><\/ul>\n<ul data-l="xcopy1" class="tides"><\/ul><p class="note"/);
+  assert.doesNotMatch(noScript(after), /<li|aria-busy/);
+});
+
+test("canvas.frame.apply inner: a text with marks edited in place keeps each mark's source, and leaves out what a script drew", () => {
+  const src = stamp(scripted).html;
+  // The person retyped "High" as "Highest"; <b> untouched (kept by id); <i> as the script filled it, untouched; a mark a script added (n9) isn't in the file.
+  const r = applyOps(src, [{ id: "a2", inner: ["Highest ", { id: "a3" }, " and ", { id: "a4" }, " ", { id: "n9", inner: ["gen"] }] }]);
+  assert.match(r.html, /<p class="note" data-l="a2">Highest <b data-l="a3">4:12<\/b> and <i data-l="a4"><\/i> <\/p>/, "the <i> stays empty as in the file: the script fills it again");
+  assert.doesNotMatch(noScript(r.html), /gen|low/);
+  assert.equal(applyOps(r.html, r.undo).html, src, "undo puts back the exact bytes");
+  // A mark whose own words were changed: its tag from the file, its words from the edit; a line break; text escaped.
+  const t = applyOps(src, [{ id: "a2", inner: ["High ", { id: "a3", inner: ["4:15 <soon>"] }, { br: true }, "& on"] }]);
+  assert.match(t.html, /<p class="note" data-l="a2">High <b data-l="a3">4:15 &lt;soon&gt;<\/b><br>&amp; on<\/p>/);
+  // A mark deleted while editing is gone; one used twice is used once; an id outside the element is never pulled in.
+  const d = applyOps(src, [{ id: "a2", inner: ["Only ", { id: "a3" }, { id: "a3" }, { id: "a1" }] }]);
+  assert.match(d.html, /<p class="note" data-l="a2">Only <b data-l="a3">4:12<\/b><\/p>/);
+  assert.match(d.html, /<ul class="tides" data-l="a1"><\/ul>/, "the list is where it was, once");
+  assert.throws(() => applyOps(src, [{ id: "a2", inner: "x" as unknown as string[] }]), /isn't one the canvas reads/);
+});
+
+test("canvas versions: a turn that leaves design.json broken keeps no copy, and a copy of a broken state says unreadable", async () => {
+  const { root, store, api, ctx } = setup();
+  await api["canvas.create"]({ cwd: root, title: "Brk", size: "phone" });
+  const dir = join(root, ".liner/designs/brk");
+  const turn = (n: number, status: "running" | "done"): Item => ({ kind: "turn", id: `turn${n}`, turn: n, at: Date.now(), agent: "forge", model: "demo:x", status });
+  const step = async (it: Item) => (store.putItem("t", it), await canvas.canvasIdle(ctx));
+  await step(turn(1, "running"));
+  writeFileSync(join(dir, "frames/phone.html"), page("<p>one</p>"));
+  await step(turn(1, "done"));
+  const whole = readFileSync(join(dir, "design.json"), "utf8");
+  await step(turn(2, "running"));
+  writeFileSync(join(dir, "design.json"), whole.slice(0, 20));
+  await step(turn(2, "done"));
+  let vs = await api["canvas.versions"]({ threadId: "t", file: "brk" });
+  assert.deepEqual(vs.map((v) => v.key), ["t0", "t1"], "no copy of turn 2's broken state");
+  assert.ok(vs.every((v) => !v.unreadable));
+  // Bringing turn 1 back over the broken file keeps the broken state as a "before" copy: it says so, and isn't one to offer.
+  store.patchThread("t", { turns: 3 });
+  await api["canvas.restore"]({ threadId: "t", file: "brk", key: "t1" });
+  vs = await api["canvas.versions"]({ threadId: "t", file: "brk" });
+  const before = vs.filter((v) => v.kind === "before");
+  assert.equal(before.length, 1);
+  assert.equal(before[0].unreadable, true);
+  assert.equal([...vs].filter((v) => !v.unreadable).sort((a, b) => b.at - a.at)[0]?.key, "t1", "the newest readable copy is the good one");
+  assert.equal(readFileSync(join(dir, "design.json"), "utf8"), whole);
+  // The sentence for a broken file counts only copies that open.
+  writeFileSync(join(dir, "design.json"), "{");
+  const [info] = await api["canvas.list"]({ cwd: root });
+  assert.match(info.unreadable!, /has an earlier copy/);
+});
+
+test("canvas: the engine's writes land whole: no file half written, no temp file left, the file's mode kept", async () => {
+  const { root, api } = setup();
+  await api["canvas.create"]({ cwd: root, title: "Whole", size: "phone" });
+  const dir = join(root, ".liner/designs/whole");
+  const frame = join(dir, "frames/phone.html");
+  chmodSync(frame, 0o640);
+  const { rev } = await api["canvas.frame.read"]({ cwd: root, file: "whole", frame: "phone" });
+  const body = ids(readFileSync(frame, "utf8"))[0];
+  await api["canvas.frame.apply"]({ cwd: root, file: "whole", frame: "phone", base: rev, ops: [{ into: body, insert: "<p>x</p>" }] });
+  assert.equal(statSync(frame).mode & 0o777, 0o640, "a frame's mode is the one it had");
+  await api["canvas.save"]({ cwd: root, file: "whole", patch: { title: "Whole 2" } });
+  assert.equal(JSON.parse(readFileSync(join(dir, "design.json"), "utf8")).title, "Whole 2");
+  const left = readdirSync(dir, { recursive: true }).map(String).filter((n) => n.endsWith(".tmp"));
+  assert.deepEqual(left, [], "no temp file left beside them");
+  // A write that can't land leaves the file as it was.
+  const was = readFileSync(join(dir, "design.json"), "utf8");
+  assert.throws(() => canvas.writeWhole(join(dir, "nowhere", "design.json"), "x"), /ENOENT/);
+  assert.equal(readFileSync(join(dir, "design.json"), "utf8"), was);
 });

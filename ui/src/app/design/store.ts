@@ -393,7 +393,9 @@ async function keepSource(frame: string, rev: string) {
   if (r && r.rev === rev) setNow({ html: { ...state.html, [frame]: r.html } });
 }
 const refusal = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const changedSince = (e: unknown) => refusal(e).startsWith(FRAME_CHANGED) || /There's no element/.test(refusal(e));
+/** The engine refused because the layer isn't in the frame's file (a page's script drew it, or the file changed and it went). */
+const noElement = (e: unknown) => /There's no element/.test(refusal(e));
+const changedSince = (e: unknown) => refusal(e).startsWith(FRAME_CHANGED) || noElement(e);
 
 let saving = 0;
 let savePatch: DesignPatch["frames"] = [];
@@ -772,7 +774,14 @@ export const design = {
       }
     } catch (e) {
       // `own`: the caller says the engine's sentence itself (the Code tab, under its draft).
-      if (!opts?.own) quiet(changedSince(e) ? "The frame changed on disk, so that change wasn't saved. It's drawn again as it is now." : `That change wasn't saved: ${refusal(e)} The frame is drawn again from its file.`);
+      if (!opts?.own)
+        quiet(
+          noElement(e)
+            ? `That layer isn't in the frame's file (the page's own script draws it, or it was taken out since), so the change wasn't saved.${eye ? " The frame is drawn again from its file." : ""}`
+            : refusal(e).startsWith(FRAME_CHANGED)
+              ? `The frame changed on disk, so that change wasn't saved.${eye ? " It's drawn again as it is now." : ""}`
+              : `That change wasn't saved: ${refusal(e)}${eye ? " The frame is drawn again from its file." : ""}`,
+        );
       if (eye) await redrawFromFile(frame);
       return { ok: false, error: refusal(e) };
     }

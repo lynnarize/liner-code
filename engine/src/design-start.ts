@@ -22,7 +22,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import type { DesignSize, Project } from "../../contracts/src/index.ts";
 import { DESIGNS_FOLDER, FRAME_SIZES, UNTITLED_DESIGN, type DesignFile, type DesignFileInfo } from "../../contracts/src/design.ts";
 import { builtCopy } from "./buildlinks.ts";
-import { addFrame, CANVAS_DIR, createFile, designDir, drawingIn, freeSlug, linkFree, listFiles, peekFile, readFile, saveFile, setOpened, type DesignCtx } from "./canvas.ts";
+import { addFrame, CANVAS_DIR, createFile, designDir, drawingIn, freeSlug, linkFree, listFiles, peekFile, readFile, saveFile, setOpened, writeWhole, type DesignCtx } from "./canvas.ts";
 import { picturesPref, setPicturesPref } from "./design-prefs.ts";
 import { keepOutOfGit } from "./designs.ts";
 import { readLean, safePath } from "./lean.ts";
@@ -296,7 +296,7 @@ export async function attachDesign(h: StartHost, a: { projectId: string; to: { p
         const p = String((raw.lean as { path?: string }).path);
         if (p.startsWith(`${CANVAS_DIR}/${old}/`)) raw.lean = { ...(raw.lean as object), path: `${CANVAS_DIR}/${next}/${p.slice(`${CANVAS_DIR}/${old}/`.length)}` };
       }
-      writeFileSync(index, `${JSON.stringify(raw, null, 2)}\n`);
+      writeWhole(index, `${JSON.stringify(raw, null, 2)}\n`);
     }
     crash("staged");
     // The journal, before anything lands where it's used.

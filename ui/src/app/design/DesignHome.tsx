@@ -175,8 +175,21 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
   const engineSettings = useEngine((s) => s.settings);
   const projects = useMemo(() => codeProjects(all), [all]);
   // On its own by default; a project picked here is kept for the next design.
-  const [place, setPlace] = useState<string>(() => localStorage.getItem("ld:place") ?? OWN);
-  useEffect(() => void localStorage.setItem("ld:place", place), [place]);
+  // A window without storage (it throws) starts on its own each time, rather than breaking the page.
+  const [place, setPlace] = useState<string>(() => {
+    try {
+      return localStorage.getItem("ld:place") ?? OWN;
+    } catch {
+      return OWN;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("ld:place", place);
+    } catch {
+      // kept for this view only
+    }
+  }, [place]);
   const project = projects.find((p) => p.id === place);
   const initial = useMemo((): RunSettings => runFor(project), [project?.id, project?.agent, engineSettings.start, engineSettings.defaultAccess, providers.length]);
   const [settings, setSettings] = useState<RunSettings>(initial);

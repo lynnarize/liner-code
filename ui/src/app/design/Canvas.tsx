@@ -166,15 +166,13 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
   // A text edited in place ends: its words go into the file, as one step to undo.
   useEffect(
     () =>
-      onEdited((frame, id, text) => {
+      onEdited((frame, id, text, inner) => {
         design.edit(undefined);
         // The keyboard comes back from the frame, so Esc and ⌘Z are the canvas's again.
         root.current?.focus({ preventScroll: true });
-        // Plain words go in as text; a text with marks inside (a <b>, a <span>) goes in as that element.
-        void frames.read(frame, id).then(
-          (n) => design.apply(frame, [/<[a-z]/i.test(n.html.replace(/^<[^>]*>/, "")) ? { id, html: n.html } : { id, text }]),
-          () => design.apply(frame, [{ id, text }]),
-        );
+        // Plain words go in as text; a text with marks inside (a <b>, a <span>) as its runs, each mark
+        // kept from the file's own source by id (never the page as its scripts drew it).
+        void design.apply(frame, [inner ? { id, inner } : { id, text }]);
       }),
     [],
   );

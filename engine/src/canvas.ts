@@ -19,7 +19,7 @@
 */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { cpSync, createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { chmodSync, cpSync, createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { cp, lstat, readdir } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -251,11 +251,56 @@ const mayWrite = (ctx: DesignCtx) => !quiet.getStore() && !("threadId" in ctx &&
 */
 const quiet = new AsyncLocalStorage<boolean>();
 
+/**
+  Writes a file whole or not at all: into a hidden file beside it (the same folder, so the same
+  disk), with the mode the file had, then renamed over it, so a crash or a full disk mid-write
+  leaves the file as it was, never half of it. Node's rename replaces a file that's there on
+  Windows too (MoveFileEx with replace); when it's refused there (the file held open without
+  sharing, by an editor or a scanner), it's tried again for a moment, then written in place, as
+  before. The hidden file never matches a frame's or design.json's name, so the watcher and the
+  canvas leave it be.
+*/
+export function writeWhole(abs: string, data: string | Buffer) {
+  const was = statSync(abs, { throwIfNoEntry: false });
+  const tmp = join(dirname(abs), `.${basename(abs)}.${process.pid}.${createHash("sha1").update(`${Math.random()}${Date.now()}`).digest("hex").slice(0, 8)}.tmp`);
+  try {
+    writeFileSync(tmp, data, was ? { mode: was.mode & 0o7777 } : {});
+    // A umask can take bits off the mode asked for: the file's own mode, exactly.
+    if (was) chmodSync(tmp, was.mode & 0o7777);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
+  for (let tries = 0; ; tries++) {
+    try {
+      renameSync(tmp, abs);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY") && tries < 5) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (tries + 1));
+        continue;
+      }
+      if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY")) {
+        // Still held: written in place, as the file is open for reading only by whoever holds it.
+        try {
+          writeFileSync(abs, data);
+          return;
+        } finally {
+          rmSync(tmp, { force: true });
+        }
+      }
+      rmSync(tmp, { force: true });
+      throw e;
+    }
+  }
+}
+
 /** Writes a file of the engine's own, and remembers it so the watcher doesn't take it for an agent's. */
 function writeOwn(st: State, abs: string, content: string) {
   mkdirSync(dirname(abs), { recursive: true });
   if (lstatSync(abs, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${basename(abs)} is a link, so it isn't written.`);
-  writeFileSync(abs, content);
+  writeWhole(abs, content);
   st.own.set(abs, hash(content));
   st.there.set(abs, true);
 }
@@ -502,7 +547,7 @@ function unreadable(ctx: DesignCtx, cwd: string, slug: string, bytes: Buffer) {
   }
   const earlier = ctx.store.threads.find((t) => {
     try {
-      return resolve(ctx.cwdOf(t.id)) === resolve(cwd) && kept(ctx, t.id, slug).length > 0;
+      return resolve(ctx.cwdOf(t.id)) === resolve(cwd) && kept(ctx, t.id, slug).some((v) => !brokenIndex(join(versionsDir(ctx, t.id, slug), v.key)));
     } catch {
       return false;
     }
@@ -890,6 +935,20 @@ function heardBefore(ctx: DesignCtx, cwd: string, slug: string, frame: string, a
     ctx.emit({ type: "canvas.changed", cwd, file: slug, frame, by: "agent", ...withThread(runningIn(ctx, cwd, slug, frame)), at: Date.now(), rev });
   }
   return rev;
+}
+
+/**
+  One element of a drawn frame as its file has it (stamped, as canvas.frame.read gives the page): the
+  Code tab, ⌘D and whatever else needs an element's own source read it here, never from the page on
+  screen, whose scripts may have built children into it, set attributes on it or moved it.
+*/
+export function readNode(ctx: DesignCtx, cwd: string, slug: string, asked: string, id: string) {
+  const r = readFrameRev(ctx, cwd, slug, asked, { keep: true });
+  if (!r.ok) throw new Error(`“${r.frame.name}” can't take data-l ids without something else in it changing, so its layers can't be read one by one; edit its file instead.`);
+  const doc = parse(r.html);
+  const el = byId(doc, String(id ?? ""));
+  if (!el) throw new Error(`There's no element with data-l="${String(id ?? "").slice(0, 40)}" in “${r.frame.name}”'s file: the page's own script draws it, or it was taken out since.`);
+  return { html: outer(doc, el), rev: r.rev };
 }
 
 /** A drawn frame's HTML, stamped (readFrameRev without the revision); writes nothing. */
@@ -1301,19 +1360,43 @@ const slugsIn = (cwd: string) => {
 };
 
 /**
+  Whether a design folder (the file's own, or a kept copy of it) holds a design.json that is there
+  but isn't whole JSON: such a state is never kept as a turn's copy, and a "before" copy of it is
+  never offered to bring back (versions() marks it `unreadable`).
+*/
+function brokenIndex(dir: string) {
+  const index = join(dir, "design.json");
+  const l = lstatSync(index, { throwIfNoEntry: false });
+  if (!l?.isFile()) return false;
+  try {
+    JSON.parse(readFileSync(index, "utf8"));
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
   A turn began: a design file this session has no copy of yet gets one as it was before (turn - 1),
-  to scrub back to. Off the engine's loop; a folder with no .liner/designs costs one check.
+  to scrub back to. Off the engine's loop; a folder with no .liner/designs costs one check. A file
+  whose design.json can't be read now gets none: a copy of it would only bring the break back.
 */
 export async function turnStarted(ctx: DesignCtx, threadId: string, turn: number) {
   const cwd = resolve(ctx.cwdOf(threadId));
-  for (const slug of slugsIn(cwd)) if (!kept(ctx, threadId, slug).length) await keepVersionAsync(ctx, threadId, cwd, slug, Math.max(0, turn - 1), await digestAsync(ctx, designDir(cwd, slug)));
+  for (const slug of slugsIn(cwd)) if (!kept(ctx, threadId, slug).length && !brokenIndex(designDir(cwd, slug))) await keepVersionAsync(ctx, threadId, cwd, slug, Math.max(0, turn - 1), await digestAsync(ctx, designDir(cwd, slug)));
 }
 
-/** A turn ended: each design file it changed (from the last turn's copy, by size and time first, then hashes) is kept as this turn's. */
+/**
+  A turn ended: each design file it changed (from the last turn's copy, by size and time first, then
+  hashes) is kept as this turn's; one the turn left with a design.json that can't be read isn't,
+  so the copies to bring back stay ones that open.
+*/
 export async function turnEnded(ctx: DesignCtx, threadId: string, turn: number) {
   const cwd = resolve(ctx.cwdOf(threadId));
   for (const slug of slugsIn(cwd)) {
-    const sum = await digestAsync(ctx, designDir(cwd, slug));
+    const dir = designDir(cwd, slug);
+    if (brokenIndex(dir)) continue;
+    const sum = await digestAsync(ctx, dir);
     if (lastTurn(kept(ctx, threadId, slug))?.digest !== sum) await keepVersionAsync(ctx, threadId, cwd, slug, turn, sum);
   }
 }
@@ -1333,8 +1416,10 @@ function queue(ctx: DesignCtx, threadId: string, fn: () => Promise<void>) {
   });
 }
 
+/** The copies kept, oldest first; one whose design.json can't be read (a "before" copy of a broken file, or one kept before this was looked at) says `unreadable`. */
 export function versions(ctx: DesignCtx, threadId: string, slug: string): CanvasVersion[] {
-  return kept(ctx, threadId, slug).map(({ turn, at, frames, key, kind, back, backKind }) => ({ turn, at, frames, key, kind, ...(back !== undefined ? { back } : {}), ...(backKind ? { backKind } : {}) }));
+  const dir = versionsDir(ctx, threadId, slug);
+  return kept(ctx, threadId, slug).map(({ turn, at, frames, key, kind, back, backKind }) => ({ turn, at, frames, key, kind, ...(back !== undefined ? { back } : {}), ...(backKind ? { backKind } : {}), ...(brokenIndex(join(dir, key)) ? { unreadable: true as const } : {}) }));
 }
 
 /** A kept copy by its key ("t5", "b1731400000000"), else by its turn. */
@@ -1422,7 +1507,7 @@ export function restore(ctx: DesignCtx, threadId: string, slug: string, w: numbe
     const to = inDesign(dir, rel);
     mkdirSync(dirname(to), { recursive: true });
     const buf = readFileSync(src);
-    writeFileSync(to, buf);
+    writeWhole(to, buf);
     st.own.set(to, hash(buf));
   };
   for (const n of readdirSync(from)) put(n);
@@ -1478,7 +1563,7 @@ export function attach(ctx: DesignCtx) {
   });
 }
 
-export type CanvasMethod = "canvas.list" | "canvas.open" | "canvas.create" | "canvas.save" | "canvas.frame.add" | "canvas.frame.remove" | "canvas.frame.unremove" | "canvas.frame.apply" | "canvas.frame.copy" | "canvas.frame.read" | "canvas.frame.write" | "canvas.watch" | "canvas.versions" | "canvas.version.read" | "canvas.restore" | "canvas.selection";
+export type CanvasMethod = "canvas.list" | "canvas.open" | "canvas.create" | "canvas.save" | "canvas.frame.add" | "canvas.frame.remove" | "canvas.frame.unremove" | "canvas.frame.apply" | "canvas.frame.copy" | "canvas.frame.read" | "canvas.frame.node" | "canvas.frame.write" | "canvas.watch" | "canvas.versions" | "canvas.version.read" | "canvas.restore" | "canvas.selection";
 
 /** Each drawn frame's revision, by id (a frame whose file can't be read has none). */
 function revsOf(ctx: DesignCtx, cwd: string, file: DesignFile) {
@@ -1565,6 +1650,10 @@ export function rpc(x: () => DesignCtx): DesignRpc<CanvasMethod> {
       const ctx = c();
       const r = readFrameRev(ctx, ctx.folder(cwd), file, frame, { keep: true });
       return { html: r.html, rev: r.rev };
+    },
+    "canvas.frame.node": ({ cwd, file, frame, id }) => {
+      const ctx = c();
+      return readNode(ctx, ctx.folder(cwd), file, frame, id);
     },
     "canvas.frame.write": ({ cwd, file, frame, html, threadId, base }) => {
       const ctx = c();

@@ -1650,6 +1650,12 @@ export type Rpc = {
   /** A frame's HTML, stamped with data-l ids, and its revision (FrameRev). */
   "canvas.frame.read": [{ cwd: string; file: string; frame: string }, { html: string; rev: string }];
   /**
+    One element of a drawn frame as its file has it (by data-l, stamped), and the file's revision:
+    the source the Code tab shows and edits and ⌘D copies, never the page as its scripts drew it.
+    Refused when the file hasn't got that element (a page's script draws it).
+  */
+  "canvas.frame.node": [{ cwd: string; file: string; frame: string; id: string }, { html: string; rev: string }];
+  /**
     The editor writes a frame whole: stamped, and canvas.changed goes out with by "you". With `base`,
     refused when the file's revision isn't that one any more (an error starting "changed:", FRAME_CHANGED).
     `from`: the revision of the bytes it wrote over ("" when there were none); when they weren't what

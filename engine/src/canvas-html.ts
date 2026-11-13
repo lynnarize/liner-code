@@ -909,11 +909,14 @@ function upWithId(el: El | undefined, ok: Set<El>) {
 type Op =
   | { id: string; style: Record<string, string | null> }
   | { id: string; text: string }
+  | { id: string; inner: Part[] }
   | { id: string; attr: Record<string, string | null> }
   | { id: string; html: string }
   | { id: string; remove: true }
   | { id: string; move: { before?: string; into?: string } }
   | { into: string; insert: string; before?: string };
+/** A run of a text edited in place (contracts' TextPart): words, a line break, or a mark of the source by id. */
+type Part = string | { br: true } | { id: string; inner?: Part[] };
 
 /**
   Applies a list of changes to a frame's source, in order, all or nothing: each touches only its
@@ -993,6 +996,39 @@ export function applyOps(source: string, ops: Op[]): { html: string; undo: Op[];
       swappable(el, id);
       undo.unshift(snap(doc, ok, el));
       cur = splice(cur, [{ at: el.openEnd, del: el.innerEnd - el.openEnd, ins: encText(String(o.text ?? "")) }]);
+    } else if ("inner" in o) {
+      // A text with marks, edited in place: its words from the runs, each mark from this source by id (its bytes as they are
+      // when its words weren't touched), so nothing a page's script drew, set or moved gets into the file.
+      if (el.closedBy === "void" || RAW.has(el.tag)) throw new Error(`${id} holds no text.`);
+      swappable(el, id);
+      const inside = new Set(each(el));
+      const used = new Set<El>();
+      const bad = () => new Error(`The text for ${id} isn't one the canvas reads, so nothing was changed.`);
+      const build = (parts: unknown, depth: number): string => {
+        if (!Array.isArray(parts) || depth > 24) throw bad();
+        return parts
+          .map((p) => {
+            if (typeof p === "string") return encText(p);
+            if (!p || typeof p !== "object") throw bad();
+            if ((p as { br?: unknown }).br === true) return "<br>";
+            const pid = (p as { id?: unknown }).id;
+            const m = typeof pid === "string" ? byId(doc, pid) : undefined;
+            // A mark this element's source hasn't got (a page's script drew it) is left out: the script draws it again.
+            if (!m || !inside.has(m) || within(m).some((x) => used.has(x))) return "";
+            const kids = (p as { inner?: unknown }).inner;
+            if (kids === undefined || m.closedBy === "void" || RAW.has(m.tag)) {
+              for (const x of within(m)) used.add(x);
+              return outer(doc, m);
+            }
+            used.add(m);
+            return cur.slice(m.start, m.openEnd) + build(kids, depth + 1) + cur.slice(m.innerEnd, m.end);
+          })
+          .join("");
+      };
+      const next = build(o.inner, 0);
+      placeable(balanced(next), el);
+      undo.unshift(snap(doc, ok, el));
+      cur = splice(cur, [{ at: el.openEnd, del: el.innerEnd - el.openEnd, ins: next }]);
     } else if ("html" in o) {
       swappable(el, id);
       const piece = String(o.html ?? "");
@@ -1037,7 +1073,7 @@ export function applyOps(source: string, ops: Op[]): { html: string; undo: Op[];
       const piece = outer(doc, el);
       cur = splice(cur, [{ at: el.start, del: el.end - el.start, ins: "" }]);
       cur = splice(cur, [{ at: at > el.start ? at - piece.length : at, del: 0, ins: piece }]);
-    } else throw new Error("That change isn't one the canvas knows: style, text, attr, html, remove, move or insert.");
+    } else throw new Error("That change isn't one the canvas knows: style, text, inner, attr, html, remove, move or insert.");
   }
   const done = stamp(cur);
   if (!done.ok) throw new Error("The ids for what's new couldn't be added without changing anything else, so nothing was changed.");

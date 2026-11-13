@@ -14,17 +14,38 @@
   try/catch, and it reads and writes the DOM only.
 
   Whoever puts it in a page (the app's srcdoc, the engine's proxy for a live frame) puts it in one
-  <script data-liner-agent> tag: that attribute is how the agent knows its own tag, and serialising
-  takes every script[data-liner-agent] (and the app's base[data-liner-base]) out of the document,
-  so the agent never ends up in a frame's file. The same tag may start with
-  `window.__linerComputed = [...]` (contracts' COMPUTED, as JSON) before this file's text: the agent
-  reads the computed properties from it, so the list lives in one place. The list below is only the
-  fallback for a tag that doesn't set it, and must match COMPUTED in contracts/src/design.ts.
+  <script data-liner-agent> tag, as the very first thing of the document (after a leading doctype,
+  <html> and <head> only), so it runs before any script of the page: Frame.tsx agentFirst, and the
+  proxy's own copy of it. That attribute is how the agent knows its own tag, and serialising takes
+  every script[data-liner-agent] (and the app's base[data-liner-base]) out of the document, so the
+  agent never ends up in a frame's file; the agent takes its own tag out of the page at once anyway
+  (below). The same tag may start with `window.__linerComputed = [...]` (contracts' COMPUTED, as
+  JSON) before this file's text: the agent reads the computed properties from it, so the list lives
+  in one place. The list below is only the fallback for a tag that doesn't set it, and must match
+  COMPUTED in contracts/src/design.ts. A drawn frame's tag also wraps this file's text in a function
+  whose one argument, __linerKey, is the key the app gave this document (keyPort below).
 */
 (() => {
-  if (window.__linerFrameAgent) return;
-  window.__linerFrameAgent = true;
+  /*
+    One agent a window. The mark is a property no script of the page can set first (the agent runs
+    before any of them) nor change after (it can't be configured again); a page that sets
+    window.__linerFrameAgent itself, the way the mark once was, makes a property that can be, and
+    the agent runs all the same.
+  */
+  try {
+    const d = Object.getOwnPropertyDescriptor(window, "__linerFrameAgent");
+    if (d && !d.configurable) return;
+    Object.defineProperty(window, "__linerFrameAgent", { value: true, writable: false, enumerable: false, configurable: false });
+  } catch {
+    return;
+  }
   const me = document.currentScript;
+  // Out of the page before any of its scripts run, so none of them can read the tag (a drawn frame's has its key in it).
+  try {
+    if (me) me.remove();
+  } catch {
+    // stays; serialising takes it out
+  }
   const say = (m) => {
     try {
       parent.postMessage(m, "*");
@@ -32,6 +53,65 @@
       // nobody listening
     }
   };
+
+  /*
+    The canvas's keys (below, at keydown) go to the app over a port only this agent holds, never by
+    say(): any script of the page can call parent.postMessage too, and the app can't tell its
+    messages from the agent's (they come from the same window). The agent makes the channel itself,
+    here, before any script of the page runs, keeps one end, and sends the other up in its first
+    message ({ t: "keys", key }, the port transferred), so no port ever comes into the page for a
+    script of it to catch. A script of the page can make channels and send them up the same way; the
+    app tells the agent's apart (bridge.ts keysFor): in a drawn frame by `key`, the key the app put
+    in this document's tag, which only the agent reads (its tag is out of the page before any script
+    of it runs); in a live frame by being the first since the window that held the port before went
+    away, the agent's message being the first a page's window sends. The app then sends { t: "go", n }
+    over the port and hears keys on it only after the same n comes back, so what was sent on a port
+    before (by a window that went away since) is never taken for a key. The port's postMessage and
+    the event's data getter are taken here, before any of the page runs, and only ever called
+    through Reflect.apply, so a page that swaps them on the prototypes reads or changes nothing.
+    Sending says nothing until the app answered.
+  */
+  const use = Reflect.apply;
+  const getterOf = (P, k) => {
+    try {
+      const d = Object.getOwnPropertyDescriptor(P, k);
+      return d && d.get;
+    } catch {
+      return undefined;
+    }
+  };
+  const keyPort = (() => {
+    try {
+      // typeof, as a live frame's tag has no __linerKey at all.
+      const key = typeof __linerKey === "string" ? __linerKey : undefined;
+      const dataOf = getterOf(MessageEvent.prototype, "data");
+      const send = MessagePort.prototype.postMessage;
+      const ch = new MessageChannel();
+      const port = ch.port1;
+      let open = false;
+      // A port with a listener stays alive as long as the app's end does, even once a document.open() took every listener of the window.
+      port.onmessage = (e) => {
+        try {
+          const m = use(dataOf, e, []);
+          if (!m || typeof m !== "object" || m.t !== "go" || typeof m.n !== "string") return;
+          use(send, port, [{ t: "ok", n: m.n }]);
+          open = true;
+        } catch {
+          // never into the page
+        }
+      };
+      parent.postMessage({ t: "keys", key }, "*", [ch.port2]);
+      return (m) => {
+        try {
+          if (open) use(send, port, [m]);
+        } catch {
+          // the app closed it
+        }
+      };
+    } catch {
+      return () => {};
+    }
+  })();
 
   const OWN_COMPUTED = [
     "display", "flex-direction", "flex-wrap", "gap", "align-items", "justify-content",
@@ -299,6 +379,25 @@
   // see and retype is what's in the file; it goes back as it was when the editing ends.
   let editing = null;
   let wasTransform = null;
+  /*
+    A text with marks inside (a <b>, a <span>) is told as runs (TextPart in contracts/src/design.ts):
+    its words, line breaks, and each mark by its data-l, with the mark's own runs only when its
+    words were touched while editing (else the app's engine keeps the mark's bytes from the file).
+    So a mark a script filled in, and attributes a script set, never reach the file.
+  */
+  let startInner = new Map();
+  function runsOf(p) {
+    const out = [];
+    for (const c of p.childNodes) {
+      if (c.nodeType === 3) out.push(c.nodeValue);
+      else if (c.nodeType !== 1 || isMe(c) || SKIP.has(c.tagName) && c.tagName !== "BR") continue;
+      else if (c.tagName === "BR") out.push({ br: true });
+      else if (c.hasAttribute("data-l")) out.push(startInner.has(c) && startInner.get(c) === c.innerHTML ? { id: c.getAttribute("data-l") } : { id: c.getAttribute("data-l"), inner: runsOf(c) });
+      // An element the editing made by itself has no id: its words stay, in its place.
+      else out.push(...runsOf(c));
+    }
+    return out;
+  }
   function endEdit() {
     const el = editing;
     if (!el) return;
@@ -311,7 +410,15 @@
       else el.style.removeProperty("text-transform");
       if (!el.getAttribute("style")) el.removeAttribute("style");
       wasTransform = null;
-      say({ t: "edited", id: el.getAttribute("data-l"), text: (el.textContent || "").replace(/\n+$/, "") });
+      const m = { t: "edited", id: el.getAttribute("data-l"), text: (el.textContent || "").replace(/\n+$/, "") };
+      if (el.firstElementChild) {
+        const inner = runsOf(el);
+        const last = inner[inner.length - 1];
+        if (typeof last === "string") inner[inner.length - 1] = last.replace(/\n+$/, "");
+        m.inner = inner;
+      }
+      startInner = new Map();
+      say(m);
     } catch {
       // gone while it was edited
     }
@@ -322,6 +429,8 @@
     if (!el) return;
     editing = el;
     try {
+      startInner = new Map();
+      for (const c of el.querySelectorAll("[data-l]")) startInner.set(c, c.innerHTML);
       el.setAttribute("contenteditable", "plaintext-only");
       el.setAttribute("spellcheck", "false");
       el.setAttribute("data-liner-editing", "");
@@ -345,6 +454,69 @@
       endEdit();
     }
   }, true);
+  /*
+    The canvas's keys while the frame has the keyboard (Play, a live page): the app's window doesn't
+    hear keys pressed in a frame, so Esc couldn't stop Play once you clicked into the page. Esc is
+    told always, and ⌘Z, ⇧⌘Z, Delete, V and H when no text is edited in place and no field of the
+    page has the keyboard, so typing in the page's own inputs stays the page's. Told after the page's
+    own handlers have run (the next task), and not when one of them took the key. Only a key the
+    person pressed (isTrusted, which no script can set or swap): a page that presses keys itself (a
+    typing demo, a terminal mock-up, or one out to delete the selection) tells the app nothing. It
+    goes over keyPort (above), which no script of the page can reach, and is read through what
+    keyPort's note says was taken before the page ran; the app acts on it only while the frame
+    really has the keyboard (bridge.ts).
+  */
+  const ev = (() => {
+    try {
+      const E = Event.prototype, K = KeyboardEvent.prototype;
+      const g = { target: getterOf(E, "target"), prevented: getterOf(E, "defaultPrevented"), key: getterOf(K, "key"), code: getterOf(K, "code"), meta: getterOf(K, "metaKey"), ctrl: getterOf(K, "ctrlKey"), shift: getterOf(K, "shiftKey"), alt: getterOf(K, "altKey"), composing: getterOf(K, "isComposing") };
+      return (e, k) => use(g[k], e, []);
+    } catch {
+      return null;
+    }
+  })();
+  const nodeTypeOf = getterOf(Node.prototype, "nodeType"), editableOf = getterOf(HTMLElement.prototype, "isContentEditable"), closest = (() => {
+    try {
+      return Element.prototype.closest;
+    } catch {
+      return undefined;
+    }
+  })();
+  const later = setTimeout;
+  // In doubt (a target this can't read), a field: the key stays the page's.
+  const field = (t) => {
+    try {
+      if (!t || use(nodeTypeOf, t, []) !== 1) return false;
+      let editable = false;
+      try {
+        editable = use(editableOf, t, []);
+      } catch {
+        // not an HTML element (an svg one): only an ancestor can make it a field
+      }
+      return Boolean(editable || use(closest, t, ["input, textarea, select, [contenteditable]:not([contenteditable=false])"]));
+    } catch {
+      return true;
+    }
+  };
+  addEventListener("keydown", (e) => {
+    try {
+      if (!e.isTrusted || !ev || editing || ev(e, "composing")) return;
+      const k = ev(e, "key");
+      const m = { t: "key", key: k, code: ev(e, "code"), meta: ev(e, "meta"), ctrl: ev(e, "ctrl"), shift: ev(e, "shift"), alt: ev(e, "alt") };
+      const mod = m.meta || m.ctrl;
+      const canvas = k === "Escape" || (!field(ev(e, "target")) && ((mod && !m.alt && (k === "z" || k === "Z" || k === "y" || m.code === "KeyZ" || m.code === "KeyY")) || (!mod && !m.alt && (k === "Delete" || k === "Backspace" || ((k === "v" || k === "V" || k === "h" || k === "H") && !m.shift)))));
+      if (!canvas) return;
+      later(() => {
+        try {
+          if (!ev(e, "prevented")) keyPort(m);
+        } catch {
+          // never into the page
+        }
+      }, 0);
+    } catch {
+      // never into the page
+    }
+  });
   addEventListener("focusout", (e) => {
     if (editing && e.target === editing) endEdit();
   }, true);

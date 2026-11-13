@@ -19,7 +19,7 @@ import { Pop, Row, Sep } from "../ui";
 import * as os from "../os";
 import { patchTab, tabKey, type DesignTab } from "../face";
 import { close as closeTabHere, OwnChip, Tabs } from "./Tabs";
-import { editText, frames } from "./bridge";
+import { editText, frames, hearFrameKeys } from "./bridge";
 import { Canvas, fit, parentIn } from "./Canvas";
 import { Dock } from "./Dock";
 import { ChatColumn, DockFloat, DockHosts, useHosts, useShownSize } from "./Chat";
@@ -78,7 +78,8 @@ function Unreadable({ thread, cwd, broken }: { thread?: Thread; cwd?: string; br
     let live = true;
     // A design with no session yet has no kept copies.
     if (!thread) return void setCopies([]);
-    void rpc("canvas.versions", { threadId: thread.id, file: broken.file }).then((v) => live && setCopies([...v].sort((a, b) => b.at - a.at)), () => live && setCopies([]));
+    // Only a copy that opens: one whose design.json is broken too (the "before" copy a bring-back keeps of this very state) would bring the break back.
+    void rpc("canvas.versions", { threadId: thread.id, file: broken.file }).then((v) => live && setCopies(v.filter((x) => !x.unreadable).sort((a, b) => b.at - a.at)), () => live && setCopies([]));
     return () => void (live = false);
   }, [thread?.id, broken.file]);
   const last = copies?.[0];
@@ -124,7 +125,14 @@ async function duplicate() {
     if (!getDesign().tree[x.frame]) await design.refreshTree(x.frame);
     const here = parentIn(getDesign().tree[x.frame], x.node!);
     if (!here?.parent) continue;
-    const read = await frames.read(x.frame, x.node!).catch(() => undefined);
+    // A drawn frame's layer is copied from its file's own source, never from the page on screen,
+    // which may hold what its scripts built into it; a live page (or the mock) has only the page.
+    const f = getDesign().file?.frames.find((y) => y.id === x.frame);
+    const now = getDesign();
+    let read: { html: string } | undefined;
+    if (f?.kind === "drawn" && !now.mock && now.cwd && now.file) {
+      read = await rpc("canvas.frame.node", { cwd: now.cwd, file: now.file.id, frame: x.frame, id: x.node! }).catch((e: Error) => void toast(`That layer wasn't duplicated: ${e.message}`, { duration: 3500 }));
+    } else read = await frames.read(x.frame, x.node!).catch(() => undefined);
     if (!read) continue;
     const id = `x${Math.random().toString(36).slice(2, 8)}`;
     const html = read.html.replace(/\sdata-l="[^"]*"/g, "").replace(/^<(\w+)/, `<$1 data-l="${id}"`);
@@ -303,6 +311,11 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
       if (k === "r") return done(), void insert("box");
       if (k === "t") return done(), void insert("text");
     };
+    // A frame tells the canvas its keys only where it needs to: in Play, or a live frame (bridge.ts).
+    hearFrameKeys((frame) => {
+      const s = getDesign();
+      return s.tool === "play" || s.file?.frames.find((f) => f.id === frame)?.kind === "live";
+    });
     // Heard before the app's own keys, so ⌘1 zooms here rather than opening a session.
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);

@@ -4,10 +4,16 @@
   ⌘Enter, and the layer is replaced with what you wrote (one { id, html } op, one undo step); Esc
   puts it back. A change made in Style marks the line it changed. JSX and Tailwind are the same
   layer said another way, read only (inspect/convert.ts says how, and what it leaves out).
+
+  A drawn frame's layer is its file's own source (canvas.frame.node), read again whenever the
+  file's revision moves: never the page on screen, whose scripts may have built children into it
+  or set attributes on it, which an edit here would otherwise write into the file for good. A live
+  page (and the mock) has only the page, so there it is the page's.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toks, tokensOf } from "../code";
-import { design, useDesign } from "./store";
+import { rpc } from "../engine";
+import { design, frameOf, useDesign } from "./store";
 import { Choice } from "./inspect/controls";
 import { backToHtml, htmlAndCss, toJsx } from "./inspect/convert";
 import { Empty } from "./inspect/Empty";
@@ -43,13 +49,25 @@ export function CodeTab() {
       // kept for this view only
     }
   };
+  const source = useSource(frame, node?.id);
   if (!node || !frame) return sel.length ? <Empty several={sel.length > 1} /> : <Empty />;
+  const html = source.from === "page" ? node.html : source.html;
   return (
     <div className="ld-body ld-code-tab">
       <div className="ld-segs">
         <Choice label="Say it as" options={WAYS} value={way} onPick={pick} fit />
       </div>
-      {way === "html" ? <Editable key={`${frame}/${node.id}`} frame={frame} id={node.id} html={node.html} /> : <ReadOnly code={toJsx(node.html, way === "tailwind")} />}
+      {html === undefined ? (
+        source.missing ? (
+          <p className="ld-note" role="status">This layer isn't in the frame's file: the page's own script draws it, so there is no HTML of it to show or change here. Change the script, or ask the agent.</p>
+        ) : (
+          <p className="ld-note l-shimmer" role="status">Reading the layer from its file</p>
+        )
+      ) : way === "html" ? (
+        <Editable key={`${frame}/${node.id}`} frame={frame} id={node.id} html={html} />
+      ) : (
+        <ReadOnly code={toJsx(html, way === "tailwind")} />
+      )}
       {several > 1 && <p className="ld-note">The first of {several} selected layers.</p>}
       {way === "html" ? (
         <>
@@ -63,6 +81,33 @@ export function CodeTab() {
       )}
     </div>
   );
+}
+
+/**
+  The layer's HTML as the Code tab shows and edits it: for a drawn frame, its file's own source by
+  id, read again when the file's revision moves (an edit here or in Style, undo, an agent's write);
+  `missing` when the file hasn't got it (a script on the page draws it). For a live page or the
+  mock, the page's (`from: "page"`).
+*/
+function useSource(frame: string | undefined, id: string | undefined): { from: "file" | "page"; html?: string; missing?: boolean } {
+  const drawn = useDesign((s) => !s.mock && frameOf(s, frame)?.kind === "drawn");
+  const cwd = useDesign((s) => s.cwd);
+  const file = useDesign((s) => s.file?.id);
+  const rev = useDesign((s) => (frame ? s.revs[frame] : undefined));
+  const [got, setGot] = useState<{ key: string; html?: string; missing?: boolean } | undefined>();
+  const key = `${cwd}\u0000${file}\u0000${frame}\u0000${id}`;
+  useEffect(() => {
+    if (!drawn || !cwd || !file || !frame || !id) return;
+    let live = true;
+    void rpc("canvas.frame.node", { cwd, file, frame, id }).then(
+      (r) => live && setGot({ key, html: r.html }),
+      () => live && setGot({ key, missing: true }),
+    );
+    return () => void (live = false);
+  }, [drawn, key, rev]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!drawn) return { from: "page" };
+  // Another layer's source is never shown for this one while its own is read.
+  return got?.key === key ? { from: "file", html: got.html, missing: got.missing } : { from: "file" };
 }
 
 /** "a: b" lines of the rule whose property the last Style change wrote (padding marks padding-top's line too). */

@@ -221,6 +221,7 @@ export async function sendToCode() {
       const op = h.op;
       if ("style" in op && h.prop) lines.push(`   ${h.prop}: ${origins[frame]?.[id]?.[h.prop]?.shown || "not set"} → ${op.style[h.prop] ?? "taken away"}`);
       else if ("text" in op) lines.push(`   its text → “${cut(op.text, 200)}”`);
+      else if ("inner" in op) lines.push(`   its text, its marks (bold, links and the like) kept → “${cut(n?.text ?? "", 200)}”`);
       else if ("attr" in op) lines.push(`   attributes: ${Object.entries(op.attr).map(([a, v]) => `${a} → ${v ?? "taken away"}`).join(", ")}`);
       else if ("remove" in op) lines.push("   taken away");
       else if ("move" in op) lines.push("   moved to another place in its parent");

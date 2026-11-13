@@ -76,7 +76,7 @@ export type NewFrame = { name: string; w: number; h: number; kind?: "drawn" | "l
   `backKind`: on a "before" copy, the kind of copy that was being brought back. `frames`: what
   scrubbing to it shows (live frames, and drawn ones whose file it holds).
 */
-export type CanvasVersion = { turn: number; at: number; frames: number; key: string; kind: "turn" | "before"; back?: number; backKind?: "turn" | "before" };
+export type CanvasVersion = { turn: number; at: number; frames: number; key: string; kind: "turn" | "before"; back?: number; backKind?: "turn" | "before"; /** Its design.json can't be read (a "before" copy of a broken file): never offered to put back over a broken one. */ unreadable?: true };
 
 /** Where canvas.frame.add put the frame: its place, and `moved` when the place asked overlapped another frame, so it went to the nearest free one to the right. */
 export type FramePlaced = { frame: string; x: number; y: number; moved: boolean };
@@ -130,10 +130,23 @@ export type TreeNode = NodeRef & { text?: string; children: TreeNode[] };
 /** One node read whole: its HTML, inline styles, the computed ones the inspector shows, and where it came from in the project (a live frame). */
 export type NodeRead = NodeRef & { html: string; text?: string; inline: Record<string, string>; computed: Record<string, string>; source?: { file: string; line?: number } };
 
+/**
+  A text edited in place, said as runs, for one with marks inside (a <b>, a <span>): plain words, a
+  line break, or a mark of the frame's source by its data-l id, whose own bytes in the file stay as
+  they are when `inner` is left out (its words weren't touched), else its runs in turn.
+*/
+export type TextPart = string | { br: true } | { id: string; inner?: TextPart[] };
+
 /** One change to a frame. null in style or attr takes the property away. */
 export type FrameOp =
   | { id: string; style: Record<string, string | null> }
   | { id: string; text: string }
+  /**
+    A text with marks inside, edited in place: its content becomes these runs, each mark taken from
+    the file's own source by id (never from the page as a script drew it); a mark the source hasn't
+    got inside it is left out.
+  */
+  | { id: string; inner: TextPart[] }
   | { id: string; attr: Record<string, string | null> }
   /** Replace the node. */
   | { id: string; html: string }
@@ -167,8 +180,17 @@ export type FromFrame =
   | { t: "rects"; rects: Record<string, Rect> }
   | { t: "applied"; n: number; html: string; ids: string[] }
   | { t: "checks"; n: number; findings: CheckFinding[] }
-  /** A text edited in place has ended (Enter, Esc, or the caret left it), with the text it holds now. */
-  | { t: "edited"; id: string; text: string };
+  /**
+    A text edited in place has ended (Enter, Esc, or the caret left it), with the text it holds now;
+    with `inner` when it has marks inside (TextPart), the runs to save it by.
+  */
+  | { t: "edited"; id: string; text: string; inner?: TextPart[] }
+  /**
+    A key the canvas answers, pressed while the frame has the keyboard (Play, a live page): Esc
+    always, and ⌘Z, ⇧⌘Z, Delete, V and H when no text is edited in place and no field of the page
+    has it. The page's own handlers hear it first; one it took (preventDefault) isn't sent.
+  */
+  | { t: "key"; key: string; code: string; meta: boolean; ctrl: boolean; shift: boolean; alt: boolean };
 
 /** The computed properties a node's read carries, the ones the inspector shows. */
 export const COMPUTED = [

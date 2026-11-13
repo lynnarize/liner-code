@@ -92,6 +92,35 @@ const setNow = (patch: Partial<DesignState>) => {
 // The face, as face.ts has it.
 subscribeFace(() => setNow({ face: getFace() }));
 
+/*
+  The chat's size in the Design face (Chat.tsx): one row at the composer (min), open above it (open), or a column beside
+  the canvas (pinned). Kept for the window, apart from the design's own state, so a size change draws only the chat.
+*/
+export type ChatSize = "min" | "open" | "pinned";
+const CHAT_KEY = "liner.design-chat";
+let chatSize: ChatSize = (() => {
+  try {
+    const v = localStorage.getItem(CHAT_KEY);
+    return v === "open" || v === "pinned" ? v : "min";
+  } catch {
+    return "min";
+  }
+})();
+const chatFns = new Set<() => void>();
+export const getChat = () => chatSize;
+export function setChat(next: ChatSize) {
+  if (next === chatSize) return;
+  chatSize = next;
+  try {
+    localStorage.setItem(CHAT_KEY, next);
+  } catch {
+    // a window without storage keeps the size until it closes
+  }
+  for (const l of chatFns) l();
+}
+const subscribeChat = (fn: () => void) => (chatFns.add(fn), () => void chatFns.delete(fn));
+export const useChat = () => useSyncExternalStore(subscribeChat, getChat);
+
 export const getDesign = () => state;
 export const subscribeDesign = (fn: () => void) => {
   listeners.add(fn);
@@ -201,14 +230,14 @@ export function onCanvasEvent(e: EngineEvent) {
     if (e.gone === true) return void goneNow(s.cwd!, s.file!.id);
     if (s.scrub !== undefined) return void (scrubbed && (scrubbed.stale = true));
     const frame = e.frame;
-    if (!frame) return void reloadFile();
+    if (!frame) return void reloadFile(undefined, e.by);
     if (e.by === "agent") heardAgent(frame, e.threadId);
     // Heard after this window's own save to that frame lands, so its own revision is known by then.
     void (inflight.get(frame) ?? Promise.resolve()).catch(() => {}).then(() => {
       // Ours, or the frame already as it is; except a frame whose file was gone and is back (the same bytes again).
       if (e.rev && (mine.has(e.rev) || state.revs[frame] === e.rev) && !isGone(frameOf(state, frame))) return;
       forgetFrame(frame);
-      void reloadFile(frame);
+      void reloadFile(frame, e.by);
     });
     return;
   }
@@ -217,11 +246,59 @@ export function onCanvasEvent(e: EngineEvent) {
     const presence = { ...s.presence };
     if (e.on) presence[e.frame] = { agent: e.agent, name: e.name, label: e.label, lead: !/sidekick/i.test(e.label) && !/sidekick/i.test(e.name), node: e.node };
     else delete presence[e.frame];
+    if (e.on) lastLead.set(e.frame, presence[e.frame].lead);
     set({ presence });
   }
 }
 
-async function reloadFile(frame?: string) {
+/*
+  What the canvas needs to show an agent's change as it arrives (Frame.tsx settles in what is new,
+  Canvas.tsx points out a small change): for each frame drawn again because of an agent's change,
+  its HTML before, whose colour (the lead's or the sidekick's), and the `rev` that redraw has. Kept
+  a few seconds only, so a frame you open later, or one drawn again by undo, a turn brought back or
+  your own edit (a later `rev`), never animates. Keyed by the open design file and the frame; an
+  entry goes once the frame has taken it, or after its 4 s, and every entry goes when another design
+  file (or none) is open, so a page's HTML is never held longer than the redraw needs it.
+*/
+export type AgentRedraw = { before?: string; lead: boolean; rev: number; at: number };
+const REDRAW_MS = 4000;
+const redraws = new Map<string, AgentRedraw & { timer: number }>();
+/** Who was last drawing a frame, for a change heard after its presence went (a quick edit). */
+const lastLead = new Map<string, boolean>();
+const redrawKey = (frame: string) => `${state.cwd ?? ""}\u0000${state.file?.id ?? ""}\u0000${frame}`;
+function keepRedraw(frame: string, r: AgentRedraw) {
+  const key = redrawKey(frame);
+  clearTimeout(redraws.get(key)?.timer);
+  const timer = window.setTimeout(() => redraws.get(key)?.timer === timer && redraws.delete(key), REDRAW_MS);
+  redraws.set(key, { ...r, timer });
+}
+export function agentRedraw(frame: string, rev: number): AgentRedraw | undefined {
+  const key = redrawKey(frame);
+  const r = redraws.get(key);
+  if (!r || r.rev !== rev || Date.now() - r.at >= REDRAW_MS) return undefined;
+  // Let go once taken; after this task, since a render in StrictMode may ask twice in a row.
+  clearTimeout(r.timer);
+  r.timer = window.setTimeout(() => redraws.get(key) === r && redraws.delete(key), 0);
+  return r;
+}
+// Another design file, or none: nothing kept for the one before.
+let redrawsFor = "";
+subscribeDesign(() => {
+  const now = `${state.cwd ?? ""}\u0000${state.file?.id ?? ""}`;
+  if (now === redrawsFor) return;
+  redrawsFor = now;
+  for (const r of redraws.values()) clearTimeout(r.timer);
+  redraws.clear();
+  lastLead.clear();
+  for (const fn of switched) fn();
+});
+/** Hears the open design file change (another, or none), so what was kept for the one before can go (Frame.tsx's marks). */
+const switched = new Set<() => void>();
+export const onDesignSwitch = (fn: () => void) => (switched.add(fn), () => void switched.delete(fn));
+/** For a probe: how many redraws are held now. */
+export const heldRedraws = () => redraws.size;
+
+async function reloadFile(frame?: string, by?: "you" | "agent") {
   const s = state;
   if (!s.cwd || !s.file) return;
   const cwd = s.cwd;
@@ -243,6 +320,7 @@ async function reloadFile(frame?: string) {
       if (html[f.id] !== r.html) {
         html[f.id] = r.html;
         rev[f.id] = (rev[f.id] ?? 0) + 1;
+        if (by === "agent" && state.cwd === cwd && state.file?.id === id) keepRedraw(f.id, { before: state.html[f.id], lead: state.presence[f.id]?.lead ?? lastLead.get(f.id) ?? true, rev: rev[f.id], at: Date.now() });
       }
     }));
     // A frame taken away takes its selection with it; the rest is kept by data-l, and a layer its

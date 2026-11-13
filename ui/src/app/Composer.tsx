@@ -509,7 +509,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       setEditing(null);
       const still = queue.some((x) => x.id === edit.id);
       if (still && !files.length) {
-        setQueue(queue.map((x) => (x.id === edit.id ? { ...x, text: t } : x)));
+        // Edited, it is your own words now: what Liner wrote for you to read of it no longer says it.
+        setQueue(queue.map((x) => (x.id === edit.id ? { ...x, text: t, shown: undefined } : x)));
         setText(edit.draft);
         setMention(null);
         return;
@@ -591,7 +592,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     const before = queue;
     steered.current = { text: words, at, until: Date.now() + 5000 };
     void rpc("thread.queue", { id: thread.id, queue: queue.filter((x) => x.id !== q.id) })
-      .then(() => rpc("thread.send", { id: thread.id, text: words, mode: "steer" }))
+      .then(() => rpc("thread.send", { id: thread.id, text: words, mode: "steer", ...(q.shown && words === q.text ? { shown: q.shown } : {}) }))
       .catch((e) => {
         steered.current = null;
         void rpc("thread.queue", { id: thread.id, queue: before }).catch(() => {});
@@ -876,6 +877,50 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     </button>
   );
 
+  // What waits for the next turn. Liner Design's composer (canvas) keeps it inside its tray, over the box, with the tray's grey behind it.
+  const queued = queue.length > 0 && (
+    <div className="lc-queued">
+      <div className="lc-queued-h">Queued for the next turn · {queue.length}</div>
+      {queue.map((q, i) => (
+        <div key={q.id} className="lc-queued-row" data-editing={editing?.id === q.id || undefined}>
+          <span className="lc-queued-handle" aria-hidden>
+            <I.drag size={13} />
+          </span>
+          {/* A line Liner wrote for you: the whole of what the agent will be told is its tooltip (a fold has no room in the row). */}
+          <span className="lc-queued-t" title={q.shown ? q.text : undefined}>{q.shown?.text || designPart(q.text).said}</span>
+          {editing?.id === q.id && <span className="lc-queued-tag">Editing</span>}
+          <button
+            type="button"
+            className="lc-queued-now l-focus"
+            title={`${busy ? "Steer it into this turn now" : "Send it now"}${i === 0 ? ` (${os.mod}${os.shift}Enter)` : ""}`}
+            onClick={() => sendNow(q)}
+          >
+            Send now
+          </button>
+          {i > 0 && (
+            <button type="button" className="lc-ib l-focus" aria-label="Move up" onClick={() => setQueue([...queue.slice(0, i - 1), q, queue[i - 1], ...queue.slice(i + 1)])}>
+              <I.chevU size={12} />
+            </button>
+          )}
+          <button type="button" className="lc-ib l-focus" aria-label="Edit" aria-pressed={editing?.id === q.id} title="Edit it in place" onClick={() => (editing?.id === q.id ? stopEditing() : editQueued(q))}>
+            <I.edit size={12} />
+          </button>
+          <button
+            type="button"
+            className="lc-ib l-focus"
+            aria-label="Remove"
+            onClick={() => {
+              if (editing?.id === q.id) stopEditing();
+              setQueue(queue.filter((x) => x.id !== q.id));
+            }}
+          >
+            <I.close size={12} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div
       className="lc-composer"
@@ -897,47 +942,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         addFiles(e.dataTransfer.files);
       }}
     >
-      {queue.length > 0 && (
-        <div className="lc-queued">
-          <div className="lc-queued-h">Queued for the next turn · {queue.length}</div>
-          {queue.map((q, i) => (
-            <div key={q.id} className="lc-queued-row" data-editing={editing?.id === q.id || undefined}>
-              <span className="lc-queued-handle" aria-hidden>
-                <I.drag size={13} />
-              </span>
-              <span className="lc-queued-t">{designPart(q.text).said}</span>
-              {editing?.id === q.id && <span className="lc-queued-tag">Editing</span>}
-              <button
-                type="button"
-                className="lc-queued-now l-focus"
-                title={`${busy ? "Steer it into this turn now" : "Send it now"}${i === 0 ? ` (${os.mod}${os.shift}Enter)` : ""}`}
-                onClick={() => sendNow(q)}
-              >
-                Send now
-              </button>
-              {i > 0 && (
-                <button type="button" className="lc-ib l-focus" aria-label="Move up" onClick={() => setQueue([...queue.slice(0, i - 1), q, queue[i - 1], ...queue.slice(i + 1)])}>
-                  <I.chevU size={12} />
-                </button>
-              )}
-              <button type="button" className="lc-ib l-focus" aria-label="Edit" aria-pressed={editing?.id === q.id} title="Edit it in place" onClick={() => (editing?.id === q.id ? stopEditing() : editQueued(q))}>
-                <I.edit size={12} />
-              </button>
-              <button
-                type="button"
-                className="lc-ib l-focus"
-                aria-label="Remove"
-                onClick={() => {
-                  if (editing?.id === q.id) stopEditing();
-                  setQueue(queue.filter((x) => x.id !== q.id));
-                }}
-              >
-                <I.close size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {!canvas && queued}
 
       {cold && (
         <div className="lc-cold" role="status">
@@ -960,6 +965,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             {thread && !canvas && <WatchCanvas thread={thread} />}
           </div>
         )}
+        {canvas && queued}
         <div className="lc-card">
           {files.length > 0 && (
             <div className="lc-files">

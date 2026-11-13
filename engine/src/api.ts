@@ -21,7 +21,7 @@ import { ensureSampleProject } from "./providers/demo.ts";
 import { endpointModels } from "./providers/endpoint.ts";
 import { skillsIn } from "./providers/models.ts";
 import type { Routines } from "./routines.ts";
-import { providers, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
+import { providers, shownOf, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
 import { picture } from "./prflow.ts";
 import { uid, type Store } from "./store.ts";
@@ -36,7 +36,7 @@ import * as buildlinks from "./buildlinks.ts";
 import * as pictures from "./pictures.ts";
 import * as start from "./design-start.ts";
 import { touched as touchedDesign } from "./design-start.ts";
-import { factsOf, forget as forgetFact, remember, searchSessions } from "./memory.ts";
+import { factsOf, forget as forgetFact, remember, searchSessions, titleForAgents } from "./memory.ts";
 import { checkManifest } from "./addons.ts";
 import { refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
 import type { Offers } from "./offers.ts";
@@ -472,7 +472,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   };
 
   /** A message that couldn't start isn't lost: it waits in the queue, and the timeline says why. */
-  const keepMessage = (id: string, text: string, files: { name: string; data: string }[] | undefined, anchor: QueuedMessage["anchor"], why: string) => {
+  const keepMessage = (id: string, text: string, files: { name: string; data: string }[] | undefined, anchor: QueuedMessage["anchor"], why: string, shown?: QueuedMessage["shown"]) => {
     const t = store.threads.find((x) => x.id === id);
     if (!t) return;
     let saved: string[] | undefined;
@@ -482,7 +482,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     } catch {
       lost = Boolean(files?.length);
     }
-    runtime.keepQueued(id, text, saved, anchor);
+    runtime.keepQueued(id, text, saved, anchor, shown);
     store.putItem(id, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `${why} Your message is in the queue.${lost ? " Its files couldn't be kept, so add them again." : ""}` });
   };
 
@@ -1002,10 +1002,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "memory.list": ({ projectId }) => factsOf(store.home, store.project(projectId).id),
     "memory.add": ({ projectId, fact }) => remember(store.home, store.project(projectId).id, fact).facts,
     "memory.forget": ({ projectId, fact }) => forgetFact(store.home, store.project(projectId).id, fact),
-    "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query),
+    // The person's own search: it may match and show what they read of a message (shown); an agent's never does.
+    "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query, { person: true }),
     "thread.carryOn": async ({ id, model }) => (await ensureWorktree(id), await runtime.carryOn(id, model), null),
-    "thread.send": ({ id, text, files, mode, anchor, design }) => {
+    "thread.send": ({ id, text, files, mode, anchor, design, shown: said }) => {
       const t = store.thread(id);
+      // What the person reads of it (Liner Design's asks): kept on the item and in the queue, never in what the agent is sent.
+      const shown = shownOf(said);
       // Liner Code's own commands, whichever tool the session runs on.
       const goal = /^\/goal(?:\s+([\s\S]*))?$/.exec(text.trim());
       const what = (goal?.[1] ?? "").trim();
@@ -1028,17 +1031,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         try {
           await setups.get(t.sideOf ?? id);
           if (!stopped()) await ensureWorktree(id);
-          if (stopped()) return keepMessage(id, text, files, anchor, "You stopped this before it started.");
+          if (stopped()) return keepMessage(id, text, files, anchor, "You stopped this before it started.", shown);
           c = withContext(t, text, files);
         } catch (e) {
           const why = String((e as Error)?.message ?? e);
           store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: why });
-          return keepMessage(id, text, files, anchor, `That didn't start: ${why}.`);
+          return keepMessage(id, text, files, anchor, `That didn't start: ${why}.`, shown);
         }
         // A goal with work in flight waits in the queue, like any message, and starts from there.
         if (goal && !runtime.isRunning(id)) return void (await runtime.startGoal(id, what).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "The goal didn't start", body: String(e?.message ?? e) })));
         // Sent from Liner Design: the turn hears where the design is and what's selected (runtime.ts, lean.ts designNote).
-        await runtime.send(id, c.text, mode, anchor, c.files, design?.file ? { file: String(design.file), ...(design.sel ? { sel: design.sel } : {}) } : undefined);
+        await runtime.send(id, c.text, mode, anchor, c.files, design?.file ? { file: String(design.file), ...(design.sel ? { sel: design.sel } : {}) } : undefined, shown);
       })().catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
       return null;
     },
@@ -1391,7 +1394,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const items = store.timeline(threadId);
       const plan = [...items].reverse().find((x) => x.kind === "proposal" && x.state === "approved");
       const asked = items.find((x) => x.kind === "user");
-      const line = (plan?.kind === "proposal" ? plan.title : asked?.kind === "user" ? asked.text.split("\n")[0] : t.title).trim();
+      const line = (plan?.kind === "proposal" ? plan.title : asked?.kind === "user" ? (asked.shown?.text || asked.text).split("\n")[0] : t.title).trim();
       const subject = message ?? (line.length > 72 ? `${line.slice(0, 71).trimEnd()}…` : line);
       // Hooks and signing can take minutes, and nothing here can answer a prompt. What they say, all of it, is why it failed.
       const c = await run("git", ["commit", "-m", subject, "--", ...literal(going)], { cwd, env: { ...env, GIT_TERMINAL_PROMPT: "0" }, input: "", timeout: 10 * 60_000 });
@@ -1649,7 +1652,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const open = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? x.files.map((f) => local(f.path, prefix, f.rel)) : [])))];
       const diff = open.length ? (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(open)], { cwd, timeout: 30000 }).catch(() => null))?.stdout ?? "" : "";
       const by = runtime.writerFor(t);
-      const out = await runtime.quiet(threadId, by, cwd, deskPrompt(t.title, asksOf(threadId), said, files, context, question.slice(0, 1000), diff), new AbortController().signal, "desk", 5 * 60_000);
+      const out = await runtime.quiet(threadId, by, cwd, deskPrompt(titleForAgents(store, t), asksOf(threadId), said, files, context, question.slice(0, 1000), diff), new AbortController().signal, "desk", 5 * 60_000);
       const answer = out.trim();
       if (!answer) throw new Error("The model didn't answer. Ask again in a moment.");
       return { answer, by };

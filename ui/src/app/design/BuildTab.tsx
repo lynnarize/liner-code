@@ -12,7 +12,7 @@
   Update code and Bring it into the frame carry only the difference, in one direction or the other.
 */
 import { useEffect, useSyncExternalStore } from "react";
-import type { DesignFrame, FrameBuild, Thread } from "@contracts";
+import type { DesignFrame, FrameBuild, ShownChip, Thread, UserShown } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { onStream, rpc, useEngine } from "../engine";
 import { I } from "../icons";
@@ -98,10 +98,25 @@ export const linesOf = (b?: FrameBuild) => (b?.changed ?? "").split("\n").map((l
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /**
-  Sends an ask to the session's agent as a design turn (the engine adds the design file's note).
-  Queued behind a turn that runs, as the dock's own messages are.
+  What you read in the chat of an ask Liner writes (thread.send's `shown`): one short line, what kind of ask it is as a
+  chip, and the frames it is about (the first three, then how many more). The agent gets the whole ask.
 */
-export async function askAgent(text: string, said = "Sent to the agent") {
+export function shownAsk(text: string, chip: ShownChip, list: { name: string }[] = []): UserShown {
+  const frames = list.slice(0, 3).map((f): ShownChip => ({ kind: "frame", label: f.name }));
+  return { text, chips: [chip, ...frames, ...(list.length > 3 ? [{ kind: "frame" as const, label: `${list.length - 3} more` }] : [])] };
+}
+const many = (list: { name: string }[]) => (list.length === 1 ? list[0].name : plural(list.length, "frame"));
+/** Update code: the frames ahead of their files, said as you'd say it. */
+const updateShown = (list: { f: DesignFrame; b: FrameBuild }[]) =>
+  shownAsk(list.length === 1 ? `Change ${list[0].b.file} to match ${list[0].f.name}` : `Change the code to match ${many(list.map((x) => x.f))}`, { kind: "build", label: "Update the code" }, list.map((x) => x.f));
+/** Build: the frames to build into the code. */
+const buildShown = (list: DesignFrame[]) => shownAsk(`Build ${many(list)} into the code`, { kind: "build", label: list.length === 1 ? "Build 1 frame" : `Build ${list.length} frames` }, list);
+
+/**
+  Sends an ask to the session's agent as a design turn (the engine adds the design file's note).
+  Queued behind a turn that runs, as the dock's own messages are. `shown`: what you read of it in the chat.
+*/
+export async function askAgent(text: string, said = "Sent to the agent", shown?: UserShown) {
   const s = getDesign();
   if (!s.file) return void toast.error("Open a design file first");
   if (s.scrub !== undefined) return void toast("Back to now first", { description: "A kept turn is only looked at.", duration: 2500 });
@@ -110,7 +125,7 @@ export async function askAgent(text: string, said = "Sent to the agent") {
     // A design with no session yet gets it here, begun from this design.
     const id = await design.session();
     if (!id) return void toast.error("Open the design's session first");
-    await rpc("thread.send", { id, text, mode: "queue", design: { file: s.file.id } });
+    await rpc("thread.send", { id, text, mode: "queue", design: { file: s.file.id }, ...(shown ? { shown } : {}) });
     toast(said, { duration: 2000 });
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
@@ -232,12 +247,12 @@ function Built({ f, b }: { f: DesignFrame; b: FrameBuild }) {
       {b.state === "code-ahead" && b.changed && <ul className="ld-bt-l"><li>{b.changed}</li></ul>}
       <div className="ld-bt-a">
         {b.state === "design-ahead" && (
-          <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(updateAsk([{ f, b }]), "Sent: update the code")}>
+          <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(updateAsk([{ f, b }]), "Sent: update the code", updateShown([{ f, b }]))}>
             Update code
           </button>
         )}
         {b.state === "code-ahead" && (
-          <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(bringAsk(f, b), "Sent: bring it into the frame")}>
+          <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(bringAsk(f, b), "Sent: bring it into the frame", shownAsk(`Bring what changed in ${b.file} into ${f.name}`, { kind: "build", label: "Bring into the frame" }, [f]))}>
             Bring it into the frame
           </button>
         )}
@@ -303,7 +318,7 @@ export function BuildTab() {
             ))}
           </ul>
           <div className="ld-bt-a">
-            <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(buildAsk(rest), "Sent: build them")}>
+            <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(buildAsk(rest), "Sent: build them", buildShown(rest))}>
               {rest.length === 1 ? "Build it" : "Build them"}
             </button>
           </div>
@@ -365,7 +380,7 @@ function BuildFoot() {
     return (
       <div className="ld-bfoot">
         <span>{plural(n, "change")} to send</span>
-        <button type="button" className="lc-btn" data-kind="ink" onClick={() => void askAgent(updateAsk(ahead), "Sent: update the code")}>
+        <button type="button" className="lc-btn" data-kind="ink" onClick={() => void askAgent(updateAsk(ahead), "Sent: update the code", updateShown(ahead))}>
           Update code
         </button>
       </div>
@@ -392,7 +407,7 @@ function BuildFoot() {
   return (
     <div className="ld-bfoot">
       <span>{note}</span>
-      <button type="button" className="lc-btn" data-kind="ink" disabled={!which.length} title={which.length ? `Build ${which.map((f) => f.name).join(", ")}` : undefined} onClick={() => void askAgent(buildAsk(which), "Sent: build")}>
+      <button type="button" className="lc-btn" data-kind="ink" disabled={!which.length} title={which.length ? `Build ${which.map((f) => f.name).join(", ")}` : undefined} onClick={() => void askAgent(buildAsk(which), "Sent: build", buildShown(which))}>
         Build
       </button>
     </div>
@@ -447,7 +462,7 @@ export function WaitRow({ thread }: { thread: Thread }) {
       </span>
       <span className="lc-trow-t">{ahead.length === 1 ? `${one.name} is ${n ? plural(n, "change") : "a change"} ahead of the code` : `${plural(ahead.length, "frame")} are ahead of the code`}</span>
       <span className="lc-grow" />
-      <button type="button" className="lc-trow-lk l-focus" title={`Ask ${who} to change only what differs`} onClick={() => void askAgent(updateAsk(ahead.map((f) => ({ f, b: builds[f.id] }))), "Sent: update the code")}>
+      <button type="button" className="lc-trow-lk l-focus" title={`Ask ${who} to change only what differs`} onClick={() => void askAgent(updateAsk(ahead.map((f) => ({ f, b: builds[f.id] }))), "Sent: update the code", updateShown(ahead.map((f) => ({ f, b: builds[f.id] }))))}>
         Update code
       </button>
     </div>

@@ -68,12 +68,13 @@ function LeanPage({ thread, project, sidebar, onSidebar }: { thread?: Thread; pr
     };
   }, []);
 
-  const ask = async (text: string, said: string) => {
+  // `shown`: the one line you read of it in the chat; the agent gets the whole ask (thread.send's `shown`).
+  const ask = async (text: string, said: string, shown?: string) => {
     try {
       // A design with no session yet gets it now, begun from this design.
       const id = thread?.id ?? (await design.session());
       if (!id) return;
-      await rpc("thread.send", { id, text, files: [], ...(file ? { design: { file: file.id } } : {}) });
+      await rpc("thread.send", { id, text, files: [], ...(file ? { design: { file: file.id } } : {}), ...(shown ? { shown: { text: shown } } : {}) });
       toast(`Asked ${who} ${said}. The turn is in the dock.`, { duration: 3000 });
       closeLean();
     } catch (e) {
@@ -102,7 +103,7 @@ function LeanPage({ thread, project, sidebar, onSidebar }: { thread?: Thread; pr
       <div className="ld-lp-in">
         <SkillTiles cwd={cwd} />
         <div className="ld-lp-cols">
-          <Editor cwd={cwd} lean={lean} mock={mock} where={project.kind === "design" ? "this design's folder" : project.name} who={who} onAsk={() => void ask(`Write the project's DESIGN.md: the lean every design here follows. Read the code and the design files first. ${SECTIONS}`, "to write DESIGN.md")} />
+          <Editor cwd={cwd} lean={lean} mock={mock} where={project.kind === "design" ? "this design's folder" : project.name} who={who} onAsk={() => void ask(`Write the project's DESIGN.md: the lean every design here follows. Read the code and the design files first. ${SECTIONS}`, "to write DESIGN.md", "Write DESIGN.md, the lean every design here follows")} />
           <section className="ld-lp-read" aria-label="What Liner reads from it">
             <Sources lean={lean} who={who} onAsk={ask} />
             <Read lean={lean} title={file?.title ?? "this design"} threadId={thread?.id ?? ""} />
@@ -321,7 +322,7 @@ function Editor({ cwd, lean, mock, where, who, onAsk }: { cwd?: string; lean: Le
 
 // ---------- Where the rules come from
 
-function Sources({ lean, who, onAsk }: { lean: Lean | null; who: string; onAsk: (text: string, said: string) => Promise<void> }) {
+function Sources({ lean, who, onAsk }: { lean: Lean | null; who: string; onAsk: (text: string, said: string, shown?: string) => Promise<void> }) {
   const file = useDesign((s) => s.file);
   const [site, setSite] = useState("");
   const builtin = lean?.off === "builtin";
@@ -343,7 +344,7 @@ function Sources({ lean, who, onAsk }: { lean: Lean | null; who: string; onAsk: 
         </Pop>
         <Pop label="Rules from a site" width={340} triggerClass="ld-lp-chip" trigger={<>From a site</>}>
           {(close) => (
-            <form className="ld-brand" onSubmit={(e) => (e.preventDefault(), site.trim() && (close(), void onAsk(`Read ${site.trim()} and write the project's DESIGN.md from its look: its colours, type, spacing and corners. ${SECTIONS}`, "to write DESIGN.md from the site")))}>
+            <form className="ld-brand" onSubmit={(e) => (e.preventDefault(), site.trim() && (close(), void onAsk(`Read ${site.trim()} and write the project's DESIGN.md from its look: its colours, type, spacing and corners. ${SECTIONS}`, "to write DESIGN.md from the site", `Write DESIGN.md from the look of ${site.trim()}`)))}>
               <b>From a site</b>
               <span className="lc-quiet">{who} reads the site and writes DESIGN.md from its look.</span>
               <input className="ld-field" value={site} onChange={(e) => setSite(e.target.value)} placeholder="https://" aria-label="The site's address" autoFocus />
@@ -356,7 +357,7 @@ function Sources({ lean, who, onAsk }: { lean: Lean | null; who: string; onAsk: 
             </form>
           )}
         </Pop>
-        <button type="button" className="ld-lp-chip l-focus" onClick={() => void onAsk(`Read this project's code for its look (its CSS, theme, tokens and components) and write DESIGN.md from it. ${SECTIONS}`, "to write DESIGN.md from your code")}>
+        <button type="button" className="ld-lp-chip l-focus" onClick={() => void onAsk(`Read this project's code for its look (its CSS, theme, tokens and components) and write DESIGN.md from it. ${SECTIONS}`, "to write DESIGN.md from your code", "Write DESIGN.md from this project's code")}>
           From my code
         </button>
       </div>

@@ -25,7 +25,7 @@ import { useLaunch } from "../launch";
 import { agentOf } from "../model";
 import { Pop, Row, Sep } from "../ui";
 import { frames } from "./bridge";
-import { askAgent } from "./BuildTab";
+import { askAgent, shownAsk } from "./BuildTab";
 import { design, getDesign, subscribeDesign, useDesign, type DesignState } from "./store";
 import { STYLE_TOP } from "./inspect/slots";
 import "./build.css";
@@ -242,7 +242,8 @@ export async function sendToCode() {
     "",
     "Find each element in the source (where no file is named, look for it by its classes and text), change only these properties, the way the code already writes its styles (its tokens, classes or components), and leave the rest as it is. The frame reloads by itself when the change lands.",
   ].join("\n");
-  await askAgent(text, `Sent to ${thread ?? "the agent"}`);
+  const live = [...new Set(held.map((h) => h.frame))].flatMap((id) => s.file?.frames.find((x) => x.id === id) ?? []);
+  await askAgent(text, `Sent to ${thread ?? "the agent"}`, shownAsk(`Write ${held.length === 1 ? "the change" : `the ${held.length} changes`} made by hand in ${live.length === 1 ? live[0].name : "the live frames"} into the code`, { kind: "build", label: "Send to code" }, live));
   for (const frame of Object.keys(s.pending)) design.clearPending(frame);
 }
 

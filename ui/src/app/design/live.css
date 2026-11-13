@@ -1,0 +1,57 @@
+/*
+  An agent's change, as it arrives on the canvas (Canvas.tsx, Frame.tsx). The settling of new pieces
+  happens inside the frame with the Web Animations API (frame-agent.js); what's here is drawn on the
+  canvas's overlay, never in a frame: a small change lit in the agent's colour for a moment, and a
+  "Changed" tag by the first one. Only opacity moves. The ring and the dots are in design-face.css.
+*/
+.ld-chg-set {
+  --ld-pc: var(--ld-side);
+}
+.ld-chg-set[data-lead] {
+  --ld-pc: var(--ld-lead);
+}
+.ld-chg {
+  position: absolute;
+  margin: -2px -3px;
+  padding: 2px 3px;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--ld-pc) 26%, transparent);
+  animation: ld-chg 2.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.ld-chg-tag {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--ld-pc);
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  animation: ld-chg 2.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes ld-chg {
+  0% {
+    opacity: 0;
+  }
+  8%,
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+/* Without motion the change is still pointed out, steady, for as long. */
+html[data-motion="quick"] .ld-chg,
+html[data-motion="quick"] .ld-chg-tag {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ld-chg,
+  .ld-chg-tag {
+    animation: none;
+  }
+}

@@ -42,7 +42,18 @@ export async function sessionMarkdown(store: Store, threadId: string, diff: (fro
   for (const it of store.timeline(threadId) as Item[]) {
     switch (it.kind) {
       case "user":
-        para(`## You${it.anchor ? `, on ${it.anchor.file}:${it.anchor.line}${it.anchor.endLine ? `–${it.anchor.endLine}` : ""}` : ""}${it.steer ? " (mid-turn)" : ""}`, "", it.text);
+        // A message Liner wrote for you: what you read of it, then what the agent was told, whole, as a quote.
+        if (it.shown)
+          para(
+            `## You${it.steer ? " (mid-turn)" : ""}`,
+            "",
+            ...(it.shown.chips?.length ? [it.shown.chips.map((c) => `\`${c.label}\``).join(" "), ""] : []),
+            ...(it.shown.text ? [it.shown.text, ""] : []),
+            "What the agent was told:",
+            "",
+            ...it.text.split("\n").map((l) => `> ${l}`.trimEnd()),
+          );
+        else para(`## You${it.anchor ? `, on ${it.anchor.file}:${it.anchor.line}${it.anchor.endLine ? `–${it.anchor.endLine}` : ""}` : ""}${it.steer ? " (mid-turn)" : ""}`, "", it.text);
         break;
       case "turn":
         para(`## ${name(it.agent)}${it.model ? ` · ${it.model}` : ""}${it.planning ? " (planning)" : ""}${it.status === "stopped" ? " (stopped)" : ""}`);

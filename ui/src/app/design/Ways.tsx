@@ -166,7 +166,8 @@ async function threeHere(frame: string, node?: string) {
   const about = node ? ` Start from ${getDesign().node?.id === node ? `“${getDesign().node!.name}”` : "the element"} (data-l ${node}) in it.` : "";
   const text = `Draw 3 more ways of “${f.name}” (frames/${f.id}.html), one into each of these new frames, which start as copies of it: ${paths}.${about} ${RULES}`;
   const sel = selectionOf({ ...getDesign(), sel: [{ frame: f.id }, ...ids.map((id) => ({ frame: id }))], node: undefined });
-  await rpc("thread.send", { id: t.id, text, mode: "queue", design: { file: s.file.id, ...(sel ? { sel } : {}) } }).catch((e: Error) => toast.error(e.message));
+  const shown = { text: `Draw 3 more ways of ${f.name}`, chips: [{ kind: "frame" as const, label: f.name }] };
+  await rpc("thread.send", { id: t.id, text, mode: "queue", design: { file: s.file.id, ...(sel ? { sel } : {}) }, shown }).catch((e: Error) => toast.error(e.message));
 }
 
 /** One take each by other tools: a session each, in this folder, on the same design file. */
@@ -244,7 +245,7 @@ async function onePerTool(frame: string, tools: { ref: string; name: string }[])
     try {
       const sel = selectionOf({ ...getDesign(), sel: [{ frame: f.id }, { frame: id }], node: undefined });
       const text = `Draw another way of “${f.name}” (frames/${f.id}.html) into frames/${id}.html, which starts as a copy of it. Change only that one file. ${RULES}`;
-      await rpc("thread.send", { id: session, text, mode: "queue", design: { file, ...(sel ? { sel } : {}) } });
+      await rpc("thread.send", { id: session, text, mode: "queue", design: { file, ...(sel ? { sel } : {}) }, shown: { text: `Draw another way of ${f.name}`, chips: [{ kind: "frame", label: f.name }] } });
     } catch (e) {
       await design.removeFrames([id]);
       made.pop();

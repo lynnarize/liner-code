@@ -1,0 +1,308 @@
+/*
+  The Design face's chat (Chat.tsx): one row at the top of the composer's tray, the conversation open in that tray, or
+  a column beside the canvas. Flat, in the tray's own grey; nothing here is a card of its own.
+*/
+
+/* The canvas and, when pinned, the chat's column before it. Always there, so pinning doesn't draw the canvas anew. */
+.ldc-split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.ldc-split > .ld-cv {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The places the one composer and the one conversation are put in (Chat.tsx Slot), and the hosts that move between them. */
+.ldc-slot,
+.ldc-host {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.ldc-slot > .ldc-host {
+  flex: 1 1 auto;
+}
+.ldc-slot.ldc-grow {
+  flex: 1;
+}
+.ldc-open .ldc-slot .ldc-body {
+  flex: 0 1 auto;
+}
+.ldc-col .ldc-slot .ldc-body {
+  flex: 1;
+  padding: 4px 16px 14px;
+}
+
+/* The queue in the canvas's tray keeps to a few rows and scrolls inside, so a long queue never pushes the chat off the canvas. */
+.ld-dock .lc-tray > .lc-queued {
+  max-height: var(--ldc-queue-max, 168px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/*
+  The floating dock is sized to stay on the canvas by what it holds (Chat.tsx useDockFit), not by a cap of its own: a cap
+  would let the composer run out of its foot. It grows up from its place at the bottom.
+*/
+.ldc-open .ldc-slot {
+  max-height: var(--ldc-body-max, 46vh);
+}
+
+/* ---------- the row and the header ---------- */
+.ldc-min {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 4px 0 2px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.ldc-min-t {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+@media (hover: hover) {
+  .ldc-min-t:hover {
+    background: var(--l-wash-2);
+  }
+}
+.ldc-min-w {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Working, or a reply not seen yet: in full ink. A reply seen stays quiet. */
+.ldc-min:is([data-running], [data-unread]) .ldc-min-w {
+  color: var(--l-ink);
+}
+.ldc-side {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ldc-q {
+  flex: none;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.ldc-q[data-wait] {
+  color: var(--l-warn);
+}
+.ldc-min > .ldc-q {
+  margin: 0 6px 0 4px;
+}
+.ldc-v {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--lc-hair);
+}
+/* A reply that came while the chat was small: still, in the lead's colour (the breathing dot is for work under way). */
+.ldc-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ld-lead);
+}
+.ldc-h {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 40px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.ldc-h > b {
+  flex: none;
+  margin-right: 6px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ldc-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ldc-h .lc-tb[aria-pressed="true"] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.ldc-empty {
+  margin: 0;
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+
+/* ---------- open: in the tray, above the box, as wide as it ---------- */
+.ldc-open {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}
+.ldc-open > .ldc-h {
+  padding: 0 0 0 10px;
+}
+.ldc-open .ldc-body {
+  padding: 2px 10px 12px;
+}
+.ldc-body {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+/* The dock leaves its old sheet behind: the chat is in the tray now. */
+.ld-dock .ld-sheet {
+  display: none;
+}
+
+/* ---------- pinned: a column between the sidebar and the canvas ---------- */
+.ldc-col {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 312px;
+  min-height: 0;
+  background: var(--lc-paper);
+  box-shadow: 1px 0 0 var(--lc-hair);
+}
+.ldc-col > .ldc-h {
+  padding: 0 8px 0 16px;
+}
+.ldc-col > .ldc-empty {
+  flex: 1;
+  padding: 12px 16px;
+}
+.ldc-foot {
+  flex: none;
+  min-width: 0;
+  padding: 0 8px 8px;
+}
+/* The composer in the column: in place, not floating over the canvas. */
+.ld-dock[data-place="column"] {
+  position: static;
+  display: block;
+  pointer-events: auto;
+}
+.ld-dock[data-place="column"] .lc-tray {
+  box-shadow: 0 0 0 1px var(--lc-hair);
+}
+
+/*
+  The timeline, made for a wide column, in 312px or the dock's width: nothing may push it sideways. Long commands and
+  paths cut with an ellipsis, code and tables scroll inside themselves, cards keep to the width.
+*/
+.ldc-body .lc-tl {
+  gap: 16px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+.ldc-body :is(.lc-turn, .lc-blk, .lc-trail, .lc-wk, .lc-wk-row, .lc-md, .lc-you) {
+  min-width: 0;
+  max-width: 100%;
+}
+.ldc-body .lc-turn {
+  content-visibility: visible;
+}
+/* Who worked and the turn's number say little in a chat this size: a part by another model keeps its head. */
+.ldc-body .lc-blk:has(> .lc-head:not([data-part])) {
+  display: none;
+}
+.ldc-body .lc-md :is(pre, table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.ldc-body .lc-md :is(code, a) {
+  overflow-wrap: anywhere;
+}
+.ldc-body .lc-md img {
+  max-width: 100%;
+  height: auto;
+}
+.ldc-body :is(.lc-pre, .lc-wk-slot) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.ldc-body .lc-wk-ln {
+  min-width: 0;
+  max-width: 100%;
+}
+.ldc-body .lc-trail-sum {
+  max-width: 100%;
+  min-width: 0;
+}
+.ldc-body .lc-trail-sum > :not(.lc-trail-parts) {
+  flex: none;
+}
+.ldc-body :is(.lc-wk-target, .lc-wk-r, .lc-trail-parts) {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/*
+  Your message keeps the Timeline's rhythm here: no room held under it for Edit from here and Copy, which wait unseen
+  until a hover in Liner Code (a 312px column has no room to show them beside the bubble). They are a press away there.
+*/
+.ldc-body .lc-you {
+  margin-bottom: 0;
+}
+.ldc-body .lc-you-more {
+  display: none;
+}
+/* A frame's name on a step reads as a name (Timeline's plainTarget); files and commands stay mono. */
+.ldc-body .lc-wk-target[data-plain] {
+  font-family: inherit;
+  font-size: inherit;
+}
+.ldc-body .lc-you :is(p, .lc-you-toldbox) {
+  max-width: 88%;
+}
+.ldc-body :is(.lc-fcard, .lc-prc, .lc-todo, .lc-foot, .lc-dz-inline, .l-cdiff__card) {
+  max-width: 100%;
+  min-width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ldc-min,
+  .ldc-open {
+    animation: none;
+  }
+}
+html[data-motion="quick"] :is(.ldc-min, .ldc-open) {
+  animation: none;
+}

@@ -11,12 +11,17 @@
   moved by its name (or by dragging it once it's picked), and resized by its edges, which reflows
   what it holds. A node picked in a stack can be pulled wider or taller by its edges; it can't be
   dragged out of its place (reorder it with ⌘[ and ⌘], or in Layers).
+
+  An agent at work reads as generating: the frame it is on has a ring in its colour that breathes,
+  what it writes settles in inside the frame (Frame.tsx, frame-agent.js), and a small change is lit
+  for a moment here on the overlay with a "Changed" tag (live.css). None of it is in a frame's file.
 */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as PE } from "react";
 import type { DesignFrame, Rect, TreeNode } from "@contracts";
 import { editText, frames, onEdited, onReady } from "./bridge";
 import { carriesFiles, dropFiles } from "./Drop";
-import { Frame } from "./Frame";
+import { Frame, takeMarks } from "./Frame";
+import "./live.css";
 import { SayBar } from "./SayBar";
 import { FrameMark } from "./BuildTab";
 import { CompareOver } from "./Compare";
@@ -124,6 +129,25 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     return () => stops.forEach((s) => s());
   }, [watchKey]);
 
+  // A small change an agent made (Frame.tsx planOf): each changed element lit in the agent's colour for a moment, "Changed" by the first.
+  const [changed, setChanged] = useState<{ frame: string; lead: boolean; rects: Rect[]; key: number }[]>([]);
+  useEffect(() => {
+    const timers = new Set<number>();
+    const stop = onReady((frame) => {
+      const m = takeMarks(frame);
+      if (!m) return;
+      void Promise.all(m.ids.map((id) => frames.read(frame, id).then((n) => n.rect, () => undefined))).then((got) => {
+        const rects = got.filter((r): r is Rect => Boolean(r && r.w > 0 && r.h > 0));
+        if (!rects.length) return;
+        const key = Date.now() + Math.random();
+        setChanged((was) => [...was.filter((x) => x.frame !== frame), { frame, lead: m.lead, rects, key }]);
+        const t = window.setTimeout(() => (timers.delete(t), setChanged((was) => was.filter((x) => x.key !== key))), 2400);
+        timers.add(t);
+      });
+    });
+    return () => (stop(), timers.forEach((t) => clearTimeout(t)));
+  }, []);
+
   // A frame that loaded again (the agent changed it) is read again: its outline, and the node picked in it.
   useEffect(
     () =>
@@ -158,17 +182,30 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     for (const x of sel) if (!getDesign().tree[x.frame]) void design.refreshTree(x.frame);
   }, [sel]);
 
-  // Space held pans, as in every canvas; not while you type.
+  /*
+    Space held pans, as in every canvas, with the focus on the canvas or on nothing. Not while you
+    type, and not on a control that Space presses (a button in the chat, the inspector, the tabs or
+    Layers, a menu): there Space is that control's. The rail's tools are the canvas's own, so a tool
+    just picked still lets Space pan.
+  */
   useEffect(() => {
-    const typing = (t: EventTarget | null) => t instanceof Element && Boolean(t.closest("input, textarea, select, [contenteditable]"));
-    const down = (e: KeyboardEvent) => e.code === "Space" && !e.repeat && !typing(e.target) && (e.preventDefault(), setSpace(true));
+    const CONTROL = "input, textarea, select, [contenteditable], button, a[href], summary, [role=button], [role=tab], [role=checkbox], [role=switch], [role=radio], [role=menuitem], [role=option], [role=slider]";
+    const its = (t: EventTarget | null) => {
+      if (!(t instanceof Element) || t === root.current) return false;
+      if (t.closest(".ld-dock, .ldc-col, .ldc-host, .lc-pop-panel")) return true;
+      const c = t.closest(CONTROL);
+      return Boolean(c && !(c.closest(".ld-rail") && !c.matches("input, textarea, select, [contenteditable]")));
+    };
+    const down = (e: KeyboardEvent) => e.code === "Space" && !e.repeat && !its(e.target) && (e.preventDefault(), setSpace(true));
     const up = (e: KeyboardEvent) => e.code === "Space" && setSpace(false);
+    const blur = () => setSpace(false);
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
-    window.addEventListener("blur", () => setSpace(false));
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
     };
   }, []);
 
@@ -558,7 +595,8 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
                   </>
                 )}
               </div>
-              {p && <div className="ld-pres" data-lead={p.lead || undefined} style={b} />}
+              {/* The ring breathes outward 7.5 px a side: a scale worked out from the box, so only transform and opacity move (design-face.css). */}
+              {p && <div className="ld-pres" data-lead={p.lead || undefined} style={{ ...b, ["--ld-gx" as string]: (b.width + 15) / Math.max(1, b.width), ["--ld-gy" as string]: (b.height + 15) / Math.max(1, b.height) }} />}
               <CompareOver frame={f} box={b} zoom={zoom} />
             </div>
           );
@@ -580,6 +618,21 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
                 (x.node
                   ? (["e", "s", "se"] as Edge[]).map((edge) => <i key={edge} data-edge={edge} data-ld-ui onPointerDown={startNodeSize(x.frame, x.node!, r!, edge)} />)
                   : EDGES.map((edge) => <i key={edge} data-edge={edge} data-ld-ui onPointerDown={startFrameSize(f, edge)} />))}
+            </div>
+          );
+        })}
+        {changed.map((c) => {
+          const f = frameOf({ file } as never, c.frame);
+          if (!f || f.page !== page) return null;
+          const first = boxOf(f, c.rects[0]);
+          return (
+            <div key={c.key} className="ld-chg-set" data-lead={c.lead || undefined}>
+              {c.rects.map((r, i) => (
+                <div key={i} className="ld-chg" style={boxOf(f, r)} />
+              ))}
+              <span className="ld-chg-tag" style={{ left: first.left, top: first.top + first.height + 4 }}>
+                Changed
+              </span>
             </div>
           );
         })}

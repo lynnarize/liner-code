@@ -14,7 +14,7 @@
   or all of them in one message.
 */
 import { useSyncExternalStore } from "react";
-import type { CheckFinding, DesignFrame, FrameOp, LeanTokens, Rect } from "@contracts";
+import type { CheckFinding, DesignFrame, FrameOp, LeanTokens, Rect, UserShown } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc } from "../engine";
 import { agentOf } from "../model";
@@ -466,8 +466,8 @@ export function fixerName() {
 
 const frameName = (id: string) => getDesign().file?.frames.find((f) => f.id === id)?.name ?? id;
 
-/** One message to the session's agent, as a design turn on these frames. */
-export async function ask(text: string, frameIds: string[]) {
+/** One message to the session's agent, as a design turn on these frames. `shown`: what you read of it in the chat (the agent gets `text`). */
+export async function ask(text: string, frameIds: string[], shown?: UserShown) {
   const s = getDesign();
   if (s.scrub !== undefined) return void toast("An old turn is shown", { description: "Go back to now before asking for a fix." });
   if (s.mock || !s.file) return void toast("Fixes go to the session's agent", { description: "The sample canvas has no session to ask." });
@@ -476,7 +476,7 @@ export async function ask(text: string, frameIds: string[]) {
     // A design with no session yet gets it here, begun from this design.
     const id = await design.session();
     if (!id) return;
-    await rpc("thread.send", { id, text, mode: "queue", design: { file: s.file.id, ...(sel ? { sel } : {}) } });
+    await rpc("thread.send", { id, text, mode: "queue", design: { file: s.file.id, ...(sel ? { sel } : {}) }, ...(shown ? { shown } : {}) });
     toast(`Asked ${fixerName()}`, { description: frameIds.length > 1 ? `${frameIds.length} frames` : frameName(frameIds[0]), duration: 2500 });
   } catch (e) {
     toast.error((e as Error).message);
@@ -489,7 +489,7 @@ const RULE = "Change only what this needs, keep to the lean (DESIGN.md), and kee
 /** Fix: the finding's own changes when it has them, else an ask. */
 export async function fixOne(f: Finding) {
   if (f.fix?.length) return design.apply(f.frame, f.fix);
-  await ask(`Fix this check in ${frameName(f.frame)}:\n${askLine(f)}\n\n${RULE}`, [f.frame]);
+  await ask(`Fix this check in ${frameName(f.frame)}:\n${askLine(f)}\n\n${RULE}`, [f.frame], { text: f.text, chips: [{ kind: "check", label: "Fix 1 check" }, { kind: "frame", label: frameName(f.frame) }] });
 }
 
 /** Fix all: the ones with their own changes here, the rest in one ask. */
@@ -500,7 +500,12 @@ export async function fixAll() {
   const rest = all.filter((f) => !f.fix?.length);
   if (!rest.length) return;
   const ids = [...new Set(rest.map((f) => f.frame))];
-  await ask(`Fix these ${rest.length === 1 ? "check" : `${rest.length} checks`} on the canvas:\n${rest.map(askLine).join("\n")}\n\n${RULE}`, ids);
+  // You read how many, and the one sentence when there is one; the agent gets each line.
+  const shown: UserShown = {
+    text: rest.length === 1 ? rest[0].text : `${rest.length} checks on the canvas`,
+    chips: [{ kind: "check", label: rest.length === 1 ? "Fix 1 check" : `Fix ${rest.length} checks` }, ...(ids.length === 1 ? [{ kind: "frame" as const, label: frameName(ids[0]) }] : [])],
+  };
+  await ask(`Fix these ${rest.length === 1 ? "check" : `${rest.length} checks`} on the canvas:\n${rest.map(askLine).join("\n")}\n\n${RULE}`, ids, shown);
 }
 
 /** Show: picks the finding's node on the canvas. */

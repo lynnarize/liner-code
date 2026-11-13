@@ -78,7 +78,41 @@ html[data-theme="dark"] {
   background: var(--ld-side);
 }
 .ld-pd[data-lead] {
+  position: relative;
   background: var(--ld-lead);
+}
+/* The dot of who is drawing breathes while it draws (a tab, a layer, a status row in either face); a legend in a menu stays still. */
+.ld-pd[data-lead]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: ld-dot 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes ld-dot {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.lc-pop-panel .ld-pd[data-lead]::after {
+  content: none;
+}
+html[data-motion="quick"] .ld-pd[data-lead]::after {
+  animation: none;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ld-pd[data-lead]::after {
+    animation: none;
+    opacity: 0;
+  }
 }
 .ld-watch {
   gap: 8px;

@@ -9,7 +9,7 @@
   ⌘D, ⌘[ and ⌘], ⌘Z and ⇧⌘Z, ⌘0 and ⌘1, ⌘+ and ⌘−. They're heard first (before the app's ⌘1 to
   ⌘9) and only while nothing that takes typing has the keyboard.
 */
-import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import type { Project, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "../engine";
@@ -22,6 +22,7 @@ import { close as closeTabHere, OwnChip, Tabs } from "./Tabs";
 import { editText, frames } from "./bridge";
 import { Canvas, fit, parentIn } from "./Canvas";
 import { Dock } from "./Dock";
+import { ChatColumn, DockFloat, DockHosts, useHosts, useShownSize } from "./Chat";
 import { Inspector } from "./Inspector";
 import { reorder } from "./Layers";
 import { insert, Rail } from "./Rail";
@@ -111,6 +112,8 @@ export function cwdOf(thread: Thread, projects: { id: string; path: string }[]) 
 }
 
 const typing = (t: EventTarget | null) => t instanceof Element && Boolean(t.closest("input, textarea, select, [contenteditable], .xterm"));
+/** Focus in the chat or the dock (a fold, a trail row, an ask, a question's option): the canvas's plain keys aren't for it. */
+const inChat = (t: EventTarget | null) => t instanceof Element && Boolean(t.closest(".ld-dock, .ldc-col, .ldc-host"));
 
 async function duplicate() {
   const s = getDesign();
@@ -233,6 +236,11 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
   const error = useDesign((s) => s.error);
   const cv = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(false);
+  // The chat: its size as shown (a narrow window shows a pinned chat open), and the hosts its one composer and conversation go in.
+  const row = useRef<HTMLDivElement>(null);
+  const { size, minimise } = useShownSize(row, thread?.id);
+  const made = useHosts();
+  const hosts = useMemo(() => ({ ...made, size, minimise }), [made, size, minimise]);
 
   // This tab's design file on the canvas, with its own view and steps; the tab before is parked.
   useEffect(() => {
@@ -275,6 +283,8 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
       if (matches(e, "mod+[")) return done(), void reorder(-1);
       if (matches(e, "mod+]")) return done(), void reorder(1);
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Delete, Enter, Esc and the tool letters pressed on a chat control are that control's, never the canvas's.
+      if (inChat(e.target)) return;
       if (e.key === "Escape") {
         if (s.tool === "play" || s.tool === "frame") return done(), design.setTool("select");
         if (s.sel.length || s.editing) return done(), up();
@@ -302,28 +312,40 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
     <div className="ld-face">
       <section className="ld-main" aria-label="Canvas">
         <TopRow sidebar={sidebar} onSidebar={onSidebar} cv={cv} tab={tab} project={project} />
-        <div className="ld-cv">
-          <Rail />
-          {file && mine ? (
-            <FaceBoundary what="canvas">
-              <Canvas root={cv} />
-            </FaceBoundary>
-          ) : (
-            <div className="ld-empty">
-              {loading || (file && !mine) ? (
-                <span className="l-shimmer">Opening the design file</span>
-              ) : broken ? (
-                <Unreadable thread={thread} cwd={cwd} broken={broken} />
+        {/* The chat pinned is a column before the canvas (Chat.tsx); the split is always there, so pinning never draws the canvas anew. */}
+        <DockHosts.Provider value={hosts}>
+          <div ref={row} className="ldc-split">
+            {size === "pinned" && (
+              <FaceBoundary what="chat">
+                <ChatColumn thread={thread} />
+              </FaceBoundary>
+            )}
+            <div className="ld-cv">
+              <Rail />
+              {file && mine ? (
+                <FaceBoundary what="canvas">
+                  <Canvas root={cv} />
+                </FaceBoundary>
               ) : (
-                <span className="l-shimmer">Opening the design file</span>
+                <div className="ld-empty">
+                  {loading || (file && !mine) ? (
+                    <span className="l-shimmer">Opening the design file</span>
+                  ) : broken ? (
+                    <Unreadable thread={thread} cwd={cwd} broken={broken} />
+                  ) : (
+                    <span className="l-shimmer">Opening the design file</span>
+                  )}
+                </div>
               )}
+              <EmptyHint />
+              {size !== "pinned" && <DockFloat />}
             </div>
-          )}
-          <EmptyHint />
+          </div>
+          {/* One composer and one conversation, whatever the size: they go into the hosts the places above hold. */}
           <FaceBoundary what="dock">
             <Dock thread={thread} project={project} tab={tab} />
           </FaceBoundary>
-        </div>
+        </DockHosts.Provider>
       </section>
       <div className="ld-insp-col">
         <FaceBoundary what="inspector">

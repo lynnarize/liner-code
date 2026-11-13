@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { Item, Thread } from "../../contracts/src/index.ts";
 import type { McpResult } from "./agent-tools.ts";
 import type { Store } from "./store.ts";
+import { titleForAgents } from "./memory.ts";
 
 type Api = { call(method: string, params: unknown): Promise<unknown> };
 
@@ -20,9 +21,9 @@ const fail = (t: string): McpResult => ({ content: [{ type: "text", text: t }], 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** A session's last few turns as an outside agent reads them: asks, answers, steps, and what waits on the person. */
-export function readout(t: Thread, items: Item[], turns = 3) {
+export function readout(t: Thread, items: Item[], turns = 3, title = t.title) {
   const from = Math.max(1, t.turns - turns + 1);
-  const lines = [`${t.title} · ${t.status}${t.status === "waiting" ? " (it asks the person something in Liner Code)" : ""} · ${t.turns} ${t.turns === 1 ? "turn" : "turns"}`];
+  const lines = [`${title} · ${t.status}${t.status === "waiting" ? " (it asks the person something in Liner Code)" : ""} · ${t.turns} ${t.turns === 1 ? "turn" : "turns"}`];
   for (const it of items) {
     if (it.turn < from) continue;
     if (it.kind === "user") lines.push(`\nThe person: ${clip(it.text, 2000)}`);
@@ -103,11 +104,11 @@ export class Outside {
             .filter((t) => !t.archived && !t.sideOf && (!p || t.projectId === p.id))
             .sort((a, b) => b.updatedAt - a.updatedAt)
             .slice(0, Math.min(50, Number(args.limit) || 20));
-          return text(list.map((t) => `${t.id} · ${t.title} · ${this.store.projects.find((x) => x.id === t.projectId)?.name ?? "?"} · ${t.status}`).join("\n") || "No sessions.");
+          return text(list.map((t) => `${t.id} · ${titleForAgents(this.store, t)} · ${this.store.projects.find((x) => x.id === t.projectId)?.name ?? "?"} · ${t.status}`).join("\n") || "No sessions.");
         }
         case "liner_read": {
           const t = this.thread(args.session);
-          return text(readout(t, this.store.timeline(t.id), Math.min(10, Number(args.turns) || 3)));
+          return text(readout(t, this.store.timeline(t.id), Math.min(10, Number(args.turns) || 3), titleForAgents(this.store, t)));
         }
         case "liner_start": {
           const p = this.project(args.project);
@@ -140,7 +141,7 @@ export class Outside {
           };
           while (Date.now() < until && working()) await new Promise((r) => setTimeout(r, 1000));
           if (!working()) this.sent.delete(t.id);
-          return text(readout(this.thread(t.id), this.store.timeline(t.id), 1));
+          return text(readout(this.thread(t.id), this.store.timeline(t.id), 1, titleForAgents(this.store, this.thread(t.id))));
         }
         default:
           return fail(`Liner Code has no tool called ${tool}.`);

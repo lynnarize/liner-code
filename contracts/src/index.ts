@@ -425,8 +425,14 @@ export type Thread = {
   updatedAt: number;
 };
 
-/** files: what you attached, saved on disk, which go with the message when it's sent. */
-export type QueuedMessage = { id: string; text: string; at: number; files?: string[]; anchor?: { file: string; line: number; endLine?: number } };
+/**
+  What the person reads of a message Liner wrote for them (Liner Design's "Fix 1 check", "Build 2 frames"): a short line and
+  chips for what it is about. Display only: the agent is sent `text` as it is, and this never reaches a provider.
+*/
+export type ShownChip = { kind: "check" | "frame" | "layer" | "compare" | "build"; label: string };
+export type UserShown = { text: string; chips?: ShownChip[] };
+/** files: what you attached, saved on disk, which go with the message when it's sent. `shown`: what the person reads of it (UserShown). */
+export type QueuedMessage = { id: string; text: string; at: number; files?: string[]; anchor?: { file: string; line: number; endLine?: number }; shown?: UserShown };
 export type Question = { question: string; header?: string; options: { label: string; description?: string; suggested?: boolean }[]; multiSelect?: boolean };
 
 export type ToolKind = "read" | "edit" | "write" | "exec" | "search" | "fetch" | "think" | "task" | "web" | "other";
@@ -805,6 +811,8 @@ export type Item =
       steer?: boolean;
       /** Asked about lines in the diff: the agent's answer belongs to this place. */
       anchor?: { file: string; line: number; endLine?: number };
+      /** What the person reads of it, when Liner wrote `text` for them (UserShown); `text` is what the agent was told. */
+      shown?: UserShown;
     })
   | (Base & {
       kind: "review";
@@ -1426,7 +1434,7 @@ export type Rpc = {
   "sessions.search": [{ projectId: string; query: string }, { threadId: string; title: string; at: number; who: "you" | "agent"; snippet: string }[]];
   /** A limited session carries on with another tool's model (`model`, else the one its limit card offers). */
   "thread.carryOn": [{ id: string; model?: string }, null];
-  "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number }; /** Sent from Liner Design: the design file (its slug) and what is selected, for the turn's "## Design" note (lean.ts designNote). */ design?: { file: string; sel?: DesignSelection } }, null];
+  "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number }; /** Sent from Liner Design: the design file (its slug) and what is selected, for the turn's "## Design" note (lean.ts designNote). */ design?: { file: string; sel?: DesignSelection }; /** What the person reads of it (UserShown): kept on the item, never sent to the agent. */ shown?: UserShown }, null];
   "thread.queue": [{ id: string; queue: QueuedMessage[] }, Thread];
   /** Rewinds to just before a message you sent: the turns from there come off, and with `files`, so do their changes. */
   "thread.rewind": [{ threadId: string; itemId: string; files: boolean; force?: boolean }, { turn: number; files: number }];

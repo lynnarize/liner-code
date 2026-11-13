@@ -669,8 +669,52 @@
     }
   });
 
+  /*
+    An agent's change, shown as it arrives (Canvas.tsx and Frame.tsx decide; the app's srcdoc puts the
+    plan in this agent's own tag as window.__linerSettle, so it is there before the first paint and
+    goes with the tag). "settle": the new elements fade in and rise 4 px, in document order, a little
+    apart, the whole under 600 ms. "whole": the page fades in once. Only the Web Animations API: no
+    class, attribute or inline style is put on anything, so what serialise() gives, during and after,
+    is the page as it is; each animation is cancelled when it ends. A page that asks for less motion
+    gets none.
+  */
+  function settle(p) {
+    try {
+      if (!p || typeof p !== "object" || !document.body || typeof document.body.animate !== "function") return;
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
+      const runs = [];
+      if (p.mode === "whole") runs.push(document.documentElement.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease-out" }));
+      else if (p.mode === "settle" && Array.isArray(p.ids)) {
+        const els = p.ids.slice(0, 40).map(byId).filter((el) => el && el !== document.body);
+        // The last one starts by 300 ms, so the whole is in by about 600.
+        const gap = els.length > 1 ? Math.min(60, 300 / (els.length - 1)) : 0;
+        els.forEach((el, i) => {
+          // Ends at the element's own opacity; `translate` adds to a transform it has rather than replacing it.
+          const o = getComputedStyle(el).opacity || "1";
+          runs.push(el.animate([{ opacity: 0, translate: "0 4px" }, { opacity: o, translate: "0 0" }], { duration: 300, delay: Math.round(i * gap), easing: ease, fill: "backwards" }));
+        });
+      }
+      if (!runs.length) return;
+      void Promise.all(runs.map((a) => a.finished.catch(() => {}))).then(() => {
+        for (const a of runs) a.cancel();
+        // Watched rects read mid-rise are 4 px off: told again once everything stands still.
+        soon();
+      });
+    } catch {
+      // a page that won't animate shows its change at once
+    }
+  }
+
   const ready = () => {
     stamp();
+    const plan = window.__linerSettle;
+    try {
+      delete window.__linerSettle;
+    } catch {
+      // a page that froze its window: the plan stays, unread
+    }
+    settle(plan);
     try {
       new MutationObserver(soon).observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
     } catch {

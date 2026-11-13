@@ -5,9 +5,9 @@
   you (a request, a question, a plan) waits in place. The answer follows, and the turn ends with
   one line: what changed, and the Reviewer's verdict.
 */
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { addonKey, PR_TEST_TOOL, type ConnectionAsk, type Item, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
+import { addonKey, PR_TEST_TOOL, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
 import { appIcon, OfferCard } from "./Addon";
 import { toComposer } from "./Find";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
@@ -159,6 +159,8 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
   const marks = items.filter((x): x is Mark => x.kind === "turn");
   const marker = marks[0];
   const running = marks.some((m) => m.status === "running");
+  // The Design face names its frames for the steps that read or change them (FrameNames).
+  const names = useContext(FrameNames);
   const parts = sectionsOf(marks);
   const cps = items.filter((x): x is Checkpoint => x.kind === "checkpoint");
   const lastCp = cps[cps.length - 1];
@@ -213,7 +215,7 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
     }
     // Its own part's checkpoint (a build after the plan keeps its own), for its lines and its diffs.
     const partCp = cps.find((c) => c.turn === entries[0].it.turn) ?? cp;
-    const read = rowsOf(entries, partCp);
+    const read = rowsOf(entries, partCp, names);
     count += read.rows.filter((r) => r.kind === "step").length;
     blocks.push({ key: `t${key}`, id: key, still: true, trail: { entries, ...read, cp: partCp, who: whoOf(at ?? marker, agents, providers) } });
   };
@@ -337,7 +339,7 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
 
 const whoOf = (marker: Item | undefined, agents: AgentProfile[], providers: ProviderInfo[]) => (marker?.kind === "turn" ? agentOf(marker.agent, agents, providers).name : "The agent");
 
-type Mark = Extract<Item, { kind: "turn" }>;
+export type Mark = Extract<Item, { kind: "turn" }>;
 
 /** A turn's parts by model, each under the id of its first: a part on another model starts a head of its own; one on the same model (its fix) carries on under it. */
 function sectionsOf(marks: Mark[]) {
@@ -440,7 +442,7 @@ function onTick(fn: () => void) {
   };
 }
 /** Text that keeps itself up to date each second. React never owns its words, so a redraw and a tick can't fight over them. */
-function Tick({ text, className }: { text: () => string; className?: string }) {
+export function Tick({ text, className }: { text: () => string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const read = useRef(text);
   read.current = text;
@@ -461,7 +463,11 @@ const ticked = (s: number) => (s < 60 ? `${Math.floor(Math.max(0, s))}s` : durat
   doing as one word, its clock and how many steps. Waiting on you, it's amber and says where the
   clock stopped: time you take isn't the agent's. A tool gone quiet says so here, with Stop.
 */
-function LiveStatus({ threadId, marks, items, steps, quiet }: { threadId: string; marks: Mark[]; items: Item[]; steps: number; quiet?: Extract<Item, { kind: "notice" }> }) {
+/**
+  A running turn's state for a status line: whether it waits on you, its one word, and its clock (time spent waiting on you
+  left out). The turn's own line here and the Design face's chat row (design/Chat.tsx) both read it.
+*/
+export function liveOf(marks: Mark[], items: Item[]) {
   const first = marks[0];
   const now = marks.findLast((m) => m.status === "running") ?? marks[marks.length - 1];
   const asks = items.filter((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
@@ -480,6 +486,11 @@ function LiveStatus({ threadId, marks, items, steps, quiet }: { threadId: string
         : !items.some((x) => x.kind === "tool" && x.status === "running") && last?.kind === "reasoning" && last.streaming
           ? "Thinking"
           : "Working";
+  return { waiting, word, clock };
+}
+
+function LiveStatus({ threadId, marks, items, steps, quiet }: { threadId: string; marks: Mark[]; items: Item[]; steps: number; quiet?: Extract<Item, { kind: "notice" }> }) {
+  const { waiting, word, clock } = liveOf(marks, items);
   // "opencode hasn't said anything new for 1 minute": the notice's first clause; the rest is its title.
   const hush = quiet && quiet.text.split(/:\s/)[0];
   return (
@@ -583,21 +594,103 @@ const tailOf = (s: string, n = 6000) => {
   const nl = tail.indexOf("\n");
   return `…\n${nl >= 0 && nl < 240 ? tail.slice(nl + 1) : tail}`;
 };
-/** The command a step ran: Claude Code reports its input as JSON, Codex and the rest as the command. */
+/** The command a step ran: Claude Code reports its input as JSON, Codex and the rest as the command; "" when nothing names it. */
 function commandOf(t: Tool) {
   const raw = t.input ?? "";
   try {
-    const j = JSON.parse(raw) as { command?: unknown };
-    if (typeof j?.command === "string") return j.command;
+    const j = JSON.parse(raw) as { command?: unknown; cmd?: unknown };
+    const c = j?.command ?? j?.cmd;
+    if (typeof c === "string") return c;
+    if (Array.isArray(c) && c.every((x) => typeof x === "string")) return c.join(" ");
+    // JSON with no command in it is no command to show.
+    if (j && typeof j === "object") return "";
   } catch {
     // the command itself
   }
-  return raw || t.title.replace(/^Run\s+/, "");
+  return raw || (bare(t.title) ? "" : t.title.replace(/^Run\s+/, ""));
 }
+
+/*
+  Plain names for steps. A tool may title a call with nothing but its kind ("edit", "execute": OpenCode's before it says
+  more), and Liner Design's own tools name frames by their ids; neither is words for a person. trailSteps names every step
+  (the trail, the Wall, the Design face's chat row all read it), so the plain names are made there, from what the call
+  holds: its path, its command, the frame it touches.
+*/
+/** A frame's file in a design file: .liner/designs/<file>/frames/<id>.html. */
+const FRAME_FILE = /\.liner\/designs\/([^/]+)\/frames\/([^/]+)\.html$/;
+/**
+  Calls that were drawing a frame while they ran, by design, frame and call: they say "Drawing", then "Drew", whatever the
+  design file says of the frame meanwhile (one drawn again after it was deleted joins the file mid-call).
+*/
+const drawing = new Set<string>();
+/** A title that is only a tool's kind, or nothing. */
+const BARE = /^(?:edit|write|delete|move|execute|exec|bash|shell|read|search|grep|glob|fetch|web|think|other|task|tool|use a tool)?$/i;
+const bare = (title?: string) => BARE.test((title ?? "").trim());
+/** A call's input as an object, when it is JSON. */
+const inputOf = (t: Tool): Record<string, unknown> => {
+  try {
+    const j = JSON.parse(t.input ?? "") as unknown;
+    return j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+};
+const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+/** The file a call is about: its path, else a path in its input, else its title without the verb (a real title only). */
+const fileOf = (t: Tool, verb: RegExp) => {
+  const i = inputOf(t);
+  const p = t.path ?? str(i.file_path) ?? str(i.filePath) ?? str(i.path) ?? str(i.file) ?? str(i.filename);
+  if (p) return nameOf(p);
+  return bare(t.title) ? undefined : t.title.replace(verb, "") || undefined;
+};
+/** Liner Design's canvas tools, by any tool's name for them (Claude Code's mcp__liner__, ACP's liner., OpenCode's liner_, Antigravity's mcp_liner_). */
+const CANVAS_STEP = /^(?:mcp__liner__|mcp_liner_|liner\.|liner_)?design_(files|frame|tree|node|selection|shot|picture|built)$/;
+/** Turns a frame's id into its name. The Design face gives one (Chat.tsx); without it a frame is called by what the call says. */
+/** `design`: the design file the call names (its slug); a namer names only the open one's frames. */
+export type FrameNamer = ((frame: string, design?: string) => string | undefined) & {
+  /** The open design file's slug: only its frames can be new for want of a name. */
+  open?: string;
+  /** The calls that drew a frame: the first whole write of its file in the session (the chat works it out from the timeline). */
+  drew?: (toolId: string) => boolean;
+};
+/** A frame not in the design file yet (or with no namer) by a name made from its id: brand-board is "Brand board", never the slug. */
+export const readableFrame = (id: string) => {
+  if (!/^[a-z0-9][a-z0-9_~-]*$/.test(id)) return id;
+  const w = id.replace(/~.*$/, "").replace(/[-_]+/g, " ").trim();
+  return w ? w.charAt(0).toUpperCase() + w.slice(1) : id;
+};
+export const FrameNames = createContext<FrameNamer | undefined>(undefined);
+/** A canvas tool's step in plain words: "Read Phone / Menu", "Changed Phone / Menu". */
+function canvasStep(t: Tool, kind: string, running: boolean, names?: FrameNamer): { verb: string; target?: string } {
+  const i = inputOf(t);
+  const id = str(i.frame) ?? str(i.id);
+  const frame = (id && names?.(id, str(i.design))) ?? str(i.name) ?? (id && readableFrame(id));
+  const v = (now: string, done: string) => (running ? now : done);
+  switch (kind) {
+    case "files":
+      return { verb: v("Reading the design files", "Read the design files") };
+    case "frame":
+      return { verb: v("Drawing", "Drew"), target: str(i.name) ?? frame ?? "a frame" };
+    case "tree":
+      return { verb: v("Reading", "Read"), target: frame ?? "a frame" };
+    case "node":
+      return i.html === undefined ? { verb: v("Reading", "Read"), target: frame ?? "a frame" } : { verb: v("Changing", "Changed"), target: frame ?? "a frame" };
+    case "selection":
+      return { verb: v("Looking at what's selected", "Looked at what's selected") };
+    case "shot":
+      return { verb: v("Looking at", "Looked at"), target: frame ?? "a frame" };
+    case "picture":
+      return { verb: v("Making a picture", "Made a picture"), ...(frame ? { target: `for ${frame}` } : {}) };
+    default:
+      return { verb: v("Marking it built", "Marked it built"), ...(frame ? { target: frame } : {}) };
+  }
+}
+/** A step whose call says only its kind, by that kind. */
+const KIND_WORDS: Partial<Record<Tool["toolKind"], [string, string]>> = { think: ["Thinking", "Thought it through"], fetch: ["Reading a page", "Read a page"], web: ["Reading the web", "Read the web"], task: ["Handing work on", "Handed work on"] };
 
 /** One line of the trail: what it did (a verb and what it touched), how it went, and the fact that matters, under it. */
 /** `diff`: the file in the turn's checkpoint an edit step changed, which a press opens in Changes. */
-export type TrailStep ={ key: string; tools: Tool[]; verb: string; target?: string; result?: ReactNode; state: "running" | "done" | "failed"; at: number; seconds: number; tail?: string; diff?: string };
+export type TrailStep ={ key: string; tools: Tool[]; verb: string; target?: string; /** The target is a frame's name, in the Design face: plain type, not mono. */ plainTarget?: boolean; result?: ReactNode; state: "running" | "done" | "failed"; at: number; seconds: number; tail?: string; diff?: string };
 type Row = { kind: "step"; step: TrailStep } | Exclude<Entry, { kind: "tool" }>;
 
 /** A line of output that says what went wrong. */
@@ -651,7 +744,7 @@ const writes = (t: Tool) => t.toolKind === "edit" || t.toolKind === "write";
   file (T3 Code's work log groups them the same way, so a run of edits isn't a stack of rows), and
   so do the agent's turns at the Browser.
 */
-export function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
+export function trailSteps(tools: Tool[], cp?: Checkpoint, names?: FrameNamer): TrailStep[] {
   const groups: Tool[][] = [];
   for (const t of tools) {
     const prev = groups.at(-1)?.at(-1);
@@ -666,6 +759,11 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
     // From the first call's start to the last one's end: calls in a group often run side by side.
     const seconds = (Math.max(...g.map((x) => x.at + (x.seconds ?? 0) * 1000)) - first.at) / 1000;
     const base = { key: first.id, tools: g, state, at: first.at, seconds } as const;
+    const canvas = CANVAS_STEP.exec(t.tool);
+    if (canvas) {
+      const line = lastLine(t.output);
+      return { ...base, ...canvasStep(t, canvas[1], state === "running", names), plainTarget: Boolean(names), result: state === "failed" ? <span className="lc-bad">✕ {clip(line ?? "it didn't go")}</span> : undefined };
+    }
     const browser = BROWSER.exec(t.tool);
     if (browser) {
       // What it did, counting only what worked: a click the page turned down didn't happen.
@@ -687,12 +785,18 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
       return { ...base, verb: state === "running" ? "Starting" : state === "failed" ? "Couldn't start" : "Started", target: t.title.replace(/^Run\s+|\s+from launch\.json$/g, ""), result: state === "failed" ? (why ? clip(why) : undefined) : at };
     }
     if (t.toolKind === "read") {
-      const names = [...new Set(g.map((x) => nameOf(x.path ?? x.title.replace(/^Read\s+/, ""))))];
-      return { ...base, verb: "Read", target: names.length === 1 ? names[0] : `${names.length} files`, result: names.length > 1 ? clip(names.join(", ")) : undefined };
+      const files = [...new Set(g.flatMap((x) => fileOf(x, /^Read\s+/) ?? []))];
+      const verb = state === "running" ? "Reading" : "Read";
+      // Calls that name no file are still reads: counted, not shown as their kind.
+      if (!files.length) return { ...base, verb: g.length > 1 ? `${verb} ${plural(g.length, "file")}` : `${verb} a file` };
+      return { ...base, verb, target: files.length === 1 ? files[0] : `${files.length} files`, result: files.length > 1 ? clip(files.join(", ")) : undefined };
     }
     if (t.toolKind === "search") {
       const hits = t.output ? t.output.split("\n").filter(Boolean).length : 0;
-      return { ...base, verb: "Searched", target: t.title.replace(/^Search(?:ed)?(?: the code)?(?: for)?\s*/i, "") || undefined, result: t.output !== undefined ? (hits ? plural(hits, "match", "matches") : "nothing found") : undefined };
+      const i = inputOf(t);
+      const what = bare(t.title) ? (str(i.pattern) ?? str(i.query)) : t.title.replace(/^Search(?:ed)?(?: the code)?(?: for)?\s*/i, "") || undefined;
+      const verb = state === "running" ? "Searching" : "Searched";
+      return { ...base, verb: what ? verb : `${verb} the code`, target: what, result: t.output !== undefined ? (hits ? plural(hits, "match", "matches") : "nothing found") : undefined };
     }
     if (writes(t)) {
       const f = t.path ? cp?.files.find((x) => slashed(t.path!) === x.path || slashed(t.path!).endsWith(`/${x.path}`)) : undefined;
@@ -701,17 +805,37 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
       return {
         ...base,
         diff: f && cp && !cp.reverted && state !== "running" ? f.path : undefined,
-        verb: state === "running" ? "Editing" : f?.status === "added" ? "Created" : "Edited",
-        target: t.path ? nameOf(t.path) : t.title.replace(/^(?:Edit|Write)\s+/, ""),
+        ...(() => {
+          // A design file's frame is called by its name ("Changed Phone / Menu"), not its file's.
+          const [, slug, frame] = FRAME_FILE.exec(slashed(t.path ?? "")) ?? [];
+          // In the Design face (a namer), a design frame by its name: drawn when the call wrote it first (or, under way, the
+          // frame isn't in the design file yet), else changed. Liner Code has no namer and reads it as any file, as before.
+          if (frame && names) {
+            // A frame with no name is new only in the open design; one of another design has no name here at all, so its
+            // call says what it is by itself (a first whole write) and is otherwise a change.
+            const key = (x: Tool) => `${slug}/${frame}/${x.id}`;
+            const drawn = f?.status === "added" || g.some((x) => names.drew?.(x.id) || drawing.has(key(x))) || (state === "running" && slug === names.open && !names(frame, slug));
+            if (drawn && state === "running") drawing.add(key(t));
+            return { verb: state === "running" ? (drawn ? "Drawing" : "Changing") : drawn ? "Drew" : "Changed", target: names(frame, slug) ?? readableFrame(frame), plainTarget: true };
+          }
+          const file = fileOf(t, /^(?:Edit|Write)\s+/);
+          // A change that names no file still says what it did: "Changed a file", not the tool's "edit".
+          if (!file) return { verb: state === "running" ? "Changing a file" : "Changed a file" };
+          return { verb: state === "running" ? "Editing" : f?.status === "added" ? "Created" : "Edited", target: file };
+        })(),
         result: joined([f && <Lines added={f.added} removed={f.removed} />, g.length > 1 && plural(g.length, "edit"), missed > 0 && <span className="lc-bad">{missed} didn't apply</span>]),
       };
     }
     if (t.toolKind === "exec") {
       const command = commandOf(t).replace(/\s+/g, " ").trim();
-      return { ...base, verb: state === "running" ? "Running" : "Ran", target: clip(command, 72), result: state === "running" ? undefined : ranResult(t), tail: state === "running" && t.output ? t.output.split("\n").filter(Boolean).slice(-2).join("\n") : undefined };
+      const verb = state === "running" ? "Running" : "Ran";
+      return { ...base, verb: command ? verb : `${verb} a command`, target: command ? clip(command, 72) : undefined, result: state === "running" ? undefined : ranResult(t), tail: state === "running" && t.output ? t.output.split("\n").filter(Boolean).slice(-2).join("\n") : undefined };
     }
     const line = lastLine(t.output);
-    return { ...base, verb: t.title, result: line && state !== "running" ? clip(line) : undefined };
+    // A call titled with only its kind is named by the kind in words; one with no kind of note, by its tool's name.
+    const words = KIND_WORDS[t.toolKind];
+    const verb = !bare(t.title) ? t.title : words ? words[state === "running" ? 0 : 1] : !bare(t.tool) && !/^(?:mcp__|liner)/.test(t.tool) ? `${state === "running" ? "Using" : "Used"} ${t.tool}` : state === "running" ? "Using a tool" : "Used a tool";
+    return { ...base, verb, result: line && state !== "running" ? clip(line) : undefined };
   }).map((step) => {
     // A call that was still going when its turn was stopped says so, rather than how far its output got.
     const t = step.tools[step.tools.length - 1];
@@ -721,13 +845,13 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint): TrailStep[] {
 
 /** A trail's rows in the order they came: its steps (as trailSteps groups them), with thinking and answered asks between them. */
 type TrailIn = { entries: Entry[]; rows: Row[]; sent: Tool[]; cp?: Checkpoint; who: string };
-function rowsOf(entries: Entry[], cp?: Checkpoint): { rows: Row[]; sent: Tool[] } {
+function rowsOf(entries: Entry[], cp?: Checkpoint, names?: FrameNamer): { rows: Row[]; sent: Tool[] } {
   // Agents this part sent off (Claude Code's Agent tool): they fan out under the trail, each with what it does (Crew.tsx), not as steps.
   const sent = entries.flatMap((e) => (e.kind === "tool" && e.it.toolKind === "task" && isStep(e.it) ? [e.it] : []));
   const rows: Row[] = [];
   let tools: Tool[] = [];
   const flush = () => {
-    for (const step of trailSteps(tools, cp)) rows.push({ kind: "step", step });
+    for (const step of trailSteps(tools, cp, names)) rows.push({ kind: "step", step });
     tools = [];
   };
   for (const e of entries) {
@@ -767,6 +891,7 @@ const ROW_IN = 160;
 */
 function Trail({ threadId, entries, rows, sent, asks, cp, live, waiting, took, onReview }: TrailIn & { threadId: string; asks: Map<string, Ask>; live: boolean; waiting: boolean; took?: number; onReview: (checkpointId: string, path?: string) => void }) {
   const [isOpen, setOpen] = useState(false);
+  const names = useContext(FrameNames);
   const [all, setAll] = useState(false);
   const [opened, setOpened] = useState<string[]>([]);
   const steps = rows.filter((r): r is { kind: "step"; step: TrailStep } => r.kind === "step").map((r) => r.step);
@@ -852,7 +977,14 @@ function Trail({ threadId, entries, rows, sent, asks, cp, live, waiting, took, o
   // Folded, the row keeps what it changed, ran, read and looked up, and whether it checked its work.
   const tools = steps.flatMap((s) => s.tools);
   const paths = [...new Set(tools.filter((t) => (t.toolKind === "edit" || t.toolKind === "write") && t.path).map((t) => t.path!))];
-  const edited = [...new Set(paths.map(nameOf))];
+  // A design file's frames by their names, as their steps say them.
+  const frameIds = paths.map((p) => FRAME_FILE.exec(slashed(p))?.[2]);
+  const slugs = paths.map((p) => FRAME_FILE.exec(slashed(p))?.[1]);
+  // Only in the Design face; Liner Code says "edited <file>" as it always has.
+  const framesOnly = Boolean(names) && frameIds.length > 0 && frameIds.every(Boolean);
+  const edited = [...new Set(paths.map((p, i) => (names && frameIds[i] ? (names(frameIds[i]!, slugs[i]) ?? readableFrame(frameIds[i]!)) : nameOf(p))))];
+  // Frames this part drew (their first whole write in the session): "drew", as their steps say it.
+  const drewAll = framesOnly && paths.every((p, i) => tools.some((t) => t.path === p && (names!.drew?.(t.id) || drawing.has(`${slugs[i]}/${frameIds[i]}/${t.id}`))));
   const ran = tools.filter((t) => t.toolKind === "exec").length;
   const read = new Set(tools.filter((t) => t.toolKind === "read").map((t) => t.path ?? t.id)).size;
   const searched = tools.some((t) => t.toolKind === "search");
@@ -862,7 +994,7 @@ function Trail({ threadId, entries, rows, sent, asks, cp, live, waiting, took, o
   const mine = cp?.files.filter((f) => paths.some((p) => slashed(p) === f.path || slashed(p).endsWith(`/${f.path}`))) ?? [];
   const lines = mine.length ? sumLines(mine) : null;
   const said = [
-    edited.length > 0 && (edited.length <= 2 ? `edited ${edited.join(" and ")}` : `edited ${edited.length} files`),
+    edited.length > 0 && (framesOnly ? (edited.length <= 2 ? `${drewAll ? "drew" : "changed"} ${edited.join(" and ")}` : `${drewAll ? "drew" : "changed"} ${edited.length} frames`) : edited.length <= 2 ? `edited ${edited.join(" and ")}` : `edited ${edited.length} files`),
     ran > 0 && `ran ${plural(ran, "command")}`,
     read > 0 && `read ${plural(read, "file")}`,
     searched && "searched the code",
@@ -925,7 +1057,8 @@ function StepRow({ s, said, cp, open, onToggle, onReview, fresh }: { s: TrailSte
         onClick={() => (diff ? onReview(diff.id, diff.path) : onToggle())}
       >
         <b className="lc-wk-verb">{s.verb}</b>
-        {s.target && <code className="lc-wk-target">{s.target}</code>}
+        {/* A frame's name in the Design face reads as a name, not code (plainTarget); files and commands stay mono. */}
+        {s.target && (s.plainTarget ? <span className="lc-wk-target" data-plain>{s.target}</span> : <code className="lc-wk-target">{s.target}</code>)}
         {result && <span className="lc-wk-r">{result}</span>}
         {tagsOf(said).map((t) => (
           <span key={t} className="lc-wk-tag">
@@ -1771,12 +1904,17 @@ function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
   A message you sent. Edit from here takes the conversation back to just before it: the turns
   after come off, and with Revert files too, so do their changes. Then the edited message goes.
 */
+/** A chip of what a message Liner wrote is about, by its kind. */
+const SHOWN_ICON: Record<ShownChip["kind"], (p: { size?: number }) => ReactNode> = { check: I.shield, frame: I.page, layer: I.box, compare: I.contrast, build: I.code };
+
 function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<Item, { kind: "user" }>; fresh: boolean; onReview: (checkpointId: string, path?: string) => void }) {
   const running = useEngine((s) => threadOf(s, threadId)?.status === "running");
   // Only the checkpoints: the whole timeline would redraw every message you sent with each streamed word.
   const cps = useItemsWhere(threadId, isCheckpoint) as Checkpoint[];
   const [edit, setEdit] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A message Liner wrote for you (Liner Design's "Fix 1 check"): what the agent was told, folded under it.
+  const [told, setTold] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
   const later = cps.filter((x) => x.turn >= it.turn && !x.reverted);
   // The files show above the words, so the line that tells the agent where they are doesn't show again.
@@ -1871,14 +2009,41 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
         </span>
       )}
       {it.files && it.files.length > 0 && <Attachments files={it.files} />}
-      {said && <p>{said}</p>}
+      {it.shown ? (
+        <>
+          <p className="lc-you-shown">
+            {it.shown.chips?.map((c, i) => {
+              const Icon = SHOWN_ICON[c.kind];
+              return (
+                <span key={i} className="lc-you-sc" data-kind={c.kind}>
+                  <Icon size={12} />
+                  {c.label}
+                </span>
+              );
+            })}
+            {it.shown.text}
+          </p>
+          {/* Words you typed as they went (a message with a selection) have nothing more to unfold. */}
+          {typed.trim() !== it.shown.text.trim() && (
+            <>
+              <button type="button" className="lc-you-told l-focus" aria-expanded={told} onClick={() => setTold(!told)}>
+                What the agent was told
+                <I.chevR size={11} />
+              </button>
+              {told && <pre className="lc-you-toldbox">{typed}</pre>}
+            </>
+          )}
+        </>
+      ) : (
+        said && <p>{said}</p>
+      )}
       {!it.steer && it.turn > 0 && (
         <span className="lc-you-more">
           <button type="button" className="lc-you-btn l-focus" disabled={running} title={running ? "Stop the turn to edit from here" : "Edit this message and go back to it"} onClick={() => setEdit(part ? said : it.text)}>
             <I.edit size={12} />
             Edit from here
           </button>
-          <button type="button" className="lc-you-btn l-focus" title="Copy" aria-label="Copy the message" onClick={() => void navigator.clipboard?.writeText(said).then(() => toast("Copied"), fail)}>
+          <button type="button" className="lc-you-btn l-focus" title="Copy" aria-label="Copy the message" onClick={() => void navigator.clipboard?.writeText(it.shown?.text || said).then(() => toast("Copied"), fail)}>
             <I.copy size={12} />
           </button>
         </span>

@@ -7,7 +7,32 @@
 */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Thread } from "../../contracts/src/index.ts";
 import { writeAtomic, type Store } from "./store.ts";
+
+/** The first words of a first message, as a session's name. */
+export function titleFrom(text: string) {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > 44 ? `${t.slice(0, 42).trimEnd()}…` : t || "New session";
+}
+
+/**
+  A session's name as an agent or an outside tool reads it. A session named by its first message is named by what the
+  person read of it (runtime.ts shownOf): told to an agent, that line would be words the agent was never told, so it reads
+  the name the first message's own words give. A name the person gave, or any other, is as it is. A side chat named as
+  one ("Side chat · …", as thread.side names it) reads its session's name for agents now, by its link to the session,
+  whatever the session was called when the side chat was made.
+*/
+export function titleForAgents(store: Store, t: Thread): string {
+  if (t.sideOf && t.title.startsWith("Side chat · ")) {
+    const parent = store.threads?.find((x) => x.id === t.sideOf);
+    if (parent) return `Side chat · ${titleForAgents(store, parent)}`;
+  }
+  // A stand-in store (a test's, an outside tool's view) may keep no timeline: its name is then as it is.
+  const first = (typeof store.peek === "function" ? store.peek(t.id, ["user"]) : []).find((x) => x.kind === "user");
+  if (first?.kind === "user" && first.shown?.text && t.title === titleFrom(first.shown.text)) return titleFrom(first.text);
+  return t.title;
+}
 
 /** At most this many facts per project; the oldest go first. */
 const MAX_FACTS = 60;
@@ -70,20 +95,24 @@ const termsOf = (q: string) => [...new Set(q.toLowerCase().match(/[\p{L}\p{N}_.-
   `skip`): your messages and the agents' answers, scored by how many of the query's words each
   holds and how often, newer first on a tie. A snippet is the part around the first match.
 */
-export function searchSessions(store: Store, projectId: string, query: string, o: { skip?: string; limit?: number } = {}): SessionHit[] {
+export function searchSessions(store: Store, projectId: string, query: string, o: { skip?: string; limit?: number; person?: boolean } = {}): SessionHit[] {
   const terms = termsOf(query);
   if (!terms.length) return [];
   const hits: (SessionHit & { score: number })[] = [];
   for (const t of store.threads.filter((x) => x.projectId === projectId && x.id !== o.skip)) {
     for (const it of store.peek(t.id, ["user", "text"])) {
       if (it.kind !== "user" && it.kind !== "text") continue;
-      const low = it.text.toLowerCase();
+      // A message Liner wrote for the person (Liner Design's asks): the person's own search in the app (`person`) finds it by
+      // what they read of it too, and shows that. An agent's search reads only what the agent was told (runtime.ts shownOf).
+      const read = o.person && it.kind === "user" && it.shown ? [it.shown.text, ...(it.shown.chips ?? []).map((c) => c.label)].join(" ") : "";
+      const low = `${read}\n${it.text}`.toLowerCase();
       const found = terms.filter((w) => low.includes(w));
       if (!found.length) continue;
       const count = found.reduce((n, w) => n + low.split(w).length - 1, 0);
-      const at = Math.max(0, low.indexOf(found[0]) - 80);
-      const snippet = `${at ? "…" : ""}${it.text.slice(at, at + 260).replace(/\s+/g, " ").trim()}${at + 260 < it.text.length ? "…" : ""}`;
-      hits.push({ threadId: t.id, title: t.title, at: it.at, who: it.kind === "user" ? "you" : "agent", snippet, score: found.length * 10 + Math.min(count, 10) });
+      const words = read && found.some((w) => read.toLowerCase().includes(w)) ? read : it.text;
+      const at = Math.max(0, words.toLowerCase().indexOf(found.find((w) => words.toLowerCase().includes(w)) ?? found[0]) - 80);
+      const snippet = `${at ? "…" : ""}${words.slice(at, at + 260).replace(/\s+/g, " ").trim()}${at + 260 < words.length ? "…" : ""}`;
+      hits.push({ threadId: t.id, title: o.person ? t.title : titleForAgents(store, t), at: it.at, who: it.kind === "user" ? "you" : "agent", snippet, score: found.length * 10 + Math.min(count, 10) });
     }
   }
   return hits

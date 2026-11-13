@@ -11,7 +11,7 @@ import type { DesignFrame, LaunchServer, LocalServer } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "../engine";
 import { I } from "../icons";
-import { askAgent, useBuilds } from "./BuildTab";
+import { askAgent, shownAsk, useBuilds } from "./BuildTab";
 import { proxied } from "./Live";
 import { getDesign, useDesign } from "./store";
 import "./build.css";
@@ -116,7 +116,7 @@ export function CompareOver({ frame, box, zoom }: { frame: DesignFrame; box: { l
           }}
           onBlur={() => addr.trim() !== now.path && void openCompare(frame.id, addr.trim() || "/")}
         />
-        <button type="button" className="ld-live-lk l-focus" onClick={() => void askAgent(fixAsk(frame, builds[frame.id]?.file, `http://${url}`), "Sent: fix the differences")}>
+        <button type="button" className="ld-live-lk l-focus" onClick={() => void askAgent(fixAsk(frame, builds[frame.id]?.file, `http://${url}`), "Sent: fix the differences", shownAsk(`Make the app at ${url} match ${frame.name}`, { kind: "compare", label: "Fix the differences" }, [frame]))}>
           Fix the differences
         </button>
         <button type="button" className="lc-ib l-focus" aria-label="Stop comparing" title="Stop comparing" onClick={() => void openCompare(undefined)}>

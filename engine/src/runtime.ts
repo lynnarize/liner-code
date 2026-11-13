@@ -14,7 +14,7 @@
   steer reaches the agent at its next step instead. A change whose check the queue went ahead of
   is read with the next check (Thread.reviewSince).
 */
-import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
+import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, ShownChip, UserShown, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, frontierClass, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
@@ -37,7 +37,7 @@ import { fingerprint, type Addons, type Connection } from "./addons.ts";
 import { briefOf } from "./agents.ts";
 import { modeNote } from "./creator.ts";
 import { designNote, type DesignMark } from "./lean.ts";
-import { memoryNote } from "./memory.ts";
+import { memoryNote, titleFrom } from "./memory.ts";
 import { commandRisk, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, type BriefOutcome } from "./sidekick.ts";
@@ -98,7 +98,7 @@ const aboutLines = (a: NonNullable<QueuedMessage["anchor"]>, text: string) => `A
   part: a turn that carries on yours (a fix the Reviewer sent back), shown as part of it. why: why it went, said when you ask.
   review: false when nothing it changes goes to the Reviewer (a side chat, a goal's turns, a fix, which its round reads).
 */
-type TurnOptions = { design?: DesignMark; show?: boolean; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string; note?: string; files?: string[]; wake?: { session: ProviderSession; w: WakeTurn }; part?: TurnPart; why?: string };
+type TurnOptions = { design?: DesignMark; show?: boolean; /** What the person reads of the message (UserShown), kept on its item only. */ shown?: UserShown; anchor?: { file: string; line: number; endLine?: number }; review?: boolean; prompt?: string; note?: string; files?: string[]; wake?: { session: ProviderSession; w: WakeTurn }; part?: TurnPart; why?: string };
 /**
   How a turn ended, from runTurn: done, stopped (by you, or by the spending cap), error, waiting
   (something asks you), limited (out of usage); and whether it left a checkpoint.
@@ -207,6 +207,12 @@ export class Runtime {
     the design through design_files and design_selection instead. Accepted for now.
   */
   private queuedDesign = new Map<string, DesignMark>();
+  /**
+    Queued messages with a line for the person (shown) that the app just took out of a thread's queue, by thread and then
+    by id, the last 20 a thread: put back in that thread's queue, they keep it. One that went (Send now, as a steer or a
+    message) is forgotten here when it goes, so putting it back after can't bring its line.
+  */
+  private leftQueue = new Map<string, Map<string, QueuedMessage>>();
   /** Threads a routine is working in right now, with nobody watching. */
   private unattended = new Set<string>();
   private quitting = false;
@@ -367,19 +373,20 @@ export class Runtime {
     // On its own it goes as it would have; joined with others, a message about lines says so in words.
     const only = going.length === 1 ? going[0] : undefined;
     const text = only ? only.text : going.map((q) => (q.anchor ? aboutLines(q.anchor, q.text) : q.text)).join("\n\n");
-    void this.send(threadId, text, "queue", only?.anchor, files.length ? files : undefined, design).catch(() => {});
+    // What the person reads goes with a message that goes on its own; joined with others, the words are what was said.
+    void this.send(threadId, text, "queue", only?.anchor, files.length ? files : undefined, design, only?.shown).catch(() => {});
   }
 
-  private enqueue(threadId: string, text: string, files?: string[], anchor?: TurnOptions["anchor"], design?: DesignMark) {
+  private enqueue(threadId: string, text: string, files?: string[], anchor?: TurnOptions["anchor"], design?: DesignMark, shown?: UserShown) {
     const t = this.store.thread(threadId);
     const id = uid("q");
     if (design) this.queuedDesign.set(id, design);
-    this.store.patchThread(threadId, { queue: [...(t.queue ?? []), { id, text, at: Date.now(), ...(files?.length ? { files } : {}), ...(anchor ? { anchor } : {}) }] });
+    this.store.patchThread(threadId, { queue: [...(t.queue ?? []), { id, text, at: Date.now(), ...(files?.length ? { files } : {}), ...(anchor ? { anchor } : {}), ...(shown ? { shown } : {}) }] });
   }
 
   /** A message that didn't start waits in the queue, where you can edit, send or drop it, like one Stop kept. */
-  keepQueued(threadId: string, text: string, files?: string[], anchor?: TurnOptions["anchor"]) {
-    this.enqueue(threadId, text, files, anchor);
+  keepQueued(threadId: string, text: string, files?: string[], anchor?: TurnOptions["anchor"], shown?: UserShown) {
+    this.enqueue(threadId, text, files, anchor, undefined, shown);
     this.kept.add(threadId);
   }
 
@@ -389,7 +396,27 @@ export class Runtime {
     (T3 Code: useQueuedRunEdit.ts edits one queued message by its id instead of the whole list).
   */
   setQueue(threadId: string, queue: QueuedMessage[]) {
-    const t = this.store.patchThread(threadId, { queue: queue.filter((q) => !this.drained.has(q.id)) });
+    // What the person reads of a queued message is only ever the engine's own, kept with the text it was stored with: the
+    // app's copy can't bring one in, and a text changed in the app is the person's own words now, so its line goes.
+    const was = new Map((this.store.thread(threadId).queue ?? []).map((q) => [q.id, q]));
+    // One the app took out and puts back (a Send now that failed): its line comes back from what the engine kept of it.
+    const left = this.leftQueue.get(threadId) ?? new Map<string, QueuedMessage>();
+    for (const [id, q] of left) if (!was.has(id)) was.set(id, q);
+    const t = this.store.patchThread(threadId, {
+      queue: queue
+        .filter((q) => !this.drained.has(q.id))
+        .map(({ shown: _, ...q }) => {
+          const old = was.get(q.id);
+          return { ...q, ...(old?.shown && old.text === q.text ? { shown: old.shown } : {}) };
+        }),
+    });
+    // What this edit took out, kept a short while for a put-back; what is in the queue again is no longer "taken out".
+    const now = new Set((t.queue ?? []).map((q) => q.id));
+    for (const id of now) left.delete(id);
+    for (const [id, q] of was) if (!now.has(id) && q.shown && !this.drained.has(id)) left.set(id, q);
+    while (left.size > 20) left.delete(left.keys().next().value!);
+    if (left.size) this.leftQueue.set(threadId, left);
+    else this.leftQueue.delete(threadId);
     // One Stop kept for you waits on, edited: taking a message out of it doesn't send the rest.
     if (t.queue?.length && !this.isRunning(threadId) && !this.kept.has(threadId)) this.drain(threadId);
     return this.store.thread(threadId);
@@ -672,9 +699,12 @@ export class Runtime {
   }
 
   /** You sent a message. While a turn runs it waits in the queue, or steers the running turn. */
-  async send(threadId: string, text: string, mode: "queue" | "steer" = "queue", anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark) {
+  async send(threadId: string, text: string, mode: "queue" | "steer" = "queue", anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark, shown?: UserShown) {
     const store = this.store;
     const running = this.turns.get(threadId);
+    // A message taken out of the queue goes now (Send now): what was kept for putting it back goes with it.
+    const left = this.leftQueue.get(threadId);
+    if (left) for (const [id, q] of left) if (q.text === text) left.delete(id);
     // From Liner Design: the message carries its mark to the turn it becomes (a steer, at once), and only there.
     if (!design?.file) design = undefined;
     if (running || this.busy.has(threadId)) {
@@ -682,17 +712,17 @@ export class Runtime {
       // next, from the queue (T3 Code: SteeringCompletion.integration.test.ts).
       // After Stop nothing is left of that turn to read a steer: it goes next, like any message. So does a command, which is no word to the agent.
       if (mode === "steer" && !this.halted.has(threadId) && !commandOf({ text, files, anchor }) && running?.session?.steer && (await running.session.steer([this.designOf(threadId, design), anchor ? aboutLines(anchor, text) : text, attachNote(files ?? [])].filter(Boolean).join("\n\n"), files))) {
-        store.putItem(threadId, { kind: "user", id: uid("it"), turn: running.turn, at: Date.now(), text, steer: true, ...(anchor ? { anchor } : {}), ...(files?.length ? { files } : {}) });
+        store.putItem(threadId, { kind: "user", id: uid("it"), turn: running.turn, at: Date.now(), text, steer: true, ...(anchor ? { anchor } : {}), ...(files?.length ? { files } : {}), ...(shown ? { shown } : {}) });
         return;
       }
-      this.enqueue(threadId, text, files, anchor, design);
+      this.enqueue(threadId, text, files, anchor, design, shown);
       // Sent after Stop: it isn't one more for Stop to keep, it's your next message.
       if (this.halted.has(threadId)) this.released.add(threadId);
       // The turn ended while the steer was tried: nothing in flight will send the queue now.
       if (!this.isRunning(threadId)) this.drain(threadId);
       return;
     }
-    return this.hold(threadId, () => this.dispatch(threadId, text, anchor, files, design));
+    return this.hold(threadId, () => this.dispatch(threadId, text, anchor, files, design, shown));
   }
 
   /** The "## Design" note of a message sent from Liner Design; "" for any other. A note that can't be read is left out, never the message. */
@@ -708,7 +738,7 @@ export class Runtime {
   }
 
   /** A message to a thread with nothing in flight: a side chat answers it, a pull request ask opens the PR card, and anything else is one turn of the session's lead. */
-  private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark) {
+  private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark, shown?: UserShown) {
     const store = this.store;
     const t = store.thread(threadId);
     this.settleAsks(threadId);
@@ -719,9 +749,9 @@ export class Runtime {
       store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `Going on: another $${cap} for this session before it stops again.` });
     }
     // A side chat only answers: no pull request, nothing for the Reviewer, and no design note (it changes nothing).
-    if (t.sideOf) return void (await this.turn(threadId, text, t.agent, { review: false, files }));
-    if (!anchor && !files?.length && isPrAsk(text)) return this.openPr(threadId, text);
-    await this.turn(threadId, text, t.agent, { anchor, review: !anchor, files, ...(design ? { design } : {}) });
+    if (t.sideOf) return void (await this.turn(threadId, text, t.agent, { review: false, files, ...(shown ? { shown } : {}) }));
+    if (!anchor && !files?.length && isPrAsk(text)) return this.openPr(threadId, text, shown);
+    await this.turn(threadId, text, t.agent, { anchor, review: !anchor, files, ...(design ? { design } : {}), ...(shown ? { shown } : {}) });
   }
 
   /** "codex:gpt-6-luna" as its tool calls it ("GPT-6 Luna"), for the lines reviews and the timeline write. */
@@ -731,13 +761,13 @@ export class Runtime {
   }
 
   /** "Create PR": no agent turn, the PR card itself opens the pull request in the chat. */
-  private openPr(threadId: string, text: string) {
+  private openPr(threadId: string, text: string, shown?: UserShown) {
     const store = this.store;
     const t = store.thread(threadId);
     const turn = t.turns + 1;
-    const title = t.title === "New session" || t.title === "New thread" ? titleFrom(text) : t.title;
+    const title = t.title === "New session" || t.title === "New thread" ? titleFrom(shown?.text || text) : t.title;
     store.patchThread(threadId, { turns: turn, title, archived: false, done: false, snoozedUntil: undefined });
-    store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text });
+    store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(shown ? { shown } : {}) });
     store.putItem(threadId, { kind: "pr", id: uid("it"), turn, at: Date.now(), ...(this.resolve(t).provider === "demo" ? { demo: true } : {}) });
   }
 
@@ -913,11 +943,12 @@ export class Runtime {
     const abort = new AbortController();
     const live: Turn = { abort, started: Date.now(), turn, agentId };
     this.turns.set(threadId, live);
-    const title = t.title === "New session" || t.title === "New thread" ? titleFrom(text) : t.title;
+    // A session named by its first message is named by what the person read of it, not by the words Liner wrote for the agent.
+    const title = t.title === "New session" || t.title === "New thread" ? titleFrom(o.shown?.text || text) : t.title;
     t = store.patchThread(threadId, { status: "running", turns: turn, title, archived: false, done: false, snoozedUntil: undefined, turnBy: agentId });
     const r = this.resolve(t, agentId);
     const marker: Item = { kind: "turn", id: uid("it"), turn, at: Date.now(), agent: agentId, model: `${r.provider}:${r.model}`, status: "running", ...(o.part ? { part: o.part } : {}), ...(o.why ? { why: o.why } : {}) };
-    if (show) store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}), ...(o.files?.length ? { files: o.files } : {}) });
+    if (show) store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}), ...(o.files?.length ? { files: o.files } : {}), ...(o.shown ? { shown: o.shown } : {}) });
     if (o.note) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: o.note });
     store.putItem(threadId, marker);
     live.marker = marker.id;
@@ -2784,11 +2815,36 @@ export function isPrAsk(text: string) {
   return /^(?:\/pr|(?:please\s+)?(?:create|open|make|raise|submit)\s+(?:a\s+|the\s+)?(?:pr|pull\s+request))[\s.!]*$/i.test(text.trim());
 }
 
-/** The first words of a first message, as a session's name. */
-export function titleFrom(text: string) {
-  const t = text.replace(/\s+/g, " ").trim();
-  return t.length > 44 ? `${t.slice(0, 42).trimEnd()}…` : t || "New session";
+/**
+  What the person reads of a message, as thread.send may carry it (UserShown), checked: a line of text and up to 8 chips of
+  the known kinds, each cut to a sane length. Anything else is dropped, never the message.
+
+  Where `shown` may go, and nowhere else: the user item and the queued message that hold it; the app's timeline and queue
+  row; the session's title and a commit's subject (labels the person reads, named after what they asked); the export (for
+  the person, beside the text); and the person's own session search in the app (sessions.search, `person`). It never goes
+  to an agent or an outside tool: prompts, handoffs, the reviewer, steers, agent-side session search (sessions_search),
+  outside-tools readouts and the Desk all read `text`, which is what the agent was told. A short line Liner wrote for the
+  person would read to another agent as something the person said that was never said to the agent. The one label made
+  from it that agents also see, the session's name, reaches them as memory.ts titleForAgents gives it: from `text`. One
+  place hands the person's name on as it is: add-on panels (panels.ts session.info and sessions.list), which are drawn for
+  the person; a panel that passes that name to ai.ask passes what the person reads.
+*/
+const SHOWN_KINDS = new Set(["check", "frame", "layer", "compare", "build"]);
+export function shownOf(x: unknown): UserShown | undefined {
+  if (!x || typeof x !== "object") return undefined;
+  const o = x as { text?: unknown; chips?: unknown };
+  if (typeof o.text !== "string") return undefined;
+  const chips = (Array.isArray(o.chips) ? (o.chips as { kind?: unknown; label?: unknown }[]) : [])
+    .filter((c) => Boolean(c) && typeof c === "object" && SHOWN_KINDS.has(c.kind as string) && typeof c.label === "string" && Boolean(c.label.trim()))
+    .slice(0, 8)
+    .map((c) => ({ kind: c.kind as ShownChip["kind"], label: (c.label as string).trim().slice(0, 80) }));
+  const text = o.text.trim().slice(0, 2000);
+  if (!text && !chips.length) return undefined;
+  return { text, ...(chips.length ? { chips } : {}) };
 }
+
+// The first words of a first message, as a session's name: memory.ts has it, beside the name agents read.
+export { titleFrom };
 
 /**
   The conversation so far, for a session that starts fresh. What you asked stays whole and the

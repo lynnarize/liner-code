@@ -6,7 +6,8 @@
   promises for every edit:
 
   - the first ask draws Foreshore, the tide tables sample of the approved mockup: seven frames one
-    after another, into empty frames Design Home made where there are some, in two tidy rows. It
+    after another, each written in a few parts so the canvas shows it arriving (piecesOf), into
+    empty frames Design Home made where there are some, in two tidy rows. It
     follows the folder's lean when there is one; it writes a DESIGN.md only when the ask says to
     (the lean is optional);
   - Build writes a small page per named frame under src/pages/, from the frame's own HTML, and
@@ -25,7 +26,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { DesignFile, DesignFrame } from "../../../contracts/src/index.ts";
 import { designDir, inDesign } from "../canvas.ts";
-import { addressable, applyOps, attr, outline, parse } from "../canvas-html.ts";
+import { addressable, applyOps, attr, elements, outline, parse, type El } from "../canvas-html.ts";
 import { atomic, inside, leanFile, noLinks, safeSlug } from "../lean.ts";
 import type { OpenOptions, TurnSink } from "./types.ts";
 
@@ -49,6 +50,48 @@ export function foreshorePage(src: string, night = false) {
   const html = readFileSync(join(FORESHORE, src), "utf8");
   return night ? toNight(html) : html;
 }
+/*
+  A page in the pieces the Demo writes it in, as an agent writing a screen part by part would: the
+  page with nothing in its body first, then more of its parts each time, the last piece the page
+  whole. The parts are the body's own children (or, when the body holds one wrapper, the wrapper's).
+  The first part with something in it stays small (30 elements at most where it can), so the canvas
+  settles it in rather than taking it for a whole page written at once (Frame.tsx planOf). The page's
+  own scripts come only with the last piece: one run on a half-written page throws, since what it
+  looks for isn't there yet.
+*/
+export function piecesOf(html: string, parts = 3): string[] {
+  const doc = parse(html);
+  const all = elements(doc);
+  let box = all.find((e) => e.tag === "body");
+  const kidsOf = (e: El) => e.children.filter((c): c is El => "tag" in c && c.tag !== "script");
+  while (box) {
+    const real = kidsOf(box).filter((k) => !/^(style|template)$/.test(k.tag));
+    if (real.length === 1 && kidsOf(real[0]).length >= 2) box = real[0];
+    else break;
+  }
+  const kids = box ? kidsOf(box) : [];
+  if (kids.length < 2) return [html];
+  const scripts = all.filter((e) => e.tag === "script" && !e.foreign);
+  const size = (a: number, b: number) => all.filter((e) => e.start >= kids[a].start && e.end <= kids[b - 1].end).length;
+  // The first part: a third of the children at most, within 30 elements, at least one.
+  let first = 1;
+  const cap = Math.max(1, Math.floor(kids.length / 3));
+  while (first < cap && size(0, first + 1) <= 30) first++;
+  const rest = kids.length - first;
+  const cuts = [0, first];
+  const more = Math.max(1, Math.min(parts - 1, rest));
+  for (let i = 1; i < more; i++) cuts.push(first + Math.round((rest * i) / more));
+  const end = kids[kids.length - 1].end;
+  // Each piece is the page with the children from its cut on taken out, and every script; the last is the page itself.
+  const piece = (c: number) => {
+    const out: [number, number][] = [[kids[c].start, end], ...scripts.filter((s) => s.end <= kids[c].start || s.start >= end).map((s): [number, number] => [s.start, s.end])];
+    let page = html;
+    for (const [a, b] of out.sort((x, y) => y[0] - x[0])) page = page.slice(0, a) + page.slice(b);
+    return page;
+  };
+  return [...cuts.map(piece), html];
+}
+
 const toNight = (html: string) => html.replace(/<html([^>]*)>/i, (m, a: string) => (/class=/.test(a) ? m.replace(/class="([^"]*)"/, 'class="$1 night"') : `<html${a} class="night">`));
 const toDay = (html: string) => html.replace(/(<html[^>]*class="[^"]*?)\s*\bnight\b/i, "$1").replace(/<html([^>]*) class=""/i, "<html$1");
 const isNight = (html: string) => /<html[^>]*class="[^"]*\bnight\b/i.test(html);
@@ -275,8 +318,12 @@ async function drawAll(c: Ctx, had: DesignFile | null, ask: string) {
     const path = have?.path ?? `frames/${id}.html`;
     const call = { key: `${t}-f${n}`, tool: "Write", toolKind: "write" as const, title: `Draw ${s.name}`, path: `${rel}/${path}` };
     sink.tool({ ...call, status: "running", input: JSON.stringify({ file_path: `${rel}/${path}`, size: `${s.w} × ${s.h}` }) });
-    await pause(gap, signal);
-    atomic(frameFile(o.cwd, slug, { id, path }), foreshorePage(s.src, s.night));
+    await pause(gap * 0.3, signal);
+    // The frame goes on the canvas empty, then fills in a part at a time (piecesOf), each far enough
+    // apart for the canvas to hear it on its own (the folder's watch waits 250 ms for a file to settle).
+    const pieces = piecesOf(foreshorePage(s.src, s.night));
+    const abs = frameFile(o.cwd, slug, { id, path });
+    atomic(abs, pieces[0]);
     // Its own frames keep where the person moved them; anything else goes in the rows.
     const mine = have?.by?.agent === "demo";
     const frame: DesignFrame = { ...(have ?? {}), id, page: have?.page ?? page, name: s.name, kind: "drawn", path, x: mine ? have!.x : s.x + dx, y: mine ? have!.y : s.y + dy, w: s.w, h: s.h, by: { agent: "demo", name: "Demo" }, ...(s.screen === false ? { screen: false as const } : {}) };
@@ -284,6 +331,10 @@ async function drawAll(c: Ctx, had: DesignFile | null, ask: string) {
     file = readIndex(o.cwd, slug) ?? file;
     file = { ...file, frames: file.frames.some((f) => f.id === id) ? file.frames.map((f) => (f.id === id ? { ...frame, ...(f.by?.agent === "demo" ? { x: f.x, y: f.y } : {}) } : f)) : [...file.frames, frame] };
     writeIndex(o.cwd, slug, file);
+    for (const piece of pieces.slice(1)) {
+      await pause(gap * 0.5, signal);
+      atomic(abs, piece);
+    }
     sink.tool({ ...call, status: "done", output: `${s.w} × ${s.h}${s.night ? ", the night chart" : ""}${taken.get(s.name)?.id === id ? `, into the empty “${taken.get(s.name)!.name}”` : ""}` });
     plan(++n);
   }

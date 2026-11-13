@@ -56,6 +56,12 @@ export type ApprovalRequest = {
   fields: { label: string; value: string }[];
   /** What "Don't ask again for … this session" would allow, like "pnpm test" or "Edit". */
   rule?: string;
+  /**
+    Nothing of the tool's own has judged this step: it has no auto mode (OpenCode and the other ACP tools), or its Auto
+    can't run here (noAuto). In Auto, Liner Code then lets a routine command through itself (risk.ts, routine). Left out
+    where the tool's Auto did run: what that hands over, it meant for you.
+  */
+  unjudged?: boolean;
 };
 
 export type TurnSink = {
@@ -143,7 +149,7 @@ export type OpenOptions = {
   dirs?: string[];
   /** Claude Code subagents this agent brings (Explorer, Test runner, Opus for hard parts). */
   subagents?: Record<string, { description: string; prompt: string; tools?: string[]; model?: string }>;
-  /** Auto can't run here (Claude Code through another maker's API, whose safety check runs only with Anthropic): it runs as Edits on its own. */
+  /** Auto can't run here (Claude Code through another maker's API, whose safety check runs only with Anthropic): it runs as Edits on its own, with Liner Code letting routine commands through. */
   noAuto?: boolean;
   /** PATH and friends, from the shell that launched the app. */
   env: NodeJS.ProcessEnv;

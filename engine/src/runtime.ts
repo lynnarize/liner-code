@@ -38,7 +38,7 @@ import { briefOf } from "./agents.ts";
 import { modeNote } from "./creator.ts";
 import { designNote, type DesignMark } from "./lean.ts";
 import { memoryNote } from "./memory.ts";
-import { commandRisk, plainGit, readsOnly, ruleFor } from "./risk.ts";
+import { commandRisk, namesSecret, plainGit, readsOnly, routine, ruleFor } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, type BriefOutcome } from "./sidekick.ts";
 
@@ -2342,7 +2342,12 @@ export class Runtime {
         const toolId = req.key ? tools.get(req.key)?.id : undefined;
         const access = now.access;
         // Auto: the tool's own auto mode lets through what it can; of what it hands over, reading and editing go ahead.
-        if (!held && access === "auto" && req.risk !== "high" && (command === undefined ? EDIT_TOOLS.has(req.tool) : readsOnly(command))) return Promise.resolve({ allow: true });
+        // A tool with no such mode hands over every command, so a routine one goes ahead too: rated low, inside its
+        // folder, sending nothing out (risk.ts, routine). The rest still comes to you.
+        const plain = () => Boolean(req.unjudged && command !== undefined && routine(command, now.worktree?.path ?? store.project(now.projectId).path) && !leavesMac(command));
+        // A command that names a .env file is neither, though it only reads: what it prints goes to the model (risk.ts, namesSecret).
+        const secret = command !== undefined && namesSecret(command);
+        if (!held && access === "auto" && req.risk !== "high" && (command === undefined ? EDIT_TOOLS.has(req.tool) : !secret && (readsOnly(command) || plain()))) return Promise.resolve({ allow: true });
         const ask = (note?: string) => {
           // Stopped while the Reviewer read the step, or the turn ended: nothing to ask about.
           if (sig.aborted || signal.aborted || over) return Promise.resolve({ allow: false });
@@ -2356,7 +2361,8 @@ export class Runtime {
         };
         // Reviewer decides: reading goes ahead, what can't be undone comes to you, the Reviewer calls the rest.
         if (!held && access === "review" && req.risk !== "high") {
-          if (command !== undefined && readsOnly(command)) return Promise.resolve({ allow: true });
+          // One that names a .env file is the Reviewer's to read like any other step.
+          if (command !== undefined && readsOnly(command) && !secret) return Promise.resolve({ allow: true });
           return this.stepCall(threadId, req, AbortSignal.any([sig, signal])).then((call) => {
             // Its word is no good once you've stopped the turn it was for.
             if (sig.aborted || signal.aborted || over) return { allow: false };
@@ -2366,7 +2372,7 @@ export class Runtime {
             return { allow: true };
           });
         }
-        return ask();
+        return ask(secret && access === "auto" ? "This names a .env file, which often holds keys, and what the command prints goes to the model. So Auto leaves it to you." : undefined);
       },
       ask: (questions: Question[], sig, o) => {
         // Nobody answers after the turn, nor an optional question in a routine's step: the agent carries on with its own best guess.

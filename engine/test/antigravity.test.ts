@@ -179,6 +179,8 @@ test("antigravity: Auto is agy's default mode with Liner Code answering, as for 
   const edit = { kind: "edit", title: "File src/a.ts", locations: [{ path: "src/a.ts" }], rawInput: { Path: "src/a.ts" } };
   assert.deepEqual(await agyAsk(edit, "auto"), { card: false, picked: "yes" });
   assert.deepEqual(await agyAsk({ kind: "execute", title: "touch x", rawInput: { CommandLine: "touch x" } }, "auto"), { card: true, picked: "no" });
+  // Said to be nobody's call yet, so at Auto the runtime lets a routine command through instead of drawing the card (risk.ts, routine).
+  assert.equal(asked[0]?.unjudged, true);
 });
 
 test("antigravity: Read only, refused by agy, is said; the session doesn't pretend it switched", async () => {
@@ -231,6 +233,8 @@ test("antigravity: Liner Code's tools are known inside call_mcp_tool, on the ser
 });
 
 /** One ask agy sends at Ask: whether it came to the person as a card, and what Liner Code answered. */
+/** What the last agyAsk handed the runtime to answer. */
+let asked: ApprovalRequest[] = [];
 async function agyAsk(toolCall: Record<string, unknown>, access: Access = "ask", mcp = true) {
   const fake = fakeAgy();
   const options = [{ optionId: "yes", kind: "allow_once" }, { optionId: "no", kind: "reject_once" }];
@@ -239,6 +243,7 @@ async function agyAsk(toolCall: Record<string, unknown>, access: Access = "ask",
   const r = recorder();
   await s.turn("go", r.sink, new AbortController().signal);
   s.close();
+  asked = r.cards;
   return { card: r.cards.length > 0, picked: fake.read().find((m) => m.id === 900 && !m.method)?.result?.outcome?.optionId };
 }
 

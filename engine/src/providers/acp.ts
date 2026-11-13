@@ -1228,7 +1228,7 @@ class AcpSession implements ProviderSession {
       const named = kind === "other" && !reaching && call.title !== "doom_loop" && /^[\w.:-]+$/.test(call.title ?? "");
       const rule = loose ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : kind !== "other" ? call.kind : named ? `tool ${call.title}` : undefined;
       const description = loose ? (away ? "This is outside the project." : "The agent didn't say which files this changes.") : undefined;
-      const a: { allow: boolean; reason?: string; level?: boolean } = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: this.titled(call.title ?? "Use a tool"), description, risk: loose ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule }, signal).catch(() => ({ allow: false }));
+      const a: { allow: boolean; reason?: string; level?: boolean } = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: this.titled(call.title ?? "Use a tool"), description, risk: loose ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule, unjudged: true }, signal).catch(() => ({ allow: false }));
       // Refused by the level (Read only), with no card: ACP's answer carries no words, so the model hears why as its next turn starts.
       if (a.level && a.reason) this.refusedLast = `Last turn Liner Code refused a step: ${a.reason}`;
       // Stopped while it asked: a request open when the prompt is cancelled is answered "cancelled", as ACP

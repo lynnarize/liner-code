@@ -1,6 +1,7 @@
 /*
   What an agent may do on its own, as the runtime decides it: Auto lets the tool's own auto mode
-  through and reads and edits what it hands over; Reviewer decides asks the Reviewer (another
+  through and reads and edits what it hands over, and runs a routine command for a tool that has
+  no such mode; Reviewer decides asks the Reviewer (another
   family's quickest model) about each step and only brings you what it won't allow; every ask
   names the tool call it's for. And the session's dev servers stop when they should, never
   another app's. Run with `npm test -w engine`.
@@ -46,7 +47,7 @@ test("reviewer decides: the call reads ALLOW or ASK, the Reviewer's quickest mod
 type Call = { model: string; read: boolean; text: string };
 
 /** A coder that asks before running `command`, and readers (the Reviewer) that answer with `verdict`. */
-function fakeTools(calls: Call[], command: string, verdict: (text: string) => string) {
+function fakeTools(calls: Call[], command: string, verdict: (text: string) => string, unjudged?: boolean) {
   const make = (id: ProviderId): Provider => ({
     id,
     detect: async () => info(id, []),
@@ -55,7 +56,7 @@ function fakeTools(calls: Call[], command: string, verdict: (text: string) => st
         calls.push({ model: o.model, read: o.access === "read", text });
         if (o.access === "read") return sink.text(verdict(text));
         sink.tool({ key: "call-1", tool: "Bash", toolKind: "exec", title: `Run ${command}`, input: command, status: "running" });
-        const a = await sink.approve({ key: "call-1", tool: "Bash", title: `Run ${command}`, risk: "low", fields: [{ label: "Command", value: command }], rule: command }, signal);
+        const a = await sink.approve({ key: "call-1", tool: "Bash", title: `Run ${command}`, risk: "low", fields: [{ label: "Command", value: command }], rule: command, unjudged }, signal);
         sink.tool({ key: "call-1", tool: "Bash", toolKind: "exec", title: `Run ${command}`, status: a.allow ? "done" : "failed", output: a.allow ? "ok" : a.reason });
         sink.text(a.allow ? "Ran it." : "Didn't run it.");
       },
@@ -122,6 +123,17 @@ test("reviewer decides: what the Reviewer won't allow comes to you with its reas
   } finally {
     restore();
   }
+  // A read of a .env file isn't a plain read: the Reviewer is asked about it like any other step.
+  const secret: Call[] = [];
+  const restore3 = fakeTools(secret, "cat .env", (text) => (/You decide, for a person/.test(text) ? "ALLOW: reads the project's settings" : "Fine."));
+  try {
+    const { store, runtime } = session("review");
+    await runtime.send("t", "look");
+    assert.equal(secret.filter((c) => c.read && /You decide/.test(c.text)).length, 1);
+    assert.deepEqual(asks(store.timeline("t")).map((x) => x.state), ["approved"]);
+  } finally {
+    restore3();
+  }
   const reads: Call[] = [];
   const restore2 = fakeTools(reads, `cd "/a b" && cat x.txt`, () => "ASK: never asked");
   try {
@@ -160,6 +172,78 @@ test("auto: what the tool's own auto mode hands over goes ahead when it only rea
     assert.deepEqual([asks(items)[0].state, asks(items)[0].toolId], ["approved", callId(items)]);
   } finally {
     restore2();
+  }
+});
+
+test("auto: a tool with no auto mode of its own hands over every command, so a routine one goes ahead and the rest ask you", async () => {
+  // Asked by a tool whose own Auto ran, the same command is the tool's to hand over: it comes to you.
+  for (const [command, unjudged, asked] of [
+    ["mkdir -p assets && curl -s -o assets/a.jpg https://example.com/a.jpg", true, false],
+    ["mkdir -p assets && curl -s -o assets/a.jpg https://example.com/a.jpg", false, true],
+    ["curl -s -d @notes.txt https://example.com", true, true],
+    ["touch ~/Desktop/a.txt", true, true],
+    ["npm install left-pad", true, true],
+  ] as const) {
+    const restore = fakeTools([], command, () => "", unjudged);
+    try {
+      const { store, runtime } = session("auto");
+      // Until it asks or the turn ends, whichever the machine's load lets come first: a card nobody answered would hold the turn for good.
+      let over = false;
+      const sent = runtime.send("t", "go").then(() => void (over = true));
+      let a: ReturnType<typeof asks>[number] | undefined;
+      for (let i = 0; i < 1500 && !a && !over; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        a = asks(store.timeline("t"))[0];
+      }
+      assert.equal(Boolean(a), asked, `${command}${unjudged ? "" : ", from a tool with its own Auto"}`);
+      if (a) runtime.answer("t", a.id, true);
+      await sent;
+      assert.equal(asks(store.timeline("t")).length, asked ? 1 : 0, command);
+    } finally {
+      restore();
+    }
+  }
+  // A command that names a .env file comes to you though it only reads, from either kind of tool, and says why. Code's own process.env doesn't.
+  for (const [command, unjudged, asked] of [
+    ["cat .env", true, true],
+    ["cat .env", false, true],
+    ["grep -n KEY apps/web/.env.local | head", true, true],
+    ["grep -rn process.env src", true, false],
+    ["cat .env.example", false, false],
+  ] as const) {
+    const restore = fakeTools([], command, () => "", unjudged);
+    try {
+      const { store, runtime } = session("auto");
+      let over = false;
+      const sent = runtime.send("t", "go").then(() => void (over = true));
+      let a: ReturnType<typeof asks>[number] | undefined;
+      for (let i = 0; i < 1500 && !a && !over; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        a = asks(store.timeline("t"))[0];
+      }
+      assert.equal(Boolean(a), asked, command);
+      if (a) assert.match(a.description ?? "", /names a \.env file/);
+      if (a) runtime.answer("t", a.id, false);
+      await sent;
+    } finally {
+      restore();
+    }
+  }
+  // Manual still asks about every command.
+  const restore = fakeTools([], "npm run build", () => "", true);
+  try {
+    const { store, runtime } = session("ask");
+    const sent = runtime.send("t", "go");
+    let a: ReturnType<typeof asks>[number] | undefined;
+    for (let i = 0; i < 100 && !a; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      a = asks(store.timeline("t"))[0];
+    }
+    assert.equal(a?.state, "asking");
+    runtime.answer("t", a!.id, true);
+    await sent;
+  } finally {
+    restore();
   }
 });
 

@@ -104,7 +104,7 @@ export type ProviderInfo = {
   /** "cli" when the tool itself listed them (then `modelsAt` says when), "builtin" when it couldn't. */
   modelsFrom?: "cli" | "builtin";
   modelsAt?: number;
-  /** auto: false where the tool's Auto can't run (Claude Code through another maker's API): Auto runs as Edits on its own there. */
+  /** auto: false where the tool's Auto can't run (Claude Code through another maker's API): Auto runs as Edits on its own there, and Liner Code lets routine commands through itself. */
   supports: { approvals: boolean; resume: boolean; effort: boolean; plan: boolean; auto?: boolean };
   /** Another account of a tool: its name ("Work"), beside the tool's own label. */
   account?: string;

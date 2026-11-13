@@ -230,8 +230,8 @@ test("auto: when Claude Code says its Auto can't run here, the session goes on a
     done(made[0]);
     await turn;
     assert.deepEqual(made[0].calls.modes, ["acceptEdits"], "switched once");
-    assert.equal(notices.filter((n) => /Edits on its own/.test(n)).length, 1);
-    assert.match(notices.find((n) => /Edits on its own/.test(n))!, /only runs with Anthropic's own models/);
+    assert.equal(notices.filter((n) => /Liner Code stands in for it/.test(n)).length, 1);
+    assert.match(notices.find((n) => /Liner Code stands in for it/.test(n))!, /only runs with Anthropic's own models[\s\S]*runs routine commands by itself, and asks about the rest/);
     assert.equal(notices.some((n) => /^Auto mode can't check/.test(n)), false, "Claude Code's own notice gives way to ours");
     // A later change to Auto stays Edits on its own.
     await s.update!({ model: "claude-opus-5-5", effort: "medium", access: "edits" });

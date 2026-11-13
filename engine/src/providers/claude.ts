@@ -408,7 +408,8 @@ const MODE: Record<Access, PermissionMode> ={ read: "plan", ask: "default", edit
 /**
   The permission mode for an access level. Auto needs Claude Code's safety check, which runs only with Anthropic's own models:
   through another maker's API (noAuto) every call would be refused, so Auto runs as Edits on its own there (acceptEdits,
-  with Liner Code's own answers: commands ask). The session keeps its level; another model gets Auto again.
+  with Liner Code's own answers: a routine command goes ahead, the rest ask; risk.ts, routine). The session keeps its
+  level; another model gets Auto again.
 */
 export const modeOf = (access: Access, noAuto?: boolean): PermissionMode => (access === "auto" && noAuto ? "acceptEdits" : MODE[access]);
 /** What Claude Code says when its Auto can't run here: in a notice, or as each refused call's result. */
@@ -830,6 +831,8 @@ class ClaudeSession implements ProviderSession {
             risk: forced ? "high" : kind === "exec" ? commandRisk(command) : kind === "edit" || kind === "write" ? "low" : "medium",
             fields,
             rule: forced || suppressAlwaysAllowRule ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" || kind === "write" ? "Edit" : name,
+            // Its Auto can't run here, so nothing has read this step: Liner Code lets a routine command through at Auto (risk.ts, routine).
+            unjudged: Boolean(this.noAuto),
           },
           signal,
         );
@@ -1830,7 +1833,7 @@ class ClaudeSession implements ProviderSession {
     if (this.access !== "auto" || this.noAuto) return false;
     this.noAuto = true;
     void this.q?.setPermissionMode(modeOf("auto", true)).catch(() => {});
-    sink.notice("Auto can't run in this session: the safety check it relies on only runs with Anthropic's own models, and this one goes through another service. So it goes on as Edits on its own: it edits files by itself and asks before commands. Send again what was refused.");
+    sink.notice("Auto can't run in this session: the safety check it relies on only runs with Anthropic's own models, and this one goes through another service. So Liner Code stands in for it: it edits files and runs routine commands by itself, and asks about the rest. Send again what was refused.");
     return true;
   }
 

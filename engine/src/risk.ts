@@ -2,6 +2,8 @@
   How risky a tool call is, for the approval card: high risk approves with a hold instead of a
   press, and in Full access the guard still asks about anything that can't be undone.
 */
+import { homedir } from "node:os";
+import { posix, win32 } from "node:path";
 import type { Risk, ToolKind } from "../../contracts/src/index.ts";
 
 const HIGH = [
@@ -195,6 +197,77 @@ function sedScriptReads(s: string) {
       i += flags.length;
     } else if (/[\d\s,$!;{}+~pP=lnNqQdDgGhHx]/.test(ch)) i++;
     else return false;
+  }
+  return true;
+}
+
+/** A name ending in .env or starting with it (.env, .env.local, prod.env), wherever it stands in a command. */
+const ENV_NAME = /(?:^|[^\w.-])([\w.-]*\.env(?:\.[\w.-]+)?)(?![\w.-])/gi;
+
+/**
+  Whether a command names a .env file, which often holds keys: what the command prints goes to the model, and so to
+  whoever runs the model. Auto and Reviewer decides let no such command through as a plain read, whatever it does with
+  the file. Not an example (.env.example), which is made to be read, a folder (.env.d/x), nor code's own
+  `process.env.X` and `import.meta.env`, which a search of the project is full of. The same files as acp.ts's secretFile.
+*/
+export function namesSecret(command: string) {
+  for (const m of command.matchAll(ENV_NAME)) {
+    const name = m[1];
+    const next = command[m.index + m[0].length] ?? "";
+    if (next === "/" || next === "\\") continue;
+    if (/\.example$/i.test(name) || /(?:^|\.)(?:process|meta)\.env(?:\.|$)/.test(name)) continue;
+    return true;
+  }
+  return false;
+}
+
+/** Rated low, yet a rating says too little about them for Auto to run them unasked. */
+const ASKS = [
+  // Deleting, however small, and stopping programs that may not be its own.
+  /\b(?:rm|rmdir|unlink|shred|trash)\b/,
+  /\b(?:kill|pkill|killall)\b/,
+  // A script that isn't a file of the project: piped into a shell or an interpreter, decoded, or put together as text.
+  /\|\s*(?:env\s+)?(?:(?:ba|z|da|k|fi)?sh|python[\d.]*|node|perl|ruby|php|osascript)\b/,
+  /\beval\b|\bbase64\b[^;&|\n]*\s(?:-d|-D|--decode)\b/,
+  // What sets up this computer rather than the project.
+  /\b(?:osascript|launchctl|crontab|security|networksetup|scutil|dscl)\b|\bdefaults\s+write\b/,
+  // A web address put together from what another command prints.
+  /https?:\/\/[^\s"']*(?:\$\(|`)/i,
+];
+if (process.platform === "win32") ASKS.push(/\b(?:del|erase|rd|Remove-Item|ri|taskkill|Stop-Process|iex|Invoke-Expression|schtasks|Set-ExecutionPolicy)\b|\breg\s+add\b/i);
+/** A command that talks to the network, and a name that reads like a key or a password: the two together come to you. */
+const NETWORK = /\b(?:curl|wget|nc|ncat|telnet|ftp|http|https|xh)\b|\bInvoke-(?:WebRequest|RestMethod)\b/i;
+const SECRET_NAME = /\.env\b|\.pem\b|\.ssh\b|\.npmrc\b|\.netrc\b|id_(?:rsa|ed25519|ecdsa)|credential|keychain|secret|passw|token|api[_-]?key/i;
+/** A place written from the root, from home or from a drive, as a word's start. A web address isn't one: `:` starts no word. */
+const PLACE = /(?:^|[\s"'=(<>])((?:~|\$HOME\b|\$\{HOME\}|\/|[A-Za-z]:[\\/]|\\\\)[^\s"'`;&|<>()]*)/g;
+/** `..`, a step up out of the folder. */
+const UP = /(?:^|[\s"'=(<>\/\\])\.\.(?:[\/\\]|[\s"';&|)]|$)/;
+/** Outside the project and still nobody's: where output is thrown away, and the temporary folders. */
+const SPARE = /^\/(?:dev\/(?:null|stdout|stderr|stdin|tty)|(?:private\/)?tmp|(?:private\/)?var\/folders)(?:\/|$)/;
+
+/**
+  What Auto runs without asking on a tool with no safety check of its own (OpenCode and the other ACP tools, Claude Code
+  through another maker's API): a command rated low that names no place outside its folder and isn't one of the few a low
+  rating says too little about. All of it is read off the text, as the rating is: nothing here judges what a command is
+  for, so what the text can't vouch for comes to you, and a pattern that only looks like a path (`grep "/api/"`) does too.
+*/
+export function routine(command: string, cwd: string, platform = process.platform) {
+  if (!command.trim() || commandRisk(command) !== "low" || namesSecret(command)) return false;
+  const texts = [command, bareNames(command)];
+  if (ASKS.some((r) => texts.some((c) => r.test(c)))) return false;
+  if (NETWORK.test(command) && SECRET_NAME.test(command)) return false;
+  if (UP.test(command)) return false;
+  const paths = platform === "win32" ? win32 : posix;
+  const fold = (p: string) => (platform === "win32" ? p.toLowerCase() : p);
+  const root = fold(paths.resolve(cwd));
+  for (const [, place] of command.matchAll(PLACE)) {
+    if (SPARE.test(place)) continue;
+    // Home is outside unless the project is under it and the path says so in full.
+    const written = place.replace(/^(?:~|\$HOME\b|\$\{HOME\})(?=$|[\\/])/, homedir());
+    // `~someone` is another person's home.
+    if (/^[~$]/.test(written)) return false;
+    const full = fold(paths.resolve(written));
+    if (full !== root && !full.startsWith(root + paths.sep)) return false;
   }
   return true;
 }

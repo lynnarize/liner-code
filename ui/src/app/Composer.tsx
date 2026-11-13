@@ -773,7 +773,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               <button key={l.id} type="button" role="radio" aria-checked={settings.access === l.id} className="lc-perm-r l-focus" onClick={() => pick(l.id)}>
                 <span className="lc-perm-t">
                   <b>{l.label}</b>
-                  <small>{l.id === "auto" && noAuto ? "With this model it edits on its own and asks before commands: the safety check Auto relies on only runs on Anthropic's own models." : l.note}</small>
+                  <small>{l.id === "auto" && noAuto ? "With this model Liner Code decides what's routine itself, by simple rules: the safety check Auto relies on only runs on Anthropic's own models." : l.note}</small>
                 </span>
                 {settings.access === l.id && <I.check size={16} />}
                 <kbd className="lc-perm-k">{i + 1}</kbd>

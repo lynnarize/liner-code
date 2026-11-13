@@ -7,33 +7,40 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 import { ACCESS_NAMES, type ApprovalWhy, type Risk, type ToolKind } from "../../contracts/src/index.ts";
 
+/**
+  Any start of a long flag's name as a pattern, `--h` up to `--hard`: git's parse-options takes each start only that flag
+  begins with (`git reset --h` is --hard, `git clean --f` is --force, `git restore --sta --work` throws the worktree away).
+*/
+const startOf = (name: string) => `--${name[0]}` + [...name.slice(1)].reduceRight((rest, ch) => `(?:${ch}${rest})?`, "");
+
 /** Gone for good: the text completes "Can't be undone: …". */
 const HIGH: [RegExp, string][] = [
   // rm recursive and forced, however its flags are written: -rf, -r -f, -Rfv, --recursive --force,
   // and the --rec --f that GNU rm takes for them.
   [/\brm\b(?=[^;&|\n]*\s(?:-[a-zA-Z]*[rR][a-zA-Z]*|--r[a-z]*)\b)(?=[^;&|\n]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--f[a-z]*)\b)/, "deletes files for good"],
   [/\brm\s+-[a-z]*r\b.*\s(\/|~|\$HOME|\.\.?)(\s|$)/i, "deletes a whole folder for good"],
-  [/\bgit\s+push\b.*(--force|-f\b|--force-with-lease)/i, "writes over what the remote had"],
-  [/\bgit\s+reset\b[^;&|\n]*\s--hard\b/i, "throws away changes that aren't committed"],
-  [/\bgit\s+clean\b[^;&|\n]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--force)\b/i, "deletes the files git doesn't track"],
+  // A refspec with a + in front (`git push origin +main`) forces that one.
+  [/\bgit\s+push\b.*(--force|-f\b|--force-with-lease|\s\+[^\s;&|])/i, "writes over what the remote had"],
+  [new RegExp(String.raw`\bgit\s+reset\b[^;&|\n]*\s${startOf("hard")}\b`, "i"), "throws away changes that aren't committed"],
+  [new RegExp(String.raw`\bgit\s+clean\b[^;&|\n]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|${startOf("force")})\b`, "i"), "deletes the files git doesn't track"],
   // What throws away work git can't give back: changes not committed, stashes, unmerged branches.
   // [^;&|\n]* keeps a rule to the one command, so a later one in a chain isn't read as its flag.
   [/\bgit\s+branch\b[^;&|\n]*\s-[a-zA-Z]*D/, "deletes a branch that may not be merged"],
-  [/\bgit\s+branch\b(?=[^;&|\n]*\s(?:-[a-zA-Z]*d|--delete)\b)(?=[^;&|\n]*\s(?:-[a-zA-Z]*f|--force)\b)/, "deletes a branch that may not be merged"],
+  [new RegExp(String.raw`\bgit\s+branch\b(?=[^;&|\n]*\s(?:-[a-zA-Z]*d|${startOf("delete")})\b)(?=[^;&|\n]*\s(?:-[a-zA-Z]*f|${startOf("force")})\b)`), "deletes a branch that may not be merged"],
   [/\bgit\s+checkout\b[^;&|\n]*\s--(?:\s|$)/, "throws away changes that aren't committed"],
   [/\bgit\s+checkout\b[^;&|\n]*\s\.(?:\/[^\s;&|]*)?(?=[\s;&|]|$)/, "throws away changes that aren't committed"],
-  [/\bgit\s+checkout\b[^;&|\n]*\s(?:-f|--force)\b/, "throws away changes that aren't committed"],
+  [new RegExp(String.raw`\bgit\s+checkout\b[^;&|\n]*\s(?:-f|${startOf("force")})\b`), "throws away changes that aren't committed"],
   // git restore puts back the working tree unless it's told only --staged (the index).
   [/\bgit\s+restore\b(?![^;&|\n]*\s(?:--staged|-S)\b)/, "throws away changes that aren't committed"],
-  [/\bgit\s+restore\b(?=[^;&|\n]*\s(?:--worktree|-W)\b)/, "throws away changes that aren't committed"],
+  [new RegExp(String.raw`\bgit\s+restore\b(?=[^;&|\n]*\s(?:${startOf("worktree")}|-W)\b)`), "throws away changes that aren't committed"],
   [/\bgit\s+stash\s+(?:clear|drop)\b/, "throws away stashed changes"],
-  [/\bgit\s+switch\b[^;&|\n]*\s(?:--discard-changes|-f|--force)\b/, "throws away changes that aren't committed"],
-  [/\bgit\s+worktree\s+remove\b[^;&|\n]*\s(?:--force|-f)\b/, "removes a worktree with its changes"],
+  [new RegExp(String.raw`\bgit\s+switch\b[^;&|\n]*\s(?:${startOf("discard-changes")}|-f|${startOf("force")})\b`), "throws away changes that aren't committed"],
+  [new RegExp(String.raw`\bgit\s+worktree\s+remove\b[^;&|\n]*\s(?:${startOf("force")}|-f)\b`), "removes a worktree with its changes"],
   [/\bfind\b[^;&|\n]*\s['"]?-delete\b/, "deletes files for good"],
   [/\bfind\b[^;&|\n]*\s['"]?-exec(?:dir)?['"]?\s+['"]?rm\b/, "deletes files for good"],
   [/\bsudo\b/, "runs as the administrator"],
   [/\bmkfs\b|\bdd\s+if=/, "writes over a disk"],
-  [/\bchmod\s+-R\s+777\b/, "opens every file in a folder to anyone"],
+  [new RegExp(String.raw`\bchmod\s+(?:-R|${startOf("recursive")})\s+777\b`), "opens every file in a folder to anyone"],
   [/(curl|wget)[^|]*\|\s*(sh|bash|zsh)\b/, "runs a script straight from the web"],
   [/\bdrop\s+(table|database)\b/i, "deletes a database table"],
   [/\btruncate\s+table\b/i, "empties a database table"],
@@ -58,7 +65,7 @@ if (process.platform === "win32")
 const MEDIUM: [RegExp, ApprovalWhy][] = [
   [/\bgit\s+push\b/, { kind: "network", text: "it pushes to a remote" }],
   [/\bgit\s+(commit|merge|rebase|tag)\b/, { kind: "changes", text: "it changes the git history" }],
-  [/\bgit\s+branch\b[^;&|\n]*\s(?:-d|--delete)\b/, { kind: "changes", text: "it deletes a branch" }],
+  [new RegExp(String.raw`\bgit\s+branch\b[^;&|\n]*\s(?:-d|${startOf("delete")})\b`), { kind: "changes", text: "it deletes a branch" }],
   [/\b(npm|pnpm|yarn|bun)\s+(i|install|add|remove)\b/, { kind: "changes", text: "it installs a package" }],
   [/\bpip\s+install\b/, { kind: "changes", text: "it installs a package" }],
   [/\bbrew\s+install\b/, { kind: "changes", text: "it installs a package" }],
@@ -133,19 +140,23 @@ export function readsOnly(command: string) {
   if (!bare || /[<>`'"\\()]|\$\u0000|(?:^|[\s;&|])#/.test(bare)) return false;
   // A lone & and a new line start another command as surely as ; does.
   return bare.split(/&&|\|\||;|\||&|[\r\n]/).every((part) => {
+    // Not a cd into git's own folder: a shell the tool keeps between commands writes the next one's `config` there.
+    const cd = /^cd\s+(\S+)$/.exec(part.trim());
+    if (cd && intoGit(cd[1].replace(/\u0000(\d+)\u0000/g, (_, i: string) => quoted[Number(i)]))) return false;
     const p = part.trim().replace(/^cd\s+\S+$/, "pwd");
     const words = p.split(/\s+/).map((w) => w.replace(/\u0000(\d+)\u0000/g, (_, i: string) => quoted[Number(i)]));
     // A whole word: tree-sitter, cat-file-writer and the like are programs of their own.
     if (/^(pwd|ls|cat|head|tail|wc|nl|grep|stat|echo)(?=\s|$)/.test(p)) return true;
-    // rg --pre and --hostname-bin run a command; tree -o, file -C and git --output write a file.
-    if (/^rg(?=\s|$)/.test(p)) return !words.some((w) => /^--(pre|hostname-bin)(=|$)/.test(w));
-    if (/^tree(?=\s|$)/.test(p)) return !words.some((w) => /^-[^-]*o/.test(w));
-    if (/^file(?=\s|$)/.test(p)) return !words.some((w) => /^-[^-]*C|^--compile$/.test(w));
+    // rg --pre and --hostname-bin run a command; tree -o, file -C and git --output write a file. Long flags by any
+    // start of their name too (longFlagOf): getopt_long and git take `--comp` for `--compile`.
+    if (/^rg(?=\s|$)/.test(p)) return !words.some((w) => longFlagOf(w, ["pre", "hostname-bin"]));
+    if (/^tree(?=\s|$)/.test(p)) return !words.some((w) => /^-[^-]*[oRH]/.test(w) || longFlagOf(w, ["output", "fromfile"]));
+    if (/^file(?=\s|$)/.test(p)) return !words.some((w) => /^-[^-]*C/.test(w) || longFlagOf(w, ["compile"]));
     if (/^sed(?=\s|$)/.test(p)) return sedReads(words);
     // Read off the words with their quotes put back, so a quoted '-delete' is seen too.
     if (/^find(?=\s|$)/.test(p)) return !words.some((w) => /^-(delete|exec|ok|fprint|fls)/.test(w));
     if (/^git\s+branch(?=\s|$)/.test(p)) return branchLists(words.slice(2));
-    return /^git\s+(status|diff|log|show|ls-files|rev-parse)(?=\s|$)/.test(p) && !words.some((w) => /^--output(=|$)/.test(w));
+    return /^git\s+(status|diff|log|show|ls-files|rev-parse)(?=\s|$)/.test(p) && !words.some((w) => longFlagOf(w, ["output", "ext-diff"]));
   });
 }
 
@@ -230,14 +241,143 @@ const ENV_NAME = /(?:^|[^\w.-])([\w.-]*\.env(?:\.[\w.-]+)?)(?![\w.-])/gi;
   whoever runs the model. Auto and Reviewer decides let no such command through as a plain read, whatever it does with
   the file. Not an example (.env.example), which is made to be read, a folder (.env.d/x), nor code's own
   `process.env.X` and `import.meta.env`, which a search of the project is full of. The same files as acp.ts's secretFile.
+  Named any way the shell or a program could make the name: with quotes in it, as a pattern or a variable that could
+  stand for one (patternNamesSecret), .envrc, a search for what reads like a key, or a variable named like one.
 */
 export function namesSecret(command: string) {
-  for (const m of command.matchAll(ENV_NAME)) {
-    const name = m[1];
-    const next = command[m.index + m[0].length] ?? "";
-    if (next === "/" || next === "\\") continue;
-    if (/\.example$/i.test(name) || /(?:^|\.)(?:process|meta)\.env(?:\.|$)/.test(name)) continue;
-    return true;
+  // The name as written, and as the shell hands it over with its quotes out (`.e""nv` is `.env`).
+  for (const text of [command, ...shellWords(command).map(unquoted)]) {
+    for (const m of text.matchAll(ENV_NAME)) {
+      const name = m[1];
+      const next = text[m.index + m[0].length] ?? "";
+      if (next === "/" || next === "\\") continue;
+      if (/\.example$/i.test(name) || /(?:^|\.)(?:process|meta)\.env(?:\.|$)/.test(name)) continue;
+      return true;
+    }
+  }
+  // direnv's .envrc holds keys as often as .env does.
+  if (/(?:^|[^\w.-])[\w.-]*\.envrc(?![\w.-])/i.test(command)) return true;
+  // A search for what reads like a key (`grep -r API_KEY .`): what it prints is the key's line.
+  if (GREPS.test(command) && secretish(command)) return true;
+  // A variable named like a key (`echo $OPENAI_API_KEY`) prints the key.
+  for (const m of command.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)) if (secretish(m[1])) return true;
+  return patternNamesSecret(command);
+}
+
+/** A name that reads like a key, a token or a password, as a search pattern or a variable has it (API_KEY, apiKey, GH_TOKEN, accessToken), not tokenize or monkey. */
+const secretish = (s: string) => /(?:^|[^a-z])keys?(?:[^a-z]|$)|apikey|token(?![a-z])|secret|passw|credential/i.test(s) || /[a-z]Keys?(?![a-z])/.test(s);
+/** Variables the shell sets to what's no .env file: a folder, a name. */
+const PLAIN_VARS = /\$\{?(?:HOME|PWD|OLDPWD|USER|LOGNAME|TMPDIR|SHELL)\b\}?/g;
+/** What a pattern ends with, written out, that no .env file ends with: code, documents, pictures. */
+const CODE_END = /\.(?:[cm]?[jt]sx?|d\.ts|md|mdx|txt|py|go|rs|rb|java|kt|swift|c|h|cc|cpp|hpp|cs|php|css|scss|less|html|vue|svelte|astro|sh|sql|svg|png|jpe?g|gif|webp|ico|lua|ex|exs|dart|zig|log|csv|example|sample|template)$/i;
+/** A program that searches files' text, as a word of a command. */
+const GREPS = /(?:^|[\s;&|(`"'])(?:[ef]?grep|rg|ag|ack|findstr|select-string|sls)(?=[\s;&|)`"']|$)/i;
+
+/**
+  Whether a word the shell or the program fills in (a pattern `*`, `?`, `[…]`, a `{a,b}`, a variable or a substitution)
+  could stand for a .env name: `cat .e*v`, `cat .en[v]`, `tail .e?v.local`, `cat .e${X}nv`. Read off the word's last
+  part, with each such piece standing for any text. A search's own pattern, quoted whole so the shell leaves it alone
+  (`grep -rn "foo.*bar" src`), is a pattern for the text, not a name, and isn't read; one written bare is, since the
+  shell expands it to file names first.
+*/
+function patternNamesSecret(command: string) {
+  // Command by command (a quoted separator splits too early, which only ever reads more words as names).
+  for (const part of command.split(/[;&|\r\n]/)) {
+    const words = shellWords(part);
+    // Searches and git match their own arguments against file names (`rg -g '.e*'`, `grep --include`, a pathspec), so in
+    // them a quoted pattern counts too. Elsewhere only what the shell fills in: what isn't quoted, and what's in double
+    // quotes when a `$` or a backtick is in them; text quoted plainly is dropped, which only lets the rest match more.
+    const globs = words.some((w) => /^(?:[ef]?grep|rg|ag|ack|git|fd)$/i.test(unquoted(w)));
+    let pattern = false;
+    for (let i = 0; i < words.length; i++) {
+      const raw = words[i];
+      const w = globs ? unquoted(raw) : raw.replace(/'[^']*'/g, "").replace(/"([^"]*)"/g, (_, inner: string) => (/[$`]/.test(inner) ? inner : ""));
+      if (/^(?:[ef]?grep|rg|ag|ack)$/i.test(w)) {
+        pattern = true;
+        continue;
+      }
+      // The search's pattern: its first word that isn't a flag, quoted whole, right after the program or flags that take
+      // no value (so `rg -g '.e*'`, a flag's value, is still read as a name). -e and -f give the pattern another way.
+      if (pattern && w.startsWith("-")) {
+        if (!/^-[rRnliwvcosFEHhIsUP]+$|^--(?:line-number|ignore-case|recursive|count|fixed-strings|extended-regexp|word-regexp|no-heading|with-filename|smart-case)$/.test(w)) pattern = false;
+        continue;
+      }
+      if (pattern) {
+        pattern = false;
+        if (/^'[^']*'$|^"[^"$`]*"$/.test(raw)) continue;
+      }
+      const filled = w.replace(PLAIN_VARS, "x");
+      if (!/[*?[{$`]/.test(filled)) continue;
+      const last = filled.split(/[\\/]/).pop() ?? "";
+      // `*.ts`, `src/*.md`: what's written after the last pattern piece says it's code, not a key's file.
+      if (CODE_END.test(/[^*?\]}$`]*$/.exec(last)?.[0] ?? "")) continue;
+      if (globCouldBeEnv(last)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+  Whether a pattern could match a .env name: anything with `.env` at its end or followed by a dot, or `.envrc`. Read as
+  one machine over both, the pattern's pieces against the name's, with letters standing for themselves (any case: a
+  Mac's disk doesn't tell them apart) and `*`, `?`, a set, a `{…}` or a `$…` for what they can be.
+*/
+function globCouldBeEnv(pattern: string) {
+  // Each piece: "*" any text, "?" one character, or the characters it may be ("x" standing for any other character).
+  type Piece = { star: true } | { star: false; can: Set<string> };
+  const REPS = [".", "e", "n", "v", "r", "c", "x"];
+  const rep = (ch: string) => (REPS.includes(ch) ? ch : "x");
+  const pieces: Piece[] = [];
+  const p = pattern.toLowerCase();
+  for (let i = 0; i < p.length; i++) {
+    const ch = p[i];
+    if (ch === "*" || ch === "{" || ch === "$" || ch === "`") {
+      pieces.push({ star: true });
+      // A `{…}`, `${…}` or `$(…)` stands for any text up to where it closes; a `$name` up to the name's end.
+      const close = ch === "{" ? p.indexOf("}", i) : p[i + 1] === "{" ? p.indexOf("}", i) : p[i + 1] === "(" ? p.indexOf(")", i) : ch === "`" ? p.indexOf("`", i + 1) : -1;
+      if (close > i) i = close;
+      else if (ch === "$") while (/[a-z0-9_]/.test(p[i + 1] ?? "")) i++;
+    } else if (ch === "?") pieces.push({ star: false, can: new Set(REPS) });
+    else if (ch === "[" && p.indexOf("]", i + 2) > i) {
+      const end = p.indexOf("]", i + 2);
+      let body = p.slice(i + 1, end);
+      const not = /^[!^]/.test(body);
+      if (not) body = body.slice(1);
+      const has = new Set<string>();
+      for (let k = 0; k < body.length; k++) {
+        if (body[k + 1] === "-" && body[k + 2]) {
+          for (let c = body.charCodeAt(k); c <= body.charCodeAt(k + 2); c++) has.add(rep(String.fromCharCode(c)));
+          k += 2;
+        } else has.add(rep(body[k]));
+      }
+      // Negated, a set may be any character it doesn't name, and always some other one.
+      pieces.push({ star: false, can: new Set(not ? REPS.filter((r) => r === "x" || !has.has(r)) : [...has]) });
+      i = end;
+    } else pieces.push({ star: false, can: new Set([rep(ch)]) });
+  }
+  // The name's machine: 0 anything so far, 1 ".", 2 ".e", 3 ".en", 4 ".env" (a match), 5 ".env." and then anything (a match), 6 ".envr", 7 ".envrc" (a match).
+  const step = (s: number, c: string): number[] => {
+    if (s === 0) return c === "." ? [0, 1] : [0];
+    if (s === 5) return [5];
+    const next: Record<number, [string, number][]> = { 1: [["e", 2]], 2: [["n", 3]], 3: [["v", 4]], 4: [[".", 5], ["r", 6]], 6: [["c", 7]] };
+    return (next[s] ?? []).filter(([ch]) => ch === c).map(([, to]) => to);
+  };
+  const seen = new Set<string>();
+  const todo: [number, number][] = [[0, 0]];
+  while (todo.length) {
+    const [i, s] = todo.pop()!;
+    const key = `${i}:${s}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (i === pieces.length) {
+      if (s === 4 || s === 5 || s === 7) return true;
+      continue;
+    }
+    const piece = pieces[i];
+    if (piece.star) {
+      todo.push([i + 1, s]);
+      for (const c of REPS) for (const t of step(s, c)) todo.push([i, t]);
+    } else for (const c of piece.can) for (const t of step(s, c)) todo.push([i + 1, t]);
   }
   return false;
 }
@@ -281,10 +421,16 @@ const SKILL_ROOTS = [".agents/skills", ".claude/skills", ".codex/skills"];
 export type JudgeOptions = { platform?: NodeJS.Platform; home?: string; inside?: string[] };
 
 /**
-  What Auto runs without asking on a tool with no safety check of its own (OpenCode and the other ACP tools, Claude Code
-  through another maker's API): a command rated low that names no place outside its folder and isn't one of the few a low
-  rating says too little about. All of it is read off the text, as the rating is: nothing here judges what a command is
-  for, so what the text can't vouch for comes to you, and a pattern that only looks like a path (`grep "/api/"`) does too.
+  What Auto runs without asking on a tool with no safety check of its own (OpenCode and the other ACP tools, Antigravity,
+  Claude Code through another maker's API). An allowlist on top of a floor: the floor is the old check (rated low, or
+  medium only for a commit or an install from the lock file; naming no place outside its folder; none of the few a low
+  rating says too little about), and on top of it every part of the command must be one the list knows (unknownWhy:
+  KNOWN's programs and subcommands, with only literal words, redirects into the folder, and `cd` into a subfolder).
+  Anything else comes to you, never the other way round. All of it is read off the text, as the rating is: what the text
+  can't vouch for comes to you, and a pattern that only looks like a path (`grep "/api/"`) does too.
+  Not everything it lets through stays on the Mac: an install from the project's own lists (npm ci, pnpm install, yarn)
+  reaches the package registry and runs the packages' install scripts, and a build or test runs the project's own
+  scripts and config. That's the trade-off taken for Auto: what the project already says to install and run.
   `inside`: skill folders you allowed (skillOffer), inside for one word only: the script an interpreter runs as a file. Any
   other word naming a place in one (the same path again, another file there) is outside, and so is the script when the
   command has a redirect or sets a variable first, so nothing is written there and nothing changes what runs.
@@ -302,7 +448,9 @@ export function judge(command: string, cwd: string, o: JudgeOptions = {}): { ok:
   const home = o.home ?? homedir();
   if (!command.trim()) return { ok: false };
   const rated = riskOf(command);
-  if (rated.risk !== "low") return { ok: false, why: rated.why };
+  // Rated medium only for a commit or an install from the lock file, when every part is one of those or low; the
+  // allowlist below still has to know each part.
+  if (rated.risk === "high" || (rated.risk === "medium" && !localMedium(command, platform))) return { ok: false, why: rated.why };
   if (namesSecret(command)) return { ok: false, why: { kind: "level", text: `${ACCESS_NAMES.auto} leaves a command that names a .env file to you` } };
   const texts = [command, bareNames(command)];
   const asks = ASKS.find(([r]) => texts.some((c) => r.test(c)));
@@ -343,7 +491,11 @@ export function judge(command: string, cwd: string, o: JudgeOptions = {}): { ok:
     }
     outside.push(place);
   }
-  if (!outside.length) return { ok: true };
+  if (!outside.length) {
+    // All of the above is the floor. What passes it still runs only when every part of it is one the list knows.
+    const why = unknownWhy(command, { platform, paths, fold, root, script, cwd, home });
+    return why ? { ok: false, why } : { ok: true };
+  }
   // Named for what it is: a script an interpreter runs, in its skill's folder when it's one; else the place as written.
   const first = fold(paths.resolve(outside[0].replace(/^(?:~|\$HOME\b|\$\{HOME\})(?=$|[\\/])/, home)));
   const tilde = (p: string) => (within(p, fold(home)) ? `~${p.slice(home.length)}` : p);
@@ -351,6 +503,598 @@ export function judge(command: string, cwd: string, o: JudgeOptions = {}): { ok:
   const run = scripts.some((w) => fullPath(w, cwd, home, paths) !== undefined && fold(fullPath(w, cwd, home, paths)!) === first);
   const text = run ? `the script is outside the project, in ${tilde(skillFolder(first, fold(home), paths) ?? paths.dirname(first))}` : `it names ${tilde(first)}, outside the project`;
   return { ok: false, why: { kind: "outside", text }, outside };
+}
+
+/*
+  The allowlist. A command is known only when every part of it is: each simple command (a pipe's stage, a chain's part
+  after &&, ||, ; or a new line) a program on the list below, named bare, with the subcommands and flags it allows, and
+  every word literal. Nothing the shell fills in ($ of any kind, a substitution, a backtick, ~, a bare glob, a brace), no
+  redirect but into the folder or /dev/null (and 2>&1), no variable set, no loop or background job, `cd` only into a
+  subfolder named literally. Interpreters, shells, wrappers, the network's programs, and settings beyond the project are
+  on no list. Windows's commands, PowerShell's or cmd's, get a shorter list still (windowsWhy).
+*/
+
+/** Why Auto left a command it doesn't know to you, by the first thing it didn't know. */
+const UNKNOWN: ApprovalWhy = { kind: "level", text: `${ACCESS_NAMES.auto} runs only the everyday commands it knows for a tool with no safety check of its own` };
+const FILLS_IN: ApprovalWhy = { kind: "level", text: "the shell fills in part of it (a variable, a substitution, a pattern), so the text can't say what it does" };
+const RUNS_CODE: ApprovalWhy = { kind: "changes", text: "it runs code it's handed, which can do anything" };
+const NETWORK_WHY: ApprovalWhy = { kind: "network", text: "it reaches the network" };
+const SETUP_WHY: ApprovalWhy = { kind: "changes", text: "it changes settings or installs beyond the project" };
+const WRITES_WHY: ApprovalWhy = { kind: "changes", text: "it writes somewhere Auto doesn't write unasked" };
+const PRINTS_KEYS: ApprovalWhy = { kind: "level", text: "it prints the shell's variables, keys among them" };
+const ELSEWHERE: ApprovalWhy = { kind: "outside", text: "it names a place outside the project" };
+
+/** What the allowlist needs from judge: where the folder is, and the skill script you allowed, if any, in full and folded. */
+type Known = { platform: NodeJS.Platform; paths: typeof posix; fold: (p: string) => string; root: string; script?: string; cwd: string; home: string };
+
+/** Programs that reach the network or another machine, named for why they ask. */
+const NET_PROGRAMS = /^(?:curl|wget|dig|nslookup|host|ping|nc|ncat|netcat|socat|telnet|ftp|sftp|ssh|scp|rsync|gh|hub|glab|aws|gcloud|gsutil|az|kubectl|helm|terraform|pulumi|vercel|netlify|fly|flyctl|heroku|firebase|wrangler|railway|docker|podman|http|https|xh|ngrok|npx|bunx|pnpx|brew|pip|pip3|pipx|uv|poetry|gem|apt|apt-get|port|invoke-webrequest|invoke-restmethod|iwr|irm)$/;
+/** Programs that run code they're handed, or set what runs. */
+const CODE_PROGRAMS = /^(?:awk|gawk|nawk|deno|jq|yq|source|\.|exec|eval|xargs|parallel|tclsh|expect|osascript|swift|java|jshell|irb)$/;
+
+/**
+  The flags that make a program write a file, run a program or code it's handed, or open a server, whatever else it's
+  doing: what the list refuses on its programs (KNOWN), and what a "don't ask again" rule never covers either (hazardOf),
+  as a rule names only the program and its subcommand. Each long flag by any start of its name, as the program takes one
+  (longFlagOf): getopt_long takes `sort --out=b`, git's parse-options `git grep --open='…'`, npm's nopt `npm test --scr=./x`.
+*/
+const BANS: Record<string, (args: string[]) => ApprovalWhy | undefined> = {
+  git: (a) => gitBans(a),
+  sort: (a) => (a.some((w) => /^-[^-]*o/.test(w) || longFlagOf(w, ["output", "compress-program"])) ? WRITES_WHY : undefined),
+  rg: (a) => (a.some((w) => longFlagOf(w, ["pre", "hostname-bin"])) ? RUNS_CODE : undefined),
+  // find's tests are whole words, never taken by a start of their name.
+  find: (a) => (a.some((w) => /^-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/.test(w)) ? RUNS_CODE : undefined),
+  tree: (a) => (a.some((w) => /^-[^-]*[oRH]/.test(w) || longFlagOf(w, ["output", "fromfile"])) ? WRITES_WHY : undefined),
+  file: (a) => (a.some((w) => /^-[^-]*C/.test(w) || longFlagOf(w, ["compile"])) ? WRITES_WHY : undefined),
+  npm: (a) => packageBans(a),
+  pnpm: (a) => packageBans(a),
+  yarn: (a) => packageBans(a),
+  // bun runs code it's handed too, before its subcommand or after it (`bun test --preload ./x`).
+  bun: (a) => packageBans(a) ?? (a.some((w) => /^-[a-zA-Z]*[ep]$/.test(w) || longFlagOf(w, ["eval", "print", "preload", "require", "import"])) ? RUNS_CODE : undefined),
+  cargo: (a) => (a.some((w) => /^-Z/.test(w) || longFlagOf(w, ["config"])) ? RUNS_CODE : undefined),
+  // Go's flag package takes a flag's whole name only (`-o` is never `-overlay`), so these are matched whole.
+  go: (a) => (a.some((w) => /^--?(?:exec|toolexec|vettool|overlay)(?:=|$)/.test(w)) ? RUNS_CODE : undefined),
+  // --eval (-E) is make code, which runs the shell; SHELL and the like choose the program each recipe runs in.
+  make: (a) => (a.some((w) => /^-[^-]*E/.test(w) || longFlagOf(w, ["eval"]) || /^(?:SHELL|MAKESHELL|\.SHELLFLAGS|MAKEFLAGS)=/.test(w)) ? RUNS_CODE : undefined),
+  pytest: (a) => pytestBans(a),
+  // The UI and the API open a server that runs tests on request, the inspector a debugger anyone on the port can drive.
+  vitest: (a) => (a.some((w) => /^--(?:ui|api|inspect|inspect-brk|browser)(?:[.=]|$)/i.test(w)) ? RUNS_CODE : undefined),
+};
+
+/**
+  git's flags that write a file, run a program or make a repository whose settings Liner Code never saw, by any start of
+  their name (GIT_BANNED), with the subcommand first: grep's -O (attached or alone, in a cluster too), which opens its
+  matches in any program, and rebase's -x, which runs a command after each commit (its --exec is in GIT_BANNED).
+*/
+function gitBans([sub, ...rest]: string[]) {
+  if (rest.some((w) => longFlagOf(w, GIT_BANNED))) return RUNS_CODE;
+  if (sub === "grep" && rest.some((w) => /^-[^-]*O/.test(w))) return RUNS_CODE;
+  if (sub === "rebase" && rest.some((w) => /^-[^-]*x/.test(w))) return RUNS_CODE;
+  return undefined;
+}
+
+/**
+  npm's, pnpm's and yarn's own settings that choose a program or load code, as flags before `--` (what's after it is the
+  script's): a shell for scripts, Node's options (`--node-options=--import=data:text/javascript,…` runs that code),
+  another settings file, git, an editor or a browser, pnpm's `--config.<name>`; -c, npm exec's code. A global install
+  reaches beyond the project.
+*/
+const PACKAGE_BANNED = ["node-options", "script-shell", "userconfig", "globalconfig", "git", "shell", "editor", "browser", "viewer", "onload-script", "init-module", "call", "node-gyp"];
+function packageBans(args: string[]) {
+  const end = args.indexOf("--");
+  const own = end < 0 ? args : args.slice(0, end);
+  if (own.some((w) => /^-[a-zA-Z]*g[a-zA-Z]*$/.test(w) || longFlagOf(w, ["global", "location"]))) return SETUP_WHY;
+  if (own.some((w) => longFlagOf(w, PACKAGE_BANNED) || /^--config\./i.test(w) || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(w))) return RUNS_CODE;
+  return undefined;
+}
+
+/**
+  pytest: never -p, which loads a plugin by name, unless it turns one off (-p no:cacheprovider), nor -o or --override-ini
+  (any start), which can set addopts to a -p of its own. Its short flags cluster as argparse takes them (`-xp x`, `-xo
+  addopts=-px`): read letter by letter, a flag that takes a value taking the rest of the word or the next.
+*/
+function pytestBans(args: string[]) {
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === "--") break;
+    if (longFlagOf(w, ["override-ini"])) return RUNS_CODE;
+    if (!/^-[^-]/.test(w)) continue;
+    for (let j = 1; j < w.length; j++) {
+      const ch = w[j];
+      if (ch === "o") return RUNS_CODE;
+      if (ch === "p") {
+        const value = j + 1 < w.length ? w.slice(j + 1) : (args[++i] ?? "");
+        if (!/^no:/.test(value)) return RUNS_CODE;
+        break;
+      }
+      // The rest of the word is this flag's value, or the next word is.
+      if ("kmcrWn".includes(ch)) {
+        if (j + 1 === w.length) i++;
+        break;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+  The programs on the list and what each allows. Paths aren't checked here: judge's floor has already said every place
+  named is in the folder, and plainWord that nothing is filled in. Writing programs never write into .git (its hooks and
+  its config run code). Each returns why not, or nothing when it knows the command.
+*/
+const KNOWN: Record<string, (args: string[], k: Known) => ApprovalWhy | undefined> = {
+  ...Object.fromEntries(["ls", "pwd", "cat", "head", "tail", "wc", "nl", "stat", "du", "diff", "cmp", "cut", "tr", "column", "basename", "dirname", "realpath", "echo", "true", "false", "which", "sleep", "grep", "egrep", "fgrep"].map((p) => [p, () => undefined])),
+  // (Readers, these and rg, find, tree, file, sed and sort, may name the temporary folders the floor lets through; see READERS.)
+  printf: (a) => (a.some((w) => /^-[a-zA-Z]*v/.test(w)) ? UNKNOWN : undefined),
+  // A format, UTC, the ISO, RFC 3339 and RFC 2822 spellings, and BSD's -v that shifts the date it shows (`-v-1d`): never
+  // -s or -f, nor a long flag but those named whole (--set, and its starts, sets the clock).
+  date: (a) => (a.every((w) => /^\+|^-u$|^-R$|^-I(?:date|hours|minutes|seconds|ns)?$|^-v[+-]?\d+[ymwdHMS]$|^--(?:iso-8601(?:=(?:date|hours|minutes|seconds|ns))?|rfc-3339=(?:date|seconds|ns)|rfc-email|utc|universal)$/.test(w)) ? undefined : UNKNOWN),
+  sort: BANS.sort,
+  uniq: (a) => (a.filter((w) => !w.startsWith("-")).length > 1 ? WRITES_WHY : undefined),
+  rg: BANS.rg,
+  find: BANS.find,
+  tree: BANS.tree,
+  file: BANS.file,
+  sed: (a) => (sedReads(["sed", ...a]) ? undefined : WRITES_WHY),
+  mkdir: (a) => writes(a, /^-[pv]+$/, /^-m$/),
+  touch: (a) => writes(a, /^-[acmh]+$/, /^-[rtd]$/),
+  tee: (a) => writes(a, /^-[ai]+$/),
+  // Copies a file within the folder; a folder's copy (-r, -R, -a) is the floor's to rate.
+  cp: (a) => writes(a, /^-[fnipvlLHP]+$/),
+  chmod: (a) => {
+    const [mode, ...paths] = a;
+    if (!mode || !/^(?:[ugoa]*[-+=][rwxX]*(?:,[ugoa]*[-+=][rwxX]*)*|[0-7]{3,4})$/.test(mode) || !paths.length) return UNKNOWN;
+    return writes(paths, /^$/);
+  },
+  git: gitWhy,
+  npm: (a) => packagesWhy("npm", a),
+  pnpm: (a) => packagesWhy("pnpm", a),
+  yarn: (a) => packagesWhy("yarn", a),
+  bun: (a) => packagesWhy("bun", a),
+  cargo: (a) => {
+    const [sub] = a;
+    if (!sub || !/^(?:build|b|test|t|check|c|fmt|clippy)$/.test(sub)) return sub === "install" || sub === "publish" || sub === "login" ? SETUP_WHY : UNKNOWN;
+    return BANS.cargo(a);
+  },
+  go: (a) => {
+    const [sub] = a;
+    if (!sub || !/^(?:build|test|vet|fmt)$/.test(sub)) return sub === "install" || sub === "get" ? SETUP_WHY : UNKNOWN;
+    return BANS.go(a);
+  },
+  // Targets and the flags that only say how; never -f, -C, --eval or a variable set (CC=…, SHELL=… choose what runs).
+  make: (a) => (a.every((w) => /^-(?:j\d*|k|s|B|n|q|w)$|^--(?:silent|keep-going|jobs(?:=\d+)?)$/.test(w) || /^[A-Za-z0-9_][\w./-]*$/.test(w)) ? undefined : UNKNOWN),
+  pytest: BANS.pytest,
+  tsc: () => undefined,
+  eslint: () => undefined,
+  vitest: BANS.vitest,
+  jest: () => undefined,
+  // Only checking: --write rewrites every file it's given.
+  prettier: (a) => (a.some((w) => /^(?:--check|-c|--list-different|-l)$/.test(w)) && !a.some((w) => w === "-w" || longFlagOf(w, ["write"])) ? undefined : WRITES_WHY),
+};
+
+/** The programs that only read, which alone may name a place the floor counts as nobody's (/tmp): anything else that names a path from the root names one in the folder. */
+const READERS = /^(?:ls|pwd|cat|head|tail|wc|nl|stat|du|diff|cmp|cut|tr|column|basename|dirname|realpath|echo|true|false|which|sleep|grep|egrep|fgrep|rg|find|tree|file|sed|sort)$/;
+
+/** A writing program's words: its flags (alone, or one that takes the next word), then paths, none of them in .git. */
+function writes(args: string[], alone: RegExp, takes?: RegExp) {
+  const paths: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (w === "--") {
+      paths.push(...args.slice(i + 1));
+      break;
+    }
+    if (alone.test(w)) continue;
+    else if (takes?.test(w) && args[i + 1] !== undefined) i++;
+    else if (w.startsWith("-")) return UNKNOWN;
+    else paths.push(w);
+  }
+  return paths.length && paths.every((p) => !gitPlace(p)) ? undefined : GIT_FOLDER_OR_WRITES(paths);
+}
+
+/** Why a writing program's paths came to you: git's own folder (or a gitdir's HEAD) by name, else a write the list doesn't know. */
+const GIT_FOLDER_OR_WRITES = (paths: string[]) => (paths.some(gitPlace) ? GIT_FOLDER : WRITES_WHY);
+
+/**
+  A path with a .git folder in it, however it's written (`./.git/`, `.//.git`, `sub/.GIT/hooks`): by its parts, in any
+  case, as a Mac's disk doesn't tell them apart, and as git itself reads a name (is_hfs_dotgit, is_ntfs_dotgit): with
+  the characters HFS+ ignores taken out and the dots and spaces Windows drops from a name's end.
+*/
+const intoGit = (p: string) => p.split(/[\\/]/).some((s) => s.normalize("NFC").replace(/[\u200b-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g, "").toLowerCase().replace(/[. ]+$/, "") === ".git");
+
+/**
+  A place no command on the list writes: one in a .git folder, or a file named HEAD (any case). git takes any folder
+  holding a HEAD, objects/ and refs/ for a repository of its own, and a `config` there runs code (core.fsmonitor) on the
+  next `git status` run in it: `mkdir -p x/objects x/refs`, `echo 'ref: refs/heads/main' > x/HEAD`, a config, `cd x`.
+  Without a HEAD there's no repository, so a HEAD is the one file it can't do without.
+*/
+export const gitPlace = (p: string) => intoGit(p) || /^head[. ]*$/i.test(p.split(/[\\/]/).filter(Boolean).pop() ?? "");
+
+/** The flags whose value is a pattern a tool skips, never a place it writes (`eslint --ignore-pattern .git`), by the program. */
+const PATTERN_FLAGS: Record<string, RegExp> = { eslint: /^--ignore-pattern$/, pytest: /^--ignore(?:-glob)?$/, vitest: /^--exclude$/, tsc: /^--exclude(?:Directories|Files)$/ };
+
+/**
+  Why a program's words reach git's own folder, or nothing: each word, a flag's value (`--outDir=.git/x`) and what's glued
+  to a short flag (`-o.git/config`). For git a name in .git only (HEAD is a commit to it); for every other program a file
+  named HEAD too, as a build's output can be one (`tsc --outFile x/HEAD`, `go build -o x/HEAD`). What a pattern flag is given
+  (PATTERN_FLAGS) is no place. A program that only reads may name either (READERS); the caller leaves those out.
+*/
+function gitArgsWhy(name: string, args: string[]) {
+  const place = name === "git" ? intoGit : gitPlace;
+  const pattern = PATTERN_FLAGS[name];
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (pattern?.test(w)) {
+      i++;
+      continue;
+    }
+    if (pattern && w.includes("=") && pattern.test(w.slice(0, w.indexOf("=")))) continue;
+    if ([w, w.replace(/^[^=]*=/, ""), w.replace(/^-[A-Za-z]+/, "")].some(place)) return GIT_FOLDER;
+  }
+  return undefined;
+}
+
+/**
+  Whether a word is a long flag `banned` names (names without their dashes): the name before any `=`, when it's one of
+  them or the start of one. getopt_long (sort, file, GNU's tools), git's parse-options (grep, init, commit and the rest
+  but log, diff and show) and npm's nopt all take any start of a long flag's name that only one flag has (`sort --out=b`
+  is `--output=b`, `git grep --open='…'` is `--open-files-in-pager='…'`, `git init --templ=x`), so a ban on the whole
+  name alone lets its shorter spellings through. Any start counts, however short, so a spelling the program would call
+  ambiguous comes to you too; `--` alone (the end of the flags) and a word with one dash are no long flag.
+*/
+function longFlagOf(word: string, banned: string[]) {
+  if (!/^--[^-]/.test(word)) return false;
+  const name = word.slice(2).split("=")[0].toLowerCase();
+  return banned.some((b) => b.startsWith(name));
+}
+
+/** git's subcommands that stay in the folder and the network never sees. */
+const GIT_KNOWN = /^(?:status|diff|log|show|add|commit|branch|switch|checkout|restore|stash|ls-files|rev-parse|blame|shortlog|describe|merge-base|grep|init|reflog)$/;
+const GIT_NETWORK = /^(?:push|fetch|pull|clone|remote|submodule|ls-remote|send-email|request-pull|archive|svn|p4|daemon)$/;
+/**
+  The subcommands' flags that write a file, run a program or make a repository whose settings Liner Code never saw
+  (--bare and --separate-git-dir make one with no .git in its path), by any start of their name (longFlagOf).
+*/
+const GIT_BANNED = ["output", "ext-diff", "open-files-in-pager", "upload-pack", "receive-pack", "exec", "template", "separate-git-dir", "bare"];
+const GIT_ELSEWHERE: ApprovalWhy = { kind: "changes", text: "it points git at another repository, whose settings can run code" };
+const GIT_FOLDER: ApprovalWhy = { kind: "changes", text: "it reaches into git's own folder, whose hooks and settings run code" };
+const CHECKOUT_WHY: ApprovalWhy = { kind: "changes", text: "git checkout with a name puts back a file of that name, throwing its changes away, and the text can't tell a file from a branch" };
+/** What git config reads, and how it says it: a key's value (--get, --get-all, --get-regexp) or the list, from the settings git already reads. */
+const CONFIG_READS = /^(?:--get|--get-all|--get-regexp|--list|-l)$/;
+const CONFIG_SAYS = /^(?:--local|--show-origin|--show-scope|--name-only|-z|--null)$/;
+
+/**
+  git: before the subcommand only --no-pager and --no-optional-locks (never -C, --git-dir or --work-tree, which point
+  it at a repository whose settings can run code, nor -c, which sets any setting, nor --exec-path); the subcommand on
+  GIT_KNOWN; and none of the flags gitBans names. What only lists or reads: `config` with one key to get or the list (no
+  setting, no other file: --global, --system and --file read past the project's own), `remote` alone or -v, `worktree
+  list`, and `reflog` but its expire, delete and drop. `checkout` only alone or making a branch (-b): with a name it
+  puts back a file of that name, which a branch's name can't be told from; `switch` takes only branches. What can't be
+  undone (reset --hard, checkout ., restore without --staged, branch -D) the floor rated.
+*/
+function gitWhy(args: string[]) {
+  let i = 0;
+  while (args[i]?.startsWith("-")) {
+    if (args[i] === "--no-pager" || args[i] === "--no-optional-locks") i++;
+    else if (/^-C/.test(args[i]) || /^--(?:git-dir|work-tree|bare|namespace)(?:=|$)/.test(args[i])) return GIT_ELSEWHERE;
+    else return args[i] === "-c" || /^--(?:config-env|exec-path)/.test(args[i]) ? SETUP_WHY : UNKNOWN;
+  }
+  const sub = args[i];
+  const rest = args.slice(i + 1);
+  if (sub === "config") {
+    const reads = rest.filter((w) => CONFIG_READS.test(w));
+    const keys = rest.filter((w) => !w.startsWith("-"));
+    const listing = reads.length === 1 && /^(?:--list|-l)$/.test(reads[0]);
+    return reads.length === 1 && rest.every((w) => CONFIG_READS.test(w) || CONFIG_SAYS.test(w) || !w.startsWith("-")) && keys.length === (listing ? 0 : 1) ? undefined : SETUP_WHY;
+  }
+  if (sub === "remote") return rest.every((w) => w === "-v" || w === "--verbose") ? undefined : NETWORK_WHY;
+  if (sub === "worktree") return rest[0] === "list" && rest.slice(1).every((w) => /^(?:--porcelain|-v|--verbose|-z)$/.test(w)) ? undefined : UNKNOWN;
+  if (!sub || !GIT_KNOWN.test(sub)) return sub && GIT_NETWORK.test(sub) ? NETWORK_WHY : UNKNOWN;
+  if (sub === "reflog" && rest.some((w) => /^(?:expire|delete|drop|write)$/.test(w))) return UNKNOWN;
+  // Alone, or -b with a new branch and the commit it starts from (with -b that's a commit, never a path).
+  if (sub === "checkout" && rest.length) {
+    const words = rest.filter((w) => w !== "-q" && w !== "--quiet");
+    if (!(words[0] === "-b" && words.length >= 2 && words.length <= 3 && words.slice(1).every((w) => !w.startsWith("-")))) return CHECKOUT_WHY;
+  }
+  if (sub === "init" && rest.some((w) => longFlagOf(w, ["bare", "separate-git-dir"]))) return GIT_ELSEWHERE;
+  return gitBans([sub, ...rest]);
+}
+
+/** Script names `pnpm build`, `yarn lint` and `bun lint` run bare. */
+const BARE_SCRIPTS = /^(?:build|test|lint|typecheck|check|format)$/;
+/** An install's flags that only say how: from the lock file, quietly, without scripts. */
+const INSTALL_FLAGS = /^(?:--frozen-lockfile|--prefer-offline|--offline|--no-audit|--no-fund|--silent|--ignore-scripts|--legacy-peer-deps|--immutable|--production|--prod|--loglevel=\w+|-s|-q)$/;
+/** A script's run's own flags, which say only where it runs and how quietly; pnpm's that pick its packages. */
+const RUN_FLAGS = /^(?:--if-present|-s|--silent|--workspaces|--ws|--include-workspace-root)$/;
+const PNPM_FLAGS = /^(?:-r|--recursive|--parallel|--stream|--no-bail|-w|--workspace-root)$/;
+
+/**
+  npm, pnpm, yarn, bun: only test, run with a script's name, a bare script name the others run (BARE_SCRIPTS), or
+  install and ci from the lock file: no package named, nothing packageBans names. Never exec, x, dlx, publish, config,
+  link or the rest. The flags before `--` are the tool's own (`npm test -- -g foo` hands -g to the script), and those are
+  only the few that say where and how quietly (RUN_FLAGS, PNPM_FLAGS): npm's -w, --workspace and --prefix and pnpm's
+  --filter, -F, -C and --dir, each with a literal value in the project, before the subcommand too (`npm --prefix ui test`,
+  `pnpm -r test`); anything else, `--node-options`, `--script-shell` or one nobody listed, comes to you. pnpm hands every
+  word after the script's name to the script (pnpm 12.9.1: `pnpm test --watch`), so those are the script's. bun runs a
+  file it's named (`bun run x.ts`), so its script names have no dot or slash.
+*/
+function packagesWhy(pm: "npm" | "pnpm" | "yarn" | "bun", args: string[]) {
+  const banned = BANS[pm](args);
+  if (banned) return banned;
+  const end = args.indexOf("--");
+  const own = end < 0 ? args : args.slice(0, end);
+  const value = (w: string | undefined) => w !== undefined && w !== "" && !w.startsWith("-") && !posix.isAbsolute(w) && !win32.isAbsolute(w);
+  const takes = pm === "npm" ? /^(?:-w|--workspace|--prefix)$/ : pm === "pnpm" ? /^(?:--filter|-F|-C|--dir)$/ : undefined;
+  const glued = pm === "npm" ? /^--(?:workspace|prefix)=(.*)$/ : pm === "pnpm" ? /^--(?:filter|dir)=(.*)$/ : undefined;
+  /** Past the flag at words[i], to the next word: or -1 when it isn't one of the few. */
+  const past = (words: string[], i: number) => {
+    const w = words[i];
+    if (RUN_FLAGS.test(w) || (pm === "pnpm" && PNPM_FLAGS.test(w)) || (glued?.test(w) && value(glued.exec(w)![1]))) return i + 1;
+    return takes?.test(w) && value(words[i + 1]) ? i + 2 : -1;
+  };
+  /** Every flag among words one of the few. */
+  const known = (words: string[]) => {
+    for (let i = 0; i < words.length; ) {
+      if (!words[i].startsWith("-")) i++;
+      else if ((i = past(words, i)) < 0) return false;
+    }
+    return true;
+  };
+  let i = 0;
+  if (pm === "npm" || pm === "pnpm") while (i >= 0 && i < own.length && own[i].startsWith("-")) i = past(own, i);
+  if (i < 0) return UNKNOWN;
+  const sub = own[i];
+  const after = own.slice(i + 1);
+  // Bare yarn installs.
+  if (sub === undefined) return pm === "yarn" && args.length === 0 ? undefined : UNKNOWN;
+  if (/^(?:install|i|ci)$/.test(sub) && (sub !== "ci" || pm === "npm")) return args.slice(i + 1).every((w) => INSTALL_FLAGS.test(w)) ? undefined : SETUP_WHY;
+  if (/^(?:test|t|tst)$/.test(sub) || (pm !== "npm" && BARE_SCRIPTS.test(sub))) return pm === "pnpm" || known(after) ? undefined : UNKNOWN;
+  if (sub === "run" || sub === "run-script") {
+    let j = 0;
+    while (j >= 0 && j < after.length && after[j].startsWith("-")) j = past(after, j);
+    if (j < 0 || !after[j] || !(pm === "bun" ? /^[A-Za-z0-9][\w:-]*$/ : /^[A-Za-z0-9][\w:.-]*$/).test(after[j])) return UNKNOWN;
+    return pm === "pnpm" || known(after.slice(j + 1)) ? undefined : UNKNOWN;
+  }
+  return /^(?:exec|x|dlx|create|init|publish|unpublish|deprecate|dist-tag|owner|access|login|logout|adduser|token|team|config|set|link|add|remove|uninstall|rm|un|update|up|upgrade|global)$/.test(sub) ? SETUP_WHY : UNKNOWN;
+}
+
+/**
+  A raw word (quotes still on, as parseShell keeps it) as the program gets it, or none when the shell would fill any of
+  it in: a `$` or substitution outside single quotes, a backtick or backslash, a bare `*`, `?`, `[` or brace, `~` where it
+  starts a home folder (a word's start, after `=` or `:`), and `=` at a word's start (zsh's program lookup).
+*/
+function plainWord(raw: string): string | undefined {
+  let out = "";
+  for (let i = 0; i < raw.length; ) {
+    const ch = raw[i];
+    if (ch === "'" || ch === '"') {
+      const end = raw.indexOf(ch, i + 1);
+      if (end < 0) return undefined;
+      const inner = raw.slice(i + 1, end);
+      if (ch === '"' && /[$`\\\u0001]/.test(inner)) return undefined;
+      out += inner;
+      i = end + 1;
+    } else {
+      if (/[$`\\\u0001*?[\]{}]/.test(ch)) return undefined;
+      if (ch === "~" && (i === 0 || /[=:]/.test(raw[i - 1]))) return undefined;
+      if (ch === "=" && i === 0) return undefined;
+      out += ch;
+      i++;
+    }
+  }
+  return out;
+}
+
+/** Why a command isn't one the list knows, or nothing when it is: every part, every word, every redirect. */
+function unknownWhy(command: string, k: Known): ApprovalWhy | undefined {
+  if (k.platform === "win32") return windowsWhy(command, k);
+  const p = parseShell(command);
+  if (!p || p.subst) return FILLS_IN;
+  if (p.keyword || p.assign || p.assigns.length || p.background || !p.list.length) return UNKNOWN;
+  for (const r of p.redirects) {
+    // 2>&1 and >&2: what it prints, joined.
+    if (r.op === ">&") {
+      if (/^[12]$/.test(r.target) && /^[12]?$/.test(r.fd)) continue;
+      return UNKNOWN;
+    }
+    if (r.op !== ">" && r.op !== "<") return UNKNOWN;
+    if (r.fd && !/^[012]$/.test(r.fd)) return UNKNOWN;
+    const t = plainWord(r.target);
+    if (t === undefined) return FILLS_IN;
+    if (t === "/dev/null") continue;
+    // Into the folder only: a path from the root must be in it (the floor let the temporary folders through as places).
+    if (k.paths.isAbsolute(t) && !k.fold(k.paths.resolve(t)).startsWith(k.root + k.paths.sep)) return WRITES_WHY;
+    if (r.op === ">" && gitPlace(t)) return GIT_FOLDER;
+  }
+  for (const x of p.list) {
+    const why = simpleWhy(x.words, k);
+    if (why) return why;
+  }
+  return undefined;
+}
+
+/** One simple command's words, raw: the skill script you allowed, `cd` into a subfolder, or a program KNOWN knows. */
+function simpleWhy(words: string[], k: Known): ApprovalWhy | undefined {
+  // An interpreter running the one skill script you allowed (skillOffer), with literal words after it.
+  const script = k.script ? scriptOf(words) : undefined;
+  if (script && fullPath(script, k.cwd, k.home, k.paths) !== undefined && k.fold(fullPath(script, k.cwd, k.home, k.paths)!) === k.script) return words.slice(2).every((w) => plainWord(w) !== undefined) ? undefined : FILLS_IN;
+  const plain = words.map(plainWord);
+  if (plain.some((w) => w === undefined)) return FILLS_IN;
+  const [first, ...args] = plain as string[];
+  // A program by its path (`./git`, `/tmp/x/npm`) is whatever that file is.
+  if (!first || /[\\/]/.test(first)) return UNKNOWN;
+  // A path from the root, as a word, a flag's value (`--rulesdir=/tmp/x`) or glued to a short flag, is in the folder, unless the program only reads.
+  if (!READERS.test(first.toLowerCase()) && k.platform !== "win32") {
+    for (const w of args) {
+      const m = /^(?:-[A-Za-z]+|[^=]*=)?(\/.*)$/.exec(w);
+      if (m && m[1] !== "/dev/null" && !k.fold(k.paths.resolve(m[1])).startsWith(k.root + k.paths.sep) && k.fold(k.paths.resolve(m[1])) !== k.root) return ELSEWHERE;
+    }
+  }
+  // Nor, unless it only reads, git's own folder or a HEAD of a repository of its own: as a word, a flag's value or glued to
+  // a short flag (`go build -o .git/hooks/pre-commit`, `tsc --outDir=.git/x`, `tsc --outFile x/HEAD`), whose hooks and
+  // settings run code (gitArgsWhy).
+  if (!READERS.test(first.toLowerCase())) {
+    const why = gitArgsWhy(first.toLowerCase(), args);
+    if (why) return why;
+  }
+  return programWhy(first.toLowerCase(), args, k);
+}
+
+/** A program named bare, by its name in lower case, with its words: what KNOWN says, or why it's on no list. */
+function programWhy(name: string, args: string[], k: Known): ApprovalWhy | undefined {
+  // Into a subfolder, never git's own (`cd .git && printf … > config`: what's written next lands in it).
+  if (name === "cd") return args.length !== 1 || args[0].startsWith("-") || k.paths.isAbsolute(args[0]) || /^[A-Za-z]:/.test(args[0]) ? UNKNOWN : intoGit(args[0]) ? GIT_FOLDER : undefined;
+  if (/^python[\d.]*$|^py$/.test(name) && args[0] === "-m" && args[1] === "pytest") return pytestBans(args.slice(2));
+  const known = Object.hasOwn(KNOWN, name) ? KNOWN[name] : undefined;
+  if (known) return known(args, k);
+  if (name === "env" || name === "printenv" || name === "set" || name === "export" || name === "declare") return PRINTS_KEYS;
+  if (NET_PROGRAMS.test(name)) return NETWORK_WHY;
+  if (INTERPRETERS.test(name) || WRAPPERS.test(name) || CODE_PROGRAMS.test(name)) return RUNS_CODE;
+  return UNKNOWN;
+}
+
+/** Windows's programs on the list, PowerShell's and cmd's: those that read in the folder, and the build tools KNOWN knows. */
+const WINDOWS_READS = /^(?:dir|type|findstr|get-childitem|gci|ls|get-content|gc|cat|select-string|sls|get-location|pwd|echo|write-output)$/;
+const WINDOWS_BUILDS = /^(?:git|npm|pnpm|yarn|cargo|go|tsc|eslint|pytest|vitest|jest|prettier)$/;
+
+/** A part of a Windows command in words, as cmd and PowerShell split them: on spaces outside double quotes, the quotes then taken out. None when a quote is left open. */
+function windowsWords(part: string) {
+  const words: string[] = [];
+  let w = "";
+  let quoted = false;
+  let any = false;
+  for (const ch of part) {
+    if (ch === '"') (quoted = !quoted), (any = true);
+    else if (/\s/.test(ch) && !quoted) {
+      if (any) words.push(w);
+      (w = ""), (any = false);
+    } else (w += ch), (any = true);
+  }
+  if (quoted) return undefined;
+  if (any) words.push(w);
+  return words;
+}
+
+/**
+  On Windows the command may be PowerShell's, cmd's or bash's, so only the plainest is known: no %VAR%, $ of any kind, ^,
+  backtick, single quote, pipe, redirect, parenthesis, brace, @, ! or pattern; parts joined only by && or ;; and in
+  each, a program from WINDOWS_READS or WINDOWS_BUILDS named bare, `cd` into a subfolder, and no word with a `:` but a
+  drive's (env:, HKCU: and the like are places of their own).
+*/
+function windowsWhy(command: string, k: Known): ApprovalWhy | undefined {
+  const c = command.trim();
+  if (/[%$`^'|<>(){}@!*?[\]\r\n]/.test(c)) return FILLS_IN;
+  for (const part of c.split(/&&|;/)) {
+    if (part.includes("&")) return UNKNOWN;
+    const words = windowsWords(part);
+    if (!words) return FILLS_IN;
+    const [first, ...args] = words;
+    if (!first || /[\\/:]/.test(first)) return UNKNOWN;
+    if (args.some((a) => a.includes(":") && !/^[A-Za-z]:[\\/][^:]*$/.test(a))) return UNKNOWN;
+    const name = first.toLowerCase().replace(ENDS_LIKE_A_PROGRAM, "");
+    if (name === "cd") {
+      if (args.length !== 1 || /^[\\/]|^[A-Za-z]:/.test(args[0]) || args[0].startsWith("-")) return UNKNOWN;
+      if (intoGit(args[0])) return GIT_FOLDER;
+      continue;
+    }
+    if (WINDOWS_READS.test(name)) continue;
+    if (!WINDOWS_BUILDS.test(name)) return programWhy(name, [], k) ?? UNKNOWN;
+    // git's own folder and a HEAD of a repository of its own, by backslash as well (`go build -o .git\hooks\pre-commit`).
+    const why = gitArgsWhy(name, args) ?? programWhy(name, args, k);
+    if (why) return why;
+  }
+  return undefined;
+}
+
+/**
+  What a "don't ask again" rule never covers, whatever it names (runtime.ts, ruleAllows). A rule is a program and its
+  subcommand (ruleFor), so a grant for `git grep` would run `git grep --open='touch x' foo` too, its pager any command.
+  So each part of the command, a `cd` in front of it included, is held to what the list holds its program to, past the
+  subcommand: none of the flags BANS names for it; and, but for a program that only reads, nothing into git's own folder
+  or a HEAD of a repository of its own (gitArgsWhy), nor a place outside the folder (git names none it writes); a `cd`
+  only into a subfolder, never .git; no redirect into either. A word the shell fills in can't be read for any of that,
+  so on a program with bans or one that writes it comes to you as well. Nothing here when the rule may cover it.
+*/
+export function hazardOf(command: string, cwd: string, platform: NodeJS.Platform = process.platform): ApprovalWhy | undefined {
+  const paths = platform === "win32" ? win32 : posix;
+  const fold = (p: string) => (platform === "win32" ? p.toLowerCase() : p);
+  const root = fold(paths.resolve(cwd));
+  const within = (p: string) => {
+    const full = fold(paths.resolve(cwd, p));
+    return full === root || full.startsWith(root + paths.sep);
+  };
+  // A place a word names outside the folder: home, a variable's, another machine's, from the root or a drive, or up with `..`.
+  const away = (w: string) => /^[~$%]/.test(w) || /^[\\/]{2}/.test(w) || UP.test(w) || ((paths.isAbsolute(w) || /^[A-Za-z]:/.test(w)) && w !== "/dev/null" && !within(w));
+  const parts: { name: string; words: (string | undefined)[] }[] = [];
+  if (platform === "win32") {
+    for (const part of command.trim().split(/&&|;|\|/)) {
+      const words = windowsWords(part);
+      if (!words) return FILLS_IN;
+      if (words.length) parts.push({ name: programOf(words[0]), words: words.slice(1).map((w) => (/[%$`^]/.test(w) ? undefined : w)) });
+    }
+  } else {
+    const p = parseShell(command);
+    if (!p || p.subst) return FILLS_IN;
+    for (const r of p.redirects) {
+      if (r.op === ">&") continue;
+      const t = plainWord(r.target);
+      if (t === undefined) return FILLS_IN;
+      if (t === "/dev/null") continue;
+      if (gitPlace(t)) return GIT_FOLDER;
+      if (r.op !== "<" && away(t)) return WRITES_WHY;
+    }
+    for (const x of p.list) parts.push({ name: programOf(x.words[0] ?? ""), words: x.words.slice(1).map(hazardWord) });
+  }
+  for (const { name, words } of parts) {
+    if (name === "cd") {
+      const [to] = words;
+      if (words.length !== 1 || to === undefined || to.startsWith("-") || away(to)) return ELSEWHERE;
+      if (intoGit(to)) return GIT_FOLDER;
+      continue;
+    }
+    // sed writes with -i, or a script's w.
+    const reads = READERS.test(name) && name !== "sed";
+    const bans = Object.hasOwn(BANS, name) ? BANS[name] : undefined;
+    if (words.some((w) => w === undefined)) {
+      if (bans || !reads) return FILLS_IN;
+      continue;
+    }
+    const args = words as string[];
+    const banned = bans?.(args);
+    if (banned) return banned;
+    if (reads) continue;
+    const git = gitArgsWhy(name, args);
+    if (git) return git;
+    if (name !== "git" && args.some((w) => [w, w.replace(/^[^=]*=/, ""), w.replace(/^-[A-Za-z]+/, "")].some(away) || [...w.matchAll(PLACE)].some((m) => away(m[1])))) return ELSEWHERE;
+  }
+  return undefined;
+}
+
+/**
+  A word as hazardOf reads it: as the program gets it (plainWord), or, when the shell would expand a pattern or a brace in
+  it, as written with its quotes off, when what that expands to still starts as written (`src/*.ts`). Never a word with a
+  $, a substitution, a backtick or a backslash, nor one a pattern, a brace, `~` or `=` starts, nor a flag with one in it
+  (`-{-open=x,}`, or `*` where a file named `--open=x` would fill it in).
+*/
+function hazardWord(raw: string) {
+  const plain = plainWord(raw);
+  if (plain !== undefined) return plain;
+  if (/[$`\\\u0001]/.test(raw)) return undefined;
+  const bare = unquoted(raw);
+  return /^[-*?[\]{}~=]/.test(bare) ? undefined : bare;
+}
+
+/**
+  Whether a command rated medium is so only for what stays in the folder: each part rated low, or medium for a commit or
+  an install (MEDIUM's own entries), which the allowlist then narrows to a commit and an install from the lock file.
+*/
+function localMedium(command: string, platform: NodeJS.Platform) {
+  const local = new Set([MEDIUM[1][1], MEDIUM[3][1]]);
+  const parts = platform === "win32" ? command.split(/&&|;/) : parseShell(command)?.list.map((x) => x.raw.join(" "));
+  return Boolean(parts?.length) && parts!.every((part) => {
+    const r = riskOf(part);
+    return r.risk === "low" || (r.risk === "medium" && r.why !== undefined && local.has(r.why));
+  });
 }
 
 /** A word as a full path: quotes off, home spelled out, from `cwd`. None for one the text can't settle (a variable, a substitution). */
@@ -637,13 +1381,14 @@ function plainFetch(program: "curl" | "wget", words: string[], bound: Set<string
 type Simple = { words: string[]; raw: string[]; nested: boolean; fed: boolean };
 /**
   `assigns`: every variable set, as written (`code=$(…)`), with the command it's a prefix of (`target`), none when it's a
-  statement of its own. `subs`: what each `$( )` holds, by the number in its placeholder (\u0001<n>\u0001).
+  statement of its own. `subs`: what each `$( )` holds, by the number in its placeholder (\u0001<n>\u0001). `redirects`:
+  every redirect as written, the spare ones (2>&1, >/dev/null) too, for the allowlist (unknownWhy).
 */
-type Parsed = { list: Simple[]; subst: boolean; keyword: boolean; assign: boolean; redirect: boolean; background: boolean; seps: string[]; assigns: { word: string; target?: Simple }[]; subs: Simple[][]; loops: { name: string; literal: boolean }[] };
+type Parsed = { list: Simple[]; subst: boolean; keyword: boolean; assign: boolean; redirect: boolean; background: boolean; seps: string[]; assigns: { word: string; target?: Simple }[]; subs: Simple[][]; loops: { name: string; literal: boolean }[]; redirects: { op: string; fd: string; target: string }[] };
 const UNREADABLE = new Error("unreadable");
 export function parseShell(command: string): Parsed | undefined {
   const s = command;
-  const out: Parsed = { list: [], subst: false, keyword: false, assign: false, redirect: false, background: false, seps: [], assigns: [], subs: [], loops: [] };
+  const out: Parsed = { list: [], subst: false, keyword: false, assign: false, redirect: false, background: false, seps: [], assigns: [], subs: [], loops: [], redirects: [] };
   let i = 0;
   const fail = (): never => {
     throw UNREADABLE;
@@ -790,6 +1535,7 @@ export function parseShell(command: string): Parsed | undefined {
         // Thrown away, or the errors joined to what it prints: neither writes anything.
         const spare = (op === ">" && /^[12]?$/.test(fd) && target === "/dev/null") || (op === ">&" && fd === "2" && target === "1");
         if (!spare) out.redirect = true;
+        out.redirects.push({ op, fd, target });
       } else {
         const w = token();
         if (!w) fail();

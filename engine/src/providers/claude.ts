@@ -418,6 +418,16 @@ const NO_AUTO = /Auto mode (?:can't|cannot|is unavailable|isn't available)/i;
 const SIDE_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
 /** Just a model, for an app (plain): every built-in that reaches this Mac, denied by rule as well as left out. */
 const PLAIN_DENIED = ["Read", "Glob", "Grep", "LS", "Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"];
+/**
+  Liner Code's own ask rules, so Claude Code hands a delete to Liner Code rather than running it: its acceptEdits (Edits, the
+  Reviewer, Full, and Auto through another maker's API) runs rm and rmdir in the project with no ask at all (2.1.3xx: `rm
+  notes-copy.txt` went ahead at Auto, seen). Handed over, Liner Code's level decides: Auto's routine leaves a delete to you,
+  Edits asks before commands, Full lets it go. Passed as the session's flag settings, so they're told apart from yours
+  (ruleCaught): yours want a person whatever the level, these don't. mv can't be caught only where it writes over a file.
+*/
+export const LINER_ASKS = ["Bash(rm:*)", "Bash(rmdir:*)"];
+/** Is this step asked about by Liner Code's own rules (LINER_ASKS) alone, as Claude Code says it matched one? */
+const linerAsk = (name: string, command: unknown) => typeof command === "string" && askRuleNames(LINER_ASKS, name, command);
 
 /** A command near enough as a shell reads it: no quotes or escapes, one space between words. */
 const plainCommand = (s: string) => s.replace(/["'\\]/g, "").replace(/\s+/g, " ").trim();
@@ -752,8 +762,8 @@ class ClaudeSession implements ProviderSession {
       additionalDirectories: o.dirs?.length ? o.dirs : undefined,
       model: o.model || undefined,
       effort: sdkEffort(o.effort),
-      // Ultracode: standing multi-agent workflows on top of extra high effort.
-      settings: o.effort === "ultracode" ? { ultracode: true } : undefined,
+      // Ultracode: standing multi-agent workflows on top of extra high effort. Liner Code's own ask rules (LINER_ASKS).
+      settings: { ...(o.effort === "ultracode" ? { ultracode: true } : {}), permissions: { ask: LINER_ASKS } },
       thinking: { type: "adaptive", display: "summarized" },
       permissionMode: o.side ? "default" : modeOf(this.access, this.noAuto),
       // A sidekick sends no agents of its own: the lead waits on it, and nobody would see theirs. Workflow runs a script of agents
@@ -863,24 +873,29 @@ class ClaudeSession implements ProviderSession {
     but leaves out of its types. Any other type can come with no rule of yours at all (a command it
     can't call safe, a path outside the project), and Full access would then ask about each of
     them, so none counts by itself: a command is read against your rules instead. When Claude Code
-    can't list them, only a compound command comes to you, the one answer that can hide a rule.
+    can't list them, a compound command comes to you, the one answer that can hide a rule, and so
+    does a step a rule caught though the rule was told as Liner Code's: with the same words as one
+    of yours (Bash(rm:*)), Claude Code may name either, and with no list it can't be told apart.
   */
-  private async ruleCaught(name: string, input: Record<string, unknown>, ask: { matchedAskRule?: unknown }) {
+  private async ruleCaught(name: string, input: Record<string, unknown>, ask: { matchedAskRule?: { source?: string } }) {
     const type = (ask as { decisionReasonType?: string }).decisionReasonType;
+    const byRule = ask.matchedAskRule !== undefined || type === "rule";
+    // Liner Code's own (LINER_ASKS, the flag settings) only hand the step over: then yours are read as for any other command.
+    const ours = linerAsk(name, input.command) && (ask.matchedAskRule === undefined || ask.matchedAskRule.source === "flagSettings");
     // A hook of yours that says ask is a rule of yours too.
-    if (ask.matchedAskRule !== undefined || type === "rule" || type === "hook") return true;
+    if (type === "hook" || (!ours && byRule)) return true;
     if (typeof input.command !== "string") return false;
     const rules = await this.askRules();
-    return rules ? askRuleNames(rules, name, input.command) : type === "subcommandResults";
+    return rules ? askRuleNames(rules, name, input.command) : byRule || type === "subcommandResults";
   }
 
-  /** Your ask rules as Claude Code holds them now, from every settings file; null when it can't say (one too old to, or that doesn't answer). */
+  /** Your ask rules as Claude Code holds them now, from every settings file but the flag settings, Liner Code's own (LINER_ASKS); null when it can't say (one too old to, or that doesn't answer). */
   private async askRules(): Promise<string[] | null> {
     const q = this.q as unknown as { listPermissionRules?: () => Promise<{ state: { rules: SDKPermissionRuleEntry[] } }> } | null;
     let timer: NodeJS.Timeout | undefined;
     try {
       const listed = await Promise.race([q?.listPermissionRules?.(), new Promise<undefined>((r) => (timer = setTimeout(() => r(undefined), waits.rules)))]);
-      return listed ? listed.state.rules.flatMap((r) => (r.behavior === "ask" && !r.notInEffect ? [r.rule] : [])) : null;
+      return listed ? listed.state.rules.flatMap((r) => (r.behavior === "ask" && !r.notInEffect && r.source !== "flagSettings" ? [r.rule] : [])) : null;
     } catch {
       return null;
     } finally {

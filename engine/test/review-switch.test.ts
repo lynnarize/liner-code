@@ -21,8 +21,10 @@ function setup() {
   const home = mkdtempSync(join(tmpdir(), "lc-review-"));
   const store = new Store(home);
   store.putProject({ id: "p", name: "p", path: mkdtempSync(join(tmpdir(), "lc-review-dir-")), git: false, createdAt: Date.now() });
-  const runtime = new Runtime(store, process.env);
-  const api = createApi(store, runtime, process.env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+  // No tool on its PATH and the store's home for its own: the API's look at the tools as it starts never asks this Mac's.
+  const env = { PATH: "/usr/bin:/bin", HOME: home };
+  const runtime = new Runtime(store, env);
+  const api = createApi(store, runtime, env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
   const thread = (extra: Partial<Thread> = {}): Thread => ({ id: "t", projectId: "p", title: "t", agent: "@claude:claude-opus-5-5", status: "idle", access: "full", turns: 0, usage: emptyUsage(), createdAt: 0, updatedAt: 0, ...extra });
   return { home, store, runtime, api, thread };
 }

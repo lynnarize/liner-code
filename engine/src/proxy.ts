@@ -14,7 +14,7 @@
   dev server sees it), the header x-liner-frame: 1, or a page reached from a marked one (its Referer
   has the marker). The Browser panel never sends it, so its pages are as they were.
 */
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { closeSync, constants, createReadStream, fstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server } from "node:http";
 import { connect } from "node:net";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -86,10 +86,72 @@ function addressed(server: Server, host?: string) {
 */
 const fromItself = (req: IncomingMessage) => req.headers.origin === `http://${req.headers.host}`;
 
-/** A page with the probe as the first thing in its head (and, for a design, the frame's style). */
+const WHITE = "\t\n\f\r ";
+/**
+  Where a start tag ends (one past its ">"), from just after its name, read as the browser's
+  tokenizer reads it: quotes count only round an attribute's value, so a ">" inside one doesn't end
+  the tag, and a quote in an attribute's name doesn't start one. -1 when it doesn't end.
+*/
+function tagEnd(s: string, j: number) {
+  const white = (c: string) => WHITE.includes(c);
+  for (;;) {
+    while (j < s.length && (white(s[j]) || s[j] === "/")) j++;
+    if (j >= s.length) return -1;
+    if (s[j] === ">") return j + 1;
+    // An attribute's name: its first character may be anything (even "="), the rest runs to white space, "/", ">" or "=".
+    j++;
+    while (j < s.length && !white(s[j]) && s[j] !== "/" && s[j] !== ">" && s[j] !== "=") j++;
+    while (j < s.length && white(s[j])) j++;
+    if (s[j] !== "=") continue;
+    j++;
+    while (j < s.length && white(s[j])) j++;
+    const q = s[j];
+    if (q === '"' || q === "'") {
+      const e = s.indexOf(q, j + 1);
+      if (e < 0) return -1;
+      j = e + 1;
+    } else if (q === ">") return j + 1;
+    else while (j < s.length && !white(s[j]) && s[j] !== ">") j++;
+  }
+}
+
+/**
+  Where the probe (and a live frame's agent) goes so that it runs before every script of the page:
+  after a leading doctype, <html> and <head>, each taken only where nothing but white space comes
+  before it, else at the very start. Never by finding a "<head" further on, which may be a
+  <header>, sit in a comment, or come after a script of the page. The same as the app's for a drawn
+  frame (ui/src/app/design/Frame.tsx agentAt): keep the two alike.
+*/
+export function agentAt(html: string) {
+  let i = 0;
+  let at = 0;
+  const skip = () => {
+    while (i < html.length && WHITE.includes(html[i])) i++;
+  };
+  skip();
+  if (html.slice(i, i + 9).toLowerCase() === "<!doctype") {
+    // A doctype ends at its first ">", quoted or not.
+    const e = html.indexOf(">", i);
+    if (e < 0) return 0;
+    at = i = e + 1;
+    skip();
+  }
+  for (const name of ["html", "head"]) {
+    const c = html[i + name.length + 1];
+    if (html.slice(i, i + name.length + 1).toLowerCase() !== `<${name}` || c === undefined || !`${WHITE}/>`.includes(c)) continue;
+    const e = tagEnd(html, i + name.length + 1);
+    if (e < 0) return at;
+    at = i = e;
+    skip();
+  }
+  return at;
+}
+
+/** A page with the probe first of all (agentAt), then `extra`: for a design, the frame's style; for a live frame, its agent. */
 const withProbe = (html: string, extra = "") => {
   const tag = `<script src="${PROBE_PATH}"></script>${extra}`;
-  return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + tag) : tag + html;
+  const at = agentAt(html);
+  return html.slice(0, at) + tag + html.slice(at);
 };
 
 /** Opens a server on a port (a free one for 0) of a host and says which. */
@@ -154,6 +216,14 @@ export class Proxies {
   async files(root: string): Promise<string> {
     const have = this.folders.get(root);
     if (have) return have.address;
+    // The folder as it really is on disk: every path is checked against it after its links are
+    // followed, so a link in the folder (one a cloned repository brings, say) can't serve ~/.ssh.
+    let realRoot: string;
+    try {
+      realRoot = realpathSync(root);
+    } catch {
+      realRoot = resolve(root);
+    }
     const server = createServer((req, res) => {
       if (!addressed(server, req.headers.host)) return void res.writeHead(403).end();
       if (req.method !== "GET" && req.method !== "HEAD") return void res.writeHead(405).end();
@@ -168,13 +238,46 @@ export class Proxies {
       const inside = relative(root, abs);
       const parts = inside.split(sep);
       const design = parts[0] === ".liner" && parts[1] === "designs" && parts.length > 2;
-      if (inside.startsWith("..") || isAbsolute(inside) || parts.slice(design ? 2 : 0).some((p) => p.startsWith("."))) return void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note("Not a file of this session's folder."));
+      const refused = () => void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note("Not a file of this session's folder."));
+      /** Not inside the folder, or hidden in it (.env, .git), but for the session's designs. */
+      const out = (rel: string) => {
+        const p = rel.split(sep);
+        const ok = p[0] === ".liner" && p[1] === "designs" && p.length > 2;
+        return rel.startsWith("..") || isAbsolute(rel) || p.slice(ok ? 2 : 0).some((x) => x.startsWith("."));
+      };
+      if (out(inside)) return refused();
+      const missing = () => void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note(`No ${escaped(inside || "index.html")} in this session's folder yet.`));
+      // Its links followed: where it really is must be in the folder, and not hidden in it, too.
+      let real: string;
       try {
-        if (statSync(abs).isDirectory()) abs = join(abs, "index.html");
+        real = realpathSync(abs);
+        if (statSync(real).isDirectory()) real = realpathSync(join(real, "index.html"));
       } catch {
-        // missing; said below
+        return missing();
       }
-      if (!existsSync(abs) || !statSync(abs).isFile()) return void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note(`No ${escaped(inside || "index.html")} in this session's folder yet.`));
+      const realRel = relative(realRoot, real);
+      if (!realRel || out(realRel)) return refused();
+      abs = real;
+      // One descriptor, opened without following a link at its end, for the look and the read, so
+      // the file can't be swapped for a link between the two.
+      let fd: number;
+      try {
+        fd = openSync(abs, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      } catch {
+        return missing();
+      }
+      let size: number;
+      try {
+        const st = fstatSync(fd);
+        if (!st.isFile()) {
+          closeSync(fd);
+          return missing();
+        }
+        size = st.size;
+      } catch {
+        closeSync(fd);
+        return missing();
+      }
       const type = TYPES[extname(abs).toLowerCase()] ?? "application/octet-stream";
       const headers = { "content-type": type, "cache-control": "no-store" };
       // A file can go, or be out of reach, between the look above and the read.
@@ -182,20 +285,22 @@ export class Proxies {
       if (type.startsWith("text/html")) {
         let page: string;
         try {
-          page = readFileSync(abs, "utf8");
+          page = readFileSync(fd, "utf8");
         } catch {
           return unread();
+        } finally {
+          closeSync(fd);
         }
         return void res.writeHead(200, headers).end(req.method === "HEAD" ? undefined : withProbe(page, design ? DESIGN_FRAME_STYLE : ""));
       }
-      if (req.method === "HEAD") return void res.writeHead(200, { ...headers, "content-length": statSync(abs).size }).end();
-      // The headers wait for the file to open, so one that can't be read can still say so.
-      const file = createReadStream(abs);
+      if (req.method === "HEAD") {
+        closeSync(fd);
+        return void res.writeHead(200, { ...headers, "content-length": size }).end();
+      }
+      const file = createReadStream("", { fd, autoClose: true });
       file.once("error", unread);
-      file.once("open", () => {
-        res.writeHead(200, { ...headers, "content-length": statSync(abs).size });
-        file.pipe(res);
-      });
+      res.writeHead(200, { ...headers, "content-length": size });
+      file.pipe(res);
       res.once("close", () => file.destroy());
     });
     const served = serve(server);

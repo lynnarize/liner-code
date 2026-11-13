@@ -22,7 +22,7 @@ import { capture, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { killTree, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
 import { claudeTeam, fixPrompt, parseFindings, parseStep, quickOf, reviewPrompt, stepPrompt } from "./review.ts";
-import { antigravity, cursor, grok, hermes, opencode } from "./providers/acp.ts";
+import { antigravity, cursor, gitInside, grok, hermes, opencode } from "./providers/acp.ts";
 import { effortOf } from "./providers/models.ts";
 import { accountProvider, addedProvider } from "./providers/added.ts";
 import { claude } from "./providers/claude.ts";
@@ -38,7 +38,7 @@ import { briefOf } from "./agents.ts";
 import { modeNote } from "./creator.ts";
 import { designNote, type DesignMark } from "./lean.ts";
 import { memoryNote, titleFrom } from "./memory.ts";
-import { commandRisk, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
+import { commandRisk, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, type BriefOutcome } from "./sidekick.ts";
 
@@ -119,6 +119,12 @@ const LIMIT_UNKNOWN_MS = 3_600_000;
 const LIMIT_STALE_MS = 24 * 3_600_000;
 /** The tools that only edit files in the project, by the name each provider asks with (Claude Code's, Codex's apply_patch, ACP's "edit" kind). */
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit", "apply_patch", "edit"]);
+/**
+  Whether an ask's files reach into git's own folder or name a file HEAD (risk.ts, gitPlace), from the project and once
+  links are followed (acp.ts, gitInside): a hook written there (`.git/hooks/pre-commit`) runs on the next `git commit`,
+  and Auto runs that. Such an edit is never Auto's, nor a rule's: it comes to you below Full.
+*/
+const editsGit = (fields: { label: string; value: string }[], cwd: string) => fields.some((f) => f.label === "File" && gitInside(cwd, f.value));
 /**
   What Read only forbids of what a tool asks to do, by the ask itself: a command that changes things (one that only reads is
   allowed), a file edit (Claude Code's Edit and Write, Codex's apply_patch, an ACP agent's edit, delete or move), and more access
@@ -1966,38 +1972,43 @@ export class Runtime {
     Whether a command, or a tool by its rule, was allowed for the session: a command when every rule it needs was
     granted (ruleParts), a tool by its own name only, so a program named like a tool (`Edit`) never rides on it.
   */
-  private ruleAllows(threadId: string, command: string | undefined, rule?: string) {
+  private ruleAllows(threadId: string, command: string | undefined, rule?: string, fields: { label: string; value: string }[] = []) {
     const rules = (this.grants.get(threadId) ?? []).filter((g) => g.kind === "rule");
-    if (command === undefined) return Boolean(rule && rules.some((g) => g.tool && g.parts[0] === rule));
+    const t = this.store.thread(threadId);
+    const cwd = t.worktree?.path ?? this.store.project(t.projectId).path;
+    // An Edit rule never writes into git's own folder (editsGit).
+    if (command === undefined) return Boolean(rule && rules.some((g) => g.tool && g.parts[0] === rule)) && !editsGit(fields, cwd);
     const needs = ruleParts(command);
     const granted = new Set(rules.filter((g) => !g.tool).flatMap((g) => g.parts));
-    return Boolean(needs?.length && needs.every((r) => granted.has(r)));
+    // A rule names a program and its subcommand, never what Auto's list bans past them: `git grep` granted, `git grep
+    // --open='touch x' foo` still asks, and so does a write into .git, onto a HEAD or outside the folder (risk.ts, hazardOf).
+    return Boolean(needs?.length && needs.every((r) => granted.has(r))) && !hazardOf(command, cwd);
   }
 
   /**
-    Auto's own rule, the one function both Auto and "don't ask again this turn" go by. Auto passes the tool's own `unjudged`.
-    The turn's grant passes true for every tool: it applies only at the levels below Auto (Manual, Edits on its own; see
-    turnLevel), where it uses Liner Code's own Auto rule for a tool with no check of its own, whatever the tool is. At Auto
-    and above it is neither offered nor taken nor applied, so a step a judging tool (Claude Code's own Auto, Codex) hands
-    over at Auto can't go ahead on it. A tool's own edit goes ahead; a command when it only reads, or when nothing of the tool's
-    own judged it (`unjudged`) and Liner Code's reading would run it: rated low, inside the project or a skill's script you
-    allowed, none of the asks a low rating says too little about, no .env name, sending nothing out (risk.ts, routine,
-    leavesMac). Never what can't be undone.
+    Auto's own rule, the one function both Auto and "don't ask again this turn" go by, each passing the tool's own
+    `unjudged`: for a tool that judges its own commands (Claude Code's own Auto, Codex) Auto's rule is reading and editing,
+    whatever level it's applied at, so a turn's grant at Manual never runs more on it than that. A tool's own edit goes
+    ahead, but not one into git's own folder or onto a HEAD (editsGit), whatever the tool; a command when it only reads,
+    or when nothing of the tool's own judged it (`unjudged`) and Liner Code's allowlist knows it: every part a known
+    in-folder command, nothing the shell fills in, no .env name, no push, upload or form sent out (risk.ts, routine,
+    leavesMac). An install from the project's own lists is on that list: it reaches
+    the package registry and runs the packages' install scripts, the trade-off Auto takes. Never what can't be undone.
   */
   private autoLets(req: ApprovalRequest, command: string | undefined, cwd: string, skills: string[], unjudged: boolean) {
     if (req.risk === "high") return false;
-    if (command === undefined) return EDIT_TOOLS.has(req.tool);
+    if (command === undefined) return EDIT_TOOLS.has(req.tool) && !editsGit(req.fields, cwd);
     if (namesSecret(command)) return false;
     return readsOnly(command) || (unjudged && routine(command, cwd, process.platform, { inside: skills }) && !leavesMac(command));
   }
 
   /**
-    What "don't ask again this turn" lets go ahead (see approve): what Auto's rule would run for a tool with no safety check of
-    its own (autoLets), narrowed in two places, never widened: a read-only command must also pass Auto's place check (routine),
-    and an edit must name files, all in the project.
+    What "don't ask again this turn" lets go ahead (see approve): exactly what Auto's rule would run for this tool, judged or
+    not by its own `unjudged` (autoLets), narrowed in two places, never widened: a read-only command must also pass Auto's
+    allowlist (routine), and an edit must name files, all in the project. Only below Auto (turnLevel).
   */
   private turnCovers(req: ApprovalRequest, command: string | undefined, cwd: string, skills: string[]) {
-    if (!this.autoLets(req, command, cwd, skills, true)) return false;
+    if (!this.autoLets(req, command, cwd, skills, Boolean(req.unjudged))) return false;
     // A read too only where Auto's place check passes: Auto lets any read-only command a tool hands over go ahead, which at
     // Manual is just the read outside the project the tool asked about (`cat ~/.ssh/id_rsa`). Never wider than Auto.
     if (command !== undefined) return routine(command, cwd, process.platform, { inside: skills }) && !leavesMac(command);
@@ -2526,7 +2537,7 @@ export class Runtime {
         // Allowed for the rest of the session already. Not what can't be undone (a rule from `rm a.txt` is `rm`, and `rm -rf ~` is `rm` too),
         // nor in a routine's step, whose limits are its own whatever you said in its session. A command only when every
         // rule it needs was granted (risk.ts, ruleParts), so nothing chained after an allowed command rides on it.
-        if (!held && req.risk !== "high" && !this.unattended.has(threadId) && req.rule && !secret && this.ruleAllows(threadId, command, req.rule)) return Promise.resolve({ allow: true });
+        if (!held && req.risk !== "high" && !this.unattended.has(threadId) && req.rule && !secret && this.ruleAllows(threadId, command, req.rule, req.fields)) return Promise.resolve({ allow: true });
         // Nobody's there to ask.
         if (held && this.unattended.has(threadId)) return Promise.resolve({ allow: false, reason: "This turn only reads. Leave the change for the person." });
         // A routine runs with nobody watching: it may do what can be undone, never what can't, and
@@ -2548,7 +2559,8 @@ export class Runtime {
         const access = now.access;
         // Auto: the tool's own auto mode lets through what it can; of what it hands over, reading and editing go ahead.
         // A tool with no such mode hands over every command, so a routine one goes ahead too: rated low, inside its
-        // folder (or a skill's you allowed), sending nothing out (risk.ts, routine, leavesMac). The rest still comes to you.
+        // folder (or a skill's you allowed), sending none of your work out (risk.ts, routine, leavesMac); an install from the
+        // project's lists still reaches the registry. The rest still comes to you.
         if (!held && access === "auto" && this.autoLets(req, command, cwd, reach.skills, Boolean(req.unjudged))) return Promise.resolve({ allow: true });
         /**
           Why it comes to you, most important first, each from the check that decided it: what can't be undone (risk.ts's

@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { acpMcp, acpProvider, commandWords, fromFolder, hermes, hermesWait, inFolder, leaves, linerCall, opencodeAsks, opencodeEnv, secretFile, setCancelMs, setOpencodeUsageMs, CANCEL_MS, OPENCODE_USAGE_MS } from "../src/providers/acp.ts";
+import { acpMcp, acpProvider, commandWords, fromFolder, hermes, hermesWait, inFolder, leaves, linerCall, opencodeAsks, opencodeEnv, opencodeTurnUsage, secretFile, setCancelMs, setOpencodeUsageMs, CANCEL_MS, OPENCODE_USAGE_MS } from "../src/providers/acp.ts";
 import { execMcp } from "../src/providers/codex.ts";
 import { TOOLS } from "../src/liner-tools.ts";
 import { CodexServerSession, codexAsk } from "../src/providers/codex-server.ts";
@@ -19,7 +19,7 @@ import { LINER_WAIT_SEC, ResumeFailed, type ApprovalRequest, type OpenOptions, t
 import type { Access, ProviderId, Question } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { demo, PLAN_ASK } from "../src/providers/demo.ts";
-import { leavesMac, providers, Runtime } from "../src/runtime.ts";
+import { leavesMac, providers, readForbids, Runtime } from "../src/runtime.ts";
 import { Store } from "../src/store.ts";
 import { noLeaks } from "./leaks.ts";
 
@@ -363,22 +363,35 @@ const ACCESS: Access[] = ["read", "ask", "edits", "auto", "review"];
 
 test("acp: OpenCode is told to ask, whatever its environment says; no other agent is", async () => {
   const told = (name: string, env: NodeJS.ProcessEnv = {}) => {
-    const fake = script(name, `fs.writeFileSync(process.env.FAKE_LOG + ".rules", process.env.OPENCODE_PERMISSION ?? "none");\n${ACP}`);
+    const fake = script(name, `fs.writeFileSync(process.env.FAKE_LOG + ".rules", process.env.OPENCODE_PERMISSION ?? "none");\nfs.writeFileSync(process.env.FAKE_LOG + ".config", process.env.OPENCODE_CONFIG_CONTENT ?? "none");\n${ACP}`);
     return { fake, s: acpProvider("acp.fake", { label: "Fake", cmd: [fake.file, "acp"], login: "" }).open(opts({ mcp: { command: "x", args: [], env: {} }, env: { ...process.env, ...env, FAKE_LOG: fake.log } })) };
   };
-  const rules = async (name: string, env?: NodeJS.ProcessEnv) => {
+  const both = async (name: string, env?: NodeJS.ProcessEnv) => {
     const { fake, s } = told(name, env);
     await s.turn("hi", recorder().sink, new AbortController().signal);
     s.close();
-    return readFileSync(`${fake.log}.rules`, "utf8");
+    return { rules: readFileSync(`${fake.log}.rules`, "utf8"), config: readFileSync(`${fake.log}.config`, "utf8") };
   };
+  const rules = async (name: string, env?: NodeJS.ProcessEnv) => (await both(name, env)).rules;
   const said = JSON.parse(await rules("opencode", { OPENCODE_PERMISSION: '{"*":"allow","bash":"allow"}' })) as Record<string, string>;
   assert.equal(Object.keys(said)[0], "*", "the last rule that fits wins, so what nobody named comes first");
   for (const name of ["*", "read", "glob", "grep", "edit", "bash", "external_directory", "webfetch", "websearch", "codesearch", "doom_loop"]) assert.equal(said[name], "ask", name);
   for (const name of ["todowrite", "question", "skill", "lsp", "list", "liner_design_show"]) assert.equal(said[name], "allow", name);
   assert.equal(said["task*"], "deny", "a subagent's asks never reach the client, so it would wait for good");
   assert.ok(Object.keys(said).indexOf("task*") > 0, "and it comes after \"*\", or an opencode.json's own `task` would lose it to the ask");
+  assert.equal(said.shell, "ask", "OpenCode 2's name for bash");
+  assert.equal(said["subagent*"], "deny", "and for task");
+  // OpenCode 2 reads only its config's rules: the same ones go there, for a plain session and an endpoint's alike, its provider kept.
+  const plain = JSON.parse((await both("opencode")).config) as { permission: Record<string, string> };
+  assert.equal(plain.permission["*"], "ask");
+  assert.equal(plain.permission.shell, "ask");
+  assert.equal(plain.permission["subagent*"], "deny");
+  const endpoint = JSON.parse((await both("opencode", { OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: { liner_x: { npm: "n" } }, model: "liner_x/m" }) })).config) as { permission: Record<string, string>; provider: unknown; model: string };
+  assert.deepEqual(endpoint.provider, { liner_x: { npm: "n" } }, "the endpoint's provider stays");
+  assert.equal(endpoint.model, "liner_x/m");
+  assert.equal(endpoint.permission.shell, "ask");
   assert.equal(await rules("agent"), "none");
+  assert.equal((await both("agent")).config, "none", "no other agent is told");
 });
 
 test("acp: reading goes by itself at every level, unless it leaves the project or it's a .env", async () => {
@@ -447,6 +460,42 @@ test("acp: what's handed to it is there to read, not to change", async () => {
   assert.deepEqual(await acpStep({ kind: "read", locations: [{ path: join(away, "secret.txt") }] }, "ask", { cwd: root, dirs: [away] }), { picked: "yes", cards: [] });
   assert.equal((await acpStep({ kind: "edit", locations: [{ path: join(away, "secret.txt") }] }, "edits", { cwd: root, dirs: [away] })).cards[0].risk, "high");
   assert.equal((await acpStep({ kind: "read", locations: [{ path: "link/secret.txt" }] }, "ask", { cwd: root, dirs: [join(root, "elsewhere", "link")] })).cards[0].risk, "high", "a path goes by the project it's in, not the folder it's handed");
+});
+
+test("acp: an edit into git's own folder, or onto a HEAD, is in the project and still never goes by itself below Full: a hook there runs on the next commit", async () => {
+  const { root } = project();
+  mkdirSync(join(root, ".git", "hooks"), { recursive: true });
+  symlinkSync(join(root, ".git"), join(root, "gitlink"));
+  const edit = (path: string) => ({ kind: "edit", title: "Edit", locations: [{ path }] });
+  for (const path of [".git/hooks/pre-commit", join(root, ".git", "config"), "./.GIT/hooks/pre-commit", "gitlink/hooks/pre-commit", "evil/HEAD"]) {
+    for (const access of ["ask", "edits", "auto", "review"] as Access[]) {
+      const out = await acpStep(edit(path), access, { cwd: root });
+      assert.equal(out.picked, "no", `${access}: ${path}`);
+      assert.equal(out.cards[0].risk, "high", `${access}: ${path}, so neither Auto nor the Reviewer answers for you`);
+      assert.equal(out.cards[0].rule, undefined, "and no Don't ask again");
+      assert.match(out.cards[0].description ?? "", /git's own folder/);
+      assert.deepEqual(out.cards[0].why, [{ kind: "changes", text: "it writes into git's own folder, whose hooks and settings run code" }]);
+    }
+    assert.equal((await acpStep(edit(path), "read", { cwd: root })).picked, "no", `read: ${path}`);
+    assert.deepEqual(await acpStep(edit(path), "full", { cwd: root }), { picked: "yes", cards: [] }, `full: ${path}`);
+  }
+  // Two files, one of them in .git: the card names that one.
+  assert.equal((await acpStep({ kind: "edit", title: "Edit", locations: [{ path: "src/a.ts" }, { path: ".git/config" }] }, "auto", { cwd: root })).cards[0].fields.find((f) => f.label === "File")?.value, ".git/config");
+  for (const path of ["src/a.ts", ".gitignore", ".github/workflows/ci.yml", "src/head.ts"]) assert.deepEqual(await acpStep(edit(path), "auto", { cwd: root }), { picked: "yes", cards: [] }, path);
+  // Reading there is still reading.
+  assert.deepEqual(await acpStep({ kind: "read", locations: [{ path: ".git/config" }] }, "ask", { cwd: root }), { picked: "yes", cards: [] });
+  // An agent that writes without asking (fs/write_text_file) asks for it there too, below Full.
+  const cards: ApprovalRequest[] = [];
+  const write = (path: string, access: Access) => acpAsk({ method: "fs/write_text_file", params: { path, content: "touch MARK" } }, { cwd: root, access }, async (req) => (cards.push(req), { allow: false }));
+  for (const access of ["edits", "auto", "review"] as Access[]) {
+    assert.match((await write(".git/hooks/pre-commit", access)).error?.message ?? "", /didn't allow/, access);
+    assert.match((await write("gitlink/hooks/post-commit", access)).error?.message ?? "", /didn't allow/, access);
+  }
+  assert.throws(() => readFileSync(join(root, ".git", "hooks", "pre-commit")));
+  assert.ok(cards.every((c) => c.risk === "high" && c.rule === undefined), "high, and no rule");
+  assert.equal((await write("src/b.ts", "auto")).error, undefined);
+  assert.equal(cards.length, 6, "a write in the project asked nothing");
+  assert.equal((await write(".git/hooks/pre-commit", "full")).error, undefined, "Full access is all of it");
 });
 
 test("acp: a command that only reads goes by itself at every level; the rest of what runs asks", async () => {
@@ -824,7 +873,7 @@ test("acp: your denies in opencode.json stay denies at every level; your allows 
   const order = Object.keys(said);
   assert.ok(order.indexOf("edit*") > order.indexOf("edit"), "the last rule that fits wins, so a deny comes after the ask of its name");
   assert.ok(!("edit" in said) || said.edit === "ask");
-  assert.equal(order.at(-1), "task*");
+  assert.deepEqual(order.slice(-2), ["task*", "subagent*"], "subagents off last, under both names");
   // Under a name your file doesn't hold: one it does stays where you wrote it, ahead of "*", whose ask would win.
   assert.ok(Object.keys(JSON.parse(opencodeAsks({ edit: "deny" }))).filter((k) => k === "edit*").length === 1);
 });
@@ -871,6 +920,103 @@ test("acp: rules from two files add up as OpenCode adds them, and the older tool
   assert.equal(old.bash, "ask");
   assert.equal(rules({ tools: { webfetch: false } }, { tools: { webfetch: true } })["webfetch*"], undefined, "later over earlier");
   assert.equal(rules({ tools: { webfetch: false }, permission: { webfetch: "allow" } }, {})["webfetch*"], undefined, "and permission over tools, as in OpenCode");
+});
+
+test("acp: OpenCode 2 gets the same rules in its config, under its own names, beside an endpoint's provider", () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "lc-oc-")));
+  const env = { HOME: home, XDG_CONFIG_HOME: join(home, "cfg") };
+  const told = (extra: NodeJS.ProcessEnv = {}) => opencodeEnv(home, { ...env, ...extra });
+  const config = (extra: NodeJS.ProcessEnv = {}) => JSON.parse(String(told(extra).OPENCODE_CONFIG_CONTENT)) as { permission: Record<string, unknown>; provider?: unknown; model?: string; experimental: Record<string, unknown> };
+  // 2.3.0 reads no OPENCODE_PERMISSION: a plain session's config carries the rules, the same as the variable 1.x reads.
+  const plain = config();
+  assert.deepEqual(plain.permission, JSON.parse(String(told().OPENCODE_PERMISSION)), "one set of rules, both ways");
+  const order = Object.keys(plain.permission);
+  assert.equal(order[0], "*", "the last rule that fits wins, in 2.x's list as in 1.x");
+  assert.equal(plain.permission["*"], "ask", "a tool nobody named asks rather than runs");
+  for (const name of ["bash", "shell", "edit", "read", "webfetch", "external_directory"]) assert.equal(plain.permission[name], "ask", name);
+  assert.equal(plain.permission["subagent*"], "deny", "2.x's task, which `task*` doesn't reach: 2.x maps a bare `task`, not one with a *");
+  assert.equal(plain.permission["task*"], "deny");
+  assert.equal(plain.permission["execute*"], "deny", "Code Mode off: what it does inside would only ever ask as one opaque `execute`");
+  assert.equal(plain.permission["opencode?worktree_*"], "deny", "2.x's own tools that ask nothing aren't offered");
+  for (const name of ["subagent*", "execute*", "opencode?worktree_*"]) assert.ok(order.indexOf(name) > order.indexOf("*"), `${name} after "*"`);
+  assert.equal(plain.experimental.continue_loop_on_deny, true);
+
+  // An endpoint's config keeps its provider and model, with the rules put in beside them.
+  const endpoint = config({ OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: { liner_x: { npm: "n", options: { baseURL: "http://127.0.0.1:1/v1" } } }, model: "liner_x/m", permission: { bash: { "rm *": "deny" } } }) });
+  assert.deepEqual(endpoint.provider, { liner_x: { npm: "n", options: { baseURL: "http://127.0.0.1:1/v1" } } });
+  assert.equal(endpoint.model, "liner_x/m");
+  assert.equal(endpoint.permission.bash, "ask", "its allows come to the access level");
+  assert.deepEqual(endpoint.permission["bash*"], { "rm *": "deny" }, "its denies stay");
+  assert.deepEqual(endpoint.permission["shell*"], { "rm *": "deny" }, "under 2.x's name too");
+
+  // 2.x reads a document's `permissions` list after its `permission`: an allow there would win over Liner Code's asks, so only its denies stay.
+  const listed = (permissions: unknown, permission?: unknown) => JSON.parse(String(told({ OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "liner_x/m", permission, permissions }) }).OPENCODE_CONFIG_CONTENT)) as { permission: Record<string, unknown>; permissions?: unknown; model?: string };
+  const mixed = listed([{ action: "shell", resource: "*", effect: "allow" }, { action: "edit", resource: "*", effect: "allow" }, { action: "webfetch", resource: "*", effect: "deny" }, { action: "shell", resource: "git push *", effect: "deny" }, "allow"], { "*": "allow", bash: "allow", read: { "*": "allow", "*.pem": "deny" } });
+  assert.deepEqual(mixed.permissions, [{ action: "webfetch", resource: "*", effect: "deny" }, { action: "shell", resource: "git push *", effect: "deny" }], "your denies stay, in your order; the allows are gone");
+  assert.equal(mixed.model, "liner_x/m");
+  assert.equal(mixed.permission["*"], "ask", "an allow of yours under `permission` doesn't loosen Liner Code's");
+  assert.equal(mixed.permission.bash, "ask");
+  assert.equal(mixed.permission.shell, "ask");
+  assert.deepEqual(mixed.permission["read*"], { "*": "ask", "*.pem": "deny" }, "a deny of yours under `permission` stays");
+  assert.equal(mixed.permission["webfetch*"], "deny", "and the list's denies are in the rules too");
+  assert.deepEqual(mixed.permission["shell*"], { "git push *": "deny" });
+  assert.equal("permissions" in listed([{ action: "shell", resource: "*", effect: "allow" }]), false, "a list of allows alone goes");
+  assert.equal("permissions" in listed({ shell: "allow" }), false, "and so does one that isn't a list");
+
+  // One that won't parse: 2.3.0 would start with no rules at all, so Liner Code's own take its place.
+  const was = console.error;
+  const said: string[] = [];
+  console.error = (...a: unknown[]) => void said.push(a.join(" "));
+  try {
+    assert.equal(config({ OPENCODE_CONFIG_CONTENT: "{ not json" }).permission["*"], "ask");
+  } finally {
+    console.error = was;
+  }
+  assert.equal(said.length, 1);
+});
+
+test("acp: a deny of yours holds under OpenCode 2's names for the tool, and in its list form", () => {
+  const rules = (yours: Record<string, unknown>) => JSON.parse(opencodeAsks(yours)) as Record<string, unknown>;
+  assert.equal(rules({ bash: "deny" })["shell*"], "deny", "2.x calls bash shell");
+  assert.equal(rules({ shell: "deny" })["bash*"], "deny", "and 1.x calls shell bash");
+  assert.deepEqual(rules({ shell: { "*": "allow", "git push *": "deny" } })["shell*"], { "*": "ask", "git push *": "deny" });
+  assert.equal(rules({ shell: "allow" }).shell, "ask", "an allow under the new name comes to the access level too");
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "lc-oc-")));
+  writeFileSync(join(home, "opencode.json"), JSON.stringify({ permissions: [{ action: "webfetch", resource: "*", effect: "deny" }, { action: "shell", resource: "git push *", effect: "deny" }, { action: "edit", resource: "*", effect: "allow" }] }));
+  const said = JSON.parse(opencodeEnv(home, { HOME: home, XDG_CONFIG_HOME: join(home, "cfg") }).OPENCODE_PERMISSION) as Record<string, unknown>;
+  assert.equal(said["webfetch*"], "deny", "2.x's own list form");
+  assert.deepEqual(said["shell*"], { "git push *": "deny" });
+  assert.equal(said["edit*"], undefined, "its allows don't count");
+});
+
+test("acp: OpenCode 2's Code Mode, should it ask, is a command with the network: high, no rule, refused at Read only", async () => {
+  const fake = script("opencode", ACP_ASKS);
+  const code = 'return await fetch("https://example.com", { method: "POST", body: "x" })';
+  const ask = { method: "session/request_permission", params: { sessionId: "s-new", options: [{ optionId: "once", kind: "allow_once" }, { optionId: "reject", kind: "reject_once" }], toolCall: { toolCallId: "c1", name: "execute", title: "execute", kind: "other", status: "pending", locations: [], rawInput: { code } } } };
+  const step = async (access: Access) => {
+    const cards: ApprovalRequest[] = [];
+    const s = acpProvider("opencode", { label: "OpenCode", cmd: [fake.file, "acp"], login: "" }).open(opts({ access, env: { ...process.env, FAKE_LOG: fake.log, FAKE_ASK: JSON.stringify([ask]) } }));
+    const { sink } = recorder();
+    sink.approve = async (req) => (cards.push(req), { allow: false });
+    const was = console.error;
+    console.error = () => {};
+    try {
+      await s.turn("go", sink, new AbortController().signal);
+    } finally {
+      console.error = was;
+      s.close();
+    }
+    return cards;
+  };
+  for (const access of ["ask", "edits", "auto", "read"] as const) {
+    const [card] = await step(access);
+    assert.equal(card.tool, "execute", `${access}: as a command, which Read only refuses with no card (readForbids)`);
+    assert.equal(card.risk, "high", `${access}: Auto and the Reviewer leave it to you`);
+    assert.equal(card.rule, undefined, `${access}: one rule would let any code through`);
+    assert.deepEqual(card.fields[0], { label: "Code", value: code });
+    assert.equal(readForbids(card), true);
+  }
+  assert.deepEqual(await step("full"), [], "Full lets it go");
 });
 
 test("acp: Liner Code's own tools go by themselves by name, from the list that defines them, and only with its server there", async () => {
@@ -1076,7 +1222,14 @@ test("acp: OpenCode goes on after a refusal and reviews in the session, added to
   assert.deepEqual(endpoint.experimental, { other: 1, continue_loop_on_deny: true, mcp_timeout: LINER_WAIT_SEC * 1000 });
   assert.equal(config({ OPENCODE_CONFIG_CONTENT: '{ // yours\n "model": "a/b", }' }).model, "a/b", "with comments, as OpenCode takes it");
   assert.equal(config({ OPENCODE_CONFIG_CONTENT: JSON.stringify({ command: { review: { template: "mine" } } }) }).command?.review.template, "mine", "a /review of your own stays yours");
-  assert.equal(opencodeEnv(home, { ...env, OPENCODE_CONFIG_CONTENT: "{ not json" }).OPENCODE_CONFIG_CONTENT, undefined, "one that won't parse is left for OpenCode to say so");
+  const was = console.error;
+  console.error = () => {};
+  try {
+    // OpenCode 2.3.0 starts on one that won't parse as if it weren't there, with no rules: Liner Code's own goes in its place.
+    assert.equal(config({ OPENCODE_CONFIG_CONTENT: "{ not json" }).experimental.continue_loop_on_deny, true, "one that won't parse gives way to Liner Code's");
+  } finally {
+    console.error = was;
+  }
 
   const mine = realpathSync(mkdtempSync(join(tmpdir(), "lc-oc-")));
   writeFileSync(join(mine, "opencode.json"), JSON.stringify({ command: { review: { template: "mine" } } }));
@@ -1136,6 +1289,8 @@ test("acp: a subagent's turn can't hang, even if OpenCode doesn't answer the can
 
 test("acp: pressing Stop on a subagent's turn is just Stop, and a second wait doesn't outlive it", async () => {
   const fake = script("opencode", ACP_SUBTASK);
+  // Its `opencode export`, read as the turn ends, takes longer than the wait for a cancel, however fast this Mac starts node.
+  writeFileSync(fake.file, readFileSync(fake.file, "utf8").replace('const fs = require("fs");', 'if (process.argv[2] === "export") return void setTimeout(() => {}, 150);\nconst fs = require("fs");'));
   const s = acpProvider("opencode", { label: "OpenCode", cmd: [fake.file, "acp"], login: "" }).open(opts({ env: { ...process.env, FAKE_LOG: fake.log } }));
   const was = CANCEL_MS;
   setCancelMs(40);
@@ -1302,6 +1457,14 @@ const db = () => JSON.parse(fs.readFileSync(STORE, "utf8"));
 const add = (...ms) => { const d = db(); d.s1.push(...ms); fs.writeFileSync(STORE, JSON.stringify(d)); };
 const step = ${step.toString().replace(/^\(/, "(").replace(/: number/g, "")};
 const a = process.argv.slice(2);
+if (a[0] === "export" || a[0] === "session") fs.appendFileSync(STORE + ".calls", a.slice(0, -1).join(" ") + "\\n");
+// OpenCode 2: no \`export\`, so its root help, exiting 0; \`session export --standalone <id>\` with each message's role as its type.
+if (a[0] === "export" && process.env.FAKE_EXPORT === "v2") { process.stdout.write("DESCRIPTION\\n  OpenCode command line interface\\n\\nUSAGE\\n  opencode <subcommand> [flags] [<directory>]\\n"); return; }
+if (a[0] === "session" && a[1] === "export" && a[2] === "--standalone") {
+  const id = a[3];
+  process.stdout.write(JSON.stringify({ info: { id }, messages: (db()[id] ?? []).map((m) => ({ id: "msg", type: m.info.role, time: m.info.time, ...(m.info.tokens ? { tokens: m.info.tokens } : {}) })) }));
+  return;
+}
 if (a[0] === "export") {
   if (process.env.FAKE_EXPORT === "slow") { setTimeout(() => {}, 60_000); return; }
   // Deaf to SIGTERM, and a child of its own holding its output open.
@@ -1378,6 +1541,28 @@ test("opencode: a turn of many steps counts them all, from OpenCode's store, onc
   assert.deepEqual(used, [{ inputTokens: 1000 + 300 + 200 + 950, outputTokens: 10 + 5 + 20 + 111, cacheReadTokens: 5000 + 20672 }], "every step of this turn, not the last one's, nor the earlier turn's or another session's");
   assert.deepEqual(totals, [undefined], "a step, so each sink adds it");
   assert.deepEqual(said, []);
+});
+
+test("opencode: OpenCode 2, which has no `export`, is read with `session export`, the way learnt once", async () => {
+  const fake = opencodeStore();
+  const s = acpProvider("opencode", { label: "OpenCode", cmd: [fake.file, "acp"], login: "" }).open(opts({ env: { ...process.env, FAKE_EXPORT: "v2" } }));
+  const { sink } = recorder();
+  const used: Record<string, unknown>[] = [];
+  sink.usage = (u) => void used.push(u);
+  const was = console.error;
+  const said: string[] = [];
+  console.error = (...a: unknown[]) => void said.push(a.join(" "));
+  try {
+    await s.turn("go", sink, new AbortController().signal);
+    // The next read goes 2.x's way straight off.
+    assert.ok(await opencodeTurnUsage([fake.file, "acp"], "s1", 0, { cwd: tmpdir(), env: process.env }));
+  } finally {
+    console.error = was;
+    s.close();
+  }
+  assert.deepEqual(used, [{ inputTokens: 1000 + 300 + 200 + 950, outputTokens: 10 + 5 + 20 + 111, cacheReadTokens: 5000 + 20672 }], "every step of the turn, as with 1.x");
+  assert.deepEqual(said, []);
+  assert.deepEqual(readFileSync(fake.store + ".calls", "utf8").trim().split("\n"), ["export --pure", "session export --standalone", "session export --standalone"], "1.x's way tried once, then 2.x's");
 });
 
 test("opencode: a stopped turn counts what it used before Stop, not zero", async () => {

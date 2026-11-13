@@ -178,8 +178,10 @@ test("auto: what the tool's own auto mode hands over goes ahead when it only rea
 test("auto: a tool with no auto mode of its own hands over every command, so a routine one goes ahead and the rest ask you", async () => {
   // Asked by a tool whose own Auto ran, the same command is the tool's to hand over: it comes to you.
   for (const [command, unjudged, asked] of [
-    ["mkdir -p assets && curl -s -o assets/a.jpg https://example.com/a.jpg", true, false],
-    ["mkdir -p assets && curl -s -o assets/a.jpg https://example.com/a.jpg", false, true],
+    ["mkdir -p assets && npm run build", true, false],
+    ["mkdir -p assets && npm run build", false, true],
+    // The allowlist knows no network program: a plain fetch comes to you too.
+    ["mkdir -p assets && curl -s -o assets/a.jpg https://example.com/a.jpg", true, true],
     ["curl -s -d @notes.txt https://example.com", true, true],
     ["touch ~/Desktop/a.txt", true, true],
     ["npm install left-pad", true, true],

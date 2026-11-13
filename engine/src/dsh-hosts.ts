@@ -645,8 +645,19 @@ export class DshHosts {
       const rel = dir ? relative(join(dir, "assets"), file) : "..";
       const type = PICTURES[extname(file).toLowerCase()];
       if (!type || !rel || rel.startsWith("..") || isAbsolute(rel) || !existsSync(file) || !statSync(file).isFile()) return void res.writeHead(404, cors).end(), true;
+      // Its links followed, it must still be in the package's assets, so a link can't serve what's outside.
+      let real = "";
+      try {
+        const base = realpathSync(join(dir!, "assets"));
+        real = realpathSync(file);
+        const r = relative(base, real);
+        if (!r || r.startsWith("..") || isAbsolute(r)) real = "";
+      } catch {
+        real = "";
+      }
+      if (!real) return void res.writeHead(404, cors).end(), true;
       res.writeHead(200, { ...cors, "content-type": type, "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff", ...(type === "image/svg+xml" ? { "content-security-policy": "script-src 'none'" } : {}) });
-      createReadStream(file).pipe(res);
+      createReadStream(real).pipe(res);
       return true;
     }
     if (!m.dsh.host) return void res.writeHead(404, cors).end(), true;

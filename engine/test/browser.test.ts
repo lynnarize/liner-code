@@ -98,6 +98,39 @@ test("files: a page from the session's folder gets the probe; its scripts pass a
   }
 });
 
+test("files: a link in the folder (a cloned repository's, say) can't serve what's outside it or hidden in it; one to its own files still does", async () => {
+  // A stand-in for the home folder, outside the session's folder, with a key in it.
+  const home = mkdtempSync(join(tmpdir(), "liner-home-"));
+  mkdirSync(join(home, ".ssh"));
+  writeFileSync(join(home, ".ssh", "id_rsa"), "PRIVATE KEY");
+  writeFileSync(join(home, "notes.txt"), "outside");
+  writeFileSync(join(home, "index.html"), "<p>outside page</p>");
+  const root = mkdtempSync(join(tmpdir(), "liner-files-"));
+  writeFileSync(join(root, "index.html"), "<p>in</p>");
+  writeFileSync(join(root, ".env"), "SECRET=1");
+  mkdirSync(join(root, "assets"));
+  writeFileSync(join(root, "assets", "app.js"), "ok()");
+  symlinkSync(join(home, ".ssh"), join(root, "docs"));
+  symlinkSync(home, join(root, "x"));
+  symlinkSync(join(home, "notes.txt"), join(root, "notes.txt"));
+  symlinkSync(join(root, ".env"), join(root, "config.txt"));
+  symlinkSync(join(root, "assets"), join(root, "static"));
+  const proxies = new Proxies();
+  try {
+    const base = await proxies.files(root);
+    for (const p of ["/docs/id_rsa", "/x/.ssh/id_rsa", "/x/notes.txt", "/x/", "/x", "/notes.txt", "/config.txt"]) {
+      const r = await get(`${base}${p}`);
+      assert.equal(r.status, 404, `${p} is refused`);
+      assert.doesNotMatch(r.body, /PRIVATE KEY|outside|SECRET/, `${p} gives nothing of it away`);
+    }
+    assert.equal((await get(`${base}/static/app.js`)).body, "ok()", "a link to the folder's own files still serves");
+    assert.equal((await get(`${base}/assets/app.js`)).body, "ok()");
+    assert.match((await get(`${base}/`)).body, /<p>in<\/p>/);
+  } finally {
+    proxies.closeAll();
+  }
+});
+
 test("files: pages are given as localhost, a site apart from the app's 127.0.0.1, and both loopbacks are the proxy's", async () => {
   const root = mkdtempSync(join(tmpdir(), "liner-files-"));
   writeFileSync(join(root, "index.html"), "<p>hi</p>");

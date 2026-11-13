@@ -327,20 +327,23 @@ export type Mark = { name?: string; value: string; file?: string };
   pid and start time together, not its pid alone, which the system gives out again.
 */
 const MARKS = join(tmpdir(), "liner-marks");
-let own: { dir: string; fd: number } | undefined;
+let own: { dir: string; fd: number; start: number } | undefined;
 /** Kept on quitting (marksKept): what the folder's markers are held by may still run, and the next engine ends it. */
 let keep = false;
 
-/** This engine's own marker folder, made the first time it's needed. Windows: none. */
+/**
+  This engine's own marker folder, made the first time it's needed, and made again, under the same name, if it has gone since (a
+  sweep or a temp cleaner removed it): a marker is never what keeps a spawn from starting. Windows: none.
+*/
 export function markDir() {
-  if (own) return own.dir;
+  if (own) {
+    if (!existsSync(join(own.dir, "engine"))) holdEngineFile(own.dir, own.start);
+    return own.dir;
+  }
+  // The same clock as engineAlive reads back (startedAt, UTC); performance.timeOrigin is UTC ms as well.
   const start = startedAt(process.pid) ?? Math.round(performance.timeOrigin);
   const dir = join(MARKS, `${process.pid}-${start}`);
-  mkdirSync(dir, { recursive: true });
-  const file = join(dir, "engine");
-  writeFileSync(file, JSON.stringify({ pid: process.pid, start }));
-  // Held for this engine's life (Node opens it close-on-exec, so nothing it starts holds it): while it's held, the engine runs.
-  own = { dir, fd: openSync(file, "r") };
+  holdEngineFile(dir, start);
   // Gone as the engine goes, unless something it marked may still be running (marksKept), or a run's marker is still there,
   // which only its close removes, once all that held it has ended: then the next engine's sweep ends that first.
   process.once("exit", () => {
@@ -353,6 +356,21 @@ export function markDir() {
     }
   });
   return dir;
+}
+
+/** The folder and its `engine` file, made (again), and held for this engine's life (Node opens it close-on-exec, so nothing it starts holds it): while it's held, the engine runs. */
+function holdEngineFile(dir: string, start: number) {
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "engine");
+  writeFileSync(file, JSON.stringify({ pid: process.pid, start }));
+  const fd = openSync(file, "r");
+  if (own)
+    try {
+      closeSync(own.fd);
+    } catch {
+      // closed already
+    }
+  own = { dir, fd, start };
 }
 
 /** On an orderly quit, once all this engine started has ended: its marker folder goes. */
@@ -378,8 +396,10 @@ export const threadMark = (threadId: string): Mark => ({ name: THREAD_ENV, value
 /**
   When a process started, in ms, as `ps` says it (to the second): for telling an engine that still runs from another process the
   system has given its pid since. Linux: /proc. Undefined where neither answers (`ps` is setuid, and a sandbox may refuse it).
+  Read in UTC (TZ=UTC, parsed as UTC), as launch.ts sameProcess reads it: a local time is ambiguous in the hour a clock goes back,
+  and two engines with different TZs would read the same process differently.
 */
-function startedAt(pid: number): number | undefined {
+export function startedAt(pid: number): number | undefined {
   if (win) return undefined;
   if (process.platform === "linux") {
     try {
@@ -392,27 +412,47 @@ function startedAt(pid: number): number | undefined {
     }
   }
   try {
-    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" }, timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim();
-    const at = Date.parse(out);
-    return Number.isFinite(at) ? at : undefined;
+    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return lstartUtc(out);
   } catch {
     return undefined;
   }
 }
 
-/** Whether the engine that made a marker folder still runs: its pid is up, and it's the same process (its start, or its `engine` file held). */
-async function engineAlive(pid: number, start: number, dir: string) {
+/** `ps -o lstart` as printed with TZ=UTC and LC_ALL=C ("Sun Nov  1 01:30:00 2026"), in ms; undefined if it isn't that. */
+export function lstartUtc(out: string): number | undefined {
+  const m = /^\s*(\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4})\s*$/.exec(out);
+  const at = m ? Date.parse(`${m[1]} UTC`) : NaN;
+  return Number.isFinite(at) ? at : undefined;
+}
+
+/** Whether a process is there: ESRCH says it isn't. (EPERM: one of another user's, which no engine of this user's is.) */
+const up = (pid: number) => {
   try {
     process.kill(pid, 0);
+    return true;
   } catch (e) {
-    // No such process. (EPERM: one of another user's, which no engine of this user's is.)
-    if ((e as NodeJS.ErrnoException).code === "ESRCH" || (e as NodeJS.ErrnoException).code === "EPERM") return false;
+    return (e as NodeJS.ErrnoException).code !== "ESRCH" && (e as NodeJS.ErrnoException).code !== "EPERM";
   }
-  const now = startedAt(pid);
+};
+
+/**
+  Whether the engine that made a marker folder still runs: its pid is up, and it's the same process (its start, or its `engine` file
+  held). null: its pid is up and neither look answered (`ps` too slow or refused, lsof too), which is never taken for "dead": the
+  sweep leaves the folder, to look again next time (as launch.ts sameProcess keeps a server it couldn't look at).
+*/
+export async function engineAlive(pid: number, start: number, dir: string, look: { startedAt?: typeof startedAt; holders?: typeof holders } = {}): Promise<boolean | null> {
+  if (!up(pid)) return false;
+  const now = (look.startedAt ?? startedAt)(pid);
   // `ps` reads to the second; an engine's own start (performance.timeOrigin) is a moment after its exec.
   if (now !== undefined) return Math.abs(now - start) < 3000;
+  // ps printing nothing because the pid went meanwhile is an answer.
+  if (!up(pid)) return false;
   // Where its start can't be read: the engine holds its folder's `engine` file for as long as it runs.
-  return (await markedPids({ value: "", file: join(dir, "engine") })).has(pid);
+  const file = join(dir, "engine");
+  if (!existsSync(file)) return null;
+  const held = await (look.holders ?? holders)(file, [pid]);
+  return held ? held.has(pid) : null;
 }
 
 /**
@@ -422,7 +462,7 @@ async function engineAlive(pid: number, start: number, dir: string) {
   Markers from before these folders, straight in the temp folder, say no engine: only those nothing holds are removed.
   Resolves with how many processes were ended and how many were still running after.
 */
-export async function sweepMarks(): Promise<{ ended: number; left: Proc[]; folders: number }> {
+export async function sweepMarks(look: Parameters<typeof engineAlive>[3] = {}): Promise<{ ended: number; left: Proc[]; folders: number }> {
   const out = { ended: 0, left: [] as Proc[], folders: 0 };
   if (win) return out;
   let names: string[] = [];
@@ -434,7 +474,8 @@ export async function sweepMarks(): Promise<{ ended: number; left: Proc[]; folde
   for (const name of names) {
     const m = /^(\d+)-(\d+)$/.exec(name);
     const dir = join(MARKS, name);
-    if (!m || dir === own?.dir || (await engineAlive(Number(m[1]), Number(m[2]), dir))) continue;
+    // Alive, or couldn't tell (null): left alone.
+    if (!m || dir === own?.dir || (await engineAlive(Number(m[1]), Number(m[2]), dir, look)) !== false) continue;
     let files: string[] = [];
     try {
       files = readdirSync(dir).filter((f) => /^liner-(?:run|thread)-/.test(f)).map((f) => join(dir, f));
@@ -444,8 +485,24 @@ export async function sweepMarks(): Promise<{ ended: number; left: Proc[]; folde
     let stuck = false;
     for (const file of files) {
       const mark: Mark = { value: "", file };
+      // A look that failed isn't "nothing holds it": the folder stays, for the next look.
+      const held = async () => {
+        const pids = await (look.holders ?? holders)(file);
+        pids?.delete(process.pid);
+        return pids;
+      };
+      const pids = await held();
+      if (!pids) {
+        stuck = true;
+        continue;
+      }
+      if (!pids.size) continue;
       const holding = await marked(mark);
-      if (!holding.length) continue;
+      if (!holding.length) {
+        // Held, but not listed (ps refused, say), unless what held it ended meanwhile: nothing was ended, so it stays too.
+        stuck ||= (await held())?.size !== 0;
+        continue;
+      }
       const still = await endAll(holding, () => marked(mark));
       out.ended += holding.length - still.length;
       out.left.push(...still);
@@ -458,7 +515,7 @@ export async function sweepMarks(): Promise<{ ended: number; left: Proc[]; folde
   }
   for (const f of readdirSync(tmpdir()).filter((x) => /^liner-run-[0-9a-f]+$/.test(x))) {
     const file = join(tmpdir(), f);
-    if (!(await markedPids({ value: "", file })).size) rmSync(file, { force: true });
+    if ((await (look.holders ?? holders)(file))?.size === 0) rmSync(file, { force: true });
   }
   return out;
 }
@@ -477,13 +534,23 @@ export function marking<T>(base: readonly T[], marks: Mark[]) {
   const fds: number[] = [];
   const low: number[] = [];
   for (const mark of held) {
-    if (!existsSync(mark.file!)) writeFileSync(mark.file!, "");
-    let fd = openSync(mark.file!, "r");
-    while (fd < slots) {
-      low.push(fd);
-      fd = openSync(mark.file!, "r");
+    try {
+      if (!existsSync(mark.file!)) {
+        // Its folder may have gone (a sweep, a temp cleaner): made again, this engine's own with its `engine` file.
+        if (dirname(mark.file!) === own?.dir) markDir();
+        else mkdirSync(dirname(mark.file!), { recursive: true });
+        writeFileSync(mark.file!, "");
+      }
+      let fd = openSync(mark.file!, "r");
+      while (fd < slots) {
+        low.push(fd);
+        fd = openSync(mark.file!, "r");
+      }
+      fds.push(fd);
+    } catch (e) {
+      // A spawn never fails for a marker: this one goes without it (found by its environment alone, where that can be read).
+      console.error(`[marks] couldn't hand ${mark.file} on: ${(e as Error).message}`);
     }
-    fds.push(fd);
   }
   for (const fd of low) closeSync(fd);
   const stdio: (T | number)[] = [...base, ...fds];
@@ -578,18 +645,32 @@ export async function markedPids(mark: Mark, among?: number[]): Promise<Set<numb
       if (m && ` ${m[2]} `.includes(` ${tag} `)) has.add(Number(m[1]));
     }
   }
-  if (mark.file && existsSync(mark.file)) {
-    const ask = (timeout: number) => tryRun("lsof", ["-w", "-t", ...(among ? ["-a", "-p", among.join(",")] : []), "--", mark.file!], { timeout });
-    // lsof says 1 with nothing printed when nothing holds the file: an answer. Anything else that isn't 0 (too slow under load,
-    // refused) is a look that failed, never taken for "none": asked again, longer, and said when it fails again.
-    const failed = (r: RunResult) => r.code !== 0 && !(r.code === 1 && !r.stdout.trim() && !r.stderr.trim());
-    let holding = await ask(8000);
-    if (failed(holding)) holding = await ask(20000);
-    if (failed(holding)) console.error(`[marks] couldn't tell what holds ${mark.file}: ${holding.stderr.trim().slice(0, 200) || `lsof answered ${holding.code}`}`);
-    for (const l of holding.stdout.split("\n")) if (/^\d+$/.test(l.trim())) has.add(Number(l.trim()));
-  }
+  // What a failed look did print still counts here (a pid in it does hold the file); only "none" can't be told from it.
+  if (mark.file) for (const pid of (await lsofHolders(mark.file, among)).has) has.add(pid);
   has.delete(process.pid);
   return has;
+}
+
+/**
+  The pids that hold a file open, by lsof (`among`: only these asked about); none for a file that isn't there. null: lsof didn't
+  answer (too slow under load, refused), which a caller that would remove or end something on "none" (sweepMarks) never takes for it.
+*/
+export const holders = async (file: string, among?: number[]): Promise<Set<number> | null> => {
+  const r = await lsofHolders(file, among);
+  return r.ok ? r.has : null;
+};
+async function lsofHolders(file: string, among?: number[]): Promise<{ has: Set<number>; ok: boolean }> {
+  const has = new Set<number>();
+  if (win || !existsSync(file) || (among && !among.length)) return { has, ok: true };
+  const ask = (timeout: number) => tryRun("lsof", ["-w", "-t", ...(among ? ["-a", "-p", among.join(",")] : []), "--", file], { timeout });
+  // lsof says 1 with nothing printed when nothing holds the file: an answer. Anything else that isn't 0 (too slow under load,
+  // refused) is a look that failed, never taken for "none": asked again, longer, and said when it fails again.
+  const failed = (r: RunResult) => r.code !== 0 && !(r.code === 1 && !r.stdout.trim() && !r.stderr.trim());
+  let holding = await ask(8000);
+  if (failed(holding)) holding = await ask(20000);
+  if (failed(holding)) console.error(`[marks] couldn't tell what holds ${file}: ${holding.stderr.trim().slice(0, 200) || `lsof answered ${holding.code}`}`);
+  for (const l of holding.stdout.split("\n")) if (/^\d+$/.test(l.trim())) has.add(Number(l.trim()));
+  return { has, ok: !failed(holding) };
 }
 
 /**

@@ -25,7 +25,8 @@ function fake(work: (text: string, sink: TurnSink, signal: AbortSignal) => Promi
   const seen = { texts: [] as string[], now: 0, most: 0 };
   const make: Provider = {
     id: "claude",
-    detect: async () => info("claude", []),
+    // Found with the models the sessions here run on, as the API's own look at the tools finds it.
+    detect: async () => ready[0],
     open: (_o: OpenOptions) => ({
       turn: async (text, sink, signal) => {
         seen.texts.push(text);
@@ -357,8 +358,13 @@ test("a fork of a session at work starts from its last turn that ended; a side c
     await new Promise<void>((r) => (release = r));
   });
   try {
-    const { store, runtime } = session({ access: "ask" });
-    const api = createApi(store, runtime, process.env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+    // On a model, not an agent that isn't there: the API's look at the tools, done at once with none to find, would point the
+    // session at a stand-in after its first turn, and the second would go as a new session's (the conversation so far, then "two").
+    const { store, runtime } = session({ access: "ask", agent: "@claude:claude-opus-5-5" });
+    // The API looks for every tool as it starts (versions, models, logins): here none is on its PATH, and its home is the store's,
+    // so the tools and settings of this Mac are never asked.
+    const env = { PATH: "/usr/bin:/bin", HOME: store.home };
+    const api = createApi(store, runtime, env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
     await runtime.send("t", "one");
     const working = runtime.send("t", "two");
     await until(() => store.timeline("t").some((x) => x.kind === "approval"), "the second turn asks");

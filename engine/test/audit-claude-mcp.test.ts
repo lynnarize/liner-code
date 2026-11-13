@@ -17,7 +17,7 @@ import { createInterface } from "node:readline";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Question, Thread, Usage } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
-import { askRuleNames, claude, claudeMcp, sdk, waits, withFiles } from "../src/providers/claude.ts";
+import { askRuleNames, claude, claudeMcp, LINER_ASKS, sdk, waits, withFiles } from "../src/providers/claude.ts";
 import { acpModels } from "../src/providers/models.ts";
 import { Outside } from "../src/outside-tools.ts";
 import { LINER_WAIT_SEC, type ApprovalRequest, type OpenOptions, type TurnSink, type WakeTurn } from "../src/providers/types.ts";
@@ -143,6 +143,84 @@ test("full access: what your own ask rule stopped still comes to you, with the t
     s.close();
   } finally {
     restore();
+  }
+});
+
+test("Liner Code's own ask rule hands a delete over: the level decides it, and only a rule of yours makes it yours at Full", async () => {
+  const rules = [
+    { behavior: "ask", source: "flagSettings", rule: "Bash(rm:*)" },
+    { behavior: "ask", source: "flagSettings", rule: "Bash(rmdir:*)" },
+  ];
+  const { made, restore } = standIn(() => ({ listPermissionRules: async () => ({ state: { rules } }) }));
+  try {
+    const s = claude.open(opts({ access: "full" }));
+    const { r, sink } = recorder();
+    const { turn, mine } = await running(made, s, sink);
+    assert.deepEqual((made[0].options.settings as { permissions?: { ask?: string[] } }).permissions?.ask, LINER_ASKS, "told as the session's flag settings");
+    assert.ok(LINER_ASKS.includes("Bash(rm:*)") && LINER_ASKS.includes("Bash(rmdir:*)"));
+    const ask = askOf(made[0]);
+    // Claude Code's acceptEdits would run these itself; handed over by Liner Code's rule, Full lets them go.
+    assert.equal((await ask("Bash", { command: "rm notes-copy.txt" }, askOptions({ decisionReasonType: "rule" }))).behavior, "allow");
+    assert.equal((await ask("Bash", { command: "rmdir old" }, askOptions({ matchedAskRule: { source: "flagSettings", toolName: "Bash", ruleContent: "rmdir:*" } }))).behavior, "allow");
+    assert.equal(r.approvals.length, 0, "no card at Full");
+    // A rule of yours for the same command is yours: it comes to you.
+    rules.push({ behavior: "ask", source: "userSettings", rule: "Bash(rm:*)" });
+    await ask("Bash", { command: "rm notes-copy.txt" }, askOptions({ decisionReasonType: "rule" }));
+    await ask("Bash", { command: "rm a.txt" }, askOptions({ matchedAskRule: { source: "userSettings", toolName: "Bash", ruleContent: "rm:*" } }));
+    assert.equal(r.approvals.length, 2);
+    assert.ok(r.approvals.every((a) => a.risk === "high" && a.rule === undefined));
+    made[0].emit(result({ user_message_uuids: [mine] }));
+    await turn;
+    s.close();
+  } finally {
+    restore();
+  }
+  // Below Full it's the level's to say: at Edits, a card like any command, with its "don't ask again".
+  const two = standIn(() => ({ listPermissionRules: async () => ({ state: { rules: rules.slice(0, 2) } }) }));
+  try {
+    const s = claude.open(opts({ access: "edits" }));
+    const { r, sink } = recorder();
+    const { turn, mine } = await running(two.made, s, sink);
+    await askOf(two.made[0])("Bash", { command: "rm notes-copy.txt" }, askOptions({ decisionReasonType: "rule" }));
+    assert.equal(r.approvals.length, 1);
+    assert.equal(r.approvals[0].risk === "high", false, "not taken for a rule of yours");
+    assert.equal(r.approvals[0].rule, "rm");
+    two.made[0].emit(result({ user_message_uuids: [mine] }));
+    await turn;
+    s.close();
+  } finally {
+    two.restore();
+  }
+});
+
+test("when Claude Code can't list your rules, a delete it says Liner Code's rule caught still comes to you at Full: the rule might be yours too", async () => {
+  // Your own Bash(rm:*) has the same words as Liner Code's, and Claude Code may name either as the one that matched.
+  const cases: Over[] = [{ listPermissionRules: async () => Promise.reject(new Error("Unsupported control request subtype")) }, { listPermissionRules: () => new Promise(() => {}) }, {}];
+  for (const over of cases) {
+    await quick(
+      async () => {
+        const { made, restore } = standIn(() => over);
+        try {
+          const s = claude.open(opts({ access: "full" }));
+          const { r, sink } = recorder();
+          const { turn, mine } = await running(made, s, sink);
+          const ask = askOf(made[0]);
+          await ask("Bash", { command: "rm notes-copy.txt" }, askOptions({ decisionReasonType: "rule" }));
+          await ask("Bash", { command: "rmdir old" }, askOptions({ matchedAskRule: { source: "flagSettings", toolName: "Bash", ruleContent: "rmdir:*" } }));
+          assert.equal(r.approvals.length, 2, "each came to you");
+          assert.ok(r.approvals.every((a) => a.risk === "high" && a.rule === undefined), "and only you can answer it");
+          // Not caught by a rule at all: the rest of Full goes ahead as before.
+          assert.equal((await ask("Bash", { command: "rm /elsewhere/a.txt" }, askOptions({ decisionReasonType: "workingDir" }))).behavior, "allow");
+          assert.equal(r.approvals.length, 2);
+          made[0].emit(result({ user_message_uuids: [mine] }));
+          await turn;
+          s.close();
+        } finally {
+          restore();
+        }
+      },
+      { rules: 20 },
+    );
   }
 });
 

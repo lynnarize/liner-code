@@ -15,7 +15,7 @@ import type { Access, CommandInfo, ModelInfo, ProviderId, ProviderInfo, Question
 import { randomBytes } from "node:crypto";
 import { closesOnExit, endAll, jsonLines, killTree, marked, markedPids, markFile, marking, RUN_ENV, run, spawn, THREAD_ENV, threadMark, versionOf, which, type Mark, type Proc } from "../exec.ts";
 import { VERSION } from "../version.ts";
-import { commandRisk, isDestructive, readsOnly, ruleFor, shellWords, unwrapped } from "../risk.ts";
+import { commandRisk, gitPlace, isDestructive, readsOnly, ruleFor, shellWords, unwrapped } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { TOOLS } from "../liner-tools.ts";
 import { acpCommands, acpModelRequest, acpModels, agyModels } from "./models.ts";
@@ -62,13 +62,34 @@ const SECRET = /\.env(?:\.(?!example$).*)?$/i;
   the main session (OPENCODE_REVIEW) and any other is stopped as it starts (SUBAGENT).
   (T3 Code: provider-opencode adapter.ts, openCodePermissionRules; there reads are allowed, here
   they ask so a link out of the project shows.)
+  OpenCode 2 (2.3.0) reads none of OPENCODE_PERMISSION, only the `permission` of its config, which
+  is why opencodeEnv puts these in OPENCODE_CONFIG_CONTENT too; it takes the old names for its new
+  ones there (bash is shell, task is subagent, write and patch are edit) but not a name with a *,
+  so `shell` and `subagent*` are said by their own names, and a deny of yours under either name
+  stands under both (RENAMED). Its rules are a list where the last that fits wins, config after
+  the agent's own, as `opencode debug agents` shows. Its `execute` (Code Mode: JavaScript that
+  calls the other tools and fetches over HTTP) is off, by a deny: the call asks nothing itself, and
+  what it does inside comes to session/request_permission as one opaque `execute` with its code,
+  never as the tool or address it reaches; a tool of an MCP server, Liner Code's among them, would
+  only be called that way. With Code Mode off, OpenCode offers every tool directly, as 1.x does
+  (2.3.0: Tool.snapshot). (T3 Code drives OpenCode 2 over its HTTP API with a rule list per session,
+  `shell` asked: provider-opencode v2/adapter.ts, sessionRules.)
 */
-const OPENCODE_ASK = ["read", "glob", "grep", "edit", "bash", "external_directory", "webfetch", "websearch", "codesearch", "doom_loop"];
+const OPENCODE_ASK = ["read", "glob", "grep", "edit", "bash", "shell", "external_directory", "webfetch", "websearch", "codesearch", "doom_loop"];
 const OPENCODE_NOTES = ["list", "lsp", "question", "skill", "todowrite"];
+/**
+  OpenCode 2's own tools that change things without asking anything at all (2.3.0, its `opencode` namespace: worktree_create
+  ran at Read only with no ask, seen), so an ask rule can't reach them and only a deny, which takes them off its list, can.
+  `?` for the namespace's dot or underscore, whichever it matches by.
+*/
+const OPENCODE_UNASKED = ["opencode?worktree_*", "opencode?session_move", "opencode?schedule_*", "opencode?artifact_*", "opencode?watch_*"];
+/** OpenCode 2's names for 1.x's tools, both ways: your deny under either holds under both. */
+const RENAMED: Record<string, string> = { bash: "shell", shell: "bash", task: "subagent", subagent: "task" };
 /** Liner Code's tools as OpenCode names them, its server's name and the tool's joined with _. */
 const OPENCODE_LINER = TOOLS.map((t) => `liner_${t.name}`);
 const isRules = (rule: unknown): rule is Json => typeof rule === "object" && rule !== null;
-export function opencodeAsks(yours: Json = {}, linerServer = true) {
+export const opencodeAsks = (yours: Json = {}, linerServer = true) => JSON.stringify(opencodeRules(yours, linerServer));
+export function opencodeRules(yours: Json = {}, linerServer = true): Json {
   const named = Object.keys(yours).filter((name) => name !== "*");
   // Everything denied but what you named: that stays so, with what you named coming to the access level.
   const shut = yours["*"] === "deny";
@@ -86,16 +107,20 @@ export function opencodeAsks(yours: Json = {}, linerServer = true) {
     return Object.fromEntries(name === "*" ? each.filter(([, action]) => action === "deny") : each);
   };
   const denied = Object.entries(yours).flatMap(([name, rule]): [string, unknown][] => {
-    if (rule === "deny") return name === "*" ? [] : [[`${name}*`, "deny"]];
-    return isRules(rule) && Object.values(rule).includes("deny") ? [[`${name}*`, patterns(name, rule)]] : [];
+    const names = RENAMED[name] ? [name, RENAMED[name]] : [name];
+    if (rule === "deny") return name === "*" ? [] : names.map((n) => [`${n}*`, "deny"]);
+    return isRules(rule) && Object.values(rule).includes("deny") ? names.map((n) => [`${n}*`, patterns(name, rule)]) : [];
   });
-  return JSON.stringify({
+  return {
     "*": shut ? "deny" : "ask",
     ...Object.fromEntries(asked.map((name) => [name, "ask"])),
     ...Object.fromEntries(free.map((name) => [name, "allow"])),
     ...Object.fromEntries(denied),
+    "execute*": "deny",
+    ...Object.fromEntries(OPENCODE_UNASKED.map((name) => [name, "deny"])),
     "task*": "deny",
-  });
+    "subagent*": "deny",
+  };
 }
 /**
   /review as a step of the session it's in, which the access level holds: OpenCode's own runs as a
@@ -227,7 +252,9 @@ function opencodeOwn(cwd: string, env: NodeJS.ProcessEnv, content: Json) {
     }
   };
   const configs = [...files.map(read), content].filter((c) => c !== null);
-  const rules = (c: Json) => (typeof c.permission === "string" ? { "*": c.permission } : ((c.permission ?? {}) as Json));
+  // OpenCode 2's own list form, `permissions: [{ action, resource, effect }]`, after `permission` as it reads them: only its denies count here.
+  const listed = (c: Json) => (Array.isArray(c.permissions) ? (c.permissions as Json[]) : []).filter((r) => isRules(r) && r.effect === "deny" && typeof r.action === "string").reduce<Json>((out, r) => overlay(out, { [String(r.action)]: (r.resource ?? "*") === "*" ? "deny" : { [String(r.resource)]: "deny" } }), {});
+  const rules = (c: Json) => overlay(typeof c.permission === "string" ? { "*": c.permission } : ((c.permission ?? {}) as Json), listed(c));
   const tools = Object.entries(Object.assign({}, ...configs.map((c) => c.tools)) as Json);
   const older = Object.fromEntries(tools.map(([name, on]) => [/^(?:write|edit|patch)$/.test(name) ? "edit" : name, on ? "allow" : "deny"]));
   const review = configs.some((c) => (c.command as Json | undefined)?.review) || [global, ...dots].some((d) => ["command", "commands"].some((f) => existsSync(join(d, f, "review.md"))));
@@ -241,18 +268,28 @@ function opencodeOwn(cwd: string, env: NodeJS.ProcessEnv, content: Json) {
   routine the rest of its step, and a person's No the agent's chance to adapt. mcp_timeout: OpenCode gives
   up on an MCP call after a minute, and a sidekick's brief runs up to 10; the servers Liner Code hands over
   ACP carry no wait of their own, so this one setting is theirs, and it covers your add-on connections too.
+  The rules go both ways: OPENCODE_PERMISSION for OpenCode 1.x, which lays it over everything, and the
+  config's `permission` for 2.x, which reads only that (see opencodeRules), with the endpoint's provider
+  and model kept beside them. 2.3.0 drops continue_loop_on_deny as an old setting, so there a refusal still
+  ends the turn: ACP's reject carries no words it could go on with.
 */
 export function opencodeEnv(cwd: string, env: NodeJS.ProcessEnv, linerServer = true) {
-  const had = jsonc(env.OPENCODE_CONFIG_CONTENT || "{}");
-  const { permission, review } = opencodeOwn(cwd, env, had ?? {});
-  const rules = opencodeAsks(permission, linerServer);
-  // One that won't parse is OpenCode's to say, which it does as it starts: writing over it would hide that.
-  if (!had) return { OPENCODE_PERMISSION: rules };
+  const parsed = jsonc(env.OPENCODE_CONFIG_CONTENT || "{}");
+  // One that won't parse: 1.x refused to start on it, but 2.3.0 starts as if it weren't there, with no rules
+  // at all. Liner Code's own goes in its place, so the access level holds either way.
+  if (!parsed) console.error("[opencode] OPENCODE_CONFIG_CONTENT in your environment isn't JSON, so Liner Code's own settings went in its place");
+  const had = parsed ?? {};
+  const { permission, review } = opencodeOwn(cwd, env, had);
+  const rules = opencodeRules(permission, linerServer);
   const experimental = (had.experimental as Json | undefined) ?? {};
   // A longer wait given before stays: it's in milliseconds.
   const wait = Math.max(Number(experimental.mcp_timeout) || 0, LINER_WAIT_SEC * 1000);
-  const config = { ...had, experimental: { ...experimental, continue_loop_on_deny: true, mcp_timeout: wait }, ...(review ? {} : { command: { ...(had.command as Json | undefined), review: OPENCODE_REVIEW } }) };
-  return { OPENCODE_PERMISSION: rules, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) };
+  // 2.x reads a document's `permissions` list after its `permission`, so an allow left in it would win over these asks: only its denies
+  // stay (they're in `rules` already, from opencodeOwn). Its `permission` is replaced outright, by rules that carry its denies and bring its allows to the level.
+  const { permissions, ...kept } = had;
+  const denies = Array.isArray(permissions) ? permissions.filter((r) => isRules(r) && r.effect === "deny") : [];
+  const config = { ...kept, ...(denies.length ? { permissions: denies } : {}), permission: rules, experimental: { ...experimental, continue_loop_on_deny: true, mcp_timeout: wait }, ...(review ? {} : { command: { ...(had.command as Json | undefined), review: OPENCODE_REVIEW } }) };
+  return { OPENCODE_PERMISSION: JSON.stringify(rules), OPENCODE_CONFIG_CONTENT: JSON.stringify(config) };
 }
 
 /** How long a turn's end waits for OpenCode to say what the turn used (opencodeTurnUsage); ~0.3 s warm, a few cold. */
@@ -260,13 +297,21 @@ export let OPENCODE_USAGE_MS = 4000;
 /** For tests: a shorter wait. */
 export const setOpencodeUsageMs = (ms: number) => void (OPENCODE_USAGE_MS = ms);
 
+/** The way each OpenCode command reads a session: 1.x's `export --pure`, or 2.x's `session export --standalone` (opencodeTurnUsage). */
+const EXPORTS = new Map<string, "pure" | "session">();
+/** 2.x's root help, which it prints for a command it hasn't got (`export`), exiting 0. */
+const NO_SUCH_COMMAND = /^USAGE\s*$[\s\S]*\bopencode <subcommand>/m;
+
 /**
   What an OpenCode turn used, step by step from its own store: its ACP prompt result carries only the last step's
   tokens, and a stopped turn's none, so a turn of many steps read 10 to 30 times too low. `opencode export` is its
-  documented way to read a session (it only reads; --pure leaves your plugins out, which this needs none of). The
-  turn's steps are its session's assistant messages after its prompt (the first user message from `since` on).
-  Input is the uncached part with the cache it wrote; output takes the reasoning. Cost isn't here: usage_update
-  says it as it goes. Null when it can't say in time or in a form it knows, and the turn keeps ACP's numbers.
+  documented way to read a session (it only reads; --pure leaves your plugins out, which this needs none of). OpenCode 2
+  (2.3.0) has no `export` and prints its help for it: there it's `session export`, with --standalone so it reads the store
+  itself rather than starting the background service (it starts no MCP server, ~0.3 s), and each message has its role as
+  `type`, its time and tokens at its top. Which way a command takes is learnt once. The turn's steps are its session's
+  assistant messages after its prompt (the first user message from `since` on). Input is the uncached part with the
+  cache it wrote; output takes the reasoning. Cost isn't here: usage_update says it as it goes. Null when it can't say
+  in time or in a form it knows, and the turn keeps ACP's numbers.
 */
 export async function opencodeTurnUsage(cmd: string[], session: string | null | undefined, since: number, o: { cwd: string; env?: NodeJS.ProcessEnv }) {
   if (!session) return null;
@@ -274,32 +319,41 @@ export async function opencodeTurnUsage(cmd: string[], session: string | null | 
   // The command it runs as, without its "acp": `opencode`, or whatever starts it.
   const at = cmd.lastIndexOf("acp");
   const [bin, ...pre] = at > 0 ? cmd.slice(0, at) : cmd.slice(0, 1);
+  const key = [bin, ...pre].join("\0");
   // In a group of its own with no input, so one that doesn't exit (or a fake that speaks ACP whatever it's asked) is
-  // ended with everything it started at the wait, and the turn ends then whatever its pipes do.
-  const out = await new Promise<{ code: number | null; stdout: string; stderr: string }>((done) => {
-    let stdout = "", stderr = "", over = false;
-    let child: ChildProcessWithoutNullStreams;
-    try {
-      child = spawn(bin, [...pre, "export", "--pure", session], { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" }) as unknown as ChildProcessWithoutNullStreams;
-    } catch (e) {
-      return done({ code: null, stdout: "", stderr: e instanceof Error ? e.message : String(e) });
-    }
-    const end = (code: number | null, why = "") => {
-      clearTimeout(timer);
-      done({ code, stdout: over ? "" : stdout, stderr: why || stderr });
-    };
-    const timer = setTimeout(() => (killTree(child), end(null, `no answer in ${OPENCODE_USAGE_MS} ms`)), OPENCODE_USAGE_MS);
-    child.stdout.on("data", (d: Buffer) => {
-      stdout += d;
-      // A session too big to read in time isn't read at all.
-      if (stdout.length > 128 * 1024 * 1024 && !over) (over = true), killTree(child);
+  // ended with everything it started at the wait, and the turn ends then whatever its pipes do. Both ways share the wait.
+  const read = (way: "pure" | "session") =>
+    new Promise<{ code: number | null; stdout: string; stderr: string }>((done) => {
+      let stdout = "", stderr = "", over = false;
+      let child: ChildProcessWithoutNullStreams;
+      const args = way === "pure" ? ["export", "--pure", session] : ["session", "export", "--standalone", session];
+      try {
+        child = spawn(bin, [...pre, ...args], { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" }) as unknown as ChildProcessWithoutNullStreams;
+      } catch (e) {
+        return done({ code: null, stdout: "", stderr: e instanceof Error ? e.message : String(e) });
+      }
+      const end = (code: number | null, why = "") => {
+        clearTimeout(timer);
+        done({ code, stdout: over ? "" : stdout, stderr: why || stderr });
+      };
+      const timer = setTimeout(() => (killTree(child), end(null, `no answer in ${OPENCODE_USAGE_MS} ms`)), Math.max(0, OPENCODE_USAGE_MS - (Date.now() - started)));
+      child.stdout.on("data", (d: Buffer) => {
+        stdout += d;
+        // A session too big to read in time isn't read at all.
+        if (stdout.length > 128 * 1024 * 1024 && !over) (over = true), killTree(child);
+      });
+      child.stderr.on("data", (d: Buffer) => void (stderr = (stderr + d).slice(-2000)));
+      child.on("error", (e) => end(null, e.message));
+      child.on("close", (code) => end(code));
     });
-    child.stderr.on("data", (d: Buffer) => void (stderr = (stderr + d).slice(-2000)));
-    child.on("error", (e) => end(null, e.message));
-    child.on("close", (code) => end(code));
-  });
+  let way = EXPORTS.get(key) ?? "pure";
+  let out = await read(way);
+  if (way === "pure" && !out.stdout.includes("{") && NO_SUCH_COMMAND.test(out.stdout + out.stderr)) {
+    way = "session";
+    out = await read(way);
+  }
   type Tokens = { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } };
-  type Message = { info?: { role?: string; time?: { created?: number }; tokens?: Tokens } };
+  type Message = { info?: { role?: string; time?: { created?: number }; tokens?: Tokens }; type?: string; time?: { created?: number }; tokens?: Tokens };
   let messages: Message[] | undefined;
   try {
     const start = out.stdout.indexOf("{");
@@ -308,15 +362,17 @@ export async function opencodeTurnUsage(cmd: string[], session: string | null | 
   } catch {
     // not an export it knows
   }
+  if (messages) EXPORTS.set(key, way);
+  const role = (m: Message) => m.info?.role ?? m.type;
   // A second of slack: OpenCode stamps the prompt as it takes it, on the same clock.
-  const from = messages?.findIndex((m) => m.info?.role === "user" && (m.info.time?.created ?? 0) >= since - 1000) ?? -1;
+  const from = messages?.findIndex((m) => role(m) === "user" && ((m.info ?? m).time?.created ?? 0) >= since - 1000) ?? -1;
   if (!messages || from < 0) {
-    console.error(`[opencode] couldn't read what the turn used from \`opencode export\` (${out.code !== 0 ? `${out.code === null ? "" : `exit ${out.code}: `}${out.stderr.trim().split("\n").at(-1)?.slice(0, 160) ?? ""}` : "no such turn in it"}, ${Date.now() - started} ms): its last step's count stands`);
+    console.error(`[opencode] couldn't read what the turn used from \`opencode ${way === "pure" ? "export" : "session export"}\` (${out.code !== 0 ? `${out.code === null ? "" : `exit ${out.code}: `}${out.stderr.trim().split("\n").at(-1)?.slice(0, 160) ?? ""}` : "no such turn in it"}, ${Date.now() - started} ms): its last step's count stands`);
     return null;
   }
   const u = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
   for (const m of messages.slice(from + 1)) {
-    const t = m.info?.role === "assistant" ? m.info.tokens : undefined;
+    const t = role(m) === "assistant" ? (m.info ?? m).tokens : undefined;
     if (!t) continue;
     u.inputTokens += (t.input ?? 0) + (t.cache?.write ?? 0);
     u.outputTokens += (t.output ?? 0) + (t.reasoning ?? 0);
@@ -484,6 +540,20 @@ export function inFolder(folder: string, path: unknown, platform = process.platf
   const real = realPath(target, paths, files);
   if (!root || !real) return false;
   return stays(paths.relative(root, real), paths);
+}
+
+/**
+  Whether a path lands in git's own folder, or on a file named HEAD (risk.ts, gitPlace), as said from the folder and once
+  its links are followed (a link in the project to .git): a hook written there (`.git/hooks/pre-commit`) runs on the next
+  `git commit`, which Auto runs. In the project for inFolder, and still never an edit that goes by itself below Full.
+*/
+export function gitInside(folder: string, path: unknown, platform = process.platform, files = FILES) {
+  const paths = pathsOf(platform);
+  const target = paths.resolve(folder, String(path));
+  if (gitPlace(paths.relative(folder, target))) return true;
+  const root = realPath(folder, paths, files);
+  const real = realPath(target, paths, files);
+  return Boolean(root && real && gitPlace(paths.relative(root, real)));
 }
 
 /** A .env file, by a path's last part as this platform splits it. */
@@ -879,7 +949,26 @@ class AcpSession implements ProviderSession {
     // An agent that stopped reading never answers what's written to it.
     child.stdin.on("error", (e) => fail(new Error(this.said() || `${bin} stopped reading: ${e.message}`)));
     // What it left behind (an MCP server, a command) goes with it, and lets go of the pipes "close" waits for.
-    if (process.platform !== "win32") child.on("exit", () => killTree(child));
+    // Its group only: it has exited itself, so killTree's way for a group that's gone (its bare pid, SIGKILLed 2 s on) could
+    // reach another process given that pid meanwhile. A group that's gone too left nothing behind.
+    if (process.platform !== "win32")
+      child.on("exit", () => {
+        const group = child.pid;
+        if (!group) return;
+        try {
+          process.kill(-group, "SIGTERM");
+        } catch {
+          return;
+        }
+        // One that ignores it would go on working beside whatever starts next (exec.ts killTree's 2 s).
+        setTimeout(() => {
+          try {
+            process.kill(-group, "SIGKILL");
+          } catch {
+            // it went when it was asked
+          }
+        }, 2000).unref();
+      });
     closesOnExit(child);
     child.on("close", (code) => {
       fail(new Error(this.said() || unstarted || `${bin} exited with ${code}.`));
@@ -1108,13 +1197,16 @@ class AcpSession implements ProviderSession {
     if (method === "fs/write_text_file") {
       if (this.o.access === "read") throw new Error("This thread is read only.");
       const abs = inside(p.path);
-      // Ask first holds here too, for an agent that writes without asking; one that asked for this file has its answer.
-      if (this.o.access === "ask" && !this.granted.has(abs)) {
+      // Ask first holds here too, for an agent that writes without asking; one that asked for this file has its answer. A write
+      // into git's own folder asks below Full, high and with no rule, as the same edit asked for does (gitInside).
+      const git = this.o.access !== "full" && gitInside(this.o.cwd, abs);
+      if ((this.o.access === "ask" || git) && !this.granted.has(abs)) {
         const sink = this.sink;
         const signal = this.signal;
         if (!sink || !signal) throw new Error("Nothing can allow this write now.");
         const fields = [{ label: "File", value: this.rel(abs) }, { label: "Where", value: this.o.cwd }];
-        const a = await sink.approve({ tool: "edit", title: `Write ${this.rel(abs)}`, risk: "low", fields, rule: "Edit" }, signal).catch(() => ({ allow: false }));
+        const why = git ? { description: "This writes into git's own folder, whose hooks and settings run code.", why: [{ kind: "changes" as const, text: "it writes into git's own folder, whose hooks and settings run code" }] } : {};
+        const a = await sink.approve({ tool: "edit", title: `Write ${this.rel(abs)}`, risk: git ? "high" : "low", fields, rule: git ? undefined : "Edit", ...why }, signal).catch(() => ({ allow: false }));
         if (!a.allow) throw new Error("You didn't allow this write.");
       }
       await mkdir(dirname(abs), { recursive: true });
@@ -1163,10 +1255,15 @@ class AcpSession implements ProviderSession {
       const reader = step === "exec" && readsOnly(command);
       // An edit goes by itself only when every file it names is in the project (T3 Code: provider-acp clientPolicy.ts).
       // What's handed to it to read (your attachments, a long output it saved) is as good as in the project, but only to read.
-      const files = call.locations ?? [];
+      // OpenCode 2 names a command's working folder as its place: in the project that says nothing (it isn't a file the command
+      // names), outside it, it's where the command runs, and stays.
+      const ran = step === "exec" && this.opencode ? resolve(this.o.cwd, String(raw.workdir ?? raw.cwd ?? ".")) : undefined;
+      const files = (call.locations ?? []).filter((l) => !(ran && resolve(this.o.cwd, l.path) === ran && this.inProject(l.path)));
       const handed = (path: string) => step !== "edit" && (step !== "exec" || reader) && (this.o.dirs ?? []).some((d) => inFolder(d, resolve(this.o.cwd, path)));
       const stray = files.find((l) => !this.inProject(l.path) && !handed(l.path));
-      const scoped = files.length > 0 && !stray;
+      // An edit into git's own folder (or onto a HEAD) isn't scoped, in the project as it is: it asks below Full (gitInside).
+      const gitDir = (kind === "edit" || step === "edit") && files.some((l) => gitInside(this.o.cwd, l.path));
+      const scoped = files.length > 0 && !stray && !gitDir;
       // A command that only reads names its own files, and OpenCode asks to go outside for few of them: not for a
       // relative path, nor a link. An ask you've allowed for this step has said so already.
       const words = reader ? commandWords(command) : [];
@@ -1224,24 +1321,30 @@ class AcpSession implements ProviderSession {
       const sink = this.sink;
       const signal = this.signal;
       if (!sink || !signal) return { outcome: { outcome: "cancelled" } };
-      const file = away ?? files[0]?.path;
+      const file = away ?? (gitDir ? files.find((l) => gitInside(this.o.cwd, l.path))?.path : undefined) ?? files[0]?.path;
       const fields = [command && { label: "Command", value: command }, file && { label: "File", value: this.rel(file) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
-      // What reaches outside the project, or an edit of files it doesn't name, is yours each time: high, so Auto and the Reviewer leave it to you, and no rule.
+      // What reaches outside the project, an edit of files it doesn't name or into git's own folder, is yours each time: high, so Auto and the Reviewer leave it to you, and no rule.
       // Whatever its kind: OpenCode's first ask to go outside (external_directory) is "other", and only the place it names says so.
       const loose = Boolean(away) || (kind === "edit" && !scoped);
       // "other" is a catch-all, so a rule for it would allow every tool nobody named (T3 Code never turns an unknown request
       // into a grant). A tool that gives a name, as a connection's does, gets a rule for that name alone, worded so no command
       // or kind can share it. Not doom_loop: that's OpenCode asking whether to go on repeating itself, a different thing each time.
       const named = kind === "other" && !reaching && call.title !== "doom_loop" && /^[\w.:-]+$/.test(call.title ?? "");
-      const rule = loose ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : kind !== "other" ? call.kind : named ? `tool ${call.title}` : undefined;
-      const description = loose ? (away ? "This is outside the project." : "The agent didn't say which files this changes.") : undefined;
-      // Why, from what made it loose: the place it names outside the project, or an edit that names no file.
+      // OpenCode 2's Code Mode (opencodeRules turns it off): JavaScript that fetches over HTTP and calls other tools, each of
+      // which asks as this one call, with its code and never the address or tool it reaches. A command with the network, so
+      // high (Auto and the Reviewer leave it to you), with no rule, since one would let any code through; as tool `execute`, which
+      // Read only refuses with no card, as it does a command that changes things (runtime.ts, readForbids).
+      const code = this.opencode && kind === "other" && (call.name ?? call.title) === "execute" ? String(raw.code ?? "") : undefined;
+      if (code !== undefined) fields.unshift({ label: "Code", value: code.length > 4000 ? `${code.slice(0, 3999)}…` : code });
+      const rule = loose || code !== undefined ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : kind !== "other" ? call.kind : named ? `tool ${call.title}` : undefined;
+      const description = loose ? (away ? "This is outside the project." : gitDir ? "This writes into git's own folder, whose hooks and settings run code." : "The agent didn't say which files this changes.") : code !== undefined ? "OpenCode runs this JavaScript, which can send and fetch anything over the network and call its other tools." : undefined;
+      // Why, from what made it loose: the place it names outside the project, an edit into git's own folder, or one that names no file.
       const home = homedir();
       const at = away ? resolve(this.o.cwd, away) : "";
-      const why = loose ? [away ? { kind: "outside" as const, text: `it reaches ${at === home || at.startsWith(home + sep) ? `~${at.slice(home.length)}` : at}, outside the project` } : { kind: "changes" as const, text: "the agent didn't say which files it changes" }] : undefined;
+      const why = loose ? [away ? { kind: "outside" as const, text: `it reaches ${at === home || at.startsWith(home + sep) ? `~${at.slice(home.length)}` : at}, outside the project` } : gitDir ? { kind: "changes" as const, text: "it writes into git's own folder, whose hooks and settings run code" } : { kind: "changes" as const, text: "the agent didn't say which files it changes" }] : undefined;
       // The agent's own words for its command: OpenCode's bash tool takes a `description` beside it.
       const says = kind === "exec" ? saysOf(raw.description) : undefined;
-      const a: { allow: boolean; reason?: string; level?: boolean } = await sink.approve({ key: call.toolCallId, tool: call.kind ?? "tool", title: this.titled(call.title ?? "Use a tool"), description, risk: loose ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule, unjudged: true, ...(says ? { says } : {}), ...(why ? { why } : {}) }, signal).catch(() => ({ allow: false }));
+      const a: { allow: boolean; reason?: string; level?: boolean } = await sink.approve({ key: call.toolCallId, tool: code !== undefined ? "execute" : (call.kind ?? "tool"), title: this.titled(call.title ?? "Use a tool"), description, risk: loose || code !== undefined ? "high" : kind === "exec" ? commandRisk(command) : "low", fields, rule, unjudged: true, ...(says ? { says } : {}), ...(why ? { why } : {}) }, signal).catch(() => ({ allow: false }));
       // Refused by the level (Read only), with no card: ACP's answer carries no words, so the model hears why as its next turn starts.
       if (a.level && a.reason) this.refusedLast = `Last turn Liner Code refused a step: ${a.reason}`;
       // Stopped while it asked: a request open when the prompt is cancelled is answered "cancelled", as ACP
@@ -1316,7 +1419,8 @@ class AcpSession implements ProviderSession {
       const call: ToolCall = { ...prev, ...(u as ToolCall), content: (u.content as Json[] | undefined) ?? prev?.content };
       this.calls.set(call.toolCallId, call);
       // A subagent, with `task` denied: a command marked subtask gets past that, and it would wait for good at its first step.
-      if (call.title === "task") this.cut?.(SUBAGENT);
+      // OpenCode 2 calls it `subagent`, by name beside a title of its own.
+      if (call.title === "task" || (this.opencode && (call.name === "subagent" || call.title === "subagent"))) this.cut?.(SUBAGENT);
       // A tool of an MCP server Liner Code didn't hand it (one of its own settings), under way with no ask, below Full: agy offers
       // such a server's tools up front, and runs them unasked, when its conversation knew them before (seen on 1.5.7 after a
       // resume, for a server of the person's named as an earlier process's liner_<tag>). Liner Code can't refuse a step it isn't
@@ -1446,11 +1550,13 @@ class AcpSession implements ProviderSession {
     // An agent that hasn't finished cancelling 15 seconds after Stop is stopped itself, and the turn
     // ends as stopped; the next turn starts it again on the same session (T3 Code: AcpSessionRuntime.ts, defaultCancelTimeout).
     let late: NodeJS.Timeout | undefined;
+    let answered = false;
     let giveUp = () => {};
     const gaveUp = new Promise<null>((r) => (giveUp = () => r(null)));
     const cancel = () => {
       // Once: a turn already being ended can be stopped by you as well, and a second wait would outlive this turn.
-      if (late) return;
+      // Not once its prompt has answered: there's nothing left to cancel, and the wait would close a process that did stop.
+      if (late || answered) return;
       this.send({ method: "session/cancel", params: { sessionId: this.session } });
       late = setTimeout(() => {
         this.close();
@@ -1541,6 +1647,11 @@ class AcpSession implements ProviderSession {
       } catch (e) {
         if (!(e instanceof Stopped)) throw e;
       } finally {
+        // The prompt has answered (or was given up on), so the wait for a cancel is over: left running, it closed the process
+        // while the turn's end below still read its use (`opencode export`, up to OPENCODE_USAGE_MS) or ended its work, and
+        // the next turn had to start it again, with a session it might not load.
+        answered = true;
+        clearTimeout(late);
         // However the prompt ended (done, stopped, failed), its use is said once, before the turn is handed back.
         // OpenCode's result carries only its last step's tokens, and a stopped one's none: the turn's come from its own store.
         const real = this.opencode ? await opencodeTurnUsage(this.cmd, session, since, { cwd: this.o.cwd, env: this.o.env }) : null;

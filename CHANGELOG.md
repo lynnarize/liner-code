@@ -1,5 +1,112 @@
 # Changelog
 
+## 0.2.6 (beta), 2026-11-13
+
+Update from 0.2.5: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;
+on Windows, run the new setup. **Liner Design:** the same session as a canvas of frames in real HTML,
+drawn by any tool, with checks and a way into your code. **The Antigravity CLI**, Google's agy, as a
+built-in tool in Beta. **Asks answered at the composer**, with Enter, and a lighter live turn. **Auto
+asks less** on tools with no safety check of their own.
+
+### Added
+
+- **Liner Design** (⌥⌘E, or Code | Design under the name in the sidebar) is a second face for the same
+  session: the conversation goes on, and what you see is a canvas. Its frames are real HTML and CSS,
+  drawn through Liner Code's design tools, so Claude Code, Codex, OpenCode, Hermes and Antigravity can
+  all draw. Layers are in the sidebar and the inspector on the right (Style, Code, Checks, Build); you
+  can change a frame yourself, and what you pick goes with your next ask. The canvas keeps a copy at
+  the end of each turn that changed it, to step back through and bring back.
+- **The lean**, if you want one: a DESIGN.md the agent reads first, whose colours, type and spacing
+  the inspector offers first, with a quiet note on what's off it. Design skills (/awwwards, /brandkit
+  and the like) switch on per design and stay in sight in the sidebar and the composer, and one that
+  fits what you type is offered. A design needs neither.
+- **Checks** run on the frames themselves, with no agent and nothing spent: what doesn't fit at phone
+  width, low contrast, small touch targets, a control with no name. Each is a numbered mark on the
+  frame and a plain sentence, with Fix, or Fix all, for the agent.
+- **Build** turns frames into your project's code and keeps each linked to its file (in step, design
+  ahead, code ahead, not built), with Update code or Bring it into the frame either way. Compare lays
+  the running app over a built frame. A live frame puts the running app itself on the canvas: a change
+  you make there is held until Send to code.
+- **Three ways:** "3 more like this" draws three takes of a frame side by side, each saying who drew
+  it, whether it keeps to the lean and how many checks it fails. Keep one, mix two, or drop the
+  others.
+- **AI pictures**, if you set them up: a picture model (an endpoint that speaks OpenAI's Images API)
+  beside the lead and its sidekick, asked when a frame needs a picture, before the first, before each,
+  or never. Each says who made it and from what words. You can always drop your own picture files on
+  the canvas. Settings › Models says for each model whether it "Takes pictures" (can be shown one),
+  guessed from its name; one that can't is told what a frame shows in words instead.
+- **Starting a design:** New design in the Design tab (⌘N there) starts one with no session until your
+  first ask, and never in Scratch. A design on its own lives in ~/Liner Designs, and Build in a
+  project moves it into one later. Each open design has a tab, kept across restarts. "Liner opens in:
+  Code | Design" in Settings › General is for someone who only builds front ends.
+- **A real chat in Liner Design:** the session's own conversation at three sizes, a row on the
+  composer, open in the composer's frame, or pinned as a column. An ask Liner Code writes for you (a
+  fix from Checks, a build, a compare) shows as a short line with chips that unfolds to what the agent
+  was told; the agent still gets it whole. Steps have plain names.
+- **Frames draw live:** the frame an agent is on breathes in its colour, new pieces settle in as each
+  write lands, and a small change is pointed out. None of it reaches the saved design, and Quick
+  motion and Reduce motion still it.
+- **The first time Liner Design opens**, a sheet says what it's for in four points, each with a short
+  moving picture.
+- **The Antigravity CLI** (Google's agy, 1.5.0 or later) is a built-in tool, in Beta: signing in from
+  Liner Code, older versions of agy and business accounts are untried. Liner Code drives it over ACP
+  and holds it to your access level, answering its asks itself rather than using agy's own auto mode;
+  at Read only an edit or a command that changes things is refused outright. agy leaves commands and
+  its own agents running after a turn; Liner Code ends them, and anything else it started, at Stop and
+  when the turn ends. Your own connections reach it only at Full access, since it runs their tools
+  without asking. Google's terms for Antigravity restrict third-party tools; its row in Settings links
+  them.
+- **Motion** in Settings › Appearance: Full plays each view's way in as before; Quick, the default,
+  shows a view you open as it is. Your system's Reduce motion still turns it all off.
+
+### Changed
+
+- **Asks come to the composer:** an agent's ask sits in the composer's tray, with the agent's own
+  words for what the command does, the command a row a step, and why it came to you in place of the
+  risk pill. Enter allows it; Esc says no and lets you say why, and Enter sends that back. ⌘Enter
+  allows it and doesn't ask again for that one command, or for an installed skill's scripts. Below
+  Auto, "Don't ask again this turn" runs the rest of the turn as Auto would. A high-risk ask still
+  wants a hold.
+- **A lighter live turn:** while it runs, its last three steps show a line each, thinking and output
+  share one place, one status line sits at its end, and its clock stops while it waits on you. Only a
+  small dot moves.
+- **Auto asks less on tools with no safety check of their own** (OpenCode and the other ACP tools, and
+  Claude Code through another maker's API): a command Liner Code fully recognises goes ahead, such as
+  reading files, a build or a test run, an install from the project's own lists, and git's everyday
+  commands (status, diff, add, commit, branch). Anything it doesn't recognise still asks, as does
+  any other command that reaches the network, code given on its own line, or a write outside the
+  folder or into .git.
+  Before, every command but a read-only one drew a card. An edit into a project's .git, whose hooks
+  and settings run code, now asks below Full on every tool, and "Don't ask again" never covers it.
+- **A command that names a .env file** is no longer a plain read at Auto on the tools that hand every
+  command to Liner Code: it asks you, and at Reviewer decides it goes to the Reviewer. Claude Code
+  and Codex let plain reads through themselves, so there it isn't asked.
+- **Claude Code through another maker's API runs as Edits at Auto**, since Claude Code's own Auto
+  check only runs on Anthropic's models; the Auto row says so, and the session keeps its level for
+  another model.
+- **A shorter model picker:** its first view fits without scrolling, with Pair, Best and Fast a line
+  each and the tools two to a row. A pair's Lead and Sidekick open with the best few that are ready
+  first. A pair's cost is a dot on a green-to-red bar beside Fast and Best, an estimate and never a
+  number; a model with no figure shows none.
+- **First-time setup** shows each tool's and maker's mark in place of letter tiles.
+
+### Fixed
+
+- **OpenCode 2 didn't hold to your access level:** from OpenCode 2.0 every command ran with no ask
+  at every level, Read only included, because it no longer reads its rules where Liner Code put
+  them. Liner Code now gives them the way OpenCode 2 reads them (and 1.x still), knows its renamed
+  tools, keeps its subagents and Code Mode off, and reads its token counts again. With OpenCode 2, a
+  step you refuse ends its turn; OpenCode 1 went on.
+- **Claude Code deleted files without asking** at Edits, and at Auto through another maker's API: rm
+  and rmdir now come to Liner Code, so they ask below Full.
+- **A link in a session's folder could reach outside it:** a page from that folder in the Browser (a
+  cloned repository's, say) could read any file a link in it pointed to, your SSH keys among them,
+  and send it on. Where a link really leads is now checked, so only the folder's own files are
+  served, never hidden ones. A plugin's pictures are checked the same way.
+- Settings, Usage and the Wall open without a pause the first time: they're fetched while Liner Code
+  is idle.
+- Scrolling a session and moving the sidebar's highlight do less layout work.
+
 ## 0.2.5 (beta), 2026-11-11
 
 Update from 0.2.4: on a Mac Liner Code does it by itself (Restart to update), or download the new

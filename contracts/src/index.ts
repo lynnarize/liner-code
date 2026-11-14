@@ -207,11 +207,11 @@ export function picturesOf(provider: ProviderId, model: string | undefined, s: {
   return takesPictures(e, !model || model === "default" ? (e.models[0] ?? "") : model);
 }
 /**
-  The voucher: a code from Liner Code's site that runs one model, DeepSeek V4.1 Flash, on the site's
+  The voucher: a code from Liner Code's site (linercode.dev, site/worker/index.ts) that runs one model, DeepSeek V4.1 Flash, on the site's
   plan (its five hours and its week), through OpenCode. An endpoint Settings doesn't list, named
   only "Promo"; the code is its key, kept like an endpoint's, and the site checks it on each call.
 */
-export const VOUCHER: Endpoint = { id: "voucher", label: "Promo", url: "https://linerui.sorafel.com/api/code/v1", protocol: "chat", models: ["deepseek-v4.1-flash"] };
+export const VOUCHER: Endpoint = { id: "voucher", label: "Promo", url: "https://linercode.dev/api/code/v1", protocol: "chat", models: ["deepseek-v4.1-flash"] };
 /** What a design's page gets in a frame of Liner Code's (the Design surface, the chat): no scrollbar of its own down its edge; it still scrolls. */
 export const DESIGN_FRAME_STYLE = "<style>html{scrollbar-width:none!important}</style>";
 /** An agent in the ACP registry, and how Liner Code would run it here. */

@@ -1,11 +1,18 @@
 // Cloudflare: the built site served as static assets by the Worker "liner-code", whose name
 // must match the one in the dashboard. Build settings there: root directory "site", build
 // "npm run build", deploy "npx wrangler deploy". Missing pages get dist/404.html.
+// Only /api/* runs worker/index.ts first (the promo); every other path is the static site.
+// The promo's settings are on the Worker in the dashboard: LINER_CODE_VOUCHERS and the secret
+// OPENCODE_GO_API_KEY (Settings > Variables and Secrets).
 {
   "name": "liner-code",
+  "main": "./worker/index.ts",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "404-page"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": { "enabled": true }
 }

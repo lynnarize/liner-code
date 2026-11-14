@@ -140,7 +140,7 @@ test("endpoints: a redeemed voucher is a tool Settings doesn't list, its one mod
   assert.ok(p, "on with the setting");
   const c = endpointOptions(VOUCHER, "deepseek-v4.1-flash", "v-test", env);
   assert.equal(c.model, "liner_voucher/deepseek-v4.1-flash");
-  assert.deepEqual(JSON.parse(String(c.env.OPENCODE_CONFIG_CONTENT)).provider.liner_voucher.options, { baseURL: "https://linerui.sorafel.com/api/code/v1", apiKey: `{env:${KEY_VAR}}` });
+  assert.deepEqual(JSON.parse(String(c.env.OPENCODE_CONFIG_CONTENT)).provider.liner_voucher.options, { baseURL: "https://linercode.dev/api/code/v1", apiKey: `{env:${KEY_VAR}}` });
   assert.equal(c.env[KEY_VAR], "v-test");
 
   const real = globalThis.fetch;
@@ -151,7 +151,7 @@ test("endpoints: a redeemed voucher is a tool Settings doesn't list, its one mod
     return Response.json({ usage: { rolling: { percent: 30, resetsAt: "2026-11-02T06:00:00.000Z" }, weekly: { percent: 8 } } });
   }) as typeof fetch;
   const l = await p.limits!({ PATH: "/usr/bin" }, "");
-  assert.deepEqual(asked, ["https://linerui.sorafel.com/api/code/v1/usage Bearer v-test"]);
+  assert.deepEqual(asked, ["https://linercode.dev/api/code/v1/usage Bearer v-test"]);
   assert.equal(l?.plan, "Promo");
   assert.deepEqual(l?.windows.map((w) => [w.kind, w.usedPercent]), [["session", 30], ["weekly", 8]]);
 

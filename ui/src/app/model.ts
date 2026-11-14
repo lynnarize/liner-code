@@ -120,6 +120,9 @@ export function sourceMarkOf(name: string): MarkKind {
   return SOURCES.find(([re]) => re.test(n))?.[1] ?? "other";
 }
 
+/** The tool itself (Claude Code, Codex, OpenCode), by its provider: for the tool picker, apart from the model's maker. */
+export const toolMarkOf = (provider: string): MarkKind => TOOL_MARK[familyOf(provider as Parameters<typeof familyOf>[0])] ?? "other";
+
 export function markOf(ref: string): MarkKind {
   const { provider, model } = splitModel(ref);
   const family = familyOf(provider);

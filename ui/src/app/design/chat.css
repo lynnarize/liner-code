@@ -229,7 +229,7 @@
 .ldc-body .lc-tl {
   gap: 16px;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .ldc-body :is(.lc-turn, .lc-blk, .lc-trail, .lc-wk, .lc-wk-row, .lc-md, .lc-you) {
   min-width: 0;

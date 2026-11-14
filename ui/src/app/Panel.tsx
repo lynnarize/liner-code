@@ -186,6 +186,7 @@ export function Panel({
       ref={box}
       className="lc-panel lc-dockpanes"
       aria-label="Dock"
+      data-tab={dock.panes[0]?.tab}
       style={{ "--panes": dock.panes.length } as CSSProperties}
       data-wide-review={wideReview || undefined}
       data-leaving={leaving || undefined}

@@ -173,7 +173,7 @@ button.ld-tr:hover {
   height: 28px;
   padding: 0 8px;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
   white-space: nowrap;
   cursor: default;
@@ -211,7 +211,7 @@ button.ld-tr:hover {
 }
 .ld-none {
   padding: 8px 10px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .ld-filter {
@@ -457,7 +457,7 @@ html[data-motion="quick"] .ld-face {
 }
 .ld-empty span {
   max-width: 340px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .ld-empty .lc-btn {
   margin-top: 10px;
@@ -523,7 +523,7 @@ html[data-motion="quick"] .ld-face {
   gap: 0 8px;
   height: 18px;
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
   white-space: nowrap;
   pointer-events: auto;
@@ -557,7 +557,7 @@ html[data-motion="quick"] .ld-face {
   outline: 1.5px solid var(--l-accent);
   background: var(--lc-paper);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink);
 }
 .ld-ptag {
@@ -816,7 +816,7 @@ html[data-motion="quick"] .ld-pres::after {
   padding: 0 6px 0 8px;
   border-radius: 8px;
   background: color-mix(in oklab, var(--l-accent) 13%, transparent);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink);
 }
@@ -888,7 +888,7 @@ html[data-motion="quick"] .ld-pres::after {
   padding: 8px 12px;
   border-radius: 14px;
   background: var(--l-wash-2);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -1005,7 +1005,7 @@ html[data-motion="quick"] .ld-pres::after {
 .ld-ly-gone {
   flex: none;
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .ld-empty .ld-mono {
@@ -1215,4 +1215,48 @@ html[data-motion="quick"] .ld-pres::after {
 .ld-hint b {
   font-weight: 500;
   color: var(--l-ink-2);
+}
+
+/* ---------- 0.2.7, third pass: Design Home laid out as Code's Home ---------- */
+/*
+  Where the design lives sits on top of the box as Home's project name, the box in the middle of the
+  paper and Pick up under it (app.css: "0.2.7: Home, as Devin lays it out"). The skills row that
+  fits what you typed rests on the box, joined to it, under the name.
+*/
+.ld-home-head {
+  display: flex;
+  align-self: end;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+/* Home's row sits at the foot of its grid cell; in this column it spans the width. */
+.ld-home-head > .lc-home-top {
+  align-self: stretch;
+}
+.ld-home-head > .ld-fit {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: -12px;
+}
+.lc-home-in:has(.ld-home-head > .ld-fit) .lc-home-compose .lc-tray {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* ---------- The Design face's top row clears the traffic lights ---------- */
+/*
+  As Code's top bar does (app.css: "With the sidebar away, the paper's top bar starts after the
+  traffic lights"): with the sidebar hidden, the Design face's row (Home, the canvas, the lean
+  page) starts just past the lights, its centre on theirs. In full screen the lights' x is 0, so
+  the row keeps its own 16px.
+*/
+html[data-native="mac"] .ld-bar {
+  transition: padding 520ms var(--l-spring-smooth);
+}
+html[data-native="mac"] .lc-app:not([data-sidebar]) .ld-bar {
+  --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 28px)), min(6px, var(--lc-lights-x, 70px)));
+  padding-top: calc(6px - var(--lc-up));
+  padding-bottom: calc(6px + var(--lc-up));
+  padding-left: max(16px, calc(var(--lc-lights-x, 70px) + 4px));
 }

@@ -9,8 +9,13 @@
 */
 
 :root {
-  --l-font-display: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
-  --l-font-body: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* The interface is set in Inter (0.2.7): open letters at whole-pixel sizes, so strokes fill their
+     pixels (docs/research/home-like-home.md). Only the app's name keeps Instrument Sans. */
+  --l-font-display: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --l-font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --lc-font-name: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --l-track-body: -0.005em;
+  --l-track-display: -0.02em;
   --lc-side: 244px;
   /* The one top row: the sidebar's head, the session's header and the panel's tabs share it (44, as
      the approved one-row header has it; 52 before 0.2.5). Its centre, the window's gap plus half of
@@ -71,7 +76,10 @@ html[data-action="ink"] {
   --lc-bar-hover: color-mix(in oklab, var(--l-ink) 11%, var(--lc-field));
   --lc-bar-tile: var(--lc-paper);
   --lc-hair: color-mix(in oklab, var(--l-ink) 8%, transparent);
-  --lc-lift: 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 14px 36px -16px oklch(0.3 0.04 265 / 0.24);
+  /* No text lighter than this: the fourth grey is 4.6:1 on the paper (it was 3.6:1). */
+  --l-ink-4: oklch(0.545 0.006 265);
+  /* A raised card: a small, close shadow (it was a 36px one). */
+  --lc-lift: 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 2px 6px -1px oklch(0.3 0.04 265 / 0.08);
   --lc-float-shadow: 0 0 0 0.5px oklch(0.3 0.04 265 / 0.08), 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 20px 48px -18px oklch(0.3 0.04 265 / 0.3), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
 }
 [data-theme="dark"] {
@@ -87,7 +95,8 @@ html[data-action="ink"] {
   --lc-ctl-ink: oklch(0.94 0.003 265);
   --lc-ctl-ink-2: oklch(0.66 0.006 265);
   --lc-bar-tile: color-mix(in oklab, var(--l-ink) 16%, var(--lc-paper));
-  --lc-lift: 0 1px 2px oklch(0 0 0 / 0.4), 0 18px 44px -16px oklch(0 0 0 / 0.75);
+  --l-ink-4: oklch(0.64 0.005 265);
+  --lc-lift: 0 1px 2px oklch(0 0 0 / 0.4), 0 3px 8px -2px oklch(0 0 0 / 0.5);
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
 }
 /*
@@ -407,7 +416,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   display: inline-flex;
   gap: 4px;
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .lc-lines [data-add] {
@@ -425,7 +434,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   border-radius: 5px;
   box-shadow: inset 0 0 0 1px var(--l-line-2);
   background: var(--l-surface);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--l-ink-3);
 }
 .lc-code {
@@ -443,7 +452,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   animation: l-swap-in 280ms var(--l-ease-out) backwards;
@@ -480,7 +489,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--l-wash-2);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--l-ink-2);
 }
@@ -566,7 +575,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   border: 0;
   border-radius: 999px;
   background: var(--lc-well);
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
   color: var(--l-ink);
@@ -631,7 +640,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
 .lc-btn[data-size="sm"] {
   height: 30px;
   padding: 0 12px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-btn[data-kind="ghost"][data-size="sm"] {
   padding: 0 10px;
@@ -683,7 +692,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line-2);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--l-ink);
   transition: box-shadow 160ms ease;
 }
@@ -748,13 +757,13 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   justify-content: space-between;
   gap: 8px;
   padding: 7px 9px 5px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--l-ink-3);
 }
 .lc-pop-head > span:first-child {
   color: var(--l-ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
 }
 .lc-pop-foot {
@@ -886,7 +895,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   border-radius: 9px;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink);
   text-align: left;
   cursor: pointer;
@@ -903,7 +912,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   min-width: 0;
   margin-left: auto;
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -941,7 +950,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   flex: 1 1 120px;
   min-width: 0;
   height: 30px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-env-note {
   margin: 4px 9px 2px;
@@ -993,6 +1002,7 @@ html[data-native="mac"] .lc-sb-head {
   min-width: 0;
   font-size: 17px;
   font-weight: 600;
+  font-family: var(--lc-font-name);
   letter-spacing: -0.025em;
   line-height: 1;
   white-space: nowrap;
@@ -1218,7 +1228,7 @@ html[data-native="mac"] .lc-sb-head {
 */
 .lc-sb-plab {
   height: 30px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
 }
 .lc-sb-pt {
@@ -1370,7 +1380,7 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 6px;
   background: none;
   font: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -1486,7 +1496,7 @@ html[data-native="mac"] .lc-sb-head {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 20px;
   text-overflow: ellipsis;
@@ -1498,7 +1508,7 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-time {
   flex: none;
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-4);
   font-variant-numeric: tabular-nums;
 }
@@ -1531,7 +1541,7 @@ html[data-native="mac"] .lc-sb-head {
   background: var(--l-surface);
   box-shadow: 0 0 0 1.5px var(--l-accent);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--l-ink);
 }
@@ -1591,7 +1601,7 @@ html[data-native="mac"] .lc-sb-head {
 /* Settings' places, when the filter finds none. */
 .lc-sb-empty {
   margin: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--l-ink-3);
 }
@@ -1616,7 +1626,7 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-2);
 }
 .lc-sb-none > span {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--l-ink-3);
 }
@@ -1863,7 +1873,7 @@ html[data-native="mac"] .lc-sb-head {
   padding: 0 8px;
   border-radius: 9px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-2);
   transition:
@@ -1904,7 +1914,7 @@ html[data-native="mac"] .lc-sb-head {
   line-height: 1.35;
 }
 .lc-sb-update-t > b {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink);
 }
@@ -1920,7 +1930,7 @@ html[data-native="mac"] .lc-sb-head {
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink);
   cursor: pointer;
@@ -2020,7 +2030,7 @@ html[data-native="mac"] .lc-sb-head {
   height: 24px;
   border-radius: 50%;
   background: var(--l-wash-2);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--l-ink-2);
 }
@@ -2100,7 +2110,7 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 14px;
   background: var(--lc-float);
   box-shadow: var(--lc-float-shadow);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 17px;
   color: var(--l-ink-2);
   pointer-events: none;
@@ -2161,7 +2171,7 @@ html[data-native="mac"] .lc-sb-head {
   gap: 5px;
   min-width: 0;
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-sbc-branch > svg {
@@ -2201,7 +2211,7 @@ html[data-native="mac"] .lc-sb-head {
   margin: 11px 0 0;
   padding-top: 9px;
   border-top: 1px solid var(--lc-hair);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-sbc-keys kbd {
@@ -2324,7 +2334,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-tt .lc-title {
   min-width: 0;
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 500;
   letter-spacing: -0.01em;
 }
@@ -2356,7 +2366,7 @@ html[data-native="mac"] .lc-sb-head {
   border: 0;
   border-radius: 999px;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
   cursor: pointer;
   transition: background 160ms ease;
@@ -2378,7 +2388,7 @@ html[data-native="mac"] .lc-sb-head {
   height: 24px;
   padding: 0 4px;
   border-radius: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 /* The session's bar heads the thread's column: narrow, it keeps the title and turns who works on it
@@ -2573,7 +2583,7 @@ html[data-native="mac"] .lc-sb-head {
   background: var(--lc-ctl);
   box-shadow: 0 4px 12px -4px oklch(0 0 0 / 0.3);
   color: var(--lc-ctl-ink);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .l-tip.l-glass kbd {
   color: var(--lc-ctl-ink-2);
@@ -2630,7 +2640,7 @@ html[data-native="mac"] .lc-sb-head {
   padding: 0 12px;
   border: 0;
   border-radius: 999px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   animation: l-pop-in 220ms var(--l-ease-enter) backwards;
@@ -2643,7 +2653,7 @@ html[data-native="mac"] .lc-sb-head {
   margin: 18vh auto 0;
   text-align: center;
   color: var(--l-ink-3);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
   animation: l-unblur 420ms var(--l-ease-out) backwards;
 }
@@ -2698,7 +2708,7 @@ html[data-native="mac"] .lc-sb-head {
   overflow-wrap: anywhere;
 }
 .lc-you-tag {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-accent-text);
 }
 .lc-head {
@@ -2741,7 +2751,7 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 9px;
   list-style: none;
   color: var(--l-ink-3);
-  font-size: 13.5px;
+  font-size: 14px;
   cursor: pointer;
   transition:
     background-color 160ms ease,
@@ -2764,7 +2774,7 @@ html[data-native="mac"] .lc-sb-head {
   margin: 6px 0 4px 4px;
   padding-left: 14px;
   box-shadow: inset 1.5px 0 0 var(--l-line);
-  font-size: 13.5px;
+  font-size: 14px;
 }
 /* Permissions: a heading, then each level a row (its name, what it does, a tick when it's on,
    its number), and Full access last, a plain row you enable. */
@@ -2775,7 +2785,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-perm-h {
   margin: 0 10px 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-3);
 }
@@ -2813,7 +2823,7 @@ html[data-native="mac"] .lc-sb-head {
   font-weight: 500;
 }
 .lc-perm-t small {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 17px;
   color: var(--l-ink-3);
 }
@@ -2830,7 +2840,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-perm-on {
   flex: none;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--l-ink-2);
 }
 .lc-head-meta {
@@ -2871,7 +2881,7 @@ html[data-native="mac"] .lc-sb-head {
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--l-wash);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 19px;
 }
 .lc-md code {
@@ -2890,7 +2900,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-notice {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
   overflow-wrap: anywhere;
 }
@@ -2941,7 +2951,7 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 9px;
   background: none;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--l-ink-3);
   cursor: pointer;
   transition:
@@ -2976,7 +2986,7 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 10px;
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 17px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -3119,7 +3129,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-ask-title small,
 .lc-plan-top small {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-ask-title b,
@@ -3132,7 +3142,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-ask-desc {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
   color: var(--l-ink-2);
 }
@@ -3155,7 +3165,7 @@ html[data-native="mac"] .lc-sb-head {
   box-shadow: 0 -1px 0 var(--l-line);
 }
 .lc-fields dt {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-fields dd {
@@ -3174,7 +3184,7 @@ html[data-native="mac"] .lc-sb-head {
   align-items: center;
   gap: 6px;
   min-height: 32px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-check {
   display: inline-flex;
@@ -3213,7 +3223,7 @@ html[data-native="mac"] .lc-sb-head {
     0 0 0 4px var(--l-accent-soft);
   color: var(--l-ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
 }
 .lc-else {
@@ -3258,7 +3268,7 @@ html[data-native="mac"] .lc-sb-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-dots {
@@ -3317,14 +3327,14 @@ html[data-native="mac"] .lc-sb-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 19px;
 }
 .lc-opt small {
   display: block;
   margin-top: 2px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--l-ink-3);
 }
@@ -3345,7 +3355,7 @@ html[data-native="mac"] .lc-sb-head {
   align-items: baseline;
   column-gap: 10px;
   padding: 3px 0;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
   animation: l-unblur 320ms var(--l-ease-out) backwards;
 }
@@ -3546,7 +3556,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   resize: none;
   background: none;
   font: inherit;
-  font-size: 14.5px;
+  font-size: 15px;
   line-height: 22px;
   color: var(--l-ink);
   transition: height 200ms var(--l-ease-out);
@@ -3629,7 +3639,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-seg .lc-ring {
   padding: 0 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
 }
 .lc-seg .lc-effort-word {
@@ -3925,7 +3935,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   align-items: center;
   gap: 2px 4px;
   padding: 0 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-4);
 }
 .lc-under-b {
@@ -4006,7 +4016,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   border-radius: 9px;
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line-2);
-  font-size: 12.5px;
+  font-size: 13px;
   animation: l-pop-in 240ms var(--l-ease-enter) backwards;
 }
 .lc-file-chip > * {
@@ -4071,7 +4081,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   border: 0;
   border-radius: 8px;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
@@ -4387,7 +4397,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   border: 0;
   border-radius: 10px;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
   cursor: pointer;
 }
@@ -4418,13 +4428,13 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-who-opt-n {
   flex: none;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 /* The pair beside the rows: who leads and who's its sidekick, each a button that opens the model list. */
 .lc-who-h {
   padding: 7px 9px 2px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--l-ink-2);
 }
@@ -4494,7 +4504,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   position: relative;
   height: 48px;
   margin-top: 5px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 14px;
   color: var(--l-ink-3);
   white-space: nowrap;
@@ -4679,7 +4689,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   flex-wrap: wrap;
   justify-content: center;
   gap: 18px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
   animation: l-unblur 420ms 260ms var(--l-ease-out) backwards;
 }
@@ -4868,7 +4878,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-diff .l-cdiff__unfold {
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-diff .l-cdiff__unfold svg {
   width: 12px;
@@ -5036,7 +5046,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   min-width: 0;
 }
 .lc-agent-card-t b {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
 }
 .lc-agent-card-t b span {
@@ -5044,7 +5054,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-weight: 400;
 }
 .lc-agent-card-t small {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-agent-card-m {
@@ -5053,7 +5063,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 2px;
 }
 .lc-agent-card-m small {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
   text-transform: capitalize;
 }
@@ -5082,7 +5092,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   align-items: baseline;
   gap: 8px;
   margin-bottom: 8px;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .lc-usage-h b {
   font-weight: 600;
@@ -5111,7 +5121,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   padding: 12px 14px;
 }
 .lc-tile-card small {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-tile-card b {
@@ -5122,7 +5132,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-tile-card .lc-quiet {
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5178,7 +5188,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-table th {
   padding: 6px 0;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-3);
   text-align: right;
@@ -5347,7 +5357,7 @@ html[data-native="mac"] .lc-lockup {
   box-sizing: border-box;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1.5px var(--l-line-strong);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   transition:
     background 300ms ease,
@@ -5444,7 +5454,7 @@ html[data-native="mac"] .lc-lockup {
   align-items: center;
   gap: 10px;
   padding: 0 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-grp-h b {
@@ -5478,7 +5488,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-cli b,
 .lc-keys b {
   display: block;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -5486,7 +5496,7 @@ html[data-native="mac"] .lc-lockup {
   display: block;
   margin-top: 2px;
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5498,7 +5508,7 @@ html[data-native="mac"] .lc-lockup {
   height: 32px;
   border-radius: 10px;
   background: var(--l-wash-2);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--l-ink-2);
 }
@@ -5506,7 +5516,7 @@ html[data-native="mac"] .lc-lockup {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ok-text);
 }
@@ -5563,7 +5573,7 @@ html[data-native="mac"] .lc-lockup {
   outline: none;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink);
 }
 .lc-sure {
@@ -5574,7 +5584,7 @@ html[data-native="mac"] .lc-lockup {
   margin: 0;
   padding: 12px 0 0;
   border-top: 1px dashed var(--l-line-2);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-sure span {
@@ -5590,7 +5600,7 @@ html[data-native="mac"] .lc-lockup {
   align-items: center;
   gap: 8px;
   padding-top: 6px;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .lc-prj {
   display: grid;
@@ -5616,7 +5626,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-prj-row b {
   display: block;
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5624,7 +5634,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-prj-row small {
   display: block;
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5633,7 +5643,7 @@ html[data-native="mac"] .lc-lockup {
   opacity: 0.7;
 }
 .lc-prj-row .lc-quiet {
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-prj-strip {
   display: flex;
@@ -5644,7 +5654,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-prj-strip .lc-input {
   flex: 1;
   height: 30px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-rcs {
   display: grid;
@@ -5682,7 +5692,7 @@ html[data-native="mac"] .lc-lockup {
   letter-spacing: -0.012em;
 }
 .lc-rc small {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-rc p {
@@ -5798,7 +5808,7 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-ad-ch {
   margin-bottom: -4px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -5814,7 +5824,7 @@ html[data-native="mac"] .lc-lockup {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--l-ink-2);
 }
@@ -5837,7 +5847,7 @@ html[data-native="mac"] .lc-lockup {
   padding: 0 6px;
   border-radius: 5px;
   background: var(--l-accent-soft);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--l-accent-text);
 }
@@ -5911,7 +5921,7 @@ html[data-native="mac"] .lc-lockup {
   outline: none;
   background: var(--lc-well);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--l-ink);
 }
 .lc-ad-in:focus-visible {
@@ -5986,7 +5996,7 @@ html[data-native="mac"] .lc-lockup {
   outline: none;
   resize: vertical;
   background: var(--lc-well);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 19px;
   color: var(--l-ink-2);
 }
@@ -6014,7 +6024,7 @@ html[data-native="mac"] .lc-lockup {
   padding: 0 4px 0 10px;
   border-radius: 999px;
   background: var(--lc-well);
-  font-size: 12.5px;
+  font-size: 13px;
   animation: l-swap-in 260ms var(--l-ease-out) backwards;
 }
 .lc-ad-chip .lc-mono {
@@ -6059,7 +6069,7 @@ html[data-native="mac"] .lc-lockup {
   background: none;
   box-shadow: inset 0 0 0 1px var(--lc-hair);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-2);
   cursor: pointer;
@@ -6072,7 +6082,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-ad-wait {
   display: block;
   padding: 6px 9px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-ad-sum {
   display: flex;
@@ -6080,7 +6090,7 @@ html[data-native="mac"] .lc-lockup {
   gap: 8px;
   min-width: 0;
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
   color: var(--l-ink-3);
 }
@@ -6096,7 +6106,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-ad-err {
   min-width: 0;
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--l-danger-text);
@@ -6196,7 +6206,7 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-st-hero p {
   margin: 3px 0 0;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--l-ink-3);
 }
 
@@ -6213,13 +6223,13 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-st-group h2 {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.005em;
 }
 .lc-st-group > header p {
   margin: 2px 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--l-ink-3);
 }
@@ -6264,12 +6274,12 @@ html[data-native="mac"] .lc-lockup {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .lc-st-t small {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--l-ink-3);
   overflow-wrap: anywhere;
@@ -6313,7 +6323,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-st-terms {
   margin: -8px 0 0;
   padding: 0 0 12px 48px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.45;
 }
 .lc-st-terms a {
@@ -6354,7 +6364,7 @@ html[data-native="mac"] .lc-lockup {
   box-shadow:
     0 0 0 1px var(--l-line-2),
     0 1px 2px var(--l-drop);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink);
   cursor: pointer;
@@ -6372,7 +6382,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-st-sel .l-in-box {
   --i-h: 32px;
   border-radius: 10px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-st-input {
   display: inline-flex;
@@ -6396,7 +6406,7 @@ html[data-native="mac"] .lc-lockup {
   outline: none;
   background: none;
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink);
 }
 .lc-st-radios {
@@ -6641,7 +6651,7 @@ html[data-native="mac"] .lc-lockup {
   box-shadow: 0 2px 6px oklch(0 0 0 / 0.12);
 }
 .lc-pv-cap {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -6707,7 +6717,7 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-bgs-add[data-busy] {
   pointer-events: none;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .lc-bgs-note {
   margin: 0;
@@ -6774,7 +6784,7 @@ html[data-native="mac"] .lc-lockup {
   border-radius: 999px;
   background: var(--lc-ctl);
   box-shadow: var(--lc-float-shadow);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--lc-ctl-ink);
   animation: l-pop-in 260ms var(--l-ease-enter) backwards;
@@ -6893,7 +6903,7 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-ship-msg p {
   margin: 0 0 2px;
-  font-size: 14.5px;
+  font-size: 15px;
   line-height: 22px;
   color: var(--l-ink-2);
   opacity: 0;
@@ -6914,7 +6924,7 @@ html[data-native="mac"] .lc-lockup {
   padding: 1px 5px;
   border-radius: 5px;
   background: var(--lc-plate);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-ship-wrap {
   position: relative;
@@ -6983,7 +6993,7 @@ html[data-native="mac"] .lc-lockup {
   border-radius: 5px;
   background: var(--l-accent-soft);
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-accent-text);
 }
 .lc-ship-tag[data-m] {
@@ -7124,7 +7134,7 @@ html[data-native="mac"] .lc-lockup {
 .lc-ship-meta {
   margin-left: auto;
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-ship-meta > span {
@@ -7167,7 +7177,7 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-ship-hsw {
   margin-left: auto;
-  font-size: 12.5px;
+  font-size: 13px;
   justify-items: end;
 }
 .lc-ship[data-p="0"] .x0,
@@ -7229,7 +7239,7 @@ html[data-native="mac"] .lc-lockup {
   align-items: center;
   gap: 6px;
   height: 30px;
-  font-size: 12.5px;
+  font-size: 13px;
   opacity: 0;
   transition: opacity calc(240ms * var(--k)) ease;
 }
@@ -7343,7 +7353,7 @@ html[data-native="mac"] .lc-lockup {
   align-items: center;
   gap: 6px;
   margin-left: auto;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
   animation: l-swap-in 280ms var(--l-ease-out) backwards;
 }
@@ -7468,7 +7478,7 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-prc-note {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
   color: var(--l-ink-2);
   animation: l-unblur 360ms var(--l-ease-out) backwards;
@@ -7527,7 +7537,7 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-prc-file {
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-prc-hunks code {
@@ -7575,7 +7585,7 @@ html[data-native="mac"] .lc-lockup {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 24px;
   white-space: nowrap;
   color: var(--l-ink-2);
@@ -7687,7 +7697,7 @@ html[data-native="mac"] .lc-lockup {
 /* A command to copy, shown whole and wrapping. */
 .lc-st-cmd {
   display: block;
-  font-size: 11.5px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -7747,7 +7757,7 @@ html[data-native="mac"] .lc-lockup {
 }
 .lc-queued-tag {
   flex: none;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--l-accent);
 }
@@ -7761,7 +7771,7 @@ html[data-native="mac"] .lc-lockup {
   border-radius: 12px;
   background: color-mix(in oklab, var(--l-warn) 9%, var(--lc-card));
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-warn) 24%, transparent);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
   animation: l-blur-in 260ms var(--l-ease-out) backwards;
 }
@@ -7811,7 +7821,7 @@ html[data-native="mac"] .lc-lockup {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--l-ink-3);
@@ -7907,7 +7917,7 @@ html[data-native="mac"] .lc-lockup {
   gap: 2px;
   padding: 4px 6px 4px 12px;
   border-radius: 12px;
-  font-size: 12.5px;
+  font-size: 13px;
   animation: l-blur-in 220ms var(--l-ease-out) backwards;
 }
 .lc-sb-bulk .lc-sb-a {
@@ -8002,7 +8012,7 @@ html[data-native="mac"] .lc-lockup {
   background: var(--l-wash);
   box-shadow: inset 0 0 0 1px var(--l-line);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink);
   cursor: pointer;
 }
@@ -8043,7 +8053,7 @@ html[data-native="mac"] .lc-lockup {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
   cursor: pointer;
 }
@@ -8069,4 +8079,679 @@ html[data-motion="quick"] .lc-sheet[open] .lc-sheet-frame {
 }
 html[data-motion="quick"] .lc-session .lc-body {
   transition-duration: 180ms;
+}
+
+/* ---------- 0.2.7: the sidebar, after Claude Code's and Devin's ---------- */
+/*
+  The head is the name with Back, Forward and Hide at its right end, so the sidebar is 20 wider
+  than it was (264). Under it your places are plain rows (New session lit while Home is up,
+  Search, The Wall, Add-ons), the session rows carry no project tile, and the foot holds Code or
+  Design as one option where your name was. Navigation icons are the 20px drawings (icons.tsx, N).
+*/
+:root {
+  --lc-side: 264px;
+}
+.lc-brand {
+  flex: none;
+  cursor: default;
+}
+.lc-sb-head {
+  gap: 0;
+}
+.lc-sb-hb {
+  width: 26px;
+  height: 28px;
+  color: var(--l-ink-2);
+}
+.lc-sb-hb:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.lc-sb-nav {
+  font-size: 14px;
+}
+.lc-sb-nav > svg {
+  width: auto;
+  height: auto;
+  color: var(--l-ink-2);
+}
+.lc-sb-navrow .lc-ib {
+  color: var(--l-ink-3);
+}
+/* A session row: its title with a dot while it works or waits, then the model's mark, where it is and when. */
+.lc-sb .lc-sb-row[data-two] .lc-sb-pick {
+  min-height: 46px;
+}
+.lc-sb-row[data-two] .lc-sb-lead,
+.lc-sb-row[data-two]:is(:hover, :focus-within) .lc-sb-lead,
+.lc-sb-row[data-two]:has(.lc-sb-acts [data-open]) .lc-sb-lead {
+  display: grid;
+  position: static;
+  width: 12px;
+  opacity: 1;
+  visibility: visible;
+  color: var(--l-ink-3);
+}
+.lc-sb-rdot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--l-accent);
+}
+.lc-sb-rdot[data-k="warn"] {
+  background: var(--l-warn);
+}
+.lc-sb-rdot[data-k="danger"] {
+  background: var(--l-danger);
+}
+.lc-sb-rdot[data-k="work"] {
+  animation: lc-dot-work 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-sb-rdot[data-k="work"] {
+    animation: none;
+  }
+}
+/* The foot's option: a tile, Code or Design, and the arrow that says it opens. */
+.lc-sb-facepick {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 8px 0 5px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--l-ink);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-sb-facepick > svg {
+  color: var(--l-ink-3);
+}
+.lc-sb-facepick[data-open] {
+  background: var(--l-wash-2);
+}
+@media (hover: hover) {
+  .lc-sb-facepick:hover {
+    background: var(--l-wash-2);
+  }
+  .lc-face-opt:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-face-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7.5px;
+  background: var(--lc-ctl);
+  color: var(--lc-ctl-ink);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    inset 0 0 0 1px rgb(0 0 0 / 0.12),
+    0 1px 2px rgb(20 22 30 / 0.22);
+}
+.lc-face-tile[data-face="design"] {
+  background: var(--l-accent);
+  color: #fff;
+}
+.lc-face-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-face-opt[aria-checked="true"] {
+  background: var(--l-wash);
+}
+.lc-face-tx {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.lc-face-tx > b {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.lc-face-tx > small {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--l-ink-3);
+}
+
+/* ---------- 0.2.7: Home, as Devin lays it out ---------- */
+/*
+  The composer sits in the middle of the paper, a touch below centre. The project's name and
+  This checkout / Worktree rest on top of it; Pick up hangs below it and never moves it.
+*/
+.lc-home-in[data-mid] {
+  display: grid;
+  grid-template-columns: minmax(0, 720px);
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+  justify-content: center;
+  gap: 12px;
+  padding: 4vh 24px 0;
+  overflow: visible;
+}
+.lc-home-top {
+  display: flex;
+  align-self: end;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 2px;
+}
+.lc-home-top > .lc-pop {
+  min-width: 0;
+}
+.lc-home-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--l-ink);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-home-name > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-home-name > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-home-name[data-open] {
+  background: var(--l-wash-2);
+}
+.lc-home-where {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--l-wash);
+}
+.lc-home-where > button {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-home-where > button[aria-checked="true"] {
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair);
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-home-in[data-mid] .lc-home-compose {
+  width: 100%;
+}
+.lc-home-pickup {
+  display: flex;
+  align-self: start;
+  flex-direction: column;
+  padding: 0 4px;
+  animation: lc-focus-in 420ms 160ms var(--l-ease-enter) backwards;
+}
+.lc-home-pickup .lc-home-pick {
+  padding: 0 8px;
+}
+@media (hover: hover) {
+  .lc-home-name:hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-home-card {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: min(400px, 100%);
+  box-sizing: border-box;
+  padding: 4px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--lc-hair);
+  animation: lc-focus-in 420ms var(--l-ease-enter) backwards;
+}
+.lc-home-card + .lc-home-card {
+  animation-delay: 60ms;
+}
+.lc-home-card-h {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-home-pick,
+.lc-home-card .lc-pop > .lc-home-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-home-pick > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-home-pick[aria-pressed="true"] {
+  background: var(--l-wash);
+  font-weight: 500;
+}
+.lc-home-pick[aria-pressed="true"] > svg:last-child {
+  color: var(--l-ink);
+}
+.lc-home-pick-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-home-pick small {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-home-pick small.lc-mono {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+}
+.lc-home-pick-q {
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-home-waits {
+  flex: none;
+  font-weight: 500;
+  color: var(--l-warn-text);
+}
+.lc-home-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--lc-hair);
+}
+.lc-home-two {
+  display: flex;
+  gap: 4px;
+}
+.lc-home-two > * {
+  flex: 1;
+  min-width: 0;
+}
+@media (hover: hover) {
+  .lc-home-pick:hover {
+    background: var(--l-wash);
+  }
+}
+
+/* ---------- 0.2.7: the rail of surfaces ---------- */
+/*
+  The session's surfaces run down the paper's right edge as 20px icons, there whether the panel is
+  open or shut. The lit one is the surface in the panel; the Terminal's is lit while the bottom
+  panel is up. The panel's own row keeps what it had; its tabs are no longer the way in.
+*/
+.lc-session {
+  flex-direction: row;
+}
+.lc-session > .lc-body {
+  min-width: 0;
+}
+.lc-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 46px;
+  box-sizing: border-box;
+  padding: 7px 0 10px;
+}
+.lc-rail-b {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  color: var(--l-ink-2);
+}
+.lc-rail-b[aria-pressed="true"] {
+  background: var(--l-wash-2);
+  box-shadow: none;
+  color: var(--l-ink);
+}
+.lc-rail-b[aria-pressed="true"] > svg {
+  fill: color-mix(in srgb, currentColor 12%, transparent);
+}
+.lc-rail-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lc-act);
+  box-shadow: 0 0 0 2px var(--lc-paper);
+}
+/* The scripts menu starts the bottom panel's row of shells. */
+.lc-terms-run {
+  display: inline-flex;
+  gap: 6px;
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+/* The rail is the way to a surface, so beside the thread the panel's row drops its tabs and its
+   plus and keeps the full canvas and Hide. Over the whole paper (the full canvas) the tabs stay. */
+.lc-session:not([data-wide]) .lc-panel-top .lc-stabs-row,
+.lc-session:not([data-wide]) .lc-panel-top .lc-stab-pin,
+.lc-session:not([data-wide]) .lc-panel-top > .lc-pop {
+  display: none;
+}
+
+/* ---------- 0.2.7: half-pixel lines ---------- */
+/* On a Retina screen the thin lines are half a pixel, a little darker so they still read. */
+@media (min-resolution: 2dppx) {
+  :root,
+  [data-theme] {
+    --lc-line: color-mix(in oklab, var(--l-ink) 17%, transparent);
+    --lc-card-ring: 0 0 0 0.5px var(--lc-line), 0 1px 2px oklch(0.3 0.04 265 / 0.04);
+  }
+  [data-theme="dark"] {
+    --lc-card-ring: 0 0 0 0.5px var(--lc-line);
+  }
+  .lc-paper {
+    box-shadow:
+      0 0 0 0.5px var(--lc-line),
+      0 1px 2px oklch(0.3 0.04 265 / 0.05);
+  }
+  .lc-ledger {
+    border-top: 0.5px solid var(--lc-line);
+    border-bottom: 0.5px solid var(--lc-line);
+  }
+  .lc-home-sep {
+    height: 0.5px;
+    background: var(--lc-line);
+  }
+  .lc-home-card,
+  .lc-home-where > button[aria-checked="true"] {
+    box-shadow: 0 0 0 0.5px var(--lc-line);
+  }
+}
+.lc-rail-gap {
+  height: 10px;
+}
+.lc-trow-commit {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+/* The session's width now includes the rail (46px), so the panel's own width is worked out from
+   the body's: without this it ran 46px past its column, under the rail. */
+.lc-session:not([data-wide]) .lc-body > .lc-panel {
+  width: max(100%, min(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)), calc(100cqw - 466px)));
+}
+
+/* ---------- 0.2.7, second pass: type as Devin sets it, and the sidebar as the mockup lays it ---------- */
+/*
+  Chrome is 13px at weight 400. Only a section head or a picked item goes to 500; 600 is for the
+  app's name, Home's project name and real headings. Answers (.lc-md) and code keep their own.
+  The browser draws the letters as they come: no optimizeLegibility (Liner's base sets it), no
+  synthesised bold or italic.
+*/
+body,
+.l-root,
+.l-scope {
+  font-optical-sizing: auto;
+  font-synthesis: none;
+  text-rendering: auto;
+}
+/* The sidebar: places, the view label and group labels at 13 regular; the lit place at 500. */
+.lc-sb-nav {
+  font-size: 13px;
+  font-weight: 400;
+}
+.lc-sb-nav[aria-current] {
+  font-weight: 500;
+}
+.lc-sb-view {
+  font-weight: 400;
+}
+.lc-sb-lab {
+  font-size: 13px;
+  font-weight: 400;
+}
+.lc-sb-facepick {
+  font-size: 13px;
+  font-weight: 500;
+}
+/* The composer's controls (the Reviewer, the mode chip and the Desk cue: in their own sheets). */
+.lc-seg-b,
+.lc-chip-name {
+  font-weight: 400;
+}
+/* Home: Pick up's rows. */
+.lc-home-pick,
+.lc-home-card .lc-pop > .lc-home-pick {
+  font-size: 13px;
+}
+/* Tooltips and menus' rows: 13 regular, the picked row at 500, a menu's head at 500. */
+/* (Liner's own sheets load after this one: these two are a step more specific.) */
+.l-tip-anchor .l-tip {
+  font-size: 13px;
+  font-weight: 400;
+}
+.l-cmd__item .l-cmd__label {
+  font-size: 13px;
+}
+.lc-row-t b,
+.lc-who-row-t b {
+  font-weight: 400;
+}
+.lc-row[data-on] .lc-row-t b,
+.lc-who-row[data-on] .lc-who-row-t b {
+  font-weight: 500;
+}
+.lc-face-tx > b {
+  font-size: 13px;
+  font-weight: 400;
+}
+.lc-face-opt[aria-checked="true"] .lc-face-tx > b {
+  font-weight: 500;
+}
+.lc-pop-head {
+  font-weight: 400;
+}
+.lc-pop-head > span:first-child {
+  font-weight: 500;
+}
+
+/*
+  The sidebar against the approved mockup (home-canvas, Centred): Add-ons is the fourth of the
+  top rows, 1px under The Wall like the others; everything starts on one left edge (the places'
+  icons, the name, the view label, group labels, session titles and the foot's tile, 10px inside
+  the sidebar's inset); All projects sits 14 under Add-ons with the first group label right under
+  it at 30 high; session rows stack with no gap at a 10px corner; the foot's buttons are 30 square
+  with 20px drawings, 4 apart, 4 from the edge, like the head's.
+*/
+.lc-sb-head {
+  padding-right: 4px;
+  padding-left: 10px;
+}
+.lc-sb-view {
+  padding-left: 10px;
+}
+.lc-sb-views {
+  margin-bottom: -10px;
+}
+.lc-sb-lab {
+  height: 30px;
+  padding: 0 8px 0 10px;
+}
+.lc-sb-sec {
+  gap: 0;
+}
+.lc-sb-row,
+.lc-sb-pick,
+.lc-sb-plate {
+  border-radius: 10px;
+}
+.lc-sb-foot {
+  gap: 4px;
+  padding: 0 4px 0 2px;
+}
+.lc-sb-facepick {
+  padding-left: 8px;
+}
+.lc-sb-foot .lc-ib {
+  width: 30px;
+  height: 30px;
+}
+.lc-sb-ring > svg {
+  width: 20px;
+  height: 20px;
+}
+/* Home: the project's row and Pick up stand where the mockup puts them. */
+.lc-home-top {
+  padding: 0 8px 0 6px;
+}
+.lc-home-pickup {
+  padding: 4px 4px 0;
+}
+.lc-home-pickup .lc-home-card-h {
+  padding: 0 8px;
+}
+
+/* ---------- 0.2.7, second pass: every surface beside the thread is a card, as the mockup draws it ---------- */
+/*
+  Beside the thread the panel floats: 8px from the paper's top and bottom and from the thread, a
+  14px corner, its own ring and a small shadow, and no top row (the rail's first button hides it;
+  the full canvas keeps its key and the Review link). It stays inside its column, so it never runs
+  under the rail. The Session card is only as tall as what it holds and scrolls past that; every
+  other surface fills the height. Its ring is the edge: no hairline between thread and panel.
+  Over the whole paper ([data-wide]) nothing changes.
+*/
+.lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
+  justify-self: stretch;
+  width: auto;
+  min-width: 0;
+  margin: 8px 0 8px 8px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--lc-paper);
+  box-shadow: 0 0 0 1px var(--lc-hair), 0 1px 2px oklch(0.3 0.04 265 / 0.04);
+}
+html[data-bg] .lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
+  background: color-mix(in oklab, var(--lc-paper) 86%, transparent);
+}
+@media (min-resolution: 2dppx) {
+  .lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
+    box-shadow: 0 0 0 0.5px var(--lc-line), 0 1px 2px oklch(0.3 0.04 265 / 0.04);
+  }
+}
+.lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]:not([data-leaving]) {
+  align-self: start;
+  height: auto;
+  max-height: calc(100% - 16px);
+  overflow: auto;
+}
+.lc-session:not([data-wide]) .lc-body > .lc-panel > .lc-panel-top {
+  display: none;
+}
+.lc-session[data-beside]:not([data-wide]) .lc-panel > .lc-surface {
+  margin-left: 0;
+}
+/* The grip straddles the card's left edge (8px into the column), and its line runs down that edge. */
+.lc-session:not([data-wide]) .lc-grip {
+  margin-left: 3px;
+}
+.lc-session:not([data-wide]) .lc-grip::after {
+  top: 8px;
+  bottom: 8px;
+  left: 4px;
+}
+
+/* ---------- 0.2.7, third pass: the sidebar's head in T3 Code's order ---------- */
+/*
+  Hide the sidebar, the name, then Back and Forward right after it; the rest of the row is the
+  window's drag area. On macOS the row starts just past the traffic lights and runs into the
+  sidebar's right inset, so "Liner Design" fits in the 264 with its arrows.
+*/
+.lc-sb-head > .lc-brand {
+  margin: 0 2px 0 4px;
+}
+.lc-sb-head > .lc-brand ~ .lc-sb-hb {
+  width: 24px;
+}
+.lc-sb-head > .lc-grow {
+  min-width: 0;
+}
+html[data-native="mac"] .lc-sb-head {
+  margin-right: -4px;
+  padding-right: 0;
+  padding-left: max(4px, calc(var(--lc-lights-x, 70px) - 4px));
+}
+
+/* ---------- 0.2.7: the panel's row stays the header when it fills the paper ---------- */
+/*
+  Beside the thread the panel's top row is gone (the card above), but in a session too narrow for
+  both the panel takes the paper and its row is the paper's header again: it holds Show the sidebar
+  and starts after the traffic lights (the block "With the sidebar away"), so it stays.
+*/
+@container lc-session (max-width: 700px) {
+  .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel > .lc-panel-top {
+    display: flex;
+  }
 }

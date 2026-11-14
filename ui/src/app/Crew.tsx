@@ -42,6 +42,8 @@ export const agentTask = (t: Tool) => t.agent?.task ?? t.title.split(":").slice(
 export const stateOf = (t: Tool): State => agentState(t);
 /** A path's last part: "src/tides.js" is tides.js. */
 const nameOf = (path: string) => path.split("/").pop() || path;
+/** The frames a sidekick drew on the canvas (AgentRun.frames), said as a row says files: by name for one or two. */
+const drewSaid = (frames: { name: string }[], after = false) => `${frames.length <= 2 ? (after ? "drew" : "Drew") : after ? "changed" : "Changed"} ${frames.length <= 2 ? frames.map((f) => f.name).join(" and ") : plural(frames.length, "frame")}`;
 /** "+3 −1" in words, for a screen reader: "3 lines added, 1 removed". */
 const linesSaid = ({ added, removed }: { added: number; removed: number }) => [added > 0 && `${plural(added, "line")} added`, removed > 0 && `${added > 0 ? removed : plural(removed, "line")} removed`].filter(Boolean).join(", ");
 const FILE_WORD: Record<string, string> = { added: "Added", deleted: "Deleted", renamed: "Renamed" };
@@ -522,6 +524,8 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
       const task = agentTask(t);
       const on = st === "running";
       const files = side && !on ? t.agent?.files : undefined;
+      // A design's frames aren't in its files (the snapshot leaves .liner/ out): measured on their own, said beside them.
+      const frames = side && !on ? (t.agent?.frames ?? []) : [];
       // Said as one sentence: read from its parts, the mark and a report that starts "Done." said it twice, and "measured" hung on the end.
       const doing = agentNow(t);
       const word = STATE_WORD[st];
@@ -529,7 +533,8 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
         `${whoIs(t, providers)}${side ? ", the sidekick" : ""}`,
         on ? `${word} on: ${task}. Now: ${doing}` : doing.toLowerCase().startsWith(word.toLowerCase()) ? doing : `${word}: ${doing}`,
         on ? agentStats(t, now) : duration(secsOf(t, now)),
-        files && !unstarted(t) ? (files.length ? `Changed ${files.length <= 2 ? files.map((f) => nameOf(f.path)).join(" and ") : plural(files.length, "file")}, ${linesSaid(sumLines(files))}` : "Changed no file") : null,
+        files && !unstarted(t) ? (files.length ? `Changed ${files.length <= 2 ? files.map((f) => nameOf(f.path)).join(" and ") : plural(files.length, "file")}, ${linesSaid(sumLines(files))}` : frames.length ? null : "Changed no file") : null,
+        frames.length && !unstarted(t) ? drewSaid(frames) : null,
       ]
         .filter((x): x is string => Boolean(x))
         .map((x) => x.replace(/[.\s]+$/, ""))
@@ -551,9 +556,12 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
                 <span className="lc-fan-m l-num">{agentStats(t, now)}</span>
               </span>
             )}
-            {files && !unstarted(t) && (
+            {(files || frames.length > 0) && !unstarted(t) && (
               <span className="lc-fan-2">
-                <span className="lc-fan-now">{files.length ? <>Changed {files.length <= 2 ? files.map((f) => nameOf(f.path)).join(" and ") : plural(files.length, "file")} <Lines {...sumLines(files)} /></> : "Changed no file"}</span>
+                <span className="lc-fan-now">
+                  {files?.length ? <>Changed {files.length <= 2 ? files.map((f) => nameOf(f.path)).join(" and ") : plural(files.length, "file")} <Lines {...sumLines(files)} /></> : frames.length ? null : "Changed no file"}
+                  {frames.length > 0 && (files?.length ? `; ${drewSaid(frames, true)}` : drewSaid(frames))}
+                </span>
                 <span className="lc-fan-m">measured</span>
               </span>
             )}
@@ -1055,7 +1063,7 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
         {unstarted(it) ? `It never started on this brief: it was stopped while it waited its turn, so nothing was done. ${sender} was told.` : (a?.report ?? (st === "running" ? (it.status !== "running" ? `It works in the background; ${sender} hears when it ends.` : `Goes back to ${sender} when it finishes, and shows here.`) : st === "stopped" ? `Stopped before it reported. ${sender} was told.` : (it.output ?? "Nothing came back.")))}
       </div>
 
-      {side && !unstarted(it) && <Measured threadId={thread.id} files={st === "running" ? undefined : a?.files} running={st === "running"} />}
+      {side && !unstarted(it) && <Measured threadId={thread.id} files={st === "running" ? undefined : a?.files} frames={a?.frames} running={st === "running"} />}
 
       {st === "running" && (direct || (thread.status === "running" && !parent)) && (
         <>
@@ -1094,9 +1102,29 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
   What a sidekick's brief changed, as Liner Code measured it from snapshots before and after (its
   report is its own claim). A file opens in Files; unmeasured (no git here), it says so.
 */
-function Measured({ threadId, files, running }: { threadId: string; files?: FileChange[]; running: boolean }) {
+function Measured({ threadId, files, frames = [], running }: { threadId: string; files?: FileChange[]; frames?: { name: string; path: string }[]; running: boolean }) {
   return (
     <>
+      {/* The canvas's frames are measured apart (the snapshot leaves .liner/ out): a brief that only drew says what it drew. */}
+      {!running && frames.length > 0 && (
+        <>
+          <div className="lc-cr-h" role="heading" aria-level={3}>
+            Frames it changed<span className="lc-cr-rule" />
+            <span>measured</span>
+          </div>
+          <ul className="lc-cr-files" role="list">
+            {frames.map((f) => (
+              <li key={f.path}>
+                <span className="lc-cr-file" title={f.path}>
+                  <span className="lc-cr-fs" data-s="modified">F</span>
+                  <span className="lc-cr-fp">{f.name}</span>
+                  <span className="lc-cr-fp lc-mono">{f.path}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <div className="lc-cr-h" role="heading" aria-level={3}>
         Files it changed<span className="lc-cr-rule" />
         <span>{files?.length ? <Lines {...sumLines(files)} /> : "measured"}</span>
@@ -1106,7 +1134,7 @@ function Measured({ threadId, files, running }: { threadId: string; files?: File
       ) : !files ? (
         <p className="lc-cr-none">Not measured: this folder couldn't be snapshotted.</p>
       ) : !files.length ? (
-        <p className="lc-cr-none">None. Measured from the folder before and after its brief.</p>
+        <p className="lc-cr-none">{frames.length ? "No file outside the design's frames." : "None."} Measured from the folder before and after its brief.</p>
       ) : (
         <ul className="lc-cr-files" role="list">
           {files.map((f) => (

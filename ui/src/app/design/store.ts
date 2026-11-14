@@ -24,6 +24,7 @@ import { getFace, setFace, subscribeFace } from "../face";
 export type Sel = { frame: string; node?: string };
 /** play: the frames take the pointer, to try them as they would run. */
 export type Tool = "select" | "hand" | "frame" | "box" | "text" | "picture" | "comment" | "play";
+/** Who is on a frame: `agent` is "lead" or "sidekick" (canvas.presence), `lead` that read once for the colour. */
 export type Presence = { agent: string; name: string; label: string; lead: boolean; node?: string };
 
 export type DesignState = {
@@ -244,7 +245,8 @@ export function onCanvasEvent(e: EngineEvent) {
   if (e.type === "canvas.presence") {
     if (e.cwd !== s.cwd || e.file !== s.file?.id) return;
     const presence = { ...s.presence };
-    if (e.on) presence[e.frame] = { agent: e.agent, name: e.name, label: e.label, lead: !/sidekick/i.test(e.label) && !/sidekick/i.test(e.name), node: e.node };
+    // Whose colour is the engine's word for it ("lead" or "sidekick"): the name is the model's and the label what it does.
+    if (e.on) presence[e.frame] = { agent: e.agent, name: e.name, label: e.label, lead: e.agent !== "sidekick", node: e.node };
     else delete presence[e.frame];
     if (e.on) lastLead.set(e.frame, presence[e.frame].lead);
     set({ presence });
@@ -1135,7 +1137,7 @@ async function openMock(cwd: string, listOnly = false) {
   };
   undos.length = 0;
   redos.length = 0;
-  setNow({ cwd, files, file, base: "", html, rev: {}, tree: {}, page: "screens", sel: [], node: undefined, loading: false, canUndo: false, canRedo: false, presence: { "phone-week": { agent: "claude", name: "Claude", label: "Claude", lead: true }, "dark-today": { agent: "codex", name: "Sidekick", label: "Sidekick", lead: false } } });
+  setNow({ cwd, files, file, base: "", html, rev: {}, tree: {}, page: "screens", sel: [], node: undefined, loading: false, canUndo: false, canRedo: false, presence: { "phone-week": { agent: "lead", name: "Claude", label: "Drawing", lead: true }, "dark-today": { agent: "sidekick", name: "Haiku", label: "Drawing", lead: false } } });
 }
 
 // In dev, the store is reachable from the console (and the check scripts) as window.__ld.

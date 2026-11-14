@@ -89,8 +89,9 @@ export const briefPrompt = (brief: string, doneWhen?: string) => (doneWhen ? `${
   unstarted: it was stopped before it began (waiting in line, or its lead already stopped), so it did nothing.
   capMs: the cap it ran under, when the lead's own tool set it below the usual one (Provider.toolWait).
   how "agent": Liner Code stopped it as it tried to send an agent of its own, which a sidekick may not; `agent` is that agent's task.
+  frames: the frames of design files it changed on the canvas, measured apart (files leave .liner/ out).
 */
-export type BriefOutcome = { how: "done" | "failed" | "stopped" | "capped" | "limited" | "agent" | "replaced"; who: string; seconds: number; report: string; files: FileChange[] | null; problem?: string; unstarted?: boolean; capMs?: number; agent?: string };
+export type BriefOutcome = { how: "done" | "failed" | "stopped" | "capped" | "limited" | "agent" | "replaced"; who: string; seconds: number; report: string; files: FileChange[] | null; frames?: { name: string; path: string }[]; problem?: string; unstarted?: boolean; capMs?: number; agent?: string };
 
 const took = (s: number) => (s < 60 ? `${Math.max(1, Math.round(s))} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
 /** Its report as the lead reads it: whole unless it's long, when the end (where a report sums up) stays. */
@@ -119,11 +120,15 @@ export function sidekickResult(o: BriefOutcome) {
   }[o.how];
   const said = o.report.trim();
   const report = said.length > REPORT_MAX ? `…${said.slice(-REPORT_MAX)}` : said;
+  // Design files are left out of the snapshot, so a brief that only drew on the canvas says that, never "none".
+  const drew = o.frames?.length ? `Frames changed on the canvas (measured):\n${o.frames.map((f) => `- ${f.name} (${f.path})`).join("\n")}` : "";
   const files =
     o.files === null
       ? "Files changed: not measured (this folder couldn't be snapshotted)."
       : o.files.length
         ? `Files changed (measured):\n${o.files.map((f) => `- ${f.path}${f.from ? ` (from ${f.from})` : ""}: ${f.status}, +${f.added} -${f.removed}`).join("\n")}`
-        : "Files changed (measured): none.";
-  return [head, `Its report:\n${report || "(It said nothing.)"}`, files, "The report is its own claim: check the diff before you rely on it."].join("\n\n");
+        : drew
+          ? "Outside the design files, no file changed (measured)."
+          : "Files changed (measured): none.";
+  return [head, `Its report:\n${report || "(It said nothing.)"}`, files, drew, drew ? "The report is its own claim: check the diff, and look at the frames with design_shot, before you rely on it." : "The report is its own claim: check the diff before you rely on it."].filter(Boolean).join("\n\n");
 }

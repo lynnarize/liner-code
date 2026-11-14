@@ -7,7 +7,7 @@
 .lc-sheet.ld-intro {
   --ld-in-idle: color-mix(in oklab, var(--l-ink) 18%, var(--lc-paper));
   width: min(640px, calc(100vw - 48px));
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.55;
   font-variant-numeric: tabular-nums;
 }
@@ -168,7 +168,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   color: var(--l-ink-3);
 }
 .ld-in-lab {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.3;
   color: var(--l-ink-3);
@@ -188,7 +188,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1;
   white-space: nowrap;
   color: var(--l-ink-2);
@@ -253,7 +253,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   padding: 0 8px;
   border-radius: 4px 999px 999px 999px;
   background: var(--ld-lead);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 20px;
   white-space: nowrap;
@@ -307,7 +307,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   gap: 6px;
   width: 88px;
   height: 28px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-3);
   animation: ld-in-ink-out 300ms ease 380ms backwards;
@@ -322,7 +322,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
 }
 .ld-in-key {
   margin-left: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .ld-in-p1a { top: 92px; left: 24px; width: 232px; animation: ld-in-rise 460ms var(--l-ease-out) 480ms backwards; }
@@ -472,7 +472,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   padding: 0 8px;
   border-radius: 999px;
   background: var(--lc-well);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 20px;
   color: var(--l-ink-2);
   animation: ld-in2-chip 9s ease 700ms infinite backwards;
@@ -482,7 +482,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .ld-in-typed {
   animation: ld-in2-typed 9s ease 700ms infinite backwards;
@@ -664,7 +664,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   align-items: center;
   gap: 8px;
   padding: 4px 12px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .ld-in-more svg.ld-in-g {
@@ -702,7 +702,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   height: 20px;
   border-radius: 999px;
   background: var(--l-warn);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: #fff;
 }
@@ -757,7 +757,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
 .ld-in-bl code {
   display: block;
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--l-ink-3);
 }
@@ -780,7 +780,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   padding: 0 12px;
   border-radius: 999px;
   background: var(--l-ink);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 26px;
   color: var(--lc-paper);

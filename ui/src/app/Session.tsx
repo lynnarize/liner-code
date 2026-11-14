@@ -6,7 +6,7 @@
   with a hairline from the paper's top to its bottom between them that is the resize grip. The full
   canvas gives the dock the whole paper (on the diff, that's the full-width Review).
 */
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject, type ReactNode } from "react";
 import { isPair, makerOf, reviewOn, type Item, type Project, type ProjectScript, type Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
@@ -18,7 +18,7 @@ import { Composer, type RunSettings } from "./Composer";
 import { AskDock, useDockAsk } from "./Ask";
 import { EnvMenu } from "./Env";
 import { ShipCard } from "./Ship";
-import { I, ModelMark } from "./icons";
+import { I, ModelMark, N } from "./icons";
 import { agentOf, checkpointsOf, markOf, modelLabel, plural, sumLines, threadModel } from "./model";
 import { ModelPicker } from "./Models";
 import { myPicks, reviewerFor, savePick } from "./Agentic";
@@ -30,9 +30,9 @@ import { glyphs, is, matches } from "./keymap";
 import { entering, readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
 import { useSeen } from "./launch";
-import { closeTab, closeWhere, openTab, paneOf, replaceTab, showDock, toggleTab, type DockState } from "./dock";
+import { closeTab, closeWhere, GUIDE, hideDock, openTab, paneOf, replaceTab, showDock, toggleTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
-import { onOpenSurface, SideKeys, TopBar } from "./TopBar";
+import { onOpenSurface, SideKeys } from "./TopBar";
 import { ModeChip } from "./Modes";
 import { CrewChip, CrewStrip, pairOf } from "./Crew";
 import { Timeline } from "./Timeline";
@@ -636,7 +636,6 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                 <I.close size={14} />
               </button>
             )}
-            <TopBar panel={dock.open} onPanel={() => setDock(showDock)} below={below} onBelow={() => setBelow(!below)} run={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
           </header>
           <div className="lc-stage" hidden={view !== "chat"}>
             <div ref={scroller} className="lc-scroll">
@@ -732,7 +731,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           {below && (
             <div ref={entering} className="lc-below" role="region" aria-label="Bottom panel">
               <Suspense fallback={null}>
-                <TerminalSurface thread={thread} visible onHide={() => setBelow(false)} />
+                <TerminalSurface thread={thread} visible onHide={() => setBelow(false)} lead={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
               </Suspense>
             </div>
           )}
@@ -771,9 +770,47 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           />
         )}
       </div>
+      <Rail dock={dock} below={below} changed={openFiles} onTab={(id) => setDock((d) => toggleTab(d, id))} onBelow={() => setBelow(!below)} onAdd={() => setDock((d) => openTab(d, GUIDE))} onPanel={() => setDock((d) => (d.open ? hideDock(d) : showDock(d, "session")))} />
     </div>
     </SideKeys.Provider>
     </MarkdownLinks.Provider>
+  );
+}
+
+/*
+  The rail: the session's surfaces as a column of icons at the paper's right edge, there whether
+  the panel is open or shut (0.2.7; they were a row of tabs over the panel). Pressing one shows it
+  in the panel, pressing the lit one puts the panel away. The Terminal's opens the bottom panel,
+  where the shells live. The plus sits right under the last of them, so it is always the list's
+  end; it opens the guide to every surface.
+*/
+const RAIL: { id: Tab; label: string; icon: (p: { size?: number }) => ReactNode }[] = [
+  { id: "session", label: "Session", icon: N.session },
+  { id: "changes", label: "Changes", icon: N.changes },
+  { id: "files", label: "Files", icon: N.folder },
+  { id: "browser", label: "Browser", icon: N.globe },
+  { id: "terminal", label: "Terminal", icon: N.terminal },
+  { id: "design", label: "Design", icon: N.design },
+  { id: "agents", label: "Agents", icon: N.agents },
+];
+function Rail({ dock, below, changed, onTab, onBelow, onAdd, onPanel }: { dock: DockState; below: boolean; changed: number; onTab: (id: Tab) => void; onBelow: () => void; onAdd: () => void; onPanel: () => void }) {
+  const up = (id: Tab) => (id === "terminal" ? below : dock.open && dock.panes.some((p) => p.tab === id));
+  return (
+    <nav className="lc-rail" aria-label="Surfaces" data-drag>
+      <button type="button" className="lc-ib lc-rail-b l-focus" aria-label={dock.open ? "Hide the panel" : "Show the panel"} title={dock.open ? "Hide the panel" : "Show the panel"} onClick={onPanel}>
+        <N.panel />
+      </button>
+      <span className="lc-rail-gap" aria-hidden />
+      {RAIL.map((x) => (
+        <button key={x.id} type="button" className="lc-ib lc-rail-b l-focus" aria-label={x.id === "changes" && changed ? `Changes, ${plural(changed, "file")} to commit` : x.label} title={x.label} aria-pressed={up(x.id)} onClick={() => (x.id === "terminal" ? onBelow() : onTab(x.id))}>
+          <x.icon />
+          {x.id === "changes" && changed > 0 && <span className="lc-rail-dot" aria-hidden />}
+        </button>
+      ))}
+      <button type="button" className="lc-ib lc-rail-b l-focus" aria-label="Every surface" title="Every surface" onClick={onAdd}>
+        <N.plus />
+      </button>
+    </nav>
   );
 }
 
@@ -788,8 +825,8 @@ function ToCommit({ files, lines, onView }: { files: number; lines: { added: num
       <span className="lc-trow-t">{plural(files, "file")} to commit</span>
       <Lines {...lines} />
       <span className="lc-grow" />
-      <button type="button" className="lc-trow-lk l-focus" onClick={onView}>
-        View changes
+      <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind="ink" onClick={onView}>
+        Commit
       </button>
     </div>
   );
@@ -1059,8 +1096,13 @@ function ScriptsPick({ project, onRun }: { project: Project; onRun: (s: { name: 
       label="Run a script"
       align="end"
       width={300}
-      triggerClass="lc-tb lc-sbar-b"
-      trigger={<I.play size={16} />}
+      triggerClass="lc-ib lc-terms-run"
+      trigger={
+        <>
+          <I.play size={12} />
+          Run
+        </>
+      }
     >
       {(close) => (
         <ScriptsMenu

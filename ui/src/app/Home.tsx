@@ -1,11 +1,11 @@
 /*
-  Home: start a session. One question, the project it's about, and the composer with who works
-  on it, how hard they think and what they may do. In its tray, under the box, one line of how it
-  runs: this checkout or a new worktree and the branch on the left, the mode (Standard, Workshop,
-  yours) at the right edge. Under the tray, quietly, the other ways to start: a scratch folder, a session to
-  carry on from Claude Code or Codex, and what the box takes. Behind it, two scrolls down, the
-  Desk: every open session on one line, and the case for each decision that waits on you. In the
-  corner, what's new: Liner Code's own update and the agent tools'.
+  Home: start a session, laid out as Devin's (docs/research/home-like-home.md, board B). The
+  composer sits in the middle of the paper. On top of it, where a headline was, the project's
+  name (press it to change it) and, at the right, This checkout or Worktree. Under the box one
+  row says the rest of how it runs: the branch, the tool, and at the right edge the mode. Below
+  that, Pick up: sessions that wait on you, work not committed, and sessions to carry on from
+  Claude Code or Codex. Behind it, two scrolls down, the Desk: every open session on one line,
+  and the case for each decision that waits on you. In the corner, what's new.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ImportableSession, Project, SessionMode } from "@contracts";
@@ -16,9 +16,9 @@ import { Composer, type RunSettings } from "./Composer";
 import { DeskPresence } from "./Desk";
 import { DeskStage } from "./DeskStage";
 import { rpc, useEngine } from "./engine";
-import { I } from "./icons";
-import { ago, codeProjects } from "./model";
-import { PanelHead, Pop, Row, Sep, Kbd } from "./ui";
+import { I, ModelMark } from "./icons";
+import { ago, bucketOf, codeProjects } from "./model";
+import { Pop, Row, Sep } from "./ui";
 import { ProjectChooser } from "./Projects";
 import { ModePick } from "./Modes";
 import { HomeUpdates } from "./Updates";
@@ -135,16 +135,26 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     }
   };
 
+  // What a row in Pick up puts in the box (work not committed, to carry on), like a prompt handed to Home.
+  const [handed, setHanded] = useState<{ text: string; at: number } | undefined>();
   const ask = (
-    <div className="lc-home-in">
+    <div className="lc-home-in" data-mid={project ? "" : undefined}>
       {project ? (
         <>
-          <h2 className="lc-ask-h">
-            What should we build in{" "}
-            <span className="lc-ask-p">
-              <ProjectPick project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} />?
-            </span>
-          </h2>
+          <div className="lc-home-top">
+            <ProjectName project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} onScratch={() => void scratch()} />
+            <span className="lc-grow" />
+            {project.git && !inWorktree && (
+              <div className="lc-home-where" role="radiogroup" aria-label="Where it runs">
+                <button type="button" role="radio" aria-checked={!worktree} className="l-focus" onClick={() => setWorktree(false)}>
+                  This checkout
+                </button>
+                <button type="button" role="radio" aria-checked={worktree} className="l-focus" onClick={() => setWorktree(true)}>
+                  Worktree
+                </button>
+              </div>
+            )}
+          </div>
           <div
             className="lc-home-compose"
             onKeyDownCapture={(e) => {
@@ -170,27 +180,15 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               compare={project.git && mode_ === "standard" ? compare : undefined}
               onCompare={project.git && mode_ === "standard" ? setCompare : undefined}
               autoFocus
-              seed={startPrompt}
+              seed={handed && (!startPrompt || handed.at > startPrompt.at) ? handed : startPrompt}
               stripEnd={<ModePick value={mode_} onPick={pick} />}
-              stripUnder={
-                <>
-                  <span>Or</span>
-                  {project.name !== "Scratch" && (
-                    <>
-                      <button type="button" className="lc-under-b l-focus" onClick={() => void scratch()}>
-                        <I.folderPlus size={13} />
-                        start in a scratch folder
-                      </button>
-                      <span aria-hidden>·</span>
-                    </>
-                  )}
-                  <CarryOn project={project} onOpen={onStarted} />
-                  <span aria-hidden>·</span>
-                  <Keys />
-                </>
-              }
             />
           </div>
+          <PickUp
+            project={project}
+            onOpen={onStarted}
+            onContinue={(n) => setHanded({ text: `Carry on the work that isn't committed here (${n} ${n === 1 ? "file" : "files"}): read what changed, then finish it.`, at: Date.now() })}
+          />
         </>
       ) : (
         <div className="lc-noproj">
@@ -242,112 +240,103 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   );
 }
 
-/** Past Claude Code and Codex sessions in this project's folder: one press brings it in to carry on here. */
-function CarryOn({ project, onOpen }: { project: Project; onOpen: (threadId: string) => void }) {
-  return (
-    <Pop
-      label="Carry on a session from Claude Code or Codex"
-      align="center"
-      width={440}
-      triggerClass="lc-under-b"
-      trigger={
-        <>
-          <I.rotate size={13} />
-          <span>
-            carry on a session<span className="lc-under-long"> from Claude Code or Codex</span>
-          </span>
-        </>
-      }
-    >
-      {(close) => <CarryOnList project={project} onOpen={(id) => (close(), onOpen(id))} />}
-    </Pop>
-  );
-}
-
-/** What the box takes, kept behind one quiet "keys" button at the end of the line under the strip. */
-const KEYS = [
-  ["@", "A file"],
-  ["/", "A command"],
-  ["$", "A skill"],
-  [`${os.mod}Enter`, "Start it in the background"],
-  [`${os.mod}K`, "Everything else"],
-] as const;
-
-function Keys() {
-  return (
-    <Pop
-      label="What the box takes"
-      align="center"
-      width={280}
-      triggerClass="lc-under-b"
-      trigger={
-        <>
-          <I.keyboard size={14} />
-          keys
-        </>
-      }
-    >
-      {() => (
-        <>
-          <PanelHead>In the box</PanelHead>
-          <dl className="lc-box-keys">
-            {KEYS.map(([k, what]) => (
-              <div key={k}>
-                <dt>
-                  <Kbd>{k}</Kbd>
-                </dt>
-                <dd>{what}</dd>
-              </div>
-            ))}
-          </dl>
-        </>
-      )}
-    </Pop>
-  );
-}
-
-/** Looked for each time the list opens, since the tools keep adding sessions. */
-function CarryOnList({ project, onOpen }: { project: Project; onOpen: (threadId: string) => void }) {
-  const [list, setList] = useState<ImportableSession[] | null>(null);
-  useEffect(() => void rpc("sessions.importable", { projectId: project.id }).then(setList, () => setList([])), [project.id]);
-  const bring = (s: ImportableSession) =>
-    void rpc("sessions.import", { projectId: project.id, tool: s.tool, id: s.id }).then(
-      (t) => onOpen(t.id),
-      (e: Error) => toast.error(e.message),
-    );
-  return (
-    <>
-      <PanelHead>Sessions in {project.name}</PanelHead>
-      {list === null ? (
-        <Row title="Looking" note="Claude Code's and Codex's own history for this folder" />
-      ) : list.length ? (
-        list.slice(0, 20).map((s) => <Row key={`${s.tool}:${s.id}`} title={s.title} note={`${s.tool === "claude" ? "Claude Code" : "Codex"} · ${ago(s.at)}`} onPick={() => bring(s)} />)
-      ) : (
-        <Row title="None here" note="Neither Claude Code nor Codex has a session in this folder that isn't here already." />
-      )}
-    </>
-  );
-}
-
-function ProjectPick({ project, projects, onPick, onSample }: { project: Project; projects: Project[]; onPick: (id: string) => void; onSample: () => void }) {
+/** The project's name over the box: press it for your other projects, another folder or a scratch folder. */
+function ProjectName({ project, projects, onPick, onSample, onScratch }: { project: Project; projects: Project[]; onPick: (id: string) => void; onSample: () => void; onScratch: () => void }) {
   const showDemo = useEngine((s) => s.settings.showDemo === true);
   return (
-    <Pop label={`Project: ${project.name}. Change it`} align="center" width={420} triggerClass="lc-proj" trigger={<span>{project.name}</span>}>
+    <Pop
+      label={`Project: ${project.name}. Change it`}
+      width={420}
+      triggerClass="lc-home-name"
+      trigger={
+        <>
+          <span>{project.name}</span>
+          <I.chevD size={14} />
+        </>
+      }
+    >
       {(close) => (
         <ProjectChooser
           value={project.id}
           onPick={(p) => (onPick(p.id), close())}
           extra={
-            showDemo &&
-            !projects.some((p) => p.agent === "demo") && (
-              <>
-                <Sep />
-                <Row title="Try the sample project" note="The Demo agent, no account needed" icon={<I.sparkle size={13} />} onPick={() => (close(), onSample())} />
-              </>
-            )
+            <>
+              <Sep />
+              {project.name !== "Scratch" && <Row title="A scratch folder" note="Start without a project" icon={<I.folderPlus size={13} />} onPick={() => (close(), onScratch())} />}
+              {showDemo && !projects.some((p) => p.agent === "demo") && <Row title="Try the sample project" note="The Demo agent, no account needed" icon={<I.sparkle size={13} />} onPick={() => (close(), onSample())} />}
+            </>
           }
         />
       )}
     </Pop>
+  );
+}
+
+/**
+  Pick up: what is already yours to carry on. Sessions that wait on you (any project), this
+  project's work that isn't committed, its sessions in Claude Code and Codex that aren't here yet,
+  Nothing to pick up, nothing shown.
+*/
+function PickUp({ project, onOpen, onContinue }: { project: Project; onOpen: (threadId: string) => void; onContinue: (files: number) => void }) {
+  const threads = useEngine((s) => s.threads);
+  const all = useEngine((s) => s.projects);
+  const waits = useMemo(
+    () =>
+      threads
+        .filter((t) => !t.archived && t.turns > 0 && bucketOf(t) === "needs")
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 2),
+    [threads],
+  );
+  const [changed, setChanged] = useState(0);
+  const [theirs, setTheirs] = useState<ImportableSession[]>([]);
+  useEffect(() => {
+    let live = true;
+    setChanged(0);
+    setTheirs([]);
+    if (project.git) void rpc("git.status", { projectId: project.id }).then((g) => live && setChanged(g.changes.length), () => undefined);
+    void rpc("sessions.importable", { projectId: project.id }).then((l) => live && setTheirs(l.slice(0, 2)), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, [project.id, project.git]);
+  const bring = (x: ImportableSession) =>
+    void rpc("sessions.import", { projectId: project.id, tool: x.tool, id: x.id }).then(
+      (t) => onOpen(t.id),
+      (e: Error) => toast.error(e.message),
+    );
+  const word = (t: (typeof threads)[number]) => (t.status === "error" ? "Stopped" : t.status === "limited" ? "At its limit" : t.status === "waiting" ? "Waiting" : "New");
+  if (!waits.length && !changed && !theirs.length) return <div className="lc-home-pickup" />;
+  return (
+    <section className="lc-home-pickup" aria-label="Pick up">
+      <div className="lc-home-card-h">Pick up</div>
+      {waits.map((t) => (
+        <button key={t.id} type="button" className="lc-home-pick l-focus" onClick={() => onOpen(t.id)}>
+          <span className="lc-home-waits">{word(t)}</span>
+          <span className="lc-home-pick-t">{t.title}</span>
+          <span className="lc-grow" />
+          <small>{all.find((p) => p.id === t.projectId)?.name}</small>
+        </button>
+      ))}
+      {changed > 0 && (
+        <button type="button" className="lc-home-pick l-focus" onClick={() => onContinue(changed)}>
+          <span className="lc-home-pick-t">Continue uncommitted work</span>
+          <span className="lc-grow" />
+          <small>
+            {changed} {changed === 1 ? "file" : "files"} in {project.name}
+          </small>
+        </button>
+      )}
+      {theirs.map((x) => (
+        <button key={`${x.tool}:${x.id}`} type="button" className="lc-home-pick l-focus" onClick={() => bring(x)}>
+          <ModelMark kind={x.tool === "claude" ? "claudecode" : "codex"} size={14} />
+          <span className="lc-home-pick-t">{x.title}</span>
+          <span className="lc-grow" />
+          <small>
+            from {x.tool === "claude" ? "Claude Code" : "Codex"} · {ago(x.at)}
+          </small>
+        </button>
+      ))}
+    </section>
   );
 }

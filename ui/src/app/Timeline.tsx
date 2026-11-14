@@ -7,7 +7,7 @@
 */
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { addonKey, PR_TEST_TOOL, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
+import { addonKey, modeName, PR_TEST_TOOL, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
 import { appIcon, OfferCard } from "./Addon";
 import { toComposer } from "./Find";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
@@ -20,7 +20,7 @@ import { commandOf as askCommand, headlineOf } from "./Ask";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
-import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, onClaude, plural, sumLines, turnsOf } from "./model";
+import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, money, onClaude, plural, sumLines, turnsOf } from "./model";
 import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
 import { Fanout, isSidekick, onWhom } from "./Crew";
 import { toast } from "@liner/components/toast/toast";
@@ -161,6 +161,8 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
   const running = marks.some((m) => m.status === "running");
   // The Design face names its frames for the steps that read or change them (FrameNames).
   const names = useContext(FrameNames);
+  // The session's mode, fixed for its life, for the closing line; none for a thread the store doesn't hold.
+  const mode = useEngine((s) => { const t = threadOf(s, threadId); return t ? (t.mode ?? "standard") : null; });
   const parts = sectionsOf(marks);
   const cps = items.filter((x): x is Checkpoint => x.kind === "checkpoint");
   const lastCp = cps[cps.length - 1];
@@ -257,7 +259,7 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
       else if (it.kind === "turn") {
         at = it;
         const part = parts.get(it.id);
-        if (part) blocks.push({ key: it.id, node: <TurnHead it={it} marks={part} n={it === marker ? n : undefined} items={items} agents={agents} providers={providers} timed={!items.some((x) => x.kind === "tool" && isStep(x))} /> });
+        if (part && parts.size > 1) blocks.push({ key: it.id, node: <TurnHead it={it} marks={part} n={it === marker ? n : undefined} items={items} agents={agents} providers={providers} timed={!items.some((x) => x.kind === "tool" && isStep(x))} /> });
       }
       else if (it.kind === "text") {
         const planning = Boolean((at ?? marker)?.planning);
@@ -323,6 +325,36 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
   // Done, the turn's time goes at the end of its last trail's line, unless a part's head says it ("built it in 46s").
   const end = marks[marks.length - 1];
   const took = !running && marker && end?.status === "done" && end.seconds !== undefined && !marks.some((m) => m.part || m.planning) ? (end.at - marker.at) / 1000 + end.seconds - marks.slice(0, -1).reduce((n, m) => n + (m.waited ?? 0), 0) / 1000 : undefined;
+  // Done, a turn one agent answered closes on one line: the model's mark and name, and how long it took.
+  if (!running && marker && parts.size <= 1 && end && end.status !== "running") {
+    const all = end.seconds === undefined ? undefined : (end.at - marker.at) / 1000 + end.seconds;
+    // What the turn cost, its marks' own added up: nothing when no tool said.
+    const cost = marks.reduce((n, m) => n + (m.costUsd ?? 0), 0);
+    const words =items.flatMap((x) => (x.kind === "text" ? [untag(x.text)] : [])).join("\n\n");
+    blocks.push({
+      key: `end-${marker.id}`,
+      still: true,
+      node: (
+        <div className="lc-turn-end">
+          <span className="lc-turn-end-mk" aria-hidden>
+            <ModelMark kind={markOf(marker.model)} size={12} />
+          </span>
+          <span className="l-num">
+            {isModelAgent(marker.agent) ? modelLabel(marker.model, providers) : agentOf(marker.agent, agents, providers).name}
+            {mode && ` · ${modeName(mode, agents)}`}
+            {all !== undefined && ` · ${duration(all)}`}
+            {cost > 0 && ` · ${money(cost)}`}
+          </span>
+          <span className="lc-grow" />
+          {words && (
+            <button type="button" className="lc-ib l-focus" aria-label="Copy the answer" title="Copy the answer" onClick={() => void navigator.clipboard.writeText(words).then(() => toast("Copied"))}>
+              <I.copy size={14} />
+            </button>
+          )}
+        </div>
+      ),
+    });
+  }
   // While it works, the turn ends on its status line: what it's doing and its clock.
   if (running && marker) blocks.push({ key: `live-${marker.id}`, still: true, node: <LiveStatus threadId={threadId} marks={marks} items={items} steps={count} quiet={quiet} /> });
   return (
@@ -496,7 +528,7 @@ function LiveStatus({ threadId, marks, items, steps, quiet }: { threadId: string
   return (
     <div className="lc-status" role="status" data-wait={waiting || undefined} data-quiet={(!waiting && quiet) || undefined} title={!waiting && quiet ? quiet.text : undefined}>
       <span className="lc-pip" aria-hidden />
-      <b>{word}</b>
+      <b className={waiting ? undefined : "l-shimmer"}>{word}</b>
       {waiting ? (
         <span className="l-num">
           the clock stopped at <Tick text={clock} />
@@ -831,6 +863,9 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint, names?: FrameNamer): 
       const verb = state === "running" ? "Running" : "Ran";
       return { ...base, verb: command ? verb : `${verb} a command`, target: command ? clip(command, 72) : undefined, result: state === "running" ? undefined : ranResult(t), tail: state === "running" && t.output ? t.output.split("\n").filter(Boolean).slice(-2).join("\n") : undefined };
     }
+    // In the Design face a lead's brief is said once and plainly: the brief itself is on its row, and what the sidekick
+    // does is the sidekick's own part of the chat's row (Chat.tsx). Liner Code (no namer) names it by its title, as before.
+    if (names && isSidekick(t)) return { ...base, verb: state === "running" ? "Waiting on its sidekick" : "Handed work to its sidekick" };
     const line = lastLine(t.output);
     // A call titled with only its kind is named by the kind in words; one with no kind of note, by its tool's name.
     const words = KIND_WORDS[t.toolKind];
@@ -1005,11 +1040,12 @@ function Trail({ threadId, entries, rows, sent, asks, cp, live, waiting, took, o
   return (
     <div className="lc-trail" data-open={isOpen || undefined}>
       <button type="button" className="lc-trail-sum l-focus" aria-expanded={isOpen} onClick={() => setOpen(!isOpen)}>
-        <span className="lc-trail-parts">
+        {took !== undefined && <span className="lc-trail-worked l-num">Worked for {duration(took)}</span>}
+        <span className="lc-trail-parts" data-after={took !== undefined || undefined}>
           {said.map((p, i) => (
             <span key={p}>
               {i > 0 && ", "}
-              {i === 0 ? `${p[0].toUpperCase()}${p.slice(1)}` : p}
+              {i === 0 && took === undefined ? `${p[0].toUpperCase()}${p.slice(1)}` : p}
               {i === 0 && edited.length > 0 && lines && (
                 <>
                   {" "}
@@ -1020,7 +1056,6 @@ function Trail({ threadId, entries, rows, sent, asks, cp, live, waiting, took, o
           ))}
         </span>
         {failed > 0 && <span className="lc-trail-failed">· {failed} failed</span>}
-        {took !== undefined && <span className="lc-trail-took l-num">· {duration(took)}</span>}
         <Chev className="lc-row-chev" />
       </button>
       {isOpen && <ol className="lc-wk lc-wk-all">{rows.map(row)}</ol>}
@@ -2217,12 +2252,36 @@ function TurnFoot({ cp, all, review, providers, onReview, reviewing }: { cp?: Ch
               Committed {cp.committed}
             </span>
           ) : (
-            <button type="button" className="lc-foot-chip lc-foot-changes l-focus" aria-current={here || undefined} onClick={() => onReview(all ? "all" : cp.id, cp.files[0]?.path)}>
-              {/* The words "View changes" went (the chevron says it opens); a reader still hears them. */}
-              {plural(cp.files.length, "file")} changed <Lines {...sumLines(cp.files)} />
-              <span className="l-sr-only">{here ? ", in the panel" : ", view changes"}</span>
-              <Chev className="lc-row-chev" />
-            </button>
+            <section className="lc-ledger" aria-label="What this turn changed" data-here={here || undefined}>
+              <div className="lc-ledger-h">
+                <b>{plural(cp.files.length, "file")} changed</b>
+                <Lines {...sumLines(cp.files)} />
+                <span className="lc-grow" />
+                <button type="button" className="lc-ledger-go l-focus" onClick={() => onReview(all ? "all" : cp.id, cp.files[0]?.path)}>
+                  Review
+                </button>
+              </div>
+              {cp.files.slice(0, 6).map((f) => {
+                // Five squares: the share of the file's changed lines that were added, and removed.
+                const sum = f.added + f.removed;
+                const plus = sum ? Math.max(f.added ? 1 : 0, Math.round((f.added / sum) * 5)) : 0;
+                const minus = sum ? Math.min(5 - plus, Math.max(f.removed ? 1 : 0, 5 - plus)) : 0;
+                return (
+                  <button key={f.path} type="button" className="lc-ledger-r l-focus" onClick={() => onReview(all ? "all" : cp.id, f.path)}>
+                    <span className="lc-mono lc-ledger-p">{f.path}</span>
+                    {f.status === "added" && <span className="lc-ledger-new">new</span>}
+                    <span className="lc-grow" />
+                    <Lines added={f.added} removed={f.removed} />
+                    <span className="lc-ledger-sq" aria-hidden>
+                      {[0, 1, 2, 3, 4].map((i) => (
+                        <i key={i} data-k={i < plus ? "a" : i < plus + minus ? "d" : undefined} />
+                      ))}
+                    </span>
+                  </button>
+                );
+              })}
+              {cp.files.length > 6 && <span className="lc-ledger-more">and {plural(cp.files.length - 6, "more file")}</span>}
+            </section>
           ))}
         {review && (
           <button type="button" className="lc-foot-chip l-focus" data-tone={review.status === "passed" ? "ok" : blocked ? "danger" : undefined} aria-expanded={has ? open : undefined} disabled={!has} onClick={() => setOpen(!open)}>

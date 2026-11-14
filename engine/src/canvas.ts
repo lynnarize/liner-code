@@ -514,6 +514,37 @@ export function peekFile(cwd: string, slug: string): DesignFile | null {
 }
 
 /**
+  Every drawn frame of a folder's design files by its file's revision ("<file>/<frame id>"), read
+  only. A turn's snapshots leave .liner/ out (checkpoints.ts), so a sidekick's brief measures what it
+  changed on the canvas with these, taken before and after (runtime.ts runBrief): that catches a
+  frame written with design_frame and one written with the sidekick's own file tools alike.
+*/
+export function frameRevs(cwd: string): Map<string, { rev: string; name: string; path: string }> {
+  const out = new Map<string, { rev: string; name: string; path: string }>();
+  let slugs: string[];
+  try {
+    slugs = readdirSync(join(cwd, CANVAS_DIR));
+  } catch {
+    return out;
+  }
+  for (const slug of slugs) {
+    const file = peekFile(cwd, slug);
+    if (!file) continue;
+    for (const f of file.frames) {
+      if (f.kind !== "drawn" || f.missing) continue;
+      try {
+        out.set(`${slug}/${f.id}`, { rev: revOf(readFileSync(inDesign(designDir(cwd, slug), framePath(f)))), name: f.name, path: `${CANVAS_DIR}/${slug}/${framePath(f)}` });
+      } catch {
+        // A frame whose file can't be read (a link, gone meanwhile) has no revision to compare.
+      }
+    }
+  }
+  return out;
+}
+/** The frames whose file is new or different after, by name and path: what frameRevs says changed. */
+export const framesChanged = (before: ReturnType<typeof frameRevs>, after: ReturnType<typeof frameRevs>) => [...after].filter(([k, v]) => before.get(k)?.rev !== v.rev).map(([, v]) => ({ name: v.name, path: v.path }));
+
+/**
   Sets a frame's build link (buildlinks.ts), or takes it off with undefined, through the same
   read and write as every other change of the index. Not a DesignPatch field, so the app's
   canvas.save can't write one.

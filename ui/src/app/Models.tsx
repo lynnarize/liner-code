@@ -394,12 +394,11 @@ export function EffortPick({ modelRef, value, onChange, side = "bottom", keep, t
       disabled={!list.length}
       trigger={
         <>
-          {icon && <I.effort size={14} />}
+          {icon && <I.level size={16} n={/min|low/i.test(shown) ? 1 : /med/i.test(shown) ? 2 : 3} />}
           <span className="lc-ctl-label">
             {level}
             {word && <span className="lc-effort-word">{word}</span>}
           </span>
-          {list.length > 0 && <I.chevD size={11} />}
         </>
       }
     >

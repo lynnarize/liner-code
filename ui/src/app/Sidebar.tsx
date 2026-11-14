@@ -19,9 +19,9 @@ import type { AgentProfile, ProviderInfo, Thread } from "@contracts";
 import { bridge } from "./bridge";
 import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
-import { I, ModelMark } from "./icons";
+import { I, ModelMark, N } from "./icons";
 import { agentOf, ago, bucketOf, clock, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
-import { ContextMenu, Disc, LimitRow, ModelTag, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
+import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
 import { appNotice, updates } from "./Updates";
 import { pairOf } from "./Crew";
 import { agentState, ROUTINES_ON, updateModes } from "@contracts";
@@ -44,6 +44,11 @@ type Props = {
   wallOn?: boolean;
   onSearch: () => void;
   onHide: () => void;
+  /** Home is on screen: New session is the lit row. */
+  homeOn?: boolean;
+  /** Back and Forward through where you have been in this window; absent when there is nowhere to go. */
+  onBack?: () => void;
+  onForward?: () => void;
   /** An app's page of its own (an add-on panel placed "page"), and the one on screen. */
   onApp?: (id: string) => void;
   appOn?: string | null;
@@ -149,7 +154,7 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSettings, onAgent, usageOn, onRoutines, routinesOn, onSearch, onHide, onApp, appOn, onAddons, addonsOn, onCreateAddon, onBeside, onPutAway, face = "code", onFace, designBody }: Props) {
+export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSettings, usageOn, onRoutines, routinesOn, onSearch, onHide, homeOn, onBack, onForward, onApp, appOn, onAddons, addonsOn, onBeside, onPutAway, face = "code", onFace, designBody }: Props) {
   const addons = useEngine((s) => s.addons);
   const pages = addons.filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
   const limits = useEngine((s) => s.limits);
@@ -173,7 +178,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       .join(","),
   );
   const sent = useMemo(() => new Map(sentLine.split(",").filter(Boolean).map((x) => [x.split("=")[0], Number(x.split("=")[1])] as const)), [sentLine]);
-  const [query, setQuery] = useState("");
+  // The filter field went in 0.2.7 (Search is a row now): nothing narrows the list from here.
+  const query = "";
   const [view, setView] = useStored<View>("lc:sb-view", "all", ["all", "folder", "snoozed", "settled", "archive"]);
   const [order, setOrder] = useStored<Order>("lc:sb-order", "activity", ["activity", "started"]);
   const [shutProjects, toggleProject] = useFolded("lc:sb-shut");
@@ -220,7 +226,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const projectName = (t: Thread) => projects.find((p) => p.id === t.projectId)?.name ?? "No project";
 
   const place = (t: Thread): Bucket => bucketOf(t, now);
-  const team = agents.filter((a) => a.id !== "demo");
   const working = threads.filter((t) => !t.archived && t.status === "running").length;
   // Routines handed back to you wait on their icon as a dot; otherwise its tip says how many run.
   const handed = runs.filter((r) => r.status === "handed" && !r.test).length;
@@ -228,7 +233,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   // The Wall's row: how many sessions are on it, and a dot while one asks, failed or hit a limit.
   const onWallNow = threads.filter((t) => onTheWall(t, now));
   const wallWaits = onWallNow.filter((t) => t.status === "waiting" || t.status === "error" || t.status === "limited").length;
-  const me = window.__LINER__?.user ?? "You";
   const machine = window.__LINER__?.machine ?? "This computer";
   const addProject = () =>
     void bridge.pickFolder().then((p) =>
@@ -723,15 +727,13 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         >
           {two ? (
             <>
-              <ProjectBadge name={projectName(t)} none={!projects.some((p) => p.id === t.projectId)} design={Boolean(t.design)} dot={dot} />
               <span className="lc-sb-tx">
                 <span className="lc-sb-h">
                   {title}
-                  <span className="lc-sb-lead">
-                    <ModelMark kind={markOf(ref)} size={12} />
-                  </span>
+                  {dot && <span className="lc-sb-rdot" data-k={dot} />}
                 </span>
                 <span className="lc-sb-s">
+                  <span className="lc-sb-lead">{t.design ? <I.design size={12} /> : <ModelMark kind={markOf(ref)} size={12} />}</span>
                   <span className="lc-sb-st">
                     {t.design ? designWhere(t, projects) : projectName(t)}
                     {state && (
@@ -894,26 +896,21 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
 
   return (
     <nav ref={nav} className="lc-sb" aria-label="Sessions">
+      {/* T3 Code's order: Hide, the name, Back and Forward right after it, then the drag area. */}
       <div className="lc-sb-head" data-drag>
-        <span className="lc-brand">{face === "design" ? "Liner Design" : "Liner Code"}</span>
-        <button type="button" className="lc-ib l-focus" aria-label="Hide the sidebar" title={`Hide the sidebar${key("sidebar")}`} onClick={onHide}>
-          <I.sidebar size={16} />
+        <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={onHide}>
+          <N.sidebar />
         </button>
+        {/* Six presses on the name show the Demo (it was the name in the foot). */}
+        <span className="lc-brand" role="presentation" onClick={tapMe}>{face === "design" ? "Liner Design" : "Liner Code"}</span>
+        <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Back" title="Back" disabled={!onBack} onClick={onBack}>
+          <N.back />
+        </button>
+        <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Forward" title="Forward" disabled={!onForward} onClick={onForward}>
+          <N.forward />
+        </button>
+        <span className="lc-grow" data-drag />
       </div>
-
-      {/* The two faces of the same sessions: one plate glides between them (⌥⌘E). */}
-      {onFace && (
-        <div className="lc-sb-face" role="radiogroup" aria-label="Liner Code or Liner Design" data-face={face}>
-          <button type="button" role="radio" aria-checked={face === "code"} className="lc-sb-face-b l-focus" title={`Liner Code${key("face")}`} onClick={() => onFace("code")}>
-            <I.code size={15} />
-            Code
-          </button>
-          <button type="button" role="radio" aria-checked={face === "design"} className="lc-sb-face-b l-focus" title={`Liner Design${key("face")}`} onClick={() => onFace("design")}>
-            <I.edit size={15} />
-            Design
-          </button>
-        </div>
-      )}
 
       {designBody ? (
         <div className="lc-sb-design">{designBody}</div>
@@ -921,35 +918,32 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       <>
       {/* Your places, one row each: New session (search at its end), Routines and Add-ons. */}
       <div className="lc-sb-top">
-        <div className="lc-sb-navrow">
-          <button type="button" className="lc-sb-nav l-focus" title={`New session${key("new")}`} onClick={() => onNew()}>
-            <I.compose size={16} />
-            <span>New session</span>
-            {shortcutOf("new") && <kbd className="lc-sb-kbd">{os.keys(shortcutOf("new")!)}</kbd>}
-          </button>
-          <button type="button" className="lc-ib l-focus" aria-label="Search sessions, projects and commands" title={`Search${key("commands")}`} onClick={onSearch}>
-            <I.search size={16} />
-          </button>
-        </div>
+        <button type="button" className="lc-sb-nav l-focus" aria-current={homeOn ? "page" : undefined} title="New session" onClick={() => onNew()}>
+          <N.plus />
+          <span>New session</span>
+        </button>
+        <button type="button" className="lc-sb-nav l-focus" title="Search sessions, projects and commands" onClick={onSearch}>
+          <N.search />
+          <span>Search</span>
+        </button>
         {onWall && (
           <button
             type="button"
             className="lc-sb-nav l-focus"
             aria-current={wallOn ? "page" : undefined}
             aria-label={`The Wall, ${plural(onWallNow.length, "session")}${wallWaits ? `, ${wallWaits} waiting on you` : ""}`}
-            title={`The Wall: every session at once${key("wall")}`}
+            title="The Wall: every session at once"
             onClick={onWall}
           >
-            <I.wall size={16} />
+            <N.wall />
             <span>The Wall</span>
             {wallWaits > 0 && <span className="lc-sb-ndot" data-k="warn" />}
-            {onWallNow.length > 0 && <span className="lc-sb-nend">{onWallNow.length}</span>}
           </button>
         )}
         {/* Routines switched off (contracts, ROUTINES_ON): no row for them. */}
         {ROUTINES_ON && (
         <button type="button" className="lc-sb-nav l-focus" aria-current={routinesOn ? "page" : undefined} aria-label={`Routines${routinesNote ? `, ${routinesNote}` : ""}`} title={`Routines${routinesNote ? ` · ${routinesNote}` : ""}`} onClick={onRoutines}>
-          <I.routines size={16} />
+          <N.routines />
           <span>Routines</span>
           {handed > 0 ? <span className="lc-sb-ndot" data-k="warn" /> : routines.some((r) => r.on) && <span className="lc-sb-nend">{routinesNote}</span>}
         </button>
@@ -959,25 +953,18 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       {/* Add-ons, apart from your places: its ··· makes a new one or opens their settings, and your apps sit under it (DeepSeek Harness's sidebar entry). */}
       {(onAddons || (pages.length > 0 && onApp)) && (
         <section className="lc-sb-apps" aria-label="Add-ons">
-          <div className="lc-sb-lab">
-            Add-ons
-            {onAddons && (
-              <Pop label="Add-ons" menu align="end" width={250} className="lc-sb-labpop" triggerClass="lc-sb-add" triggerAttrs={{ "aria-current": addonsOn ? "page" : undefined, title: "Add-ons: connections, panels and apps" }} trigger={<I.more size={14} />}>
-                {(close) => (
-                  <div className="lc-sb-menu">
-                    {onCreateAddon && <Row title="New add-on" note="Starts a session in Workshop" icon={<I.plus size={13} />} onPick={() => (close(), onCreateAddon())} />}
-                    <Row title="Add-on settings" note="Connections, panels and apps" icon={<I.settings size={13} />} onPick={() => (close(), onAddons())} />
-                  </div>
-                )}
-              </Pop>
-            )}
-          </div>
+          {onAddons && (
+            <button type="button" className="lc-sb-nav l-focus" aria-current={addonsOn ? "page" : undefined} title="Add-ons: connections, panels and apps" onClick={onAddons}>
+              <N.puzzle />
+              <span>Add-ons</span>
+            </button>
+          )}
           {onApp &&
             pages.map((a) => {
               const Icon = appIcon(a.panel?.icon);
               return (
                 <button key={a.id} type="button" className="lc-sb-nav l-focus" aria-current={appOn === a.id ? "page" : undefined} onClick={() => onApp(a.id)}>
-                  <Icon size={16} />
+                  <Icon size={16} style={{ margin: "0 2px" }} />
                   <span>{a.name}</span>
                 </button>
               );
@@ -1049,15 +1036,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           <button type="button" className="lc-ib l-focus" aria-label="Add a project" title={`Add a project${key("open-project")}`} onClick={addProject}>
             <I.plus size={14} />
           </button>
-        </div>
-        <div className="lc-sb-find" role="search">
-          <I.search size={14} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter sessions" aria-label="Filter sessions" onKeyDown={(e) => e.key === "Escape" && query && (e.preventDefault(), setQuery(""))} />
-          {query && (
-            <button type="button" className="lc-ib l-focus" aria-label="Clear the filter" title="Clear the filter (Esc)" onClick={() => setQuery("")}>
-              <I.close size={12} />
-            </button>
-          )}
         </div>
       </div>
 
@@ -1249,48 +1227,49 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         );
       })()}
 
-      {/* Along the foot: you, then the team, your plans' limits and Settings. */}
+      {/* Along the foot: Code or Design, then your plans' limits and Settings (your account is in Settings). */}
       <div className="lc-sb-foot">
-        <button type="button" className="lc-sb-me l-focus" aria-label={`${me}, ${machine}`} title={`${me} · ${machine}`} onClick={tapMe}>
-          <span className="lc-me-av lc-sb-av">{initials(me)}</span>
-          <span className="lc-sb-me-n">{me}</span>
-        </button>
-        <span className="lc-grow" />
-        <Pop
-          label={`Team, ${team.length}${working > 0 ? `, ${plural(working, "session")} at work` : ""}`}
-          side="top"
-          width={300}
-          triggerClass="lc-ib lc-sb-fi"
-          trigger={
-            <>
-              <I.agents size={16} />
-              {working > 0 && <span className="lc-sb-fdot" />}
-            </>
-          }
-        >
-          {(close) => (
-            <>
-              <PanelHead>Team · {team.length}</PanelHead>
-              <div className="lc-sb-team-list">
-                {team.map((a) => (
-                  <button key={a.id} type="button" className="lc-sb-agent l-focus" onClick={() => (close(), onAgent(a))} title={`Edit ${a.name}`}>
-                    <Disc agent={a} size={24} />
-                    <span className="lc-sb-agent-t">
-                      <span>{a.name}</span>
-                      <small>{a.role}</small>
-                    </span>
-                    <ModelTag kind={markOf(a.model)} label={modelLabel(a.model, providers)} />
-                  </button>
-                ))}
+        {onFace ? (
+          <Pop
+            label={`${face === "design" ? "Liner Design" : "Liner Code"}. Switch between Code and Design`}
+            menu
+            side="top"
+            width={252}
+            triggerClass="lc-sb-facepick"
+            trigger={
+              <>
+                <span className="lc-face-tile" data-face={face}>{face === "design" ? <I.design size={16} /> : <I.terminal size={16} />}</span>
+                {face === "design" ? "Design" : "Code"}
+                <I.chevD size={11} />
+              </>
+            }
+          >
+            {(close) => (
+              <div className="lc-sb-menu">
+                <button type="button" role="menuitemradio" aria-checked={face === "code"} className="lc-face-opt l-focus" onClick={() => (close(), onFace("code"))}>
+                  <span className="lc-face-tile" data-face="code"><I.terminal size={16} /></span>
+                  <span className="lc-face-tx">
+                    <b>Code</b>
+                    <small>Sessions with your agents, in your projects</small>
+                  </span>
+                  {face === "code" && <I.check size={14} />}
+                </button>
+                <button type="button" role="menuitemradio" aria-checked={face === "design"} className="lc-face-opt l-focus" onClick={() => (close(), onFace("design"))}>
+                  <span className="lc-face-tile" data-face="design"><I.design size={16} /></span>
+                  <span className="lc-face-tx">
+                    <b>Design</b>
+                    <small>Frames on a canvas, drawn with an agent</small>
+                  </span>
+                  {face === "design" && <I.check size={14} />}
+                </button>
               </div>
-              <Sep />
-              <Row title="New agent" icon={<I.plus size={13} />} onPick={() => (close(), onAgent())} />
-            </>
-          )}
-        </Pop>
+            )}
+          </Pop>
+        ) : null}
+        <span className="lc-grow" />
         <PlanLimits tools={limits.filter((l) => l.windows.length)} usageOn={usageOn} onUsage={onUsage} />
-        <button type="button" className="lc-ib l-focus" aria-label="Settings" title={`Settings (${os.mod},)`} onClick={onSettings}>
-          <I.settings size={16} />
+        <button type="button" className="lc-ib l-focus" aria-label="Settings and your account" title="Settings and your account" onClick={onSettings}>
+          <N.settings />
         </button>
       </div>
     </nav>
@@ -1352,14 +1331,6 @@ export function exportSession(threadId: string) {
   );
 }
 
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
 /** Who's on a session (a pair as one: "Opus 5.5 + Sol"), and the model its lead runs on. */
 function onIt(t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) {

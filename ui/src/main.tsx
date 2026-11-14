@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "@fontsource-variable/inter/opsz.css";
 import "@fontsource-variable/instrument-sans/wdth.css";
 import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/500.css";

@@ -2,7 +2,7 @@
   Liner Code. The window is one ground: the sidebar beside Home, a session or Usage, with
   nothing drawn between them. ⌘K reaches everything; the shell's menu bar sends the same commands.
 */
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import type { AgentProfile, PanelPlace, RoutineRun, SessionMode } from "@contracts";
 import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
@@ -69,6 +69,9 @@ import * as os from "./os";
 
 /** `wall` on a session: opened from the Wall, so its header has the way back and Esc goes there. */
 type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string; beside?: string; wall?: true } | { kind: "wall" } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
+
+/** The same place: the same kind of screen, and the same session, app or comparison on it. */
+const samePlace = (a: View, b: View) => a.kind === b.kind && ("id" in a ? a.id : undefined) === ("id" in b ? b.id : undefined);
 
 const readView = (): View => {
   try {
@@ -142,7 +145,42 @@ export function App() {
   const projects = useEngine((s) => s.projects);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const [view, setView] = useState<View>(readView);
+  const [view, setViewNow] = useState<View>(readView);
+  /*
+    Where you have been in this window, for Back and Forward (the sidebar's head, as Claude Code and
+    Devin have them). Going to another place, or another session, leaves the one you were on behind
+    you; a change within a place (Home's project, a session opened beside) does not.
+  */
+  const trail = useRef<{ back: View[]; forward: View[] }>({ back: [], forward: [] });
+  const setView = useCallback((next: View | ((v: View) => View)) => {
+    setViewNow((was) => {
+      const v = typeof next === "function" ? next(was) : next;
+      const t = trail.current;
+      // The updater may run twice (StrictMode): the place is kept once.
+      if (!samePlace(was, v) && t.back[t.back.length - 1] !== was) {
+        t.back.push(was);
+        if (t.back.length > 60) t.back.shift();
+        t.forward = [];
+      }
+      return v;
+    });
+  }, []);
+  const goBack = () => {
+    const t = trail.current;
+    const to = t.back.pop();
+    if (!to) return;
+    t.forward.push(view);
+    setSettings(false);
+    setViewNow(to);
+  };
+  const goForward = () => {
+    const t = trail.current;
+    const to = t.forward.pop();
+    if (!to) return;
+    t.back.push(view);
+    setSettings(false);
+    setViewNow(to);
+  };
   // Liner Code or Liner Design: the same sessions under either, remembered per window.
   const face = useFace();
   const [sidebar, setSidebar] = useState(() => localStorage.getItem("lc:sidebar") !== "0");
@@ -753,7 +791,7 @@ export function App() {
                   </Suspense>
                 )
               }
-              current={view.kind === "session" ? view.id : null} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={trail.current.back.length ? goBack : undefined} onForward={trail.current.forward.length ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />

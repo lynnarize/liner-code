@@ -108,6 +108,20 @@ export const I = {
   copy: (p: P) => <S {...p}><rect x="5.5" y="5.5" width="7.75" height="7.75" rx="1.5" /><path d="M10.5 5.5V4.25a1.5 1.5 0 0 0-1.5-1.5H4.25a1.5 1.5 0 0 0-1.5 1.5V9a1.5 1.5 0 0 0 1.5 1.5H5.5" /></S>,
   edit: (p: P) => <S {...p}><path d="M11.2 2.55a1.6 1.6 0 0 1 2.25 2.25l-7.7 7.7-3 .75.75-3ZM9.75 4l2.25 2.25" /></S>,
   trash: (p: P) => <S {...p}><path d="M2.75 4.25h10.5M6.25 4.25V3a.75.75 0 0 1 .75-.75h2a.75.75 0 0 1 .75.75v1.25M4.25 4.25l.55 8.2a1 1 0 0 0 1 .95h4.4a1 1 0 0 0 1-.95l.55-8.2" /></S>,
+  /** Add-ons: a puzzle piece, as browsers and editors mark extensions; nothing like the Wall's tiles. */
+  puzzle: (p: P) => <S {...p}><path d="M6.4 3.8a1.4 1.4 0 1 1 2.8 0v.8h2.4a1 1 0 0 1 1 1V8h-.8a1.4 1.4 0 1 0 0 2.8h.8v1.8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5.6a1 1 0 0 1 1-1h2.4Z" /></S>,
+  /** How hard it thinks: three bars that step up, as many dark as the level (1 to 3). */
+  level: ({ n = 2, ...p }: P & { n?: number }) => (
+    <S {...p} w={2.5}>
+      <path d="M4 12.25v-2.5" strokeOpacity={n >= 1 ? 1 : 0.28} />
+      <path d="M8 12.25v-5.5" strokeOpacity={n >= 2 ? 1 : 0.28} />
+      <path d="M12 12.25v-8.5" strokeOpacity={n >= 3 ? 1 : 0.28} />
+    </S>
+  ),
+  /** Goes ahead on its own: two arrowheads, as Claude Code marks accepting edits. */
+  auto: (p: P) => <S {...p}><path d="M3.75 4.5 7.25 8l-3.5 3.5M8.75 4.5 12.25 8l-3.5 3.5" /></S>,
+  /** The box's commands: a slash in a square. */
+  slash: (p: P) => <S {...p}><rect x="2.75" y="2.75" width="10.5" height="10.5" rx="2.75" /><path d="M9.25 5.5 6.75 10.5" /></S>,
   more: (p: P) => <S {...p} w={2}><path d="M4 8h.01M8 8h.01M12 8h.01" /></S>,
   fork: (p: P) => <S {...p}><circle cx="4.5" cy="3.5" r="1.5" /><circle cx="11.5" cy="3.5" r="1.5" /><circle cx="8" cy="12.5" r="1.5" /><path d="M4.5 5v1a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2V5M8 8v3" /></S>,
   sliders: (p: P) => <S {...p}><path d="M2.75 5h5M11.25 5h2M2.75 11h2M8.25 11h5" /><circle cx="9.5" cy="5" r="1.75" /><circle cx="6.5" cy="11" r="1.75" /></S>,
@@ -188,6 +202,40 @@ export function Glyph({ glyph, size = 13 }: { glyph: AgentGlyph; size?: number }
       return <S size={size} w={1.2}><path d="M8 3.9 9 7l3.1 1L9 9l-1 3.1L7 9 3.9 8 7 7Z" /></S>;
   }
 }
+
+/*
+  The navigation icons: the same family drawn again on a 20px grid, for the sidebar's rows, the
+  rail of surfaces and the top row. An icon is only ever shown at the size it was drawn for (20
+  here, 16 for `I`), so a 1.5 stroke fills whole device pixels and never blurs from scaling.
+*/
+const L = ({ size = 20, children, className, style }: P & { children: ReactNode }) => (
+  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={style}>
+    {children}
+  </svg>
+);
+const F20 = <rect x="2.75" y="3.75" width="14.5" height="12.5" rx="3.25" />;
+const B20 = <rect x="2.75" y="2.75" width="14.5" height="14.5" rx="3.5" />;
+export const N = {
+  sidebar: (p: P) => <L {...p}>{F20}<path d="M7.75 3.75v12.5" /></L>,
+  panel: (p: P) => <L {...p}>{F20}<path d="M12.25 3.75v12.5" /></L>,
+  back: (p: P) => <L {...p}><path d="M8.75 4.75 3.5 10l5.25 5.25M3.75 10H16.5" /></L>,
+  forward: (p: P) => <L {...p}><path d="M11.25 4.75 16.5 10l-5.25 5.25M16.25 10H3.5" /></L>,
+  plus: (p: P) => <L {...p}><path d="M9.75 4v11.5M4 9.75h11.5" /></L>,
+  search: (p: P) => <L {...p}><circle cx="9.25" cy="9.25" r="5.5" /><path d="m13.25 13.25 3.5 3.5" /></L>,
+  wall: (p: P) => <L {...p}><rect x="2.75" y="2.75" width="6" height="6" rx="1.75" /><rect x="11.25" y="2.75" width="6" height="6" rx="1.75" /><rect x="2.75" y="11.25" width="6" height="6" rx="1.75" /><rect x="11.25" y="11.25" width="6" height="6" rx="1.75" /></L>,
+  puzzle: (p: P) => <L {...p}><path d="M8 4.75a1.75 1.75 0 1 1 3.5 0v1h3a1.25 1.25 0 0 1 1.25 1.25v3h-1a1.75 1.75 0 1 0 0 3.5h1V16a1.25 1.25 0 0 1-1.25 1.25H5A1.25 1.25 0 0 1 3.75 16V7A1.25 1.25 0 0 1 5 5.75h3Z" /></L>,
+  routines: (p: P) => <L {...p}><path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6" /><path d="M15.25 2.5v3.4h-3.4M10 6.5V10l2.25 1.25" /></L>,
+  settings: (p: P) => <L {...p}><g transform="scale(1.25)" strokeWidth={1.2}><path d={GEAR} /><circle cx="8" cy="8" r="2" /></g></L>,
+  session: (p: P) => <L {...p}>{B20}<path d="M6.5 7.25h.01M9.5 7.25h4M6.5 12.75h.01M9.5 12.75h4" /></L>,
+  changes: (p: P) => <L {...p}>{B20}<path d="M9.75 5.75v5M7.25 8.25h5M7.25 13.75h5" /></L>,
+  folder: (p: P) => <L {...p}><path d="M2.75 6a2 2 0 0 1 2-2h2.9c.53 0 1.04.21 1.41.59l1.19 1.16h5a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" /></L>,
+  globe: (p: P) => <L {...p}><circle cx="9.75" cy="9.75" r="7" /><path d="M2.75 9.75h14M9.75 2.75c1.85 1.95 2.8 4.3 2.8 7s-.95 5.05-2.8 7c-1.85-1.95-2.8-4.3-2.8-7s.95-5.05 2.8-7Z" /></L>,
+  terminal: (p: P) => <L {...p}><path d="m4.75 6 4 4-4 4M10.75 14h4.5" /></L>,
+  design: (p: P) => <L {...p}><path d="M10 16.5 5.25 10.6 7.5 3.5h5l2.25 7.1Z" /><path d="M10 16.5v-4.75" /><circle cx="10" cy="10.3" r="1.45" /></L>,
+  agents: (p: P) => <L {...p}><circle cx="7.5" cy="6.75" r="2.75" /><path d="M2.75 16.25a4.75 4.75 0 0 1 9.5 0M12.75 4.1a2.75 2.75 0 0 1 0 5.3M14.5 12.05a4.75 4.75 0 0 1 2.75 4.2" /></L>,
+  app: (p: P) => <L {...p}><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5" /><path d="M2.75 7.75h14.5M5.75 5.75h.01M8 5.75h.01" /></L>,
+};
+
 
 /** Whose model it is, or which tool runs it: its logo in the current ink. A model nobody's list knows gets a diamond. */
 export type MarkKind = Brand | "other" | "demo";

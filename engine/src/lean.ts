@@ -374,8 +374,12 @@ const NOTE_MAX = 2000;
   loaded skills to read first, the selection in short, and the lean's rules. The same words for
   every provider (the tools by their plain names; toolsNote gives each tool's own), under 2,000
   characters. Reads the design file from disk; one that isn't there yet is said so.
+  `sidekick`: the turn is a pair's lead's, and this is its sidekick's name. The lead is then told what
+  to hand over on the canvas, since leadRules alone keeps design calls and one-file edits, and a
+  frame is both. That part (sidekickPart) comes on top of the 2,000: the note is a single model's,
+  cut the same way, plus the part. The sidekick itself never gets this note: it hears only the lead's briefs.
 */
-export function designNote(cwd: string, mark: DesignMark, env: NodeJS.ProcessEnv = process.env): string {
+export function designNote(cwd: string, mark: DesignMark, env: NodeJS.ProcessEnv = process.env, o: { sidekick?: string } = {}): string {
   const slug = safeSlug(mark.file);
   const dir = `.liner/designs/${slug}/`;
   const file = slug ? peekFile(cwd, slug) : null;
@@ -415,8 +419,26 @@ export function designNote(cwd: string, mark: DesignMark, env: NodeJS.ProcessEnv
     shown--;
     note = make();
   }
-  return note.length > NOTE_MAX ? `${note.slice(0, NOTE_MAX - 1)}…` : note;
+  note = note.length > NOTE_MAX ? `${note.slice(0, NOTE_MAX - 1)}…` : note;
+  // A pair's lead: the same note, cut the same way, with the hand-over as a line of its own after the
+  // head. It comes on top of the limit, so a pair loses nothing a single model's note keeps.
+  if (!o.sidekick) return note;
+  const at = head.join("\n").length;
+  return `${note.slice(0, at)}\n${sidekickPart(o.sidekick, dir, lean.path)}${note.slice(at)}`;
 }
+
+/**
+  What a pair's lead hands over on the canvas: the look and a small change stay its own; the frames
+  that follow a pattern, and the same change across frames, go to the sidekick. It sees none of the
+  note, so a brief carries where everything is. Short, since it comes on top of NOTE_MAX; the note's
+  own last line already says to look with design_shot.
+*/
+export const sidekickPart = (name: string, dir: string, lean?: string) =>
+  [
+    `${name} is your sidekick. The look is yours: decide it, and draw each screen's first frame and any small change to one element yourself.`,
+    `Once a frame sets the pattern, hand ${name} its follow-on frames (another size, dark, empty, loading, error) and the same change across frames, such as a check's finding in several.`,
+    `It sees none of this note: each brief names ${dir}, the frame to copy, ${lean ? `the lean (${lean}), ` : ""}the frame to make or change, and that data-l ids stay; done_when says what design_shot should show.`,
+  ].join(" ");
 
 const short = (html: string) => {
   const s = String(html ?? "").replace(/\s+/g, " ").trim();

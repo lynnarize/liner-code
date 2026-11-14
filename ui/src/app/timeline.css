@@ -63,7 +63,7 @@
   border-radius: 999px;
   background: var(--l-wash-2);
   color: var(--l-ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
 }
 .lc-you-chip > span {
@@ -194,7 +194,7 @@
   padding: 8px 11px;
   border-radius: 12px;
   color: var(--l-ink);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
   overflow-wrap: anywhere;
   pointer-events: none;
@@ -246,7 +246,7 @@
 }
 .lc-addon-mono {
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 .lc-addon-wrap {
@@ -318,4 +318,124 @@
 .lc-answered-act:hover {
   color: var(--l-ink);
   text-decoration-color: currentColor;
+}
+
+/* ---------- 0.2.7: the turn, after Devin and Claude Code ---------- */
+/* A finished group leads with how long it worked; what it did follows in the quieter grey. */
+.lc-trail-worked {
+  flex: none;
+  color: var(--l-ink-2);
+}
+.lc-trail-parts[data-after]::before {
+  content: "· ";
+}
+/* What the turn changed: a ruled list in the answer. One thin line above and below, no fill,
+   no shadow and no corners, so it never reads as the composer's box. */
+.lc-foot-row:has(> .lc-ledger) {
+  flex-wrap: wrap;
+}
+.lc-ledger {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  min-width: 0;
+  padding: 2px 0 4px;
+  border-top: 1px solid var(--lc-hair);
+  border-bottom: 1px solid var(--lc-hair);
+}
+.lc-ledger-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-ledger-h > b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-ledger-go {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--l-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--l-ink-4);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lc-ledger-r {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% + 16px);
+  min-height: 30px;
+  box-sizing: border-box;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-ledger-p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-ledger-new,
+.lc-ledger-more {
+  flex: none;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-ledger-more {
+  padding: 4px 0 2px;
+}
+.lc-ledger-sq {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+.lc-ledger-sq > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--l-wash-2);
+}
+.lc-ledger-sq > i[data-k="a"] {
+  background: var(--l-ok);
+}
+.lc-ledger-sq > i[data-k="d"] {
+  background: var(--l-danger);
+}
+@media (hover: hover) {
+  .lc-ledger-r:hover {
+    background: var(--l-wash);
+  }
+}
+/* The turn's closing line: the model's mark and name, how long it took, and Copy at the right. */
+.lc-turn-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-turn-end-mk {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--lc-hair);
+  color: var(--l-ink-2);
 }

@@ -940,6 +940,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // null clears a field; undefined leaves it.
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : k === "sidekick" ? String(v).replace(/^@/, "") : v]));
       const t = store.thread(id);
+      if (clean.connectionsOff !== undefined && (!Array.isArray(clean.connectionsOff) || clean.connectionsOff.some((x) => typeof x !== "string"))) throw new Error("connectionsOff is a list of add-on ids.");
       if (patch.archived && !t.archived) leftBehind(id);
       // Opened again: a worktree a clean-up took is put back.
       if (patch.archived === false && t.archived) void ensureWorktree(id).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "Its worktree didn't come back", body: String(e?.message ?? e) }));
@@ -950,6 +951,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const moved = ("model" in clean && clean.model !== t.model) || (clean.agent !== undefined && clean.agent !== t.agent);
       // Another tool, account, lead or sidekick: what the session ran on ends now, a turn at work on it stopped first (runtime.retool).
       if (moved || ("sidekick" in clean && clean.sidekick !== t.sidekick)) queueMicrotask(() => void runtime.retool(id).catch(() => {}));
+      // A connection switched off or on for this session: it alone relinks, as a change in Add-ons relinks them all.
+      if ("connectionsOff" in clean && String(clean.connectionsOff ?? "") !== String(t.connectionsOff ?? "")) queueMicrotask(() => void runtime.relink(id).catch(() => {}));
       // Put away: its sessions end as a deleted one's do, by the one close (runtime.closeThread).
       if (patch.archived && !t.archived) queueMicrotask(() => void runtime.closeThread(id, "You archived this session").catch(() => {}));
       return store.patchThread(id, moved ? { ...next, usage: { ...t.usage, contextWindow: undefined } } : next);

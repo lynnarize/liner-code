@@ -372,7 +372,8 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
   panel itself: its strip is their tabs, a + for another shell, the open one's folder and tools,
   and the way to put the panel away.
 */
-export function TerminalSurface({ thread, visible, onHide }: { thread: Thread; visible: boolean; onHide?: () => void }) {
+/** `lead` starts the bottom panel's row of shells: the project's scripts, which open as tabs of this row. */
+export function TerminalSurface({ thread, visible, onHide, lead }: { thread: Thread; visible: boolean; onHide?: () => void; lead?: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const tabs = useTabs(thread.id);
   // The engine's list is the truth: the tabs come back after a reload, and ones whose shells it
@@ -444,6 +445,7 @@ export function TerminalSurface({ thread, visible, onHide }: { thread: Thread; v
     <div className="lc-terms" data-below={onHide ? "" : undefined}>
       {(panes.length > 1 || onHide) && (
         <div className="lc-terms-tabs" role="tablist" aria-label="Shells">
+          {onHide && lead}
           {panes.map((p) => (
             <span key={p.key} className="lc-terms-tab" data-on={p.key === on || undefined}>
               <button type="button" role="tab" aria-selected={p.key === on} className="l-focus" onClick={() => setOn(p.key)} title={p.command ?? "A shell"}>

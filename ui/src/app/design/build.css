@@ -60,7 +60,7 @@
   gap: 8px;
   height: 40px;
   padding: 0 16px;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--l-ink-3);
 }
 .ld-bt-top > svg {
@@ -74,7 +74,7 @@
 }
 .ld-bt-top > span {
   flex: none;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .ld-bt {
   display: flex;
@@ -88,7 +88,7 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .ld-bt-i {
   display: grid;
@@ -125,7 +125,7 @@ button.ld-bt-n {
 }
 .ld-bt-s {
   flex: none;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .ld-bt-f {
@@ -144,7 +144,7 @@ button.ld-bt-n {
   margin: 2px 0 0;
   padding: 0 0 0 24px;
   list-style: none;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--l-ink-2);
 }
@@ -168,7 +168,7 @@ button.ld-bt-n {
 .ld-bt-p {
   margin: 0;
   padding-left: 24px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--l-ink-3);
 }
@@ -184,7 +184,7 @@ button.ld-bt-n {
 }
 .ld-bt-empty {
   padding: 16px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 
@@ -239,7 +239,7 @@ button.ld-bt-n {
   flex: 1;
   min-width: 0;
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink);
 }
 .ld-live-lk {
@@ -250,7 +250,7 @@ button.ld-bt-n {
   border-radius: 6px;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink);
   text-decoration: underline;
@@ -272,7 +272,7 @@ button.ld-bt-n {
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--l-wash);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--l-ink-2);
 }
@@ -281,7 +281,7 @@ button.ld-bt-n {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 
@@ -309,13 +309,13 @@ button.ld-bt-n {
 }
 .ld-lpick-h {
   padding: 2px 4px 0;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--l-ink);
 }
 .ld-lpick-n {
   padding: 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--l-ink-3);
 }
@@ -358,7 +358,7 @@ button.ld-bt-n {
   padding: 8px;
   border-radius: 8px;
   background: var(--l-wash);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
 }
 .ld-lpick-ask code {
@@ -392,7 +392,7 @@ button.ld-bt-n {
   outline: none;
   background: var(--l-wash);
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink);
 }
 .ld-lpick-in:focus-visible {
@@ -413,7 +413,7 @@ button.ld-bt-n {
   border-radius: 8px;
   background: var(--l-wash);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
   cursor: pointer;
 }
@@ -540,15 +540,15 @@ button.ld-bt-n {
   justify-content: flex-end;
   gap: 6px;
   height: 20px;
-  font-size: 11.5px;
+  font-size: 12px;
   pointer-events: auto;
 }
 .ld-cmp-head .ld-q {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .ld-cmp-head .ld-live-lk {
   height: 20px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .ld-cmp-head .lc-ib {
   width: 20px;
@@ -601,7 +601,7 @@ button.ld-bt-n {
   margin: 0;
   padding: 0 0 0 24px;
   list-style: none;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
 }
 .ld-bt-rows li {

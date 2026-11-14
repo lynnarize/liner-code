@@ -124,13 +124,15 @@ function useNow(thread: Thread, items: Item[]) {
   const named = step ? trailSteps([step], undefined, namer)[0] : undefined;
   const leadFrame = lead ? (frameName(lead[0]) ?? readableFrame(lead[0])) : undefined;
   const words = live?.waiting ? live.word : named ? [named.verb, named.target].filter(Boolean).join(" ") : leadFrame ? `Drawing ${leadFrame}` : (live?.word ?? "Working");
-  const sideWords = side ? `${side[1].name}${side[1].label && side[1].label !== side[1].name ? `, ${side[1].label}` : ""} on ${frameName(side[0]) ?? readableFrame(side[0])}` : undefined;
+  const lower = (w: string) => `${w.charAt(0).toLowerCase()}${w.slice(1)}`;
+  // Named as the sidekick: a pair of one model (the Demo's, Opus with Opus) has the same name twice. Its label is what it does ("Drawing").
+  const sideWords = side ? `Sidekick ${side[1].name}: ${lower(side[1].label || "Drawing")} ${frameName(side[0]) ?? readableFrame(side[0])}` : undefined;
   // The header's longer line: who is drawing which frame, as the old head row said it.
   // The step's own verb when one is under way ("is changing Phone / Today" in a fix), so the header and the row agree.
-  const lower = (w: string) => `${w.charAt(0).toLowerCase()}${w.slice(1)}`;
   const doing = named && /ing\b/.test(named.verb.split(" ")[0]) ? `${lower(named.verb)}${named.target ? ` ${named.target}` : ""}` : undefined;
   const header = !running ? undefined : doing && !live?.waiting ? `${lead?.[1].name || who} is ${doing}` : leadFrame && !live?.waiting ? `${lead![1].name || who} is drawing ${leadFrame}` : `${who}: ${lower(words)}`;
-  return { running, live, words, sideWords, header, reply };
+  // Only the sidekick is on a frame (the lead waits on it): the row's dot is in the sidekick's colour.
+  return { running, live, words, sideWords, header, reply, sideOnly: Boolean(side) && !lead };
 }
 
 /**
@@ -185,7 +187,7 @@ export function ChatMin({ thread }: { thread: Thread }) {
   return (
     <div className="ldc-min" data-running={now.running || undefined} data-unread={unread || undefined}>
       <button type="button" className="ldc-min-t l-focus" onClick={open} title="Open the chat">
-        {now.running ? <span className="ld-pd" data-lead aria-hidden /> : unread ? <span className="ldc-dot" aria-hidden /> : null}
+        {now.running ? <span className="ld-pd" data-lead={now.sideOnly ? undefined : true} aria-hidden /> : unread ? <span className="ldc-dot" aria-hidden /> : null}
         <span className="ldc-min-w">{now.running ? now.words : line}</span>
         {now.running && now.sideWords && <span className="ldc-q ldc-side">{now.sideWords}</span>}
       </button>

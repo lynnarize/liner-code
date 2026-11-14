@@ -332,6 +332,8 @@ export type Thread = {
     `sidekick` tool. Unset, one model works the session alone.
   */
   sidekick?: string;
+  /** Connections (add-on ids) you switched off for this session alone: its tool isn't handed them. The rest follow Add-ons. */
+  connectionsOff?: string[];
   /** This session's own word on the Reviewer: true reads each change, false reads none; unset follows Settings.review. */
   review?: boolean;
   /**
@@ -475,6 +477,8 @@ export type AgentRun = {
   report?: string;
   /** What it changed, as Liner Code measured it (a sidekick's brief), not as it said. */
   files?: FileChange[];
+  /** The frames of design files it changed on the canvas, measured too (a sidekick's brief): `files` leaves .liner/ out. */
+  frames?: { name: string; path: string }[];
 };
 /** How an agent stands: its own word, else its call's. */
 export const agentState = (it: { status: "running" | "done" | "failed" | "stopped"; agent?: AgentRun }) => it.agent?.state ?? it.status;
@@ -792,6 +796,8 @@ export type Item =
       planning?: boolean;
       status: "running" | "done" | "stopped" | "error";
       seconds?: number;
+      /** What this part of the turn cost, as its tool reported it (the same number its usage record has); none when it reported no cost. */
+      costUsd?: number;
       /**
         A turn that carries on the one you started: the lead fixing what the Reviewer found ("fix").
         It shows as part of your turn, not a turn of its own. Older timelines have the other parts.
@@ -1417,7 +1423,7 @@ export type Rpc = {
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
   "thread.create": [{ projectId: string; agent?: string; sidekick?: string; review?: boolean; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode; /** Begun from a design (Thread.design); in a design project it defaults to the project's design file. */ design?: { file: string } }, Thread];
-  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string | null; effort?: Effort; agent?: string; sidekick?: string | null; review?: boolean | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
+  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string | null; effort?: Effort; agent?: string; sidekick?: string | null; connectionsOff?: string[] | null; review?: boolean | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
   /**
     A thread's timeline, with the number of the last event sent when it was read: events for it with

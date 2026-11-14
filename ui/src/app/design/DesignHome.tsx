@@ -1,7 +1,9 @@
 /*
-  Design Home: the Design face's first tab. One question, the composer, and under it where the
-  design lives (on its own, by default; a project; another folder), the lean it follows (none is
-  fine), the skills it loads and what it's drawn for; then the other ways to start. Sending makes
+  Design Home: the Design face's first tab, laid out as Code's Home (Home.tsx). On top of the box,
+  where the design lives (on its own, by default; a project; another folder), pressed to change it;
+  the composer in the middle, and on its strip the lean it follows (none is fine), the skills it
+  loads and what it's drawn for; under it the other ways to start; below, Pick up: the designs
+  changed last. Sending makes
   the design (design.new), opens its tab, makes its session (begun from it) and sends the ask as a
   design turn. Nothing here ever makes or picks the Scratch project.
 
@@ -86,13 +88,13 @@ const OWN = "";
 /** The composer needs a project to read; a design on its own has none yet, so it reads this stand-in (no git, no files). */
 const NOWHERE: Project = { id: "", name: "On its own", path: "", git: false, createdAt: 0, kind: "design" };
 
-/** Where this design lives: the place chip under the box. */
+/** Where this design lives: the name over the box, as Home's project name (press it to change it). */
 function PlaceChip({ place, onPlace }: { place: string; onPlace: (id: string) => void }) {
   const projects = codeProjects(useEngine((s) => s.projects));
   const here = projects.find((p) => p.id === place);
   const [other, setOther] = useState(false);
   return (
-    <Pop label={`Where this design lives: ${here?.name ?? "on its own"}. Change it`} width={420} triggerClass="lc-pb" keep trigger={<><I.folder size={13} /><span className="lc-strip-cap">{here?.name ?? "On its own"}</span><I.chevD size={11} /></>}>
+    <Pop label={`Where this design lives: ${here?.name ?? "on its own"}. Change it`} width={420} triggerClass="lc-home-name" keep trigger={<><span>{here?.name ?? "On its own"}</span><I.chevD size={14} /></>}>
       {(close) =>
         other ? (
           <div className="ld-own-pop">
@@ -246,9 +248,15 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
         <Tabs />
         <span className="lc-grow" data-drag />
       </header>
-      <div className="lc-home-in ld-home-in">
-        <h2 className="lc-ask-h">What should we design?</h2>
-        {Above && skillsCwd && <Above cwd={skillsCwd} />}
+      {/* Laid out as Code's Home: where it lives on top of the box, the box in the middle, Pick up under it. */}
+      <div className="lc-home-in ld-home-in" data-mid="">
+        <div className="ld-home-head">
+          <div className="lc-home-top">
+            <PlaceChip place={project ? place : OWN} onPlace={setPlace} />
+            <span className="lc-grow" />
+          </div>
+          {Above && skillsCwd && <Above cwd={skillsCwd} />}
+        </div>
         <div className="lc-home-compose">
           <Composer
             variant="home"
@@ -264,7 +272,6 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
             trayEnd={<PicturesChip lead={undefined} home />}
             stripStart={
               <>
-                <PlaceChip place={project ? place : OWN} onPlace={setPlace} />
                 <LeanChip cwd={project?.path} />
                 {Skills && skillsCwd && <Skills cwd={skillsCwd} />}
               </>
@@ -297,8 +304,34 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
             }
           />
         </div>
+        <PickUp />
       </div>
     </div>
+  );
+}
+
+/** Pick up, as on Code's Home: the designs changed last, plain rows, each opened as the sidebar opens it. */
+function PickUp() {
+  const list = useListed();
+  const threads = useEngine((s) => s.threads);
+  const recent = (list ?? [])
+    .flatMap((x) => x.files.map((f) => [x.project, f] as const))
+    .sort((a, b) => b[1].updated - a[1].updated)
+    .slice(0, 3);
+  if (!recent.length) return <div className="lc-home-pickup" />;
+  return (
+    <section className="lc-home-pickup" aria-label="Pick up">
+      <div className="lc-home-card-h">Pick up</div>
+      {recent.map(([p, f]) => (
+        <button key={tabKey({ projectId: p.id, file: f.id })} type="button" className="lc-home-pick l-focus" onClick={() => openDesign(p, f)}>
+          <span className="lc-home-pick-t">{f.title}</span>
+          <span className="lc-grow" />
+          <small>
+            {p.kind === "design" ? "On its own" : p.name} · {f.unreadable ? "can't be read" : sessionOf({ projectId: p.id, file: f.id }, threads)?.status === "running" ? "being drawn" : ago(f.updated)}
+          </small>
+        </button>
+      ))}
+    </section>
   );
 }
 
@@ -342,6 +375,25 @@ function useListed() {
 
 type Menu = { project: Project; file: DesignFileInfo; x: number; y: number };
 
+/** Opens a design in its tab: the sidebar's rows and Home's Pick up. */
+function openDesign(project: Project, f: DesignFileInfo) {
+  knowProject(project);
+  const next = { projectId: project.id, file: f.id, title: f.title };
+  // The design shown last (from Home, the one shown before it): opened in its place, an untouched one goes.
+  const here = lastDesignTab();
+  if (here && tabKey(here) === tabKey(next)) return showTab(tabKey(next));
+  // Opened in the place of an untouched design: that one goes (it held nothing of yours), its tab becomes this one's.
+  if (here?.fresh && !getTabs().list.some((t) => tabKey(t) === tabKey(next)))
+    return void untouched(here).then((gone) => {
+      if (!gone) return openTab(next);
+      moveTab(tabKey(here), next);
+      showTab(tabKey(next));
+      design.forget(tabKey(here));
+      void dropIfUntouched(here);
+    });
+  openTab(next);
+}
+
 /** The sidebar's body on Design Home: "New design", the filter, and every design, on their own first, then by project. */
 export function DesignFiles({ onSearch }: { onSearch: () => void }) {
   const list = useListed();
@@ -356,23 +408,7 @@ export function DesignFiles({ onSearch }: { onSearch: () => void }) {
   const match = (f: DesignFileInfo) => !q || f.title.toLowerCase().includes(q.toLowerCase());
   const own = (list ?? []).filter((x) => x.project.kind === "design");
   const inProjects = (list ?? []).filter((x) => x.project.kind !== "design" && x.files.length);
-  const open = (project: Project, f: DesignFileInfo) => {
-    knowProject(project);
-    const next = { projectId: project.id, file: f.id, title: f.title };
-    // The design shown last (from Home, the one shown before it): opened in its place, an untouched one goes.
-    const here = lastDesignTab();
-    if (here && tabKey(here) === tabKey(next)) return showTab(tabKey(next));
-    // Opened in the place of an untouched design: that one goes (it held nothing of yours), its tab becomes this one's.
-    if (here?.fresh && !getTabs().list.some((t) => tabKey(t) === tabKey(next)))
-      return void untouched(here).then((gone) => {
-        if (!gone) return openTab(next);
-        moveTab(tabKey(here), next);
-        showTab(tabKey(next));
-        design.forget(tabKey(here));
-        void dropIfUntouched(here);
-      });
-    openTab(next);
-  };
+  const open = openDesign;
   const busy = (project: Project, f: DesignFileInfo) => sessionOf({ projectId: project.id, file: f.id }, threads)?.status === "running";
   const rename = async (project: Project, f: DesignFileInfo, title: string) => {
     if (!title || title === f.title) return;

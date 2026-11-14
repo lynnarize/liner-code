@@ -14,7 +14,7 @@
   height: 100%;
   min-height: 0;
   color: var(--l-ink);
-  font-size: 12.5px;
+  font-size: 13px;
   container-type: inline-size;
 }
 .ld-insp-top {
@@ -53,7 +53,7 @@
   gap: 8px;
   height: 40px;
   padding: 0 16px;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
 }
 .ld-ish > svg {
@@ -160,7 +160,7 @@
 .ld-l {
   flex: none;
   width: 62px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .ld-col {
@@ -265,7 +265,7 @@
   background: var(--lc-well);
   color: var(--l-ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-align: left;
@@ -377,7 +377,7 @@ span.ld-swt {
   margin-left: auto;
   overflow: hidden;
   color: var(--l-ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -392,7 +392,7 @@ span.ld-swt {
   border-radius: 8px;
   background: color-mix(in oklab, var(--l-warn) 14%, transparent);
   color: var(--l-ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
 }
 .ld-off > svg {
@@ -469,7 +469,7 @@ span.ld-swt {
   margin: 0;
   padding: 10px 16px 0;
   color: var(--l-ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.55;
 }
 .ld-mono {
@@ -484,7 +484,7 @@ span.ld-swt {
   gap: 8px;
   padding: 24px 28px 80px;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
   text-align: center;
 }

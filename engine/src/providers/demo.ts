@@ -14,7 +14,7 @@ import type { ProviderInfo } from "../../../contracts/src/index.ts";
 import { run } from "../exec.ts";
 import type { OpenOptions, Provider, ProviderSession, ToolUpdate, TurnSink } from "./types.ts";
 import { PAIR_ENV } from "../liner-tools.ts";
-import { drawTides } from "./demo-canvas.ts";
+import { drawBrief, drawTides, isFrameBrief } from "./demo-canvas.ts";
 
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -184,8 +184,10 @@ class DemoSession implements ProviderSession {
     const file = join(this.o.cwd, "src/tides.js");
     const sample = existsSync(file) && readFileSync(file, "utf8").includes("nextHigh");
     // A pair's sidekick works the brief, whatever it says; a pair's lead hands a change to it and reads what comes back.
-    if (this.o.sidekick) return this.brief(text, sink, signal, t, n);
+    // A brief to draw a frame on the canvas (a Demo lead's, demo-canvas.ts frameBrief) is drawn there, in parts.
+    if (this.o.sidekick) return isFrameBrief(text) ? drawBrief(this.o, text, sink, signal, t) : this.brief(text, sink, signal, t, n);
     // Sent from Liner Design (its "## Design" note leads the message): Foreshore's tide tables, drawn frame by frame on the canvas.
+    // A pair's lead draws them too, and hands the one frame that only follows a pattern to its sidekick (demo-canvas.ts handOver).
     if (/^## Design$/m.test(text)) return drawTides(this.o, text, sink, signal, t);
     if (DESIGN_ASK.test(text) && !/^Build the design\b/i.test(text.trim())) return this.design(text, sink, signal, t);
     // Asked for a plan first: it proposes one and waits; turned down, the turn ends there.

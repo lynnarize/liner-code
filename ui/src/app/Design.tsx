@@ -21,6 +21,7 @@ import { bridge } from "./bridge";
 import { langOf, linesOf, tokensOf, Toks } from "./code";
 import { getState, onStream, rpc, useEngine } from "./engine";
 import { I } from "./icons";
+import { setFace } from "./face";
 import { agentOf } from "./model";
 import { updateLook, useLook } from "./look";
 import { SurfaceNote, useCwd } from "./Surfaces";
@@ -173,6 +174,73 @@ export function startDesigns() {
   return onStream((e) => {
     if (e.type === "item" && e.item.kind === "design") window.dispatchEvent(new CustomEvent("lc:open-design", { detail: { threadId: e.threadId, design: e.item.design, auto: true } }));
   });
+}
+
+/* ---------- No designs yet: start one ---------- */
+
+type StartSize = "desktop+phone" | DesignSize;
+/** What a new design is drawn for, as Design Home offers it (design/DesignHome.tsx). */
+const START_SIZES: { id: StartSize; label: string }[] = [
+  { id: "desktop+phone", label: "Desktop and phone" },
+  { id: "desktop", label: "Desktop" },
+  { id: "tablet", label: "Tablet" },
+  { id: "phone", label: "Phone" },
+];
+
+/**
+  The surface with no design yet: the Design face's own start. Where it lives (this session's
+  project, or on its own in Liner Designs) and what it's drawn for, then New design, which makes it
+  as the Design face's New design does (design/session.ts newDesign) and shows it there: a design
+  opens in its tab in Liner Design, so the window turns to that face.
+*/
+function DesignStart({ thread }: { thread: Thread }) {
+  const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
+  // A design on its own (or its session) has no project to put another in: those start on their own.
+  const inProject = project && project.kind !== "design" ? project : undefined;
+  const [here, setHere] = useState(!!inProject);
+  const [size, setSize] = useState<StartSize>("desktop+phone");
+  const [making, setMaking] = useState(false);
+  const start = async () => {
+    setMaking(true);
+    try {
+      const { newDesign } = await import("./design/session");
+      await newDesign({ ...(here && inProject ? { projectId: inProject.id } : {}), size });
+      setFace("design");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMaking(false);
+    }
+  };
+  return (
+    <SurfaceNote
+      icon={<I.design size={20} />}
+      title="No designs yet"
+      action={
+        <div className="lc-dz-start">
+          {inProject && (
+            <div className="lc-home-where" role="radiogroup" aria-label="Where the design lives">
+              <button type="button" role="radio" aria-checked={here} className="l-focus" onClick={() => setHere(true)}>
+                In {inProject.name}
+              </button>
+              <button type="button" role="radio" aria-checked={!here} className="l-focus" onClick={() => setHere(false)}>
+                On its own
+              </button>
+            </div>
+          )}
+          <Pop label={`What it's drawn for: ${START_SIZES.find((x) => x.id === size)?.label}. Change it`} width={220} triggerClass="lc-pb" trigger={<><I.monitor size={13} /><span className="lc-strip-cap">{START_SIZES.find((x) => x.id === size)?.label}</span><I.chevD size={11} /></>} menu>
+            {(close) => START_SIZES.map((x) => <Row key={x.id} title={x.label} on={x.id === size} onPick={() => (close(), setSize(x.id))} />)}
+          </Pop>
+          <button type="button" className="lc-btn" data-kind="primary" disabled={making} onClick={() => void start()}>
+            <I.plus size={14} />
+            New design
+          </button>
+        </div>
+      }
+    >
+      Start one here. It opens in Liner Design, where you draw it with the agent and have it built.
+    </SurfaceNote>
+  );
 }
 
 /* ---------- The surface ---------- */
@@ -396,12 +464,7 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
     }
   };
 
-  if (!latest)
-    return (
-      <SurfaceNote icon={<I.design size={20} />} title="No designs yet">
-        Ask {agentName} for a screen, a page or a prototype, like “Design the settings screen”. It draws here, version by version: pick any part of it to say what should change, then have it built.
-      </SurfaceNote>
-    );
+  if (!latest) return <DesignStart thread={thread} />;
 
   const toks = view === "code" && codeNow ? tokensOf(linesOf(codeNow.html), langOf("design.html")) : [];
   const frameStyle = { width: W, height: frameH, transform: scale === 1 ? undefined : `scale(${scale})`, colorScheme: scheme === "system" ? undefined : scheme };

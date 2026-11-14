@@ -471,7 +471,7 @@
   background: var(--lc-well);
   color: var(--l-ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: default;
   transition: background 160ms ease;
 }
@@ -503,7 +503,7 @@
   gap: 10px;
   min-height: 30px;
   margin-top: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-cx-ticks i {
@@ -523,7 +523,7 @@
   background: none;
   color: var(--l-ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
@@ -568,7 +568,7 @@
 }
 .lc-sinfo-note {
   margin: 2px 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
 }
 /* A colour of its own would paint over the shimmer's light while it waits. */
@@ -602,7 +602,7 @@
 }
 .lc-term-err {
   margin: 0 4px 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-danger-text);
 }
 .lc-term-box {
@@ -746,7 +746,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .lc-br-console,
 .lc-dev-log {
@@ -770,7 +770,7 @@
   border: 0;
   border-radius: 14px;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
   text-align: left;
   cursor: pointer;
@@ -792,7 +792,7 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -808,7 +808,7 @@
   min-height: 0;
   overflow: auto;
   padding: 0 12px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 17px;
   scrollbar-width: thin;
   -webkit-user-select: text;
@@ -991,7 +991,7 @@
 }
 .lc-br-lnote {
   color: var(--l-ink-3);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 15px;
 }
 .lc-br-lrow[data-bad] .lc-br-lnote {
@@ -1060,7 +1060,7 @@
   background: none;
   color: var(--l-ink-3);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
 }
 .lc-br-lfoot {
@@ -1143,7 +1143,7 @@
   min-width: 0;
 }
 .lc-br-risky {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   color: var(--l-danger-text);
@@ -1291,7 +1291,7 @@
 .lc-files-none {
   display: block;
   margin: 10px 8px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 /* The open file: one hairline beside it (or over it, stacked), then its rows on the paper. */
 .lc-files-view {
@@ -1483,7 +1483,7 @@
     0 0 0 6px color-mix(in oklab, var(--l-ink) 88%, transparent),
     0 0 0 7px var(--l-line-2),
     0 18px 40px -16px var(--l-drop);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-dev-screen img {
   width: 100%;
@@ -1573,7 +1573,7 @@
 }
 .lc-pr-title b {
   font-family: var(--l-font-display);
-  font-size: 15.5px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.012em;
   line-height: 21px;
@@ -1584,7 +1584,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-pr-branches {
   display: flex;
@@ -1694,11 +1694,11 @@
   white-space: nowrap;
 }
 .lc-pr-commit > .lc-mono {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .lc-pr-none {
   margin: 4px 2px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-pr-foot {
   padding: 8px 12px 10px;
@@ -1751,14 +1751,14 @@
   padding: 10px 12px;
   border-radius: 12px;
   background: color-mix(in oklab, var(--l-warn) 12%, transparent);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--l-warn-text);
 }
 .lc-pr-field {
   display: grid;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-2);
 }
@@ -1799,7 +1799,7 @@
 }
 .lc-run-steps time {
   padding-top: 1px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .lc-run-step-t {
   display: flex;
@@ -1867,7 +1867,7 @@
 }
 .lc-linked-t b {
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1886,7 +1886,7 @@
   gap: 6px;
 }
 .lc-linked-line {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
 }
 .lc-linked-line[data-tone="danger"] {
@@ -1915,7 +1915,7 @@
   gap: 10px;
   min-height: 32px;
   padding: 0 2px 0 4px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-rt-wait {
   display: inline-flex;
@@ -2053,7 +2053,7 @@
   min-height: 30px;
   padding: 0 8px;
   border-radius: 9px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-rt-steps li[data-s="running"] {
   background: var(--lc-plate);
@@ -2124,13 +2124,13 @@
   border: 0;
   border-radius: 10px;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
 .lc-rt-run .lc-mono {
   flex: none;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .lc-rt-run-t {
   overflow: hidden;
@@ -2219,7 +2219,7 @@
   padding: 0 10px;
   border-radius: 9px;
   background: var(--l-wash-2);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-rb-test input {
   width: 46px;
@@ -2245,7 +2245,7 @@
   padding: 3px 8px;
   border-radius: 7px;
   background: var(--l-wash-2);
-  font-size: 11.5px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
   -webkit-user-select: all;
@@ -2318,7 +2318,7 @@
   padding: 6px 6px 6px 14px;
   translate: -50% 0;
   border-radius: 999px;
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
   animation: l-pop-in 260ms var(--l-ease-enter) backwards;
 }
@@ -2387,7 +2387,7 @@
   min-height: 32px;
   padding: 0 8px;
   border-radius: 9px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-rv-f[data-on] {
   color: var(--l-ink-3);
@@ -2425,7 +2425,7 @@
   align-items: flex-start;
   gap: 8px;
   padding: 4px 2px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
 }
 .lc-rv-sub-a b {
@@ -2454,7 +2454,7 @@
   margin-left: 4px;
 }
 .lc-rv-count {
-  font-size: 12.5px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .lc-rv-files {
@@ -2556,7 +2556,7 @@
   font: inherit;
   /* The body's face: --l-font-sans isn't one of the tokens, so this fell back to the code's mono. */
   font-family: var(--l-font-body);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
   cursor: pointer;
 }
@@ -2613,7 +2613,7 @@
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--l-accent-soft);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--l-accent-text);
 }
@@ -2627,7 +2627,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
 }
 .lc-rv-a .lc-md {
@@ -2718,7 +2718,7 @@
   font-size: 13px;
 }
 .lc-cmp-h .lc-model {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--l-ink);
 }
@@ -2729,7 +2729,7 @@
   white-space: nowrap;
 }
 .lc-cmp-s {
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-cmp-stats {
   display: grid;
@@ -2741,7 +2741,7 @@
   border-bottom: 1px solid var(--l-line);
 }
 .lc-cmp-stats dt {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-cmp-stats dd {
@@ -2780,7 +2780,7 @@
   border: 0;
   border-radius: 999px;
   background: var(--l-accent-soft);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--l-accent-text);
   cursor: pointer;
@@ -2801,7 +2801,7 @@
   border-radius: 7px;
   background: color-mix(in oklab, var(--l-accent) 13%, transparent);
   vertical-align: middle;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 22px;
   white-space: nowrap;
@@ -2845,7 +2845,7 @@
   border-radius: 8px;
   background: var(--l-wash);
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -2914,7 +2914,7 @@
   flex: none;
   align-items: center;
   margin-right: 2px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-3);
 }
@@ -2941,7 +2941,7 @@
   align-items: center;
   gap: 4px 8px;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-plan-meta b {
   color: var(--l-ink-2);
@@ -2950,7 +2950,7 @@
 .lc-plan-modeb {
   height: 26px;
   padding: 0 9px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-plan-more {
   display: inline-flex;
@@ -2965,7 +2965,7 @@
   background: none;
   color: var(--l-ink-3);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -3215,7 +3215,7 @@
 .lc-budget-line .lc-link {
   margin-left: auto;
   padding: 0;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-budget-over {
   font-weight: 500;
@@ -3261,7 +3261,7 @@
   height: 260px;
   padding: 10px 12px;
   resize: vertical;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 19px;
 }
 .lc-rules-n {
@@ -3390,7 +3390,7 @@
   font-weight: 600;
 }
 .lc-limit-t small {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   color: var(--l-ink-2);
 }
@@ -3425,7 +3425,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .lc-limits-w {
   display: grid;
@@ -3434,7 +3434,7 @@
 .lc-limits-l {
   display: flex;
   justify-content: space-between;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
 }
 .lc-limits-bar {
@@ -3465,7 +3465,7 @@
   opacity: 0.45;
 }
 .lc-limits-w small {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* The composer's / and $ menus. */
@@ -3516,7 +3516,7 @@
 .lc-mention-wait {
   display: block;
   padding: 7px 9px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 /* A goal the agent works toward across turns. */
@@ -3532,7 +3532,7 @@
   border-radius: 12px;
   /* It floats over the text with the composer, so it is solid: the accent's wash on the paper. */
   background: color-mix(in oklab, var(--l-accent) 10%, var(--l-surface));
-  font-size: 12.5px;
+  font-size: 13px;
   animation: l-blur-in 300ms var(--l-ease-out) backwards;
 }
 .lc-goal-k {
@@ -3618,7 +3618,7 @@
 }
 .lc-pop-note {
   margin: 4px 9px 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
 }
 
@@ -3636,7 +3636,7 @@
 }
 .lc-script .lc-input {
   height: 32px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-script-wt {
   display: inline-flex;
@@ -3829,7 +3829,7 @@
 .lc-st-none {
   margin: 0;
   padding: 16px 0;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-pick.lc-st-addb {
   gap: 6px;
@@ -3837,7 +3837,7 @@
   padding: 0 10px;
   border-radius: 9px;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--l-ink-2);
 }
@@ -3884,7 +3884,7 @@
   resize: vertical;
 }
 .lc-st-form .lc-input.lc-mono {
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-st-form .lc-input[aria-invalid] {
   box-shadow: 0 0 0 1.5px var(--l-danger);
@@ -3905,7 +3905,7 @@
 .lc-st-cm .l-in-box {
   --i-h: 34px;
   border-radius: 10px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 @container (max-width: 560px) {
   .lc-st-form-g {
@@ -3961,7 +3961,7 @@
   color: var(--l-ink);
 }
 .lc-reg-t b .lc-quiet {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 400;
 }
 .lc-reg-t small {
@@ -3980,7 +3980,7 @@
 .lc-reg-none {
   margin: 0;
   padding: 20px 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: center;
 }
 .lc-reg-h {
@@ -4084,7 +4084,7 @@
 
 /* Settings, Keyboard: a command's keys, clicked to record new ones; the same list as JSON. */
 .lc-kb-id {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .lc-kb-rec {
   display: inline-flex;
@@ -4096,7 +4096,7 @@
   border: 0;
   border-radius: 9px;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
   transition:
     background 160ms ease,
@@ -4119,7 +4119,7 @@
   height: auto;
   min-height: 120px;
   padding: 10px 12px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
   resize: vertical;
 }
@@ -4127,7 +4127,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-kb-err {
   color: var(--l-danger-text);
@@ -4196,7 +4196,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
   cursor: pointer;
 }
@@ -4364,7 +4364,7 @@
   border: 0;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
   text-align: left;
   cursor: pointer;
@@ -4404,7 +4404,7 @@
   background: var(--l-surface-2);
   box-shadow: 0 0 0 1px var(--l-line);
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 17px;
   color: var(--l-ink-2);
   white-space: pre-wrap;
@@ -4417,7 +4417,7 @@
   align-items: center;
   gap: 8px;
   padding: 0 14px 12px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 /* The Pull request surface: Liner's PR flow card, then what it doesn't draw. */
@@ -4455,7 +4455,7 @@
 }
 .lc-pr-out {
   margin: 4px 2px 0;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-pr-fold svg {
@@ -4525,7 +4525,7 @@
   font-size: 13px;
 }
 .lc-appr .l-appr__titles b {
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .lc-appr .l-appr__head .l-badge {
   flex: none;
@@ -4558,7 +4558,7 @@
   gap: 4px 14px;
   margin: 0 12px;
   padding: 7px 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--l-ink-3);
   animation: l-unblur 320ms var(--l-ease-out) backwards;
@@ -4635,7 +4635,7 @@
   min-height: 40px;
   padding: 0 8px 0 14px;
   box-shadow: inset 0 -1px 0 var(--lc-hair);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-sc-head b {
@@ -4671,7 +4671,7 @@
   animation: l-unblur 420ms var(--l-ease-out) backwards;
 }
 .lc-sc-empty b {
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--l-ink);
 }
@@ -4707,7 +4707,7 @@
   outline: none;
   background: none;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
   color: var(--l-ink);
   resize: none;
@@ -4758,7 +4758,7 @@
   background: none;
   color: var(--l-ink-3);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
   transition:
@@ -4854,7 +4854,7 @@
   background: none;
   color: var(--l-ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
 }
@@ -4909,7 +4909,7 @@
   overflow: hidden;
   color: var(--l-ink-2);
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4921,7 +4921,7 @@
 .lc-tstep-res {
   margin-top: 1px;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -4943,7 +4943,7 @@
   background: var(--l-wash);
   color: var(--l-ink-3);
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -4966,7 +4966,7 @@
   min-height: 20px;
   margin-left: 0;
   padding: 0;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -4978,7 +4978,7 @@
   margin: 2px 0;
   padding-left: 0;
   box-shadow: none;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -5052,7 +5052,7 @@
   background: none;
   color: var(--l-ink-3);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -5102,7 +5102,7 @@
   overflow: hidden;
   color: var(--l-ink-3);
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   text-overflow: ellipsis;
 }
 .lc-wk-row[data-state="running"] .lc-wk-target {
@@ -5114,7 +5114,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
   text-overflow: ellipsis;
 }
 .lc-wk-tag {
@@ -5123,7 +5123,7 @@
   border-radius: 999px;
   background: var(--l-wash);
   color: var(--l-ink-3);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 18px;
 }
 .lc-wk-row[data-state="wait"] .lc-wk-tag {
@@ -5165,7 +5165,7 @@
   background: none;
   color: var(--l-ink-3);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -5183,7 +5183,7 @@
   height: 3.1em;
   overflow: hidden;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.55;
 }
 .lc-wk-slot > span {
@@ -5192,7 +5192,7 @@
 .lc-wk-slot[data-mono] > span {
   overflow: hidden;
   font-family: var(--l-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: pre;
 }
@@ -5282,7 +5282,7 @@ html[data-motion="quick"] .lc-dask {
   gap: 8px;
   min-width: 0;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-dask-who {
   min-width: 0;
@@ -5304,7 +5304,7 @@ html[data-motion="quick"] .lc-dask {
 .lc-dask-h {
   margin: 0;
   color: var(--l-ink);
-  font-size: 15.5px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -5324,7 +5324,7 @@ html[data-motion="quick"] .lc-dask {
   overscroll-behavior: contain;
   color: var(--l-ink-2);
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.6;
 }
 .lc-dask-l {
@@ -5368,7 +5368,7 @@ html[data-motion="quick"] .lc-dask {
   display: grid;
   gap: 3px;
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-dask-fields > div {
   display: flex;
@@ -5395,7 +5395,7 @@ html[data-motion="quick"] .lc-dask {
   flex-wrap: wrap;
   gap: 5px 16px;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-dask-fact {
   display: inline-flex;
@@ -5450,7 +5450,7 @@ html[data-motion="quick"] .lc-dask {
   padding: 0;
   list-style: none;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-dask-next > li {
   display: flex;
@@ -5481,7 +5481,7 @@ html[data-motion="quick"] .lc-dask {
   border-radius: 5px;
   background: color-mix(in oklab, currentColor 13%, transparent);
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 18px;
 }
@@ -5498,7 +5498,7 @@ html[data-motion="quick"] .lc-dask {
   background: none;
   color: var(--l-ink-3);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -5524,7 +5524,7 @@ html[data-motion="quick"] .lc-dask {
   min-width: 0;
   overflow: hidden;
   color: var(--l-ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5545,7 +5545,7 @@ html[data-motion="quick"] .lc-dask {
   background: var(--l-ink);
   color: var(--lc-paper);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
@@ -6055,7 +6055,7 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   min-width: 0;
   height: 26px;
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 26px;
   text-overflow: ellipsis;
@@ -6141,7 +6141,7 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   gap: 8px;
   min-width: 0;
   height: 22px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-2);
   animation: lc-row-in 180ms ease-out backwards;
 }
@@ -6207,7 +6207,7 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   margin: 0;
   padding: 8px 12px;
   font-family: var(--l-font-sans, inherit);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-br-hint {
   box-sizing: border-box;
@@ -6291,4 +6291,136 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* ---------- 0.2.7: the Session surface's rows, as the board draws them ---------- */
+.lc-sinfo-v {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+button.lc-sinfo-go {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.lc-sinfo-go:disabled {
+  cursor: default;
+}
+.lc-sinfo-bar {
+  height: 4px;
+  margin: 2px 0 6px;
+  border-radius: 2px;
+  background: var(--l-wash-2);
+  overflow: hidden;
+}
+.lc-sinfo-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--l-ink-3);
+  transition: width 500ms ease;
+}
+.lc-sinfo-chip {
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--l-wash-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.lc-sinfo-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--l-ok);
+}
+.lc-sinfo-dot[data-state="running"] {
+  background: var(--l-warn);
+}
+.lc-sinfo-dot[data-state="fail"] {
+  background: var(--l-danger);
+}
+/* A connection's switch for this session: off a wash with a grey knob, on ink with a paper knob at the right. */
+.lc-sinfo-switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-wash-2);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.lc-sinfo-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+  transition: transform 150ms ease, background 150ms ease;
+}
+.lc-sinfo-switch[aria-checked="true"] {
+  background: var(--l-ink);
+}
+.lc-sinfo-switch[aria-checked="true"]::after {
+  background: var(--lc-paper);
+  transform: translateX(12px);
+}
+
+/* ---------- 0.2.7, second pass: one plain column, plain rows ---------- */
+/* The Reviewer in the session's bar is a control: 13 regular. */
+.lc-verdict {
+  font-weight: 400;
+}
+/* The Session surface's rows: a row that is a button (Context, the files changed) is 13 like the
+   rest and starts on the same edge, without the button's own padding. A section head's right-hand
+   value is regular; the head's name keeps 500. */
+button.lc-sinfo-go {
+  padding: 0;
+  font-size: 13px;
+}
+.lc-sinfo-card .lc-pop-head,
+.lc-sinfo-card .lc-pop-head :is(.l-num, .lc-quiet) {
+  font-weight: 400;
+}
+.lc-sinfo-chip {
+  font-weight: 400;
+}
+/* The guide: each surface a plain row (icon, name, one-line note, key at the right), no fill,
+   no ring, no tile behind the icon; a wash as you point at it, at an 8px corner. */
+.lc-spick-b {
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: none;
+  box-shadow: none;
+  transition: background 140ms ease;
+}
+@media (hover: hover) {
+  .lc-spick-b:hover {
+    background: var(--l-wash);
+    box-shadow: none;
+  }
+}
+.lc-spick-i {
+  width: 20px;
+  height: 20px;
+  border-radius: 0;
+  background: none;
+}
+.lc-spick-grid {
+  gap: 2px;
 }

@@ -18,6 +18,11 @@
   - a Fix from Checks fixes the named finding in the named frame;
   - an ask that says dark, night or light turns the selected frame to the other light.
 
+  In a pair, the lead draws the first drawing's frames itself but hands one that only follows a
+  pattern (Dark / Today, Phone / Today at night) to its sidekick through Liner Code's sidekick tool,
+  as the design note tells a real lead to; the Demo's sidekick, given that brief, copies the frame
+  and writes it in parts, so the canvas shows the sidekick on it (drawBrief).
+
   Frames are found by their exact id or name. design_built goes through Liner Code's own tools, the
   same door as demo.ts's design_show. The frames are copies of docs/demo/foreshore/ beside this file
   (demo-foreshore/): foreshore.css inlined, fonts from Google Fonts as they were.
@@ -28,6 +33,8 @@ import type { DesignFile, DesignFrame } from "../../../contracts/src/index.ts";
 import { designDir, inDesign } from "../canvas.ts";
 import { addressable, applyOps, attr, elements, outline, parse, type El } from "../canvas-html.ts";
 import { atomic, inside, leanFile, noLinks, safeSlug } from "../lean.ts";
+import { PAIR_ENV } from "../liner-tools.ts";
+import { sidekickTitle } from "../sidekick.ts";
 import type { OpenOptions, TurnSink } from "./types.ts";
 
 /** The sample's files, shipped with the engine. */
@@ -246,7 +253,8 @@ export async function drawTides(o: OpenOptions, text: string, sink: TurnSink, si
   if (/^Draw (?:3 more ways|another way) of “/.test(ask)) return takes(c, ask, file);
   if (/^Fix (?:this check in|these \d* ?checks? on the canvas)/.test(ask)) return fix(c, ask, file);
   if (drawn && /\b(?:dark|night|light)\b/i.test(ask)) return light(c, text, ask, file!);
-  if (!drawn) return drawAll(c, file, ask);
+  // A pair's lead (only it is offered the sidekick tool) hands the night chart over.
+  if (!drawn) return drawAll(c, file, ask, o.mcp?.env[PAIR_ENV] === "1");
   await think(sink, `${t}-r`, `"${ask.split("\n")[0].slice(0, 80)}": the tide tables are drawn already, and that's an ask the Demo has no script for.`, signal);
   await say(sink, `${t}-a`, "The tide tables are on the canvas already. I'm the Demo, so I can do what the canvas's own buttons ask: Build frames into the sample project, Update code or Bring it into the frame, Send to code from a live frame, 3 more like this, Fix a check, or turn a frame to night or day. I didn't change anything this time.", signal);
   done(c, 1800, 300);
@@ -265,20 +273,36 @@ function whatIdDo(ask: string) {
 
 // The first drawing.
 
-async function drawAll(c: Ctx, had: DesignFile | null, ask: string) {
+/** The frame a Demo pair's lead hands its sidekick: Phone / Today at night only follows a frame already drawn. */
+export const HANDED = "dark-today";
+
+async function drawAll(c: Ctx, had: DesignFile | null, ask: string, pair = false) {
   const { o, sink, signal, t, slug, rel, gap } = c;
   // The lean: the folder's own when there is one. With none, a DESIGN.md is written only when the ask says to.
   const lean = leanFile(o.cwd);
   const write = !lean && /\bDESIGN\.md\b/i.test(ask);
   const leanRel = lean?.path ?? "DESIGN.md";
-  await think(sink, `${t}-r`, `A home screen for the tide tables, on the canvas. ${lean ? "I'll read the lean first, then draw" : write ? `I'll write ${leanRel} first, as asked, then draw` : "There's no lean here, so I'll draw in Foreshore's own look"} the frames one by one: the desktop day, the brand board, the phone screens, the night chart and the launch page.`, signal);
+  await think(sink, `${t}-r`, `A home screen for the tide tables, on the canvas. ${lean ? "I'll read the lean first, then draw" : write ? `I'll write ${leanRel} first, as asked, then draw` : "There's no lean here, so I'll draw in Foreshore's own look"} the frames one by one: the desktop day, the brand board, the phone screens, ${pair ? "and the launch page. The night chart is Phone / Today at night, so it follows a pattern: my sidekick draws that one." : "the night chart and the launch page."}`, signal);
+  const first = lean ? "Read the lean" : write ? `Write ${leanRel}` : "Settle the look";
+  const stage = (n: number, from: number, to: number) => (n > to ? "completed" : n > from ? "in_progress" : "pending");
   const plan = (n: number) =>
-    sink.plan([
-      { title: lean ? "Read the lean" : write ? `Write ${leanRel}` : "Settle the look", status: n > 0 ? "completed" : "in_progress" },
-      { title: "Draw the desktop and the brand board", status: n > 2 ? "completed" : n > 0 ? "in_progress" : "pending" },
-      { title: "Draw the phone screens and the night chart", status: n > 6 ? "completed" : n > 2 ? "in_progress" : "pending" },
-      { title: "Draw the launch page", status: n > 7 ? "completed" : n > 6 ? "in_progress" : "pending" },
-    ]);
+    sink.plan(
+      pair
+        ? [
+            { title: first, status: n > 0 ? "completed" : "in_progress" },
+            { title: "Draw the desktop and the brand board", status: stage(n, 0, 2) },
+            { title: "Draw the phone screens", status: stage(n, 2, 5) },
+            { title: "Draw the launch page", status: stage(n, 5, 6) },
+            { title: "Hand the night chart to the sidekick", status: stage(n, 6, 7) },
+            { title: "Look at what it drew", status: stage(n, 7, 8) },
+          ]
+        : [
+            { title: first, status: n > 0 ? "completed" : "in_progress" },
+            { title: "Draw the desktop and the brand board", status: stage(n, 0, 2) },
+            { title: "Draw the phone screens and the night chart", status: stage(n, 2, 6) },
+            { title: "Draw the launch page", status: stage(n, 6, 7) },
+          ],
+    );
   plan(0);
   let wrote = false;
   if (lean || write) {
@@ -313,6 +337,7 @@ async function drawAll(c: Ctx, had: DesignFile | null, ask: string) {
   plan(1);
   let n = 1;
   for (const s of TIDE_FRAMES) {
+    if (pair && s.id === HANDED) continue;
     const have = file.frames.find((f) => f.name === s.name) ?? taken.get(s.name);
     const id = have?.id ?? s.id;
     const path = have?.path ?? `frames/${id}.html`;
@@ -338,6 +363,19 @@ async function drawAll(c: Ctx, had: DesignFile | null, ask: string) {
     sink.tool({ ...call, status: "done", output: `${s.w} × ${s.h}${s.night ? ", the night chart" : ""}${taken.get(s.name)?.id === id ? `, into the empty “${taken.get(s.name)!.name}”` : ""}` });
     plan(++n);
   }
+  if (pair) {
+    const handed = await handOver(c, file, lean ? leanRel : undefined, { dx, dy });
+    plan(8);
+    const looked = handed && (await lookAt(c, handed));
+    plan(9);
+    await say(
+      sink,
+      `${t}-a`,
+      `The tide tables are on the canvas: ${looked ? "seven" : "six"} frames in “${file.title}”. I drew Desktop / Today, the brand board, the three phone screens and the launch page, the day drawn the way a sea chart draws a coast. ${looked ? `Dark / Today followed a pattern already set, so my sidekick drew it from Phone / Today: I read the frame it wrote, and it's the night chart, every data-l id kept.` : `I handed Dark / Today to my sidekick, but ${handed ? "the frame it wrote isn't Phone / Today at night" : "it didn't finish"}, so the night chart isn't drawn yet. Ask again and I'll draw the frames once more and hand Dark / Today to my sidekick again.`}\n\n${lean ? `I followed ${leanRel}: steps of 4, corners 4, and magenta only for now.` : wrote ? `I wrote ${leanRel} as you asked, Foreshore's lean, and followed it: steps of 4, corners 4, and magenta only for now.` : "There's no lean here, so I drew it in Foreshore's own look: steps of 4, corners 4, and magenta only for now."} Select any part of a frame and say what should change.`,
+      signal,
+    );
+    return done(c, 5600, 13200);
+  }
   plan(8);
   await say(
     sink,
@@ -346,6 +384,123 @@ async function drawAll(c: Ctx, had: DesignFile | null, ask: string) {
     signal,
   );
   done(c, 5200, 14800);
+}
+
+// A pair on the canvas: the lead's hand-over, and the sidekick's frame.
+
+/**
+  The brief a Demo lead writes for a frame that follows another: everything the sidekick needs, by
+  path, since it sees none of the design note (the folder, the frame to copy, the lean, the frame to
+  make, the data-l ids), and done_when as what design_shot should show.
+*/
+export function frameBrief(rel: string, to: { name: string; path: string; w: number; h: number; x: number; y: number }, from: { name: string; path: string }, lean?: string) {
+  return {
+    brief: [
+      `Draw ${to.name} in the design folder ${rel}/: ${to.path}, ${to.w} × ${to.h}, a copy of ${from.name} (${from.path}) in the night chart's colours, with class "night" on <html>.`,
+      lean ? `The lean is ${lean}: keep to it.` : "",
+      `Write the frame's file, then add it to ${rel}/design.json as “${to.name}” at x ${to.x}, y ${to.y}, beside the phones. Every data-l id stays as it is in the copy; change nothing else.`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    done_when: `design_shot of ${to.name} shows ${from.name}'s screen in the night colours, and nothing else changed.`,
+  };
+}
+const FRAME_BRIEF = /^Draw (.+?) in the design folder \.liner\/designs\/([a-z0-9-]+)\/: (frames\/[a-z0-9-]+\.html), (\d+) × (\d+), a copy of (.+?) \((frames\/[a-z0-9-]+\.html)\)/m;
+/** A brief to draw a frame on the canvas, as frameBrief writes one: the Demo's sidekick draws it (drawBrief) instead of its code brief. */
+export const isFrameBrief = (text: string) => FRAME_BRIEF.test(text);
+
+const idsOf = (html: string) => new Set([...html.matchAll(/\sdata-l="([^"]*)"/g)].map((m) => m[1]));
+
+/** The lead hands the night chart to its sidekick through Liner Code's own sidekick tool, the call any lead makes, and waits. Returns the frame when the brief finished. */
+async function handOver(c: Ctx, file: DesignFile, lean: string | undefined, at: { dx: number; dy: number }) {
+  const { o, sink, signal, t, slug, rel } = c;
+  const s = TIDE_FRAMES.find((x) => x.id === HANDED)!;
+  const now = readIndex(o.cwd, slug) ?? file;
+  const from = now.frames.find((f) => f.name === "Phone / Today" && f.kind === "drawn");
+  if (!from) return null;
+  const have = now.frames.find((f) => f.name === s.name);
+  const id = have?.id ?? s.id;
+  const to = { name: s.name, path: have?.path ?? `frames/${id}.html`, w: s.w, h: s.h, x: have?.x ?? s.x + at.dx, y: have?.y ?? s.y + at.dy };
+  await say(sink, `${t}-h`, `${s.name} is Phone / Today at night: the pattern is set, so my sidekick draws it while I wait. It sees nothing of the canvas but my brief, so the brief says where everything is.\n\n`, signal);
+  const args = frameBrief(rel, to, { name: from.name, path: from.path ?? `frames/${from.id}.html` }, lean);
+  const call = { key: `${t}-sk`, tool: "mcp__liner__sidekick", toolKind: "task" as const, title: sidekickTitle(args.brief), input: JSON.stringify(args) };
+  sink.tool({ ...call, status: "running" });
+  const r = await liner(o, "sidekick", args, signal);
+  sink.tool({ ...call, status: r.ok ? "done" : "failed", output: r.said.slice(0, 4000) });
+  return r.ok && /finished the brief/.test(r.said) ? { id, path: to.path, name: s.name, from } : null;
+}
+
+/** The lead reads back the frame its sidekick drew before it says so: the night chart, with the copy's data-l ids. */
+async function lookAt(c: Ctx, f: { id: string; path: string; name: string; from: DesignFrame }) {
+  let ok = false;
+  await step(c, "Read", "read", `Read ${f.name}`, `${c.rel}/${f.path}`, () => {
+    const html = readFrameOf(c.o.cwd, c.slug, f);
+    const mine = idsOf(html);
+    ok = isNight(html) && [...idsOf(readFrameOf(c.o.cwd, c.slug, f.from))].every((id) => mine.has(id));
+    return ok ? "The night chart, with every data-l id of Phone / Today" : "Not Phone / Today at night";
+  });
+  return ok;
+}
+
+/**
+  The Demo's sidekick on a frame brief (frameBrief's words): it reads the frame to copy, writes the
+  new one in parts (piecesOf, scripts only with the last) so the canvas shows it there while it
+  works, puts it in design.json where the brief says, reads it back, and reports. Only in its sample
+  project or a design on its own, and never in a session that only reads, as for the lead.
+*/
+export async function drawBrief(o: OpenOptions, text: string, sink: TurnSink, signal: AbortSignal, t: string, gap = 1100) {
+  pace = gap ? 1 : 0;
+  const m = FRAME_BRIEF.exec(text)!;
+  const [, name, slug, path, w, h, fromName, fromPath] = m;
+  const rel = `.liner/designs/${slug}`;
+  const c: Ctx = { o, sink, signal, t, slug, rel, gap, n: 0 };
+  const where = /\bat x (-?\d+), y (-?\d+)/.exec(text);
+  await think(sink, `${t}-r`, `The brief: ${name} as a copy of ${fromName} at night. Read the copy, write the frame in parts, add it to design.json, read it back, report.`, signal);
+  if (o.access === "read" || (!isSample(o.cwd) && !o.designOnItsOwn)) {
+    return say(sink, `${t}-a`, `Not done: ${o.access === "read" ? "this session only reads" : "this isn't the Demo's sample project or a design on its own"}, so I didn't draw ${name}.\n\nFiles: none.\nChecks: none.\nLeft: the whole frame.`, signal);
+  }
+  let src = "";
+  await step(c, "Read", "read", `Read ${fromName}`, `${rel}/${fromPath}`, () => {
+    src = readFrameOf(o.cwd, slug, { id: fromPath.slice(7, -5), path: fromPath });
+    if (!src.trim()) throw new Error(`${fromPath} is empty or isn't there.`);
+    return `${fromName}, ${src.length} characters`;
+  });
+  const id = path.slice(7, -5);
+  // The frame's file only through the checks: frames/<id>.html in the design's folder, no link on the way.
+  let abs = "";
+  try {
+    abs = frameFile(o.cwd, slug, { id, path });
+  } catch {
+    abs = "";
+  }
+  if (!src || !abs) {
+    done(c, 1400, 200);
+    return say(sink, `${t}-a`, `Not done: I couldn't read ${fromPath}${abs ? "" : ` or write ${path}`}, so ${name} isn't drawn.\n\nFiles: none.\nChecks: none.\nLeft: the whole frame.`, signal);
+  }
+  const night = isNight(src) ? src : toNight(src);
+  const pieces = piecesOf(night);
+  const call = { key: `${t}-w`, tool: "Write", toolKind: "write" as const, title: `Draw ${name}`, path: `${rel}/${path}` };
+  sink.tool({ ...call, status: "running", input: JSON.stringify({ file_path: `${rel}/${path}`, size: `${w} × ${h}` }) });
+  await pause(gap * 0.3, signal);
+  atomic(abs, pieces[0]);
+  const file = readIndex(o.cwd, slug) ?? fresh(slug);
+  const had = file.frames.find((f) => f.id === id);
+  const page = had?.page ?? file.pages[0]?.id ?? "p1";
+  const frame: DesignFrame = { ...(had ?? {}), id, page, name, kind: "drawn", path, x: had?.x ?? Number(where?.[1] ?? 0), y: had?.y ?? Number(where?.[2] ?? 0), w: Number(w), h: Number(h), by: { agent: "demo", name: "Demo" } };
+  writeIndex(o.cwd, slug, { ...file, frames: had ? file.frames.map((f) => (f.id === id ? frame : f)) : [...file.frames, frame] });
+  for (const piece of pieces.slice(1)) {
+    await pause(gap * 0.5, signal);
+    atomic(abs, piece);
+  }
+  sink.tool({ ...call, status: "done", output: `${w} × ${h}, ${fromName} at night` });
+  let kept = false;
+  await step(c, "Read", "read", `Read ${name}`, `${rel}/${path}`, () => {
+    const mine = idsOf(readFrameOf(o.cwd, slug, { id, path }));
+    kept = [...idsOf(src)].every((x) => mine.has(x));
+    return kept ? "class night on <html>, every data-l id of the copy kept" : "some of the copy's data-l ids are missing";
+  });
+  sink.usage({ inputTokens: 2400, outputTokens: 380, cacheReadTokens: 1100, costUsd: 0 });
+  await say(sink, `${t}-a`, `Done. ${name} is drawn in ${rel}/${path}: a copy of ${fromName} with class night on <html>, ${kept ? "every data-l id kept" : "but some of its data-l ids didn't survive"}, and it's in design.json at x ${frame.x}, y ${frame.y}.\n\nFiles: ${rel}/${path}, ${rel}/design.json.\nChecks: read the frame back. I didn't take a design_shot: that look is yours.\nLeft: nothing.`, signal);
 }
 
 // Build, Update code, Bring it into the frame.

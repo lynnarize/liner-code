@@ -107,7 +107,7 @@
   border: 0;
   background: none;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   color: inherit;
   cursor: pointer;
@@ -153,7 +153,7 @@
   gap: 1px;
 }
 .lc-ao-ways b {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
 }
 .lc-ao-ways small {
@@ -223,7 +223,7 @@ button.lc-ao-open {
   min-width: 0;
 }
 .lc-ao-open b {
-  font-size: 15.5px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--l-ink);
 }
@@ -378,7 +378,7 @@ button.lc-ao-open {
 .lc-ao-sheet dl {
   display: grid;
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .lc-ao-sheet dl > div {
   display: grid;
@@ -421,7 +421,7 @@ button.lc-ao-open {
   padding: 12px 14px;
   border-radius: 12px;
   background: var(--lc-well);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .lc-ao-files ul {
   display: grid;
@@ -446,7 +446,7 @@ button.lc-ao-open {
 }
 .lc-ao-sheet footer > .lc-quiet {
   flex: 1;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.4;
 }
 .lc-ao-remove {
@@ -482,7 +482,7 @@ button.lc-ao-open {
 }
 .lc-ao-from > p {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 15px;
   line-height: 22px;
   color: var(--l-ink);
 }
@@ -490,7 +490,7 @@ button.lc-ao-open {
   height: 44px;
   padding: 0 14px;
   border-radius: 12px;
-  font-size: 14.5px;
+  font-size: 15px;
 }
 .lc-ao-from > .lc-input:focus {
   box-shadow: inset 0 0 0 1.5px var(--l-accent);
@@ -515,7 +515,7 @@ button.lc-ao-open {
   border-radius: 6px;
   background: none;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--l-ink-3);
   cursor: pointer;
 }
@@ -527,7 +527,7 @@ button.lc-ao-open {
 }
 .lc-ao-from > p.lc-ao-about {
   margin: -6px 0 0;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
   color: var(--l-ink-2);
 }
@@ -537,7 +537,7 @@ button.lc-ao-open {
   padding: 12px 14px;
   border-radius: 14px;
   background: color-mix(in oklab, var(--l-warn) 10%, transparent);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 20px;
   color: var(--l-warn-text);
 }

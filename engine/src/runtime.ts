@@ -37,6 +37,7 @@ import { fingerprint, type Addons, type Connection } from "./addons.ts";
 import { briefOf } from "./agents.ts";
 import { modeNote } from "./creator.ts";
 import { designNote, type DesignMark } from "./lean.ts";
+import { frameRevs, framesChanged } from "./canvas.ts";
 import { memoryNote, titleFrom } from "./memory.ts";
 import { commandRisk, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
@@ -595,21 +596,23 @@ export class Runtime {
     return { session, fresh: !resume && !forking, switched: Boolean(saved) && !saved.startsWith(`${r.provider}:`) };
   }
 
-  /** The connections a thread's tool gets: your add-ons for its project. A side chat gets them too; it only reads. */
+  /** The connections a thread's tool gets: your add-ons for its project, less those switched off for it. A side chat gets them too; it only reads. */
   private connectionsOf(t: Thread): Connection[] {
-    return this.addons?.connections(t.projectId, this.keys) ?? [];
+    const all = this.addons?.connections(t.projectId, this.keys) ?? [];
+    return t.connectionsOff?.length ? all.filter((c) => !t.connectionsOff!.includes(c.name)) : all;
   }
 
   /**
     Your add-ons changed: each open session gets its connections now where its tool takes them in
     place (Claude Code), and is reopened otherwise: at once when it's idle, for its next turn when it's
     working. Says, for each thread, whether they're there now or from its next turn: for the session
-    working its turn, when there is one.
+    working its turn, when there is one. `only`: one session's connections changed (thread.update), so only its own.
   */
-  async relink(): Promise<Map<string, "now" | "next">> {
+  async relink(only?: string): Promise<Map<string, "now" | "next">> {
     const out = new Map<string, "now" | "next">();
     for (const [key, l] of [...this.live]) {
       const threadId = key.slice(0, key.indexOf(":"));
+      if (only !== undefined && threadId !== only) continue;
       const t = this.store.threads.find((x) => x.id === threadId);
       if (!t) continue;
       const connections = this.connectionsOf(t);
@@ -717,7 +720,7 @@ export class Runtime {
       // A steer the tool couldn't take (its request failed, or the turn ended first) isn't lost: it goes
       // next, from the queue (T3 Code: SteeringCompletion.integration.test.ts).
       // After Stop nothing is left of that turn to read a steer: it goes next, like any message. So does a command, which is no word to the agent.
-      if (mode === "steer" && !this.halted.has(threadId) && !commandOf({ text, files, anchor }) && running?.session?.steer && (await running.session.steer([this.designOf(threadId, design), anchor ? aboutLines(anchor, text) : text, attachNote(files ?? [])].filter(Boolean).join("\n\n"), files))) {
+      if (mode === "steer" && !this.halted.has(threadId) && !commandOf({ text, files, anchor }) && running?.session?.steer && (await running.session.steer([this.designOf(threadId, design, undefined, running.agentId), anchor ? aboutLines(anchor, text) : text, attachNote(files ?? [])].filter(Boolean).join("\n\n"), files))) {
         store.putItem(threadId, { kind: "user", id: uid("it"), turn: running.turn, at: Date.now(), text, steer: true, ...(anchor ? { anchor } : {}), ...(files?.length ? { files } : {}), ...(shown ? { shown } : {}) });
         return;
       }
@@ -731,12 +734,16 @@ export class Runtime {
     return this.hold(threadId, () => this.dispatch(threadId, text, anchor, files, design, shown));
   }
 
-  /** The "## Design" note of a message sent from Liner Design; "" for any other. A note that can't be read is left out, never the message. */
-  private designOf(threadId: string, mark: DesignMark | undefined, cwd?: string) {
+  /**
+    The "## Design" note of a message sent from Liner Design; "" for any other. A note that can't be read is left out, never the message.
+    `agentId`: whose turn it goes to. A pair's lead is told what to hand its sidekick on the canvas; the sidekick only ever gets briefs.
+  */
+  private designOf(threadId: string, mark: DesignMark | undefined, cwd?: string, agentId?: string) {
     if (!mark) return "";
     try {
       const t = this.store.thread(threadId);
-      return designNote(cwd ?? t.worktree?.path ?? this.store.project(t.projectId).path, mark, this.env);
+      const lead = (agentId ?? t.agent) === t.agent && this.pairOf(t);
+      return designNote(cwd ?? t.worktree?.path ?? this.store.project(t.projectId).path, mark, this.env, lead ? { sidekick: this.labelOf(t.sidekick!) } : {});
     } catch (e) {
       console.error("[engine] design note", e);
       return "";
@@ -961,7 +968,7 @@ export class Runtime {
 
     let prompt = o.prompt ? o.prompt : o.anchor ? aboutLines(o.anchor, text) : text;
     // Sent from Liner Design: where the design is, its frames, the lean and what's selected, before the words. A side chat and a fix round don't take it.
-    const designed = o.design && show && !o.wake && !o.prompt && !t.sideOf && !COMPACT.test(text) ? this.designOf(threadId, o.design, cwd) : "";
+    const designed = o.design && show && !o.wake && !o.prompt && !t.sideOf && !COMPACT.test(text) ? this.designOf(threadId, o.design, cwd, agentId) : "";
     if (designed) prompt = `${designed}\n\n${prompt}`;
     // Your attachments are named only in what the agent is sent; the timeline shows them as files.
     if (o.files?.length) prompt = `${prompt}\n\n${attachNote(o.files)}`;
@@ -1093,10 +1100,12 @@ export class Runtime {
     const m = kept?.kind === "turn" ? kept : marker;
     const waited = (m.waited ?? 0) + (m.waitingSince ? Math.max(0, Date.now() - m.waitingSince) : 0);
     const { waitingSince: _open, ...settled } = m;
-    store.putItem(threadId, { ...settled, status: stopped ? "stopped" : errored ? "error" : "done", seconds: Math.max(0, seconds - waited / 1000), ...(waited ? { waited } : {}) });
+    // Its cost on its mark is its usage record's own number (logUsage below): none when the tool reported none.
+    const spent = sink.spent();
+    store.putItem(threadId, { ...settled, status: stopped ? "stopped" : errored ? "error" : "done", seconds: Math.max(0, seconds - waited / 1000), ...(waited ? { waited } : {}), ...(spent.costUsd > 0 ? { costUsd: spent.costUsd } : {}) });
 
     t = store.thread(threadId);
-    this.logUsage(t, agentId, sink.spent(), seconds);
+    this.logUsage(t, agentId, spent, seconds);
     // A side chat starts with a copy of its session's timeline; only its own turns can wait on you.
     const asking = store.timeline(threadId).some((x) => x.turn > (t.sideFrom ?? 0) && (x.kind === "proposal" || x.kind === "question" || x.kind === "approval") && x.state === "asking");
     const limited = sink.limited();
@@ -1686,6 +1695,8 @@ export class Runtime {
     let files: FileChange[] | null | undefined;
     /** Whether its turn was sent: one stopped before that did nothing at all. */
     let began = false;
+    /** The design files' frames before it began (canvas.ts frameRevs), to tell what it drew. */
+    let framesFrom: ReturnType<typeof frameRevs> | undefined;
     /** The agent it tried to send of its own, by its task, which stopped the brief. */
     let sentAgent: string | undefined;
     // Its approvals go through the lead's rules and cards (the same access, the same "don't ask again").
@@ -1789,6 +1800,8 @@ export class Runtime {
       git = await isRepo(cwd);
       const tag = `${threadId}/${turn}-${uid("sk")}`;
       from = git ? await capture(cwd, `${tag}-before`) : null;
+      // The canvas's frames, which the snapshot leaves out, are measured on their own.
+      framesFrom = frameRevs(cwd);
       ({ session } = await this.session(store.thread(threadId), agentId, cwd, true));
       brief.session = session;
       run.steerable = Boolean(session.steer);
@@ -1826,14 +1839,15 @@ export class Runtime {
       const to = await capture(cwd, `${threadId}/${turn}-${uid("sk")}-after`).catch(() => null);
       files = to ? await changes(cwd, from, to, { turn: true }).catch(() => null) : null;
     }
+    const frames = framesFrom && !unstarted ? framesChanged(framesFrom, frameRevs(cwd)) : [];
     const seconds = (Date.now() - started) / 1000;
     const how: BriefOutcome["how"] = brief.by === "cap" ? "capped" : brief.by === "agent" ? "agent" : brief.by === "replaced" ? "replaced" : abort.signal.aborted ? "stopped" : limited ? "limited" : problem ? "failed" : "done";
     const report = said.filter((x) => x.trim()).at(-1)?.trim() ?? "";
     store.logUsage({ at: Date.now(), threadId, projectId: t.projectId, agent: "sidekick", provider, model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, cacheReadTokens: spent.cacheReadTokens, costUsd: spent.costUsd, seconds });
     for (const s of steps) if (s.status === "running") s.status = how === "done" ? "done" : "failed";
     const state = how === "done" ? "done" : how === "failed" || how === "limited" ? "failed" : "stopped";
-    row.paint({ ...run, steps: steps.slice(-40), state, now: undefined, report: unstarted ? "Stopped before it started." : report || (how === "failed" ? problem : how === "agent" ? "Stopped: a sidekick may not send agents of its own." : limited) || undefined, files: files ?? undefined }, true, how === "done" ? "done" : "failed");
-    return { how, who, seconds, report, files: files ?? null, problem: how === "limited" ? limited : problem, ...(b.capMs === undefined ? {} : { capMs: b.capMs }), ...(unstarted ? { unstarted: true } : {}), ...(sentAgent ? { agent: sentAgent } : {}) };
+    row.paint({ ...run, steps: steps.slice(-40), state, now: undefined, report: unstarted ? "Stopped before it started." : report || (how === "failed" ? problem : how === "agent" ? "Stopped: a sidekick may not send agents of its own." : limited) || undefined, files: files ?? undefined, ...(frames.length ? { frames } : {}) }, true, how === "done" ? "done" : "failed");
+    return { how, who, seconds, report, files: files ?? null, ...(frames.length ? { frames } : {}), problem: how === "limited" ? limited : problem, ...(b.capMs === undefined ? {} : { capMs: b.capMs }), ...(unstarted ? { unstarted: true } : {}), ...(sentAgent ? { agent: sentAgent } : {}) };
   }
 
   /**

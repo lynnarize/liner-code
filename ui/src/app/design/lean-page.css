@@ -6,7 +6,7 @@
 
 .ld-lp-mono {
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 /* ---------- the page, in the canvas's place ---------- */
@@ -69,7 +69,7 @@ html[data-motion="quick"] .ld-lp {
   font-weight: 500;
 }
 .ld-lp-note {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 
@@ -120,7 +120,7 @@ html[data-motion="quick"] .ld-lp {
 .ld-lp-tile-d {
   display: -webkit-box;
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--l-ink-2);
   -webkit-box-orient: vertical;
@@ -155,7 +155,7 @@ html[data-motion="quick"] .ld-lp {
   overflow: auto;
   padding-bottom: 24px;
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 22px;
   scrollbar-width: thin;
 }
@@ -306,7 +306,7 @@ html[data-motion="quick"] .ld-lp {
   color: var(--l-ink);
 }
 .ld-lp-sw > small {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .ld-lp-two {
@@ -330,7 +330,7 @@ html[data-motion="quick"] .ld-lp {
   border-bottom: 0;
 }
 .ld-lp-ty-n {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .ld-lp-ty-s {
@@ -340,11 +340,11 @@ html[data-motion="quick"] .ld-lp {
   color: var(--l-ink);
 }
 .ld-lp-nofont {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .ld-lp-ty-v {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .ld-lp-steps,
@@ -380,7 +380,7 @@ html[data-motion="quick"] .ld-lp {
 }
 .ld-lp-rules {
   margin: 4px 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.55;
   color: var(--l-ink-3);
 }
@@ -413,7 +413,7 @@ html[data-motion="quick"] .ld-lp {
   margin: 48px auto 0;
   max-width: 320px;
   text-align: center;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-3);
 }
 .ld-lp-empty > svg {
@@ -455,7 +455,7 @@ html[data-motion="quick"] .ld-lp {
 }
 .ld-skill-chip {
   font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .ld-skill-chip[aria-pressed="true"] {
   background: var(--lc-plate);
@@ -479,7 +479,7 @@ html[data-motion="quick"] .ld-lp {
   color: var(--l-ink);
 }
 .ld-brand > .lc-quiet {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
 }
 .ld-field {

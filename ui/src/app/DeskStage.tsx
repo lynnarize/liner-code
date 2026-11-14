@@ -5,14 +5,15 @@
   armed slides the Desk up as an area of its own. At the top of the Desk the same two scrolls
   up bring the question back. Pressing a cue does it in one.
 */
-import { useEffect, useRef, useState, type ReactNode, type WheelEvent } from "react";
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode, type WheelEvent } from "react";
 import type { Project } from "@contracts";
 import type { RunSettings } from "./Composer";
 import { Desk, useDeskCounts } from "./Desk";
 import { I } from "./icons";
 import { Num } from "./ui";
 
-type Props = { project: Project; settings: RunSettings; worktree: boolean; onOpen: (threadId: string) => void; children: ReactNode };
+/** `openRef` is handed the way to the Desk, for a row that opens it; `noCue` leaves out the cue at Home's foot (the composer is there). */
+type Props = { project: Project; settings: RunSettings; worktree: boolean; onOpen: (threadId: string) => void; children: ReactNode; openRef?: MutableRefObject<(() => void) | null>; noCue?: boolean };
 type Area = "ask" | "desk";
 type Dir = "down" | "up";
 
@@ -31,7 +32,7 @@ function scrollsItself(from: EventTarget | null, dir: Dir, stop: HTMLElement) {
   return false;
 }
 
-export function DeskStage({ project, settings, worktree, onOpen, children }: Props) {
+export function DeskStage({ project, settings, worktree, onOpen, children, openRef, noCue }: Props) {
   const [area, setArea] = useState<Area>("ask");
   const [armed, setArmed] = useState<Dir | null>(null);
   // The Desk mounts the first time it's opened and then stays, so an open case is still there when you come back.
@@ -53,6 +54,7 @@ export function DeskStage({ project, settings, worktree, onOpen, children }: Pro
     setArea(next);
     if (next === "desk") requestAnimationFrame(() => deskPage.current?.scrollTo({ top: 0 }));
   };
+  if (openRef) openRef.current = () => go("desk");
   const arm = (dir: Dir) => {
     armedAt.current = { dir, at: performance.now() };
     setArmed(dir);
@@ -96,7 +98,7 @@ export function DeskStage({ project, settings, worktree, onOpen, children }: Pro
     <div ref={stage} className="lc-desk-stage" data-area={area} data-armed={armed ?? undefined} onWheel={onWheel}>
       <div className="lc-desk-page lc-desk-page-ask" inert={area !== "ask" || undefined} aria-hidden={area !== "ask" || undefined}>
         {children}
-        <Cue dir="down" armed={armed === "down"} counts={counts} onPress={() => go("desk")} />
+        {!noCue && <Cue dir="down" armed={armed === "down"} counts={counts} onPress={() => go("desk")} />}
       </div>
       <div ref={deskPage} className="lc-desk-page lc-desk-page-desk" inert={area !== "desk" || undefined} aria-hidden={area !== "desk" || undefined}>
         <Cue dir="up" armed={armed === "up"} counts={counts} onPress={() => go("ask")} />

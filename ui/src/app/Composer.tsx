@@ -23,12 +23,12 @@ import { is } from "./keymap";
 import { mirror } from "./mdMirror";
 import { isPrompt, rpc, useEngine, useItems, useItemsWhere } from "./engine";
 import { I, ModelMark, type MarkKind } from "./icons";
-import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, isModelAgent, markOf, modelLabel, pairReady, plural, providerLabel, shortName, since, wayOf, whoOf, type Way } from "./model";
+import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, isModelAgent, markOf, modelLabel, pairReady, plural, providerLabel, shortName, since, toolMarkOf, wayOf, whoOf, type Way } from "./model";
 import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
 import { CostMini, costScale, PairCost } from "./PairCost";
 import { SideKeys } from "./TopBar";
-import { ContextMeter, Disc, LimitMeter, PanelHead, Pop, Row, Sep } from "./ui";
+import { Disc, PanelHead, Pop, Row } from "./ui";
 import * as os from "./os";
 import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
@@ -144,27 +144,6 @@ const branchesFor = (projectId: string) => {
   return gitCache.get(projectId)!;
 };
 
-/** Where a new session works: this checkout, a new worktree, or one that's already there. */
-function WhereRows({ project, git, onOpen, worktree, inWorktree, onPick }: { project: Project; git: RpcResult<"git.branches"> | null; onOpen: () => void; worktree: boolean; inWorktree?: { path: string }; onPick: (worktree: boolean, existing?: { path: string; branch?: string }) => void }) {
-  useEffect(onOpen, []);
-  const tilde = os.tilde;
-  return (
-    <>
-      <PanelHead>Where it runs</PanelHead>
-      <Row title="This checkout" note={tilde(project.path)} on={!worktree && !inWorktree} onPick={() => onPick(false)} />
-      <Row title="A new worktree" note="Its own branch and folder, so sessions never edit the same files" on={worktree && !inWorktree} onPick={() => onPick(true)} />
-      {git && git.worktrees.length > 0 && (
-        <>
-          <Sep />
-          <PanelHead>Or carry on in a worktree</PanelHead>
-          {git.worktrees.slice(0, 8).map((w) => (
-            <Row key={w.path} title={w.branch ?? "Detached"} note={`${tilde(w.path)}${w.threadId ? " · has a session" : ""}`} on={inWorktree?.path === w.path} icon={<I.branch size={12} />} onPick={() => onPick(false, { path: w.path, branch: w.branch })} />
-          ))}
-        </>
-      )}
-    </>
-  );
-}
 function BaseRows({ git, onOpen, current, onPick }: { git: RpcResult<"git.branches"> | null; onOpen: () => void; current?: string; onPick: (b: string | undefined) => void }) {
   useEffect(onOpen, []);
   if (!git) return <p className="l-shimmer lc-pop-note">Reading the branches</p>;
@@ -243,6 +222,57 @@ const AGENTS_TAB = "@agents";
 /** The tools whose models the picker lists: ready, with models, the Demo apart (it has a row of its own). */
 const toolsOf = (providers: ProviderInfo[]) => providers.filter((p) => p.available && p.adapter && p.models.length && p.id !== "demo");
 
+/**
+  The tool that runs the session (Claude Code, Codex, OpenCode), picked on its own beside where it
+  runs, as Devin does, and not inside the model list. Picking one starts with that tool's own
+  pair: its strongest model leading and its quickest helping, or its strongest alone when it has
+  one model ready. The box's picker then lists that tool's models.
+*/
+function ToolPick({ settings, onSettings }: { settings: RunSettings; onSettings: (p: Partial<RunSettings>) => void }) {
+  const providers = useEngine((s) => s.providers);
+  const agents = useEngine((s) => s.agents);
+  const picks = useEngine((s) => s.settings.picks);
+  const tools = useMemo(() => toolsOf(providers), [providers]);
+  if (settings.agent === "demo" || tools.length === 0) return null;
+  const now = splitModel(settings.model ?? agentOf(settings.agent, agents, providers).model).provider;
+  const tool = tools.find((t) => t.id === now);
+  return (
+    <Pop
+      label={`The tool that runs it: ${tool?.label ?? "another"}. Change it`}
+      menu
+      width={250}
+      triggerClass="lc-pb"
+      trigger={
+        <>
+          <ModelMark kind={toolMarkOf(now)} size={14} />
+          <span className="lc-strip-cap">{tool?.label ?? providerLabel(`${now}:`, providers)}</span>
+        </>
+      }
+    >
+      {(close) => (
+        <div className="lc-sb-menu">
+          {tools.map((t) => (
+            <Row
+              key={t.id}
+              title={t.label}
+              icon={<ModelMark kind={toolMarkOf(t.id)} size={14} />}
+              keepIcon
+              on={t.id === now}
+              onPick={() => {
+                close();
+                if (t.id === now) return;
+                const cast = castOf([t], { picks });
+                if (!cast) return;
+                onSettings({ agent: `@${cast.lead}`, sidekick: pairReady(cast) ? cast.sidekick : undefined, model: undefined });
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </Pop>
+  );
+}
+
 const toBase64 = (f: File) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -251,7 +281,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, onWorktree, base, onBase, inWorktree, onInWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -284,24 +314,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   // The lead: who you talk to, whose model the effort is for.
   const coder = agentOf(settings.agent, agents, providers);
   const model = settings.model ?? coder.model;
-  const shownModel = model;
   const lev = accessOf(settings.access);
   // Claude Code through another maker's API: its Auto can't run there, so it runs as Edits on its own (engine: claude.ts modeOf).
   const noAuto = model ? providers.find((p) => p.id === splitModel(model).provider)?.supports.auto === false : false;
-  // The plan windows of the tools this runs on (who you talk to first), when they report any.
-  const limits = useEngine((s) => s.limits);
-  const planOf = useMemo(
-    () =>
-      [...new Set([shownModel, model])].flatMap((ref) => {
-        const { provider, model: id } = splitModel(ref);
-        return limits.filter((l) => l.provider === provider && l.windows.length && (!l.models || id.startsWith(l.models)));
-      }).filter((l, i, all) => all.findIndex((x) => x.provider === l.provider) === i),
-    [limits, shownModel, model],
-  );
   const queue = thread?.queue ?? [];
   const usage = thread?.usage;
-  // Past the window can't be: that's a total an older version saved, not how full the context is.
-  const ctx = usage?.contextTokens && usage.contextWindow && usage.contextTokens <= usage.contextWindow ? usage.contextTokens / usage.contextWindow : undefined;
 
   const recall = useRef(-1);
   // The draft is kept per session (and Home's), a moment after you stop typing and when you leave.
@@ -740,8 +757,9 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       {whoNow.agent ? (
         <Disc agent={whoNow.agent} size={22} />
       ) : (
-        <span className="lc-who-marks" data-two={whoNow.marks.length > 1 || undefined}>
-          {whoNow.marks.map((k, i) => (
+        <span className="lc-who-marks">
+          {/* One mark, the lead's: the menu names both models of a pair. */}
+          {whoNow.marks.slice(0, 1).map((k, i) => (
             <span key={`${k}${i}`} className="lc-who-tile">
               <ModelMark kind={k} size={12} />
             </span>
@@ -749,7 +767,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         </span>
       )}
       <span className="lc-chip-name" title={whoNow.full !== whoNow.name ? whoNow.full : undefined}>
-        {whoName ?? whoNow.name}
+        {whoName ?? (settings.sidekick && settings.agent !== "demo" && !whoNow.agent ? "Fusion" : whoNow.name)}
       </span>
       {whoNow.agent && settings.sidekick && (
         <span className="lc-way-marks">
@@ -757,7 +775,6 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         </span>
       )}
       {compare.length > 0 && <span className="lc-chip-more">· {compare.length + 1} models</span>}
-      <I.chevD size={11} />
     </>
   );
   // A pair shows its Lead and Sidekick beside the rows, so the panel is wider then.
@@ -782,9 +799,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       triggerClass="lc-seg-b lc-access"
       trigger={
         <>
-          <LevelIcon size={14} />
+          <LevelIcon size={16} />
           <span className="lc-ctl-label">{lev.short}</span>
-          <I.chevD size={11} />
         </>
       }
     >
@@ -874,6 +890,21 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const attach = (
     <button type="button" className="lc-ctl-attach l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
       <I.attach size={16} />
+    </button>
+  );
+  const commandsBtn = (
+    <button
+      type="button"
+      className="lc-ctl-attach l-focus"
+      aria-label="Commands"
+      title={text.trim() && !text.startsWith("/") ? "Commands start a message: clear the box first" : "Commands"}
+      disabled={Boolean(text.trim()) && !text.startsWith("/")}
+      onClick={() => {
+        field.current?.focus();
+        if (!text.startsWith("/")) onType("/", 1);
+      }}
+    >
+      <I.slash size={16} />
     </button>
   );
 
@@ -1135,25 +1166,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
           {/* The controls sit in a tray of their own inside the text box, the same on Home and in a session: attach, then the choices, then Send. */}
           <div className="lc-card-row" ref={tray}>
             {attach}
+            {commandsBtn}
             <span className="lc-seg">
               <Pop label={`Who works on this: ${whoNow.full}. Change it`} side={variant === "home" ? "bottom" : "top"} width={pairShown ? 620 : 320} keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
                 {(close) => <WhoPanel project={project} settings={settings} onSettings={onSettings} compare={compare} onCompare={onCompare} onNewAgent={onNewAgent} close={close} />}
               </Pop>
               {effortPick && <span className="lc-seg-div" aria-hidden />}
               {effortPick}
-              {variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow && (
-                <>
-                  <span className="lc-seg-div" aria-hidden />
-                  <ContextMeter used={usage.contextTokens} max={usage.contextWindow} running={busy} onCompact={canCompact ? compactNow : undefined} limits={planOf} />
-                </>
-              )}
-              {/* The plan's windows join the context ring's pop; with no ring (Home) they keep a meter of their own. */}
-              {planOf.length > 0 && !(variant === "session" && ctx !== undefined && usage?.contextTokens && usage.contextWindow) && (
-                <>
-                  <span className="lc-seg-div" aria-hidden />
-                  <LimitMeter tools={planOf} />
-                </>
-              )}
               <span className="lc-seg-div" aria-hidden />
               {accessPick}
             </span>
@@ -1177,40 +1196,6 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
         {variant === "home" && (
           <div className="lc-strip">
             {stripStart ?? (<>
-            {project.git ? (
-              <Pop
-                label="Where it runs"
-                width={300}
-                triggerClass="lc-pb"
-                trigger={
-                  <>
-                    <I.folder size={13} />
-                    <span className="lc-strip-cap">{compare.length ? `${compare.length + 1} new worktrees` : inWorktree ? `The ${inWorktree.branch ?? "other"} worktree` : worktree ? "A new worktree" : "This checkout"}</span>
-                    <I.chevD size={11} />
-                  </>
-                }
-              >
-                {(close) => (
-                  <WhereRows
-                    project={project}
-                    git={git}
-                    onOpen={loadGit}
-                    worktree={Boolean(worktree)}
-                    inWorktree={inWorktree}
-                    onPick={(w, existing) => {
-                      onWorktree?.(w);
-                      onInWorktree?.(existing);
-                      close();
-                    }}
-                  />
-                )}
-              </Pop>
-            ) : (
-              <span className="lc-strip-note">
-                <I.folder size={13} />
-                <span className="lc-strip-cap">{os.tilde(project.path)}</span>
-              </span>
-            )}
             {worktree && !inWorktree && project.git && !compare.length ? (
               // A new worktree starts from a branch you pick: this one by default.
               <Pop
@@ -1221,7 +1206,6 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                   <>
                     from <I.branch size={13} />
                     <span className="lc-mono lc-strip-cap">{base ?? project.branch ?? "HEAD"}</span>
-                    <I.chevD size={11} />
                   </>
                 }
               >
@@ -1230,12 +1214,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             ) : (
               (inWorktree?.branch ?? project.branch) && (
                 <span className="lc-strip-note">
-                  on <I.branch size={13} />
+                  <I.branch size={13} />
                   <span className="lc-mono lc-strip-cap">{inWorktree?.branch ?? project.branch}</span>
                 </span>
               )
             )}
             </>)}
+            {!stripStart && <ToolPick settings={settings} onSettings={onSettings} />}
             <span className="lc-grow" />
             {stripEnd}
           </div>
@@ -1309,10 +1294,18 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const providers = useEngine((s) => s.providers);
   const picks = useEngine((s) => s.settings.picks);
   const showDemo = useEngine((s) => s.settings.showDemo === true) && agents.some((a) => a.id === "demo");
-  const pair = useMemo(() => castOf(providers, { picks }), [providers, picks]);
+  // The tool is picked on its own (ToolPick, beside where it runs), so this panel offers that tool's
+  // models: its own pair, its best and its fast, and its full list. A sidekick can still come from
+  // another tool, from the Sidekick's "every model". The Demo, or a tool that's gone, sees them all.
+  const toolNow = settings.agent === "demo" ? "" : splitModel(settings.model ?? agentOf(settings.agent, agents, providers).model).provider;
+  const scoped = useMemo(() => {
+    const own = providers.filter((p) => p.id === toolNow);
+    return toolsOf(own).length ? own : providers;
+  }, [providers, toolNow]);
+  const pair = useMemo(() => castOf(scoped, { picks }), [scoped, picks]);
   const two = pairReady(pair);
   const way: Way | "demo" = settings.agent === "demo" ? "demo" : wayOf(settings, pair);
-  const tools = useMemo(() => toolsOf(providers), [providers]);
+  const tools = useMemo(() => toolsOf(scoped), [scoped]);
   const yours = agents.filter((a) => a.id !== "demo");
   const [query, setQuery] = useState("");
   // What the column shows: the rows (""), a tool's models (its id), or your agents.
@@ -1401,7 +1394,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const rows: { id: "pair" | "best" | "fast"; title: string; icon: ReactNode; note: string; say?: string; marks: MarkKind[]; off: boolean }[] = [
     {
       id: "pair",
-      title: "Pair",
+      title: "Fusion",
       icon: <PairIcon size={14} />,
       note: own || two ? `${leadShort} + ${shortName(label(side!))}` : pair ? "Needs two different models ready" : "No model is ready yet",
       say: own || two ? `${leadShort} leads, ${shortName(label(side!))} works` : undefined,
@@ -1644,4 +1637,4 @@ function WatchCanvas({ thread }: { thread: Thread }) {
 export const Hints = ({ children }: { children?: ReactNode }) => <div className="lc-hints">{children}</div>;
 
 /** Each access level's icon, in the permissions picker and on its chip. */
-const ACCESS_ICONS: Record<Access, (p: { size?: number }) => ReactNode> = { read: I.eye, ask: I.lock, edits: I.edit, auto: I.ahead, review: I.shield, full: I.shieldOff };
+const ACCESS_ICONS: Record<Access, (p: { size?: number }) => ReactNode> = { read: I.eye, ask: I.lock, edits: I.edit, auto: I.auto, review: I.shield, full: I.shieldOff };

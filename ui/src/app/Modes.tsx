@@ -73,7 +73,6 @@ export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: Se
         <>
           <ModeIcon mode={value} agents={agents} size={13} />
           <span className="lc-strip-cap">{label}</span>
-          <I.chevD size={11} />
         </>
       }
     >

@@ -5,25 +5,29 @@
   turn starts or ends, and on Refresh.
 */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ContextPart, ContextSource, FileChange, Item, SessionInfo, Thread } from "@contracts";
+import type { ContextPart, ContextSource, FileChange, Item, LimitWindow, PrInfo, SessionInfo, Thread, ToolLimits } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { accessOf, checkpointsOf, compact, markOf, modelLabel, plural, sumLines } from "./model";
-import { exportSession } from "./Sidebar";
-import { Lines, ModelTag, PanelHead } from "./ui";
-import * as os from "./os";
+import { checkpointsOf, compact, duration, modelLabel, money, plural, sumLines } from "./model";
+import { liveOf, Tick, type Mark } from "./Timeline";
+import { Lines, PanelHead } from "./ui";
 
-const home = os.tilde;
 
 export function SessionSurface({ thread, items, visible, onShowChange }: { thread: Thread; items: Item[]; visible: boolean; onShowChange: (path: string) => void }) {
   const [info, setInfo] = useState<SessionInfo | null>(null);
-  const { open, files } = useMemo(() => openFiles(items), [items]);
+  const { files } = useMemo(() => openFiles(items), [items]);
   const [failed, setFailed] = useState("");
   const [looking, setLooking] = useState(false);
   const providers = useEngine((s) => s.providers);
+  const limits = useEngine((s) => s.limits);
+  // The pull request's checks, as its card reads them (pr.status): asked only when the session has one.
+  const [checks, setChecks] = useState<PrInfo["checks"]>([]);
+  const usage = thread.usage;
   const running = thread.status === "running";
+  // What fills the context, source by source, opens under its row: the board shows the one line.
+  const [more, setMore] = useState(false);
   // Only the latest ask is shown: one sent as a turn started can answer after the one sent as it ended.
   const asked = useRef(0);
   const look = () => {
@@ -32,6 +36,12 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
     rpc("thread.info", { id: thread.id })
       .then((i) => n === asked.current && (setInfo(i), setFailed("")), (e: Error) => n === asked.current && setFailed(e.message))
       .finally(() => n === asked.current && setLooking(false));
+    if (thread.pr)
+      rpc("pr.status", { threadId: thread.id }).then(
+        (st) => n === asked.current && setChecks(st.pr?.checks ?? []),
+        () => {},
+      );
+    else setChecks([]);
   };
   // When it shows, and when a turn starts or ends.
   useEffect(() => {
@@ -50,6 +60,7 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
   return (
     <div className="lc-sinfo">
       {failed && <p className="lc-sinfo-note" role="alert">{failed}</p>}
+      {/* The board's sections, in its order: Session, Project, Who works. */}
       <section className="lc-sinfo-card">
         <PanelHead
           end={
@@ -58,55 +69,179 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
             </button>
           }
         >
-          Environment
+          Session
         </PanelHead>
-        <Line icon={<I.laptop size={14} />}>{info.machine}</Line>
-        <Line icon={<I.folder size={14} />} title={info.path}>
-          {info.project} <span className="lc-quiet">· {home(info.path)}</span>
-        </Line>
-        {info.branch && (
-          <Line icon={<I.branch size={14} />}>
-            {info.branch} {info.worktree && <span className="lc-quiet">· its own worktree</span>}
+        <button type="button" className="lc-sinfo-line lc-sinfo-go l-focus" aria-expanded={more} title="What fills the context" onClick={() => setMore(!more)}>
+          <span className="lc-sinfo-ic">
+            <I.clock size={14} />
+          </span>
+          <span className="lc-sinfo-v">
+            <span className="lc-grow">Context</span>
+            <span className="l-num">
+              {info.context ? `${((info.context.used / info.context.max) * 100).toFixed(1)}%` : "Empty"}
+              {usage && usage.costUsd > 0 ? ` · ${money(usage.costUsd)}` : ""}
+            </span>
+          </span>
+        </button>
+        <div className="lc-sinfo-bar" role="img" aria-label="Share of the context used">
+          <span style={{ width: `${info.context ? Math.min(100, (info.context.used / info.context.max) * 100) : 0}%` }} />
+        </div>
+        {usage && usage.inputTokens + usage.cacheReadTokens > 0 && (
+          <Line icon={<I.layers size={14} />}>
+            <span className="lc-grow">Cache hit</span>
+            <span className="l-num">{((usage.cacheReadTokens / (usage.inputTokens + usage.cacheReadTokens)) * 100).toFixed(1)}%</span>
           </Line>
         )}
-        <Line icon={<I.chip size={14} />}>
-          {info.tool} <ModelTag kind={markOf(`${info.provider}:${info.model}`)} label={modelLabel(`${info.provider}:${info.model}`, providers)} />
-        </Line>
-        <Line icon={<I.lock size={14} />}>{accessOf(info.access).label}</Line>
       </section>
 
-      <ContextCard info={info} doing={running ? doingOf(items) : ""} running={running} onCompact={compactNow} />
+      {more && <ContextCard info={info} doing={running ? doingOf(items) : ""} running={running} onCompact={compactNow} />}
 
       <section className="lc-sinfo-card">
-        <PanelHead end={files.length > 0 && <Lines {...sumLines(files)} />}>Changes</PanelHead>
-        {files.length ? (
-          <>
-            {files.map((f) => (
-              <button key={f.path} type="button" className="lc-sinfo-file l-focus" title={f.from ? `${f.from} → ${f.path}` : f.path} onClick={() => onShowChange(f.path)}>
-                <span className="lc-sinfo-st" data-status={f.status}>
-                  {LETTER[f.status]}
-                </span>
-                <span className="lc-sinfo-path">
-                  {f.path.includes("/") && <span className="lc-quiet">{f.path.slice(0, f.path.lastIndexOf("/") + 1)}</span>}
-                  {f.path.slice(f.path.lastIndexOf("/") + 1)}
-                </span>
-                <Lines added={f.added} removed={f.removed} />
-              </button>
-            ))}
-            <p className="lc-sinfo-note">
-              {plural(files.length, "file")} from {plural(open.length, "turn")}, not committed yet. Press one to see it in the diff.
-            </p>
-          </>
-        ) : (
-          <p className="lc-sinfo-note">Nothing waiting to commit. When a turn edits files, they show here.</p>
+        <PanelHead end={<span className="lc-quiet">{info.project}</span>}>Project</PanelHead>
+        {info.branch && (
+          <Line icon={<I.branch size={14} />}>
+            <span className="lc-mono">{info.branch}</span>
+          </Line>
         )}
+        <button type="button" className="lc-sinfo-line lc-sinfo-go l-focus" disabled={!files.length} onClick={() => files[0] && onShowChange(files[0].path)}>
+          <span className="lc-sinfo-ic">
+            <I.changes size={14} />
+          </span>
+          <span className="lc-sinfo-v">
+            <span className="lc-grow">{files.length ? `${plural(files.length, "file")} changed` : "No changes yet"}</span>
+            {files.length > 0 && <Lines {...sumLines(files)} />}
+          </span>
+        </button>
+        {thread.pr && (
+          <Line icon={<I.pr size={14} />}>
+            <span className="lc-grow">Pull request</span>
+            <span className="lc-sinfo-chip">#{thread.pr.number}</span>
+          </Line>
+        )}
+        {thread.pr && checks.length > 0 && <ChecksLine checks={checks} />}
       </section>
 
-      <button type="button" className="lc-btn lc-sinfo-export" data-kind="ghost" data-size="sm" onClick={() => exportSession(thread.id)}>
-        <I.download size={13} />
-        Export as Markdown
-      </button>
+      <section className="lc-sinfo-card">
+        <PanelHead end={thread.sidekick ? <span className="lc-quiet">Fusion</span> : undefined}>Who works</PanelHead>
+        <Line icon={<I.chip size={14} />}>
+          <span className="lc-grow">Tool</span>
+          {info.tool}
+        </Line>
+        <Line icon={<I.agents size={14} />}>
+          <span className="lc-grow">Lead</span>
+          {modelLabel(`${info.provider}:${info.model}`, providers)}
+        </Line>
+        {thread.sidekick && (
+          <Line icon={<I.agents size={14} />}>
+            <span className="lc-grow">Sidekick</span>
+            {modelLabel(thread.sidekick, providers)}
+          </Line>
+        )}
+        <Line icon={<I.shield size={14} />}>
+          <span className="lc-grow">Reviewer</span>
+          {thread.review ? "On" : "Off"}
+        </Line>
+      </section>
+
+      <Connections thread={thread} />
+
+      <ThisTurn items={items} limits={limits.find((t) => t.provider === info.provider)} />
     </div>
+  );
+}
+
+/** The pull request's checks as one count: passed (a skipped one counts) of all, the dot amber while any runs and red once one fails. */
+function ChecksLine({ checks }: { checks: PrInfo["checks"] }) {
+  const passed = checks.filter((c) => c.state === "pass" || c.state === "skipped").length;
+  const failed = checks.filter((c) => c.state === "fail");
+  const running = checks.filter((c) => c.state === "pending").length;
+  const state = failed.length ? "fail" : running ? "running" : "ok";
+  const title = failed.length ? `Failed: ${failed.map((c) => c.name).join(", ")}` : running ? `${running} still running` : "Every check passed";
+  return (
+    <Line icon={<I.check size={14} />} title={title}>
+      <span className="lc-grow">Checks</span>
+      <i className="lc-sinfo-dot" data-state={state} aria-hidden />
+      <span className="l-num">
+        {passed}/{checks.length}
+      </span>
+    </Line>
+  );
+}
+
+/**
+  The connections this session's tool may get, each with a switch for this session alone. The same
+  choice the engine makes (Addons.connections): on in Add-ons, not removed, for this project or every
+  one; a connection, or a ported plugin's program that gives tools. A switch reaches a turn under way
+  where its tool takes connections in place, else from its next turn, as a change in Add-ons does.
+*/
+function Connections({ thread }: { thread: Thread }) {
+  const addons = useEngine((s) => s.addons);
+  const off = useEngine((s) => s.addonsOff);
+  const all = off ? [] : addons.filter((a) => a.enabled && !a.removed && (!a.project || a.project === thread.projectId) && (a.kind === "connection" ? !a.dsh || Boolean(a.dsh.tools?.length) : Boolean(a.panel?.dsh?.host && a.panel.dsh.tools?.length)));
+  if (!all.length) return null;
+  const offHere = thread.connectionsOff ?? [];
+  const on = all.filter((a) => !offHere.includes(a.id)).length;
+  const flip = (id: string) => {
+    const next = offHere.includes(id) ? offHere.filter((x) => x !== id) : [...offHere, id];
+    rpc("thread.update", { id: thread.id, connectionsOff: next.length ? next : null }).catch((e: Error) => toast.error(e.message));
+  };
+  return (
+    <section className="lc-sinfo-card">
+      <PanelHead end={<span className="l-num lc-quiet">{on} of {all.length}</span>}>Connections</PanelHead>
+      {all.map((a) => {
+        const here = !offHere.includes(a.id);
+        return (
+          <div key={a.id} className="lc-sinfo-line">
+            <button type="button" role="switch" aria-checked={here} aria-label={a.name} className="lc-sinfo-switch l-focus" onClick={() => flip(a.id)} />
+            <span className="lc-sinfo-v">{a.name}</span>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+/** A plan window's span in words: "5 hours", "week"; its own label when it names more than its span. */
+function spanOf(w: LimitWindow) {
+  const m = w.minutes;
+  if (!m || w.label.includes(",")) return w.label[0].toLowerCase() + w.label.slice(1);
+  if (m === 10080) return "week";
+  if (m >= 40000) return "month";
+  if (m % 1440 === 0) return plural(m / 1440, "day");
+  if (m % 60 === 0) return plural(m / 60, "hour");
+  return plural(m, "minute");
+}
+
+/**
+  The session's last turn: how long it took, or its clock while it runs (time spent waiting on you
+  left out, as the turn's own status line counts it), and the busiest plan window of the session's
+  tool. Nothing before the first turn.
+*/
+function ThisTurn({ items, limits }: { items: Item[]; limits?: ToolLimits }) {
+  const marks = items.filter((x): x is Mark => x.kind === "turn");
+  const n = marks.at(-1)?.turn;
+  if (n === undefined) return null;
+  const turn = marks.filter((m) => m.turn === n);
+  const first = turn[0];
+  const end = turn[turn.length - 1];
+  const running = turn.some((m) => m.status === "running");
+  const now = Date.now();
+  const used = (w: LimitWindow) => (w.resetsAt !== undefined && w.resetsAt <= now ? 0 : Math.max(0, Math.min(100, w.usedPercent)));
+  const busiest = limits?.windows.reduce<LimitWindow | undefined>((a, w) => (!a || used(w) > used(a) ? w : a), undefined);
+  const took = !running && end.seconds !== undefined ? (end.at - first.at) / 1000 + end.seconds : undefined;
+  // What it cost, each part's own (a fix after the Reviewer is a mark of its own) added up; nothing when no tool said.
+  const cost = turn.reduce((s, m) => s + (m.costUsd ?? 0), 0);
+  if (!running && took === undefined && !busiest) return null;
+  return (
+    <section className="lc-sinfo-card">
+      <PanelHead end={running ? <Tick className="l-num" text={liveOf(turn, items.filter((x) => x.turn === n)).clock} /> : took !== undefined ? <span className="l-num">{duration(took)}{cost > 0 ? ` · ${money(cost)}` : ""}</span> : undefined}>This turn</PanelHead>
+      {busiest && (
+        <Line icon={<I.usage size={14} />}>
+          <span className="lc-grow">Plan limit, {spanOf(busiest)}</span>
+          <span className="l-num">{Math.round(used(busiest))}% used</span>
+        </Line>
+      )}
+    </section>
   );
 }
 
@@ -212,7 +347,6 @@ function ContextCard({ info, doing, running, onCompact }: { info: SessionInfo; d
   );
 }
 
-const LETTER: Record<FileChange["status"], string> = { added: "A", modified: "M", deleted: "D", renamed: "R" };
 
 /** The files still to commit, each once as it stands now: its latest status, its lines from every turn. */
 function openFiles(items: Item[]) {

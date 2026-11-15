@@ -1443,6 +1443,13 @@ export type Rpc = {
   "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number }; /** Sent from Liner Design: the design file (its slug) and what is selected, for the turn's "## Design" note (lean.ts designNote). */ design?: { file: string; sel?: DesignSelection }; /** What the person reads of it (UserShown): kept on the item, never sent to the agent. */ shown?: UserShown }, null];
   /** You started writing in a session: its tool opens ahead of the message (Runtime.warm). Answers at once. */
   "thread.warm": [{ id: string }, null];
+  /**
+    You started writing on Home: the session thread.create would make from these same fields opens its tool ahead, under `id`,
+    which thread.create is then given (Runtime.warmNew). Sent again with the same id when a choice changes. Answers at once.
+  */
+  "thread.warmNew": [Rpc["thread.create"][0] & { id: string; /** Models picked to compare: a comparison makes its own sessions (compare.start), so nothing opens. */ compare?: boolean }, null];
+  /** The draft thread.warmNew opened a session for went away (cleared, or Home left without starting it): that session closes. */
+  "thread.unwarmNew": [{ id: string }, null];
   "thread.queue": [{ id: string; queue: QueuedMessage[] }, Thread];
   /** Rewinds to just before a message you sent: the turns from there come off, and with `files`, so do their changes. */
   "thread.rewind": [{ threadId: string; itemId: string; files: boolean; force?: boolean }, { turn: number; files: number }];

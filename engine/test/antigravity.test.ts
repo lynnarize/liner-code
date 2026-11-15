@@ -1379,3 +1379,30 @@ test("sidekick: a brief stopped because the sidekick was replaced tells the lead
   assert.match(said, /^The sidekick changed, so Liner Code stopped the sidekick \(Gemini 3\.8 Flash\) after .* and ended it and what it started\./);
   assert.doesNotMatch(said, /The person stopped/);
 });
+
+test("antigravity: settled between turns once its session resumes, and not while a turn runs or it owes the next turn a word; an agent that marks nothing never is", async () => {
+  // A turn left nothing running: settled, its process up, so an idle close ends nothing of its own (Runtime.idleCheck).
+  const fake = fakeAgy();
+  const s = antigravity.open(opts(envOf(fake, { FAKE_RESUME: "1", FAKE_SLOW: "300" }), { access: "full" }));
+  assert.equal(await s.settled!(), false, "nothing opened yet: no conversation to come back to");
+  await s.turn("hi", recorder().sink, new AbortController().signal);
+  assert.equal(await s.settled!(), true);
+  const going = s.turn("again", recorder().sink, new AbortController().signal);
+  await tick(100);
+  assert.equal(await s.settled!(), false, "a turn under way");
+  await going;
+  assert.equal(await s.settled!(), true);
+  s.close();
+  // What its turn left running was ended, and the next turn is to hear so: closing now would lose that word.
+  const f2 = fakeAgy();
+  const sub = { sessionUpdate: "tool_call", toolCallId: "sub1", name: "invoke_subagent", title: "Run invoke_subagent", kind: "other", status: "in_progress", rawInput: { Prompt: "go" } };
+  const t = antigravity.open(opts(envOf(f2, { FAKE_PROMPT: JSON.stringify([sub]), FAKE_RESUME: "1" }), { access: "full" }));
+  await t.turn("hi", recorder().sink, new AbortController().signal);
+  assert.equal(await t.settled!(), false, "the word for its next turn would go with it");
+  t.close();
+  // OpenCode and the rest run their commands in their own process group, beside what else they keep: they can't tell, so they have no settled at all.
+  const { opencode } = await import("../src/providers/acp.ts");
+  const u = opencode.open(opts(envOf(fakeAgy())));
+  assert.equal(u.settled, undefined, "it has no settled at all, so the runtime gives it no idle timer");
+  u.close();
+});

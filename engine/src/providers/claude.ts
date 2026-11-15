@@ -595,6 +595,15 @@ function titleOf(name: string, input: Record<string, unknown>, cwd: string): { t
   }
 }
 
+/**
+  Claude Code's tools whose work lives in its process and shows as no task: a wakeup it set (ScheduleWakeup reports none; T3 Code:
+  ClaudeAdapterV2.ts, scheduledWakeupsByNativeThread), a schedule (CronCreate), a monitor. Once a session has called one, Liner
+  Code can't tell when it's over, so the session is never closed for idleness (settled).
+*/
+const OUTLIVES = /^(?:ScheduleWakeup|CronCreate|Monitor)$/;
+/** How long a close waits for Claude Code's process to be gone: the SDK's grace before its kill, and a little more. */
+const CLOSE_WAIT_MS = 5000;
+
 type TaskEnd = Extract<SDKMessage, { type: "system"; subtype: "task_notification" }>;
 type Run = { title: string; path?: string; agent: NonNullable<ToolUpdate["agent"]>; calls: string[]; status: "running" | "done" | "failed"; sink: TurnSink; text?: string; end?: TaskEnd };
 
@@ -739,6 +748,8 @@ class ClaudeSession implements ProviderSession {
   private owed = false;
   /** What the next turn says about that: nothing runs when update() does, so there's no turn to say it on then. */
   private owedNote: string | null = null;
+  /** It was asked for something that lives in its process with no task to show for it (OUTLIVES): from then on it's never closed for idleness. */
+  private lasting = false;
 
   constructor(o: OpenOptions) {
     this.o = o;
@@ -1219,6 +1230,7 @@ class ClaudeSession implements ProviderSession {
         if (b.type !== "tool_use") continue;
         const input = (b.input ?? {}) as Record<string, unknown>;
         this.tools.set(b.id, { name: b.name, input });
+        if (OUTLIVES.test(b.name)) this.lasting = true;
         if (b.name === "TodoWrite" && Array.isArray(input.todos)) {
           sink.plan(
             (input.todos as { content?: string; status?: string }[]).map((t) => ({
@@ -1764,6 +1776,7 @@ class ClaudeSession implements ProviderSession {
         run.calls.push(b.id);
         said.now = title;
         said.tools = Math.max(run.agent.tools ?? 0, run.calls.length);
+        if (OUTLIVES.test(b.name)) this.lasting = true;
         if (b.name === "Agent" || b.name === "Task") {
           this.tools.set(b.id, { name: b.name, input });
           run.sink.tool({ key: b.id, tool: b.name, toolKind: "task", title, path, input: JSON.stringify(input, null, 2), status: "running", agent: this.sentOff(run.sink, b.id, b.name, input, title, path, key) });
@@ -1951,13 +1964,39 @@ class ClaudeSession implements ProviderSession {
     return { used: u.totalTokens, max: u.maxTokens, parts, sources: contextSources(u), compactAt: u.autoCompactThreshold, autoCompact: u.isAutoCompactEnabled, deferred: deferred || undefined };
   }
 
-  close() {
+  /**
+    Nothing would end or be lost with its process now (ProviderSession.settled): no turn of yours or of its own under way or
+    offered, no task (a command or an agent in the background, a monitor), no agent still at work, nothing it set to wake it
+    later, and a conversation it resumes (`o.resume`, set as its first turn began). Nothing it holds for the next turn either:
+    what came while no turn ran (a background task's word, which the next turn shows) beyond its own start's init, which T3
+    Code lets go (ClaudeAdapterV2.ts, hasPendingBackgroundWork) and here would lose "a background task failed". Not while a
+    turn we let go of still runs in it (draining: after a Stop, or a turn about stopped work, until its result). And not when
+    it runs otherwise than it would be opened again: a plan you approved put it at Auto for the rest of the session, and its
+    Auto found not to run here made it Edits on its own, neither of which is the thread's; reopened, it would plan again or
+    be refused again.
+  */
+  settled() {
+    if (this.closed || !this.o.resume || this.o.fork || this.sink || this.waking || this.opened || this.linking || this.lasting || this.draining) return false;
+    if (this.access !== this.o.access || this.noAuto !== Boolean(this.o.noAuto)) return false;
+    // An agent whose row would say it stopped as the process goes (endRuns) is one still at work.
+    if (this.tasks.size || [...this.runs.values()].some((r) => r.status === "running" || (r.agent.state ?? "running") === "running")) return false;
+    return this.idle.every((m) => m.type === "system" && m.subtype === "init");
+  }
+
+  /**
+    Ends Claude Code's process; settles once it has exited, so whoever waits (Runtime.ending) opens the next one on this
+    conversation only then, not beside the old process still running its SessionEnd hooks. The SDK's own return() waits for
+    the process (Query.performCleanup awaits the transport's waitForExit, bounded: stdin's end, a grace of about 2 s, then a kill).
+    Bounded here too (CLOSE_WAIT_MS): one that doesn't settle in time is let go, rather than holding the next turn for good.
+  */
+  close(): Promise<void> {
     // A resume's check begun ahead of a message ends here rather than at its own time limit.
     this.closed = true;
     this.opened = null;
     this.unwarm.abort();
     this.inbox.end();
-    this.q?.return?.(undefined);
+    const q = this.q;
+    const ended = q?.return?.(undefined);
     this.q = null;
     // A turn Claude Code began by itself and nobody ran goes with the process.
     if (this.waking) this.waking.pending = false;
@@ -1969,6 +2008,9 @@ class ClaudeSession implements ProviderSession {
     this.release(null);
     for (const id of [...this.tails.keys()]) this.untail(id);
     void this.signal;
+    if (!ended) return Promise.resolve();
+    let cap: NodeJS.Timeout | undefined;
+    return Promise.race([Promise.resolve(ended).then(() => {}, () => {}), new Promise<void>((r) => (cap = setTimeout(r, CLOSE_WAIT_MS)))]).finally(() => clearTimeout(cap));
   }
 }
 

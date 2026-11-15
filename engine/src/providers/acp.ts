@@ -803,6 +803,8 @@ class AcpSession implements ProviderSession {
     this.unasked = Boolean(known.unasked);
     this.named = Boolean(o.mcpName);
     this.server = o.mcpName ?? (known.tagged ? newServerName() : "liner");
+    // Only an agent whose work ends with each turn can say it's settled (settledNow).
+    if (known.endsWork) this.settled = () => this.settledNow();
     // A session it loads may have been told before that the connections were kept from it: it hears where they stand now.
     if (this.unasked && o.resume && o.connections?.length) this.toldHeld = "?";
   }
@@ -1847,6 +1849,29 @@ class AcpSession implements ProviderSession {
     return this.owed;
   }
   private owed = false;
+
+  /**
+    Nothing would end or be lost with its process now (ProviderSession.settled). Only an agent whose work ends with each turn
+    (AcpSpec.endsWork: Antigravity), since only that one's background work Liner Code can find: everything it starts carries its
+    marker, and what's left when a turn ends is ended then (endWork). So between turns, with its session one it resumes or loads,
+    nothing it said it would tell the next turn (endedLast, refusedLast, notes), and nothing marked beside itself and the servers
+    it was handed, it's settled. Any other ACP agent (OpenCode, Hermes, Cursor, Grok, one you added) runs its commands in its own
+    process group, beside language servers and the like, and nothing says which of those a close would cut short: those have no
+    `settled` at all (constructor), so the runtime gives them no idle timer.
+  */
+  settled?: () => Promise<boolean>;
+  private async settledNow() {
+    const idle = () => !this.sink && !this.gating && !this.asking && !this.pending.size;
+    if (!this.known.endsWork || !this.session || this.lost || !(this.canResume || this.canLoad) || this.endedLast || this.refusedLast || this.notes.length || !idle()) return false;
+    const child = this.child;
+    // Its process is gone already (a turn's end ended it): its session loads in the next one.
+    if (!child) return true;
+    const all = await marked(this.mark);
+    // The agent carries its own marker: a look that didn't find it found nothing it can be trusted on.
+    if (!all.some((p) => p.pid === child.pid)) return false;
+    const servers = this.ownServers(all, child.pid);
+    return this.child === child && idle() && all.every((p) => p.pid === child.pid || this.resident.has(p.pid) || servers.has(p.pid));
+  }
 
   /**
     Closing a session ends its agent's process and everything marked as its own (exec.ts Mark), whatever was in flight: a turn,

@@ -7,7 +7,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readF
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { castOf, endpointKey, ROUTINES_ON, splitModel, startOf, VOUCHER } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
 import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
@@ -427,6 +427,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return back;
   };
   runtime.worktreeBack = ensureWorktree;
+  // A session whose worktree is being set up or put back isn't idle: its tool isn't closed for idleness meanwhile (runtime.ts idleNow).
+  runtime.settingUp = (id) => {
+    const w = store.threads.find((x) => x.id === id)?.worktree;
+    return setups.has(id) || Boolean(w && restoring.has(w.root ?? w.path));
+  };
 
   /*
     A model an app asks (access.ai): the one you picked for it in the window (settings.addonModels),
@@ -639,6 +644,48 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     store.emit({ type: "thread.removed", id });
     if (kept && !quiet) store.emit({ type: "notify", threadId: id, kind: "done", title: "Kept its worktree", body: `${root} stays: ${kept}. Its branch ${t.worktree!.branch} stays too.` });
     return kept;
+  };
+
+  /** A session's mode by a name there is: Standard, Workshop, or one of your named agents. */
+  const modeKnown = (mode?: string) => mode === undefined || mode === "standard" || mode === "creator" || (mode.startsWith("agent:") && store.agents.some((a) => `agent:${a.id}` === mode));
+  /**
+    The thread thread.create makes from what it's asked, saved nowhere: thread.create saves it, and thread.warmNew opens a session
+    ahead for it as you write on Home, so the two can't drift. `agent` is who it's asked for (else the parent's, else the project's);
+    `more`: a fork's parent and whether its last turn is half done, and the worktree made for it.
+  */
+  const draftThread = (o: Omit<RpcParams<"thread.create">, "id" | "worktree" | "base" | "inWorktree">, tid: string, now: number, more: { parent?: Thread; live?: boolean; tree?: Thread["worktree"] } = {}): Thread => {
+    const { projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn } = o;
+    const { parent, live = false, tree } = more;
+    const project = store.project(projectId);
+    const who = agent ?? parent?.agent ?? project.agent;
+    // A model, or an agent you have. With none, or one that's gone (a project's, an outside agent's guess), it starts as Settings say a new session starts (startOf).
+    const known = (id?: string): id is string => Boolean(id && (id.startsWith("@") || store.agents.some((a) => a.id === id)));
+    const start = known(who) ? undefined : defaultStart();
+    const writer = start ? start.agent : who!;
+    return {
+      id: tid,
+      projectId,
+      title: title ?? parent?.title ?? "New session",
+      agent: writer,
+      // A pair's sidekick, as a model ref; a fork keeps its parent's, and a session started as Settings say gets theirs.
+      ...((sidekick ?? parent?.sidekick ?? start?.sidekick) ? { sidekick: (sidekick ?? parent?.sidekick ?? start!.sidekick)!.replace(/^@/, "") } : {}),
+      // The session's own word on the Reviewer; a fork keeps its parent's.
+      ...((review ?? parent?.review) !== undefined ? { review: review ?? parent?.review } : {}),
+      status: "idle",
+      access: access ?? parent?.access ?? store.settings.defaultAccess,
+      model: model ?? parent?.model,
+      effort: effort ?? parent?.effort,
+      forkOf,
+      forkSession: parent ? (live ? "" : (parent.providerSession ?? "")) : undefined,
+      worktree: tree ?? parent?.worktree,
+      // A fork keeps its parent's mode, as it keeps its conversation.
+      ...((mode && mode !== "standard") || parent?.mode ? { mode: mode && mode !== "standard" ? mode : parent?.mode } : {}),
+      ...((drawn ?? parent?.design ?? designOf(project)) ? { design: { file: (drawn ?? parent?.design ?? designOf(project))!.file } } : {}),
+      turns: parent ? parent.turns - (live ? 1 : 0) : 0,
+      usage: emptyUsage(),
+      createdAt: now,
+      updatedAt: now,
+    };
   };
 
   const handlers: Handlers = {
@@ -883,9 +930,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // It goes to git as an argument of its own: one starting with - would be an option.
       if (base?.startsWith("-")) throw new Error("That base isn't a branch or a commit.");
       // A mode is set once, as the session starts; a custom one is one of your named agents.
-      if (mode !== undefined && mode !== "standard" && mode !== "creator" && !(mode.startsWith("agent:") && store.agents.some((a) => `agent:${a.id}` === mode))) throw new Error("There's no mode by that name.");
+      if (!modeKnown(mode)) throw new Error("There's no mode by that name.");
       const parent = forkOf ? store.thread(forkOf) : undefined;
-      const who = agent ?? parent?.agent ?? project.agent;
       const now = Date.now();
       // An id the app picked (a side chat or a comparison it names ahead) names files too: one of its own, never another's.
       if (id !== undefined && (!/^[\w-]{1,64}$/.test(id) || store.threads.some((t) => t.id === id))) throw new Error("That session id can't be used.");
@@ -926,38 +972,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           if (steps.length || mods) setups.set(tid, prep().finally(() => setups.delete(tid)));
         }
       }
-      // A model, or an agent you have. With none, or one that's gone (a project's, an outside agent's guess), it starts as Settings say a new session starts (startOf).
-      const known = (id?: string): id is string => Boolean(id && (id.startsWith("@") || store.agents.some((a) => a.id === id)));
-      const start = known(who) ? undefined : defaultStart();
-      const writer = start ? start.agent : who!;
       // A fork of a session at work branches from its last turn that ended, not from one half done
       // (T3 Code: ThreadForkService.ts forks from the last stable run), and gets the conversation as text.
       // Half done is its last turn still running, by that turn's own status: one the Reviewer reads now has ended.
       const live = parent ? runtime.isRunning(parent.id) && store.timeline(parent.id).some((x) => x.kind === "turn" && x.turn === parent.turns && x.status === "running") : false;
-      const t: Thread = {
-        id: tid,
-        projectId,
-        title: title ?? parent?.title ?? "New session",
-        agent: writer,
-        // A pair's sidekick, as a model ref; a fork keeps its parent's, and a session started as Settings say gets theirs.
-        ...((sidekick ?? parent?.sidekick ?? start?.sidekick) ? { sidekick: (sidekick ?? parent?.sidekick ?? start!.sidekick)!.replace(/^@/, "") } : {}),
-        // The session's own word on the Reviewer; a fork keeps its parent's.
-        ...((review ?? parent?.review) !== undefined ? { review: review ?? parent?.review } : {}),
-        status: "idle",
-        access: access ?? parent?.access ?? store.settings.defaultAccess,
-        model: model ?? parent?.model,
-        effort: effort ?? parent?.effort,
-        forkOf,
-        forkSession: parent ? (live ? "" : (parent.providerSession ?? "")) : undefined,
-        worktree: tree ?? parent?.worktree,
-        // A fork keeps its parent's mode, as it keeps its conversation.
-        ...((mode && mode !== "standard") || parent?.mode ? { mode: mode && mode !== "standard" ? mode : parent?.mode } : {}),
-        ...((drawn ?? parent?.design ?? designOf(project)) ? { design: { file: (drawn ?? parent?.design ?? designOf(project))!.file } } : {}),
-        turns: parent ? parent.turns - (live ? 1 : 0) : 0,
-        usage: emptyUsage(),
-        createdAt: now,
-        updatedAt: now,
-      };
+      const t = draftThread({ projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn }, tid, now, { parent, live, tree });
       store.putThread(t);
       if (notice) store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: now, text: notice });
       // A fork starts with its parent's timeline, so you can see where it branched.
@@ -985,6 +1004,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           throw e;
         }
       }
+      // A session opened ahead for this id as you wrote on Home (thread.warmNew) is its own now, if it opens as this thread would.
+      await runtime.adopt(t);
       return t;
     },
     "thread.update": ({ id, ...patch }) => {
@@ -1104,6 +1125,27 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     // its worktree isn't opened ahead, and one that fails here is opened again by the turn, which says why.
     "thread.warm": ({ id }) => {
       if (!setups.has(id)) void ready.then(() => runtime.warm(id)).catch(() => {});
+      return null;
+    },
+    /*
+      You started writing on Home: the session it would start opens its tool now, under the id Home picked for it, which
+      thread.create then takes (runtime.ts warmNew, adopt). Answers at once; the open waits for this launch's look, as
+      thread.warm does. Only where nothing about the session needs making first: no worktree (new or picked), no fork, no
+      design, a project that isn't a design on its own, a mode there is, an id no session has. Anything else opens nothing,
+      and closes what was opened for this id before.
+    */
+    "thread.warmNew": (o) => {
+      const { id, projectId, worktree, base, inWorktree, forkOf, design: drawn, mode, compare } = o;
+      if (!/^[\w-]{1,64}$/.test(id ?? "") || store.threads.some((t) => t.id === id)) return null;
+      const project = store.projects.find((p) => p.id === projectId);
+      const plain = project && project.kind !== "design" && !(worktree && project.git) && !base && !inWorktree && !forkOf && !drawn && !compare && modeKnown(mode);
+      if (plain) void ready.then(() => runtime.warmNew(draftThread(o, id, Date.now()))).catch(() => {});
+      else void ready.then(() => runtime.letGoAhead(id)).catch(() => {});
+      return null;
+    },
+    // The draft on Home it was opened for is gone (cleared, or Home left): its session closes now, not after warmMs.
+    "thread.unwarmNew": ({ id }) => {
+      void ready.then(() => runtime.letGoAhead(id)).catch(() => {});
       return null;
     },
     "thread.queue": ({ id, queue }) => runtime.setQueue(id, queue),
@@ -1865,6 +1907,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const h = own[method];
     own[method] = async (p: unknown) => (looked || (await ready), h(p));
   }
+  // A create that fails, wherever it fails (its worktree, a fork's copy), closes a session opened ahead for its id (thread.warmNew).
+  const create = own["thread.create"];
+  own["thread.create"] = async (p: unknown) => {
+    try {
+      return await create(p);
+    } catch (e) {
+      const id = (p as { id?: unknown } | null)?.id;
+      if (typeof id === "string") void runtime.dropAhead(id);
+      throw e;
+    }
+  };
 
   return {
     ready,

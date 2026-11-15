@@ -105,6 +105,40 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     }
   };
 
+  /*
+    The session you're writing here opens its tool ahead, as one you write in does (thread.warm): as you begin the draft, it's
+    given the id it will have, and the engine opens what thread.create would make with what's picked (thread.warmNew); start()
+    then makes it with that id, and its first turn takes the tool already up. A choice changed afterwards sends it again, same id,
+    once per change, never per keystroke. Nothing is picked or sent where something has to be made first (a worktree, new or
+    picked, or a comparison): then it's as before. Sent once a choice moves to one of those, so the engine closes what's open;
+    and so it does when the draft is emptied by hand, or Home goes away (a session opened, another page) with it not started
+    (thread.unwarmNew), once each.
+  */
+  const nextId = useRef<string | null>(null);
+  const begun = useRef(false);
+  const sentFor = useRef("");
+  const plainHere = Boolean(project) && !(worktree && project?.git) && !inWorktree && !(compare.length && mode_ === "standard");
+  const choices = { projectId: project?.id ?? "", mode: mode_, agent: settings.agent, sidekick: settings.sidekick, review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: Boolean(worktree && project?.git && !inWorktree), base: worktree ? base : undefined, inWorktree: inWorktree?.path, compare: Boolean(compare.length && mode_ === "standard") };
+  const choicesKey = JSON.stringify(choices);
+  const warmNew = () => {
+    if (!project || !begun.current || sentFor.current === choicesKey) return;
+    if (!nextId.current) {
+      if (!plainHere) return;
+      nextId.current = `th_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    }
+    sentFor.current = choicesKey;
+    void rpc("thread.warmNew", { id: nextId.current, ...choices }).catch(() => {});
+  };
+  useEffect(warmNew, [choicesKey, plainHere]);
+  /** The draft went (emptied by hand, or Home left) with a session opened for it: that session closes, and the next draft gets an id of its own. */
+  const unwarm = () => {
+    const id = nextId.current;
+    nextId.current = null;
+    if (id && sentFor.current) void rpc("thread.unwarmNew", { id }).catch(() => {});
+    sentFor.current = "";
+  };
+  useEffect(() => unwarm, []);
+
   // ⌘Enter starts the session without opening it: a toast offers it, and Home clears for the next
   // ask (T3 Code: web components/chat/backgroundThread.ts). The composer sends either way; the key
   // is read here, as it goes by, before the composer takes it.
@@ -114,6 +148,11 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     const quietly = background.current;
     background.current = false;
     const asMode = mode_;
+    // The id the draft's tool was opened under, if it was: this session's. The next ask gets an id of its own.
+    const id = nextId.current ?? undefined;
+    nextId.current = null;
+    begun.current = false;
+    sentFor.current = "";
     try {
       if (compare.length && asMode === "standard") {
         const made = await rpc("compare.start", { projectId: project.id, text: m.text, files: m.files, models: [settings.agent, ...compare], effort: settings.effort, access: settings.access });
@@ -121,7 +160,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         if (made[0]?.compare) onCompare(made[0].compare.id);
         return;
       }
-      const t = await rpc("thread.create", { projectId: project.id, mode: asMode, agent: settings.agent, sidekick: settings.sidekick, review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
+      const t = await rpc("thread.create", { ...(id ? { id } : {}), projectId: project.id, mode: asMode, agent: settings.agent, sidekick: settings.sidekick, review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
       if (quietly) {
         setInWorktree(undefined);
@@ -168,6 +207,11 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               settings={settings}
               onSettings={(p) => setSettings((s) => ({ ...s, ...p }))}
               onSend={start}
+              onDraft={(on) => {
+                begun.current = on;
+                if (on) warmNew();
+                else unwarm();
+              }}
               onNewAgent={onNewAgent}
               placeholder={mode_ === "creator" ? "Say what to add to Liner Code: a connection, a panel or an app" : "Ask for a change, paste an error, or drop in a screenshot"}
               worktree={worktree}

@@ -2628,6 +2628,35 @@ html[data-native="mac"] .lc-sb-head {
 .lc-thread .lc-scroll {
   mask-image: linear-gradient(transparent, #000 18px, #000 calc(100% - 28px), transparent calc(100% - 2px));
 }
+/* On the plain paper the same fades are painted over the edges in the paper's colour: the same
+   pixels (but for the gradients' dithering, a step of 1 in 255), without the mask. A mask on what
+   scrolls had the thread drawn into a surface of its own and the window composited again from it:
+   20 to 50 MB more in the graphics process at rest, about 50 MB more while a turn streams. Over a picture
+   (data-bg) the paper isn't one colour, so the mask stays. The scroller stays a stacking context,
+   as the mask made it, so what's in it is painted in the same order. */
+html:not([data-bg]) .lc-thread .lc-scroll {
+  mask-image: none;
+  isolation: isolate;
+}
+html:not([data-bg]) .lc-thread .lc-stage::before,
+html:not([data-bg]) .lc-thread .lc-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  left: 0;
+  pointer-events: none;
+}
+html:not([data-bg]) .lc-thread .lc-stage::before {
+  top: 0;
+  height: 18px;
+  background: linear-gradient(var(--lc-paper), transparent);
+}
+html:not([data-bg]) .lc-thread .lc-stage::after {
+  bottom: 0;
+  height: 28px;
+  background: linear-gradient(transparent, var(--lc-paper) calc(100% - 2px));
+}
 .lc-jump {
   position: absolute;
   left: 50%;

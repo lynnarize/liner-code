@@ -72,6 +72,11 @@ type Props = {
   /** Home: the box's text as it changes, so an add-on ask can switch the task's mode. */
   onText?: (text: string) => void;
   /**
+    Home: you began a draft by hand (an empty box typed into: true), so the session it starts can open its tool ahead
+    (thread.warmNew), or emptied it by hand (false), so that one closes. Only on those changes, never per keystroke.
+  */
+  onDraft?: (begun: boolean) => void;
+  /**
     A session: the tray's head, rows over the card (what's waiting to commit, who the work waits
     on). A row that renders nothing leaves the head empty, and with nothing in it the tray isn't
     drawn (app.css reads that with :has, so a row coming or going needs no word from here).
@@ -296,7 +301,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, onDraft, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -336,6 +341,15 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const usage = thread?.usage;
 
   const recall = useRef(-1);
+  /** A draft is being written by hand here (onDraft): set at its first change, cleared once it's emptied by hand or sent. */
+  const drafting = useRef(false);
+  // Emptied otherwise (sent, stashed): the next change by hand begins a new draft. A stash lets the draft's session go; a send
+  // doesn't, since the send itself takes it (Home's start).
+  useEffect(() => {
+    if (text.trim() || !drafting.current) return;
+    drafting.current = false;
+    if (!sending.current) onDraft?.(false);
+  }, [text]);
   // The draft is kept per session (and Home's), a moment after you stop typing and when you leave.
   // While a queued message is edited, the draft kept is the one it pushed aside.
   const pendingDraft = useRef<{ key: string; text: string } | null>(null);
@@ -497,6 +511,14 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
 
   const onType = (v: string, caret: number) => {
     if (thread && !text.trim() && v.trim()) warmFor(thread);
+    // Home: the first change by hand to a draft, one begun from empty or one kept from before (a restored draft), and its emptying.
+    if (v.trim() && !drafting.current) {
+      drafting.current = true;
+      onDraft?.(true);
+    } else if (!v.trim() && drafting.current) {
+      drafting.current = false;
+      onDraft?.(false);
+    }
     setText(v);
     // Changed by hand, it's yours: ↑ on the first line no longer swaps it for an older message.
     recall.current = -1;

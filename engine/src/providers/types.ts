@@ -231,6 +231,14 @@ export interface ProviderSession {
     says what's wrong in its own words.
   */
   warm?(): Promise<void>;
+  /**
+    Whether closing it now, between turns, would end nothing of its own and lose nothing: no turn of it under way, nothing it
+    started still running that would die with its process (a command or an agent in the background, a schedule, a wake), and a
+    conversation of its own it resumes where it was. Asked by the runtime before it closes a session that sat idle (Runtime,
+    idleCheck), as T3 Code asks its adapters (orchestration-v2/ProviderSessionManager.ts, hasPendingBackgroundWork). Unset, or
+    false where it can't tell: never closed for idleness.
+  */
+  settled?(): boolean | Promise<boolean>;
   /** Ends the tool's process and what it started, whatever is in flight; a promise where ending all of it takes a moment (acp.ts). */
   close(): void | Promise<void>;
 }

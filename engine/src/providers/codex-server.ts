@@ -218,14 +218,21 @@ export class CodexServer {
   private write(m: Json) {
     this.child?.stdin.write(`${JSON.stringify(m)}\n`);
   }
-  request(method: string, params: Json): Promise<Json> {
+  /** `timeout`: a request that isn't answered in this many ms fails, and is forgotten, so a late answer finds nothing waiting. */
+  request(method: string, params: Json, timeout?: number): Promise<Json> {
     const id = this.seq++;
     const child = this.child;
     // No process to ask, or one that's going: an answer would never come (Synara: codexAppServerManager.ts,
     // "a child that stopped draining stdin must never hold" the session).
     if (!child || !child.stdin.writable) return Promise.reject(new Error("Codex's app server isn't running."));
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, child });
+      let late: NodeJS.Timeout | undefined;
+      const done = <T>(f: (v: T) => void) => (v: T) => (clearTimeout(late), f(v));
+      this.pending.set(id, { resolve: done(resolve), reject: done(reject), child });
+      if (timeout) {
+        late = setTimeout(() => this.pending.delete(id) && reject(new Error(`Codex didn't answer ${method} in time.`)), timeout);
+        late.unref();
+      }
       this.write({ id, method, params });
     });
   }
@@ -251,18 +258,30 @@ export class CodexServer {
     }
   }
 
-  close() {
+  /**
+    Ends the app server; settles once its process has exited, so whoever waits (Runtime.ending) opens the next one on this thread
+    only then: one that resumes the thread beside the old process still holding it is refused as in use (IN_USE). Bounded: if it
+    hasn't gone a second after the SIGKILL, it settles anyway, rather than holding the next turn for good.
+  */
+  close(): Promise<void> {
     const c = this.child;
     this.child = null;
     // Asked again after this, it starts a process of its own rather than standing on this one's start.
     this.booting = null;
+    if (!c || c.exitCode !== null || c.signalCode !== null) return Promise.resolve();
+    const gone = new Promise<void>((resolve) => {
+      const cap = setTimeout(resolve, KILL_AFTER_MS + 1000);
+      cap.unref();
+      c.once("exit", () => (clearTimeout(cap), resolve()));
+    });
     // On Windows, with the commands it started (they leave its job by themselves).
-    if (c && process.platform === "win32") killTree(c);
-    else if (c) {
+    if (process.platform === "win32") killTree(c);
+    else {
       c.kill();
       // One that ignores it would stay for good, unseen.
-      setTimeout(() => c.kill("SIGKILL"), KILL_AFTER_MS).unref();
+      setTimeout(() => c.exitCode === null && c.signalCode === null && c.kill("SIGKILL"), KILL_AFTER_MS).unref();
     }
+    return gone;
   }
 }
 
@@ -547,15 +566,37 @@ export class CodexServerSession implements ProviderSession {
     return lower ? "Codex runs this turn in the sandbox it started with" : true;
   }
 
+  /**
+    Nothing would end or be lost with its app server now (ProviderSession.settled): no turn under way, opening or offered, no
+    command or agent of its or its agents' still running, a thread it resumes, and Codex's own list of what runs in the background
+    (a dev server an earlier turn left) empty for that thread and its agents'. T3 Code asks the same of its tracked commands and
+    agents (CodexAdapterV2.ts, hasPendingBackgroundWork); the list is asked here too, since a command can outlive what was tracked.
+    A list that doesn't come, or doesn't say, is "can't tell".
+  */
+  /** How long settled() waits for Codex's list of what runs in the background, here so a test can shorten it. */
+  listWait = 10_000;
+  async settled() {
+    if (!this.thread || this.lost || this.sink || this.opening || this.starting || this.waking?.pending) return false;
+    if (this.running.size || this.others.size || [...this.agents.values()].some((a) => (a.agent.state ?? a.status) === "running")) return false;
+    // No process: nothing of it runs, and its thread resumes in the next one.
+    if (!this.server.child) return true;
+    for (const threadId of [this.thread, ...this.kids.keys()]) {
+      const page = (await this.server.request("thread/backgroundTerminals/list", { threadId }, this.listWait).catch(() => null)) as { data?: unknown[] } | null;
+      if (!Array.isArray(page?.data) || page.data.length) return false;
+    }
+    return !this.sink && !this.running.size && !this.others.size;
+  }
+
   close() {
     // What a subagent left for a wake goes with it: run later, it would open a server nothing closes.
     if (this.waking) this.waking.pending = false;
     // Its agents go with its process.
     this.endAgents("stopped");
-    this.server.close();
+    const gone = this.server.close();
     this.opened = false;
     // Its process is gone without a word: a turn under way ends here.
     this.done?.();
+    return gone;
   }
 
   /** Stops a command Codex runs, as turn/interrupt doesn't (an older Codex doesn't know this, and the interrupt is all it gets). */

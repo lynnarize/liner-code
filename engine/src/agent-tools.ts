@@ -304,6 +304,11 @@ export class AgentTools {
     return this.keys.get(key);
   }
 
+  /** Forgets every key of a thread that never came to be (a session opened ahead of it that no thread took): those keys reach nothing now. */
+  forget(threadId: string) {
+    for (const [key, who] of this.keys) if (who === threadId || who === `${threadId}${AS_SIDEKICK}`) this.keys.delete(key);
+  }
+
   /** The app's answer to a Browser request. */
   /**
     The app's answer to a Browser request. More than one window can be listening (the app, and

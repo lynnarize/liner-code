@@ -492,7 +492,7 @@ function Work({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   const cards: { id: Start; title: string; sub: string; body: string; icon: ReactNode; off?: boolean }[] = [
     {
       id: "pair",
-      title: "Pair",
+      title: "Fusion",
       sub: "For most work",
       body: two ? `${lead} leads: it plans, decides and reviews. ${side} does the work it hands over.` : "Needs two different models ready. Connect another tool and it's yours.",
       icon: (

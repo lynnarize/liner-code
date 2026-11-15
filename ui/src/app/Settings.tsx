@@ -64,7 +64,7 @@ const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string;
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem" },
-  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Your pair, the lead and its sidekick, and what a new session starts with; and the Reviewer, which reads each change before it's yours.", words: "agentic pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes" },
+  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Fusion, its lead and sidekick, and what a new session starts with; and the Reviewer, which reads each change before it's yours.", words: "agentic fusion pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes" },
   { id: "modes", label: "Modes", icon: <I.idea />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
   { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "What a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
@@ -576,14 +576,14 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             value={start === "pair" && !two ? "best" : start}
             onValueChange={(v) => save({ start: v as EngineSettings["start"] })}
             options={[
-              { value: "pair", title: "Pair", description: two ? `${label(cast!.lead)} leads, ${label(cast!.sidekick)} does the work it hands over.` : "A pair needs two models ready: a lead and a quicker sidekick.", icon: <I.agents size={16} />, disabled: !two },
+              { value: "pair", title: "Fusion", description: two ? `${label(cast!.lead)} leads, ${label(cast!.sidekick)} does the work it hands over.` : "Fusion needs two models ready: a lead and a quicker sidekick.", icon: <I.agents size={16} />, disabled: !two },
               { value: "best", title: "Best", description: cast ? `${label(cast.lead)} alone, for the hardest work.` : "Your lead model alone.", icon: <I.star size={16} /> },
               { value: "fast", title: "Fast", description: cast ? `${label(cast.sidekick)} alone: the quickest, and the least it costs.` : "Your sidekick model alone.", icon: <I.bolt size={16} />, disabled: !two },
             ]}
           />
           <span className="lc-st-more">
             <button type="button" className="lc-st-link l-focus" onClick={() => go("agentic")}>
-              Your pair, and the Reviewer
+              Fusion and the Reviewer
               <I.chevR size={12} />
             </button>
           </span>

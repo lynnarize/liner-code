@@ -158,7 +158,7 @@ export function crewOf(items: Item[], thread: Thread, profiles: AgentProfile[], 
     else if (it.kind === "plan") plan = it.entries;
   }
   if (!members.length) return null;
-  const mode = pair ? "Pair" : "One model";
+  const mode = pair ? "Fusion" : "One model";
   return { turn, mode, members, reviews, agents, earlier, plan, start: members[0].at, lead: members.findLast((m) => m.status === "running") ?? members.at(-1), pair };
 }
 
@@ -341,7 +341,7 @@ function PairChip({ thread, pair }: { thread: Thread; pair: PairNames }) {
       {(close) => (
         <div className="lc-crp">
           <div className="lc-crp-h">
-            <b>Pair</b>
+            <b>Fusion</b>
             <span className="lc-quiet">· nothing asked yet</span>
           </div>
           <div className="lc-crp-r">
@@ -743,7 +743,7 @@ function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; 
         {pair ? (
           <>
             <div className="lc-cr-h">
-              Your pair<span className="lc-cr-rule" />
+              Fusion<span className="lc-cr-rule" />
               <span>nothing asked yet</span>
             </div>
             <div className="lc-cr-tree">

@@ -4707,7 +4707,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-cost-pair {
   top: 0;
-  left: clamp(12px, var(--pair), calc(100% - 12px));
+  left: clamp(18px, var(--pair), calc(100% - 18px));
   translate: -50%;
   font-weight: 500;
   color: var(--l-ink-2);

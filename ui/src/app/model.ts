@@ -207,7 +207,7 @@ export function shortName(label: string) {
 */
 export function whoOf(s: { agent: string; sidekick?: string; model?: string }, agents: AgentProfile[], providers: ProviderInfo[]): { name: string; full: string; marks: MarkKind[]; agent?: AgentProfile } {
   const lead = agentOf(s.agent, agents, providers);
-  if (s.agent === "demo") return { name: "Demo run", full: s.sidekick ? "The Demo, as a scripted pair" : "The Demo, a scripted run", marks: ["demo"] };
+  if (s.agent === "demo") return { name: "Demo run", full: s.sidekick ? "The Demo, as a scripted Fusion run" : "The Demo, a scripted run", marks: ["demo"] };
   const named = isModelAgent(s.agent) ? undefined : lead;
   const leadName = named ? named.name : modelLabel(s.model ?? lead.model, providers);
   const leadMark = markOf(s.model ?? lead.model);

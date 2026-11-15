@@ -1535,7 +1535,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const changed = (ways?.own.length ?? 0) + (effortOwn ? 1 : 0);
   const clsWord = ways ? { small: "a small sidekick", mid: "a mid sidekick", frontier: "a frontier-class sidekick" }[ways.cls] : "";
   /** What the automatic choice of a line is marked with. */
-  const autoNote = (k: HowKey) => (k === "effort" ? "Automatic in a pair" : k !== "handOver" ? `Automatic for ${clsWord}` : handOverSet ? "From Settings" : leadRuns && frontierClass(leadRuns.replace(/^@/, "")) ? "Automatic for a frontier-class lead" : "Automatic, said more firmly to this lead");
+  const autoNote = (k: HowKey) => (k === "effort" ? "Automatic in Fusion" : k !== "handOver" ? `Automatic for ${clsWord}` : handOverSet ? "From Settings" : leadRuns && frontierClass(leadRuns.replace(/^@/, "")) ? "Automatic for a frontier-class lead" : "Automatic, said more firmly to this lead");
   const lineLabel = (k: HowKey) => (k === "effort" ? (efforts.list.find((e) => e.id === effortNow)?.label ?? effortNow) : (HOW.find((h) => h.k === k)?.opts.find((o) => o.v === ways?.[k])?.label ?? ""));
   const lineOwn = (k: HowKey) => (k === "effort" ? effortOwn : Boolean(ways?.own.includes(k)));
   /** A choice made on a line: kept as the session's own unless it is what automatic is anyway, then back on the six lines. */
@@ -1693,7 +1693,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                   </button>
                 )}
                 {showDemo && (
-                  <button type="button" className="lc-who-tool l-focus" data-rove data-on={way === "demo" || undefined} aria-pressed={way === "demo"} title="A scripted pair, no account" onClick={() => pickAgent("demo", "demo:demo")}>
+                  <button type="button" className="lc-who-tool l-focus" data-rove data-on={way === "demo" || undefined} aria-pressed={way === "demo"} title="A scripted Fusion run, no account" onClick={() => pickAgent("demo", "demo:demo")}>
                     <span className="lc-who-i">
                       <ModelMark kind="demo" size={13} />
                     </span>
@@ -1720,17 +1720,17 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
             className="lc-team-col lc-who-pair"
             data-full={(picking && full) || undefined}
             role="group"
-            aria-label={open === "lead" ? "Lead" : open === "side" ? "Sidekick" : open === "lines" ? "How this pair works" : open === "effort" ? "Lead's effort" : open ? (HOW.find((h) => h.k === open)?.name ?? "Pair") : "Pair"}
+            aria-label={open === "lead" ? "Lead" : open === "side" ? "Sidekick" : open === "lines" ? "How Fusion works here" : open === "effort" ? "Lead's effort" : open ? (HOW.find((h) => h.k === open)?.name ?? "Fusion") : "Fusion"}
             onKeyDown={(e) => (rove(e), across(e), open && escape(e, picking ? (full ? fewer : shut) : line ? () => toLines(line) : shut))}
           >
             {open === "lines" && ways ? (
               <>
-                <button type="button" className="lc-who-back l-focus" data-rove aria-label="Back to the pair" onClick={shut}>
+                <button type="button" className="lc-who-back l-focus" data-rove aria-label="Back to Fusion" onClick={shut}>
                   <I.chevL size={12} />
-                  Pair
+                  Fusion
                 </button>
                 <div className="lc-how-h">
-                  <span>How this pair works</span>
+                  <span>How Fusion works here</span>
                   <span className="lc-how-cls">{CLASS_TAG[ways.cls]}</span>
                 </div>
                 {[...HOW.map((h) => h.k), ...(levels.length ? (["effort"] as const) : [])].map((k) => (
@@ -1752,9 +1752,9 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
               </>
             ) : line && ways ? (
               <>
-                <button type="button" className="lc-who-back l-focus" data-rove aria-label="Back to how this pair works" onClick={() => toLines(line)}>
+                <button type="button" className="lc-who-back l-focus" data-rove aria-label="Back to how Fusion works here" onClick={() => toLines(line)}>
                   <I.chevL size={12} />
-                  How this pair works
+                  How Fusion works here
                 </button>
                 <div className="lc-team-lab">{line === "effort" ? "Lead's effort" : HOW.find((h) => h.k === line)?.name}, for this session</div>
                 {(line === "effort" ? levels.map((e) => ({ v: e.id, label: e.label, note: EFFORT_NOTES[e.id] ?? e.description ?? "" })) : (HOW.find((h) => h.k === line)?.opts ?? [])).map((o) => {
@@ -1774,7 +1774,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
               </>
             ) : !open ? (
               <>
-                <div className="lc-who-h">Pair</div>
+                <div className="lc-who-h">Fusion</div>
                 <p className="lc-who-note lc-who-lede">The lead plans, decides and reviews. The sidekick does the work the lead hands it.</p>
                 <div className="lc-who-part">
                   <span>Lead</span>
@@ -1795,11 +1795,11 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                 {ways && (
                   <div className="lc-how">
                     <div className="lc-how-h">
-                      <span>How this pair works</span>
+                      <span>How Fusion works here</span>
                       <span className="lc-how-cls">{CLASS_TAG[ways.cls]}</span>
                     </div>
                     <p className="lc-how-sum">{howSaid(ways, isModelAgent(lead) ? nameAlone(leadName) : leadName, nameAlone(label(side)))}</p>
-                    <button ref={howBtn} type="button" className="lc-how-row l-focus" data-rove data-own={changed > 0 || undefined} aria-label={`Change how this pair works for this session${changed ? `, ${changed} changed` : ", nothing changed"}`} onClick={() => toLines()}>
+                    <button ref={howBtn} type="button" className="lc-how-row l-focus" data-rove data-own={changed > 0 || undefined} aria-label={`Change how Fusion works for this session${changed ? `, ${changed} changed` : ", nothing changed"}`} onClick={() => toLines()}>
                       <span className="lc-how-k">Change for this session</span>
                       <span className="lc-how-v">{changed > 0 ? `${changed} changed` : ""}</span>
                       <I.chevR size={12} />
@@ -1811,9 +1811,9 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
             ) : (
               <>
                 {/* In the column's own place, so nothing grows under the buttons and scrolls: the few best ready, then every model. */}
-                <button type="button" className="lc-who-back l-focus" data-rove aria-label={full ? `Back to the short list for the ${open === "lead" ? "lead" : "sidekick"}` : "Back to the pair"} onClick={full ? fewer : shut}>
+                <button type="button" className="lc-who-back l-focus" data-rove aria-label={full ? `Back to the short list for the ${open === "lead" ? "lead" : "sidekick"}` : "Back to Fusion"} onClick={full ? fewer : shut}>
                   <I.chevL size={12} />
-                  {full ? (open === "lead" ? "Lead" : "Sidekick") : "Pair"}
+                  {full ? (open === "lead" ? "Lead" : "Sidekick") : "Fusion"}
                 </button>
                 {full ? (
                   open === "lead" ? (

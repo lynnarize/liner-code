@@ -154,7 +154,7 @@ const gone = (c: Pair, ref?: string) => Boolean(ref && !c.providers.some((p) => 
 /* ---------------------------------- Your pair ---------------------------------- */
 
 const STARTS = [
-  { value: "pair", label: "Pair" },
+  { value: "pair", label: "Fusion" },
   { value: "best", label: "Best" },
   { value: "fast", label: "Fast" },
 ] as const;
@@ -171,7 +171,7 @@ function YourPair({ c }: { c: Pair }) {
   };
   return (
     <Part
-      title="Your pair"
+      title="Fusion"
       note="The lead owns a session and hands bounded work to its sidekick, a quicker model, then reads what it changed. Each session can change them from its composer."
       end={
         picks.lead || picks.sidekick ? (
@@ -189,7 +189,7 @@ function YourPair({ c }: { c: Pair }) {
           <Line title="Sidekick" note={<>Does the work the lead hands it: edits it can specify, the same change across files, slow test runs.{gone(c, picks.sidekick) ? " Your pick's tool isn't ready, so it's automatic for now." : ""}</>}>
             <Pick c={c} title="Sidekick model" part="sidekick" fallback={c.fall.sidekick} />
           </Line>
-          <Line title="New sessions start with" note={two ? lines[shown] : lead && c.models > 1 ? `No model of a lead's class is ready, so ${label(lead)} does it all. Pick a lead above for a pair.` : lead ? `A pair needs a second model, and ${label(lead)} is the only one ready. Sign in to another tool, or add an API endpoint in Settings › Models.` : "No model is ready yet."} below>
+          <Line title="New sessions start with" note={two ? lines[shown] : lead && c.models > 1 ? `No model of a lead's class is ready, so ${label(lead)} does it all. Pick a lead above for Fusion.` : lead ? `Fusion needs a second model, and ${label(lead)} is the only one ready. Sign in to another tool, or add an API endpoint in Settings › Models.` : "No model is ready yet."} below>
             <Segmented
               size="sm"
               value={shown}
@@ -298,7 +298,7 @@ function PairClasses({ c }: { c: Pair }) {
   const unplaced = models.filter((m) => !moved[m.ref] && !placedOf(m.ref));
   return (
     <Part
-      title="How a pair works"
+      title="How Fusion works"
       note="The lead writes for the sidekick it has. Each of your models sits in a class, and the class sets how the lead briefs it and checks its work."
       end={
         Object.keys(moved).length ? (
@@ -381,7 +381,7 @@ function LeadInPair({ c }: { c: Pair }) {
   const hand = settings.handOver ?? "auto";
   const now = HAND_OVER.find((h) => h.id === hand) ?? HAND_OVER[0];
   return (
-    <Part title="The lead in a pair">
+    <Part title="The lead in Fusion">
       <div className="lc-frame">
         <div className="lc-fcard lc-st-card lc-ag-pair">
           <Line title="Hands over" note="A frontier-class lead hands over slow runs and spelled-out edits by default. Any other lead tends to keep the work, so it is told more firmly.">
@@ -410,8 +410,8 @@ function LeadInPair({ c }: { c: Pair }) {
               {(close) => HAND_OVER.map((h) => <Row key={h.id} title={h.title} note={h.note} on={hand === h.id} onPick={() => (save({ handOver: h.id === "auto" ? UNSET : h.id }), close())} />)}
             </Pop>
           </Line>
-          <Line title="Lead's effort in a pair" note="Planning and reading a diff rarely need more than Medium. Alone, as Best, the lead keeps its own effort.">
-            <Segmented size="sm" value={settings.pairEffort ?? "medium"} onValueChange={(v) => save({ pairEffort: v })} options={PAIR_EFFORTS} aria-label="Lead's effort in a pair" />
+          <Line title="Lead's effort in Fusion" note="Planning and reading a diff rarely need more than Medium. Alone, as Best, the lead keeps its own effort.">
+            <Segmented size="sm" value={settings.pairEffort ?? "medium"} onValueChange={(v) => save({ pairEffort: v })} options={PAIR_EFFORTS} aria-label="Lead's effort in Fusion" />
           </Line>
         </div>
       </div>

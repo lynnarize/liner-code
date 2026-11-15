@@ -51,8 +51,8 @@ export function PairCost({ lead, sidekick, names }: { lead: string; sidekick: st
         <span>Estimated cost</span>
         <span>{word}</span>
       </div>
-      <div className="lc-cost-bar" role="img" aria-label={`Estimated cost of this pair: ${word[0].toLowerCase()}${word.slice(1)}, ${fast}.`} style={{ "--pair": `${at(pair.total)}%` } as CSSProperties}>
-        <span className="lc-cost-pair">Pair</span>
+      <div className="lc-cost-bar" role="img" aria-label={`Estimated cost of Fusion: ${word[0].toLowerCase()}${word.slice(1)}, ${fast}.`} style={{ "--pair": `${at(pair.total)}%` } as CSSProperties}>
+        <span className="lc-cost-pair">Fusion</span>
         <i className="lc-cost-track" />
         <i className="lc-cost-dot" />
         {[lo, hi].map((t) => (
@@ -64,7 +64,7 @@ export function PairCost({ lead, sidekick, names }: { lead: string; sidekick: st
           </span>
         ))}
       </div>
-      <p className="lc-who-note lc-cost-note">From each model's price for a typical task, and how a pair shares the work. Your plan may differ.</p>
+      <p className="lc-who-note lc-cost-note">From each model's price for a typical task, and how Fusion shares the work. Your plan may differ.</p>
     </div>
   );
 }

@@ -1,5 +1,94 @@
 # Changelog
 
+## 0.2.7 (beta), 2026-11-16
+
+Update from 0.2.6: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;
+on Windows, run the new setup. **A faster start:** your sessions are on screen in about 0.6 s, and the
+first answer comes sooner. **A new Home, sidebar and session**, set in Inter. **Fusion**, the new name
+for the lead and its sidekick, now works to its sidekick's class. **Idle tools close** after 30
+minutes and pick up where they were.
+
+### Added
+
+- **Fusion tuned to its sidekick:** each model sits in a class as a sidekick (small, mid or
+  frontier-class), and the lead briefs it, lets it look around, reviews its work and takes work back
+  by that class. A small one is told exactly which files and functions to change and has every file it
+  changed read; a frontier-class one is told what and why and left the how. The picker says how Fusion
+  works here in one sentence, with Change for this session behind it.
+- **Classes in Settings:** Settings › Agentic features shows your models in their classes, and you can
+  move one to another class, or back to automatic; a model no list knows is "Not placed yet" and
+  treated as small. It also sets how readily the lead hands work over, and the lead's effort in Fusion
+  (Medium unless you change it).
+- **Each model's share** in the crew list of a Fusion session: its tokens and its share of the cost
+  (an estimate from list prices), and how many briefs were sent, kept and taken back.
+- **Fusion in Liner Design:** the lead hands its sidekick the follow-on frames (another size, dark,
+  the empty, loading and error states) and the same change across frames, and keeps the look, each
+  screen's first frame and small changes itself. The frames the sidekick drew are counted, in its
+  colour.
+- **The Session card:** the Session surface beside the thread is a card only as tall as what it holds:
+  Context (what fills it, and Compact), the session's cost and cache hit; the project's branch, files
+  changed, pull request and its checks; This turn, its time and cost, live while it runs; Who works
+  (tool, lead, sidekick, Reviewer); and Connections, where a connection can be switched off for this
+  session alone.
+- **Back and Forward** at the top of the sidebar walk where you have been in the window.
+- **The Design panel shows the session's canvas:** in the Code face, a session made from a Liner
+  Design file shows its frames small, redrawn as the agent or you change them, with the frame an agent
+  is on ringed in its colour. Press a frame, or Open in Liner Design, to go there. The small view only
+  looks: it never changes the design or steers the agent.
+- **Full canvas from the rail:** while the panel is up, Open in the full canvas sits on the rail right
+  under Show/Hide the panel.
+
+### Changed
+
+- **Fusion** is the name for the lead and its sidekick, the pair from 0.2.5, everywhere the app names
+  it: the picker, the composer, Settings, the cost bar and the crew list.
+- **A faster launch:** from the second launch your sessions are on screen about 0.6 s after Liner Code
+  starts, against about 2.3 s before. The last look at your tools is kept (readable only by you) and
+  shown at once while a fresh look runs, and anything that starts a tool waits for that fresh look.
+  The app's engine is bundled, so it starts quicker and uses less memory.
+- **A sooner first answer:** Claude Code, and Codex through its app server, open as you start writing,
+  in a session or a new one from Home, before you send. On Claude Code the first text came about 60 ms
+  after Send, against about 260 ms. This means Claude Code's SessionStart hooks and a project's MCP
+  servers now run when you start writing, before you send. At most two opened ahead wait unused,
+  closed after ten minutes. Other tools open when you send, since opening ahead would leave an empty
+  session in their own history.
+- **Idle tools close:** a session's Claude Code, Codex or Antigravity that has sat idle for 30 minutes
+  is closed, and picks up where it was on your next turn or as you start writing: about 160 MB less
+  for each idle Claude Code session. It stays open while it has something going, such as a background
+  task, a wakeup, a schedule or a monitor. Coming back runs Claude Code's SessionStart hooks and a
+  project's MCP servers again.
+- **Home:** the project's name over the box, with This checkout or Worktree; the box mid-page, with
+  the branch, the tool and Standard or Workshop under it; and Pick up below, with sessions that wait
+  on you, work not committed and sessions to carry on. Liner Design's start page follows the same
+  layout, and the panel's Design surface starts a design instead of asking for one.
+- **The sidebar:** Hide, the name, Back and Forward at the top; New session (lit on Home), Search, The
+  Wall and Add-ons as one group; session rows without project tiles; and Code or Design as one option
+  at its foot.
+- **Inter:** the interface is set in Inter at whole-pixel sizes, for sharper text. Only the app's name
+  keeps its own type.
+- **The rail and the panel:** a session's surfaces sit on a rail at the paper's edge, and every
+  surface beside the thread is a floating card.
+- **The composer:** a commands button lists the tool's commands with a line on each; the tool is
+  picked on its own, apart from the model picker, which lists only that tool's models; Fusion reads
+  with one mark; the access level and Auto have new icons; and the context ring is gone, since Context
+  is in the Session card.
+- **Turns:** a finished group of steps reads "Worked for…", a turn closes on one line with the model,
+  mode, time and cost, and what changed is a ruled list with Review.
+- **Run** moved from the top row to the start of the Terminal's row.
+- The Promo endpoint now goes through linercode.dev.
+
+### Fixed
+
+- The bottom panel's buttons squeezed Run into the Shell tab.
+- With the bottom panel up, a line showed between the composer and the panel's top.
+- An empty folder in Files showed a tree over an empty file view; it's one note now.
+- Commands in the / list read their slash twice.
+- A session reopened just after its Claude Code or Codex closed could meet the old process: closing
+  now waits for it to be gone. A Claude Code session that was closed could start a process again.
+- Liner Design's top row ran under the window buttons with the sidebar hidden.
+- The thread's top and bottom fades cost 25 to 50 MB of graphics memory; they look the same and no
+  longer do.
+
 ## 0.2.6 (beta), 2026-11-13
 
 Update from 0.2.5: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;

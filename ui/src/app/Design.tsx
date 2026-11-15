@@ -19,6 +19,7 @@ import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { langOf, linesOf, tokensOf, Toks } from "./code";
+import { DesignMini, useSessionDesign } from "./DesignMini";
 import { getState, onStream, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { setFace } from "./face";
@@ -66,7 +67,7 @@ const noQuery = (url: string) => url.replace(/\?.*$/, "");
   localStorage or sessionStorage, which throw there; a page that does gets ones that keep its
   values for as long as it's open. Its own scrollbar doesn't show down the frame's edge.
 */
-const SHIM = `<script>(()=>{const m=()=>{const s=new Map();return{getItem:k=>s.has(String(k))?s.get(String(k)):null,setItem:(k,v)=>void s.set(String(k),String(v)),removeItem:k=>void s.delete(String(k)),clear:()=>s.clear(),key:i=>[...s.keys()][i]??null,get length(){return s.size}}};for(const n of["localStorage","sessionStorage"]){try{void window[n].length}catch{try{Object.defineProperty(window,n,{value:m(),configurable:true})}catch{}}}})()</script>${DESIGN_FRAME_STYLE}`;
+export const SHIM = `<script>(()=>{const m=()=>{const s=new Map();return{getItem:k=>s.has(String(k))?s.get(String(k)):null,setItem:(k,v)=>void s.set(String(k),String(v)),removeItem:k=>void s.delete(String(k)),clear:()=>s.clear(),key:i=>[...s.keys()][i]??null,get length(){return s.size}}};for(const n of["localStorage","sessionStorage"]){try{void window[n].length}catch{try{Object.defineProperty(window,n,{value:m(),configurable:true})}catch{}}}})()</script>${DESIGN_FRAME_STYLE}`;
 export const withShim = (html: string) => (/<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + SHIM) : SHIM + html);
 
 /**
@@ -245,7 +246,53 @@ function DesignStart({ thread }: { thread: Thread }) {
 
 /* ---------- The surface ---------- */
 
+/**
+  The session's Liner Design file, when it has one (DesignMini.tsx): a small view of its canvas,
+  kept in step, with Open in Liner Design. Designs an agent showed in the chat (design_show) are
+  still there behind a two-way switch when the session has both; one you open from the timeline
+  turns the switch to them (an agent showing one doesn't). With neither, the start below, as before.
+*/
 export function DesignSurface({ thread, items, agentName, visible }: { thread: Thread; items: Item[]; agentName: string; visible: boolean }) {
+  const cwd = useCwd(thread);
+  const file = useSessionDesign(thread, items, cwd, visible);
+  const older = useMemo(() => designsIn(items).length, [items]);
+  const [show, setShow] = useState<"canvas" | "older">("canvas");
+  useEffect(() => {
+    const on = (e: Event) => {
+      // Asked for by you (the timeline's Open in the panel); an agent showing one doesn't take the canvas away.
+      const d = (e as CustomEvent<{ threadId?: string; design?: string; auto?: boolean }>).detail;
+      if (d?.threadId === thread.id && d.design && !d.auto) setShow("older");
+    };
+    window.addEventListener("lc:open-design", on);
+    return () => window.removeEventListener("lc:open-design", on);
+  }, [thread.id]);
+  if (!file) return <OlderDesigns thread={thread} items={items} agentName={agentName} visible={visible} />;
+  const both = older > 0;
+  const pick = both ? (
+    <div className="lc-dm-switch">
+      <Segmented
+        size="sm"
+        value={show}
+        onValueChange={setShow}
+        options={[
+          { value: "canvas", label: "Canvas" },
+          { value: "older", label: older === 1 ? "Shown in chat" : `Shown in chat (${older})` },
+        ]}
+        aria-label="Which designs"
+      />
+    </div>
+  ) : null;
+  if (both && show === "older")
+    return (
+      <div className="lc-dm-both">
+        {pick}
+        <OlderDesigns thread={thread} items={items} agentName={agentName} visible={visible} />
+      </div>
+    );
+  return <DesignMini thread={thread} items={items} cwd={cwd} file={file} agentName={agentName} visible={visible} top={pick} />;
+}
+
+function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; items: Item[]; agentName: string; visible: boolean }) {
   const designs = useMemo(() => designsIn(items), [items]);
   const where = useLook().designs;
   const cwd = useCwd(thread);

@@ -571,3 +571,245 @@ html[data-native="mac"] .lc-dz-full-bar {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- A session's Liner Design file: a small view of its canvas (DesignMini.tsx) ---------- */
+/* The title and Open in Liner Design over it, who is drawing under them, then the frames on the canvas's own grey. */
+.lc-dm,
+.lc-dm-both {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.lc-dm-switch {
+  display: flex;
+  flex: none;
+  padding: 10px 14px 0;
+}
+.lc-dm-both > .lc-dz {
+  min-height: 0;
+}
+.lc-dm-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 6px 10px 6px 16px;
+}
+.lc-dm-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 17px;
+}
+.lc-dm-name > b {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-dm-meta {
+  font-size: 12px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-dm-head > .lc-btn {
+  flex: none;
+  white-space: nowrap;
+}
+.lc-dm-status {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 0 16px 10px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-dm-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lc-dm-who b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-dm-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 16px 24px;
+  background: var(--ld-cv);
+}
+.lc-dm-wait,
+.lc-dm-none {
+  display: block;
+  margin: 40px auto 0;
+  max-width: 300px;
+  font-size: 13px;
+  text-align: center;
+}
+.lc-dm-grid {
+  display: grid;
+  align-items: start;
+  gap: 18px 14px;
+}
+.lc-dm-page {
+  margin-bottom: -6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--l-ink-2);
+}
+.lc-dm-tile {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+/* Its name over it, as on the canvas: the name, who is on it, its size. */
+.lc-dm-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+}
+.lc-dm-label > b {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-dm-size {
+  flex: none;
+  font-family: var(--l-font-mono);
+  font-size: 11px;
+  color: var(--l-ink-4);
+}
+.lc-dm-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--ld-side);
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+}
+.lc-dm-tag[data-lead] {
+  background: var(--ld-lead);
+}
+/* The frame: flat, its page's own size scaled down, a hairline round it; its iframes clipped square. */
+.lc-dm-box {
+  --lc-dm-c: var(--l-accent);
+  position: relative;
+  display: grid;
+  place-items: center;
+  max-width: 100%;
+  background: color-mix(in oklab, var(--l-ink) 4%, var(--lc-paper));
+  box-shadow: 0 0 0 1px var(--l-line);
+  transition: box-shadow 140ms ease;
+}
+.lc-dm-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.lc-dm-f {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  background: #fff;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.lc-dm-f[data-behind] {
+  visibility: hidden;
+}
+.lc-dm-note {
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--l-ink-3);
+  text-align: center;
+}
+@media (hover: hover) {
+  .lc-dm-tile:hover .lc-dm-box {
+    box-shadow: 0 0 0 1.5px var(--lc-dm-c);
+  }
+  .lc-dm-tile:hover .lc-dm-label > b {
+    color: var(--l-ink);
+  }
+}
+/* An agent on the frame: a ring in its colour that breathes outward while it works, as on the canvas (design-face.css .ld-pres). */
+.lc-dm-box[data-on] {
+  --lc-dm-c: var(--ld-side);
+  box-shadow: 0 0 0 1.5px var(--lc-dm-c);
+}
+.lc-dm-box[data-on="lead"] {
+  --lc-dm-c: var(--ld-lead);
+}
+.lc-dm-box[data-on]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: 0 0 0 1.5px var(--lc-dm-c);
+  opacity: 0;
+  pointer-events: none;
+  animation: lc-dm-breathe 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes lc-dm-breathe {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(1.06);
+    opacity: 0;
+  }
+}
+html[data-motion="quick"] .lc-dm-box[data-on]::after {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-dm-box[data-on]::after {
+    animation: none;
+  }
+}
+/* Narrow: Open in Liner Design keeps its words on a line of its own under the title. */
+@container (max-width: 340px) {
+  .lc-dm-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding: 10px 12px;
+  }
+  .lc-dm-name {
+    flex-basis: 100%;
+  }
+  .lc-dm-status,
+  .lc-dm-body {
+    padding-inline: 12px;
+  }
+}

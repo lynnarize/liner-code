@@ -1648,9 +1648,9 @@ export type Rpc = {
   /** While a Design surface is open: tell it when a design's file changes. */
   "design.watch": [{ threadId: string; on: boolean }, null];
   /** Liner Design (contracts/src/design.ts). `cwd` is a project's folder or a session's worktree; `file`, a design file's slug in .liner/designs/. */
-  "canvas.list": [{ cwd: string }, DesignFileInfo[]];
+  "canvas.list": [{ cwd: string; /** A look only (the Code face's small view): nothing adopted, made or kept while listing. */ peek?: boolean }, DesignFileInfo[]];
   /** `base`: where the design's folder is served (the files proxy), for a frame's <base>. */
-  "canvas.open": [{ cwd: string; file: string }, { file: DesignFile; base: string; /** Each drawn frame's revision, by id. */ revs: Record<string, string> }];
+  "canvas.open": [{ cwd: string; file: string; /** A look only (the Code face's small view): read as it is, nothing adopted, written or marked as heard, and not taken as the one the person has open, which a design tool naming none would draw on. */ peek?: boolean }, { file: DesignFile; base: string; /** Each drawn frame's revision, by id. */ revs: Record<string, string> }];
   /** A new design file; with `size`, it starts with one empty frame of that size. */
   "canvas.create": [{ cwd: string; title: string; size?: DesignSize }, DesignFile];
   "canvas.save": [{ cwd: string; file: string; patch: DesignPatch }, DesignFile];
@@ -1663,7 +1663,7 @@ export type Rpc = {
   /** A copy of a frame beside it (or at x, y), with its HTML. */
   "canvas.frame.copy": [{ cwd: string; file: string; frame: string; x?: number; y?: number }, DesignFile];
   /** A frame's HTML, stamped with data-l ids, and its revision (FrameRev). */
-  "canvas.frame.read": [{ cwd: string; file: string; frame: string }, { html: string; rev: string }];
+  "canvas.frame.read": [{ cwd: string; file: string; frame: string; /** A look only (the Code face's small view): the frame as it is on disk, ids in the returned page only, nothing written or marked as heard. */ peek?: boolean }, { html: string; rev: string }];
   /**
     One element of a drawn frame as its file has it (by data-l, stamped), and the file's revision:
     the source the Code tab shows and edits and ⌘D copies, never the page as its scripts drew it.
@@ -1684,7 +1684,7 @@ export type Rpc = {
   */
   "canvas.frame.apply": [{ cwd: string; file: string; frame: string; ops: FrameOp[]; base?: string; threadId?: string }, { at: number; rev: string; from: string; undo: FrameOp[]; ids: string[] }];
   /** While the canvas shows a design file: tell it when its files change. */
-  "canvas.watch": [{ cwd: string; file: string; on: boolean }, null];
+  "canvas.watch": [{ cwd: string; file: string; on: boolean; /** A watch that only looks (the Code face's small view), counted apart: alone on a folder it writes nothing and still announces changes. Turn it off with peek too. */ peek?: boolean }, null];
   /** A design file's kept states in a session, a copy per turn. */
   "canvas.versions": [{ threadId: string; file: string }, CanvasVersion[]];
   /** A kept copy as it was, to look at: its index and its drawn frames' HTML by id. By `key` (CanvasVersion.key), else by `turn`. Reads the session's copy only; one never kept is refused. */

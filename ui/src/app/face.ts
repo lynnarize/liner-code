@@ -145,6 +145,26 @@ export function moveTab(key: string, to: DesignTab) {
   putTabs({ list, at: tabs.at === key ? k : tabs.at });
 }
 
+/*
+  A frame to land on: the Code face's small view of a design file (DesignMini.tsx) opens Liner
+  Design on the frame pressed. Kept here so Liner Code can ask without loading Liner Design; the
+  canvas takes it once it shows that design file (Canvas.tsx), within 10 s, and picks and fits it.
+*/
+let landing: { file: string; frame: string; at: number } | undefined;
+const landFns = new Set<() => void>();
+export function landOn(file: string, frame: string) {
+  landing = { file, frame, at: Date.now() };
+  for (const l of landFns) l();
+}
+/** The frame asked for this design file, once; none when another file was asked for, or it waited too long. */
+export function takeLanding(file: string) {
+  const l = landing;
+  if (!l || l.file !== file) return undefined;
+  landing = undefined;
+  return Date.now() - l.at < 10_000 ? l.frame : undefined;
+}
+export const onLanding = (fn: () => void) => (landFns.add(fn), () => void landFns.delete(fn));
+
 type Tool = Extract<Item, { kind: "tool" }>;
 /** A tool call that draws on a design file: Liner's design tools by any tool's name for them. */
 export const CANVAS_TOOL = /^(?:mcp__liner__|liner\.|liner_)?design_(frame|node|picture|built)\b/;

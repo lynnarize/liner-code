@@ -30,6 +30,7 @@ import { CheckLabel, CheckMarks } from "./ChecksTab";
 import { WayLabel, WaysOver } from "./Ways";
 import { PictureOver } from "./Pictures";
 import { blankHtml, design, frameOf, getDesign, isGone, keepsView, useDesign, type Sel } from "./store";
+import { onLanding, takeLanding } from "../face";
 
 const DRAG = 3;
 type Box = { x: number; y: number; w: number; h: number };
@@ -109,6 +110,31 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     // A tab coming back keeps the view it had (store.ts show).
     if (!keepsView(file.id)) fit(root.current);
   }, [file?.id, page, onPage.length > 0]);
+
+  // A frame pressed in the Code face's small view of this file (face.ts landOn): picked and fitted,
+  // after the tab has settled (store.ts show puts a tab's own view and selection back two frames on).
+  useEffect(() => {
+    const id = file?.id;
+    if (!id) return;
+    let timer = 0;
+    // Taken only when it is acted on: a canvas that goes before its timer (a remount) leaves it for the next one.
+    const land = () => {
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const want = takeLanding(id);
+        if (!want) return;
+        const s = getDesign();
+        const f = s.file?.id === id ? s.file.frames.find((x) => x.id === want) : undefined;
+        if (!f) return;
+        if (f.page !== (s.page ?? s.file!.pages[0]?.id)) design.setPage(f.page);
+        design.select([{ frame: f.id }]);
+        requestAnimationFrame(() => fit(root.current));
+      }, 160);
+    };
+    land();
+    const off = onLanding(land);
+    return () => (off(), clearTimeout(timer));
+  }, [file?.id]);
 
   // Where the selected nodes are, in their frames' pixels, as the frames say while they move.
   const watchKey = sel.filter((x) => x.node).map((x) => `${x.frame}:${x.node}`).join(",");

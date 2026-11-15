@@ -213,7 +213,7 @@ function inFolder(cwd: string, asked: string) {
   return rel.split(sep).join("/");
 }
 
-type Watcher = { n: number; fw?: FSWatcher; timers: Map<string, NodeJS.Timeout>; cwd: string; file: string; /** Whether its folder and design.json were there when last looked. */ present?: boolean; /** Looks for the design file going and coming back, once a second. */ poll?: NodeJS.Timeout };
+type Watcher = { n: number; /** Watches that only look (canvas.watch with peek, the Code face's small view): while they are the only ones, the watch writes nothing. */ peek?: number; fw?: FSWatcher; timers: Map<string, NodeJS.Timeout>; cwd: string; file: string; /** Whether its folder and design.json were there when last looked. */ present?: boolean; /** Looks for the design file going and coming back, once a second. */ poll?: NodeJS.Timeout };
 type State = {
   /** What the engine wrote last to each file, by path: the watcher leaves those changes be. */
   own: Map<string, string>;
@@ -496,6 +496,7 @@ export function readFile(ctx: DesignCtx, cwd: string, slug: string, o: { drop?: 
   there's no such design file or its JSON is broken.
 */
 export function peekFile(cwd: string, slug: string): DesignFile | null {
+  // Left as it was for its callers (a turn's note, design_files' hooks, design-start); the Code face's small view reads with lookFile, below, which has readFile's guards.
   let dir: string;
   try {
     dir = designDir(cwd, slug);
@@ -511,6 +512,30 @@ export function peekFile(cwd: string, slug: string): DesignFile | null {
   } catch {
     return null;
   }
+}
+
+/**
+  A design file's index as it is, for what only looks and is reached from the app (the `peek` calls of
+  the Code face's small view): read through readFile's own guards (a design.json that is a link, or
+  leads out of the folder, is refused the same way), loose frame files adopted in memory only, and
+  never written: no index made, none adopted into, no copy of a broken one kept. Throws what is true.
+*/
+export function lookFile(cwd: string, slug: string): DesignFile {
+  const dir = designDir(cwd, slug);
+  const index = inDesign(dir, "design.json");
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`There's no design file “${slug}” in this folder.`);
+  let raw: unknown = {};
+  if (existsSync(index)) {
+    try {
+      raw = JSON.parse(readFileSync(index, "utf8"));
+    } catch {
+      throw new Error(`${DESIGN_UNREADABLE} ${CANVAS_DIR}/${slug}/design.json can't be read (it isn't whole JSON), so nothing is written to it.`);
+    }
+  }
+  const file = normal(raw, slug);
+  // No look in the trash (readFile's fromTrash): a loose file that was a removed frame shows under a name made from its file until a plain read adopts it with its old one. Left so on purpose.
+  sync(dir, file, false);
+  return file;
 }
 
 /**
@@ -594,8 +619,8 @@ function writeIndex(st: State, cwd: string, file: DesignFile) {
   writeOwn(st, inDesign(designDir(cwd, file.id), "design.json"), `${JSON.stringify(onDisk, null, 2)}\n`);
 }
 
-/** The design files of a folder, newest first. */
-export function listFiles(ctx: DesignCtx, cwd: string): DesignFileInfo[] {
+/** The design files of a folder, newest first. With `peek` (the Code face's small view), each is read with lookFile: nothing adopted, made or kept. */
+export function listFiles(ctx: DesignCtx, cwd: string, peek = false): DesignFileInfo[] {
   const root = linkFree(cwd, CANVAS_DIR);
   if (!existsSync(root)) return [];
   const out: DesignFileInfo[] = [];
@@ -603,7 +628,7 @@ export function listFiles(ctx: DesignCtx, cwd: string): DesignFileInfo[] {
     const dir = join(root, slug);
     if (!SLUG.test(slug) || !lstatSync(dir).isDirectory() || !(existsSync(join(dir, "design.json")) || existsSync(join(dir, "frames")))) continue;
     try {
-      const file = readFile(ctx, cwd, slug);
+      const file = peek ? lookFile(cwd, slug) : readFile(ctx, cwd, slug);
       const times = [join(dir, "design.json"), ...file.frames.filter((f) => f.kind === "drawn").map((f) => join(dir, framePath(f)))].map((p) => statSync(p, { throwIfNoEntry: false })?.mtimeMs ?? 0);
       out.push({ id: slug, title: file.title, frames: file.frames.length, updated: Math.round(Math.max(...times)), ...(file.frames[0] ? { thumb: file.frames[0].id } : {}) });
     } catch (e) {
@@ -945,6 +970,17 @@ export function readFrameRev(ctx: DesignCtx, cwd: string, slug: string, asked: s
   return { html: s.html, rev: heardRev(st, abs, raw), frame: f, ok: true };
 }
 
+/**
+  A drawn frame as it is on disk, for what only looks (the Code face's small view, canvas.frame.read
+  with peek): ids stamped into the returned page only, never written, and nothing marked as heard,
+  so an agent's next edit finds its file as it left it and others still hear of its changes.
+*/
+export function peekFrame(cwd: string, slug: string, asked: string) {
+  const raw = readFileSync(frameFile(cwd, slug, frameOf(lookFile(cwd, slug), asked)), "utf8");
+  const s = stamp(raw);
+  return { html: s.ok ? s.html : raw, rev: revOf(raw) };
+}
+
 /** A revision someone was handed: the engine knows the app has seen it. */
 const heardRev = (st: State, abs: string, bytes: string | Buffer) => {
   const rev = revOf(bytes);
@@ -1086,8 +1122,8 @@ function changedOnDisk(ctx: DesignCtx, cwd: string, slug: string, rel: string) {
   }
   let frame: string | undefined;
   try {
-    // A new file in frames/ goes on the canvas (readFile adopts it).
-    frame = readFile(ctx, cwd, slug).frames.find((f) => f.path === rel)?.id ?? m[1];
+    // A new file in frames/ goes on the canvas (readFile adopts it); a folder watched only to look adopts nothing (lookFile).
+    frame = (st.watchers.get(dir)?.n ? readFile(ctx, cwd, slug) : lookFile(cwd, slug)).frames.find((f) => f.path === rel)?.id ?? m[1];
   } catch {
     frame = m[1];
   }
@@ -1097,14 +1133,28 @@ function changedOnDisk(ctx: DesignCtx, cwd: string, slug: string, rel: string) {
 
 const withThread = (threadId?: string) => (threadId ? { threadId } : {});
 
-/** canvas.watch: while the canvas shows a design file, its folder is watched (counted, so two windows can). */
-export function watchFile(ctx: DesignCtx, cwd: string, slug: string, on: boolean) {
+/**
+  canvas.watch: while the canvas shows a design file, its folder is watched (counted, so two windows can).
+  With `peek` (the Code face's small view), counted apart: a folder watched only that way writes nothing
+  (lookFile, never readFile) and still announces its changes; once a plain watch is on it too, the watch
+  is as it always was, and what the looking watch left loose is adopted then, as a plain start would.
+*/
+export function watchFile(ctx: DesignCtx, cwd: string, slug: string, on: boolean, peek = false) {
   const st = state(ctx);
   attach(ctx);
   const dir = designDir(cwd, slug);
   const w: Watcher = st.watchers.get(dir) ?? { n: 0, timers: new Map(), cwd, file: slug };
-  w.n = Math.max(0, w.n + (on ? 1 : -1));
-  if (!w.n) {
+  const wasLooking = Boolean(w.fw) && !w.n;
+  if (peek) w.peek = Math.max(0, (w.peek ?? 0) + (on ? 1 : -1));
+  else w.n = Math.max(0, w.n + (on ? 1 : -1));
+  if (wasLooking && w.n) {
+    try {
+      readFile(ctx, cwd, slug);
+    } catch {
+      // an index that can't be read: as a plain start would leave it
+    }
+  }
+  if (!w.n && !w.peek) {
     w.fw?.close();
     clearInterval(w.poll);
     for (const t of w.timers.values()) clearTimeout(t);
@@ -1136,7 +1186,8 @@ function listen(ctx: DesignCtx, cwd: string, slug: string, dir: string, w: Watch
   const st = state(ctx);
   // What's there now, so a file's going and coming back is told.
   try {
-    for (const f of readFile(ctx, cwd, slug).frames) if (f.kind === "drawn") st.there.set(join(dir, framePath(f)), !f.missing);
+    // Watched only to look (canvas.watch with peek): read as it is, nothing adopted or made.
+    for (const f of (w.n ? readFile(ctx, cwd, slug) : lookFile(cwd, slug)).frames) if (f.kind === "drawn") st.there.set(join(dir, framePath(f)), !f.missing);
   } catch {
     // an index that can't be read: its frames are told as they change
   }
@@ -1596,8 +1647,8 @@ export function attach(ctx: DesignCtx) {
 
 export type CanvasMethod = "canvas.list" | "canvas.open" | "canvas.create" | "canvas.save" | "canvas.frame.add" | "canvas.frame.remove" | "canvas.frame.unremove" | "canvas.frame.apply" | "canvas.frame.copy" | "canvas.frame.read" | "canvas.frame.node" | "canvas.frame.write" | "canvas.watch" | "canvas.versions" | "canvas.version.read" | "canvas.restore" | "canvas.selection";
 
-/** Each drawn frame's revision, by id (a frame whose file can't be read has none). */
-function revsOf(ctx: DesignCtx, cwd: string, file: DesignFile) {
+/** Each drawn frame's revision, by id (a frame whose file can't be read has none). `hear` false (a look only): none is marked as heard. */
+function revsOf(ctx: DesignCtx, cwd: string, file: DesignFile, hear = true) {
   const st = state(ctx);
   const out: Record<string, string> = {};
   const dir = designDir(cwd, file.id);
@@ -1605,7 +1656,7 @@ function revsOf(ctx: DesignCtx, cwd: string, file: DesignFile) {
     if (f.kind !== "drawn") continue;
     try {
       const abs = inDesign(dir, framePath(f));
-      if (existsSync(abs)) out[f.id] = heardRev(st, abs, readFileSync(abs));
+      if (existsSync(abs)) out[f.id] = hear ? heardRev(st, abs, readFileSync(abs)) : revOf(readFileSync(abs));
     } catch {
       // a link or a file gone: no revision
     }
@@ -1635,16 +1686,22 @@ export function rpc(x: () => DesignCtx): DesignRpc<CanvasMethod> {
     return ctx;
   };
   return {
-    "canvas.list": ({ cwd }) => {
+    "canvas.list": ({ cwd, peek }) => {
       const ctx = c();
-      return listFiles(ctx, ctx.folder(cwd));
+      return listFiles(ctx, ctx.folder(cwd), Boolean(peek));
     },
-    "canvas.open": async ({ cwd, file }) => {
+    "canvas.open": async ({ cwd, file, peek }) => {
       const ctx = c();
       const dir = ctx.folder(cwd);
       // Gone on disk: never made again from what's left of it, behind the person's back.
       const d = designDir(dir, slugOk(file));
-      if (!lstatSync(d, { throwIfNoEntry: false })?.isDirectory() || (state(ctx).watchers.has(d) && !existsSync(join(d, "design.json")))) throw new Error(`“${slugOk(file)}” isn't there any more: its folder or its design.json was removed on disk.`);
+      if (!lstatSync(d, { throwIfNoEntry: false })?.isDirectory() || (Boolean(state(ctx).watchers.get(d)?.n) && !existsSync(join(d, "design.json")))) throw new Error(`“${slugOk(file)}” isn't there any more: its folder or its design.json was removed on disk.`);
+      // A look only (the Code face's small view of a design): read as it is (a loose frame file shows, adopted in memory only),
+      // nothing written, nothing marked as heard, and never the file a tool that names none means.
+      if (peek) {
+        const p = lookFile(dir, slugOk(file));
+        return { file: p, base: await baseOf(ctx, dir, p.id), revs: revsOf(ctx, dir, p, false) };
+      }
       const f = readFile(ctx, dir, slugOk(file), { drop: true });
       state(ctx).opened.set(dir, f.id);
       return { file: f, base: await baseOf(ctx, dir, f.id), revs: revsOf(ctx, dir, f) };
@@ -1677,8 +1734,9 @@ export function rpc(x: () => DesignCtx): DesignRpc<CanvasMethod> {
       const ctx = c();
       return copyFrame(ctx, ctx.folder(cwd), file, frame, at, y);
     },
-    "canvas.frame.read": ({ cwd, file, frame }) => {
+    "canvas.frame.read": ({ cwd, file, frame, peek }) => {
       const ctx = c();
+      if (peek) return peekFrame(ctx.folder(cwd), slugOk(file), frame);
       const r = readFrameRev(ctx, ctx.folder(cwd), file, frame, { keep: true });
       return { html: r.html, rev: r.rev };
     },
@@ -1697,9 +1755,9 @@ export function rpc(x: () => DesignCtx): DesignRpc<CanvasMethod> {
       if (threadId) ctx.store.thread(threadId);
       return applyFrame(ctx, ctx.folder(cwd), file, frame, ops, { by: "you", threadId, ...(base !== undefined ? { base: String(base) } : {}) });
     },
-    "canvas.watch": ({ cwd, file, on }) => {
+    "canvas.watch": ({ cwd, file, on, peek }) => {
       const ctx = c();
-      watchFile(ctx, ctx.folder(cwd), slugOk(file), Boolean(on));
+      watchFile(ctx, ctx.folder(cwd), slugOk(file), Boolean(on), Boolean(peek));
       return null;
     },
     "canvas.versions": ({ threadId, file }) => versions(c(), threadId, file),

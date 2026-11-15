@@ -9,6 +9,7 @@ import type { DesignFile, DesignSize, Project, Thread } from "@contracts";
 import { startOf } from "@contracts";
 import type { RunSettings } from "../Composer";
 import { getState, rpc } from "../engine";
+import { pairEffortFor } from "../model";
 import { currentTab, getTabs, openTab, patchTab, showTab, tabKey, type DesignTab } from "../face";
 import { blankHtml } from "./store";
 
@@ -25,7 +26,7 @@ export function runFor(project?: Project): RunSettings {
   if (project?.agent === "demo") return { agent: "demo", sidekick: "demo:demo", effort: "low", access };
   if (project?.agent) return { agent: project.agent, effort: "medium", access };
   const start = startOf(settings, providers);
-  if (start) return { ...start, effort: "medium", access };
+  if (start) return { ...start, effort: start.sidekick ? pairEffortFor(start.agent, providers, settings.pairEffort) : "medium", access };
   const first = providers.find((p) => p.available && p.adapter && p.id !== "demo");
   return { agent: first ? `@${first.id}:${first.models[0]?.id ?? "default"}` : "demo", effort: "medium", access };
 }
@@ -40,7 +41,7 @@ export function makeSession(tab: DesignTab, run?: RunSettings): Promise<Thread> 
   if (going) return going;
   const project = getState().projects.find((p) => p.id === tab.projectId);
   const r = run ?? runFor(project);
-  const next = rpc("thread.create", { projectId: tab.projectId, design: { file: tab.file }, agent: r.agent, sidekick: r.sidekick, model: r.model, effort: r.effort, access: r.access, mode: "standard", worktree: false, ...(tab.title ? { title: tab.title } : {}) })
+  const next = rpc("thread.create", { projectId: tab.projectId, design: { file: tab.file }, agent: r.agent, sidekick: r.sidekick, ...(r.sidekick && r.tuning ? { tuning: r.tuning } : {}), model: r.model, effort: r.effort, access: r.access, mode: "standard", worktree: false, ...(tab.title ? { title: tab.title } : {}) })
     .then((t) => (patchTab(k, { threadId: t.id }), t))
     .finally(() => making.delete(k));
   making.set(k, next);

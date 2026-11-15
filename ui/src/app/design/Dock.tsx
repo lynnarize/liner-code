@@ -113,7 +113,7 @@ export function Dock({ thread, project, tab }: { thread?: Thread; project: Proje
   const lead = thread ? (pairOf(thread, agents, providers)?.lead ?? coder.name) : coder.name;
   // An agent's ask waits at the composer, as in Liner Code: in every size of the chat, since the composer is always here.
   const asking = useDockAsk(thread ?? NO_THREAD, lead);
-  const settings: RunSettings = thread ? { agent: thread.agent, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, ...(thread.sidekick ? { sidekick: thread.sidekick } : {}) } : first;
+  const settings: RunSettings = thread ? { agent: thread.agent, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, ...(thread.sidekick ? { sidekick: thread.sidekick } : {}), ...(thread.tuning ? { tuning: thread.tuning } : {}) } : first;
   const busy = thread?.status === "running";
   const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
   const update = (patch: Partial<RunSettings>) => {
@@ -124,6 +124,7 @@ export function Dock({ thread, project, tab }: { thread?: Thread; project: Proje
     if ("model" in patch) p.model = patch.model ?? null;
     if ("effort" in patch) p.effort = patch.effort;
     if ("access" in patch) p.access = patch.access;
+    if ("tuning" in patch) p.tuning = patch.tuning ?? null;
     void rpc("thread.update", p).catch(fail);
   };
   const send = async (m: { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" }) => {

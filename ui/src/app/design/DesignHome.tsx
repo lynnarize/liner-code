@@ -193,7 +193,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
     }
   }, [place]);
   const project = projects.find((p) => p.id === place);
-  const initial = useMemo((): RunSettings => runFor(project), [project?.id, project?.agent, engineSettings.start, engineSettings.defaultAccess, providers.length]);
+  const initial = useMemo((): RunSettings => runFor(project), [project?.id, project?.agent, engineSettings.start, engineSettings.defaultAccess, engineSettings.pairEffort, providers.length]);
   const [settings, setSettings] = useState<RunSettings>(initial);
   useEffect(() => setSettings(initial), [initial]);
   const [size, setSize] = useState<Size>("desktop+phone");
@@ -212,7 +212,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
     try {
       const { project: p, file } = await make(title);
       // Its session, begun from it, in its own folder (never a worktree: the design file is there).
-      const t = await rpc("thread.create", { projectId: p.id, design: { file: file.id }, title: file.title, agent: settings.agent, sidekick: settings.sidekick, model: settings.model, effort: settings.effort, access: settings.access, mode: "standard", worktree: false });
+      const t = await rpc("thread.create", { projectId: p.id, design: { file: file.id }, title: file.title, agent: settings.agent, sidekick: settings.sidekick, ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), model: settings.model, effort: settings.effort, access: settings.access, mode: "standard", worktree: false });
       openTab({ projectId: p.id, file: file.id, title: file.title, threadId: t.id });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files, design: { file: file.id } });
     } catch (e) {

@@ -6,8 +6,9 @@ import { fileURLToPath } from "node:url";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, endpointKey, ROUTINES_ON, splitModel, startOf, VOUCHER } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary } from "../../contracts/src/index.ts";
+import { castOf, endpointKey, isPair, ROUTINES_ON, splitModel, startOf, VOUCHER } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary } from "../../contracts/src/index.ts";
+import { CLASSES, pairShare, TUNING } from "./sidekick.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
 import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
@@ -662,7 +663,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const known = (id?: string): id is string => Boolean(id && (id.startsWith("@") || store.agents.some((a) => a.id === id)));
     const start = known(who) ? undefined : defaultStart();
     const writer = start ? start.agent : who!;
-    return {
+    const tuning = tuningOf(o.tuning) ?? parent?.tuning;
+    const t: Thread = {
       id: tid,
       projectId,
       title: title ?? parent?.title ?? "New session",
@@ -681,11 +683,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // A fork keeps its parent's mode, as it keeps its conversation.
       ...((mode && mode !== "standard") || parent?.mode ? { mode: mode && mode !== "standard" ? mode : parent?.mode } : {}),
       ...((drawn ?? parent?.design ?? designOf(project)) ? { design: { file: (drawn ?? parent?.design ?? designOf(project))!.file } } : {}),
+      // How its pair works, its own changes; a fork keeps its parent's, as it keeps its sidekick.
+      ...(tuning ? { tuning } : {}),
       turns: parent ? parent.turns - (live ? 1 : 0) : 0,
       usage: emptyUsage(),
       createdAt: now,
       updatedAt: now,
     };
+    // A new session that starts as a pair with no effort said works at the pair's effort (Settings.pairEffort, else medium), as
+    // near as its lead's model has one (resolve, nearestEffort). A fork keeps its parent's, which the person may have set.
+    if (!parent && t.effort === undefined && isPair(t)) t.effort = runtime.resolve({ ...t, effort: store.settings.pairEffort ?? "medium" }).effort;
+    return t;
   };
 
   const handlers: Handlers = {
@@ -921,7 +929,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, sidekick, review, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode, design: drawn }) => {
+    "thread.create": async ({ projectId, agent, sidekick, review, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode, design: drawn, tuning }) => {
+      // Checked before anything is made for it (a worktree): one it can't take fails here.
+      tuningOf(tuning);
       const project = store.project(projectId);
       // Begun from a design: its design file, by slug. Every session of a design on its own draws its design, said or not.
       if (drawn !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(String(drawn?.file ?? ""))) throw new Error("That isn't a design file's name.");
@@ -976,7 +986,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // (T3 Code: ThreadForkService.ts forks from the last stable run), and gets the conversation as text.
       // Half done is its last turn still running, by that turn's own status: one the Reviewer reads now has ended.
       const live = parent ? runtime.isRunning(parent.id) && store.timeline(parent.id).some((x) => x.kind === "turn" && x.turn === parent.turns && x.status === "running") : false;
-      const t = draftThread({ projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn }, tid, now, { parent, live, tree });
+      const t = draftThread({ projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn, tuning }, tid, now, { parent, live, tree });
       store.putThread(t);
       if (notice) store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: now, text: notice });
       // A fork starts with its parent's timeline, so you can see where it branched.
@@ -1013,6 +1023,15 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : k === "sidekick" ? String(v).replace(/^@/, "") : v]));
       const t = store.thread(id);
       if (clean.connectionsOff !== undefined && (!Array.isArray(clean.connectionsOff) || clean.connectionsOff.some((x) => typeof x !== "string"))) throw new Error("connectionsOff is a list of add-on ids.");
+      // The pair's own ways: stored as sent (an empty set, like null, clears them), heard by the lead's next turn, which opens
+      // its session again, resuming, as its words changed (runtime.ts shapeOf, kit), as another sidekick does.
+      if ("tuning" in clean) clean.tuning = tuningOf(clean.tuning);
+      // Another sidekick without a word on the ways: the session's own brief, exploring, reading and taking back were for the
+      // last one's class, so they go; how its lead hands over is the lead's, so it stays.
+      else if (clean.sidekick !== undefined && clean.sidekick !== t.sidekick && t.tuning) {
+        const left = t.tuning.handOver ? { handOver: t.tuning.handOver } : undefined;
+        clean.tuning = left;
+      }
       if (patch.archived && !t.archived) leftBehind(id);
       // Opened again: a worktree a clean-up took is put back.
       if (patch.archived === false && t.archived) void ensureWorktree(id).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "Its worktree didn't come back", body: String(e?.message ?? e) }));
@@ -1035,6 +1054,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const cwd = cwdOf(id);
       const md = await sessionMarkdown(store, id, async (from, to) => (await git(cwd, ["diff", "--relative", ...PATCH, "-M", from, to])).stdout);
       return { path: saveToDownloads(store.thread(id).title, md) };
+    },
+    // Its usage records are read from when it was made: none of its own is older. Finished turns only: mid-turn a brief's use
+    // is logged as the brief ends but the lead's only as its turn does, so counting the turn at work would show the sidekick
+    // with all of it. The app says so from the session's status. A record of the very millisecond the turn began is the last
+    // turn's (its lead's, logged as it ended): nothing of the new one is logged before a brief has snapshotted and run.
+    "thread.shares": ({ id }) => {
+      const t = store.thread(id);
+      const items = store.timeline(t.id);
+      const live = liveTurn(t, items);
+      const records = store.usage(t.createdAt).filter((r) => r.threadId === t.id && (!live || r.at <= live.at));
+      return pairShare(records, live ? items.filter((x) => x.turn < live.turn) : items);
     },
     "thread.info": async ({ id }) => {
       const t = store.thread(id);
@@ -1567,6 +1597,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // A picture model's key goes only to an https address (or one on this Mac): refused before anything is kept.
       if (patch.pictures) for (const e of patch.pictures) pictures.checkEndpointUrl(e?.url);
       if (patch.openIn !== undefined && patch.openIn !== "code" && patch.openIn !== "design") throw new Error("Liner opens in Code or Design.");
+      pairSettings(patch as Record<string, unknown>);
       const settings = store.setSettings(patch);
       if (patch.outside !== undefined) x.outside?.apply();
       // A new or changed account or endpoint is a tool to find; a model id you added only changes the lists.
@@ -1928,6 +1959,51 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return h(params ?? {});
     },
   };
+}
+
+/**
+  A session's own ways as sent (thread.create, thread.update), checked key by key so nothing else is
+  stored on the thread; undefined for none (null, or an empty set). A value the engine can't say to
+  a lead throws.
+*/
+function tuningOf(x: unknown): PairTuning | undefined {
+  if (x === undefined || x === null) return undefined;
+  if (typeof x !== "object" || Array.isArray(x)) throw new Error("tuning is a set of a pair's ways.");
+  for (const [k, v] of Object.entries(x)) if (!Object.hasOwn(TUNING, k) || !TUNING[k as keyof PairTuning].includes(v)) throw new Error(`A pair has no way "${k}: ${String(v)}".`);
+  return Object.keys(x).length ? (x as PairTuning) : undefined;
+}
+
+/**
+  Settings' word on how pairs work, checked as a session's own is (tuningOf), in place on the patch: a model moved to a
+  class there isn't is dropped (the rest are kept), a hand-over there isn't, or an effort that isn't a word, throws, and
+  null (or no models moved) clears the setting to unset, so automatic reads it as unset rather than as null.
+*/
+function pairSettings(patch: Record<string, unknown>) {
+  if ("classes" in patch) {
+    const c = patch.classes;
+    if (c !== null && c !== undefined && (typeof c !== "object" || Array.isArray(c))) throw new Error("classes is a set of models and their classes.");
+    const kept = Object.entries((c ?? {}) as Record<string, unknown>).filter(([, v]) => CLASSES.includes(v as never));
+    patch.classes = kept.length ? Object.fromEntries(kept) : undefined;
+  }
+  if ("handOver" in patch) {
+    if (patch.handOver !== null && patch.handOver !== undefined && !TUNING.handOver.includes(patch.handOver)) throw new Error(`A pair's lead has no way to hand over called "${String(patch.handOver)}".`);
+    patch.handOver = patch.handOver ?? undefined;
+  }
+  if ("pairEffort" in patch) {
+    if (patch.pairEffort !== null && patch.pairEffort !== undefined && (typeof patch.pairEffort !== "string" || !patch.pairEffort.trim())) throw new Error("pairEffort is an effort's name.");
+    patch.pairEffort = patch.pairEffort ?? undefined;
+  }
+}
+
+/**
+  The turn of a session still at work, by its mark (the turn's number and when it began), else undefined. Its mark settles
+  in the same step that logs the lead's use (runtime.ts, a turn's end), so while it reads running the lead's use of it isn't
+  logged yet, though its briefs' may be (thread.shares leaves both out).
+*/
+function liveTurn(t: Thread, items: Item[]) {
+  if (t.status !== "running") return undefined;
+  const mark = items.findLast((x) => x.kind === "turn" && x.status === "running");
+  return mark ? { turn: mark.turn, at: mark.at } : undefined;
 }
 
 // Local calendar days: the engine runs on your machine, so its zone is yours (the app labels days the same way).

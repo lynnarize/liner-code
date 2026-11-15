@@ -13,9 +13,9 @@
   default, Codex's past its turn) outlives the turn that sent it and ends on its own row, turns
   later: until then it counts wherever agents at work do, whichever message is the latest.
 */
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { toast } from "@liner/components/toast/toast";
-import { agentState, isPair, type AgentProfile, type FileChange, type Item, type PlanEntry, type ProviderInfo, type Thread } from "@contracts";
+import { agentState, isPair, type AgentProfile, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type Thread } from "@contracts";
 import { rpc, useEngine, useItemsWhere } from "./engine";
 import { I, ModelMark } from "./icons";
 import { useLaunch } from "./launch";
@@ -393,6 +393,7 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
         <b>{crew.mode}</b>
         <span className="lc-quiet">· {working ? `${working} of ${countOf(crew)} working` : `${countOf(crew)} worked on it`}</span>
       </div>
+      {crew.pair && <PairShares thread={thread} />}
       {crew.members.map((m) => (
         <div key={m.key}>
           <div className="lc-crp-r">
@@ -458,6 +459,69 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
         )}
       </div>
     </div>
+  );
+}
+
+/** "88%": a share (0 to 1) as a whole percent, never 0% for a part that used something. */
+const pct = (share: number) => `${share > 0 && share < 0.01 ? "<1" : Math.round(share * 100)}%`;
+
+/**
+  A pair's use so far, by model: each one's tokens, and its share of the session's cost (of its
+  tokens when no cost is known for it), with the token share quietly beside a cost share; then how
+  the lead's briefs went, through the last finished turn. An answer with no models (a pair's first
+  turn, before any has ended), or an engine that can't say (it fails), leaves the list as it was, with no word.
+*/
+function PairShares({ thread }: { thread: Thread }) {
+  const providers = useEngine((s) => s.providers);
+  const [shares, setShares] = useState<PairShare | null>(null);
+  // The engine counts finished turns only (a lead's use is recorded at its turn's end), so a turn at work isn't in yet.
+  const live = thread.status === "running" || thread.status === "waiting";
+  // Read once per open, and again when a turn is added or the session's status moves (a turn ends). Each read
+  // reads the whole usage log, so never per usage tick. A reply to an older read than the latest is dropped.
+  useEffect(() => {
+    let gone = false;
+    void rpc("thread.shares", { id: thread.id })
+      .then((s) => !gone && setShares(s))
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [thread.id, thread.turns, thread.status]);
+  if (!shares?.models.length) return null;
+  const { sent, kept, tookBack } = shares.briefs;
+  return (
+    <>
+      {shares.models.map((m) => {
+        const ref = m.ref.replace(/^@/, "");
+        const cost = m.costShare !== undefined;
+        const share = cost ? m.costShare! : m.tokenShare;
+        const role = m.role === "lead" ? "Lead" : "Sidekick";
+        return (
+          <div key={`${m.role}:${m.ref}`} className="lc-crp-m">
+            <ModelMark kind={markOf(ref)} size={12} />
+            <b>
+              {modelLabel(ref, providers)}
+              <span className="lc-crp-role">{role}</span>
+            </b>
+            <span className="lc-crp-n">{compact(m.tokens)} tokens</span>
+            <span className="lc-crp-share" role="img" aria-label={`${role}: ${pct(share)} of ${cost ? "cost" : "tokens"}${cost ? `, ${pct(m.tokenShare)} of tokens` : ""}`}>
+              <i style={{ "--w": `${Math.max(0, Math.min(1, share)) * 100}%` } as CSSProperties} />
+              <span>
+                {pct(share)} of {cost ? "cost" : "tokens"}
+                {cost && <span className="lc-quiet"> · {pct(m.tokenShare)} of tokens</span>}
+              </span>
+            </span>
+          </div>
+        );
+      })}
+      <div className="lc-crp-sep" />
+      {sent > 0 && <div className="lc-crp-l">{`${plural(sent, "brief")} · ${kept} kept · ${tookBack} taken back`}</div>}
+      <div className="lc-crp-l lc-quiet">
+        {live ? "Through the last finished turn. " : ""}
+        {shares.estimated ? "Tokens are counted. Cost is an estimate from list prices, and your plan may differ." : "Tokens and cost are as each tool reported them."}
+      </div>
+      <div className="lc-crp-sep" />
+    </>
   );
 }
 

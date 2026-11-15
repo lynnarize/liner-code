@@ -65,6 +65,15 @@ export const QUICKER: Tier[] = [
   ["minimax", [/minimax.*(flash|lite)/i]],
   ["xai", [/grok.*(fast|mini)/i]],
 ];
+/**
+  The sidekicks between the two (tuning.ts, sidekickClassOf): strong enough to be given a goal, the
+  files and the limits rather than every line, not so strong that a lead leaves them the how. Sol
+  sits in FRONTIER and QUICKER both, and as a sidekick it is one of these.
+*/
+export const MID: Tier[] = [
+  ["anthropic", [/sonnet/i]],
+  ["openai", [/sol(?!.*pro)/i]],
+];
 
 /**
   What a model costs for a typical task, in dollars: Artificial Analysis's cost per Intelligence

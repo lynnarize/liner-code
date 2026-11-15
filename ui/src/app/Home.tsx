@@ -17,7 +17,7 @@ import { DeskPresence } from "./Desk";
 import { DeskStage } from "./DeskStage";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
-import { ago, bucketOf, codeProjects } from "./model";
+import { ago, bucketOf, codeProjects, pairEffortFor } from "./model";
 import { Pop, Row, Sep } from "./ui";
 import { ProjectChooser } from "./Projects";
 import { ModePick } from "./Modes";
@@ -48,9 +48,10 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     if (own) return { agent: own.id, effort: own.effort, access };
     const firstModel = providers.find((p) => p.available && p.adapter && p.id !== "demo");
     const start = startOf(engineSettings, providers);
-    if (start) return { ...start, effort: "medium", access };
+    // Starting as a pair, at a pair's effort (Settings, Medium unless set).
+    if (start) return { ...start, effort: start.sidekick ? pairEffortFor(start.agent, providers, engineSettings.pairEffort) : "medium", access };
     return { agent: firstModel ? `@${firstModel.id}:${firstModel.models[0]?.id ?? "default"}` : "demo", effort: "medium", access };
-  }, [project?.id, project?.agent, engineSettings.start, JSON.stringify(engineSettings.picks ?? {}), access, agents.length, readyKey]);
+  }, [project?.id, project?.agent, engineSettings.start, JSON.stringify(engineSettings.picks ?? {}), engineSettings.pairEffort, access, agents.length, readyKey]);
   const [settings, setSettings] = useState<RunSettings>(initial);
   // The session's mode, fixed once it starts: your default, unless you pick another here.
   const defaultMode = useEngine((s) => s.settings.defaultMode ?? "standard");
@@ -118,7 +119,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   const begun = useRef(false);
   const sentFor = useRef("");
   const plainHere = Boolean(project) && !(worktree && project?.git) && !inWorktree && !(compare.length && mode_ === "standard");
-  const choices = { projectId: project?.id ?? "", mode: mode_, agent: settings.agent, sidekick: settings.sidekick, review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: Boolean(worktree && project?.git && !inWorktree), base: worktree ? base : undefined, inWorktree: inWorktree?.path, compare: Boolean(compare.length && mode_ === "standard") };
+  const choices = { projectId: project?.id ?? "", mode: mode_, agent: settings.agent, sidekick: settings.sidekick, tuning: settings.tuning, review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: Boolean(worktree && project?.git && !inWorktree), base: worktree ? base : undefined, inWorktree: inWorktree?.path, compare: Boolean(compare.length && mode_ === "standard") };
   const choicesKey = JSON.stringify(choices);
   const warmNew = () => {
     if (!project || !begun.current || sentFor.current === choicesKey) return;
@@ -160,7 +161,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         if (made[0]?.compare) onCompare(made[0].compare.id);
         return;
       }
-      const t = await rpc("thread.create", { ...(id ? { id } : {}), projectId: project.id, mode: asMode, agent: settings.agent, sidekick: settings.sidekick, review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
+      const t = await rpc("thread.create", { ...(id ? { id } : {}), projectId: project.id, mode: asMode, agent: settings.agent, sidekick: settings.sidekick, ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
       await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
       if (quietly) {
         setInWorktree(undefined);

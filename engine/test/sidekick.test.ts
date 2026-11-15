@@ -12,9 +12,10 @@ import { createServer } from "node:http";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Item, ProviderInfo, Thread } from "../../contracts/src/index.ts";
-import { emptyUsage } from "../../contracts/src/index.ts";
+import type { Item, PairShare, ProviderInfo, Thread } from "../../contracts/src/index.ts";
+import { emptyUsage, waysOf } from "../../contracts/src/index.ts";
 import { AgentTools } from "../src/agent-tools.ts";
+import { createApi } from "../src/api.ts";
 import { PAIR_ENV, toolsFor } from "../src/liner-tools.ts";
 import { providers, Runtime } from "../src/runtime.ts";
 import { ensureSampleProject } from "../src/providers/demo.ts";
@@ -470,9 +471,11 @@ test("sidekick: the Demo leads a pair end to end: it hands the change over, its 
 });
 
 test("sidekick: the words: a quicker sidekick gets prescriptive briefs, a frontier one lighter ones; the result is short and says it's a claim", () => {
-  assert.match(leadRules("Luna", false), /be prescriptive/);
-  assert.match(leadRules("Astra", true), /listen when it pushes back/);
-  for (const rules of [leadRules("Luna", false), leadRules("Astra", true)]) {
+  const small = waysOf(LEAD, SIDE, {});
+  const frontier = waysOf(LEAD, "codex:gpt-6-astra", {});
+  assert.match(leadRules("Luna", small), /be prescriptive/);
+  assert.match(leadRules("Astra", frontier), /listen when it pushes back/);
+  for (const rules of [leadRules("Luna", small), leadRules("Astra", frontier)]) {
     assert.match(rules, /By default, hand it any test, build or install run/, "handing over is the default, not a permission");
     assert.match(rules, /When the judgment is the deliverable .* do it yourself/);
     assert.match(rules, /Every brief says in done_when how it can tell it's done: the command to run and what it should show/);
@@ -548,10 +551,10 @@ test("sidekick: the cap for one brief from the lead's tool's wait", () => {
 test("sidekick: its tool is known by Hermes's name, and a Hermes lead is told that name and how to find it", () => {
   for (const name of ["mcp__liner__sidekick", "liner.sidekick", "liner_sidekick", "mcp__editor_liner_8c735fbc__sidekick"]) assert.ok(isSidekickTool(name), name);
   for (const name of ["mcp__editor_liner_zz__sidekick", "mcp__editor_github_8c735fbc__sidekick", "sidekick_x"]) assert.ok(!isSidekickTool(name), name);
-  const rules = leadRules("Luna", false, linerName("hermes"));
+  const rules = leadRules("Luna", waysOf(LEAD, SIDE, {}), linerName("hermes"));
   assert.match(rules, /mcp__editor_liner_<tag>__sidekick hands it/);
   assert.match(rules, /tool_search \("sidekick"\).*tool_call/);
-  assert.doesNotMatch(leadRules("Luna", false, linerName("claude")), /tool_search|<tag>/, "only where the name has a tag");
+  assert.doesNotMatch(leadRules("Luna", waysOf(LEAD, SIDE, {}), linerName("claude")), /tool_search|<tag>/, "only where the name has a tag");
   assert.match(toolsNote(linerName("hermes")), /^- mcp__editor_liner_<tag>__design_show shows/m);
   assert.match(toolsNote(linerName("hermes")), /find it with tool_search and call it through tool_call/);
   assert.doesNotMatch(toolsNote(linerName("codex")), /<tag>/);
@@ -806,5 +809,99 @@ test("sidekick: a brief whose call has less than the least time left once it's o
   } finally {
     side.restore();
     lead.restore();
+  }
+});
+
+/** A sidekick that writes the file its brief names ("write b.txt"), new words each time, and says so. */
+let written = 0;
+const writes: Script = async (o, text, sink) => {
+  const file = /write (\S+)/.exec(text)?.[1] ?? "b.txt";
+  writeFileSync(join(o.cwd, file), `${text} ${++written}\n`);
+  sink.text(`Wrote ${file}.`);
+};
+
+test("sidekick: taken back, measured: the lead changing a brief's file after it is; another file, or a later brief changing it, isn't", async () => {
+  const side = fake("codex", writes);
+  let after: (cwd: string, o: OpenOptions, sink: TurnSink) => Promise<void> = async () => {};
+  const lead = fake("claude", async (o, _t, sink) => {
+    await hand(tools, o, sink, "k1", { brief: "write b.txt" });
+    await after(o.cwd, o, sink);
+  });
+  const { store, runtime, tools } = pair();
+  const took = () => rows(store.timeline("t")).map((r) => r.agent?.tookBack);
+  try {
+    // The lead rewrites the file its sidekick just wrote: taken back.
+    after = async (cwd) => writeFileSync(join(cwd, "b.txt"), "mine\n");
+    await runtime.send("t", "one");
+    assert.deepEqual(took(), [true]);
+    // The lead edits a file of its own: the brief stays its sidekick's.
+    after = async (cwd) => writeFileSync(join(cwd, "c.txt"), "mine\n");
+    await runtime.send("t", "two");
+    assert.deepEqual(took(), [true, false]);
+    // A later brief changes the first one's file and the lead nothing: neither was taken back.
+    after = async (_cwd, o, sink) => void (await hand(tools, o, sink, "k2", { brief: "write b.txt again" }));
+    await runtime.send("t", "three");
+    assert.deepEqual(took(), [true, false, false, false]);
+  } finally {
+    side.restore();
+    lead.restore();
+  }
+});
+
+test("sidekick: a session's own ways reach the lead's next turn, its session opened again resuming, and the sidekick hears how far it may look", async () => {
+  const side = fake("codex", writer);
+  const lead = fake("claude", async (o, _t, sink) => void (o.mcp?.env[PAIR_ENV] === "1" && (await hand(tools, o, sink, "k1", { brief: "Write b.txt." }))));
+  const { store, runtime, tools } = pair({ providerSession: "claude:lead-1" });
+  try {
+    await runtime.send("t", "one");
+    assert.match(lead.opened[0].soul, /be prescriptive/, "Luna is a small sidekick");
+    assert.match(side.opened[0].soul, /Don't go looking beyond the files the brief names/);
+    await runtime.send("t", "two");
+    assert.equal(lead.opened.length, 1, "nothing changed: the same session");
+    store.patchThread("t", { tuning: { brief: "open", explore: "bounded", handOver: "asked" } });
+    await runtime.send("t", "three");
+    assert.equal(lead.opened.length, 2, "opened again for its new words");
+    assert.equal(lead.opened[1].resume, "lead-1", "resuming where it was");
+    assert.match(lead.opened[1].soul, /listen when it pushes back/);
+    assert.match(lead.opened[1].soul, /Keep the work yourself unless the person asks/);
+    // Its sidekick's session opened again by its next brief, with its new line.
+    assert.equal(side.opened.length, 2);
+    assert.match(side.opened[1].soul, /A few searches inside the folders the brief names are fine/);
+    // A class moved in Settings reaches it too.
+    store.setSettings({ classes: { [SIDE]: "frontier" } });
+    store.patchThread("t", { tuning: undefined });
+    await runtime.send("t", "five");
+    assert.match(lead.opened.at(-1)!.soul, /listen when it pushes back/);
+  } finally {
+    side.restore();
+    lead.restore();
+  }
+});
+
+test("sidekick: thread.shares mid-turn, after a brief ended and before the lead's turn did, is what it was before the turn began", async () => {
+  const side = fake("codex", writer);
+  let mid: unknown;
+  const lead = fake("claude", async (o, text, sink) => {
+    await hand(tools, o, sink, `k-${text}`, { brief: "Write b.txt." });
+    if (text === "two") mid = await api.call("thread.shares", { id: "t" });
+    sink.usage({ inputTokens: 300, outputTokens: 100, cacheReadTokens: 0, costUsd: 0.04 });
+  });
+  const { store, runtime, tools, home } = pair();
+  const env = { PATH: "/usr/bin:/bin", HOME: home };
+  const api = createApi(store, runtime, env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+  try {
+    await runtime.send("t", "one");
+    const before = (await api.call("thread.shares", { id: "t" })) as PairShare;
+    assert.deepEqual(before.models.map((m) => m.role), ["lead", "sidekick"]);
+    assert.equal(before.briefs.sent, 1);
+    await runtime.send("t", "two");
+    assert.deepEqual(mid, before, "the turn at work isn't counted, its ended brief neither");
+    const after = (await api.call("thread.shares", { id: "t" })) as PairShare;
+    assert.equal(after.briefs.sent, 2);
+    assert.equal(after.models.find((m) => m.role === "lead")?.tokens, 800);
+  } finally {
+    side.restore();
+    lead.restore();
+    runtime.shutdown();
   }
 });

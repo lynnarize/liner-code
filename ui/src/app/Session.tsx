@@ -276,7 +276,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
   const pair = pairOf(thread, agents, providers);
   // The composer's settings: who leads, the sidekick of a pair, the model, effort and access (the
   // sidekick goes in by a spread, so this compiles before and after the composer's type has it).
-  const settings: RunSettings = { agent: thread.agent, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, ...(thread.sidekick ? { sidekick: thread.sidekick } : {}) };
+  const settings: RunSettings = { agent: thread.agent, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, ...(thread.sidekick ? { sidekick: thread.sidekick } : {}), ...(thread.tuning ? { tuning: thread.tuning } : {}) };
   const open = checkpointsOf(cps).filter((c) => !c.reverted && !c.committed);
   const lines = sumLines(open.flatMap((c) => c.files));
   const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
@@ -496,6 +496,8 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     if ("model" in patch) p.model = patch.model ?? null;
     if ("effort" in patch) p.effort = patch.effort;
     if ("access" in patch) p.access = patch.access;
+    // A pair's own ways: none left is automatic again (null).
+    if ("tuning" in patch) p.tuning = patch.tuning ?? null;
     void rpc("thread.update", p).catch(fail);
   };
 

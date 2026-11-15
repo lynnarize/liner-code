@@ -17,8 +17,8 @@
 import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, ShownChip, UserShown, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, frontierClass, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER } from "../../contracts/src/index.ts";
-import { capture, changes, isRepo, PATCH } from "./checkpoints.ts";
+import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
+import { capture, changedPaths, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { holders, killTree, markFile, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
 import { claudeTeam, fixPrompt, parseFindings, parseStep, quickOf, reviewPrompt, stepPrompt } from "./review.ts";
@@ -41,7 +41,7 @@ import { frameRevs, framesChanged } from "./canvas.ts";
 import { memoryNote, titleFrom } from "./memory.ts";
 import { commandRisk, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
-import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, type BriefOutcome } from "./sidekick.ts";
+import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, knownWays, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, tookBackOf, UNSTARTED, type BriefMark, type BriefOutcome } from "./sidekick.ts";
 
 export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, antigravity, demo };
 
@@ -87,8 +87,9 @@ const liveKeyOf =(threadId: string, agentId: string) => `${threadId}:${agentId}`
   agentId: who works it. liner: install cards its agent asked for through Liner Code's tools, which
   expire with the turn like the tool's own requests. ends: what waits on the turn (a brief the lead called).
   winding: those briefs' own ends, which the turn waits for once it has stopped them (BRIEF_WIND_MS at most).
+  briefs: the briefs that began in it, in order, with their snapshots, for the turn's end to tell which it took back (tookBackOf).
 */
-type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean; agentId?: string; liner?: Set<string>; ends?: Set<() => void>; winding?: Set<Promise<void>>; marker?: string };
+type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean; agentId?: string; liner?: Set<string>; ends?: Set<() => void>; winding?: Set<Promise<void>>; marker?: string; briefs?: BriefMark[] };
 /**
   A "don't ask again this session": `rule` a command's rules (ruleParts) or a tool's name (`tool`), `skill` a skill's
   folder in full. `label` is what the card offered and what forgetting it names.
@@ -599,8 +600,13 @@ export class Runtime {
     const links = fingerprint(connections);
     // The lead of a pair gets the sidekick tool and its words; the sidekick gets its own words and no such tool.
     const pair = !sidekick && agentId === t.agent && this.pairOf(t);
+    // How the pair works, for both sides' words: in the kit, so a change to it (the session's own, a class or hand-over in
+    // Settings, another lead) reopens the session, resuming, by its next turn, as another sidekick does.
+    const ways = (pair || sidekick) && t.sidekick ? this.pairWays(t) : undefined;
+    const how = ways ? `:${ways.brief}.${ways.explore}.${ways.review}.${ways.takeBack}.${ways.handOver}${ways.firm ? ".firm" : ""}` : "";
     // An endpoint's model that takes pictures or not is declared to OpenCode when it opens: a change in Settings reopens it (resuming).
-    const kit = `${sidekick ? "sidekick" : pair ? `pair:${t.sidekick}` : ""}${picturesOf(r.provider, r.model, this.store.settings) ? "" : "|text"}`;
+    // The sidekick hears only how far it may look around, so only that reopens it.
+    const kit = `${sidekick ? `sidekick${ways ? `:${ways.explore}` : ""}` : pair ? `pair:${t.sidekick}${how}` : ""}${picturesOf(r.provider, r.model, this.store.settings) ? "" : "|text"}`;
     const forking = !sidekick && this.realFork(t) && agentId === t.agent;
     // A provider session id is kept as "<provider>:<id>" per part (the lead, the sidekick), so it only resumes into the one that made it.
     const saved = (sidekick ? t.sessions?.[agentId] : savedSession(t, agentId)) ?? "";
@@ -621,10 +627,10 @@ export class Runtime {
         t.sideOf
           ? [briefOf(r.agent, cwd), SIDE_RULES].filter(Boolean).join("\n\n")
           : sidekick
-            ? [briefOf(r.agent, cwd), sidekickRules(this.nameOf(t, t.agent))].filter(Boolean).join("\n\n")
+            ? [briefOf(r.agent, cwd), sidekickRules(this.nameOf(t, t.agent), ways?.explore)].filter(Boolean).join("\n\n")
             : briefOf(r.agent, cwd),
         this.tools ? toolsNote(n, family) : "",
-        pair ? leadRules(this.labelOf(t.sidekick!), frontierClass(t.sidekick!), n) : "",
+        pair && ways ? leadRules(this.labelOf(t.sidekick!), ways, n) : "",
         // A session's mode (Workshop, a custom one) is the lead's way of working, not the sidekick's.
         sidekick ? "" : modeNote(t, this.store.agents, cwd, n, Boolean(this.tools)),
         memoryNote(this.store.home, t.projectId),
@@ -1475,6 +1481,8 @@ export class Runtime {
         store.putItem(threadId, { kind: "checkpoint", id: uid("it"), turn, at: Date.now(), files, from, to, seconds });
         changed = true;
       }
+      // Which of its briefs the lead took back, from the snapshots already taken: a diff of names per brief, no snapshot more.
+      if (live.briefs?.length) await this.markTookBack(threadId, cwd, live.briefs, to).catch(() => {});
     }
     const errored = failed || sink.errored();
     // The turn's clock leaves out the time it waited on you: what was settled, and a wait still open as it ended.
@@ -1920,6 +1928,28 @@ export class Runtime {
   }
 
   /**
+    Puts on each brief's row whether the lead took it back (AgentRun.tookBack, tookBackOf), at the end of the turn they ran
+    in, against that turn's after snapshot (`end`). A row whose stretches couldn't all be measured is left as it was.
+  */
+  private async markTookBack(threadId: string, cwd: string, marks: BriefMark[], end: string | null) {
+    const took = await tookBackOf(marks, end, (a, b) => changedPaths(cwd, a, b));
+    for (const [rowId, tookBack] of took) {
+      const it = this.store.timeline(threadId).find((x) => x.id === rowId);
+      if (it?.kind === "tool" && it.agent) this.store.putItem(threadId, { ...it, agent: { ...it.agent, tookBack } });
+    }
+  }
+
+  /**
+    How a pair works (contracts' tuning.ts, waysOf): by the model its lead runs on as it resolves now (the session's own model,
+    else its agent's, so one of your agents counts by its model), its sidekick, Settings, and the session's own changes.
+  */
+  pairWays(t: Thread) {
+    const r = this.resolve(t);
+    const known = knownWays(this.store.settings, t.tuning);
+    return waysOf(`${r.provider}:${r.model}`, t.sidekick!, known.settings, known.own);
+  }
+
+  /**
     The lead's `sidekick` call (agent-tools.ts): the brief runs as one turn of the sidekick's own
     session (runBrief), one brief at a time in a thread, and the lead reads back how it went
     (sidekickResult). Only in the lead's own running turn, which waits on the call: Stop stops the
@@ -2051,7 +2081,7 @@ export class Runtime {
     const started = Date.now();
     // Stopped while it waited in line: it never starts, and the brief at work (if any) stays the one at work.
     if (stop.aborted) {
-      row.paint({ name: "Sidekick", task: taskOf(b.brief), brief: b.brief, model: ref, state: "stopped", now: undefined, report: "Stopped before it started.", files: [] }, true, "failed");
+      row.paint({ name: "Sidekick", task: taskOf(b.brief), brief: b.brief, model: ref, state: "stopped", now: undefined, report: UNSTARTED, files: [] }, true, "failed");
       return { how: "stopped", who, seconds: 0, report: "", files: [], unstarted: true };
     }
     const abort = new AbortController();
@@ -2072,7 +2102,12 @@ export class Runtime {
     let problem: string | undefined;
     let limited: string | undefined;
     let from: string | null = null;
+    let to: string | null = null;
     let git = false;
+    // Kept on the lead's turn from its before snapshot on, so a brief still at work as the turn ends bounds the stretch before it
+    // (tookBackOf); one that never began is taken off again below.
+    const lead = this.turns.get(threadId);
+    const mark: BriefMark | undefined = lead?.turn === turn ? { row: row.id, from: null, to: null, paths: null } : undefined;
     /** What it changed, measured; null when the folder couldn't be snapshotted. */
     let files: FileChange[] | null | undefined;
     /** Whether its turn was sent: one stopped before that did nothing at all. */
@@ -2186,6 +2221,10 @@ export class Runtime {
       git = await isRepo(cwd);
       const tag = `${threadId}/${turn}-${uid("sk")}`;
       from = git ? await capture(cwd, `${tag}-before`) : null;
+      if (mark) {
+        mark.from = from;
+        (lead!.briefs ??= []).push(mark);
+      }
       // The canvas's frames, which the snapshot leaves out, are measured on their own.
       framesFrom = frameRevs(cwd);
       ({ session } = await opening);
@@ -2202,7 +2241,7 @@ export class Runtime {
         await session.turn(prompt, sink, abort.signal);
       }
       if (git && from) {
-        const to = await capture(cwd, `${tag}-after`);
+        to = await capture(cwd, `${tag}-after`);
         files = to ? await changes(cwd, from, to, { turn: true }) : null;
       }
     } catch (e) {
@@ -2223,9 +2262,12 @@ export class Runtime {
     // Stopped or failed before its after snapshot: what it changed so far is measured now.
     if (unstarted) files = [];
     else if (files === undefined && git && from) {
-      const to = await capture(cwd, `${threadId}/${turn}-${uid("sk")}-after`).catch(() => null);
+      to = await capture(cwd, `${threadId}/${turn}-${uid("sk")}-after`).catch(() => null);
       files = to ? await changes(cwd, from, to, { turn: true }).catch(() => null) : null;
     }
+    // One that did nothing isn't the lead's to take back, and the stretch it sat in was the lead's alone.
+    if (mark && unstarted) lead!.briefs = lead!.briefs?.filter((m) => m !== mark);
+    else if (mark) Object.assign(mark, { to, paths: files ? files.flatMap((f) => [f.path, ...(f.from ? [f.from] : [])]) : null });
     const frames = framesFrom && !unstarted ? framesChanged(framesFrom, frameRevs(cwd)) : [];
     const seconds = (Date.now() - started) / 1000;
     const how: BriefOutcome["how"] = brief.by === "cap" ? "capped" : brief.by === "agent" ? "agent" : brief.by === "replaced" ? "replaced" : abort.signal.aborted ? "stopped" : limited ? "limited" : problem ? "failed" : "done";
@@ -2233,7 +2275,7 @@ export class Runtime {
     store.logUsage({ at: Date.now(), threadId, projectId: t.projectId, agent: "sidekick", provider, model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, cacheReadTokens: spent.cacheReadTokens, costUsd: spent.costUsd, seconds });
     for (const s of steps) if (s.status === "running") s.status = how === "done" ? "done" : "failed";
     const state = how === "done" ? "done" : how === "failed" || how === "limited" ? "failed" : "stopped";
-    row.paint({ ...run, steps: steps.slice(-40), state, now: undefined, report: unstarted ? "Stopped before it started." : report || (how === "failed" ? problem : how === "agent" ? "Stopped: a sidekick may not send agents of its own." : limited) || undefined, files: files ?? undefined, ...(frames.length ? { frames } : {}) }, true, how === "done" ? "done" : "failed");
+    row.paint({ ...run, steps: steps.slice(-40), state, now: undefined, report: unstarted ? UNSTARTED : report || (how === "failed" ? problem : how === "agent" ? "Stopped: a sidekick may not send agents of its own." : limited) || undefined, files: files ?? undefined, ...(frames.length ? { frames } : {}) }, true, how === "done" ? "done" : "failed");
     return { how, who, seconds, report, files: files ?? null, ...(frames.length ? { frames } : {}), problem: how === "limited" ? limited : problem, ...(b.capMs === undefined ? {} : { capMs: b.capMs }), ...(unstarted ? { unstarted: true } : {}), ...(sentAgent ? { agent: sentAgent } : {}) };
   }
 

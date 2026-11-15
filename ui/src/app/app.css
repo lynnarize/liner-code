@@ -4510,6 +4510,146 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   }
 }
 /*
+  How the pair works, under its Lead and Sidekick: the sidekick's class at the head's end, one
+  sentence of how the lead works with it, and a row that opens the six lines behind it in the
+  column's own place. A line the session changed carries the accent's dot before its value.
+*/
+.lc-how {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-how-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px 3px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+}
+.lc-how-cls {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  color: var(--l-ink-3);
+}
+.lc-how-sum {
+  margin: 0;
+  padding: 0 9px 2px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-2);
+}
+.lc-how-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 3px 6px 3px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-size: 12.5px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-how-k {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-how-v {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink);
+}
+.lc-how-row[data-own] .lc-how-v::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--l-accent);
+  vertical-align: 1px;
+}
+.lc-how-row > svg {
+  flex: none;
+  color: var(--l-ink-4);
+}
+.lc-how-sub {
+  padding: 6px 9px 1px;
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+}
+.lc-how-reset {
+  flex: none;
+  align-self: flex-start;
+  height: 26px;
+  margin: 2px 0 0 3px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 12px;
+  color: var(--l-accent-text);
+  cursor: pointer;
+}
+/* A line's choices: its name, the automatic one marked beside it, and its one line of what it means. */
+.lc-how-opt {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.lc-how-opt[data-on] {
+  background: var(--lc-plate);
+}
+.lc-how-opt b {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.lc-how-opt small {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-how-opt > span {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+@media (hover: hover) {
+  .lc-how-row:hover,
+  .lc-how-reset:hover,
+  .lc-how-opt:not([data-on]):hover {
+    background: var(--l-wash-2);
+  }
+}
+/*
   What the pair is likely to cost: a dot on a bar from green to red, named "Pair" above it, with a
   mark under the bar where its sidekick alone (Fast) and its lead alone (Best) would sit. A place,
   never a number. The dot is white in both themes, so it reads on every part of the bar.

@@ -15,15 +15,15 @@
     (⌘⇧Enter for the first), or edited where it waits.
   - A paste of 32 KiB or more comes as a text file. Drafts outlast a restart.
 */
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
-import type { Access, CommandInfo, SkillInfo, Effort, Project, ProviderInfo, QueuedMessage, RpcResult, Thread } from "@contracts";
-import { castOf, costOf, familyOf, pairCostOf, shortlistOf, splitModel } from "@contracts";
+import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
+import type { Access, CommandInfo, SkillInfo, Effort, PairTuning, PairWays, Project, ProviderInfo, QueuedMessage, RpcResult, SidekickClass, Thread } from "@contracts";
+import { castOf, costOf, familyOf, frontierClass, pairCostOf, shortlistOf, splitModel, waysOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
 import { isPrompt, rpc, useEngine, useItems, useItemsWhere } from "./engine";
 import { I, ModelMark, type MarkKind } from "./icons";
-import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, isModelAgent, markOf, modelLabel, pairReady, plural, providerLabel, shortName, since, toolMarkOf, wayOf, whoOf, type Way } from "./model";
+import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, effortsFor, EXTRA_EFFORTS, isModelAgent, keepHandOver, markOf, modelLabel, pairEffortFor, pairReady, plural, providerLabel, shortName, since, toolMarkOf, wayOf, whoOf, type Way } from "./model";
 import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
 import { CostMini, costScale, PairCost } from "./PairCost";
@@ -36,9 +36,11 @@ import type { DockAsk } from "./Ask";
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
   your agents); `sidekick`, set, makes it a pair: the model the lead hands work to. `review` is the
-  session's own word on the Reviewer, unset following Settings.
+  session's own word on the Reviewer, unset following Settings. `tuning` is a pair's own changes to
+  how it works (contracts' tuning.ts); unset, or a key left out, is automatic. In a patch, `tuning`
+  undefined clears the session's own.
 */
-export type RunSettings = { agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; review?: boolean };
+export type RunSettings = { agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; review?: boolean; tuning?: PairTuning };
 export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" };
 
 type Props = {
@@ -252,6 +254,7 @@ function ToolPick({ settings, onSettings }: { settings: RunSettings; onSettings:
   const providers = useEngine((s) => s.providers);
   const agents = useEngine((s) => s.agents);
   const picks = useEngine((s) => s.settings.picks);
+  const pairEffort = useEngine((s) => s.settings.pairEffort);
   const tools = useMemo(() => toolsOf(providers), [providers]);
   if (settings.agent === "demo" || tools.length === 0) return null;
   const now = splitModel(settings.model ?? agentOf(settings.agent, agents, providers).model).provider;
@@ -283,7 +286,9 @@ function ToolPick({ settings, onSettings }: { settings: RunSettings; onSettings:
                 if (t.id === now) return;
                 const cast = castOf([t], { picks });
                 if (!cast) return;
-                onSettings({ agent: `@${cast.lead}`, sidekick: pairReady(cast) ? cast.sidekick : undefined, model: undefined });
+                // Another tool is another sidekick: the session's own class lines go, and a session that only now becomes a pair gets a pair's effort.
+                const two = pairReady(cast);
+                onSettings({ agent: `@${cast.lead}`, sidekick: two ? cast.sidekick : undefined, model: undefined, tuning: keepHandOver(settings.tuning), ...(two && !settings.sidekick ? { effort: pairEffortFor(cast.lead, providers, pairEffort) } : {}) });
               }}
             />
           ))}
@@ -1320,6 +1325,74 @@ function roveGrid(e: KeyEvent<HTMLElement>, cols = 2) {
 type PanelProps = { project: Project; settings: RunSettings; onSettings: (patch: Partial<RunSettings>) => void; compare: string[]; onCompare?: (refs: string[]) => void; onNewAgent?: () => void; close: () => void };
 
 /*
+  How a pair works, as six lines a session can change for itself: four follow the sidekick's class
+  (tuning.ts, CLASS_WAYS), two belong to the lead (handing over, and its effort, which is the
+  session's own effort). Each choice has its one line of what it means to the lead.
+*/
+type TuneKey = keyof PairTuning;
+type HowKey = TuneKey | "effort";
+const HOW: { k: TuneKey; name: string; opts: { v: string | number; label: string; note: string }[] }[] = [
+  {
+    k: "brief",
+    name: "Brief",
+    opts: [
+      { v: "exact", label: "Exact files and functions", note: "Names each file and function and what to leave alone. One task per brief." },
+      { v: "scoped", label: "Goal, files and limits", note: "The goal, the files involved and the limits. The sidekick finds the lines." },
+      { v: "open", label: "Goal and why", note: "What you want and why. The how is left to the sidekick, and it may push back." },
+    ],
+  },
+  {
+    k: "explore",
+    name: "Exploration",
+    opts: [
+      { v: "none", label: "None", note: "The brief names every file. The sidekick does not go looking." },
+      { v: "bounded", label: "A few searches", note: "It may run a few searches to find callers, inside the folders the brief names." },
+      { v: "open", label: "Open", note: "It reads what it needs to and reports what it found." },
+    ],
+  },
+  {
+    k: "review",
+    name: "Review",
+    opts: [
+      { v: "all", label: "Every changed file", note: "The lead reads every file the brief changed before it builds on it." },
+      { v: "diff", label: "Diff, trusts its checks", note: "The lead reads the diff. A check the sidekick ran and reported is not run again." },
+      { v: "risk", label: "Diff where it matters", note: "The lead reads the parts of the diff that carry risk and skims the rest." },
+    ],
+  },
+  {
+    k: "takeBack",
+    name: "Take the work back after",
+    opts: [
+      { v: 1, label: "1 failure", note: "After one failed brief the lead does that piece itself." },
+      { v: 2, label: "2 failures", note: "The lead sends one correction. After a second failure it does the piece itself." },
+    ],
+  },
+  {
+    k: "handOver",
+    name: "Hands over",
+    opts: [
+      { v: "default", label: "By default", note: "Slow runs, edits across files and repeated changes go to the sidekick unless there is a reason not to." },
+      { v: "asked", label: "When asked", note: "The lead keeps the work unless you ask it to use its sidekick." },
+    ],
+  },
+];
+/** What an effort level means to a lead in a pair; a level a tool has besides these keeps the tool's own note. */
+const EFFORT_NOTES: Record<string, string> = { low: "Quickest. Fine for small, well-marked work.", medium: "Enough to plan and to review a diff.", high: "For hard plans and risky reviews. Uses the most." };
+const CLASS_TAG: Record<SidekickClass, string> = { small: "Small sidekick", mid: "Mid sidekick", frontier: "Frontier-class sidekick" };
+/**
+  The pair's ways in one sentence, the lead's short name first: how it briefs, how it reads what
+  comes back and when it takes the work back, with a clause when it hands over only when asked.
+*/
+function howSaid(ways: PairWays, lead: string, side: string) {
+  const brief = { exact: "writes exact briefs, one task each", scoped: "gives the goal, the files and the limits", open: "says what it wants and why" }[ways.brief];
+  const review = { all: `reads every file ${side} changes`, diff: `reads the diff and trusts ${side}'s checks`, risk: "reads the diff where it matters" }[ways.review];
+  const asked = ways.handOver === "asked" ? "hands work over only when you ask, " : "";
+  return `${lead} ${asked}${brief}, ${review}, and takes the work back after ${ways.takeBack === 1 ? "one failure" : "two failures"}.`;
+}
+/** A model by name alone, for a sentence: "Opus 5.5" is Opus, "GPT-6.1 Sol" Sol, "DeepSeek V4.1 Flash" DeepSeek Flash. */
+const nameAlone = (label: string) => label.split(" ").filter((w) => !/\d/.test(w)).join(" ") || label;
+
+/*
   Who works on this: a search on top; Pair, Best and Fast, each on one line, filled in from what's
   ready (your picks first); then every tool, your agents, and the Demo when it's shown, two to a
   row. It's kept short so it fits the room it opens into without scrolling. Picking Pair shows its
@@ -1332,6 +1405,9 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const providers = useEngine((s) => s.providers);
   const picks = useEngine((s) => s.settings.picks);
   const showDemo = useEngine((s) => s.settings.showDemo === true) && agents.some((a) => a.id === "demo");
+  const classes = useEngine((s) => s.settings.classes);
+  const handOverSet = useEngine((s) => s.settings.handOver);
+  const pairEffort = useEngine((s) => s.settings.pairEffort);
   // The tool is picked on its own (ToolPick, beside where it runs), so this panel offers that tool's
   // models: its own pair, its best and its fast, and its full list. A sidekick can still come from
   // another tool, from the Sidekick's "every model". The Demo, or a tool that's gone, sees them all.
@@ -1348,14 +1424,20 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const [query, setQuery] = useState("");
   // What the column shows: the rows (""), a tool's models (its id), or your agents.
   const [view, setView] = useState("");
-  // The Pair column: its Lead and Sidekick (""), or one of them being picked, from the short list or (`full`) from every model.
-  const [open, setOpen] = useState<"" | "lead" | "side">("");
+  /*
+    The Pair column: its Lead and Sidekick (""), or one of them being picked, from the short list or
+    (`full`) from every model; or how the pair works, as its six lines ("lines"), or one line's choices (its key).
+  */
+  const [open, setOpen] = useState<"" | "lead" | "side" | "lines" | HowKey>("");
   const [full, setFull] = useState(false);
   const find = useRef<HTMLInputElement>(null);
   const col = useRef<HTMLDivElement>(null);
   const pairCol = useRef<HTMLDivElement>(null);
   const leadBtn = useRef<HTMLButtonElement>(null);
   const sideBtn = useRef<HTMLButtonElement>(null);
+  const howBtn = useRef<HTMLButtonElement>(null);
+  const picking = open === "lead" || open === "side";
+  const line = open && open !== "lines" && !picking ? open : undefined;
   /** Across the two columns by the arrows: Right from the Pair row to the Lead, Left from Lead or Sidekick back to it. */
   const across = (e: KeyEvent<HTMLElement>) => {
     if (e.defaultPrevented || !(e.target instanceof HTMLButtonElement)) return;
@@ -1367,7 +1449,10 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const label = (ref: string) => modelLabel(ref, providers);
   // A list or a view that goes takes the focus it had back to what opened it, not to the page.
   const refocus = (el: () => HTMLElement | null | undefined) => requestAnimationFrame(() => el()?.focus({ preventScroll: true }));
-  const shut = () => (setOpen(""), setFull(false), refocus(() => (open === "side" ? sideBtn : leadBtn).current));
+  const shut = () => (setOpen(""), setFull(false), refocus(() => (open === "side" ? sideBtn : open === "lead" ? leadBtn : howBtn).current));
+  /** The six lines, on the one a list of choices was opened from (`from`), else the first. */
+  const toLines = (from?: HowKey) => (setOpen("lines"), refocus(() => pairCol.current?.querySelector<HTMLElement>(from ? `[data-line="${from}"]` : ".lc-how-row")));
+  const toLine = (k: HowKey) => (setOpen(k), refocus(() => pairCol.current?.querySelector<HTMLElement>(".lc-how-opt[data-on]") ?? pairCol.current?.querySelector<HTMLElement>(".lc-how-opt")));
   const pickFrom = (which: "lead" | "side") => (setOpen(which), setFull(false), refocus(() => pairCol.current?.querySelector<HTMLElement>(".lc-who-opt[data-on], .lc-who-opt")));
   /** Back from every model to the short list, on the row that led there. */
   const fewer = () => (setFull(false), refocus(() => pairCol.current?.querySelector<HTMLElement>("[data-all]")));
@@ -1410,8 +1495,11 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   };
   const pickWay = (w: "pair" | "best" | "fast") => {
     if (!pair) return;
-    // Picking Pair keeps the panel open on its Lead and Sidekick; a pair already picked stays as it is.
-    if (w === "pair") return void (way !== "pair" && onSettings({ agent: `@${pair.lead}`, sidekick: pair.sidekick, model: undefined }));
+    /*
+      Picking Pair keeps the panel open on its Lead and Sidekick; a pair already picked stays as it is. A
+      session that becomes a pair starts on how its class works, at a pair's effort (Settings, Medium unless set).
+    */
+    if (w === "pair") return void (way !== "pair" && onSettings({ agent: `@${pair.lead}`, sidekick: pair.sidekick, model: undefined, tuning: undefined, effort: pairEffortFor(pair.lead, providers, pairEffort) }));
     onSettings({ agent: `@${w === "best" ? pair.lead : pair.sidekick}`, sidekick: undefined, model: undefined });
     close();
   };
@@ -1424,8 +1512,47 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   };
   const pickSide = (ref: string) => {
     if (ref === leadModel) return toast("The lead and its sidekick are two different models", { description: `${leadName} leads: pick another model to work for it.` });
-    onSettings({ sidekick: ref });
+    // Another sidekick is another class: the session's own class lines go with the old one.
+    onSettings(ref === side ? { sidekick: ref } : { sidekick: ref, tuning: keepHandOver(settings.tuning) });
     shut();
+  };
+
+  /*
+    How this pair works: its ways resolved (the sidekick's class, Settings, then this session's own),
+    and what each would be left automatic. The lead's effort is the session's effort, and its
+    automatic one is a pair's (Settings, Medium unless set) as near as the lead's model takes.
+  */
+  // The lead as the engine runs it: the session's own model when it has one (a usage limit moved it, or a named agent's override), else its agent's.
+  const leadRuns = settings.model ?? leadModel;
+  const sett = { classes, handOver: handOverSet };
+  const ways = leadRuns && side ? waysOf(leadRuns, side, sett, settings.tuning) : undefined;
+  const auto = leadRuns && side ? waysOf(leadRuns, side, sett) : undefined;
+  const efforts = leadRuns ? effortsFor(leadRuns, providers) : { list: [], fallback: undefined };
+  const levels = efforts.list.filter((e) => !EXTRA_EFFORTS.has(e.id));
+  const effortNow = efforts.list.some((e) => e.id === settings.effort) ? settings.effort : (efforts.fallback ?? settings.effort);
+  const effortAuto = leadRuns ? pairEffortFor(leadRuns, providers, pairEffort) : "medium";
+  const effortOwn = levels.length > 0 && effortNow !== effortAuto;
+  const changed = (ways?.own.length ?? 0) + (effortOwn ? 1 : 0);
+  const clsWord = ways ? { small: "a small sidekick", mid: "a mid sidekick", frontier: "a frontier-class sidekick" }[ways.cls] : "";
+  /** What the automatic choice of a line is marked with. */
+  const autoNote = (k: HowKey) => (k === "effort" ? "Automatic in a pair" : k !== "handOver" ? `Automatic for ${clsWord}` : handOverSet ? "From Settings" : leadRuns && frontierClass(leadRuns.replace(/^@/, "")) ? "Automatic for a frontier-class lead" : "Automatic, said more firmly to this lead");
+  const lineLabel = (k: HowKey) => (k === "effort" ? (efforts.list.find((e) => e.id === effortNow)?.label ?? effortNow) : (HOW.find((h) => h.k === k)?.opts.find((o) => o.v === ways?.[k])?.label ?? ""));
+  const lineOwn = (k: HowKey) => (k === "effort" ? effortOwn : Boolean(ways?.own.includes(k)));
+  /** A choice made on a line: kept as the session's own unless it is what automatic is anyway, then back on the six lines. */
+  const pickLine = (k: HowKey, v: string | number) => {
+    if (k === "effort") onSettings({ effort: String(v) });
+    else if (auto) {
+      const next: Record<string, unknown> = { ...settings.tuning };
+      if (v === auto[k]) delete next[k];
+      else next[k] = v;
+      onSettings({ tuning: Object.keys(next).length ? (next as PairTuning) : undefined });
+    }
+    toLines(k);
+  };
+  /** Back to automatic: the session's own lines go, and its effort is a pair's again. */
+  const unTune = () => {
+    onSettings({ tuning: undefined, ...(effortOwn ? { effort: effortAuto } : {}) });
+    refocus(() => pairCol.current?.querySelector<HTMLElement>(".lc-how-row"));
   };
 
   // `note` is what the row shows beside its name; `say` the fuller words a screen reader gets.
@@ -1588,8 +1715,64 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           {main}
         </div>
         {way === "pair" && lead && side && (
-          <div ref={pairCol} className="lc-team-col lc-who-pair" data-full={(open && full) || undefined} role="group" aria-label={open === "lead" ? "Lead" : open === "side" ? "Sidekick" : "Pair"} onKeyDown={(e) => (rove(e), across(e), open && escape(e, full ? fewer : shut))}>
-            {!open ? (
+          <div
+            ref={pairCol}
+            className="lc-team-col lc-who-pair"
+            data-full={(picking && full) || undefined}
+            role="group"
+            aria-label={open === "lead" ? "Lead" : open === "side" ? "Sidekick" : open === "lines" ? "How this pair works" : open === "effort" ? "Lead's effort" : open ? (HOW.find((h) => h.k === open)?.name ?? "Pair") : "Pair"}
+            onKeyDown={(e) => (rove(e), across(e), open && escape(e, picking ? (full ? fewer : shut) : line ? () => toLines(line) : shut))}
+          >
+            {open === "lines" && ways ? (
+              <>
+                <button type="button" className="lc-who-back l-focus" data-rove aria-label="Back to the pair" onClick={shut}>
+                  <I.chevL size={12} />
+                  Pair
+                </button>
+                <div className="lc-how-h">
+                  <span>How this pair works</span>
+                  <span className="lc-how-cls">{CLASS_TAG[ways.cls]}</span>
+                </div>
+                {[...HOW.map((h) => h.k), ...(levels.length ? (["effort"] as const) : [])].map((k) => (
+                  <Fragment key={k}>
+                    {k === "handOver" && <div className="lc-how-sub">The lead</div>}
+                    <button type="button" className="lc-how-row l-focus" data-rove data-line={k} data-own={lineOwn(k) || undefined} aria-label={`${k === "effort" ? "Lead's effort" : HOW.find((h) => h.k === k)!.name}: ${lineLabel(k)}, ${lineOwn(k) ? "changed for this session" : "automatic"}. Change it`} onClick={() => toLine(k)}>
+                      <span className="lc-how-k">{k === "effort" ? "Lead's effort" : HOW.find((h) => h.k === k)!.name}</span>
+                      <span className="lc-how-v">{lineLabel(k)}</span>
+                      <I.chevR size={12} />
+                    </button>
+                  </Fragment>
+                ))}
+                {changed > 0 && (
+                  <button type="button" className="lc-how-reset l-focus" data-rove onClick={unTune}>
+                    Back to automatic
+                  </button>
+                )}
+                <p className="lc-who-note">Only this session changes. New sessions keep the class setting.</p>
+              </>
+            ) : line && ways ? (
+              <>
+                <button type="button" className="lc-who-back l-focus" data-rove aria-label="Back to how this pair works" onClick={() => toLines(line)}>
+                  <I.chevL size={12} />
+                  How this pair works
+                </button>
+                <div className="lc-team-lab">{line === "effort" ? "Lead's effort" : HOW.find((h) => h.k === line)?.name}, for this session</div>
+                {(line === "effort" ? levels.map((e) => ({ v: e.id, label: e.label, note: EFFORT_NOTES[e.id] ?? e.description ?? "" })) : (HOW.find((h) => h.k === line)?.opts ?? [])).map((o) => {
+                  const on = line === "effort" ? o.v === effortNow : o.v === ways[line];
+                  const isAuto = line === "effort" ? o.v === effortAuto : o.v === auto?.[line];
+                  return (
+                    <button key={String(o.v)} type="button" className="lc-how-opt l-focus" data-rove data-on={on || undefined} aria-pressed={on} onClick={() => pickLine(line, o.v)}>
+                      <b>
+                        {o.label}
+                        {isAuto && <small>{autoNote(line)}</small>}
+                      </b>
+                      {o.note && <span>{o.note}</span>}
+                    </button>
+                  );
+                })}
+                <p className="lc-who-note">Only this session changes. New sessions keep the class setting.</p>
+              </>
+            ) : !open ? (
               <>
                 <div className="lc-who-h">Pair</div>
                 <p className="lc-who-note lc-who-lede">The lead plans, decides and reviews. The sidekick does the work the lead hands it.</p>
@@ -1609,6 +1792,20 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                     <I.chevR size={12} />
                   </button>
                 </div>
+                {ways && (
+                  <div className="lc-how">
+                    <div className="lc-how-h">
+                      <span>How this pair works</span>
+                      <span className="lc-how-cls">{CLASS_TAG[ways.cls]}</span>
+                    </div>
+                    <p className="lc-how-sum">{howSaid(ways, isModelAgent(lead) ? nameAlone(leadName) : leadName, nameAlone(label(side)))}</p>
+                    <button ref={howBtn} type="button" className="lc-how-row l-focus" data-rove data-own={changed > 0 || undefined} aria-label={`Change how this pair works for this session${changed ? `, ${changed} changed` : ", nothing changed"}`} onClick={() => toLines()}>
+                      <span className="lc-how-k">Change for this session</span>
+                      <span className="lc-how-v">{changed > 0 ? `${changed} changed` : ""}</span>
+                      <I.chevR size={12} />
+                    </button>
+                  </div>
+                )}
                 {leadModel && <PairCost lead={leadModel} sidekick={side} names={{ lead: leadName, sidekick: label(side) }} />}
               </>
             ) : (

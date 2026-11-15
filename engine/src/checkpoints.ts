@@ -207,6 +207,16 @@ export async function changes(cwd: string, from: string, to: string, o: { turn?:
 }
 
 /**
+  The paths that differ between two snapshots, by paths in the project's folder as `changes` gives
+  them, both ends of a rename apart; null when git can't say. Names only, from commits already
+  there: nothing in the folder is read (a pair's taken back, sidekick.ts tookBackOf).
+*/
+export async function changedPaths(cwd: string, from: string, to: string): Promise<Set<string> | null> {
+  const r = await git(cwd, ["diff", "--relative", "--no-ext-diff", "--no-renames", "--name-only", "-z", from, to]);
+  return r.code === 0 ? new Set(r.stdout.split("\0").filter(Boolean)) : null;
+}
+
+/**
   The paths a turn wrote itself when HEAD moved under it (a pull, merge, checkout or rebase), by the
   project's own paths; null when HEAD stayed put, so every change is the turn's. Each snapshot's
   parent is the HEAD it was taken on. What differed from HEAD at either end is the turn's (or

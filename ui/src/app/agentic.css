@@ -72,3 +72,100 @@
 .lc-ag-pair .lc-st-row[data-off] :is(.lc-st-t b, .lc-mpop, .lc-ag-who b, .l-seg__opt) {
   color: var(--l-ink-3);
 }
+
+/*
+  How a pair works: a class a row, its name and what it's like in a narrow column, then your models
+  in it as chips, the sentence, and its four ways as a small grid. Stacked when the page is narrow.
+*/
+.lc-ag-cls {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 6px 18px;
+  padding: 14px 0;
+}
+@container lc-ag (max-width: 620px) {
+  .lc-ag-cls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.lc-ag-cls h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.lc-ag-cls small {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-ag-cls p {
+  max-width: 62ch;
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--l-ink-2);
+}
+.lc-ag-cls dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 8px 14px;
+  margin: 8px 0 0;
+}
+.lc-ag-cls dt {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-ag-cls dd {
+  margin: 0;
+  font-size: 13px;
+}
+.lc-ag-models {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  margin-bottom: 7px;
+  font-size: 13px;
+}
+.lc-st-row .lc-ag-models {
+  margin-bottom: 0;
+}
+/* A model as a chip, which opens a small menu that moves it; one you moved carries the accent's dot. */
+.lc-ag .lc-ag-mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  max-width: 100%;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lc-well);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-ag-mchip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-ag-mchip[data-own]::after {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-accent);
+}
+.lc-ag .lc-ag-mchip[data-open] {
+  background: var(--l-wash-2);
+}
+@media (hover: hover) {
+  .lc-ag .lc-ag-mchip:hover {
+    background: var(--l-wash-2);
+  }
+}

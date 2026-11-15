@@ -121,9 +121,10 @@
   font-weight: 400;
 }
 
-/* Its list. */
+/* Its list. One column no wider than the panel: a long line ellipsizes rather than widening the list past its edge. */
 .lc-crp {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   padding: 2px 0 0;
 }
 .lc-crp-h {
@@ -201,6 +202,72 @@ button.lc-crp-r:hover {
   align-items: center;
   gap: 6px;
   padding: 0 2px 2px;
+}
+/*
+  A pair's use, by model: its mark, name and role, its tokens at the end, and under them a flat bar
+  of its share of the cost (of its tokens when no cost is known). Then how the briefs went, and a
+  quiet line on where the figures come from.
+*/
+.lc-crp-m {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 9px;
+  row-gap: 5px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.lc-crp-m > svg {
+  justify-self: center;
+  color: var(--l-ink-2);
+}
+.lc-crp-m b {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-crp-share {
+  display: grid;
+  grid-column: 2 / 4;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-2);
+}
+.lc-crp-share > i {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--lc-plate);
+}
+.lc-crp-share > i::after {
+  content: "";
+  display: block;
+  width: var(--w);
+  height: 100%;
+  border-radius: 2px;
+  background: var(--l-ink-2);
+}
+.lc-crp-share .lc-quiet {
+  color: var(--l-ink-3);
+}
+.lc-crp-l {
+  padding: 4px 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-2);
+}
+.lc-crp-l.lc-quiet {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
 }
 
 /* ---------- the fan-out under a turn's work ---------- */

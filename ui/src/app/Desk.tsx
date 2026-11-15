@@ -255,7 +255,7 @@ export function Desk({ project, settings, worktree, onOpen }: Props) {
   const add = async (title: string) => {
     if (!project) return;
     try {
-      await rpc("thread.create", { projectId: project.id, agent: settings.agent, sidekick: settings.sidekick, review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, title, worktree: worktree && project.git });
+      await rpc("thread.create", { projectId: project.id, agent: settings.agent, sidekick: settings.sidekick, ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, title, worktree: worktree && project.git });
     } catch (e) {
       toast.error(msg(e));
     }

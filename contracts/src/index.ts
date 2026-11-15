@@ -13,6 +13,7 @@
     an approval it is waiting on, the checkpoint that closed a turn.
 */
 import type { CanvasVersion, FrameOp, FramePlaced, DesignFile, DesignFileInfo, DesignPatch, DesignPresence, DesignSelection, DesignSkill, FrameBuild, Lean, NewFrame, PictureAdd, PictureEndpoint, PictureModel } from "./design.ts";
+import type { HandOver, PairTuning, SidekickClass } from "./tuning.ts";
 
 /** The tools Liner Code knows by name. */
 export type BuiltinProvider = "claude" | "codex" | "hermes" | "opencode" | "cursor" | "grok" | "antigravity" | "demo";
@@ -332,6 +333,8 @@ export type Thread = {
     `sidekick` tool. Unset, one model works the session alone.
   */
   sidekick?: string;
+  /** This session's own changes to how its pair works, over its sidekick's class and Settings (tuning.ts, waysOf). Unset keys are automatic. */
+  tuning?: PairTuning;
   /** Connections (add-on ids) you switched off for this session alone: its tool isn't handed them. The rest follow Add-ons. */
   connectionsOff?: string[];
   /** This session's own word on the Reviewer: true reads each change, false reads none; unset follows Settings.review. */
@@ -479,6 +482,12 @@ export type AgentRun = {
   files?: FileChange[];
   /** The frames of design files it changed on the canvas, measured too (a sidekick's brief): `files` leaves .liner/ out. */
   frames?: { name: string; path: string }[];
+  /**
+    A sidekick's brief the lead took back: after it ended and before the lead's turn did, the lead
+    itself changed a file this brief had changed, as the folder's snapshots measured it. Unset when
+    the folder couldn't be snapshotted.
+  */
+  tookBack?: boolean;
 };
 /** How an agent stands: its own word, else its call's. */
 export const agentState = (it: { status: "running" | "done" | "failed" | "stopped"; agent?: AgentRun }) => it.agent?.state ?? it.status;
@@ -957,6 +966,12 @@ export type Settings = {
     alone. Unset: a pair when two different models are ready, else one model.
   */
   start?: "pair" | "best" | "fast";
+  /** Models you moved to another class as a sidekick, by model ref (tuning.ts, sidekickClassOf); the rest are placed by the lists. */
+  classes?: Record<string, SidekickClass>;
+  /** How a pair's lead hands work over, unless a session says otherwise. Unset is automatic (tuning.ts, waysOf). */
+  handOver?: HandOver;
+  /** The effort a session gets when it becomes a pair, through nearestEffort for its lead's model. Unset is "medium". */
+  pairEffort?: Effort;
   /** How many times the Reviewer sends blocking findings back before it's yours (default 2). */
   reviewRounds?: number;
   /** The Reviewer reads small changes too (SMALL_CHANGE lines or fewer, or only docs), which it otherwise lets through. */
@@ -1278,6 +1293,18 @@ export type UsageSummary = {
   byAgent: { agent: string; costUsd: number; tokens: number; turns: number }[];
   byModel: { model: string; provider: ProviderId; tokens: number; cacheShare: number; costUsd: number }[];
 };
+/**
+  A pair's use, by model, from its session's usage records: `tokens` as the Usage page counts them
+  (input and output, cache reads in), `tokenShare` and `costShare` each model's part of the session's (0 to 1). `costShare` is from the
+  cost each tool reported when every model listed reported some, else an estimate from list prices
+  (`estimated`), and left out for a model with neither. `briefs`: how many the lead sent, how many
+  ended done and stayed the sidekick's, and how many it took back (AgentRun.tookBack).
+*/
+export type PairShare = {
+  models: { ref: string; role: "lead" | "sidekick"; tokens: number; costUsd: number; costShare?: number; tokenShare: number }[];
+  estimated: boolean;
+  briefs: { sent: number; kept: number; tookBack: number };
+};
 
 /** A slash command the tool (or Liner Code) understands, and a skill it can use. */
 export type CommandInfo = { name: string; description: string; hint?: string; source: "tool" | "liner" };
@@ -1422,8 +1449,8 @@ export type Rpc = {
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
-  "thread.create": [{ projectId: string; agent?: string; sidekick?: string; review?: boolean; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode; /** Begun from a design (Thread.design); in a design project it defaults to the project's design file. */ design?: { file: string } }, Thread];
-  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string | null; effort?: Effort; agent?: string; sidekick?: string | null; connectionsOff?: string[] | null; review?: boolean | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null }, Thread];
+  "thread.create": [{ projectId: string; agent?: string; sidekick?: string; review?: boolean; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode; /** Begun from a design (Thread.design); in a design project it defaults to the project's design file. */ design?: { file: string }; tuning?: PairTuning }, Thread];
+  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string | null; effort?: Effort; agent?: string; sidekick?: string | null; connectionsOff?: string[] | null; review?: boolean | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null; /** null clears the session's own. */ tuning?: PairTuning | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
   /**
     A thread's timeline, with the number of the last event sent when it was read: events for it with
@@ -1551,6 +1578,8 @@ export type Rpc = {
   "desk.ask": [{ threadId: string; question: string; context: string }, { answer: string; by: string }];
   /** The Session surface: where a session runs, and what fills its context. */
   "thread.info": [{ id: string }, SessionInfo];
+  /** A pair's use, by model, and how its briefs went: the crew chip's list. */
+  "thread.shares": [{ id: string }, PairShare];
   /** The session as Markdown (asks, plans, answers, findings, diffs), saved in Downloads; where it went. */
   "thread.export": [{ id: string }, { path: string }];
   /** Past Claude Code and Codex sessions in the project's folder, newest first. */
@@ -1793,6 +1822,7 @@ export function newerVersion(a?: string, b?: string) {
   return false;
 }
 export * from "./cast.ts";
+export * from "./tuning.ts";
 export * from "./panel.ts";
 export * from "./dsh.ts";
 export * from "./design.ts";

@@ -1,18 +1,20 @@
 /*
   Agentic features: your pair, the lead and the sidekick that new sessions start with (each
-  automatic until you pick one), and what a new session starts as (Pair, Best or Fast); then the
-  Reviewer, which reads each change before it's yours. How one of your agents runs (with helpers
+  automatic until you pick one), and what a new session starts as (Pair, Best or Fast); how a pair
+  works, by the class of its sidekick, with your models in their classes; the lead in a pair (how it
+  hands over, and its effort); then the Reviewer, which reads each change before it's yours. How one of your agents runs (with helpers
   or alone) is the agent's own setting, in Team.
 */
-import { useEffect, useId, useMemo, useRef, type ReactNode, type Ref } from "react";
-import type { ModelPicks, ProviderInfo, Settings as EngineSettings } from "@contracts";
-import { castOf, frontierClass, makerOf, reviewerOf, SMALL_CHANGE, startOf } from "@contracts";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import type { ModelPicks, ProviderInfo, Settings as EngineSettings, SidekickClass } from "@contracts";
+import { castOf, CLASS_WAYS, frontierClass, makerOf, placedOf, reviewerOf, sidekickClassOf, SMALL_CHANGE, startOf } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
-import { modelLabel } from "./model";
+import { I, ModelMark } from "./icons";
+import { allModels, markOf, modelLabel, plural } from "./model";
 import { ModelPop } from "./Models";
-import { NamedSwitch } from "./ui";
+import { NamedSwitch, PanelHead, Pop, Row, Sep } from "./ui";
 import "./agentic.css";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -62,6 +64,8 @@ export function Agentic(_: { onOpen?: (threadId: string) => void }) {
   return (
     <div className="lc-ag">
       <YourPair c={c} />
+      <PairClasses c={c} />
+      <LeadInPair c={c} />
       <Reviewer c={c} />
     </div>
   );
@@ -193,6 +197,221 @@ function YourPair({ c }: { c: Pair }) {
               options={STARTS.map((s) => ({ value: s.value, label: s.label, disabled: !two && s.value !== "best" }))}
               aria-label="New sessions start with"
             />
+          </Line>
+        </div>
+      </div>
+    </Part>
+  );
+}
+
+/* ---------------------------------- How a pair works ---------------------------------- */
+
+/*
+  The three classes a sidekick can be in (contracts' tuning.ts): what each is like, what the lead
+  does with it in a sentence, and its four ways as words. What a class means isn't set here; which
+  class a model is in is, one model at a time.
+*/
+const CLASSES: { cls: SidekickClass; name: string; tag: string; line: string }[] = [
+  { cls: "small", name: "Small", tag: "Quick and literal", line: "The lead names every file and function, one task per brief. The sidekick does not go looking. The lead reads every file it changed." },
+  { cls: "mid", name: "Mid", tag: "Capable with a clear goal", line: "The lead gives the goal, the files involved and the limits. The sidekick may run a few searches. The lead reads the diff and trusts a check the sidekick reports." },
+  { cls: "frontier", name: "Frontier-class", tag: "Could lead itself", line: "The lead says what it wants and why and leaves the how. The sidekick explores freely and may push back. The lead reads the diff where it matters." },
+];
+const BRIEF_WORD = { exact: "Exact files and functions", scoped: "Goal, files and limits", open: "Goal and why" } as const;
+const EXPLORE_WORD = { none: "None", bounded: "A few searches", open: "Open" } as const;
+const REVIEW_WORD = { all: "Every changed file", diff: "The diff, trusts a reported check", risk: "The diff where it matters" } as const;
+const classWord = (cls: SidekickClass) => CLASSES.find((x) => x.cls === cls)!.name;
+
+/*
+  JSON leaves an undefined out, so a setting goes back to unset by null, which every reader of it
+  takes as unset (`??`, `!`).
+*/
+const UNSET = null as unknown as undefined;
+
+/**
+  Each class with your own ready models in it, a chip each; a chip is a small menu that moves the
+  model to another class, or back to where the lists put it. A model no list knows waits under
+  "Not placed yet", treated as small until you place it.
+*/
+function PairClasses({ c }: { c: Pair }) {
+  const { providers, settings } = c;
+  const moved = settings.classes ?? {};
+  // A tool's "default" (an ACP tool's "Hermes default", Codex's configured model) names no model a class could hold: left out.
+  const models = useMemo(() => [...new Map(allModels(providers).filter((m) => m.providerId !== "demo" && !m.legacy && !m.ref.endsWith(":default")).map((m) => [m.ref, m])).values()], [providers]);
+  // Past six not placed, the rest wait behind "Show all".
+  const [allUnplaced, setAllUnplaced] = useState(false);
+  // A name two tools share says which tool it is.
+  const twice = new Set(models.map((m) => m.label).filter((l, i, all) => all.indexOf(l) !== i));
+  // A moved chip is a new one in another row: the focus follows it there once Settings come back.
+  const card = useRef<HTMLDivElement>(null);
+  const follow = useRef<string | null>(null);
+  useEffect(() => {
+    const ref = follow.current;
+    if (!ref) return;
+    follow.current = null;
+    requestAnimationFrame(() => card.current?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(ref)}"]`)?.focus({ preventScroll: true }));
+  }, [settings.classes]);
+  const place = (ref: string, cls: SidekickClass | undefined) => {
+    follow.current = ref;
+    const next = { ...moved };
+    // A move to the class the lists give it anyway isn't kept as one, unless it places a model no list knows.
+    if (!cls || (cls === sidekickClassOf(ref) && placedOf(ref))) delete next[ref];
+    else next[ref] = cls;
+    save({ classes: next });
+  };
+  const chip = (m: (typeof models)[number]) => {
+    const own = moved[m.ref];
+    const cls = sidekickClassOf(m.ref, moved);
+    const name = twice.has(m.label) ? `${m.label} · ${m.provider}` : m.label;
+    const placed = placedOf(m.ref);
+    return (
+      <Pop
+        key={m.ref}
+        menu
+        width={260}
+        label={`${name}: ${own || placed ? `${classWord(cls)}${own ? ", moved by you" : ""}` : "not placed yet, treated as small"}. Move it`}
+        triggerClass="lc-ag-mchip"
+        triggerAttrs={{ "data-own": Boolean(own) || undefined, "data-ref": m.ref, title: `${m.label}, ${m.provider}` }}
+        trigger={
+          <>
+            <ModelMark kind={markOf(m.ref)} size={12} />
+            <span>{name}</span>
+          </>
+        }
+      >
+        {(close) => (
+          <>
+            <PanelHead>Move {m.label} as a sidekick</PanelHead>
+            {CLASSES.map((k) => (
+              <Row key={k.cls} title={k.name} note={k.tag} on={(own || placed) && cls === k.cls} onPick={() => (place(m.ref, k.cls), close())} />
+            ))}
+            {own && (
+              <>
+                <Sep />
+                <Row title="Back to automatic" note={placed ? `${classWord(sidekickClassOf(m.ref))}, from the lists` : "Not placed yet, treated as small"} onPick={() => (place(m.ref, undefined), close())} />
+              </>
+            )}
+          </>
+        )}
+      </Pop>
+    );
+  };
+  const unplaced = models.filter((m) => !moved[m.ref] && !placedOf(m.ref));
+  return (
+    <Part
+      title="How a pair works"
+      note="The lead writes for the sidekick it has. Each of your models sits in a class, and the class sets how the lead briefs it and checks its work."
+      end={
+        Object.keys(moved).length ? (
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => save({ classes: {} })}>
+            All automatic
+          </button>
+        ) : undefined
+      }
+    >
+      <div className="lc-frame">
+        <div ref={card} className="lc-fcard lc-st-card lc-ag-pair">
+          {CLASSES.map((k) => {
+            const ways = CLASS_WAYS[k.cls];
+            const mine = models.filter((m) => (moved[m.ref] || placedOf(m.ref)) && sidekickClassOf(m.ref, moved) === k.cls);
+            return (
+              <div key={k.cls} className="lc-ag-cls">
+                <div>
+                  <h3>{k.name}</h3>
+                  <small>{k.tag}</small>
+                </div>
+                <div>
+                  <div className="lc-ag-models">{mine.length ? mine.map(chip) : <span className="lc-quiet">None of your models</span>}</div>
+                  <p>{k.line}</p>
+                  <dl>
+                    <div>
+                      <dt>Brief</dt>
+                      <dd>{BRIEF_WORD[ways.brief]}</dd>
+                    </div>
+                    <div>
+                      <dt>Exploration</dt>
+                      <dd>{EXPLORE_WORD[ways.explore]}</dd>
+                    </div>
+                    <div>
+                      <dt>Review</dt>
+                      <dd>{REVIEW_WORD[ways.review]}</dd>
+                    </div>
+                    <div>
+                      <dt>Take back after</dt>
+                      <dd>{plural(ways.takeBack, "failure")}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            );
+          })}
+          {unplaced.length > 0 && (
+            <Line title="Not placed yet" note={`${unplaced.length === 1 ? "No list knows this model, so it is" : "No list knows these models, so they are"} treated as small until you place ${unplaced.length === 1 ? "it" : "them"}.`} below>
+              <div className="lc-ag-models">
+                {(allUnplaced ? unplaced : unplaced.slice(0, 6)).map(chip)}
+                {!allUnplaced && unplaced.length > 6 && (
+                  <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (setAllUnplaced(true), requestAnimationFrame(() => card.current?.querySelector<HTMLElement>(`[data-ref="${CSS.escape(unplaced[6].ref)}"]`)?.focus({ preventScroll: true })))}>
+                    Show all {unplaced.length}
+                  </button>
+                )}
+              </div>
+            </Line>
+          )}
+        </div>
+      </div>
+    </Part>
+  );
+}
+
+/* ---------------------------------- The lead in a pair ---------------------------------- */
+
+const HAND_OVER = [
+  { id: "auto", title: "Automatic", note: "By default. A lead that isn't frontier-class is told more firmly." },
+  { id: "default", title: "By default", note: "Slow runs, edits across files and repeated changes go to the sidekick." },
+  { id: "asked", title: "When asked", note: "The lead keeps the work unless you ask it to use its sidekick." },
+] as const;
+const PAIR_EFFORTS = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+/** How a pair's lead hands work over, and the effort a session gets when it becomes a pair. */
+function LeadInPair({ c }: { c: Pair }) {
+  const { settings } = c;
+  const hand = settings.handOver ?? "auto";
+  const now = HAND_OVER.find((h) => h.id === hand) ?? HAND_OVER[0];
+  return (
+    <Part title="The lead in a pair">
+      <div className="lc-frame">
+        <div className="lc-fcard lc-st-card lc-ag-pair">
+          <Line title="Hands over" note="A frontier-class lead hands over slow runs and spelled-out edits by default. Any other lead tends to keep the work, so it is told more firmly.">
+            <Pop
+              menu
+              width={300}
+              align="end"
+              label={`Hands over: ${hand === "auto" ? "Automatic, by default" : now.title}. Change it`}
+              triggerClass="lc-mpop"
+              trigger={
+                <>
+                  <span className="lc-ag-who">
+                    {hand === "auto" ? (
+                      <>
+                        <span className="lc-quiet">Automatic</span>
+                        <b>By default</b>
+                      </>
+                    ) : (
+                      <b>{now.title}</b>
+                    )}
+                  </span>
+                  <I.chevD size={11} />
+                </>
+              }
+            >
+              {(close) => HAND_OVER.map((h) => <Row key={h.id} title={h.title} note={h.note} on={hand === h.id} onPick={() => (save({ handOver: h.id === "auto" ? UNSET : h.id }), close())} />)}
+            </Pop>
+          </Line>
+          <Line title="Lead's effort in a pair" note="Planning and reading a diff rarely need more than Medium. Alone, as Best, the lead keeps its own effort.">
+            <Segmented size="sm" value={settings.pairEffort ?? "medium"} onValueChange={(v) => save({ pairEffort: v })} options={PAIR_EFFORTS} aria-label="Lead's effort in a pair" />
           </Line>
         </div>
       </div>

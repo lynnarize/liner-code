@@ -2,8 +2,8 @@
   What the screens work out from the engine's state: who an agent is, what a model is called,
   which bucket a session sits in, and the one line under its title.
 */
-import type { Access, AgentProfile, EffortInfo, FileChange, Item, ModelInfo, Project, ProviderInfo, Thread } from "@contracts";
-import { familyOf, splitModel } from "@contracts";
+import type { Access, AgentProfile, EffortInfo, FileChange, Item, ModelInfo, PairTuning, Project, ProviderInfo, Thread } from "@contracts";
+import { familyOf, nearestEffort, splitModel } from "@contracts";
 import type { MarkKind } from "./icons";
 
 type Level = { id: Access; label: string; short: string; note: string };
@@ -44,6 +44,18 @@ export function effortsFor(ref: string, providers: ProviderInfo[]): { list: Effo
   if (m?.efforts) return { list: m.efforts, fallback: m.defaultEffort };
   return p?.supports.effort ? { list: EFFORTS, fallback: "medium" } : { list: [], fallback: undefined };
 }
+
+/**
+  The effort a session gets as it becomes a pair: Settings' word for a pair's lead (Medium unless
+  set), as near as its lead's model takes. Planning and reading a diff rarely need more.
+*/
+export function pairEffortFor(leadRef: string, providers: ProviderInfo[], pairEffort?: string): string {
+  const { list, fallback } = effortsFor(leadRef.replace(/^@/, ""), providers);
+  return nearestEffort(pairEffort ?? "medium", list, fallback);
+}
+
+/** A session's own ways with another sidekick: the four that follow the sidekick's class go back to automatic, its word on handing over stays. */
+export const keepHandOver = (t?: PairTuning): PairTuning | undefined => (t?.handOver ? { handOver: t.handOver } : undefined);
 
 /** "Extra high effort", "Ultracode". */
 export function effortName(id: string, ref: string, providers: ProviderInfo[]) {

@@ -30,7 +30,7 @@ import { glyphs, is, matches } from "./keymap";
 import { entering, readLook } from "./look";
 import { keepDock, keptDock, PanelGrip, runScript, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
 import { useSeen } from "./launch";
-import { closeTab, closeWhere, GUIDE, hideDock, openTab, paneOf, replaceTab, showDock, toggleTab, type DockState } from "./dock";
+import { closeTab, closeWhere, GUIDE, hideDock, openTab, paneOf, replaceTab, showDock, toggleFull, toggleTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { onOpenSurface, SideKeys } from "./TopBar";
 import { ModeChip } from "./Modes";
@@ -770,7 +770,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           />
         )}
       </div>
-      <Rail dock={dock} below={below} changed={openFiles} onTab={(id) => setDock((d) => toggleTab(d, id))} onBelow={() => setBelow(!below)} onAdd={() => setDock((d) => openTab(d, GUIDE))} onPanel={() => setDock((d) => (d.open ? hideDock(d) : showDock(d, "session")))} />
+      <Rail dock={dock} below={below} changed={openFiles} onTab={(id) => setDock((d) => toggleTab(d, id))} onBelow={() => setBelow(!below)} onAdd={() => setDock((d) => openTab(d, GUIDE))} onPanel={() => setDock((d) => (d.open ? hideDock(d) : showDock(d, "session")))} onFull={() => setDock(toggleFull)} />
     </div>
     </SideKeys.Provider>
     </MarkdownLinks.Provider>
@@ -793,13 +793,19 @@ const RAIL: { id: Tab; label: string; icon: (p: { size?: number }) => ReactNode 
   { id: "design", label: "Design", icon: N.design },
   { id: "agents", label: "Agents", icon: N.agents },
 ];
-function Rail({ dock, below, changed, onTab, onBelow, onAdd, onPanel }: { dock: DockState; below: boolean; changed: number; onTab: (id: Tab) => void; onBelow: () => void; onAdd: () => void; onPanel: () => void }) {
+function Rail({ dock, below, changed, onTab, onBelow, onAdd, onPanel, onFull }: { dock: DockState; below: boolean; changed: number; onTab: (id: Tab) => void; onBelow: () => void; onAdd: () => void; onPanel: () => void; onFull: () => void }) {
   const up = (id: Tab) => (id === "terminal" ? below : dock.open && dock.panes.some((p) => p.tab === id));
   return (
     <nav className="lc-rail" aria-label="Surfaces" data-drag>
       <button type="button" className="lc-ib lc-rail-b l-focus" aria-label={dock.open ? "Hide the panel" : "Show the panel"} title={dock.open ? "Hide the panel" : "Show the panel"} onClick={onPanel}>
         <N.panel />
       </button>
+      {/* While the panel is up, the way to give it the whole paper and back, right under the one that hides it. */}
+      {dock.open && (
+        <button type="button" className="lc-ib lc-rail-b l-focus" aria-label={dock.full ? "Leave the full canvas" : "Open in the full canvas"} title={dock.full ? "Leave the full canvas" : "Open in the full canvas"} aria-pressed={dock.full} onClick={onFull}>
+          {dock.full ? <N.shrink /> : <N.expand />}
+        </button>
+      )}
       <span className="lc-rail-gap" aria-hidden />
       {RAIL.map((x) => (
         <button key={x.id} type="button" className="lc-ib lc-rail-b l-focus" aria-label={x.id === "changes" && changed ? `Changes, ${plural(changed, "file")} to commit` : x.label} title={x.label} aria-pressed={up(x.id)} onClick={() => (x.id === "terminal" ? onBelow() : onTab(x.id))}>

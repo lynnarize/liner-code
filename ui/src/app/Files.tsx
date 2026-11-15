@@ -248,6 +248,16 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
     browseTo(thread.id, sel).catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
   };
 
+  // An empty folder has nothing to find or pick: one note fills the surface, not a tree over an empty file view.
+  if (tree && !tree.length && !err && !sel)
+    return (
+      <div className="lc-fsv" data-empty="">
+        <SurfaceNote icon={<I.folder size={20} />} title="This folder is empty">
+          Files the agent writes show up here.
+        </SurfaceNote>
+      </div>
+    );
+
   return (
     <div className="lc-fsv">
       <div className="lc-files-side">

@@ -22,7 +22,7 @@ import { toast } from "@liner/components/toast/toast";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { Boundary } from "./Boundary";
 import { CommitButton } from "./Commit";
-import { closeOthers, closeTab, GUIDE, hideDock, moveTab, openTab, paneOf, pickTab, toggleFull, type DockState } from "./dock";
+import { closeOthers, closeTab, GUIDE, hideDock, moveTab, openTab, paneOf, pickTab, type DockState } from "./dock";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { checkpointsOf, plural } from "./model";
@@ -260,7 +260,7 @@ export function Panel({
 /**
   One pane's strip, which is the panel's header (TasteCode v0.5), on the session header's line: the
   apps you pinned first, as icons, then every tab with its name (Changes with its count of files to
-  commit, quiet), the + menu of what isn't open, and in the last pane the full canvas and the
+  commit, quiet), the + menu of what isn't open, and in the last pane the
   button that hides the panel, last, where the session's header has the one that shows it.
 */
 function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, onDragOver, onDrop, style, label, projectId, files, lead, add }: {
@@ -462,11 +462,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
       <span className="lc-grow" data-drag />
       {last && (
         <>
-          <Tooltip content={dock.full ? "Leave the full canvas" : "Open in the full canvas"}>
-            <button type="button" className="lc-tb lc-sbar-b l-focus" aria-label={dock.full ? "Leave the full canvas" : "Open in the full canvas"} aria-pressed={dock.full} onClick={() => onDock(toggleFull(dock))}>
-              {dock.full ? <I.shrink size={16} /> : <I.expand size={16} />}
-            </button>
-          </Tooltip>
+          {/* The full canvas is the rail's, right under its own Show/Hide the panel (Session.tsx). */}
           <Tooltip content="Hide the panel">
             <button type="button" className="lc-tb lc-sbar-b l-focus" data-panel-toggle aria-label="Hide the panel" aria-pressed onClick={() => onDock(hideDock(dock))}>
               <I.dock size={16} />

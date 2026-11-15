@@ -1189,7 +1189,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               {mention.kind !== "@" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
               {found.map((f, i) => (
                 <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
-                  {f.kind === "@" ? <I.file size={13} /> : f.kind === "/" ? <span className="lc-mention-k">/</span> : <I.sparkle size={13} />}
+                  {f.kind === "@" ? <I.file size={13} /> : f.kind === "$" ? <I.sparkle size={13} /> : null}
                   <span className="lc-mono lc-mention-n">
                     {f.label}
                     {f.hint && <span className="lc-quiet"> {f.hint}</span>}

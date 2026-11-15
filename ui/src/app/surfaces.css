@@ -1196,6 +1196,10 @@
   grid-template-columns: minmax(170px, 0.36fr) minmax(0, 1fr);
   min-height: 0;
 }
+.lc-fsv[data-empty] {
+  display: flex;
+  flex-direction: column;
+}
 .lc-files-side {
   display: flex;
   flex-direction: column;
@@ -3482,14 +3486,6 @@
 .lc-mention-row {
   flex: none;
   min-width: 0;
-}
-.lc-mention-k {
-  display: grid;
-  place-items: center;
-  width: 13px;
-  font-family: var(--l-font-mono);
-  font-weight: 500;
-  color: var(--l-ink-3);
 }
 .lc-mention-n {
   flex: none;
@@ -6006,6 +6002,15 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
 .lc-thread[data-below] > .lc-thread-foot {
   bottom: var(--lc-below-h);
 }
+/* Over the bottom panel's top line the thread doesn't run on to the window's edge, so nothing of it
+   shows in the strip under the composer: the fade ends solid at the card's foot (12px up). */
+html:not([data-bg]) .lc-thread[data-below] .lc-stage::after {
+  height: 34px;
+  background: linear-gradient(transparent, var(--lc-paper) 20px);
+}
+html[data-bg] .lc-thread[data-below] .lc-scroll {
+  mask-image: linear-gradient(transparent, #000 18px, #000 calc(100% - 34px), transparent calc(100% - 14px));
+}
 .lc-below {
   display: flex;
   flex: none;
@@ -6071,6 +6076,14 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
 .lc-terms[data-below] .lc-ib {
   width: 26px;
   height: 26px;
+}
+/* Run is an icon with its word: the square above would squeeze it to 26px and run its word into the first tab. */
+.lc-terms[data-below] .lc-ib.lc-terms-run {
+  width: auto;
+  margin-right: 4px;
+}
+.lc-terms[data-below] .lc-terms-tabs > .lc-pop {
+  flex: none;
 }
 .lc-below-tools {
   display: flex;

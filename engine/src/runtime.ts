@@ -718,9 +718,11 @@ export class Runtime {
     opens it again and says what's wrong in its own words.
   */
   async warm(threadId: string) {
+    // Nor one whose worktree is being set up or put back (settingUp): opened in a folder still being made, its tool's own start
+    // (Claude Code's SessionStart hooks) would run there half done, and the turn would take that session as it is.
     const idle = () => {
       const t = this.store.threads.find((x) => x.id === threadId);
-      return t && !this.quitting && !t.archived && !t.sideOf && t.forkSession === undefined && !this.isRunning(threadId) ? t : null;
+      return t && !this.quitting && !t.archived && !t.sideOf && t.forkSession === undefined && !this.isRunning(threadId) && !this.settingUp?.(threadId) ? t : null;
     };
     try {
       const first = idle();
@@ -970,24 +972,33 @@ export class Runtime {
     return Boolean(saved?.startsWith(`${l.provider}:`) && saved.length > l.provider.length + 1);
   }
 
-  /** The connections a thread's tool gets: your add-ons for its project, less those switched off for it. A side chat gets them too; it only reads. */
+  /**
+    The connections a thread's tool gets: your add-ons for its project, less those switched off for it. A side chat gets them too;
+    it only reads. A side chat has no switches of its own: it follows its session's, as they are now, not as they were when it was
+    made, so a connection you switch off in the session reaches nothing that came from it, a side chat already open included
+    (relink takes its side chats along). Copied once instead, one switched off after the side chat opened would still reach it.
+    A fork is a session of its own, with its own switches: it starts with its parent's (draftThread) and goes its own way.
+  */
   private connectionsOf(t: Thread): Connection[] {
     const all = this.addons?.connections(t.projectId, this.keys) ?? [];
-    return t.connectionsOff?.length ? all.filter((c) => !t.connectionsOff!.includes(c.name)) : all;
+    const parent = t.sideOf ? this.store.threads.find((x) => x.id === t.sideOf) : undefined;
+    const off = [...(t.connectionsOff ?? []), ...(parent?.connectionsOff ?? [])];
+    return off.length ? all.filter((c) => !off.includes(c.name)) : all;
   }
 
   /**
     Your add-ons changed: each open session gets its connections now where its tool takes them in
     place (Claude Code), and is reopened otherwise: at once when it's idle, for its next turn when it's
     working. Says, for each thread, whether they're there now or from its next turn: for the session
-    working its turn, when there is one. `only`: one session's connections changed (thread.update), so only its own.
+    working its turn, when there is one. `only`: one session's connections changed (thread.update), so only its own, and its side
+    chat's, which follows its switches (connectionsOf).
   */
   async relink(only?: string): Promise<Map<string, "now" | "next">> {
     const out = new Map<string, "now" | "next">();
     for (const [key, l] of [...this.live]) {
       const threadId = key.slice(0, key.indexOf(":"));
-      if (only !== undefined && threadId !== only) continue;
       const t = this.store.threads.find((x) => x.id === threadId);
+      if (only !== undefined && threadId !== only && t?.sideOf !== only) continue;
       if (!t) continue;
       const connections = this.connectionsOf(t);
       const links = fingerprint(connections);
@@ -2251,6 +2262,10 @@ export class Runtime {
         this.drop(liveKey);
         this.unheard(liveKey, opening);
       }
+      // Stopped before it was prompted (Stop, a brief that replaced it, the lead's turn ending): a session opened fresh for it,
+      // its tool already started (openForTurn), heard nothing and has no saved id for the idle close to resume, so it goes, as
+      // a stopped turn's does (runTurn). One that resumed stays: it's the sidekick's own, and closes for idleness like any.
+      else if (!began) this.unheard(liveKey, opening);
     } finally {
       clearTimeout(cap);
       stop.removeEventListener("abort", onStop);

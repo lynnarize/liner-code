@@ -9,6 +9,7 @@ import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderInfo, Thread } from "../../contracts/src/index.ts";
+import { emptyUsage } from "../../contracts/src/index.ts";
 import { AgentTools } from "../src/agent-tools.ts";
 import { createApi } from "../src/api.ts";
 import { markFile, run } from "../src/exec.ts";
@@ -392,6 +393,31 @@ test("a thread made under the id while its marker's holders are looked up keeps 
     await until(() => Boolean(answer), "asked");
     answer(new Set());
     await until(() => !existsSync(file2), "removed");
+    await s.runtime.shutdown();
+  } finally {
+    f.restore();
+  }
+});
+
+test("thread.warm while a worktree is being put back opens nothing until its setup has run", async () => {
+  const f = fake();
+  try {
+    const s = await setup();
+    // A session whose worktree a clean-up took, put away: opened again, the folder comes back, then the project's setup runs there.
+    s.store.putProject({ ...s.store.project("p"), setup: "sleep 1.5" });
+    await git(s.dir, "branch", "liner/back");
+    const root = join(s.home, "worktrees", "th_back");
+    s.store.putThread({ id: "th_back", projectId: "p", title: "Back", agent: "@claude:claude-opus-5-5", status: "idle", access: "edits", archived: true, providerSession: "claude:sid-0", worktree: { path: root, branch: "liner/back", made: true }, turns: 1, usage: emptyUsage(), createdAt: Date.now(), updatedAt: Date.now() });
+    await s.call("thread.update", { id: "th_back", archived: false });
+    await until(() => existsSync(join(root, "a.txt")), "the worktree's folder is back");
+    assert.equal(s.runtime.settingUp?.("th_back"), true, "and its setup still runs");
+    await s.call("thread.warm", { id: "th_back" });
+    await tick(200);
+    assert.equal(f.made.length, 0, "nothing opens in a folder still being set up");
+    await until(() => s.runtime.settingUp?.("th_back") === false, "the setup ends", 10_000);
+    await s.call("thread.warm", { id: "th_back" });
+    await until(() => f.made.length === 1, "once it's done, writing opens the session ahead as it would anywhere");
+    assert.equal(f.made[0].o.cwd, root);
     await s.runtime.shutdown();
   } finally {
     f.restore();

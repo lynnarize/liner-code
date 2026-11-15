@@ -685,6 +685,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       ...((drawn ?? parent?.design ?? designOf(project)) ? { design: { file: (drawn ?? parent?.design ?? designOf(project))!.file } } : {}),
       // How its pair works, its own changes; a fork keeps its parent's, as it keeps its sidekick.
       ...(tuning ? { tuning } : {}),
+      // The connections switched off in the parent stay off in a fork, as it starts; from then on its switches are its own, as a
+      // session's are (a side chat, which has none, follows its session's instead: runtime.ts connectionsOf).
+      ...(parent?.connectionsOff?.length ? { connectionsOff: [...parent.connectionsOff] } : {}),
       turns: parent ? parent.turns - (live ? 1 : 0) : 0,
       usage: emptyUsage(),
       createdAt: now,
@@ -1152,7 +1155,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     // You started writing in a session: its tool opens now, behind an answer that comes at once. The open waits for this launch's
     // own look, as a send does (LOOK_FIRST), since a Codex opened before it would run through exec; a session still setting up
-    // its worktree isn't opened ahead, and one that fails here is opened again by the turn, which says why.
+    // its worktree, or having it put back (runtime.settingUp, asked again by Runtime.warm as it opens), isn't opened ahead, and
+    // one that fails here is opened again by the turn, which says why.
     "thread.warm": ({ id }) => {
       if (!setups.has(id)) void ready.then(() => runtime.warm(id)).catch(() => {});
       return null;
@@ -1233,7 +1237,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (old && !fresh) return old;
       if (old) dropSide(old.id);
       const now = Date.now();
-      // Made whole in one go, so nothing ever sees it as a session of its own.
+      // Made whole in one go, so nothing ever sees it as a session of its own. No connectionsOff of its own: it follows the
+      // session's switches as they change, so one switched off there never reaches it (runtime.ts connectionsOf, relink).
       const t = store.putThread({
         id: uid("th"),
         projectId: parent.projectId,
@@ -1968,8 +1973,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 */
 function tuningOf(x: unknown): PairTuning | undefined {
   if (x === undefined || x === null) return undefined;
-  if (typeof x !== "object" || Array.isArray(x)) throw new Error("tuning is a set of a pair's ways.");
-  for (const [k, v] of Object.entries(x)) if (!Object.hasOwn(TUNING, k) || !TUNING[k as keyof PairTuning].includes(v)) throw new Error(`A pair has no way "${k}: ${String(v)}".`);
+  if (typeof x !== "object" || Array.isArray(x)) throw new Error("tuning is a set of Fusion's ways.");
+  for (const [k, v] of Object.entries(x)) if (!Object.hasOwn(TUNING, k) || !TUNING[k as keyof PairTuning].includes(v)) throw new Error(`Fusion has no way "${k}: ${String(v)}".`);
   return Object.keys(x).length ? (x as PairTuning) : undefined;
 }
 
@@ -1986,7 +1991,7 @@ function pairSettings(patch: Record<string, unknown>) {
     patch.classes = kept.length ? Object.fromEntries(kept) : undefined;
   }
   if ("handOver" in patch) {
-    if (patch.handOver !== null && patch.handOver !== undefined && !TUNING.handOver.includes(patch.handOver)) throw new Error(`A pair's lead has no way to hand over called "${String(patch.handOver)}".`);
+    if (patch.handOver !== null && patch.handOver !== undefined && !TUNING.handOver.includes(patch.handOver)) throw new Error(`Fusion's lead has no way to hand over called "${String(patch.handOver)}".`);
     patch.handOver = patch.handOver ?? undefined;
   }
   if ("pairEffort" in patch) {

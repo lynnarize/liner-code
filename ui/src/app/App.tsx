@@ -72,6 +72,8 @@ type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { t
 
 /** The same place: the same kind of screen, and the same session, app or comparison on it. */
 const samePlace = (a: View, b: View) => a.kind === b.kind && ("id" in a ? a.id : undefined) === ("id" in b ? b.id : undefined);
+/** A place as Back and Forward keep it: Home without the mode and words it opened with (Create add-on's), so going back doesn't start that again. */
+const trailed = (v: View): View => (v.kind === "home" ? { kind: "home", projectId: v.projectId } : { ...v });
 
 const readView = (): View => {
   try {
@@ -151,35 +153,47 @@ export function App() {
     Devin have them). Going to another place, or another session, leaves the one you were on behind
     you; a change within a place (Home's project, a session opened beside) does not.
   */
-  const trail = useRef<{ back: View[]; forward: View[] }>({ back: [], forward: [] });
+  const trail = useRef<{ back: View[]; forward: View[]; left?: View }>({ back: [], forward: [] });
   const setView = useCallback((next: View | ((v: View) => View)) => {
     setViewNow((was) => {
       const v = typeof next === "function" ? next(was) : next;
       const t = trail.current;
       // The updater may run twice (StrictMode): the place is kept once.
-      if (!samePlace(was, v) && t.back[t.back.length - 1] !== was) {
-        t.back.push(was);
+      if (!samePlace(was, v) && t.left !== was) {
+        t.left = was;
+        t.back.push(trailed(was));
         if (t.back.length > 60) t.back.shift();
         t.forward = [];
       }
       return v;
     });
   }, []);
-  const goBack = () => {
-    const t = trail.current;
-    const to = t.back.pop();
-    if (!to) return;
-    t.forward.push(view);
-    setSettings(false);
-    setViewNow(to);
+  // Back and Forward step over a session or a page that has gone since (deleted, removed elsewhere).
+  const stillThere = (v: View) => {
+    const s = getState();
+    if (v.kind === "session") return s.threads.some((t) => t.id === v.id);
+    if (v.kind === "app") return s.addons.some((a) => a.id === v.id && a.panel);
+    if (v.kind === "compare") return s.threads.some((t) => t.compare?.id === v.id && !t.archived);
+    if (v.kind === "routines") return ROUTINES_ON;
+    if (v.kind === "routine") return ROUTINES_ON && (!v.id || s.routines.some((r) => r.id === v.id));
+    return true;
   };
-  const goForward = () => {
-    const t = trail.current;
-    const to = t.forward.pop();
-    if (!to) return;
-    t.back.push(view);
+  const step = (from: View[], to: View[]) => {
+    let v = from.pop();
+    while (v && !stillThere(v)) v = from.pop();
+    if (!v) return;
+    to.push(trailed(view));
     setSettings(false);
-    setViewNow(to);
+    setViewNow(v);
+  };
+  const goBack = () => step(trail.current.back, trail.current.forward);
+  const goForward = () => step(trail.current.forward, trail.current.back);
+  /** A session put away or gone: no longer a place Back or Forward goes; beside another, the other stays. */
+  const forget = (id: string) => {
+    const t = trail.current;
+    const keep = (list: View[]) => list.filter((v) => !(v.kind === "session" && v.id === id)).map((v) => (v.kind === "session" && v.beside === id ? { kind: "session" as const, id: v.id, wall: v.wall } : v));
+    t.back = keep(t.back);
+    t.forward = keep(t.forward);
   };
   // Liner Code or Liner Design: the same sessions under either, remembered per window.
   const face = useFace();
@@ -262,17 +276,21 @@ export function App() {
     const i = [...box.children].findIndex((c) => c.contains(target as Node));
     if (i >= 0) setSideFocus(i);
   };
-  // A session that went away (removed elsewhere) hands back to the one beside it, or to Home.
+  // A session that went away (removed elsewhere) hands back to the one beside it, or to Home, in its place: Back doesn't lead to it.
   useEffect(() => {
-    if (ready && view.kind === "session" && !current) setView(besideThread ? { kind: "session", id: besideThread.id } : { kind: "home" });
+    if (!ready || view.kind !== "session" || current) return;
+    forget(view.id);
+    setViewNow(besideThread ? { kind: "session", id: besideThread.id } : { kind: "home" });
   }, [ready, view, current, besideThread]);
-  /** A session put away (archived, deleted): beside another, that one stays on screen; alone, back to Home. */
-  const leave = (id: string) =>
-    setView((v) => {
+  /** A session put away (archived, deleted): beside another, that one stays on screen; alone, back to Home. Either way in its place, and Back and Forward forget it. */
+  const leave = (id: string) => {
+    forget(id);
+    setViewNow((v) => {
       if (v.kind !== "session" || (v.id !== id && v.beside !== id)) return v;
       const other = v.id === id ? v.beside : v.id;
       return other && other !== id && getState().threads.some((t) => t.id === other && !t.archived) ? { kind: "session", id: other } : { kind: "home" };
     });
+  };
 
   /*
     The two faces of the same work. Design from a session begun from a design (Thread.design) shows
@@ -775,6 +793,7 @@ export function App() {
       ) : (
         <>
           <div ref={side} className="lc-side" inert={!sidebar || undefined}>
+            {/* Back and Forward walk Liner Code's places; Liner Design shows its own tabs over Home and a session alike, so there they rest. */}
             <Sidebar
               face={face}
               onFace={(f) => setFace(f)}
@@ -791,7 +810,7 @@ export function App() {
                   </Suspense>
                 )
               }
-              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={trail.current.back.length ? goBack : undefined} onForward={trail.current.forward.length ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face !== "design" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face !== "design" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />

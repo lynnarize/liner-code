@@ -129,3 +129,41 @@ test("connections off: thread.update keeps the list, relinks that session, clear
     },
   );
 });
+
+test("connections off: a side chat follows its session's switches, as they are and as they change; a fork starts with them and keeps its own", async () => {
+  const { store, runtime, dirs } = rig();
+  const { createApi } = await import("../src/api.ts");
+  const api = createApi(store, runtime, { PATH: "/usr/bin:/bin" }, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+  const call = <T>(m: string, p: unknown) => api.call(m, p) as Promise<T>;
+  await withTool(
+    dirs,
+    () => {},
+    async (seen) => {
+      // Only the side chat opens in a's folder here, so what the fake saw there is the side chat's.
+      const side = await call<Thread>("thread.side", { id: "a" });
+      assert.equal(side.sideOf, "a");
+      await runtime.send(side.id, "what's here?");
+      assert.deepEqual(seen.opened.a, ["ping"], "linear, off in the session, never reaches its side chat");
+      // Switched back on in the session: the side chat open beside it gets it in place, and off again takes it away.
+      await call("thread.update", { id: "a", connectionsOff: null });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.deepEqual(seen.connected.a, [["linear", "ping"]], "the side chat relinked with the session");
+      await call("thread.update", { id: "a", connectionsOff: ["linear", "ping"] });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.deepEqual(seen.connected.a, [["linear", "ping"], []], "and lost both with it");
+      // A side chat made after the change follows it too.
+      const again = await call<Thread>("thread.side", { id: "a", fresh: true });
+      await runtime.send(again.id, "and now?");
+      assert.deepEqual(seen.opened.a, [], "a new side chat opens with none");
+
+      // A fork: what's off in the parent is off as it starts; from then on its switches are its own.
+      const fork = await call<Thread>("thread.create", { projectId: "pa", forkOf: "a" });
+      assert.deepEqual(fork.connectionsOff, ["linear", "ping"], "the fork starts with its parent's switches");
+      await call("thread.update", { id: "a", connectionsOff: null });
+      assert.deepEqual(store.thread(fork.id).connectionsOff, ["linear", "ping"], "and keeps them when the parent's change");
+      const plain = await call<Thread>("thread.create", { projectId: "pb", forkOf: "b" });
+      assert.equal(plain.connectionsOff, undefined, "a fork of a session with none off has none off");
+      runtime.shutdown();
+    },
+  );
+});

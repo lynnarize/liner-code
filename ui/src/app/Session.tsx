@@ -797,8 +797,9 @@ const RAIL: { id: Tab; label: string; icon: (p: { size?: number }) => ReactNode 
 ];
 function Rail({ dock, below, changed, onTab, onBelow, onAdd, onPanel, onFull }: { dock: DockState; below: boolean; changed: number; onTab: (id: Tab) => void; onBelow: () => void; onAdd: () => void; onPanel: () => void; onFull: () => void }) {
   const up = (id: Tab) => (id === "terminal" ? below : dock.open && dock.panes.some((p) => p.tab === id));
+  // Not a drag region: the window moves by the top bar. The rail runs the paper's height, and its gaps would move the window, or zoom it at a double click.
   return (
-    <nav className="lc-rail" aria-label="Surfaces" data-drag>
+    <nav className="lc-rail" aria-label="Surfaces">
       <button type="button" className="lc-ib lc-rail-b l-focus" aria-label={dock.open ? "Hide the panel" : "Show the panel"} title={dock.open ? "Hide the panel" : "Show the panel"} onClick={onPanel}>
         <N.panel />
       </button>

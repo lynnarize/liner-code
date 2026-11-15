@@ -905,3 +905,54 @@ test("sidekick: thread.shares mid-turn, after a brief ended and before the lead'
     runtime.shutdown();
   }
 });
+
+test("sidekick: a first brief stopped before it's prompted, its tool already started, leaves no session of the sidekick's open; the next brief opens its own", async () => {
+  // The sidekick's tool, started as its session opens (openForTurn), as Codex's app server is: the Stop comes while the brief's
+  // snapshot is taken, from the session's Stop, which the lead's turn ending would do as well.
+  const made: { closed: boolean; texts: string[] }[] = [];
+  let stopOnWarm = true;
+  const saved = providers.codex;
+  providers.codex = {
+    id: "codex",
+    detect: async () => info("codex", []),
+    warms: () => true,
+    open: () => {
+      const m = { closed: false, texts: [] as string[] };
+      made.push(m);
+      return {
+        turn: async (text, sink) => {
+          m.texts.push(text);
+          sink.session("side-2");
+          sink.text("Done.");
+        },
+        warm: async () => {
+          if (stopOnWarm) runtime.stop("t");
+        },
+        settled: () => true,
+        close: () => void (m.closed = true),
+      };
+    },
+  };
+  let said = "";
+  const lead = fake("claude", async (o, _t, sink) => void (said = (await hand(tools, o, sink, "k1", { brief: "look" })).text));
+  const { store, runtime, tools } = pair();
+  const live = () => [...(runtime as unknown as { live: Map<string, unknown> }).live.keys()].filter((k) => k.endsWith("#sidekick"));
+  try {
+    await runtime.send("t", "go");
+    await until(() => made[0]?.closed === true, "the session opened for it is closed");
+    assert.deepEqual(made[0].texts, [], "it was never prompted");
+    assert.deepEqual(live(), [], "nothing of the sidekick's is left live, where the idle close could never end it");
+    assert.equal(store.thread("t").sessions?.[`@${SIDE}`], undefined, "and it has no saved session");
+    // The next brief opens a session of its own, fresh, and runs.
+    stopOnWarm = false;
+    await runtime.send("t", "again");
+    assert.equal(made.length, 2);
+    assert.equal(made[1].texts.length, 1);
+    assert.match(said, /Done\./);
+    assert.equal(store.thread("t").sessions?.[`@${SIDE}`], "codex:side-2");
+    runtime.shutdown();
+  } finally {
+    providers.codex = saved;
+    lead.restore();
+  }
+});

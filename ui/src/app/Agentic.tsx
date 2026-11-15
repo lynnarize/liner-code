@@ -438,7 +438,7 @@ function Reviewer({ c }: { c: Pair }) {
           <Line title="Read each change" note={on ? (now && start ? `In new sessions ${label(now)} reads what ${label(writers[0])}${start.sidekick ? " and its sidekick" : ""} change${start.sidekick ? "" : "s"}.` : "Nobody else is ready to read changes yet.") : "Off: changes in new sessions are yours as they are."}>
             <NamedSwitch name="Read each change" checked={on} onCheckedChange={(review) => save({ review })} />
           </Line>
-          <Line title="Who reads" note={<>{now && writers.length && makerOf(now) === makerOf(writers[0]) ? `${label(now)} reads, of the lead's own maker: ${now === picks.checker ? "your pick" : "nothing of another maker is ready"}.` : "Best from another maker than the pair's, so they don't share blind spots."}{gone(c, picks.checker) ? " Your pick's tool isn't ready, so it's automatic for now." : ""}</>} off={!on}>
+          <Line title="Who reads" note={<>{now && writers.length && makerOf(now) === makerOf(writers[0]) ? `${label(now)} reads, of the lead's own maker: ${now === picks.checker ? "your pick" : "nothing of another maker is ready"}.` : "Best from another maker than the lead's and the sidekick's, so they don't share blind spots."}{gone(c, picks.checker) ? " Your pick's tool isn't ready, so it's automatic for now." : ""}</>} off={!on}>
             <Pick c={c} title="Reviewer model" part="checker" fallback={auto} />
           </Line>
           <Line title="Rounds before it's yours" note="How many times it sends findings back. After that, you decide." off={!on}>

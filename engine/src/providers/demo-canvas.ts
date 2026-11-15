@@ -32,13 +32,14 @@ import { join, relative } from "node:path";
 import type { DesignFile, DesignFrame } from "../../../contracts/src/index.ts";
 import { designDir, inDesign } from "../canvas.ts";
 import { addressable, applyOps, attr, elements, outline, parse, type El } from "../canvas-html.ts";
+import { enginePath } from "../paths.ts";
 import { atomic, inside, leanFile, noLinks, safeSlug } from "../lean.ts";
 import { PAIR_ENV } from "../liner-tools.ts";
 import { sidekickTitle } from "../sidekick.ts";
 import type { OpenOptions, TurnSink } from "./types.ts";
 
 /** The sample's files, shipped with the engine. */
-export const FORESHORE = join(import.meta.dirname, "demo-foreshore");
+export const FORESHORE = enginePath("providers", "demo-foreshore");
 
 type Spec = { id: string; name: string; src: string; w: number; h: number; x: number; y: number; night?: boolean; screen?: false };
 /** Foreshore's frames, in the order they're drawn, and where they sit: the big ones in a row, the phones under them, 160 apart in a row and 240 between the rows, so each frame's label clears its neighbours even zoomed far out. */

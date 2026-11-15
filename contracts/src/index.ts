@@ -1441,6 +1441,8 @@ export type Rpc = {
   /** A limited session carries on with another tool's model (`model`, else the one its limit card offers). */
   "thread.carryOn": [{ id: string; model?: string }, null];
   "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number }; /** Sent from Liner Design: the design file (its slug) and what is selected, for the turn's "## Design" note (lean.ts designNote). */ design?: { file: string; sel?: DesignSelection }; /** What the person reads of it (UserShown): kept on the item, never sent to the agent. */ shown?: UserShown }, null];
+  /** You started writing in a session: its tool opens ahead of the message (Runtime.warm). Answers at once. */
+  "thread.warm": [{ id: string }, null];
   "thread.queue": [{ id: string; queue: QueuedMessage[] }, Thread];
   /** Rewinds to just before a message you sent: the turns from there come off, and with `files`, so do their changes. */
   "thread.rewind": [{ threadId: string; itemId: string; files: boolean; force?: boolean }, { turn: number; files: number }];

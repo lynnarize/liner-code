@@ -19,13 +19,14 @@ import { PANEL_ICONS } from "../../contracts/src/index.ts";
 import { ADDON_DIR, STORAGE_MAX, type Addons } from "./addons.ts";
 import { briefOf } from "./agents.ts";
 import { CHECK_THEME } from "./panels.ts";
+import { enginePath } from "./paths.ts";
 
 /** The topics liner_inspect reads, each a part of the creator's guide. */
 export const TOPICS = ["catalogue", "connections", "panels", "manifest", "places", "apps", "bridge", "theme", "design", "starters", "verify", "installed"] as const;
 export type Topic = (typeof TOPICS)[number];
 
 /** Liner 2.0, Liner Code's own look, as a skill: a SKILL.md beside the engine's source, shipped with it. */
-export const LINER_2 = join(import.meta.dirname, "skills", "liner-2", "SKILL.md");
+export const LINER_2 = enginePath("skills", "liner-2", "SKILL.md");
 let liner2: string | undefined;
 /** The skill as the agent reads it: its body, after the front matter that only names it. */
 export const liner2Skill = () => (liner2 ??= readFileSync(LINER_2, "utf8").replace(/^---\n[\s\S]*?\n---\n+/, "").trim());

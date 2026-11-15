@@ -166,7 +166,7 @@ test("mode_add: the card carries every word of the instructions, and add-ons set
 });
 
 test("Liner 2.0: a SKILL.md beside the engine's source, read as the guide's design topic, before any HTML or CSS", () => {
-  // A real skill: front matter naming it, shipped with the engine's source (build-mac.sh copies engine/src whole).
+  // A real skill: front matter naming it, shipped with the engine (engine/build.ts copies skills/ beside the bundle).
   const file = readFileSync(LINER_2, "utf8");
   assert.match(file, /^---\nname: liner-2\ndescription: Liner 2\.0, Liner Code's own look/);
   assert.ok(LINER_2.includes(join("engine", "src", "skills", "liner-2", "SKILL.md")));

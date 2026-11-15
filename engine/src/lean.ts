@@ -21,6 +21,7 @@ import type { DesignFile, DesignSelection, DesignSkill, Lean, LeanTokens } from 
 import type { McpResult } from "./agent-tools.ts";
 import { canvasHooks, linkFree, peekFile, readFile, type DesignCall, type DesignCtx, type DesignRpc } from "./canvas.ts";
 import { LINER_2 } from "./creator.ts";
+import { enginePath } from "./paths.ts";
 import { skillsIn } from "./providers/models.ts";
 
 export { TOOLS } from "./lean-tools.ts";
@@ -347,7 +348,7 @@ export function homeOf(env: NodeJS.ProcessEnv) {
 */
 export function listSkills(cwd: string | undefined, env: NodeJS.ProcessEnv, loaded: string[] = []): DesignSkill[] {
   const home = homeOf(env);
-  const roots = [join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "skills"), ...(cwd ? [join(cwd, ".claude", "skills")] : []), join(env.CODEX_HOME || join(home, ".codex"), "skills"), join(import.meta.dirname, "skills")];
+  const roots = [join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "skills"), ...(cwd ? [join(cwd, ".claude", "skills")] : []), join(env.CODEX_HOME || join(home, ".codex"), "skills"), enginePath("skills")];
   const seen = new Set<string>();
   const out: DesignSkill[] = [];
   for (const root of roots) {

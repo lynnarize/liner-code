@@ -70,6 +70,7 @@ export function accountProvider(base: Provider, a: ToolAccount): Provider {
     limits: base.limits && ((env, scratch) => base.limits!(envOf(env), scratch)),
     // Read in the account's own home: a second Hermes has a config of its own.
     toolWait: base.toolWait && ((env) => base.toolWait!(envOf(env))),
+    warms: base.warms && ((env) => base.warms!(envOf(env))),
     open: (o) => base.open({ ...o, env: envOf(o.env) }),
   };
 }

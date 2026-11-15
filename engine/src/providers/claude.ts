@@ -43,7 +43,7 @@ export const sdk = { query, getSessionMessages };
   handed over before a turn goes without them, a stopped turn has to say it ended, and Claude Code
   has to list your ask rules while a step waits on them.
 */
-export const waits = { open: 90_000, link: 30_000, stop: 4_000, rules: 3_000 };
+export const waits = { open: 90_000, link: 30_000, stop: 4_000, rules: 3_000, settle: 10_000 };
 
 /** Only until Claude Code answers: the engine asks it for its real list as it starts. */
 const FALLBACK: ModelInfo[] = [
@@ -750,6 +750,8 @@ class ClaudeSession implements ProviderSession {
   }
 
   private start() {
+    // Closed (a stop and a close while a turn waited on the start): a process now would be nobody's.
+    if (this.closed) throw new Error("This Claude Code session was closed.");
     const o = this.o;
     // Claude Code can't start in a folder that's gone, and the SDK takes that for a missing program ("does not match this system's libc").
     if (!existsSync(o.cwd)) throw new Error(`This session's folder isn't there any more: ${o.cwd}`);
@@ -1466,7 +1468,43 @@ class ClaudeSession implements ProviderSession {
     return withFiles(this.o.effort === "ultrathink" ? `${text}\n\nultrathink` : text, files, this.budget);
   }
 
+  /**
+    Claude Code's process started ahead of your message (warm): its settings, hooks and MCP servers load while you write. Nothing
+    reaches the model until a message goes, as with the commands list (commands, below), which starts it the same way. A resume's
+    check, when it's one, is under way in `opened`, and the turn takes up how it ended: a session it can't find any more fails that
+    turn with ResumeFailed, as resume() would there. A plain or one-off read is never opened ahead.
+  */
+  private opened: Promise<void> | null = null;
+  private unwarm = new AbortController();
+  /** close() has run: nothing starts again on this session, which is out of the runtime's hands, so no process of it would ever be ended. */
+  private closed = false;
+  async warm() {
+    if (this.closed || this.q || this.opened || this.o.plain || this.o.ephemeral) return;
+    if (!this.o.resume) return this.start();
+    const opened = this.resume(this.unwarm.signal);
+    opened.catch(() => {});
+    this.opened = opened;
+  }
+
   async turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
+    const opened = this.opened;
+    this.opened = null;
+    if (opened) {
+      try {
+        // Stopped while it's checked: nothing more is asked of it, as when resume() below hears the stop.
+        await Promise.race([opened, new Promise<void>((r) => (signal.aborted ? r() : signal.addEventListener("abort", () => r(), { once: true })))]);
+      } catch (e) {
+        if (e instanceof ResumeFailed) throw e;
+        // Any other end (its time limit, counted from the warm and not from your message): not this turn's failure by itself.
+        // It goes on with the process if that's there, else resumes or starts it below and says what's wrong in its own words.
+      }
+      if (signal.aborted) {
+        // How it ends is then the next turn's to take up: a session it can't find fails that one with ResumeFailed, not silently.
+        if (!this.closed) this.opened ??= opened;
+        return;
+      }
+    }
+    if (this.closed) throw new Error("This Claude Code session was closed.");
     if (!this.q && this.o.resume) await this.resume(signal);
     if (!this.q) this.start();
     // The connections' tools are there for this message; a server slow to start doesn't hold it past a while.
@@ -1499,7 +1537,8 @@ class ClaudeSession implements ProviderSession {
   private async resume(signal: AbortSignal) {
     this.start();
     const q = this.q!;
-    const stopped = new Promise<void>((r) => signal.addEventListener("abort", () => r(), { once: true }));
+    // Stopped already, it doesn't wait for the start or its time limit either.
+    const stopped = new Promise<void>((r) => (signal.aborted ? r() : signal.addEventListener("abort", () => r(), { once: true })));
     let timer: NodeJS.Timeout | undefined;
     const late = new Promise<"late">((r) => (timer = setTimeout(() => r("late"), waits.open)));
     try {
@@ -1861,6 +1900,15 @@ class ClaudeSession implements ProviderSession {
   }
 
   async update(o: Pick<OpenOptions, "model" | "effort" | "access">) {
+    // A resume begun ahead of your message (warm) still opening: changed in place only once it's up, and not waited on for long;
+    // one that isn't up in time, or failed, is reopened by the runtime with the new settings instead.
+    const opened = this.opened;
+    if (opened) {
+      let timer: NodeJS.Timeout | undefined;
+      const up = await Promise.race([opened.then(() => true, () => false), new Promise<boolean>((r) => (timer = setTimeout(() => r(false), waits.settle)))]);
+      clearTimeout(timer);
+      if (!up) return false;
+    }
     const q = this.q;
     this.owed = false;
     if (!q) {
@@ -1904,6 +1952,10 @@ class ClaudeSession implements ProviderSession {
   }
 
   close() {
+    // A resume's check begun ahead of a message ends here rather than at its own time limit.
+    this.closed = true;
+    this.opened = null;
+    this.unwarm.abort();
     this.inbox.end();
     this.q?.return?.(undefined);
     this.q = null;
@@ -1971,5 +2023,7 @@ export const claude: Provider = {
     );
     return { plan: u.subscription_type ?? undefined, windows };
   },
+  // A plain or one-off read is never warmed (ClaudeSession.warm), and the runtime warms neither.
+  warms: () => true,
   open: (o) => new ClaudeSession(o),
 };

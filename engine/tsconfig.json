@@ -14,5 +14,5 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
-  "include": ["src", "test", "../contracts/src"]
+  "include": ["src", "test", "build.ts", "../contracts/src"]
 }

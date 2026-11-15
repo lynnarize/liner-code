@@ -1,6 +1,6 @@
 /*
   Wraps a staged app folder in Electron as "Liner Code.app" with @electron/packager. No asar: the
-  engine's TypeScript runs from plain files on Electron's own Node.
+  engine (engine/build.ts's bundle) runs from plain files on Electron's own Node.
     node desktop/package.ts <staged folder> <icon.icns> <out dir> [extra resource…]
   An Assets.car among the extra resources (actool's build of desktop/AppIcon.icon) lands in
   Contents/Resources and is named by CFBundleIconName, so macOS 26 and later draw that icon and turn

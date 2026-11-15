@@ -763,10 +763,10 @@ async function reportProblem() {
 
 // ---------- Launch ----------
 
-/** Where the engine's code and the built app live: inside the app, or in the repo while developing. */
+/** Where the engine's code and the built app live: inside the app, where the engine is engine/build.ts's bundle, or in the repo while developing, where it runs from source. */
 function resources(): Paths | null {
   const root = app.isPackaged ? app.getAppPath() : join(__dirname, "../..");
-  const paths = { engine: join(root, "engine/src/main.ts"), ui: join(root, app.isPackaged ? "ui" : "ui/dist") };
+  const paths = { engine: join(root, app.isPackaged ? "engine/src/main.js" : "engine/src/main.ts"), ui: join(root, app.isPackaged ? "ui" : "ui/dist") };
   return existsSync(paths.engine) ? paths : null;
 }
 

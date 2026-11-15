@@ -15,7 +15,6 @@
   its frame come here as well (panelCall), checked against its access (panels.ts).
 */
 import { createHash, randomBytes } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import type { AgentBrowserOp, AddonInfo, Item, PanelManifest, PanelPlace, ProviderInfo, Risk, Thread } from "../../contracts/src/index.ts";
 import { addonKey, panelDocument } from "../../contracts/src/index.ts";
 import { accessWords, ADDON_GUIDE, modelHostRefusal, readDraft, sizeWords, type Addons, type PanelFiles } from "./addons.ts";
@@ -28,6 +27,7 @@ import { commandLine, launchRisk, riskyEnv, shownEnv, type Launcher } from "./la
 import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
 import { remember, searchSessions } from "./memory.ts";
 import { uid, type Store } from "./store.ts";
+import { script } from "./paths.ts";
 import { PAIR_ENV } from "./liner-tools.ts";
 import { AS_SIDEKICK, sidekickTitle } from "./sidekick.ts";
 import * as canvas from "./canvas.ts";
@@ -297,7 +297,7 @@ export class AgentTools {
     }
     // Under the Electron shell process.execPath is the app itself, which is a Node only when told so.
     const electron: Record<string, string> = process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {};
-    return { command: process.execPath, args: [fileURLToPath(new URL("./mcp.ts", import.meta.url))], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY: key, ...(o.pair && !o.sidekick ? { [PAIR_ENV]: "1" } : {}) } };
+    return { command: process.execPath, args: [script("mcp")], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY: key, ...(o.pair && !o.sidekick ? { [PAIR_ENV]: "1" } : {}) } };
   }
 
   threadOf(key: string) {

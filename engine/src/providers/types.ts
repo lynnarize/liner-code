@@ -224,6 +224,13 @@ export interface ProviderSession {
   connect?(connections: Connection[]): Promise<boolean>;
   /** What fills the context now, by the tool's own count; null when it can't say. */
   context?(): Promise<ContextUse | null>;
+  /**
+    Starts now what the first turn would start first, before there's a message (Runtime.warm, and beside a turn's snapshot): only
+    what leaves nothing behind when no message follows, so no conversation opened in the tool's own history, no tokens, no sign-in.
+    A tool without it isn't opened ahead. One that fails here leaves the session as it was: turn() does the same work again and
+    says what's wrong in its own words.
+  */
+  warm?(): Promise<void>;
   /** Ends the tool's process and what it started, whatever is in flight; a promise where ending all of it takes a moment (acp.ts). */
   close(): void | Promise<void>;
 }
@@ -243,6 +250,11 @@ export interface Provider {
     cut to fit it. Unset or null: it waits as long as Liner Code asks.
   */
   toolWait?(env: NodeJS.ProcessEnv): number | null;
+  /**
+    Whether a session of this tool opens ahead of a message (ProviderSession.warm does the work), asked before anything is opened:
+    a tool that can't isn't opened, or closed, for nothing (Runtime.warm). Unset: it can't.
+  */
+  warms?(env: NodeJS.ProcessEnv): boolean;
   open(o: OpenOptions): ProviderSession;
 }
 

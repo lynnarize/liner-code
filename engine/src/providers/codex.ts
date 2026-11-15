@@ -289,6 +289,8 @@ export const codex: Provider = {
     const said = appServer ? detail.replace(" Runs in Codex's sandbox; it can't stop to ask.", " Asks before it acts, through its app server.") : detail;
     return { ...base, supports: { ...base.supports, approvals: appServer }, models, modelsFrom: listed.length ? ("cli" as const) : ("builtin" as const), modelsAt: Date.now(), available: true, version, signedIn, detail: signedIn === false ? "Not signed in: run codex login, or add an OpenAI key" : said };
   },
+  // Only the app server has a start to do ahead (CodexServerSession.warm); exec starts a process per turn.
+  warms: (env) => appServerFor(env),
   open: (o) => (appServerFor(o.env) ? new CodexServerSession(o) : new CodexSession(o)),
   async commands(env, cwd) {
     if (!appServerFor(env)) return { commands: [], skills: skillsIn([join(env.CODEX_HOME || join(homedir(), ".codex"), "skills"), join(cwd, ".codex", "skills")]) };

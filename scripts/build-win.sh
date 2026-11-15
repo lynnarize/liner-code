@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds Liner Code for Windows, from this Mac: the same pages, shell, engine source and its one
+# Builds Liner Code for Windows, from this Mac: the same pages, shell, bundled engine and its one
 # dependency as the Mac app, wrapped in Electron's Windows build as "Liner Code.exe" in a folder.
 # That folder goes into a setup (NSIS, scripts/windows/liner-code.nsi: for you alone, no
 # administrator, in the Start menu and Settings › Apps) and into a zip to run from anywhere, each
@@ -31,12 +31,12 @@ node desktop/build.ts
 
 echo "→ Putting what goes inside together"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/desktop/dist" "$STAGE/engine" "$STAGE/contracts" "$STAGE/node_modules/@anthropic-ai"
+mkdir -p "$STAGE/desktop/dist" "$STAGE/node_modules/@anthropic-ai"
 # The Mac addon (mac.node) stays out: it's AppKit.
 cp desktop/dist/main.cjs desktop/dist/preload.cjs "$STAGE/desktop/dist/"
 cp -R ui/dist "$STAGE/ui"
-cp -R engine/src engine/package.json "$STAGE/engine/"
-cp -R contracts/src contracts/package.json "$STAGE/contracts/"
+# The engine bundled, as on the Mac (engine/build.ts).
+node engine/build.ts "$STAGE"
 # As on the Mac, the engine drives the claude you installed, so the SDK's own binary stays out.
 cp -R node_modules/@anthropic-ai/claude-agent-sdk "$STAGE/node_modules/@anthropic-ai/"
 cat > "$STAGE/package.json" <<JSON

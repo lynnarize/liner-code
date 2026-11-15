@@ -365,6 +365,16 @@ export class CodexServerSession implements ProviderSession {
     this.opened = true;
   }
 
+  /**
+    The app server started and its handshake done ahead of your message (warm): `initialize` only. The thread (thread/start or
+    thread/resume) waits for the turn, so no message leaves no empty thread in Codex's history. The turn's open() waits on the same
+    start, or begins again if this one failed (CodexServer.ready). As T3 Code does: CodexAdapterV2.ts initializes in openSession
+    and starts the thread in ensureThread.
+  */
+  async warm() {
+    await this.server.ready();
+  }
+
   async turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
     this.sink = sink;
     this.signal = signal;

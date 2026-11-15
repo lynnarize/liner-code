@@ -31,9 +31,11 @@ import { createRequire, registerHooks, syncBuiltinESMExports } from "node:module
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SHIMMED, WEB_TOOLS } from "./dsh-shims.ts";
+import { script } from "./paths.ts";
 
 // DSH's tools and settings packages, as Liner Code answers them: before any of the plugin loads.
-const SHIM = new URL("./dsh-shims.ts", import.meta.url).href;
+// From the bundle, dsh-shims.js: the same module this file's import names, which the build keeps apart for this.
+const SHIM = pathToFileURL(script("dsh-shims")).href;
 registerHooks({ resolve: (spec, context, next) => (SHIMMED.includes(spec) ? { url: SHIM, shortCircuit: true } : next(spec, context)) });
 
 type Start = { t: "start"; dir: string; entry: string; config?: Record<string, unknown>; name: string; secret: string; model: string | null; tools?: string[]; named?: string[] };

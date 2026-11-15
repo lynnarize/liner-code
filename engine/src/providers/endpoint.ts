@@ -137,6 +137,8 @@ export function endpointProvider(base: Provider, e: Endpoint, key: () => string 
         return windows && { plan: isVoucher(e) ? "Promo" : "Go", windows };
       },
     }),
+    // As the tool it runs through: the endpoint's model and key change neither what that tool starts nor where it's found.
+    warms: base.warms && ((env: NodeJS.ProcessEnv) => base.warms!(env)),
     open: (o: OpenOptions) => {
       const model = o.model && o.model !== "default" ? o.model : (e.models[0] ?? "");
       const x = endpointOptions(e, model, key(), o.env);

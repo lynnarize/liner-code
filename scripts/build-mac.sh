@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds "Liner Code.app" on Electron: the web app, the shell (desktop/), the engine's source and
+# Builds "Liner Code.app" on Electron: the web app, the shell (desktop/), the engine bundled and
 # its one dependency, an icon, the licences, and a signature. The engine runs on Electron's own
 # Node, so the app needs no Node installed. Output: build/Liner Code.app
 # Signing: a "Developer ID Application" identity in your keychain (or LINER_SIGN_IDENTITY) signs it
@@ -24,11 +24,11 @@ node desktop/build.ts
 
 echo "→ Putting what goes inside together"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/desktop" "$STAGE/engine" "$STAGE/contracts" "$STAGE/node_modules/@anthropic-ai"
+mkdir -p "$STAGE/desktop" "$STAGE/node_modules/@anthropic-ai"
 cp -R desktop/dist "$STAGE/desktop/"
 cp -R ui/dist "$STAGE/ui"
-cp -R engine/src engine/package.json "$STAGE/engine/"
-cp -R contracts/src contracts/package.json "$STAGE/contracts/"
+# The engine bundled, with the files it reads (engine/build.ts): it starts in half the time its source took.
+node engine/build.ts "$STAGE"
 # The engine's only dependency. Its own Claude Code binary (about 260 MB) stays out: the engine
 # drives the claude you installed and signed in to, so your plan and settings come along.
 cp -R node_modules/@anthropic-ai/claude-agent-sdk "$STAGE/node_modules/@anthropic-ai/"

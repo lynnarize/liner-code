@@ -22,7 +22,6 @@ import { createHash } from "node:crypto";
 import { chmodSync, cpSync, createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { cp, lstat, readdir } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { DesignSize, EngineEvent, Item, RpcMethod, RpcParams, RpcResult } from "../../contracts/src/index.ts";
 import { DESIGN_UNREADABLE, FRAME_CHANGED, FRAME_SIZES, type CanvasVersion, type FrameOp, type FramePlaced, type DesignFile, type DesignFileInfo, type DesignFrame, type DesignPatch, type DesignPresence, type DesignSelection, type DesignSkill, type FrameBuild, type NewFrame } from "../../contracts/src/design.ts";
 import type { AddonHost, McpResult } from "./agent-tools.ts";
@@ -30,13 +29,14 @@ import { applyOps, attr, byId, elements, outer, outline, parse, replaceNode, sta
 import { keepOutOfGit, slugOf, type Designs } from "./designs.ts";
 import { AS_SIDEKICK } from "./sidekick.ts";
 import { picturesPref, setPicturesPref } from "./design-prefs.ts";
+import { enginePath } from "./paths.ts";
 import type { Store } from "./store.ts";
 
 export { TOOLS } from "./canvas-tools.ts";
 export { stamp, outline, replaceNode } from "./canvas-html.ts";
 
 /** The frame agent's script on disk, for the proxy to put in a live frame (the app imports it with ?raw). */
-export const FRAME_AGENT = fileURLToPath(new URL("../../contracts/src/frame-agent.js", import.meta.url));
+export const FRAME_AGENT = enginePath("../../contracts/src/frame-agent.js");
 
 /** A picture of a page the app drew out of sight (AgentTools' `shot`): a PNG in base64, its console errors and full height. */
 export type Shot = { png: string; errors?: string[]; height?: number };

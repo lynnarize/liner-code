@@ -24,13 +24,14 @@ import type { ReadableStream as WebStream } from "node:stream/web";
 import type { AppUpdate, BuiltinProvider, Settings, ToolUpdate, Updates } from "../../contracts/src/index.ts";
 import { newerVersion, updateModes } from "../../contracts/src/index.ts";
 import { run, which } from "./exec.ts";
+import { enginePath } from "./paths.ts";
 import type { Store } from "./store.ts";
 
 const EVERY = 6 * 3600_000;
 const BUNDLE_ID = "app.liner.code";
 const APP_NAME = "Liner Code.app";
 /** The app's own package.json: the repo's root while developing, the staged one inside the app. */
-const PACKAGE = join(import.meta.dirname, "../../package.json");
+const PACKAGE = enginePath("../../package.json");
 
 const SIZE: Record<string, number> = { b: 1, kb: 1e3, kib: 1024, mb: 1e6, mib: 1024 ** 2, gb: 1e9, gib: 1024 ** 3 };
 

@@ -1,6 +1,6 @@
 /*
   The engine, as a child process on Electron's own Node (ELECTRON_RUN_AS_NODE), so the app needs
-  no Node installed. It runs engine/src/main.ts, which prints `LINER_READY {"port":…}` once it
+  no Node installed. It runs engine/src/main.ts (inside the app, its bundle main.js), which prints `LINER_READY {"port":…}` once it
   listens. Its stdin stays open; when the app quits, the pipe closes and the engine stops with
   it. If it crashes, it comes back on the same port and token, so the page reconnects by itself.
 */

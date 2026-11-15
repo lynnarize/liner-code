@@ -202,6 +202,21 @@ export function addToDraft(key: string, text: string) {
 const draftFiles = new Map<string, File[]>();
 const MAX_FILES = 10;
 
+/**
+  You started writing in a session: its tool opens now, so it's up by the time you send (thread.warm; the engine decides whether
+  it can). Once per session until a turn has run there since, or WARM_AGAIN_MS have passed (the engine closes an unused one then).
+  Not on opening a session or clicking through them: only a draft you begin by hand.
+*/
+const warmed = new Map<string, { at: number; turns: number }>();
+const WARM_AGAIN_MS = 10 * 60_000;
+function warmFor(t: Thread) {
+  if (t.status === "running" || t.archived || t.sideOf) return;
+  const w = warmed.get(t.id);
+  if (w && w.turns === t.turns && Date.now() - w.at < WARM_AGAIN_MS) return;
+  warmed.set(t.id, { at: Date.now(), turns: t.turns });
+  void rpc("thread.warm", { id: t.id }).catch(() => {});
+}
+
 /** A paste this big (in bytes, as T3 Code counts it: chat/useComposerAttachmentIntake.ts) comes as a text file. */
 const PASTE_AS_FILE = 32 * 1024;
 const bytesOf = (s: string) => (s.length * 3 < PASTE_AS_FILE ? s.length : new TextEncoder().encode(s).byteLength);
@@ -481,6 +496,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   }, [hl, found]);
 
   const onType = (v: string, caret: number) => {
+    if (thread && !text.trim() && v.trim()) warmFor(thread);
     setText(v);
     // Changed by hand, it's yours: ↑ on the first line no longer swaps it for an older message.
     recall.current = -1;

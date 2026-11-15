@@ -66,10 +66,18 @@ export function syncProviders(s: Settings, keys?: Map<string, string>) {
   links: a fingerprint of the connections the session was given, so a change reaches it. kit: which
   of Liner Code's tools and words it was given for its part in a pair (the lead's `sidekick`, or
   none of it), so a session whose sidekick changed is opened again, resuming, by its next turn.
+  unused: opened ahead of a message (warm) and no turn has taken it yet: whether it starts knowing nothing and came from
+  another tool, as its opening said, for the first turn to hear (session), and the timer that closes it if none does.
 */
-type Live = { session: ProviderSession; provider: ProviderId; key: string; links: string; kit: string };
+type Live = { session: ProviderSession; provider: ProviderId; key: string; links: string; kit: string; unused?: { fresh: boolean; switched: boolean; at: number; timer: NodeJS.Timeout } };
+/** A live session going by any way: its warm timer (Live.unused) goes with it. Its session, to close. */
+const unwarmed = (l: Live) => {
+  if (l.unused) clearTimeout(l.unused.timer);
+  l.unused = undefined;
+  return l.session;
+};
 /** Who a live session is in a thread. */
-const liveKeyOf = (threadId: string, agentId: string) => `${threadId}:${agentId}`;
+const liveKeyOf =(threadId: string, agentId: string) => `${threadId}:${agentId}`;
 /**
   heard: when its tool last said anything (text, a step, tokens). quiet: the watchdog said so already.
   agentId: who works it. liner: install cards its agent asked for through Liner Code's tools, which
@@ -164,6 +172,9 @@ function commandOf(q: Pick<QueuedMessage, "text" | "files" | "anchor">) {
 export const READ_MS = 10 * 60_000;
 /** How long the Reviewer may take over one read: the longest a quiet read gets. */
 export const REVIEW_MS = READ_MS;
+/** How long a session opened ahead of a message (warm) waits for one before it's closed, and how many may wait at once. */
+export const WARM_MS = 10 * 60_000;
+const WARM_MAX = 2;
 /** "10 minutes", "1 minute", "30 seconds". */
 export const spanOf = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} minute${Math.round(ms / 60_000) === 1 ? "" : "s"}` : `${Math.max(1, Math.round(ms / 1000))} second${Math.max(1, Math.round(ms / 1000)) === 1 ? "" : "s"}`);
 /** A quiet read that ran out of time: its model never answered. */
@@ -265,6 +276,13 @@ export class Runtime {
   briefWindMs = BRIEF_WIND_MS;
   /** How long the Reviewer may take over one read (REVIEW_MS), here so a test can shorten it. */
   reviewMs = REVIEW_MS;
+  /** How long a session opened ahead of a message waits for one (WARM_MS), here so a test can shorten it. */
+  warmMs = WARM_MS;
+  /**
+    The openings under way, by live key: a second one for the same key (a message sent while warm opens it) waits for the first
+    and then finds its session live, rather than starting a second tool beside it.
+  */
+  private opening = new Map<string, Promise<unknown>>();
 
   constructor(store: Store, env: NodeJS.ProcessEnv, tools?: AgentTools) {
     this.store = store;
@@ -481,8 +499,10 @@ export class Runtime {
   /** What the open session says about itself for the Session surface: what fills its context. */
   async inspect(threadId: string) {
     const t = this.store.thread(threadId);
-    const session = this.live.get(`${t.id}:${t.agent}`)?.session;
-    const context = (await session?.context?.().catch(() => null)) ?? null;
+    const l = this.live.get(`${t.id}:${t.agent}`);
+    const session = l?.session;
+    // One opened ahead that no turn has used yet holds nothing of the conversation to say.
+    const context = (l?.unused ? null : await session?.context?.().catch(() => null)) ?? null;
     return { ...this.resolve(t), live: Boolean(session), context };
   }
 
@@ -497,7 +517,52 @@ export class Runtime {
     The provider session for an agent in a thread. `fresh`: it starts a conversation of its own, knowing nothing yet.
     `sidekick`: it's the pair's sidekick (agentId "@<its ref>"), in a session of its own even when it's the lead's model too.
   */
-  private async session(t: Thread, agentId: string, cwd: string, sidekick = false): Promise<{ session: ProviderSession; fresh: boolean; switched: boolean }> {
+  private session(t: Thread, agentId: string, cwd: string, sidekick = false) {
+    return this.once(sidekick ? `${liveKeyOf(t.id, agentId)}#sidekick` : liveKeyOf(t.id, agentId), () => this.openSession(t, agentId, cwd, sidekick));
+  }
+
+  /** `work` for a live key once nothing else is opening it (opening). */
+  private async once<T>(liveKey: string, work: () => Promise<T>): Promise<T> {
+    for (let p = this.opening.get(liveKey); p; p = this.opening.get(liveKey)) await p.catch(() => {});
+    const p = work();
+    this.opening.set(liveKey, p);
+    try {
+      return await p;
+    } finally {
+      if (this.opening.get(liveKey) === p) this.opening.delete(liveKey);
+    }
+  }
+
+  /** A turn's session (session), its tool started at once where it can be (ProviderSession.warm), so it starts while the turn's snapshot is taken. */
+  private async openForTurn(t: Thread, agentId: string, cwd: string, sidekick = false) {
+    const s = await this.session(t, agentId, cwd, sidekick);
+    // Not waited on: the turn's own start waits for what this began, or does it again where it failed, in its own words.
+    s.session.warm?.().catch(() => {});
+    return s;
+  }
+
+  /**
+    A turn that never got as far as its prompt (its snapshot threw) lets go of a session opened fresh for it, once that opening
+    ends: kept, the next turn would find it live, be told `fresh: false`, and a session that knows nothing would get no handoff.
+  */
+  private unheard(liveKey: string, opening: Promise<{ session: ProviderSession; fresh: boolean }> | null) {
+    void opening?.then(
+      (s) => {
+        if (s.fresh && this.live.get(liveKey)?.session === s.session) this.drop(liveKey);
+      },
+      () => {},
+    );
+  }
+
+  /** A live session as a turn takes it: one opened ahead of a message says now what its opening said (Live.unused), once. */
+  private taken(l: Live) {
+    const u = l.unused;
+    if (u) clearTimeout(u.timer);
+    l.unused = undefined;
+    return { session: l.session, fresh: u?.fresh ?? false, switched: u?.switched ?? false };
+  }
+
+  private async openSession(t: Thread, agentId: string, cwd: string, sidekick = false): Promise<{ session: ProviderSession; fresh: boolean; switched: boolean }> {
     // A sidekick is its bare model, never the thread's own settings, which are the lead's.
     const r = sidekick ? this.resolve({ ...t, agent: "" }, agentId) : this.resolve(t, agentId);
     const access: Access = r.access;
@@ -517,7 +582,7 @@ export class Runtime {
     // Each session this one replaces ends by the one close (ending), checked gone before the new one starts.
     if (cur && cur.kit !== kit) {
       this.live.delete(liveKey);
-      await this.ending(t.id, [cur.session]);
+      await this.ending(t.id, [unwarmed(cur)]);
       cur = undefined;
     }
     // Connections changed since it opened: taken in place where the tool can, else it reopens below and resumes.
@@ -525,23 +590,23 @@ export class Runtime {
       if (await cur.session.connect?.(connections).catch(() => false)) cur.links = links;
       else {
         this.live.delete(liveKey);
-        await this.ending(t.id, [cur.session]);
+        await this.ending(t.id, [unwarmed(cur)]);
         cur = undefined;
       }
     }
-    if (cur && cur.key === key) return { session: cur.session, fresh: false, switched: false };
+    if (cur && cur.key === key) return this.taken(cur);
     if (cur && cur.provider === r.provider && cur.session.update) {
       // Same provider, new settings: change them in place where the provider can.
       // One the tool refuses (auto mode isn't on this account) reopens below with the new settings, instead of failing your turn.
       if (await cur.session.update({ model: team.model, effort: r.effort, access }).catch(() => false)) {
         // What it couldn't apply yet stays out of the key, so the next turn asks again.
         if (!cur.session.owes?.()) cur.key = key;
-        return { session: cur.session, fresh: false, switched: false };
+        return this.taken(cur);
       }
     }
     if (cur) {
       this.live.delete(liveKey);
-      await this.ending(t.id, [cur.session]);
+      await this.ending(t.id, [unwarmed(cur)]);
     }
     // A model whose tool is gone (an account or an endpoint you removed) doesn't quietly become the Demo.
     const p = providers[r.provider];
@@ -596,6 +661,79 @@ export class Runtime {
     return { session, fresh: !resume && !forking, switched: Boolean(saved) && !saved.startsWith(`${r.provider}:`) };
   }
 
+  /**
+    Opens a session's tool ahead of your message, as you start writing it (thread.warm), so the tool's own start isn't between
+    send and the model hearing you: exactly as the next turn would open it (session), kept live for that turn. Only the lead of
+    an idle session with nothing live for it: never a side chat, an archived session, a fork still to branch, the sidekick or the
+    Demo, and only a tool that can open without leaving anything behind (ProviderSession.warm). One nobody sends to is closed
+    after warmMs, and at most WARM_MAX wait at once, a third closing the oldest. What fails is let go without a word: the turn
+    opens it again and says what's wrong in its own words.
+  */
+  async warm(threadId: string) {
+    const idle = () => {
+      const t = this.store.threads.find((x) => x.id === threadId);
+      return t && !this.quitting && !t.archived && !t.sideOf && t.forkSession === undefined && !this.isRunning(threadId) ? t : null;
+    };
+    try {
+      const first = idle();
+      if (!first) return;
+      // Asked of the tool before anything opens: one with nothing to start ahead (an ACP tool, Codex through exec, the Demo) is
+      // neither opened nor closed, so no close of it holds the message that follows (ending).
+      const { provider } = this.resolve(first);
+      if (provider === "demo" || !providers[provider]?.warms?.(this.envFor(provider))) return;
+      const liveKey = liveKeyOf(threadId, first.agent);
+      if (this.live.has(liveKey) || this.opening.has(liveKey)) return;
+      await this.once(liveKey, async () => {
+        // Looked at again: a turn, another tool or a close may have come while an opening before this one ended.
+        const t = idle();
+        if (!t || t.agent !== first.agent || this.live.has(liveKey) || this.resolve(t).provider !== provider) return;
+        const cwd = t.worktree?.path ?? this.store.project(t.projectId).path;
+        if (!existsSync(cwd)) return;
+        const { session, fresh, switched } = await this.openSession(t, t.agent, cwd);
+        const l = this.live.get(liveKey);
+        if (l?.session !== session) return;
+        // Marked before anything else: a message sent meanwhile waits on this opening, and its turn must hear what it said.
+        l.unused = { fresh, switched, at: Date.now(), timer: this.unusedTimer(l) };
+        const now = this.store.threads.find((x) => x.id === threadId);
+        // Put away meanwhile, or no longer what the next turn would open: another agent or tool (a retool that ran before this was
+        // live couldn't end it), or another conversation to resume (a rewind cleared the one it opened on, which would be taken
+        // with `fresh: false` and remember turns you took back). Let go; the turn opens what's right.
+        const same = now && now.agent === t.agent && now.providerSession === t.providerSession && now.forkSession === t.forkSession && this.resolve(now).provider === provider;
+        if (!same || now.archived || now.sideOf || this.quitting) return this.drop(liveKey);
+        this.trimUnused(l);
+        void session.warm?.().catch(() => {
+          if (l.unused && this.live.get(liveKey) === l) this.drop(liveKey);
+        });
+      });
+    } catch {
+      // The turn that follows opens it again, and says what went wrong.
+    }
+  }
+
+  /** Closes a session opened ahead of a message that no turn took in time; one whose thread is busy (a turn about to take it) waits another while. */
+  private unusedTimer(l: Live): NodeJS.Timeout {
+    const timer = setTimeout(() => {
+      if (!l.unused) return;
+      for (const [key, x] of this.live) {
+        if (x !== l) continue;
+        if (this.isRunning(key.slice(0, key.indexOf(":")))) l.unused.timer = this.unusedTimer(l);
+        else this.drop(key);
+        return;
+      }
+    }, this.warmMs);
+    timer.unref?.();
+    return timer;
+  }
+
+  /** At most WARM_MAX sessions opened ahead wait for a message: the oldest beyond that close, `keep` (the newest) aside. */
+  private trimUnused(keep: Live) {
+    const waiting = [...this.live].filter(([key, l]) => l.unused && l !== keep && !this.isRunning(key.slice(0, key.indexOf(":")))).sort((a, b) => a[1].unused!.at - b[1].unused!.at);
+    for (const [key, l] of waiting.slice(0, Math.max(0, waiting.length + 1 - WARM_MAX))) {
+      clearTimeout(l.unused!.timer);
+      this.drop(key);
+    }
+  }
+
   /** The connections a thread's tool gets: your add-ons for its project, less those switched off for it. A side chat gets them too; it only reads. */
   private connectionsOf(t: Thread): Connection[] {
     const all = this.addons?.connections(t.projectId, this.keys) ?? [];
@@ -625,7 +763,7 @@ export class Runtime {
       // Reopened for the next turn, resuming where it was; one working now is left to finish.
       if (!now && !this.turns.has(threadId)) {
         this.live.delete(key);
-        void this.ending(threadId, [l.session]);
+        void this.ending(threadId, [unwarmed(l)]);
       }
       if (this.turns.get(threadId)?.session === l.session || !out.has(threadId)) out.set(threadId, now ? "now" : "next");
     }
@@ -973,21 +1111,34 @@ export class Runtime {
     // Your attachments are named only in what the agent is sent; the timeline shows them as files.
     if (o.files?.length) prompt = `${prompt}\n\n${attachNote(o.files)}`;
 
-    // A side chat shares its session's folder and changes nothing, so it takes no snapshot: what
-    // the session edits meanwhile would read as the side chat's change.
-    const git = !t.sideOf && (await isRepo(cwd));
-    const from = git ? await capture(cwd, `${threadId}/${turn}-before`) : null;
+    // The tool opens while the snapshot is taken, both waited on before the prompt goes: opening doesn't prompt the agent, so
+    // the folder is still as it was (T3 Code: RunExecutionService.ts forkBaseline, joined in ProviderTurnStartService.ts before
+    // the prompt). A turn the tool began by itself runs on the session that began it, and a folder that's gone opens nothing.
+    const there = existsSync(cwd);
+    const opening = there && !o.wake ? this.openForTurn(t, agentId, cwd) : null;
+    // Waited on below, inside the turn's own try; a snapshot that throws first leaves nothing unhandled behind.
+    opening?.catch(() => {});
     // Said, not hidden: a turn with no snapshot can't be shown as a diff or taken back.
     const unsnapped = "Couldn't snapshot this turn, so its changes can't be shown or undone.";
-    if (git && !from) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: unsnapped });
-    const sink = this.sink(threadId, turn, abort.signal, agentId);
+    // Whatever throws before the turn's own try (the snapshot, a save of its notice, its sink) lets go of a session opened fresh for it.
+    const { git, from, sink } = await (async () => {
+      // A side chat shares its session's folder and changes nothing, so it takes no snapshot: what
+      // the session edits meanwhile would read as the side chat's change.
+      const git = !t.sideOf && (await isRepo(cwd));
+      const from = git ? await capture(cwd, `${threadId}/${turn}-before`) : null;
+      if (git && !from) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: unsnapped });
+      return { git, from, sink: this.sink(threadId, turn, abort.signal, agentId) };
+    })().catch((e) => {
+      this.unheard(liveKeyOf(threadId, agentId), opening);
+      throw e;
+    });
     let failed = false;
     let ran = false;
     try {
       // The tool would fail to start with its own words, naming neither the folder nor what's wrong with it.
-      if (!existsSync(cwd)) throw new Error(`This session's folder isn't there any more: ${cwd}`);
+      if (!there) throw new Error(`This session's folder isn't there any more: ${cwd}`);
       // A turn the tool began by itself runs on the session that began it, as it is.
-      const { session, fresh, switched } = o.wake ? { session: o.wake.session, fresh: false, switched: false } : await this.session(t, agentId, cwd);
+      const { session, fresh, switched } = o.wake ? { session: o.wake.session, fresh: false, switched: false } : await opening!;
       live.session = session;
       // The level the tool really thinks at is its to say again (TurnSink.effortNow): a session just opened hasn't yet.
       if (fresh && agentId === t.agent && store.thread(threadId).effortNow !== undefined) store.patchThread(threadId, { effortNow: undefined });
@@ -1787,6 +1938,7 @@ export class Runtime {
         this.limitedUntil.set(provider, until ?? Date.now() + LIMIT_UNKNOWN_MS);
       },
     };
+    let opening: Promise<{ session: ProviderSession; fresh: boolean }> | null = null;
     try {
       if (abort.signal.aborted) throw new Error("stopped");
       // A model whose tool is gone doesn't quietly become another.
@@ -1797,12 +1949,15 @@ export class Runtime {
         const { [agentId]: _, ...rest } = store.thread(threadId).sessions ?? {};
         store.patchThread(threadId, { sessions: Object.keys(rest).length ? rest : undefined });
       }
+      // Its tool opens while the snapshot is taken, as a turn's does (runTurn): nothing is prompted until both are done.
+      opening = this.openForTurn(store.thread(threadId), agentId, cwd, true);
+      opening.catch(() => {});
       git = await isRepo(cwd);
       const tag = `${threadId}/${turn}-${uid("sk")}`;
       from = git ? await capture(cwd, `${tag}-before`) : null;
       // The canvas's frames, which the snapshot leaves out, are measured on their own.
       framesFrom = frameRevs(cwd);
-      ({ session } = await this.session(store.thread(threadId), agentId, cwd, true));
+      ({ session } = await opening);
       brief.session = session;
       run.steerable = Boolean(session.steer);
       if (abort.signal.aborted) throw new Error("stopped");
@@ -1822,8 +1977,9 @@ export class Runtime {
     } catch (e) {
       if (!abort.signal.aborted) {
         problem = e instanceof Error ? e.message : String(e);
-        // A session that broke is opened afresh for the next brief.
+        // A session that broke is opened afresh for the next brief; so is a fresh one its snapshot failed before it heard anything.
         this.drop(liveKey);
+        this.unheard(liveKey, opening);
       }
     } finally {
       clearTimeout(cap);
@@ -2098,7 +2254,7 @@ export class Runtime {
   private drop(key: string) {
     const l = this.live.get(key);
     this.live.delete(key);
-    if (l) void this.ending(key.slice(0, key.indexOf(":")), [l.session]);
+    if (l) void this.ending(key.slice(0, key.indexOf(":")), [unwarmed(l)]);
   }
 
   /**
@@ -2117,7 +2273,7 @@ export class Runtime {
     const sessions: ProviderSession[] = [];
     for (const [key, l] of this.live) {
       if (!key.startsWith(`${threadId}:`)) continue;
-      sessions.push(l.session);
+      sessions.push(unwarmed(l));
       this.live.delete(key);
     }
     this.grants.delete(threadId);
@@ -2171,7 +2327,10 @@ export class Runtime {
       stale.push({ key, l, side });
     }
     if (!stale.length) return;
-    for (const { key } of stale) this.live.delete(key);
+    for (const { key, l } of stale) {
+      this.live.delete(key);
+      unwarmed(l);
+    }
     const label = (provider: string) => this.providerInfo.find((p) => p.id === provider)?.label ?? provider;
     // As the picker shows it: the tool, and its model unless that's the tool's own default ("Claude Code, Sonnet 5.5").
     const picked = (provider: string, model: string) => {
@@ -2220,7 +2379,7 @@ export class Runtime {
     for (const [key, l] of this.live) {
       if (familyOf(l.provider) !== family || this.turns.has(key.slice(0, key.indexOf(":")))) continue;
       this.live.delete(key);
-      void this.ending(key.slice(0, key.indexOf(":")), [l.session]);
+      void this.ending(key.slice(0, key.indexOf(":")), [unwarmed(l)]);
     }
   }
 
@@ -2370,7 +2529,7 @@ export class Runtime {
     for (const id of this.turns.keys()) this.stop(id);
     // A pull request's test suite runs outside any turn, in a process group of its own.
     for (const s of this.prStops.values()) s.abort();
-    const closing = [...this.live.values()].map((l) => l.session.close());
+    const closing = [...this.live.values()].map((l) => unwarmed(l).close());
     // And the closes already under way (a session another tool took over from).
     return Promise.allSettled([...closing, ...this.closing.values()]).then(() => undefined);
   }

@@ -3,7 +3,7 @@
   background and reports through events; handlers answer as soon as the command is accepted.
 */
 import { fileURLToPath } from "node:url";
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
 import { castOf, endpointKey, ROUTINES_ON, splitModel, startOf, VOUCHER } from "../../contracts/src/index.ts";
@@ -164,6 +164,19 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
+/** A saved tool as the snapshot needs it, checked before last launch's list stands in for this one's look. */
+const isInfo = (d: unknown): d is ProviderInfo => {
+  const x = d as ProviderInfo;
+  return Boolean(x) && typeof x === "object" && typeof x.id === "string" && typeof x.label === "string" && typeof x.available === "boolean" && typeof x.adapter === "boolean" && typeof x.login === "string" && Array.isArray(x.models) && x.models.every((m) => Boolean(m) && typeof m.id === "string" && typeof m.label === "string") && Boolean(x.supports) && typeof x.supports === "object";
+};
+/**
+  What starts or asks a tool waits for this launch's own look; last launch's list only paints. Codex's app server is
+  known only from a look (codex.ts appServerFor), so a turn opened before it would run through exec, which can't stop
+  to ask; and a tool gone since the list was saved then fails in its own words, as one gone mid-session does.
+  defaultStart (thread.create) and limited() (usage.limits) read the look too.
+*/
+const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "compare.start", "review.run", "git.message", "pr.draft", "desk.ask", "agent.commands", "usage.limits"]);
+
 type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
@@ -177,12 +190,48 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return { ...d, models: [...d.models, ...mine.map((c): ModelInfo => ({ id: c.id, label: c.label?.trim() || c.id, description: "A model id you added", efforts: like?.efforts, defaultEffort: like?.defaultEffort, custom: true }))] };
   };
   const shown = () => detected.map(withCustom);
-  const publish = () => {
+  const apply = () => {
     runtime.providerInfo = shown();
     // An agent that's gone stands in as your sidekick's model, the quicker of your two, never as another of your agents.
     store.standIn = castOf(runtime.providerInfo, { picks: store.settings.picks })?.sidekick ?? store.standIn;
+  };
+  // The last look at the tools, kept on disk so the app's first snapshot doesn't wait the two seconds a look takes:
+  // it shows what was found last time, and this launch's own look replaces it through publish() once it's done.
+  // An endpoint's key stays in runtime.keys (its address here is only the host), but an agent you added names its whole
+  // command line in `login` and `detail`, which can carry a key as an argument: those two aren't kept for it, and the
+  // look fills them in again within seconds. The file is yours alone to read, as settings are.
+  const toolsFile = join(store.home, "tools.json");
+  const keptOf = (d: ProviderInfo): ProviderInfo => (d.added ? { ...d, login: "", detail: undefined } : d);
+  /** Whether a look has finished in this launch, so `detected` is no longer the saved list. */
+  let looked = false;
+  const publish = () => {
+    apply();
+    if (looked) {
+      try {
+        writeFileSync(toolsFile, JSON.stringify(detected.map(keptOf)), { mode: 0o600 });
+        chmodSync(toolsFile, 0o600);
+      } catch (e) {
+        console.error("[tools] not saved:", e instanceof Error ? e.message : e);
+      }
+    }
     store.emit({ type: "providers", providers: runtime.providerInfo });
   };
+  // Settings decide which of your own tools there are (endpoints, accounts, added agents): one removed since the file was
+  // written doesn't come back from it, and one it doesn't know yet means waiting for the look, so none is hidden.
+  // A list from another version still paints; one that isn't the right shape, or doesn't read, is as good as none.
+  const seeded = (() => {
+    try {
+      const saved: unknown = JSON.parse(readFileSync(toolsFile, "utf8"));
+      if (!Array.isArray(saved) || !saved.length || !saved.every(isInfo)) return false;
+      const kept = saved.filter((d) => Object.hasOwn(providers, d.id));
+      if (Object.keys(providers).some((id) => id.includes(".") && !kept.some((d) => d.id === id))) return false;
+      detected = kept;
+      apply();
+      return true;
+    } catch {
+      return false;
+    }
+  })();
 
   // Each tool's own model list. Asking takes a second or more (it starts the tool), so the last
   // answer is kept on disk and shown at once; the tool is asked again in the background when it
@@ -236,6 +285,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (gen !== detectGen) return detecting!;
       const forced = forcing;
       forcing = false;
+      looked = true;
       detected = found.map((d) => {
         const had = listed[d.id];
         return had && d.modelsFrom !== "cli" && had.version === d.version ? { ...d, models: had.models, modelsFrom: "cli", modelsAt: had.at } : d;
@@ -593,7 +643,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
   const handlers: Handlers = {
     "state.get": async () => {
-      await ready;
+      // With last launch's list on disk the snapshot answers at once; the look's answer follows as a providers event.
+      if (!seeded) await ready;
       return snapshot();
     },
     "providers.refresh": async () => (await detect(true), shown()),
@@ -989,7 +1040,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "outside.info": () => {
       // How its MCP server starts: on the app's own Node when this is the app, else on this Node.
-      const script = fileURLToPath(new URL("./outside.ts", import.meta.url));
+      const script = fileURLToPath(new URL(import.meta.url.endsWith(".ts") ? "./outside.ts" : "./outside.js", import.meta.url)); // outside.js inside the app, beside the bundle (paths.ts)
       const electron = Boolean(process.versions.electron);
       const home = store.home === join(homedir(), ".liner-code") ? [] : [`LINER_HOME=${store.home}`];
       const vars = [...(electron ? ["ELECTRON_RUN_AS_NODE=1"] : []), ...home];
@@ -1046,6 +1097,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         // Sent from Liner Design: the turn hears where the design is and what's selected (runtime.ts, lean.ts designNote).
         await runtime.send(id, c.text, mode, anchor, c.files, design?.file ? { file: String(design.file), ...(design.sel ? { sel: design.sel } : {}) } : undefined, shown);
       })().catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
+      return null;
+    },
+    // You started writing in a session: its tool opens now, behind an answer that comes at once. The open waits for this launch's
+    // own look, as a send does (LOOK_FIRST), since a Codex opened before it would run through exec; a session still setting up
+    // its worktree isn't opened ahead, and one that fails here is opened again by the turn, which says why.
+    "thread.warm": ({ id }) => {
+      if (!setups.has(id)) void ready.then(() => runtime.warm(id)).catch(() => {});
       return null;
     },
     "thread.queue": ({ id, queue }) => runtime.setQueue(id, queue),
@@ -1798,6 +1856,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const start = startOf(store.settings, shown());
     const p = detected.find((x) => x.available && x.adapter && x.id !== "demo");
     return start ?? { agent: p ? `@${p.id}:${p.models[0]?.id ?? "default"}` : "demo" };
+  }
+
+  // The wait is on the handler itself, so one handler calling another (sessions.import and compare.start make their
+  // sessions through thread.create) waits as a call from the app does.
+  const own = handlers as Record<string, (p: unknown) => unknown>;
+  for (const method of LOOK_FIRST) {
+    const h = own[method];
+    own[method] = async (p: unknown) => (looked || (await ready), h(p));
   }
 
   return {

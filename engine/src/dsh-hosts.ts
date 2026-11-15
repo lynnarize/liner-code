@@ -36,12 +36,12 @@ import { createReadStream, existsSync, lstatSync, mkdirSync, openSync, closeSync
 import { request, type IncomingMessage, type ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { DshFrame, DshInstructions, DshTool, PanelManifest } from "../../contracts/src/index.ts";
 import { DSH_TOKEN } from "../../contracts/src/index.ts";
 import type { Addons, Connection } from "./addons.ts";
 import { killTree } from "./exec.ts";
 import { groupsGone } from "./launch.ts";
+import { script } from "./paths.ts";
 
 /** A tool as MCP lists it. */
 type McpTool = { name: string; description: string; inputSchema: unknown };
@@ -426,7 +426,7 @@ export class DshHosts {
     }
     // Under the Electron shell process.execPath is the app itself, which is a Node only when told so.
     const electron: Record<string, string> = process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {};
-    return { name: id, stdio: { command: process.execPath, args: [fileURLToPath(new URL("./dsh-mcp.ts", import.meta.url))], env: { ...electron, LINER_DSH_URL: `${this.url}/dsh/${token}/mcp`, LINER_DSH_NAME: name } } };
+    return { name: id, stdio: { command: process.execPath, args: [script("dsh-mcp")], env: { ...electron, LINER_DSH_URL: `${this.url}/dsh/${token}/mcp`, LINER_DSH_NAME: name } } };
   }
 
   /** A model picked or changed: each process hears it, for its currentSelection(). */
@@ -476,12 +476,12 @@ export class DshHosts {
     const logFile = join(addonDir, "host.log");
     const log = openSync(logFile, "a");
     if (fstatSync(log).size > LOG_MAX) ftruncateSync(log, 0);
-    const script = fileURLToPath(new URL("./dsh-host.ts", import.meta.url));
+    const host = script("dsh-host");
     const node = process.execPath;
     const e = this.env;
     // Your PATH and home, its own folder and a temporary one inside it, and nothing else of the engine's: no keys, no token.
     const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries({ PATH: e.PATH, HOME: e.HOME ?? homedir(), USER: e.USER, LOGNAME: e.LOGNAME, SHELL: e.SHELL, LANG: e.LANG ?? "en_US.UTF-8", LC_ALL: e.LC_ALL, TMPDIR: tmp, TZ: e.TZ, SystemRoot: e.SystemRoot, APPDATA: e.APPDATA, LOCALAPPDATA: e.LOCALAPPDATA, USERPROFILE: e.USERPROFILE, DSH_HOME: own, NODE_NO_WARNINGS: "1", ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}) }).filter(([, v]) => v !== undefined));
-    const args = ["--disable-warning=ExperimentalWarning", script];
+    const args = ["--disable-warning=ExperimentalWarning", host];
     // The folder a plugin with a page saves to in your Documents, made by Liner Code for it; why not, in its log and on its page.
     // One that only gives your agents tools gets none (and no folder in your Documents it never asked for).
     const saves = this.sandbox && m.dsh.slot ? savesFolder(env.HOME!, [m.name, m.id], join(addonDir, "folders.json"), { projects: this.projects?.() ?? [], make: true }) : {};

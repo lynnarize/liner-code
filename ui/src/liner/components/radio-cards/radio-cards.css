@@ -63,7 +63,9 @@
   box-shadow: inset 0 0 0 1px var(--l-line);
   color: var(--l-ink-2);
 }
-.l-rcard__icon svg {
+/* An icon that brings no size of its own gets 17px; one drawn for a size keeps it, so its stroke
+   lands where it was drawn to (Liner Code's icons set theirs from the size they're asked for). */
+.l-rcard__icon svg:not([width]) {
   width: 17px;
   height: 17px;
 }

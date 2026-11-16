@@ -705,13 +705,13 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               <PanelHead end={zoom === 1 ? undefined : `${Math.round(zoom * 100)}%`}>Zoom</PanelHead>
               <div className="lc-br-zoomrow">
                 <button type="button" className="lc-ib l-focus" aria-label="Zoom out" disabled={zoom <= ZOOMS[0]} onClick={() => zoomBy(-1)}>
-                  <I.minus size={13} />
+                  <I.minus size={14} />
                 </button>
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-label="Reset the zoom" title="Back to 100%" disabled={zoom === 1} onClick={() => setZoom(1)}>
                   {Math.round(zoom * 100)}%
                 </button>
                 <button type="button" className="lc-ib l-focus" aria-label="Zoom in" disabled={zoom >= ZOOMS[ZOOMS.length - 1]} onClick={() => zoomBy(1)}>
-                  <I.plus size={13} />
+                  <I.plus size={14} />
                 </button>
               </div>
               <PanelHead>Page theme</PanelHead>
@@ -928,7 +928,7 @@ function LaunchRows({ servers, pressing, onRun, onStop, onOpen }: { servers: Lau
         return (
           <li key={s.name} className="lc-br-lrow" data-status={s.status} data-bad={(!on && s.ended?.failed) || s.problem ? "" : undefined}>
             <button type="button" className="lc-br-lmain l-focus" disabled={s.status !== "running"} title={s.status === "running" ? `Open localhost:${s.at}` : undefined} onClick={() => onOpen(s)}>
-              <I.server size={15} />
+              <I.server size={16} />
               <span className="lc-br-ltext">
                 <span className="lc-br-lname">{s.name}</span>
                 {note && <span className="lc-br-lnote" title={s.ended?.tail?.slice(-6).join("\n")}>{note}</span>}
@@ -937,7 +937,7 @@ function LaunchRows({ servers, pressing, onRun, onStop, onOpen }: { servers: Lau
             </button>
             {s.status === "running" && (
               <button type="button" className="lc-br-lgo l-focus" data-quiet={s.changed ? undefined : ""} aria-label={`Restart ${s.name}`} title={s.ask ? FIRST : s.changed ? "Restart with launch.json as it is now" : "Restart"} disabled={busy} onClick={() => onRun(s.name, true)}>
-                <I.refresh size={13} />
+                <I.refresh size={14} />
               </button>
             )}
             {on ? (

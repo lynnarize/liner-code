@@ -101,7 +101,7 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
           ) : (
             <div className="lc-sc-empty">
               <span className="lc-sc-empty-i">
-                <I.comment size={18} />
+                <I.comment size={20} />
               </span>
               <b>Ask about this session on the side</b>
               <span>

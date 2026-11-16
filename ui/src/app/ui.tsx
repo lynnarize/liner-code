@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
 import type { AgentProfile, LimitWindow, Thread, ToolLimits } from "@contracts";
-import { Glyph, I, ModelMark, Rays, type MarkKind } from "./icons";
+import { Glyph, I, ModelMark, Spinner, wt, type MarkKind } from "./icons";
 import { clock, compact } from "./model";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
@@ -255,13 +255,13 @@ export function Disc({ agent, size = 22, lead }: { agent: Pick<AgentProfile, "gl
   const filled = Boolean(lead);
   return (
     <span className="lc-disc" data-filled={filled || undefined} style={{ width: size, height: size }} aria-hidden>
-      <Glyph glyph={agent.glyph} size={Math.round(size * 0.56)} />
+      <Glyph glyph={agent.glyph} size={Math.round(size * 0.28) * 2} />
     </span>
   );
 }
 
 /** A model's mark and name, quiet. */
-export const ModelTag = ({ kind, label, size = 11 }: { kind: MarkKind; label: string; size?: number }) => (
+export const ModelTag = ({ kind, label, size = 12 }: { kind: MarkKind; label: string; size?: number }) => (
   <span className="lc-model">
     <ModelMark kind={kind} size={size} />
     {label}
@@ -277,26 +277,26 @@ export function Badge({ tone = "neutral", children, dot = true }: { tone?: "ok" 
 }
 
 /**
-  How a session stands: rays while it works (in the tint of whose model it runs on, when `brand`
+  How a session stands: the spinner while it works (in the tint of whose model it runs on, when `brand`
   says), amber when it needs you, an alert when it stopped on a problem, a ring before it starts,
   a quiet check when done.
 */
 export function StatusMark({ t, bucket, brand }: { t: Thread; bucket: string; brand?: MarkKind }) {
-  if (t.status === "running") return <span className="lc-mk" data-s="run" data-brand={brand} aria-label="Working"><Rays size={11} /></span>;
+  if (t.status === "running") return <span className="lc-mk" data-s="run" data-brand={brand} aria-label="Working"><Spinner size={14} /></span>;
   if (t.status === "error")
     return (
       <span className="lc-mk" data-s="error" aria-label="Ran into a problem">
-        <svg width={13} height={13} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden>
+        <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(14, 16, 1.6)} strokeLinecap="round" aria-hidden>
           <circle cx="8" cy="8" r="5.75" />
           <path d="M8 5.1v3.4M8 10.9v.01" />
         </svg>
       </span>
     );
   if (bucket === "needs" && t.turns === 0) return <span className="lc-mk" data-s="new" aria-label="Not started"><i /></span>;
-  if (t.status === "limited") return <span className="lc-mk" data-s="needs" aria-label="Limited"><I.clock size={13} /></span>;
+  if (t.status === "limited") return <span className="lc-mk" data-s="needs" aria-label="Limited"><I.clock size={14} /></span>;
   if (bucket === "needs") return <span className="lc-mk" data-s="needs" aria-label="Needs you"><i /></span>;
   if (t.turns === 0) return <span className="lc-mk" data-s="new" aria-label="Not started"><i /></span>;
-  return <span className="lc-mk" data-s="done" aria-label="Done"><I.check size={13} /></span>;
+  return <span className="lc-mk" data-s="done" aria-label="Done"><I.check size={14} /></span>;
 }
 
 /** +19 −7, in mono. */

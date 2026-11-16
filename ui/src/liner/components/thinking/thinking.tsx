@@ -39,12 +39,10 @@ export function Thinking({
   return (
     <div className={cx("l-think", className)} data-done={done || undefined} role="status" aria-live="polite">
       <span className="l-think__mark" aria-hidden>
-        <svg className="l-think__rays" viewBox="0 0 20 20">
-          <g className="l-think__turn">
-            {Array.from({ length: 8 }, (_, k) => (
-              <line key={k} x1="10" y1="2.6" x2="10" y2="5.4" opacity={k ? 0.18 + (0.82 * k) / 8 : 1} transform={`rotate(${k * 45} 10 10)`} />
-            ))}
-          </g>
+        {/* The same spinner as everywhere else in Liner: an accent arc travelling on the waiting ring. */}
+        <svg className="l-think__rays" viewBox="0 0 16 16" fill="none">
+          <circle className="l-rays__track" cx="8" cy="8" r="5.75" />
+          <circle className="l-rays__arc" cx="8" cy="8" r="5.75" strokeLinecap="round" strokeDasharray="9 40" />
         </svg>
         <svg className="l-think__check" viewBox="0 0 20 20" fill="none">
           <path d="M5.6 10.4 8.6 13.2 14.4 7" pathLength="1" />

@@ -403,7 +403,7 @@ function LeadInPair({ c }: { c: Pair }) {
                       <b>{now.title}</b>
                     )}
                   </span>
-                  <I.chevD size={11} />
+                  <I.chevD size={12} />
                 </>
               }
             >

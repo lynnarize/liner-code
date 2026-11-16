@@ -62,18 +62,15 @@ export function ModelMark({ id, size = 16 }: { id: string; size?: number }) {
 }
 
 /**
- * A spinner without a spin: eight rays, the brightest a beat ahead of the ones fading behind
- * it. The rays hold their shades and the group steps round a ray at a time: one animation
- * that changes eight times a turn, not eight fades repainting on every frame.
+ * At work: the waiting ring with an accent arc travelling on it, eased so it gathers and lets go.
+ * Drawn the same as Liner Code's own Spinner (app/icons.tsx), so the two never disagree. Its size
+ * comes from the holder's CSS, as before.
  */
 export function Rays({ className }: { className?: string }) {
   return (
-    <svg className={cx("l-rays", className)} viewBox="0 0 20 20" aria-hidden>
-      <g className="l-rays__turn">
-        {Array.from({ length: 8 }, (_, k) => (
-          <line key={k} x1="10" y1="2.6" x2="10" y2="5.6" opacity={k ? 0.18 + (0.82 * k) / 8 : 1} transform={`rotate(${k * 45} 10 10)`} />
-        ))}
-      </g>
+    <svg className={cx("l-rays", className)} viewBox="0 0 16 16" fill="none" strokeWidth="1.5" aria-hidden>
+      <circle className="l-rays__track" cx="8" cy="8" r="5.75" />
+      <circle className="l-rays__arc" cx="8" cy="8" r="5.75" strokeLinecap="round" strokeDasharray="9 40" />
     </svg>
   );
 }

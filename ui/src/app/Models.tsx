@@ -205,7 +205,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
               setSource(picked ? sourceOf(picked) : null);
             }}>
             {/* Each tool by its maker's mark; an added agent nobody's list knows keeps its initial. */}
-            {markOf(`${p.id}:`) === "other" ? <span className="lc-mp-ini">{INITIALS[familyOf(p.id)] ?? p.label[0]}</span> : <ModelMark kind={markOf(`${p.id}:`)} size={15} />}
+            {markOf(`${p.id}:`) === "other" ? <span className="lc-mp-ini">{INITIALS[familyOf(p.id)] ?? p.label[0]}</span> : <ModelMark kind={markOf(`${p.id}:`)} size={16} />}
             {p.account && <span className="lc-mp-acct">{p.account[0].toUpperCase()}</span>}
           </button>
         ))}
@@ -228,7 +228,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
         ) : (
           <>
             {!bare && <div className="lc-mp-find">
-              <I.search size={13} />
+              <I.search size={14} />
               <input ref={field} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={rail === "fav" || query ? "Find a model" : `Find a model in ${toolOf(rail)?.label ?? "all tools"}`} aria-label="Find a model" aria-controls={`${ids}-list`} aria-activedescendant={lit} spellCheck={false} />
               {rail !== "fav" && !query && toolOf(rail)?.modelsFrom === "cli" && <span className="lc-mp-src" title="Asked of the tool itself">{toolOf(rail)?.models.length}</span>}
             </div>}
@@ -241,7 +241,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
                     <button key={`s${l.name}`} type="button" className="lc-mp-source l-focus" data-on={(value && l.refs.includes(value)) || undefined} onClick={() => setSource(l.name)}>
                       {/* The source's own logo (Nous Portal, OpenCode Go), else a plain mark. */}
                       <span className="lc-mp-srcmark">
-                        <ModelMark kind={sourceMarkOf(l.name)} size={15} />
+                        <ModelMark kind={sourceMarkOf(l.name)} size={16} />
                       </span>
                       <span className="lc-mp-t">
                         <b>{l.name || "Other"}</b>
@@ -297,7 +297,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
                       </span>
                     </button>
                     <button type="button" className="lc-mp-star l-focus" data-on={fav || undefined} aria-label={fav ? `Unstar ${l.m.label}` : `Star ${l.m.label}`} aria-pressed={fav} onClick={() => star(l.m.ref)}>
-                      <I.star size={13} />
+                      <I.star size={14} />
                     </button>
                   </div>
                 );
@@ -331,7 +331,7 @@ export function ModelPop({ label, value, onPick, only, choices = [], width = 400
       trigger={
         <>
           {choice ? (choice.show ?? <span>{choice.title}</span>) : value ? <ModelTag kind={markOf(value)} label={model?.label ?? value.slice(value.indexOf(":") + 1)} size={12} /> : <span className="lc-quiet">Pick a model</span>}
-          <I.chevD size={11} />
+          <I.chevD size={12} />
         </>
       }
     >

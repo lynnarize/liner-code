@@ -4599,15 +4599,6 @@
   }
 }
 
-/* A plan step that changes state swaps its mark in: the tick lands, the rays start. */
-.lc-todo-mk > svg {
-  animation: l-swap-in 260ms var(--l-ease-out) backwards;
-}
-@media (prefers-reduced-motion: reduce) {
-  .lc-todo-mk > svg {
-    animation: none;
-  }
-}
 /* A Reviewer or escalation line in a narrow column: the words stay, the model and round give way first. */
 .lc-esc-h > span:nth-child(2) {
   flex-shrink: 0.2;

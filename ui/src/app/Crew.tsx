@@ -17,9 +17,9 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties,
 import { toast } from "@liner/components/toast/toast";
 import { agentState, isPair, type AgentProfile, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type Thread } from "@contracts";
 import { rpc, useEngine, useItemsWhere } from "./engine";
-import { I, ModelMark } from "./icons";
+import { I, ModelMark, StepMark, type StepState } from "./icons";
 import { useLaunch } from "./launch";
-import { agentOf, compact, duration, isModelAgent, markOf, modelLabel, plural, sumLines } from "./model";
+import { agentOf, compact, duration, isModelAgent, markOf, modelLabel, planEnd, planStatus, plural, sumLines, type PlanEnd } from "./model";
 import { openSurface } from "./TopBar";
 import { Lines, Num, Pop } from "./ui";
 import "./crew.css";
@@ -60,7 +60,8 @@ export const whoIs = (t: Tool, providers: ProviderInfo[]) => (isSidekick(t) ? (t
 export const shortModel = (label: string) => label.replace(/^GPT-[\d.]+\s+(?=\S)/i, "").replace(/^(\S+?)[\s-]+v?\d[\d.]*\s+(?=\S)/i, "$1 ");
 /**
   A pair, by name: its lead (the model, or your agent) and its sidekick, and the two in one breath
-  ("Opus 5.5 + Sol"). Null for a session of one model.
+  ("Opus 5.5 + Sol"). The same model on both sides is named once ("Demo", not "Demo + Demo": the same ref or the same full label, since short names drop versions), and
+  `same` says so, for the faces that would show it twice. Null for a session of one model.
 */
 export function pairOf(t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) {
   if (!isPair(t)) return null;
@@ -69,7 +70,8 @@ export function pairOf(t: Thread, agents: AgentProfile[], providers: ProviderInf
   const leadRef = t.model ?? a.model;
   const lead = bare ? modelLabel(leadRef, providers) : a.name;
   const side = modelLabel(t.sidekick!, providers);
-  return { lead, leadRef, side, sideRef: t.sidekick!, name: `${bare ? shortModel(lead) : lead} + ${shortModel(side)}` };
+  const same = bare && (leadRef === t.sidekick || lead === side);
+  return { lead, leadRef, side, sideRef: t.sidekick!, same, name: same ? shortModel(lead) : `${bare ? shortModel(lead) : lead} + ${shortModel(side)}` };
 }
 export type PairNames = NonNullable<ReturnType<typeof pairOf>>;
 /** Its first line said plainly: no list marks, headings, code ticks or bold. */
@@ -104,7 +106,7 @@ export function agentStats(t: Tool, now: number) {
 export type AgentNode = { it: Tool; kids: AgentNode[] };
 export type Member = { key: string; agent: string; model: string; name: string; tag?: string; role?: string; status: Turn["status"]; at: number; seconds?: number; agents: AgentNode[] };
 /** `earlier`: agents an earlier message sent that are still at work, in the background past their turn. */
-export type Crew = { turn: number; mode: string; members: Member[]; reviews: Review[]; agents: Tool[]; earlier: Tool[]; plan?: PlanEntry[]; start: number; lead?: Member; pair: PairNames | null };
+export type Crew = { turn: number; mode: string; members: Member[]; reviews: Review[]; agents: Tool[]; earlier: Tool[]; plan?: PlanEntry[]; /** How the run that made the plan ended (model.ts planEnd). */ planEnd?: PlanEnd; start: number; lead?: Member; pair: PairNames | null };
 
 /** What a part of a turn did, for a session from before too (a planner, a builder, a refiner). */
 const ROLE: Record<string, string> = { build: "Builder", refine: "Refiner", repair: "Fixer", fix: "Fixer", revise: "Reviser", takeover: "Took over" };
@@ -159,7 +161,7 @@ export function crewOf(items: Item[], thread: Thread, profiles: AgentProfile[], 
   }
   if (!members.length) return null;
   const mode = pair ? "Fusion" : "One model";
-  return { turn, mode, members, reviews, agents, earlier, plan, start: members[0].at, lead: members.findLast((m) => m.status === "running") ?? members.at(-1), pair };
+  return { turn, mode, members, reviews, agents, earlier, plan, planEnd: planEnd(planStatus(items, turn)), start: members[0].at, lead: members.findLast((m) => m.status === "running") ?? members.at(-1), pair };
 }
 
 /** The crew of a session, read from only the items that make it (not every streamed word). */
@@ -229,7 +231,7 @@ function useShownAgent(threadId: string) {
   do what they're sent to, one Codex calls by a nickname ("Planck") as well.
 */
 function Kind({ name, size = 12 }: { name: string; size?: number }) {
-  const Icon = /^explor/i.test(name) ? I.search : /^test/i.test(name) ? I.flask : I.sparkle;
+  const Icon = /^explor/i.test(name) ? I.search : /^test/i.test(name) ? I.flask : I.turn;
   return <Icon size={size} />;
 }
 /** An agent's face: a sidekick's is its model's mark, the rest their kind's. */
@@ -237,19 +239,21 @@ function Face({ t, size = 12 }: { t: Tool; size?: number }) {
   return isSidekick(t) && t.agent?.model ? <ModelMark kind={markOf(t.agent.model)} size={size} /> : <Kind name={agentName(t)} size={size} />;
 }
 const STATE_WORD: Record<State, string> = { running: "Working", done: "Done", failed: "Didn't finish", stopped: "Stopped" };
-/** How it stands, as a mark: a breathing dot at work, a tick when done, a square when stopped, a ring when it hasn't started. */
+const STEP_OF: Record<State, StepState> = { running: "working", done: "done", failed: "failed", stopped: "skipped" };
+const HEAD_WORD: Record<StepState, string> = { working: "Working", done: "All done", failed: "One didn't finish", skipped: "Stopped", waiting: "Waiting" };
+/**
+  How it stands, as the Plan list's marks (icons.tsx StepMark): the arc travelling on the ring at
+  work, a disc with its tick when done, the ring in the danger ink with a × when it didn't finish,
+  the ring dashed when it was stopped, the plain ring when it hasn't started.
+*/
 export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
-  return (
-    <span className="lc-cr-mark" data-state={waiting ? "waiting" : state} role="img" aria-label={waiting ? "Waiting" : STATE_WORD[state]}>
-      {state === "done" ? <I.check size={12} /> : state === "failed" ? <I.close size={11} /> : <i />}
-    </span>
-  );
+  return <StepMark className="lc-cr-mark" size={14} state={waiting ? "waiting" : STEP_OF[state]} label={waiting ? "Waiting" : STATE_WORD[state]} />;
 }
 
 /* ---------- the header's crew chip ---------- */
 
 /**
-  Who leads your latest message and how many work for it ("Sonnet 5.5 + 3 agents"); once it's
+  Who leads your latest message and how many work for it ("Sonnet 5.5 · 3 agents"); once it's
   over, how many worked on it. A pair is named as one ("Opus 5.5 + Sol"), from before its first
   message on. Opens the crew as a list. Nothing when one model works alone.
 */
@@ -277,36 +281,37 @@ export function CrewChip({ thread }: { thread: Thread }) {
         <>
           <span className="lc-cr-faces" aria-hidden>
             <span data-lead={live || undefined}>
-              <ModelMark kind={markOf(pair ? pair.leadRef : lead.model)} size={11} />
+              <ModelMark kind={markOf(pair ? pair.leadRef : lead.model)} size={12} />
             </span>
-            {pair && (
+            {pair && !pair.same && (
               <span data-lead={(live && working.some(isSidekick)) || undefined}>
-                <ModelMark kind={markOf(pair.sideRef)} size={11} />
+                <ModelMark kind={markOf(pair.sideRef)} size={12} />
               </span>
             )}
             {(working.length ? working : crew.agents)
               .filter((t) => !pair || !isSidekick(t))
-              .slice(0, pair ? 1 : 2)
+              .slice(0, pair && !pair.same ? 1 : 2)
               .map((t) => (
                 <span key={t.id}>
-                  <Face t={t} size={11} />
+                  <Face t={t} size={12} />
                 </span>
               ))}
           </span>
+          {/* The models by name, then the agents they sent counted after a dot: a "+" read as one more model. */}
           {pair ? (
             <span className="lc-crew-t">
               {pair.name}
-              {live && others > 0 && <span className="lc-quiet"> + {plural(others, "agent")}</span>}
+              {live && others > 0 && <span className="lc-quiet"> · {plural(others, "agent")}</span>}
             </span>
           ) : live ? (
             <span className="lc-crew-t">
               {lead.name}
-              {crew.agents.length + crew.earlier.length > 0 && <span className="lc-quiet"> + {plural(crew.agents.length + crew.earlier.length, "agent")}</span>}
+              {crew.agents.length + crew.earlier.length > 0 && <span className="lc-quiet"> · {plural(crew.agents.length + crew.earlier.length, "agent")}</span>}
             </span>
           ) : (
             <span className="lc-crew-t">{countOf(crew)} worked on it</span>
           )}
-          <I.chevD size={11} />
+          <I.chevD size={12} />
         </>
       }
     >
@@ -327,14 +332,16 @@ function PairChip({ thread, pair }: { thread: Thread; pair: PairNames }) {
         <>
           <span className="lc-cr-faces" aria-hidden>
             <span>
-              <ModelMark kind={markOf(pair.leadRef)} size={11} />
+              <ModelMark kind={markOf(pair.leadRef)} size={12} />
             </span>
-            <span>
-              <ModelMark kind={markOf(pair.sideRef)} size={11} />
-            </span>
+            {!pair.same && (
+              <span>
+                <ModelMark kind={markOf(pair.sideRef)} size={12} />
+              </span>
+            )}
           </span>
           <span className="lc-crew-t">{pair.name}</span>
-          <I.chevD size={11} />
+          <I.chevD size={12} />
         </>
       }
     >
@@ -435,14 +442,14 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
       {servers.length ? (
         servers.map((s) => (
           <div key={s.name} className="lc-crp-r">
-            <I.server size={13} />
+            <I.server size={14} />
             <span className="lc-crp-t lc-mono">{s.name}</span>
             <span className="lc-crp-n">{s.at ? `localhost:${s.at}` : s.status}</span>
           </div>
         ))
       ) : (
         <div className="lc-crp-r lc-quiet">
-          <I.server size={13} />
+          <I.server size={14} />
           Nothing in the background
         </div>
       )}
@@ -634,13 +641,17 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
         </div>
       );
     });
+  // The header's mark says how they all stand: at work while any is, else a tick only when every one
+  // is done, the danger ring when one didn't finish, the dashed ring when one was stopped.
+  const states = tools.map(stateOf);
+  const head: StepState = ongoing ? "working" : states.every((s) => s === "done") ? "done" : states.includes("failed") ? "failed" : states.includes("stopped") ? "skipped" : "working";
   // A pair's lead hands work over; it doesn't start "1 agent".
   const whom = onWhom(tools);
   const handed = tools.every(isSidekick);
   return (
     <div className="lc-fan" role="group" aria-label={handed ? "Handed to its sidekick" : `${plural(tools.length, "agent")} sent`}>
       <div className="lc-fan-h">
-        <I.fanout size={14} />
+        <StepMark size={14} state={head} label={HEAD_WORD[head]} />
         {ongoing ? (handed ? "Handed work to its sidekick" : `Started ${whom}`) : handed ? `Handed ${plural(tools.length, "brief")} to its sidekick` : `With ${whom}`}
         <span className="lc-quiet">· {ongoing ? (handed && tools.length === 1 ? "at work" : [done && `${done} done`, working && `${working} working`, back && `${back} in the background`].filter(Boolean).join(", ")) : tools.length === 1 ? "what it sent back" : "what each sent back"}</span>
       </div>
@@ -671,7 +682,7 @@ export function CrewStrip({ thread }: { thread: Thread }) {
       <span className="lc-cr-faces lc-crs-faces" aria-hidden>
         {working.slice(0, 3).map((t) => (
           <span key={t.id}>
-            <Face t={t} size={10} />
+            <Face t={t} size={12} />
           </span>
         ))}
       </span>
@@ -776,7 +787,7 @@ function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; 
       <div key={n.it.id} className="lc-cr-kid" data-last={(i === nodes.length - 1 && !more) || undefined}>
         <button type="button" className="lc-cr-row l-focus" onClick={() => showAgent(thread.id, n.it.id)}>
           <span className="lc-cr-tile">
-            <Face t={n.it} size={13} />
+            <Face t={n.it} size={14} />
           </span>
           <span className="lc-cr-t">
             <b>
@@ -867,12 +878,15 @@ function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; 
           <div className="lc-cr-h">
             Tasks<span className="lc-cr-rule" />
             <span>
-              {plan.filter((p) => p.status === "completed").length} of {plan.length} done
+              {crew.planEnd === "stopped" ? "Stopped at " : ""}
+              {plan.filter((p) => p.status === "completed").length} of {plan.length}
+              {crew.planEnd === "stopped" ? "" : " done"}
             </span>
           </div>
+          {/* The Plan list's rule: once the run that made it is over, a step not done reads as skipped (stopped) or left open (finished). */}
           {plan.map((p, i) => (
             <div key={`${i}${p.title}`} className="lc-cr-task" data-state={p.status}>
-              <Mark state={p.status === "completed" ? "done" : "running"} waiting={p.status === "pending"} />
+              {p.status !== "completed" && crew.planEnd ? <StepMark className="lc-cr-mark" size={14} state="skipped" label={crew.planEnd === "open" ? "Left open" : "Skipped"} /> : <Mark state={p.status === "completed" ? "done" : "running"} waiting={p.status === "pending"} />}
               <span className="lc-cr-task-t">{p.title}</span>
               {p.owner ? <span className="lc-cr-own">{p.owner}</span> : p.status === "pending" && <span className="lc-quiet lc-cr-none">no one yet</span>}
             </div>
@@ -1030,18 +1044,18 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
     <>
       {/* Named for where it goes: "Agents" alone was also the panel tab's name. */}
       <button type="button" className="lc-cr-back l-focus" aria-label="Back to all agents" onClick={() => showAgent(thread.id, null)}>
-        <I.chevL size={13} />
+        <I.chevL size={14} />
         Agents
         {parent && (
           <>
-            <I.chevR size={11} />
+            <I.chevR size={12} />
             <span>{agentName(parent)}</span>
           </>
         )}
       </button>
       <div className="lc-cr-ah">
         <span className="lc-cr-tile" data-big>
-          <Face t={it} size={15} />
+          <Face t={it} size={16} />
         </span>
         <b>{name}</b>
         {side ? <span className="lc-cr-pill">Sidekick</span> : a?.model && <span className="lc-cr-pill">{modelLabel(a.model, providers)}</span>}
@@ -1090,7 +1104,7 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
           {kids.map((k) => (
             <button key={k.id} type="button" className="lc-cr-row l-focus" onClick={() => showAgent(thread.id, k.id)}>
               <span className="lc-cr-tile">
-                <Kind name={agentName(k)} size={13} />
+                <Kind name={agentName(k)} size={14} />
               </span>
               <span className="lc-cr-t">
                 <b>{agentName(k)}</b>

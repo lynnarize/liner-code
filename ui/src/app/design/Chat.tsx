@@ -149,7 +149,7 @@ function Pin() {
         setChat(pinned ? "open" : "pinned");
         if (keys) requestAnimationFrame(() => document.querySelector<HTMLElement>("[aria-label='Unpin the chat'], [aria-label='Pin the chat beside the canvas']")?.focus({ preventScroll: true }));
       }}>
-      <I.sidebar size={15} />
+      <I.sidebar size={16} />
     </button>
   );
 }
@@ -157,7 +157,7 @@ function OpenInCode() {
   return (
     <button type="button" className="ld-lk l-focus" onClick={() => design.setFace("code")}>
       Open in Liner Code
-      <I.external size={13} />
+      <I.external size={14} />
     </button>
   );
 }
@@ -198,7 +198,7 @@ export function ChatMin({ thread }: { thread: Thread }) {
       )}
       <span className="ldc-v" aria-hidden />
       <button type="button" className="lc-tb l-focus" aria-label="Open the chat" title="Open the chat" onClick={open}>
-        <I.chevU size={15} />
+        <I.chevU size={16} />
       </button>
       <Pin />
     </div>
@@ -400,7 +400,7 @@ export function ChatOpen({ thread }: { thread: Thread }) {
         )}
         <span className="lc-grow" />
         <button ref={mini} type="button" className="lc-tb l-focus" aria-label="Make the chat small" title="Make the chat small" onClick={() => (hosts ? hosts.minimise() : setChat("min"))}>
-          <I.chevD size={15} />
+          <I.chevD size={16} />
         </button>
         <Pin />
         <OpenInCode />
@@ -420,7 +420,7 @@ export function ChatColumn({ thread }: { thread?: Thread }) {
         <span className="lc-grow" />
         <Pin />
         <button type="button" className="lc-tb l-focus" aria-label="Open in Liner Code" title="Open in Liner Code" onClick={() => design.setFace("code")}>
-          <I.external size={15} />
+          <I.external size={16} />
         </button>
       </div>
       {thread && hosts ? <Slot host={hosts.body} className="ldc-slot ldc-grow" /> : <p className="ldc-empty ldc-grow">Nothing said yet. Say what to draw below.</p>}

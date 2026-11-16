@@ -99,7 +99,7 @@ function PlaceChip({ place, onPlace }: { place: string; onPlace: (id: string) =>
         other ? (
           <div className="ld-own-pop">
             <button type="button" className="ld-own-back l-focus" onClick={() => setOther(false)}>
-              <I.chevL size={13} />
+              <I.chevL size={14} />
               Another folder
             </button>
             <ProjectChooser value={here?.id} onPick={(p) => (setOther(false), close(), onPlace(p.id))} />
@@ -108,7 +108,7 @@ function PlaceChip({ place, onPlace }: { place: string; onPlace: (id: string) =>
           <div className="ld-own-pop">
             <div className="ld-way-mh">Where this design lives</div>
             <button type="button" className="ld-wl l-focus" data-on={!here || undefined} onClick={() => (close(), onPlace(OWN))}>
-              <I.folder size={15} />
+              <I.folder size={16} />
               <span>
                 <b>On its own</b>
                 <small>In {DESIGNS_FOLDER}. No project needed</small>
@@ -117,7 +117,7 @@ function PlaceChip({ place, onPlace }: { place: string; onPlace: (id: string) =>
             </button>
             {projects.slice(0, 6).map((p) => (
               <button key={p.id} type="button" className="ld-wl l-focus" data-on={p.id === place || undefined} onClick={() => (close(), onPlace(p.id))}>
-                <I.folder size={15} />
+                <I.folder size={16} />
                 <span>
                   <b>{p.name}</b>
                   <small>Beside its code, ready to build</small>
@@ -127,7 +127,7 @@ function PlaceChip({ place, onPlace }: { place: string; onPlace: (id: string) =>
             ))}
             <Sep />
             <button type="button" className="ld-wl l-focus" onClick={() => setOther(true)}>
-              <I.plus size={15} />
+              <I.plus size={16} />
               <span>
                 <b>Another folder</b>
               </span>
@@ -156,7 +156,7 @@ function LeanChip({ cwd }: { cwd?: string }) {
     return () => void (live = false);
   }, [cwd]);
   return (
-    <Pop label={name ? `Lean: ${name}` : "No lean"} width={320} triggerClass="lc-pb ld-lean-chip" trigger={<><span className="ld-q4" data-small data-none={!name || undefined} aria-hidden>{sw.map((c) => <i key={c} style={{ background: c }} />)}</span><span className="lc-strip-cap">{name ?? "No lean"}</span><I.chevD size={11} /></>}>
+    <Pop label={name ? `Lean: ${name}` : "No lean"} width={320} triggerClass="lc-pb ld-lean-chip" trigger={<><span className="ld-q4" data-small data-none={!name || undefined} aria-hidden>{sw.map((c) => <i key={c} style={{ background: c }} />)}</span><span className="lc-strip-cap">{name ?? "No lean"}</span><I.chevD size={12} /></>}>
       {() => (
         <div className="ld-own-pop">
           <div className="ld-way-mh">{name ? `The lean: ${name}` : "No lean"}</div>
@@ -277,7 +277,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
               </>
             }
             stripEnd={
-              <Pop label={`What it's drawn for: ${SIZES.find((x) => x.id === size)?.label}. Change it`} width={220} align="end" triggerClass="lc-pb" trigger={<><I.monitor size={13} /><span className="lc-strip-cap">{SIZES.find((x) => x.id === size)?.label}</span><I.chevD size={11} /></>} menu>
+              <Pop label={`What it's drawn for: ${SIZES.find((x) => x.id === size)?.label}. Change it`} width={220} align="end" triggerClass="lc-pb" trigger={<><I.monitor size={14} /><span className="lc-strip-cap">{SIZES.find((x) => x.id === size)?.label}</span><I.chevD size={12} /></>} menu>
                 {(close) => SIZES.map((x) => <Row key={x.id} title={x.label} on={x.id === size} onPick={() => (close(), setSize(x.id))} />)}
               </Pop>
             }
@@ -285,7 +285,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
               <>
                 <span>Or</span>
                 <button type="button" className="lc-under-b l-focus" onClick={() => void empty()}>
-                  <D.frame size={13} />
+                  <D.frame size={14} />
                   open an empty canvas
                 </button>
                 {project && (
@@ -294,7 +294,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
                     <HomeLive project={project} onOpen={async (file) => openTab({ projectId: project.id, file })} />
                     <span aria-hidden>·</span>
                     <button type="button" className="lc-under-b l-focus" onClick={() => setSeed({ text: "Turn the components in the code into parts on the canvas: one frame per component, on the Parts page.", at: Date.now() })}>
-                      <I.file size={13} />
+                      <I.file size={14} />
                       turn components in the code into parts
                     </button>
                   </>

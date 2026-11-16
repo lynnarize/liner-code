@@ -83,14 +83,14 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
         aria-label="Where to choose from"
       />
       <div className="lc-mp-find lc-pc-find">
-        <I.search size={13} />
+        <I.search size={14} />
         <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tab === "github" ? "Find a repository" : "Find a project"} aria-label="Find" spellCheck={false} />
       </div>
       <div className="lc-pc-list">
         {tab === "here" && (
           <>
             {here.map((p) => (
-              <Row key={p.id} title={p.name} note={[p.remote ?? tilde(p.path), noRemote(p.remote) ? "no GitHub remote" : ""].filter(Boolean).join(" · ")} on={p.id === value} icon={<I.folder size={13} />} onPick={() => onPick(p)} />
+              <Row key={p.id} title={p.name} note={[p.remote ?? tilde(p.path), noRemote(p.remote) ? "no GitHub remote" : ""].filter(Boolean).join(" · ")} on={p.id === value} icon={<I.folder size={14} />} onPick={() => onPick(p)} />
             ))}
             {here.length === 0 && <p className="lc-quiet lc-mp-none">{q ? "No project matches that." : `No projects yet. Find one on ${os.here} or on GitHub.`}</p>}
           </>
@@ -110,7 +110,7 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
                       title={r.name}
                       note={[tilde(r.path), r.branch, r.lastCommitAt ? since(r.lastCommitAt) : "", noRemote(r.remote) ? "no GitHub remote" : ""].filter(Boolean).join(" · ")}
                       on={p?.id === value}
-                      icon={<I.folder size={13} />}
+                      icon={<I.folder size={14} />}
                       end={busy === r.path ? <span className="l-shimmer">Adding</span> : p ? <span className="lc-quiet">Added</span> : undefined}
                       disabled={busy !== null}
                       onPick={() => (p ? onPick(p) : void add(r.path, () => rpc("project.add", { path: r.path })))}
@@ -119,12 +119,12 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
                 })}
               {mac.length === 0 ? <p className="lc-quiet lc-mp-none">No Git repositories in the usual folders.</p> : !mac.some((r) => match(r.name, r.path, r.remote)) && <p className="lc-quiet lc-mp-none">No repository here matches that.</p>}
               <Sep />
-              <Row title="Choose a folder…" note={`Any folder on ${os.here}`} icon={<I.plus size={13} />} disabled={busy !== null} onPick={() =>
+              <Row title="Choose a folder…" note={`Any folder on ${os.here}`} icon={<I.plus size={14} />} disabled={busy !== null} onPick={() =>
                   void bridge.pickFolder().then((path) => {
                     if (path) void add(path, () => rpc("project.add", { path }));
                   })
                 } />
-              <Row title="Look again" icon={<I.refresh size={13} />} onPick={() => loadMac(true)} />
+              <Row title="Look again" icon={<I.refresh size={14} />} onPick={() => loadMac(true)} />
             </>
           ))}
         {tab === "github" &&
@@ -164,12 +164,12 @@ export function ProjectChooser({ value, onPick, need, extra }: { value?: string;
                       title={
                         <>
                           {r.fullName}
-                          {r.private && <I.lock size={11} />}
+                          {r.private && <I.lock size={12} />}
                         </>
                       }
                       note={[r.description, r.pushedAt ? `pushed ${since(r.pushedAt)}` : ""].filter(Boolean).join(" · ")}
                       on={Boolean(p && p.id === value)}
-                      icon={<I.pr size={13} />}
+                      icon={<I.pr size={14} />}
                       end={busy === r.fullName ? <span className="l-shimmer">Cloning</span> : p ? <span className="lc-quiet">Here</span> : <span className="lc-pc-clone">Clone</span>}
                       disabled={busy !== null}
                       onPick={() => (p ? onPick(p) : void add(r.fullName, () => rpc("project.clone", { url: r.fullName })))}

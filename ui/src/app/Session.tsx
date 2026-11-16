@@ -606,9 +606,9 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                   onChanges={() => setDock((d) => openTab(d, "changes"))}
                   actions={(close) => (
                     <>
-                      <Row title="Rename" icon={<I.edit size={13} />} onPick={() => (close(), setRenaming(true))} />
-                      <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={13} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }).catch(fail))} />
-                      {onBeside && <Row title="Open another session beside it" icon={<I.split size={13} />} onPick={() => (close(), onBeside())} />}
+                      <Row title="Rename" icon={<I.edit size={14} />} onPick={() => (close(), setRenaming(true))} />
+                      <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={14} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }).catch(fail))} />
+                      {onBeside && <Row title="Open another session beside it" icon={<I.split size={14} />} onPick={() => (close(), onBeside())} />}
                       <Sep />
                     </>
                   )}
@@ -625,7 +625,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
               <div className="lc-views" role="tablist" aria-label="Session views">
                 {[{ id: "chat", name: "Chat", Icon: I.comment }, ...tabApps.map((a) => ({ id: a.id, name: a.name, Icon: appIcon(a.panel?.icon) }))].map((v) => (
                   <button key={v.id} type="button" role="tab" className="lc-view-b l-focus" aria-selected={view === v.id} onClick={() => setView(v.id)}>
-                    <v.Icon size={13} />
+                    <v.Icon size={14} />
                     <span>{v.name}</span>
                   </button>
                 ))}
@@ -684,7 +684,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
           <div ref={foot} className="lc-thread-foot" hidden={view !== "chat"}>
             {away && (
               <button type="button" className="lc-jump l-glass l-focus" onClick={jump}>
-                <I.chevD size={13} />
+                <I.chevD size={14} />
                 Latest
               </button>
             )}
@@ -830,7 +830,7 @@ function Rail({ dock, below, changed, onTab, onBelow, onAdd, onPanel, onFull }: 
 function ToCommit({ files, lines, onView }: { files: number; lines: { added: number; removed: number }; onView: () => void }) {
   return (
     <div className="lc-trow">
-      <I.changes size={15} />
+      <I.changes size={16} />
       <span className="lc-trow-t">{plural(files, "file")} to commit</span>
       <Lines {...lines} />
       <span className="lc-grow" />
@@ -1011,10 +1011,10 @@ function ReviewerSwitch({ thread }: { thread: Thread }) {
       trigger={
         <>
           <span key={state ?? "on"} className={state === "checking" ? "l-shimmer" : undefined}>
-            {state === "verified" ? <I.verified size={14} /> : state === "blocked" ? <I.alert size={14} /> : state === "off" || state === "checking" ? null : <I.shield size={13} />}
+            {state === "verified" ? <I.verified size={14} /> : state === "blocked" ? <I.alert size={14} /> : state === "off" || state === "checking" ? null : <I.shield size={14} />}
             {word}
           </span>
-          <I.chevD size={11} />
+          <I.chevD size={12} />
         </>
       }
     >
@@ -1060,7 +1060,7 @@ function ReviewerMenu({ thread, on }: { thread: Thread; on: boolean }) {
           <button ref={who} type="button" className="lc-rvm-who l-focus" aria-expanded={choosing} aria-label={`Who reads: ${now ? (mine ? label(now) : `Automatic, ${label(now)}`) : "nobody ready"}. Change it`} onClick={() => setChoosing(!choosing)}>
             {now && <ModelMark kind={markOf(now)} size={12} />}
             <span>{now ? (mine ? label(now) : `Automatic: ${label(now)}`) : "Nobody ready"}</span>
-            <I.chevD size={11} />
+            <I.chevD size={12} />
           </button>
         </div>
       )}

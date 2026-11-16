@@ -161,7 +161,7 @@ function FitRow({ cwd, place }: { cwd: string; place: "home" | "dock" }) {
   if (!fit) return null;
   return (
     <div className={place === "home" ? "ld-fit" : "lc-trow ld-fit-row"} role="status">
-      <I.sparkle size={13} />
+      <I.sparkle size={14} />
       <span className="lc-trow-t">
         <span className="ld-lp-mono">/{fit.skill.name}</span> fits {fit.why}. You have it, and it isn't loaded.
       </span>
@@ -199,7 +199,7 @@ function SideSkills({ cwd }: { cwd: string }) {
                 <Row key={s.name} title={<span className="ld-lp-mono">/{s.name}</span>} note={s.description} on={loaded.includes(s.name)} onPick={() => setSkill(s.name, !loaded.includes(s.name), cwd)} />
               ))}
               <Sep />
-              <Row title="Open the lean" icon={<I.forward size={13} />} onPick={openLean} />
+              <Row title="Open the lean" icon={<I.forward size={14} />} onPick={openLean} />
             </>
           )}
         </Pop>
@@ -270,7 +270,7 @@ function BrandStart({ cwd, send }: { cwd: string; send: (text: string) => Promis
   return (
     <>
       <span aria-hidden>·</span>
-      <Pop label="Start with a brand" width={340} triggerClass="lc-under-b l-focus" trigger={<><I.sparkle size={13} />start with a brand</>}>
+      <Pop label="Start with a brand" width={340} triggerClass="lc-under-b l-focus" trigger={<><I.sparkle size={14} />start with a brand</>}>
         {(close) => (
           <form className="ld-brand" onSubmit={(e) => (e.preventDefault(), void go(close))}>
             <b>Start with a brand</b>
@@ -298,7 +298,7 @@ export function DockSkills({ cwd }: { cwd: string }) {
   const mine = (skills ?? []).filter(isDesign);
   return (
     <span className="lc-seg">
-      <Pop label={`Design skills: ${loaded.length ? loaded.join(", ") : "none loaded"}. Change them`} side="top" width={340} triggerClass="lc-seg-b ld-skills-b" trigger={<><span className="ld-sl" aria-hidden>/</span>{loaded.length ? plural(loaded.length, "skill") : "Skills"}<I.chevD size={11} /></>} menu>
+      <Pop label={`Design skills: ${loaded.length ? loaded.join(", ") : "none loaded"}. Change them`} side="top" width={340} triggerClass="lc-seg-b ld-skills-b" trigger={<><span className="ld-sl" aria-hidden>/</span>{loaded.length ? plural(loaded.length, "skill") : "Skills"}<I.chevD size={12} /></>} menu>
         {(close) => (
           <>
             {mine.map((s) => (
@@ -306,7 +306,7 @@ export function DockSkills({ cwd }: { cwd: string }) {
             ))}
             {skills && !mine.length && <Row title="No design skills on this Mac" note="Skills are SKILL.md files in ~/.claude/skills, ~/.codex/skills or the project's .claude/skills" disabled />}
             <Sep />
-            <Row title="Open the lean" icon={<I.forward size={13} />} onPick={() => (close(), openLean())} />
+            <Row title="Open the lean" icon={<I.forward size={14} />} onPick={() => (close(), openLean())} />
           </>
         )}
       </Pop>

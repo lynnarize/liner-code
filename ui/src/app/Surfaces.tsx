@@ -253,7 +253,7 @@ export function Guide({ thread, items, agentName, panes, onOpen, onMake }: { thr
         {SURFACES.map((s, i) => (
           <button key={s.id} type="button" className="lc-spick-b l-focus" style={{ animationDelay: `${i * 18}ms` }} onClick={() => onOpen(s.id)}>
             <span className="lc-spick-i">
-              <s.icon size={15} />
+              <s.icon size={16} />
             </span>
             <span className="lc-spick-t">
               <b>{s.label}</b>
@@ -270,7 +270,7 @@ export function Guide({ thread, items, agentName, panes, onOpen, onMake }: { thr
           return (
             <button key={a.id} type="button" className="lc-spick-b l-focus" style={{ animationDelay: `${(SURFACES.length + i) * 18}ms` }} onClick={() => onOpen(`app:${a.id}`)}>
               <span className="lc-spick-i">
-                <Icon size={15} />
+                <Icon size={16} />
               </span>
               <span className="lc-spick-t">
                 <b>{a.name}</b>
@@ -281,7 +281,7 @@ export function Guide({ thread, items, agentName, panes, onOpen, onMake }: { thr
         })}
         <button type="button" className="lc-spick-b l-focus" data-make style={{ animationDelay: `${(SURFACES.length + apps.length) * 18}ms` }} onClick={onMake}>
           <span className="lc-spick-i">
-            <I.plus size={15} />
+            <I.plus size={16} />
           </span>
           <span className="lc-spick-t">
             <b>Make one…</b>

@@ -318,7 +318,7 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
 
   const barParts: ReactNode = (
     <>
-        <I.terminal size={13} />
+        <I.terminal size={14} />
         <span className="lc-mono lc-term-where" title={st.cwd}>
           {where || (st.error ? "No shell" : "Starting a shell")}
         </span>
@@ -351,10 +351,10 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
             if (idRef.current) void rpc("term.clear", { id: idRef.current }).catch(() => {});
           }}
         >
-          <I.trash size={13} />
+          <I.trash size={14} />
         </button>
         <button type="button" className="lc-ib l-focus" aria-label="A new shell" title="A new shell" onClick={onRestart}>
-          <I.refresh size={13} />
+          <I.refresh size={14} />
         </button>
     </>
   );
@@ -449,18 +449,18 @@ export function TerminalSurface({ thread, visible, onHide, lead }: { thread: Thr
           {panes.map((p) => (
             <span key={p.key} className="lc-terms-tab" data-on={p.key === on || undefined}>
               <button type="button" role="tab" aria-selected={p.key === on} className="l-focus" onClick={() => setOn(p.key)} title={p.command ?? "A shell"}>
-                {p.command ? <I.play size={10} /> : <I.terminal size={11} />}
+                {p.command ? <I.play size={12} /> : <I.terminal size={12} />}
                 {p.title}
               </button>
               <button type="button" className="lc-terms-x l-focus" aria-label={`Close ${p.title}`} onClick={() => close(p)}>
-                <I.close size={9} />
+                <I.close size={12} />
               </button>
             </span>
           ))}
           {onHide && (
             <>
               <button type="button" className="lc-ib l-focus" aria-label="Another shell" title="Another shell" onClick={() => put(thread.id, (k) => { const n = shellPane(); return { panes: [...k.panes, n], on: n.key }; })}>
-                <I.plus size={13} />
+                <I.plus size={14} />
               </button>
               <span className="lc-grow" />
               <span ref={setSlot} className="lc-below-tools" />

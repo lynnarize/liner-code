@@ -158,7 +158,7 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
       {conflicts.length > 0 && (
         <div className="lc-prc-fix">
           <button type="button" className="lc-prc-sum l-focus" data-done={settled || undefined} aria-expanded={!settled || showFix} onClick={() => setShowFix((s) => !s)}>
-            {settled ? <I.check size={13} /> : <I.alert size={13} />}
+            {settled ? <I.check size={14} /> : <I.alert size={14} />}
             {settled ? `${plural(conflicts.length, "conflict")} resolved` : `${plural(conflicts.length, "conflict")} in ${plural(files.length, "file")}`}
             <span className="lc-prc-aside">{settled ? (showFix ? "Hide" : "Show") : `${conflicts.length - open} of ${conflicts.length} resolved`}</span>
           </button>
@@ -196,7 +196,7 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
             {checks.map((k) => (
               <li key={k.id} data-state={k.state} title={k.detail}>
                 <span className="lc-prc-ck" aria-hidden>
-                  {k.state === "passed" ? <I.check size={13} /> : k.state === "failed" ? <I.close size={12} /> : <span />}
+                  {k.state === "passed" ? <I.check size={14} /> : k.state === "failed" ? <I.close size={12} /> : <span />}
                 </span>
                 {k.label}
                 <span className="lc-prc-cm" key={k.state}>
@@ -215,7 +215,7 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
         <span className="lc-grow" />
         {want === "open" && (
           <button type="button" className="lc-btn" data-kind="accent" data-size="sm" onClick={begin}>
-            <I.pr size={13} />
+            <I.pr size={14} />
             Open a pull request
           </button>
         )}

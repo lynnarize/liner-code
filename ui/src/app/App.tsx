@@ -667,28 +667,28 @@ export function App() {
 
   const commands = useMemo<CommandItem[]>(() => {
     const items: CommandItem[] = [
-      { id: "new", label: "New session", group: "Actions", icon: <I.compose size={15} />, shortcut: shortcutOf("new"), onSelect: () => newSession() },
-      { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={15} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
-      { id: "wall", label: "The Wall", group: "Actions", icon: <I.wall size={15} />, keywords: ["every session", "all sessions", "grid", "overview"], shortcut: shortcutOf("wall"), onSelect: showWall },
-      { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={15} />, onSelect: () => go({ kind: "usage" }) },
-      { id: "face", label: face === "design" ? "Switch to Liner Code" : "Switch to Liner Design", group: "Actions", icon: face === "design" ? <I.code size={15} /> : <I.edit size={15} />, keywords: ["design", "canvas", "code", "face"], shortcut: shortcutOf("face"), onSelect: () => toggleFace() },
+      { id: "new", label: "New session", group: "Actions", icon: <I.compose size={16} />, shortcut: shortcutOf("new"), onSelect: () => newSession() },
+      { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={16} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
+      { id: "wall", label: "The Wall", group: "Actions", icon: <I.wall size={16} />, keywords: ["every session", "all sessions", "grid", "overview"], shortcut: shortcutOf("wall"), onSelect: showWall },
+      { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={16} />, onSelect: () => go({ kind: "usage" }) },
+      { id: "face", label: face === "design" ? "Switch to Liner Code" : "Switch to Liner Design", group: "Actions", icon: face === "design" ? <I.code size={16} /> : <I.edit size={16} />, keywords: ["design", "canvas", "code", "face"], shortcut: shortcutOf("face"), onSelect: () => toggleFace() },
       ...(ROUTINES_ON
         ? [
-            { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={15} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
-            { id: "routine-new", label: "New routine", group: "Actions", icon: <I.plus size={15} />, onSelect: () => editRoutine() },
+            { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={16} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
+            { id: "routine-new", label: "New routine", group: "Actions", icon: <I.plus size={16} />, onSelect: () => editRoutine() },
           ]
         : []),
-      { id: "settings", label: "Settings", group: "Actions", icon: <I.settings size={15} />, shortcut: shortcutOf("settings"), onSelect: () => setSettings(true) },
-      { id: "sidebar", label: sidebar ? "Hide the sidebar" : "Show the sidebar", group: "Actions", icon: <I.sidebar size={15} />, shortcut: shortcutOf("sidebar"), onSelect: () => setSidebar((s) => !s) },
-      { id: "agent", label: "New agent", group: "Actions", icon: <I.plus size={15} />, onSelect: () => setAgentDialog({ open: true }) },
-      { id: "project", label: "Add a project", group: "Actions", icon: <I.folder size={15} />, onSelect: addProject },
+      { id: "settings", label: "Settings", group: "Actions", icon: <I.settings size={16} />, shortcut: shortcutOf("settings"), onSelect: () => setSettings(true) },
+      { id: "sidebar", label: sidebar ? "Hide the sidebar" : "Show the sidebar", group: "Actions", icon: <I.sidebar size={16} />, shortcut: shortcutOf("sidebar"), onSelect: () => setSidebar((s) => !s) },
+      { id: "agent", label: "New agent", group: "Actions", icon: <I.plus size={16} />, onSelect: () => setAgentDialog({ open: true }) },
+      { id: "project", label: "Add a project", group: "Actions", icon: <I.folder size={16} />, onSelect: addProject },
     ];
     if (here) {
       const branch = here.worktree?.branch ?? projects.find((p) => p.id === here.projectId)?.branch;
       items.push(
         // The panel's surfaces, opened beside this session (T3 Code's palette lists them too).
-        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: `Open ${s.label}`, group: "This session", icon: <s.icon size={15} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
-        ...(branch ? [{ id: "copy-branch", label: "Copy branch name", group: "This session", hint: branch, icon: <I.branch size={15} />, onSelect: () => copy(branch, "the branch name") }] : []),
+        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
+        ...(branch ? [{ id: "copy-branch", label: "Copy branch name", group: "This session", hint: branch, icon: <I.branch size={16} />, onSelect: () => copy(branch, "the branch name") }] : []),
         { id: "copy-id", label: "Copy session id", group: "This session", hint: here.id, onSelect: () => copy(here.id, "the session id") },
         { id: "stop", label: "Stop this session", group: "This session", keywords: ["cancel", "interrupt"], onSelect: () => void rpc("thread.stop", { id: here.id }) },
         { id: "pin", label: here.pinned ? "Unpin it" : "Pin it", group: "This session", onSelect: () => void rpc("thread.update", { id: here.id, pinned: !here.pinned }) },
@@ -698,14 +698,14 @@ export function App() {
           id: "fork",
           label: "Fork it",
           group: "This session",
-          icon: <I.fork size={15} />,
+          icon: <I.fork size={16} />,
           onSelect: () => void rpc("thread.create", { projectId: here.projectId, forkOf: here.id }).then((t) => openSession(t.id)),
         },
         {
           id: "access",
           label: "Change what it may do",
           group: "This session",
-          icon: <I.lock size={15} />,
+          icon: <I.lock size={16} />,
           items: ACCESS_LEVELS.map((l) => ({ id: `access-${l.id}`, label: l.label, hint: l.note, onSelect: () => void rpc("thread.update", { id: here.id, access: l.id }) })),
         },
         {
@@ -722,7 +722,7 @@ export function App() {
           label: "Open a terminal here",
           group: "This session",
           hint: "In Terminal",
-          icon: <I.terminal size={15} />,
+          icon: <I.terminal size={16} />,
           onSelect: () => {
             const p = projects.find((x) => x.id === here.projectId);
             if (p) bridge.openIn(here.worktree?.path ?? p.path, "terminal");
@@ -732,7 +732,7 @@ export function App() {
           id: "delete",
           label: "Delete this session",
           group: "This session",
-          icon: <I.trash size={15} />,
+          icon: <I.trash size={16} />,
           // It can't be undone, so it asks first, on a page of its own; Enter alone keeps it.
           items: [
             { id: "delete-keep", label: "Keep it", onSelect: () => {} },
@@ -741,7 +741,7 @@ export function App() {
               id: "delete-yes",
               label: `Delete “${here.title}” for good`,
               hint: here.worktree ? "Its worktree is kept if it has changes" : "Its timeline goes; your files stay",
-              icon: <I.trash size={15} />,
+              icon: <I.trash size={16} />,
               onSelect: () =>
                 void rpc("thread.remove", { id: here.id })
                   .then(() => leave(here.id))
@@ -753,8 +753,8 @@ export function App() {
     }
     for (const t of threads.filter((x) => !x.archived).slice(0, 200)) items.push({ id: `t-${t.id}`, label: t.title, group: "Sessions", hint: `${projects.find((p) => p.id === t.projectId)?.name ?? ""} · ${agentOf(t.agent, agents, providers).name}`, onSelect: () => openSession(t.id) });
     // Words inside messages: the query itself is a keyword, so a hit stays listed while you type on.
-    for (const h of found) items.push({ id: `m-${h.threadId}`, label: h.snippet, group: "In messages", hint: h.title, icon: <I.comment size={15} />, keywords: [asked.toLowerCase()], onSelect: () => openSession(h.threadId) });
-    for (const p of projects) if (p.kind !== "design") items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={15} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
+    for (const h of found) items.push({ id: `m-${h.threadId}`, label: h.snippet, group: "In messages", hint: h.title, icon: <I.comment size={16} />, keywords: [asked.toLowerCase()], onSelect: () => openSession(h.threadId) });
+    for (const p of projects) if (p.kind !== "design") items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={16} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
     for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
     return items;
     // New session and New routine read where you are and your last project, so they're here too.

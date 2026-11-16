@@ -519,11 +519,11 @@ export function LiveChip() {
         >
           {(close) => (
             <>
-              <Row title="Put another page on the canvas" icon={<I.plus size={13} />} onPick={() => (close(), openLivePicker())} />
+              <Row title="Put another page on the canvas" icon={<I.plus size={14} />} onPick={() => (close(), openLivePicker())} />
               <Sep />
               {server ? (
                 <>
-                  <Row title={server.status === "running" ? "Restart" : "Run"} note={server.changed ? "launch.json changed" : undefined} icon={<I.refresh size={13} />} onPick={() => (close(), void restart())} />
+                  <Row title={server.status === "running" ? "Restart" : "Run"} note={server.changed ? "launch.json changed" : undefined} icon={<I.refresh size={14} />} onPick={() => (close(), void restart())} />
                   <Row title="Stop" icon={<I.stop size={9} />} disabled={server.status === "stopped"} onPick={() => (close(), void stop())} />
                 </>
               ) : local?.owner ? (
@@ -568,7 +568,7 @@ export function HomeLive({ project, onOpen }: { project: Project; onOpen: (file:
     await onOpen(df.id);
   };
   return (
-    <Pop label="Put the running app on the canvas, live" width={340} triggerClass="lc-under-b l-focus" trigger={<><I.globe size={13} />put the running app on the canvas, live</>}>
+    <Pop label="Put the running app on the canvas, live" width={340} triggerClass="lc-under-b l-focus" trigger={<><I.globe size={14} />put the running app on the canvas, live</>}>
       {(close) => <Picker onPut={put} onClose={close} />}
     </Pop>
   );

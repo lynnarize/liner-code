@@ -107,7 +107,7 @@ export function ChecksTab() {
   return (
     <div className="ld-body ld-ck">
       <div className="ld-ck-top" aria-live="polite">
-        <I.shield size={15} />
+        <I.shield size={16} />
         <b>{running && !checked ? "Checking the screens" : `${plural(checked, "screen")} checked`}</b>
         <span className="lc-grow" />
         {running ? <span className="ld-ck-q l-shimmer">Checking</span> : ms !== undefined && <span className="ld-ck-q">{(ms / 1000).toFixed(1)} s</span>}
@@ -135,7 +135,7 @@ export function ChecksTab() {
         <div className="ld-ck-pass">
           {passed.map(({ frame, p }) => (
             <div key={`${frame.id}:${p}`} className="ld-ck-pr">
-              <I.check size={13} />
+              <I.check size={14} />
               <span className="ld-ell">{frame.name}</span>
               <span className="lc-grow" />
               <small>{p}</small>

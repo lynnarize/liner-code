@@ -134,9 +134,9 @@ export function Versions() {
   return (
     <span className="ld-ver" role="group" aria-label="Kept copies of this design">
       <button type="button" className="lc-ib l-focus" aria-label="A copy back" title="A copy back" disabled={at <= 0 || busy} onClick={() => void look(at - 1)}>
-        <I.chevL size={13} />
+        <I.chevL size={14} />
       </button>
-      <Pop label={now ? `${nameOf(now)}: the kept copies` : "The design now: its kept copies"} width={280} align="end" triggerClass="ld-ver-t" trigger={<><I.clock size={13} /><span className="ld-num ld-ell">{now ? nameOf(now) : "Now"}</span></>} menu>
+      <Pop label={now ? `${nameOf(now)}: the kept copies` : "The design now: its kept copies"} width={280} align="end" triggerClass="ld-ver-t" trigger={<><I.clock size={14} /><span className="ld-num ld-ell">{now ? nameOf(now) : "Now"}</span></>} menu>
         {(close) => (
           <>
             <Row title="Now" note="As it is" on={!now} onPick={() => (close(), design.scrub(undefined))} />
@@ -148,7 +148,7 @@ export function Versions() {
         )}
       </Pop>
       <button type="button" className="lc-ib l-focus" aria-label="A copy forward" title="A copy forward" disabled={!now} onClick={() => void look(at + 1)}>
-        <I.chevR size={13} />
+        <I.chevR size={14} />
       </button>
       {now && <ScrubBar v={now} shown={shown} threadId={threadId} file={file} />}
     </span>

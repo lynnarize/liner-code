@@ -55,7 +55,7 @@ function LeanRow({ cwd }: { cwd: string }) {
         <b>{name}</b>
         {note && <small>{note}</small>}
       </span>
-      <I.chevR size={13} />
+      <I.chevR size={12} />
     </button>
   );
 }
@@ -92,7 +92,7 @@ function Nodes({ frame, node, depth, open, onToggle, picked }: { frame: string; 
             <div className="ld-ly" role="treeitem" aria-level={depth + 1} aria-selected={picked.has(c.id)} aria-expanded={has ? on : undefined} data-on={picked.has(c.id) || undefined} style={{ paddingLeft: 8 + depth * 14 }} onClick={(e) => design.select(e.shiftKey ? [...getDesign().sel, { frame, node: c.id }] : [{ frame, node: c.id }])}>
               {has ? (
                 <button type="button" className="ld-ly-tw" aria-label={on ? "Fold" : "Open"} onClick={(e) => (e.stopPropagation(), onToggle(c.id))}>
-                  {on ? <I.chevD size={11} /> : <I.chevR size={11} />}
+                  {on ? <I.chevD size={12} /> : <I.chevR size={12} />}
                 </button>
               ) : (
                 <span className="ld-ly-tw" />
@@ -166,7 +166,7 @@ function LayerList() {
                   setOpen((was) => new Set(was).add(f.id));
                 }}
               >
-                {on ? <I.chevD size={11} /> : <I.chevR size={11} />}
+                {on ? <I.chevD size={12} /> : <I.chevR size={12} />}
               </button>
               <D.frame size={14} />
               <b className="ld-ell">{f.name}</b>

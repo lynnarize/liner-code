@@ -217,7 +217,7 @@ function ProjectPictures({ onPick }: { onPick: (path: string) => void }) {
   return (
     <>
       <label className="lc-mp-find lc-who-find">
-        <I.search size={13} />
+        <I.search size={14} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a picture" aria-label="Find a picture in the project" spellCheck={false} autoFocus />
       </label>
       <div className="ld-pic-list">
@@ -288,7 +288,7 @@ function MadeBy({ t }: { t: Target }) {
         ) : (
           <button type="button" className="ld-pic-words l-focus" title="Change the words" onClick={() => (setEditing(true), requestAnimationFrame(() => field.current?.focus()))}>
             {words}
-            <I.edit size={13} />
+            <I.edit size={14} />
           </button>
         )}
         {model ? (
@@ -482,7 +482,7 @@ export function PicturesChip({ threadId, lead, home }: { threadId?: string; lead
   const pick = (model: string | null) => save({ ask, model });
   const setAsk = (v: "first" | "always" | "never") => save({ ask: v, model: file?.pictures?.model });
   return (
-    <Pop label={`Who does what: ${name}`} side="top" width={360} triggerClass="lc-seg-b ld-pic-chip" trigger={<>{on && <span className="ld-pd" data-pic aria-hidden />}<span className="lc-chip-name">{name}</span><I.chevD size={11} /></>}>
+    <Pop label={`Who does what: ${name}`} side="top" width={360} triggerClass="lc-seg-b ld-pic-chip" trigger={<>{on && <span className="ld-pd" data-pic aria-hidden />}<span className="lc-chip-name">{name}</span><I.chevD size={12} /></>}>
       {() => (
         <div className="ld-pic-pop">
           <div className="ld-way-mh">Who does what</div>
@@ -531,7 +531,7 @@ export function PicturesChip({ threadId, lead, home }: { threadId?: string; lead
               <p className="ld-note ld-pic-note">With no one here, {who.lead} leaves a labelled empty box where it would have asked for a picture, and nothing is charged.</p>
               {!models.length && (
                 <button type="button" className="ld-pic-add l-focus" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" }))}>
-                  <I.plus size={13} />
+                  <I.plus size={14} />
                   Add a model for AI pictures
                 </button>
               )}
@@ -573,9 +573,9 @@ export function PicturesSettings({ Group, Field }: { Group: GroupT; Field: Field
     >
       {adding && <PictureForm taken={list} onDone={() => setAdding(false)} />}
       {list.map((e, i) => (
-        <Field key={e.id} lead={<span className="lc-st-mark"><D.picture size={15} /></span>} title={<>{e.label || e.model}{i === 0 && list.length > 1 && <span className="ld-q"> · used first</span>}</>} note={`${e.model} · ${host(e.url)}`}>
+        <Field key={e.id} lead={<span className="lc-st-mark"><D.picture size={16} /></span>} title={<>{e.label || e.model}{i === 0 && list.length > 1 && <span className="ld-q"> · used first</span>}</>} note={`${e.model} · ${host(e.url)}`}>
           <button type="button" className="lc-ib l-focus" aria-label={`Remove ${e.label || e.model}`} title="Remove" onClick={() => remove(e)}>
-            <I.trash size={13} />
+            <I.trash size={14} />
           </button>
         </Field>
       ))}

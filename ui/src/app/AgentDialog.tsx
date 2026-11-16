@@ -184,7 +184,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
                 {PRESETS.map((p) => (
                   <button key={p.id} type="button" role="radio" aria-checked={spec === p.id} title={p.note} className="lc-spec l-focus" data-on={spec === p.id || undefined} onClick={() => choose(p.id)}>
                     <span className="lc-spec-g">
-                      <Glyph glyph={p.glyph} size={13} />
+                      <Glyph glyph={p.glyph} size={14} />
                     </span>
                     {p.label}
                   </button>
@@ -227,7 +227,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
                       </span>
                       <span className="lc-ad-dd-t">{modelLabel(model, providers)}</span>
                       <small>{providers.find((x) => model.startsWith(`${x.id}:`))?.label}</small>
-                      <I.chevD size={11} />
+                      <I.chevD size={12} />
                     </>
                   }
                 >
@@ -245,7 +245,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
                     trigger={
                       <>
                         <span className="lc-ad-dd-t">{RUNS.find((m) => m.id === runMode)?.t}</span>
-                        <I.chevD size={11} />
+                        <I.chevD size={12} />
                       </>
                     }
                   >
@@ -410,7 +410,7 @@ function Paths({ list, onChange, kind }: { list: string[]; onChange: (l: string[
           <span className="lc-mono">{kind === "skill" ? skillName(p) : isOwn(p) ? shortPath(p) : p}</span>
           <i>{isOwn(p) ? "yours" : kind === "skill" ? "this project" : "each project"}</i>
           <button type="button" className="lc-ad-x l-focus" aria-label={`Remove ${p}`} onClick={() => onChange(list.filter((x) => x !== p))}>
-            <I.close size={10} />
+            <I.close size={12} />
           </button>
         </span>
       ))}

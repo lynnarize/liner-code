@@ -451,7 +451,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
               </button>
               {closable && (
                 <button type="button" className="lc-stab-x l-focus" tabIndex={on ? 0 : -1} aria-label={`Close ${m.label}`} onClick={() => onDock(closeTab(dock, t))}>
-                  <I.close size={10} />
+                  <I.close size={12} />
                 </button>
               )}
             </span>
@@ -465,7 +465,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
           {/* The full canvas is the rail's, right under its own Show/Hide the panel (Session.tsx). */}
           <Tooltip content="Hide the panel">
             <button type="button" className="lc-tb lc-sbar-b l-focus" data-panel-toggle aria-label="Hide the panel" aria-pressed onClick={() => onDock(hideDock(dock))}>
-              <I.dock size={16} />
+              <I.panel size={16} />
             </button>
           </Tooltip>
         </>
@@ -478,13 +478,13 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
                 <Row
                   title={pins.includes(menu.t.slice(4)) ? "Unpin from the panel" : "Pin to the panel"}
                   note={pins.includes(menu.t.slice(4)) ? undefined : "Its tab stays at the strip's start"}
-                  icon={<I.pin size={13} />}
+                  icon={<I.pin size={14} />}
                   onPick={() => (close(), pin(menu.t.slice(4), !pins.includes(menu.t.slice(4))))}
                 />
               )}
               {menu.t.startsWith("app:") && <Sep />}
-              <Row title="Close" icon={<I.close size={13} />} onPick={() => (close(), onDock(closeTab(dock, menu.t)))} />
-              <Row title="Close the others" icon={<I.close size={13} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(closeOthers(dock, menu.t)))} />
+              <Row title="Close" icon={<I.close size={14} />} onPick={() => (close(), onDock(closeTab(dock, menu.t)))} />
+              <Row title="Close the others" icon={<I.close size={14} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(closeOthers(dock, menu.t)))} />
             </>
           )
         }
@@ -555,8 +555,8 @@ function PushButton({ thread, branch }: { thread: Thread; branch?: string }) {
       {(close) => (
         <div className="lc-ship-menu">
           <PanelHead>Nothing to commit</PanelHead>
-          <Row title={`Push ${branch ?? "this branch"}`} note="To its branch on GitHub" icon={<I.push size={13} />} onPick={() => (close(), void ship(thread, null))} />
-          <Row title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={13} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail))} />
+          <Row title={`Push ${branch ?? "this branch"}`} note="To its branch on GitHub" icon={<I.push size={14} />} onPick={() => (close(), void ship(thread, null))} />
+          <Row title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={14} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail))} />
         </div>
       )}
     </Pop>

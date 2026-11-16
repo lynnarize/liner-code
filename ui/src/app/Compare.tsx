@@ -98,7 +98,7 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
   return (
     <section className="lc-cmp-col" style={{ animationDelay: `${i * 60}ms` }} aria-label={modelLabel(model, providers)}>
       <header className="lc-cmp-h">
-        <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} size={13} />
+        <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} size={14} />
         <span className="lc-quiet">{a.name !== modelLabel(model, providers) ? a.name : ""}</span>
         <span className="lc-grow" />
         {t.status === "running" ? <span className="l-shimmer lc-cmp-s">Working</span> : t.status === "waiting" ? <Badge tone="warn">Waits for you</Badge> : t.status === "limited" ? <Badge tone="warn">Hit its limit</Badge> : t.status === "error" ? <Badge tone="danger">A problem</Badge> : <Badge tone="ok">Done</Badge>}

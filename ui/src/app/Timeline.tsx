@@ -7,12 +7,12 @@
 */
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { addonKey, modeName, PR_TEST_TOOL, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart } from "@contracts";
+import { addonKey, modeName, PR_TEST_TOOL, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart, type PlanEntry } from "@contracts";
 import { appIcon, OfferCard } from "./Addon";
 import { toComposer } from "./Find";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { isCheckpoint, rpc, threadOf, useEngine, useItems, useItemsWhere } from "./engine";
-import { I, ModelMark, Rays } from "./icons";
+import { I, ModelMark, Spinner, StepMark, type StepState } from "./icons";
 import { PageCard } from "./Page";
 import { DesignCard } from "./Design";
 import { PrChatCard } from "./Pr";
@@ -20,7 +20,7 @@ import { commandOf as askCommand, headlineOf } from "./Ask";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
-import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, money, onClaude, plural, sumLines, turnsOf } from "./model";
+import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, money, onClaude, planEnd, planStatus, plural, sumLines, turnsOf, type PlanEnd } from "./model";
 import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
 import { Fanout, isSidekick, onWhom } from "./Crew";
 import { toast } from "@liner/components/toast/toast";
@@ -275,7 +275,7 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
           if (draft.after) blocks.push({ key: `${it.id}-after`, node: <StreamedMarkdown className="lc-md" text={draft.after} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
         }
       }
-      else if (it.kind === "plan") blocks.push({ key: it.id, node: <Todo it={it} /> });
+      else if (it.kind === "plan") blocks.push({ key: it.id, node: <Todo it={it} end={planEnd(planStatus(items, it.turn))} /> });
       else if (it.kind === "page") blocks.push({ key: it.id, node: <PageCard threadId={threadId} it={it} /> });
       else if (it.kind === "design") blocks.push({ key: it.id, node: <DesignCard threadId={threadId} it={it} /> });
       else if (it.kind === "pr") blocks.push({ key: it.id, node: <PrChatCard threadId={threadId} it={it} fresh={fresh(it.id)} run={prRun} ask={prAsk && ((w) => <Approval key={prAsk.id} threadId={threadId} it={prAsk} who={w} />)} /> });
@@ -438,7 +438,7 @@ function TurnHead({ it, marks, n, items, agents, providers, timed }: { it: Mark;
     <div className="lc-head" data-part={n === undefined || undefined} title={why || undefined}>
       {alone ? (
         <span className="lc-disc lc-disc-model" style={{ width: 22, height: 22 }} aria-hidden>
-          <ModelMark kind={markOf(it.model)} size={13} />
+          <ModelMark kind={markOf(it.model)} size={14} />
         </span>
       ) : (
         <Disc agent={a} size={22} lead={it.planning || undefined} />
@@ -1150,30 +1150,47 @@ function AskRow({ it, fresh }: { it: Ask; fresh: boolean }) {
   );
 }
 
-function Todo({ it }: { it: Extract<Item, { kind: "plan" }> }) {
+/**
+  The turn's plan. `end` is how the run that owns it ended (model.ts planEnd, read from the turn
+  item of the plan's own `turn`, so a lead's plan stays as it was when a fix part starts). Stopped
+  or failed: a step still waiting or under way was never reached, so it reads as skipped, the count
+  says where it stopped, and one line names the first step it didn't reach. Finished with steps
+  left: those read as left open, dashed the same, and the count stays "N of M done".
+*/
+function Todo({ it, end }: { it: Extract<Item, { kind: "plan" }>; end?: PlanEnd }) {
+  const total = it.entries.length;
   const done = it.entries.filter((e) => e.status === "completed").length;
+  const shown = (s: PlanEntry["status"]): StepState => (s === "completed" ? "done" : end ? "skipped" : s === "in_progress" ? "working" : "waiting");
+  const missed = end === "stopped" ? it.entries.find((e) => e.status !== "completed") : undefined;
+  // The words round the count change, the count stays where it is, so it rolls rather than coming in again.
+  const [before, after] = missed ? ["Stopped at ", ` of ${total}`] : done === total && total > 0 ? ["All ", " done"] : ["", ` of ${total} done`];
   return (
     // A labelled list on the paper, not a card: "Plan" and its count, then a line a task.
     <section className="lc-todo" aria-label="Plan">
       <div className="lc-todo-h">
         <b>Plan</b>
         <span className="lc-quiet">
-          <Num value={done} /> of {it.entries.length} done
+          {before}
+          <Num value={done} />
+          {after}
         </span>
       </div>
       <ol>
         {it.entries.map((e, i) => (
-          <li key={i} data-s={e.status}>
-            <span className="lc-todo-mk" key={e.status}>
-              {e.status === "completed" ? <I.check size={14} /> : e.status === "in_progress" ? <Rays size={11} /> : null}
-            </span>
-            <span>
-              <span className={e.status === "in_progress" ? "l-shimmer" : undefined}>{e.title}</span>
+          <li key={i} data-s={shown(e.status)}>
+            <StepMark state={shown(e.status)} label={e.status !== "completed" && end === "open" ? "Left open" : undefined} />
+            <span className="lc-todo-t">
+              {e.title}
               {e.owner && <span className="lc-todo-own">{e.owner}</span>}
             </span>
           </li>
         ))}
       </ol>
+      {missed && (
+        <p className="lc-todo-foot">
+          <b>{missed.title}</b> wasn't reached.
+        </p>
+      )}
     </section>
   );
 }
@@ -1210,7 +1227,7 @@ function Approval({ threadId, it, who }: { threadId: string; it: Extract<Item, {
   if (!live.current || (it.state !== "asking" && !answered))
     return (
       <div className="lc-answered" data-state={it.state}>
-        {it.state === "approved" ? <I.check size={13} /> : <I.close size={13} />}
+        {it.state === "approved" ? <I.check size={14} /> : <I.close size={14} />}
         <span>
           {it.state === "approved" ? `You let ${who}: ` : it.state === "denied" ? `You said no to ` : "No longer waiting: "}
           <b>{it.title}</b>
@@ -1259,7 +1276,7 @@ function Approval({ threadId, it, who }: { threadId: string; it: Extract<Item, {
         <div className="lc-appr-strip">
           {(it.description || it.fields.length > 0) && (
             <button type="button" className="lc-appr-more l-focus" aria-expanded={details} onClick={() => setDetails((d) => !d)}>
-              <I.chevR size={11} />
+              <I.chevR size={12} />
               {details ? "Less" : "Details"}
             </button>
           )}
@@ -1319,7 +1336,7 @@ function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: stri
     const gone = it.state === "approved" && have?.removed;
     return (
       <div className="lc-answered lc-addon-receipt" data-state={gone ? "denied" : it.state} role="status">
-        {it.state === "approved" && !gone ? <I.check size={13} /> : <I.close size={13} />}
+        {it.state === "approved" && !gone ? <I.check size={14} /> : <I.close size={14} />}
         <span>
           {it.state === "expired" ? (
             <>
@@ -1399,7 +1416,7 @@ function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: stri
         aside={
           <>
             <button type="button" className="lc-appr-more l-focus" aria-expanded={details} onClick={() => setDetails((d) => !d)}>
-              <I.chevR size={11} />
+              <I.chevR size={12} />
               {details ? "Less" : "Details"}
             </button>
             <code className="lc-addon-path" title={a.path}>
@@ -1451,7 +1468,7 @@ function PanelAddonCard({ threadId, it, who }: { threadId: string; it: Ask; who:
     const back = a.same && a.replaces && have && !have.removed ? (have.version === a.version ? { to: a.replaces, label: `Back to v${a.replaces}` } : have.version === a.replaces ? { to: a.version!, label: `Forward to v${a.version}` } : null) : null;
     return (
       <div className="lc-answered lc-addon-receipt" data-state={gone ? "denied" : it.state} data-same={a.same || undefined} role="status">
-        {it.state === "approved" && !gone ? a.same ? <I.push size={13} /> : <I.check size={13} /> : <I.close size={13} />}
+        {it.state === "approved" && !gone ? a.same ? <I.push size={14} /> : <I.check size={14} /> : <I.close size={14} />}
         <span>
           {it.state === "expired" ? (
             <>
@@ -1537,7 +1554,7 @@ function PanelAddonCard({ threadId, it, who }: { threadId: string; it: Ask; who:
         hold={Boolean(net)}
         aside={
           <button type="button" className="lc-appr-more l-focus" aria-expanded={files} onClick={() => setFiles((d) => !d)}>
-            <I.chevR size={11} />
+            <I.chevR size={12} />
             {files ? "Less" : `Its ${plural(a.files.length, "file")}`}
           </button>
         }
@@ -1560,7 +1577,7 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
   if (it.state !== "asking")
     return (
       <div className="lc-answered" data-state={it.state === "answered" ? "approved" : "denied"}>
-        {it.state === "answered" ? <I.check size={13} /> : <I.close size={13} />}
+        {it.state === "answered" ? <I.check size={14} /> : <I.close size={14} />}
         <span>
           {it.state === "answered" ? (
             Object.entries(it.answers ?? {}).map(([q, a]) => (
@@ -1756,7 +1773,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
   if (it.state !== "asking" && it.state !== "expired")
     return (
       <div className="lc-answered" data-state={it.state === "approved" ? "approved" : "denied"}>
-        {it.state === "approved" ? <I.check size={13} /> : <I.edit size={13} />}
+        {it.state === "approved" ? <I.check size={14} /> : <I.edit size={14} />}
         <span>
           {it.state === "approved" ? "You approved the plan: " : "You asked for changes: "}
           <b>{it.state === "approved" ? it.title : it.note}</b>
@@ -1817,7 +1834,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
                           <I.chevD size={12} />
                         </button>
                         <button type="button" className="lc-ib l-focus" aria-label="Drop this step" onClick={() => setEdit(steps.filter((_, k) => k !== i))}>
-                          <I.close size={11} />
+                          <I.close size={12} />
                         </button>
                       </span>
                     ) : owner.id !== coder.id ? (
@@ -1844,7 +1861,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
         <div className="lc-plan-meta">
           <span>{coder.id.startsWith("@") ? "Built by" : `${coder.name} builds it on`}</span>
           {claude ? (
-            <Pop label={`How ${coder.name} runs`} width={290} triggerClass="lc-btn lc-plan-modeb" trigger={<>{mode.id === "helpers" ? `${modelLabel(thread?.model ?? coder.model, providers)}, with helpers` : `${modelLabel(thread?.model ?? coder.model, providers)} alone`}<I.chevD size={11} /></>}>
+            <Pop label={`How ${coder.name} runs`} width={290} triggerClass="lc-btn lc-plan-modeb" trigger={<>{mode.id === "helpers" ? `${modelLabel(thread?.model ?? coder.model, providers)}, with helpers` : `${modelLabel(thread?.model ?? coder.model, providers)} alone`}<I.chevD size={12} /></>}>
               {(close) => (
                 <>
                   {RUN_MODES.map((m) => (
@@ -2029,7 +2046,7 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
       {it.steer && <span className="lc-you-tag">Steered</span>}
       {it.anchor && (
         <button type="button" className="lc-you-anchor l-focus" onClick={() => onReview("all", it.anchor!.file)} title="Show these lines">
-          <I.comment size={11} />
+          <I.comment size={12} />
           <span>
             {it.anchor.file.split("/").pop()}, {it.anchor.endLine && it.anchor.endLine !== it.anchor.line ? `lines ${it.anchor.line}–${it.anchor.endLine}` : `line ${it.anchor.line}`}
           </span>
@@ -2037,7 +2054,7 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
       )}
       {part && (
         <span className="lc-you-anchor lc-you-part" title={`About ${part} in “${title}”`}>
-          <I.comment size={11} />
+          <I.comment size={12} />
           <span>
             {part} · {title}
           </span>
@@ -2063,7 +2080,7 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
             <>
               <button type="button" className="lc-you-told l-focus" aria-expanded={told} onClick={() => setTold(!told)}>
                 What the agent was told
-                <I.chevR size={11} />
+                <I.chevR size={12} />
               </button>
               {told && <pre className="lc-you-toldbox">{typed}</pre>}
             </>
@@ -2206,7 +2223,7 @@ function Escalation({ it, providers }: { it: Tool; providers: ProviderInfo[] }) 
   return (
     <div className="lc-esc" data-open={open || undefined}>
       <button type="button" className="lc-esc-h l-focus" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!it.output}>
-        <span className="lc-tile">{it.status === "running" ? <Rays size={11} /> : <I.sparkle size={11} />}</span>
+        <span className="lc-tile">{it.status === "running" ? <Spinner size={12} /> : <I.turn size={12} />}</span>
         <span className={it.status === "running" ? "l-shimmer" : undefined}>
           {it.status === "running" ? `Asking ${opus} to plan this` : `Asked ${opus} to plan this`}
           {what && <span className="lc-quiet">, {what.charAt(0).toLowerCase() + what.slice(1)}</span>}
@@ -2285,7 +2302,7 @@ function TurnFoot({ cp, all, review, providers, onReview, reviewing }: { cp?: Ch
           ))}
         {review && (
           <button type="button" className="lc-foot-chip l-focus" data-tone={review.status === "passed" ? "ok" : blocked ? "danger" : undefined} aria-expanded={has ? open : undefined} disabled={!has} onClick={() => setOpen(!open)}>
-            {review.status === "running" ? <Rays size={11} /> : <I.shield size={12} />}
+            {review.status === "running" ? <Spinner size={12} /> : <I.shield size={12} />}
             Reviewer
             <span className="lc-quiet">{modelLabel(review.reviewer, providers)}</span>
             <b className={review.status === "running" ? "l-shimmer" : undefined}>{verdict}</b>

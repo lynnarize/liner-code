@@ -74,7 +74,7 @@ export function Tabs() {
             {busy && <span className="ld-pd" data-lead aria-label="An agent is drawing here" />}
             {on && (
               <button type="button" className="ld-tab-x l-focus" aria-label={`Close the ${name} tab`} title="Close the tab: the design stays" onClick={(e) => (e.stopPropagation(), close(k))}>
-                <I.close size={11} />
+                <I.close size={12} />
               </button>
             )}
           </div>
@@ -83,7 +83,7 @@ export function Tabs() {
     </div>
       {/* Outside the strip that scrolls, so it's always there. */}
       <button type="button" className="ld-tab-new l-focus" aria-label="New design" title={`New design (${keys("mod+n")})`} onClick={() => void newDesign().catch(fail)}>
-        <I.plus size={15} />
+        <I.plus size={16} />
       </button>
     </div>
   );
@@ -125,7 +125,7 @@ export function OwnChip({ tab, project }: { tab: DesignTab; project: Project }) 
         choosing ? (
           <div className="ld-own-pop">
             <button type="button" className="ld-own-back l-focus" onClick={() => setChoosing(false)}>
-              <I.chevL size={13} />
+              <I.chevL size={14} />
               Build in a project
             </button>
             {busy ? (
@@ -141,7 +141,7 @@ export function OwnChip({ tab, project }: { tab: DesignTab; project: Project }) 
           <div className="ld-own-pop">
             <div className="ld-way-mh">This design is on its own</div>
             <button type="button" className="ld-wl l-focus" onClick={() => (close(), bridge.reveal(project.path))}>
-              <I.folder size={15} />
+              <I.folder size={16} />
               <span>
                 <b>{ownPlace(project)}</b>
                 <small>Plain HTML files. Show in Finder</small>
@@ -149,7 +149,7 @@ export function OwnChip({ tab, project }: { tab: DesignTab; project: Project }) 
             </button>
             <Sep />
             <button type="button" className="ld-wl l-focus" onClick={() => setChoosing(true)}>
-              <I.link size={15} />
+              <I.link size={16} />
               <span>
                 <b>Build in a project</b>
                 <small>Pick a folder. The design moves in with it</small>

@@ -371,7 +371,7 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
     <div className="lc-rb">
       <header className="lc-top" data-drag>
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onClose}>
-          <I.chevL size={13} />
+          <I.chevL size={14} />
           Routines
         </button>
         <input
@@ -393,9 +393,9 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
           triggerClass="lc-pb lc-rb-proj"
           trigger={
             <>
-              <I.folder size={13} />
+              <I.folder size={14} />
               <span className="lc-rb-proj-n">{projects.find((p) => p.id === draft.projectId)?.name ?? "Choose a project"}</span>
-              <I.chevD size={11} />
+              <I.chevD size={12} />
             </>
           }
         >
@@ -436,13 +436,13 @@ export function RoutineBuilder({ id, projectId, onClose, onOpenRun }: { id?: str
       </header>
       {draft.trigger.kind === "github" && projects.find((p) => p.id === draft.projectId) && !projects.find((p) => p.id === draft.projectId)?.remote && (
         <div className="lc-rb-hook lc-rb-warn">
-          <I.pr size={13} />
+          <I.pr size={14} />
           <span>{projects.find((p) => p.id === draft.projectId)?.name} has no GitHub remote, so this trigger can't see its pull requests or issues. Choose a project from GitHub, or push this one there.</span>
         </div>
       )}
       {hook && (
         <div className="lc-rb-hook">
-          <I.bolt size={13} />
+          <I.bolt size={14} />
           <span className="lc-quiet">POST to</span>
           <span className="lc-mono lc-rb-url">{hook}</span>
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void navigator.clipboard?.writeText(hook).then(() => toast("Copied the URL"), () => toast.error("Couldn't copy it"))}>

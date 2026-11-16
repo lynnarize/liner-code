@@ -97,7 +97,7 @@ function AppModelDialog({ asking }: { asking: Asking }) {
     <Dialog
       open
       onOpenChange={(o) => !o && asking.resolve(null)}
-      icon={<I.sparkle size={16} />}
+      icon={<I.turn size={16} />}
       title={`${asking.name} wants to use a model`}
       description="Pick one of your models for it. It's just a model: it gets what the app sends and answers with text, with no tools, files or agent. Each ask is billed to that model's account."
       size="md"
@@ -130,7 +130,7 @@ export function AppModelChip({ addon, name }: { addon: string; name: string }) {
   const ready = appModelReady(ref, providers, settings);
   return (
     <button type="button" className="lc-appmodel-chip l-focus" title={ready ? "The model this app asks. Change it" : "Pick the model this app may ask"} onClick={() => void pickAppModel(addon, name)}>
-      <I.sparkle size={12} />
+      <I.turn size={12} />
       {ref && ready ? modelLabel(ref, providers) : ref ? "Its model isn't ready" : "Pick a model"}
     </button>
   );

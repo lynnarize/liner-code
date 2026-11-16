@@ -112,7 +112,7 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
   };
   return (
     <div className="lc-find l-glass" role="search" aria-label={label}>
-      <I.search size={13} />
+      <I.search size={14} />
       <input
         ref={field}
         value={query}
@@ -128,10 +128,10 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
       />
       <span className="lc-find-n lc-quiet">{query.trim() ? (count ? `${at + 1} of ${count}` : "None") : ""}</span>
       <button type="button" className="lc-ib l-focus" aria-label="Previous match" disabled={!count} onClick={() => step(-1)}>
-        <I.chevU size={13} />
+        <I.chevU size={14} />
       </button>
       <button type="button" className="lc-ib l-focus" aria-label="Next match" disabled={!count} onClick={() => step(1)}>
-        <I.chevD size={13} />
+        <I.chevD size={14} />
       </button>
       <button type="button" className="lc-ib l-focus" aria-label="Close find" onClick={onClose}>
         <I.close size={12} />

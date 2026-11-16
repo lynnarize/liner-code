@@ -9,15 +9,27 @@
   on a 2x screen instead of smearing across two. Where a centre line can't be on one (±, the
   globe's equator) the glyph sits a quarter pixel off centre, which the eye doesn't see.
   The mark is two turns that share one centre: the outer in ink, the inner in the accent, set in
-  like an inside lane (docs/brand/icon-2026).
+  like an inside lane (docs/brand/icon-2026). `turn` is that mark in small, for whatever an agent
+  made or is; `turnMono` is the same in one ink, where the accent would shout.
+
+  The weight rule. This file used to say an icon is only ever shown at the size it was drawn for.
+  It wasn't true: the call sites asked for 11, 12, 13, 14 and 15 as often as 16, and the stroke
+  shrank with the icon, so one screen carried eight real line weights, from 0.89 to 1.7px. Now the
+  wrappers set the stroke from the size asked for, so it lands at a real 1.5px from 14px up and
+  1.25px below (thinner, because a 1.5 line closes up the counters of a 12px glyph). An icon that
+  draws heavier on purpose (send's 1.7, the dots' 2, the level's bars) keeps that proportion to
+  1.5, so its dots and bars don't thin out. Sizes in use are 12, 14, 16 and 20.
 */
 import { useId, type CSSProperties, type ReactNode } from "react";
 import type { AgentGlyph } from "@contracts";
 import { BRANDS, type Brand } from "./brands";
 
+/** The stroke, in grid units, that lands at the real weight for `size`; `w` is the icon's own weight at 1.5, kept in proportion. */
+export const wt = (size: number, grid: number, w = 1.5) => +((((size >= 14 ? 1.5 : 1.25) * grid) / size) * (w / 1.5)).toFixed(3);
+
 type P = { size?: number; className?: string; style?: CSSProperties };
 const S = ({ size = 16, children, className, style, w = 1.5 }: P & { children: ReactNode; w?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={style}>
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(size, 16, w)} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={style}>
     {children}
   </svg>
 );
@@ -32,8 +44,8 @@ export const I = {
   sort: (p: P) => <S {...p}><path d="M5.25 12.75v-9.5M3 5.5l2.25-2.25L7.5 5.5M10.75 3.25v9.5M8.5 10.5l2.25 2.25L13 10.5" /></S>,
   routines: (p: P) => <S {...p}><path d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71" /><path d="M12.25 1.9v2.75H9.5M8 5.25V8l1.75 1" /></S>,
   folder: (p: P) => <S {...p}><path d="M2.25 4.75a1.5 1.5 0 0 1 1.5-1.5h2.38c.4 0 .78.16 1.06.44l1.06 1.06h4a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5h-8.5a1.5 1.5 0 0 1-1.5-1.5Z" /></S>,
+  /** A folder to add; the old `folderAdd` was this with its plus a quarter pixel off. */
   folderPlus: (p: P) => <S {...p}><path d="M2.25 4.75a1.5 1.5 0 0 1 1.5-1.5h2.38c.4 0 .78.16 1.06.44l1.06 1.06h4a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5h-8.5a1.5 1.5 0 0 1-1.5-1.5Z" /><path d="M8 7.4v3.7M6.15 9.25h3.7" /></S>,
-  folderAdd: (p: P) => <S {...p}><path d="M2.25 4.75a1.5 1.5 0 0 1 1.5-1.5h2.38c.4 0 .78.16 1.06.44l1.06 1.06h4a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5h-8.5a1.5 1.5 0 0 1-1.5-1.5Z" /><path d="M8 7.25v3.5M6.25 9h3.5" /></S>,
   pin: (p: P) => <S {...p}><path d="M6.25 2.75h3.5M6.75 2.75v3.4L4.75 8.4v1.85h6.5V8.4l-2-2.25v-3.4M8 10.25v3.25" /></S>,
   snooze: (p: P) => <S {...p}><path d="M8 2.5a4 4 0 0 0 5.5 5.5A5.5 5.5 0 1 1 8 2.5Z" /></S>,
   settle: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.5" /><path d="m5.75 8.1 1.6 1.6 2.9-3.2" /></S>,
@@ -47,9 +59,9 @@ export const I = {
   chevD: (p: P) => <S {...p}><path d="M4.25 6.25 8 10l3.75-3.75" /></S>,
   chevU: (p: P) => <S {...p}><path d="M4.25 9.75 8 6l3.75 3.75" /></S>,
   sidebar: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M6.25 2.75v10.5" /></S>,
+  /** The panel beside the session: a frame with its right part ruled off. (The old `dock` was the same drawing; it is this one now.) */
   panel: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M9.75 2.75v10.5" /></S>,
-  /** The panel beside the session: a frame with its right part ruled off. */
-  dock: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M9.75 2.75v10.5" /></S>,
+  /** A panel along the foot; the old `bottom` was this drawing a quarter pixel off. */
   panelBottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M2.25 9.75h11.5" /></S>,
   split: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M8 2.75v10.5" /></S>,
   /** The Wall: every session at once, four tiles. */
@@ -66,7 +78,6 @@ export const I = {
   page: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 5.75h11.5" /></S>,
   /** A tab beside Chat. */
   tab: (p: P) => <S {...p}><path d="M2.25 13.25V5a1 1 0 0 1 1-1h3.5l1.25 1.75h5a1 1 0 0 1 1 1v6.5Z" /></S>,
-  bottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 9.5h11.5" /></S>,
   agents: (p: P) => <S {...p}><circle cx="6" cy="5.5" r="2.25" /><path d="M2.25 13a3.75 3.75 0 0 1 7.5 0M10.25 3.35a2.25 2.25 0 0 1 0 4.3M11.6 9.65A3.75 3.75 0 0 1 13.75 13" /></S>,
   /** Work sent off: a stem with two branches, each ending in an agent. */
   fanout: (p: P) => <S {...p}><path d="M4.25 2.75v7.5a1.75 1.75 0 0 0 1.75 1.75h2.5M4.25 6.25h4.25" /><circle cx="10.25" cy="6.25" r="1.75" /><circle cx="10.25" cy="12" r="1.75" /></S>,
@@ -96,20 +107,20 @@ export const I = {
   wrap: (p: P) => <S {...p}><path d="M2.75 4h10.5M2.75 8h8.25a2 2 0 0 1 0 4H8.5M2.75 12h3M10 10.5 8.5 12l1.5 1.5" /></S>,
   usage: (p: P) => <S {...p}><path d="M2.75 2.75v9.5a1 1 0 0 0 1 1h9.5M6 10.25V7.5M9 10.25v-5M12 10.25V8.5" /></S>,
   settings: (p: P) => <S {...p}><path d={GEAR} /><circle cx="8" cy="8" r="2" /></S>,
-  read: (p: P) => <S {...p}><circle cx="7.25" cy="7.25" r="4.5" /><path d="m10.6 10.6 2.65 2.65" /></S>,
   globe: (p: P) => <S {...p}><circle cx="7.75" cy="7.75" r="5.5" /><path d="M2.25 7.75h11M7.75 2.25c1.45 1.55 2.2 3.4 2.2 5.5s-.75 3.95-2.2 5.5c-1.45-1.55-2.2-3.4-2.2-5.5s.75-3.95 2.2-5.5Z" /></S>,
   undo: (p: P) => <S {...p}><path d="M5.75 3.75 3 6.5l2.75 2.75M3 6.5h6.75a3.25 3.25 0 0 1 0 6.5H7.25" /></S>,
   commit: (p: P) => <S {...p}><circle cx="8" cy="8" r="2.5" /><path d="M1.75 8h3.75M10.5 8h3.75" /></S>,
   drag: (p: P) => <S {...p} w={2}><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" /></S>,
   info: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.75" /><path d="M8 7.4v3.6M8 5.15v.1" /></S>,
   layers: (p: P) => <S {...p}><path d="M8 2.25 13.75 5.5 8 8.75 2.25 5.5ZM2.25 9.25 8 12.5l5.75-3.25" /></S>,
+  /** The four-point star, for AI pictures and brand starts in Design only; whatever an agent made or is takes `turn`. */
   sparkle: (p: P) => <S {...p}><path d="M8 2.25Q9.3 6.7 13.75 8 9.3 9.3 8 13.75 6.7 9.3 2.25 8 6.7 6.7 8 2.25Z" /></S>,
   refresh: (p: P) => <S {...p}><path d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71" /><path d="M12.25 1.9v2.75H9.5" /></S>,
   copy: (p: P) => <S {...p}><rect x="5.5" y="5.5" width="7.75" height="7.75" rx="1.5" /><path d="M10.5 5.5V4.25a1.5 1.5 0 0 0-1.5-1.5H4.25a1.5 1.5 0 0 0-1.5 1.5V9a1.5 1.5 0 0 0 1.5 1.5H5.5" /></S>,
   edit: (p: P) => <S {...p}><path d="M11.2 2.55a1.6 1.6 0 0 1 2.25 2.25l-7.7 7.7-3 .75.75-3ZM9.75 4l2.25 2.25" /></S>,
   trash: (p: P) => <S {...p}><path d="M2.75 4.25h10.5M6.25 4.25V3a.75.75 0 0 1 .75-.75h2a.75.75 0 0 1 .75.75v1.25M4.25 4.25l.55 8.2a1 1 0 0 0 1 .95h4.4a1 1 0 0 0 1-.95l.55-8.2" /></S>,
-  /** Add-ons: a puzzle piece, as browsers and editors mark extensions; nothing like the Wall's tiles. */
-  puzzle: (p: P) => <S {...p}><path d="M6.4 3.8a1.4 1.4 0 1 1 2.8 0v.8h2.4a1 1 0 0 1 1 1V8h-.8a1.4 1.4 0 1 0 0 2.8h.8v1.8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5.6a1 1 0 0 1 1-1h2.4Z" /></S>,
+  /** Add-ons: a puzzle piece, as browsers and editors mark extensions; nothing like the Wall's tiles. Half-circle knobs at the middle of a square body, the whole piece centred on the grid. */
+  puzzle: (p: P) => <S {...p}><path d="M2.75 5a.75.75 0 0 1 .75-.75h2.25a1.5 1.5 0 0 1 3 0h2.25a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 1 0 3v2.25a.75.75 0 0 1-.75.75h-7.5a.75.75 0 0 1-.75-.75Z" /></S>,
   /** How hard it thinks: three bars that step up, as many dark as the level (1 to 3). */
   level: ({ n = 2, ...p }: P & { n?: number }) => (
     <S {...p} w={2.5}>
@@ -160,7 +171,6 @@ export const I = {
   close2: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.5" /><path d="m6 6 4 4m0-4-4 4" /></S>,
   dot: (p: P) => <S {...p} w={0}><circle cx="8" cy="8" r="3" fill="currentColor" /></S>,
   star: (p: P) => <S {...p}><path d="m8 2.6 1.6 3.4 3.7.5-2.7 2.5.7 3.7L8 10.9l-3.3 1.8.7-3.7-2.7-2.5 3.7-.5Z" /></S>,
-  idea: (p: P) => <S {...p}><path d="M5.75 11.25v-.6c0-.55-.3-1.05-.7-1.45a4.25 4.25 0 1 1 5.9 0c-.4.4-.7.9-.7 1.45v.6ZM6.25 13.5h3.5" /></S>,
   flow: (p: P) => <S {...p}><circle cx="3.75" cy="8" r="1.75" /><circle cx="12.25" cy="4" r="1.75" /><circle cx="12.25" cy="12" r="1.75" /><path d="M5.5 8h.75c1.1 0 2-.9 2-2v-.5c0-.83.67-1.5 1.5-1.5h.75M6.25 8c1.1 0 2 .9 2 2v.5c0 .83.67 1.5 1.5 1.5h.75" /></S>,
   alert: (p: P) => <S {...p}><path d="M7.13 2.9a1 1 0 0 1 1.74 0l5.02 8.9a1 1 0 0 1-.87 1.5H2.98a1 1 0 0 1-.87-1.5Z" /><path d="M8 6.5v2.5M8 11.25v.01" /></S>,
   monitor: (p: P) => <S {...p}><rect x="2" y="3" width="12" height="8" rx="1.5" /><path d="M6 13.25h4M8 11v2.25" /></S>,
@@ -173,13 +183,36 @@ export const I = {
   minus: (p: P) => <S {...p}><path d="M3.5 8h9" /></S>,
   fit: (p: P) => <S {...p}><path d="M2.75 5.75v-3h3M13.25 5.75v-3h-3M2.75 10.25v3h3M13.25 10.25v3h-3" /></S>,
   tool: (p: P) => <S {...p}><path d="M10.2 2.9a3.25 3.25 0 0 0-4 4.25L2.9 10.45a1.4 1.4 0 0 0 2 2L8.2 9.15a3.25 3.25 0 0 0 4.25-4l-2 2-1.6-.4-.4-1.6Z" /></S>,
+  /** Liner's mark in small: two L-shaped turns round one centre, down and then along, the outer in ink and the inner in the accent (docs/brand/icon-2026/favicon.svg). For what an agent made, or an agent with no logo. */
+  turn: (p: P) => <S {...p}><path d="M3 2.75V7.5a5.75 5.75 0 0 0 5.75 5.75H13" /><path d="M6.25 6v1.5a2.5 2.5 0 0 0 2.5 2.5h1" stroke="var(--l-accent)" /></S>,
+  /** The turn in one ink, where the accent would shout (the Demo's mark, a custom agent's disc). */
+  turnMono: (p: P) => <S {...p}><path d="M3 2.75V7.5a5.75 5.75 0 0 0 5.75 5.75H13M6.25 6v1.5a2.5 2.5 0 0 0 2.5 2.5h1" /></S>,
+  /** Best: a cut stone, the finest you have; a star would read as a favourite or a rating. */
+  gem: (p: P) => <S {...p}><path d="M5 3.25h6l2.75 3.5L8 13 2.25 6.75Z" /><path d="M2.25 6.75h11.5M6.25 6.75 8 13l1.75-6.25" /></S>,
+  /** Fast: a step forward with motion lines. The bolt stays for triggers. */
+  speed: (p: P) => <S {...p}><path d="M8.5 4.25 12.25 8 8.5 11.75" /><path d="M2.75 5.75h3M1.75 8h4.5M2.75 10.25h3" /></S>,
+  /** Fusion: two rings that overlap, two models working as one. */
+  fusion: (p: P) => <S {...p}><circle cx="6" cy="8" r="3.75" /><circle cx="10" cy="8" r="3.75" /></S>,
+  /** Modes: a switch, because you pick how it works. */
+  toggle: (p: P) => <S {...p}><rect x="1.75" y="4.5" width="12.5" height="7" rx="3.5" /><circle cx="10.75" cy="8" r="1.75" fill="currentColor" stroke="none" /></S>,
+  /** Thinking: the comment bubble with three dots, the agent mid-thought. The dots are heavier, kept in proportion. */
+  think: ({ size = 16, ...p }: P) => (
+    <S size={size} {...p}>
+      <path d="M8 2.75c3.04 0 5.25 2.02 5.25 4.75S11.04 12.25 8 12.25c-.62 0-1.2-.08-1.75-.24L3.25 13.25l.8-2.4C3.18 10 2.75 8.8 2.75 7.5 2.75 4.77 4.96 2.75 8 2.75Z" />
+      <path d="M5.75 7.5h.01M8 7.5h.01M10.25 7.5h.01" strokeWidth={wt(size, 16, 2)} />
+    </S>
+  ),
+  /** Asks before it goes on: the same bubble with a question mark, legible at any size. */
+  ask: (p: P) => <S {...p}><path d="M8 2.75c3.04 0 5.25 2.02 5.25 4.75S11.04 12.25 8 12.25c-.62 0-1.2-.08-1.75-.24L3.25 13.25l.8-2.4C3.18 10 2.75 8.8 2.75 7.5 2.75 4.77 4.96 2.75 8 2.75Z" /><path d="M6.6 6.2a1.45 1.45 0 0 1 2.8.45c0 .95-1.4 1.15-1.4 2.05M8 10.15v.01" /></S>,
+  /** Some package: a plain cube, for a model or tool with no logo of its own. */
+  cube: (p: P) => <S {...p}><path d="M8 2.25 13.25 5.25v5.5L8 13.75 2.75 10.75v-5.5Z" /><path d="M2.75 5.25 8 8.25l5.25-3M8 8.25v5.5" /></S>,
 };
 
-/** An agent's glyph, for its disc. */
-export function Glyph({ glyph, size = 13 }: { glyph: AgentGlyph; size?: number }) {
+/** An agent's glyph, for its disc. The ids are what saved profiles hold, so they keep their names when a drawing changes: `sun` is drawn as an orbit, `scope` as a crosshair, `pen` as the family's quill, and `spark` (the default, a custom agent) as the turn in one ink. */
+export function Glyph({ glyph, size = 14 }: { glyph: AgentGlyph; size?: number }) {
   switch (glyph) {
     case "sun":
-      return <S size={size} w={1.4}><circle cx="8" cy="8" r="3" /><path d="M8 2.5v2.5M8 11v2.5M2.5 8H5M11 8h2.5M4.1 4.1l1.8 1.8M10.1 10.1l1.8 1.8M11.9 4.1l-1.8 1.8M5.9 10.1l-1.8 1.8" /></S>;
+      return <S size={size}><circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" /><ellipse cx="8" cy="8" rx="5.75" ry="2.6" transform="rotate(-32 8 8)" /></S>;
     case "moon":
       return (
         <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden>
@@ -187,29 +220,29 @@ export function Glyph({ glyph, size = 13 }: { glyph: AgentGlyph; size?: number }
         </svg>
       );
     case "pen":
-      return <S size={size} w={1.3}><path d="m9.6 4.7 1.7 1.7-4.9 4.9-2.1.4.4-2.1 4.9-4.9Z" /></S>;
+      return <I.edit size={size} />;
     case "code":
-      return <S size={size} w={1.4}><path d="M6 5 3 8l3 3M10 5l3 3-3 3" /></S>;
+      return <S size={size}><path d="M6 5 3 8l3 3M10 5l3 3-3 3" /></S>;
     case "scope":
-      return <S size={size} w={1.3}><path d="M8 4.6a3.4 3.4 0 1 1 0 6.8 3.4 3.4 0 0 1 0-6.8ZM8 3.4v2M8 10.6v2M3.4 8h2M10.6 8h2" /></S>;
+      return <S size={size}><circle cx="8" cy="8" r="4.25" /><path d="M8 1.75v2.5M8 11.75v2.5M1.75 8h2.5M11.75 8h2.5" /><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none" /></S>;
     case "lens":
       return <S size={size}><path d="M7.2 4.4a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Zm2 4.8 2.4 2.4" /></S>;
     case "shapes":
-      return <S size={size} w={1.3}><circle cx="5.75" cy="5.75" r="2.25" /><rect x="8.5" y="8.5" width="4.5" height="4.5" rx="1" /></S>;
+      return <S size={size}><circle cx="5.75" cy="5.75" r="2.25" /><rect x="8.5" y="8.5" width="4.5" height="4.5" rx="1" /></S>;
     case "leaf":
-      return <S size={size} w={1.3}><path d="M3.5 12.5c0-5 3-8.5 9-9 0 6-3.5 9-9 9ZM3.5 12.5 9 7" /></S>;
+      return <S size={size}><path d="M3.25 12.75C3.25 7.25 6.5 3.75 12.75 3.25c-.25 6-3.75 9.5-9.5 9.5ZM3.25 12.75 8.5 7.5" /></S>;
     default:
-      return <S size={size} w={1.2}><path d="M8 3.9 9 7l3.1 1L9 9l-1 3.1L7 9 3.9 8 7 7Z" /></S>;
+      return <I.turnMono size={size} />;
   }
 }
 
 /*
   The navigation icons: the same family drawn again on a 20px grid, for the sidebar's rows, the
-  rail of surfaces and the top row. An icon is only ever shown at the size it was drawn for (20
-  here, 16 for `I`), so a 1.5 stroke fills whole device pixels and never blurs from scaling.
+  rail of surfaces and the top row. They're meant for 20px, where a 1.5 stroke fills whole device
+  pixels; asked for another size they follow the same weight rule as `I`.
 */
 const L = ({ size = 20, children, className, style }: P & { children: ReactNode }) => (
-  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={style}>
+  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={wt(size, 20)} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={style}>
     {children}
   </svg>
 );
@@ -225,9 +258,11 @@ export const N = {
   plus: (p: P) => <L {...p}><path d="M9.75 4v11.5M4 9.75h11.5" /></L>,
   search: (p: P) => <L {...p}><circle cx="9.25" cy="9.25" r="5.5" /><path d="m13.25 13.25 3.5 3.5" /></L>,
   wall: (p: P) => <L {...p}><rect x="2.75" y="2.75" width="6" height="6" rx="1.75" /><rect x="11.25" y="2.75" width="6" height="6" rx="1.75" /><rect x="2.75" y="11.25" width="6" height="6" rx="1.75" /><rect x="11.25" y="11.25" width="6" height="6" rx="1.75" /></L>,
-  puzzle: (p: P) => <L {...p}><path d="M8 4.75a1.75 1.75 0 1 1 3.5 0v1h3a1.25 1.25 0 0 1 1.25 1.25v3h-1a1.75 1.75 0 1 0 0 3.5h1V16a1.25 1.25 0 0 1-1.25 1.25H5A1.25 1.25 0 0 1 3.75 16V7A1.25 1.25 0 0 1 5 5.75h3Z" /></L>,
+  /** Add-ons: `I.puzzle` drawn again on this grid, knobs of radius 2 at the middle of an 11.5 body. */
+  puzzle: (p: P) => <L {...p}><path d="M3.25 6.25a1 1 0 0 1 1-1h2.75a2 2 0 0 1 4 0h2.75a1 1 0 0 1 1 1v2.75a2 2 0 0 1 0 4v2.75a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1Z" /></L>,
   routines: (p: P) => <L {...p}><path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6" /><path d="M15.25 2.5v3.4h-3.4M10 6.5V10l2.25 1.25" /></L>,
-  settings: (p: P) => <L {...p}><g transform="scale(1.25)" strokeWidth={1.2}><path d={GEAR} /><circle cx="8" cy="8" r="2" /></g></L>,
+  /** The gear drawn on this grid, not the 16px one scaled up. */
+  settings: (p: P) => <L {...p}><path d="M8.8 4.53 8.98 2.82 11.02 2.82 11.2 4.53 13.02 5.28 14.35 4.2 15.8 5.65 14.72 6.98 15.47 8.8 17.18 8.98 17.18 11.02 15.47 11.2 14.72 13.02 15.8 14.35 14.35 15.8 13.02 14.72 11.2 15.47 11.02 17.18 8.98 17.18 8.8 15.47 6.98 14.72 5.65 15.8 4.2 14.35 5.28 13.02 4.53 11.2 2.82 11.02 2.82 8.98 4.53 8.8 5.28 6.98 4.2 5.65 5.65 4.2 6.98 5.28Z" /><circle cx="10" cy="10" r="2.5" /></L>,
   session: (p: P) => <L {...p}>{B20}<path d="M6.5 7.25h.01M9.5 7.25h4M6.5 12.75h.01M9.5 12.75h4" /></L>,
   changes: (p: P) => <L {...p}>{B20}<path d="M9.75 5.75v5M7.25 8.25h5M7.25 13.75h5" /></L>,
   folder: (p: P) => <L {...p}><path d="M2.75 6a2 2 0 0 1 2-2h2.9c.53 0 1.04.21 1.41.59l1.19 1.16h5a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" /></L>,
@@ -238,8 +273,7 @@ export const N = {
   app: (p: P) => <L {...p}><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5" /><path d="M2.75 7.75h14.5M5.75 5.75h.01M8 5.75h.01" /></L>,
 };
 
-
-/** Whose model it is, or which tool runs it: its logo in the current ink. A model nobody's list knows gets a diamond. */
+/** Whose model it is, or which tool runs it: its logo in the current ink. A model nobody's list knows gets a plain cube; the Demo gets the turn in one ink. */
 export type MarkKind = Brand | "other" | "demo";
 export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }) {
   const cut = useId();
@@ -251,16 +285,8 @@ export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }
         ))}
       </svg>
     );
-  if (kind === "demo") return <S size={size} w={1.3}><path d="M8 3.9 9 7l3.1 1L9 9l-1 3.1L7 9 3.9 8 7 7Z" /></S>;
-  // A source or tool with no logo of its own: three asterisks, "some other".
-  if (kind === "other")
-    return (
-      <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden className="lc-mark" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round">
-        {[2.6, 8, 13.4].map((x) => (
-          <path key={x} d={`M${x} 5.6v4.8M${x - 2.08} 6.8l4.16 2.4M${x - 2.08} 9.2l4.16-2.4`} />
-        ))}
-      </svg>
-    );
+  if (kind === "demo") return <I.turnMono size={size} />;
+  if (kind === "other") return <I.cube size={size} className="lc-mark" />;
   const { letters } = BRANDS[kind];
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden className="lc-mark" data-brand={kind}>
@@ -275,13 +301,45 @@ export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }
   );
 }
 
-/** Rays: an agent at work. */
-export function Rays({ size = 10 }: { size?: number }) {
+/**
+  An agent at work: the waiting ring, with an accent arc travelling on it (ease in and out, so it
+  gathers and lets go rather than whirring). It is the same footprint as the ring before it, so a
+  step changes state without its mark changing size. The arc is in the current ink when its
+  holder tints it (a session's model), otherwise the accent; reduced motion slows it right down.
+*/
+export function Spinner({ size = 14 }: { size?: number }) {
   return (
-    <svg className="lc-rays" width={size} height={size} viewBox="0 0 10 10" aria-hidden>
-      <circle cx="5" cy="5" r="2" fill="currentColor" />
-      <path d="M5 0.5v1.4M5 8.1v1.4M0.5 5h1.4M8.1 5h1.4M1.8 1.8l1 1M7.2 7.2l1 1M8.2 1.8l-1 1M2.8 7.2l-1 1" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+    <svg className="lc-spin" width={size} height={size} viewBox="0 0 16 16" fill="none" strokeWidth={wt(size, 16)} aria-hidden>
+      <circle cx="8" cy="8" r="5.75" stroke="var(--l-wash-3)" />
+      <circle className="lc-spin-arc" cx="8" cy="8" r="5.75" stroke="currentColor" strokeLinecap="round" strokeDasharray="9 40" />
     </svg>
+  );
+}
+
+export type StepState = "waiting" | "working" | "done" | "skipped" | "failed";
+const STEP_WORD: Record<StepState, string> = { waiting: "Waiting", working: "Working", done: "Done", skipped: "Skipped", failed: "Didn't finish" };
+/**
+  How a step stands, for the Plan list and the agents: one mark with every state in the same
+  footprint, so a step changes state in place and the change plays (app.css, .lc-stepmark). Waiting is
+  the ring; working is the Spinner (the ring as a faint track, the accent arc travelling on it);
+  done is a soft disc with the tick drawn in; skipped is the ring dashed; failed is the ring in the
+  danger ink with a small ×. All the parts are always drawn and the state shows the ones it needs,
+  so don't key it by its state: a remount would skip the change. The ring is a real 1.25px, the
+  arc, tick and × follow the weight rule.
+*/
+export function StepMark({ state, size = 16, label, className }: { state: StepState; size?: number; label?: string; className?: string }) {
+  const ring = +((1.25 * 16) / size).toFixed(3);
+  const line = wt(size, 16);
+  return (
+    <span className={className ? `lc-stepmark ${className}` : "lc-stepmark"} data-s={state} role="img" aria-label={label ?? STEP_WORD[state]} style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle className="lc-stepmark-ring" cx="8" cy="8" r="5.75" strokeWidth={ring} />
+        <circle className="lc-stepmark-arc" cx="8" cy="8" r="5.75" strokeWidth={line} strokeDasharray="9 40" />
+        <circle className="lc-stepmark-disc" cx="8" cy="8" r="6.75" />
+        <path className="lc-stepmark-tick" d="M5.4 8.2 7.15 9.9 10.6 6.35" strokeWidth={line} />
+        <path className="lc-stepmark-x" d="m6.4 6.4 3.2 3.2M9.6 6.4l-3.2 3.2" strokeWidth={line} />
+      </svg>
+    </span>
   );
 }
 
@@ -293,6 +351,6 @@ export function ToolIcon({ kind, size = 12 }: { kind: string; size?: number }) {
   if (kind === "search") return <I.search size={size} />;
   if (kind === "web" || kind === "fetch") return <I.globe size={size} />;
   if (kind === "task") return <I.agents size={size} />;
-  if (kind === "think") return <I.idea size={size} />;
+  if (kind === "think") return <I.think size={size} />;
   return <I.tool size={size} />;
 }

@@ -946,19 +946,20 @@ a.l-cite-card-item:hover {
   }
 }
 
-/* Eight rays, the brightest a beat ahead: a spinner without a spin. The group steps round a
-   ray at a time, so the mark changes eight times a turn instead of on every frame. */
-.l-rays line {
-  stroke: var(--l-ink-3);
-  stroke-width: 1.7;
-  stroke-linecap: round;
+/* At work: an accent arc travelling on the waiting ring, the same as Liner Code's Spinner. It
+   turns with transform (see l-spin), eased so it gathers and lets go; reduced motion slows it to
+   an even crawl rather than freezing it, so it still reads as working. */
+.l-rays__track {
+  stroke: var(--l-wash-3);
 }
-.l-rays__turn {
-  transform-origin: 10px 10px;
-  animation: l-spin 0.96s steps(8) infinite;
+.l-rays__arc {
+  stroke: var(--l-accent);
+  transform-origin: 8px 8px;
+  animation: l-spin 900ms cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .l-rays__turn {
-    animation: none;
+  .l-rays__arc {
+    animation-duration: 3.6s;
+    animation-timing-function: linear;
   }
 }

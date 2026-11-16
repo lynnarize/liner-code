@@ -61,10 +61,10 @@ function Chips() {
         const Icon = x.node ? (KIND_ICON[node?.id === x.node ? node.kind : "box"] ?? I.box) : I.page;
         return (
           <span key={`${x.frame}:${x.node ?? ""}`} className="ld-chip">
-            <Icon size={13} />
+            <Icon size={14} />
             <span className="ld-ell">{nameOf(x.frame, x.node)}</span>
             <button type="button" className="l-focus" aria-label={`Leave ${nameOf(x.frame, x.node)} out`} onClick={() => design.select(sel.filter((y) => y !== x))}>
-              <I.close size={11} />
+              <I.close size={12} />
             </button>
           </span>
         );

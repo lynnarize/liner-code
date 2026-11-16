@@ -6,7 +6,7 @@
 */
 import { toast } from "@liner/components/toast/toast";
 import type { DesignSize } from "@contracts";
-import { I } from "../icons";
+import { I, wt } from "../icons";
 import { Pop, Row } from "../ui";
 import { editText } from "./bridge";
 import { openLivePicker } from "./Live";
@@ -16,11 +16,11 @@ import { design, getDesign, useDesign, type Tool } from "./store";
 
 type P = { size?: number };
 const G = ({ size = 16, children }: P & { children: React.ReactNode }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(size, 16)} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     {children}
   </svg>
 );
-/** The rail's own glyphs, drawn as icons.tsx draws: a 16 grid, 1.5 strokes, round ends. */
+/** The rail's own glyphs, drawn as icons.tsx draws: a 16 grid, round ends, and its weight rule (a real 1.5px from 14 up, 1.25 below). */
 export const D = {
   move: (p: P) => <G {...p}><path d="M3.75 2.75 12.25 7l-3.9 1.15-1.6 3.85Z" /></G>,
   frame: (p: P) => <G {...p}><path d="M5.25 2.25v11.5M10.75 2.25v11.5M2.25 5.25h11.5M2.25 10.75h11.5" /></G>,

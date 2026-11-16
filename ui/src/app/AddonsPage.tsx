@@ -55,7 +55,7 @@ function Tile({ a, size = 52 }: { a: { kind?: string; panel?: { icon?: PanelIcon
   return (
     <span className="lc-ao-tile" style={{ width: size, height: size }} aria-hidden>
       <span style={{ background: bg, color: fg }}>
-        <Icon size={size > 50 ? 19 : 18} />
+        <Icon size={20} />
       </span>
     </span>
   );
@@ -138,7 +138,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                 Turn on and set up what you've added to Liner Code
                 <Tooltip content="Connections let your agents work with a service. Panels show beside your sessions, and apps have a page of their own. Each one asked you first, runs sealed off with only what you allowed, and keeps its versions.">
                   <button type="button" className="lc-ao-info l-focus" aria-label="About add-ons">
-                    <I.info size={13} />
+                    <I.info size={14} />
                   </button>
                 </Tooltip>
               </p>
@@ -151,18 +151,18 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                 <I.plus size={14} />
                 Add add-on
               </button>
-              <Pop label="More ways to add one" align="end" width={290} triggerClass="lc-ao-split-more" trigger={<I.chevD size={13} />}>
+              <Pop label="More ways to add one" align="end" width={290} triggerClass="lc-ao-split-more" trigger={<I.chevD size={12} />}>
                 {(close) => (
                   <div className="lc-ao-ways" role="menu" aria-label="Ways to add one">
                     {(
                       [
-                        { icon: I.sparkle, label: "Make one with an agent", note: "Describe it, and Workshop builds it", pick: onMake },
+                        { icon: I.turn, label: "Make one with an agent", note: "Describe it, and Workshop builds it", pick: onMake },
                         { icon: I.link, label: "From GitHub, npm or a folder", note: "One someone else made, or a DeepSeek Harness plugin", pick: () => setAdding("source") },
                         { icon: I.plug, label: "Connect a service", note: "Linear, Sentry and others, with a key", pick: () => setAdding("connect") },
                       ] as const
                     ).map((w) => (
                       <button key={w.label} type="button" role="menuitem" className="l-focus" onClick={() => (close(), w.pick())}>
-                        <w.icon size={15} />
+                        <w.icon size={16} />
                         <span>
                           <b>{w.label}</b>
                           <small>{w.note}</small>
@@ -203,7 +203,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                 <p>Say what you'd like, and an agent makes it in Workshop: a page for your notes, a panel of TODOs, a connection to Linear. Or add one someone else made.</p>
                 <span>
                   <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={onMake}>
-                    <I.sparkle size={13} />
+                    <I.turn size={14} />
                     Make one with an agent
                   </button>
                   <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setAdding("source")}>
@@ -328,7 +328,7 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
             <span>{a.panel ? KIND[a.panel.place] : "Connection"}</span>
           </div>
           <button type="button" className="lc-ao-ghost l-focus" aria-label="Close" autoFocus onClick={onClose}>
-            <I.close size={15} />
+            <I.close size={16} />
           </button>
         </header>
         <div className="lc-ao-sheet-body">
@@ -471,7 +471,7 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
             </button>
             <span className="lc-grow" />
             <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={pick}>
-              <I.folder size={13} />
+              <I.folder size={14} />
               Choose a folder…
             </button>
           </div>
@@ -481,14 +481,14 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
             </p>
           )}
           <div className="lc-ao-trust">
-            <I.alert size={15} />
+            <I.alert size={16} />
             <span>Add only what you trust. Before it's turned on, you'll see what it can touch, and it never runs inside Liner Code itself.</span>
           </div>
           <button type="submit" className="lc-btn lc-ao-go" data-kind="primary" disabled={!source.trim() || busy}>
             {busy ? (/github/i.test(source) ? "Fetching it from GitHub…" : /^\s*[~/.]|^\s*[A-Za-z]:\\/.test(source) ? "Reading it…" : "Fetching it from npm…") : "Add"}
           </button>
           <button type="button" className="lc-ao-quiet lc-ao-make l-focus" onClick={onMake}>
-            <I.sparkle size={13} />
+            <I.turn size={14} />
             Or describe it, and an agent makes it in Workshop
           </button>
         </form>
@@ -537,7 +537,7 @@ function DshCard({ o, p: a, more, aside, yes, no }: { o: Opened; p: PanelAsk | C
             value: (
               <details className="lc-ao-told">
                 <summary className="l-focus">
-                  <I.chevR size={11} />
+                  <I.chevR size={12} />
                   What it tells your agents
                 </summary>
                 {d.instructions && <div className="lc-ao-told-text">{d.instructions}</div>}
@@ -636,7 +636,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
   const aside = (label: string) => (
     <>
       <button type="button" className="lc-appr-more l-focus" aria-expanded={more} onClick={() => setMore((d) => !d)}>
-        <I.chevR size={11} />
+        <I.chevR size={12} />
         {more ? "Less" : label}
       </button>
       <code className="lc-addon-path" title={o.from}>

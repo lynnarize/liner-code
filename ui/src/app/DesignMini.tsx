@@ -420,7 +420,7 @@ export function DesignMini({ thread, items, cwd, file: slug, agentName, visible,
           )}
         </div>
         <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => open()}>
-          <I.edit size={13} />
+          <I.edit size={14} />
           Open in Liner Design
         </button>
       </div>

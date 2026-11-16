@@ -139,7 +139,7 @@ export function TopBar({ panel, onPanel, below, onBelow, run }: { panel: boolean
       {!panel && (
         <Tooltip content="Show the panel">
           <button type="button" className="lc-tb lc-sbar-b l-focus" data-panel-toggle aria-label="Show the panel" aria-pressed={false} onClick={onPanel}>
-            <I.dock size={16} />
+            <I.panel size={16} />
           </button>
         </Tooltip>
       )}

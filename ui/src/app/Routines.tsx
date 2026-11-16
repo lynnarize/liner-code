@@ -46,8 +46,8 @@ const runWord = (r: RoutineRun) => (r.test ? "a test" : r.status === "merged" ? 
 
 function StepMark({ status }: { status: string }) {
   if (status === "running") return <span className="lc-rt-mk" data-s="run" aria-label="Running" />;
-  if (status === "done") return <span className="lc-rt-mk" data-s="done" aria-label="Done"><I.check size={10} /></span>;
-  if (status === "failed") return <span className="lc-rt-mk" data-s="fail" aria-label="Failed"><I.close size={9} /></span>;
+  if (status === "done") return <span className="lc-rt-mk" data-s="done" aria-label="Done"><I.check size={12} /></span>;
+  if (status === "failed") return <span className="lc-rt-mk" data-s="fail" aria-label="Failed"><I.close size={12} /></span>;
   if (status === "skipped") return <span className="lc-rt-mk" data-s="skip" aria-label="Skipped" />;
   return <span className="lc-rt-mk" aria-label="Waiting" />;
 }
@@ -102,7 +102,7 @@ export function RoutinesList({ projectId, onNew, onEdit, onRun, compact: tight }
         )}
         <span className="lc-grow" />
         <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={onNew}>
-          <I.plus size={13} />
+          <I.plus size={14} />
           New routine
         </button>
       </div>
@@ -128,7 +128,7 @@ export function RoutinesList({ projectId, onNew, onEdit, onRun, compact: tight }
         return (
           <article key={r.id} className="lc-rt-card" data-off={!r.on || undefined} style={{ animationDelay: `${i * 35}ms` }}>
             <div className="lc-rt-h">
-              <span className="lc-tile">{r.trigger.kind === "schedule" ? <I.clock size={13} /> : r.trigger.kind === "github" ? <I.pr size={13} /> : r.trigger.kind === "webhook" ? <I.bolt size={13} /> : <I.hand size={13} />}</span>
+              <span className="lc-tile">{r.trigger.kind === "schedule" ? <I.clock size={12} /> : r.trigger.kind === "github" ? <I.pr size={12} /> : r.trigger.kind === "webhook" ? <I.bolt size={12} /> : <I.hand size={12} />}</span>
               <button type="button" className="lc-rt-name l-focus" onClick={() => onEdit(r.id)} title="Edit the routine">
                 <b>{r.name}</b>
                 <small className="lc-quiet">
@@ -150,7 +150,7 @@ export function RoutinesList({ projectId, onNew, onEdit, onRun, compact: tight }
                 );
               })}
               <span className="lc-rt-out">
-                <I.chevR size={11} />
+                <I.chevR size={12} />
                 {outcomeText(r)}
               </span>
             </div>

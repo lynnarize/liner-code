@@ -65,7 +65,7 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
         <PanelHead
           end={
             <button type="button" className="lc-ib l-focus" aria-label="Refresh" title="Ask the session again" disabled={looking} onClick={look}>
-              <I.refresh size={13} />
+              <I.refresh size={14} />
             </button>
           }
         >

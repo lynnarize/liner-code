@@ -395,7 +395,7 @@
   width: 17px;
   height: 17px;
 }
-.l-asb-mark .l-rays line {
+.l-asb-mark .l-rays__arc {
   stroke: var(--l-accent-text);
 }
 .l-asb-mark > i {

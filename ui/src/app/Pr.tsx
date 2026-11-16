@@ -17,7 +17,7 @@ import { toast } from "@liner/components/toast/toast";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { bridge, ghInstall } from "./bridge";
 import { getState, isCheckpoint, rpc, subscribe, useEngine, useItemsWhere } from "./engine";
-import { I, Rays } from "./icons";
+import { I, Spinner } from "./icons";
 import { agentOf, checkpointsOf, duration, plural, sumLines } from "./model";
 import { PrCard } from "./PrCard";
 import { prLine, SurfaceNote } from "./Surfaces";
@@ -424,7 +424,7 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
         {!pr && (
           <div className="lc-pr-sec lc-pr-edit" data-open={editing || undefined}>
             <button type="button" className="lc-pr-lab lc-pr-fold l-focus" aria-expanded={editing} onClick={() => setEditing((e) => !e)}>
-              <I.chevR size={11} />
+              <I.chevR size={12} />
               Title and description
               <span>{editing ? "Yours, if you write them" : "Written from the branch"}</span>
             </button>
@@ -433,7 +433,7 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
                 <div className="lc-pr-new">
                   <div className="lc-pr-write">
                     <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={drafting || !st.ahead} onClick={() => void draftIt()}>
-                      <I.sparkle size={12} />
+                      <I.turn size={12} />
                       {drafting ? "Writing it" : "Write it for me"}
                     </button>
                     <span className="lc-quiet">From the branch's changes, its commits and what the session checked</span>
@@ -697,11 +697,11 @@ function PrConsole({ threadId, run, agentName }: { threadId: string; run: Tool; 
           <span className="lc-quiet">on {os.here}</span>
           <span className="lc-grow" />
           <span className="lc-prcon-st" key={run.status}>
-            {running ? <Rays size={11} /> : run.status === "done" ? <I.check size={12} /> : <I.close size={12} />}
+            {running ? <Spinner size={12} /> : run.status === "done" ? <I.check size={12} /> : <I.close size={12} />}
             {running ? "Running" : run.status === "done" ? "Passed" : "Failed"}
           </span>
           {!running && <span className="lc-quiet l-num">{duration(run.seconds)}</span>}
-          <I.chevR size={11} />
+          <I.chevR size={12} />
         </button>
         <div className="lc-fold">
           <div>
@@ -830,7 +830,7 @@ export function LinkedSurface({ thread, agentName, onOpenSession }: { thread: Th
                   </button>
                 )}
                 <button type="button" className="lc-ib l-focus" aria-label={`Open #${p.number} on GitHub`} title={`Open #${p.number} on GitHub`} onClick={() => bridge.openExternal(p.url)}>
-                  <I.push size={13} />
+                  <I.push size={14} />
                 </button>
               </div>
             </article>

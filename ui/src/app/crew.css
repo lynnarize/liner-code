@@ -5,49 +5,7 @@
 */
 
 /* ---------- marks ---------- */
-.lc-cr-mark {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 14px;
-  height: 14px;
-  color: var(--l-ink-3);
-}
-.lc-cr-mark > i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--l-ink-4);
-}
-.lc-cr-mark[data-state="running"] > i {
-  background: var(--l-accent);
-  animation: lc-cr-breathe 1.6s ease-in-out infinite;
-}
-.lc-cr-mark[data-state="waiting"] > i {
-  width: 8px;
-  height: 8px;
-  box-sizing: border-box;
-  border: 1.5px solid var(--l-ink-4);
-  background: none;
-}
-.lc-cr-mark[data-state="stopped"] > i {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--l-warn);
-}
-.lc-cr-mark[data-state="done"] {
-  color: var(--l-ok-text);
-}
-.lc-cr-mark[data-state="failed"] {
-  color: var(--l-danger-text);
-}
-@keyframes lc-cr-breathe {
-  50% {
-    opacity: 0.4;
-    transform: scale(0.8);
-  }
-}
+/* How each one stands is the Plan list's mark (.lc-stepmark in app.css) at 14px, the footprint the dots had. */
 
 /* Stacked marks: the lead, then the agents it sent. */
 .lc-cr-faces {
@@ -283,18 +241,21 @@ button.lc-crp-r:hover {
   font-size: 13px;
   color: var(--l-ink-2);
 }
-.lc-fan-h > svg {
-  color: var(--l-ink-3);
-}
+/* The rail hangs from the header's mark: its stem is at the mark's centre (7px of 14). */
 .lc-fan-kids {
   position: relative;
   margin-left: 7px;
+}
+/* An agent's own agents hang from its mark in the same way: the row's padding and half the mark. */
+.lc-fan-kid > .lc-fan-kids {
+  margin-left: 17px;
 }
 .lc-fan-kid {
   position: relative;
   padding-left: 22px;
 }
-/* A branch for each: the stem goes on past all but the last, and each bends into its row. */
+/* One rail that branches: the stem goes on past all but the last, and each bends into its row with
+   a small curve that runs on to just short of the agent's mark, as the Plan list's rail does. */
 .lc-fan-kid::before {
   content: "";
   position: absolute;
@@ -302,18 +263,18 @@ button.lc-crp-r:hover {
   bottom: 0;
   left: 0;
   width: 1px;
-  background: var(--l-line);
+  background: var(--l-wash-3);
 }
 .lc-fan-kid::after {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
-  width: 13px;
+  width: 28px;
   height: 17px;
   box-sizing: border-box;
-  border-bottom: 1px solid var(--l-line);
-  border-left: 1px solid var(--l-line);
+  border-bottom: 1px solid var(--l-wash-3);
+  border-left: 1px solid var(--l-wash-3);
   border-bottom-left-radius: 8px;
 }
 .lc-fan-kid[data-last]::before {
@@ -832,22 +793,22 @@ button.lc-cr-bg:hover {
   color: var(--l-ink-3);
 }
 
-/* Who took a task on, in the turn's plan card: kept out of a done task's line-through. */
+/* Who took a task on, in the turn's plan: quiet words after a middle dot, not a pill on every line. */
 .lc-todo-own {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--l-wash-2);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 18px;
-  vertical-align: 1px;
-  color: var(--l-ink-2);
+  font-size: 13px;
+  color: var(--l-ink-4);
+  white-space: nowrap;
+}
+.lc-todo-own::before {
+  content: "·";
+  margin: 0 7px 0 8px;
+  color: var(--l-ink-5);
+}
+.lc-todo li[data-s="working"] .lc-todo-own {
+  color: var(--l-ink-3);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lc-cr-mark[data-state="running"] > i,
   .lc-cr-faces > span[data-lead],
   .lc-cr-disc[data-on] {
     animation: none;

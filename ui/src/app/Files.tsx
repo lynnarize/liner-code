@@ -262,7 +262,7 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
     <div className="lc-fsv">
       <div className="lc-files-side">
         <div className="lc-files-find">
-          <I.search size={13} />
+          <I.search size={14} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a file" aria-label="Find a file" onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
         </div>
         <Segmented
@@ -315,7 +315,7 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
               )}
               {kind === "html" && (
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={openInBrowser}>
-                  <I.globe size={13} />
+                  <I.globe size={14} />
                   Open in Browser
                 </button>
               )}

@@ -170,7 +170,7 @@ function Done({ info, roomy }: { info: Info; roomy: boolean }) {
             const cut = f.path.lastIndexOf("/");
             return (
               <li key={f.path} data-status={f.status}>
-                <I.file size={13} />
+                <I.file size={14} />
                 <span className="lc-wt-fname">{f.path.slice(cut + 1)}</span>
                 {cut > 0 && <span className="lc-wt-fdir">{f.path.slice(0, cut)}</span>}
                 <span className="lc-grow" />
@@ -575,7 +575,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
         <span className="lc-wt-title">{t.title}</span>
         <span className="lc-wt-state" data-tone={state.tone}>
           {/* An answer you haven't read is Done here, with the check, not the sidebar's Needs you dot. */}
-          {kind === "done" ? <I.check size={13} className="lc-wt-check" /> : <StatusMark t={t} bucket={bucketOf({ ...t, pinned: false }, now)} brand={ref ? markOf(ref) : undefined} />}
+          {kind === "done" ? <I.check size={14} className="lc-wt-check" /> : <StatusMark t={t} bucket={bucketOf({ ...t, pinned: false }, now)} brand={ref ? markOf(ref) : undefined} />}
           <span className="l-num">{state.word}</span>
         </span>
       </button>
@@ -601,7 +601,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
             {ask && (
               <div className="lc-wt-card">
                 <span className="lc-wt-lead">
-                  <I.hand size={14} />
+                  <I.ask size={14} />
                   {shell ? "Wants to run" : "Asks before it goes on"}
                 </span>
                 {command ? <code className="lc-wt-cmd">{os.tilde(command)}</code> : <b className="lc-wt-what">{ask.title}</b>}
@@ -668,7 +668,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
             {t.status === "waiting" && !ask && !question && !plan && (
               <div className="lc-wt-card">
                 <span className="lc-wt-lead">
-                  <I.hand size={14} />
+                  <I.ask size={14} />
                   Waits for you
                 </span>
                 <div className="lc-wt-acts">
@@ -694,7 +694,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
             )}
             {t.verdict?.state === "verified" && (
               <span className="lc-wt-vf">
-                <I.verified size={13} />
+                <I.verified size={14} />
                 Verified
               </span>
             )}

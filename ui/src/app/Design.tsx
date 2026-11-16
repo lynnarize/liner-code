@@ -229,7 +229,7 @@ function DesignStart({ thread }: { thread: Thread }) {
               </button>
             </div>
           )}
-          <Pop label={`What it's drawn for: ${START_SIZES.find((x) => x.id === size)?.label}. Change it`} width={220} triggerClass="lc-pb" trigger={<><I.monitor size={13} /><span className="lc-strip-cap">{START_SIZES.find((x) => x.id === size)?.label}</span><I.chevD size={11} /></>} menu>
+          <Pop label={`What it's drawn for: ${START_SIZES.find((x) => x.id === size)?.label}. Change it`} width={220} triggerClass="lc-pb" trigger={<><I.monitor size={14} /><span className="lc-strip-cap">{START_SIZES.find((x) => x.id === size)?.label}</span><I.chevD size={12} /></>} menu>
             {(close) => START_SIZES.map((x) => <Row key={x.id} title={x.label} on={x.id === size} onPick={() => (close(), setSize(x.id))} />)}
           </Pop>
           <button type="button" className="lc-btn" data-kind="primary" disabled={making} onClick={() => void start()}>
@@ -522,7 +522,7 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
     <div className="lc-dz">
       {/* One row: which design and version, how it's drawn, and what to do with it. */}
       <div className="lc-dz-bar">
-        <Pop label="Designs in this session" width={300} triggerClass="lc-dz-name" trigger={<><b>{latest.title}</b><I.chevD size={11} /></>}>
+        <Pop label="Designs in this session" width={300} triggerClass="lc-dz-name" trigger={<><b>{latest.title}</b><I.chevD size={12} /></>}>
           {(close) => (
             <div className="lc-dz-menu">
               <PanelHead>Designs in this session</PanelHead>
@@ -549,7 +549,7 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
                 {shownVersion ? `v${shownVersion.version}` : `v${latest.version}`}
                 {!shownVersion && <span className="lc-dz-wide"> · Live</span>}
               </span>
-              <I.chevD size={10} />
+              <I.chevD size={12} />
             </>
           }
         >
@@ -604,19 +604,19 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
             <div className="lc-br-more">
               <div className="lc-dz-acts">
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (void openInLinerDesign(thread, latest), close())}>
-                  <I.edit size={13} /> Open in Liner Design
+                  <I.edit size={14} /> Open in Liner Design
                 </button>
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!base} onClick={() => (base && bridge.openExternal(served(base, latest.path)), close())}>
-                  <I.external size={13} /> Open in your browser
+                  <I.external size={14} /> Open in your browser
                 </button>
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (void copy(), close())}>
-                  <I.copy size={13} /> Copy its HTML
+                  <I.copy size={14} /> Copy its HTML
                 </button>
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!cwd} onClick={() => (bridge.reveal(`${cwd}/${latest.path}`), close())}>
-                  <I.folder size={13} /> Show its file
+                  <I.folder size={14} /> Show its file
                 </button>
                 <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (switchWhere(where === "chat" ? "panel" : "chat"), close())}>
-                  {where === "chat" ? <I.panel size={13} /> : <I.comment size={13} />} {where === "chat" ? "Open designs beside the chat" : "Show designs in the chat instead"}
+                  {where === "chat" ? <I.panel size={14} /> : <I.comment size={14} />} {where === "chat" ? "Open designs beside the chat" : "Show designs in the chat instead"}
                 </button>
               </div>
               <PanelHead>Theme</PanelHead>
@@ -639,12 +639,12 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
         </Pop>
         {shownVersion ? (
           <button type="button" className="lc-btn lc-dz-build" data-kind="plain" data-size="sm" onClick={() => void restore()} title={`Put version ${shownVersion.version} back in ${latest.path}`}>
-            <I.undo size={13} />
+            <I.undo size={14} />
             <span className="lc-dz-wide">Bring back</span> v{shownVersion.version}
           </button>
         ) : (
           <button type="button" className="lc-btn lc-dz-build" data-kind={built?.version === latest.version ? "plain" : "primary"} data-size="sm" onClick={() => void build()} title={`Ask ${agentName} to build version ${latest.version} into the app`}>
-            <I.play size={11} />
+            <I.play size={12} />
             <span>{built ? "Build again" : "Build it"}</span>
           </button>
         )}
@@ -745,17 +745,17 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
           </div>
           <div className="lc-dz-zoom" role="group" aria-label="Zoom">
             <button type="button" className="l-focus" aria-label="Zoom out" title="Zoom out" disabled={scale <= ZOOMS[0] + 0.001} onClick={() => zoomBy(-1)}>
-              <I.minus size={13} />
+              <I.minus size={14} />
             </button>
             <span className="l-num" aria-live="polite">
               {Math.round(scale * 100)}%
             </span>
             <button type="button" className="l-focus" aria-label="Zoom in" title="Zoom in" disabled={scale >= ZOOMS[ZOOMS.length - 1] - 0.001} onClick={() => zoomBy(1)}>
-              <I.plus size={13} />
+              <I.plus size={14} />
             </button>
             <i aria-hidden />
             <button type="button" className="l-focus" aria-label="Fit it to the panel" title="Fit it to the panel" aria-pressed={zoom === null} onClick={() => setZoom(null)}>
-              <I.fit size={13} />
+              <I.fit size={14} />
             </button>
           </div>
         </div>
@@ -839,7 +839,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
           </div>
         </div>
         <figcaption className="lc-dz-capline">
-          <I.design size={13} />
+          <I.design size={14} />
           <b>{it.title}</b>
           <span className="lc-dz-capnote">
             · Version {it.version} · {size}
@@ -858,7 +858,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
           )}
           {thread && (
             <button type="button" className="lc-btn lc-dz-buildsm" data-kind="plain" data-size="sm" onClick={() => void buildDesign(thread, it, agentName)} title={`Ask ${agentName} to build version ${it.version} into the app`}>
-              <I.play size={10} /> Build it
+              <I.play size={12} /> Build it
             </button>
           )}
         </figcaption>
@@ -882,7 +882,7 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
         )}
       </button>
       <figcaption className="lc-dz-capline">
-        <I.design size={13} />
+        <I.design size={14} />
         <b>{it.title}</b>
         <span className="lc-dz-capnote">
           · Version {it.version}
@@ -940,7 +940,7 @@ function DesignFull({ it, html, onOpen, onClose }: { it: DesignItem; html: strin
         </span>
         <span className="lc-grow" />
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onOpen}>
-          <I.panel size={13} /> Open in the panel
+          <I.panel size={14} /> Open in the panel
         </button>
         <button ref={close} type="button" className="lc-ib l-focus" aria-label="Close full screen" title="Close (Esc)" onClick={onClose}>
           <I.close size={14} />

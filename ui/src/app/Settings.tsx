@@ -7,7 +7,7 @@
   window (localStorage) and apply at once; the rest lives in the engine. Escape, ⌘, or Back
   returns to the sessions.
 */
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
+import { cloneElement, isValidElement, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
 import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, picturesGuess, ROUTINES_ON, toolPicturesKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
@@ -65,7 +65,7 @@ const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string;
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem" },
   { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Fusion, its lead and sidekick, and what a new session starts with; and the Reviewer, which reads each change before it's yours.", words: "agentic fusion pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes" },
-  { id: "modes", label: "Modes", icon: <I.idea />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
+  { id: "modes", label: "Modes", icon: <I.toggle />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
   { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "What a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
   { id: "addons", label: "Add-ons", icon: <I.blocks />, group: "Agents", blurb: "Connections, panels and apps your agents made for Liner Code. Each one asked first, keeps its versions, and turns off here.", words: "addon addons add-on add-ons connection connections panel panels app apps mcp server servers plugin extension linear sentry version restore remove safe mode start without" },
@@ -231,12 +231,12 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
             {/* Your name is your account's on this computer; nothing in Liner Code changes it, so this opens General. */}
             <button type="button" className="lc-st-edit l-focus" onClick={() => go("general")}>
               Edit profile
-              <I.edit size={11} />
+              <I.edit size={12} />
             </button>
           </span>
         </div>
         <div className="lc-sb-find lc-st-find" role="search">
-          <I.search size={15} />
+          <I.search size={16} />
           <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a setting" aria-label="Find a setting" onKeyDown={(e) => e.key === "Escape" && (query ? (e.preventDefault(), setQuery("")) : e.currentTarget.blur())} />
           {query ? (
             <button type="button" className="lc-ib l-focus" aria-label="Clear" onClick={() => (setQuery(""), find.current?.focus())}>
@@ -296,7 +296,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
           </div>
         </nav>
         <button type="button" className="lc-st-back l-focus" onClick={onClose}>
-          <I.back size={15} />
+          <I.back size={16} />
           <span className="lc-grow">Back to sessions</span>
           <span className="lc-sb-key">esc</span>
         </button>
@@ -316,7 +316,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
           <span className="lc-grow" data-drag />
           {reset && (
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (reset(), toast("Put back as it came"))}>
-              <I.undo size={13} />
+              <I.undo size={14} />
               Restore defaults
             </button>
           )}
@@ -325,7 +325,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
           <div className="lc-st-col" key={page}>
             <div className="lc-st-hero">
               <span className="lc-st-hero-i" aria-hidden>
-                {place.icon}
+                {isValidElement<{ size?: number }>(place.icon) ? cloneElement(place.icon, { size: 20 }) : place.icon}
               </span>
               <h1 ref={heading} tabIndex={-1}>
                 {place.label}
@@ -572,13 +572,14 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
         <Field title="What they start with" below>
           <RadioCards
             label="What they start with"
+            className="lc-st-start"
             columns={3}
             value={start === "pair" && !two ? "best" : start}
             onValueChange={(v) => save({ start: v as EngineSettings["start"] })}
             options={[
-              { value: "pair", title: "Fusion", description: two ? `${label(cast!.lead)} leads, ${label(cast!.sidekick)} does the work it hands over.` : "Fusion needs two models ready: a lead and a quicker sidekick.", icon: <I.agents size={16} />, disabled: !two },
-              { value: "best", title: "Best", description: cast ? `${label(cast.lead)} alone, for the hardest work.` : "Your lead model alone.", icon: <I.star size={16} /> },
-              { value: "fast", title: "Fast", description: cast ? `${label(cast.sidekick)} alone: the quickest, and the least it costs.` : "Your sidekick model alone.", icon: <I.bolt size={16} />, disabled: !two },
+              { value: "pair", title: "Fusion", description: two ? `${label(cast!.lead)} leads, ${label(cast!.sidekick)} does the work it hands over.` : "Fusion needs two models ready: a lead and a quicker sidekick.", icon: <I.fusion size={16} />, disabled: !two },
+              { value: "best", title: "Best", description: cast ? `${label(cast.lead)} alone, for the hardest work.` : "Your lead model alone.", icon: <I.gem size={16} /> },
+              { value: "fast", title: "Fast", description: cast ? `${label(cast.sidekick)} alone: the quickest, and the least it costs.` : "Your sidekick model alone.", icon: <I.speed size={16} />, disabled: !two },
             ]}
           />
           <span className="lc-st-more">
@@ -780,7 +781,7 @@ function PictureCards<T extends string>({ label, value, options, onPick }: { lab
         <button key={m.value} type="button" role="radio" aria-checked={value === m.value} className="lc-st-mode l-focus" data-on={value === m.value || undefined} onClick={() => onPick(m.value)}>
           {value === m.value && (
             <span className="lc-st-tick" aria-hidden>
-              <I.check size={10} />
+              <I.check size={12} />
             </span>
           )}
           {m.picture}
@@ -1193,7 +1194,7 @@ function ThemeRow({ name, note, colors, liner, on, onUse, onEdit, onRemove }: { 
       )}
       {onRemove && (
         <button type="button" className="lc-ib l-focus" aria-label={`Remove ${name}`} title="Remove" onClick={onRemove}>
-          <I.trash size={13} />
+          <I.trash size={14} />
         </button>
       )}
     </Field>
@@ -1362,7 +1363,7 @@ function Models() {
         note="Liner Code drives the tools you already have, with your own sign-ins."
         end={
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={looking} onClick={lookAgain}>
-            <I.refresh size={13} />
+            <I.refresh size={14} />
             {looking ? "Looking" : "Look again"}
           </button>
         }
@@ -1376,7 +1377,7 @@ function Models() {
                 <Field
                   lead={
                     <span className="lc-st-mark">
-                      <ModelMark kind={markOf(`${p.id}:`)} size={15} />
+                      <ModelMark kind={markOf(`${p.id}:`)} size={16} />
                     </span>
                   }
                   title={
@@ -1549,7 +1550,7 @@ function ProviderRow({ p, fallback, onRemove, children }: { p?: ProviderInfo; fa
     <Field
       lead={
         <span className="lc-st-mark">
-          <ModelMark kind={markOf(`${p?.id ?? "other"}:`)} size={15} />
+          <ModelMark kind={markOf(`${p?.id ?? "other"}:`)} size={16} />
         </span>
       }
       title={
@@ -1561,7 +1562,7 @@ function ProviderRow({ p, fallback, onRemove, children }: { p?: ProviderInfo; fa
     >
       {children}
       <button type="button" className="lc-ib l-focus" aria-label={`Remove ${p?.label ?? fallback}`} title="Remove" onClick={onRemove}>
-        <I.trash size={13} />
+        <I.trash size={14} />
       </button>
     </Field>
   );
@@ -1747,7 +1748,7 @@ function EndpointModels({ e, all }: { e: Endpoint; all: Endpoint[] }) {
     save({ endpoints: all.map((x) => (x === e ? { ...e, pictures: Object.keys(pictures).length ? pictures : undefined } : x)) });
   };
   return (
-    <Pop label={`Models of ${e.label}`} align="end" width={340} triggerClass="lc-st-ver" trigger={<>{e.models.length === 1 ? e.models[0] : `${e.models.length} models`}<I.chevD size={11} /></>}>
+    <Pop label={`Models of ${e.label}`} align="end" width={340} triggerClass="lc-st-ver" trigger={<>{e.models.length === 1 ? e.models[0] : `${e.models.length} models`}<I.chevD size={12} /></>}>
       {() => (
         <div className="lc-st-form lc-st-keys lc-st-pics">
           <div className="lc-st-pics-h">Takes pictures</div>
@@ -1795,7 +1796,7 @@ function ToolPictures({ p }: { p: ProviderInfo }) {
     save({ toolPictures: v === null ? rest : { ...rest, [toolPicturesKey(p.id, m)]: v } });
   };
   return (
-    <Pop label={`Pictures for ${p.label}`} align="end" width={340} triggerClass="lc-st-ver" trigger={<>Pictures<I.chevD size={11} /></>}>
+    <Pop label={`Pictures for ${p.label}`} align="end" width={340} triggerClass="lc-st-ver" trigger={<>Pictures<I.chevD size={12} /></>}>
       {() => (
         <div className="lc-st-form lc-st-keys lc-st-pics">
           <div className="lc-st-pics-h">Takes pictures</div>
@@ -2016,7 +2017,7 @@ function Registry({ onDone }: { onDone: () => void }) {
   return (
     <div className="lc-reg">
       <div className="lc-mp-find lc-reg-find">
-        <I.search size={13} />
+        <I.search size={14} />
         <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={list ? `Find among ${list.length} agents` : "Reading the ACP registry"} aria-label="Find an agent" spellCheck={false} />
       </div>
       <div className="lc-reg-list" role="list">
@@ -2050,7 +2051,7 @@ function Registry({ onDone }: { onDone: () => void }) {
         </button>
         <span className="lc-grow" />
         <button type="button" className="lc-ib l-focus" aria-label="Read the registry again" title="Read the registry again" onClick={() => (setList(null), load(true))}>
-          <I.refresh size={13} />
+          <I.refresh size={14} />
         </button>
       </div>
     </div>
@@ -2077,9 +2078,9 @@ function CustomModels() {
   return (
     <Group title="Models you added" note="A model id a tool takes but doesn't list: a preview, a fine-tune, a router's name for one. It shows after the tool's own.">
       {mine.map((c) => (
-        <Field key={`${c.provider}:${c.id}`} lead={<span className="lc-st-mark"><ModelMark kind={markOf(`${c.provider}:${c.id}`)} size={15} /></span>} title={c.label || c.id} note={`${providerLabel(`${c.provider}:`, providers)} · ${c.id}`}>
+        <Field key={`${c.provider}:${c.id}`} lead={<span className="lc-st-mark"><ModelMark kind={markOf(`${c.provider}:${c.id}`)} size={16} /></span>} title={c.label || c.id} note={`${providerLabel(`${c.provider}:`, providers)} · ${c.id}`}>
           <button type="button" className="lc-ib l-focus" aria-label={`Remove ${c.label || c.id}`} title="Remove" onClick={() => save({ customModels: mine.filter((x) => x !== c) })}>
-            <I.trash size={13} />
+            <I.trash size={14} />
           </button>
         </Field>
       ))}
@@ -2109,7 +2110,7 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
       note="A name, a model, how hard it thinks, and a soul.md that says how it works."
       end={
         <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => onAgent()}>
-          <I.plus size={13} />
+          <I.plus size={14} />
           New agent
         </button>
       }
@@ -2207,7 +2208,7 @@ export function AddonsPlace() {
   const panels = addons.filter((a) => !a.removed && a.panel);
   const gone = addons.filter((a) => a.removed && a.panel);
   const versions = (a: AddonInfo) => (
-    <Pop label={`Versions of ${a.name}`} align="end" width={220} triggerClass="lc-st-ver lc-mono" disabled={a.versions.length < 2} trigger={<>v{a.version}{a.versions.length > 1 && <I.chevD size={11} />}</>}>
+    <Pop label={`Versions of ${a.name}`} align="end" width={220} triggerClass="lc-st-ver lc-mono" disabled={a.versions.length < 2} trigger={<>v{a.version}{a.versions.length > 1 && <I.chevD size={12} />}</>}>
       {(close) => [...a.versions].reverse().map((v) => <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ") || undefined} on={v === a.version} onPick={() => (update(a.id, { version: v }), close())} />)}
     </Pop>
   );
@@ -2230,7 +2231,7 @@ export function AddonsPlace() {
         note="MCP servers that every agent tool gets: Claude Code, Codex, OpenCode and Hermes."
         end={
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
-            <I.plus size={13} />
+            <I.plus size={14} />
             Add one by hand
           </button>
         }
@@ -2241,7 +2242,7 @@ export function AddonsPlace() {
             key={a.id}
             lead={
               <span className="lc-st-mark">
-                <I.plug size={15} />
+                <I.plug size={16} />
               </span>
             }
             title={a.name}
@@ -2255,7 +2256,7 @@ export function AddonsPlace() {
         {!shown.length && !adding && <p className="lc-st-none lc-quiet">None yet. Ask an agent to connect a service (“Connect Linear's MCP server”), and it asks you on a card in the session first.</p>}
         {removed.map((a) => (
           <div key={a.id} className="lc-st-removed">
-            <I.box size={13} />
+            <I.box size={14} />
             <span>
               Removed: {a.name}, {since(a.removed!)}. Its files are kept.
             </span>
@@ -2273,7 +2274,7 @@ export function AddonsPlace() {
               key={a.id}
               lead={
                 <span className="lc-st-mark">
-                  <Icon size={15} />
+                  <Icon size={16} />
                 </span>
               }
               title={a.name}
@@ -2287,7 +2288,7 @@ export function AddonsPlace() {
         {!panels.length && <p className="lc-st-none lc-quiet">None yet. Ask an agent for one (“Make me a panel that lists the TODOs”), and it shows it to you, live, before you add it.</p>}
         {gone.map((a) => (
           <div key={a.id} className="lc-st-removed">
-            <I.box size={13} />
+            <I.box size={14} />
             <span>
               Removed: {a.name}, {since(a.removed!)}. Its files are kept.
             </span>
@@ -2461,7 +2462,7 @@ function Projects() {
       note="Removing a project only forgets it here. Its folder stays as it is."
       end={
         <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={add}>
-          <I.plus size={13} />
+          <I.plus size={14} />
           Add a project
         </button>
       }
@@ -2473,7 +2474,7 @@ function Projects() {
             <Field
               lead={
                 <span className="lc-st-mark">
-                  <I.folder size={15} />
+                  <I.folder size={16} />
                 </span>
               }
               title={p.name}
@@ -2721,7 +2722,7 @@ function ScriptKey({ value, name, others, onChange }: { value?: string; name: st
       </button>
       {value && !recording && (
         <button type="button" className="lc-ib l-focus" aria-label={`Take the keys off ${name}`} title="No keys" onClick={() => onChange(undefined)}>
-          <I.close size={10} />
+          <I.close size={12} />
         </button>
       )}
     </span>
@@ -2752,13 +2753,13 @@ function Git() {
         </Field>
         <Field title="Branch names start with" note={`A new worktree's branch is this, then the session's id: ${s.branchPrefix}mvpa5q8q`}>
           <span className="lc-st-input">
-            <I.branch size={13} />
+            <I.branch size={14} />
             <input value={prefix} onChange={(e) => setPrefix(e.target.value)} onBlur={commitPrefix} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} spellCheck={false} aria-label="Branch prefix" />
           </span>
         </Field>
         <Field title="Where worktrees live" note="Another drive or folder, for big projects. Worktrees already made stay where they are.">
           <span className="lc-st-input lc-st-wide">
-            <I.folder size={13} />
+            <I.folder size={14} />
             <input
               key={s.worktreeRoot ?? ""}
               defaultValue={s.worktreeRoot ?? ""}
@@ -2914,7 +2915,7 @@ function UpdatesPlace() {
         note={u.checkedAt ? `Looked ${since(u.checkedAt)}, and again every six hours.` : "Looks a few seconds after it opens, then every six hours."}
         end={
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy} onClick={() => void look()}>
-            <I.refresh size={13} />
+            <I.refresh size={14} />
             {busy ? <span className="l-shimmer">Looking</span> : "Look now"}
           </button>
         }
@@ -2933,7 +2934,7 @@ function UpdatesPlace() {
         <Field title="Releases from" note={a.repo ? <span className="lc-mono">github.com/{a.repo}</span> : "No GitHub repository: this copy was built without one, so it has nowhere to look."}>
           {a.repo && (
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => bridge.openExternal(`https://github.com/${a.repo}/releases`)}>
-              <I.external size={13} />
+              <I.external size={14} />
               Releases
             </button>
           )}
@@ -2976,7 +2977,7 @@ function AppRow({ a }: { a: AppUpdate }) {
   const news = appHasNews(a);
   const page = a.url && (
     <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.openExternal(a.url!)}>
-      <I.external size={13} />
+      <I.external size={14} />
       Release page
     </button>
   );
@@ -3011,7 +3012,7 @@ function AppRow({ a }: { a: AppUpdate }) {
       note = `${a.latest} is out${a.size ? `, ${sizeOf(a.size)}` : ""}.`;
       control = (
         <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={updates.download}>
-          <I.download size={13} />
+          <I.download size={14} />
           Download
         </button>
       );

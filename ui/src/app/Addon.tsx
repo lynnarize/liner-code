@@ -85,12 +85,12 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
     return (
       <div className="lc-addon-view" data-preview>
         <div className="lc-addon-banner" role="note">
-          <I.eye size={13} />
+          <I.eye size={14} />
           <span>A preview: try it. Nothing is kept until you add it.</span>
         </div>
         <Frame key={preview} source={{ threadId: thread.id, itemId: preview }} addon={addon} preview={preview} thread={thread} agentName={agentName} visible={visible} />
         <div className="lc-addon-strip">
-          <I.shield size={13} />
+          <I.shield size={14} />
           <span>{stripOf({ by: agentName, reaches: accessLine(draft.access, draft.place), place: draft.place, preview: true })}</span>
           {draft.access.ai && <AppModelChip addon={addon} name={draft.name} />}
         </div>
@@ -100,7 +100,7 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
   if (!info?.panel) return <PanelNote icon={<I.blocks size={20} />} title="This add-on is gone" body="It was removed, or this window doesn't have it yet." />;
   const strip = (
     <div className="lc-addon-strip">
-      <I.shield size={13} />
+      <I.shield size={14} />
       <span>{info.enabled && !info.removed ? stripOf({ by: info.by.agent, version: info.version, reaches: info.reaches, place: info.panel.place, dsh: info.panel.dsh }) : `${info.panel.dsh ? info.panel.dsh.package : `${info.panel.place === "dock" ? "Add-on" : "App"} by ${info.by.agent}`} · off`}</span>
       {info.panel.access.ai && info.enabled && !info.removed && <AppModelChip addon={info.id} name={info.name} />}
       <AddonMenu a={info} thread={thread} agentName={agentName} onOpenElsewhere={onOpenElsewhere} />
@@ -318,28 +318,28 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
     <>
       {blocked && (
         <div className="lc-addon-blocked" role="status">
-          <I.shield size={13} />
+          <I.shield size={14} />
           <span>
             Blocked a request to <b>{blocked}</b>. {reach ? `${name} may reach ${reach} and nothing else.` : `${name} didn't ask for the network, so it can't reach it.`}
           </span>
           <button type="button" className="lc-ib l-focus" aria-label="Dismiss" onClick={() => setBlocked(null)}>
-            <I.close size={11} />
+            <I.close size={12} />
           </button>
         </div>
       )}
       {/* Said whether or not the page then stopped: what stops it may be just this. */}
       {notice && notice !== heard && (
         <div className="lc-addon-blocked" data-tone="quiet" role="status">
-          <I.folder size={13} />
+          <I.folder size={14} />
           <span>{notice}</span>
           <button type="button" className="lc-ib l-focus" aria-label="Dismiss" onClick={() => setHeard(notice)}>
-            <I.close size={11} />
+            <I.close size={12} />
           </button>
         </div>
       )}
       {hostDown && !crash && (
         <div className="lc-addon-blocked" role="alert">
-          <I.alert size={13} />
+          <I.alert size={14} />
           <span>
             Its own program didn't start, so {name} can't load what it keeps: {hostDown}
           </span>
@@ -446,12 +446,12 @@ export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass 
             <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ")} on={v === a.version} onPick={() => (set({ version: v }), close())} />
           ))}
           <Sep />
-          {thread && !a.panel?.dsh && <Row title={`Change it with ${agentName}`} icon={<I.edit size={13} />} onPick={() => (close(), toComposer(thread.id, `Change the ${a.name} ${page ? "app" : "panel"} so `))} />}
-          <Row title="Show its files" icon={<I.folder size={13} />} onPick={() => (close(), void rpc("addons.read", { id: a.id }).then((r) => bridge.reveal(`${r.dir}/v${a.version}`)).catch(fail))} />
-          {onOpenElsewhere && <Row title={page ? "Open it in the dock" : "Open it on its own"} icon={<I.dock size={13} />} onPick={() => (close(), onOpenElsewhere())} />}
-          {!page && (a.project ? <Row title="Show it in every project" icon={<I.globe size={13} />} onPick={() => (close(), set({ project: null }))} /> : here && <Row title={`Show it only in ${here.name}`} icon={<I.folder size={13} />} onPick={() => (close(), set({ project: here.id }))} />)}
+          {thread && !a.panel?.dsh && <Row title={`Change it with ${agentName}`} icon={<I.edit size={14} />} onPick={() => (close(), toComposer(thread.id, `Change the ${a.name} ${page ? "app" : "panel"} so `))} />}
+          <Row title="Show its files" icon={<I.folder size={14} />} onPick={() => (close(), void rpc("addons.read", { id: a.id }).then((r) => bridge.reveal(`${r.dir}/v${a.version}`)).catch(fail))} />
+          {onOpenElsewhere && <Row title={page ? "Open it in the dock" : "Open it on its own"} icon={<I.panel size={14} />} onPick={() => (close(), onOpenElsewhere())} />}
+          {!page && (a.project ? <Row title="Show it in every project" icon={<I.globe size={14} />} onPick={() => (close(), set({ project: null }))} /> : here && <Row title={`Show it only in ${here.name}`} icon={<I.folder size={14} />} onPick={() => (close(), set({ project: here.id }))} />)}
           <Sep />
-          <Row title={a.enabled ? "Turn it off" : "Turn it on"} icon={<I.shieldOff size={13} />} onPick={() => (close(), set({ enabled: !a.enabled }))} />
+          <Row title={a.enabled ? "Turn it off" : "Turn it on"} icon={<I.shieldOff size={14} />} onPick={() => (close(), set({ enabled: !a.enabled }))} />
           <RemoveRow name={a.name} onRemove={() => (close(), set({ removed: true }))} />
         </div>
       )}
@@ -462,7 +462,7 @@ export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass 
 /** Remove, asked twice. Its yes goes with the menu: opened again, it asks from the start. */
 function RemoveRow({ name, onRemove }: { name: string; onRemove: () => void }) {
   const [sure, setSure] = useState(false);
-  return sure ? <Row title={`Remove ${name}`} note="Its files, versions and storage are kept" icon={<I.trash size={13} />} onPick={onRemove} /> : <Row title="Remove…" icon={<I.trash size={13} />} onPick={() => setSure(true)} />;
+  return sure ? <Row title={`Remove ${name}`} note="Its files, versions and storage are kept" icon={<I.trash size={14} />} onPick={onRemove} /> : <Row title="Remove…" icon={<I.trash size={14} />} onPick={() => setSure(true)} />;
 }
 
 /**
@@ -481,7 +481,7 @@ export function AppPage({ id, back, onBack, sidebar, onSidebar }: { id: string; 
           </button>
         )}
         <button type="button" className="lc-apppage-back l-focus" onClick={onBack}>
-          <I.back size={13} />
+          <I.back size={14} />
           <span>{back}</span>
         </button>
         <span className="lc-quiet" aria-hidden>
@@ -507,7 +507,7 @@ export const openSession = (id: string, panel?: { id: string; place: PanelPlace 
 
 type Offer = Extract<Item, { kind: "offer" }>;
 const PLACES: { id: PanelPlace | "custom"; label: string; hint: string; icon: (p: { size?: number }) => ReactNode }[] = [
-  { id: "dock", label: "Right panel", hint: "View alongside this conversation", icon: I.dock },
+  { id: "dock", label: "Right panel", hint: "View alongside this conversation", icon: I.panel },
   { id: "tab", label: "Session tab", hint: "Open beside Chat", icon: I.tab },
   { id: "page", label: "Global page", hint: "Open from the left sidebar", icon: I.page },
   { id: "custom", label: "Write your own", hint: "Describe where you want it", icon: I.edit },
@@ -581,7 +581,7 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
   return (
     <section className="lc-offer" aria-label="Make it an app" data-state={it.state}>
       <div className="lc-offer-head">
-        <I.sparkle size={13} />
+        <I.turn size={14} />
         <span>Make it an app</span>
         <span className="lc-quiet">You can remove it at any time</span>
       </div>
@@ -613,7 +613,7 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
               {PLACES.map((p) => (
                 <button key={p.id} type="button" role="radio" aria-checked={place === p.id} className="lc-offer-place l-focus" onClick={() => setPlace(p.id)}>
                   <span>
-                    <p.icon size={13} />
+                    <p.icon size={14} />
                     {p.label}
                   </span>
                   <small>{p.hint}</small>
@@ -628,12 +628,12 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
             )}
           </div>
           <div className="lc-offer-touch">
-            <I.shield size={13} />
+            <I.shield size={14} />
             <span>{willTouch(it.access, place === "custom" ? it.place : place)}</span>
           </div>
           <div className="lc-offer-acts">
             <button type="button" className="lc-offer-link l-focus" aria-expanded={info} onClick={() => setInfo((s) => !s)}>
-              {info ? <I.chevD size={11} /> : <I.chevR size={11} />}
+              {info ? <I.chevD size={12} /> : <I.chevR size={12} />}
               How making it works, and token use
             </button>
             <span className="lc-grow" />

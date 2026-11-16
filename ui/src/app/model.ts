@@ -350,6 +350,22 @@ export function turnsOf(items: Item[], before?: Map<number, Item[]>) {
   });
 }
 
+/**
+  How a plan's unfinished steps read once the run that owns it is over: "stopped" when you stopped
+  it or it failed (they weren't reached), "open" when it finished and left them (agents often do,
+  or stop to ask you). Nothing while it runs.
+*/
+export type PlanEnd = "stopped" | "open";
+export const planEnd = (status?: Extract<Item, { kind: "turn" }>["status"]): PlanEnd | undefined => (!status || status === "running" ? undefined : status === "done" ? "open" : "stopped");
+/** The status of the run that made a plan: the last turn item of its own `turn` (a part of a turn is a run of its own, with its own plan), else the group's. */
+export function planStatus(items: Item[], turn: number): Extract<Item, { kind: "turn" }>["status"] | undefined {
+  const marks = items.filter((x): x is Extract<Item, { kind: "turn" }> => x.kind === "turn");
+  const own = marks.filter((m) => m.turn === turn).at(-1);
+  if (own) return own.status;
+  if (!marks.length) return undefined;
+  return marks.some((m) => m.status === "running") ? "running" : marks[marks.length - 1].status;
+}
+
 /** Files a turn and the turns that carried it on changed, as one list: each file once, its lines added up. */
 export function mergeFiles(files: FileChange[]): FileChange[] {
   const by = new Map<string, FileChange>();

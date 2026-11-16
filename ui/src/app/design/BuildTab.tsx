@@ -15,7 +15,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { DesignFrame, FrameBuild, ShownChip, Thread, UserShown } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { onStream, rpc, useEngine } from "../engine";
-import { I } from "../icons";
+import { I, wt } from "../icons";
 import { agentOf } from "../model";
 import { compareOn, openCompare } from "./Compare";
 import { pendingCount, sendToCode } from "./Live";
@@ -166,12 +166,12 @@ export function bringAsk(f: DesignFrame, b: FrameBuild) {
 const STATE: Record<FrameBuild["state"], string> = { step: "In step", "design-ahead": "Design ahead", "code-ahead": "Code ahead", none: "Not built" };
 
 /** The state's mark: a tick, an arrow towards the code, one back from it, a ring. */
-export function StateIcon({ state, size = 13 }: { state: FrameBuild["state"]; size?: number }) {
+export function StateIcon({ state, size = 14 }: { state: FrameBuild["state"]; size?: number }) {
   if (state === "step") return <I.check size={size} />;
   if (state === "design-ahead") return <I.forward size={size} />;
   if (state === "code-ahead") return <I.back size={size} />;
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(size, 16)} aria-hidden>
       <circle cx="8" cy="8" r="4.25" />
     </svg>
   );
@@ -215,7 +215,7 @@ export function LayerMark({ frame }: { frame: DesignFrame }) {
   if (!b || b.state === "none") return null;
   return (
     <span className="ld-bmark ld-bmark-i" data-state={b.state} aria-label={STATE[b.state]} title={b.file ? `${STATE[b.state]}: ${b.file}` : STATE[b.state]}>
-      <StateIcon state={b.state} size={13} />
+      <StateIcon state={b.state} size={14} />
     </span>
   );
 }
@@ -290,7 +290,7 @@ export function BuildTab() {
   return (
     <div className="ld-body ld-build">
       <div className="ld-bt-top">
-        <I.folder size={15} />
+        <I.folder size={16} />
         <b className="ld-ell">{project ?? file.title}</b>
         <span>{built.length ? (last ? `built in turn ${last}` : `${plural(built.length, "frame")} built`) : "nothing built yet"}</span>
       </div>

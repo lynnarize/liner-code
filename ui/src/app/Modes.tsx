@@ -71,7 +71,7 @@ export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: Se
       triggerClass={`lc-pb lc-mode-pick${value === "creator" ? " lc-mode-creator" : ""}`}
       trigger={
         <>
-          <ModeIcon mode={value} agents={agents} size={13} />
+          <ModeIcon mode={value} agents={agents} size={14} />
           <span className="lc-strip-cap">{label}</span>
         </>
       }
@@ -79,14 +79,14 @@ export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: Se
       {(close) => (
         <div className="lc-mode-menu">
           {BUILTIN_MODES.map((m) => (
-            <Row key={m.id} keepIcon icon={<ModeIcon mode={m.id} agents={agents} size={15} />} title={m.name} note={m.id === "creator" ? "Add connections, panels and apps to Liner Code" : "Everyday work on your code"} on={value === m.id} onPick={() => (onPick(m.id), close())} />
+            <Row key={m.id} keepIcon icon={<ModeIcon mode={m.id} agents={agents} size={16} />} title={m.name} note={m.id === "creator" ? "Add connections, panels and apps to Liner Code" : "Everyday work on your code"} on={value === m.id} onPick={() => (onPick(m.id), close())} />
           ))}
           {customs(agents).map((a) => (
-            <Row key={a.id} keepIcon icon={<ModeIcon mode={`agent:${a.id}`} agents={agents} size={15} />} title={a.name} note={a.role} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), close())} />
+            <Row key={a.id} keepIcon icon={<ModeIcon mode={`agent:${a.id}`} agents={agents} size={16} />} title={a.name} note={a.role} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), close())} />
           ))}
           <Sep />
           <button type="button" role="menuitem" className="lc-mode-more l-focus" onClick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "modes" })))}>
-            <I.sliders size={15} />
+            <I.sliders size={16} />
             Modes in Settings…
           </button>
         </div>
@@ -101,7 +101,7 @@ export function ModeChip({ thread }: { thread: Thread }) {
   if (!thread.mode || thread.mode === "standard") return null;
   return (
     <span className="lc-mode-chip" title={thread.mode === "creator" ? "Workshop: this session adds to Liner Code, each add-on on a card" : "A mode of yours: its instructions, on this session's model"}>
-      <ModeIcon mode={thread.mode} agents={agents} size={13} />
+      <ModeIcon mode={thread.mode} agents={agents} size={14} />
       {modeName(thread.mode, agents)}
     </span>
   );

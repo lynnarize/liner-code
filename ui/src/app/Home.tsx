@@ -249,8 +249,10 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
                 Try the sample project
               </button>
             )}
+            {/* "No project" when the paper is too narrow for the whole label on the row (app.css, .lc-noproj); the hidden one is display: none, so the shown words are its name. */}
             <button type="button" className="lc-btn" data-kind="ghost" onClick={() => void scratch()}>
-              Start without a project
+              <span className="lc-noproj-long">Start without a project</span>
+              <span className="lc-noproj-short">No project</span>
             </button>
           </div>
         </div>

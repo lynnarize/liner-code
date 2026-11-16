@@ -188,7 +188,7 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
         note={<span className="lc-mono">{tilde(cwd)}</span>}
         side={
           <button type="button" className="lc-env-b l-focus" aria-label={`Show in ${os.fileManager}`} title={`Show in ${os.fileManager}`} onClick={() => (close(), bridge.openIn(cwd, "finder"))}>
-            <I.folder size={13} />
+            <I.folder size={14} />
           </button>
         }
         open={more === "mac"}

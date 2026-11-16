@@ -442,7 +442,7 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
               <span className="lc-rv-navh">{subs.some(isSidekick) ? "Who else worked on it" : `${coder.name}'s subagents checked`}</span>
               {subs.map((s) => (
                 <div key={s.id} className="lc-rv-sub-a">
-                  <span className="lc-tile">{isSidekick(s) && s.agent?.model ? <ModelMark kind={markOf(s.agent.model)} size={11} /> : <I.agents size={11} />}</span>
+                  <span className="lc-tile">{isSidekick(s) && s.agent?.model ? <ModelMark kind={markOf(s.agent.model)} size={12} /> : <I.agents size={12} />}</span>
                   <span>
                     {/* A pair's sidekick by its model, with its brief. */}
                     <b>{isSidekick(s) ? whoIs(s, providers) : s.title.split(":")[0]}</b> <small className="lc-quiet">{s.status === "running" ? "working" : isSidekick(s) ? `Sidekick · ${agentTask(s) || s.status}` : (s.title.split(":").slice(1).join(":").trim() || s.status)}</small>
@@ -452,7 +452,7 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
               {findings.reviewer && (
                 <div className="lc-rv-sub-a">
                   <span className="lc-tile">
-                    <I.shield size={11} />
+                    <I.shield size={12} />
                   </span>
                   <span>
                     <b>Reviewer</b> <small className="lc-quiet">{findings.status === "running" ? "reading" : findings.list.length ? plural(findings.list.length, "note") : "nothing to note"}</small>
@@ -558,7 +558,7 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
                     {p.segs.map((s, si) =>
                       s.kind === "fold" && !open.has(`${p.file.path}:${s.id}`) && !s.rows.some((r) => carries(p, r)) ? (
                         <button key={si} type="button" className="lc-rv-fold l-focus" onClick={() => setOpen((o) => new Set(o).add(`${p.file.path}:${s.id}`))}>
-                          <I.chevD size={11} />
+                          <I.chevD size={12} />
                           {plural(s.rows.length, "unchanged line")}
                         </button>
                       ) : (

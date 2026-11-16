@@ -366,7 +366,7 @@ export function WayLabel({ frame }: { frame: DesignFrame }) {
   return (
     <>
       <span className="ld-way-tag" title={ref ? modelLabel(ref, providers) : by.name}>
-        {ref && <ModelMark kind={markOf(ref)} size={11} />}
+        {ref && <ModelMark kind={markOf(ref)} size={12} />}
         {by.name}
       </span>
       {thread?.status === "running" && <span className="l-shimmer">drawing</span>}
@@ -540,7 +540,7 @@ export function WaysRow() {
   const names = new Set(w.takes.map((f) => byOf(f)?.name));
   return (
     <div className="lc-trow ld-way-row" role="status">
-      <I.copy size={13} />
+      <I.copy size={14} />
       <span className="lc-trow-t">
         One ask, drawn {w.takes.length} {w.takes.length === 1 ? "way" : "ways"}
         {names.size === 1 ? ` by ${[...names][0]}` : ""}

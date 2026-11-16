@@ -336,10 +336,10 @@ function Sources({ lean, who, onAsk }: { lean: Lean | null; who: string; onAsk: 
       <div className="ld-lp-k">Where the rules come from</div>
       <div className="ld-lp-src">
         <button type="button" className="ld-lp-chip l-focus" aria-pressed={ownFile} disabled={!file} onClick={() => file && builtin && void switchTo({ skills: file.lean.skills })}>
-          {ownFile && <I.check size={13} />}
+          {ownFile && <I.check size={14} />}
           DESIGN.md in the project
         </button>
-        <Pop label="A built-in lean" width={280} triggerClass="ld-lp-chip" triggerAttrs={{ "aria-pressed": builtin }} trigger={<>{builtin && <I.check size={13} />}A built-in</>} menu>
+        <Pop label="A built-in lean" width={280} triggerClass="ld-lp-chip" triggerAttrs={{ "aria-pressed": builtin }} trigger={<>{builtin && <I.check size={14} />}A built-in</>} menu>
           {(close) => <Row title="Liner 2.0" note="Liner Code's own look: flat surfaces, hairlines, one accent" on={builtin} disabled={!file} onPick={() => (close(), file && void switchTo({ skills: file.lean.skills, builtin: "liner-2" }))} />}
         </Pop>
         <Pop label="Rules from a site" width={340} triggerClass="ld-lp-chip" trigger={<>From a site</>}>

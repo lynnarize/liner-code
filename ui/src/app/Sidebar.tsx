@@ -578,7 +578,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
             <>
               <span className="lc-sbc-dot">·</span>
               <span className="lc-sbc-branch">
-                <I.branch size={11} />
+                <I.branch size={12} />
                 <span>{branch}</span>
               </span>
             </>
@@ -590,7 +590,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           </span>
           <span data-tone={state.tone}>{state.text}</span>
           <span className="lc-sbc-i">
-            <ModelMark kind={markOf(ref)} size={13} />
+            <ModelMark kind={markOf(ref)} size={14} />
           </span>
           <span>{team}</span>
           <span className="lc-sbc-i">
@@ -674,7 +674,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       );
     const working = sent.get(t.id) ?? 0;
     // A pair is named as one, its sidekick at work or not; one model counts the agents it sent.
-    const state = two ? (working ? { text: on.pair ? (working > 1 ? `${on.who} + ${plural(working - 1, "agent")}` : on.who) : `${on.who} + ${plural(working, "agent")}` } : rowState(t, bucket, now, run)) : null;
+    const state = two ? (working ? { text: on.pair ? (working > 1 ? `${on.who} · ${plural(working - 1, "agent")}` : on.who) : `${on.who} · ${plural(working, "agent")}` } : rowState(t, bucket, now, run)) : null;
     const dot = t.archived ? undefined : t.status === "running" || run?.status === "running" || (working && bucket !== "needs") ? "work" : t.status === "error" ? "danger" : bucket === "needs" || t.status === "limited" ? "warn" : undefined;
     return (
       <div
@@ -817,8 +817,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         </span>
         {forks && (
           <button type="button" className="lc-sb-forks l-focus" aria-expanded={forks.open} aria-label={`${plural(forks.n, "fork")} of ${t.title}`} title={forks.open ? "Fold its forks" : "Show its forks"} onClick={forks.toggle}>
-            <I.chevR size={10} />
-            <I.fork size={11} />
+            <I.chevR size={12} />
+            <I.fork size={12} />
             {forks.n}
           </button>
         )}
@@ -975,17 +975,17 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       {/* What the list shows, how it's sorted and a new project; the filter under them. */}
       <div className="lc-sb-views">
         <div className="lc-sb-bar">
-          <Pop label={`What the list shows: ${VIEWS[view]}`} menu width={236} triggerClass="lc-sb-view" trigger={<>{VIEWS[view]}<I.chevD size={11} /></>}>
+          <Pop label={`What the list shows: ${VIEWS[view]}`} menu width={236} triggerClass="lc-sb-view" trigger={<>{VIEWS[view]}<I.chevD size={12} /></>}>
             {(close) => {
               const pick = (v: View) => () => (close(), setView(v));
               return (
                 <div className="lc-sb-menu">
-                  <Row title="All projects" icon={<I.list size={13} />} keepIcon on={view === "all"} onPick={pick("all")} />
-                  <Row title="By folder" icon={<I.folder size={13} />} keepIcon on={view === "folder"} onPick={pick("folder")} />
+                  <Row title="All projects" icon={<I.list size={14} />} keepIcon on={view === "all"} onPick={pick("all")} />
+                  <Row title="By folder" icon={<I.folder size={14} />} keepIcon on={view === "folder"} onPick={pick("folder")} />
                   <Sep />
-                  {(byBucket.snoozed.length > 0 || view === "snoozed") && <Row title="Snoozed" icon={<I.snooze size={13} />} keepIcon on={view === "snoozed"} end={byBucket.snoozed.length || undefined} onPick={pick("snoozed")} />}
-                  <Row title="Settled" icon={<I.settle size={13} />} keepIcon on={view === "settled"} end={byBucket.settled.length || undefined} onPick={pick("settled")} />
-                  <Row title="Archive" icon={<I.box size={13} />} keepIcon on={view === "archive"} end={archivedList.length || undefined} onPick={pick("archive")} />
+                  {(byBucket.snoozed.length > 0 || view === "snoozed") && <Row title="Snoozed" icon={<I.snooze size={14} />} keepIcon on={view === "snoozed"} end={byBucket.snoozed.length || undefined} onPick={pick("snoozed")} />}
+                  <Row title="Settled" icon={<I.settle size={14} />} keepIcon on={view === "settled"} end={byBucket.settled.length || undefined} onPick={pick("settled")} />
+                  <Row title="Archive" icon={<I.box size={14} />} keepIcon on={view === "archive"} end={archivedList.length || undefined} onPick={pick("archive")} />
                 </div>
               );
             }}
@@ -1022,14 +1022,14 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                             void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
                           }}
                         >
-                          <I.close size={10} />
+                          <I.close size={12} />
                         </span>
                       </span>
                     }
                     onPick={close}
                   />
                 ))}
-                <Row title="New group" icon={<I.plus size={13} />} onPick={() => (close(), setNaming({}))} />
+                <Row title="New group" icon={<I.plus size={14} />} onPick={() => (close(), setNaming({}))} />
               </>
             )}
           </Pop>
@@ -1075,10 +1075,10 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                     <div className="lc-sb-lab lc-sb-plab" onContextMenu={(e) => (e.preventDefault(), setProjMenu({ id: x.id, name: x.name, x: e.clientX, y: e.clientY }))}>
                       <button type="button" className="lc-sb-pt l-focus" aria-expanded={!shut} title={shut ? "Show its sessions" : "Fold its sessions"} onClick={() => toggleProject(x.id)}>
                         <span className="lc-sb-picon">
-                          {x.id === DESIGNS ? <I.edit size={15} /> : <I.folder size={16} />}
+                          {x.id === DESIGNS ? <I.edit size={16} /> : <I.folder size={16} />}
                         </span>
                         <span>{x.name}</span>
-                        <I.chevR size={11} />
+                        <I.chevR size={12} />
                       </button>
                       {x.needs > 0 && (
                         <span className="lc-sb-pneeds" title={`${plural(x.needs, "session")} ${x.needs === 1 ? "needs" : "need"} you`}>
@@ -1149,7 +1149,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           </Pop>
           <span className="lc-grow" />
           <button type="button" className="lc-sb-a l-focus" aria-label="Let go of them" title="Let go of them (Esc)" onClick={clearPicked}>
-            <I.close size={13} />
+            <I.close size={14} />
           </button>
         </div>
       )}
@@ -1163,9 +1163,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         {(close) =>
           projMenu && (
             <>
-              {projMenu.id && <Row title="New session here" icon={<I.plus size={13} />} onPick={() => (close(), onNew(projMenu.id))} />}
-              <Row title="Settle the project" note="Its finished sessions go to Settled" icon={<I.settle size={13} />} onPick={() => (close(), void settleProject(projMenu.id, projMenu.name))} />
-              <Row title={shutProjects.includes(projMenu.id) ? "Show its sessions" : "Fold its sessions"} icon={<I.chevD size={13} />} onPick={() => (close(), toggleProject(projMenu.id))} />
+              {projMenu.id && <Row title="New session here" icon={<I.plus size={14} />} onPick={() => (close(), onNew(projMenu.id))} />}
+              <Row title="Settle the project" note="Its finished sessions go to Settled" icon={<I.settle size={14} />} onPick={() => (close(), void settleProject(projMenu.id, projMenu.name))} />
+              <Row title={shutProjects.includes(projMenu.id) ? "Show its sessions" : "Fold its sessions"} icon={<I.chevD size={14} />} onPick={() => (close(), toggleProject(projMenu.id))} />
             </>
           )
         }
@@ -1175,7 +1175,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         {(close) =>
           menu && (
             <>
-              {onBeside && current && current !== menu.t.id && <Row title="Open beside" note="Next to the session on screen" icon={<I.split size={13} />} onPick={() => (close(), onBeside(menu.t.id))} />}
+              {onBeside && current && current !== menu.t.id && <Row title="Open beside" note="Next to the session on screen" icon={<I.split size={14} />} onPick={() => (close(), onBeside(menu.t.id))} />}
               {!menu.t.archived && (
                 <>
                   <Row title={menu.t.pinned ? "Unpin" : "Pin"} end="P" onPick={() => (close(), void act(menu.t, "pin"))} />
@@ -1187,7 +1187,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                   {groups.map((g) => (
                     <Row key={g.id} title={g.name} on={menu.t.group === g.id} onPick={() => (close(), void moveTo(menu.t, menu.t.group === g.id ? null : g.id))} />
                   ))}
-                  <Row title="New group" icon={<I.plus size={13} />} onPick={() => (close(), setNaming({ forThread: menu.t.id }))} />
+                  <Row title="New group" icon={<I.plus size={14} />} onPick={() => (close(), setNaming({ forThread: menu.t.id }))} />
                   {menu.t.group && <Row title="Take it out of its group" onPick={() => (close(), void moveTo(menu.t, null))} />}
                   <Sep />
                 </>
@@ -1210,7 +1210,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         const busy = working > 0 && update.app.state === "ready" ? ` ${plural(working, "session")} ${working === 1 ? "is" : "are"} working.` : "";
         return (
           <div className="lc-sb-update" role="status">
-            <I.download size={15} />
+            <I.download size={16} />
             <div className="lc-sb-update-t">
               <b>{n.title}</b>
               <span>{update.app.state === "ready" ? `Restart now, or it goes in when you next quit.${busy}` : n.body}</span>
@@ -1238,16 +1238,16 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
             triggerClass="lc-sb-facepick"
             trigger={
               <>
-                <span className="lc-face-tile" data-face={face}>{face === "design" ? <I.design size={16} /> : <I.terminal size={16} />}</span>
+                <span className="lc-face-tile" data-face={face}>{face === "design" ? <I.design size={12} /> : <I.terminal size={12} />}</span>
                 {face === "design" ? "Design" : "Code"}
-                <I.chevD size={11} />
+                <I.chevD size={12} />
               </>
             }
           >
             {(close) => (
               <div className="lc-sb-menu">
                 <button type="button" role="menuitemradio" aria-checked={face === "code"} className="lc-face-opt l-focus" onClick={() => (close(), onFace("code"))}>
-                  <span className="lc-face-tile" data-face="code"><I.terminal size={16} /></span>
+                  <span className="lc-face-tile" data-face="code"><I.terminal size={12} /></span>
                   <span className="lc-face-tx">
                     <b>Code</b>
                     <small>Sessions with your agents, in your projects</small>
@@ -1255,7 +1255,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                   {face === "code" && <I.check size={14} />}
                 </button>
                 <button type="button" role="menuitemradio" aria-checked={face === "design"} className="lc-face-opt l-focus" onClick={() => (close(), onFace("design"))}>
-                  <span className="lc-face-tile" data-face="design"><I.design size={16} /></span>
+                  <span className="lc-face-tile" data-face="design"><I.design size={12} /></span>
                   <span className="lc-face-tx">
                     <b>Design</b>
                     <small>Frames on a canvas, drawn with an agent</small>
@@ -1316,7 +1316,7 @@ function PlanLimits({ tools, usageOn, onUsage }: { tools: import("@contracts").T
           ))}
           {!tools.length && <p className="lc-quiet lc-pop-note">No plan has reported its limits yet. They show here once a session runs on Claude Code or Codex.</p>}
           <Sep />
-          <Row title="Usage and cost" icon={<I.usage size={13} />} onPick={() => (close(), onUsage())} />
+          <Row title="Usage and cost" icon={<I.usage size={14} />} onPick={() => (close(), onUsage())} />
         </div>
       )}
     </Pop>
@@ -1358,7 +1358,7 @@ function badgeLetters(name: string) {
 function ProjectBadge({ name, none, design, dot }: { name: string; none?: boolean; design?: boolean; dot?: "work" | "warn" | "danger" }) {
   return (
     <span className="lc-pjb" data-none={none || undefined} data-design={design || undefined} aria-hidden>
-      {design ? <I.edit size={13} /> : badgeLetters(name)}
+      {design ? <I.edit size={12} /> : badgeLetters(name)}
       {dot && <span className="lc-pjb-dot" data-k={dot} />}
     </span>
   );

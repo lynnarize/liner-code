@@ -214,7 +214,7 @@ function TopRow({ sidebar, onSidebar, cv, tab, project }: { sidebar: boolean; on
         )}
       </Pop>
       <button type="button" className="lc-tb l-focus" aria-label="Play: try the screens as they would run" title={play ? "Stop playing (Esc)" : "Play: try the screens as they would run"} aria-pressed={play} onClick={() => design.setTool(play ? "select" : "play")}>
-        <I.play size={15} />
+        <I.play size={16} />
       </button>
     </header>
   );

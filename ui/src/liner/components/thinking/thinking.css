@@ -29,16 +29,25 @@
     scale 320ms var(--l-ease-snap),
     filter 220ms ease;
 }
-/* Eight rays, the brightest a beat ahead: a spinner without a spin. The group steps round a
-   ray at a time, so the mark changes eight times a turn instead of on every frame. */
-.l-think__rays line {
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
+/* At work: the spinner Liner draws everywhere (pro/ai-kit's Rays, Liner Code's Spinner), an accent
+   arc travelling on the waiting ring. Its track and arc take the l-rays rules; the stroke here
+   lands at a real 1.5px in the 18px mark. */
+.l-think__rays {
+  stroke-width: 1.333;
 }
-.l-think__turn {
-  transform-origin: 10px 10px;
-  animation: l-spin 0.8s steps(8) infinite;
+.l-think__rays .l-rays__track {
+  stroke: var(--l-wash-3);
+}
+.l-think__rays .l-rays__arc {
+  stroke: var(--l-accent);
+  transform-origin: 8px 8px;
+  animation: l-spin 900ms cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-think__rays .l-rays__arc {
+    animation-duration: 3.6s;
+    animation-timing-function: linear;
+  }
 }
 .l-think__check {
   stroke: var(--l-ok);

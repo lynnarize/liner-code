@@ -89,7 +89,7 @@ export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item,
         <iframe ref={frame} className="lc-page-f" title={it.title} sandbox="allow-scripts" srcDoc={doc} onLoad={() => frame.current?.contentWindow?.postMessage({ __linerPing: 1 }, "*")} style={{ height: Math.min(height, cap) }} />
       </div>
       <figcaption className="lc-dz-capline">
-        <I.sparkle size={13} />
+        <I.turn size={14} />
         <b>{it.title}</b>
         <span className="lc-dz-capnote">· HTML page</span>
         <span className="lc-grow" />
@@ -100,7 +100,7 @@ export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item,
         )}
         {/* Kept and drawn full size, version by version, where you can comment on its parts. */}
         <button type="button" className="lc-ib l-focus" aria-label="Open it in the panel, as a design" title="Open it in the panel, as a design" onClick={save}>
-          <I.panel size={13} />
+          <I.panel size={14} />
         </button>
         <button
           type="button"
@@ -114,7 +114,7 @@ export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item,
               .catch(() => toast.error("Couldn't copy it"))
           }
         >
-          <I.copy size={13} />
+          <I.copy size={14} />
         </button>
       </figcaption>
     </figure>

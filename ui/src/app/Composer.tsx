@@ -814,7 +814,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       </span>
       {whoNow.agent && settings.sidekick && (
         <span className="lc-way-marks">
-          <ModelMark kind={markOf(settings.sidekick)} size={11} />
+          <ModelMark kind={markOf(settings.sidekick)} size={12} />
         </span>
       )}
       {compare.length > 0 && <span className="lc-chip-more">· {compare.length + 1} models</span>}
@@ -958,7 +958,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       {queue.map((q, i) => (
         <div key={q.id} className="lc-queued-row" data-editing={editing?.id === q.id || undefined}>
           <span className="lc-queued-handle" aria-hidden>
-            <I.drag size={13} />
+            <I.drag size={14} />
           </span>
           {/* A line Liner wrote for you: the whole of what the agent will be told is its tooltip (a fold has no room in the row). */}
           <span className="lc-queued-t" title={q.shown ? q.text : undefined}>{q.shown?.text || designPart(q.text).said}</span>
@@ -1020,7 +1020,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
 
       {cold && (
         <div className="lc-cold" role="status">
-          <I.clock size={13} />
+          <I.clock size={14} />
           <span className="lc-cold-t">The cache has expired: this message re-reads {compact(usage?.contextTokens ?? 0)} tokens. Compact first?</span>
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={compactNow}>
             Compact
@@ -1045,11 +1045,11 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             <div className="lc-files">
               {files.map((f, i) => (
                 <span key={`${f.name}${i}`} className="lc-file-chip" data-image={thumbs[i] ? true : undefined}>
-                  {thumbs[i] ? <img src={thumbs[i]!} alt="" className="lc-file-thumb" /> : <I.file size={13} />}
+                  {thumbs[i] ? <img src={thumbs[i]!} alt="" className="lc-file-thumb" /> : <I.file size={14} />}
                   <span className="lc-file-n" title={f.name}>{f.name}</span>
                   <span>{f.size < 1024 ? `${f.size} B` : `${Math.round(f.size / 1024)} KB`}</span>
                   <button type="button" className="l-focus" aria-label={`Remove ${f.name}`} onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>
-                    <I.close size={11} />
+                    <I.close size={12} />
                   </button>
                 </span>
               ))}
@@ -1194,7 +1194,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
               {mention.kind !== "@" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
               {found.map((f, i) => (
                 <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
-                  {f.kind === "@" ? <I.file size={13} /> : f.kind === "$" ? <I.sparkle size={13} /> : null}
+                  {f.kind === "@" ? <I.file size={14} /> : f.kind === "$" ? <I.notes size={14} /> : null}
                   <span className="lc-mono lc-mention-n">
                     {f.label}
                     {f.hint && <span className="lc-quiet"> {f.hint}</span>}
@@ -1247,7 +1247,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
                 triggerClass="lc-pb"
                 trigger={
                   <>
-                    from <I.branch size={13} />
+                    from <I.branch size={14} />
                     <span className="lc-mono lc-strip-cap">{base ?? project.branch ?? "HEAD"}</span>
                   </>
                 }
@@ -1257,7 +1257,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
             ) : (
               (inWorktree?.branch ?? project.branch) && (
                 <span className="lc-strip-note">
-                  <I.branch size={13} />
+                  <I.branch size={14} />
                   <span className="lc-mono lc-strip-cap">{inWorktree?.branch ?? project.branch}</span>
                 </span>
               )
@@ -1273,14 +1273,6 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     </div>
   );
 }
-
-/** Two rings overlapping: a pair. */
-const PairIcon = ({ size = 14 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-    <circle cx="9" cy="12" r="5" />
-    <circle cx="15" cy="12" r="5" />
-  </svg>
-);
 
 /**
   The arrow keys walk a column's rows (Home and End to its ends), as Tab does; from the search
@@ -1560,14 +1552,14 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
     {
       id: "pair",
       title: "Fusion",
-      icon: <PairIcon size={14} />,
+      icon: <I.fusion size={14} />,
       note: own || two ? `${leadShort} + ${shortName(label(side!))}` : pair ? "Needs two different models ready" : "No model is ready yet",
       say: own || two ? `${leadShort} leads, ${shortName(label(side!))} works` : undefined,
       marks: own || two ? [markOf(leadModel ?? ""), markOf(side!)] : [],
       off: !two && !own,
     },
-    { id: "best", title: "Best", icon: <I.star size={14} />, note: pair ? label(pair.lead) : "No model is ready yet", say: pair ? `${label(pair.lead)} alone` : undefined, marks: pair ? [markOf(pair.lead)] : [], off: !pair },
-    { id: "fast", title: "Fast", icon: <I.bolt size={14} />, note: !pair ? "No model is ready yet" : two ? label(pair.sidekick) : "Same model as Best", say: two && pair ? `${label(pair.sidekick)} alone` : !pair ? undefined : "The same model as Best, with one ready", marks: two && pair ? [markOf(pair.sidekick)] : [], off: !two },
+    { id: "best", title: "Best", icon: <I.gem size={14} />, note: pair ? label(pair.lead) : "No model is ready yet", say: pair ? `${label(pair.lead)} alone` : undefined, marks: pair ? [markOf(pair.lead)] : [], off: !pair },
+    { id: "fast", title: "Fast", icon: <I.speed size={14} />, note: !pair ? "No model is ready yet" : two ? label(pair.sidekick) : "Same model as Best", say: two && pair ? `${label(pair.sidekick)} alone` : !pair ? undefined : "The same model as Best, with one ready", marks: two && pair ? [markOf(pair.sidekick)] : [], off: !two },
   ];
   // The best few ready for each part, your own pick first when it isn't one of them; never the other part's model.
   const leadPick = lead && isModelAgent(lead) ? lead.slice(1) : undefined;
@@ -1576,7 +1568,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const scale = costScale(providers, leadModel ? costOf(leadModel) : undefined, side ? costOf(side) : undefined);
   const modelRow = (ref: string, on: boolean, onPick: () => void, cost?: number) => (
     <button key={ref} type="button" className="lc-who-opt l-focus" data-rove data-on={on || undefined} aria-pressed={on} onClick={onPick}>
-      <ModelMark kind={markOf(ref)} size={13} />
+      <ModelMark kind={markOf(ref)} size={14} />
       <span className="lc-who-opt-t">{label(ref)}</span>
       <span className="lc-who-opt-n">{providerLabel(ref, providers)}</span>
       <CostMini at={cost === undefined ? undefined : scale(cost)} />
@@ -1612,7 +1604,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           {yours.map((a) => agentRow(a, !settings.sidekick && settings.agent === a.id, () => pickAgent(a.id)))}
           {onNewAgent && (
             <button type="button" className="lc-who-opt l-focus" data-rove onClick={() => (close(), onNewAgent())}>
-              <I.plus size={13} />
+              <I.plus size={14} />
               <span className="lc-who-opt-t">New agent</span>
             </button>
           )}
@@ -1641,7 +1633,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
     main = (
       <>
         <label className="lc-mp-find lc-who-find">
-          <I.search size={13} />
+          <I.search size={14} />
           <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && query && (e.preventDefault(), setQuery(""))} placeholder="Find a model" aria-label="Find a model" spellCheck={false} />
         </label>
         {query.trim() ? (
@@ -1665,7 +1657,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                       <ModelMark key={`${k}${i}`} kind={k} size={12} />
                     ))}
                   </span>
-                  <span className="lc-who-chev">{r.id === "pair" && !r.off && <I.chevR size={13} />}</span>
+                  <span className="lc-who-chev">{r.id === "pair" && !r.off && <I.chevR size={12} />}</span>
                 </button>
               );
             })}
@@ -1677,25 +1669,25 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                 {tools.map((p) => (
                   <button key={p.id} type="button" className="lc-who-tool l-focus" data-rove data-view={p.id} data-on={(oneValue && oneValue.startsWith(`${p.id}:`)) || undefined} title={p.account ? `${p.label} · ${p.account}` : undefined} aria-label={`${p.label}${p.account ? `, ${p.account}` : ""}: its models`} onClick={() => enter(p.id)}>
                     <span className="lc-who-i">
-                      <ModelMark kind={markOf(`${p.id}:`)} size={13} />
+                      <ModelMark kind={markOf(`${p.id}:`)} size={14} />
                     </span>
                     <span className="lc-who-tool-t">{p.label}</span>
-                    <I.chevR size={13} />
+                    <I.chevR size={12} />
                   </button>
                 ))}
                 {(yours.length > 0 || onNewAgent) && (
                   <button type="button" className="lc-who-tool l-focus" data-rove data-view={AGENTS_TAB} data-on={(!settings.sidekick && yours.some((a) => a.id === settings.agent)) || undefined} onClick={() => enter(AGENTS_TAB)}>
                     <span className="lc-who-i">
-                      <I.agents size={13} />
+                      <I.agents size={14} />
                     </span>
                     <span className="lc-who-tool-t">Your agents</span>
-                    <I.chevR size={13} />
+                    <I.chevR size={12} />
                   </button>
                 )}
                 {showDemo && (
                   <button type="button" className="lc-who-tool l-focus" data-rove data-on={way === "demo" || undefined} aria-pressed={way === "demo"} title="A scripted Fusion run, no account" onClick={() => pickAgent("demo", "demo:demo")}>
                     <span className="lc-who-i">
-                      <ModelMark kind="demo" size={13} />
+                      <ModelMark kind="demo" size={14} />
                     </span>
                     <span className="lc-who-tool-t">Demo run</span>
                     <span />
@@ -1821,7 +1813,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                       value={leadPick}
                       autoFocus
                       height={300}
-                      extra={yours.length ? { id: AGENTS_TAB, label: "Your agents", icon: <I.agents size={15} />, open: !isModelAgent(lead), body: yours.map((a) => agentRow(a, settings.agent === a.id, () => pickLead(a.id))) } : undefined}
+                      extra={yours.length ? { id: AGENTS_TAB, label: "Your agents", icon: <I.agents size={16} />, open: !isModelAgent(lead), body: yours.map((a) => agentRow(a, settings.agent === a.id, () => pickLead(a.id))) } : undefined}
                       onPick={(ref) => pickLead(`@${ref}`)}
                     />
                   ) : (
@@ -1835,7 +1827,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                     <div className="lc-who-sep" />
                     <button type="button" className="lc-who-opt l-focus" data-rove data-all onClick={() => setFull(true)}>
                       <span className="lc-who-opt-t">{open === "lead" && yours.length ? "All models and your agents" : "All models"}</span>
-                      <I.chevR size={13} />
+                      <I.chevR size={12} />
                     </button>
                   </>
                 )}

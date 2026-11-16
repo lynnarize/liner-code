@@ -539,8 +539,18 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   background: var(--l-wash-2);
   color: var(--l-ink-2);
 }
-.lc-rays {
-  animation: lc-turn 2.4s linear infinite;
+/* The spinner: an accent arc travelling on the waiting ring. A holder that tints its work (a
+   session's model, in .lc-mk) passes its own ink down instead. */
+.lc-spin {
+  flex: none;
+  color: var(--l-accent);
+}
+.lc-mk[data-s="run"] .lc-spin {
+  color: inherit;
+}
+.lc-spin-arc {
+  transform-origin: 8px 8px;
+  animation: lc-turn 900ms cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
 }
 @keyframes lc-turn {
   to {
@@ -1086,12 +1096,15 @@ html[data-native="mac"] .lc-sb-head {
     background 140ms ease,
     color 140ms ease;
 }
+/* An icon that brings no size of its own is 16px; the navigation icons are drawn for theirs and keep it. */
 .lc-sb-nav > svg {
   flex: none;
-  width: 16px;
-  height: 16px;
   color: var(--l-ink-3);
   transition: color 140ms ease;
+}
+.lc-sb-nav > svg:not([width]) {
+  width: 16px;
+  height: 16px;
 }
 .lc-sb-nav[aria-current] {
   color: var(--l-ink);
@@ -1304,13 +1317,10 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-4);
 }
 /* A session begun from a design: the pencil in place of the project's letters. */
-.lc-pjb[data-design] svg {
-  width: 11px;
-  height: 11px;
-}
-.lc-sb-row[data-two] .lc-pjb[data-design] svg {
-  width: 13px;
-  height: 13px;
+/* Sized where it's drawn (Sidebar.tsx ProjectBadge), so its stroke lands where the weight rule puts it; an svg with no size of its own takes 12px. */
+.lc-pjb[data-design] svg:not([width]) {
+  width: 12px;
+  height: 12px;
 }
 .lc-pjb-dot {
   position: absolute;
@@ -2035,7 +2045,7 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-2);
 }
 
-/* Status marks: rays at work (in the tint of whose model it is), an amber dot with a soft halo
+/* Status marks: the spinner at work (in the tint of whose model it is), an amber dot with a soft halo
    when it needs you, an alert on a problem, a hollow ring before it starts, a quiet check. */
 .lc-mk {
   display: grid;
@@ -3047,7 +3057,9 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 /* Session info, the open file and a Review file aren't cards at all any more: rows and lists on the
    paper (SessionInfo.tsx, Files.tsx, Review.tsx), so their sticky bits take the paper. */
 /* The turn's plan is a labelled list on the paper, not a card: "Plan" and its count on a 28px
-   line, then a 28px line a task, its mark where a bullet would be. */
+   line, then a line a task, its mark where a bullet would be and a hairline rail joining the marks
+   so the list reads as a sequence. The step at work is the brightest line; done and skipped steps
+   dim, with no strike through words you may still want to read. */
 .lc-todo {
   display: grid;
 }
@@ -3061,6 +3073,9 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 .lc-todo-h b {
   font-weight: 600;
 }
+.lc-todo-h > span {
+  font-variant-numeric: tabular-nums;
+}
 .lc-todo ol {
   display: grid;
   margin: 0;
@@ -3068,40 +3083,144 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   list-style: none;
 }
 .lc-todo li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 28px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 12px;
+  padding-block: 5px;
   font-size: 14px;
+  line-height: 20px;
   color: var(--l-ink-2);
 }
-.lc-todo li > span:last-child {
+.lc-todo li > .lc-stepmark {
+  z-index: 1;
+  margin-top: 2px;
+}
+/* The rail: from under one mark to just above the next, behind them; firmer behind finished steps. */
+.lc-todo li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 23px;
+  bottom: -7px;
+  left: 7.5px;
+  width: 1px;
+  background: var(--l-line);
+  transition: background-color 300ms ease;
+}
+.lc-todo li[data-s="done"]:not(:last-child)::after {
+  background: var(--l-wash-3);
+}
+.lc-todo-t {
   min-width: 0;
   overflow-wrap: anywhere;
+  transition: color 300ms ease;
 }
-.lc-todo li[data-s="completed"] > span:last-child {
+.lc-todo li[data-s="working"] .lc-todo-t {
+  color: var(--l-ink);
+}
+.lc-todo li:is([data-s="done"], [data-s="skipped"]) .lc-todo-t {
+  color: var(--l-ink-4);
+}
+/* A turn that ended before its plan did: the first step it didn't reach, said once under the list. */
+.lc-todo-foot {
+  margin: 4px 0 0;
+  padding-left: 28px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-4);
+}
+.lc-todo-foot b {
+  font-weight: 500;
   color: var(--l-ink-3);
-  text-decoration: line-through;
-  text-decoration-color: var(--l-ink-4);
 }
-/* Waiting: a small ring; done: the tick alone; at work: the rays, in the accent. */
-.lc-todo-mk {
-  display: grid;
+
+/*
+  A step's mark (icons.tsx StepMark): every state's parts are drawn and the state shows the ones it
+  needs, so a change plays as a transition. Waiting: the ring. Working: the ring goes faint and the
+  accent arc travels on it, as the Spinner does. Done: the ring gives way to a soft disc, then the
+  tick draws in. Skipped: the ring dashed. Failed: the ring and a small × in the danger ink.
+*/
+.lc-stepmark {
+  display: inline-grid;
   flex: none;
   place-items: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1.5px var(--l-ink-5);
-  color: var(--l-ink-3);
-  transition: box-shadow 260ms ease;
+  position: relative;
 }
-.lc-todo li[data-s="completed"] .lc-todo-mk {
-  box-shadow: none;
+.lc-stepmark > svg {
+  display: block;
+  overflow: visible;
 }
-.lc-todo li[data-s="in_progress"] .lc-todo-mk {
-  box-shadow: none;
-  color: var(--l-accent);
+.lc-stepmark-ring {
+  stroke: var(--l-ink-5);
+  transition: stroke 300ms ease, opacity 300ms ease;
+}
+.lc-stepmark-arc {
+  stroke: var(--l-accent);
+  opacity: 0;
+  transform-origin: 8px 8px;
+  animation: lc-turn 900ms cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
+  animation-play-state: paused;
+  transition: opacity 200ms ease;
+}
+.lc-stepmark-disc {
+  fill: var(--l-wash-3);
+  opacity: 0;
+  transform-origin: 8px 8px;
+  transform: scale(0.6);
+  transition: transform 320ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 200ms ease;
+}
+.lc-stepmark-tick {
+  stroke: var(--l-ink);
+  stroke-dasharray: 9;
+  stroke-dashoffset: 9;
+  transition: stroke-dashoffset 240ms 120ms cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+.lc-stepmark-x {
+  stroke: var(--l-danger-text, var(--l-danger));
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.lc-stepmark[data-s="working"] .lc-stepmark-ring {
+  stroke: var(--l-wash-3);
+}
+.lc-stepmark[data-s="working"] .lc-stepmark-arc {
+  opacity: 1;
+  animation-play-state: running;
+}
+.lc-stepmark[data-s="done"] .lc-stepmark-ring {
+  opacity: 0;
+}
+.lc-stepmark[data-s="done"] .lc-stepmark-disc {
+  opacity: 1;
+  transform: none;
+}
+.lc-stepmark[data-s="done"] .lc-stepmark-tick {
+  stroke-dashoffset: 0;
+}
+.lc-stepmark[data-s="skipped"] .lc-stepmark-ring {
+  stroke-dasharray: 2 2.6;
+}
+.lc-stepmark[data-s="failed"] .lc-stepmark-ring {
+  stroke: var(--l-danger-text, var(--l-danger));
+}
+.lc-stepmark[data-s="failed"] .lc-stepmark-x {
+  opacity: 1;
+}
+/* Reduced motion: the arc stands still where it is, and the tick is there without drawing in. */
+@media (prefers-reduced-motion: reduce) {
+  .lc-stepmark-arc {
+    animation: none;
+  }
+  .lc-stepmark-ring,
+  .lc-stepmark-arc,
+  .lc-stepmark-disc,
+  .lc-stepmark-tick,
+  .lc-stepmark-x,
+  .lc-todo-t,
+  .lc-todo li::after {
+    transition: none;
+  }
 }
 
 /* Approvals, questions and plans: cards that wait for you */
@@ -3745,9 +3864,11 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     opacity: 0;
   }
 }
+/* Stop is neutral, an ink square on a wash: the action colour means one thing, send, and Stop
+   beside Send in the same red read as two of the same. */
 .lc-stop {
-  background: var(--l-danger);
-  color: #fff;
+  background: var(--l-wash-2);
+  color: var(--l-ink);
   animation: lc-stop-in 260ms var(--l-ease-enter) backwards;
 }
 @keyframes lc-stop-in {
@@ -3778,7 +3899,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     background: color-mix(in oklab, var(--lc-act) 88%, black);
   }
   .lc-stop:hover {
-    background: color-mix(in oklab, var(--l-danger) 88%, black);
+    background: var(--l-wash-3);
   }
 }
 /* What Enter does while a turn runs, and what's waiting: a quiet note in the tray. */
@@ -4867,14 +4988,18 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   align-items: center;
   gap: 6px;
 }
+/* Nothing to start in yet: the words in a 460px measure, and the three ways in on one row under
+   them (primary, quiet, ghost), wider than the words so the third doesn't drop to a line of its
+   own; a narrow window wraps them. */
 .lc-noproj {
   display: grid;
   justify-items: center;
   gap: 12px;
-  max-width: 460px;
+  max-width: 600px;
   text-align: center;
 }
 .lc-noproj p {
+  max-width: 460px;
   margin: 0;
   font-size: 14px;
   line-height: 21px;
@@ -4885,6 +5010,20 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   justify-content: center;
   gap: 8px;
   margin-top: 6px;
+}
+.lc-home-in:has(> .lc-noproj) {
+  container: lc-noproj / inline-size;
+}
+.lc-noproj-short {
+  display: none;
+}
+@container lc-noproj (width < 600px) {
+  .lc-noproj-long {
+    display: none;
+  }
+  .lc-noproj-short {
+    display: inline;
+  }
 }
 
 /* ---------- The panel ---------- */
@@ -6359,8 +6498,8 @@ html[data-native="mac"] .lc-lockup {
   color: var(--l-ink);
 }
 .lc-st-hero-i svg {
-  width: 21px;
-  height: 21px;
+  width: 20px;
+  height: 20px;
 }
 .lc-st-hero h1 {
   margin: 0;
@@ -7036,8 +7175,9 @@ html[data-native="mac"] .lc-lockup {
   .lc-boot-wm {
     animation: none !important;
   }
-  .lc-rays {
-    animation-duration: 8s;
+  .lc-spin-arc {
+    animation-duration: 3.6s;
+    animation-timing-function: linear;
   }
 }
 

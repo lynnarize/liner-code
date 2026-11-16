@@ -192,11 +192,11 @@ function whyLine(w: ApprovalWhy, level: string): ReactNode {
 }
 
 const WHY_ICON: Record<ApprovalWhy["kind"], ReactNode> = {
-  undo: <I.alert size={13} />,
-  outside: <I.folder size={13} />,
-  network: <I.globe size={13} />,
-  changes: <I.edit size={13} />,
-  level: <I.shield size={13} />,
+  undo: <I.alert size={14} />,
+  outside: <I.folder size={14} />,
+  network: <I.globe size={14} />,
+  changes: <I.edit size={14} />,
+  level: <I.shield size={14} />,
 };
 
 /** The command, a row a step, each on one line until you ask for it whole. Past eight rows it scrolls. */
@@ -332,7 +332,7 @@ function RunsIn({ path, home }: { path: string; home: DockAsk["home"] }) {
   const own = bare(path) === bare(home.worktree) ? "the worktree" : bare(path) === bare(home.project) ? "the project" : undefined;
   return (
     <span className="lc-dask-fact lc-dask-where" title={own ? path : undefined}>
-      <I.folder size={13} />
+      <I.folder size={14} />
       {own ? (
         <span>Runs in {own}</span>
       ) : (

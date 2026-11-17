@@ -48,12 +48,54 @@ export function colour(v?: string | null): { hex: string; a: number } | undefine
   // The canvas writes sRGB as hex or rgba(), read above. oklch(), lab() and color() come back as
   // they went in (Chromium 152), so asking again would never end: those are read off a pixel.
   if (/^(#|rgba?\()/i.test(out)) return colour(out);
-  probe.clearRect(0, 0, 1, 1);
-  probe.fillRect(0, 0, 1, 1);
-  const [r, g, b, alpha] = probe.getImageData(0, 0, 1, 1).data;
-  const said = /\/\s*([\d.]+)(%?)\s*\)$/.exec(out);
-  const a = said ? Number(said[1]) / (said[2] ? 100 : 1) : alpha / 255;
+  // The pixel is painted whole: a canvas keeps its colour times its alpha in 8 bits, so at / 0.02 the
+  // hue is mostly lost and at / 0 all of it. The alpha is the one written, where it's written plainly.
+  const [r, g, b] = paint(opaque(probe, out));
+  const said = alphaOf(out);
+  const a = said ?? paint(out)[3] / 255;
   return { hex: "#" + [r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("").toUpperCase(), a };
+}
+
+/** The pixel a colour paints on the probe, as [r, g, b, a] in 0..255. */
+function paint(c: string) {
+  const p = probe!;
+  p.clearRect(0, 0, 1, 1);
+  p.fillStyle = c;
+  p.fillRect(0, 0, 1, 1);
+  return p.getImageData(0, 0, 1, 1).data;
+}
+
+/** The colour with its alpha at 1: by relative colour syntax (any colour, color-mix too), else its own "/ a" taken off, else as it is. */
+function opaque(p: CanvasRenderingContext2D, c: string) {
+  const whole = `rgb(from ${c} r g b / 1)`;
+  p.fillStyle = "#010203";
+  p.fillStyle = whole;
+  if (String(p.fillStyle) !== "#010203") return whole;
+  const cut = slash(c);
+  return cut ? `${c.slice(0, cut.at).trimEnd()})` : c;
+}
+
+/** The "/ a" at the top level of a colour function: where it starts, and what follows it. */
+function slash(c: string) {
+  const open = c.indexOf("(");
+  if (open < 0 || !c.endsWith(")")) return undefined;
+  let depth = 0;
+  for (let i = open + 1; i < c.length - 1; i++) {
+    if (c[i] === "(") depth++;
+    else if (c[i] === ")") depth--;
+    else if (c[i] === "/" && depth === 0) return { at: i, said: c.slice(i + 1, -1).trim() };
+  }
+  return undefined;
+}
+
+/** The alpha a colour function says, 0..1: "/ 0.4", "/ 40%", "/ none" (painted as 0), none written (1). undefined when the words don't say: calc(), or a colour made of others. */
+function alphaOf(c: string) {
+  const said = slash(c)?.said;
+  // None written: whole, unless it's made of another colour (color-mix(), "from"), whose alpha the pixel says.
+  if (said === undefined) return /\(.*\(|\bfrom\b/i.test(c) ? undefined : 1;
+  if (/^none$/i.test(said)) return 0;
+  const m = /^(-?[\d.]+)(%?)$/.exec(said);
+  return m ? Math.min(1, Math.max(0, Number(m[1]) / (m[2] ? 100 : 1))) : undefined;
 }
 
 /** The same colour, alpha included, whatever way each was written. */

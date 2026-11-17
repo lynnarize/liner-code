@@ -87,7 +87,8 @@ export function OpenDesigns() {
             data-on={on || undefined}
             title={busy ? `${name}: an agent is drawing here` : name}
             onClick={() => showTab(k)}
-            onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), showTab(k)) : undefined)}
+            // Its own keys only: Enter and Space on the cross inside it close the design, not open it.
+            onKeyDown={(e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), showTab(k))}
             // A middle-click closes it, as a browser's tab.
             onMouseDown={(e) => e.button === 1 && e.preventDefault()}
             onAuxClick={(e) => e.button === 1 && (e.preventDefault(), close(k))}
@@ -145,11 +146,15 @@ export function TabTitle() {
   );
 }
 
-/** ⌃Tab and ⇧⌃Tab: the next and the last of Home and the open designs, round. Heard while Liner Design shows. */
+/** Where ⌃Tab is someone else's: a field that takes typing (the terminal's too), or a dialog over the face. */
+const notOurs = (t: EventTarget | null) =>
+  (t instanceof Element && Boolean(t.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), .xterm"))) || Boolean(document.querySelector("dialog[open], [aria-modal='true']"));
+
+/** ⌃Tab and ⇧⌃Tab: the next and the last of Home and the open designs, round. Heard while Liner Design shows, and nothing that takes typing or a dialog has the keyboard. */
 export function useTabKeys() {
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || !e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key !== "Tab" || !e.ctrlKey || e.metaKey || e.altKey || e.isComposing || notOurs(e.target)) return;
       const { list, at } = getTabs();
       const ring = [HOME_TAB, ...list.map(tabKey)];
       const i = Math.max(0, ring.indexOf(at));

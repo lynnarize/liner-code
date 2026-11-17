@@ -311,24 +311,34 @@ html[data-bg] .lc-panel {
    so it stays a step steadier than the sidebar, where the reading is. What opens over the window
    (menus, popovers, dialogs) keeps its solid surface. No backdrop-filter here: the blur, when it's
    on, is the window's own material, which macOS draws. */
+/* --lc-see is a quarter at most (look.ts, deskSee), and the ground never lets through more than that
+   whatever it's set to: three quarters of the ground is what keeps text readable over a black or a
+   white wallpaper (look.ts, DESK_THROUGH, has the numbers). The faintest grey is the next one up
+   here, as --l-ink-4 over that ground was 2.6:1. Blurred, the tints are the same: how much the
+   blur's own material hides isn't the page's to know, so it isn't counted on. */
+html[data-bg="desktop"] {
+  --lc-see-most: 0.25;
+  --l-ink-4: var(--l-ink-3);
+}
 html[data-bg="desktop"],
 html[data-bg="desktop"] body {
   background: transparent;
 }
 html[data-bg="desktop"] :is(.lc-app, .lc-boot) {
-  background: color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-see)) * 100%), transparent);
+  background: color-mix(in oklab, var(--lc-ground) calc((1 - min(var(--lc-see), var(--lc-see-most))) * 100%), transparent);
 }
 html[data-bg="desktop"] .lc-paper {
-  background: color-mix(in oklab, var(--lc-paper) calc((1 - var(--lc-see)) * 60%), transparent);
+  background: color-mix(in oklab, var(--lc-paper) calc((1 - min(var(--lc-see), var(--lc-see-most))) * 60%), transparent);
 }
-/* Blurred, the window's material already lays a tint of its own over the desktop (macOS's
-   under-window grey), so the page's tints are lighter, or the desktop barely came through even at 75%. */
-/* 55% and 35%: FROST_GROUND in look.ts, which gives the shell's boot screen the same ground. */
-html[data-bg="desktop"][data-frost] :is(.lc-app, .lc-boot) {
-  background: color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-see)) * 55%), transparent);
-}
-html[data-bg="desktop"][data-frost] .lc-paper {
-  background: color-mix(in oklab, var(--lc-paper) calc((1 - var(--lc-see)) * 35%), transparent);
+/* Reduce transparency (Accessibility, Display): the window is solid (look.ts, lessGlass, tells the
+   shell). Should a see-through look reach the page first, its own surfaces are whole anyway. */
+@media (prefers-reduced-transparency: reduce) {
+  html[data-bg="desktop"] :is(.lc-app, .lc-boot) {
+    background: var(--lc-ground);
+  }
+  html[data-bg="desktop"] .lc-paper {
+    background: var(--lc-paper);
+  }
 }
 /*
   In the Electron shell the window moves by regions the page marks (the Swift shell was asked on
@@ -8570,6 +8580,10 @@ html[data-native="mac"] .lc-sb-head {
   .lc-qp-row:hover {
     background: var(--l-wash-2);
   }
+}
+/* What Enter in the find field picks: the first project shown, washed as if the pointer were on it. */
+.lc-qp-row[data-hl] {
+  background: var(--l-wash-2);
 }
 
 /* ---------- 0.2.8: the sidebar's name at the foot, its list on one grid, and Carry on ---------- */

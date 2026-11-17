@@ -570,9 +570,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const here = onDisk(abs);
     const have = store.projects.find((p) => p.path === abs || onDisk(p.path) === here);
     if (have) return have;
-    const isGit = await isRepo(abs);
-    const info = isGit ? await repoInfo(abs) : {};
-    return store.putProject({ id: uid("pr"), name: name ?? basename(abs), path: abs, agent, git: isGit, ...info, createdAt: Date.now() });
+    // Kept in the disk's own case (~/code/App, typed as ~/code/app), the folder the tools themselves name their sessions by; a link is kept as you gave it.
+    const path = here !== abs && here.toLowerCase() === abs.toLowerCase() ? here : abs;
+    const isGit = await isRepo(path);
+    const info = isGit ? await repoInfo(path) : {};
+    return store.putProject({ id: uid("pr"), name: name ?? basename(path), path, agent, git: isGit, ...info, createdAt: Date.now() });
   };
 
   /** A folder that's a Git repository with one commit of these files, made once. */

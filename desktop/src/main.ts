@@ -220,6 +220,9 @@ function createWindow() {
   applyMaterial();
 
   const wc = win.webContents;
+  // Showing the window makes it opaque again, so the material goes back on each time it's shown
+  // (on launch, from the Dock, from a second launch); without this, Desktop never showed through.
+  win.on("show", () => applyMaterial());
   win.once("ready-to-show", () => {
     win?.show();
     app.focus({ steal: true });

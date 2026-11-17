@@ -23,7 +23,7 @@ import "./setup.css";
 type Start = NonNullable<Settings["start"]>;
 type Opened = "tools" | "projects" | null;
 type Opens = { opened: Opened; toggle: (o: Exclude<Opened, null>) => void };
-type Adds = { count: number; run: () => Promise<void> };
+type Adds = { count: number; run: () => Promise<void>; looked?: boolean };
 
 /** Each tool shows its own mark, in the same ink as in the model picker. */
 const TOOLS: { id: ProviderInfo["id"]; mark: MarkKind; name: string; beta?: boolean }[] = [
@@ -37,6 +37,8 @@ const TOOLS: { id: ProviderInfo["id"]; mark: MarkKind; name: string; beta?: bool
 ];
 /** The API key that stands in for a tool's own sign-in. */
 const KEY_OF: Partial<Record<string, string>> = { claude: "anthropic", codex: "openai" };
+/** A tool's state, the way its line says it: a tool still asking you to sign in (with no key standing in) isn't ready. */
+const toolState = (p: ProviderInfo | undefined, id: string, keys: string[]) => (!p ? "looking" : p.available && p.adapter ? (p.signedIn === false && !keys.includes(KEY_OF[id] ?? "") ? "signin" : "ready") : p.available ? "soon" : "install");
 /** The keys that work today. The ones still to come are in Settings › Models. */
 const KEYS: { id: "anthropic" | "openai"; name: string }[] = [
   { id: "anthropic", name: "Anthropic" },
@@ -78,6 +80,22 @@ export function Setup({ onDone }: { onDone: () => void }) {
     }
   };
   const note = "Liner Code never sees a sign-in and resells no tokens. Every call is billed to your own account.";
+  // What the line under the title says it found: only what it did find (a tool ready, projects to add or already here).
+  const providers = useEngine((s) => s.providers);
+  const keys = useEngine((s) => s.keys);
+  const tool = TOOLS.some((t) => toolState(providers.find((x) => x.id === t.id), t.id, keys) === "ready");
+  const have = useEngine((s) => s.projects.some((p) => p.kind !== "design"));
+  const project = adds.count > 0 || have;
+  const looked = providers.length > 0 && adds.looked === true;
+  const found = !looked
+    ? "Liner Code is looking around for your agents and projects."
+    : tool && project
+      ? "Liner Code looked around and guessed all three. Change what's wrong, then start."
+      : tool
+        ? "Liner Code found your agents, and no project yet. Add one, or start without."
+        : project
+          ? "Liner Code found your projects, and no agent yet. Install one or add a key, then start."
+          : "Pick an agent and a project to start.";
 
   return (
     <div className="lc-wel" data-intro={played || undefined}>
@@ -92,7 +110,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
       <main className="lc-wel-main" aria-label="Set up Liner Code">
         <header className="lc-wel-head" style={{ "--i": 1 } as CSSProperties}>
           <h1>Ready when you are</h1>
-          <p>Liner Code looked around and guessed all three. Change what's wrong, then start.</p>
+          <p>{found}</p>
         </header>
         <div className="lc-wel-rows">
           <SystemRows />
@@ -229,8 +247,7 @@ function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) =
   // Each tool's state, the way its line says it: a tool still asking you to sign in (with no key standing in) isn't ready.
   const rows = TOOLS.map((t) => {
     const p = providers.find((x) => x.id === t.id);
-    const state = !p ? "looking" : p.available && p.adapter ? (p.signedIn === false && !keys.includes(KEY_OF[t.id] ?? "") ? "signin" : "ready") : p.available ? "soon" : "install";
-    return { ...t, p, state };
+    return { ...t, p, state: toolState(p, t.id, keys) };
   });
   const ready = rows.filter((r) => r.state === "ready");
   const signin = rows.filter((r) => r.state === "signin");
@@ -343,7 +360,10 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
   const [first, setFirst] = useState<string[]>([]);
   // The sample project is the Demo's, so it's offered only while the Demo is shown.
   const showDemo = useEngine((s) => s.settings.showDemo === true);
-  const [sample, setSample] = useState(showDemo);
+  // Not when it's in your projects already (Home knows it the same way: the project the Demo works in).
+  const hasSample = useEngine((s) => s.projects.some((p) => p.agent === "demo"));
+  const offer = showDemo && !hasSample;
+  const [sample, setSample] = useState(offer);
   const open = opened === "projects";
   const [clone, setClone] = useState("");
   const [cloning, setCloning] = useState(false);
@@ -360,25 +380,26 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
       .catch(() => setFound([]));
   }, []);
   const roots = useMemo(() => [...new Set((found ?? []).map((f) => os.tilde(f.path.replace(/[\\/][^\\/]+$/, ""))))].slice(0, 2), [found]);
-  const count = picked.size + (showDemo && sample ? 1 : 0);
+  const count = picked.size + (offer && sample ? 1 : 0);
 
   // What the foot button adds: each pick, marked added as it goes, so a second press after a failure doesn't add it twice.
   useEffect(() => {
     onAdds({
       count,
+      looked: found !== null,
       run: async () => {
         for (const path of [...picked]) {
           await rpc("project.add", { path });
           setPicked((p) => new Set([...p].filter((x) => x !== path)));
           setFound((f) => (f ?? []).map((x) => (x.path === path ? { ...x, added: true } : x)));
         }
-        if (showDemo && sample) {
+        if (offer && sample) {
           await rpc("project.add", { path: "@sample" });
           setSample(false);
         }
       },
     });
-  }, [count, picked, sample, showDemo]);
+  }, [count, picked, sample, offer, found !== null]);
 
   const addFolder = async () => {
     const path = await bridge.pickFolder();
@@ -413,7 +434,7 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
       return n;
     });
 
-  const names = [...(showDemo && sample ? ["Sample project"] : []), ...(found ?? []).filter((f) => picked.has(f.path)).map((f) => f.name)];
+  const names = [...(offer && sample ? ["Sample project"] : []), ...(found ?? []).filter((f) => picked.has(f.path)).map((f) => f.name)];
   // "the newest of 13" only while the picks are still the newest; once you've chosen, just where they were found.
   const newest = picked.size === first.length && first.every((p) => picked.has(p));
   const where = found?.length ? ` · ${newest ? "the newest of" : "of"} ${found.length} found${roots.length ? ` in ${roots.join(", ")}` : ""}` : "";
@@ -427,7 +448,7 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
         {where}
       </span>
     ) : (
-      <span className="lc-wel-cut">{found.length || showDemo ? "Choose some, or start without one" : "No Git repositories in the usual places. Add a folder, or clone one."}</span>
+      <span className="lc-wel-cut">{found.length || offer ? "Choose some, or start without one" : "No Git repositories in the usual places. Add a folder, or clone one."}</span>
     );
 
   return (
@@ -461,7 +482,7 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
             </div>
           }
         >
-          {showDemo && (
+          {offer && (
             <label className="lc-wel-repo">
               <input type="checkbox" checked={sample} onChange={(e) => setSample(e.target.checked)} />
               <b>Sample project</b>

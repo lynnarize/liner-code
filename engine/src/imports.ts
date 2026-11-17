@@ -5,7 +5,7 @@
   Claude Code keeps them in <config>/projects/<folder with every other character as ->/<id>.jsonl;
   Codex in <home>/sessions/YYYY/MM/DD/rollout-*.jsonl, each starting with its id and folder.
 */
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 import type { ImportableSession, Item, RecentSession, ToolKind } from "../../contracts/src/index.ts";
@@ -17,21 +17,65 @@ const LATEST = 60;
 
 const claudeDir = (env: NodeJS.ProcessEnv, cwd: string) => join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
 const codexDir = (env: NodeJS.ProcessEnv) => join(env.CODEX_HOME || join(homedir(), ".codex"), "sessions");
+/** A folder as the disk has it, links followed and each name in its own case (~/code/app is ~/code/App there), as api.ts's onDisk: the tools name their folders by the path they were started in, which is the disk's. */
 const real = (p: string) => {
   try {
-    return realpathSync(p);
+    return realpathSync.native(p);
   } catch {
-    return p;
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
   }
 };
 
-/** A file's first bytes, as lines: enough for a title without reading a long session whole. */
-function head(file: string, bytes = 96 * 1024) {
-  const fd = openSync(file, "r");
+/** Fills `buf` from byte `from` on, each byte where it is in the file, as far as the file goes; how much of `buf` is filled. */
+function readAt(fd: number, buf: Buffer, from: number) {
+  let n = from;
+  while (n < buf.length) {
+    const got = readSync(fd, buf, n, buf.length - n, n);
+    if (!got) break;
+    n += got;
+  }
+  return n;
+}
+
+/**
+  A file's first bytes, as lines: enough for a title without reading a long session whole. A first
+  line longer than that (Codex's session_meta can carry its instructions whole) is read on to its
+  end, 1 MB at most, and the same 96 KB after it. A file that can't be read, or is no plain file (a
+  folder, a pipe that would never answer), has no lines: one session less, not none at all.
+*/
+function head(file: string, bytes = 96 * 1024, cap = 1024 * 1024) {
+  let fd: number;
   try {
-    const buf = Buffer.alloc(bytes);
-    const n = readSync(fd, buf, 0, bytes, 0);
+    // Never blocks on a pipe swapped in since the folder was read; one is turned away below, unread.
+    fd = openSync(file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  } catch {
+    return [];
+  }
+  try {
+    if (!fstatSync(fd).isFile()) return [];
+    let buf = Buffer.alloc(bytes);
+    let n = readAt(fd, buf, 0);
+    let end = buf.subarray(0, n).indexOf(10);
+    while (end < 0 && n === buf.length && buf.length < cap) {
+      const more = Buffer.alloc(Math.min(buf.length * 2, cap));
+      buf.copy(more, 0, 0, n);
+      buf = more;
+      n = readAt(fd, buf, n);
+      end = buf.subarray(0, n).indexOf(10);
+    }
+    if (end >= bytes && end + 1 + bytes > buf.length && n === buf.length) {
+      const more = Buffer.alloc(end + 1 + bytes);
+      buf.copy(more, 0, 0, n);
+      buf = more;
+      n = readAt(fd, buf, n);
+    }
     return buf.subarray(0, n).toString("utf8").split("\n");
+  } catch {
+    return [];
   } finally {
     closeSync(fd);
   }
@@ -54,10 +98,14 @@ const titleOf = (text: string) => {
 };
 const newest = (files: string[]) =>
   files
-    // A file the tool cleared away since the folder was read, or a link to nothing, is one session less, not none at all.
+    // A file the tool cleared away since the folder was read, a link to nothing, or a folder or pipe that only looks like a session, is one session less, not none at all.
     .flatMap((f) => {
-      const st = statSync(f, { throwIfNoEntry: false });
-      return st ? [{ f, at: st.mtimeMs }] : [];
+      try {
+        const st = statSync(f, { throwIfNoEntry: false });
+        return st?.isFile() ? [{ f, at: st.mtimeMs }] : [];
+      } catch {
+        return [];
+      }
     })
     .sort((a, b) => b.at - a.at)
     .slice(0, LATEST);
@@ -67,6 +115,29 @@ function claudeText(m: Json | undefined) {
   if (typeof c === "string") return c;
   return Array.isArray(c) ? (c as Json[]).flatMap((b) => (b.type === "text" && typeof b.text === "string" ? [b.text] : [])).join("\n") : "";
 }
+/**
+  Codex's rollouts, as paths under its sessions folder, from a walk that stays inside it: a link
+  (to a folder or a file) is never followed, so nothing outside the tree is read. A folder that
+  can't be read is passed over.
+*/
+function rollouts(sessions: string, match: (name: string) => boolean) {
+  const out: string[] = [];
+  const dirs = [sessions];
+  for (let dir = dirs.pop(); dir !== undefined; dir = dirs.pop()) {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const d of entries) {
+      if (d.isDirectory()) dirs.push(join(dir, d.name));
+      else if (d.isFile() && match(d.name)) out.push(join(dir, d.name));
+    }
+  }
+  return out;
+}
+
 function codexText(p: Json) {
   return Array.isArray(p.content) ? (p.content as Json[]).flatMap((b) => (typeof b.text === "string" ? [b.text] : [])).join("\n") : "";
 }
@@ -98,12 +169,14 @@ function codexSessions(heres: Set<string>, env: NodeJS.ProcessEnv, have: Set<str
   const out: (ImportableSession & { cwd: string })[] = [];
   const sessions = codexDir(env);
   if (!heres.size || !existsSync(sessions)) return out;
-  const files = (readdirSync(sessions, { recursive: true }) as string[]).filter((n) => /rollout-.*\.jsonl$/.test(n)).map((n) => join(sessions, n));
-  for (const { f, at } of newest(files)) {
+  // Each folder a rollout names is looked up on disk once, so it compares with the projects' own (real) spelling.
+  const seen = new Map<string, string>();
+  const onDisk = (p: string) => seen.get(p) ?? seen.set(p, real(p)).get(p)!;
+  for (const { f, at } of newest(rollouts(sessions, (n) => /^rollout-.*\.jsonl$/.test(n)))) {
     const lines = head(f).map(parse);
     const meta = lines.find((o) => o?.type === "session_meta")?.payload as Json | undefined;
     const id = typeof meta?.id === "string" ? meta.id : "";
-    const cwd = typeof meta?.cwd === "string" ? real(meta.cwd) : "";
+    const cwd = typeof meta?.cwd === "string" ? onDisk(meta.cwd) : "";
     if (!id || !heres.has(cwd) || have.has(`codex:${id}`)) continue;
     const first = lines.find((o) => (o?.payload as Json | undefined)?.type === "message" && (o?.payload as Json).role === "user" && yours(codexText(o!.payload as Json)));
     if (first && !linerOwn(codexText(first.payload as Json))) out.push({ tool: "codex", id, title: titleOf(codexText(first.payload as Json)), at, cwd });
@@ -172,10 +245,10 @@ export function transcript(tool: "claude" | "codex", id: string, cwd: string, en
   if (tool === "claude") file = join(claudeDir(env, real(cwd)), `${id}.jsonl`);
   else {
     const sessions = codexDir(env);
-    const name = (readdirSync(sessions, { recursive: true }) as string[]).find((n) => n.endsWith(".jsonl") && n.includes(id));
-    if (name) file = join(sessions, name);
+    file = rollouts(sessions, (n) => n.endsWith(".jsonl") && n.includes(id))[0] ?? "";
   }
-  if (!file || !existsSync(file)) throw new Error("That session isn't there any more.");
+  // A plain file only: a folder can't be read, and a pipe would never answer.
+  if (!file || !statSync(file, { throwIfNoEntry: false })?.isFile()) throw new Error("That session isn't there any more.");
   const items: Item[] = [];
   let turn = 0;
   let model = "";

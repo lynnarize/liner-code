@@ -760,6 +760,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           }}
           onKeyDown={(e) => {
             if (e.key !== "Enter" && e.key !== " ") return rowKeys(e, t);
+            if (e.target !== e.currentTarget) return;
             e.preventDefault();
             clearPicked();
             onOpen(t.id);
@@ -1379,6 +1380,10 @@ function CarryOn({ projectId, now, onOpen, onCarryOn, side }: { projectId?: stri
   const [stale, setStale] = useState(0);
   // The panel is open: the row stays while it is, even with nothing left in it.
   const [showing, setShowing] = useState(false);
+  // The read of sessions.recent that's out, for which list: the window's focus and visibilitychange both come on a return, and one read answers both.
+  const pending = useRef<{ key: string; p: Promise<RecentSession[]> } | null>(null);
+  const keyRef = useRef(key);
+  keyRef.current = key;
   useEffect(() => {
     if (asked) return;
     const go = () => setAsked((a) => a || 1);
@@ -1392,7 +1397,7 @@ function CarryOn({ projectId, now, onOpen, onCarryOn, side }: { projectId?: stri
   // Back to the window (from a terminal, from Claude Code): what's over a minute old is asked again.
   useEffect(() => {
     const again = () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible" || pending.current) return;
       const git = gitRef.current;
       if (!fresh(recentFound) || (git && !fresh(changedFound.get(git)))) setAsked((a) => a + 1);
     };
@@ -1423,13 +1428,22 @@ function CarryOn({ projectId, now, onOpen, onCarryOn, side }: { projectId?: stri
     if (!asked) return;
     if (recentFound?.key === key && fresh(recentFound)) return setFound(recentFound.theirs);
     let live = true;
-    void rpc("sessions.recent", { limit: RECENT_MAX }).then(
-      (theirs) => {
+    // A read already out for this list is waited on, not asked twice.
+    let ask = pending.current?.key === key ? pending.current.p : null;
+    if (!ask) {
+      const p: Promise<RecentSession[]> = rpc("sessions.recent", { limit: RECENT_MAX }).then((theirs) => {
         // A late answer for a list that has since moved on is let go, not kept.
-        if (!live) return;
-        recentFound = { at: Date.now(), key, theirs };
-        setFound(theirs);
-      },
+        if (keyRef.current === key) recentFound = { at: Date.now(), key, theirs };
+        return theirs;
+      });
+      const out = { key, p };
+      pending.current = out;
+      const done = () => void (pending.current === out && (pending.current = null));
+      p.then(done, done);
+      ask = p;
+    }
+    ask.then(
+      (theirs) => live && setFound(theirs),
       // Nothing kept: the next look asks again.
       () => live && setFound([]),
     );

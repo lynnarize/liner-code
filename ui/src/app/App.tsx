@@ -233,7 +233,14 @@ export function App() {
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const follow = () => readLook().theme === "system" && applyLook(readLook());
     mq.addEventListener("change", follow);
-    return () => mq.removeEventListener("change", follow);
+    // Reduce transparency turned on or off: the see-through window goes solid or comes back (look.ts, lessGlass).
+    const glass = matchMedia("(prefers-reduced-transparency: reduce)");
+    const again = () => applyLook(readLook());
+    glass.addEventListener("change", again);
+    return () => {
+      mq.removeEventListener("change", follow);
+      glass.removeEventListener("change", again);
+    };
   }, []);
   // A command with no catch of its own (Pin, Stop, a rename) says when the engine turned it down, rather than nothing happening.
   useEffect(() => {

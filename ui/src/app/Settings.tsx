@@ -36,7 +36,7 @@ import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./theme
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
-import { applyLook, DESK_SHOW, entering, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
+import { applyLook, DESK_MAX, deskSee, deskShow, entering, lessGlass, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -732,7 +732,7 @@ function Preview({ look }: { look: Look }) {
   const bg = useBackgroundUrl(look.background);
   // Desktop: the window drawn over a see-through check, in its tints.
   const desk = onDesktop(look);
-  const vars = bg ? ({ "--lc-pv-bg": `url("${bg}")`, "--lc-pv-blur": `${Math.round((look.bgBlur ?? 28) * 0.3)}px`, "--lc-pv-show": String(look.bgShow ?? 0.45) } as CSSProperties) : desk ? ({ "--lc-pv-see": String(look.bgShow ?? DESK_SHOW) } as CSSProperties) : undefined;
+  const vars = bg ? ({ "--lc-pv-bg": `url("${bg}")`, "--lc-pv-blur": `${Math.round((look.bgBlur ?? 28) * 0.3)}px`, "--lc-pv-show": String(look.bgShow ?? 0.45) } as CSSProperties) : desk ? ({ "--lc-pv-see": String(deskSee(look)) } as CSSProperties) : undefined;
   const mode = look.theme === "system" ? "Matches the system" : look.theme === "dark" ? "Dark" : "Light";
   const accent = look.accent === "own" ? "your own colour" : look.accent;
   return (
@@ -953,8 +953,9 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
         {look.background === "desktop" ? (
           seeThrough() && (
             <>
-              <Field title="Shows through" note="How much of the desktop comes through the sidebar and the page.">
-                <Slider label="Shows through" min={15} max={75} step={5} unit="%" marks={false} value={Math.round((look.bgShow ?? DESK_SHOW) * 100)} onValueChange={(v) => set({ bgShow: v / 100 })} />
+              {lessGlass() && <Field title="The window stays solid" note="Reduce transparency is on in System Settings, Accessibility, Display. The desktop shows through once it's off." />}
+              <Field title="Shows through" note="How much of the desktop comes through the sidebar and the page. Never so much that the text stops being easy to read.">
+                <Slider label="Shows through" min={15} max={DESK_MAX * 100} step={5} unit="%" marks={false} value={Math.round(deskShow(look) * 100)} onValueChange={(v) => set({ bgShow: v / 100 })} />
               </Field>
               <Field title="Blur the desktop" note="Softens what's behind into colour, so it doesn't compete with the text. It costs the graphics card more whenever something moves behind the window.">
                 <NamedSwitch name="Blur the desktop" checked={look.bgFrost === true} onCheckedChange={(bgFrost) => set({ bgFrost })} />

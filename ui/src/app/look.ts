@@ -43,6 +43,8 @@ export const readLook = (): Look => {
   const look = { ...LOOK_DEFAULT, ...rest, v: 3 };
   // A look saved before there was a choice, or with a word this build doesn't know, moves as Quick.
   if (!MOTIONS.includes(look.motion)) look.motion = LOOK_DEFAULT.motion;
+  // The desktop's "Shows through" went to 75% before 0.2.8; past DESK_MAX it comes back to it.
+  if (look.background === "desktop" && typeof look.bgShow === "number" && look.bgShow > DESK_MAX) look.bgShow = DESK_MAX;
   return look;
 };
 
@@ -54,15 +56,30 @@ export const readLook = (): Look => {
 export const seeThrough = () => window.linerShell?.clear === true;
 /** How much of the desktop comes through when nothing's been chosen: enough to see it, not so much a busy wallpaper fights the text. */
 export const DESK_SHOW = 0.4;
+/** The most of the desktop "Shows through" goes to (it went to 75%, where text over a black wallpaper in the light theme was 1.6:1). */
+export const DESK_MAX = 0.5;
+/**
+  Of what "Shows through" says, the share that comes through the window's ground (--lc-see): at
+  DESK_MAX a quarter, so the ground behind any text is three quarters its own colour at the least.
+  Over a pure black or white desktop, the worst there is, that keeps body text (--l-ink, --l-ink-2)
+  at 5.3:1 or more and the greys (--l-ink-3, and --l-ink-4, which is --l-ink-3 here: app.css) at
+  3.1:1 or more, in both themes, in the sidebar; the page has its paper over the ground besides.
+*/
+const DESK_THROUGH = 0.5;
+/** "Shows through" on the desktop as it can be: the saved value, from 15% to DESK_MAX. */
+export const deskShow = (l: Look) => Math.min(DESK_MAX, Math.max(0.15, l.bgShow ?? DESK_SHOW));
+/** How much of the desktop comes through the window's ground, 0 to 1 (--lc-see). */
+export const deskSee = (l: Look) => deskShow(l) * DESK_THROUGH;
+/** The Mac's Reduce transparency (Accessibility, Display): the window stays solid whatever the look says. */
+export const lessGlass = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-transparency: reduce)").matches;
 /** The look shows the desktop behind the window, where it can. */
-export const onDesktop = (l: Look) => l.background === "desktop" && seeThrough();
-/** Blurred, the window's own material tints the desktop already, so the page's tints are this much of what they'd be (app.css, data-frost). */
-const FROST_GROUND = 0.55;
+export const onDesktop = (l: Look) => l.background === "desktop" && seeThrough() && !lessGlass();
 /**
   The see-through window's ground as one colour: what the page paints round the paper, and what
   the shell's boot screen paints before the page is there, so the hand-over doesn't jump.
+  Blurred or not, the same tint: the page can't know how much the blur's own material hides.
 */
-const deskGround = (l: Look) => `color-mix(in oklab, ${getComputedStyle(document.documentElement).getPropertyValue("--lc-ground").trim()} ${Math.round((1 - (l.bgShow ?? DESK_SHOW)) * (l.bgFrost === true ? FROST_GROUND : 1) * 100)}%, transparent)`;
+const deskGround = (l: Look) => `color-mix(in oklab, ${getComputedStyle(document.documentElement).getPropertyValue("--lc-ground").trim()} ${Math.round((1 - deskSee(l)) * 100)}%, transparent)`;
 
 // The colours last put on the page, so a change of theme or accent can land in one frame.
 let painted = "";
@@ -112,7 +129,7 @@ export function applyLook(l: Look) {
   const desk = onDesktop(l);
   if (desk) {
     h.dataset.bg = "desktop";
-    h.style.setProperty("--lc-see", String(l.bgShow ?? DESK_SHOW));
+    h.style.setProperty("--lc-see", String(deskSee(l)));
   } else {
     if (h.dataset.bg === "desktop") delete h.dataset.bg;
     h.style.removeProperty("--lc-see");

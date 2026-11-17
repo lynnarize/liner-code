@@ -6,7 +6,7 @@
   the last used first, with the folder's path after the name, and the ways to add one under them;
   From GitHub and Find on this Mac open the full chooser in its place.
 */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ROUTINES_ON, type FoundRepo, type GitHubRepo, type Project } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
@@ -29,10 +29,10 @@ const tilde = os.tilde;
 /** How many projects the quick pick shows before it offers a find field. */
 const QUICK = 8;
 
-/** One line in the quick pick: an icon, a name, then something grey after it, and a check at the end. */
-function QuickRow({ icon, title, note, on, onPick }: { icon: ReactNode; title: string; note?: string; on?: boolean; onPick: () => void }) {
+/** One line in the quick pick: an icon, a name, then something grey after it, and a check at the end. `hl`: what Enter in the find field picks. */
+function QuickRow({ icon, title, note, on, hl, onPick }: { icon: ReactNode; title: string; note?: string; on?: boolean; hl?: boolean; onPick: () => void }) {
   return (
-    <button type="button" className="lc-qp-row l-focus" data-on={on || undefined} aria-pressed={on === undefined ? undefined : on} title={note ? `${title} · ${note}` : undefined} onClick={onPick}>
+    <button type="button" className="lc-qp-row l-focus" data-on={on || undefined} data-hl={hl || undefined} aria-pressed={on === undefined ? undefined : on} title={note ? `${title} · ${note}` : undefined} onClick={onPick}>
       <span className="lc-qp-icon">{icon}</span>
       <span className="lc-qp-name">{title}</span>
       {/* The path ends where the folder is: a long one gives way at its start, so its end stays. */}
@@ -54,6 +54,8 @@ export function ProjectQuickPick({ value, onPick, more = [] }: { value?: string;
   const threads = useEngine((s) => s.threads);
   const [full, setFull] = useState<Tab | null>(null);
   const [query, setQuery] = useState("");
+  // The find field has the keyboard: Enter there picks the first project shown, marked so.
+  const [finding, setFinding] = useState(false);
   // When you last worked in each project: its newest session's last activity.
   const used = useMemo(() => {
     const m = new Map<string, number>();
@@ -77,18 +79,45 @@ export function ProjectQuickPick({ value, onPick, more = [] }: { value?: string;
         <ProjectChooser value={value} onPick={onPick} initialTab={full} extra={extras.length ? (<><Sep />{extras}</>) : undefined} />
       </div>
     );
+  // The arrow keys go over the rows (and up from the first, back to the find field); Escape is the panel's.
+  const arrows = (e: KeyboardEvent<HTMLDivElement>) => {
+    if ((e.key !== "ArrowDown" && e.key !== "ArrowUp") || e.altKey || e.metaKey || e.ctrlKey || e.nativeEvent.isComposing) return;
+    const field = e.currentTarget.querySelector<HTMLInputElement>(".lc-qp-find input");
+    const rows = [...e.currentTarget.querySelectorAll<HTMLElement>(".lc-qp-row:not(:disabled)")];
+    if (!rows.length) return;
+    e.preventDefault();
+    const down = e.key === "ArrowDown";
+    const i = rows.indexOf(document.activeElement as HTMLElement);
+    const to = i < 0 ? (down ? rows[0] : rows[rows.length - 1]) : down ? (rows[i + 1] ?? field ?? rows[0]) : (rows[i - 1] ?? field ?? rows[rows.length - 1]);
+    to.focus();
+    to.scrollIntoView({ block: "nearest" });
+  };
   return (
-    <div className="lc-qp">
+    <div className="lc-qp" onKeyDown={arrows}>
       {many && (
         <div className="lc-mp-find lc-qp-find">
           <I.search size={14} />
-          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a project" aria-label="Find a project" spellCheck={false} />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setFinding(true)}
+            onBlur={() => setFinding(false)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || e.nativeEvent.isComposing || !shown[0]) return;
+              e.preventDefault();
+              onPick(shown[0]);
+            }}
+            placeholder="Find a project"
+            aria-label="Find a project"
+            spellCheck={false}
+          />
         </div>
       )}
       {projects.length > 0 && <div className="lc-qp-head">{q ? "Projects" : "Recent"}</div>}
       <div className="lc-qp-list">
-        {shown.map((p) => (
-          <QuickRow key={p.id} icon={<I.folder size={16} />} title={p.name} note={tilde(p.path)} on={p.id === value} onPick={() => onPick(p)} />
+        {shown.map((p, i) => (
+          <QuickRow key={p.id} icon={<I.folder size={16} />} title={p.name} note={tilde(p.path)} on={p.id === value} hl={finding && i === 0} onPick={() => onPick(p)} />
         ))}
         {q && shown.length === 0 && <p className="lc-quiet lc-qp-none">No project matches that.</p>}
       </div>

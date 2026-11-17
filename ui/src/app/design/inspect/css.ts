@@ -35,13 +35,25 @@ export function colour(v?: string | null): { hex: string; a: number } | undefine
   }
   if (/var\(|gradient|url\(/i.test(s)) return undefined;
   // Named colours and the rest: let a canvas say what it is.
-  if (probe === undefined) probe = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+  if (probe === undefined) {
+    const c = typeof document === "undefined" ? null : document.createElement("canvas");
+    if (c) c.width = c.height = 1;
+    probe = c?.getContext("2d", { willReadFrequently: true }) ?? null;
+  }
   if (!probe) return undefined;
   probe.fillStyle = "#010203";
   probe.fillStyle = s;
   const out = String(probe.fillStyle);
   if (out === "#010203" && !/^#010203$/i.test(s)) return undefined;
-  return colour(out);
+  // The canvas writes sRGB as hex or rgba(), read above. oklch(), lab() and color() come back as
+  // they went in (Chromium 152), so asking again would never end: those are read off a pixel.
+  if (/^(#|rgba?\()/i.test(out)) return colour(out);
+  probe.clearRect(0, 0, 1, 1);
+  probe.fillRect(0, 0, 1, 1);
+  const [r, g, b, alpha] = probe.getImageData(0, 0, 1, 1).data;
+  const said = /\/\s*([\d.]+)(%?)\s*\)$/.exec(out);
+  const a = said ? Number(said[1]) / (said[2] ? 100 : 1) : alpha / 255;
+  return { hex: "#" + [r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("").toUpperCase(), a };
 }
 
 /** The same colour, alpha included, whatever way each was written. */

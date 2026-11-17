@@ -878,14 +878,35 @@
     }
   }
 
+  /*
+    An agent's change loads the page again, piece by piece: its own one-off motion (an entrance,
+    text that unblurs in) is put at its end at once, so the words don't blink on every piece.
+    Whatever repeats for ever (a spinner) goes on; the settle that follows is the change's own.
+    Before the first paint (DOMContentLoaded), so the page is never seen at the motion's start.
+  */
+  function quiet() {
+    try {
+      if (typeof document.getAnimations !== "function") return;
+      for (const a of document.getAnimations()) {
+        const end = a.effect && typeof a.effect.getComputedTiming === "function" ? a.effect.getComputedTiming().endTime : Infinity;
+        if (Number.isFinite(end)) a.finish();
+      }
+    } catch {
+      // a page that won't be stilled plays as it was written
+    }
+  }
+
   const ready = () => {
     stamp();
     const plan = window.__linerSettle;
+    const still = window.__linerQuiet === true;
     try {
       delete window.__linerSettle;
+      delete window.__linerQuiet;
     } catch {
       // a page that froze its window: the plan stays, unread
     }
+    if (still) quiet();
     settle(plan);
     try {
       new MutationObserver(soon).observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });

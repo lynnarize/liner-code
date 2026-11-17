@@ -19,8 +19,8 @@ import { agentRedraw, getDesign, onDesignSwitch, useDesign } from "./store";
 
 // The computed properties come from contracts (COMPUTED) with the agent, so the two can't drift.
 // With `key`, the agent's text is wrapped in a function that gets it as __linerKey (frame-agent.js keyPort), never a global a script of the page could read.
-const scriptOf = (settle?: Settle, rev?: number, key?: string) =>
-  `<script data-liner-agent${rev !== undefined ? ` data-rev="${rev}"` : ""}>window.__linerComputed=${JSON.stringify(COMPUTED)};${settle ? `window.__linerSettle=${JSON.stringify(settle).replace(/</g, "\\u003c")};` : ""}${key ? `((__linerKey) => {\n${agent}\n})(${JSON.stringify(key)});` : agent}</script>`;
+const scriptOf = (settle?: Settle, rev?: number, key?: string, quiet?: boolean) =>
+  `<script data-liner-agent${rev !== undefined ? ` data-rev="${rev}"` : ""}>window.__linerComputed=${JSON.stringify(COMPUTED)};${settle ? `window.__linerSettle=${JSON.stringify(settle).replace(/</g, "\\u003c")};` : ""}${quiet ? "window.__linerQuiet=true;" : ""}${key ? `((__linerKey) => {\n${agent}\n})(${JSON.stringify(key)});` : agent}</script>`;
 
 const WHITE = "\t\n\f\r ";
 /**
@@ -87,11 +87,12 @@ export function agentAt(html: string) {
   of all (agentAt). With `settle`, the agent shows an agent's change arriving (frame-agent.js
   settle). With `rev`, the store's count of redraws, on the agent's tag (taken out with the agent
   whenever the page is serialised), so the same HTML drawn again is still a new document. With
-  `key`, the key the agent sends its key port up with (bridge.ts keysFor).
+  `key`, the key the agent sends its key port up with (bridge.ts keysFor). With `quiet`, the page's
+  own one-off motion (an entrance, a reveal) is shown at its end at once (frame-agent.js quiet).
 */
-export function srcDocOf(html: string, base?: string, settle?: Settle, rev?: number, key?: string) {
+export function srcDocOf(html: string, base?: string, settle?: Settle, rev?: number, key?: string, quiet?: boolean) {
   const baseTag = base ? `<base data-liner-base href="${base.replace(/\/?$/, "/")}frames/">` : "";
-  const head = `${baseTag}${scriptOf(settle, rev, key)}`;
+  const head = `${baseTag}${scriptOf(settle, rev, key, quiet)}`;
   // A piece of a page, with no doctype, <html>, <head> or <body> anywhere: a document of its own round it.
   if (!/<!doctype|<(html|head|body)[\s/>]/i.test(html)) return `<!doctype html><html><head>${head}</head><body>${html}</body></html>`;
   const at = agentAt(html);
@@ -223,7 +224,12 @@ export const Frame = memo(function Frame({ frame, editing, live }: { frame: Desi
     if (plan?.mode === "mark") marks.set(markKey(frame.id), { ids: plan.ids, lead: heard!.lead, at: Date.now() });
     else marks.delete(markKey(frame.id));
     const key = keyOf();
-    return { doc: srcDocOf(html, base, plan && plan.mode !== "mark" && !stillMotion() ? plan : undefined, rev, key), key };
+    // An agent writes a page in pieces and each one loads the frame again: the page's own entrance
+    // (text that fades or unblurs in) would play on every piece, and the words blink. So an agent's
+    // redraw shows the page at rest; a page appearing whole, and a frame opened, undone or brought
+    // back, still plays its motion.
+    const quiet = Boolean(heard) && plan?.mode !== "whole";
+    return { doc: srcDocOf(html, base, plan && plan.mode !== "mark" && !stillMotion() ? plan : undefined, rev, key, quiet), key };
   }, [rev, has, base, frame.kind, frame.id]);
   const doc = made?.doc;
   // Attached before the browser can run the document (a layout effect), so its first "ready" is heard.

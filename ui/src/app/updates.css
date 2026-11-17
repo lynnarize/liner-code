@@ -1,8 +1,8 @@
 /*
-  Updates: a notice stack in Home's bottom-left corner, clear of the Desk cue in the middle,
-  and the Updates place in Settings (prefix lc-up-).
+  Updates: a notice stack in Home's bottom-left corner, and the Updates place in Settings
+  (prefix lc-up-).
 */
-/* With no project there's no Desk stage around Home: Home itself holds the corner. */
+/* Home itself holds the corner. */
 .lc-home {
   position: relative;
 }

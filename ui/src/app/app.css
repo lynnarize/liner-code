@@ -548,12 +548,6 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   box-shadow: none;
   color: var(--l-surface);
 }
-.lc-stack {
-  display: flex;
-}
-.lc-stack > .lc-disc + .lc-disc {
-  margin-left: -8px;
-}
 .lc-tile {
   display: grid;
   flex: none;
@@ -711,8 +705,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   .lc-sb-update-go:hover {
     background: var(--lc-plate);
   }
-  .lc-st-mode:not([data-on]):hover,
-  .lc-rc:not([data-on]):hover {
+  .lc-st-mode:not([data-on]):hover {
     box-shadow: 0 0 0 1px var(--l-line-strong);
   }
 }
@@ -3366,8 +3359,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   color: var(--l-ink-2);
   cursor: pointer;
 }
-.lc-check input,
-.lc-prj-row input {
+.lc-check input {
   width: 16px;
   height: 16px;
   margin: 0;
@@ -4940,7 +4932,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   justify-content: safe center;
   gap: 22px;
   min-height: 0;
-  /* In the middle of the paper, a little above it for the Desk's cue at the foot. */
+  /* In the middle of the paper, a little above it. */
   padding: 24px 24px 5vh;
   overflow: auto;
 }
@@ -5539,348 +5531,13 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-weight: 600;
 }
 
-/* ---------- Setup ---------- */
-/* First launch fits the window: the page never scrolls. Spacing gives way to a short window, and past
-   that only a step's body scrolls, under its title and above its buttons. */
-.lc-setup {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  background: var(--l-bg);
-}
-html[data-native="mac"] .lc-setup {
-  background: color-mix(in oklab, var(--l-bg) 82%, transparent);
-  transition: background 600ms var(--l-ease-out);
-}
-html[data-native="mac"] .lc-setup[data-intro] {
-  background: var(--lc-ground);
-}
-/* Equal outer columns and equal padding keep the steps on the window's centre; the row's centre is
-   the traffic lights'. */
-.lc-setup-top {
-  display: grid;
-  flex: none;
-  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
-  align-items: center;
-  gap: 16px;
-  height: 52px;
-  box-sizing: border-box;
-  padding: 0 24px;
-}
-html[data-native="mac"] .lc-setup-top {
-  height: calc(var(--lc-lights-y, 26px) * 2);
-}
-.lc-lockup {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-self: start;
-  margin-left: 6px;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  white-space: nowrap;
-  transform-origin: 50% 50%;
-  transition: transform 1000ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-html[data-native="mac"] .lc-lockup {
-  margin-left: max(6px, calc(var(--lc-lights-x, 70px) - 2px));
-}
-.lc-lockup[data-intro]:not([data-measured]) {
-  opacity: 0;
-}
-/* The boot screen's name, in the same spot at the same size (26px), so nothing moves when Setup
-   takes over. The name is already in focus: only the line under it comes and goes. */
-.lc-lockup[data-intro] {
-  transform: translate(var(--fx, 0px), var(--fy, 0px)) scale(calc(26 / 17));
-  transition: none;
-}
+/* ---------- The boot screen's name, and a key typed in place (Settings) ----------
+   First launch itself is setup.css, beside Setup.tsx. */
 @keyframes lc-wm {
   from {
     opacity: 0;
     filter: blur(8px);
   }
-}
-/* 13px at the intro's scale, on the line where the boot screen says "Opening" (30px below centre). */
-.lc-lockup-tag {
-  position: absolute;
-  top: calc(50% + 30px * 17 / 26);
-  left: 50%;
-  translate: -50% 0;
-  font-size: calc(13px * 17 / 26);
-  font-weight: 400;
-  letter-spacing: -0.004em;
-  color: var(--l-ink-3);
-  opacity: 0;
-  pointer-events: none;
-}
-.lc-lockup[data-intro] .lc-lockup-tag {
-  animation: lc-tag 2.25s cubic-bezier(0.2, 0.8, 0.2, 1) 250ms backwards;
-}
-@keyframes lc-tag {
-  0%,
-  100% {
-    opacity: 0;
-    filter: blur(6px);
-  }
-  25%,
-  75% {
-    opacity: 1;
-    filter: none;
-  }
-}
-.lc-setup .lc-stepper,
-.lc-setup .lc-machine,
-.lc-setup-main {
-  transition:
-    opacity 600ms var(--l-ease-out),
-    filter 600ms var(--l-ease-out);
-}
-.lc-setup[data-intro] .lc-stepper,
-.lc-setup[data-intro] .lc-machine,
-.lc-setup[data-intro] .lc-setup-main {
-  opacity: 0;
-  filter: blur(6px);
-  pointer-events: none;
-}
-.lc-stepper {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-}
-.lc-stepper li {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--l-ink-3);
-  white-space: nowrap;
-}
-.lc-stepper li + li::before {
-  content: "";
-  width: 40px;
-  height: 1.5px;
-  margin-right: 6px;
-  background: var(--l-line-2);
-  transition: background 400ms ease;
-}
-.lc-stepper li[data-state="done"] + li::before,
-.lc-stepper li[data-state="now"]:not(:first-child)::before {
-  background: var(--l-accent);
-}
-.lc-stepper li[data-state="now"] {
-  color: var(--l-ink);
-  font-weight: 500;
-}
-.lc-stepper .lc-quiet {
-  font-size: 12px;
-  font-weight: 400;
-}
-.lc-step-n {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  box-sizing: border-box;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1.5px var(--l-line-strong);
-  font-size: 12px;
-  font-weight: 500;
-  transition:
-    background 300ms ease,
-    color 300ms ease;
-}
-.lc-stepper li[data-state="now"] .lc-step-n {
-  background: var(--l-ink);
-  box-shadow: none;
-  color: var(--l-surface);
-}
-.lc-stepper li[data-state="done"] .lc-step-n {
-  background: var(--l-accent-soft);
-  box-shadow: none;
-  color: var(--l-accent-text);
-}
-.lc-machine {
-  display: inline-flex;
-  justify-self: end;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
-  font-size: 13px;
-}
-.lc-machine i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--l-ok);
-}
-.lc-setup-main {
-  display: flex;
-  flex: 1;
-  justify-content: center;
-  min-height: 0;
-  padding: clamp(12px, 3.6vh, 36px) 24px clamp(14px, 3.6vh, 40px);
-}
-.lc-step {
-  display: flex;
-  flex-direction: column;
-  gap: clamp(10px, 2vh, 18px);
-  width: min(900px, 100%);
-  min-height: 0;
-}
-.lc-step > * {
-  flex: none;
-}
-.lc-step-narrow {
-  width: min(760px, 100%);
-  padding-top: clamp(0px, 4vh - 12px, 40px);
-}
-.lc-step-body {
-  display: flex;
-  flex: 0 1 auto;
-  flex-direction: column;
-  gap: inherit;
-  min-height: 0;
-  margin: -6px -10px;
-  padding: 6px 10px;
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-.lc-step-body > * {
-  flex: none;
-}
-.lc-step h1 {
-  margin: 0;
-  font-family: var(--l-font-display);
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  text-align: center;
-  animation: l-unblur 520ms var(--l-ease-out) backwards;
-}
-.lc-step-sub {
-  margin: -6px auto 6px;
-  max-width: 720px;
-  font-size: 15px;
-  line-height: 22px;
-  color: var(--l-ink-3);
-  text-align: center;
-  animation: l-unblur 520ms 80ms var(--l-ease-out) backwards;
-}
-.lc-grp {
-  display: grid;
-  gap: 8px;
-  animation: lc-focus-in 520ms 140ms var(--l-ease-enter) backwards;
-}
-.lc-grp-h {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 4px;
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.lc-grp-h b {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--l-ink);
-}
-.lc-setup-frame {
-  border-radius: 22px;
-}
-.lc-cli {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.lc-cli > div,
-.lc-keys > div {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 12px;
-  min-height: 60px;
-  padding: 0 14px;
-  animation: l-unblur 420ms calc(var(--i, 0) * 60ms + 200ms) var(--l-ease-out) backwards;
-}
-.lc-cli > div:nth-child(n + 4) {
-  box-shadow: 0 -1px 0 var(--l-line);
-}
-.lc-cli > div:not(:nth-child(3n + 1)) {
-  border-left: 1px solid var(--l-line);
-}
-.lc-cli b,
-.lc-keys b {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.lc-cli code {
-  display: block;
-  margin-top: 2px;
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-tile-av {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: var(--l-wash-2);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--l-ink-2);
-}
-.lc-ready {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ok-text);
-}
-.lc-soon {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--l-wash-2);
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-keys {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.lc-keys > div {
-  min-height: 56px;
-}
-.lc-keys > div:nth-child(n + 3) {
-  box-shadow: 0 -1px 0 var(--l-line);
-}
-.lc-keys > div:nth-child(2n) {
-  border-left: 1px solid var(--l-line);
-}
-.lc-keys small {
-  display: block;
-  margin-top: 1px;
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .lc-keyin {
   display: inline-flex;
@@ -5908,145 +5565,6 @@ html[data-native="mac"] .lc-lockup {
   font: inherit;
   font-size: 13px;
   color: var(--l-ink);
-}
-.lc-sure {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px 22px;
-  margin: 0;
-  padding: 12px 0 0;
-  border-top: 1px dashed var(--l-line-2);
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.lc-sure span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.lc-sure svg {
-  color: var(--l-ok);
-}
-.lc-step-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 6px;
-  font-size: 14px;
-}
-.lc-prj {
-  display: grid;
-  max-height: max(160px, 100vh - 420px);
-  overflow: auto;
-}
-.lc-prj-row {
-  display: grid;
-  grid-template-columns: 16px 16px minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 12px;
-  min-height: 54px;
-  padding: 0 16px;
-  cursor: pointer;
-  animation: l-unblur 380ms var(--l-ease-out) backwards;
-}
-.lc-prj-row + .lc-prj-row {
-  box-shadow: 0 -1px 0 var(--l-line);
-}
-.lc-prj-row > svg {
-  color: var(--l-ink-3);
-}
-.lc-prj-row b {
-  display: block;
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-prj-row small {
-  display: block;
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-prj-row[data-added] {
-  opacity: 0.7;
-}
-.lc-prj-row .lc-quiet {
-  font-size: 13px;
-}
-.lc-prj-strip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 6px 4px;
-}
-.lc-prj-strip .lc-input {
-  flex: 1;
-  height: 30px;
-  font-size: 13px;
-}
-.lc-rcs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-.lc-rc {
-  position: relative;
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  min-height: 210px;
-  padding: 18px 18px 20px;
-  border: 0;
-  border-radius: 20px;
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
-  text-align: left;
-  cursor: pointer;
-  transition: box-shadow 320ms var(--l-spring-smooth);
-  animation: lc-focus-in 520ms calc(var(--i) * 90ms + 120ms) var(--l-ease-enter) backwards;
-}
-.lc-rc[data-on] {
-  box-shadow:
-    0 0 0 1.5px var(--l-accent),
-    0 0 0 5px var(--l-accent-soft),
-    0 1px 2px var(--l-drop);
-}
-.lc-rc b {
-  display: block;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.012em;
-}
-.lc-rc small {
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.lc-rc p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--l-ink-3);
-  text-wrap: pretty;
-}
-.lc-rc-tick {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--l-accent);
-  color: var(--l-accent-ink);
-  animation: l-pop-in 260ms var(--l-ease-enter) backwards;
 }
 
 /* ---------- Sheets (dialogs) ---------- */
@@ -6466,10 +5984,9 @@ html[data-native="mac"] .lc-lockup {
 }
 /* ---------- Settings: the whole window ---------- */
 /* Settings' sidebar (you, the search, the places and the open one's sections): settings.css. */
-/* Settings and Setup keep white cards, with a 1px ring where the glass frame was. */
+/* Settings keeps white cards, with a 1px ring where the glass frame was. */
 .lc-fcard.lc-st-card,
 .lc-st-col .lc-fcard,
-.lc-setup .lc-fcard,
 .lc-usage-in .lc-fcard {
   border-radius: 18px;
 }
@@ -7177,17 +6694,6 @@ html[data-native="mac"] .lc-lockup {
 .lc-offline .l-shimmer {
   background-image: linear-gradient(100deg, var(--lc-ctl-ink-2) 35%, var(--lc-ctl-ink) 50%, var(--lc-ctl-ink-2) 65%);
 }
-
-/* First run's header keeps one line: the steps tighten, and this Mac's name goes first. */
-@media (max-width: 1040px) {
-  .lc-stepper li + li::before {
-    width: 20px;
-  }
-  .lc-stepper .lc-quiet,
-  .lc-machine {
-    display: none;
-  }
-}
 /* Usage's note gives way to the period switch. */
 .lc-usage > .lc-top > .lc-quiet {
   min-width: 0;
@@ -7201,20 +6707,6 @@ html[data-native="mac"] .lc-lockup {
   .lc-usage-mid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .lc-cli,
-  .lc-rcs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  /* The tools' dividers follow the two columns: odd ones start a row, the third starts the second. */
-  .lc-cli > div:nth-child(2n + 1) {
-    border-left: 0;
-  }
-  .lc-cli > div:nth-child(2n) {
-    border-left: 1px solid var(--l-line);
-  }
-  .lc-cli > div:nth-child(3) {
-    box-shadow: 0 -1px 0 var(--l-line);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7225,8 +6717,7 @@ html[data-native="mac"] .lc-lockup {
   .lc-top,
   .lc-panel-top,
   .lc-fold,
-  .lc-sb-plate,
-  .lc-lockup {
+  .lc-sb-plate {
     transition: none !important;
   }
   .lc-blk[data-fresh],
@@ -7239,15 +6730,8 @@ html[data-native="mac"] .lc-lockup {
   .lc-usage,
   .lc-panel,
   .lc-queued-row,
-  .lc-rc,
-  .lc-grp,
-  .lc-cli > div,
-  .lc-keys > div,
-  .lc-prj-row,
   .lc-st-side,
   .lc-st-col,
-  .lc-lockup,
-  .lc-lockup *,
   .lc-boot-wm {
     animation: none !important;
   }
@@ -8625,7 +8109,8 @@ html[data-motion="quick"] .lc-session .lc-body {
 /* ---------- 0.2.7: Home, as Devin lays it out ---------- */
 /*
   The composer sits in the middle of the paper, a touch below centre. The project's name and
-  This checkout / Worktree rest on top of it; Pick up hangs below it and never moves it.
+  This checkout / Worktree rest on top of it. Liner Design's Pick up hangs below its box and
+  never moves it.
 */
 .lc-home-in[data-mid] {
   display: grid;
@@ -8720,20 +8205,6 @@ html[data-motion="quick"] .lc-session .lc-body {
     background: var(--l-wash-2);
   }
 }
-.lc-home-card {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  width: min(400px, 100%);
-  box-sizing: border-box;
-  padding: 4px;
-  border-radius: 14px;
-  box-shadow: 0 0 0 1px var(--lc-hair);
-  animation: lc-focus-in 420ms var(--l-ease-enter) backwards;
-}
-.lc-home-card + .lc-home-card {
-  animation-delay: 60ms;
-}
 .lc-home-card-h {
   display: flex;
   align-items: center;
@@ -8742,8 +8213,7 @@ html[data-motion="quick"] .lc-session .lc-body {
   font-size: 12px;
   color: var(--l-ink-3);
 }
-.lc-home-pick,
-.lc-home-card .lc-pop > .lc-home-pick {
+.lc-home-pick {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -8765,13 +8235,6 @@ html[data-motion="quick"] .lc-session .lc-body {
   flex: none;
   color: var(--l-ink-3);
 }
-.lc-home-pick[aria-pressed="true"] {
-  background: var(--l-wash);
-  font-weight: 500;
-}
-.lc-home-pick[aria-pressed="true"] > svg:last-child {
-  color: var(--l-ink);
-}
 .lc-home-pick-t {
   min-width: 0;
   overflow: hidden;
@@ -8787,33 +8250,6 @@ html[data-motion="quick"] .lc-session .lc-body {
   color: var(--l-ink-3);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.lc-home-pick small.lc-mono {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-size: 12px;
-}
-.lc-home-pick-q {
-  font-size: 13px;
-  color: var(--l-ink-2);
-}
-.lc-home-waits {
-  flex: none;
-  font-weight: 500;
-  color: var(--l-warn-text);
-}
-.lc-home-sep {
-  height: 1px;
-  margin: 4px 0;
-  background: var(--lc-hair);
-}
-.lc-home-two {
-  display: flex;
-  gap: 4px;
-}
-.lc-home-two > * {
-  flex: 1;
-  min-width: 0;
 }
 @media (hover: hover) {
   .lc-home-pick:hover {
@@ -8905,11 +8341,6 @@ html[data-motion="quick"] .lc-session .lc-body {
     border-top: 0.5px solid var(--lc-line);
     border-bottom: 0.5px solid var(--lc-line);
   }
-  .lc-home-sep {
-    height: 0.5px;
-    background: var(--lc-line);
-  }
-  .lc-home-card,
   .lc-home-where > button[aria-checked="true"] {
     box-shadow: 0 0 0 0.5px var(--lc-line);
   }
@@ -8967,9 +8398,8 @@ body,
 .lc-chip-name {
   font-weight: 400;
 }
-/* Home: Pick up's rows. */
-.lc-home-pick,
-.lc-home-card .lc-pop > .lc-home-pick {
+/* Liner Design's Home: Pick up's rows. */
+.lc-home-pick {
   font-size: 13px;
 }
 /* Tooltips and menus' rows: 13 regular, the picked row at 500, a menu's head at 500. */
@@ -9048,7 +8478,7 @@ body,
   width: 20px;
   height: 20px;
 }
-/* Home: the project's row and Pick up stand where the mockup puts them. */
+/* Home: the project's row (and Liner Design's Pick up) stand where the mockup puts them. */
 .lc-home-top {
   padding: 0 8px 0 6px;
 }
@@ -9138,5 +8568,96 @@ html[data-native="mac"] .lc-sb-head {
 @container lc-session (max-width: 700px) {
   .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel > .lc-panel-top {
     display: flex;
+  }
+}
+
+/* ---------- 0.2.8: a compact Home and Recent in the sidebar (the smaller Code / Design switch is in its own rules, "The foot's option") ---------- */
+/*
+  Home's project picker is small, as Devin's folder picker: a quiet Recent, one line a project (its
+  folder, its name in ink, its path in grey after it, a check on the one picked), then the ways to
+  add one. A path too long gives way at its start, so the folder it ends in stays readable.
+*/
+.lc-qp {
+  display: grid;
+  gap: 1px;
+}
+.lc-qp-find {
+  margin: 0 0 2px;
+}
+.lc-qp-head {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-qp-list {
+  display: grid;
+  gap: 1px;
+  max-height: calc(34px * 8 + 7px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lc-qp-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-qp-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  color: var(--l-ink-3);
+}
+.lc-qp-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-qp-row[data-on] .lc-qp-name {
+  font-weight: 500;
+}
+.lc-qp-path {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  /* Right to left, so the ellipsis eats the path's start; the marks round it keep it reading left to right. */
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  color: var(--l-ink-3);
+}
+.lc-qp-row > svg {
+  flex: none;
+  color: var(--l-ink-2);
+}
+.lc-qp-none {
+  margin: 0;
+  padding: 6px 9px;
+  font-size: 13px;
+}
+@media (hover: hover) {
+  .lc-qp-row:hover {
+    background: var(--l-wash-2);
   }
 }

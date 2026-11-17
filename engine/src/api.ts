@@ -13,7 +13,7 @@ import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
 import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
 import { saveToDownloads, sessionMarkdown } from "./export.ts";
-import { importable, transcript } from "./imports.ts";
+import { importable, recentSessions, transcript } from "./imports.ts";
 import { outside, run, shellOf, which } from "./exec.ts";
 import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
@@ -93,10 +93,25 @@ async function repoInfo(path: string) {
   return { branch, lastCommitAt: last.code === 0 && last.stdout.trim() ? Number(last.stdout.trim()) * 1000 : undefined, remote: origin.code === 0 ? githubName(origin.stdout) : undefined };
 }
 
-/** Git repositories in the usual places people keep code, three levels down. */
-function findRepos(roots: string[]) {
+/** A folder as the disk has it: links followed, and each name in its own case (~/code is ~/Code on a Mac). */
+const onDisk = (path: string) => {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+};
+
+/**
+  Git repositories in the usual places people keep code, three levels down. Each once, by where it
+  really is: ~/Code and ~/code are one folder on a disk that ignores case (a Mac's, a PC's), and the
+  path given back is the disk's own spelling, whichever was walked; two real folders on a disk that
+  minds case are both looked in.
+*/
+export function findRepos(roots: string[]) {
   const out: string[] = [];
   const seen = new Set<string>();
+  const walked = new Set<string>();
   const walk = (dir: string, depth: number) => {
     if (out.length > 200 || depth > 3) return;
     let names: string[] = [];
@@ -106,8 +121,9 @@ function findRepos(roots: string[]) {
       return;
     }
     if (names.includes(".git")) {
-      if (!seen.has(dir)) out.push(dir);
-      seen.add(dir);
+      const real = onDisk(dir);
+      if (!seen.has(real)) out.push(real);
+      seen.add(real);
       return;
     }
     for (const n of names) {
@@ -120,7 +136,13 @@ function findRepos(roots: string[]) {
       }
     }
   };
-  for (const r of roots) if (existsSync(r)) walk(r, 0);
+  for (const r of roots) {
+    if (!existsSync(r)) continue;
+    const real = onDisk(r);
+    if (walked.has(real)) continue;
+    walked.add(real);
+    walk(r, 0);
+  }
   return out;
 }
 
@@ -544,7 +566,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
   const addProject = async (abs: string, name?: string, agent?: string) => {
     if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error("That folder doesn't exist.");
-    const have = store.projects.find((p) => p.path === abs);
+    // The same folder under another spelling (~/Code/app for ~/code/app, or through a link) is the project you have.
+    const here = onDisk(abs);
+    const have = store.projects.find((p) => p.path === abs || onDisk(p.path) === here);
     if (have) return have;
     const isGit = await isRepo(abs);
     const info = isGit ? await repoInfo(abs) : {};
@@ -699,6 +723,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return t;
   };
 
+  /** Every Claude Code and Codex session already brought in here ("claude:<id>"), so neither list offers it again. */
+  const broughtIn = () => new Set(store.threads.flatMap((t) => [t.providerSession, ...Object.values(t.sessions ?? {})].filter((s): s is string => Boolean(s))));
   const handlers: Handlers = {
     "state.get": async () => {
       // With last launch's list on disk the snapshot answers at once; the look's answer follows as a providers event.
@@ -771,7 +797,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(abs, undefined, agent);
     },
     // An empty agent clears it: new sessions there start with whoever Home would pick.
-    "sessions.importable": ({ projectId }) => importable(store.project(projectId).path, env, new Set(store.threads.flatMap((t) => [t.providerSession, ...Object.values(t.sessions ?? {})].filter((s): s is string => Boolean(s))))),
+    "sessions.importable": ({ projectId }) => importable(store.project(projectId).path, env, broughtIn()),
+    "sessions.recent": ({ limit }) => recentSessions(store.projects.filter((p) => p.kind !== "design"), env, broughtIn(), Math.max(1, Math.min(50, limit ?? 6))),
     "sessions.import": async ({ projectId, tool, id }) => {
       const project = store.project(projectId);
       const taken = store.threads.find((t) => t.providerSession === `${tool}:${id}`);
@@ -887,7 +914,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "projects.scan": async ({ roots }) => {
       const home = homedir();
       const paths = findRepos((roots?.length ? roots : ROOTS.map((r) => join(home, r))).map((r) => r.replace(/^~(?=\/|$)/, home)));
-      const found: FoundRepo[] = await Promise.all(paths.map(async (p) => ({ path: p, name: basename(p), ...(await repoInfo(p)), added: store.projects.some((x) => x.path === p) })));
+      // Added under any spelling of the same folder, as addProject matches it.
+      const have = new Set(store.projects.map((x) => onDisk(x.path)));
+      const found: FoundRepo[] = await Promise.all(paths.map(async (p) => ({ path: p, name: basename(p), ...(await repoInfo(p)), added: have.has(p) })));
       return found.sort((a, b) => (b.lastCommitAt ?? 0) - (a.lastCommitAt ?? 0));
     },
     "github.repos": async () => {

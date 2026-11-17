@@ -17,7 +17,7 @@
 */
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
 import type { Access, CommandInfo, SkillInfo, Effort, PairTuning, PairWays, Project, ProviderInfo, QueuedMessage, RpcResult, SidekickClass, Thread } from "@contracts";
-import { castOf, costOf, familyOf, frontierClass, pairCostOf, shortlistOf, splitModel, waysOf } from "@contracts";
+import { castOf, costOf, familyOf, frontierClass, listedHere, openCodeHasGo, pairCostOf, shortlistOf, splitModel, waysOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
@@ -241,8 +241,15 @@ function pastedName(taken: string[]) {
 const COLD_TOKENS = 200_000;
 /** The model picker's tab for your agents (no tool has this id). */
 const AGENTS_TAB = "@agents";
-/** The tools whose models the picker lists: ready, with models, the Demo apart (it has a row of its own). */
-const toolsOf = (providers: ProviderInfo[]) => providers.filter((p) => p.available && p.adapter && p.models.length && p.id !== "demo");
+/**
+  The tools whose models the picker lists: ready, with models to list, the Demo apart (it has a row
+  of its own). A tool whose every model is left out (Hermes with only OpenCode Go's, while OpenCode
+  has Go: listedHere, judged on `every` tool) isn't one.
+*/
+const toolsOf = (providers: ProviderInfo[], every: ProviderInfo[] = providers) => {
+  const goHere = openCodeHasGo(every);
+  return providers.filter((p) => p.available && p.adapter && p.id !== "demo" && p.models.some((m) => listedHere(p.id, m, goHere)));
+};
 
 /**
   The tool that runs the session (Claude Code, Codex, OpenCode), picked on its own beside where it
@@ -284,7 +291,7 @@ function ToolPick({ settings, onSettings }: { settings: RunSettings; onSettings:
               onPick={() => {
                 close();
                 if (t.id === now) return;
-                const cast = castOf([t], { picks });
+                const cast = castOf([t], { picks, every: providers });
                 if (!cast) return;
                 // Another tool is another sidekick: the session's own class lines go, and a session that only now becomes a pair gets a pair's effort.
                 const two = pairReady(cast);
@@ -1406,12 +1413,12 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const toolNow = settings.agent === "demo" ? "" : splitModel(settings.model ?? agentOf(settings.agent, agents, providers).model).provider;
   const scoped = useMemo(() => {
     const own = providers.filter((p) => p.id === toolNow);
-    return toolsOf(own).length ? own : providers;
+    return toolsOf(own, providers).length ? own : providers;
   }, [providers, toolNow]);
-  const pair = useMemo(() => castOf(scoped, { picks }), [scoped, picks]);
+  const pair = useMemo(() => castOf(scoped, { picks, every: providers }), [scoped, picks, providers]);
   const two = pairReady(pair);
   const way: Way | "demo" = settings.agent === "demo" ? "demo" : wayOf(settings, pair);
-  const tools = useMemo(() => toolsOf(scoped), [scoped]);
+  const tools = useMemo(() => toolsOf(scoped, providers), [scoped, providers]);
   const yours = agents.filter((a) => a.id !== "demo");
   const [query, setQuery] = useState("");
   // What the column shows: the rows (""), a tool's models (its id), or your agents.

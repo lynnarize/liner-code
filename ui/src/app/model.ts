@@ -3,7 +3,8 @@
   which bucket a session sits in, and the one line under its title.
 */
 import type { Access, AgentProfile, EffortInfo, FileChange, Item, ModelInfo, PairTuning, Project, ProviderInfo, Thread } from "@contracts";
-import { familyOf, nearestEffort, splitModel } from "@contracts";
+import { familyOf, listedHere, nearestEffort, openCodeHasGo, splitModel } from "@contracts";
+export { isGoModel, openCodeHasGo } from "@contracts";
 import type { MarkKind } from "./icons";
 
 type Level = { id: Access; label: string; short: string; note: string };
@@ -221,9 +222,21 @@ export function whoOf(s: { agent: string; sidekick?: string; model?: string }, a
 /** The model a thread's agent runs on. */
 export const threadModel = (t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) => t.model ?? agentOf(t.agent, agents, providers).model;
 
-/** Every model you can pick, across the providers that are ready. */
-export function allModels(providers: ProviderInfo[]) {
+/** Every model the tools that are ready report, none left out: for a name, never for a list to pick from. */
+export function everyModel(providers: ProviderInfo[]) {
   return providers.filter((p) => p.available && p.adapter).flatMap((p) => p.models.map((m) => ({ ref: `${p.id}:${m.id}`, label: m.label, description: m.description, provider: p.label, providerId: p.id, group: m.group, legacy: m.legacy, isDefault: m.isDefault })));
+}
+
+/**
+  Every model you can pick, across the providers that are ready. When OpenCode has OpenCode Go
+  itself, Go's models that another tool also runs (Hermes, with a Go key) are left out, so each of
+  them is listed once, in OpenCode (contracts' listedHere, which casting goes by too). `every` is all the tools, when `providers` is only some of them,
+  so a list of Hermes's alone still knows OpenCode has Go. A pick saved on one left out still has
+  its name (modelLabel, everyModel) and still runs.
+*/
+export function allModels(providers: ProviderInfo[], every: ProviderInfo[] = providers) {
+  const goHere = openCodeHasGo(every);
+  return everyModel(providers).filter((m) => listedHere(m.providerId, { group: m.group, id: m.ref.slice(m.ref.indexOf(":") + 1) }, goHere));
 }
 export type ModelChoice = ReturnType<typeof allModels>[number];
 

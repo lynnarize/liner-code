@@ -8,7 +8,7 @@
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
-import type { ImportableSession, Item, ToolKind } from "../../contracts/src/index.ts";
+import type { ImportableSession, Item, RecentSession, ToolKind } from "../../contracts/src/index.ts";
 import { uid } from "./store.ts";
 
 type Json = Record<string, unknown>;
@@ -71,39 +71,67 @@ function codexText(p: Json) {
   return Array.isArray(p.content) ? (p.content as Json[]).flatMap((b) => (typeof b.text === "string" ? [b.text] : [])).join("\n") : "";
 }
 
+/** Claude Code's sessions for this folder (its real path), newest first, `max` at most, leaving out ones already here. */
+function claudeSessions(here: string, env: NodeJS.ProcessEnv, have: Set<string>, max = Infinity): ImportableSession[] {
+  const out: ImportableSession[] = [];
+  const dir = claudeDir(env, here);
+  if (!existsSync(dir)) return out;
+  for (const { f, at } of newest(readdirSync(dir).filter((n) => n.endsWith(".jsonl")).map((n) => join(dir, n)))) {
+    if (out.length >= max) break;
+    const id = basename(f, ".jsonl");
+    if (have.has(`claude:${id}`)) continue;
+    let title = "";
+    let first = "";
+    for (const o of head(f).map(parse)) {
+      if (o?.type === "custom-title" && typeof o.customTitle === "string") title = o.customTitle;
+      if (!first && o?.type === "user" && !o.isSidechain && !o.isMeta && !o.isCompactSummary && yours(claudeText(o.message as Json))) first = claudeText(o.message as Json);
+    }
+    if (linerOwn(first)) continue;
+    title ||= first && titleOf(first);
+    if (title) out.push({ tool: "claude", id, title, at });
+  }
+  return out;
+}
+
+/** Codex's sessions in any of these folders (real paths), newest first, each with its folder, leaving out ones already here. Its tree is walked once, whatever the number of folders. */
+function codexSessions(heres: Set<string>, env: NodeJS.ProcessEnv, have: Set<string>): (ImportableSession & { cwd: string })[] {
+  const out: (ImportableSession & { cwd: string })[] = [];
+  const sessions = codexDir(env);
+  if (!heres.size || !existsSync(sessions)) return out;
+  const files = (readdirSync(sessions, { recursive: true }) as string[]).filter((n) => /rollout-.*\.jsonl$/.test(n)).map((n) => join(sessions, n));
+  for (const { f, at } of newest(files)) {
+    const lines = head(f).map(parse);
+    const meta = lines.find((o) => o?.type === "session_meta")?.payload as Json | undefined;
+    const id = typeof meta?.id === "string" ? meta.id : "";
+    const cwd = typeof meta?.cwd === "string" ? real(meta.cwd) : "";
+    if (!id || !heres.has(cwd) || have.has(`codex:${id}`)) continue;
+    const first = lines.find((o) => (o?.payload as Json | undefined)?.type === "message" && (o?.payload as Json).role === "user" && yours(codexText(o!.payload as Json)));
+    if (first && !linerOwn(codexText(first.payload as Json))) out.push({ tool: "codex", id, title: titleOf(codexText(first.payload as Json)), at, cwd });
+  }
+  return out;
+}
+
 /** The sessions either tool has for this folder, newest first, leaving out ones already here. */
 export function importable(cwd: string, env: NodeJS.ProcessEnv, have: Set<string>): ImportableSession[] {
-  const out: ImportableSession[] = [];
-  const dir = claudeDir(env, real(cwd));
-  if (existsSync(dir)) {
-    for (const { f, at } of newest(readdirSync(dir).filter((n) => n.endsWith(".jsonl")).map((n) => join(dir, n)))) {
-      const id = basename(f, ".jsonl");
-      if (have.has(`claude:${id}`)) continue;
-      let title = "";
-      let first = "";
-      for (const o of head(f).map(parse)) {
-        if (o?.type === "custom-title" && typeof o.customTitle === "string") title = o.customTitle;
-        if (!first && o?.type === "user" && !o.isSidechain && !o.isMeta && !o.isCompactSummary && yours(claudeText(o.message as Json))) first = claudeText(o.message as Json);
-      }
-      if (linerOwn(first)) continue;
-      title ||= first && titleOf(first);
-      if (title) out.push({ tool: "claude", id, title, at });
-    }
+  const here = real(cwd);
+  return [...claudeSessions(here, env, have), ...codexSessions(new Set([here]), env, have).map(({ cwd: _, ...x }) => x)].sort((a, b) => b.at - a.at);
+}
+
+/**
+  The newest sessions either tool has across these projects, `n` at most, each with its project:
+  Claude Code's folder of each project read for its newest `n`, and Codex's tree walked once for
+  them all. Ones already here are left out. For the sidebar's Recent.
+*/
+export function recentSessions(projects: { id: string; path: string }[], env: NodeJS.ProcessEnv, have: Set<string>, n: number): RecentSession[] {
+  const byPath = new Map<string, string>();
+  for (const p of projects) {
+    const here = real(p.path);
+    if (!byPath.has(here)) byPath.set(here, p.id);
   }
-  const sessions = codexDir(env);
-  if (existsSync(sessions)) {
-    const files = (readdirSync(sessions, { recursive: true }) as string[]).filter((n) => /rollout-.*\.jsonl$/.test(n)).map((n) => join(sessions, n));
-    const here = real(cwd);
-    for (const { f, at } of newest(files)) {
-      const lines = head(f).map(parse);
-      const meta = lines.find((o) => o?.type === "session_meta")?.payload as Json | undefined;
-      const id = typeof meta?.id === "string" ? meta.id : "";
-      if (!id || typeof meta?.cwd !== "string" || real(meta.cwd) !== here || have.has(`codex:${id}`)) continue;
-      const first = lines.find((o) => (o?.payload as Json | undefined)?.type === "message" && (o?.payload as Json).role === "user" && yours(codexText(o!.payload as Json)));
-      if (first && !linerOwn(codexText(first.payload as Json))) out.push({ tool: "codex", id, title: titleOf(codexText(first.payload as Json)), at });
-    }
-  }
-  return out.sort((a, b) => b.at - a.at);
+  const out: RecentSession[] = [];
+  for (const [here, projectId] of byPath) for (const x of claudeSessions(here, env, have, n)) out.push({ ...x, projectId });
+  for (const { cwd, ...x } of codexSessions(new Set(byPath.keys()), env, have)) out.push({ ...x, projectId: byPath.get(cwd)! });
+  return out.sort((a, b) => b.at - a.at).slice(0, n);
 }
 
 /** What a tool call did, in words, from Claude Code's tool and its input. */

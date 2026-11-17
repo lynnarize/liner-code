@@ -19,7 +19,30 @@ export function makerOf(ref: string): Maker {
 /** One of OpenCode Go's, which never leads (tiers.ts, CAPPED). */
 const capped = (ref: string) => CAPPED.test(splitModel(ref).model);
 
-const readyOf = (providers: ProviderInfo[]) => providers.filter((p) => p.available && p.adapter && p.id !== "demo" && p.models.length);
+/** One of OpenCode Go's models, whichever tool reports it: its source is OpenCode Go, or its id sits under opencode-go/ (CAPPED). */
+export const isGoModel = (m: { group?: string; id: string }) => m.group === "OpenCode Go" || CAPPED.test(m.id);
+/** OpenCode itself has OpenCode Go: a tool of OpenCode's that is ready reports one of Go's models. */
+export const openCodeHasGo = (providers: ProviderInfo[]) => providers.some((p) => p.available && p.adapter && Boolean(p.id) && familyOf(p.id) === "opencode" && (p.models ?? []).some(isGoModel));
+/**
+  Whether a tool's model is one to choose or list: all are, except OpenCode Go's reported by
+  another tool (Hermes, with a Go key) while OpenCode has Go itself (`goHere`, openCodeHasGo).
+  Then each Go model is OpenCode's alone. A pick you saved on one of the others still stands.
+*/
+export const listedHere = (provider: string, m: { group?: string; id: string }, goHere: boolean) => !(goHere && familyOf(provider as ProviderInfo["id"]) !== "opencode" && isGoModel(m));
+
+/** The tools that are ready, the Demo apart. */
+const toolsOf = (providers: ProviderInfo[]) => providers.filter((p) => p.available && p.adapter && p.id !== "demo" && p.models.length);
+/**
+  The tools that are ready with the models to choose from: another tool's OpenCode Go models left
+  out while OpenCode has Go (listedHere). Whether it has is judged on `every` tool, when
+  `providers` is only some of them (one tool's own pair, the tools left when one runs out).
+*/
+const readyOf = (providers: ProviderInfo[], every: ProviderInfo[] = providers) => {
+  const goHere = openCodeHasGo(every);
+  return toolsOf(providers)
+    .map((p) => (goHere && familyOf(p.id) !== "opencode" && p.models.some(isGoModel) ? { ...p, models: p.models.filter((m) => listedHere(p.id, m, goHere)) } : p))
+    .filter((p) => p.models.length);
+};
 
 /** A row's model from what's ready, in its maker's own tool when that lists one, unless `skip` says no. */
 function bestOf(ready: ProviderInfo[], [maker, res]: Tier, skip: (ref: string) => boolean) {
@@ -51,8 +74,8 @@ function firstOf(ready: ProviderInfo[], kind: "frontier" | "quicker", o: { not?:
   ready from each row of its table, down the table, `n` at most and none of `except`. The lead's
   never include OpenCode Go's, as they never lead.
 */
-export function shortlistOf(providers: ProviderInfo[], kind: "frontier" | "quicker", o: { n?: number; except?: string[] } = {}): string[] {
-  const ready = readyOf(providers);
+export function shortlistOf(providers: ProviderInfo[], kind: "frontier" | "quicker", o: { n?: number; except?: string[]; every?: ProviderInfo[] } = {}): string[] {
+  const ready = readyOf(providers, o.every);
   const out: string[] = [];
   for (const row of kind === "frontier" ? FRONTIER : QUICKER) {
     if (out.length >= (o.n ?? 4)) break;
@@ -89,24 +112,26 @@ export function dearestOf(providers: ProviderInfo[]): number {
   return top;
 }
 
-/** A model whose tool is ready, or nothing (a pick whose tool went away falls back to automatic). */
-const readyRef = (ready: ProviderInfo[], ref?: string) => (ref && ready.some((p) => p.id === splitModel(ref).provider) ? ref : undefined);
+/** A model whose tool is ready, or nothing (a pick whose tool went away falls back to automatic). Judged on every ready tool, so a pick on a model readyOf leaves out still stands. */
+const readyRef = (providers: ProviderInfo[], ref?: string) => (ref && toolsOf(providers).some((p) => p.id === splitModel(ref).provider) ? ref : undefined);
 
 /**
   Your pair, each "<provider>:<model>": your picks while their tools are ready, else automatic. The
   lead is the top of FRONTIER (Opus, else GPT Astra, Fable, Gemini, Sol, GLM…, never one of
   OpenCode Go's); the sidekick the top of QUICKER that isn't the lead (DeepSeek Flash, else Sol,
   Sonnet, Terra, Luna…). With no frontier model ready the sidekick leads too, so both are the same
-  model (OpenCode Go alone: DeepSeek Flash). Null with no model ready.
+  model (OpenCode Go alone: DeepSeek Flash). Null with no model ready. While OpenCode has OpenCode
+  Go, Go's models are chosen in OpenCode only, never through Hermes (readyOf, judged on `every`
+  tool when `providers` is only some of them); your picks stand.
 */
-export function castOf(providers: ProviderInfo[], o: { picks?: ModelPicks } = {}): { lead: string; sidekick: string } | null {
-  const ready = readyOf(providers);
+export function castOf(providers: ProviderInfo[], o: { picks?: ModelPicks; every?: ProviderInfo[] } = {}): { lead: string; sidekick: string } | null {
+  const ready = readyOf(providers, o.every);
   if (!ready.length) return null;
   const picks = o.picks ?? {};
   const first = `${ready[0].id}:${(ready[0].models.find((m) => m.isDefault) ?? ready[0].models[0]).id}`;
-  const lead = readyRef(ready, picks.lead) ?? firstOf(ready, "frontier");
+  const lead = readyRef(providers, picks.lead) ?? firstOf(ready, "frontier");
   // A quicker model that isn't the lead (Sol leads when it's your best, and Terra works beside it).
-  const sidekick = readyRef(ready, picks.sidekick) ?? firstOf(ready, "quicker", { except: lead ? [lead] : [] }) ?? firstOf(ready, "quicker") ?? first;
+  const sidekick = readyRef(providers, picks.sidekick) ?? firstOf(ready, "quicker", { except: lead ? [lead] : [] }) ?? firstOf(ready, "quicker") ?? first;
   return { lead: lead ?? sidekick, sidekick };
 }
 
@@ -119,13 +144,13 @@ export function castOf(providers: ProviderInfo[], o: { picks?: ModelPicks } = {}
   Go's frontier-class models, which draw down the plan's capped monthly allowance at many times
   the price (tiers.ts, CAPPED). With only Go, DeepSeek Flash's change is read by GLM Flash, not by
   GLM-5.3 or Gemini Argon. Else any other ready model, your pair's first; null when there's none.
-  Never one of the writers.
+  Never one of the writers. `every`, as castOf's.
 */
-export function reviewerOf(writers: string[], providers: ProviderInfo[], picks: ModelPicks = {}): string | null {
-  const ready = readyOf(providers);
-  const mine = readyRef(ready, picks.checker);
+export function reviewerOf(writers: string[], providers: ProviderInfo[], picks: ModelPicks = {}, every?: ProviderInfo[]): string | null {
+  const ready = readyOf(providers, every);
+  const mine = readyRef(providers, picks.checker);
   if (mine && !writers.includes(mine)) return mine;
-  const cast = castOf(providers, { picks });
+  const cast = castOf(providers, { picks, every });
   const pool = [cast?.lead, cast?.sidekick, ...ready.flatMap((p) => p.models.filter((m) => !m.legacy).map((m) => `${p.id}:${m.id}`))].filter((r): r is string => Boolean(r) && !writers.includes(r!));
   const makers = [...new Set(writers.map(makerOf))];
   // Every writer's maker avoided first, then fewer from the last, the lead's kept to the end.

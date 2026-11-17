@@ -5,7 +5,9 @@
   across all of them, each tool's current models first with its older ones folded under them,
   and the arrows and Enter from the search. A tool that runs models from several sources (Hermes's Nous
   Portal and OpenCode Go, an OpenCode with OpenRouter) shows its sources first, then a source's
-  models, so a long list is two short steps instead of one long scroll. The effort menu offers the levels the chosen model takes,
+  models, so a long list is two short steps instead of one long scroll. OpenCode Go's models are
+  listed once: in OpenCode when it has Go itself (Hermes's are then left out, allModels), else on
+  OpenCode's tab through Hermes. The effort menu offers the levels the chosen model takes,
   with the tool's own default marked.
 */
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
@@ -14,7 +16,7 @@ import { familyOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
-import { allModels, effortName, effortsFor, EXTRA_EFFORTS, markOf, sourceMarkOf, type ModelChoice } from "./model";
+import { allModels, effortName, effortsFor, everyModel, EXTRA_EFFORTS, isGoModel, markOf, sourceMarkOf, type ModelChoice } from "./model";
 import { ModelTag, PanelHead, Pop, Row, Sep } from "./ui";
 import "./models.css";
 
@@ -70,14 +72,16 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
   const favs = useEngine((s) => s.settings.favoriteModels) ?? [];
   const showDemo = useEngine((s) => s.settings.showDemo === true);
   const tools = useMemo(() => providers.filter((p) => p.available && p.adapter && p.models.length && (showDemo || p.id !== "demo") && (!only || only(p))), [providers, only, showDemo]);
-  const models = useMemo(() => allModels(tools), [tools]);
+  // Judged against every tool, so a picker of some tools still leaves out Hermes's Go models when OpenCode has Go.
+  const models = useMemo(() => allModels(tools, providers), [tools, providers]);
   /**
     The tab a model is listed on: its own tool's, except OpenCode Go's models, which sit on
     OpenCode's tab whichever tool reports them (Hermes runs them from a Go plan too). They still run
-    in the tool that reported them, and their source says so ("through Hermes").
+    in the tool that reported them, and their source says so ("through Hermes"). When OpenCode has
+    Go itself, Hermes's never get here (allModels leaves them out).
   */
   const goTab = tools.find((p) => familyOf(p.id) === "opencode")?.id;
-  const tabOf = (m: ModelChoice) => (goTab && sourceOf(m) === "OpenCode Go" ? goTab : m.providerId);
+  const tabOf = (m: ModelChoice) => (goTab && isGoModel({ group: m.group, id: m.ref.slice(m.ref.indexOf(":") + 1) }) ? goTab : m.providerId);
   const picked = value ? models.find((m) => m.ref === value) : undefined;
   const start = picked ? tabOf(picked) : value ? value.slice(0, value.indexOf(":")) : undefined;
   const [rail, setRail] = useState<string>(() => (extra?.open ? extra.id : tab && tools.some((p) => p.id === tab) ? tab : favs.length && !value ? "fav" : (tools.find((p) => p.id === start)?.id ?? tools[0]?.id ?? "fav")));
@@ -230,7 +234,8 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
             {!bare && <div className="lc-mp-find">
               <I.search size={14} />
               <input ref={field} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={rail === "fav" || query ? "Find a model" : `Find a model in ${toolOf(rail)?.label ?? "all tools"}`} aria-label="Find a model" aria-controls={`${ids}-list`} aria-activedescendant={lit} spellCheck={false} />
-              {rail !== "fav" && !query && toolOf(rail)?.modelsFrom === "cli" && <span className="lc-mp-src" title="Asked of the tool itself">{toolOf(rail)?.models.length}</span>}
+              {/* How many this tab lists (Hermes's OpenCode Go left out while OpenCode has Go, OpenCode's tab with Go's through Hermes), not the tool's raw count. */}
+              {rail !== "fav" && !query && toolOf(rail)?.modelsFrom === "cli" && <span className="lc-mp-src" title="Asked of the tool itself">{models.filter((m) => tabOf(m) === rail).length}</span>}
             </div>}
             <div ref={list} id={`${ids}-list`} className="lc-mp-list" role="listbox" aria-label="Models">
               {lines.length === 0 && <p className="lc-quiet lc-mp-none">{query ? "No model matches that." : rail === "fav" ? "Star a model and it waits here, in every picker." : "This tool reported no models."}</p>}
@@ -319,7 +324,8 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
 export function ModelPop({ label, value, onPick, only, choices = [], width = 400, align = "end" }: { label: string; value?: string; onPick: (v: string) => void; only?: (p: ProviderInfo) => boolean; choices?: { id: string; title: string; note?: string; show?: ReactNode; icon?: ReactNode }[]; width?: number; align?: "start" | "end" }) {
   const providers = useEngine((s) => s.providers);
   const choice = choices.find((c) => c.id === value);
-  const model = !choice && value ? allModels(providers).find((m) => m.ref === value) : undefined;
+  // Its name from every model, so a pick the lists now leave out (Hermes's Go, when OpenCode has Go) is still named.
+  const model = !choice && value ? everyModel(providers).find((m) => m.ref === value) : undefined;
   // Named with what it holds, as the composer's chips are ("Effort: high. Change it"): its own name alone would hide the pick.
   const now = choice ? [choice.title, choice.note].filter(Boolean).join(", ") : value ? (model?.label ?? value.slice(value.indexOf(":") + 1)) : "none picked";
   return (

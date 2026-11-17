@@ -17,7 +17,7 @@
 import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, ShownChip, UserShown, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
+import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
 import { capture, changedPaths, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { holders, killTree, markFile, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
@@ -2675,7 +2675,10 @@ export class Runtime {
   /**
     Who carries on when `provider` runs out of usage (Hermes Agent's fallbacks): another account of
     the same tool first, on the same model when it has it, since it's the same work on another
-    quota; else the sidekick a pair would get from the other families' ready tools.
+    quota; else the sidekick a pair would get from the other families' ready tools. A session out
+    of OpenCode Go's allowance never goes on with one of Go's models through another tool (Hermes
+    runs them on the same plan); and while OpenCode has Go, Hermes's Go models aren't chosen at
+    all (castOf, judged on every tool).
   */
   fallbackFor(provider: ProviderId, model: string): string | undefined {
     const now = Date.now();
@@ -2683,7 +2686,12 @@ export class Runtime {
     const ready = this.providerInfo.filter((p) => p.available && p.adapter && p.id !== "demo" && p.id !== provider && p.models.length && (this.limitedUntil.get(p.id) ?? 0) <= now);
     const twin = ready.find((p) => familyOf(p.id) === familyOf(provider));
     if (twin) return `${twin.id}:${twin.models.some((m) => m.id === model) ? model : (twin.models.find((m) => m.isDefault) ?? twin.models[0]).id}`;
-    return castOf(ready.filter((p) => familyOf(p.id) !== familyOf(provider)))?.sidekick;
+    const outOfGo = isGoModel({ id: model, group: this.providerInfo.find((p) => p.id === provider)?.models.find((m) => m.id === model)?.group });
+    const others = ready
+      .filter((p) => familyOf(p.id) !== familyOf(provider))
+      .map((p) => (outOfGo ? { ...p, models: p.models.filter((m) => !isGoModel(m)) } : p))
+      .filter((p) => p.models.length);
+    return castOf(others, { every: this.providerInfo })?.sidekick;
   }
 
   /** A limited session carries on with another tool's model: the conversation goes over with it, then it continues where it stopped. */

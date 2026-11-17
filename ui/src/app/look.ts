@@ -154,11 +154,10 @@ export function updateLook(patch: Partial<Look>) {
   painted. Ending them from here leaves nothing to undo when the window closes: no class to take
   off (which would restyle the whole view), no endless spinner put out of step, no long animation
   that picks up half way. Not ended: what runs for ever, hints that wait or repeat on purpose
-  (Home's cue, the ping of a session that needs you, a badge's pulse) and timers, which measure time,
-  like the line under the Desk's cue that drains while the second scroll counts.
+  (the ping of a session that needs you, a badge's pulse) and timers, which measure time.
 */
 const ENTER_MS = 700;
-const HINTS = ".lc-desk-cue, .lc-desk-cue-chev, .lc-desk-cue-n i, .lc-desk-cue-bar, .lc-mk > i, .l-badge__dot, [data-timer]";
+const HINTS = ".lc-mk > i, .l-badge__dot, [data-timer]";
 const windows = new WeakMap<Element, { watch: MutationObserver; timer: number }>();
 
 /** Opens a view's entering window, from now. A callback ref as it is, or call it when the view changes. */

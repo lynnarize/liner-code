@@ -2,6 +2,9 @@
   Choosing a project, the way GitHub Desktop adds one: the projects already here, the Git
   repositories found on this Mac, or your repositories on GitHub (through the GitHub CLI,
   signed in as you), which clone with one press. Picking one that isn't here yet adds it.
+  Home's quick pick is the small one, as Devin's folder picker: your projects on one line each,
+  the last used first, with the folder's path after the name, and the ways to add one under them;
+  From GitHub and Find on this Mac open the full chooser in its place.
 */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ROUTINES_ON, type FoundRepo, type GitHubRepo, type Project } from "@contracts";
@@ -23,12 +26,87 @@ let found: Promise<FoundRepo[]> | null = null;
 let github: Promise<GitHub> | null = null;
 const tilde = os.tilde;
 
-export function ProjectChooser({ value, onPick, need, extra }: { value?: string; onPick: (p: Project) => void; need?: "github"; extra?: ReactNode }) {
+/** How many projects the quick pick shows before it offers a find field. */
+const QUICK = 8;
+
+/** One line in the quick pick: an icon, a name, then something grey after it, and a check at the end. */
+function QuickRow({ icon, title, note, on, onPick }: { icon: ReactNode; title: string; note?: string; on?: boolean; onPick: () => void }) {
+  return (
+    <button type="button" className="lc-qp-row l-focus" data-on={on || undefined} aria-pressed={on === undefined ? undefined : on} title={note ? `${title} · ${note}` : undefined} onClick={onPick}>
+      <span className="lc-qp-icon">{icon}</span>
+      <span className="lc-qp-name">{title}</span>
+      {/* The path ends where the folder is: a long one gives way at its start, so its end stays. */}
+      {note ? <span className="lc-qp-path">{`\u200e${note}\u200e`}</span> : <span className="lc-grow" />}
+      {on && <I.check size={14} />}
+    </button>
+  );
+}
+
+/**
+  Home's project picker, compact: Recent, your projects one line each (the last used first, the
+  rest by name, eight at most; with more, a find field over them that looks through all), then
+  Add folder, From GitHub and Find on this Mac, and `more` (Home's own rows) at the end. The two
+  that look further open the full chooser on that tab, in the same panel, with Recent over it to
+  come back and `more` under it.
+*/
+export function ProjectQuickPick({ value, onPick, more = [] }: { value?: string; onPick: (p: Project) => void; more?: { title: string; icon: ReactNode; onPick: () => void }[] }) {
+  const all = useEngine((s) => s.projects);
+  const threads = useEngine((s) => s.threads);
+  const [full, setFull] = useState<Tab | null>(null);
+  const [query, setQuery] = useState("");
+  // When you last worked in each project: its newest session's last activity.
+  const used = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of threads) if (!t.archived) m.set(t.projectId, Math.max(m.get(t.projectId) ?? 0, t.updatedAt));
+    return m;
+  }, [threads]);
+  const projects = useMemo(() => codeProjects(all).sort((a, b) => (used.get(b.id) ?? 0) - (used.get(a.id) ?? 0) || a.name.localeCompare(b.name)), [all, used]);
+  const many = projects.length > QUICK;
+  const q = query.trim().toLowerCase();
+  const shown = q ? projects.filter((p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)) : projects.slice(0, QUICK);
+  const add = (path: string | null) => {
+    if (!path) return;
+    void rpc("project.add", { path }).then(onPick, (e: Error) => toast.error(e.message));
+  };
+  const extras = more.map((m) => <QuickRow key={m.title} icon={m.icon} title={m.title} onPick={m.onPick} />);
+  // The full chooser in its place, with the way back to the short list over it and Home's own rows under it.
+  if (full)
+    return (
+      <div className="lc-qp">
+        <QuickRow icon={<I.chevL size={14} />} title="Recent" onPick={() => setFull(null)} />
+        <ProjectChooser value={value} onPick={onPick} initialTab={full} extra={extras.length ? (<><Sep />{extras}</>) : undefined} />
+      </div>
+    );
+  return (
+    <div className="lc-qp">
+      {many && (
+        <div className="lc-mp-find lc-qp-find">
+          <I.search size={14} />
+          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a project" aria-label="Find a project" spellCheck={false} />
+        </div>
+      )}
+      {projects.length > 0 && <div className="lc-qp-head">{q ? "Projects" : "Recent"}</div>}
+      <div className="lc-qp-list">
+        {shown.map((p) => (
+          <QuickRow key={p.id} icon={<I.folder size={16} />} title={p.name} note={tilde(p.path)} on={p.id === value} onPick={() => onPick(p)} />
+        ))}
+        {q && shown.length === 0 && <p className="lc-quiet lc-qp-none">No project matches that.</p>}
+      </div>
+      {projects.length > 0 && <Sep />}
+      <QuickRow icon={<I.folderPlus size={16} />} title="Add folder…" onPick={() => void bridge.pickFolder().then(add)} />
+      <QuickRow icon={<I.pr size={16} />} title="From GitHub…" onPick={() => setFull("github")} />
+      <QuickRow icon={<I.laptop size={16} />} title={`Find on ${os.here}…`} onPick={() => setFull("mac")} />
+      {extras}
+    </div>
+  );
+}
+
+export function ProjectChooser({ value, onPick, need, extra, initialTab = "here" }: { value?: string; onPick: (p: Project) => void; need?: "github"; extra?: ReactNode; initialTab?: Tab }) {
   // A design on its own is Liner Design's, never one of the projects to choose here.
   const all = useEngine((s) => s.projects);
   const projects = useMemo(() => codeProjects(all), [all]);
   const root = useEngine((s) => s.settings.projectsRoot);
-  const [tab, setTab] = useState<Tab>("here");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
   const [mac, setMac] = useState<FoundRepo[] | null>(null);
   const [gh, setGh] = useState<GitHub | null>(null);

@@ -1070,6 +1070,8 @@ export type ProjectRules = { claude?: string; agents?: string; linked: boolean }
 
 /** A past Claude Code or Codex session in a project's folder, that can be brought in to carry on here. */
 export type ImportableSession = { tool: "claude" | "codex"; id: string; title: string; at: number };
+/** One of them in the sidebar's Recent, with the project it was found in. */
+export type RecentSession = ImportableSession & { projectId: string };
 
 /** One row of what fills a session's context, as its tool counts it. "deferred" rows sit outside the window. */
 export type ContextPart = { name: string; tokens: number; kind: "used" | "free" | "buffer" | "deferred" };
@@ -1584,6 +1586,8 @@ export type Rpc = {
   "thread.export": [{ id: string }, { path: string }];
   /** Past Claude Code and Codex sessions in the project's folder, newest first. */
   "sessions.importable": [{ projectId: string }, ImportableSession[]];
+  /** The newest of them across your code projects (`limit`, 6 by default), each with its project: Claude Code's folders and Codex's sessions read once for them all. */
+  "sessions.recent": [{ limit?: number }, RecentSession[]];
   /** Brings one in as a session here: its timeline, and its own id, so the next turn carries it on. */
   "sessions.import": [{ projectId: string; tool: "claude" | "codex"; id: string }, Thread];
   /** A project's rules for agents, as its CLAUDE.md and AGENTS.md say them. */

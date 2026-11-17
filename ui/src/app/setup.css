@@ -1,0 +1,547 @@
+/* ---------- First launch: one window that never scrolls ----------
+   Board A of the setup mockup: a quiet aside at the left (what this is, which computer, the promise
+   about sign-ins), and at the right what Liner Code guessed, as three rows split by hairlines, each a
+   status circle, a title over one grey line, and one quiet button. One part opens at a time, takes the
+   room the window has and scrolls inside itself; the foot stays in view. Spacing gives way to a short
+   window. The intro is the boot screen's name, kept where it was while a line comes into focus under
+   it, then it fades as the page fades in. */
+.lc-wel {
+  position: relative;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+  background: var(--l-bg);
+  color: var(--l-ink);
+  font-size: 13px;
+}
+html[data-native="mac"] .lc-wel {
+  background: color-mix(in oklab, var(--l-bg) 82%, transparent);
+}
+/* The window's top stays a place to drag it by, across both columns. */
+.lc-wel-drag {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  height: 44px;
+}
+
+/* The aside: Liner Code, what it is, and at its foot which computer and the promise. */
+.lc-wel-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: clamp(52px, 11.25vh, 90px) 32px clamp(24px, 5vh, 32px);
+  border-right: 1px solid var(--l-line);
+  background: var(--l-wash);
+}
+.lc-wel-name {
+  font-family: var(--l-font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lc-wel-what {
+  max-width: 220px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+}
+.lc-wel-grow {
+  flex: 1;
+}
+.lc-wel-machine {
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-wel-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+}
+.lc-wel-narrow-note {
+  display: none;
+}
+
+/* The main column: the welcome, the rows (they take what's left), the foot pinned at the bottom. */
+.lc-wel-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(52px, 11.25vh, 90px) 56px clamp(24px, 5vh, 32px);
+}
+.lc-wel-head {
+  flex: none;
+}
+.lc-wel-head h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lc-wel-head p {
+  margin: 8px 0 clamp(18px, 4.4vh, 28px);
+  font-size: 14px;
+  color: var(--l-ink-3);
+}
+.lc-wel-rows {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 -10px;
+  padding: 0 10px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+.lc-wel-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 16px;
+}
+.lc-wel-foot > span {
+  flex: 1;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+
+/* A row: status circle, title over one grey line, a quiet button; what it opens sits under its text. */
+.lc-wel-row {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--l-line);
+}
+.lc-wel-row:last-child {
+  border-bottom: 1px solid var(--l-line);
+}
+/* The open row gives way when the window is short: what it opened scrolls inside it. */
+.lc-wel-row[data-open] {
+  flex-shrink: 1;
+}
+.lc-wel-rh {
+  display: grid;
+  flex: none;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 14px;
+  padding: clamp(10px, 2.2vh, 14px) 0;
+}
+.lc-wel-st {
+  color: var(--l-ok);
+}
+.lc-wel-st[data-state="todo"] {
+  color: var(--l-ink-4);
+}
+.lc-wel-st[data-state="warn"] {
+  color: var(--l-warn);
+}
+.lc-wel-rt {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.lc-wel-title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lc-wel-title > span {
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.lc-wel-title .lc-wel-grey {
+  font-weight: 400;
+  animation: none;
+}
+.lc-wel-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wel-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-wel-marks {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  color: var(--l-ink-2);
+}
+.lc-wel-im {
+  display: inline-flex;
+  margin-right: 5px;
+  vertical-align: -2px;
+  color: var(--l-ink-2);
+}
+.lc-wel-end {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.lc-wel-grey {
+  color: var(--l-ink-3);
+}
+.lc-wel-mono {
+  font-family: var(--l-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+/* Quiet text buttons. */
+.lc-wel-tb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+.lc-wel-tb:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* Pills: what you can do under an opened row. */
+.lc-wel-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 1px solid var(--l-line);
+  border-radius: 15px;
+  background: var(--l-surface);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--l-ink);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+.lc-wel-pill[data-on] {
+  border-color: var(--l-line-strong);
+  background: var(--l-wash-2);
+}
+@media (hover: hover) {
+  .lc-wel-tb:hover:not(:disabled) {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+  .lc-wel-pill:hover {
+    border-color: var(--l-line-strong);
+  }
+}
+
+/* What opens: under the row's text, its height grows, it scrolls inside itself when there isn't room. */
+.lc-wel-fold {
+  display: grid;
+  flex: 0 1 auto;
+  grid-template-rows: 0fr;
+  min-height: 0;
+  transition: grid-template-rows 380ms var(--l-ease-out);
+}
+.lc-wel-fold > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 260ms var(--l-ease-out);
+}
+.lc-wel-fold > div > * {
+  flex: none;
+}
+.lc-wel-fold[data-open] {
+  grid-template-rows: 1fr;
+}
+.lc-wel-fold[data-open] > div {
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  opacity: 1;
+  transition-delay: 60ms;
+}
+.lc-wel-fold > div > .lc-wel-fscroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 44vh;
+  padding: 0 4px 0 38px;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.lc-wel-fold[data-open] > div > .lc-wel-fscroll {
+  overflow-y: auto;
+}
+.lc-wel-fold > div > :last-child {
+  margin-bottom: clamp(10px, 2.2vh, 14px);
+}
+.lc-wel-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+/* An API key, typed in place: which maker, the field, Save. */
+.lc-wel-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  animation: l-swap-in 220ms var(--l-ease-out) backwards;
+}
+.lc-wel-keyf {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 160px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: var(--l-surface);
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+  color: var(--l-ink-4);
+}
+.lc-wel-keyf input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+}
+
+/* Every repository, ticked to add. */
+.lc-wel input[type="checkbox"] {
+  justify-self: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--l-accent);
+  cursor: inherit;
+}
+.lc-wel input[type="checkbox"]:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+.lc-wel-repo {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 30px;
+  cursor: pointer;
+}
+.lc-wel-repo b {
+  max-width: 220px;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lc-wel-repo small {
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--l-ink-4);
+}
+.lc-wel-repo > .lc-wel-grey {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.lc-wel-repo[data-added] {
+  cursor: default;
+  opacity: 0.6;
+}
+.lc-wel-extras {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px 0 30px;
+}
+.lc-wel-extras > .lc-wel-tb {
+  color: var(--l-ink-3);
+}
+.lc-wel-clone {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.lc-wel-clone input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+  transition: box-shadow 160ms ease;
+}
+.lc-wel-clone input::placeholder {
+  color: var(--l-ink-4);
+}
+.lc-wel-clone input:focus {
+  outline: none;
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+
+/* The page fades in, a part after another, without moving; after the intro, it waits for the name to give way. */
+.lc-wel-side,
+.lc-wel-head,
+.lc-wel-row,
+.lc-wel-foot {
+  animation: lc-wel-in 520ms calc(var(--wel-d, 0ms) + var(--i, 0) * 70ms) var(--l-ease-out) backwards;
+}
+.lc-wel[data-intro] {
+  --wel-d: 1150ms;
+}
+@keyframes lc-wel-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+/* The boot screen's name, in the same spot at the same size, so nothing moves when the page takes
+   over. Its line comes into focus where "Opening" was; then the two give way. Run again from
+   Settings, with no boot screen before it, the name comes into focus too. */
+.lc-wel-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  background: var(--lc-ground, var(--l-bg));
+  font-size: 13px;
+  color: var(--l-ink-3);
+  pointer-events: none;
+  animation: lc-wel-out 520ms 1150ms var(--l-ease-out) forwards;
+}
+.lc-wel-wm {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--l-ink);
+}
+.lc-wel-intro:not([data-from-boot]) .lc-wel-wm {
+  animation: l-unblur 700ms var(--l-ease-enter) backwards;
+}
+.lc-wel-tag {
+  position: absolute;
+  top: calc(50% + 30px);
+  left: 50%;
+  translate: -50% 0;
+  white-space: nowrap;
+  animation: l-unblur 520ms 120ms var(--l-ease-out) backwards;
+}
+@keyframes lc-wel-out {
+  to {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+
+/* A narrow window: the aside becomes a 44px row on top (the name, the computer), the promise moves to the foot. */
+@media (max-width: 759px) {
+  .lc-wel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr);
+  }
+  .lc-wel-side {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 0 20px;
+    border-right: 0;
+    border-bottom: 1px solid var(--l-line);
+  }
+  html[data-native="mac"] .lc-wel-side {
+    padding-left: 84px;
+  }
+  .lc-wel-name {
+    font-size: 15px;
+  }
+  .lc-wel-side .lc-wel-what,
+  .lc-wel-side .lc-wel-note {
+    display: none;
+  }
+  .lc-wel-machine {
+    overflow: hidden;
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .lc-wel-main {
+    padding: clamp(20px, 5vh, 40px) 20px 16px;
+  }
+  .lc-wel-narrow-note {
+    display: block;
+    flex: none;
+    margin-top: auto;
+    padding-top: 12px;
+  }
+  .lc-wel-narrow-note + .lc-wel-foot {
+    margin-top: 0;
+    padding-top: 10px;
+  }
+  .lc-wel-repo {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+  }
+  .lc-wel-repo small {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-wel *,
+  .lc-wel-intro {
+    animation: none !important;
+    transition: none !important;
+  }
+}

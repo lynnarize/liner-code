@@ -1,24 +1,31 @@
 /*
-  First launch. The mark draws itself in the middle of the window, glides left as "Liner Code"
-  comes into focus, the line under it says what this is, and the lockup docks in the corner as
-  the first step arrives. Then three steps: connect the models you already pay for, add the
-  projects you work in, and pick who works on a new session: a pair, the best model or the fast one (optional).
+  First launch, as one window that never scrolls: Liner Code on a quiet aside at the left (what this is,
+  which computer is being set up, and that it never sees a sign-in), and at the right what it guessed,
+  ready to start. Three rows, each a status circle, a line of what it found and one quiet button:
+  the tools that are ready (with installs, sign-ins and an API key under Add more), the projects to add
+  (every repository under Choose), and who works on a new session. One part opens at a time, takes the
+  room the window has and scrolls inside itself; the button at the foot stays in view. The name the boot
+  screen showed stays in place while the line under it says what this is, then gives way to the page.
 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { FoundRepo, ProviderInfo, Settings, SystemCheck } from "@contracts";
 import { castOf } from "@contracts";
-import { Alert } from "@liner/components/alert/alert";
+import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { Glyph, I, ModelMark, type MarkKind } from "./icons";
+import { I, ModelMark, type MarkKind } from "./icons";
 import { markOf, modelLabel, pairReady, plural, since } from "./model";
+import * as os from "./os";
+import "./setup.css";
 
 type Start = NonNullable<Settings["start"]>;
-import * as os from "./os";
+type Opened = "tools" | "projects" | null;
+type Opens = { opened: Opened; toggle: (o: Exclude<Opened, null>) => void };
+type Adds = { count: number; run: () => Promise<void> };
 
-/** Each tool and each maker shows its own mark, in the same ink on the same tile as in the model picker. */
+/** Each tool shows its own mark, in the same ink as in the model picker. */
 const TOOLS: { id: ProviderInfo["id"]; mark: MarkKind; name: string; beta?: boolean }[] = [
   { id: "claude", mark: "claudecode", name: "Claude Code" },
   { id: "codex", mark: "codex", name: "Codex CLI" },
@@ -30,310 +37,348 @@ const TOOLS: { id: ProviderInfo["id"]; mark: MarkKind; name: string; beta?: bool
 ];
 /** The API key that stands in for a tool's own sign-in. */
 const KEY_OF: Partial<Record<string, string>> = { claude: "anthropic", codex: "openai" };
-const KEYS: { id: string; mark: MarkKind; name: string; note: string; live: boolean }[] = [
-  { id: "anthropic", mark: "claude", name: "Anthropic", note: "Claude models, as Anthropic asks apps to use them", live: true },
-  { id: "openai", mark: "openai", name: "OpenAI", note: "GPT models, through Codex", live: true },
-  { id: "google", mark: "gemini", name: "Google", note: "Gemini models", live: false },
-  { id: "xai", mark: "grok", name: "xAI", note: "Grok models", live: false },
-  { id: "mistral", mark: "mistral", name: "Mistral", note: "Mistral and Codestral", live: false },
-  { id: "deepseek", mark: "deepseek", name: "DeepSeek", note: "DeepSeek models", live: false },
-  { id: "openrouter", mark: "openrouter", name: "OpenRouter", note: "Hundreds of models, one key", live: false },
-  { id: "local", mark: "ollama", name: "Local", note: `Ollama or LM Studio, on ${os.here}`, live: false },
+/** The keys that work today. The ones still to come are in Settings › Models. */
+const KEYS: { id: "anthropic" | "openai"; name: string }[] = [
+  { id: "anthropic", name: "Anthropic" },
+  { id: "openai", name: "OpenAI" },
 ];
 
+/** The boot screen hands its name over only once a launch; setup run again from Settings brings it in. */
+let booted = false;
+
 export function Setup({ onDone }: { onDone: () => void }) {
+  // The intro plays once per mount; `played` keeps the page's delay steady after the intro has gone.
   const [intro, setIntro] = useState(() => !prefersReducedMotion());
-  const [step, setStep] = useState(0);
-  const machine = window.__LINER__?.machine ?? "This computer";
+  const [played] = useState(intro);
+  const [fromBoot] = useState(() => !booted);
   useEffect(() => {
+    booted = true;
     if (!intro) return;
-    const t = window.setTimeout(() => setIntro(false), 2600);
+    const t = window.setTimeout(() => setIntro(false), 1800);
     return () => window.clearTimeout(t);
   }, [intro]);
+  const machine = window.__LINER__?.machine ?? os.here;
+
+  // What the foot button adds, kept here so its words can say it.
+  const [adds, setAdds] = useState<Adds>({ count: 0, run: async () => {} });
+  const [start, setStart] = useState<Start>("best");
+  const [busy, setBusy] = useState(false);
+  // One part open at a time, so what's open has the room the window has.
+  const [opened, setOpened] = useState<Opened>(null);
+  const toggle = (o: Exclude<Opened, null>) => setOpened((was) => (was === o ? null : o));
+  const go = async () => {
+    setBusy(true);
+    try {
+      await adds.run();
+      await rpc("settings.save", { onboarded: true, start });
+      onDone();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+  const note = "Liner Code never sees a sign-in and resells no tokens. Every call is billed to your own account.";
 
   return (
-    <div className="lc-setup" data-intro={intro || undefined}>
-      <header className="lc-setup-top" data-drag>
-        <Lockup intro={intro} />
-        <ol className="lc-stepper" aria-label="Setup steps">
-          {["Connect models", "Add projects", "Who works"].map((s, i) => (
-            <li key={s} data-state={i < step ? "done" : i === step ? "now" : "next"}>
-              <span className="lc-step-n">{i < step ? <I.check size={11} /> : i + 1}</span>
-              {s}
-              {i === 2 && <span className="lc-quiet">optional</span>}
-            </li>
-          ))}
-        </ol>
-        <span className="lc-machine">
-          <i />
-          {machine}
-        </span>
-      </header>
-      <main className="lc-setup-main">
-        {step === 0 && <Models onNext={() => setStep(1)} />}
-        {step === 1 && <Projects onBack={() => setStep(0)} onNext={() => setStep(2)} />}
-        {step === 2 && <Work onBack={() => setStep(1)} onDone={onDone} />}
+    <div className="lc-wel" data-intro={played || undefined}>
+      <div className="lc-wel-drag" data-drag />
+      <aside className="lc-wel-side" style={{ "--i": 0 } as CSSProperties}>
+        <div className="lc-wel-name">Liner Code</div>
+        <p className="lc-wel-what">Your models, your code. Agents when you want them.</p>
+        <span className="lc-wel-grow" />
+        <div className="lc-wel-machine">Setting up {machine}</div>
+        <p className="lc-wel-note">{note}</p>
+      </aside>
+      <main className="lc-wel-main" aria-label="Set up Liner Code">
+        <header className="lc-wel-head" style={{ "--i": 1 } as CSSProperties}>
+          <h1>Ready when you are</h1>
+          <p>Liner Code looked around and guessed all three. Change what's wrong, then start.</p>
+        </header>
+        <div className="lc-wel-rows">
+          <SystemRows />
+          <Tools opened={opened} toggle={toggle} setOpened={setOpened} />
+          <Projects onAdds={setAdds} opened={opened} toggle={toggle} />
+          <Work onStart={setStart} />
+        </div>
+        <p className="lc-wel-note lc-wel-narrow-note">{note}</p>
+        <div className="lc-wel-foot" style={{ "--i": 6 } as CSSProperties}>
+          <span>Change any of it later in Settings.</span>
+          <button type="button" className="lc-btn" data-kind="accent" data-size="lg" disabled={busy} onClick={() => void go()}>
+            {busy ? (adds.count ? "Adding…" : "Starting…") : adds.count ? `Start with ${plural(adds.count, "project")}` : "Start"}
+          </button>
+        </div>
       </main>
+      {intro && (
+        <div className="lc-wel-intro" data-from-boot={fromBoot || undefined} aria-hidden>
+          <span className="lc-wel-wm">Liner Code</span>
+          <span className="lc-wel-tag">Your models, your code. Agents when you want them.</span>
+        </div>
+      )}
     </div>
   );
 }
 
-/** The wordmark, which starts where the boot screen left it, says what this is, and docks in the corner. */
-function Lockup({ intro }: { intro: boolean }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [from, setFrom] = useState<{ x: number; y: number } | null>(null);
-  // Measured untransformed, and again once the font has loaded and the wordmark has its width.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || !intro) return;
-    const measure = () => {
-      let left = el.offsetLeft;
-      for (let p = el.offsetParent as HTMLElement | null; p; p = p.offsetParent as HTMLElement | null) left += p.offsetLeft;
-      // The bar's centre, not offsetTop: that rounds, and half a pixel shows when the name changes hands.
-      const bar = el.parentElement!.getBoundingClientRect();
-      setFrom({ x: window.innerWidth / 2 - (left + el.offsetWidth / 2), y: window.innerHeight / 2 - (bar.top + bar.height / 2) });
-    };
-    measure();
-    void document.fonts.ready.then(measure);
-  }, [intro]);
+/** Where a row stands: settled (a green tick), still to do (an empty ring), or needing you (an amber ring). */
+function Status({ state }: { state: "ok" | "todo" | "warn" }) {
   return (
-    <span ref={ref} className="lc-lockup" data-intro={intro || undefined} data-measured={Boolean(from) || undefined} style={from && intro ? ({ "--fx": `${from.x}px`, "--fy": `${from.y}px` } as CSSProperties) : undefined}>
-      <span>Liner Code</span>
-      <span className="lc-lockup-tag" aria-hidden={!intro}>
-        Your models, your code. Agents when you want them.
-      </span>
-    </span>
+    <svg className="lc-wel-st" data-state={state} width="20" height="20" viewBox="0 0 20 20" aria-hidden>
+      {state === "ok" ? (
+        <>
+          <circle cx="10" cy="10" r="9" fill="currentColor" />
+          <path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      ) : (
+        <circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      )}
+    </svg>
   );
 }
 
-function Models({ onNext }: { onNext: () => void }) {
-  const providers = useEngine((s) => s.providers);
-  const keys = useEngine((s) => s.keys);
-  const [typing, setTyping] = useState<string | null>(null);
-  const [value, setValue] = useState("");
-  const [checking, setChecking] = useState(false);
+/** A row: its status, a title over one grey line, what you can do at the right, and what it opens under it. */
+function Row({ state, title, line, end, i, open, fold }: { state: "ok" | "todo" | "warn"; title: ReactNode; line: ReactNode; end: ReactNode; i: number; open?: boolean; fold?: ReactNode }) {
+  return (
+    <section className="lc-wel-row" data-open={open || undefined} style={{ "--i": i } as CSSProperties}>
+      <div className="lc-wel-rh">
+        <Status state={state} />
+        <div className="lc-wel-rt">
+          <div className="lc-wel-title">{title}</div>
+          <div className="lc-wel-line">{line}</div>
+        </div>
+        <div className="lc-wel-end">{end}</div>
+      </div>
+      {fold}
+    </section>
+  );
+}
+
+/** A quiet text button. */
+const Tb = ({ children, onClick, title, disabled, expanded, controls }: { children: ReactNode; onClick: () => void; title?: string; disabled?: boolean; expanded?: boolean; controls?: string }) => (
+  <button type="button" className="lc-wel-tb l-focus" title={title} disabled={disabled} aria-expanded={expanded} aria-controls={controls} onClick={onClick}>
+    {children}
+  </button>
+);
+
+/** A pill under an opened row. */
+const Pill = ({ children, onClick, title, on }: { children: ReactNode; onClick: () => void; title?: string; on?: boolean }) => (
+  <button type="button" className="lc-wel-pill l-focus" title={title} data-on={on || undefined} onClick={onClick}>
+    {children}
+  </button>
+);
+
+/**
+  Opens in place under its row: its height grows, and what's inside can't be reached while it's shut. It never grows the
+  page past the window: `children` scroll inside it when there isn't room, while `foot` stays under them.
+*/
+const Fold = ({ open, id, children, foot }: { open: boolean; id: string; children: ReactNode; foot?: ReactNode }) => (
+  <div id={id} className="lc-wel-fold" data-open={open || undefined} inert={!open || undefined}>
+    <div>
+      <div className="lc-wel-fscroll">{children}</div>
+      {foot}
+    </div>
+  </div>
+);
+
+/** What this computer lacks for agents to work, a row each, only when it does. */
+function SystemRows() {
   const [mac, setMac] = useState<SystemCheck | null>(null);
   const checkMac = () => void rpc("system.check", {}).then(setMac, () => {});
   useEffect(checkMac, []);
-  // Ready the way its row says it: a tool still asking you to sign in (with no key standing in) isn't.
-  const ready = TOOLS.filter((t) => providers.find((p) => p.id === t.id && p.available && p.adapter && !(p.signedIn === false && !keys.includes(KEY_OF[t.id] ?? "")))).length;
-  // "1 tool is ready", "2 keys are ready", "1 tool and 1 key are ready": only what there is.
-  const readyLine = [ready > 0 && plural(ready, "tool"), keys.length > 0 && plural(keys.length, "key")].filter(Boolean).join(" and ");
+  if (!mac) return null;
+  return (
+    <>
+      {mac.install && (
+        <Row
+          state="warn"
+          i={2}
+          title={`${os.Here} needs Apple's command line tools`}
+          line={`${[!mac.git && "Git", !mac.python && "Python"].filter(Boolean).join(" and ") || "Git and Python"} come with them. Apple's installer takes a few minutes.`}
+          end={
+            <>
+              <Tb onClick={() => bridge.runInTerminal(mac.install!)}>Install</Tb>
+              <Tb onClick={checkMac}>Look again</Tb>
+            </>
+          }
+        />
+      )}
+      {!mac.rg && (
+        <Row
+          state="warn"
+          i={2}
+          title={`${os.Here} needs ripgrep`}
+          line={mac.rgInstall ? "Agents search code with it; without it, their first search fails." : "Agents search code with it. Install it from github.com/BurntSushi/ripgrep."}
+          end={
+            <>
+              {mac.rgInstall && <Tb onClick={() => bridge.runInTerminal(mac.rgInstall!)}>Install</Tb>}
+              <Tb onClick={checkMac}>Look again</Tb>
+            </>
+          }
+        />
+      )}
+    </>
+  );
+}
 
-  const save = async (id: string) => {
+function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) => void }) {
+  const providers = useEngine((s) => s.providers);
+  const keys = useEngine((s) => s.keys);
+  const [checking, setChecking] = useState(false);
+  const [keyFor, setKeyFor] = useState<"anthropic" | "openai" | null>(null);
+  const [value, setValue] = useState("");
+  const open = opened === "tools";
+
+  // Each tool's state, the way its line says it: a tool still asking you to sign in (with no key standing in) isn't ready.
+  const rows = TOOLS.map((t) => {
+    const p = providers.find((x) => x.id === t.id);
+    const state = !p ? "looking" : p.available && p.adapter ? (p.signedIn === false && !keys.includes(KEY_OF[t.id] ?? "") ? "signin" : "ready") : p.available ? "soon" : "install";
+    return { ...t, p, state };
+  });
+  const ready = rows.filter((r) => r.state === "ready");
+  const signin = rows.filter((r) => r.state === "signin");
+  const install = rows.filter((r) => r.state === "install" && r.p?.install);
+
+  // With no tool ready this row starts open, so Install is in view; it never shuts by itself.
+  const loaded = providers.length > 0;
+  useEffect(() => {
+    if (loaded && !ready.length) setOpened("tools");
+  }, [loaded]);
+
+  const save = async () => {
     const key = value.trim();
-    if (!key) return;
+    if (!key || !keyFor) return;
     try {
-      await bridge.keychainSet(`key:${id}`, key);
-      await rpc("keys.set", { provider: id, key });
-      if (id === "anthropic") await rpc("settings.save", { claudeBilling: "key" });
-      toast.success(`${KEYS.find((k) => k.id === id)?.name} key saved`, { description: `Kept in ${os.keyStore("this Mac's keychain")}.` });
-      setTyping(null);
+      await bridge.keychainSet(`key:${keyFor}`, key);
+      await rpc("keys.set", { provider: keyFor, key });
+      if (keyFor === "anthropic") await rpc("settings.save", { claudeBilling: "key" });
+      toast.success(`${KEYS.find((k) => k.id === keyFor)?.name} key saved`, { description: `Kept in ${os.keyStore("this Mac's keychain")}.` });
+      setKeyFor(null);
       setValue("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
   };
+  const look = () => {
+    setChecking(true);
+    void rpc("providers.refresh", {}).finally(() => setChecking(false));
+  };
+  const needs = signin.length ? <span className="lc-wel-grey"> · {signin.length} {signin.length === 1 ? "needs" : "need"} you to sign in</span> : null;
 
   return (
-    <section className="lc-step" aria-label="Connect your models">
-      <h1>Connect your models</h1>
-      <p className="lc-step-sub">Use the coding tools you already have, each signed in its own way, or API keys. Liner Code never sees a sign-in and doesn't resell tokens: every call is billed to your own account.</p>
-      <div className="lc-step-body">
-        {mac && mac.install && (
-          <Alert
-            tone="warning"
-            title="This Mac needs Apple's command line tools"
-            actions={
-              <>
-                <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal(mac.install!)}>
-                  Install them
-                </button>
-                <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={checkMac}>
-                  Look again
-                </button>
-              </>
-            }
-          >
-            {[!mac.git && "Git (for undo, diffs and worktrees)", !mac.python && "Python (for the Terminal)"].filter(Boolean).join(" and ")} come with them. Apple's installer takes a few minutes; then look again.
-          </Alert>
-        )}
-        {mac && !mac.rg && (
-          <Alert
-            tone="warning"
-            title={`Agents search code with ripgrep, which isn't on ${os.here}`}
-            actions={
-              mac.rgInstall ? (
-                <>
-                  <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal(mac.rgInstall!)}>
-                    Install it
-                  </button>
-                  <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={checkMac}>
-                    Look again
-                  </button>
-                </>
-              ) : undefined
-            }
-          >
-            Without it, an agent's first search fails. {mac.rgInstall ? "Homebrew adds it in a few seconds." : "Install it from github.com/BurntSushi/ripgrep, then look again."}
-          </Alert>
-        )}
-        <div className="lc-grp">
-          <div className="lc-grp-h">
-            <b>Tools on {os.here}</b>
-            <span>Each signs in through its own login; Liner Code only asks whether it is</span>
-            <span className="lc-grow" />
-            <button
-              type="button"
-              className="lc-btn"
-              data-kind="ghost"
-              data-size="sm"
-              disabled={checking}
-              onClick={() => {
-                setChecking(true);
-                void rpc("providers.refresh", {}).finally(() => setChecking(false));
-              }}
-            >
-              <I.refresh size={13} />
+    <Row
+      state={ready.length ? "ok" : "todo"}
+      i={3}
+      open={open}
+      title={
+        <>
+          {ready.length ? `${plural(ready.length, "tool")} ${ready.length === 1 ? "is" : "are"} ready` : "No coding tool yet"}
+          {needs}
+        </>
+      }
+      line={
+        ready.length ? (
+          <>
+            <span className="lc-wel-marks" aria-hidden>
+              {ready.map((r) => (
+                <ModelMark key={r.id} kind={r.mark} size={16} />
+              ))}
+            </span>
+            <span className="lc-wel-cut">{ready.map((r) => r.name.replace(/ CLI$/, "")).join(", ")}</span>
+          </>
+        ) : (
+          <span className="lc-wel-cut">Install one, or add an API key</span>
+        )
+      }
+      end={
+        <Tb expanded={open} controls="lc-wel-tools" onClick={() => toggle("tools")}>
+          {open ? "Done" : "Add more"}
+        </Tb>
+      }
+      fold={
+        <Fold open={open} id="lc-wel-tools">
+          <div className="lc-wel-pills">
+            {install.map((r) => (
+              <Pill key={r.id} title={r.p!.install} onClick={() => bridge.runInTerminal(r.p!.install!)}>
+                <ModelMark kind={r.mark} size={14} />
+                Install {r.name}
+              </Pill>
+            ))}
+            {signin.map((r) => (
+              <Pill key={r.id} title={`${r.p!.login}, in Terminal`} onClick={() => bridge.runInTerminal(r.p!.login)}>
+                <ModelMark kind={r.mark} size={14} />
+                Sign in to {r.name}
+              </Pill>
+            ))}
+            <Pill on={Boolean(keyFor)} onClick={() => (setKeyFor((k) => (k ? null : "anthropic")), setValue(""))}>
+              Add an API key
+            </Pill>
+            <Tb disabled={checking} onClick={look}>
               {checking ? "Looking" : "Look again"}
-            </button>
+            </Tb>
           </div>
-          <div className="lc-frame lc-setup-frame">
-            <div className="lc-fcard lc-cli">
-              {TOOLS.map((t, i) => {
-                const p = providers.find((x) => x.id === t.id);
-                return (
-                  <div key={t.id} style={{ ["--i" as string]: i }}>
-                    <span className="lc-tile-av">
-                      <ModelMark kind={t.mark} size={16} />
-                    </span>
-                    <span>
-                      <b>
-                        {t.name}
-                        {t.beta && <small className="lc-quiet"> · Beta</small>}
-                      </b>
-                      <code title={p?.login}>{p?.login || "—"}</code>
-                    </span>
-                    {!p ? (
-                      <span className="lc-quiet">…</span>
-                    ) : p.available && p.adapter && p.signedIn === false && !keys.includes(KEY_OF[t.id] ?? "") ? (
-                      <button type="button" className="lc-btn" data-kind="plain" data-size="sm" title={`${p.login}, in Terminal`} onClick={() => bridge.runInTerminal(p.login)}>
-                        Sign in
-                      </button>
-                    ) : p.available && p.adapter ? (
-                      <span className="lc-ready" title={p.version}>
-                        <I.check size={12} />
-                        Ready
-                      </span>
-                    ) : p.available ? (
-                      <span className="lc-soon" title={p.detail}>
-                        Soon
-                      </span>
-                    ) : (
-                      <button type="button" className="lc-btn" data-kind="plain" data-size="sm" title={p.install} onClick={() => p.install && bridge.runInTerminal(p.install)}>
-                        Install
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+          {keyFor && (
+            <div className="lc-wel-key">
+              {KEYS.map((k) => (
+                <Pill key={k.id} on={keyFor === k.id} onClick={() => setKeyFor(k.id)}>
+                  {keys.includes(k.id) && <I.check size={12} />}
+                  {k.name}
+                </Pill>
+              ))}
+              <span className="lc-wel-keyf">
+                <I.lock size={12} />
+                <input autoFocus type="password" placeholder={keyFor === "anthropic" ? "sk-ant-…" : "sk-…"} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => (e.key === "Enter" ? void save() : e.key === "Escape" && (setKeyFor(null), setValue("")))} aria-label={`${KEYS.find((k) => k.id === keyFor)?.name} key`} />
+              </span>
+              <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!value.trim()} onClick={() => void save()}>
+                Save
+              </button>
             </div>
-          </div>
-        </div>
-        <div className="lc-grp">
-          <div className="lc-grp-h">
-            <b>API keys</b>
-            <span>Kept in {os.keyStore("this Mac's keychain")}, never sent anywhere else</span>
-          </div>
-          <div className="lc-frame lc-setup-frame">
-            <div className="lc-fcard lc-keys">
-              {KEYS.map((k) => {
-                const has = keys.includes(k.id);
-                return (
-                  <div key={k.id}>
-                    <span className="lc-tile-av" data-round>
-                      <ModelMark kind={k.mark} size={16} />
-                    </span>
-                    <span>
-                      <b>{k.name}</b>
-                      <small>{k.note}</small>
-                    </span>
-                    {has ? (
-                      <span className="lc-ready">
-                        <I.check size={12} />
-                        Connected
-                      </span>
-                    ) : typing === k.id ? (
-                      <span className="lc-keyin">
-                        <span className="lc-keyin-f">
-                          <I.lock size={12} />
-                          <input autoFocus type="password" placeholder={k.id === "anthropic" ? "sk-ant-…" : "sk-…"} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => (e.key === "Enter" ? void save(k.id) : e.key === "Escape" && (setTyping(null), setValue("")))} aria-label={`${k.name} key`} />
-                        </span>
-                        <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => void save(k.id)}>
-                          Save
-                        </button>
-                      </span>
-                    ) : k.live ? (
-                      <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (setTyping(k.id), setValue(""))}>
-                        Add key
-                      </button>
-                    ) : (
-                      <span className="lc-soon">Soon</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-        <p className="lc-sure">
-          <span>
-            <I.check size={12} />
-            No tokens resold, nothing in between
-          </span>
-          <span>
-            <I.check size={12} />
-            Switch models mid-session
-          </span>
-          <span>
-            <I.check size={12} />
-            Usage shows what each account spent
-          </span>
-        </p>
-      </div>
-      <div className="lc-step-foot">
-        <span className="lc-quiet">
-          {readyLine ? `${readyLine} ${ready + keys.length === 1 ? "is" : "are"} ready.` : "Nothing is connected yet."} Add more any time in Settings.
-        </span>
-        <span className="lc-grow" />
-        <button type="button" className="lc-btn" data-kind="accent" data-size="lg" onClick={onNext}>
-          Continue
-        </button>
-      </div>
-    </section>
+          )}
+        </Fold>
+      }
+    />
   );
 }
 
-function Projects({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Opens) {
   const [found, setFound] = useState<FoundRepo[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [first, setFirst] = useState<string[]>([]);
   // The sample project is the Demo's, so it's offered only while the Demo is shown.
   const showDemo = useEngine((s) => s.settings.showDemo === true);
   const [sample, setSample] = useState(showDemo);
+  const open = opened === "projects";
   const [clone, setClone] = useState("");
-  const [busy, setBusy] = useState(false);
-  const projects = useEngine((s) => s.projects);
+  const [cloning, setCloning] = useState(false);
 
   useEffect(() => {
     // A scan that fails says nothing turned up, rather than looking for ever.
     void rpc("projects.scan", {})
       .then((r) => {
         setFound(r);
-        setPicked(new Set(r.filter((x) => !x.added).slice(0, 3).map((x) => x.path)));
+        const newest = r.filter((x) => !x.added).slice(0, 3).map((x) => x.path);
+        setFirst(newest);
+        setPicked(new Set(newest));
       })
       .catch(() => setFound([]));
   }, []);
   const roots = useMemo(() => [...new Set((found ?? []).map((f) => os.tilde(f.path.replace(/[\\/][^\\/]+$/, ""))))].slice(0, 2), [found]);
+  const count = picked.size + (showDemo && sample ? 1 : 0);
+
+  // What the foot button adds: each pick, marked added as it goes, so a second press after a failure doesn't add it twice.
+  useEffect(() => {
+    onAdds({
+      count,
+      run: async () => {
+        for (const path of [...picked]) {
+          await rpc("project.add", { path });
+          setPicked((p) => new Set([...p].filter((x) => x !== path)));
+          setFound((f) => (f ?? []).map((x) => (x.path === path ? { ...x, added: true } : x)));
+        }
+        if (showDemo && sample) {
+          await rpc("project.add", { path: "@sample" });
+          setSample(false);
+        }
+      },
+    });
+  }, [count, picked, sample, showDemo]);
 
   const addFolder = async () => {
     const path = await bridge.pickFolder();
@@ -341,131 +386,113 @@ function Projects({ onBack, onNext }: { onBack: () => void; onNext: () => void }
     try {
       const p = await rpc("project.add", { path });
       setFound((f) => [{ path: p.path, name: p.name, branch: p.branch, lastCommitAt: p.lastCommitAt, added: true }, ...(f ?? []).filter((x) => x.path !== p.path)]);
+      setPicked((s) => new Set([...s].filter((x) => x !== p.path)));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
   };
   const doClone = async () => {
     if (!clone.trim()) return;
-    setBusy(true);
+    setCloning(true);
     try {
       const p = await rpc("project.clone", { url: clone.trim() });
-      setFound((f) => [{ path: p.path, name: p.name, branch: p.branch, lastCommitAt: p.lastCommitAt, added: true }, ...(f ?? [])]);
+      setFound((f) => [{ path: p.path, name: p.name, branch: p.branch, lastCommitAt: p.lastCommitAt, added: true }, ...(f ?? []).filter((x) => x.path !== p.path)]);
       setClone("");
       toast.success(`Cloned ${p.name}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setCloning(false);
     }
   };
-  const next = async () => {
-    setBusy(true);
-    try {
-      for (const path of picked) await rpc("project.add", { path });
-      if (sample) await rpc("project.add", { path: "@sample" });
-      onNext();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const count = picked.size + (sample ? 1 : 0) + (found ?? []).filter((f) => f.added).length;
+  const pick = (path: string, yes: boolean) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (yes) n.add(path);
+      else n.delete(path);
+      return n;
+    });
+
+  const names = [...(showDemo && sample ? ["Sample project"] : []), ...(found ?? []).filter((f) => picked.has(f.path)).map((f) => f.name)];
+  // "the newest of 13" only while the picks are still the newest; once you've chosen, just where they were found.
+  const newest = picked.size === first.length && first.every((p) => picked.has(p));
+  const where = found?.length ? ` · ${newest ? "the newest of" : "of"} ${found.length} found${roots.length ? ` in ${roots.join(", ")}` : ""}` : "";
+  const title = found === null ? "Projects to add" : count ? `${plural(count, "project")} to add` : "No projects yet";
+  const line =
+    found === null ? (
+      <span className="l-shimmer">Looking for Git repositories on {os.here}</span>
+    ) : count ? (
+      <span className="lc-wel-cut">
+        {names.join(", ")}
+        {where}
+      </span>
+    ) : (
+      <span className="lc-wel-cut">{found.length || showDemo ? "Choose some, or start without one" : "No Git repositories in the usual places. Add a folder, or clone one."}</span>
+    );
 
   return (
-    <section className="lc-step lc-step-narrow" aria-label="Add the projects you work in">
-      <h1>Add the projects you work in</h1>
-      <p className="lc-step-sub">
-        {found === null ? (
-          <span className="l-shimmer">Looking for Git repositories on {os.here}</span>
-        ) : found.length ? (
-          <>
-            Found {plural(found.length, "Git repository", "Git repositories")}
-            {roots.length ? (
-              <>
-                {" "}
-                in <code className="lc-code">{roots.join(", ")}</code>
-              </>
-            ) : null}
-            . Pick the ones to add; you can add more any time.
-          </>
-        ) : (
-          "No Git repositories turned up in the usual places. Add a folder, or clone one."
-        )}
-      </p>
-      <div className="lc-step-body">
-        <div className="lc-frame lc-setup-frame">
-          <div className="lc-fcard lc-prj">
-            {showDemo && (
-              <label className="lc-prj-row">
-                <input type="checkbox" checked={sample} onChange={(e) => setSample(e.target.checked)} />
-                <I.sparkle size={14} />
-                <span>
-                  <b>Sample project</b>
-                  <small>Tide tables, with the Demo agent. No account needed.</small>
-                </span>
-                <span className="lc-quiet lc-mono">main</span>
-              </label>
-            )}
-            {(found ?? []).slice(0, 12).map((f) => (
-              <label key={f.path} className="lc-prj-row" data-added={f.added || undefined}>
-                <input
-                  type="checkbox"
-                  checked={f.added || picked.has(f.path)}
-                  disabled={f.added}
-                  onChange={(e) =>
-                    setPicked((p) => {
-                      const n = new Set(p);
-                      if (e.target.checked) n.add(f.path);
-                      else n.delete(f.path);
-                      return n;
-                    })
-                  }
-                />
+    <Row
+      state={count ? "ok" : "todo"}
+      i={4}
+      open={open}
+      title={title}
+      line={line}
+      end={
+        <Tb expanded={open} controls="lc-wel-projects" disabled={found === null} onClick={() => toggle("projects")}>
+          {open ? "Done" : "Choose"}
+        </Tb>
+      }
+      fold={
+        <Fold
+          open={open}
+          id="lc-wel-projects"
+          foot={
+            <div className="lc-wel-extras">
+              <Tb onClick={() => void addFolder()}>
                 <I.folder size={14} />
-                <span>
-                  <b>{f.name}</b>
-                  <small className="lc-mono">{os.tilde(f.path)}</small>
-                </span>
-                <span className="lc-quiet">
-                  {f.added ? "Added" : (
-                    <>
-                      <span className="lc-mono">{f.branch ?? "—"}</span>
-                      {f.lastCommitAt ? ` · ${since(f.lastCommitAt)}` : ""}
-                    </>
-                  )}
-                </span>
-              </label>
-            ))}
-          </div>
-          <div className="lc-prj-strip">
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void addFolder()}>
-              <I.folder size={13} />
-              Add a folder
-            </button>
-            <input className="lc-input" placeholder="Clone from GitHub: owner/repo or a URL" aria-label="Clone from GitHub" value={clone} onChange={(e) => setClone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void doClone()} />
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy || !clone.trim()} onClick={() => void doClone()}>
-              Clone
-            </button>
-          </div>
-        </div>
-      </div>
-      <div className="lc-step-foot">
-        <span className="lc-quiet">{count ? `${plural(count, "project")}${projects.length ? "" : ""}.` : "No projects yet."} {showDemo ? "Quick tasks can still run in the sample project." : "Quick tasks can still run without a project."}</span>
-        <span className="lc-grow" />
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="lg" onClick={onBack}>
-          Back
-        </button>
-        <button type="button" className="lc-btn" data-kind="accent" data-size="lg" disabled={busy} onClick={() => void next()}>
-          {busy ? "Adding" : "Continue"}
-        </button>
-      </div>
-    </section>
+                Add a folder…
+              </Tb>
+              <span className="lc-wel-clone">
+                <input className="l-focus" placeholder="Clone owner/repo or a URL" aria-label="Clone from GitHub: owner/repo or a URL" value={clone} onChange={(e) => setClone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void doClone()} />
+                <Tb disabled={cloning || !clone.trim()} onClick={() => void doClone()}>
+                  {cloning ? "Cloning" : "Clone"}
+                </Tb>
+              </span>
+            </div>
+          }
+        >
+          {showDemo && (
+            <label className="lc-wel-repo">
+              <input type="checkbox" checked={sample} onChange={(e) => setSample(e.target.checked)} />
+              <b>Sample project</b>
+              <small>Tide tables, with the Demo agent</small>
+              <span className="lc-wel-grey lc-wel-mono">main</span>
+            </label>
+          )}
+          {(found ?? []).map((f) => (
+            <label key={f.path} className="lc-wel-repo" data-added={f.added || undefined}>
+              <input type="checkbox" checked={f.added || picked.has(f.path)} disabled={f.added} onChange={(e) => pick(f.path, e.target.checked)} />
+              <b>{f.name}</b>
+              <small className="lc-wel-mono">{os.tilde(f.path)}</small>
+              <span className="lc-wel-grey">
+                {f.added ? (
+                  "Added"
+                ) : (
+                  <>
+                    <span className="lc-wel-mono">{f.branch ?? "—"}</span>
+                    {f.lastCommitAt ? ` · ${since(f.lastCommitAt)}` : ""}
+                  </>
+                )}
+              </span>
+            </label>
+          ))}
+        </Fold>
+      }
+    />
   );
 }
 
-function Work({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+function Work({ onStart }: { onStart: (s: Start) => void }) {
   const providers = useEngine((s) => s.providers);
   const settings = useEngine((s) => s.settings);
   // Who'd work, from the tools found: the lead and its sidekick, your own picks first.
@@ -474,71 +501,47 @@ function Work({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   // Starts on what you have, so running the setup again doesn't change it; unset, a pair when there can be one.
   const [pick, setPick] = useState<Start>(() => settings.start ?? (two ? "pair" : "best"));
   const shown: Start = pick === "pair" && !two ? "best" : pick;
-  const lead = pair ? modelLabel(pair.lead, providers) : "The best model you connect";
-  const side = pair ? modelLabel(pair.sidekick, providers) : "a quicker, cheaper one";
-  const finish = async () => {
-    try {
-      await rpc("settings.save", { onboarded: true, start: shown });
-      onDone();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
-    }
-  };
-  const disc = (ref: string | undefined, glyph: ReactNode) => (
-    <span className="lc-disc" style={{ width: 32, height: 32 }}>
-      {ref ? <ModelMark kind={markOf(ref)} size={15} /> : glyph}
-    </span>
+  useEffect(() => onStart(shown), [shown]);
+  const name = (ref: string) => modelLabel(ref, providers);
+  // A model by its mark and name, inside the line.
+  const model = (ref: string) => (
+    <>
+      <span className="lc-wel-im">
+        <ModelMark kind={markOf(ref)} size={14} />
+      </span>
+      {name(ref)}
+    </>
   );
-  const cards: { id: Start; title: string; sub: string; body: string; icon: ReactNode; off?: boolean }[] = [
-    {
-      id: "pair",
-      title: "Fusion",
-      sub: "For most work",
-      body: two ? `${lead} leads: it plans, decides and reviews. ${side} does the work it hands over.` : "Needs two different models ready. Connect another tool and it's yours.",
-      icon: (
-        <span className="lc-stack">
-          {disc(two ? pair?.lead : undefined, <Glyph glyph="sun" size={15} />)}
-          {disc(two ? pair?.sidekick : undefined, <Glyph glyph="moon" size={15} />)}
-        </span>
-      ),
-      off: !two,
-    },
-    { id: "best", title: "Best", sub: "One model, the strongest", body: `${lead} alone, on everything you ask.`, icon: disc(pair?.lead, <I.star size={15} />) },
-    { id: "fast", title: "Fast", sub: "One model, quick and cheaper", body: two ? `${side} alone. Good for small, clear asks.` : `${lead} alone too, with one model ready.`, icon: disc(pair?.sidekick, <I.bolt size={15} />), off: !two },
-  ];
+  // Each way's line, drawn with its models' marks; `plain` is the same words for the tooltip when the line is cut short.
+  const ways: Record<Start, { name: string; line: ReactNode; plain: string }> = {
+    pair: two && pair ? { name: "Fusion", line: <>{model(pair.lead)} leads, {model(pair.sidekick)} helps</>, plain: `${name(pair.lead)} leads, ${name(pair.sidekick)} does the legwork it hands over` } : { name: "Fusion", line: "Needs two different models ready", plain: "Needs two different models ready" },
+    best: pair ? { name: "Best", line: <>{model(pair.lead)} alone, on everything</>, plain: `${name(pair.lead)} alone, on everything` } : { name: "Best", line: "The best model you connect, on everything", plain: "The best model you connect, on everything" },
+    fast: two && pair ? { name: "Fast", line: <>{model(pair.sidekick)} alone, for small, clear asks</>, plain: `${name(pair.sidekick)} alone, for small, clear asks` } : pair ? { name: "Fast", line: <>{model(pair.lead)} alone too, with one model ready</>, plain: `${name(pair.lead)} alone too, with one model ready` } : { name: "Fast", line: "A quicker model, for small, clear asks", plain: "A quicker model, for small, clear asks" },
+  };
+  const w = ways[shown];
   return (
-    <section className="lc-step" aria-label="Who works on your sessions?">
-      <h1>Who works on your sessions?</h1>
-      <p className="lc-step-sub">What a new session starts with. Each session can change it, or pick any other model, from its composer.</p>
-      <div className="lc-step-body">
-        <div className="lc-rcs" role="radiogroup" aria-label="Who works on your sessions">
-          {cards.map((c, i) => (
-            <button key={c.id} type="button" role="radio" aria-checked={shown === c.id} className="lc-rc l-focus" data-on={shown === c.id || undefined} disabled={c.off} style={{ ["--i" as string]: i }} onClick={() => setPick(c.id)}>
-              {shown === c.id && (
-                <span className="lc-rc-tick">
-                  <I.check size={12} />
-                </span>
-              )}
-              {c.icon}
-              <span>
-                <b>{c.title}</b>
-                <small>{c.sub}</small>
-              </span>
-              <p>{c.body}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="lc-step-foot">
-        <span className="lc-quiet">Settings › Agentic features changes who leads and who's the sidekick.</span>
-        <span className="lc-grow" />
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="lg" onClick={onBack}>
-          Back
-        </button>
-        <button type="button" className="lc-btn" data-kind="accent" data-size="lg" onClick={() => void finish()}>
-          Open Liner Code
-        </button>
-      </div>
-    </section>
+    <Row
+      state="ok"
+      i={5}
+      title={<span key={shown}>{w.name}</span>}
+      line={
+        <span className="lc-wel-cut" key={shown} title={w.plain}>
+          {w.line}
+        </span>
+      }
+      end={
+        <Segmented
+          size="sm"
+          value={shown}
+          onValueChange={(v) => setPick(v)}
+          options={[
+            { value: "pair", label: "Fusion", disabled: !two },
+            { value: "best", label: "Best" },
+            { value: "fast", label: "Fast", disabled: !two },
+          ]}
+          aria-label="Who works on a new session"
+        />
+      }
+    />
   );
 }

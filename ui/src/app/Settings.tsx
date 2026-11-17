@@ -8,7 +8,7 @@
   returns to the sessions.
 */
 import { cloneElement, isValidElement, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, ToolAccount, ToolUpdate, UpdateMode } from "@contracts";
+import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, CheckTier, ToolAccount, ToolCheck, ToolCheckRow, ToolUpdate, UpdateMode } from "@contracts";
 import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, picturesGuess, ROUTINES_ON, toolPicturesKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioCards } from "@liner/components/radio-cards/radio-cards";
@@ -24,7 +24,7 @@ import { Agentic } from "./Agentic";
 import { Backdrop, ownChanged, useBackgroundUrl } from "./Backdrop";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { I, ModelMark } from "./icons";
+import { I, ModelMark, StepMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, agentOf, ago, codeProjects, dollars, markOf, modelLabel, plural, providerLabel, since } from "./model";
 import { appIcon, dayOf } from "./Addon";
 // Liner Design's picture model settings load when that page of Settings is shown.
@@ -59,11 +59,11 @@ export type SettingsPage = "general" | "appearance" | "notifications" | "keyboar
 
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
-  { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, and what Enter does while an agent works.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend" },
+  { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, what Enter does while an agent works, and what's checked and said when you send.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend send check precheck prompt draft split tasks unrelated subject quick haiku edits changed files share between turns" },
   { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, how much moves, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
-  { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem" },
+  { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem check checks doctor test health broken read only manual obey" },
   { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Fusion, its lead and sidekick, and what a new session starts with; and the Reviewer, which reads each change before it's yours.", words: "agentic fusion pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes" },
   { id: "modes", label: "Modes", icon: <I.toggle />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
@@ -626,6 +626,18 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
         </Field>
         <Field title={`Keep the ${os.machine} awake`} note={`No idle sleep while a session${ROUTINES_ON ? " or a routine run" : ""} works, so a long run isn't cut off. The display still sleeps.`}>
           <NamedSwitch name={`Keep the ${os.machine} awake`} checked={s.keepAwake !== false} onCheckedChange={(keepAwake) => save({ keepAwake })} />
+        </Field>
+      </Group>
+      {/* The prompt check (Precheck.tsx, engine/src/precheck.ts) and the note of your own changes (engine/src/edits.ts): both change what reaches the agent. */}
+      <Group title="When you send">
+        <Field title="Check a message before it goes" note="A row over the box when a draft looks like several separate tasks, or a small change for the top model. It reads only your words, and never holds the message.">
+          <NamedSwitch name="Check a message before it goes" checked={s.precheck !== false} onCheckedChange={(precheck) => save({ precheck })} />
+        </Field>
+        <Field title="Ask whether it belongs in this session" note="In a long session, a message on a new subject starts the session tool's quick model (Haiku for Claude Code) to ask it one short question, on your plan or key. It may spend a little even when the answer comes too late to use: Send waits 3 seconds at most. Off unless you turn it on." off={s.precheck === false}>
+          <NamedSwitch name="Ask whether it belongs in this session" checked={s.precheckModel === true} disabled={s.precheck === false} onCheckedChange={(precheckModel) => save({ precheckModel })} />
+        </Field>
+        <Field title="Tell the agent which files changed between turns" note="Names and line counts only, never what's in them, ahead of your message. Undo, Compare, other sessions and branch changes are named as what they were.">
+          <NamedSwitch name="Tell the agent which files changed between turns" checked={s.shareEdits !== false} onCheckedChange={(shareEdits) => save({ shareEdits })} />
         </Field>
       </Group>
       <Group title="Settle sessions on their own" note="Settling is yours: a session stays in its project until you settle it from its row (D), and settled ones fold away under Settled, still searchable. These rules can do it for you; they're off unless you turn them on.">
@@ -1463,6 +1475,7 @@ function Models() {
         <PicturesSettings Group={Group} Field={Field} />
       </Suspense>
       <CustomModels />
+      <ToolChecks />
       <Group title="Billing and keys" note={`Keys stay in ${os.keyStore("the login keychain")}. The engine only holds them in memory.`}>
         <Field title="Claude Code bills to" note={keys.includes("anthropic") ? "Your plan through Claude Code's own sign-in, or the Anthropic key you added" : "Anthropic asks apps built on its Agent SDK to use an API key: add one below"}>
           <Segmented
@@ -1502,6 +1515,139 @@ function Models() {
         <Voucher />
       </Group>
     </>
+  );
+}
+
+/*
+  Check my tools (engine/src/doctor.ts): is each tool there, does it work, and does it still do what Liner Code tells it. Tier 1
+  runs when this page opens and on Check again; tier 2 (does it obey Read only and Manual) on its button, a few seconds a tool,
+  free; tier 3 only from a tool's own button, which says what it spends. Results live in the engine's memory, so they're still
+  here when you come back to the page in this run.
+*/
+const TIER_NAME: Record<CheckTier, string> = { 1: "Found and working", 2: "Obeys Read only and Manual", 3: "Test message" };
+function ToolChecks() {
+  // The Demo only once you've turned it on, as the model picker has it.
+  const showDemo = useEngine((x) => x.settings.showDemo === true);
+  const all = useEngine((x) => x.providers);
+  const providers = useMemo(() => all.filter((p) => showDemo || p.id !== "demo"), [all, showDemo]);
+  const [rows, setRows] = useState<ToolCheckRow[]>([]);
+  // What runs now, by tool: the tier it's on.
+  const [busy, setBusy] = useState<Record<string, CheckTier>>({});
+  const merge = (got: ToolCheckRow[]) =>
+    setRows((had) => {
+      const by = new Map(had.map((r) => [r.tool, r]));
+      for (const r of got) by.set(r.tool, r);
+      return [...by.values()];
+    });
+  const run = async (tier: CheckTier, tools: string[]) => {
+    setBusy((b) => ({ ...b, ...Object.fromEntries(tools.map((t) => [t, tier])) }));
+    // Every tool in one call: the engine looks at the tools once and starts what each check needs once, which one call a tool
+    // at the same time would do over for each of them.
+    await rpc("tools.check", tools.length === 1 ? { tool: tools[0] as ProviderInfo["id"], tier } : { tier })
+      .then(merge)
+      .catch(fail)
+      .finally(() =>
+        setBusy((b) => {
+          const rest = { ...b };
+          for (const t of tools) delete rest[t];
+          return rest;
+        }),
+      );
+  };
+  const ids = providers.map((p) => p.id);
+  const key = ids.join(",");
+  useEffect(() => {
+    void rpc("tools.checked", {})
+      .then(merge)
+      .catch(() => {});
+    if (ids.length) void run(1, ids);
+    // Once a page opens, and again when the tools found change (one added or removed).
+  }, [key]);
+  const any = (tier: CheckTier) => Object.values(busy).includes(tier);
+  return (
+    <Group
+      title="Check my tools"
+      note="Is each tool there, does it work, and does it still do what Liner Code tells it. A new version of a tool can stop obeying an access level; this is how you find out."
+      end={
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={any(1)} onClick={() => void run(1, ids)}>
+          <I.refresh size={14} />
+          {any(1) ? "Checking" : "Check again"}
+        </button>
+      }
+    >
+      <Field title="Found and working" note="Free and instant. Runs when you open this page: found on this Mac, its version, sign-in, its model list, and Liner Code's own tools." />
+      <Field title={`Does it obey Read only and ${accessOf("ask").label}?`} note="Free, a few seconds a tool. Each tool is pointed at a test model on this Mac, with a dummy key in a scratch folder, and asked to write a file and run a command. Your sign-ins, settings and sessions aren't touched. Claude Code, Codex and OpenCode, and the endpoints that run through them.">
+        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={any(2) || !providers.length} onClick={() => void run(2, ids)}>
+          {any(2) ? "Checking" : "Check access"}
+        </button>
+      </Field>
+      <Field title="Send it a test message" note="Costs one short message on your plan or key, two for an API endpoint: a plain reply, and one tool call through its tool. Only from a tool's own button below." />
+      {providers.map((p) => (
+        <ToolCheckRowView key={p.id} p={p} row={rows.find((r) => r.tool === p.id)} busy={busy[p.id]} onMessage={() => void run(3, [p.id])} />
+      ))}
+    </Group>
+  );
+}
+
+const STEP_OF: Record<ToolCheck["state"], "done" | "failed" | "skipped"> = { passed: "done", failed: "failed", skipped: "skipped" };
+function ToolCheckRowView({ p, row, busy, onMessage }: { p: ProviderInfo; row?: ToolCheckRow; busy?: CheckTier; onMessage: () => void }) {
+  const checks = row?.checks ?? [];
+  const bad = checks.filter((c) => c.state === "failed").length;
+  const at = Math.max(0, ...checks.map((c) => c.at));
+  const tiers = ([1, 2, 3] as CheckTier[]).filter((t) => checks.some((c) => c.tier === t) || busy === t);
+  const endpoint = p.endpoint !== undefined;
+  const ready = p.available && p.signedIn !== false;
+  return (
+    <div className="lc-ck">
+      <Field
+        lead={
+          <span className="lc-st-mark">
+            <ModelMark kind={markOf(`${p.id}:`)} size={16} />
+          </span>
+        }
+        title={
+          <>
+            {p.label} {busy ? <Badge tone="neutral">Checking</Badge> : !p.available && p.endpoint === undefined && p.id !== "demo" ? <Badge tone="warn">Not installed</Badge> : bad ? <Badge tone="danger">{bad === 1 ? "1 check failed" : `${bad} checks failed`}</Badge> : checks.length ? <Badge tone="ok">Passed</Badge> : null}
+          </>
+        }
+        note={busy ? `Running: ${TIER_NAME[busy].toLowerCase()}` : at ? `Checked ${since(at)}` : "Not checked yet"}
+      >
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={Boolean(busy) || !ready} title={endpoint ? "Costs two short messages on this endpoint's key" : p.id === "demo" ? "The Demo answers on this Mac, for nothing" : "Costs one short message on this tool's plan or key"} onClick={onMessage}>
+          {endpoint ? "Send 2 test messages" : "Send a test message"}
+        </button>
+      </Field>
+      {tiers.length > 0 && (
+        <div className="lc-ck-tiers">
+          {tiers.map((t) => (
+            <div key={t} className="lc-ck-tier">
+              <span className="lc-ck-label">{TIER_NAME[t]}</span>
+              <ul>
+                {busy === t && !checks.some((c) => c.tier === t) ? (
+                  <li>
+                    <StepMark state="working" size={14} />
+                    <span className="lc-ck-t">
+                      <b>Checking</b>
+                    </span>
+                  </li>
+                ) : (
+                  checks
+                    .filter((c) => c.tier === t)
+                    .map((c) => (
+                      <li key={c.id} data-s={c.state}>
+                        <StepMark state={busy === t ? "working" : STEP_OF[c.state]} size={14} label={c.state === "skipped" ? "Not checked" : undefined} />
+                        <span className="lc-ck-t">
+                          <b>{c.label}</b>
+                          {c.detail && <small>{c.detail}</small>}
+                        </span>
+                      </li>
+                    ))
+                )}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

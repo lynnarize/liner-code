@@ -6,12 +6,13 @@
   the sessions; the requests are asked of the engine when the menu opens, so they're current.
 */
 import { Menu, nativeImage, nativeTheme, Tray, type MenuItemConstructorOptions, type NativeImage } from "electron";
+import { waitLine, type Left } from "./finish";
 
 type Session = { id: string; title: string };
 /** `running`: every session with a turn going, routines' included, which quitting would stop. */
 export type TrayStatus = { show: boolean; working: Session[]; needs: (Session & { waiting: boolean })[]; running?: number };
 type Ask = { kind: string; id: string; title?: string; state?: string };
-type Hooks = { open: (threadId?: string) => void; quit: () => void; rpc: (method: string, params: Record<string, unknown>) => Promise<unknown> };
+type Hooks = { open: (threadId?: string) => void; quit: () => void; quitNow: () => void; rpc: (method: string, params: Record<string, unknown>) => Promise<unknown> };
 
 /**
   A 16-point template image, drawn at 2x: a ring, with a gap or a dot in it. Windows has no
@@ -46,14 +47,32 @@ export class StatusItem {
   private readonly hooks: Hooks;
   private themed = false;
   private glyphs: Record<"quiet" | "working" | "needs", NativeImage> | null = null;
+  /**
+    While the app waits to quit (Quit when they finish), what it waits for, as the engine says it.
+    The item shows then even with "Show them in the menu bar" off: it's the only sign the app is
+    still there. The page's own status is kept underneath, and comes back as it was after.
+  */
+  private held: Left | null = null;
 
   constructor(hooks: Hooks) {
     this.hooks = hooks;
   }
 
+  /** The app waits to quit for these (null: it doesn't any more). */
+  hold(left: Left | null) {
+    this.held = left;
+    this.set(this.status);
+  }
+
+  /** What the item shows: the sessions the quit waits for while it waits, the page's word otherwise. */
+  private view() {
+    if (!this.held) return this.status;
+    return { working: this.held.working, needs: this.held.waiting.map((w) => ({ ...w, waiting: true })) };
+  }
+
   set(s: TrayStatus) {
     this.status = s;
-    if (!s.show) {
+    if (!s.show && !this.held) {
       this.tray?.destroy();
       this.tray = null;
       return;
@@ -74,11 +93,12 @@ export class StatusItem {
       this.tray.on("click", () => void this.pop());
       this.tray.on("right-click", () => void this.pop());
     }
-    const kind = s.needs.length ? "needs" : s.working.length ? "working" : "quiet";
+    const { working, needs } = this.view();
+    const kind = needs.length ? "needs" : working.length ? "working" : "quiet";
     this.tray.setImage(glyphs[kind]);
-    this.tray.setTitle(kind === "needs" ? String(s.needs.length) : kind === "working" ? String(s.working.length) : "", { fontType: "monospacedDigit" });
+    this.tray.setTitle(kind === "needs" ? String(needs.length) : kind === "working" ? String(working.length) : "", { fontType: "monospacedDigit" });
     // Windows shows no title beside the icon: the counts go in its tooltip.
-    if (process.platform === "win32") this.tray.setToolTip(["Liner Code", s.working.length && `${s.working.length} working`, s.needs.length && `${s.needs.length} ${s.needs.length === 1 ? "needs" : "need"} you`].filter(Boolean).join(" · "));
+    if (process.platform === "win32") this.tray.setToolTip(["Liner Code", this.held && waitLine(this.held), working.length && `${working.length} working`, needs.length && `${needs.length} ${needs.length === 1 ? "needs" : "need"} you`].filter(Boolean).join(" · "));
   }
 
   /** How many sessions have a turn going, as the page last said: quitting asks first while any do. */
@@ -92,7 +112,8 @@ export class StatusItem {
   }
 
   private async pop() {
-    const { working, needs } = this.status;
+    const { working, needs } = this.view();
+    const held = this.held;
     // The requests waiting in sessions that wait on you, as they are now.
     const asks = new Map<string, Ask[]>();
     await Promise.all(
@@ -106,7 +127,7 @@ export class StatusItem {
     );
     const short = (s: string) => (s.length > 48 ? `${s.slice(0, 47)}…` : s);
     const head = [working.length && `${working.length} working`, needs.length && `${needs.length} ${needs.length === 1 ? "needs" : "need"} you`].filter(Boolean).join(" · ") || "Nothing working";
-    const items: MenuItemConstructorOptions[] = [{ label: head, enabled: false }];
+    const items: MenuItemConstructorOptions[] = held ? [{ label: waitLine(held), enabled: false }, ...(working.length || needs.length ? [{ label: head, enabled: false }] : [])] : [{ label: head, enabled: false }];
     if (needs.length) {
       items.push({ type: "separator" }, { label: "Needs you", enabled: false });
       for (const n of needs.slice(0, 10)) {
@@ -122,7 +143,8 @@ export class StatusItem {
       items.push({ type: "separator" }, { label: "Working", enabled: false });
       for (const w of working.slice(0, 10)) items.push({ label: short(w.title), click: () => this.hooks.open(w.id) });
     }
-    items.push({ type: "separator" }, { label: "Open Liner Code", click: () => this.hooks.open() }, { label: "Quit Liner Code", click: () => this.hooks.quit() });
+    // While it waits to quit, Open Liner Code calls that off (main.ts, show), and Quit now doesn't ask again.
+    items.push({ type: "separator" }, { label: "Open Liner Code", click: () => this.hooks.open() }, held ? { label: "Quit Now", click: () => this.hooks.quitNow() } : { label: "Quit Liner Code", click: () => this.hooks.quit() });
     this.tray?.popUpContextMenu(Menu.buildFromTemplate(items));
   }
 }

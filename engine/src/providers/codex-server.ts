@@ -12,7 +12,7 @@
 */
 import { existsSync } from "node:fs";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import type { Access, PlanEntry, Question } from "../../../contracts/src/index.ts";
+import type { Access, ErrorWhy, PlanEntry, Question } from "../../../contracts/src/index.ts";
 import { rank } from "../../../contracts/src/index.ts";
 import { closesOnExit, jsonLines, killTree, marking, spawn, THREAD_ENV, threadMark, which, withCodexPath } from "../exec.ts";
 import { VERSION } from "../version.ts";
@@ -96,6 +96,27 @@ function input(text: string, files: string[] = []) {
 
 /** A Codex failure is a usage limit when Codex says so, by code or in words. */
 export const isLimit = (e: { codexErrorInfo?: unknown; message?: string }) => e.codexErrorInfo === "usageLimitExceeded" || /usage limit|rate limit|hit your limit/i.test(e.message ?? "");
+
+/** Codex's error codes for a request its policy refused, and for no capacity to run it (Codex 0.169's CodexErrorInfo). */
+const REFUSED = new Set(["cyberPolicy", "bioPolicy", "misalignmentPolicyViolation"]);
+const OVERLOADED = new Set(["serverOverloaded", "flexUnavailable", "policyCapacityUnavailable"]);
+/** Codex's own words for the same refusals, for `codex exec`, which gives no code (its binary's messages). */
+const REFUSED_WORDS = /^(This request has been flagged for possible cybersecurity risk|This content was flagged for possible biological risk|This request was blocked due to a misalignment policy violation)\b/;
+/**
+  Whether a Codex failure is a refusal under its policy or an overloaded or down service, so another tool could carry
+  on. By code first (T3 Code: CodexAdapterV2.ts, which retries "serverOverloaded"); a code with an HTTP status in it
+  (a stream that failed, retries that ran out) counts as down on a 503 or 529. Words only where no code came.
+*/
+export function codexWhy(e: { codexErrorInfo?: unknown; message?: string }): ErrorWhy | undefined {
+  const info = e.codexErrorInfo;
+  const code = typeof info === "string" ? info : info && typeof info === "object" ? Object.keys(info)[0] : undefined;
+  if (code && REFUSED.has(code)) return "refusal";
+  if (code && OVERLOADED.has(code)) return "overloaded";
+  const detail = info && typeof info === "object" ? (Object.values(info)[0] as { httpStatusCode?: unknown } | undefined) : undefined;
+  if (detail && (detail.httpStatusCode === 503 || detail.httpStatusCode === 529)) return "overloaded";
+  if (code) return undefined;
+  return REFUSED_WORDS.test((e.message ?? "").trim()) ? "refusal" : undefined;
+}
 
 /** A short-lived app-server for one question (limits, skills), closed after. */
 export async function codexAsk<T>(env: NodeJS.ProcessEnv, cwd: string, method: string, params: Json, timeout = 20000): Promise<T> {
@@ -799,7 +820,10 @@ export class CodexServerSession implements ProviderSession {
         this.failure = null;
         if (failed) {
           if (isLimit(failed)) sink.limited(failed.message ?? "Codex hit its usage limit.");
-          else sink.error(failed.message ?? "Codex stopped with an error.");
+          else {
+            const why = codexWhy(failed);
+            sink.error(failed.message ?? "Codex stopped with an error.", why ? { why } : undefined);
+          }
         } else if (turn?.status === "failed") sink.error("Codex stopped with an error.");
         this.done?.();
         return;

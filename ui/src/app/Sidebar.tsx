@@ -32,6 +32,7 @@ import { appNotice, updates } from "./Updates";
 import { pairOf } from "./Crew";
 import { agentState, ROUTINES_ON, updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
+import { EtaLeft } from "./EtaLeft";
 import * as os from "./os";
 import { toast } from "@liner/components/toast/toast";
 
@@ -783,6 +784,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                       <span data-tone={state.tone}>{state.text}</span>
                     </>
                   )}
+                  {/* How long it should still take, while it works (not while it waits on you). */}
+                  {t.status === "running" && <EtaLeft eta={t.eta} lead=" · " />}
                 </span>
               </span>
             </>

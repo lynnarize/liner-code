@@ -1,0 +1,104 @@
+/*
+  The prompt check's row in the composer tray's head (Precheck.tsx): a tray row like what's to commit (.lc-trow), its action
+  as the row's small button, and for a split the tasks it would start, one quiet line each under it.
+*/
+.lc-pcheck-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.lc-pcheck {
+  gap: 4px;
+}
+.lc-pcheck-key {
+  flex: none;
+  padding-right: 6px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-pcheck-tasks {
+  display: grid;
+  gap: 2px;
+  margin: -4px 0 6px;
+  /* Under the caption's words; the numbers sit inside, since each line cuts itself short with an ellipsis. */
+  padding: 0 12px 0 32px;
+  list-style: decimal inside;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--l-ink-2);
+  animation: l-blur-in 240ms var(--l-ease-out) backwards;
+}
+.lc-pcheck-tasks > li {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.lc-pcheck-tasks > li::marker {
+  color: var(--l-ink-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-pcheck-tasks {
+    animation: none;
+  }
+}
+
+/* "Sent with: 3 files you changed" under your message (SentWith.tsx): the same quiet line as "What the agent was told". */
+.lc-sent {
+  max-width: 82%;
+  min-width: 0;
+}
+.lc-sent-t {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lc-sent > svg {
+  flex: none;
+}
+.lc-sent-list {
+  box-sizing: border-box;
+  display: grid;
+  gap: 8px;
+  width: min(82%, 520px);
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: var(--l-wash);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--l-ink-2);
+  animation: l-blur-in 220ms var(--l-ease-out) backwards;
+}
+.lc-sent-g {
+  display: grid;
+  min-width: 0;
+}
+.lc-sent-h {
+  color: var(--l-ink-3);
+}
+.lc-sent-f {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.lc-sent-p {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--l-font-mono);
+  -webkit-user-select: text;
+  user-select: text;
+}
+.lc-sent-n {
+  flex: none;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-sent-list {
+    animation: none;
+  }
+}

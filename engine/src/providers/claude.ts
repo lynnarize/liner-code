@@ -24,7 +24,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { stripVTControlCharacters } from "node:util";
-import type { Access, ContextPart, ContextSource, ContextUse, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
+import type { Access, ContextPart, ContextSource, ContextUse, ErrorWhy, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { base64Size, imageKind, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
 import { outside, run, sdkPath, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
@@ -147,6 +147,24 @@ export function resultError(m: SDKResultMessage, hint?: string): string | undefi
   if (m.subtype !== "success") return listed ?? structured ?? (m.errors.join("\n") || "Claude Code stopped with an error.");
   if (!m.is_error && !structured) return undefined;
   return structured ?? hint ?? (m.result || "Claude Code stopped with an error.");
+}
+
+/**
+  Whether a turn that ended failed because the provider refused the request under its usage policy, or because it is
+  overloaded or down, from fields Claude Code gives: the result's stop_reason "refusal" (the API's own), the
+  model_refusal_no_fallback notice before it, an assistant error "overloaded", or an HTTP 529 (overloaded) or 503 (down)
+  on the result. A 503 that is a gateway's rate limit (gatewayCooldown) is a limit, not this. T3 Code reads the 529 the
+  same way (ClaudeAdapterV2.ts, isOverloadedResult); it has no refusal class of its own.
+*/
+export function whyOf(m: SDKResultMessage, told: { refused?: string; overloaded?: boolean } = {}): ErrorWhy | undefined {
+  if (m.terminal_reason === "aborted_streaming" || m.terminal_reason === "aborted_tools") return undefined;
+  if (m.stop_reason === "refusal" || told.refused !== undefined) return "refusal";
+  const status = m.subtype === "success" ? m.api_error_status : undefined;
+  const failed = m.subtype !== "success" || m.is_error || (status ?? 0) >= 400;
+  if (!failed) return undefined;
+  if (status === 529 || told.overloaded) return "overloaded";
+  if (status === 503 && gatewayCooldown(m) === undefined) return "overloaded";
+  return undefined;
 }
 
 /** When a gateway's 503 around a rate limit says it lifts, if this result is one (T3 Code: ClaudeAdapterV2.ts, gatewayCooldownResetAt). */
@@ -732,6 +750,8 @@ class ClaudeSession implements ProviderSession {
   private compactKey: string | null = null;
   /** Why the sign-in failed, said when the turn ends. */
   private authFailure: string | undefined;
+  /** What this turn was told before its result of a refusal (model_refusal_no_fallback's words) or an overload (an assistant error): read when it ends (whyOf). */
+  private failedHow: { refused?: string; overloaded?: boolean } = {};
   /** The connections being handed to Claude Code, waited on before a turn's message goes so their tools are there for it. */
   private linking: Promise<string[]> | null = null;
   /** The session a transcript was opened on, until what it holds of images and PDFs is counted. */
@@ -1212,6 +1232,9 @@ class ClaudeSession implements ProviderSession {
         }
       }
       if (m.error === "authentication_failed") this.authFailure = signedOut(this.o.env.CLAUDE_CONFIG_DIR);
+      // Only an overload the turn ended on counts: one the turn went on past (a later answer that isn't an error) doesn't.
+      if (m.error === "overloaded") this.failedHow.overloaded = true;
+      else if (!m.error && m.message.model !== "<synthetic>") this.failedHow.overloaded = undefined;
       if (m.message.model && m.message.model !== "<synthetic>") this.mainModel = m.message.model;
       // Claude Code's non-streaming fallback sends the answer whole, with no deltas (T3 Code: ClaudeAdapterV2.ts, emitAssistantTextArtifacts).
       if (m.message.model !== "<synthetic>" && !this.streamed.has(m.message.id))
@@ -1328,12 +1351,22 @@ class ClaudeSession implements ProviderSession {
       const denied = m.subtype === "success" && m.api_error_status === 403;
       const failed = this.signal?.aborted ? undefined : resultError(m, denied ? m.result : undefined);
       const said = failed && this.authFailure && !denied ? this.authFailure : failed;
+      // A refusal or an overload can end a turn another tool could carry on: it says which, so the error offers that.
+      const why = this.signal?.aborted ? undefined : whyOf(m, this.failedHow);
+      const how = this.failedHow;
+      this.failedHow = {};
       // A limit was already said, with its reset time; the result's own words would repeat it.
       if (said && !this.limited) {
         const cooldown = gatewayCooldown(m);
         if (cooldown) sink.limited("Claude's API rate limit was reached. Try again later.", cooldown);
         else if (/usage limit|rate limit|limit reached|hit your limit/i.test(said)) sink.limited(said);
-        else sink.error(said);
+        else sink.error(why === "refusal" && how.refused ? how.refused : said, why ? { why } : undefined);
+      } else if (!said && !this.limited && why === "refusal") {
+        // A refusal can end as a plain success: it's still a refusal, said once as the error, not as an answer. Words the
+        // turn already streamed stay where they are, so the error doesn't say them again.
+        const result = this.said || m.subtype !== "success" ? "" : m.result.trim();
+        this.said = true;
+        sink.error(how.refused || result || "Claude declined this request.", { why });
       }
       // An answer no message carried (T3 Code: ClaudeAdapterV2.ts, its result fallbackText).
       if (!said && !this.said && m.subtype === "success" && m.result.trim()) {
@@ -1407,9 +1440,13 @@ class ClaudeSession implements ProviderSession {
         if (NO_AUTO.test(m.content) && this.autoGone(sink)) return;
         if (m.level !== "info") sink.notice(m.content);
         return;
+      // Claude Code retried on a fallback model of its own: the turn goes on, and only says so.
       case "model_refusal_fallback":
-      case "model_refusal_no_fallback":
         sink.notice(m.content);
+        return;
+      // No retry ran: the turn ends refused, and its error says these words (whyOf).
+      case "model_refusal_no_fallback":
+        this.failedHow.refused = m.content?.trim() || "Claude declined this request.";
         return;
     }
   }
@@ -1587,6 +1624,7 @@ class ClaudeSession implements ProviderSession {
     // Not carried over from a turn that was stopped before its result: they'd hide this one's failure.
     this.limited = false;
     this.authFailure = undefined;
+    this.failedHow = {};
     // Only this turn's messages are waited on; a steer an earlier turn never answered isn't.
     this.sent = new Set();
     // Your turn takes in what Claude Code had to say about work you stopped.

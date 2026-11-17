@@ -175,7 +175,8 @@ test("lock: an undo that fails lets go, and the next message goes", async () => 
     await assert.rejects(s.call("checkpoint.revert", { threadId: t.id, itemId: cpOf(s, t.id)!.id }), /Changed after that turn/);
     assert.equal(s.runtime.isRunning(t.id), false);
     await s.call("thread.send", { id: t.id, text: "next" });
-    await until(() => f.texts.includes("next"), "the session still works");
+    // Your edit to a.txt goes ahead of the words now (edits.ts), so the message ends the prompt.
+    await until(() => f.texts.some((x) => x === "next" || x.endsWith("\n\nnext")), "the session still works");
   } finally {
     f.restore();
   }

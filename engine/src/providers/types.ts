@@ -4,7 +4,7 @@
   Claude Code, Codex, Hermes and OpenCode. A provider that can't do something (approvals in
   Codex exec, say) simply never calls that part of the sink.
 */
-import type { Access, AgentRun, ApprovalWhy, CommandInfo, ContextUse, Effort, LimitWindow, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
+import type { Access, AgentRun, ApprovalWhy, CommandInfo, ContextUse, Effort, ErrorWhy, LimitWindow, ModelInfo, SkillInfo, PlanEntry, ProviderInfo, Question, Risk, ToolKind, ToolLimits, Usage } from "../../../contracts/src/index.ts";
 import { homedir } from "node:os";
 import type { Connection } from "../addons.ts";
 
@@ -107,7 +107,8 @@ export type TurnSink = {
   notice(text: string, key?: string, o?: { stop?: boolean; once?: boolean }): void;
   /** The thinking level the tool really runs the model at, when it isn't the one set; undefined when it is (Thread.effortNow). */
   effortNow?(level: string | undefined): void;
-  error(message: string): void;
+  /** `why`: the provider refused the request, or is overloaded or down (ErrorWhy), so another tool may get round it. */
+  error(message: string, o?: { why?: ErrorWhy }): void;
   /** The tool's plan ran out of usage; `until` is when its window reopens, if it said. */
   limited(message: string, until?: number): void;
   /** One of the plan's windows, as the tool reported it mid-turn (Claude Code's rate limit events). */

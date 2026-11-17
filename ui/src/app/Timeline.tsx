@@ -25,6 +25,8 @@ import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow } from 
 import { Fanout, isSidekick, onWhom } from "./Crew";
 import { toast } from "@liner/components/toast/toast";
 import { Boundary } from "./Boundary";
+import { EtaLeft } from "./EtaLeft";
+import { SentWith } from "./SentWith";
 import { bridge, isNative } from "./bridge";
 import * as os from "./os";
 import "./timeline.css";
@@ -287,6 +289,7 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
       }
       else if (it.kind === "review" && !cp && it === review) blocks.push({ key: it.id, node: <TurnFoot review={it} providers={providers} onReview={onReview} reviewing={reviewing} /> });
       else if (it.kind === "limit") blocks.push({ key: it.id, node: <LimitCard threadId={threadId} it={it} /> });
+      else if (it.kind === "error" && it.why) blocks.push({ key: it.id, node: <ErrorCard threadId={threadId} it={it} /> });
       else if (it.kind === "error")
         blocks.push({
           key: it.id,
@@ -523,6 +526,9 @@ export function liveOf(marks: Mark[], items: Item[]) {
 
 function LiveStatus({ threadId, marks, items, steps, quiet }: { threadId: string; marks: Mark[]; items: Item[]; steps: number; quiet?: Extract<Item, { kind: "notice" }> }) {
   const { waiting, word, clock } = liveOf(marks, items);
+  // Its ETA, as its sidebar row says it (Thread.eta): read as numbers, so a new thread object with the same one redraws nothing.
+  const etaFrom = useEngine((s) => threadOf(s, threadId)?.eta?.from);
+  const etaMs = useEngine((s) => threadOf(s, threadId)?.eta?.ms);
   // "opencode hasn't said anything new for 1 minute": the notice's first clause; the rest is its title.
   const hush = quiet && quiet.text.split(/:\s/)[0];
   return (
@@ -540,6 +546,7 @@ function LiveStatus({ threadId, marks, items, steps, quiet }: { threadId: string
           </span>
           {steps > 0 && ` · ${plural(steps, "step")}`}
           {hush && ` · ${hush}`}
+          {etaFrom !== undefined && etaMs !== undefined && <EtaLeft eta={{ from: etaFrom, ms: etaMs }} lead=" · " />}
         </span>
       )}
       {!waiting && quiet && (
@@ -1913,6 +1920,47 @@ const nameOf = (p: string) => p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf
 /** A path with Windows' separators turned to git's. */
 const slashed = (p: string) => p.replace(/\\/g, "/");
 
+/**
+  A failure the provider gave a reason for: it refused the request, or is overloaded or down. The error reads as any
+  other, then who and why in plain words. A refusal stops there: a refused request isn't sent to another tool, so it
+  has no buttons (the engine refuses thread.carryOn after one too). An overload offers Try again, then Carry on with
+  another tool's model, the same pick a usage limit offers (never by itself), while it's how the session stopped.
+*/
+function ErrorCard({ threadId, it }: { threadId: string; it: Extract<Item, { kind: "error" }> }) {
+  const status = useEngine((s) => threadOf(s, threadId)?.status);
+  const turns = useEngine((s) => threadOf(s, threadId)?.turns);
+  const providers = useEngine((s) => s.providers);
+  const p = providers.find((x) => x.id === it.provider);
+  // Who refused or is overloaded, by name: the company behind a tool's own sign-in, else the tool or endpoint as listed.
+  const family = it.provider?.split(".")[0];
+  const named = p?.label ?? it.provider ?? "The agent";
+  const who = p?.endpoint ? named : family === "claude" ? "Claude" : family === "codex" ? "Codex" : named;
+  const vendor = p?.endpoint ? named : family === "claude" ? "Anthropic" : family === "codex" ? "OpenAI" : named;
+  const again = it.why === "overloaded";
+  const current = again && status === "error" && turns === it.turn;
+  return (
+    <>
+      <p className="lc-error" role="alert">
+        {it.message}
+      </p>
+      <div className="lc-ask-foot">
+        <span className="lc-quiet">{again ? `${vendor} is overloaded right now` : `${who} refused this request`}</span>
+        <span className="lc-grow" />
+        {current && (
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" title="Send it to the same model again" onClick={() => void rpc("thread.tryAgain", { id: threadId }).catch(fail)}>
+            Try again
+          </button>
+        )}
+        {current && it.fallback && (
+          <button type="button" className="lc-btn" data-kind={again ? "plain" : "primary"} data-size="sm" title="Another tool takes over, with the conversation so far" onClick={() => void rpc("thread.carryOn", { id: threadId, model: it.fallback }).catch(fail)}>
+            Carry on with {modelLabel(it.fallback, providers)}
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 /** The tool's plan ran out mid-turn. It says which window and when it reopens; Resume carries on. */
 function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kind: "limit" }> }) {
   const status = useEngine((s) => threadOf(s, threadId)?.status);
@@ -2089,6 +2137,8 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
       ) : (
         said && <p>{said}</p>
       )}
+      {/* The files that changed since the last turn, which the agent was told of ahead of your words (SentWith.tsx). */}
+      {it.edits && it.edits.length > 0 && <SentWith edits={it.edits} />}
       {!it.steer && it.turn > 0 && (
         <span className="lc-you-more">
           <button type="button" className="lc-you-btn l-focus" disabled={running} title={running ? "Stop the turn to edit from here" : "Edit this message and go back to it"} onClick={() => setEdit(part ? said : it.text)}>

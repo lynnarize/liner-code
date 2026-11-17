@@ -357,6 +357,12 @@ export type Thread = {
   access: Access;
   /** Overrides the agent's model for this thread. */
   model?: string;
+  /**
+    While one message runs on the prompt check's fast model `once` (thread.send `once`): the model the session goes back to
+    (`model`, unset for the agent's own). Kept on the thread so an engine that stops mid-turn puts it back when it starts
+    again; a model picked meanwhile stays.
+  */
+  onceFrom?: { model?: string; once: string };
   effort?: Effort;
   /** The thinking level the tool really runs the model at, when it isn't `effort` (a tool with no such level). */
   effortNow?: string;
@@ -407,6 +413,12 @@ export type Thread = {
   worktree?: { path: string; branch: string; root?: string; made?: boolean };
   /** Why it's limited and when the window reopens, while `status` is "limited". */
   limit?: { message: string; until?: number; provider: string };
+  /**
+    While a turn runs: how long it's expected to take (`ms`), from this session's last finished turns on the same model,
+    else from yours on that tool and model over 30 days, and when its clock started (`from`, moved on by the time it
+    waited on you). Unset with no record to go by, and once the turn ends.
+  */
+  eta?: { from: number; ms: number };
   /** A goal it keeps working toward across turns (/goal), until it says the goal is met. */
   goal?: { text: string; status: "active" | "met" | "stopped"; turns: number; max: number };
   /** The provider's own session id, for resume. */
@@ -493,6 +505,19 @@ export type AgentRun = {
 export const agentState = (it: { status: "running" | "done" | "failed" | "stopped"; agent?: AgentRun }) => it.agent?.state ?? it.status;
 /** rel: the paths are already the project's own (every change written since they were), so none is stripped of its folder again. */
 export type FileChange = { path: string; status: "added" | "modified" | "deleted" | "renamed"; added: number; removed: number; from?: string; rel?: true };
+/**
+  A file that changed between a session's turns, and what Liner knows of who changed it: outside this session's turns and
+  nothing else known (`outside`: a person, a terminal, a background command), an Undo of turn `turn`, the turns taken back
+  when you edited an earlier message (their files kept), a Keep from Compare, another session in the same folder (`title`),
+  or a pull, merge or branch switch. Paths are the project's own.
+*/
+export type EditedFile = { path: string; status: FileChange["status"]; added: number; removed: number; from?: string; by: "outside" | "undo" | "rewind" | "keep" | "session" | "branch"; turn?: number; title?: string };
+/**
+  What the prompt check says of a draft (engine/src/precheck.ts): one suggestion, with its caption and its action's words.
+  split: several independent tasks, one session each (`tasks`); unrelated: a new subject in a long session; heavy: the
+  tool's top model or highest effort for a small ask, with the tool's fast `model` to use for this message.
+*/
+export type Precheck = { kind: "split" | "unrelated" | "heavy"; caption: string; action: string; tasks?: string[]; model?: string };
 /** `owner`: who took it on, where the tool says (Claude Code's tasks carry an agent's name). */
 export type PlanEntry = { title: string; status: "pending" | "in_progress" | "completed"; owner?: string };
 export type Risk = "low" | "medium" | "high";
@@ -828,6 +853,8 @@ export type Item =
       anchor?: { file: string; line: number; endLine?: number };
       /** What the person reads of it, when Liner wrote `text` for them (UserShown); `text` is what the agent was told. */
       shown?: UserShown;
+      /** The files that changed since the last turn, named to the agent ahead of `text` (Settings.shareEdits, engine/src/edits.ts). */
+      edits?: EditedFile[];
     })
   | (Base & {
       kind: "review";
@@ -940,10 +967,18 @@ export type Item =
       redo?: string;
       seconds?: number;
     })
-  | (Base & { kind: "error"; message: string })
+  /**
+    `why`: the provider refused the request under its usage policy, or it is overloaded or down, as the tool said it in a
+    field of its own or in its own words (ErrorWhy). Such an error offers `fallback`, another ready tool's model, to carry
+    on with; it never marks `provider` as out of usage.
+  */
+  | (Base & { kind: "error"; message: string; why?: ErrorWhy; provider?: string; fallback?: string })
   /** `fallback`: another ready tool's model that can carry on (another account of the same tool first). */
   | (Base & { kind: "limit"; message: string; until?: number; provider: string; fallback?: string })
   | (Base & { kind: "notice"; text: string; stop?: boolean });
+
+/** Why a turn failed, when it's a reason another tool could get round: the provider refused it, or is overloaded or down. */
+export type ErrorWhy = "refusal" | "overloaded";
 
 export type ItemKind = Item["kind"];
 /** The PR card's own tool: its run of the project's tests on this Mac, and the request to run them. */
@@ -1057,6 +1092,12 @@ export type Settings = {
   defaultMode?: SessionMode;
   /** Liner opens in (Settings › General): the Code face, or the Design face on Design Home. Unset: "code". */
   openIn?: "code" | "design";
+  /** A look at each draft before it goes (engine/src/precheck.ts): on unless false. */
+  precheck?: boolean;
+  /** Its one rule that asks the session tool's quick model (a new subject in a long session), on your plan or key: off unless true. */
+  precheckModel?: boolean;
+  /** The agent is told which files changed between its turns, names and line counts only (engine/src/edits.ts): on unless false. */
+  shareEdits?: boolean;
 };
 
 export type UpdateMode = "auto" | "notify" | "off";
@@ -1286,7 +1327,8 @@ export type PrPicture = {
 };
 export type Device = { udid: string; name: string; runtime: string; state: string };
 
-export type UsageRecord = { at: number; threadId: string; projectId: string; agent: string; provider: ProviderId; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; costUsd: number; seconds: number };
+/** `worked`: set on a session's own turn (not the Reviewer's or a sidekick's), in seconds, the time it waited on you left out: what a turn's ETA is worked out from (Thread.eta). */
+export type UsageRecord = { at: number; threadId: string; projectId: string; agent: string; provider: ProviderId; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; costUsd: number; seconds: number; worked?: number };
 export type UsageSummary = {
   from: number;
   to: number;
@@ -1433,6 +1475,20 @@ export type LaunchServer = {
 */
 export type LaunchAsk = { key: string; command: string; cwd: string; env: Record<string, string>; port: number; risk: Risk; risky?: string[] };
 
+/**
+  Check my tools (Settings › Models, engine/src/doctor.ts): is each tool there, does it work, and does it still do what Liner
+  Code tells it. Tier 1 is free and instant (found, version, sign-in, model list, Liner Code's tools). Tier 2 is free and takes
+  a few seconds: the real tool is pointed at a test model inside the engine and asked to write a file and run a command at Read
+  only and at Ask first. Tier 3 costs one short message per tool (two for an API endpoint), on your plan or key.
+*/
+export type CheckTier = 1 | 2 | 3;
+/** passed; failed, with one plain sentence on what to do; skipped: not checked, with why. */
+export type CheckState = "passed" | "failed" | "skipped";
+/** One check's last result. `at`: when it ran. `seconds`: how long its tier took for this tool. */
+export type ToolCheck = { id: string; label: string; tier: CheckTier; state: CheckState; detail?: string; at: number; seconds?: number };
+/** A tool's row: every check that has run on it, in the order the checks are listed. `kind` says what sort of tool it is. */
+export type ToolCheckRow = { tool: ProviderId; label: string; kind: "tool" | "account" | "agent" | "endpoint" | "demo"; checks: ToolCheck[] };
+
 /** App → engine. Each method's params and result. */
 export type Rpc = {
   "state.get": [Record<string, never>, Snapshot];
@@ -1469,7 +1525,9 @@ export type Rpc = {
   "sessions.search": [{ projectId: string; query: string }, { threadId: string; title: string; at: number; who: "you" | "agent"; snippet: string }[]];
   /** A limited session carries on with another tool's model (`model`, else the one its limit card offers). */
   "thread.carryOn": [{ id: string; model?: string }, null];
-  "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number }; /** Sent from Liner Design: the design file (its slug) and what is selected, for the turn's "## Design" note (lean.ts designNote). */ design?: { file: string; sel?: DesignSelection }; /** What the person reads of it (UserShown): kept on the item, never sent to the agent. */ shown?: UserShown }, null];
+  /** After an overload, the same model goes on where it stopped (Runtime.tryAgain). */
+  "thread.tryAgain": [{ id: string }, null];
+  "thread.send": [{ id: string; text: string; files?: { name: string; data: string }[]; mode?: "queue" | "steer"; anchor?: { file: string; line: number; endLine?: number }; /** Sent from Liner Design: the design file (its slug) and what is selected, for the turn's "## Design" note (lean.ts designNote). */ design?: { file: string; sel?: DesignSelection }; /** What the person reads of it (UserShown): kept on the item, never sent to the agent. */ shown?: UserShown; /** This message only, on this model of the session's own tool ("<provider>:<model>"): the prompt check's "Use <fast model>". */ once?: string }, null];
   /** You started writing in a session: its tool opens ahead of the message (Runtime.warm). Answers at once. */
   "thread.warm": [{ id: string }, null];
   /**
@@ -1800,6 +1858,21 @@ export type Rpc = {
   "updates.tool": [{ id?: BuiltinProvider }, Updates];
   /** Puts an update's notice away until a newer version comes out. */
   "updates.dismiss": [{ key: "app" | BuiltinProvider }, Updates];
+  /** Runs one tier of Check my tools on one tool, or on every tool without `tool`; answers with the rows it changed. */
+  "tools.check": [{ tool?: ProviderId; tier: CheckTier }, ToolCheckRow[]];
+  /** Every tool's row as last checked in this run of the engine (results are kept in memory only). */
+  "tools.checked": [Record<string, never>, ToolCheckRow[]];
+  /**
+    The prompt check (engine/src/precheck.ts). `precheck.draft`: the rules that run as you type, no model asked; a session's
+    draft by `threadId`, Home's by what it would start with. `precheck.send`: on Send, the one rule that may ask the quick
+    model, three seconds at most. Null: nothing to say. `precheck.split`: one session per task, each in a worktree of its own
+    from the commit the draft's folder is on (a session's worktree, else the project), with the same tool, model and access; a
+    session's first message keeps the first task for itself. It answers with the sessions made and the tasks `left` unmade
+    (and `why`), so a failure partway never starts a task twice.
+  */
+  "precheck.draft": [{ text: string; threadId?: string; projectId?: string; agent?: string; model?: string; effort?: Effort }, Precheck | null];
+  "precheck.send": [{ threadId: string; text: string }, Precheck | null];
+  "precheck.split": [{ projectId: string; threadId?: string; tasks: string[]; agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; mode?: SessionMode; tuning?: PairTuning; review?: boolean }, { made: Thread[]; left: string[]; why?: string }];
 };
 export type RpcMethod = keyof Rpc;
 export type RpcParams<M extends RpcMethod> = Rpc[M][0];

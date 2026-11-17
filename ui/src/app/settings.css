@@ -514,3 +514,61 @@ html[data-native="mac"] .lc-st-side {
   margin: 6px 0 0;
   font-size: 12px;
 }
+
+/*
+  Check my tools (Settings.tsx ToolChecks): a tool's row as the others in Models, then its checks under it, set in line with
+  its name, in a group per tier with a quiet label. Each check is a step mark, its name, and one line on how it stands.
+*/
+.lc-ck-tiers {
+  display: grid;
+  gap: 10px;
+  margin-top: -4px;
+  padding: 0 0 14px 48px;
+}
+.lc-ck-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--l-ink-3);
+  font-size: 12px;
+  font-weight: 500;
+}
+.lc-ck-tier ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-ck-tier li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  animation: l-unblur 220ms var(--l-ease-out) backwards;
+}
+.lc-ck-tier li > .lc-stepmark {
+  margin-top: 2px;
+}
+.lc-ck-t {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.lc-ck-t b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-ck-t small {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+  overflow-wrap: anywhere;
+}
+.lc-ck-tier li[data-s="skipped"] .lc-ck-t b {
+  color: var(--l-ink-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-ck-tier li {
+    animation: none;
+  }
+}

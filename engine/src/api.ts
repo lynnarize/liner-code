@@ -26,6 +26,7 @@ import { providers, shownOf, syncProviders, titleFrom, type Runtime } from "./ru
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
 import { picture } from "./prflow.ts";
 import { uid, type Store } from "./store.ts";
+import { draftCheck } from "./precheck.ts";
 import { appearance, boot, devices, ghState, htmlPages, listeningPorts, pagePath, stopServers, prCreate, prFor, prList, prMerge, readFile, screenshot, type DeviceLogs, type Terminals } from "./surfaces.ts";
 import type { Launcher } from "./launch.ts";
 import type { Proxies } from "./proxy.ts";
@@ -44,6 +45,7 @@ import type { Offers } from "./offers.ts";
 import type { Sources } from "./sources.ts";
 import type { DshHosts } from "./dsh-hosts.ts";
 import { Updater } from "./updates.ts";
+import { Doctor } from "./doctor.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
 
@@ -198,7 +200,7 @@ const isInfo = (d: unknown): d is ProviderInfo => {
   to ask; and a tool gone since the list was saved then fails in its own words, as one gone mid-session does.
   defaultStart (thread.create) and limited() (usage.limits) read the look too.
 */
-const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "compare.start", "review.run", "git.message", "pr.draft", "desk.ask", "agent.commands", "usage.limits"]);
+const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "thread.tryAgain", "compare.start", "review.run", "git.message", "pr.draft", "desk.ask", "agent.commands", "usage.limits"]);
 
 type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts };
 
@@ -589,6 +591,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   };
 
   const backgrounds = new Backgrounds(store.home);
+  // Check my tools (Settings › Models): its results stay in memory, with the time each ran (doctor.ts).
+  const doctor = new Doctor({ store, runtime, env, look: () => detect(), mcp: x.tools });
 
   /** A design on its own's design file, for a session made there without one named: the one named like its folder, else the first. */
   const designOf = (p: { kind?: "design"; path: string }) => {
@@ -1144,7 +1148,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     // The person's own search: it may match and show what they read of a message (shown); an agent's never does.
     "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query, { person: true }),
     "thread.carryOn": async ({ id, model }) => (await ensureWorktree(id), await runtime.carryOn(id, model), null),
-    "thread.send": ({ id, text, files, mode, anchor, design, shown: said }) => {
+    "thread.tryAgain": async ({ id }) => (await ensureWorktree(id), await runtime.tryAgain(id), null),
+    "thread.send": ({ id, text, files, mode, anchor, design, shown: said, once }) => {
       const t = store.thread(id);
       // What the person reads of it (Liner Design's asks): kept on the item and in the queue, never in what the agent is sent.
       const shown = shownOf(said);
@@ -1180,7 +1185,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         // A goal with work in flight waits in the queue, like any message, and starts from there.
         if (goal && !runtime.isRunning(id)) return void (await runtime.startGoal(id, what).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "The goal didn't start", body: String(e?.message ?? e) })));
         // Sent from Liner Design: the turn hears where the design is and what's selected (runtime.ts, lean.ts designNote).
-        await runtime.send(id, c.text, mode, anchor, c.files, design?.file ? { file: String(design.file), ...(design.sel ? { sel: design.sel } : {}) } : undefined, shown);
+        // `once`: the prompt check's fast model for this message only (Runtime.dispatch), a model ref of the session's own tool.
+        await runtime.send(id, c.text, mode, anchor, c.files, design?.file ? { file: String(design.file), ...(design.sel ? { sel: design.sel } : {}) } : undefined, shown, typeof once === "string" && /^[\w.@/-]+:[\w.:/@-]+$/.test(once) ? once : undefined);
       })().catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
       return null;
     },
@@ -1529,6 +1535,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "apps.editors": () => editors(),
     "system.check": () => systemCheck(env),
+    "tools.check": async ({ tool, tier }) => {
+      if (tier !== 1 && tier !== 2 && tier !== 3) throw new Error("There are three tiers of checks: 1, 2 and 3.");
+      // This launch's own look first: Codex can ask only through its app server, which only a look finds (codex.ts appServerFor).
+      await ready;
+      return doctor.check(tier, tool);
+    },
+    "tools.checked": () => doctor.rows(),
     "background.list": () => backgrounds.list(),
     "background.image": ({ id, dark }) => backgrounds.image(id, dark),
     "background.save": async ({ data, name }) => (await backgrounds.save(data, name), null),
@@ -1744,6 +1757,47 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       }
       store.patchThread(t.id, { done: true, unread: false });
       return { files };
+    },
+
+    // The prompt check (precheck.ts): as you type (no model), on Send (the quick model, three seconds at most), and its split.
+    "precheck.draft": ({ text, threadId }) => {
+      if (store.settings.precheck === false || typeof text !== "string") return null;
+      if (threadId) return runtime.precheckDraft(threadId, text);
+      // Home: a draft that would start a session, so only the split applies; Home doesn't ask in Workshop or a design.
+      return draftCheck({ text, first: true });
+    },
+    "precheck.send": ({ threadId, text }) => (typeof text === "string" ? runtime.precheckSend(threadId, text) : null),
+    /*
+      Several tasks, one session each, as Compare starts its takes: a worktree of its own for each from the same commit, with
+      the same tool, model, effort and access. A session's first message keeps the first task for itself, where it is; Home's
+      draft starts them all. Each task goes as that session's first message.
+    */
+    "precheck.split": async ({ projectId, threadId, tasks, agent, sidekick, model, effort, access, mode, tuning, review }) => {
+      const project = store.project(projectId);
+      const list = (Array.isArray(tasks) ? tasks : []).map((x) => String(x).trim()).filter(Boolean).slice(0, 6);
+      if (list.length < 2) throw new Error("There's nothing to split.");
+      const here = threadId ? store.thread(threadId) : undefined;
+      if (here && (here.turns > 0 || runtime.isRunning(here.id) || store.timeline(here.id).some((x) => x.kind === "user"))) throw new Error("Only a session's first message can be split.");
+      // From the commit the draft's folder is on: a session in a worktree splits from that worktree's HEAD, not the project's.
+      const where = here ? cwdOf(here.id) : project.path;
+      const head = project.git ? await git(where, ["rev-parse", "--verify", "-q", "HEAD"]) : null;
+      const base = head?.code === 0 ? head.stdout.trim() : "";
+      if (!base) throw new Error("Splitting needs a Git project with at least one commit: each task works in a worktree of its own.");
+      // Each task starts as soon as its session is made, so a failure partway doesn't take back what started: it answers with
+      // what was made and the tasks left, and the composer keeps only those (Precheck.tsx), so nothing starts twice.
+      if (here) void handlers["thread.send"]({ id: here.id, text: list[0] });
+      const rest = here ? list.slice(1) : list;
+      const made: Thread[] = [];
+      for (const [i, task] of rest.entries()) {
+        try {
+          const t = await handlers["thread.create"]({ projectId, agent, sidekick, model, effort, access, mode, tuning, review, worktree: true, base, title: titleFrom(task) });
+          made.push(t);
+          void handlers["thread.send"]({ id: t.id, text: task });
+        } catch (e) {
+          return { made, left: rest.slice(i), why: String((e as Error)?.message ?? e) };
+        }
+      }
+      return { made, left: [] };
     },
 
     "term.open": ({ threadId, cols, rows, command, title }) => x.terms.open(cwdOf(threadId), cols, rows, command, threadId, title),

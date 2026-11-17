@@ -477,9 +477,9 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const send = async (m: { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" }) => {
+  const send = async (m: { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer"; once?: string }) => {
     try {
-      await rpc("thread.send", { id: thread.id, text: m.text, files: m.files, mode: m.mode });
+      await rpc("thread.send", { id: thread.id, text: m.text, files: m.files, mode: m.mode, ...(m.once ? { once: m.once } : {}) });
       stick();
     } catch (e) {
       fail(e);

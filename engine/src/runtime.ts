@@ -14,7 +14,7 @@
   steer reaches the agent at its next step instead. A change whose check the queue went ahead of
   is read with the next check (Thread.reviewSince).
 */
-import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Question, QueuedMessage, Risk, ShownChip, UserShown, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
+import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Precheck, Question, QueuedMessage, Risk, ShownChip, UserShown, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
@@ -41,6 +41,8 @@ import { frameRevs, framesChanged } from "./canvas.ts";
 import { memoryNote, titleFrom } from "./memory.ts";
 import { commandRisk, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
+import { editsNote, editsSince, type Beside } from "./edits.ts";
+import { draftCheck, sendCheck, SEND_LIMIT_MS, type DraftFacts } from "./precheck.ts";
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, knownWays, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, tookBackOf, UNSTARTED, type BriefMark, type BriefOutcome } from "./sidekick.ts";
 
 export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, antigravity, demo };
@@ -129,6 +131,23 @@ const ROUNDS = 2;
 export { leavesMac };
 /** How long a tool counts as out of usage when it doesn't say when that ends. */
 const LIMIT_UNKNOWN_MS = 3_600_000;
+/** A turn's ETA (Thread.eta): from this session's last few finished turns on its model, when it has enough of them. */
+const ETA_TURNS = 5;
+const ETA_FEWEST = 3;
+/**
+  How long a turn should take, in ms: the median of this session's own finished turns on the model when there are
+  enough, else of yours on that tool and model over 30 days, else nothing (too little to go by says nothing).
+*/
+export function etaOf(own: number[], recent: number[]): number | undefined {
+  const median = (xs: number[]) => {
+    const v = [...xs].sort((a, b) => a - b);
+    const mid = v.length >> 1;
+    return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+  };
+  const mine = own.slice(-ETA_TURNS);
+  if (mine.length >= ETA_FEWEST) return median(mine);
+  return recent.length >= ETA_FEWEST ? median(recent) : undefined;
+}
 /** How long after a window reopened a session still carries on by itself (T3 Code: UsageLimitRecoveryWorker.ts): one left a week wakes on a stale job. */
 const LIMIT_STALE_MS = 24 * 3_600_000;
 /** The tools that only edit files in the project, by the name each provider asks with (Claude Code's, Codex's apply_patch, ACP's "edit" kind). */
@@ -309,6 +328,8 @@ export class Runtime {
     this.tools = tools;
     // A queue found on starting up is held, as one Stop kept: a thread that doesn't carry on doesn't send it on an edit.
     for (const t of store.threads) if (t.queue?.length) this.kept.add(t.id);
+    // A "Use <fast model>" message the last run of the engine didn't see to its end: the session's own model comes back.
+    for (const t of store.threads) if (t.onceFrom) this.putBackOnce(t.id);
     if (tools) tools.turnOf = (threadId) => this.turns.get(threadId)?.turn ?? this.store.thread(threadId).turns;
     this.watchdog = setInterval(() => {
       this.watchQuiet();
@@ -1093,7 +1114,7 @@ export class Runtime {
   }
 
   /** You sent a message. While a turn runs it waits in the queue, or steers the running turn. */
-  async send(threadId: string, text: string, mode: "queue" | "steer" = "queue", anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark, shown?: UserShown) {
+  async send(threadId: string, text: string, mode: "queue" | "steer" = "queue", anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark, shown?: UserShown, once?: string) {
     const store = this.store;
     const running = this.turns.get(threadId);
     // A message taken out of the queue goes now (Send now): what was kept for putting it back goes with it.
@@ -1116,7 +1137,8 @@ export class Runtime {
       if (!this.isRunning(threadId)) this.drain(threadId);
       return;
     }
-    return this.hold(threadId, () => this.dispatch(threadId, text, anchor, files, design, shown));
+    // A message queued behind a turn goes on the session's own model: the prompt check offers its fast model only when nothing runs.
+    return this.hold(threadId, () => this.dispatch(threadId, text, anchor, files, design, shown, once));
   }
 
   /**
@@ -1136,9 +1158,25 @@ export class Runtime {
   }
 
   /** A message to a thread with nothing in flight: a side chat answers it, a pull request ask opens the PR card, and anything else is one turn of the session's lead. */
-  private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark, shown?: UserShown) {
+  private async dispatch(threadId: string, text: string, anchor?: TurnOptions["anchor"], files?: string[], design?: DesignMark, shown?: UserShown, once?: string): Promise<void> {
     const store = this.store;
+    // A "Use <fast model>" left behind (the engine stopped during that message) is put back before anything else goes.
+    if (!this.onceLive.has(threadId)) this.putBackOnce(threadId);
     const t = store.thread(threadId);
+    // The prompt check's "Use <fast model>": this one message on another model of the session's own tool, then back to the
+    // model it had. The same tool keeps its session (retool moves it, the next turn sets the model in place), so the
+    // conversation goes on; one you changed meanwhile is yours and stays. The way back is kept on the thread (onceFrom)
+    // before the switch, so an engine that stops mid-turn puts it back when it starts again (the constructor).
+    if (once && !t.sideOf && splitModel(once).provider === this.resolve(t).provider && once !== `${this.resolve(t).provider}:${this.resolve(t).model}`) {
+      store.patchThread(threadId, { onceFrom: { ...(t.model ? { model: t.model } : {}), once }, model: once, usage: { ...t.usage, contextWindow: undefined } });
+      this.onceLive.add(threadId);
+      try {
+        return await this.dispatch(threadId, text, anchor, files, design, shown);
+      } finally {
+        this.onceLive.delete(threadId);
+        this.putBackOnce(threadId);
+      }
+    }
     this.settleAsks(threadId);
     // Past its spending cap: your message is the go-ahead for another cap's worth.
     const cap = store.settings.capUsd ?? 0;
@@ -1150,6 +1188,16 @@ export class Runtime {
     if (t.sideOf) return void (await this.turn(threadId, text, t.agent, { review: false, files, ...(shown ? { shown } : {}) }));
     if (!anchor && !files?.length && isPrAsk(text)) return this.openPr(threadId, text, shown);
     await this.turn(threadId, text, t.agent, { anchor, review: !anchor, files, ...(design ? { design } : {}), ...(shown ? { shown } : {}) });
+  }
+
+  /** Threads whose one message on the fast model is running now: theirs to put back when it ends (dispatch). */
+  private onceLive = new Set<string>();
+  /** The model a "Use <fast model>" message switched from, back on the thread, unless you picked another meanwhile. */
+  private putBackOnce(threadId: string) {
+    const t = this.store.threads.find((x) => x.id === threadId);
+    if (!t?.onceFrom) return;
+    const { model, once } = t.onceFrom;
+    this.store.patchThread(threadId, t.model === once ? { model, onceFrom: undefined, usage: { ...t.usage, contextWindow: undefined } } : { onceFrom: undefined });
   }
 
   /** "codex:gpt-6-luna" as its tool calls it ("GPT-6 Luna"), for the lines reviews and the timeline write. */
@@ -1327,7 +1375,7 @@ export class Runtime {
       this.turns.delete(threadId);
       this.turnGrants.delete(threadId);
       if (!this.store.threads.some((x) => x.id === threadId)) return null;
-      const t = this.store.patchThread(threadId, { status: "error" });
+      const t = this.store.patchThread(threadId, { status: "error", eta: undefined });
       this.store.emit({ type: "notify", threadId, kind: "error", title: "This turn couldn't be saved", body: e instanceof Error ? e.message : String(e) });
       return { turn: t.turns, status: "error", changed: false };
     }
@@ -1347,10 +1395,14 @@ export class Runtime {
     t = store.patchThread(threadId, { status: "running", turns: turn, title, archived: false, done: false, snoozedUntil: undefined, turnBy: agentId });
     const r = this.resolve(t, agentId);
     const marker: Item = { kind: "turn", id: uid("it"), turn, at: Date.now(), agent: agentId, model: `${r.provider}:${r.model}`, status: "running", ...(o.part ? { part: o.part } : {}), ...(o.why ? { why: o.why } : {}) };
-    if (show) store.putItem(threadId, { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}), ...(o.files?.length ? { files: o.files } : {}), ...(o.shown ? { shown: o.shown } : {}) });
+    const asked: Extract<Item, { kind: "user" }> | null = show ? { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}), ...(o.files?.length ? { files: o.files } : {}), ...(o.shown ? { shown: o.shown } : {}) } : null;
+    if (asked) store.putItem(threadId, asked);
     if (o.note) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: o.note });
     store.putItem(threadId, marker);
     live.marker = marker.id;
+    // How long it should take, for the sidebar and the live line: a turn of your own only, not a fix round.
+    const eta = agentId === t.agent && !o.part ? this.expectedMs(threadId, r.provider, r.model) : undefined;
+    t = store.patchThread(threadId, { eta: eta ? { from: Date.now(), ms: eta } : undefined });
 
     let prompt = o.prompt ? o.prompt : o.anchor ? aboutLines(o.anchor, text) : text;
     // Sent from Liner Design: where the design is, its frames, the lean and what's selected, before the words. A side chat and a fix round don't take it.
@@ -1380,6 +1432,9 @@ export class Runtime {
       this.unheard(liveKeyOf(threadId, agentId), opening);
       throw e;
     });
+    // What changed in the folder since the last turn ended, from that turn's "after" and this one's "before" (edits.ts): read
+    // while the tool opens, for a message of yours to the session's own lead only, not a fix round, a goal's next turn or a compaction.
+    const edited = asked && from && !o.wake && !o.prompt && !o.part && agentId === t.agent && store.settings.shareEdits !== false && !COMPACT.test(text) ? this.editsOf(threadId, cwd, turn, from).catch(() => null) : null;
     let failed = false;
     let ran = false;
     try {
@@ -1406,6 +1461,16 @@ export class Runtime {
       // A compaction goes to the tool as it is: put after anything, it's only words to the model (T3 Code rejects or defers it).
       const compact = COMPACT.test(text);
       let blank = false;
+      // The files you changed since its last turn, said just before your words. Kept on your message for the grey line under
+      // it. The Demo reads its prompt for words, so it's shown the line but not told. An Undo is left to the conversation when
+      // the tool is told it again this turn (handoff says which turns were undone), so it isn't said twice.
+      const edits = edited ? await edited : null;
+      if (edits?.length && asked) {
+        store.putItem(threadId, { ...asked, edits });
+        const retold = fresh && earlier.some((x) => x.kind === "user" || x.kind === "text");
+        const note = r.provider === "demo" ? "" : editsNote(edits, { skipUndo: retold });
+        if (note) prompt = `${note}\n\n${prompt}`;
+      }
       if (fresh && r.provider !== "demo" && earlier.some((x) => x.kind === "user" || x.kind === "text")) {
         if (compact) {
           // A session that knows nothing has nothing to compact, and has to be told the conversation next turn.
@@ -1506,11 +1571,13 @@ export class Runtime {
     store.putItem(threadId, { ...settled, status: stopped ? "stopped" : errored ? "error" : "done", seconds: Math.max(0, seconds - waited / 1000), ...(waited ? { waited } : {}), ...(spent.costUsd > 0 ? { costUsd: spent.costUsd } : {}) });
 
     t = store.thread(threadId);
-    this.logUsage(t, agentId, spent, seconds);
+    // A finished turn of your own counts toward later ETAs (expectedMs): not a side chat's, a routine's or a fix round's.
+    const own = !stopped && !errored && !sink.limited() && agentId === t.agent && !o.part && !t.sideOf && !t.routine;
+    this.logUsage(t, agentId, spent, seconds, own ? Math.max(0, seconds - waited / 1000) : undefined);
     // A side chat starts with a copy of its session's timeline; only its own turns can wait on you.
     const asking = store.timeline(threadId).some((x) => x.turn > (t.sideFrom ?? 0) && (x.kind === "proposal" || x.kind === "question" || x.kind === "approval") && x.state === "asking");
     const limited = sink.limited();
-    t = store.patchThread(threadId, { status: limited ? "limited" : errored ? "error" : asking ? "waiting" : "done", limit: limited ?? undefined, forkSession: undefined, toReview: this.toReview(threadId), unread: true });
+    t = store.patchThread(threadId, { status: limited ? "limited" : errored ? "error" : asking ? "waiting" : "done", limit: limited ?? undefined, forkSession: undefined, toReview: this.toReview(threadId), unread: true, eta: undefined });
     this.countAgents(threadId);
     // You're looking at a side chat when you ask in it, so it doesn't notify.
     if (!stopped && !t.sideOf) {
@@ -1696,6 +1763,76 @@ export class Runtime {
   }
 
   /**
+    What changed in a session's folder since its last turn (edits.ts), told apart from what Liner did: a Keep from Compare in
+    this checkout, another session's turns in the same folder.
+  */
+  private editsOf(threadId: string, cwd: string, turn: number, now: string) {
+    const store = this.store;
+    const t = store.thread(threadId);
+    const cwdOf = (x: Thread) => x.worktree?.path ?? store.projects.find((p) => p.id === x.projectId)?.path;
+    const keeps = t.worktree ? [] : store.threads.filter((x) => x.projectId === t.projectId && x.compare && x.id !== threadId).map((x) => `refs/liner/${x.id}/keep`);
+    const beside: Beside[] = store.threads.filter((x) => x.id !== threadId && !x.sideOf && cwdOf(x) === cwd).map((x) => ({ id: x.id, title: x.title, items: store.timeline(x.id) }));
+    return editsSince(cwd, threadId, turn, store.timeline(threadId).filter((x) => x.turn < turn), now, { keeps, beside });
+  }
+
+  /**
+    What the prompt check reads of a session (precheck.ts): how long it is, what it's been about, its model against its tool's
+    top and fast ones as the picker's Best and Fast name them (castOf, on that tool alone), and whether it thinks at the most.
+    Null where the check never runs: a side chat, a routine's run, Workshop, a design's session, or one that waits on you.
+  */
+  private factsOf(t: Thread, text: string): DraftFacts | null {
+    if (t.sideOf || t.routine || t.mode === "creator" || t.design || this.store.projects.find((p) => p.id === t.projectId)?.kind === "design") return null;
+    if (t.status === "waiting" || this.store.timeline(t.id).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) return null;
+    const r = this.resolve(t);
+    const ref = `${r.provider}:${r.model}`;
+    const cast = castOf(this.providerInfo.filter((p) => p.id === r.provider), { picks: this.store.settings.picks, every: this.providerInfo });
+    const efforts = this.providerInfo.find((p) => p.id === r.provider)?.models.find((m) => m.id === r.model)?.efforts ?? [];
+    const items = this.store.timeline(t.id);
+    const yours = items.filter((x): x is Extract<Item, { kind: "user" }> => x.kind === "user").slice(-3).map((x) => x.shown?.text || x.text);
+    const u = t.usage;
+    return {
+      text,
+      first: t.turns === 0 && !items.some((x) => x.kind === "user"),
+      turns: t.turns,
+      context: u?.contextTokens && u.contextWindow ? u.contextTokens / u.contextWindow : undefined,
+      recent: [t.title, ...yours].filter((x) => x && x !== "New session" && x !== "New thread"),
+      model: ref,
+      ...(cast && cast.lead !== cast.sidekick ? { top: cast.lead, fast: cast.sidekick, fastLabel: this.labelOf(cast.sidekick) } : {}),
+      highest: efforts.length > 1 && efforts[efforts.length - 1].id === r.effort,
+      pair: isPair(t),
+    };
+  }
+
+  /** The prompt check's rules that run as you type (precheck.ts draftCheck), on a session's draft. No model is asked. */
+  precheckDraft(threadId: string, text: string): Precheck | null {
+    if (this.store.settings.precheck === false || this.isRunning(threadId)) return null;
+    const f = this.factsOf(this.store.thread(threadId), text);
+    return f ? draftCheck(f) : null;
+  }
+
+  /**
+    The prompt check on Send (precheck.ts sendCheck): a new subject in a long session is put to its tool's quick model
+    (quickOf: Haiku for Claude Code, a mini or flash for the others), one yes or no, given SEND_LIMIT_MS. Its use is logged as
+    the prompt check's with no session, so it never counts toward the session's cap. Nothing is asked with the model rule off
+    (the default: it starts the tool for one question, and an answer too late may still be billed), with no quick model ready
+    in the session's tool, while a turn runs (the message only queues), or where the check never runs.
+  */
+  async precheckSend(threadId: string, text: string): Promise<Precheck | null> {
+    const s = this.store.settings;
+    if (s.precheck === false || this.isRunning(threadId)) return null;
+    const t = this.store.thread(threadId);
+    const f = this.factsOf(t, text);
+    if (!f) return null;
+    const cwd = t.worktree?.path ?? this.store.project(t.projectId).path;
+    const own = this.resolve(t);
+    const ref = quickOf(`${own.provider}:${own.model}`, this.providerInfo);
+    const ready = this.providerInfo.some((p) => p.id === own.provider && p.available);
+    // The Demo answers as a script would, so it's never asked; a tool whose quickest is the session's own model has none.
+    const useModel = s.precheckModel === true && ready && ref !== `${own.provider}:${own.model}` && own.provider !== "demo" && existsSync(cwd);
+    return sendCheck(f, (prompt, signal) => this.quiet(threadId, ref, cwd, prompt, signal, "precheck", SEND_LIMIT_MS, true), { useModel });
+  }
+
+  /**
     The model that writes the small things (commit messages, pull request text): Claude Code's
     quickest model when it's ready, else the session's own.
   */
@@ -1707,8 +1844,11 @@ export class Runtime {
     return `${r.provider}:${r.model}`;
   }
 
-  /** A one-off read by another model, outside the session's own conversation; its usage is logged under `as`. */
-  async quiet(threadId: string, ref: string, cwd: string, prompt: string, signal: AbortSignal, as = "reviewer", limitMs = READ_MS): Promise<string> {
+  /**
+    A one-off read by another model, outside the session's own conversation; its usage is logged under `as`. `apart`: none of
+    it is the session's (the prompt check's question): it's logged with no session and never counts toward a spending cap.
+  */
+  async quiet(threadId: string, ref: string, cwd: string, prompt: string, signal: AbortSignal, as = "reviewer", limitMs = READ_MS, apart = false): Promise<string> {
     const { provider, model } = splitModel(ref);
     // A model whose tool is gone (an account or an endpoint you removed) doesn't quietly become the Demo.
     const p = providers[provider];
@@ -1740,6 +1880,7 @@ export class Runtime {
           own[k] += add;
           cur[k] += add;
         }
+        if (apart) return;
         this.store.patchThread(threadId, { usage: cur });
         this.holdToCap(threadId);
       },
@@ -1767,7 +1908,7 @@ export class Runtime {
       clearTimeout(timer);
       session.close();
       const t = this.store.thread(threadId);
-      this.store.logUsage({ at: Date.now(), threadId, projectId: t.projectId, agent: as, provider, model, inputTokens: own.inputTokens, outputTokens: own.outputTokens, cacheReadTokens: own.cacheReadTokens, costUsd: own.costUsd, seconds: (Date.now() - started) / 1000 });
+      this.store.logUsage({ at: Date.now(), threadId: apart ? "" : threadId, projectId: apart ? "" : t.projectId, agent: as, provider, model, inputTokens: own.inputTokens, outputTokens: own.outputTokens, cacheReadTokens: own.cacheReadTokens, costUsd: own.costUsd, seconds: (Date.now() - started) / 1000 });
     }
     return text;
   }
@@ -1841,9 +1982,27 @@ export class Runtime {
     A turn's own use, as its sink added it up. Not the thread's totals before and after: a Reviewer
     deciding a step mid-turn adds to those too, and is logged on its own already (quiet).
   */
-  private logUsage(t: Thread, agentId: string, spent: Usage, seconds: number) {
+  private logUsage(t: Thread, agentId: string, spent: Usage, seconds: number, worked?: number) {
     const r = this.resolve(t, agentId);
-    this.store.logUsage({ at: Date.now(), threadId: t.id, projectId: t.projectId, agent: agentId, provider: r.provider, model: r.model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, cacheReadTokens: spent.cacheReadTokens, costUsd: spent.costUsd, seconds });
+    this.store.logUsage({ at: Date.now(), threadId: t.id, projectId: t.projectId, agent: agentId, provider: r.provider, model: r.model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, cacheReadTokens: spent.cacheReadTokens, costUsd: spent.costUsd, seconds, ...(worked !== undefined ? { worked } : {}) });
+    if (worked !== undefined) this.etaCache.delete(`${r.provider}:${r.model}`);
+  }
+
+  /** Yours over 30 days by tool and model, in ms, read once in a while: usage.jsonl is read whole each time. */
+  private etaCache = new Map<string, { at: number; ms: number[] }>();
+  /** How long a turn of this session on this tool and model should take (etaOf), in ms; undefined with too little to go by. */
+  expectedMs(threadId: string, provider: ProviderId, model: string): number | undefined {
+    const ref = `${provider}:${model}`;
+    // Its own finished turns, the time they waited on you left out (a turn's `seconds`). A side chat's copy of its session's turns counts too: same work.
+    const own = this.store.timeline(threadId).flatMap((x) => (x.kind === "turn" && x.status === "done" && !x.part && x.model === ref && x.seconds !== undefined ? [x.seconds * 1000] : []));
+    if (own.length >= ETA_FEWEST) return etaOf(own, []);
+    let recent = this.etaCache.get(ref);
+    if (!recent || Date.now() - recent.at > 10 * 60_000) {
+      const from = Date.now() - 30 * 86_400_000;
+      recent = { at: Date.now(), ms: this.store.usage(from).flatMap((u) => (u.worked !== undefined && u.provider === provider && u.model === model ? [u.worked * 1000] : [])) };
+      this.etaCache.set(ref, recent);
+    }
+    return etaOf(own, recent.ms);
   }
 
   /** Files from finished turns that are neither committed nor undone. */
@@ -2522,6 +2681,9 @@ export class Runtime {
     else if (!open && m.waitingSince) {
       const { waitingSince, ...rest } = m;
       this.store.putItem(threadId, { ...rest, waited: (m.waited ?? 0) + Math.max(0, Date.now() - waitingSince) });
+      // Its ETA leaves the wait out too: the countdown goes on from where it stopped.
+      const eta = this.store.thread(threadId).eta;
+      if (eta) this.store.patchThread(threadId, { eta: { ...eta, from: eta.from + Math.max(0, Date.now() - waitingSince) } });
     }
   }
 
@@ -2680,10 +2842,11 @@ export class Runtime {
     runs them on the same plan); and while OpenCode has Go, Hermes's Go models aren't chosen at
     all (castOf, judged on every tool).
   */
-  fallbackFor(provider: ProviderId, model: string): string | undefined {
+  fallbackFor(provider: ProviderId, model: string, skip?: Set<string>): string | undefined {
     const now = Date.now();
-    // Not a tool that's out of usage too: two of them would hand a session back and forth with no end.
-    const ready = this.providerInfo.filter((p) => p.available && p.adapter && p.id !== "demo" && p.id !== provider && p.models.length && (this.limitedUntil.get(p.id) ?? 0) <= now);
+    // Not a tool that's out of usage too: two of them would hand a session back and forth with no end. Nor one of
+    // the families `skip` names (fallbackAfter).
+    const ready = this.providerInfo.filter((p) => p.available && p.adapter && p.id !== "demo" && p.id !== provider && p.models.length && (this.limitedUntil.get(p.id) ?? 0) <= now && !skip?.has(familyOf(p.id)));
     const twin = ready.find((p) => familyOf(p.id) === familyOf(provider));
     if (twin) return `${twin.id}:${twin.models.some((m) => m.id === model) ? model : (twin.models.find((m) => m.isDefault) ?? twin.models[0]).id}`;
     const outOfGo = isGoModel({ id: model, group: this.providerInfo.find((p) => p.id === provider)?.models.find((m) => m.id === model)?.group });
@@ -2694,21 +2857,43 @@ export class Runtime {
     return castOf(others, { every: this.providerInfo })?.sidekick;
   }
 
-  /** A limited session carries on with another tool's model: the conversation goes over with it, then it continues where it stopped. */
+  /**
+    Who may carry on after the provider was overloaded or down: another family's tool, as fallbackFor picks it, since
+    another account of the same tool asks the same provider, which is overloaded the same. A refusal is never carried
+    on with another tool (your call): its error offers nothing.
+  */
+  fallbackAfter(provider: ProviderId, model: string): string | undefined {
+    return this.fallbackFor(provider, model, new Set([familyOf(provider)]));
+  }
+
+  /**
+    A session carries on with another tool's model, after its tool ran out of usage or was overloaded: the
+    conversation goes over with it, then it continues where it stopped. Never after a refusal: a request one
+    provider refused isn't sent to another this way, whatever model is asked for (a stale button, another caller).
+    Changing the model yourself in the picker is your own act, and isn't this.
+  */
   async carryOn(threadId: string, model?: string) {
     const t = this.store.thread(threadId);
     const items = this.store.timeline(threadId);
-    const limit = items.findLast((x) => x.kind === "limit");
-    const to = model ?? (limit?.kind === "limit" ? limit.fallback : undefined);
+    // What the session last stopped on: a limit, or an error (a refusal, an overload, or an ordinary one).
+    const stop = items.findLast((x) => x.kind === "limit" || x.kind === "error");
+    if (stop?.kind === "error" && stop.why === "refusal") throw new Error("The request was refused, so it isn't sent to another tool. Change it, or pick another model yourself.");
+    const limit = stop?.kind === "limit" || (stop?.kind === "error" && stop.why === "overloaded") ? stop : undefined;
+    const to = model ?? limit?.fallback;
     if (!to) throw new Error("No other tool is ready to carry on with.");
     const from = this.resolve(t);
     // The lead's model changes; on another model the limit no longer holds the session, so the message below can go
     // (straight away, or when the limited turn's hold ends). Its context window goes too, as when you change the
     // model (thread.update): the next model reports its own.
     this.store.patchThread(threadId, { model: to, usage: { ...t.usage, contextWindow: undefined }, ...(t.status === "limited" ? { status: "idle" as const, limit: undefined } : {}) });
-    this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `${this.labelOf(`${from.provider}:${from.model}`)} is out of usage, so ${this.labelOf(to)} carries on with the conversation so far.` });
+    this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `${this.labelOf(`${from.provider}:${from.model}`)} ${limit?.kind === "error" ? "is overloaded right now" : "is out of usage"}, so ${this.labelOf(to)} carries on with the conversation so far.` });
     // The tool that ran out ends now, by the one close, not at the next turn's opening.
     await this.retool(threadId);
+    await this.send(threadId, CONTINUE);
+  }
+
+  /** After an overload: the same model goes on where it stopped, with the same words carrying on uses. */
+  async tryAgain(threadId: string) {
     await this.send(threadId, CONTINUE);
   }
 
@@ -3183,10 +3368,18 @@ export class Runtime {
         if (agentId !== store.thread(threadId).agent || store.thread(threadId).effortNow === level) return;
         store.patchThread(threadId, { effortNow: level });
       },
-      error: (message) => {
+      error: (message, o) => {
         settle();
         errored = true;
-        store.putItem(threadId, { kind: "error", id: uid("it"), turn, at: Date.now(), message });
+        const why = o?.why;
+        if (!why) return void store.putItem(threadId, { kind: "error", id: uid("it"), turn, at: Date.now(), message });
+        // A refusal or an overload: neither marks the tool as out of usage. Only an overload offers another tool to
+        // carry on with (never by itself), and only the lead's own, whose model is what carrying on changes. A refusal
+        // offers none: a refused request isn't sent to another provider.
+        const t = store.thread(threadId);
+        const r = this.resolve(t, agentId);
+        const fallback = why === "overloaded" && agentId === t.agent && !t.sideOf ? this.fallbackAfter(r.provider, r.model) : undefined;
+        store.putItem(threadId, { kind: "error", id: uid("it"), turn, at: Date.now(), message, why, provider: r.provider, ...(fallback ? { fallback } : {}) });
       },
       window: (w) => store.onWindow?.(this.resolve(store.thread(threadId), agentId).provider, w),
       limited: (message, until) => {

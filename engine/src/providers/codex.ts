@@ -12,7 +12,7 @@ import { rank } from "../../../contracts/src/index.ts";
 import { linerTitle } from "../agent-tools.ts";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { closesOnExit, jsonLines, killTree, marking, run, spawn, THREAD_ENV, threadMark, versionOf, which, withCodexPath } from "../exec.ts";
-import { codexAsk, CodexServerSession, isLimit, reasoning, toml } from "./codex-server.ts";
+import { codexAsk, codexWhy, CodexServerSession, isLimit, reasoning, toml } from "./codex-server.ts";
 import { imageType } from "./attachments.ts";
 import { effortOf, skillsIn } from "./models.ts";
 import { LINER_WAIT_SEC, ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
@@ -189,7 +189,8 @@ class CodexSession implements ProviderSession {
           sink.usage({ inputTokens: Math.max(0, (e.usage.input_tokens ?? 0) - cached), cacheReadTokens: cached, outputTokens: e.usage.output_tokens ?? 0 });
         } else if (e.type === "turn.failed") {
           const m = e.error?.message ?? "Codex stopped with an error.";
-          once(isLimit({ message: readable(m) }) ? (x) => sink.limited(x) : sink.error, m);
+          const why = codexWhy({ message: readable(m) });
+          once(isLimit({ message: readable(m) }) ? (x) => sink.limited(x) : (x) => sink.error(x, why ? { why } : undefined), m);
         } else if (e.type === "error" && e.message) {
           once(sink.error, e.message);
         }

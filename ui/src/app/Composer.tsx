@@ -16,7 +16,7 @@
   - A paste of 32 KiB or more comes as a text file. Drafts outlast a restart.
 */
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
-import type { Access, CommandInfo, SkillInfo, Effort, PairTuning, PairWays, Project, ProviderInfo, QueuedMessage, RpcResult, SidekickClass, Thread } from "@contracts";
+import type { Access, CommandInfo, SkillInfo, Effort, PairTuning, PairWays, Project, ProviderInfo, QueuedMessage, RpcResult, SessionMode, SidekickClass, Thread } from "@contracts";
 import { castOf, costOf, familyOf, frontierClass, listedHere, openCodeHasGo, pairCostOf, shortlistOf, splitModel, waysOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
@@ -32,6 +32,7 @@ import { Disc, PanelHead, Pop, Row } from "./ui";
 import * as os from "./os";
 import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
+import { usePrecheck, type SendHow } from "./Precheck";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -41,7 +42,8 @@ import type { DockAsk } from "./Ask";
   undefined clears the session's own.
 */
 export type RunSettings = { agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; review?: boolean; tuning?: PairTuning };
-export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer" };
+/** `once`: this message only, on another model of the session's tool (the prompt check's "Use <fast model>", Precheck.tsx). */
+export type Outgoing = { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer"; once?: string };
 
 type Props = {
   variant: "home" | "session";
@@ -103,6 +105,9 @@ type Props = {
   canvas?: boolean;
   /** More rows for the `/` list, first (Liner Design's skills): picking one runs `onPick` and takes the typed `/…` away. */
   slashRows?: SlashRow[];
+  /** Home: the mode the session would start in, for the prompt check's split (Precheck.tsx); `checkOff`, no prompt check here (Workshop). */
+  mode?: SessionMode;
+  checkOff?: boolean;
 };
 export type SlashRow = { name: string; hint?: string; note?: string; tag?: string; onPick: () => void };
 
@@ -313,7 +318,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, onDraft, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, onDraft, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask, mode: sessionMode, checkOff }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -563,11 +568,16 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     });
   };
 
+  // The prompt check (Precheck.tsx): its row in the tray's head, and its say before a session's message goes.
+  const check = usePrecheck({ variant, project, thread, settings, mode: sessionMode, off: Boolean(canvas || checkOff || editing || compare.length || ask), busy, files: files.length, text, send: (how) => void send(mode, how), keep: (t) => setText((cur) => (cur.trim() ? cur : t)) });
+
   // One send at a time: a second Enter while the files are read, or while the first is on its way, does nothing.
   const sending = useRef(false);
-  const send = async (how = mode) => {
+  const send = async (how = mode, way: SendHow = {}) => {
     let t = text.trim();
     if ((!t && !files.length) || sending.current) return;
+    // Read by the check first unless one of its own actions sends it; Send pressed while it reads goes past it.
+    if (!way.checked && !editing && !(await check.beforeSend())) return;
     // An edited queued message goes back in its place (T3 Code: chat/useQueuedRunEdit.ts). If the
     // turn ended and took it meanwhile, or files came along (a queued message holds only text), it
     // goes as a new message instead.
@@ -594,14 +604,16 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       if (used.length) t = `${t}\n\n${used.map(([name, path]) => `Use the ${name} skill${path ? ` (${path})` : ""}.`).join("\n")}`;
       skillsUsed.current.clear();
       const from = document.activeElement;
-      const payload = { text: t || "Here are the files.", files: await Promise.all(files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how };
+      const payload: Outgoing = { text: t || "Here are the files.", files: await Promise.all(files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how, ...(way.once ? { once: way.once } : {}) };
       setText(edit?.draft ?? "");
       setFiles([]);
       setMention(null);
+      check.reset();
       handed = true;
       // The button pressed goes as the turn starts, and the keys would go with it.
       if (variant === "session" && (document.activeElement === from || document.activeElement === document.body)) field.current?.focus();
-      await onSend(payload);
+      // The check's "Start a new session" and split send it somewhere else.
+      await (way.to ? way.to(payload) : onSend(payload));
     } catch (e) {
       // The draft comes back to try again, unless you've started a new one. Whoever sent it has said what went wrong.
       setText((cur) => (cur.trim() ? cur : draft.text));
@@ -1039,11 +1051,12 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       )}
 
       <div className="lc-tray" data-variant={variant}>
-        {variant === "session" && (
+        {(variant === "session" || check.row) && (
           <div className="lc-tray-head">
             {top}
             {/* An agent drawing on a design file of this session's folder: the canvas is a press away. */}
             {thread && !canvas && <WatchCanvas thread={thread} />}
+            {check.row}
           </div>
         )}
         {canvas && queued}

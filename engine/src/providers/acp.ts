@@ -39,6 +39,24 @@ type ToolCall = { toolCallId: string; title?: string; kind?: string; status?: st
 */
 const nameOf = (call: ToolCall) => ((call._meta as Json | undefined)?.is_mcp_tool_call === true ? "call_mcp_tool" : typeof call.name === "string" && call.name ? call.name : call.title);
 
+/**
+  A command's output as the agent sends it while it runs. An agent that reads `terminal_output: true` in the client's
+  capabilities' _meta (codex-acp, src/thread.rs supports_terminal_output; claude-agent-acp, dist/tool-calls/client-capabilities.js)
+  stops putting a command's output in its content and sends it in the _meta of tool_call_update instead: terminal_info when
+  it starts, terminal_output pieces ({ terminal_id, data }) to be put end to end, terminal_exit ({ exit_code, signal }) when it
+  ends. Devin Desktop's ACP client does the same (its acp/AGENTS.md, `terminal_output`). `_delta` is the appending form
+  claude-agent-acp sends a client that asks for it by that name; Liner Code doesn't, but takes it the same way.
+*/
+const TERMINAL_KEYS = ["terminal_info", "terminal_output", "terminal_output_delta", "terminal_exit"];
+/** How a call's streamed output stands: its end only, once it's long (`cut`), and the exit code once it has one. */
+type Term = { data: string; cut: boolean; exit?: number };
+/** The same output again, as some agents also send it as content at the end (in a code fence): not shown twice. */
+const sameOutput = (data: string, text: string) => {
+  const t = (/^```[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(text.trim())?.[1] ?? text).trim();
+  const d = data.trim();
+  return Boolean(t && d && (d.includes(t) || t.includes(d)));
+};
+
 const KIND: Record<string, ToolKind> = { read: "read", edit: "edit", delete: "edit", move: "edit", search: "search", execute: "exec", think: "think", fetch: "fetch" };
 /** What OpenCode's own rules keep back from reading by itself: .env files, not their examples. In any case: Windows and a Mac's disk find .ENV all the same. */
 const SECRET = /\.env(?:\.(?!example$).*)?$/i;
@@ -778,6 +796,8 @@ class AcpSession implements ProviderSession {
   private later = new Map<string, NodeJS.Timeout>();
   /** When each call's output last reached the app. */
   private shown = new Map<string, number>();
+  /** Commands' output as their agent streams it, by call (TERMINAL_KEYS). A call is only shown in its turn, so they go with it. */
+  private terms = new Map<string, Term>();
   /** Hermes's delegations this turn, by call: the tasks each started with, read off its first words. A call is only shown in its turn, so they go with it. */
   private delegations = new Map<string, { goal: string; role?: string }[]>();
   private pid: string;
@@ -1003,7 +1023,9 @@ class AcpSession implements ProviderSession {
         // Forms: an agent only asks what a client says it can show. OpenCode's question tool is dropped without it
         // (T3 Code: provider-acp adapter.ts). Writes: an agent told Liner Code writes files for it may send whole files
         // instead of its own edits with their diffs (T3 Code: AntigravityAcpSupport.ts), so Antigravity isn't told so.
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: !this.known.noWrites }, terminal: false, elicitation: { form: {} } },
+        // A command's output while it runs: codex-acp and claude-agent-acp send it only to a client that says this, in _meta
+        // as here (TERMINAL_KEYS). Without it codex-acp keeps a command's output to itself until it ends.
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: !this.known.noWrites }, terminal: false, elicitation: { form: {} }, _meta: { terminal_output: true } },
         clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION },
       });
       const caps = init.agentCapabilities as Json | undefined;
@@ -1418,7 +1440,15 @@ class AcpSession implements ProviderSession {
     else if (kind === "agent_thought_chunk") sink.reasoning(blockText(u.content), u.messageId ? String(u.messageId) : undefined);
     else if (kind === "tool_call" || kind === "tool_call_update") {
       const prev = this.calls.get(String(u.toolCallId));
-      const call: ToolCall = { ...prev, ...(u as ToolCall), content: (u.content as Json[] | undefined) ?? prev?.content };
+      const meta = u._meta as Json | undefined;
+      const term = meta && TERMINAL_KEYS.some((k) => k in meta);
+      // A command's end for a call of an earlier turn (claude-agent-acp ends a background command's terminal when it finishes):
+      // its row is that turn's, and there's nothing here to show it on.
+      if (term && !prev && !["status", "title", "content", "kind", "rawInput", "rawOutput"].some((k) => k in u)) return;
+      if (term) this.terminal(String(u.toolCallId), meta);
+      // The terminal's part of _meta goes with the output kept above; the rest stands as the call had it, or as this update says.
+      const own = term ? Object.fromEntries(Object.entries(meta).filter(([k]) => !TERMINAL_KEYS.includes(k))) : undefined;
+      const call: ToolCall = { ...prev, ...(u as ToolCall), content: (u.content as Json[] | undefined) ?? prev?.content, ...(own ? { _meta: Object.keys(own).length ? own : prev?._meta } : {}) };
       this.calls.set(call.toolCallId, call);
       // A subagent, with `task` denied: a command marked subtask gets past that, and it would wait for good at its first step.
       // OpenCode 2 calls it `subagent`, by name beside a title of its own.
@@ -1456,14 +1486,35 @@ class AcpSession implements ProviderSession {
     }
   }
 
+  /**
+    Takes a call's terminal _meta: output pieces put end to end, and the exit code. Only the end is kept once it's long, as the row
+    only ever shows its last OUTPUT_MAX characters (T3 Code bounds an agent terminal's output to a tail too: provider-acp
+    runtimeModel.ts, appendTerminalOutput); it's cut back only when twice that, so a long build log isn't copied on every piece.
+  */
+  private terminal(id: string, meta: Json) {
+    const t = this.terms.get(id) ?? { data: "", cut: false };
+    this.terms.set(id, t);
+    for (const key of ["terminal_output", "terminal_output_delta"]) {
+      const data = (meta[key] as Json | undefined)?.data;
+      if (typeof data === "string") t.data += data;
+    }
+    if (t.data.length > 2 * OUTPUT_MAX) (t.data = t.data.slice(-OUTPUT_MAX)), (t.cut = true);
+    const code = (meta.terminal_exit as Json | undefined)?.exit_code;
+    if (typeof code === "number") t.exit = code;
+  }
+
   /** A tool call as its row shows it, with the end of its output. */
   private showCall(call: ToolCall, sink: TurnSink) {
     this.shown.set(call.toolCallId, Date.now());
-    const out = (call.content ?? [])
-      .map((c) => (c.type === "content" ? blockText(c.content) : c.type === "diff" ? `Edited ${this.rel(String(c.path))}` : ""))
-      .filter(Boolean)
-      .join("\n");
-    const status = call.status === "completed" ? "done" : call.status === "failed" ? "failed" : call.status === "stopped" ? "stopped" : "running";
+    const term = this.terms.get(call.toolCallId);
+    // A command's streamed output comes first; a text of the agent's that only says it again isn't shown twice. Its exit code
+    // ends it as the timeline reads one ("[exit 1]"), when it isn't 0.
+    const parts = (call.content ?? []).map((c) => (c.type === "content" ? (term && sameOutput(term.data, blockText(c.content)) ? "" : blockText(c.content)) : c.type === "diff" ? `Edited ${this.rel(String(c.path))}` : ""));
+    if (term) parts.unshift(term.data.replace(/\s+$/, ""));
+    if (term?.exit) parts.push(`[exit ${term.exit}]`);
+    const out = parts.filter(Boolean).join("\n");
+    // A command that exited with a code other than 0 failed, whatever the agent calls its end.
+    const status = call.status === "completed" && !term?.exit ? "done" : call.status === "completed" || call.status === "failed" ? "failed" : call.status === "stopped" ? "stopped" : "running";
     if (isDelegation(call.title)) return this.delegated(call, out, status === "stopped" ? "failed" : status, sink);
     const path = call.locations?.[0]?.path ?? ((call.content ?? []).find((c) => c.type === "diff")?.path as string | undefined);
     // Liner Code's own tools, under the name the agent gives them ("liner_design_show"): named and titled as every tool names them.
@@ -1479,7 +1530,8 @@ class AcpSession implements ProviderSession {
       title: ours ? linerTitle(ours, input) : this.titled(call.title ?? "Use a tool"),
       path: path ? this.rel(path) : undefined,
       input: input === undefined ? undefined : `${ours && JSON.stringify(input).includes(CUT_MARK) ? `(${this.cmd[0]} showed only the end of this, its last 8,000 characters; the tool had it whole.)\n` : ""}${JSON.stringify(input, null, 2)}`,
-      output: out.length > OUTPUT_MAX ? `…${out.slice(-OUTPUT_MAX)}` : out || (call.rawOutput === undefined ? undefined : JSON.stringify(call.rawOutput, null, 2).slice(0, OUTPUT_MAX)),
+      // A command with a terminal has its output there: its rawOutput is the agent's own record of the run (codex-acp's end event), not more to show.
+      output: out.length > OUTPUT_MAX || term?.cut ? `…${out.slice(-OUTPUT_MAX)}` : out || (call.rawOutput === undefined || term ? undefined : JSON.stringify(call.rawOutput, null, 2).slice(0, OUTPUT_MAX)),
       status,
     });
   }
@@ -1547,6 +1599,7 @@ class AcpSession implements ProviderSession {
     // A call is only asked about in its turn.
     this.calls.clear();
     this.shown.clear();
+    this.terms.clear();
     this.delegations.clear();
     this.heard = Date.now();
     // An agent that hasn't finished cancelling 15 seconds after Stop is stopped itself, and the turn

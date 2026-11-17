@@ -222,6 +222,9 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               autoFocus
               seed={startPrompt}
               stripEnd={<ModePick value={mode_} onPick={pick} />}
+              // The prompt check splits a draft of several tasks into sessions in this mode; Workshop isn't checked.
+              mode={mode_}
+              checkOff={mode_ === "creator"}
             />
           </div>
         </>

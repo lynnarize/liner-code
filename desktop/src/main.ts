@@ -12,6 +12,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFil
 import { homedir, release, tmpdir } from "node:os";
 import { basename, delimiter, join, normalize } from "node:path";
 import { sealedFrame } from "../../contracts/src/panel.ts";
+import { openAsk, QuitWhenDone, type Live } from "./finish";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
 import { mac, type Frame, type Rect } from "./mac";
@@ -319,6 +320,8 @@ function createWindow() {
 }
 
 function show() {
+  // Coming back to the app (the Dock, a second launch, the menu bar item, a notice) calls off a quit that waits.
+  stopWaiting();
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
@@ -339,7 +342,15 @@ async function engineRpc(method: string, params: Record<string, unknown>) {
   return body.result;
 }
 
-const statusItem = new StatusItem({ open: (id) => (id ? send(`open:${id}`) : show()), quit: () => app.quit(), rpc: engineRpc });
+const statusItem = new StatusItem({
+  open: (id) => (id ? send(`open:${id}`) : show()),
+  quit: () => app.quit(),
+  quitNow: () => {
+    quitting = true;
+    app.quit();
+  },
+  rpc: engineRpc,
+});
 
 async function fail(message: string) {
   const r = dialog.showMessageBoxSync({ type: "error", message: "Liner Code can't start", detail: message, buttons: ["Quit", "Show the log"], defaultId: 0 });
@@ -460,6 +471,11 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       return r.canceled ? null : (r.filePaths[0] ?? null);
     }
     case "notify":
+      // While the app waits to quit, the page's notice and the shell's own "needs you" would say the same thing twice.
+      if (waiting && str(p.threadId)) {
+        if (waiting.toldLately(str(p.threadId), Date.now())) return;
+        waiting.heard(str(p.threadId), Date.now());
+      }
       return notify(str(p.title), str(p.body), str(p.threadId) || undefined);
     case "badge": {
       const n = num(p.count);
@@ -470,6 +486,8 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       return;
     }
     case "status":
+      // The page saw something change: a quit that waits looks again now rather than at its next turn.
+      if (waiting) setTimeout(() => void checkWaiting(), 300);
       return statusItem.set(p as unknown as TrayStatus);
     case "reveal":
       if (str(p.path)) shell.showItemInFolder(local(str(p.path)));
@@ -799,20 +817,30 @@ app.on("activate", show);
   the menu bar item's status. An update going in, a launch that failed, or your yes has decided.
 */
 let asking = false;
+/**
+  Whether the app can wait out of sight for the work to end: on the Mac and on Windows, where the
+  menu bar item (the tray) stays to say so and to bring the window back. Linux is left as it was:
+  many desktops there show no tray at all, and the app would be running with nothing to see.
+*/
+const canWait = isMac || isWin;
 async function askToQuit(n: number) {
   asking = true;
+  const one = n === 1;
   const opts = {
     type: "warning" as const,
-    message: n === 1 ? "A session is still working. Quit anyway?" : `${n} sessions are still working. Quit anyway?`,
-    detail: "Quitting stops their turns where they are. Their timelines and the changes so far are kept.",
-    buttons: ["Quit", "Cancel"],
+    message: one ? "A session is still working. Quit anyway?" : `${n} sessions are still working. Quit anyway?`,
+    detail: canWait
+      ? `Liner Code can go out of sight and quit by itself once ${one ? "it's" : "they're"} done, or quit now and stop ${one ? "its turn" : "their turns"} where ${one ? "it is" : "they are"}.`
+      : "Quitting stops their turns where they are. Their timelines and the changes so far are kept.",
+    buttons: canWait ? [one ? "Quit When It Finishes" : "Quit When They Finish", "Quit", "Cancel"] : ["Quit", "Cancel"],
     defaultId: 0,
-    cancelId: 1,
+    cancelId: canWait ? 2 : 1,
   };
   try {
     // A sheet on the window when it's on screen; on its own when the window is shut.
     const { response } = await (win?.isVisible() && !win.isMinimized() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts));
-    if (response !== 0) return;
+    if (canWait && response === 0) return waitThenQuit();
+    if (response !== (canWait ? 1 : 0)) return;
     quitting = true;
     app.quit();
   } finally {
@@ -820,10 +848,73 @@ async function askToQuit(n: number) {
   }
 }
 
+// ---------- Quit when they finish ----------
+
+/** Set while the app waits, out of sight, for its sessions to finish before it quits (finish.ts decides). */
+let waiting: QuitWhenDone | null = null;
+let waitTimer: NodeJS.Timeout | undefined;
+let checking = false;
+/** How often the engine is asked: the page is hidden too, and a hidden page's timers can lag by a minute, so the shell asks itself. */
+const WAIT_EVERY_MS = 3000;
+
+/** Every window out of sight and, on the Mac, the Dock icon too; the menu bar item stays, and the engine is asked until nothing works. */
+function waitThenQuit() {
+  if (waiting) return;
+  waiting = new QuitWhenDone();
+  // Shown at once, on the page's last word, until the engine's first answer.
+  statusItem.hold({ working: [], waiting: [] });
+  if (win && !win.isDestroyed()) {
+    if (win.isFullScreen()) {
+      win.once("leave-full-screen", () => waiting && win?.hide());
+      win.setFullScreen(false);
+    } else win.hide();
+  }
+  if (isMac) app.dock?.hide();
+  waitTimer = setInterval(() => void checkWaiting(), WAIT_EVERY_MS);
+  void checkWaiting();
+}
+
+/** Calls off a quit that waits: the Dock icon and the menu bar item go back to how they were. */
+function stopWaiting() {
+  if (!waiting) return;
+  waiting = null;
+  clearInterval(waitTimer);
+  statusItem.hold(null);
+  if (isMac) void app.dock?.show().then(setDockIcon);
+}
+
+/** One look at the engine's sessions: quits through the normal path (the engine saves, a staged update goes in) once none works. */
+async function checkWaiting() {
+  const w = waiting;
+  if (!w || checking) return;
+  checking = true;
+  try {
+    const s = (await engineRpc("state.get", {})) as { threads?: Live[]; settings?: { notify?: boolean } };
+    const threads = s.threads ?? [];
+    // A session already waiting on you when you quit holds the app only if its request is still open (a live turn).
+    for (const id of w.toCheck(threads)) w.mark(id, openAsk(await engineRpc("thread.items", { id }).catch(() => [])));
+    if (waiting !== w) return;
+    const r = w.read(threads, Date.now());
+    statusItem.hold(r.left);
+    // It can't finish by itself: say so once, as the page would, since nothing else will make it go.
+    if (s.settings?.notify) for (const t of r.tell) notify("Waiting on you", `“${t.title}” needs you before Liner Code can quit.`, t.id);
+    if (!r.quit) return;
+    clearInterval(waitTimer);
+    quitting = true;
+    app.quit();
+  } catch (e) {
+    // The engine is restarting or busy: the next look tries again.
+    console.error("[shell] couldn't ask the engine what still works:", e);
+  } finally {
+    checking = false;
+  }
+}
+
 /** On Windows: the engine has saved and stopped, so quitting can go on. */
 let engineGone = false;
 app.on("before-quit", (e) => {
-  if (!quitting && statusItem.running() > 0) {
+  // While it waits to quit, a quit from elsewhere (logging out, shutting down) goes ahead: you already said yes, and there's no window to ask on.
+  if (!quitting && !waiting && statusItem.running() > 0) {
     e.preventDefault();
     if (!asking) void askToQuit(statusItem.running());
     return;

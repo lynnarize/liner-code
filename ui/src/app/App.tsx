@@ -797,6 +797,9 @@ export function App() {
             <Sidebar
               face={face}
               onFace={(f) => setFace(f)}
+              // Recent's project: Home's, else the session's on screen, else the one you were last in.
+              recentProject={view.kind === "home" ? (view.projectId ?? lastProject) : here?.projectId || lastProject}
+              onCarryOn={(projectId, text) => go({ kind: "home", projectId, prompt: { text, at: Date.now() } })}
               designBody={
                 face !== "design" ? undefined : designTab && designProject ? (
                   <Boundary label="Layers" quiet>

@@ -109,6 +109,8 @@ export const I = {
   settings: (p: P) => <S {...p}><path d={GEAR} /><circle cx="8" cy="8" r="2" /></S>,
   globe: (p: P) => <S {...p}><circle cx="7.75" cy="7.75" r="5.5" /><path d="M2.25 7.75h11M7.75 2.25c1.45 1.55 2.2 3.4 2.2 5.5s-.75 3.95-2.2 5.5c-1.45-1.55-2.2-3.4-2.2-5.5s.75-3.95 2.2-5.5Z" /></S>,
   undo: (p: P) => <S {...p}><path d="M5.75 3.75 3 6.5l2.75 2.75M3 6.5h6.75a3.25 3.25 0 0 1 0 6.5H7.25" /></S>,
+  /** Carry on (the sidebar's row for work begun elsewhere): a path that bends back toward you, then goes on. */
+  carry: (p: P) => <S {...p}><path d="M12.75 4.25H6.5a3.25 3.25 0 0 0 0 6.5h6.25M10.5 8.5l2.25 2.25L10.5 13" /></S>,
   commit: (p: P) => <S {...p}><circle cx="8" cy="8" r="2.5" /><path d="M1.75 8h3.75M10.5 8h3.75" /></S>,
   drag: (p: P) => <S {...p} w={2}><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" /></S>,
   info: (p: P) => <S {...p}><circle cx="8" cy="8" r="5.75" /><path d="M8 7.4v3.6M8 5.15v.1" /></S>,

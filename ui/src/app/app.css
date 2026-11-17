@@ -1494,10 +1494,6 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-3);
   white-space: nowrap;
 }
-.lc-sb-dot {
-  flex: none;
-  color: var(--l-ink-4);
-}
 /* What it stands at takes what room is left, and ends in an ellipsis. */
 .lc-sb-st {
   flex: 1;
@@ -1540,22 +1536,10 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-4);
   font-variant-numeric: tabular-nums;
 }
-/* While the actions show, the small line stops short of them and the time steps out. */
-.lc-sb-row:is(:hover, :focus-within) .lc-sb-s,
-.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-s {
-  padding-right: 62px;
-}
+/* While the actions show, the time steps out. */
 .lc-sb-row:is(:hover, :focus-within) .lc-sb-time,
 .lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-time {
   display: none;
-}
-/* A long project name gives way before what the session is doing does. */
-.lc-sb-pj {
-  min-width: 0;
-  max-width: 55%;
-  overflow: hidden;
-  color: var(--l-ink-2);
-  text-overflow: ellipsis;
 }
 .lc-sb-rename {
   flex: 1;
@@ -1583,7 +1567,7 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-st[data-tone="danger"] {
   color: var(--l-danger-text);
 }
-/* On the small line, where the time was. They fade in, and go at once, as the time comes back. */
+/* On the title's line, where the time was. They fade in, and go at once, as the time comes back. */
 .lc-sb-acts {
   position: absolute;
   top: 2px;
@@ -1771,16 +1755,6 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb .lc-sb-h > b {
   font-size: 13px;
 }
-.lc-sb-lead {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 14px;
-  color: var(--l-ink-3);
-}
-.lc-sb-row[aria-current] .lc-sb-lead {
-  color: var(--l-ink-2);
-}
 .lc-sb .lc-sb-acts {
   top: 50%;
   translate: 0 -50%;
@@ -1793,7 +1767,7 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h > :is(b, .lc-sb-rename) {
   margin-right: 64px;
 }
-/* By folder, a session sits in a step under its project's header, its title under the folder's name. */
+/* By folder, a session sits in a step under its project's header, its title under the folder's name (on the list's text edge since 0.2.8, at its end). */
 .lc-sb-proj .lc-sb-row:not([data-two]) .lc-sb-pick {
   padding-left: 32px;
 }
@@ -1807,45 +1781,14 @@ html[data-native="mac"] .lc-sb-head {
 }
 /*
   Two lines a session, in All projects and where sessions are put away (D, after the November
-  study): its project's letters, its title with the maker's mark at the end, and under it its
-  project, how it stands and how long ago. Pointing at it, the mark and the time give their place
-  to Pin, Snooze and Settle.
+  study). Its parts are laid on the list's grid at the end of this sheet (0.2.8): the mark in the
+  mark column, the title with how long ago, where it is under it.
 */
-.lc-sb .lc-sb-row[data-two] .lc-sb-pick {
-  gap: 10px;
-  min-height: 48px;
-  padding: 0 10px;
-}
-.lc-sb-row[data-two] .lc-pjb {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  font-size: 9px;
-}
-.lc-sb-tx {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.lc-sb .lc-sb-row[data-two] .lc-sb-h {
-  flex: none;
-  height: 19px;
-  gap: 6px;
-}
-.lc-sb-row[data-two] .lc-sb-lead {
-  width: auto;
-}
 .lc-sb-st > [data-tone="warn"] {
   color: var(--l-warn-text);
 }
 .lc-sb-st > [data-tone="danger"] {
   color: var(--l-danger-text);
-}
-.lc-sb-row[data-two]:is(:hover, :focus-within) .lc-sb-lead,
-.lc-sb-row[data-two]:has(.lc-sb-acts [data-open]) .lc-sb-lead {
-  display: none;
 }
 /* Add-ons, apart from your places: its ··· at the end of its label, your apps under it. */
 .lc-sb-labpop {
@@ -7956,6 +7899,8 @@ html[data-motion="quick"] .lc-session .lc-body {
   than it was (264). Under it your places are plain rows (New session lit while Home is up,
   Search, The Wall, Add-ons), the session rows carry no project tile, and the foot holds Code or
   Design as one option where your name was. Navigation icons are the 20px drawings (icons.tsx, N).
+  Since 0.2.8 the name has gone to the foot as that option, and the head is only the window's
+  controls (the block at the end of this sheet).
 */
 :root {
   --lc-side: 264px;
@@ -7987,54 +7932,24 @@ html[data-motion="quick"] .lc-session .lc-body {
 .lc-sb-navrow .lc-ib {
   color: var(--l-ink-3);
 }
-/* A session row: its title with a dot while it works or waits, then the model's mark, where it is and when. */
-.lc-sb .lc-sb-row[data-two] .lc-sb-pick {
-  min-height: 46px;
-}
-.lc-sb-row[data-two] .lc-sb-lead,
-.lc-sb-row[data-two]:is(:hover, :focus-within) .lc-sb-lead,
-.lc-sb-row[data-two]:has(.lc-sb-acts [data-open]) .lc-sb-lead {
-  display: grid;
-  position: static;
-  width: 12px;
-  opacity: 1;
-  visibility: visible;
-  color: var(--l-ink-3);
-}
-.lc-sb-rdot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--l-accent);
-}
-.lc-sb-rdot[data-k="warn"] {
-  background: var(--l-warn);
-}
-.lc-sb-rdot[data-k="danger"] {
-  background: var(--l-danger);
-}
-.lc-sb-rdot[data-k="work"] {
-  animation: lc-dot-work 1.8s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .lc-sb-rdot[data-k="work"] {
-    animation: none;
-  }
-}
-/* The foot's option: a tile, Code or Design, and the arrow that says it opens. */
+/*
+  The foot's option: an 18px tile with a 12px drawing, Code or Design at 13, and the arrow that
+  says it opens, 28 high. Its menu stays inside the sidebar (Pop's `within`), its tiles 20px, each
+  description one line. Since 0.2.8 the option is the name, "Liner Code", with no tile (.lc-sb-name,
+  at the end of this sheet); its menu is as it was.
+*/
 .lc-sb-facepick {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  height: 34px;
-  padding: 0 8px 0 5px;
+  gap: 8px;
+  height: 28px;
+  padding: 0 7px 0 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: none;
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--l-ink);
   cursor: pointer;
   transition: background 140ms ease;
@@ -8057,9 +7972,9 @@ html[data-motion="quick"] .lc-session .lc-body {
   display: grid;
   flex: none;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 7.5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5.5px;
   background: var(--lc-ctl);
   color: var(--lc-ctl-ink);
   box-shadow:
@@ -8071,15 +7986,20 @@ html[data-motion="quick"] .lc-session .lc-body {
   background: var(--l-accent);
   color: #fff;
 }
+.lc-sb-facepick > .lc-face-tile {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
 .lc-face-opt {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   width: 100%;
   box-sizing: border-box;
-  padding: 7px 8px;
+  padding: 5px 7px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   color: var(--l-ink);
@@ -8089,6 +8009,10 @@ html[data-motion="quick"] .lc-session .lc-body {
 .lc-face-opt[aria-checked="true"] {
   background: var(--l-wash);
 }
+.lc-face-opt > svg {
+  flex: none;
+  color: var(--l-ink-2);
+}
 .lc-face-tx {
   display: flex;
   flex: 1;
@@ -8096,14 +8020,20 @@ html[data-motion="quick"] .lc-session .lc-body {
   min-width: 0;
 }
 .lc-face-tx > b {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 18px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 17px;
+}
+.lc-face-opt[aria-checked="true"] .lc-face-tx > b {
+  font-weight: 500;
 }
 .lc-face-tx > small {
+  overflow: hidden;
   font-size: 12px;
   line-height: 16px;
   color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- 0.2.7: Home, as Devin lays it out ---------- */
@@ -8389,11 +8319,7 @@ body,
   font-size: 13px;
   font-weight: 400;
 }
-.lc-sb-facepick {
-  font-size: 13px;
-  font-weight: 500;
-}
-/* The composer's controls (the Reviewer, the mode chip and the Desk cue: in their own sheets). */
+/* The composer's controls (the Reviewer and the mode chip: in their own sheets). */
 .lc-seg-b,
 .lc-chip-name {
   font-weight: 400;
@@ -8417,13 +8343,6 @@ body,
 }
 .lc-row[data-on] .lc-row-t b,
 .lc-who-row[data-on] .lc-who-row-t b {
-  font-weight: 500;
-}
-.lc-face-tx > b {
-  font-size: 13px;
-  font-weight: 400;
-}
-.lc-face-opt[aria-checked="true"] .lc-face-tx > b {
   font-weight: 500;
 }
 .lc-pop-head {
@@ -8453,7 +8372,8 @@ body,
 }
 .lc-sb-lab {
   height: 30px;
-  padding: 0 8px 0 10px;
+  /* 10 at both ends, so a group's count ends where its rows' times do. */
+  padding: 0 10px;
 }
 .lc-sb-sec {
   gap: 0;
@@ -8466,9 +8386,6 @@ body,
 .lc-sb-foot {
   gap: 4px;
   padding: 0 4px 0 2px;
-}
-.lc-sb-facepick {
-  padding-left: 8px;
 }
 .lc-sb-foot .lc-ib {
   width: 30px;
@@ -8540,22 +8457,15 @@ html[data-bg] .lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leavin
 
 /* ---------- 0.2.7, third pass: the sidebar's head in T3 Code's order ---------- */
 /*
-  Hide the sidebar, the name, then Back and Forward right after it; the rest of the row is the
-  window's drag area. On macOS the row starts just past the traffic lights and runs into the
-  sidebar's right inset, so "Liner Design" fits in the 264 with its arrows.
+  Hide the sidebar, then the window's drag area, then Back and Forward (0.2.8: the name went to the
+  foot, and the arrows to the row's right end, where they end with the list's + under them; they
+  no longer run into the sidebar's right inset to make room for "Liner Design"). On macOS the row
+  starts just past the traffic lights.
 */
-.lc-sb-head > .lc-brand {
-  margin: 0 2px 0 4px;
-}
-.lc-sb-head > .lc-brand ~ .lc-sb-hb {
-  width: 24px;
-}
 .lc-sb-head > .lc-grow {
   min-width: 0;
 }
 html[data-native="mac"] .lc-sb-head {
-  margin-right: -4px;
-  padding-right: 0;
   padding-left: max(4px, calc(var(--lc-lights-x, 70px) - 4px));
 }
 
@@ -8661,3 +8571,406 @@ html[data-native="mac"] .lc-sb-head {
     background: var(--l-wash-2);
   }
 }
+
+/* ---------- 0.2.8: the sidebar's name at the foot, its list on one grid, and Carry on ---------- */
+/*
+  The top row is only the window's own controls: Hide just past the traffic lights, the drag area,
+  Back and Forward at the right (Sidebar.tsx). With no lights (Windows, Linux, a browser) the row
+  is the same, as Claude's and Codex's apps have it, and Hide's drawing sits over the places' icons.
+*/
+html:not([data-native="mac"]) .lc-sb-head {
+  padding-left: 7px;
+}
+/*
+  The list on the places' grid: every row has a 24px mark column under their icons (8px in, so its
+  centre is under theirs) and its words start on their text edge, 40px in. What the list shows
+  heads it there, in grey; sort and + come while you're in the sidebar, or the keyboard is.
+*/
+.lc-sb-bar {
+  padding-left: 32px;
+}
+.lc-sb-view {
+  padding: 0 6px 0 8px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lc-sb-view > svg {
+  color: var(--l-ink-4);
+}
+.lc-sb-bar .lc-ib {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.lc-sb:hover .lc-sb-bar .lc-ib,
+.lc-sb-bar:focus-within .lc-ib,
+.lc-sb:has(:focus-visible) .lc-sb-bar .lc-ib,
+.lc-sb-bar .lc-ib[data-open] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .lc-sb-bar .lc-ib {
+    opacity: 1;
+  }
+}
+.lc-sb-inner {
+  gap: 0;
+}
+/* A group's label: small and grey on the text edge, its count at the right, an even 18 above it (less at the top of the list). Counts and times stay in the fourth grey, no lighter (the rule at the top of this sheet): a lighter weight or a smaller size keeps them under the words. */
+.lc-sb-inner .lc-sb-lab:not(.lc-sb-plab) {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: end;
+  height: 22px;
+  box-sizing: border-box;
+  margin-top: 18px;
+  padding: 0 10px 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--l-ink-4);
+}
+.lc-sb-inner .lc-sb-lab:not(.lc-sb-plab) > svg {
+  grid-column: 1;
+  justify-self: center;
+  margin-bottom: 2px;
+}
+.lc-sb-inner .lc-sb-lab:not(.lc-sb-plab) > span {
+  margin-left: 0;
+}
+.lc-sb-lab-t {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sb-inner .lc-sb-lab:not(.lc-sb-plab) > span:last-child:not(.lc-sb-lab-t) {
+  grid-column: 3;
+  font-weight: 400;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.lc-sb-plate + .lc-sb-sec > .lc-sb-lab:first-child {
+  margin-top: 4px;
+}
+/* Finished with no label: its rows a step under Carry on, or right under the view's name. */
+.lc-sb-sec[data-bare] {
+  margin-top: 8px;
+}
+.lc-sb-plate + .lc-sb-sec[data-bare] {
+  margin-top: 2px;
+}
+.lc-sb-inner .lc-sb-hint {
+  margin: 2px 10px 6px 40px;
+}
+/*
+  A session row, two lines, 42 high: the agent's mark (or how it stands while it works, waits or
+  stopped short) in the mark column, level with the title; the title at 13.5 with how long ago at
+  the right, giving its place to Pin, Snooze and Settle while you point at it; under the title
+  where it is, in grey. A finished title steps back to the second ink, the open one is in full.
+*/
+.lc-sb .lc-sb-row[data-two] .lc-sb-pick {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-content: center;
+  column-gap: 8px;
+  row-gap: 0;
+  min-height: 42px;
+  padding: 0 10px 0 8px;
+}
+.lc-sb-mark {
+  display: grid;
+  grid-row: 1 / span 2;
+  place-items: center;
+  align-self: start;
+  height: 19px;
+  color: var(--l-ink-4);
+}
+.lc-sb .lc-sb-row[data-two] .lc-sb-h {
+  grid-column: 2;
+  height: 19px;
+  gap: 8px;
+}
+.lc-sb .lc-sb-row[data-two] .lc-sb-h > b {
+  font-size: 13.5px;
+  font-weight: 450;
+  line-height: 19px;
+}
+.lc-sb .lc-sb-row[data-two] .lc-sb-rename {
+  height: 19px;
+  font-size: 13.5px;
+  font-weight: 450;
+}
+.lc-sb .lc-sb-row[data-two] .lc-sb-time {
+  font-size: 11.5px;
+  color: var(--l-ink-4);
+}
+.lc-sb-row[data-two] .lc-sb-s {
+  grid-column: 2;
+  height: 16px;
+  font-size: 12.5px;
+  line-height: 16px;
+  color: var(--l-ink-4);
+}
+/* The actions take the time's place on the title's line. */
+.lc-sb .lc-sb-row[data-two] .lc-sb-acts {
+  top: 2px;
+  translate: none;
+}
+/* One line a session (By folder, and Pinned and your groups there): the title on the same text edge, under its folder's name. */
+.lc-sb-inner .lc-sb-row:not([data-two]) .lc-sb-pick {
+  padding-left: 40px;
+}
+/* A fork's line runs down from under the first letter of the session it came from; the fork's title a step in from it. */
+.lc-sb-inner .lc-sb-kids {
+  margin-left: 40px;
+  padding-left: 6px;
+}
+.lc-sb-inner .lc-sb-kids .lc-sb-kids {
+  margin-left: 8px;
+}
+.lc-sb-inner .lc-sb-kids .lc-sb-row:not([data-two]) .lc-sb-pick {
+  padding-left: 8px;
+}
+/* A folder's header: the folder in the mark column, its name on the text edge. */
+.lc-sb-inner .lc-sb-plab {
+  margin-top: 10px;
+  padding-left: 8px;
+}
+.lc-sb-plate + .lc-sb-sec > .lc-sb-plab {
+  margin-top: 2px;
+}
+.lc-sb-inner .lc-sb-pt {
+  margin-left: 0;
+  padding-left: 0;
+}
+.lc-sb-inner .lc-sb-picon {
+  width: 24px;
+}
+/*
+  Carry on, the list's first row: its mark in the mark column, the word on the text edge, the
+  count and an arrow at the right that say it opens beside the sidebar. Its panel is a menu: a
+  title and one line, then the work by where it is, each row as the list's rows are.
+*/
+.lc-sb-inner > .lc-pop {
+  flex: none;
+}
+.lc-sb-carry {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: center;
+  width: 100%;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px 0 8px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-align: left;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.lc-sb-carry > svg {
+  justify-self: center;
+  color: var(--l-ink-4);
+}
+.lc-sb-carry > span:first-of-type {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sb-carry-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.lc-sb-carry[data-open] {
+  background: var(--lc-plate);
+  color: var(--l-ink-2);
+}
+@media (hover: hover) {
+  .lc-sb-carry:not([data-open]):hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink-2);
+  }
+}
+.lc-carry {
+  display: grid;
+}
+.lc-carry-h {
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px 8px;
+}
+.lc-carry-h > b {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--l-ink);
+}
+.lc-carry-h > span {
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--l-ink-4);
+}
+.lc-carry-g {
+  display: grid;
+}
+/* The panel left open after a refresh found nothing: one quiet line, on the rows' text edge. */
+.lc-carry-none {
+  outline: none;
+  margin: 0;
+  padding: 2px 10px 8px 40px;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--l-ink-4);
+}
+.lc-carry-gh {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: end;
+  height: 22px;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 0 10px 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--l-ink-4);
+}
+.lc-carry-h + .lc-carry-g > .lc-carry-gh {
+  margin-top: 0;
+}
+.lc-carry-gh > span:first-child {
+  grid-column: 2;
+}
+.lc-carry-gh > span:last-child {
+  font-weight: 400;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.lc-carry-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-content: center;
+  column-gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-carry-mk {
+  display: grid;
+  grid-row: 1 / span 2;
+  place-items: center;
+  align-self: start;
+  height: 19px;
+  color: var(--l-ink-4);
+}
+.lc-carry-row > b {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 450;
+  line-height: 19px;
+  color: var(--l-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-carry-do {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--l-ink-2);
+}
+.lc-carry-s {
+  grid-column: 2 / span 2;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 16px;
+  color: var(--l-ink-4);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-carry-row:focus-visible {
+  background: var(--l-wash-2);
+}
+@media (hover: hover) {
+  .lc-carry-row:hover {
+    background: var(--l-wash-2);
+  }
+}
+/*
+  The name at the foot, set as the brand kit's wordmark: "Liner" in ink at 650 and the face in grey
+  at 600 after it, in the name's own type at 17 and drawn a little tight, then the small arrow that
+  says it opens the switch, level with the middle of the small letters. No tile; its words start on
+  the places' icons. The foot is 40 high (its rule above) with the name 34 in it, the usage ring and
+  Settings centred on the same line.
+*/
+.lc-sb-foot .lc-sb-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 7px 0 8px;
+  border-radius: 9px;
+  font-family: var(--lc-font-name);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--l-ink);
+  white-space: nowrap;
+}
+.lc-sb-name .lc-brand {
+  display: inline;
+  font: inherit;
+  font-weight: 650;
+  letter-spacing: inherit;
+  line-height: inherit;
+  cursor: inherit;
+}
+.lc-sb-name-face {
+  color: var(--l-ink-3);
+  transition: color 140ms ease;
+}
+/* The line box's middle sits above the small letters' middle: the arrow drops to meet them. */
+.lc-sb-name > svg {
+  margin-left: 0;
+  translate: 0 1px;
+  color: var(--l-ink-4);
+}
+.lc-sb-name[data-open] .lc-sb-name-face {
+  color: var(--l-ink-2);
+}
+@media (hover: hover) {
+  button.lc-sb-name:hover .lc-sb-name-face {
+    color: var(--l-ink-2);
+  }
+}
+span.lc-sb-name {
+  cursor: default;
+}
+

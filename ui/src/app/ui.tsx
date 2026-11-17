@@ -15,7 +15,7 @@ import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 type Side = "top" | "bottom";
 const EDGE = 10;
 const GAP = 6;
-type Place = { side: Side | "left"; top: number; left: number; max?: number; w?: number; ready: boolean };
+type Place = { side: Side | "left" | "right"; top: number; left: number; max?: number; w?: number; ready: boolean };
 
 /** The least room a panel that keeps its side needs there, before it gives up and flips. */
 const KEEP_MIN = 260;
@@ -25,9 +25,14 @@ const KEEP_MIN = 260;
   paper or scroller clips them. It takes the preferred side when it fits, else the side with more
   room, is never taller than that room (it scrolls inside), and stays inside the window sideways.
   One that `keep`s its side stays there while it has a fair room, and fits itself to it. One
-  `beside` its trigger opens to its left, level with it, while there's room there.
+  `beside` its trigger opens to its left, level with it, while there's room there. One kept
+  `within` an element (the sidebar's foot menu) stays inside that element's box, its padding
+  apart, sideways: never wider than it, never past its edges; `width` "within" is its whole width.
+  One beside on the right opens past that element's right edge instead (the sidebar's Carry on
+  opens beside the sidebar, never over your sessions), its top a little above the trigger's so
+  its title sits level with it; with no room there it opens under the trigger as any other.
 */
-function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number | "trigger", keep: boolean, beside = false) {
+function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number | "trigger" | "within", keep: boolean, beside: "left" | "right" | false = false, within?: () => HTMLElement | null) {
   const [at, setAt] = useState<Place>({ side: prefer, top: -9999, left: -9999, ready: false });
   useLayoutEffect(() => {
     if (!open) return setAt((a) => ({ ...a, ready: false }));
@@ -40,6 +45,20 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       const vh = window.innerHeight;
       const below = vh - r.bottom - GAP - EDGE;
       const above = r.top - GAP - EDGE;
+      // The box it keeps inside sideways: the window, or the element it's kept within, its padding apart.
+      const box = within?.();
+      const pad = box ? getComputedStyle(box) : null;
+      const b = box?.getBoundingClientRect();
+      const lo = b && pad ? Math.max(EDGE, b.left + parseFloat(pad.paddingLeft)) : EDGE;
+      const hi = b && pad ? Math.min(vw - EDGE, b.right - parseFloat(pad.paddingRight)) : vw - EDGE;
+      // Beside, to the right: past the right edge of what it's kept within (or the trigger's), as wide as asked while the window has room.
+      const from = Math.round((b ? b.right : r.right) + GAP + 2);
+      const wide = typeof width === "number" ? Math.min(width, vw - EDGE - from) : 0;
+      const right = beside === "right" && wide >= Math.min(220, typeof width === "number" ? width : 220);
+      const w = Math.min(width === "trigger" ? r.width : width === "within" ? hi - lo : width, hi - lo);
+      // Measured at the width it will have: one first drawn at its own width wraps otherwise, and its
+      // height (and so where a panel over its trigger starts) would be a line out until it settled.
+      p.style.width = `${right ? wide : w}px`;
       // Its own height, not the one a room it was fitted to gave it: a panel that shrinks into its
       // room would otherwise read as fitting, open up again, and never settle.
       const fitted = p.style.maxHeight;
@@ -51,16 +70,21 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       const side: Side = (keep && room(prefer) >= Math.min(h, KEEP_MIN)) || h <= room(prefer) ? prefer : h <= room(flip) ? flip : below >= above ? "bottom" : "top";
       const max = h > room(side) ? Math.max(120, Math.floor(room(side))) : undefined;
       const tall = Math.min(h, max ?? h);
-      const w = Math.min(width === "trigger" ? r.width : width, vw - EDGE * 2);
+      if (right) {
+        const fit = Math.min(h, vh - EDGE * 2);
+        const top = Math.max(EDGE, Math.min(r.top - 8, vh - EDGE - fit));
+        setAt({ side: "right", top: Math.round(top), left: from, max: h > fit ? fit : undefined, w: wide, ready: true });
+        return;
+      }
       // Beside, to the left (the session tray's menus): level with the trigger's top, kept on screen.
-      if (beside && r.left - GAP - w >= EDGE) {
+      if (beside === "left" && r.left - GAP - w >= EDGE) {
         const fit = Math.min(h, vh - EDGE * 2);
         const top = Math.max(EDGE, Math.min(r.top, vh - EDGE - fit));
         setAt({ side: "left", top: Math.round(top), left: Math.round(r.left - GAP * 2 - w), max: h > fit ? fit : undefined, w, ready: true });
         return;
       }
       let left = align === "end" ? r.right - w : align === "center" ? r.left + r.width / 2 - w / 2 : r.left;
-      left = Math.max(EDGE, Math.min(left, vw - EDGE - w));
+      left = Math.max(lo, Math.min(left, hi - w));
       const top = side === "bottom" ? r.bottom + GAP : r.top - GAP - tall;
       setAt({ side, top: Math.round(top), left: Math.round(left), max, w, ready: true });
     };
@@ -101,15 +125,17 @@ export function Pop({
   keep = false,
   menu = false,
   triggerAttrs,
+  within,
+  describedBy,
 }: {
   trigger: ReactNode;
   label: string;
   children: (close: () => void) => ReactNode;
   align?: "start" | "end" | "center";
-  /** "left" opens beside the trigger, as the session tray's menus do. */
-  side?: "top" | "bottom" | "left";
-  /** Its width, or the trigger's own ("trigger"), as a menu under a sidebar entry. */
-  width?: number | "trigger";
+  /** "left" opens beside the trigger, as the session tray's menus do; "right" past the right edge of `within` (or the trigger), as the sidebar's Carry on does. */
+  side?: "top" | "bottom" | "left" | "right";
+  /** Its width, or the trigger's own ("trigger"), as a menu under a sidebar entry, or all of `within`'s ("within"). */
+  width?: number | "trigger" | "within";
   className?: string;
   triggerClass?: string;
   disabled?: boolean;
@@ -119,12 +145,16 @@ export function Pop({
   menu?: boolean;
   /** More for the trigger itself: the page it stands for being open (aria-current), a state its look reads. */
   triggerAttrs?: Record<string, string | boolean | undefined>;
+  /** An element it stays inside sideways (its padding apart), as the sidebar's foot menu stays in the sidebar. */
+  within?: () => HTMLElement | null;
+  /** The id of a line inside the panel that says what it is (Carry on's), read after its label. */
+  describedBy?: string;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const at = usePlace(open, btn, panel, side === "left" ? "bottom" : side, align, width, keep, side === "left");
+  const at = usePlace(open, btn, panel, side === "left" || side === "right" ? "bottom" : side, align, width, keep, side === "left" || side === "right" ? side : false, within);
   useDismiss(open, () => setOpen(false), [wrap, panel], btn);
   const close = () => {
     setOpen(false);
@@ -151,8 +181,9 @@ export function Pop({
             data-ready={at.ready || undefined}
             role={menu ? "menu" : "dialog"}
             aria-label={label}
+            aria-describedby={describedBy}
             // Placed here, not by Liner's anchored rules: those (bottom, translate) would fight the fixed layer.
-            style={{ width: width === "trigger" ? at.w : Math.min(width, document.documentElement.clientWidth - EDGE * 2), maxHeight: at.max, top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none" }}
+            style={{ width: typeof width === "number" && !within ? Math.min(width, document.documentElement.clientWidth - EDGE * 2) : at.w, maxHeight: at.max, top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none" }}
             onKeyDown={(e) => {
               // Something inside that took the Escape first (a list open in the panel) has closed itself; the panel stays.
               if (e.key === "Escape" && !e.defaultPrevented) {
@@ -279,24 +310,24 @@ export function Badge({ tone = "neutral", children, dot = true }: { tone?: "ok" 
 /**
   How a session stands: the spinner while it works (in the tint of whose model it runs on, when `brand`
   says), amber when it needs you, an alert when it stopped on a problem, a ring before it starts,
-  a quiet check when done.
+  a quiet check when done. Each is an image to a screen reader, so its label is read out.
 */
 export function StatusMark({ t, bucket, brand }: { t: Thread; bucket: string; brand?: MarkKind }) {
-  if (t.status === "running") return <span className="lc-mk" data-s="run" data-brand={brand} aria-label="Working"><Spinner size={14} /></span>;
+  if (t.status === "running") return <span className="lc-mk" role="img" data-s="run" data-brand={brand} aria-label="Working"><Spinner size={14} /></span>;
   if (t.status === "error")
     return (
-      <span className="lc-mk" data-s="error" aria-label="Ran into a problem">
+      <span className="lc-mk" role="img" data-s="error" aria-label="Ran into a problem">
         <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(14, 16, 1.6)} strokeLinecap="round" aria-hidden>
           <circle cx="8" cy="8" r="5.75" />
           <path d="M8 5.1v3.4M8 10.9v.01" />
         </svg>
       </span>
     );
-  if (bucket === "needs" && t.turns === 0) return <span className="lc-mk" data-s="new" aria-label="Not started"><i /></span>;
-  if (t.status === "limited") return <span className="lc-mk" data-s="needs" aria-label="Limited"><I.clock size={14} /></span>;
-  if (bucket === "needs") return <span className="lc-mk" data-s="needs" aria-label="Needs you"><i /></span>;
-  if (t.turns === 0) return <span className="lc-mk" data-s="new" aria-label="Not started"><i /></span>;
-  return <span className="lc-mk" data-s="done" aria-label="Done"><I.check size={14} /></span>;
+  if (bucket === "needs" && t.turns === 0) return <span className="lc-mk" role="img" data-s="new" aria-label="Not started"><i /></span>;
+  if (t.status === "limited") return <span className="lc-mk" role="img" data-s="needs" aria-label="Limited"><I.clock size={14} /></span>;
+  if (bucket === "needs") return <span className="lc-mk" role="img" data-s="needs" aria-label="Needs you"><i /></span>;
+  if (t.turns === 0) return <span className="lc-mk" role="img" data-s="new" aria-label="Not started"><i /></span>;
+  return <span className="lc-mk" role="img" data-s="done" aria-label="Done"><I.check size={14} /></span>;
 }
 
 /** +19 −7, in mono. */

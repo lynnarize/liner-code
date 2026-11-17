@@ -26,7 +26,7 @@ import { ContextMenu, Pop, Row, Sep } from "../ui";
 import { HomeLive } from "./Live";
 import { PicturesChip } from "./Pictures";
 import { D } from "./Rail";
-import { buildIn, close as closeTabHere, Tabs } from "./Tabs";
+import { buildIn, close as closeTabHere, TabTitle } from "./Tabs";
 import { dropIfUntouched, knowProject, newDesign, runFor, sessionOf, sigOf, untouched } from "./session";
 import { design } from "./store";
 import "./design-face.css";
@@ -245,7 +245,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
             <I.sidebar size={16} />
           </button>
         )}
-        <Tabs />
+        <TabTitle />
         <span className="lc-grow" data-drag />
       </header>
       {/* Laid out as Code's Home: where it lives on top of the box, the box in the middle, Pick up under it. */}

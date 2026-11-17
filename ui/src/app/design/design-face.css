@@ -344,13 +344,42 @@ html[data-motion="quick"] .ld-face {
 .ld-bar .lc-pop {
   flex: none;
 }
-/* The tabs take what room is left: they shrink, then scroll; + stays beside them. */
-.ld-tabs-w {
-  display: flex;
+/* The name of what shows, and the menu of the open designs under it (Tabs.tsx TabTitle). */
+.ld-tt {
+  display: inline-flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
+  max-width: 420px;
+  height: 30px;
+  margin-left: -4px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--l-ink);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.ld-bar .lc-pop:has(> .ld-tt) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ld-tt:hover,
+.ld-tt[aria-expanded="true"] {
+  background: var(--l-wash);
+}
+.ld-tt > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ld-tt-note {
+  margin: 6px 10px 2px;
 }
 .ld-title {
   display: inline-flex;
@@ -1031,72 +1060,52 @@ html[data-motion="quick"] .ld-pres::after {
   translate: -50% 0;
 }
 
-/* ---------- the tabs, in the canvas's top row and Design Home's ---------- */
-.ld-tabs {
+/* ---------- the open designs, at the top of the Design sidebar (Tabs.tsx OpenDesigns) ---------- */
+.ld-open {
   display: flex;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 2px;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
-  margin-left: -4px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  padding: 0 2px 10px;
 }
-.ld-tabs::-webkit-scrollbar {
-  display: none;
+.ld-open-lab {
+  margin-top: 4px;
 }
-.ld-tab {
+.ld-open-end {
   display: inline-flex;
-  flex: 0 1 auto;
   align-items: center;
-  gap: 7px;
-  min-width: 64px;
-  max-width: 190px;
-  height: 30px;
-  box-sizing: border-box;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  white-space: nowrap;
-  color: var(--l-ink-3);
+  gap: 8px;
+  margin-left: auto;
+}
+.ld-open-end .ld-lab-b {
+  margin-left: 0;
+}
+.ld-open .ld-tr {
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease;
+  transition: background 140ms ease;
 }
-.ld-tab[data-home] {
-  flex: none;
-  min-width: 0;
-}
-.ld-tab:hover {
+.ld-open .ld-tr:hover {
   background: var(--l-wash);
-  color: var(--l-ink);
 }
-.ld-tab[aria-selected="true"],
-.ld-tab[aria-selected="true"]:hover {
-  /* The current tab gives way last, and its name still ends in "…" when it has to. */
-  flex-shrink: 0.2;
-  min-width: 96px;
-  /* With room to spare (a lone tab), the current one takes more of it. */
-  max-width: 320px;
+.ld-open .ld-tr[data-on],
+.ld-open .ld-tr[data-on]:hover {
   background: var(--l-wash-2);
-  font-weight: 500;
   color: var(--l-ink);
 }
-.ld-tab > svg {
-  flex: none;
-  color: var(--l-ink-3);
+.ld-open .ld-tr .ld-ell {
+  flex: 1;
 }
-.ld-tab .ld-pd {
+.ld-open .ld-pd {
   flex: none;
 }
-.ld-tab-x {
+/* The cross shows on the row you're in, and on one under the pointer or the keyboard. */
+.ld-open-x {
   display: grid;
   flex: none;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   margin-right: -4px;
   padding: 0;
   border: 0;
@@ -1104,26 +1113,24 @@ html[data-motion="quick"] .ld-pres::after {
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
+  opacity: 0;
 }
-.ld-tab-x:hover {
+.ld-open-r[data-on] .ld-open-x,
+.ld-open-r:hover .ld-open-x,
+.ld-open-r:focus-within .ld-open-x {
+  opacity: 1;
+}
+.ld-open-x:hover {
   background: var(--l-wash-2);
   color: var(--l-ink);
 }
-.ld-tab-new {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--l-ink-3);
-  cursor: pointer;
+.ld-open-more {
+  height: 26px;
+  font-size: 12px;
 }
-.ld-tab-new:hover {
-  background: var(--l-wash);
-  color: var(--l-ink);
+.ld-open-n {
+  flex: none;
+  color: var(--l-ink-2);
 }
 
 /* ---------- a design on its own: the top row's chip and its panel ---------- */

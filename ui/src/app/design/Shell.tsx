@@ -11,12 +11,14 @@ import { DesignFace } from "./DesignFace";
 import { DesignHome } from "./DesignHome";
 import { freshProject, makeSession, sessionOf } from "./session";
 import { design, setSessionMaker } from "./store";
+import { useTabKeys } from "./Tabs";
 
 export function DesignShell({ sidebar, onSidebar, onNewAgent }: { sidebar: boolean; onSidebar: () => void; onNewAgent: () => void }) {
   const { list, at } = useTabs();
   const projects = useEngine((s) => s.projects);
   const threads = useEngine((s) => s.threads);
   const tab = list.find((t) => tabKey(t) === at);
+  useTabKeys();
   const project = tab ? (projects.find((p) => p.id === tab.projectId) ?? freshProject(tab.projectId)) : undefined;
 
   useEffect(() => {

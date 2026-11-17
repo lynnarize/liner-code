@@ -60,6 +60,7 @@ import { currentTab, faceKept, getFace, HOME_TAB, openTab as openDesignTab, setF
 const DesignSide = lazy(() => import("./design/Layers").then((m) => ({ default: m.DesignSide })));
 // Liner Design's face: its tabs, Design Home and the canvas load the first time the window shows them.
 const DesignShell = lazy(() => import("./design/Shell").then((m) => ({ default: m.DesignShell })));
+const OpenDesigns = lazy(() => import("./design/Tabs").then((m) => ({ default: m.OpenDesigns })));
 const DesignFiles = lazy(() => import("./design/DesignHome").then((m) => ({ default: m.DesignFiles })));
 /** Liner Design's session helpers, loaded only when the Design face is (or is about to be) up. */
 const designSession = () => import("./design/session");
@@ -801,7 +802,13 @@ export function App() {
               recentProject={view.kind === "home" ? (view.projectId ?? lastProject) : here?.projectId || lastProject}
               onCarryOn={(projectId, text) => go({ kind: "home", projectId, prompt: { text, at: Date.now() } })}
               designBody={
-                face !== "design" ? undefined : designTab && designProject ? (
+                face !== "design" ? undefined : (
+                <>
+                {/* The open designs first, as Code lists its sessions; then this design's lean, pages and layers, or every design on Design Home. */}
+                <Suspense fallback={null}>
+                  <OpenDesigns />
+                </Suspense>
+                {designTab && designProject ? (
                   <Boundary label="Layers" quiet>
                     <Suspense fallback={null}>
                       <DesignSide key={tabKey(designTab)} cwd={threads.find((t) => t.id === designTab.threadId && t.projectId === designProject.id)?.worktree?.path ?? designProject.path} />
@@ -811,6 +818,8 @@ export function App() {
                   <Suspense fallback={null}>
                     <DesignFiles onSearch={() => (setBesideOf(null), setMenu(true))} />
                   </Suspense>
+                )}
+                </>
                 )
               }
               current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face !== "design" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face !== "design" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />

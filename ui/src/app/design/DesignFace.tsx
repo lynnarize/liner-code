@@ -1,9 +1,10 @@
 /*
   Liner Design's face of a design, in its tab: its design file on a canvas, and its session (the
   one begun from it, which it may not have yet: the first ask makes it). The top row holds the
-  tabs (Tabs.tsx), who is drawing, "On its own" for a design on its own, the zoom and Play; the
-  rail, the canvas and the dock fill the rest, and the inspector stands at the right. The
-  sidebar's body for this face is Layers.tsx's DesignSide.
+  design's name with a menu of the open ones (Tabs.tsx; the sidebar lists them too), who is
+  drawing, "On its own" for a design on its own, the zoom and Play; the rail, the canvas and the
+  dock fill the rest, and the inspector stands at the right. The sidebar's body for this face is
+  Layers.tsx's DesignSide, under the open designs.
 
   The keys here are the canvas's: V and H, F for a frame, R and T to add, Esc to go up, Delete,
   ⌘D, ⌘[ and ⌘], ⌘Z and ⇧⌘Z, ⌘0 and ⌘1, ⌘+ and ⌘−. They're heard first (before the app's ⌘1 to
@@ -18,7 +19,7 @@ import { matches } from "../keymap";
 import { Pop, Row, Sep } from "../ui";
 import * as os from "../os";
 import { patchTab, tabKey, type DesignTab } from "../face";
-import { close as closeTabHere, OwnChip, Tabs } from "./Tabs";
+import { close as closeTabHere, OwnChip, TabTitle } from "./Tabs";
 import { editText, frames, hearFrameKeys } from "./bridge";
 import { Canvas, fit, parentIn } from "./Canvas";
 import { Dock } from "./Dock";
@@ -188,7 +189,7 @@ function TopRow({ sidebar, onSidebar, cv, tab, project }: { sidebar: boolean; on
           <I.sidebar size={16} />
         </button>
       )}
-      <Tabs />
+      <TabTitle />
       <span className="lc-grow" data-drag />
       <LiveChip />
       <Versions />

@@ -1,13 +1,12 @@
 /*
-  The Design face's tabs, in the canvas's top row: Home, then one per open design (its name, a dot
-  in the lead's colour while an agent draws there, a cross on the current one), then + for a new
-  design. A middle-click or the cross closes a tab: nothing is deleted and nothing stops. Many tabs
-  shrink, then scroll; they never wrap. Which tabs are open is face.ts's, kept for the window.
+  The Design face's open designs ("tabs"): listed at the top of the Design sidebar (OpenDesigns),
+  named in the top row with a menu of them (TabTitle), and gone through with ⌃Tab (useTabKeys).
+  Which are open is face.ts's, kept for the window.
 
   Also here, the top row's "On its own" chip for a design on its own: where its files are, and
   Build in a project (design.attach), after which the chip is gone and the tab carries on.
 */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Project } from "@contracts";
 import { DESIGNS_FOLDER } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
@@ -35,33 +34,57 @@ export function close(key: string) {
   if (tab?.fresh) void dropIfUntouched(tab);
 }
 
-export function Tabs() {
+const nameOf = (t: DesignTab) => t.title ?? "Design";
+/** How many open designs the sidebar lists before the rest fold into one "N more" row. */
+const FOLD = 5;
+
+/**
+  The open designs, at the top of the Design sidebar (where Code keeps its sessions): Home, then a
+  row per open design (a dot in the lead's colour while an agent draws there, a cross to close it),
+  then + for a new design. Past FOLD of them the rest fold into one row, which opens them all; the
+  one you're in is always among those shown. A middle-click or the cross closes a design's row:
+  nothing is deleted and nothing stops.
+*/
+export function OpenDesigns() {
   const { list, at } = useTabs();
   const threads = useEngine((s) => s.threads);
-  const strip = useRef<HTMLDivElement>(null);
-  // The current tab stays in sight as tabs come and go.
-  useEffect(() => {
-    strip.current?.querySelector<HTMLElement>("[aria-selected='true']")?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [at, list.length]);
+  const [all, setAll] = useState(false);
+  const folds = list.length > FOLD + 1;
+  let shown = list;
+  if (folds && !all) {
+    shown = list.slice(0, FOLD);
+    const here = list.find((t) => tabKey(t) === at);
+    if (here && !shown.includes(here)) shown = [...shown.slice(0, FOLD - 1), here];
+  }
+  const rest = list.filter((t) => !shown.includes(t));
   return (
-    <div className="ld-tabs-w">
-    <div ref={strip} className="ld-tabs" role="tablist" aria-label="Open designs">
-      <button type="button" role="tab" className="ld-tab l-focus" data-home aria-selected={at === HOME_TAB} onClick={() => showTab(HOME_TAB)}>
+    <div className="ld-open" role="tablist" aria-label="Open designs" aria-orientation="vertical">
+      <div className="lc-sb-lab ld-lab ld-open-lab">
+        Designs
+        <span className="ld-open-end">
+          {list.length > 0 && <span className="ld-lab-q">{list.length} open</span>}
+          <button type="button" className="lc-ib l-focus ld-lab-b" aria-label="New design" title={`New design (${keys("mod+n")})`} onClick={() => void newDesign().catch(fail)}>
+            <I.plus size={14} />
+          </button>
+        </span>
+      </div>
+      <button type="button" role="tab" className="ld-tr l-focus" aria-selected={at === HOME_TAB} data-on={at === HOME_TAB || undefined} onClick={() => showTab(HOME_TAB)}>
         <I.home size={14} />
         <span className="ld-ell">Home</span>
       </button>
-      {list.map((t) => {
+      {shown.map((t) => {
         const k = tabKey(t);
         const on = k === at;
         const busy = sessionOf(t, threads)?.status === "running";
-        const name = t.title ?? "Design";
+        const name = nameOf(t);
         return (
           <div
             key={k}
             role="tab"
             tabIndex={0}
-            className="ld-tab l-focus"
+            className="ld-tr ld-open-r l-focus"
             aria-selected={on}
+            data-on={on || undefined}
             title={busy ? `${name}: an agent is drawing here` : name}
             onClick={() => showTab(k)}
             onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? (e.preventDefault(), showTab(k)) : undefined)}
@@ -72,21 +95,71 @@ export function Tabs() {
             <D.frame size={14} />
             <span className="ld-ell">{name}</span>
             {busy && <span className="ld-pd" data-lead aria-label="An agent is drawing here" />}
-            {on && (
-              <button type="button" className="ld-tab-x l-focus" aria-label={`Close the ${name} tab`} title="Close the tab: the design stays" onClick={(e) => (e.stopPropagation(), close(k))}>
-                <I.close size={12} />
-              </button>
-            )}
+            <button type="button" className="ld-open-x l-focus" aria-label={`Close ${name}`} title="Close: the design stays" onClick={(e) => (e.stopPropagation(), close(k))}>
+              <I.close size={12} />
+            </button>
           </div>
         );
       })}
-    </div>
-      {/* Outside the strip that scrolls, so it's always there. */}
-      <button type="button" className="ld-tab-new l-focus" aria-label="New design" title={`New design (${keys("mod+n")})`} onClick={() => void newDesign().catch(fail)}>
-        <I.plus size={16} />
-      </button>
+      {rest.length > 0 && (
+        <button type="button" className="ld-tr ld-open-more l-focus" data-rest onClick={() => setAll(true)} title={rest.map(nameOf).join(", ")}>
+          <span className="ld-open-n">{rest.length} more</span>
+          <span className="ld-ell">{rest.slice(0, 2).map(nameOf).join(", ")}{rest.length > 2 ? "…" : ""}</span>
+          {rest.some((t) => sessionOf(t, threads)?.status === "running") && <span className="ld-pd" data-lead aria-label="An agent is drawing in one of them" />}
+        </button>
+      )}
+      {folds && all && (
+        <button type="button" className="ld-tr ld-open-more l-focus" data-rest onClick={() => setAll(false)}>
+          <span className="ld-ell">Show fewer</span>
+        </button>
+      )}
     </div>
   );
+}
+
+/**
+  The top row's name of what shows (Home, or the design), and a menu of the open designs under it:
+  the way between them while the sidebar is hidden. ⌃Tab and ⇧⌃Tab go through them too (useTabKeys).
+*/
+export function TabTitle() {
+  const { list, at } = useTabs();
+  const threads = useEngine((s) => s.threads);
+  const here = list.find((t) => tabKey(t) === at);
+  const name = here ? nameOf(here) : "Home";
+  return (
+    <Pop label={`${name}: the open designs`} width={300} triggerClass="ld-tt" trigger={<><span className="ld-ell">{name}</span><I.chevD size={12} /></>} menu>
+      {(done) => (
+        <>
+          <Row title="Home" icon={<I.home size={14} />} on={!here} keepIcon onPick={() => (done(), showTab(HOME_TAB))} />
+          {list.map((t) => {
+            const k = tabKey(t);
+            const busy = sessionOf(t, threads)?.status === "running";
+            return <Row key={k} title={nameOf(t)} icon={<D.frame size={14} />} on={k === at} keepIcon end={busy ? <span className="ld-pd" data-lead aria-label="An agent is drawing here" /> : undefined} onPick={() => (done(), showTab(k))} />;
+          })}
+          <Sep />
+          <Row title="New design" icon={<I.plus size={14} />} end={<span className="ld-k">{keys("mod+n")}</span>} onPick={() => (done(), void newDesign().catch(fail))} />
+          {list.length > 1 && <p className="ld-note ld-tt-note">{keys("ctrl+tab")} goes to the next design</p>}
+        </>
+      )}
+    </Pop>
+  );
+}
+
+/** ⌃Tab and ⇧⌃Tab: the next and the last of Home and the open designs, round. Heard while Liner Design shows. */
+export function useTabKeys() {
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || !e.ctrlKey || e.metaKey || e.altKey) return;
+      const { list, at } = getTabs();
+      const ring = [HOME_TAB, ...list.map(tabKey)];
+      const i = Math.max(0, ring.indexOf(at));
+      e.preventDefault();
+      e.stopPropagation();
+      showTab(ring[(i + (e.shiftKey ? -1 : 1) + ring.length) % ring.length]);
+    };
+    addEventListener("keydown", on, true);
+    return () => removeEventListener("keydown", on, true);
+  }, []);
 }
 
 /** "Liner Designs / sign-in-screen": where a design on its own is, said short. */

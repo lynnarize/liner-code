@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.2.8 (beta), 2026-11-17
+
+Update from 0.2.7: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;
+on Windows, run the new setup. **A see-through window** on a Mac, with your desktop behind the app.
+**A compact Home and a one-page first launch.** **The sidebar on one grid**, its name at the foot and
+**Carry on** in a panel of its own. **Icons at one line weight.**
+
+### Added
+
+- **A see-through window (Mac only):** Settings › Appearance › Background has Desktop beside None and
+  the pictures: the window turns clear, and your wallpaper and windows show behind the app. Shows
+  through sets how much comes through, kept low enough that text stays readable over any wallpaper;
+  Blur the desktop softens it, and is off by default since it costs the graphics card more. Menus,
+  popovers and dialogs stay solid, full screen goes solid, and with the Mac's Reduce transparency on
+  the window stays solid.
+- **Carry on:** one row at the top of the sidebar's list, with a count, opens a panel beside it with
+  work to pick up here: changes not committed, and Claude Code and Codex sessions not brought in yet.
+- **Open designs in the sidebar:** Liner Design lists the designs you have open at the top of the
+  sidebar, under Home, the rest folded into "N more" past five. The top row's name opens a menu of
+  them, and ⌃Tab and ⇧⌃Tab go round them. They replace the tab strip, which scrolled.
+
+### Changed
+
+- **Home:** the project's name opens a small picker, one project to a line, the last used first with
+  its folder after the name, and Add folder, From GitHub and Find on this Mac under them. Pick up and
+  the Desk are gone from Home; Liner Design keeps its Pick up.
+- **First launch is one page:** agents, projects and who works, then Start. The API keys still to
+  come are in Settings only.
+- **OpenCode Go's models are listed once:** when OpenCode itself has OpenCode Go, the same models
+  through Hermes are left out of every list and never picked for you. Saved picks still stand.
+- **The sidebar:** the top row holds only Hide, Back and Forward; the name, "Liner" and the face, sits
+  at the foot and opens the Code and Design switch. The list is on one grid with the nav, rows are two
+  lines, and Sort and + show while you're in the sidebar.
+- **Icons** are drawn at one line weight for their size, the spinner is a ring, and Liner's own two
+  turns stand where the AI sparkle meant an agent.
+- **The Plan list** reads as a sequence: one mark per step with a rail between them, the step at work
+  brightest, and "Stopped at N of M" for a run you stopped or that failed.
+- **Stop** is no longer a second red button beside Send.
+
+### Fixed
+
+- In Liner Design, selecting a layer of a design built on Liner UI crashed the inspector: it couldn't
+  read oklch() and lab() colours.
+- Words blinked while an agent drew a frame in pieces, as the page's own entrance played again on
+  each piece.
+- The Background card left a tall empty space under its tiles.
+- Menus such as the one at the sidebar's foot opened a line off.
+- A design's Close button in the sidebar opened the design when pressed from the keyboard.
+- Home's project picker now moves with the arrow keys, and Enter picks the first match.
+
 ## 0.2.7 (beta), 2026-11-16
 
 Update from 0.2.6: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;

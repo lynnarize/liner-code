@@ -72,7 +72,7 @@ const boot = { base: "", token: "", machine: "This Mac", user: "" };
   `port` is asked for again at the next launch: the page's address includes it, and what the
   page keeps (folds, choices) is kept per address, so a new port each launch would forget it all.
 */
-type Prefs = { material?: string; bounds?: Rectangle; maximized?: boolean; port?: number };
+type Prefs = { material?: string; ground?: string; bounds?: Rectangle; maximized?: boolean; port?: number };
 const prefsFile = () => join(app.getPath("userData"), "shell.json");
 let prefs: Prefs = {};
 let saveTimer: NodeJS.Timeout | undefined;
@@ -112,7 +112,8 @@ function visibleBounds(b?: Rectangle) {
 // puts them there too (AppDelegate.swift, placeLights).
 const LIGHTS = { x: 20, y: 21 };
 // The line sits where the page's own boot screen keeps it, under the name, so it doesn't jump when that loads.
-const BOOT_PAGE = `<html><body style="margin:0;height:100vh;background:transparent;font:13px -apple-system,system-ui,sans-serif;color:#8a8f98"><span style="position:fixed;top:calc(50% + 30px);left:50%;translate:-50% 0;white-space:nowrap">Starting the engine</span></body></html>`;
+// Over the desktop (a see-through window) it's on a tint of the window's colour, as the page will be, not on nothing.
+const bootPage = (ground: string) => `<html><body style="margin:0;height:100vh;background:${ground};font:13px -apple-system,system-ui,sans-serif;color:#8a8f98"><span style="position:fixed;top:calc(50% + 30px);left:50%;translate:-50% 0;white-space:nowrap">Starting the engine</span></body></html>`;
 
 let material = "solid";
 let glassRect: Frame = { x: 0, y: 0, width: 0, height: 0 };
@@ -126,17 +127,27 @@ function windowColor() {
   return nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#ececec";
 }
 
+/** The window turned see-through, the desktop behind the whole app (Settings, Appearance, Background: Desktop). */
+const seeThrough = (m: string) => m === "clear" || m === "frost";
+
 /**
-  What sits behind the transparent page: Liquid Glass (macOS 26+), classic vibrancy, or solid.
-  With the addon the window stays opaque and the material covers the window's glass frame alone,
-  the paper left out of it (a live material behind the whole window kept WindowServer's GPU
-  busy). Without it, Electron's own vibrancy covers the whole window.
+  What sits behind the transparent page: Liquid Glass (macOS 26+), classic vibrancy, solid, or
+  the desktop itself, crisp (clear) or blurred (frost). With the addon the window stays opaque and
+  the material covers the window's glass frame alone, the paper left out of it (a live material
+  behind the whole window kept WindowServer's GPU busy); for clear and frost it lets the window go
+  transparent, the page tinting itself, with nothing behind it or a blur behind it all. Without
+  the addon, Electron's own vibrancy covers the whole window. Clear and frost need the addon: the
+  window is made opaque, and Electron alone left it black behind the page, vibrancy or not, so
+  there they're solid, and the page doesn't offer Desktop (boot's `clear`).
 */
 function applyMaterial() {
   if (!win || !isMac) return;
-  if (mac) return mac.backdrop(win.getNativeWindowHandle(), material, glassRect);
-  win.setVibrancy(material === "solid" ? null : "sidebar");
-  if (material === "solid") win.setBackgroundColor(windowColor());
+  // Full screen puts the window in a space of its own, with nothing of the desktop behind it (a
+  // clear window shows the space's black there), so see-through is solid until it leaves.
+  if (mac) return mac.backdrop(win.getNativeWindowHandle(), seeThrough(material) && win.isFullScreen() ? "solid" : material, glassRect);
+  const solid = material === "solid" || seeThrough(material);
+  win.setVibrancy(solid ? null : "sidebar");
+  if (solid) win.setBackgroundColor(windowColor());
 }
 
 /**
@@ -214,9 +225,11 @@ function createWindow() {
     app.focus({ steal: true });
   });
   wc.on("did-finish-load", syncLights);
-  win.on("enter-full-screen", syncLights);
+  // The material again on the way in and out of full screen: a see-through window is solid while
+  // it's full screen (applyMaterial).
+  win.on("enter-full-screen", () => (syncLights(), applyMaterial()));
   // Electron puts the lights back only after the window has left full screen.
-  win.on("leave-full-screen", () => setTimeout(syncLights, 300));
+  win.on("leave-full-screen", () => (setTimeout(syncLights, 300), applyMaterial()));
   const keepFrame = () => {
     if (!win || win.isFullScreen()) return;
     prefs.maximized = win.isMaximized();
@@ -345,7 +358,8 @@ const frameOf = (p: Record<string, unknown>): Frame => {
 };
 
 ipcMain.on("liner:boot", (e) => {
-  e.returnValue = { ...boot, platform: process.platform, lights: lights() };
+  // clear: the window can turn see-through (the Mac addon is there), so the page offers Desktop.
+  e.returnValue = { ...boot, platform: process.platform, lights: lights(), clear: Boolean(mac) };
 });
 
 ipcMain.handle("liner", async (e, method: unknown, params: unknown) => {
@@ -483,8 +497,12 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       return;
     case "setMaterial": {
       const m = str(p.material);
-      material = m === "vibrancy" || m === "solid" ? m : "glass";
+      material = m === "vibrancy" || m === "solid" || seeThrough(m) ? m : "glass";
       prefs.material = material;
+      // The see-through page's ground, for the next launch's boot screen: a CSS colour, kept to
+      // the characters one needs, since it goes into that page as it is.
+      const g = str(p.ground);
+      prefs.ground = seeThrough(material) && g.length <= 160 && /^[\w\s.,%()#-]+$/.test(g) ? g : undefined;
       savePrefs();
       return applyMaterial();
     }
@@ -838,7 +856,7 @@ function setDockIcon() {
 }
 
 nativeTheme.on("updated", () => {
-  if (win && !mac && material === "solid") win.setBackgroundColor(windowColor());
+  if (win && !mac && (material === "solid" || seeThrough(material))) win.setBackgroundColor(windowColor());
   setDockIcon();
 });
 
@@ -864,7 +882,8 @@ void app.whenReady().then(async () => {
     void win?.loadURL(devUrl);
     return;
   }
-  void win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(BOOT_PAGE)}`);
+  // Over the desktop, the ground the page last painted (its tint and blur), so the page takes over without a jump.
+  void win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(bootPage(mac && seeThrough(material) ? (prefs.ground ?? `${windowColor()}99`) : "transparent"))}`);
   const paths = resources();
   if (!paths) return fail("Liner Code can't find its engine. Reinstall the app.");
   const [env, own] = await Promise.all([loginEnvironment(), keys.all().catch(() => ({}))]);

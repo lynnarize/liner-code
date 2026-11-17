@@ -36,7 +36,7 @@ import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./theme
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
-import { applyLook, entering, LOOK_DEFAULT, LOOK_KEY, readLook, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
+import { applyLook, DESK_SHOW, entering, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -200,7 +200,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
       localStorage.setItem("lc:enter", "queue");
     },
     // The parts LOOK_DEFAULT has no word for (your own theme, colours and picture) go too, or they'd stay on.
-    appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined }),
+    appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined, bgFrost: undefined }),
     notifications: () => {
       save({ notify: true, badge: true, menuBar: true });
       feedback.setEnabled(false);
@@ -730,12 +730,14 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
 /** The window in miniature, in the look you're choosing: one ground, a card, the composer. */
 function Preview({ look }: { look: Look }) {
   const bg = useBackgroundUrl(look.background);
-  const vars = bg ? ({ "--lc-pv-bg": `url("${bg}")`, "--lc-pv-blur": `${Math.round((look.bgBlur ?? 28) * 0.3)}px`, "--lc-pv-show": String(look.bgShow ?? 0.45) } as CSSProperties) : undefined;
+  // Desktop: the window drawn over a see-through check, in its tints.
+  const desk = onDesktop(look);
+  const vars = bg ? ({ "--lc-pv-bg": `url("${bg}")`, "--lc-pv-blur": `${Math.round((look.bgBlur ?? 28) * 0.3)}px`, "--lc-pv-show": String(look.bgShow ?? 0.45) } as CSSProperties) : desk ? ({ "--lc-pv-see": String(look.bgShow ?? DESK_SHOW) } as CSSProperties) : undefined;
   const mode = look.theme === "system" ? "Matches the system" : look.theme === "dark" ? "Dark" : "Light";
   const accent = look.accent === "own" ? "your own colour" : look.accent;
   return (
     <div className="lc-st-preview" aria-hidden>
-      <div className="lc-pv-win" style={vars}>
+      <div className="lc-pv-win" style={vars} data-desk={desk || undefined}>
         <div className="lc-pv-side">
           <span className="lc-pv-lights">
             <i />
@@ -944,11 +946,22 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           <NamedSwitch name="Bring the panel up when an agent shows one" checked={look.designsAuto} disabled={look.designs === "chat"} onCheckedChange={(designsAuto) => set({ designsAuto })} />
         </Field>
       </Group>
-      <Group title="Background" note="A picture behind the session, blurred and under a wash, so the work stays easy to read. The sidebar never shows it.">
-        <Field title="Picture" below>
+      <Group title="Background" note="A picture behind the session, blurred and under a wash so the work stays easy to read, or the desktop itself behind the whole window.">
+        <Field title="Behind the work" below>
           <Backgrounds value={look.background ?? "none"} onPick={(background) => set({ background })} />
         </Field>
-        {look.background && look.background !== "none" && (
+        {look.background === "desktop" ? (
+          seeThrough() && (
+            <>
+              <Field title="Shows through" note="How much of the desktop comes through the sidebar and the page.">
+                <Slider label="Shows through" min={15} max={75} step={5} unit="%" marks={false} value={Math.round((look.bgShow ?? DESK_SHOW) * 100)} onValueChange={(v) => set({ bgShow: v / 100 })} />
+              </Field>
+              <Field title="Blur the desktop" note="Softens what's behind into colour, so it doesn't compete with the text. It costs the graphics card more whenever something moves behind the window.">
+                <NamedSwitch name="Blur the desktop" checked={look.bgFrost === true} onCheckedChange={(bgFrost) => set({ bgFrost })} />
+              </Field>
+            </>
+          )
+        ) : look.background && look.background !== "none" && (
           <>
             <Field title="Blur" note="Softer keeps the eye on the work.">
               <Slider label="Blur" min={8} max={48} step={2} unit="px" marks={false} value={look.bgBlur ?? 28} onValueChange={(bgBlur) => set({ bgBlur })} />
@@ -964,21 +977,24 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
   );
 }
 
-/** One picture as a tile. */
-function BgTile({ id, label, on, onPick, children }: { id: string; label: string; on: boolean; onPick: () => void; children?: ReactNode }) {
-  const url = useBackgroundUrl(id === "none" ? undefined : id);
+/** One picture as a tile; None and Desktop draw their own. `off`: it can't be picked here, and says why. */
+function BgTile({ id, label, on, onPick, children, off }: { id: string; label: string; on: boolean; onPick: () => void; children?: ReactNode; off?: string }) {
+  const url = useBackgroundUrl(id);
   return (
-    <button type="button" role="radio" aria-checked={on} aria-label={label} title={label} className="lc-bgs-t l-focus" data-on={on || undefined} data-id={id} onClick={onPick}>
+    <button type="button" role="radio" aria-checked={on} aria-label={label} aria-disabled={off ? true : undefined} title={off ?? label} className="lc-bgs-t l-focus" data-on={on || undefined} data-id={id} onClick={off ? undefined : onPick}>
       {url ? <img src={url} alt="" draggable={false} /> : children}
     </button>
   );
 }
 
-/** None, your own picture, and the landscapes this Mac keeps; a new picture of your own from a file. */
+/** None, the desktop behind the window, your own picture, and the landscapes this Mac keeps; a new picture of your own from a file. */
 function Backgrounds({ value, onPick }: { value: string; onPick: (id: string) => void }) {
   const [list, setList] = useState<{ pictures: { id: string; name: string }[]; own: boolean } | null>(null);
   const [n, setN] = useState(0);
   const [busy, setBusy] = useState(false);
+  const desk = seeThrough();
+  // Where Desktop can't be picked, why: the Mac app without its addon (a build from source without Node's headers), or not the Mac app.
+  const why = window.linerShell?.platform === "darwin" ? "isn't available in this build" : "is only in the Mac app";
   useEffect(() => {
     void rpc("background.list", {})
       .then(setList)
@@ -1011,19 +1027,24 @@ function Backgrounds({ value, onPick }: { value: string; onPick: (id: string) =>
       .catch(fail);
   return (
     <div className="lc-bgs">
-      <div className="lc-bgs-grid" role="radiogroup" aria-label="Background picture">
-        <BgTile id="none" label="None" on={value === "none"} onPick={() => onPick("none")}>
-          <span className="lc-bgs-none">None</span>
+      <div className="lc-bgs-grid" role="radiogroup" aria-label="Behind the work">
+        <BgTile id="none" label="None" on={value === "none" || (value === "desktop" && !desk)} onPick={() => onPick("none")}>
+          None
+        </BgTile>
+        <BgTile id="desktop" label="Desktop" on={value === "desktop" && desk} onPick={() => onPick("desktop")} off={desk ? undefined : `Desktop ${why}`}>
+          <span className="lc-bgs-desk" />
+          <span>Desktop</span>
         </BgTile>
         {list?.own && <BgTile id="own" label="Your picture" on={value === "own"} onPick={() => onPick("own")} />}
         {list?.pictures.map((p) => <BgTile key={p.id} id={p.id} label={p.name} on={value === p.id} onPick={() => onPick(p.id)} />)}
         <label className="lc-bgs-t lc-bgs-add l-focus-within" title="A picture of your own" data-busy={busy || undefined}>
           <input type="file" aria-label="A picture of your own" accept="image/jpeg,image/png,image/heic,image/heif,image/tiff,image/gif,image/webp" onChange={(e) => (e.target.files?.[0] && add(e.target.files[0]), (e.target.value = ""))} />
-          {busy ? <span className="l-shimmer">Adding</span> : <I.plus size={14} />}
+          {busy ? <span className="l-shimmer">Adding</span> : <I.plus size={16} />}
         </label>
       </div>
       <p className="lc-bgs-note">
         {list && !list.pictures.length ? "Add a picture of your own with +." : "Photos from this Mac's Desktop Pictures, or your own with +."}
+        {desk ? " Desktop makes the window see-through." : ` Desktop, a see-through window, ${why}.`}
         {list?.own && (
           <>
             {" "}

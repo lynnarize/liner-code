@@ -5,11 +5,12 @@
   Appearance is the paper's alone, blurred under a white wash so the work stays easy to read; the
   sidebar never shows it. Pictures come from the engine as JPEGs and are kept as blob URLs for the
   life of the page; a picture of your own you replace is let go. A fetch that fails isn't kept, so
-  it's asked again once the engine is back.
+  it's asked again once the engine is back. Desktop, chosen in its place, has no picture: the window
+  itself turns see-through and the ground and paper become tints (look.ts, applyLook; app.css).
 */
 import { useEffect, useState, type CSSProperties } from "react";
 import { rpc, useEngine } from "./engine";
-import { readLook, type Look } from "./look";
+import { onDesktop, readLook, type Look } from "./look";
 
 const urls = new Map<string, Promise<string | null>>();
 let ownVersion = 0;
@@ -49,7 +50,8 @@ export function useBackgroundUrl(id?: string) {
     return () => window.removeEventListener("lc:bg-own", on);
   }, []);
   useEffect(() => {
-    if (!id || id === "none") return setUrl(null);
+    // None and Desktop have no picture to fetch.
+    if (!id || id === "none" || id === "desktop") return setUrl(null);
     let live = true;
     void backgroundUrl(id, dark).then((u) => live && setUrl(u));
     return () => {
@@ -70,14 +72,17 @@ export function useLook() {
   return look;
 }
 
-/** Says on <html> whether a picture is behind the session. */
+/** Says on <html> whether a picture is behind the session; the desktop behind the window is applyLook's (look.ts). */
 export function Scene() {
   const look = useLook();
   const url = useBackgroundUrl(look.background);
+  const desk = onDesktop(look);
   useEffect(() => {
+    if (desk) return;
     // The session's own surfaces turn see-through only while a picture is behind them.
-    document.documentElement.toggleAttribute("data-bg", Boolean(url));
-  }, [url]);
+    if (url) document.documentElement.dataset.bg = "";
+    else delete document.documentElement.dataset.bg;
+  }, [url, desk]);
   return null;
 }
 

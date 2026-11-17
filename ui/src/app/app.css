@@ -305,6 +305,31 @@ html[data-bg] .lc-panel {
     animation: none;
   }
 }
+/* The desktop behind the window (Background: Desktop, the Mac app only). The window itself is
+   clear (desktop/native/mac.mm), so the ground and the paper turn to tints of their own colours,
+   --lc-see of the desktop coming through them. The paper is a lighter tint laid over the ground's,
+   so it stays a step steadier than the sidebar, where the reading is. What opens over the window
+   (menus, popovers, dialogs) keeps its solid surface. No backdrop-filter here: the blur, when it's
+   on, is the window's own material, which macOS draws. */
+html[data-bg="desktop"],
+html[data-bg="desktop"] body {
+  background: transparent;
+}
+html[data-bg="desktop"] :is(.lc-app, .lc-boot) {
+  background: color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-see)) * 100%), transparent);
+}
+html[data-bg="desktop"] .lc-paper {
+  background: color-mix(in oklab, var(--lc-paper) calc((1 - var(--lc-see)) * 60%), transparent);
+}
+/* Blurred, the window's material already lays a tint of its own over the desktop (macOS's
+   under-window grey), so the page's tints are lighter, or the desktop barely came through even at 75%. */
+/* 55% and 35%: FROST_GROUND in look.ts, which gives the shell's boot screen the same ground. */
+html[data-bg="desktop"][data-frost] :is(.lc-app, .lc-boot) {
+  background: color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-see)) * 55%), transparent);
+}
+html[data-bg="desktop"][data-frost] .lc-paper {
+  background: color-mix(in oklab, var(--lc-paper) calc((1 - var(--lc-see)) * 35%), transparent);
+}
 /*
   In the Electron shell the window moves by regions the page marks (the Swift shell was asked on
   each press instead): the bars marked data-drag move it, and anything in them you press, read
@@ -6556,9 +6581,12 @@ html[data-native="mac"] .lc-lockup {
   box-sizing: border-box;
   padding: 10px 0;
 }
+/* The words over the control, as a one-track grid, not a column flexbox: a column flexbox sized
+   the control from a measure taken at another width, so a grid that wraps (the background
+   pictures) came out rows taller than it was drawn, and the card kept the difference as empty space. */
 .lc-st-row[data-below] {
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 16px 0 18px;
 }
@@ -6926,6 +6954,16 @@ html[data-native="mac"] .lc-lockup {
   inset: 0;
   background: color-mix(in oklab, var(--lc-paper) calc((1 - var(--lc-pv-show, 0.45)) * 100%), transparent);
 }
+/* Desktop in miniature: the ground and the paper as their see-through tints over a check, the
+   usual sign for "what's behind shows here" (the real tints: html[data-bg="desktop"]). */
+.lc-pv-win[data-desk] {
+  background:
+    linear-gradient(color-mix(in oklab, var(--lc-ground) calc((1 - var(--lc-pv-see)) * 100%), transparent) 0 0),
+    repeating-conic-gradient(color-mix(in oklab, var(--l-ink) 14%, transparent) 0 25%, transparent 0 50%) 0 0 / 12px 12px;
+}
+.lc-pv-win[data-desk] .lc-pv-paper {
+  background: color-mix(in oklab, var(--lc-paper) calc((1 - var(--lc-pv-see)) * 60%), transparent);
+}
 .lc-pv-you {
   align-self: flex-end;
   width: 90px;
@@ -6967,15 +7005,19 @@ html[data-native="mac"] .lc-lockup {
     animation: none;
   }
 }
-/* Background pictures: small tiles, the chosen one ringed in the accent. */
+/* Background: None, Desktop and the pictures as tiles a picker's size (about 100px wide), so the
+   photos don't make a wall of the page. Each tile's edge, and the accent ring of the chosen one,
+   is drawn inside the tile on a layer over the picture (an inset shadow on the tile itself is
+   painted under its image): a ring outside made the picked tile bigger than the rest and broke
+   the grid's edges. */
 .lc-bgs {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   width: 100%;
 }
 .lc-bgs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 8px;
 }
 .lc-bgs-t {
@@ -6988,10 +7030,25 @@ html[data-native="mac"] .lc-lockup {
   border: 0;
   border-radius: 10px;
   background: var(--lc-well);
-  box-shadow: inset 0 0 0 1px var(--lc-hair);
   color: var(--l-ink-3);
   cursor: pointer;
-  transition: box-shadow 160ms ease;
+  transition:
+    translate 160ms var(--l-ease-out),
+    box-shadow 160ms ease;
+}
+.lc-bgs-t::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--lc-hair);
+  pointer-events: none;
+}
+/* The accent, with a line of the paper inside it so it holds against a blue picture. */
+.lc-bgs-t[data-on]::after {
+  box-shadow:
+    inset 0 0 0 2px var(--l-accent),
+    inset 0 0 0 3px var(--lc-paper);
 }
 .lc-bgs-t > img {
   width: 100%;
@@ -6999,23 +7056,41 @@ html[data-native="mac"] .lc-lockup {
   object-fit: cover;
   animation: lc-bg-in 400ms var(--l-ease-out) backwards;
 }
-.lc-bgs-t[data-on] {
-  box-shadow:
-    0 0 0 2px var(--l-surface),
-    0 0 0 4px var(--l-accent);
-}
+/* A lift on hover, moved rather than resized, so nothing round it shifts. */
 @media (hover: hover) {
-  .lc-bgs-t:not([data-on]):hover {
-    box-shadow: inset 0 0 0 1px var(--l-line-3, var(--l-line-2)), 0 1px 3px var(--l-drop);
+  .lc-bgs-t:not([data-on], [aria-disabled="true"]):hover {
+    translate: 0 -1px;
+    box-shadow: 0 2px 6px -1px var(--l-drop);
   }
 }
-.lc-bgs-none {
+/* None and Desktop are the paper itself, with their name: no picture. */
+.lc-bgs-t:is([data-id="none"], [data-id="desktop"]) {
+  align-content: center;
+  gap: 5px;
+  background: var(--lc-paper);
   font-size: 12px;
   font-weight: 500;
 }
+/* Desktop: a small window over a see-through check, the usual sign for "nothing behind this". */
+.lc-bgs-desk {
+  width: 46px;
+  height: 26px;
+  border-radius: 4px;
+  background: repeating-conic-gradient(var(--lc-hair) 0 25%, transparent 0 50%) 0 0 / 6px 6px;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+}
+.lc-bgs-t[aria-disabled="true"] {
+  cursor: default;
+}
+.lc-bgs-t[aria-disabled="true"] > * {
+  opacity: 0.5;
+}
 .lc-bgs-add:not([data-on]) {
   background: none;
-  box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
+}
+.lc-bgs-add:not([data-on])::after {
+  box-shadow: none;
+  border: 1px dashed var(--l-ink-5);
 }
 .lc-bgs-add > input {
   position: absolute;
@@ -7027,10 +7102,11 @@ html[data-native="mac"] .lc-lockup {
   pointer-events: none;
   font-size: 12px;
 }
+/* As a Field's own note. */
 .lc-bgs-note {
   margin: 0;
-  font-size: 12px;
-  line-height: 17px;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--l-ink-3);
 }
 .lc-swatches {

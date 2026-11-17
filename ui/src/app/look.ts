@@ -15,7 +15,9 @@ import { clearTheme, inkOn, readThemes, varsOf } from "./themes";
   `action`: the colour of the most important buttons (Send, Commit and push, a card's main button):
   red, the accent, ink, or `actionColor` when it's "own".
   `background`: the picture behind the session ("apple:<name>", "own", or none), with how much it's
-  blurred (px) and how much of it shows through (0 to 1).
+  blurred (px) and how much of it shows through (0 to 1). Or "desktop": no picture, the window
+  itself see-through, so the Mac's wallpaper and windows show behind the whole app; `bgShow` is
+  then how much of the desktop comes through, and `bgFrost` (off unless true) blurs it.
   `motion`: Full plays every view's way in each time it opens; Quick shows a view you open as it is
   and keeps the motion for what arrives while you watch. The system's Reduce motion stops both.
 */
@@ -23,7 +25,7 @@ export type Glass = "clear" | "tinted" | "solid";
 export type ActionColour = "red" | "accent" | "ink" | "own";
 export type DesignsWhere = "panel" | "chat";
 export type Motion = "full" | "quick";
-export type Look = { theme: "light" | "dark" | "system"; accent: string; composer: Glass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; motion: Motion; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; v?: number };
+export type Look = { theme: "light" | "dark" | "system"; accent: string; composer: Glass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; motion: Motion; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; bgFrost?: boolean; v?: number };
 export const LOOK_KEY = "liner-code:look";
 const MOTIONS: Motion[] = ["full", "quick"];
 export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", composer: "tinted", designs: "panel", designsAuto: true, action: "red", motion: "quick" };
@@ -43,6 +45,24 @@ export const readLook = (): Look => {
   if (!MOTIONS.includes(look.motion)) look.motion = LOOK_DEFAULT.motion;
   return look;
 };
+
+/**
+  Whether the window can be see-through: only the Mac app's Electron shell, with its addon, can
+  turn its window clear (desktop/native/mac.mm), and it says so (preload.ts, `clear`). In a
+  browser, on Windows, or in a shell without the addon, Desktop is shown but can't be picked.
+*/
+export const seeThrough = () => window.linerShell?.clear === true;
+/** How much of the desktop comes through when nothing's been chosen: enough to see it, not so much a busy wallpaper fights the text. */
+export const DESK_SHOW = 0.4;
+/** The look shows the desktop behind the window, where it can. */
+export const onDesktop = (l: Look) => l.background === "desktop" && seeThrough();
+/** Blurred, the window's own material tints the desktop already, so the page's tints are this much of what they'd be (app.css, data-frost). */
+const FROST_GROUND = 0.55;
+/**
+  The see-through window's ground as one colour: what the page paints round the paper, and what
+  the shell's boot screen paints before the page is there, so the hand-over doesn't jump.
+*/
+const deskGround = (l: Look) => `color-mix(in oklab, ${getComputedStyle(document.documentElement).getPropertyValue("--lc-ground").trim()} ${Math.round((1 - (l.bgShow ?? DESK_SHOW)) * (l.bgFrost === true ? FROST_GROUND : 1) * 100)}%, transparent)`;
 
 // The colours last put on the page, so a change of theme or accent can land in one frame.
 let painted = "";
@@ -85,7 +105,20 @@ export function applyLook(l: Look) {
     delete h.dataset.still;
   }
   bridge.setAppearance(own ? own.base : l.theme);
-  bridge.setMaterial("solid");
+  // The window is solid, or clear with the desktop behind it (crisp unless you asked for the blur).
+  // The ground and the paper turn to tints of themselves here, at once, rather than when the
+  // backdrop's component catches up (Backdrop.tsx, Scene, says the same for a picture).
+  // (ui/index.html sets the same three before the first paint, so the page doesn't flash opaque.)
+  const desk = onDesktop(l);
+  if (desk) {
+    h.dataset.bg = "desktop";
+    h.style.setProperty("--lc-see", String(l.bgShow ?? DESK_SHOW));
+  } else {
+    if (h.dataset.bg === "desktop") delete h.dataset.bg;
+    h.style.removeProperty("--lc-see");
+  }
+  h.toggleAttribute("data-frost", desk && l.bgFrost === true);
+  bridge.setMaterial(!desk ? "solid" : l.bgFrost === true ? "frost" : "clear", desk ? deskGround(l) : undefined);
   // The backdrop behind the session follows along.
   window.dispatchEvent(new CustomEvent("lc:look", { detail: l }));
 }

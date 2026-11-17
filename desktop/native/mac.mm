@@ -55,6 +55,10 @@ static napi_value undefinedValue(napi_env env) {
   paper. A live material behind the whole window kept WindowServer's GPU busy whenever anything
   behind it moved, so Electron's own full-window vibrancy view, which only serves to make the
   page transparent, stays hidden.
+  clear and frost are the desktop behind the whole window (Background: Desktop): the window turns
+  transparent and the page tints itself. clear has no material at all, so WindowServer only blends
+  the window over what's behind, which costs next to nothing; frost puts a blur behind the whole
+  window, no hole, and that one does cost the GPU whenever something behind it moves.
 */
 static NSImage* frameMask(NSSize size, NSRect hole, CGFloat radius) {
   return [NSImage imageWithSize:size flipped:YES drawingHandler:^BOOL(NSRect r) {
@@ -87,8 +91,16 @@ static napi_value Backdrop(napi_env env, napi_callback_info info) {
     radius = numberOf(env, h, "radius");
   }
 
-  window.opaque = YES;
-  window.backgroundColor = NSColor.windowBackgroundColor;
+  BOOL frost = [material isEqualToString:@"frost"];
+  BOOL see = frost || [material isEqualToString:@"clear"];
+  BOOL turned = window.opaque == see;
+  window.opaque = !see;
+  window.backgroundColor = see ? NSColor.clearColor : NSColor.windowBackgroundColor;
+  // A clear window's shadow follows what's drawn in it, which changes with the page's tint, blur or
+  // none, and the opacity itself: worked out again a moment after each call, once the page has
+  // painted, and once for a run of calls (a slider dragged sends one per step).
+  [NSObject cancelPreviousPerformRequestsWithTarget:window selector:@selector(invalidateShadow) object:nil];
+  if (see || turned) [window performSelector:@selector(invalidateShadow) withObject:nil afterDelay:0.25];
   NSView* ours = nil;
   for (NSView* v in content.subviews) {
     if ([v.identifier hasPrefix:kBackdrop]) ours = v;
@@ -96,9 +108,9 @@ static napi_value Backdrop(napi_env env, napi_callback_info info) {
   }
   // Liquid Glass needs macOS 26; before that it's vibrancy.
   Class glassClass = NSClassFromString(@"NSGlassEffectView");
-  BOOL live = [material isEqualToString:@"vibrancy"] || [material isEqualToString:@"glass"];
+  BOOL live = frost || [material isEqualToString:@"vibrancy"] || [material isEqualToString:@"glass"];
   BOOL glass = [material isEqualToString:@"glass"] && glassClass != nil;
-  NSString* kind = [kBackdrop stringByAppendingString:glass ? @".glass" : @".vibrancy"];
+  NSString* kind = [kBackdrop stringByAppendingString:frost ? @".frost" : glass ? @".glass" : @".vibrancy"];
   if (ours && (!live || ![ours.identifier isEqualToString:kind])) {
     [ours removeFromSuperview];
     ours = nil;
@@ -108,9 +120,11 @@ static napi_value Backdrop(napi_env env, napi_callback_info info) {
   NSVisualEffectView* fx = nil;
   if (!ours) {
     fx = [[NSVisualEffectView alloc] init];
-    fx.material = NSVisualEffectMaterialSidebar;
+    fx.material = frost ? NSVisualEffectMaterialUnderWindowBackground : NSVisualEffectMaterialSidebar;
     fx.blendingMode = NSVisualEffectBlendingModeBehindWindow;
-    fx.state = NSVisualEffectStateFollowsWindowActiveState;
+    // The desktop stays blurred behind the window when it's in the background too: following the
+    // window's state would turn it to a flat grey whenever another app is in front.
+    fx.state = frost ? NSVisualEffectStateActive : NSVisualEffectStateFollowsWindowActiveState;
     ours = fx;
     if (glass) {
       // The vibrancy shows the desktop; the glass on top of it gives the rim and lensing.
@@ -124,6 +138,14 @@ static napi_value Backdrop(napi_env env, napi_callback_info info) {
     [content addSubview:ours positioned:NSWindowBelow relativeTo:nil];
   } else {
     fx = [ours isKindOfClass:NSVisualEffectView.class] ? (NSVisualEffectView*)ours : [ours valueForKey:@"contentView"];
+  }
+  if (frost) {
+    // The whole window, following its size, with nothing masked out.
+    ours.hidden = NO;
+    ours.frame = content.bounds;
+    ours.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    fx.maskImage = nil;
+    return undefinedValue(env);
   }
   CGFloat height = content.bounds.size.height;
   ours.hidden = r.size.width < 1 || r.size.height < 1;

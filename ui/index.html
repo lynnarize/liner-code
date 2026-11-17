@@ -17,6 +17,13 @@
           if (s.glass) h.style.setProperty("--l-glass-opacity", s.glass);
           // Motion too (look.ts): Quick unless the look says Full.
           h.dataset.motion = s.motion === "full" ? "full" : "quick";
+          // The desktop behind a see-through window (look.ts, applyLook): its tints from the first
+          // frame, or the page paints its opaque ground over the clear window until the app starts.
+          if (s.background === "desktop" && window.linerShell && window.linerShell.clear) {
+            h.dataset.bg = "desktop";
+            h.style.setProperty("--lc-see", String(typeof s.bgShow === "number" ? s.bgShow : 0.4));
+            if (s.bgFrost === true) h.setAttribute("data-frost", "");
+          }
         } catch (e) {}
         // The shell: Electron's preload put linerShell here; the Swift shell has a WebKit handler.
         var root = document.documentElement;

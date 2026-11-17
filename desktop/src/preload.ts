@@ -7,13 +7,15 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 type Lights = { x: number; y: number };
-type Boot = { base: string; token: string; machine: string; user: string; platform: string; lights: Lights };
+type Boot = { base: string; token: string; machine: string; user: string; platform: string; lights: Lights; clear: boolean };
 
 const boot = ipcRenderer.sendSync("liner:boot") as Boot;
 
 contextBridge.exposeInMainWorld("__LINER__", { base: boot.base, token: boot.token, machine: boot.machine, user: boot.user });
 contextBridge.exposeInMainWorld("linerShell", {
   platform: boot.platform,
+  /** The window can be see-through, the desktop behind the app (the Mac addon is there). */
+  clear: boot.clear,
   async call(method: string, params?: Record<string, unknown>) {
     const r = (await ipcRenderer.invoke("liner", method, params ?? {})) as { ok: boolean; value: unknown };
     if (!r.ok) throw new Error(String(r.value));

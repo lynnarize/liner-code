@@ -22,11 +22,12 @@ import { I } from "../icons";
 import { ago, codeProjects, plural } from "../model";
 import * as os from "../os";
 import { ProjectChooser } from "../Projects";
+import { SideLabel } from "../SideList";
 import { ContextMenu, Pop, Row, Sep } from "../ui";
 import { HomeLive } from "./Live";
 import { PicturesChip } from "./Pictures";
 import { D } from "./Rail";
-import { buildIn, close as closeTabHere, TabTitle } from "./Tabs";
+import { buildIn, close as closeTabHere, knowFrames, TabTitle } from "./Tabs";
 import { dropIfUntouched, knowProject, newDesign, runFor, sessionOf, sigOf, untouched } from "./session";
 import { design } from "./store";
 import "./design-face.css";
@@ -344,7 +345,12 @@ function relist() {
   clearTimeout(asking);
   asking = window.setTimeout(() => {
     void rpc("design.all", {}).then(
-      (l) => ((listed = l), listFns.forEach((f) => f())),
+      (l) => {
+        listed = l;
+        listFns.forEach((f) => f());
+        // What the open designs' rows say of them when nothing runs there (Tabs.tsx).
+        for (const x of l) for (const f of x.files) if (!f.unreadable) knowFrames(tabKey({ projectId: x.project.id, file: f.id }), f.frames);
+      },
       () => {},
     );
   }, 150);
@@ -394,8 +400,8 @@ function openDesign(project: Project, f: DesignFileInfo) {
   openTab(next);
 }
 
-/** The sidebar's body on Design Home: "New design", the filter, and every design, on their own first, then by project. */
-export function DesignFiles({ onSearch }: { onSearch: () => void }) {
+/** The sidebar's body on Design Home, under the places (New design is one of them): what it shows, the filter, and every design, on their own first, then by project. */
+export function DesignFiles() {
   const list = useListed();
   const threads = useEngine((s) => s.threads);
   const { list: tabs } = useTabs();
@@ -462,25 +468,13 @@ export function DesignFiles({ onSearch }: { onSearch: () => void }) {
   const rows: ReactNode[] = [];
   const ownFiles = own.flatMap((x) => x.files.filter(match).map((f) => [x.project, f] as const)).sort((a, b) => b[1].updated - a[1].updated);
   if ((show === "all" || show === "own") && ownFiles.length) {
-    rows.push(
-      <div key="own" className="lc-sb-lab ld-lab">
-        On their own
-        <span>{ownFiles.length}</span>
-      </div>,
-      ...ownFiles.map(([p, f]) => row(p, f)),
-    );
+    rows.push(<SideLabel key="own" name="On their own" count={ownFiles.length} />, ...ownFiles.map(([p, f]) => row(p, f)));
   }
   for (const x of inProjects) {
     if (show !== "all" && show !== x.project.id) continue;
     const files = x.files.filter(match);
     if (!files.length) continue;
-    rows.push(
-      <div key={`h${x.project.id}`} className="lc-sb-lab ld-lab">
-        {x.project.name}
-        <span>{files.length}</span>
-      </div>,
-      ...files.map((f) => row(x.project, f)),
-    );
+    rows.push(<SideLabel key={`h${x.project.id}`} name={x.project.name} count={files.length} />, ...files.map((f) => row(x.project, f)));
   }
   const shownName = show === "all" ? "All designs" : show === "own" ? "On their own" : (inProjects.find((x) => x.project.id === show)?.project.name ?? "All designs");
   const m = menu;
@@ -488,16 +482,6 @@ export function DesignFiles({ onSearch }: { onSearch: () => void }) {
   const folderOf = (p: Project, f: DesignFileInfo) => (p.kind === "design" ? p.path : `${p.path.replace(/\/+$/, "")}/.liner/designs/${f.id}`);
   return (
     <div className="ld-side">
-      <div className="lc-sb-navrow">
-        <button type="button" className="lc-sb-nav l-focus" onClick={() => void newDesign().catch(fail)}>
-          <I.plus size={16} />
-          <span>New design</span>
-          <kbd className="lc-sb-kbd">{os.keys("mod+n")}</kbd>
-        </button>
-        <button type="button" className="lc-ib l-focus" aria-label="Search sessions, projects and commands" onClick={onSearch}>
-          <I.search size={16} />
-        </button>
-      </div>
       <Pop label={`Show: ${shownName}`} width={240} triggerClass="ld-show" trigger={<><span>{shownName}</span><I.chevD size={12} /></>} menu>
         {(close) => (
           <>
@@ -514,7 +498,7 @@ export function DesignFiles({ onSearch }: { onSearch: () => void }) {
         <I.search size={14} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter designs" aria-label="Filter designs" />
       </label>
-      {list === null ? <div className="ld-none l-shimmer">Looking for designs</div> : rows.length ? rows : <div className="ld-none">{q ? "No design has that in its name." : "No designs yet. Say what to make on the right, or press New design."}</div>}
+      {list === null ? <div className="ld-none l-shimmer">Looking for designs</div> : rows.length ? <div className="lc-sl-list ld-files">{rows}</div> : <div className="ld-none">{q ? "No design has that in its name." : "No designs yet. Say what to make on the right, or press New design."}</div>}
       <ContextMenu at={m ? { x: m.x, y: m.y } : null} label={m ? `${m.file.title}: what to do with it` : "Design"} onClose={() => (setMenu(null), setSure(false), setChoose(false))} width={choose ? 400 : 260}>
         {(close) =>
           m && choose ? (

@@ -938,7 +938,7 @@
 
 /* ---------- 0.2.7, second pass ---------- */
 /* Add-ons is the fourth of the sidebar's top rows, 1px under The Wall like the others (the
-   approved mockup), and All projects sits 14 under it. Its menu's rows are 13 regular. */
+   approved mockup), with the Sessions heading under it. Its menu's rows are 13 regular. */
 .lc-sb-top + .lc-sb-apps {
   margin-top: -9px;
   padding: 0 0 4px;

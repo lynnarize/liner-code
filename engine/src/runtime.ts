@@ -18,7 +18,7 @@ import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, F
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
+import { ACCESS_NAMES, agentState, castOf, doingOf, type DoingCall, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
 import { capture, changedPaths, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { holders, killTree, markFile, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
@@ -38,7 +38,7 @@ import { fingerprint, type Addons, type Connection } from "./addons.ts";
 import { briefOf } from "./agents.ts";
 import { modeNote } from "./creator.ts";
 import { designNote, type DesignMark } from "./lean.ts";
-import { frameRevs, framesChanged } from "./canvas.ts";
+import { frameRevs, framesChanged, lookFile } from "./canvas.ts";
 import { memoryNote, titleFrom } from "./memory.ts";
 import { commandRisk, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
@@ -197,6 +197,10 @@ function commandOf(q: Pick<QueuedMessage, "text" | "files" | "anchor">) {
 export const READ_MS = 10 * 60_000;
 /** How long the Reviewer may take over one read: the longest a quiet read gets. */
 export const REVIEW_MS = READ_MS;
+/** The least time between two of a session's doing lines (Thread.doing): steps can start many times a second, the sidebar reads one. */
+export const DOING_MS = 700;
+/** How long after a finished step's words were said a think or an answer is worth saying ("Thinking", "Writing its answer"): a short one between two steps never shows. */
+export const THINK_MS = 2500;
 /** How long a session opened ahead of a message (warm) waits for one before it's closed, and how many may wait at once. */
 export const WARM_MS = 10 * 60_000;
 const WARM_MAX = 2;
@@ -311,6 +315,12 @@ export class Runtime {
   briefWindMs = BRIEF_WIND_MS;
   /** How long the Reviewer may take over one read (REVIEW_MS), here so a test can shorten it. */
   reviewMs = REVIEW_MS;
+  /** The least time between two of a session's doing lines (Thread.doing), here so a test can shorten it. */
+  doingMs = DOING_MS;
+  /** How long a think or an answer after a finished step waits before it is said (THINK_MS), here so a test can shorten it. */
+  thinkMs = THINK_MS;
+  /** Each running session's doing line as last sent, the newer one waiting out doingMs, and a think or an answer waiting out thinkMs (`later`), by thread. */
+  private doingSent = new Map<string, { at: number; next?: string; timer?: NodeJS.Timeout; last?: string; think?: NodeJS.Timeout; later?: string }>();
   /** How long a session opened ahead of a message waits for one (WARM_MS), here so a test can shorten it. */
   warmMs = WARM_MS;
   /** How long a session sits idle before its tool is closed (IDLE_MS), here so a test can shorten it. */
@@ -1119,7 +1129,9 @@ export class Runtime {
     return {
       id,
       answer: answer.finally(() => {
-        this.settleWaiting(threadId);
+        // Allowed, the call that asked goes ahead.
+        const card = store.timeline(threadId).find((x) => x.id === id);
+        this.settleWaiting(threadId, card?.kind === "approval" && card.state === "approved");
         // Asked with no turn running (a tool's late call): nothing else takes the session out of Needs you.
         const now = store.threads.find((x) => x.id === threadId);
         if (now?.status === "waiting" && !this.isRunning(threadId) && !store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) store.patchThread(threadId, { status: was === "waiting" || was === "running" ? "done" : was });
@@ -1471,6 +1483,7 @@ export class Runtime {
       // or with every message after it queued behind a turn nobody is running.
       this.turns.delete(threadId);
       this.turnGrants.delete(threadId);
+      this.doneDoing(threadId);
       if (!this.store.threads.some((x) => x.id === threadId)) return null;
       const t = this.store.patchThread(threadId, { status: "error", eta: undefined });
       this.store.emit({ type: "notify", threadId, kind: "error", title: "This turn couldn't be saved", body: e instanceof Error ? e.message : String(e) });
@@ -1631,6 +1644,8 @@ export class Runtime {
       }
       this.sideRows.delete(threadId);
       this.turns.delete(threadId);
+      // However the turn ended, even when its sink's end threw.
+      this.doneDoing(threadId);
       // "Don't ask again this turn" ends with the turn, however it ended (done, stopped, failed).
       this.turnGrants.delete(threadId);
     }
@@ -2144,7 +2159,68 @@ export class Runtime {
     }
   }
 
+  /**
+    Says what a running session does now, in plain words (doingOf): at once when nothing was said for doingMs, else when
+    that time is up, the latest words winning. Words that didn't change aren't sent.
+  */
+  private doing(threadId: string, text: string | undefined) {
+    if (!text || !this.turns.has(threadId) || this.turns.get(threadId)!.abort.signal.aborted) return;
+    const was = this.doingSent.get(threadId) ?? { at: 0 };
+    this.doingSent.set(threadId, was);
+    // Something newer is said: a think or an answer waiting to be said has been overtaken.
+    if (was.think) clearTimeout(was.think);
+    was.think = undefined;
+    was.later = undefined;
+    was.last = text;
+    const wait = was.at + this.doingMs - Date.now();
+    if (wait <= 0 && !was.timer) return this.sayDoing(threadId, text);
+    was.next = text;
+    was.timer ??= setTimeout(() => {
+      was.timer = undefined;
+      const next = was.next;
+      was.next = undefined;
+      if (next && this.turns.has(threadId) && this.doingSent.get(threadId) === was) this.sayDoing(threadId, next);
+    }, Math.max(0, wait));
+  }
+  /**
+    "Thinking" or "Writing its answer", once `ms` have passed with nothing newer said. One waits at most: the one that
+    started last wins (the deadline is the same, from the step's words). Cleared by any newer words and by doneDoing.
+  */
+  private sayLater(threadId: string, ms: number, words: string) {
+    if (ms <= 0) return this.doing(threadId, words);
+    if (!this.turns.has(threadId) || this.turns.get(threadId)!.abort.signal.aborted) return;
+    // A turn whose first calls weren't steps (a plan, a page) has no line yet: it gets one here.
+    const was = this.doingSent.get(threadId) ?? { at: 0 };
+    this.doingSent.set(threadId, was);
+    was.later = words;
+    was.think ??= setTimeout(() => {
+      was.think = undefined;
+      const later = was.later;
+      was.later = undefined;
+      if (later && this.doingSent.get(threadId) === was) this.doing(threadId, later);
+    }, ms);
+  }
+  private sayDoing(threadId: string, text: string) {
+    if (!this.store.threads.some((x) => x.id === threadId) || this.store.thread(threadId).doing?.text === text) return;
+    this.doingSent.get(threadId)!.at = Date.now();
+    this.store.setDoing(threadId, { text, at: Date.now() });
+  }
+  /**
+    It isn't doing anything any more (its turn ended, stopped, failed or waits on you): said at once, and nothing waiting
+    goes after. `paused`: it waits on you, so its last words are kept for when you answer and the turn goes on (settleWaiting).
+  */
+  private doneDoing(threadId: string, paused = false) {
+    const was = this.doingSent.get(threadId);
+    if (was?.timer) clearTimeout(was.timer);
+    if (was?.think) clearTimeout(was.think);
+    if (was && paused) Object.assign(was, { timer: undefined, next: undefined, think: undefined, later: undefined, at: 0 });
+    else this.doingSent.delete(threadId);
+    if (this.store.threads.some((x) => x.id === threadId)) this.store.setDoing(threadId, undefined);
+  }
+
   stop(threadId: string) {
+    // What it was doing ends with Stop, not when the turn has wound down.
+    this.doneDoing(threadId);
     // Nothing asked between Stop and the turn's end goes ahead on "don't ask again this turn".
     this.turnGrants.delete(threadId);
     if (this.busy.has(threadId)) this.halted.add(threadId);
@@ -2590,7 +2666,7 @@ export class Runtime {
     // Said on the item only when it was really taken, so a step that later ran with no card traces back to this yes.
     const granted = allow && chosen ? this.grant(threadId, item, chosen) : undefined;
     this.store.putItem(threadId, { ...item, state: allow ? "approved" : "denied", reason, answeredAt: Date.now(), ...(granted ? { granted } : {}), ...(item.addon && scope ? { addon: { ...item.addon, scope } } : {}) });
-    this.settleWaiting(threadId);
+    this.settleWaiting(threadId, allow);
     waiter.resolve({ allow, reason, scope });
   }
 
@@ -2755,11 +2831,23 @@ export class Runtime {
     return asks.map((a, i) => `${i === asks.length - 1 ? "The latest ask, which this change is for" : `An earlier ask (${i + 1} of ${asks.length})`}:\n${a.slice(0, 1500)}`).join("\n\n");
   }
 
-  /** Back to running once nothing in a running turn waits on you. */
-  private settleWaiting(threadId: string) {
+  /**
+    Back to running once nothing in a running turn waits on you. `goesOn`: what you answered was a step's permission, and you
+    allowed it, so that step goes ahead and says so again. Anything else (a question, a plan, a refusal) ended that step: it
+    thinks about your answer.
+  */
+  private settleWaiting(threadId: string, goesOn = false) {
     this.clock(threadId);
     const still = this.store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
-    if (!still && this.turns.has(threadId)) this.store.patchThread(threadId, { status: "running" });
+    if (!still && this.turns.has(threadId)) {
+      this.store.patchThread(threadId, { status: "running" });
+      const was = this.doingSent.get(threadId);
+      if (goesOn && was?.last) this.doing(threadId, was.last);
+      else {
+        if (was) was.last = undefined;
+        this.doing(threadId, "Thinking");
+      }
+    }
   }
 
   /**
@@ -3138,6 +3226,24 @@ export class Runtime {
     /** Read only's refusal has been said on the timeline this turn. */
     let readSaid = false;
     const reasonStart = new Map<string, number>();
+    /** The lead's own calls this turn, in the order they started (not what its agents do), for what it is doing now (doingOf). */
+    const steps: DoingCall[] = [];
+    const stepAt = new Map<string, number>();
+    /** How each of those calls stands now. */
+    const stepState = new Map<string, string>();
+    let latest: string | undefined;
+    /** The call whose words were said last, and when (asked for: the throttle may send them a little later). */
+    let saidKey: string | undefined;
+    let stepSaid = 0;
+    /** A design file's frame by its name, for "Drawing Phone / Week": read only when a step writes a frame. */
+    const frameName = (frame: string, design: string) => {
+      try {
+        const t = store.thread(threadId);
+        return lookFile(t.worktree?.path ?? store.project(t.projectId).path, design).frames.find((f) => f.id === frame)?.name;
+      } catch {
+        return undefined;
+      }
+    };
 
     const settle = () => {
       for (const id of streaming) {
@@ -3159,6 +3265,12 @@ export class Runtime {
         id = uid("it");
         blocks.set(key, id);
         if (kind === "reasoning") reasonStart.set(id, Date.now());
+        // Thinking, and writing the answer, say so before any step, or after a step has finished and its words have stood
+        // THINK_MS: a short think or a line of text between two steps never shows, so the line doesn't flicker between a step
+        // and "Thinking" all turn, and a long answer at the end doesn't leave the last step's words standing.
+        const words = kind === "reasoning" ? "Thinking" : "Writing its answer";
+        if (saidKey === undefined) this.doing(threadId, words);
+        else if (stepState.get(saidKey) !== "running") this.sayLater(threadId, stepSaid + this.thinkMs - Date.now(), words);
         store.putItem(threadId, kind === "text" ? { kind: "text", id, turn, at: Date.now(), text: "", streaming: true } : { kind: "reasoning", id, turn, at: Date.now(), text: "", streaming: true }, false);
         streaming.push(id);
       } else if (!streaming.includes(id)) {
@@ -3192,6 +3304,8 @@ export class Runtime {
         signal.addEventListener("abort", gone, { once: true });
       });
     const needsYou = (title: string) => {
+      // Waiting on you is all it does until you answer: no step's words stay, and none waiting go after.
+      this.doneDoing(threadId, true);
       this.clock(threadId);
       const t = store.patchThread(threadId, { status: "waiting" });
       store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.resolve(t, agentId).agent.name} needs you`, body: title });
@@ -3261,6 +3375,21 @@ export class Runtime {
         const save = !base || (agent ? base.status !== item.status || agentState(base) !== agentState(item) || base.title !== item.title || base.agent?.report !== agent.report : u.status !== "running");
         store.putItem(threadId, item, save);
         if (agent && (base ? agentState(base) : undefined) !== agentState(item)) this.countAgents(threadId);
+        // What the session is doing now follows the lead's latest step: as it starts, and as its words fill in while it runs
+        // (a call first titled "edit" says its file later). An agent's own calls (an agent another sent) don't speak for it.
+        if (!over && !u.agent?.parentKey) {
+          const first = !stepAt.has(u.key) && !base;
+          if (first) {
+            stepAt.set(u.key, steps.push(item) - 1);
+            latest = u.key;
+          } else if (stepAt.has(u.key)) steps[stepAt.get(u.key)!] = item;
+          if (stepAt.has(u.key)) stepState.set(u.key, item.status);
+          if (latest === u.key && (first || item.status === "running")) {
+            const words = doingOf(steps, frameName);
+            if (words) [saidKey, stepSaid] = [u.key, Date.now()];
+            this.doing(threadId, words);
+          }
+        }
       },
       plan: (entries: PlanEntry[]) => {
         heard();
@@ -3474,6 +3603,8 @@ export class Runtime {
       error: (message, o) => {
         settle();
         errored = true;
+        // A problem isn't a step at work: what it was doing goes now, not when the turn has wound down.
+        this.doneDoing(threadId);
         const why = o?.why;
         if (!why) return void store.putItem(threadId, { kind: "error", id: uid("it"), turn, at: Date.now(), message });
         // A refusal or an overload: neither marks the tool as out of usage. Only an overload offers another tool to
@@ -3487,6 +3618,7 @@ export class Runtime {
       window: (w) => store.onWindow?.(this.resolve(store.thread(threadId), agentId).provider, w),
       limited: (message, until) => {
         settle();
+        this.doneDoing(threadId);
         const r = this.resolve(store.thread(threadId), agentId);
         // A limit first said with no reset time takes one a later report gives: without it, it could never carry on at reset.
         if (limit) {
@@ -3510,6 +3642,8 @@ export class Runtime {
       end: () => {
         settle();
         over = true;
+        // The turn has ended: it does nothing more, though its wind-down (snapshots, the Reviewer) takes a while yet.
+        this.doneDoing(threadId);
         // A call with no result at the end didn't finish: stopped, or the tool broke off.
         for (const [, rec] of tools) {
           const it = store.timeline(threadId).find((x) => x.id === rec.id);

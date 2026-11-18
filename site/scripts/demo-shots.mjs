@@ -42,7 +42,7 @@ const pair = async (base, w, h) => { const p = await Promise.all([mk('light', ba
 const both = (pages, fn) => Promise.all(pages.map((p, i) => fn(p, i ? 'dark' : 'light')));
 const snap = (pages, name) => both(pages, async (p, t) => { const v = p.viewportSize(); await p.mouse.move(v.width / 2, v.height - 3); await p.screenshot({ path: `${out}${name}-${t}.png` }); }).then(() => console.log('shot', name));
 // A session's row in the sidebar (its title also sits, hidden, in the command palette).
-const row = (p, title) => p.locator('.lc-sb-h', { hasText: title }).first();
+const row = (p, title) => p.locator('.lc-sl-title', { hasText: title }).first();
 const hide = (pages) => both(pages, (p) => p.getByRole('button', { name: 'Hide the sidebar' }).first().click({ timeout: 6000 }));
 const stage = async (name, fn) => { if (!stages.includes(name)) return; try { await fn(); } catch (e) { console.log('skip', name, e.message.split('\n')[0]); } };
 const agentsAsk = 'And for king tides. Send agents to look, test and write fixtures at once.';

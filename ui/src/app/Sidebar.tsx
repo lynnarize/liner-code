@@ -1,38 +1,39 @@
 /*
   The sidebar, in Liner 2.0: no colour but a session's state, no boxes, space between its parts.
-  Its top row is only the window's own: the traffic lights' room, Hide, and Back and Forward at
-  the right; the name is at the foot, "Liner Code" or "Liner Design", and it is the switch between
-  the two. Under the top row New session, Search, The Wall and Add-ons with your apps. Then the
-  list, and above it what it shows: All projects (Pinned, Active, your groups, then the rest: two
-  lines a session, its title and under it where it is) or By folder (a session a line under its
-  project's folder, a fork under the session it came from), or one of the places a session is put
-  away: Snoozed, Settled and Archive. Sort, your groups and a new project sit beside it, shown
-  while you're in the sidebar. Every row sits on the places' grid: a mark column under their
-  icons (the agent, or how it stands while it works or waits on you), the words on their text
-  edge. What's finished is the normal case and has no label of its own, unless a group sits above
-  it. At the top of the list in All projects and By folder, Carry on: one row that opens a panel
+  Its top row is as Claude Code's desktop app has it: the traffic lights' room, then Hide, Back and
+  Forward together, the window's drag area, and at the far right how many sessions work and how
+  many wait on you, a pill that opens The Wall (every face has this row). The name is at the foot,
+  "Liner Code", "Liner Design" or "Liner Security", and it is the switch between the three. Under
+  the top row New session, Search, The Wall and Add-ons with your apps. Then "Sessions", whose one
+  menu holds what the list shows (By folder, the default, or By status, or one of the places a
+  session is put away: Snoozed, Settled and Archive), Carry on, the sort, your groups and a new
+  project. By folder: Pinned and your groups, then a folder for each project, what needs you first
+  in it, a fork under the session it came from. By status: Pinned, Needs you, Working, your groups,
+  Complete. Every row is two lines on the places' grid (SideList.tsx): how it stands in the mark
+  column under their icons, the title on their text edge, and under it what the session is doing
+  now or how it ended; a pull request's mark at its end. Carry on, from the menu, opens a panel
   beside the sidebar with the work begun elsewhere (changes not committed in the project you were
   last in, sessions in Claude Code and Codex not brought in yet). The list takes all the room down
   to the foot and dissolves where it runs on past an edge, so nothing draws a line.
-  Pointing at a row shows Pin, Snooze and Settle (P, S and D from the keyboard); resting on it
-  brings a card beside the sidebar with the rest of its story. One plate marks the open session.
+  Pointing at a row shows Pin, Snooze and Settle in its end's place (P, S and D from the keyboard);
+  resting on it brings a card beside the sidebar with the rest of its story. One plate marks the open session.
   ⌘-click picks rows and ⇧-click a run of them; with more than one picked, a bar settles, snoozes,
   archives or moves them all at once. Esc lets them go.
 */
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { AgentProfile, ProviderInfo, RecentSession, Thread } from "@contracts";
 import { bridge } from "./bridge";
 import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
-import { I, ModelMark, N, Spinner, type MarkKind } from "./icons";
+import { I, ModelMark, N, type MarkKind } from "./icons";
 import { agentOf, ago, bucketOf, clock, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
 import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
+import { SideCounts, SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "./SideList";
 import { appNotice, updates } from "./Updates";
 import { pairOf } from "./Crew";
 import { agentState, ROUTINES_ON, updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
-import { EtaLeft } from "./EtaLeft";
 import { FACE_NAME, type Face } from "./face";
 import * as os from "./os";
 import { toast } from "@liner/components/toast/toast";
@@ -80,17 +81,17 @@ type Props = {
   onCarryOn?: (projectId: string, text: string) => void;
 };
 
-/** A command's keys for a tip, like " (⌘B)". */
-const key = (id: string) => {
+/** A command's keys, like "⌘O", or nothing when it has none. */
+const keysOf = (id: string) => {
   const k = shortcutOf(id);
-  return k ? ` (${os.keys(k)})` : "";
+  return k ? os.keys(k) : undefined;
 };
 
-/** What the list shows: every project's sessions by how they stand, by folder, or a place they're put away in. */
-type View = "all" | "folder" | "snoozed" | "settled" | "archive";
+/** What the list shows: every project's sessions by folder or by how they stand, or a place they're put away in. */
+type View = "folder" | "status" | "snoozed" | "settled" | "archive";
 /** By folder: the one group every design on its own is listed under. */
 const DESIGNS = "designs";
-const VIEWS: Record<View, string> = { all: "All projects", folder: "By folder", snoozed: "Snoozed", settled: "Settled", archive: "Archive" };
+const VIEWS: Record<View, string> = { folder: "By folder", status: "By status", snoozed: "Snoozed", settled: "Settled", archive: "Archive" };
 type Order = "activity" | "started";
 
 /** A choice kept in localStorage, for how you like the list. */
@@ -194,7 +195,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const sent = useMemo(() => new Map(sentLine.split(",").filter(Boolean).map((x) => [x.split("=")[0], Number(x.split("=")[1])] as const)), [sentLine]);
   // The filter field went in 0.2.7 (Search is a row now): nothing narrows the list from here.
   const query = "";
-  const [view, setView] = useStored<View>("lc:sb-view", "all", ["all", "folder", "snoozed", "settled", "archive"]);
+  // A new key since the list's rebuild (lc:sb-view, which held All projects, is no longer read): everyone starts on By folder.
+  const [view, setView] = useStored<View>("lc:sb-list", "folder", ["folder", "status", "snoozed", "settled", "archive"]);
   const [order, setOrder] = useStored<Order>("lc:sb-order", "activity", ["activity", "started"]);
   const [shutProjects, toggleProject] = useFolded("lc:sb-shut");
   const [shutForks, toggleForks] = useFolded("lc:sb-shut-forks");
@@ -205,6 +207,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const scroller = useRef<HTMLDivElement>(null);
   const nav = useRef<HTMLElement>(null);
   const [plate, setPlate] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Rows drawn before, and those first drawn already open (they skip their entry fade: row() and app.css, data-fresh).
+  const seenRows = useRef(new Set<string>());
+  const freshRows = useRef(new Set<string>());
   // Rows picked for one action on them all, and where a ⇧-click's run starts (T3 Code: threadSelectionStore.ts).
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -253,16 +258,24 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const q = query.trim().toLowerCase();
     return threads.filter((t) => t.archived && matches(t, q)).sort(newest);
   }, [threads, projects, query, order]);
-  const projectName = (t: Thread) => projects.find((p) => p.id === t.projectId)?.name ?? "No project";
 
   const place = (t: Thread): Bucket => bucketOf(t, now);
   const working = everyThread.filter((t) => !t.archived && t.status === "running").length;
   // Routines handed back to you wait on their icon as a dot; otherwise its tip says how many run.
   const handed = runs.filter((r) => r.status === "handed" && !r.test).length;
   const routinesNote = handed ? `${handed} waiting` : routines.length ? `${routines.filter((r) => r.on).length} on` : "";
-  // The Wall's row: how many sessions are on it, and a dot while one asks, failed or hit a limit.
+  /*
+    Needs you, in this panel: it waits on you, ran into a problem or hit its plan's limit. bucketOf
+    (the Dock's count, Settle the project) also counts one answered while you were away and one not
+    started; here those are finished work, under Complete with their own words, as the mockup has it.
+  */
+  const asks = (t: Thread) => t.status === "waiting" || t.status === "error" || t.status === "limited";
+  // Working, in this panel: its turn runs, or agents it sent still work and it doesn't need you. One answered while you were away whose agents still work is working; it reads as answered once they're done. The rows, By status, a folded folder, a folder's order and the pill all take this one test.
+  const works = (t: Thread) => t.status === "running" || (!asks(t) && Boolean(t.agentsAtWork));
+  // The top row's counts: the sessions on The Wall that work (as it sorts them: a turn running, or agents it sent still at work) and those that need you.
   const onWallNow = threads.filter((t) => onTheWall(t, now));
-  const wallWaits = onWallNow.filter((t) => t.status === "waiting" || t.status === "error" || t.status === "limited").length;
+  const wallWaits = onWallNow.filter(asks).length;
+  const wallWorking = onWallNow.filter(works);
   const machine = window.__LINER__?.machine ?? "This computer";
   const addProject = () =>
     void bridge.pickFolder().then((p) =>
@@ -284,14 +297,14 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     return m;
   }, [list, now, groups]);
   const byGroup = useMemo(() => groups.map((g) => ({ g, list: list.filter((t) => t.group === g.id && inGroup(t, place(t))) })), [groups, list, now]);
-  // All projects: what waits on you and what's at work, together, ahead of what's finished.
-  const active = useMemo(() => [...byBucket.needs, ...byBucket.working].sort(newest), [byBucket, order]);
 
   // Project > session > its forks: every session that isn't pinned, in a group, snoozed or
-  // settled, under its project in your projects' order. A fork sits under the session it came
-  // from while that one is here too, in the order they were made.
+  // settled, under its project in your projects' order; in each, what needs you first, then
+  // what works, then the rest in the sort you picked. A fork sits under the session it came from
+  // while that one is here too, in the order they were made.
   const tree = useMemo(() => {
-    const here = [...byBucket.needs, ...byBucket.working, ...byBucket.open].sort(newest);
+    const rank = (t: Thread) => (asks(t) ? 0 : works(t) ? 1 : 2);
+    const here = [...byBucket.needs, ...byBucket.working, ...byBucket.open].sort((a, b) => rank(a) - rank(b) || newest(a, b));
     const ids = new Set(here.map((t) => t.id));
     const forks = new Map<string, Thread[]>();
     for (const t of [...here].sort((a, b) => a.createdAt - b.createdAt)) if (t.forkOf && ids.has(t.forkOf)) forks.set(t.forkOf, [...(forks.get(t.forkOf) ?? []), t]);
@@ -301,9 +314,10 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const designs = new Set(projects.filter((p) => p.kind === "design").map((p) => p.id));
     const inSection = (id: string) => (t: Thread) => (id === DESIGNS ? designs.has(t.projectId) : id ? t.projectId === id : !known.has(t.projectId));
     const sections = [...projects.filter((p) => p.kind !== "design" && !p.demoFor).map((p) => ({ id: p.id, name: p.name })), { id: DESIGNS, name: "Designs" }, { id: "", name: "No project" }]
-      .map((x) => ({ ...x, list: top.filter(inSection(x.id)) }))
+      .map((x) => ({ ...x, list: top.filter(inSection(x.id)), all: here.filter(inSection(x.id)) }))
       .filter((x) => x.list.length > 0)
-      .map((x) => ({ ...x, needs: here.filter((t) => inSection(x.id)(t) && place(t) === "needs").length }));
+      // What a folded folder says: how many it holds, whether one needs you, and the first that works (its spinner is in that one's tint).
+      .map(({ all, ...x }) => ({ ...x, count: all.length, needs: all.filter(asks).length, working: all.find(works) }));
     return { sections, forks };
   }, [byBucket, projects, order]);
 
@@ -661,28 +675,24 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   };
 
   /*
-    A session's row. Two lines in All projects and the places sessions are put away: in the mark
-    column under the places' icons, the agent's mark (a design's nib), or how it stands while it
-    works (the spinner in its model's tint), waits on you or stopped short; its title with how long
-    ago at the end, and under it where it is and, when it's more than done, how it stands. One line
-    under its folder: the title, and at its end how it stands. The rest is in the card a resting
-    pointer brings.
+    A session's row, the same in every view (SideRow): in the mark column how it stands (the spinner
+    in its model's tint while it works, the amber dot while it waits on you, the clock, the error
+    mark, the ring before it starts, else a small grey dot); its title; under it what it is doing
+    now, or how it ended; at its end its pull request, or the changes it left to review. Pointing at
+    it, Pin, Snooze and Settle take the end's place. Who works on it, where and when are in the card
+    a resting pointer brings.
   */
-  const row = (t: Thread, shelf: Bucket, opts: { two?: boolean; forks?: { n: number; open: boolean; toggle: () => void } } = {}) => {
-    const { two, forks } = opts;
+  const row = (t: Thread, shelf: Bucket, forks?: { n: number; open: boolean; toggle: () => void }) => {
     // Pinned is where it's kept, not how it stands: one that waits on you shows it, as the Dock counts it.
     const bucket = standing(t, shelf, now);
     const on = onIt(t, agents, providers);
-    const { ref } = on;
     const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
     // Finished and nothing waits on you, or settled: the title steps back.
-    const quiet = Boolean(t.archived) || bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0);
-    const busy = t.status === "running" || t.status === "error" || t.status === "limited" || bucket === "needs" || run?.status === "running";
     const title =
       renaming === t.id ? (
         <input
           className="lc-sb-rename"
-          aria-label={`Rename ${t.title}`}
+          aria-label={`Rename ${t.title || "New session"}`}
           defaultValue={t.title}
           autoFocus
           onClick={(e) => e.stopPropagation()}
@@ -702,35 +712,101 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           }}
         />
       ) : (
-        <b>{t.title}</b>
+        // A session the engine hasn't named yet still reads as one.
+        t.title || "New session"
       );
     const working = sent.get(t.id) ?? 0;
-    // A pair is named as one, its sidekick at work or not; one model counts the agents it sent.
-    const state = two ? (working ? { text: on.pair ? (working > 1 ? `${on.who} · ${plural(working - 1, "agent")}` : on.who) : `${on.who} · ${plural(working, "agent")}` } : rowState(t, bucket, now, run)) : null;
-    const dot = t.archived ? undefined : t.status === "running" || run?.status === "running" || (working && bucket !== "needs") ? "work" : t.status === "error" ? "danger" : bucket === "needs" || t.status === "limited" ? "warn" : undefined;
-    // The mark column: the state's colour while there is one (Sidebar D keeps colour in the mark), else who works on it.
-    const mark =
-      dot === "work" ? (
-        <span className="lc-mk" role="img" data-s="run" data-brand={markOf(ref)} aria-label="Working">
-          <Spinner size={14} />
-        </span>
-      ) : dot ? (
-        <StatusMark t={t} bucket={bucket} brand={markOf(ref)} />
-      ) : t.design ? (
-        <I.design size={14} />
-      ) : (
-        <ModelMark kind={markOf(ref)} size={14} />
-      );
+    // A pair's sidekick is in its name already: the agents besides it are counted.
+    const agentsNow = Math.max(0, working - (on.pair ? 1 : 0));
+    const busy = !t.archived && (t.status === "running" || run?.status === "running" || (working > 0 && !asks(t)));
+    // Finished and nothing waits on you, or settled: the title steps back. One at work keeps full ink.
+    const quiet = !busy && (Boolean(t.archived) || bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0));
+    // A row that first comes already open (a session just sent from Home) is there at once, so the plate under it is never empty; it keeps that for good, so leaving it plays nothing.
+    if (!seenRows.current.has(t.id)) {
+      seenRows.current.add(t.id);
+      if (t.id === current) freshRows.current.add(t.id);
+    }
+    const state: SideState = busy ? "working" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : t.status === "waiting" ? "needs" : t.turns === 0 ? "new" : "done";
+    const said = rowLine(t, bucket, state, agentsNow, now);
+    const pr = t.pr ? prState(t.pr.state) : undefined;
+    const end = t.pr ? (
+      <span className="lc-sl-pr" data-pr={pr} role="img" aria-label={`Pull request #${t.pr.number}, ${pr}`}>
+        <I.pr size={14} />
+      </span>
+    ) : (t.toReview ?? 0) > 0 ? (
+      <span className="lc-sl-chg" role="img" aria-label={`${plural(t.toReview!, "file")} to review`}>
+        <I.changes size={14} />
+      </span>
+    ) : undefined;
+    const acts = t.archived ? (
+      <button type="button" className="lc-sb-a l-focus" aria-label="Bring it back" title="Bring it back from Archive" onClick={() => void unarchive(t)}>
+        <I.undo size={14} />
+      </button>
+    ) : (
+      <>
+        <button type="button" className="lc-sb-a l-focus" aria-label={t.pinned ? "Unpin" : "Pin"} title={t.pinned ? "Unpin (P)" : "Pin (P)"} aria-pressed={Boolean(t.pinned)} onClick={() => void act(t, "pin")}>
+          <I.pin size={14} />
+        </button>
+        <Pop label="Snooze until" align="end" width={230} menu triggerClass="lc-sb-a" trigger={<I.snooze size={14} />}>
+          {(close) => (
+            <>
+              <PanelHead>Snooze until</PanelHead>
+              {snoozeTimes().map((s) => (
+                <Row
+                  key={s.label}
+                  title={s.label}
+                  end={s.note}
+                  onPick={() => {
+                    close();
+                    void act(t, "snooze", s.at);
+                  }}
+                />
+              ))}
+              {t.pr && t.pr.state === "OPEN" && (
+                <>
+                  <Sep />
+                  <PanelHead>Or until</PanelHead>
+                  <Row title="Checks finish" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "checks"))} />
+                  <Row title="Someone replies" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "reply"))} />
+                </>
+              )}
+              {t.snoozedUntil && t.snoozedUntil > now && (
+                <>
+                  <Sep />
+                  <Row
+                    title="Wake it now"
+                    onPick={() => {
+                      close();
+                      void act(t, "wake");
+                    }}
+                  />
+                </>
+              )}
+            </>
+          )}
+        </Pop>
+        <button type="button" className="lc-sb-a l-focus" aria-label={bucket === "settled" ? "Bring it back" : "Settle"} aria-pressed={bucket === "settled"} title={bucket === "settled" ? "Bring it back (D)" : "Settle (D)"} onClick={() => void act(t, "settle")}>
+          <I.settle size={14} />
+        </button>
+      </>
+    );
     return (
-      <div
+      <SideRow
         key={t.id}
         className="lc-sb-row"
         data-row={t.id}
-        data-two={two || undefined}
         data-forks={forks ? "" : undefined}
         data-picked={picked.has(t.id) || undefined}
-        data-quiet={quiet || undefined}
+        data-fresh={freshRows.current.has(t.id) || undefined}
         aria-current={t.id === current ? "page" : undefined}
+        current={t.id === current}
+        quiet={quiet}
+        mark={<SideMark state={state} brand={markOf(on.ref)} />}
+        title={title}
+        sub={said.text}
+        tone={said.tone}
+        end={end}
+        acts={acts}
         draggable={renaming !== t.id && !t.archived}
         onDragStart={(e) => {
           hideCard();
@@ -746,120 +822,31 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           hideCard();
           setMenu({ t, x: e.clientX, y: e.clientY });
         }}
-      >
-        <div
-          role="button"
-          tabIndex={0}
-          className="lc-sb-pick l-focus"
-          aria-pressed={picked.size ? picked.has(t.id) : undefined}
-          aria-describedby={card?.id === t.id ? CARD_ID : undefined}
+        pick={{
+          role: "button",
+          tabIndex: 0,
+          className: "lc-sb-pick l-focus",
+          "aria-pressed": picked.size ? picked.has(t.id) : undefined,
+          "aria-describedby": card?.id === t.id ? CARD_ID : undefined,
           // ⇧ would select the text between the rows; the run is the selection here.
-          onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-          onClick={(e) => {
+          onMouseDown: (e) => e.shiftKey && e.preventDefault(),
+          onClick: (e) => {
             if (e.metaKey || e.ctrlKey) return togglePick(t.id);
             if (e.shiftKey) return pickRun(t.id);
             // A plain click opens the session, and lets go of any picked rows.
             clearPicked();
             onOpen(t.id);
-          }}
-          onKeyDown={(e) => {
+          },
+          onKeyDown: (e) => {
             if (e.key !== "Enter" && e.key !== " ") return rowKeys(e, t);
             if (e.target !== e.currentTarget) return;
             e.preventDefault();
             clearPicked();
             onOpen(t.id);
-          }}
-          onDoubleClick={(e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && setRenaming(t.id)}
-        >
-          {two ? (
-            <>
-              <span className="lc-sb-mark">{mark}</span>
-              <span className="lc-sb-h">
-                {title}
-                <span className="lc-sb-time">{ago(t.updatedAt, now)}</span>
-              </span>
-              <span className="lc-sb-s">
-                <span className="lc-sb-st">
-                  {t.design ? designWhere(t, projects) : projectName(t)}
-                  {state && (
-                    <>
-                      {" · "}
-                      <span data-tone={state.tone}>{state.text}</span>
-                    </>
-                  )}
-                  {/* How long it should still take, while it works (not while it waits on you). */}
-                  {t.status === "running" && <EtaLeft eta={t.eta} lead=" · " />}
-                </span>
-              </span>
-            </>
-          ) : (
-            <span className="lc-sb-h">
-              {title}
-              {/* Working, waiting or stuck shows its mark; anything else, how long ago. */}
-              {busy ? (
-                <span className="lc-sb-mk">
-                  <StatusMark t={t} bucket={bucket} brand={markOf(ref)} />
-                </span>
-              ) : (
-                <span className="lc-sb-time">{ago(t.updatedAt, now)}</span>
-              )}
-            </span>
-          )}
-        </div>
-        <span className="lc-sb-acts">
-          {t.archived ? (
-            <button type="button" className="lc-sb-a l-focus" aria-label="Bring it back" title="Bring it back from Archive" onClick={() => void unarchive(t)}>
-              <I.undo size={14} />
-            </button>
-          ) : (
-            <>
-              <button type="button" className="lc-sb-a l-focus" aria-label={t.pinned ? "Unpin" : "Pin"} title={t.pinned ? "Unpin (P)" : "Pin (P)"} aria-pressed={Boolean(t.pinned)} onClick={() => void act(t, "pin")}>
-                <I.pin size={14} />
-              </button>
-              <Pop label="Snooze until" align="end" width={230} menu triggerClass="lc-sb-a" trigger={<I.snooze size={14} />}>
-                {(close) => (
-                  <>
-                    <PanelHead>Snooze until</PanelHead>
-                    {snoozeTimes().map((s) => (
-                      <Row
-                        key={s.label}
-                        title={s.label}
-                        end={s.note}
-                        onPick={() => {
-                          close();
-                          void act(t, "snooze", s.at);
-                        }}
-                      />
-                    ))}
-                    {t.pr && t.pr.state === "OPEN" && (
-                      <>
-                        <Sep />
-                        <PanelHead>Or until</PanelHead>
-                        <Row title="Checks finish" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "checks"))} />
-                        <Row title="Someone replies" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "reply"))} />
-                      </>
-                    )}
-                    {t.snoozedUntil && t.snoozedUntil > now && (
-                      <>
-                        <Sep />
-                        <Row
-                          title="Wake it now"
-                          onPick={() => {
-                            close();
-                            void act(t, "wake");
-                          }}
-                        />
-                      </>
-                    )}
-                  </>
-                )}
-              </Pop>
-              <button type="button" className="lc-sb-a l-focus" aria-label={bucket === "settled" ? "Bring it back" : "Settle"} aria-pressed={bucket === "settled"} title={bucket === "settled" ? "Bring it back (D)" : "Settle (D)"} onClick={() => void act(t, "settle")}>
-                <I.settle size={14} />
-              </button>
-            </>
-          )}
-        </span>
+          },
+          onDoubleClick: (e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && setRenaming(t.id),
+        }}
+      >
         {forks && (
           <button type="button" className="lc-sb-forks l-focus" aria-expanded={forks.open} aria-label={`${plural(forks.n, "fork")} of ${t.title}`} title={forks.open ? "Fold its forks" : "Show its forks"} onClick={forks.toggle}>
             <I.chevR size={12} />
@@ -867,7 +854,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
             {forks.n}
           </button>
         )}
-      </div>
+      </SideRow>
     );
   };
 
@@ -877,36 +864,25 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const shut = shutForks.includes(t.id);
     return (
       <Fragment key={t.id}>
-        {row(t, place(t), { forks: kids.length ? { n: kids.length, open: !shut, toggle: () => toggleForks(t.id) } : undefined })}
+        {row(t, place(t), kids.length ? { n: kids.length, open: !shut, toggle: () => toggleForks(t.id) } : undefined)}
         {kids.length > 0 && !shut && <div className="lc-sb-kids">{kids.map(branch)}</div>}
       </Fragment>
     );
   };
 
-  /** A labelled run of rows, with how many there are: the pin (Pinned's) in the mark column, the word on the rows' text edge. `bare` is the rows alone, still named for a screen reader. */
-  const block = (name: string, ts: Thread[], two: boolean, extra: { pin?: boolean; bucket?: Bucket; bare?: boolean } = {}) =>
+  /** A labelled run of rows, with how many there are (Pinned's with its pin). `bare` is the rows alone, still named for a screen reader. */
+  const block = (name: string, ts: Thread[], extra: { pin?: boolean; bucket?: Bucket; bare?: boolean } = {}) =>
     ts.length > 0 && (
-      <section key={name} className="lc-sb-sec" aria-label={name} data-bare={extra.bare || undefined} {...(extra.pin ? drop("pinned") : {})}>
-        {!extra.bare && (
-          <div className="lc-sb-lab">
-            {extra.pin && <I.pin size={12} />}
-            <span className="lc-sb-lab-t">{name}</span>
-            <span>
-              <Num value={ts.length} />
-            </span>
-          </div>
-        )}
-        {ts.map((t) => row(t, extra.bucket ?? place(t), { two }))}
+      <section key={name} className="lc-sb-sec" aria-label={name} {...(extra.pin ? drop("pinned") : {})}>
+        {!extra.bare && <SideLabel name={name} count={ts.length} icon={extra.pin ? <I.pin size={12} /> : undefined} />}
+        {ts.map((t) => row(t, extra.bucket ?? place(t)))}
       </section>
     );
-  const groupBlocks = (two: boolean) =>
+  const groupBlocks = () =>
     byGroup.map(({ g, list: ts }) => (
       <section key={g.id} className="lc-sb-sec" aria-label={g.name} {...drop(`group:${g.id}`)}>
-        <div className="lc-sb-lab">
-          <span className="lc-sb-lab-t">{g.name}</span>
-          <span>{ts.length}</span>
-        </div>
-        {ts.length ? ts.map((t) => row(t, place(t), { two })) : <p className="lc-sb-hint">Drag a session here, or right-click one.</p>}
+        <SideLabel name={g.name} count={ts.length} />
+        {ts.length ? ts.map((t) => row(t, place(t))) : <p className="lc-sb-hint">Drag a session here, or right-click one.</p>}
       </section>
     ));
   /** A list with nothing in it says what's missing, and how to fill it. */
@@ -919,8 +895,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   );
   const q = query.trim();
   const listed: Record<View, number> = {
-    all: byBucket.pinned.length + byGroup.length + active.length + byBucket.open.length,
     folder: byBucket.pinned.length + byGroup.length + tree.sections.length,
+    status: byBucket.pinned.length + byGroup.length + byBucket.needs.length + byBucket.working.length + byBucket.open.length,
     snoozed: byBucket.snoozed.length,
     settled: byBucket.settled.length,
     archive: archivedList.length,
@@ -929,7 +905,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     listed[view] > 0
       ? null
       : q
-        ? none(<I.search size={20} />, "No session matches that", view === "all" || view === "folder" ? "Try fewer words, or look in Settled or Archive." : `Nothing in ${VIEWS[view]} matches it.`)
+        ? none(<I.search size={20} />, "No session matches that", view === "folder" || view === "status" ? "Try fewer words, or look in Settled or Archive." : `Nothing in ${VIEWS[view]} matches it.`)
         : view === "snoozed"
           ? none(<I.snooze size={20} />, "Nothing snoozed", "Snooze a session from its row (S), and it comes back by itself.")
           : view === "settled"
@@ -939,22 +915,27 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
               : list.length === 0
                 ? none(<I.compose size={20} />, "No sessions yet", "Start one with New session, and it shows up here.")
                 : none(<I.settle size={20} />, "Nothing open", "Every session is snoozed or settled. Pick either from the menu above.");
-
+  // Carry on's count, for its row in the menu (CarryOn knows it before its panel opens), and the way to open that panel.
+  const [carryCount, setCarryCount] = useState(0);
+  const carryOpen = useRef<(() => void) | null>(null);
+  const putAway = view === "snoozed" ? byBucket.snoozed.length : view === "settled" ? byBucket.settled.length : view === "archive" ? archivedList.length : undefined;
+  const wallBrand = wallWorking[0] ? markOf(onIt(wallWorking[0], agents, providers).ref) : undefined;
 
   return (
     <nav ref={nav} className="lc-sb" aria-label="Sessions">
-      {/* Only the window's own controls, as Claude's and Codex's apps have it: Hide after the lights, the drag area, Back and Forward at the right. The name is at the foot. */}
+      {/* As Claude Code's desktop app has it: Hide, Back and Forward together after the lights, the drag area, and at the far right what works and what waits on you, which opens The Wall. The name is at the foot. */}
       <div className="lc-sb-head" data-drag>
         <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={onHide}>
           <N.sidebar />
         </button>
-        <span className="lc-grow" data-drag />
         <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Back" title="Back" disabled={!onBack} onClick={onBack}>
           <N.back />
         </button>
         <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Forward" title="Forward" disabled={!onForward} onClick={onForward}>
           <N.forward />
         </button>
+        <span className="lc-grow" data-drag />
+        {onWall && <SideCounts working={wallWorking.length} waiting={wallWaits} brand={wallBrand} onOpen={onWall} />}
       </div>
 
       {faceBody ? (
@@ -982,7 +963,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           >
             <N.wall />
             <span>The Wall</span>
-            {wallWaits > 0 && <span className="lc-sb-ndot" data-k="warn" />}
           </button>
         )}
         {/* Routines switched off (contracts, ROUTINES_ON): no row for them. */}
@@ -1017,71 +997,87 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         </section>
       )}
 
-      {/* What the list shows on the rows' text edge; how it's sorted and a new project at the right, while you're in the sidebar. */}
-      <div className="lc-sb-views">
-        <div className="lc-sb-bar">
-          <Pop label={`What the list shows: ${VIEWS[view]}`} menu width={236} triggerClass="lc-sb-view" trigger={<>{VIEWS[view]}<I.chevD size={12} /></>}>
-            {(close) => {
-              const pick = (v: View) => () => (close(), setView(v));
-              return (
-                <div className="lc-sb-menu">
-                  <Row title="All projects" icon={<I.list size={14} />} keepIcon on={view === "all"} onPick={pick("all")} />
-                  <Row title="By folder" icon={<I.folder size={14} />} keepIcon on={view === "folder"} onPick={pick("folder")} />
-                  <Sep />
-                  {(byBucket.snoozed.length > 0 || view === "snoozed") && <Row title="Snoozed" icon={<I.snooze size={14} />} keepIcon on={view === "snoozed"} end={byBucket.snoozed.length || undefined} onPick={pick("snoozed")} />}
-                  <Row title="Settled" icon={<I.settle size={14} />} keepIcon on={view === "settled"} end={byBucket.settled.length || undefined} onPick={pick("settled")} />
-                  <Row title="Archive" icon={<I.box size={14} />} keepIcon on={view === "archive"} end={archivedList.length || undefined} onPick={pick("archive")} />
-                </div>
-              );
-            }}
-          </Pop>
-          <span className="lc-grow" />
-          <Pop label="Sort and groups" align="end" width={250} triggerClass="lc-ib" triggerAttrs={{ title: "Sort, and your groups" }} trigger={<I.sort size={14} />}>
-            {(close) => (
+      {/* "Sessions", and another view's name after it; its one menu holds the views, Carry on, the sort, your groups and a new project. Carry on's panel opens from a button hidden at the heading's end, so it opens beside the sidebar level with it. */}
+      <div className="lc-sb-listhead">
+        <SideHead title="Sessions" note={view === "folder" ? undefined : VIEWS[view]} count={putAway} menuLabel="What the list shows, and how it is sorted">
+          {(close) => {
+            const pick = (v: View) => () => (close(), setView(v));
+            return (
               <>
-                <PanelHead>Sort by</PanelHead>
-                <Row title="Last activity" on={order === "activity"} onPick={() => (close(), setOrder("activity"))} />
-                <Row title="Date started" on={order === "started"} onPick={() => (close(), setOrder("started"))} />
+                <Row title="By folder" icon={<I.folder size={14} />} keepIcon on={view === "folder"} onPick={pick("folder")} />
+                <Row title="By status" icon={<I.list size={14} />} keepIcon on={view === "status"} onPick={pick("status")} />
                 <Sep />
-                <PanelHead>Your groups</PanelHead>
-                {groups.map((g) => (
-                  <Row
-                    key={g.id}
-                    title={g.name}
-                    end={
-                      <span className="lc-sb-gacts">
-                        {threads.filter((t) => t.group === g.id && !t.archived).length}
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          className="lc-sb-gdel l-focus"
-                          aria-label={`Remove the ${g.name} group`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter" && e.key !== " ") return;
-                            e.preventDefault();
-                            e.stopPropagation();
-                            void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
-                          }}
-                        >
-                          <I.close size={12} />
+                {(byBucket.snoozed.length > 0 || view === "snoozed") && <Row title="Snoozed" icon={<I.snooze size={14} />} keepIcon on={view === "snoozed"} end={byBucket.snoozed.length || undefined} onPick={pick("snoozed")} />}
+                <Row title="Settled" icon={<I.settle size={14} />} keepIcon on={view === "settled"} end={byBucket.settled.length || undefined} onPick={pick("settled")} />
+                <Row title="Archive" icon={<I.box size={14} />} keepIcon on={view === "archive"} end={archivedList.length || undefined} onPick={pick("archive")} />
+                {carryCount > 0 && (
+                  <>
+                    <Sep />
+                    <Row
+                      title="Carry on"
+                      icon={<I.carry size={14} />}
+                      end={
+                        <span className="lc-sb-carry-n">
+                          <Num value={carryCount} />
+                          <I.chevR size={12} />
                         </span>
-                      </span>
-                    }
-                    onPick={close}
-                  />
-                ))}
+                      }
+                      onPick={() => {
+                        close();
+                        // Once the menu has gone and given the keyboard back, the panel opens and takes it.
+                        window.setTimeout(() => carryOpen.current?.());
+                      }}
+                    />
+                  </>
+                )}
+                <Sep />
+                <PanelHead>Sort by</PanelHead>
+                <Row title="Last activity" keepIcon on={order === "activity"} onPick={() => (close(), setOrder("activity"))} />
+                <Row title="Date started" keepIcon on={order === "started"} onPick={() => (close(), setOrder("started"))} />
+                {groups.length > 0 && (
+                  <>
+                    <Sep />
+                    <PanelHead>Your groups</PanelHead>
+                    {groups.map((g) => (
+                      <Row
+                        key={g.id}
+                        title={g.name}
+                        end={
+                          <span className="lc-sb-gacts">
+                            {threads.filter((t) => t.group === g.id && !t.archived).length}
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="lc-sb-gdel l-focus"
+                              aria-label={`Remove the ${g.name} group`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key !== "Enter" && e.key !== " ") return;
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
+                              }}
+                            >
+                              <I.close size={12} />
+                            </span>
+                          </span>
+                        }
+                        onPick={close}
+                      />
+                    ))}
+                  </>
+                )}
+                <Sep />
+                <Row title="Add a project" icon={<I.plus size={14} />} end={keysOf("open-project")} onPick={() => (close(), addProject())} />
                 <Row title="New group" icon={<I.plus size={14} />} onPick={() => (close(), setNaming({}))} />
               </>
-            )}
-          </Pop>
-          <button type="button" className="lc-ib l-focus" aria-label="Add a project" title={`Add a project${key("open-project")}`} onClick={addProject}>
-            <I.plus size={14} />
-          </button>
-        </div>
+            );
+          }}
+        </SideHead>
+        <CarryOn projectId={recentProject} now={now} onOpen={onOpen} onCarryOn={onCarryOn} side={() => nav.current} onCount={setCarryCount} opener={carryOpen} />
       </div>
 
       {naming && (
@@ -1099,57 +1095,55 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       )}
 
       <div ref={scroller} className="lc-sb-scroll" data-up={edges.up || undefined} data-down={edges.down || undefined}>
-        <div className="lc-sb-inner">
+        <div className="lc-sb-inner lc-sl-list">
           <span className="lc-sb-plate" aria-hidden style={plate ? { transform: `translate(${plate.x}px, ${plate.y}px)`, width: plate.w, height: plate.h, opacity: 1 } : { opacity: 0 }} />
-          {(view === "all" || view === "folder") && <CarryOn projectId={recentProject} now={now} onOpen={onOpen} onCarryOn={onCarryOn} side={() => nav.current} />}
-          {view === "all" && (
-            <>
-              {block("Pinned", byBucket.pinned, true, { pin: true, bucket: "pinned" })}
-              {block("Active", active, true)}
-              {groupBlocks(true)}
-              {/* Finished is the normal case, so it needs no label; it keeps one under any group, so its rows aren't read as that group's. */}
-              {block("Finished", byBucket.open, true, { bucket: "open", bare: !byBucket.pinned.length && !active.length && !byGroup.length })}
-            </>
-          )}
           {view === "folder" && (
             <>
-              {block("Pinned", byBucket.pinned, false, { pin: true, bucket: "pinned" })}
-              {groupBlocks(false)}
-              {tree.sections.map((x) => {
-                const shut = shutProjects.includes(x.id);
-                return (
-                  <section key={x.id || "none"} className="lc-sb-sec lc-sb-proj" aria-label={x.name}>
-                    <div className="lc-sb-lab lc-sb-plab" onContextMenu={(e) => (e.preventDefault(), setProjMenu({ id: x.id, name: x.name, x: e.clientX, y: e.clientY }))}>
-                      <button type="button" className="lc-sb-pt l-focus" aria-expanded={!shut} title={shut ? "Show its sessions" : "Fold its sessions"} onClick={() => toggleProject(x.id)}>
-                        <span className="lc-sb-picon">
-                          {x.id === DESIGNS ? <I.edit size={16} /> : <I.folder size={16} />}
-                        </span>
-                        <span>{x.name}</span>
-                        <I.chevR size={12} />
-                      </button>
-                      {x.needs > 0 && (
-                        <span className="lc-sb-pneeds" title={`${plural(x.needs, "session")} ${x.needs === 1 ? "needs" : "need"} you`}>
-                          <Num value={x.needs} />
-                        </span>
-                      )}
-                      <button type="button" className="lc-sb-add l-focus" aria-label={`Settle the finished sessions in ${x.name}`} title="Settle the project: its finished sessions go to Settled" onClick={() => void settleProject(x.id, x.name)}>
-                        <I.settle size={12} />
+              {block("Pinned", byBucket.pinned, { pin: true, bucket: "pinned" })}
+              {groupBlocks()}
+              {tree.sections.map((x) => (
+                <SideFolder
+                  key={x.id || "none"}
+                  name={x.name}
+                  count={x.count}
+                  open={!shutProjects.includes(x.id)}
+                  onToggle={() => toggleProject(x.id)}
+                  needs={x.needs > 0}
+                  working={Boolean(x.working)}
+                  brand={x.working ? markOf(onIt(x.working, agents, providers).ref) : undefined}
+                  icon={x.id === DESIGNS ? <I.edit size={16} /> : undefined}
+                  onContextMenu={(e) => (e.preventDefault(), setProjMenu({ id: x.id, name: x.name, x: e.clientX, y: e.clientY }))}
+                  actions={
+                    <>
+                      <button type="button" className="lc-sb-a l-focus" aria-label={`Settle the finished sessions in ${x.name}`} title="Settle the project: its finished sessions go to Settled" onClick={() => void settleProject(x.id, x.name)}>
+                        <I.settle size={14} />
                       </button>
                       {x.id && x.id !== DESIGNS && (
-                        <button type="button" className="lc-sb-add l-focus" aria-label={`New session in ${x.name}`} title="New session here" onClick={() => onNew(x.id)}>
-                          <I.plus size={12} />
+                        <button type="button" className="lc-sb-a l-focus" aria-label={`New session in ${x.name}`} title="New session here" onClick={() => onNew(x.id)}>
+                          <I.plus size={14} />
                         </button>
                       )}
-                    </div>
-                    {!shut && x.list.map(branch)}
-                  </section>
-                );
-              })}
+                    </>
+                  }
+                >
+                  {x.list.map(branch)}
+                </SideFolder>
+              ))}
             </>
           )}
-          {view === "snoozed" && block("Snoozed", byBucket.snoozed, true, { bucket: "snoozed" })}
-          {view === "settled" && block("Settled", byBucket.settled, true, { bucket: "settled" })}
-          {view === "archive" && block("Archive", archivedList, true)}
+          {view === "status" && (
+            <>
+              {block("Pinned", byBucket.pinned, { pin: true, bucket: "pinned" })}
+              {block("Needs you", byBucket.needs.filter(asks), { bucket: "needs" })}
+              {block("Working", [...byBucket.working, ...byBucket.needs.filter((t) => !asks(t) && works(t))].sort(newest))}
+              {groupBlocks()}
+              {/* Answered while you were away and not started are finished work here: under Complete, each with its own mark and words. */}
+              {block("Complete", [...byBucket.needs.filter((t) => !asks(t) && !works(t)), ...byBucket.open].sort(newest))}
+            </>
+          )}
+          {view === "snoozed" && block("Snoozed", byBucket.snoozed, { bucket: "snoozed", bare: true })}
+          {view === "settled" && block("Settled", byBucket.settled, { bucket: "settled", bare: true })}
+          {view === "archive" && block("Archive", archivedList, { bare: true })}
           {empty}
         </div>
         <div className="lc-sb-blur" aria-hidden />
@@ -1359,15 +1353,17 @@ const toolOf = (tool: string) => TOOLS[tool] ?? { name: tool.charAt(0).toUpperCa
 const toolOrder = (tool: string) => (tool in TOOLS ? Object.keys(TOOLS).indexOf(tool) : 99);
 
 /**
-  Carry on, at the top of the list: work that's already yours to pick up and isn't in Liner Code's
+  Carry on, in the Sessions menu: work that's already yours to pick up and isn't in Liner Code's
   list. The work not committed in the project you were last in (none offered when that isn't a code
   project: never another project's), and the sessions in Claude Code and Codex in your projects not
   brought in yet, newest first (sessions.recent, one read of both tools for every project). Sessions
-  that wait on you are in the list's own groups already, so they aren't here. It is one row with the
-  count at its end, never unfolding in place: pressing it opens a panel beside the sidebar, by where
-  the work is, so however much there is your sessions don't move. Pressing one there brings it in
-  and opens it, or for the work not committed, writes the ask to finish it into Home's box. With
-  nothing to carry on there's no row; with the panel open it stays, saying so, until you close it.
+  that wait on you are in the list's own groups already, so they aren't here. It is one row in the
+  menu with the count at its end (`onCount` tells the sidebar the count): pressing it opens a panel
+  beside the sidebar, by where the work is, so however much there is your sessions don't move. The
+  panel hangs from a button kept out of sight at the heading's end (`opener` presses it), so it opens
+  level with the heading. Pressing one there brings it in and opens it, or for the work not
+  committed, writes the ask to finish it into Home's box. With nothing to carry on there's no row;
+  with the panel open it stays, saying so, until you close it.
   The row needs its count before it's opened, so it asks once the sidebar has been still a moment
   after it comes up, and again when the panel opens or the window comes back to the front, when what
   it has is over a minute old (so a row hidden for want of anything, or after a failed read, comes
@@ -1376,7 +1372,7 @@ const toolOrder = (tool: string) => (tool in TOOLS ? Object.keys(TOOLS).indexOf(
   read), so nothing asks it on a timer. Moving to another project asks only Git again, for that
   project, once a minute at most, or sooner after its sessions changed what's uncommitted.
 */
-function CarryOn({ projectId, now, onOpen, onCarryOn, side }: { projectId?: string; now: number; onOpen: (id: string) => void; onCarryOn?: (projectId: string, text: string) => void; side: () => HTMLElement | null }) {
+function CarryOn({ projectId, now, onOpen, onCarryOn, side, onCount, opener }: { projectId?: string; now: number; onOpen: (id: string) => void; onCarryOn?: (projectId: string, text: string) => void; side: () => HTMLElement | null; onCount: (n: number) => void; opener: MutableRefObject<(() => void) | null> }) {
   const all = useEngine((s) => s.projects);
   const projects = useMemo(() => codeProjects(all), [all]);
   const project = projects.find((p) => p.id === projectId);
@@ -1506,11 +1502,15 @@ function CarryOn({ projectId, now, onOpen, onCarryOn, side }: { projectId?: stri
   const files = plural(carry, "file");
   // Known once the sessions are; until then, or with nothing to carry on, there's no row (unless its panel is open).
   const count = found ? theirs.length + (carry ? 1 : 0) : 0;
-  // Closed with nothing left, the row goes: the keyboard moves to what the list shows, rather than to nowhere.
+  useEffect(() => onCount(count), [count]);
+  // The button the panel hangs from is out of sight: once the panel closes, the keyboard goes back to the heading's menu, where Carry on is, rather than to it or to nowhere.
+  const holder = useRef<HTMLSpanElement>(null);
+  opener.current = () => holder.current?.querySelector<HTMLButtonElement>("button")?.click();
   const wasOpen = useRef(false);
   useEffect(() => {
     if (showing) return void (wasOpen.current = true);
-    if (wasOpen.current && !count && (!document.activeElement || document.activeElement === document.body)) side()?.querySelector<HTMLElement>(".lc-sb-view")?.focus({ preventScroll: true });
+    const at = document.activeElement;
+    if (wasOpen.current && (!at || at === document.body || holder.current?.contains(at))) side()?.querySelector<HTMLElement>(".lc-sl-head-b")?.focus({ preventScroll: true });
     wasOpen.current = false;
   }, [showing, count]);
   if (!count && !showing) return null;
@@ -1526,77 +1526,73 @@ function CarryOn({ projectId, now, onOpen, onCarryOn, side }: { projectId?: stri
     </button>
   );
   return (
-    <Pop
-      label={count ? `Carry on: ${count} to pick up here` : "Carry on"}
-      describedBy={intro}
-      menu
-      side="right"
-      width={276}
-      within={side}
-      triggerClass="lc-sb-carry"
-      trigger={
-        <>
-          <I.carry size={14} />
-          <span>Carry on</span>
-          <span className="lc-sb-carry-n">
-            <Num value={count} />
-            <I.chevR size={12} />
-          </span>
-        </>
-      }
-    >
-      {(close) => (
-        <CarryPanel
-          onShow={() => {
-            setShowing(true);
-            setAsked((a) => a + 1);
-          }}
-          onHide={() => setShowing(false)}
-        >
-          {/* Its title is the panel's label already; the line under it is its description (aria-describedby). */}
-          <div className="lc-carry-h">
-            <b aria-hidden>Carry on</b>
-            <span id={intro}>Work you can pick up here: changes not committed, and sessions in Claude Code and Codex.</span>
-          </div>
-          {/* The row the keyboard was on went with the rest: it lands here, so Escape and Tab still start from the panel. */}
-          {!count && (
-            <p className="lc-carry-none" tabIndex={-1} ref={(el) => void (el && (!document.activeElement || document.activeElement === document.body) && el.focus({ preventScroll: true }))}>
-              Nothing to carry on right now
-            </p>
-          )}
-          {carry > 0 && project && (
-            <div className="lc-carry-g" role="group" aria-label="Not committed">
-              <div className="lc-carry-gh" aria-hidden>
-                <span>Not committed</span>
-                <span>1</span>
-              </div>
-              {line("carry", <I.changes size={14} />, "Continue uncommitted work", `${project.name} · ${files}`, undefined, `${files} not committed in ${project.name}`, () => {
-                close();
-                onCarryOn?.(project.id, `Carry on the work that isn't committed here (${files}): read what changed, then finish it.`);
-              })}
+    // Only an anchor for the panel: the menu's row is the way in, so assistive tech is not shown a second Carry on (focus never stays in it: the effect above moves it on).
+    <span ref={holder} className="lc-sb-carry-at" aria-hidden>
+      <Pop
+        label={count ? `Carry on: ${count} to pick up here` : "Carry on"}
+        describedBy={intro}
+        menu
+        side="right"
+        width={276}
+        within={side}
+        triggerClass="lc-sb-carry"
+        // Out of the Tab order: the menu's Carry on row is the way in.
+        triggerAttrs={{ tabIndex: "-1" }}
+        trigger="Carry on"
+      >
+        {(close) => (
+          <CarryPanel
+            onShow={() => {
+              setShowing(true);
+              setAsked((a) => a + 1);
+            }}
+            onHide={() => setShowing(false)}
+          >
+            {/* Its title is the panel's label already; the line under it is its description (aria-describedby). */}
+            <div className="lc-carry-h">
+              <b aria-hidden>Carry on</b>
+              <span id={intro}>Work you can pick up here: changes not committed, and sessions in Claude Code and Codex.</span>
             </div>
-          )}
-          {sources.map((tool) => {
-            const { name, mark } = toolOf(tool);
-            const xs = theirs.filter((x) => x.tool === tool);
-            return (
-              <div key={tool} className="lc-carry-g" role="group" aria-label={`From ${name}`}>
+            {/* The row the keyboard was on went with the rest: it lands here, so Escape and Tab still start from the panel. */}
+            {!count && (
+              <p className="lc-carry-none" tabIndex={-1} ref={(el) => void (el && (!document.activeElement || document.activeElement === document.body) && el.focus({ preventScroll: true }))}>
+                Nothing to carry on right now
+              </p>
+            )}
+            {carry > 0 && project && (
+              <div className="lc-carry-g" role="group" aria-label="Not committed">
                 <div className="lc-carry-gh" aria-hidden>
-                  <span>From {name}</span>
-                  <span>{xs.length}</span>
+                  <span>Not committed</span>
+                  <span>1</span>
                 </div>
-                {xs.map((x) =>
-                  line(`${x.tool}:${x.id}`, <ModelMark kind={mark} size={14} />, x.title, `${name} · ${nameOf(x.projectId)}`, "Bring in", `From ${name} · ${nameOf(x.projectId)} · ${agoLong(x.at, now)}`, () => {
-                    close();
-                    bring(x);
-                  }),
-                )}
+                {line("carry", <I.changes size={14} />, "Continue uncommitted work", `${project.name} · ${files}`, undefined, `${files} not committed in ${project.name}`, () => {
+                  close();
+                  onCarryOn?.(project.id, `Carry on the work that isn't committed here (${files}): read what changed, then finish it.`);
+                })}
               </div>
-            );
-          })}
-        </CarryPanel>
-      )}
-    </Pop>
+            )}
+            {sources.map((tool) => {
+              const { name, mark } = toolOf(tool);
+              const xs = theirs.filter((x) => x.tool === tool);
+              return (
+                <div key={tool} className="lc-carry-g" role="group" aria-label={`From ${name}`}>
+                  <div className="lc-carry-gh" aria-hidden>
+                    <span>From {name}</span>
+                    <span>{xs.length}</span>
+                  </div>
+                  {xs.map((x) =>
+                    line(`${x.tool}:${x.id}`, <ModelMark kind={mark} size={14} />, x.title, `${name} · ${nameOf(x.projectId)}`, "Bring in", `From ${name} · ${nameOf(x.projectId)} · ${agoLong(x.at, now)}`, () => {
+                      close();
+                      bring(x);
+                    }),
+                  )}
+                </div>
+              );
+            })}
+          </CarryPanel>
+        )}
+      </Pop>
+    </span>
   );
 }
 
@@ -1697,17 +1693,37 @@ function ProjectBadge({ name, none, design, dot }: { name: string; none?: boolea
   );
 }
 
-/** How a session stands, said short after its project on its row's second line: nothing when it's simply done. */
-function rowState(t: Thread, bucket: Bucket, now: number, run?: { status: string }): { text: string; tone?: "warn" | "danger" } | null {
-  if (t.archived) return null;
-  if (run?.status === "running" || t.status === "running") return { text: "working" };
-  if (bucket === "snoozed") return t.wake ? { text: t.wake.kind === "checks" ? `until #${t.wake.pr}'s checks finish` : `until a reply on #${t.wake.pr}` } : t.snoozedUntil ? { text: `until ${clock(t.snoozedUntil, now)}` } : null;
-  if (t.status === "waiting") return { text: "waits for your answer", tone: "warn" };
-  if (t.status === "error") return { text: "ran into a problem", tone: "danger" };
-  if (t.status === "limited") return { text: "hit its plan's limit", tone: "warn" };
-  if (t.turns === 0) return { text: "not started" };
-  if (t.unread) return { text: "answered while you were away", tone: "warn" };
-  return null;
+/** A pull request's state, as its mark and words say it. */
+const prState = (state: string) => (state.toUpperCase() === "MERGED" ? "merged" : state.toUpperCase() === "CLOSED" ? "closed" : "open");
+
+/**
+  A row's second line: what the session is doing now while it works ("Reading Sidebar.tsx", the
+  engine's Thread.doing, with the agents it sent still at work after it), else how it stands or
+  how it ended, first that applies: waiting on you, a problem, its plan's limit, snoozed, not
+  started, answered while you were away, its pull request, changes to review, else finished and
+  how long ago.
+*/
+function rowLine(t: Thread, bucket: Bucket, state: SideState, agents: number, now: number): { text: string; tone?: "warn" | "danger" } {
+  if (state === "working") {
+    const doing = t.status === "running" ? t.doing?.text || "Working" : "Working";
+    // The engine's own line for sending agents ("Sending an agent"): only how many are at work, not the same word twice.
+    if (agents > 0 && doing.startsWith("Sending an agent")) return { text: `${plural(agents, "agent")} at work` };
+    return { text: agents > 0 ? `${doing} · ${plural(agents, "agent")}` : doing };
+  }
+  if (t.status === "waiting") return { text: "Waits for your answer", tone: "warn" };
+  if (t.status === "error") return { text: "Ran into a problem", tone: "danger" };
+  if (t.status === "limited") return { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" };
+  if (bucket === "snoozed") {
+    if (t.wake) return { text: t.wake.kind === "checks" ? `Until #${t.wake.pr}'s checks finish` : `Until a reply on #${t.wake.pr}` };
+    if (t.snoozedUntil) return { text: `Until ${clock(t.snoozedUntil, now)}` };
+  }
+  if (t.turns === 0) return { text: "Not started" };
+  if (t.unread) return { text: "Answered while you were away", tone: "warn" };
+  if (t.pr) return { text: `PR ${prState(t.pr.state)}` };
+  if ((t.toReview ?? 0) > 0) return { text: `${plural(t.toReview!, "file")} to review` };
+  // ago() says "now", "4m", "2h", then a day or a date: the minutes and hours read "ago" after them.
+  const a = ago(t.updatedAt, now);
+  return { text: `Finished · ${a === "now" ? "just now" : /^\d+[mh]$/.test(a) ? `${a} ago` : a}` };
 }
 
 /** "just now", "4 min ago", "2 hours ago", "yesterday". */

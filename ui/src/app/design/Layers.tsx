@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import type { TreeNode } from "@contracts";
 import { I } from "../icons";
+import { SideLabel } from "../SideList";
 import { parentIn } from "./Canvas";
 import { LayerMark } from "./BuildTab";
 import { LayerChecks } from "./ChecksTab";
@@ -204,10 +205,7 @@ export function DesignSide({ cwd }: { cwd: string }) {
   const count = (id: string) => file?.frames.filter((f) => f.page === id).length ?? 0;
   return (
     <div className="ld-side">
-      <div className="lc-sb-lab ld-lab">
-        Lean
-        <span className="ld-lab-q">optional</span>
-      </div>
+      <SideLabel name={<>Lean<span className="ld-lab-opt">optional</span></>} />
       <LeanRow cwd={cwd} />
       {Skills ? <Skills cwd={cwd} /> : <SkillRows />}
       {!lean && file && (
@@ -218,12 +216,15 @@ export function DesignSide({ cwd }: { cwd: string }) {
       )}
       {file && (
         <>
-          <div className="lc-sb-lab ld-lab">
-            Pages
-            <button type="button" className="lc-ib l-focus ld-lab-b" aria-label="Add a page" title="Add a page" onClick={() => design.addPage(`Page ${file.pages.length + 1}`)}>
-              <I.plus size={14} />
-            </button>
-          </div>
+          <SideLabel
+            name="Pages"
+            count={file.pages.length}
+            end={
+              <button type="button" className="lc-ib l-focus ld-lab-b" aria-label="Add a page" title="Add a page" onClick={() => design.addPage(`Page ${file.pages.length + 1}`)}>
+                <I.plus size={14} />
+              </button>
+            }
+          />
           {file.pages.map((p) => (
             <button key={p.id} type="button" className="ld-tr l-focus" data-on={p.id === page || undefined} onClick={() => design.setPage(p.id)}>
               <I.file size={14} />
@@ -231,7 +232,7 @@ export function DesignSide({ cwd }: { cwd: string }) {
               {count(p.id) > 0 && <span className="ld-m">{count(p.id)}</span>}
             </button>
           ))}
-          <div className="lc-sb-lab ld-lab">Layers</div>
+          <SideLabel name="Layers" />
           <LayerList />
         </>
       )}

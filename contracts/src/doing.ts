@@ -1,0 +1,375 @@
+/*
+  What a session is doing right now, in a few plain words: the sidebar's second line while a turn runs (Thread.doing).
+  The engine asks doingOf as each step of the lead's turn starts. Its verbs are those the session's own trail uses
+  (trailSteps in ui/src/app/Timeline.tsx), said as under way: "Reading Sidebar.tsx", "Running npm test", "Drawing Phone /
+  Week". Nothing secret or long gets into them: a file by its name alone, a command by its program and at most two
+  plain words after it, never a whole command line.
+*/
+
+/** What doingOf reads of a tool call: the fields a timeline's tool row and a provider's update share. */
+export type DoingCall = { tool: string; toolKind: string; title: string; input?: string; path?: string };
+/** Turns a frame's id in a design file into its name, when the engine can say it. */
+export type DoingFrameNamer = (frame: string, design: string) => string | undefined;
+
+/** The longest a doing line runs, in characters. */
+export const DOING_MAX = 48;
+
+/** Cards of their own, not steps (Timeline.tsx's CARD_TOOLS and DESIGN_TOOLS), and the PR card's test run (PR_TEST_TOOL). */
+const NOT_STEPS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show_page", "liner.show_page", "mcp__liner__design_show", "liner.design_show", "liner_design_show", "liner.test"]);
+const BROWSER = /^(?:mcp__liner__|liner\.)browser_(\w+)/;
+const SERVER = /^(?:mcp__liner__|liner\.)server_(\w+)/;
+const CANVAS = /^(?:mcp__liner__|mcp_liner_|liner\.|liner_)?design_(files|frame|tree|node|selection|shot|picture|built)$/;
+const SIDEKICK = /(?:^|[._])sidekick$/;
+/** A frame's file in a design file: .liner/designs/<file>/frames/<id>.html. */
+const FRAME_FILE = /\.liner\/designs\/([^/]+)\/frames\/([^/]+)\.html$/;
+/** A title that is only a tool's kind, or nothing. */
+const BARE = /^(?:edit|write|delete|move|execute|exec|bash|shell|read|search|grep|glob|fetch|web|think|other|task|tool|use a tool)?$/i;
+const bare = (title?: string) => BARE.test((title ?? "").trim());
+/** A step whose call says only its kind, by that kind. */
+const KIND_WORDS: Record<string, string> = { think: "Thinking", fetch: "Reading a page", web: "Reading the web", task: "Sending an agent" };
+
+const slashed = (p: string) => p.replace(/\\/g, "/");
+const baseName = (p: string) => slashed(p).replace(/\/+$/, "").split("/").pop() || p;
+const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+const inputOf = (c: DoingCall): Record<string, unknown> => {
+  try {
+    const j = JSON.parse(c.input ?? "") as unknown;
+    return j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+};
+/** One line, no control characters, no "…" or full stop at the end. */
+const oneLine = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+/** At most DOING_MAX characters, cut at a word with nothing put after it, and no full stop or "…" at the end. */
+export function cutDoing(text: string) {
+  let s = oneLine(text).replace(/(?:\.{3}|…|\.)+$/, "").trim();
+  if (s.length > DOING_MAX) {
+    const cut = s.slice(0, DOING_MAX + 1);
+    const at = cut.lastIndexOf(" ");
+    s = (at > 0 ? cut.slice(0, at) : s.slice(0, DOING_MAX)).replace(/[\s,;:·/–-]+$/, "");
+  }
+  return s.replace(/(?:\.{3}|…|\.)+$/, "").trim();
+}
+/**
+  A verb and what it touches. Past the line, a name of several words is cut at a word ("Drawing Phone / Week view with
+  the…" without the "…"); one long word (a generated file name) gives way to the plainer words.
+*/
+function said(verb: string, target: string | undefined, plainer: string) {
+  const t = target ? oneLine(target) : "";
+  if (!t) return plainer;
+  const full = `${verb} ${t}`;
+  if (full.length <= DOING_MAX) return full;
+  const cut = cutDoing(full);
+  return / /.test(t) && cut.length > verb.length + 1 ? cut : plainer;
+}
+
+/** A file's name worth saying: letters, digits, `. _ - + @ ( )` and spaces. Nothing that could carry a value (`? = & : %`). */
+const FILE_NAME = /^[\p{L}\p{N}._+@() -]{1,200}$/u;
+/** A frame's or a server's name worth saying: as a file's, and the slashes and dashes of names like "Phone / Week". */
+const NAME = /^[\p{L}\p{N}._+@() /·'’–—-]{1,200}$/u;
+/** A name as a target, or nothing: never one from a URL, never one with a value in it. */
+const safe = (name: string | undefined, rule = NAME) => (name && !/:\/\//.test(name) && rule.test(name.trim()) ? name.trim() : undefined);
+/** The file a call is about, by its name alone (its path's, else a path's in its input, else its title's without the verb), when that name is plain. */
+function fileOf(c: DoingCall, verb: RegExp) {
+  const i = inputOf(c);
+  const p = c.path ?? str(i.file_path) ?? str(i.filePath) ?? str(i.path) ?? str(i.file) ?? str(i.filename) ?? (bare(c.title) ? undefined : c.title.replace(verb, "").trim() || undefined);
+  if (!p || /:\/\//.test(p)) return undefined;
+  return safe(baseName(p), FILE_NAME);
+}
+
+/** The command a call ran (as Timeline.tsx's commandOf reads it); "" when nothing names it. */
+function commandOf(c: DoingCall) {
+  const raw = c.input ?? "";
+  try {
+    const j = JSON.parse(raw) as { command?: unknown; cmd?: unknown };
+    const v = j?.command ?? j?.cmd;
+    if (typeof v === "string") return v;
+    // An array (Codex's) is joined with each part quoted as the shell would need, so its words stay its words.
+    if (Array.isArray(v) && v.every((x) => typeof x === "string")) return v.map((x: string) => (/^[\w@%+=:,./-]+$/.test(x) ? x : `'${x.replace(/'/g, "'\\''")}'`)).join(" ");
+    if (j && typeof j === "object") return "";
+  } catch {
+    // the command itself
+  }
+  return raw || (bare(c.title) ? "" : c.title.replace(/^Run\s+/, ""));
+}
+
+/** A word after the program that is worth saying: a plain subcommand or script name, never a flag, a path, a value or anything long. */
+const PLAIN_WORD = /^[a-z][a-z0-9:_-]{0,19}$/i;
+/** A program's name: a plain word (its folder dropped). */
+const PROGRAM = /^[a-z0-9][a-z0-9._+-]{0,23}$/i;
+/** Commands whose plain words say more than their program: what the trail's reader would call them. */
+const KNOWN: [RegExp, string][] = [[/^gh pr create$/, "Opening a pull request"]];
+
+/**
+  How many plain words after a program are said, by program: only those whose next words are subcommands or script names
+  by convention ("npm run build", "git status", "docker compose up"). `first` is the first word after the program, for
+  programs that take a second only after some first words. Any program not here is named alone, since what follows it
+  could be anything, a password included ("echo hunter2", "sshpass hunter2pass ssh host").
+*/
+const SUBCOMMANDS: Record<string, (first?: string) => number> = {
+  npm: (f) => (f === "run" || f === "run-script" ? 2 : 1),
+  pnpm: (f) => (f === "run" || f === "dlx" ? 2 : 1),
+  yarn: (f) => (f === "run" ? 2 : 1),
+  bun: (f) => (f === "run" ? 2 : 1),
+  npx: () => 1,
+  bunx: () => 1,
+  git: () => 1,
+  gh: () => 2,
+  cargo: () => 1,
+  go: () => 1,
+  make: () => 1,
+  docker: (f) => (f && /^(?:compose|image|container|network|volume|system|buildx|builder|context)$/.test(f) ? 2 : 1),
+  "docker-compose": () => 1,
+  kubectl: () => 1,
+  brew: () => 1,
+  pip: () => 1,
+  pip3: () => 1,
+  uv: (f) => (f === "run" || f === "pip" ? 2 : 1),
+};
+/**
+  Programs that run another, passed over to the program they run, with their flags. `value`: flags that take a value
+  (`-u root`, `--user root`, `--user=root`); `alone`: flags that take none; `giveUp`: flags after which the program can't be
+  told (env -S splits a string into a command). Any other flag after one of them gives up too: guessing could name a value.
+*/
+const WRAPPERS: Record<string, { value: string[]; alone: string[]; giveUp?: string[] }> = {
+  sudo: {
+    value: ["-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U", "--user", "--group", "--host", "--prompt", "--close-from", "--chdir", "--chroot", "--command-timeout", "--other-user", "--role", "--type"],
+    alone: ["-A", "-b", "-E", "-H", "-i", "-k", "-K", "-n", "-P", "-s", "-S", "-B", "--askpass", "--background", "--preserve-env", "--set-home", "--login", "--reset-timestamp", "--remove-timestamp", "--non-interactive", "--preserve-groups", "--shell", "--stdin", "--bell"],
+  },
+  env: { value: ["-u", "-C", "--unset", "--chdir"], alone: ["-i", "-0", "-", "--ignore-environment", "--null"], giveUp: ["-S", "--split-string"] },
+  time: { value: ["-f", "-o", "--format", "--output"], alone: ["-p", "-v", "-l", "-a", "--portability", "--verbose", "--append"] },
+  nohup: { value: [], alone: [] },
+};
+/** A Python module after -m: a plain dotted name. */
+const MODULE = /^[a-z_][a-z0-9_.]{0,30}$/i;
+/** A part that only sets the shell up for the next: passed over when choosing what the command does. */
+const SETUP = new Set(["cd", "pushd", "popd", "export", "set", "unset", "source", ".", "alias"]);
+
+/** A word of a command as the shell reads it: its value, and whether any of it was quoted or escaped. */
+type ShellWord = { text: string; quoted: boolean };
+/**
+  A command read once, as a shell would: words, with quotes and backslashes taken into account, and parts split at
+  `| || & && ;` and new lines only where they are outside quotes. `risky`: the index of the first word at or after which
+  something can't be read safely (a `$(`, a backtick, a heredoc); `torn`: a quote that never closes.
+*/
+function shellParts(command: string): { parts: ShellWord[][]; risky: number; torn: boolean } {
+  const parts: ShellWord[][] = [[]];
+  let word: ShellWord | null = null;
+  let count = 0;
+  let risky = Infinity;
+  const end = () => {
+    if (word) parts[parts.length - 1].push(word), count++;
+    word = null;
+  };
+  const cut = () => {
+    end();
+    if (parts[parts.length - 1].length) parts.push([]);
+  };
+  const add = (ch: string, quoted = false) => {
+    word ??= { text: "", quoted: false };
+    word.text += ch;
+    if (quoted) word.quoted = true;
+  };
+  const hazard = () => (risky = Math.min(risky, count));
+  const s = command.replace(/\r/g, "");
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "'") {
+      const close = s.indexOf("'", i + 1);
+      if (close < 0) return { parts, risky, torn: true };
+      add(s.slice(i + 1, close), true);
+      word!.quoted = true;
+      i = close;
+    } else if (ch === '"') {
+      let j = i + 1;
+      let text = "";
+      for (; j < s.length && s[j] !== '"'; j++) {
+        if (s[j] === "\\" && j + 1 < s.length && '"\\$`\n'.includes(s[j + 1])) text += s[++j];
+        else {
+          if (s[j] === "`" || (s[j] === "$" && s[j + 1] === "(")) hazard();
+          text += s[j];
+        }
+      }
+      if (j >= s.length) return { parts, risky, torn: true };
+      add(text, true);
+      word!.quoted = true;
+      i = j;
+    } else if (ch === "\\") {
+      // An escaped character is the character; an escaped new line joins the lines.
+      if (s[i + 1] === "\n") i++;
+      else if (i + 1 < s.length) add(s[++i], true);
+    } else if (ch === "`" || (ch === "$" && s[i + 1] === "(")) {
+      hazard();
+      add(ch);
+    } else if (ch === "<" && s[i + 1] === "<") {
+      hazard();
+      add("<<");
+      i++;
+    } else if (ch === " " || ch === "\t") end();
+    else if (ch === "\n" || ch === ";") cut();
+    else if (ch === "|" || (ch === "&" && !/[<>]/.test(s[i - 1] ?? ""))) {
+      if (s[i + 1] === ch) i++;
+      cut();
+    } else add(ch);
+  }
+  end();
+  return { parts: parts.filter((p) => p.length), risky, torn: false };
+}
+
+/** A NAME=value word: a setting before a program (its value is never said). */
+const assigns = (w: ShellWord) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w.text);
+/**
+  A word as a program's name, or "": a plain unquoted name, or a path (quoted or not, Windows' too) whose last part is
+  one. `.exe`, `.cmd` and `.bat` are left off.
+*/
+function programOf(w: ShellWord) {
+  const plain = (n: string) => (PROGRAM.test(n) ? n.replace(/\.(?:exe|cmd|bat)$/i, "") : "");
+  if (!w.quoted && PROGRAM.test(w.text)) return plain(w.text);
+  if (/[\\/]/.test(w.text) && !/:\/\//.test(w.text)) return plain(baseName(w.text));
+  return "";
+}
+
+/**
+  A command as a few words: its program, and after it only the subcommand or script words its program is known for
+  (SUBCOMMANDS), each a plain unquoted word, at most two. It is read as a shell reads it (shellParts), so nothing inside
+  quotes is ever taken for a program or a word. A shell's -c is opened; parts that only set up (`cd … &&`, `export …;`),
+  NAME=value and sudo / env / time / nohup before the program are passed over. "" when the program can't be named safely:
+  a quote that never closes, a `$(`, a backtick or a heredoc before it, a wrapper's flag it doesn't know, or a program that
+  isn't a plain name.
+*/
+export function commandWords(command: string, depth = 0): string {
+  const { parts, risky, torn } = shellParts(command);
+  if (torn || depth > 3) return "";
+  let seen = 0;
+  for (const part of parts) {
+    const start = seen;
+    seen += part.length;
+    let i = 0;
+    while (i < part.length && assigns(part[i])) i++;
+    if (i >= part.length || (!part[i].quoted && SETUP.has(part[i].text))) continue;
+    // Past sudo, env, time and nohup, with their flags and settings.
+    for (let wrap = WRAPPERS[programOf(part[i])]; wrap; wrap = WRAPPERS[programOf(part[i])]) {
+      i++;
+      while (i < part.length) {
+        const w = part[i];
+        if (assigns(w)) i++;
+        else if (w.text === "--" && !w.quoted) {
+          i++;
+          break;
+        } else if (w.text.startsWith("-") && !w.quoted) {
+          const flag = w.text.replace(/=.*$/, "");
+          if (wrap.giveUp?.includes(flag)) return "";
+          if (wrap.value.includes(flag)) i += w.text.includes("=") ? 1 : 2;
+          else if (wrap.alone.includes(w.text)) i++;
+          else return "";
+        } else break;
+      }
+      if (i >= part.length) return "";
+    }
+    if (start + i >= risky) return "";
+    const program = programOf(part[i]);
+    if (!program) return "";
+    const rest = part.slice(i + 1);
+    const word = (w?: ShellWord) => (w && !w.quoted && PLAIN_WORD.test(w.text) ? w.text : undefined);
+    // bash -lc 'npm test': the command inside.
+    if (/^(?:ba|z|da)?sh$/.test(program)) {
+      const c = rest.findIndex((w) => !w.quoted && /^-[a-z]*c$/.test(w.text));
+      return c >= 0 && rest.slice(0, c).every((w) => !w.quoted && /^-[a-z]+$/.test(w.text)) && rest[c + 1] ? commandWords(rest[c + 1].text, depth + 1) : program;
+    }
+    // python -m pytest: the module, a plain name. Nothing else after Python.
+    if (/^python(?:3(?:\.\d+)?)?$/.test(program)) return rest[0]?.text === "-m" && !rest[0].quoted && rest[1] && !rest[1].quoted && MODULE.test(rest[1].text) ? `${program} -m ${rest[1].text}` : program;
+    const most = SUBCOMMANDS[program]?.(word(rest[0])) ?? 0;
+    const out = [program];
+    for (const w of rest.slice(0, most)) {
+      if (!word(w)) break;
+      out.push(w.text);
+    }
+    return out.join(" ");
+  }
+  return "";
+}
+
+/** A canvas tool's step as under way, in the trail's words (Timeline.tsx's canvasStep). */
+function canvasDoing(c: DoingCall, kind: string, names?: DoingFrameNamer) {
+  const i = inputOf(c);
+  const id = str(i.frame) ?? str(i.id);
+  const design = str(i.design);
+  const frame = safe((id && design && names?.(id, design)) || str(i.name) || (id && readable(id)) || undefined);
+  switch (kind) {
+    case "files":
+      return "Reading the design files";
+    case "frame":
+      return said("Drawing", safe(str(i.name) ?? frame), "Drawing");
+    case "tree":
+      return said("Reading", frame, "Reading a frame");
+    case "node":
+      return i.html === undefined ? said("Reading", frame, "Reading a frame") : said("Changing", frame, "Changing a frame");
+    case "selection":
+      return "Looking at what's selected";
+    case "shot":
+      return said("Looking at", frame, "Looking at a frame");
+    case "picture":
+      return "Making a picture";
+    default:
+      return "Marking it built";
+  }
+}
+/** A frame's id as a name: brand-board is "Brand board" (Timeline.tsx's readableFrame). */
+const readable = (id: string) => {
+  if (!/^[a-z0-9][a-z0-9_~-]*$/.test(id)) return id;
+  const w = id.replace(/~.*$/, "").replace(/[-_]+/g, " ").trim();
+  return w ? w.charAt(0).toUpperCase() + w.slice(1) : id;
+};
+
+/**
+  What the turn is doing as its latest step starts, from the lead's calls so far this turn, in order (the latest last).
+  Reads in a row gather into one, as the trail has them ("Reading 3 files"). Undefined when the latest call isn't a step
+  (a question, a plan, a design shown): what was said before stands.
+*/
+export function doingOf(calls: DoingCall[], names?: DoingFrameNamer): string | undefined {
+  const c = calls.at(-1);
+  if (!c || !isStep(c)) return undefined;
+  return cutDoing(stepWords(calls.filter(isStep), c, names));
+}
+/** A call the trail draws as a step (Timeline.tsx's isStep): not a card of its own, nor the PR card's test run. */
+const isStep = (c: DoingCall) => !NOT_STEPS.has(c.tool) && !(c.toolKind === "task" && /^Opus\b/.test(c.title));
+
+function stepWords(calls: DoingCall[], c: DoingCall, names?: DoingFrameNamer): string {
+  const canvas = CANVAS.exec(c.tool);
+  if (canvas) return canvasDoing(c, canvas[1], names);
+  if (BROWSER.test(c.tool)) return "Checking in the Browser";
+  if (SERVER.exec(c.tool)?.[1] === "start") return said("Starting", safe(c.title.replace(/^Run\s+|\s+from launch\.json$/g, "").trim()), "Starting a server");
+  if (SIDEKICK.test(c.tool)) return "Working with its sidekick";
+  if (c.toolKind === "read") {
+    // The reads in a row up to this one, as one step.
+    let n = calls.length - 1;
+    while (n > 0 && calls[n - 1].toolKind === "read") n--;
+    const run = calls.slice(n);
+    const files = [...new Set(run.flatMap((x) => fileOf(x, /^Read\s+/) ?? []))];
+    if (files.length > 1) return `Reading ${files.length} files`;
+    if (files.length === 1) return said("Reading", files[0], run.length > 1 ? `Reading ${run.length} files` : "Reading a file");
+    return run.length > 1 ? `Reading ${run.length} files` : "Reading a file";
+  }
+  if (c.toolKind === "search") return "Searching the code";
+  if (c.toolKind === "edit" || c.toolKind === "write") {
+    // A design file's frame is called by its name: "Draw Phone / Week" says it, else the design file does, else it is drawing.
+    const [, design, frame] = FRAME_FILE.exec(slashed(c.path ?? str(inputOf(c).file_path) ?? "")) ?? [];
+    if (frame) return said("Drawing", safe(/^Draw\s+(.+)$/.exec(c.title.trim())?.[1] ?? names?.(frame, design)), "Drawing");
+    return said("Editing", fileOf(c, /^(?:Edit|Write)\s+/), "Changing a file");
+  }
+  if (c.toolKind === "exec") {
+    const command = commandOf(c);
+    const ran = commandWords(command);
+    const known = KNOWN.find(([re]) => re.test(ran));
+    if (known) return known[1];
+    return said("Running", ran || undefined, "Running a command");
+  }
+  const kind = KIND_WORDS[c.toolKind];
+  if (kind) return kind;
+  // Another tool, by its name when that is a word: an MCP server's own name ("Using github"), never Liner's.
+  const server = /^mcp__([a-z0-9-]+)__/i.exec(c.tool)?.[1];
+  if (server && server !== "liner" && PROGRAM.test(server)) return `Using ${server}`;
+  if (!/^(?:mcp_|liner)/.test(c.tool) && /^[A-Za-z][A-Za-z0-9_-]{0,23}$/.test(c.tool) && !bare(c.tool)) return `Using ${c.tool}`;
+  return "Using a tool";
+}

@@ -274,6 +274,8 @@ export class Store {
       }
     // Its agents in the background went with the engine's tool process too (timeline() settles their rows).
     for (const t of this.state.threads) if (t.agentsAtWork) t.agentsAtWork = undefined;
+    // What it was doing went with its turn: a line saved by chance alongside a later save is never read back.
+    for (const t of this.state.threads) if (t.doing) t.doing = undefined;
   }
 
   on(fn: Listener) {
@@ -413,6 +415,8 @@ export class Store {
     // A security scan (and a question about a finding) only reads: whatever asks for more (a plan approved, a patch) leaves it at Read only.
     if ((t.security?.kind === "scan" || t.security?.kind === "ask") && t.access !== "read") t = { ...t, access: "read" };
     t.updatedAt = Date.now();
+    // Only a running turn is doing anything: a session that stops, ends, fails or waits on you says so at once.
+    if (t.doing && t.status !== "running") t = { ...t, doing: undefined };
     const i = this.state.threads.findIndex((x) => x.id === t.id);
     if (i < 0) this.state.threads.push(t);
     else this.state.threads[i] = t;
@@ -422,6 +426,22 @@ export class Store {
   }
   patchThread(id: string, patch: Partial<Thread>) {
     return this.putThread({ ...this.thread(id), ...patch });
+  }
+  /**
+    What a running session is doing now (Thread.doing), or nothing. It changes often, so it is cheap: sent to the app, but
+    it neither moves the session in the sidebar (updatedAt) nor saves by itself, and it is dropped when the engine starts.
+    Set only while the session runs; cleared whatever it is doing.
+  */
+  setDoing(id: string, doing: Thread["doing"]) {
+    const i = this.state.threads.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    const t = this.state.threads[i];
+    if (doing && t.status !== "running") return;
+    if (t.doing?.text === doing?.text) return;
+    const next: Thread = { ...t, doing };
+    if (!doing) delete next.doing;
+    this.state.threads[i] = next;
+    this.emit({ type: "thread", thread: next });
   }
 
   setAgents(agents: AgentProfile[]) {

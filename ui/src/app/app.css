@@ -76,6 +76,8 @@ html[data-action="ink"] {
   --lc-bar-hover: color-mix(in oklab, var(--l-ink) 11%, var(--lc-field));
   --lc-bar-tile: var(--lc-paper);
   --lc-hair: color-mix(in oklab, var(--l-ink) 8%, transparent);
+  /* A merged pull request's mark, in the sidebar's rows. */
+  --lc-merged: oklch(0.56 0.17 295);
   /* No text lighter than this: the fourth grey is 4.6:1 on the paper (it was 3.6:1). */
   --l-ink-4: oklch(0.545 0.006 265);
   /* A raised card: a small, close shadow (it was a 36px one). */
@@ -95,6 +97,7 @@ html[data-action="ink"] {
   --lc-ctl-ink: oklch(0.94 0.003 265);
   --lc-ctl-ink-2: oklch(0.66 0.006 265);
   --lc-bar-tile: color-mix(in oklab, var(--l-ink) 16%, var(--lc-paper));
+  --lc-merged: oklch(0.72 0.14 295);
   --l-ink-4: oklch(0.64 0.005 265);
   --lc-lift: 0 1px 2px oklch(0 0 0 / 0.4), 0 3px 8px -2px oklch(0 0 0 / 0.5);
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
@@ -704,7 +707,6 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
 /* The quiet controls that had nothing to show under the pointer. */
 @media (hover: hover) {
   .lc-link:hover,
-  .lc-sb-plab > .lc-sb-add:hover,
   .lc-ad-add:hover {
     background: var(--l-wash-2);
     color: var(--l-ink);
@@ -1045,23 +1047,6 @@ html[data-native="mac"] .lc-sb-head {
   line-height: 1;
   white-space: nowrap;
 }
-/* Search, with what you start from here beside it, on one row. */
-.lc-sb-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.lc-sb-bar .lc-sb-search {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-  font-weight: 400;
-  color: var(--l-ink-3);
-}
-.lc-sb-bar .lc-ib {
-  width: 30px;
-  height: 30px;
-}
 .lc-sb-find {
   display: flex;
   align-items: center;
@@ -1221,106 +1206,6 @@ html[data-native="mac"] .lc-sb-head {
   flex-direction: column;
   gap: 2px;
 }
-.lc-sb-lab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 8px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-}
-.lc-sb-lab > svg {
-  flex: none;
-  color: var(--l-ink-4);
-}
-.lc-sb-lab > span {
-  margin-left: auto;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-.lc-sb-lab[data-warn] > span {
-  font-weight: 500;
-  color: var(--l-warn-text);
-}
-.lc-sb-add {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--l-ink-3);
-  cursor: pointer;
-}
-.lc-sb-row {
-  position: relative;
-  border-radius: 12px;
-  animation: lc-row-in 180ms ease-out backwards;
-}
-/*
-  A project's header: its badge, its name, and how many of its sessions need you. It folds its
-  sessions; the chevron that says so comes when you point at it, and stays while it's folded.
-*/
-.lc-sb-plab {
-  height: 30px;
-  font-size: 13px;
-  color: var(--l-ink-2);
-}
-.lc-sb-pt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 26px;
-  margin-left: -4px;
-  padding: 0 6px 0 4px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-.lc-sb-pt > span:not(.lc-pjb, .lc-sb-picon) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* By folder, a project's header leads with its folder, in the icons' grey. */
-.lc-sb-picon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  color: var(--l-ink-4);
-}
-.lc-sb-pt > svg {
-  flex: none;
-  margin-left: -3px;
-  color: var(--l-ink-4);
-  opacity: 0;
-  transition:
-    transform 300ms var(--l-spring-smooth),
-    opacity 140ms ease;
-}
-.lc-sb-pt[aria-expanded="true"] > svg {
-  transform: rotate(90deg);
-}
-.lc-sb-plab:hover .lc-sb-pt > svg,
-.lc-sb-pt:focus-visible > svg,
-.lc-sb-pt[aria-expanded="false"] > svg {
-  opacity: 1;
-}
-@media (hover: hover) {
-  .lc-sb-pt:hover {
-    color: var(--l-ink);
-  }
-}
 /*
   The badge: a project's two letters in grey on a tint of the ink, the same for every project
   (Liner 2.0: no colour per item). A session's state is the only colour it carries: a dot at its
@@ -1383,71 +1268,6 @@ html[data-native="mac"] .lc-sb-head {
     animation: none;
   }
 }
-.lc-sb-row[aria-current] .lc-pjb-dot {
-  box-shadow: 0 0 0 2px var(--lc-plate);
-}
-.lc-sb-plab > .lc-sb-pneeds {
-  margin-left: auto;
-  font-weight: 500;
-  color: var(--l-warn-text);
-  font-variant-numeric: tabular-nums;
-}
-.lc-sb-plab > .lc-sb-pneeds + .lc-sb-add {
-  margin-left: 4px;
-}
-/* A project's + comes when you point at its header, or reach it from the keyboard. */
-.lc-sb-plab > .lc-sb-add {
-  opacity: 0;
-  transition: opacity 140ms ease;
-}
-.lc-sb-plab:hover > .lc-sb-add,
-.lc-sb-plab:focus-within > .lc-sb-add {
-  opacity: 1;
-}
-/* A session's forks: a toggle on its title's line, before its mark, and the forks under it on a line. */
-.lc-sb-forks {
-  position: absolute;
-  right: 32px;
-  bottom: 6px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 18px;
-  padding: 0 5px 0 3px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-.lc-sb-forks > svg:first-child {
-  color: var(--l-ink-4);
-  transition: transform 300ms var(--l-spring-smooth);
-}
-.lc-sb-forks[aria-expanded="true"] > svg:first-child {
-  transform: rotate(90deg);
-}
-@media (hover: hover) {
-  .lc-sb-forks:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
-.lc-sb-row[data-forks] .lc-sb-h > b {
-  margin-right: 40px;
-}
-/* While a row's actions show, its forks' toggle steps left of them, and the title stops short of both. */
-.lc-sb .lc-sb-row[data-forks]:is(:hover, :focus-within) > .lc-sb-forks,
-.lc-sb .lc-sb-row[data-forks]:has(.lc-sb-acts [data-open]) > .lc-sb-forks {
-  right: 78px;
-}
-.lc-sb-row[data-forks]:is(:hover, :focus-within) .lc-sb-h > :is(b, .lc-sb-rename),
-.lc-sb-row[data-forks]:has(.lc-sb-acts [data-open]) .lc-sb-h > :is(b, .lc-sb-rename) {
-  margin-right: 112px;
-}
 .lc-sb-kids {
   position: relative;
   display: flex;
@@ -1473,84 +1293,6 @@ html[data-native="mac"] .lc-sb-head {
     opacity: 0;
   }
 }
-/*
-  A session row, two lines, after T3 Code's card row: on top, small, the project (where its
-  header doesn't say it already), who works and where it stands, and how long ago; under it the
-  title, whole, with the session's mark at its end. On hover the time gives its place to pin,
-  snooze and settle, on the small line, so the title keeps its room. A finished or settled
-  session's title steps back a shade.
-*/
-.lc-sb-pick {
-  display: grid;
-  gap: 1px;
-  padding: 5px 10px;
-  border-radius: 12px;
-  outline: none;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .lc-sb-row:not([aria-current]):hover {
-    background: var(--l-wash-2);
-  }
-}
-.lc-sb-s {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  height: 16px;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--l-ink-3);
-  white-space: nowrap;
-}
-/* What it stands at takes what room is left, and ends in an ellipsis. */
-.lc-sb-st {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The mark ends the title's line. */
-.lc-sb-mk {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 16px;
-  height: 20px;
-}
-.lc-sb-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 20px;
-}
-.lc-sb-h > b {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-sb-row[data-quiet]:not([aria-current]) .lc-sb-h > b {
-  color: var(--l-ink-2);
-}
-.lc-sb-time {
-  flex: none;
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--l-ink-4);
-  font-variant-numeric: tabular-nums;
-}
-/* While the actions show, the time steps out. */
-.lc-sb-row:is(:hover, :focus-within) .lc-sb-time,
-.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-time {
-  display: none;
-}
 .lc-sb-rename {
   flex: 1;
   min-width: 0;
@@ -1567,33 +1309,8 @@ html[data-native="mac"] .lc-sb-head {
   font-weight: 500;
   color: var(--l-ink);
 }
-/* A new state fades in over the old one's place: no letters sliding or popping. */
-.lc-sb-st > span {
-  animation: lc-row-in 160ms ease-out backwards;
-}
-.lc-sb-st[data-tone="warn"] {
-  color: var(--l-warn-text);
-}
-.lc-sb-st[data-tone="danger"] {
-  color: var(--l-danger-text);
-}
-/* On the title's line, where the time was. They fade in, and go at once, as the time comes back. */
-.lc-sb-acts {
-  position: absolute;
-  top: 2px;
-  right: 6px;
-  display: flex;
-  gap: 1px;
-  opacity: 0;
-}
-.lc-sb-row:hover .lc-sb-acts,
-.lc-sb-row:focus-within .lc-sb-acts,
-.lc-sb-acts:has([data-open]) {
-  opacity: 1;
-  transition: opacity 140ms ease;
-}
 .lc-sb-a,
-.lc-sb-acts .lc-pick {
+.lc-sl-acts .lc-pick {
   display: grid;
   place-items: center;
   width: 22px;
@@ -1606,7 +1323,7 @@ html[data-native="mac"] .lc-sb-head {
   cursor: pointer;
 }
 .lc-sb-a[aria-pressed="true"],
-.lc-sb-acts .lc-pick[data-open] {
+.lc-sl-acts .lc-pick[data-open] {
   background: var(--l-surface);
   box-shadow:
     0 0 0 1px var(--l-line-2),
@@ -1615,7 +1332,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 @media (hover: hover) {
   .lc-sb-a:hover,
-  .lc-sb-acts .lc-pick:hover {
+  .lc-sl-acts .lc-pick:hover {
     color: var(--l-ink);
     background: var(--l-wash-2);
   }
@@ -1699,29 +1416,15 @@ html[data-native="mac"] .lc-sb-head {
   cursor: pointer;
 }
 /*
-  The sidebar in Liner 2.0: your places as rows on top (New session with search at its end,
-  Routines), then Add-ons with your apps, then what the list shows (All projects, By folder,
-  Snoozed, Settled, Archive) with the filter under it, and the list taking the room down to the
-  foot: you, then the team, your plans' limits and Settings.
+  The sidebar in Liner 2.0: your places as rows on top (New session, Search, The Wall, Routines),
+  then Add-ons with your apps, then "Sessions" with its one menu (SideList.tsx, the block at the
+  end of this sheet), and the list taking the room down to the foot: the name, your plans' limits
+  and Settings.
 */
 .lc-sb-top {
   display: flex;
   flex-direction: column;
   gap: 1px;
-}
-.lc-sb-navrow {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.lc-sb-navrow .lc-sb-nav {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-}
-.lc-sb-navrow .lc-ib {
-  width: 30px;
-  height: 30px;
 }
 .lc-sb-nav > span:first-of-type {
   flex: 1;
@@ -1730,7 +1433,6 @@ html[data-native="mac"] .lc-sb-head {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-sb-kbd,
 .lc-sb-nend {
   flex: none;
   font: inherit;
@@ -1750,76 +1452,6 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-ndot[data-k="danger"] {
   background: var(--l-danger);
 }
-/* One line per session. */
-.lc-sb .lc-sb-pick {
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 10px 0 12px;
-}
-.lc-sb .lc-sb-h {
-  flex: 1;
-  height: 32px;
-  gap: 9px;
-}
-.lc-sb .lc-sb-h > b {
-  font-size: 13px;
-}
-.lc-sb .lc-sb-acts {
-  top: 50%;
-  translate: 0 -50%;
-}
-.lc-sb-row:is(:hover, :focus-within) .lc-sb-h > :is(.lc-sb-mk, .lc-sb-time),
-.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h > :is(.lc-sb-mk, .lc-sb-time) {
-  display: none;
-}
-.lc-sb-row:is(:hover, :focus-within) .lc-sb-h > :is(b, .lc-sb-rename),
-.lc-sb-row:has(.lc-sb-acts [data-open]) .lc-sb-h > :is(b, .lc-sb-rename) {
-  margin-right: 64px;
-}
-/* By folder, a session sits in a step under its project's header, its title under the folder's name (on the list's text edge since 0.2.8, at its end). */
-.lc-sb-proj .lc-sb-row:not([data-two]) .lc-sb-pick {
-  padding-left: 32px;
-}
-.lc-sb .lc-sb-forks {
-  right: 40px;
-  bottom: 7px;
-}
-/* A project's header: Settle the project, then +, both as you point at it. */
-.lc-sb-plab > .lc-sb-add + .lc-sb-add {
-  margin-left: 2px;
-}
-/*
-  Two lines a session, in All projects and where sessions are put away (D, after the November
-  study). Its parts are laid on the list's grid at the end of this sheet (0.2.8): the mark in the
-  mark column, the title with how long ago, where it is under it.
-*/
-.lc-sb-st > [data-tone="warn"] {
-  color: var(--l-warn-text);
-}
-.lc-sb-st > [data-tone="danger"] {
-  color: var(--l-danger-text);
-}
-/* Add-ons, apart from your places: its ··· at the end of its label, your apps under it. */
-.lc-sb-labpop {
-  margin-left: auto;
-}
-.lc-sb-labpop > .lc-sb-add {
-  margin-left: 0;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-sb-labpop > .lc-sb-add:is([data-open], [aria-current]) {
-  background: var(--lc-plate);
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-sb-labpop > .lc-sb-add:not([data-open], [aria-current]):hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
 /* The sidebar's menus: their icons in the icons' grey, the picked one's tick in the accent. */
 .lc-sb-menu {
   display: contents;
@@ -1829,50 +1461,6 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-sb-menu .lc-row[data-on] .lc-row-tick {
   color: var(--l-ink);
-}
-/* What the list shows, how it's sorted and a new project; the filter field under them. */
-.lc-sb-views {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 4px;
-}
-.lc-sb-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 28px;
-}
-.lc-sb-bar .lc-ib {
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-}
-.lc-sb-view {
-  gap: 5px;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 9px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink-2);
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-sb-view > svg {
-  color: var(--l-ink-3);
-}
-.lc-sb-view[data-open] {
-  background: var(--lc-plate);
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-sb-view:not([data-open]):hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
 }
 /* A new Liner Code, over the foot. */
 .lc-sb-update {
@@ -6677,7 +6265,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   .lc-ask,
   .lc-q,
   .lc-plan,
-  .lc-sb-row,
+  .lc-sl-row,
   .lc-session,
   .lc-home,
   .lc-usage,
@@ -7939,9 +7527,6 @@ html[data-motion="quick"] .lc-session .lc-body {
   height: auto;
   color: var(--l-ink-2);
 }
-.lc-sb-navrow .lc-ib {
-  color: var(--l-ink-3);
-}
 /*
   The foot's option: an 18px tile with a 12px drawing, Code or Design at 13, and the arrow that
   says it opens, 28 high. Its menu stays inside the sidebar (Pop's `within`), its tiles 20px, each
@@ -8318,20 +7903,13 @@ body,
   font-synthesis: none;
   text-rendering: auto;
 }
-/* The sidebar: places, the view label and group labels at 13 regular; the lit place at 500. */
+/* The sidebar: places at 13 regular; the lit place at 500 (the list's labels: SideList's block). */
 .lc-sb-nav {
   font-size: 13px;
   font-weight: 400;
 }
 .lc-sb-nav[aria-current] {
   font-weight: 500;
-}
-.lc-sb-view {
-  font-weight: 400;
-}
-.lc-sb-lab {
-  font-size: 13px;
-  font-weight: 400;
 }
 /* The composer's controls (the Reviewer and the mode chip: in their own sheets). */
 .lc-seg-b,
@@ -8369,31 +7947,17 @@ body,
 /*
   The sidebar against the approved mockup (home-canvas, Centred): Add-ons is the fourth of the
   top rows, 1px under The Wall like the others; everything starts on one left edge (the places'
-  icons, the name, the view label, group labels, session titles and the foot's tile, 10px inside
-  the sidebar's inset); All projects sits 14 under Add-ons with the first group label right under
-  it at 30 high; session rows stack with no gap at a 10px corner; the foot's buttons are 30 square
-  with 20px drawings, 4 apart, 4 from the edge, like the head's.
+  icons, the name, the Sessions heading, group labels and the foot's tile, 10px inside the
+  sidebar's inset); session rows stack with no gap at a 10px corner; the foot's buttons are 30
+  square with 20px drawings, 4 apart, 4 from the edge, like the head's.
 */
 .lc-sb-head {
   padding-right: 4px;
   padding-left: 10px;
 }
-.lc-sb-view {
-  padding-left: 10px;
-}
-.lc-sb-views {
-  margin-bottom: -10px;
-}
-.lc-sb-lab {
-  height: 30px;
-  /* 10 at both ends, so a group's count ends where its rows' times do. */
-  padding: 0 10px;
-}
 .lc-sb-sec {
   gap: 0;
 }
-.lc-sb-row,
-.lc-sb-pick,
 .lc-sb-plate {
   border-radius: 10px;
 }
@@ -8592,233 +8156,19 @@ html[data-native="mac"] .lc-sb-head {
 
 /* ---------- 0.2.8: the sidebar's name at the foot, its list on one grid, and Carry on ---------- */
 /*
-  The top row is only the window's own controls: Hide just past the traffic lights, the drag area,
-  Back and Forward at the right (Sidebar.tsx). With no lights (Windows, Linux, a browser) the row
-  is the same, as Claude's and Codex's apps have it, and Hide's drawing sits over the places' icons.
+  The top row: Hide, Back and Forward together just past the traffic lights, the drag area, and the
+  counts pill at the far right (Sidebar.tsx; the pill's rules are in the list parts' block at the end
+  of this sheet). With no lights (Windows, Linux, a browser) the row is the same, as Claude's and
+  Codex's apps have it, and Hide's drawing sits over the places' icons.
 */
 html:not([data-native="mac"]) .lc-sb-head {
   padding-left: 7px;
 }
-/*
-  The list on the places' grid: every row has a 24px mark column under their icons (8px in, so its
-  centre is under theirs) and its words start on their text edge, 40px in. What the list shows
-  heads it there, in grey; sort and + come while you're in the sidebar, or the keyboard is.
-*/
-.lc-sb-bar {
-  padding-left: 32px;
-}
-.lc-sb-view {
-  padding: 0 6px 0 8px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-}
-.lc-sb-view > svg {
-  color: var(--l-ink-4);
-}
-.lc-sb-bar .lc-ib {
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-.lc-sb:hover .lc-sb-bar .lc-ib,
-.lc-sb-bar:focus-within .lc-ib,
-.lc-sb:has(:focus-visible) .lc-sb-bar .lc-ib,
-.lc-sb-bar .lc-ib[data-open] {
-  opacity: 1;
-}
-@media (hover: none) {
-  .lc-sb-bar .lc-ib {
-    opacity: 1;
-  }
-}
 .lc-sb-inner {
   gap: 0;
 }
-/* A group's label: small and grey on the text edge, its count at the right, an even 18 above it (less at the top of the list). Counts and times stay in the fourth grey, no lighter (the rule at the top of this sheet): a lighter weight or a smaller size keeps them under the words. */
-.lc-sb-inner .lc-sb-lab:not(.lc-sb-plab) {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  column-gap: 8px;
-  align-items: end;
-  height: 22px;
-  box-sizing: border-box;
-  margin-top: 18px;
-  padding: 0 10px 4px 8px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-  color: var(--l-ink-4);
-}
-.lc-sb-inner .lc-sb-lab:not(.lc-sb-plab) > svg {
-  grid-column: 1;
-  justify-self: center;
-  margin-bottom: 2px;
-}
-.lc-sb-inner .lc-sb-lab:not(.lc-sb-plab) > span {
-  margin-left: 0;
-}
-.lc-sb-lab-t {
-  grid-column: 2;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-sb-inner .lc-sb-lab:not(.lc-sb-plab) > span:last-child:not(.lc-sb-lab-t) {
-  grid-column: 3;
-  font-weight: 400;
-  color: var(--l-ink-4);
-  font-variant-numeric: tabular-nums;
-}
-.lc-sb-plate + .lc-sb-sec > .lc-sb-lab:first-child {
-  margin-top: 4px;
-}
-/* Finished with no label: its rows a step under Carry on, or right under the view's name. */
-.lc-sb-sec[data-bare] {
-  margin-top: 8px;
-}
-.lc-sb-plate + .lc-sb-sec[data-bare] {
-  margin-top: 2px;
-}
 .lc-sb-inner .lc-sb-hint {
   margin: 2px 10px 6px 40px;
-}
-/*
-  A session row, two lines, 42 high: the agent's mark (or how it stands while it works, waits or
-  stopped short) in the mark column, level with the title; the title at 13.5 with how long ago at
-  the right, giving its place to Pin, Snooze and Settle while you point at it; under the title
-  where it is, in grey. A finished title steps back to the second ink, the open one is in full.
-*/
-.lc-sb .lc-sb-row[data-two] .lc-sb-pick {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-content: center;
-  column-gap: 8px;
-  row-gap: 0;
-  min-height: 42px;
-  padding: 0 10px 0 8px;
-}
-.lc-sb-mark {
-  display: grid;
-  grid-row: 1 / span 2;
-  place-items: center;
-  align-self: start;
-  height: 19px;
-  color: var(--l-ink-4);
-}
-.lc-sb .lc-sb-row[data-two] .lc-sb-h {
-  grid-column: 2;
-  height: 19px;
-  gap: 8px;
-}
-.lc-sb .lc-sb-row[data-two] .lc-sb-h > b {
-  font-size: 13.5px;
-  font-weight: 450;
-  line-height: 19px;
-}
-.lc-sb .lc-sb-row[data-two] .lc-sb-rename {
-  height: 19px;
-  font-size: 13.5px;
-  font-weight: 450;
-}
-.lc-sb .lc-sb-row[data-two] .lc-sb-time {
-  font-size: 11.5px;
-  color: var(--l-ink-4);
-}
-.lc-sb-row[data-two] .lc-sb-s {
-  grid-column: 2;
-  height: 16px;
-  font-size: 12.5px;
-  line-height: 16px;
-  color: var(--l-ink-4);
-}
-/* The actions take the time's place on the title's line. */
-.lc-sb .lc-sb-row[data-two] .lc-sb-acts {
-  top: 2px;
-  translate: none;
-}
-/* One line a session (By folder, and Pinned and your groups there): the title on the same text edge, under its folder's name. */
-.lc-sb-inner .lc-sb-row:not([data-two]) .lc-sb-pick {
-  padding-left: 40px;
-}
-/* A fork's line runs down from under the first letter of the session it came from; the fork's title a step in from it. */
-.lc-sb-inner .lc-sb-kids {
-  margin-left: 40px;
-  padding-left: 6px;
-}
-.lc-sb-inner .lc-sb-kids .lc-sb-kids {
-  margin-left: 8px;
-}
-.lc-sb-inner .lc-sb-kids .lc-sb-row:not([data-two]) .lc-sb-pick {
-  padding-left: 8px;
-}
-/* A folder's header: the folder in the mark column, its name on the text edge. */
-.lc-sb-inner .lc-sb-plab {
-  margin-top: 10px;
-  padding-left: 8px;
-}
-.lc-sb-plate + .lc-sb-sec > .lc-sb-plab {
-  margin-top: 2px;
-}
-.lc-sb-inner .lc-sb-pt {
-  margin-left: 0;
-  padding-left: 0;
-}
-.lc-sb-inner .lc-sb-picon {
-  width: 24px;
-}
-/*
-  Carry on, the list's first row: its mark in the mark column, the word on the text edge, the
-  count and an arrow at the right that say it opens beside the sidebar. Its panel is a menu: a
-  title and one line, then the work by where it is, each row as the list's rows are.
-*/
-.lc-sb-inner > .lc-pop {
-  flex: none;
-}
-.lc-sb-carry {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  column-gap: 8px;
-  align-items: center;
-  width: 100%;
-  height: 30px;
-  box-sizing: border-box;
-  padding: 0 10px 0 8px;
-  border-radius: 10px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  text-align: left;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-sb-carry > svg {
-  justify-self: center;
-  color: var(--l-ink-4);
-}
-.lc-sb-carry > span:first-of-type {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-sb-carry-n {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--l-ink-4);
-  font-variant-numeric: tabular-nums;
-}
-.lc-sb-carry[data-open] {
-  background: var(--lc-plate);
-  color: var(--l-ink-2);
-}
-@media (hover: hover) {
-  .lc-sb-carry:not([data-open]):hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink-2);
-  }
 }
 .lc-carry {
   display: grid;
@@ -8992,3 +8342,480 @@ span.lc-sb-name {
   cursor: default;
 }
 
+
+/* ---------- The sidebar's list parts (SideList.tsx), for Code, Design and Security alike ---------- */
+/*
+  As the approved mockup draws them. A heading (14 at 600) with one menu at its right; a group's
+  label at 13 in the third grey on the places' edge, its count right after it; a folder's header,
+  32 high, the folder in the 24px mark column and its name at 500, its chevron while you point at
+  it or it's folded, and folded, what hides in it at its end; a row two lines and 44 high on the
+  same grid, the mark level with the title, the title at 13.5, under it what it is doing or how it
+  ended at 12.5, a 20px end. No borders, no fills but the open row's plate and the pointer's wash.
+*/
+.lc-sl-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 30px;
+  margin-top: 8px;
+  padding: 0 2px 0 10px;
+}
+.lc-sl-head > h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--l-ink);
+  white-space: nowrap;
+}
+.lc-sl-head-note {
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sl-head > .lc-sl-count {
+  margin-left: 7px;
+  font-size: 13px;
+}
+.lc-sl-head .lc-sl-head-b {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  color: var(--l-ink-3);
+}
+.lc-sl-head .lc-sl-head-b[data-open] {
+  background: var(--lc-plate);
+  box-shadow: none;
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-sl-head .lc-sl-head-b:not([data-open]):hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-sl-count {
+  flex: none;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+/* A group's label. 12 above it, none for the first thing in the list (past a plate that marks the open row). */
+.lc-sl-label {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  box-sizing: border-box;
+  margin-top: 12px;
+  padding: 4px 10px 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-sl-label-i {
+  display: grid;
+  flex: none;
+  place-items: center;
+  margin-right: -1px;
+  color: var(--l-ink-4);
+}
+.lc-sl-label-n {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sl-label-end {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+.lc-sl-list > :first-child,
+.lc-sl-list > :first-child > .lc-sl-label:first-child,
+.lc-sl-list > [aria-hidden]:first-child + *,
+.lc-sl-list > [aria-hidden]:first-child + * > .lc-sl-label:first-child {
+  margin-top: 0;
+}
+/* A folder: its header, then its rows while it's open. 8 above every folder but the first. */
+.lc-sl-folder {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  margin-top: 8px;
+}
+.lc-sl-fold {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 10px;
+  transition: background 140ms ease;
+}
+.lc-sl-fold-b {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  column-gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-sl-fold-i {
+  display: grid;
+  place-items: center;
+  color: var(--l-ink-3);
+}
+.lc-sl-fold-n {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.lc-sl-fold-n > span {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sl-fold-n > svg {
+  flex: none;
+  color: var(--l-ink-4);
+  opacity: 0;
+  transition:
+    opacity 140ms ease,
+    rotate 200ms ease;
+}
+.lc-sl-fold-b[aria-expanded="true"] .lc-sl-fold-n > svg {
+  rotate: 90deg;
+}
+.lc-sl-fold:hover .lc-sl-fold-n > svg,
+.lc-sl-fold-b:focus-visible .lc-sl-fold-n > svg,
+.lc-sl-fold-b[aria-expanded="false"] .lc-sl-fold-n > svg {
+  opacity: 1;
+}
+.lc-sl-fold-end {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--l-ink-4);
+}
+.lc-sl-ndot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--l-warn);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 22%, transparent);
+}
+/* A row, two lines. Its root is a grid of two: the words (the pick) across it, and the actions that take the end's place while you point at it. */
+.lc-sl-row {
+  position: relative;
+  display: grid;
+  flex: none;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 10px;
+  animation: lc-row-in 180ms ease-out backwards;
+}
+.lc-sl-row[data-current] {
+  background: var(--lc-plate);
+}
+@media (hover: hover) {
+  .lc-sl-row:not([data-current]):hover,
+  .lc-sl-fold:hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-sl-pick {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  column-gap: 8px;
+  align-content: center;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 9px 0 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.lc-sl-mark {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  place-items: center;
+  align-self: start;
+  height: 19px;
+  color: var(--l-ink-4);
+}
+.lc-sl-title {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 450;
+  line-height: 19px;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sl-row[data-quiet]:not([data-current]) .lc-sl-title {
+  color: var(--l-ink-2);
+}
+.lc-sl-sub {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* A new state fades in over the old one's place: no letters sliding or popping. */
+  animation: lc-row-in 160ms ease-out backwards;
+}
+.lc-sl-sub[data-tone="warn"] {
+  color: var(--l-warn-text);
+}
+.lc-sl-sub[data-tone="danger"] {
+  color: var(--l-danger-text);
+}
+.lc-sl-end {
+  display: grid;
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  place-items: center;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  color: var(--l-ink-4);
+}
+.lc-sl-pr,
+.lc-sl-chg {
+  display: grid;
+  place-items: center;
+}
+.lc-sl-pr[data-pr="merged"] {
+  color: var(--lc-merged);
+}
+.lc-sl-pr[data-pr="open"] {
+  color: var(--l-ok);
+}
+/* Security's rows: every word shown, the title on two lines when it needs them. */
+.lc-sl-row[data-wrap] .lc-sl-pick {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.lc-sl-row[data-wrap] :is(.lc-sl-title, .lc-sl-sub) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Renaming in place: the field takes the title's line. */
+.lc-sl-title:has(.lc-sb-rename) {
+  overflow: visible;
+}
+.lc-sl-title .lc-sb-rename {
+  width: calc(100% + 8px);
+  height: 19px;
+  box-sizing: border-box;
+  font-size: 13.5px;
+  font-weight: 450;
+}
+/* A done row's mark: a small dot in the fifth grey. */
+.lc-sl-dot > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--l-ink-5);
+}
+/* Pointing at a row or a folder, or the keyboard in it: the actions take the end's place, vertically centred, and the words make room. */
+.lc-sl-acts {
+  display: none;
+  grid-column: 2;
+  grid-row: 1;
+  gap: 1px;
+  padding-right: 6px;
+}
+.lc-sl-row:is(:hover, :focus-within) > .lc-sl-acts,
+.lc-sl-fold:is(:hover, :focus-within) > .lc-sl-acts,
+.lc-sl-acts:has([data-open]) {
+  display: flex;
+}
+.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts) > .lc-sl-pick,
+.lc-sl-row:has(> .lc-sl-acts [data-open]) > .lc-sl-pick,
+.lc-sl-fold:is(:hover, :focus-within):has(> .lc-sl-acts) > .lc-sl-fold-b {
+  grid-column: 1;
+  padding-right: 4px;
+}
+.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts) .lc-sl-end,
+.lc-sl-row:has(> .lc-sl-acts [data-open]) .lc-sl-end,
+.lc-sl-fold:is(:hover, :focus-within):has(> .lc-sl-acts) .lc-sl-fold-end {
+  display: none;
+}
+.lc-sl-acts .lc-sb-a[data-open] {
+  background: var(--lc-plate);
+  box-shadow: none;
+  color: var(--l-ink);
+}
+/* The top row's counts: how many work and how many wait on you, at its far right; it opens The Wall. */
+.lc-sl-counts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--l-wash-2);
+  font: inherit;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+@media (hover: hover) {
+  .lc-sl-counts:hover {
+    background: var(--l-wash-3);
+    color: var(--l-ink);
+  }
+}
+.lc-sl-counts-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 2px 0 7px;
+  border-radius: 50%;
+  background: var(--l-warn);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 22%, transparent);
+}
+.lc-sl-counts-dot:first-child {
+  margin-left: 2px;
+}
+
+/*
+  Code's sessions on those parts. The moving plate marks the open row (Sidebar.tsx measures it), so
+  the row's own plate steps aside for it. A session's forks: their toggle on the second line, left
+  of the end, and the forks under it on a line that runs down from under its mark. Carry on's panel
+  hangs from a button kept out of sight at the heading's end; the menu's row opens it.
+*/
+.lc-sb-inner .lc-sl-row[data-current] {
+  background: none;
+}
+/* A row first drawn already open (a session just sent from Home) is there at once, words and
+   mark: the plate is drawn under it at once, so a fade would leave the plate empty. data-fresh
+   never comes off (Sidebar.tsx), so no animation value changes as the open row changes. */
+.lc-sb-inner .lc-sl-row[data-fresh],
+.lc-sb-inner .lc-sl-row[data-fresh] :is(.lc-sl-sub, .lc-mk) {
+  animation: none;
+}
+.lc-sb-row > .lc-sb-forks {
+  position: absolute;
+  right: 38px;
+  bottom: 5px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 5px 0 3px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.lc-sb-forks > svg:first-child {
+  color: var(--l-ink-4);
+  transition: transform 300ms var(--l-spring-smooth);
+}
+.lc-sb-forks[aria-expanded="true"] > svg:first-child {
+  transform: rotate(90deg);
+}
+@media (hover: hover) {
+  .lc-sb-forks:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-sb-row[data-forks] .lc-sl-sub {
+  padding-right: 44px;
+}
+.lc-sb-row[data-forks]:is(:hover, :focus-within) > .lc-sb-forks,
+.lc-sb-row[data-forks]:has(> .lc-sl-acts [data-open]) > .lc-sb-forks {
+  right: 80px;
+}
+.lc-sb-inner .lc-sb-kids {
+  gap: 0;
+  margin-left: 20px;
+  padding-left: 4px;
+}
+.lc-sb-inner .lc-sb-kids::before {
+  top: 6px;
+  bottom: 22px;
+}
+.lc-sb-listhead {
+  position: relative;
+  flex: none;
+}
+.lc-sb-carry-at {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  width: 1px;
+  height: 30px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.lc-sb-carry-at .lc-sb-carry {
+  width: 1px;
+  height: 30px;
+  padding: 0;
+}
+.lc-sb-carry-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-sl-fold-n > svg,
+  .lc-sb-forks > svg:first-child {
+    transition: none;
+  }
+  .lc-sl-sub {
+    animation: none;
+  }
+}

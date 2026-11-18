@@ -38,10 +38,11 @@
   overflow: hidden auto;
 }
 
-/* The sidebar's body in Security: the app's own nav rows (lc-sb-nav), group labels (lc-sb-lab), and two-line rows. */
+/* The sidebar's body in Security: the app's own nav rows (lc-sb-nav), then its list and Bring in on the shared list parts (side.css). */
 .ls-side {
   display: flex;
   flex-direction: column;
+  gap: 10px;
   padding-bottom: 8px;
 }
 .ls-side .lc-sb-nav[data-later] {
@@ -61,53 +62,6 @@
   font-size: 12px;
   color: var(--l-ink-3);
   font-variant-numeric: tabular-nums;
-}
-.ls-lab {
-  display: flex;
-  align-items: center;
-  height: 28px;
-  margin-top: 10px;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-}
-.ls-lab > span:first-child {
-  flex: 1;
-}
-.ls-lab .lc-ib {
-  margin-right: -8px;
-}
-.ls-srow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: var(--l-r-sm);
-  background: none;
-  color: var(--l-ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.ls-srow:hover {
-  background: var(--l-wash);
-}
-.ls-srow[aria-current="page"] {
-  background: var(--l-wash-2);
-}
-.ls-srow > svg,
-.ls-srow > .ls-ico {
-  flex: none;
-  color: var(--l-ink-3);
-}
-.ls-srow-none {
-  padding: 4px 10px 6px;
-  font-size: 12px;
-  color: var(--l-ink-4);
 }
 
 /* Two lines in one row: a name and what it says under it. */

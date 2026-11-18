@@ -384,6 +384,8 @@ export type Thread = {
   unread?: boolean;
   /** Agents it sent that still work, also in the background after the turn that sent them: the Wall, the sidebar and quitting read it here, not from the timeline. None once the engine stops. */
   agentsAtWork?: number;
+  /** What it is doing right now, in a few plain words, while a turn runs: the sidebar's second line. Unset when no turn runs. */
+  doing?: { text: string; at: number };
   /** Messages you wrote while it worked, sent in order when the turn ends. */
   queue?: QueuedMessage[];
   /** The Reviewer's last word on this session's changes. */
@@ -1959,3 +1961,4 @@ export * from "./panel.ts";
 export * from "./dsh.ts";
 export * from "./design.ts";
 export * from "./security.ts";
+export * from "./doing.ts";

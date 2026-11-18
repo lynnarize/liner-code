@@ -1,14 +1,35 @@
-/* Liner Security's sidebar, beyond security.css: a fix's or a question's title may take two lines, never cut with "…". */
-.ls-srow.lsd-two {
-  align-items: flex-start;
+/*
+  Liner Security's sidebar, beyond security.css: the list on the shared parts (app.css, lc-sl-), the empty list's line,
+  and Bring in close under it, its + at the label's end.
+*/
+.ls-side-list {
+  display: flex;
+  flex: none;
+  flex-direction: column;
 }
-.ls-srow.lsd-two > svg,
-.ls-srow.lsd-two > .ls-ico {
-  margin-top: 1px;
+.ls-side-list > section {
+  display: flex;
+  flex-direction: column;
 }
-.ls-srow.lsd-two .ls-tl2 b {
-  overflow: visible;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  text-wrap: pretty;
+.ls-side-none {
+  margin: 0;
+  padding: 4px 10px 6px;
+  font-size: 12.5px;
+  color: var(--l-ink-4);
+}
+.ls-side-bring {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+.ls-side-bring > .lc-sl-label {
+  margin-top: 4px;
+  padding-top: 0;
+  padding-right: 2px;
+}
+.ls-side-bring .ls-side-add {
+  width: 28px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--l-ink-3);
 }

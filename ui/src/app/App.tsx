@@ -840,9 +840,9 @@ export function App() {
                   </Boundary>
                 ) : face !== "design" ? undefined : (
                 <>
-                {/* The open designs first, as Code lists its sessions; then this design's lean, pages and layers, or every design on Design Home. */}
+                {/* Your places and the open designs first, as Code lists its sessions; then this design's lean, pages and layers, or every design on Design Home. */}
                 <Suspense fallback={null}>
-                  <OpenDesigns />
+                  <OpenDesigns onSearch={() => (setBesideOf(null), setMenu(true))} />
                 </Suspense>
                 {designTab && designProject ? (
                   <Boundary label="Layers" quiet>
@@ -852,7 +852,7 @@ export function App() {
                   </Boundary>
                 ) : (
                   <Suspense fallback={null}>
-                    <DesignFiles onSearch={() => (setBesideOf(null), setMenu(true))} />
+                    <DesignFiles />
                   </Suspense>
                 )}
                 </>

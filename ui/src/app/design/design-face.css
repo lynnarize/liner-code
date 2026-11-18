@@ -11,19 +11,22 @@
   flex-direction: column;
   gap: 1px;
   min-width: 0;
-  padding: 0 2px 8px;
+  padding: 0 0 8px;
 }
-.ld-lab {
-  margin-top: 10px;
+/* Its labels are the list's (SideLabel): Lean sits 14 under the open designs (the panel's 10 and 4), Pages and Layers 12 under what's above. */
+.ld-side > .lc-sl-label:first-child {
+  margin-top: 4px;
 }
-.ld-lab > span {
-  margin-left: auto;
+.ld-lab-opt {
+  margin-left: 7px;
+  color: var(--l-ink-4);
 }
-.lc-sb-lab .ld-lab-b {
+/* A label's + (Pages): 24 square, its cross on the rows' end. */
+.ld-lab-b {
   width: 24px;
   height: 24px;
-  margin-left: auto;
   margin-right: -6px;
+  color: var(--l-ink-3);
 }
 .ld-ell {
   min-width: 0;
@@ -81,11 +84,6 @@
 }
 .ld-q4[data-none] > i {
   display: none;
-}
-.ld-lab-q {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--l-ink-3);
 }
 .ld-tr-add,
 .ld-side .lc-pop > .ld-tr-add {
@@ -208,6 +206,12 @@ button.ld-tr:hover {
 }
 .ld-ly .ld-pd {
   margin-left: auto;
+}
+/* Design Home's designs: their labels and rows, 1 apart as the sidebar's body has them. */
+.ld-files {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .ld-none {
   padding: 8px 10px;
@@ -1060,76 +1064,68 @@ html[data-motion="quick"] .ld-pres::after {
   translate: -50% 0;
 }
 
-/* ---------- the open designs, at the top of the Design sidebar (Tabs.tsx OpenDesigns) ---------- */
+/* ---------- your places and the open designs, at the top of the Design sidebar (Tabs.tsx OpenDesigns) ---------- */
+/*
+  As Code's side: the places, the heading 8 under them, the rows 10 under that (SideList's parts,
+  app.css). The open design's row wears the plate; nothing moves it, as there is one per tab.
+*/
 .ld-open {
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 1px;
+  gap: 10px;
   min-width: 0;
-  padding: 0 2px 10px;
+  padding-bottom: 10px;
 }
-.ld-open-lab {
-  margin-top: 4px;
+.ld-open-list {
+  display: flex;
+  flex-direction: column;
 }
-.ld-open-end {
-  display: inline-flex;
+.ld-open-sec,
+.ld-open-tabs {
+  display: flex;
+  flex-direction: column;
+}
+.ld-open-none {
+  margin: -4px 0 0;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--l-ink-4);
+}
+/* "N more" and "Show fewer": a quiet 32 row on the rows' grid, at the list's end. */
+.ld-open-more {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 8px;
   align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-.ld-open-end .ld-lab-b {
-  margin-left: 0;
-}
-.ld-open .ld-tr {
+  width: 100%;
+  height: 32px;
+  margin-top: 2px;
+  box-sizing: border-box;
+  padding: 0 9px 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-align: left;
   cursor: pointer;
   transition: background 140ms ease;
 }
-.ld-open .ld-tr:hover {
-  background: var(--l-wash);
+@media (hover: hover) {
+  .ld-open-more:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
 }
-.ld-open .ld-tr[data-on],
-.ld-open .ld-tr[data-on]:hover {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-}
-.ld-open .ld-tr .ld-ell {
-  flex: 1;
-}
-.ld-open .ld-pd {
-  flex: none;
-}
-/* The cross shows on the row you're in, and on one under the pointer or the keyboard. */
-.ld-open-x {
+.ld-open-more-m {
   display: grid;
-  flex: none;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  margin-right: -4px;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  color: var(--l-ink-3);
-  cursor: pointer;
-  opacity: 0;
-}
-.ld-open-r[data-on] .ld-open-x,
-.ld-open-r:hover .ld-open-x,
-.ld-open-r:focus-within .ld-open-x {
-  opacity: 1;
-}
-.ld-open-x:hover {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-}
-.ld-open-more {
-  height: 26px;
-  font-size: 12px;
+  color: var(--l-ink-4);
 }
 .ld-open-n {
-  flex: none;
   color: var(--l-ink-2);
 }
 

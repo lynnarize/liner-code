@@ -109,6 +109,8 @@ class CodexSession implements ProviderSession {
     // app server gets them.
     // Your connections don't come this way: settings go on `codex exec`'s command line, where their keys could be read. The app server takes them.
     common.push(...execMcp(o));
+    // A Liner Security scan reads the project and nothing else: no agents of its own, no web search (OpenOptions.scan).
+    if (o.scan) common.push("-c", "agents.enabled=false", "-c", "features.multi_agent=false", "-c", `web_search="disabled"`);
     for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
     const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, ...(o.ephemeral ? ["--ephemeral"] : []), "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {

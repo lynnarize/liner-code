@@ -5,7 +5,7 @@
   the list of tools, which is only data.
 */
 import { createInterface } from "node:readline";
-import { toolsFor } from "./liner-tools.ts";
+import { SECURITY_ENV, toolsFor } from "./liner-tools.ts";
 import { VERSION } from "./version.ts";
 
 const url = process.env.LINER_SURFACE_URL ?? "";
@@ -65,7 +65,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         protocolVersion: String(m.params?.protocolVersion ?? "2025-06-18"),
         capabilities: { tools: {} },
         serverInfo: { name: "liner", title: "Liner Code", version: VERSION },
-        instructions: "Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design. On Liner Design's canvas (a message that starts with \"## Design\"), each frame is one HTML file in .liner/designs/<file>/frames/: read design_files first, draw with design_frame or your own file tools, change one part with design_node, look with design_shot, and record a build with design_built. To connect a service through MCP for every agent tool, or to make a panel or small app inside Liner Code, read liner_inspect, then ask with addon_install.",
+        instructions: `Liner Code's own surfaces. Use the browser tools to check a web app you changed on its dev server, the device tools for an iOS app in the simulator, show_page to show a chart or table instead of describing it, and design_show for a screen, page or prototype you design. On Liner Design's canvas (a message that starts with "## Design"), each frame is one HTML file in .liner/designs/<file>/frames/: read design_files first, draw with design_frame or your own file tools, change one part with design_node, look with design_shot, and record a build with design_built. ${process.env[SECURITY_ENV] === "scan" ? "In this Liner Security scan (Read only), report each problem you find with security_report_finding, never by editing a file. " : ""}To connect a service through MCP for every agent tool, or to make a panel or small app inside Liner Code, read liner_inspect, then ask with addon_install.`,
       },
     });
   } else if (m.method === "tools/list") send({ id: m.id, result: { tools: toolsFor(process.env) } });

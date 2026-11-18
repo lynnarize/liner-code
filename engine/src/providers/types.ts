@@ -162,6 +162,18 @@ export type OpenOptions = {
     (Claude Code); the runtime asks no other (plainWay).
   */
   plain?: boolean;
+  /**
+    Sealed (Liner Security's Specialist scan): Liner Code's own tools (`mcp`) stay, and nothing of the person's loads: no
+    skills, plugins, hooks, settings files, CLAUDE.md, MCP servers of their own, subagents or add-on connections. Claude Code
+    honours it (claude.ts); the Demo has nothing to load. Other tools can't promise it, so a Specialist scan is never offered
+    on them (contracts security.ts, sealable) and they ignore the flag.
+  */
+  sealed?: boolean;
+  /**
+    A Liner Security scan (or a side chat of one): it reads the project and nothing else, so the tool's own tools that reach
+    out (web fetch and search) or spawn (agents, workflows, schedules, worktrees) are taken off where the tool lets them be.
+  */
+  scan?: boolean;
   /** A side chat beside a session: read only, and it answers rather than plans. */
   side?: boolean;
   /** A pair's sidekick: it works the lead's briefs, and sends no agents of its own. */

@@ -15,6 +15,7 @@ import { run } from "../exec.ts";
 import type { OpenOptions, Provider, ProviderSession, ToolUpdate, TurnSink } from "./types.ts";
 import { PAIR_ENV } from "../liner-tools.ts";
 import { drawBrief, drawTides, isFrameBrief } from "./demo-canvas.ts";
+import { demoAbout, demoFix, demoLook, demoScan } from "../security-demo.ts";
 
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -186,6 +187,12 @@ class DemoSession implements ProviderSession {
     // A pair's sidekick works the brief, whatever it says; a pair's lead hands a change to it and reads what comes back.
     // A brief to draw a frame on the canvas (a Demo lead's, demo-canvas.ts frameBrief) is drawn there, in parts.
     if (this.o.sidekick) return isFrameBrief(text) ? drawBrief(this.o, text, sink, signal, t) : this.brief(text, sink, signal, t, n);
+    // Liner Security (security-demo.ts): a scan reads, asks and finds through Liner's own tools as boards D to F draw it; a second
+    // look gives its verdicts in the block the engine reads; a question about a finding gets a plain answer.
+    if (/^## Security scan$/m.test(text)) return demoScan(this.o, sink, signal, t, text);
+    if (/^## Fix a security finding$/m.test(text)) return demoFix(text, sink, signal, t);
+    if (/^## Second look$/m.test(text)) return demoLook(text, sink, signal, t);
+    if (/^## About a security finding$/m.test(text)) return demoAbout(text, sink, signal, t);
     // Sent from Liner Design (its "## Design" note leads the message): Foreshore's tide tables, drawn frame by frame on the canvas.
     // A pair's lead draws them too, and hands the one frame that only follows a pattern to its sidekick (demo-canvas.ts handOver).
     if (/^## Design$/m.test(text)) return drawTides(this.o, text, sink, signal, t);

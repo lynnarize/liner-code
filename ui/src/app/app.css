@@ -7996,6 +7996,10 @@ html[data-motion="quick"] .lc-session .lc-body {
   background: var(--l-accent);
   color: #fff;
 }
+.lc-face-tile[data-face="security"] {
+  background: var(--l-ok);
+  color: #fff;
+}
 .lc-sb-facepick > .lc-face-tile {
   width: 18px;
   height: 18px;

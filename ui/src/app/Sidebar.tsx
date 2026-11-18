@@ -33,6 +33,7 @@ import { pairOf } from "./Crew";
 import { agentState, ROUTINES_ON, updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
 import { EtaLeft } from "./EtaLeft";
+import { FACE_NAME, type Face } from "./face";
 import * as os from "./os";
 import { toast } from "@liner/components/toast/toast";
 
@@ -68,11 +69,11 @@ type Props = {
   onBeside?: (id: string) => void;
   /** A session was archived from here: if it's on screen, the window moves off it. */
   onPutAway?: (id: string) => void;
-  /** Liner Code or Liner Design: the switch under the name, the same in both. */
-  face?: "code" | "design";
-  onFace?: (face: "code" | "design") => void;
-  /** In Design, what the sidebar holds in place of the sessions (design/Layers.tsx, design/DesignHome.tsx). */
-  designBody?: ReactNode;
+  /** Liner Code, Liner Design or Liner Security: the switch under the name, the same in each. */
+  face?: Face;
+  onFace?: (face: Face) => void;
+  /** In Design and Security, what the sidebar holds in place of the sessions (design/Layers.tsx, design/DesignHome.tsx, security/Side.tsx). */
+  faceBody?: ReactNode;
   /** The project you were last in: Recent offers to carry on its work that isn't committed. */
   recentProject?: string;
   /** Home in a project with an ask written in its box and not sent (Recent's Continue uncommitted work). */
@@ -165,13 +166,15 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSettings, usageOn, onRoutines, routinesOn, onSearch, onHide, homeOn, onBack, onForward, onApp, appOn, onAddons, addonsOn, onBeside, onPutAway, face = "code", onFace, designBody, recentProject, onCarryOn }: Props) {
+export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSettings, usageOn, onRoutines, routinesOn, onSearch, onHide, homeOn, onBack, onForward, onApp, appOn, onAddons, addonsOn, onBeside, onPutAway, face = "code", onFace, faceBody, recentProject, onCarryOn }: Props) {
   const addons = useEngine((s) => s.addons);
   const pages = addons.filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
   const limits = useEngine((s) => s.limits);
   const update = useEngine((s) => s.updates);
   const updateMode = useEngine((s) => updateModes(s.settings).app);
-  const threads = useEngine((s) => s.threads);
+  // Liner Security's scans, fixes and questions about a finding are listed in its own sidebar (security/Side.tsx), not among Code's sessions.
+  const everyThread = useEngine((s) => s.threads);
+  const threads = useMemo(() => everyThread.filter((t) => !t.security), [everyThread]);
   const groups = useEngine((s) => s.groups);
   const routines = useEngine((s) => s.routines);
   const runs = useEngine((s) => s.runs);
@@ -253,7 +256,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const projectName = (t: Thread) => projects.find((p) => p.id === t.projectId)?.name ?? "No project";
 
   const place = (t: Thread): Bucket => bucketOf(t, now);
-  const working = threads.filter((t) => !t.archived && t.status === "running").length;
+  const working = everyThread.filter((t) => !t.archived && t.status === "running").length;
   // Routines handed back to you wait on their icon as a dot; otherwise its tip says how many run.
   const handed = runs.filter((r) => r.status === "handed" && !r.test).length;
   const routinesNote = handed ? `${handed} waiting` : routines.length ? `${routines.filter((r) => r.on).length} on` : "";
@@ -297,7 +300,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     // Designs on their own (Project.kind "design") are one group, "Designs", never a project each, and never Scratch.
     const designs = new Set(projects.filter((p) => p.kind === "design").map((p) => p.id));
     const inSection = (id: string) => (t: Thread) => (id === DESIGNS ? designs.has(t.projectId) : id ? t.projectId === id : !known.has(t.projectId));
-    const sections = [...projects.filter((p) => p.kind !== "design").map((p) => ({ id: p.id, name: p.name })), { id: DESIGNS, name: "Designs" }, { id: "", name: "No project" }]
+    const sections = [...projects.filter((p) => p.kind !== "design" && !p.demoFor).map((p) => ({ id: p.id, name: p.name })), { id: DESIGNS, name: "Designs" }, { id: "", name: "No project" }]
       .map((x) => ({ ...x, list: top.filter(inSection(x.id)) }))
       .filter((x) => x.list.length > 0)
       .map((x) => ({ ...x, needs: here.filter((t) => inSection(x.id)(t) && place(t) === "needs").length }));
@@ -323,7 +326,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const ro = new ResizeObserver(measure);
     ro.observe(sc.firstElementChild as HTMLElement);
     return () => ro.disconnect();
-  }, [current, list, archivedList, view, shutProjects, shutForks, renaming, groups, Boolean(designBody)]);
+  }, [current, list, archivedList, view, shutProjects, shutForks, renaming, groups, Boolean(faceBody)]);
 
   useEffect(() => {
     const sc = scroller.current;
@@ -343,7 +346,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       ro.disconnect();
     };
     // Again when the list comes back from Design's body.
-  }, [Boolean(designBody)]);
+  }, [Boolean(faceBody)]);
 
   const act = async (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => {
     const settled = bucketOf(t, now) === "settled";
@@ -954,8 +957,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         </button>
       </div>
 
-      {designBody ? (
-        <div className="lc-sb-design">{designBody}</div>
+      {faceBody ? (
+        <div className="lc-sb-design" data-face={face}>{faceBody}</div>
       ) : (
       <>
       {/* Your places, one row each: New session (search at its end), Routines and Add-ons. */}
@@ -1275,7 +1278,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       <div className="lc-sb-foot" onClick={tapMe}>
         {onFace ? (
           <Pop
-            label={`${face === "design" ? "Liner Design" : "Liner Code"}. Switch between Code and Design`}
+            label={`Liner ${FACE_NAME[face]}. Switch between Code, Design and Security`}
             menu
             side="top"
             // As wide as the sidebar inside its insets, and never past its edge onto the paper.
@@ -1286,7 +1289,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
               <>
                 {/* "Liner" in ink and the face in grey after it, so it reads as the app's name; no tile. */}
                 <span className="lc-brand">Liner</span>
-                <span className="lc-sb-name-face">{face === "design" ? "Design" : "Code"}</span>
+                <span className="lc-sb-name-face">{FACE_NAME[face]}</span>
                 <I.chevD size={12} />
               </>
             }
@@ -1309,6 +1312,14 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                   </span>
                   {face === "design" && <I.check size={14} />}
                 </button>
+                <button type="button" role="menuitemradio" aria-checked={face === "security"} className="lc-face-opt l-focus" onClick={() => (close(), onFace("security"))}>
+                  <span className="lc-face-tile" data-face="security"><I.shield size={12} /></span>
+                  <span className="lc-face-tx">
+                    <b>Security</b>
+                    <small>Findings and scans</small>
+                  </span>
+                  {face === "security" && <I.check size={14} />}
+                </button>
               </div>
             )}
           </Pop>
@@ -1316,7 +1327,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           // With nothing to switch to, the name alone, still the Demo's six taps.
           <span className="lc-sb-name" role="presentation">
             <span className="lc-brand">Liner</span>
-            <span className="lc-sb-name-face">{face === "design" ? "Design" : "Code"}</span>
+            <span className="lc-sb-name-face">{FACE_NAME[face]}</span>
           </span>
         )}
         <span className="lc-grow" />

@@ -382,8 +382,10 @@ export class CodexServerSession implements ProviderSession {
     // An API endpoint's model provider, when this Codex runs one.
     // A sidekick sends no agents of its own. Both keys are booleans codex-cli 0.167.0 takes (its config load
     // rejects any other type for either): agents.enabled is the one OpenAI documents, features.multi_agent the feature flag.
-    const alone = this.o.sidekick ? { "agents.enabled": false, "features.multi_agent": false } : {};
-    const config = Object.keys(mcp).length || this.o.config || this.o.sidekick ? { ...mcp, ...alone, ...this.o.config } : null;
+    const alone = this.o.sidekick || this.o.scan ? { "agents.enabled": false, "features.multi_agent": false } : {};
+    // A Liner Security scan reads the project and nothing else: no web search either (OpenOptions.scan; Codex's own setting).
+    const inside = this.o.scan ? { web_search: "disabled" } : {};
+    const config = Object.keys(mcp).length || this.o.config || this.o.sidekick || this.o.scan ? { ...mcp, ...alone, ...inside, ...this.o.config } : null;
     const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: this.o.model && this.o.model !== "default" ? this.o.model : null, developerInstructions: this.o.soul || null, config };
     let r: Json | null = null;
     if (this.thread) {

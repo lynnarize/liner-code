@@ -108,6 +108,8 @@ type Props = {
   /** Home: the mode the session would start in, for the prompt check's split (Precheck.tsx); `checkOff`, no prompt check here (Workshop). */
   mode?: SessionMode;
   checkOff?: boolean;
+  /** The access level can't be changed here (a Liner Security scan stays at Read only): the chip shows it with a lock, and this tip says why. */
+  accessLock?: string;
 };
 export type SlashRow = { name: string; hint?: string; note?: string; tag?: string; onPick: () => void };
 
@@ -318,7 +320,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, onDraft, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask, mode: sessionMode, checkOff }: Props) {
+export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, onDraft, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask, mode: sessionMode, checkOff, accessLock }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -851,7 +853,13 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const LevelIcon = ACCESS_ICONS[settings.access] ?? I.ahead;
   const picks = ACCESS_LEVELS.filter((l) => l.id !== "full");
   const full = ACCESS_LEVELS.find((l) => l.id === "full")!;
-  const accessPick = (
+  const accessPick = accessLock ? (
+    // Held where it is (a scan stays at Read only): a chip that says so, with nothing to open.
+    <span className="lc-seg-b lc-access" data-locked="" role="note" title={accessLock} aria-label={`Permissions: ${lev.label}. ${accessLock}`}>
+      <I.lock size={16} />
+      <span className="lc-ctl-label">{lev.short}</span>
+    </span>
+  ) : (
     <Pop
       label={`Permissions: ${lev.label}. Change them`}
       side={variant === "home" ? "bottom" : "top"}

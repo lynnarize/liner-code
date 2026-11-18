@@ -1,0 +1,703 @@
+/* Liner Security's Overview (board A) and Projects (board G), loaded with those pages. Translated from the mockup's
+   sec.css (.figs, .chart, .g2.bxd, .rw, .pcard, .phead, .ptile) onto the app's tokens; the shared boxes, splits and tags
+   are security.css's. Builder U1. */
+
+/* The top row's pickers and its one dark button. */
+.lo-cb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lo-cb:hover,
+.lo-cb[aria-expanded="true"] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lo-cb svg {
+  color: var(--l-ink-3);
+}
+.ls-top .lo-go {
+  margin-left: 4px;
+}
+
+/* The page column: 1080 wide at most, centred. While the first answer comes the boxes stand at their size, quiet. */
+.lo-col {
+  container: lo-col / inline-size;
+  box-sizing: border-box;
+  width: 1080px;
+  max-width: calc(100% - 64px);
+  margin: 0 auto;
+  padding: 16px 0 28px;
+}
+.lo-col-g {
+  padding-top: 22px;
+}
+.lo-col[data-loading] :is(.lo-figs b, .lo-figs p, .lo-figs small, .lo-chart, .ls-parts, .ls-leg, .lo-pcard) {
+  opacity: 0;
+}
+.lo-col :is(.lo-figs b, .lo-figs p, .lo-figs small, .lo-chart, .ls-parts, .ls-leg, .lo-pcard) {
+  transition: opacity 160ms ease;
+}
+
+/* Small words. */
+.lo-q {
+  color: var(--l-ink-3);
+}
+.lo-mono {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.lo-ell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lo-grow {
+  flex: 1;
+  min-width: 0;
+}
+.lo-pad {
+  margin: 6px 0 2px;
+  font-size: 13px;
+}
+.lo-stt {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lo-stt[data-tone="ok"] {
+  color: var(--ls-ok);
+}
+.lo-lk {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 -6px 0 auto;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lo-lk:hover {
+  color: var(--l-ink);
+}
+.ls-blkh .ls-blkh-end .lo-lk {
+  margin-left: 0;
+}
+.lo-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+}
+.lo-key i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--l-ink-3);
+}
+
+/* The figures. */
+.ls-card.lo-figs {
+  display: flex;
+  align-items: stretch;
+  padding: 16px 18px;
+}
+.lo-lb {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.lo-hero {
+  flex: 1;
+  min-width: 0;
+}
+.lo-hero b {
+  display: block;
+  margin: 4px 0 0 -3px;
+  font-size: 64px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink);
+}
+.lo-hero p {
+  margin: 9px 0 0;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lo-tile {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 182px;
+  box-sizing: border-box;
+  padding: 0 12px 0 20px;
+  border: 0;
+  border-left: 1px solid var(--lc-hair);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+.lo-tile b {
+  margin-top: auto;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink);
+}
+.lo-tile small {
+  max-width: 100%;
+  margin-top: 9px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lo-tile-go {
+  border-radius: 0 8px 8px 0;
+  cursor: pointer;
+}
+.lo-tile-go:hover small {
+  color: var(--l-ink);
+}
+
+/* Two columns of boxes: the wide one, and 352px beside it. */
+.lo-g2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 352px;
+  align-items: stretch;
+  column-gap: 10px;
+  margin-top: 10px;
+}
+.lo-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+/* Narrower than the 1080 column (a window under about 1400px, or the sidebar shown): the figures put the open count on
+   a row of its own and share the next row; the side column narrows, then goes under the wide one; then the counts go two
+   to a row. Measured on the column itself, so the sidebar and the window both count. */
+@container lo-col (max-width: 1000px) {
+  .lo-g2 {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+  .lo-hero {
+    flex: 1.3 1 0;
+  }
+  .lo-hero p {
+    white-space: normal;
+    text-wrap: pretty;
+  }
+  .lo-tile {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+}
+@container lo-col (max-width: 860px) {
+  .ls-card.lo-figs {
+    flex-wrap: wrap;
+    row-gap: 18px;
+  }
+  .lo-hero {
+    flex: 1 0 100%;
+  }
+  .lo-hero + .lo-tile {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .lo-tile b {
+    margin-top: 8px;
+  }
+}
+@container lo-col (max-width: 760px) {
+  .lo-g2 {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 10px;
+  }
+}
+@container lo-col (max-width: 520px) {
+  .lo-tile {
+    flex: 1 1 40%;
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+
+/* A row in a box: a link to a finding or a project, with a hairline between rows. */
+.lo-rw {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% + 20px);
+  min-height: 44px;
+  box-sizing: border-box;
+  margin: 0 -10px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--l-ink);
+}
+button.lo-rw {
+  cursor: pointer;
+}
+button.lo-rw:hover {
+  background: var(--l-wash);
+}
+.lo-rw + .lo-rw::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 10px;
+  left: 10px;
+  height: 1px;
+  background: var(--lc-hair);
+}
+.lo-rw:hover::before,
+.lo-rw:hover + .lo-rw::before {
+  opacity: 0;
+}
+.lo-rw.lo-sm {
+  min-height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 13px;
+}
+.lo-rw.lo-c4 {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) 100px 116px;
+}
+.lo-rw.lo-c4 .ls-tag {
+  justify-self: end;
+}
+.lo-rw .lo-mono.lo-q {
+  font-size: 12px;
+}
+
+/* A count after a bar of severities; quiet at 0. */
+.lo-pf {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lo-pf b {
+  font-weight: 500;
+}
+.lo-pf[data-quiet] b {
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+
+/* The day-by-day line. Text never wears the series colour. */
+.lo-chart {
+  position: relative;
+  margin-top: 6px;
+}
+.lo-chart svg {
+  display: block;
+  overflow: visible;
+}
+.lo-chart text {
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  fill: var(--l-ink-3);
+}
+.lo-ch-gl {
+  stroke: var(--lc-hair);
+  stroke-width: 1;
+}
+.lo-ch-ax {
+  stroke: var(--ls-line);
+  stroke-width: 1;
+}
+.lo-ch-ar {
+  fill: var(--l-accent);
+  opacity: 0.1;
+}
+.lo-ch-ln {
+  fill: none;
+  stroke: var(--l-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.lo-ch-end {
+  fill: var(--l-accent);
+  stroke: var(--lc-paper);
+  stroke-width: 2;
+}
+.lo-chart .lo-ch-endl {
+  font-size: 12.5px;
+  font-weight: 500;
+  fill: var(--l-ink);
+}
+.lo-chart .lo-ch-note {
+  font-size: 12.5px;
+  fill: var(--l-ink-2);
+}
+.lo-ch-sc {
+  fill: var(--l-ink-3);
+}
+.lo-days {
+  position: absolute;
+  border-radius: 4px;
+  outline-offset: 6px;
+}
+.lo-day-at {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ls-line);
+  pointer-events: none;
+}
+.lo-day-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid var(--lc-paper);
+  border-radius: 50%;
+  background: var(--l-accent);
+  pointer-events: none;
+}
+.lo-tip {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  display: block;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: var(--lc-float);
+  box-shadow: var(--lc-card-ring), 0 8px 22px oklch(0.2 0.02 265 / 0.12);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(12px);
+}
+.lo-tip[data-side="left"] {
+  transform: translateX(calc(-100% - 12px));
+}
+.lo-tip b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lo-tip span {
+  display: block;
+}
+.lo-tip span + span {
+  color: var(--l-ink-2);
+}
+
+/* Nothing scanned yet. */
+.ls-card.lo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 24px 36px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-align: center;
+}
+.lo-empty b {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lo-empty > span:not(.ls-disc) {
+  max-width: 440px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.lo-empty .lc-btn {
+  margin-top: 10px;
+}
+
+/* Projects: the title, its line, the tabs. */
+.lo-h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--l-ink);
+}
+.lo-sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+  text-wrap: pretty;
+}
+.lo-tabs {
+  margin: 16px 0 14px;
+}
+.lo-find {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+}
+.lo-find input {
+  width: 180px;
+  border: 0;
+  outline: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+}
+
+/* A project's card. */
+.lo-pcard {
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--ls-line);
+}
+.lo-pcard + .lo-pcard {
+  margin-top: 10px;
+}
+.lo-phead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px 200px 190px 100px 56px;
+  align-items: center;
+  column-gap: 20px;
+}
+.lo-pname {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: -6px;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.lo-pname > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lo-pname .ls-tl2 b {
+  font-size: 14px;
+  font-weight: 500;
+}
+.lo-pname:hover .ls-tl2 b {
+  text-decoration: underline;
+  text-decoration-color: var(--ls-line);
+  text-underline-offset: 3px;
+}
+.lo-st2 {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--l-ink);
+  white-space: nowrap;
+}
+.lo-st2 > small {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lo-st2 .lo-pf {
+  height: 19px;
+}
+.lo-st2 .lo-stt {
+  font-size: 13px;
+}
+.lo-st2 > :not(small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lo-phead > .lo-scan {
+  justify-self: end;
+  padding: 0 10px;
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+}
+@container lo-col (max-width: 1000px) {
+  .lo-phead {
+    grid-template-columns: minmax(0, 1fr) 130px 150px 150px 80px 56px;
+    column-gap: 14px;
+  }
+}
+/* Narrower still: the name and Scan on one row, the four facts under them. */
+@container lo-col (max-width: 860px) {
+  .lo-phead {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) 56px;
+    row-gap: 12px;
+  }
+  .lo-pname {
+    grid-row: 1;
+    grid-column: 1 / 5;
+  }
+  .lo-phead > .lo-scan {
+    grid-row: 1;
+    grid-column: 5;
+  }
+}
+
+/* The open card's two tiles. */
+.lo-ptiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.lo-ptile {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--l-wash);
+}
+.lo-ptile .ls-blkh .lo-lk {
+  margin-left: auto;
+}
+.lo-ptile .ls-blkh.lo-sp2 {
+  margin-top: 8px;
+}
+.lo-tilep {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lo-prow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--l-ink);
+}
+.lo-prow + .lo-prow {
+  box-shadow: 0 -1px 0 var(--lc-hair);
+}
+.lo-prow-go {
+  cursor: pointer;
+}
+.lo-prow-go:hover .lo-grow {
+  text-decoration: underline;
+  text-decoration-color: var(--ls-line);
+  text-underline-offset: 3px;
+}
+.lo-prow .lo-when {
+  flex: none;
+  width: 96px;
+}
+.lo-prow .lo-res {
+  flex: none;
+  width: 130px;
+  text-align: right;
+}
+.lo-wm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lo-wm > svg {
+  flex: none;
+}
+.lo-dots {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+}
+.lo-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--ls-sv-l);
+}
+.lo-dots [data-tone="critical"] {
+  background: var(--ls-sv-c);
+}
+.lo-dots [data-tone="high"] {
+  background: var(--ls-sv-h);
+}
+.lo-dots [data-tone="medium"] {
+  background: var(--ls-sv-m);
+}
+
+/* A free check's row: its name keeps at least half the row; a long result ("Not checked, no package-lock.json") wraps
+   under itself at the right instead of squeezing the name. */
+.lo-rw.lo-chk {
+  display: grid;
+  grid-template-columns: minmax(50%, 1fr) auto;
+  column-gap: 16px;
+}
+.lo-chk .lo-stt {
+  max-width: 100%;
+  white-space: normal;
+  text-align: right;
+  text-wrap: pretty;
+}
+
+/* A narrow column: the open card's two tiles stack (after the tiles' own rule, so it wins). */
+@container lo-col (max-width: 860px) {
+  .lo-ptiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

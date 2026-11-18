@@ -80,8 +80,8 @@ export const bridge = {
   setMenuKeys(keys: Record<string, string>) {
     if (isNative()) void call("setMenuKeys", { keys }).catch(() => {});
   },
-  /** Which face the window shows: File › New reads "New Design" in Liner Design, "New Session" in Liner Code (the same ⌘N). */
-  setMenuFace(face: "code" | "design") {
+  /** Which face the window shows: File › New reads "New Design" in Liner Design, "New Scan" in Liner Security, "New Session" in Liner Code (the same ⌘N). */
+  setMenuFace(face: "code" | "design" | "security") {
     if (isNative()) void call("setMenuFace", { face }).catch(() => {});
   },
   /** A part of the window, as a PNG in base64 (the rect in page pixels). */

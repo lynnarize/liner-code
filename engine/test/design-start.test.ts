@@ -120,7 +120,7 @@ test("sessions of a design on its own carry Thread.design; Add a project refuses
   await assert.rejects(api.call("thread.create", { projectId: own.project.id, design: { file: "../x" } }), /isn't a design file's name/);
   await assert.rejects(api.call("project.add", { path: own.project.path }), /is a design on its own/);
   assert.equal((await api.call("settings.save", { openIn: "design" })).openIn, "design");
-  await assert.rejects(api.call("settings.save", { openIn: "paper" as never }), /Code or Design/);
+  await assert.rejects(api.call("settings.save", { openIn: "paper" as never }), /Code, Design or Security/);
 });
 
 test("the lean is optional: the ## Design note of a design without one never mentions writing a DESIGN.md", async () => {

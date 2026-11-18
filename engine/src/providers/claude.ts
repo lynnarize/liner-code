@@ -434,6 +434,8 @@ export const modeOf = (access: Access, noAuto?: boolean): PermissionMode => (acc
 const NO_AUTO = /Auto mode (?:can't|cannot|is unavailable|isn't available)/i;
 /** A side chat reads and answers: editing, and plan mode's way in and out, stay with the session. */
 const SIDE_DENIED = ["Edit", "MultiEdit", "Write", "NotebookEdit", "EnterPlanMode", "ExitPlanMode"];
+/** What a Liner Security scan doesn't get of Claude Code's own (OpenOptions.scan): what reaches past the project, or spawns. */
+export const SCAN_DENIED = ["WebFetch", "WebSearch", "Agent", "Task", "Workflow", "CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "EnterWorktree", "ExitWorktree", "RemoteTrigger"];
 /** Just a model, for an app (plain): every built-in that reaches this Mac, denied by rule as well as left out. */
 const PLAIN_DENIED = ["Read", "Glob", "Grep", "LS", "Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"];
 /**
@@ -788,6 +790,9 @@ class ClaudeSession implements ProviderSession {
     if (!existsSync(o.cwd)) throw new Error(`This session's folder isn't there any more: ${o.cwd}`);
     // Just a model, for an app: no built-in tools, no settings (and so no hooks, plugins or servers of yours), none of Liner's, its own short prompt.
     // Read denied too: with no tools at all, Claude Code still reads a file or lists a folder an @path in the prompt names.
+    // Sealed (a Specialist scan): Liner's own server alone, and none of your settings files (so no hooks, plugins or CLAUDE.md),
+    // skills, MCP servers or subagents; the Skill tool refused too.
+    const sealed: Partial<Options> = o.sealed && !o.plain ? { settingSources: [], skills: [], plugins: [], strictMcpConfig: true, agents: undefined, disallowedTools: [...(o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : []), "Skill"] } : {};
     const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], settings: { permissions: { deny: PLAIN_DENIED } }, mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
     const options: Options = {
       cwd: o.cwd,
@@ -801,7 +806,7 @@ class ClaudeSession implements ProviderSession {
       permissionMode: o.side ? "default" : modeOf(this.access, this.noAuto),
       // A sidekick sends no agents of its own: the lead waits on it, and nobody would see theirs. Workflow runs a script of agents
       // (Claude Code 2.1.322 offers it beside Agent), so it goes too.
-      disallowedTools: o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : undefined,
+      disallowedTools: o.side || o.sidekick || o.scan ? [...new Set([...(o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : [])])] : undefined,
       includePartialMessages: true,
       agents: o.subagents && Object.keys(o.subagents).length ? o.subagents : undefined,
       resume: o.resume,
@@ -885,6 +890,7 @@ class ClaudeSession implements ProviderSession {
         return answer.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: answer.level && answer.reason ? answer.reason : answer.reason ? `The user said no, and asks instead: ${answer.reason}` : "The user said no to this step." };
       },
       onElicitation: (request, { signal }) => this.elicit(request, signal),
+      ...sealed,
       ...plain,
     };
     this.seen = o.resume ? null : { input: 0, output: 0, cache: 0, cost: 0 };
@@ -893,7 +899,7 @@ class ClaudeSession implements ProviderSession {
     // The connections go over stdin rather than on the command line with `liner`, where any program
     // on this Mac could read their keys: the SDK writes `mcpServers` as --mcp-config (T3 Code:
     // ClaudeAdapterV2.ts hands its servers over with setMcpServers once query() returns, for the same reason).
-    if (o.connections?.length && !o.plain) {
+    if (o.connections?.length && !o.plain && !o.sealed) {
       this.linking = this.link(this.q);
       // A resume that fails first never reaches the turn that waits on this.
       this.linking.catch(() => {});

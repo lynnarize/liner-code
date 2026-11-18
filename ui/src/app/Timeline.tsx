@@ -118,6 +118,12 @@ type Props = {
     card. Left out (a side chat, which has no such composer), the card stays in the timeline.
   */
   docked?: boolean;
+  /**
+    A face's own drawing of an item, in its place (Liner Security: a finding the scan reported, an answered question): a node
+    draws it as a block of its own, null leaves it out, undefined draws it as usual. Left out (Code, Design), nothing changes.
+    One identity for the session's life (useCallback), so the turns don't redraw for a new one.
+  */
+  draw?: (it: Item) => ReactNode | null | undefined;
 };
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -129,7 +135,7 @@ function useSteady<A extends unknown[]>(fn: ((...a: A) => void) | undefined) {
   return useCallback((...a: A) => ref.current?.(...a), []);
 }
 
-export function Timeline({ threadId, items: given, seen, onReview, reviewing, onGrow, docked }: Props) {
+export function Timeline({ threadId, items: given, seen, onReview, reviewing, onGrow, docked, draw }: Props) {
   const own = useItems(given ? undefined : threadId);
   const items = given ?? own;
   const agents = useEngine((s) => s.agents);
@@ -148,14 +154,14 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewing, on
       {turns.map(({ turn, n, items: list }) => (
         // One turn that can't show says so in its place; the rest of the thread stays (T3 Code's RenderErrorBoundary).
         <Boundary key={turn} label="This turn" quiet>
-          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} docked={docked} />
+          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} docked={docked} draw={draw} />
         </Boundary>
       ))}
     </div>
   );
 }
 
-const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow, docked }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
+const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow, docked, draw }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
   // Your turn, and any parts that carried it on (a build, a refine, a fix): one turn, one foot, and
   // a head for each model's part, so who did what reads in order.
   const marks = items.filter((x): x is Mark => x.kind === "turn");
@@ -226,6 +232,12 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
   const offers: Extract<Item, { kind: "offer" }>[] = [];
   for (const [i, it] of items.entries()) {
     if ((it.kind === "tool" || it.kind === "approval") && it.tool === PR_TEST_TOOL) continue;
+    // A face that draws this item its own way (Timeline's `draw`): its block, or nothing.
+    const mine = draw?.(it);
+    if (mine !== undefined) {
+      if (mine !== null) (flush(), blocks.push({ key: it.id, node: mine, said: it.kind === "user" }));
+      continue;
+    }
     // A lead's reply that was all plan keeps nothing once its card has it.
     if (it.kind === "text" && !it.streaming && !it.text.trim()) continue;
     // Thinking too short to show leaves no row, so the steps either side stay one.

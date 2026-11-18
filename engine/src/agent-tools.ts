@@ -28,13 +28,16 @@ import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
 import { remember, searchSessions } from "./memory.ts";
 import { uid, type Store } from "./store.ts";
 import { script } from "./paths.ts";
-import { PAIR_ENV } from "./liner-tools.ts";
+import { PAIR_ENV, SECURITY_ENV } from "./liner-tools.ts";
 import { AS_SIDEKICK, sidekickTitle } from "./sidekick.ts";
 import * as canvas from "./canvas.ts";
 import * as lean from "./lean.ts";
 import * as buildlinks from "./buildlinks.ts";
 import * as pictures from "./pictures.ts";
 import type { DesignCtx, Shot } from "./canvas.ts";
+import type { Security } from "./security.ts";
+import * as scanTools from "./security-scan.ts";
+import { TOOLS as SECURITY_TOOLS } from "./security-tools.ts";
 
 /** Liner Design's modules, one line each: their tools (TOOLS), answered by their call, titled by their titleOf. */
 const DESIGN = [canvas, lean, buildlinks, pictures];
@@ -104,7 +107,7 @@ export function linerTitle(tool: string, input: unknown): string {
         const title = m.titleOf(tool, raw);
         if (title) return title;
       }
-      return `Liner Code · ${tool}`;
+      return scanTools.titleOf(tool, raw) ?? `Liner Code · ${tool}`;
   }
 }
 
@@ -263,6 +266,8 @@ export class AgentTools {
   filesUrl: (root: string) => Promise<string> = async () => "";
   /** What Liner Design's modules are handed (canvas.ts); their tools say they aren't there without it. */
   design?: DesignCtx;
+  /** Liner Security (security.ts): a scan's tools (security-tools.ts) are answered by security-scan.ts through it. */
+  security?: Security;
   /** Your add-ons, and the runtime they're handed to sessions through. */
   addons?: Addons;
   host?: AddonHost;
@@ -297,7 +302,12 @@ export class AgentTools {
     }
     // Under the Electron shell process.execPath is the app itself, which is a Node only when told so.
     const electron: Record<string, string> = process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {};
-    return { command: process.execPath, args: [script("mcp")], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY: key, ...(o.pair && !o.sidekick ? { [PAIR_ENV]: "1" } : {}) } };
+    // Liner Security's tools are offered only in its sessions: in a scan all of them and nothing else of Liner's, in its side
+    // chats and forks the two that only read and nothing else, in a fix or a question the two that only read beside the rest.
+    const held = this.store.threads?.find((t) => t.id === threadId);
+    const tag = held?.security;
+    const level = !tag ? undefined : tag.kind !== "scan" ? "read" : tag.scan && !held?.sideOf ? "scan" : "scan-read";
+    return { command: process.execPath, args: [script("mcp")], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY: key, ...(o.pair && !o.sidekick ? { [PAIR_ENV]: "1" } : {}), ...(level ? { [SECURITY_ENV]: level } : {}) } };
   }
 
   threadOf(key: string) {
@@ -372,6 +382,9 @@ export class AgentTools {
     } catch {
       // a thread that's gone: its call fails below as it would have
     }
+    // A security scan (its side chats and forks too) only reads: Liner's tools that run or reach things aren't for it.
+    const own = sidekick ? threadId.slice(0, -AS_SIDEKICK.length) : threadId;
+    if (this.store.threads?.find((t) => t.id === own)?.security?.kind === "scan" && !tool.startsWith("security_") && tool !== "sidekick") return { content: [{ type: "text", text: `${tool} isn't used in a security scan: it only reads, with your own reading tools and Liner's security tools.` }], isError: true };
     const r = await this.answer(threadId, tool, args, gone, sees);
     return sees ? r : wordsOnly(r);
   }
@@ -502,6 +515,11 @@ export class AgentTools {
           if (!this.offers) return fail("Offers aren't available in this session.");
           return text(this.offers.offer(threadId, args));
         default: {
+          // Liner Security's tools: a scan reports what it finds through these.
+          if (SECURITY_TOOLS.some((t) => t.name === tool)) {
+            if (!this.security) return fail("Liner Security isn't available in this session.");
+            return await scanTools.call(this.security, tool, args, { threadId: sidekick ? threadId.slice(0, -AS_SIDEKICK.length) : threadId, sidekick, gone });
+          }
           const m = DESIGN.find((d) => d.TOOLS.some((t) => t.name === tool));
           if (!m) return fail(`Liner Code has no tool called ${tool}.`);
           if (!this.design) return fail("Liner Design isn't available in this session.");

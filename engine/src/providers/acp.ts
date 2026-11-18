@@ -100,7 +100,9 @@ const OPENCODE_NOTES = ["list", "lsp", "question", "skill", "todowrite"];
   ran at Read only with no ask, seen), so an ask rule can't reach them and only a deny, which takes them off its list, can.
   `?` for the namespace's dot or underscore, whichever it matches by.
 */
-const OPENCODE_UNASKED = ["opencode?worktree_*", "opencode?session_move", "opencode?schedule_*", "opencode?artifact_*", "opencode?watch_*"];
+const OPENCODE_UNASKED = ["opencode?worktree_*", "opencode?worktree_create", "opencode?worktree_remove", "worktree_*", "opencode?session_move", "opencode?schedule_*", "opencode?artifact_*", "opencode?watch_*"];
+/** What a Liner Security scan doesn't get of OpenCode's own (OpenOptions.scan): what reaches past the project, or spawns. */
+const OPENCODE_SCAN_DENIED = ["webfetch", "websearch", "codesearch", "task"];
 /** OpenCode 2's names for 1.x's tools, both ways: your deny under either holds under both. */
 const RENAMED: Record<string, string> = { bash: "shell", shell: "bash", task: "subagent", subagent: "task" };
 /** Liner Code's tools as OpenCode names them, its server's name and the tool's joined with _. */
@@ -291,14 +293,15 @@ function opencodeOwn(cwd: string, env: NodeJS.ProcessEnv, content: Json) {
   and model kept beside them. 2.3.0 drops continue_loop_on_deny as an old setting, so there a refusal still
   ends the turn: ACP's reject carries no words it could go on with.
 */
-export function opencodeEnv(cwd: string, env: NodeJS.ProcessEnv, linerServer = true) {
+export function opencodeEnv(cwd: string, env: NodeJS.ProcessEnv, linerServer = true, deny: string[] = []) {
   const parsed = jsonc(env.OPENCODE_CONFIG_CONTENT || "{}");
   // One that won't parse: 1.x refused to start on it, but 2.3.0 starts as if it weren't there, with no rules
   // at all. Liner Code's own goes in its place, so the access level holds either way.
   if (!parsed) console.error("[opencode] OPENCODE_CONFIG_CONTENT in your environment isn't JSON, so Liner Code's own settings went in its place");
   const had = parsed ?? {};
   const { permission, review } = opencodeOwn(cwd, env, had);
-  const rules = opencodeRules(permission, linerServer);
+  // `deny`: tools off for this session whatever you allow (a Liner Security scan's outreach), as a deny of yours would be.
+  const rules = opencodeRules({ ...permission, ...Object.fromEntries(deny.map((n) => [n, "deny"])) }, linerServer);
   const experimental = (had.experimental as Json | undefined) ?? {};
   // A longer wait given before stays: it's in milliseconds.
   const wait = Math.max(Number(experimental.mcp_timeout) || 0, LINER_WAIT_SEC * 1000);
@@ -1325,9 +1328,10 @@ class AcpSession implements ProviderSession {
         (!wrapped || Object.keys((call.rawInput ?? {}) as Json).every((k) => k === "calls")) &&
         (!via || Object.keys((call.rawInput ?? {}) as Json).every((k) => MCP_WRAP_KEYS.includes(k)));
       // Read only holds whatever the agent's mode: Antigravity's plan mode still asks to edit and to run commands, and a card
-      // there would let a session that only reads change things. What only reads, and Liner Code's own tools (whose writers
-      // refuse in a session that only reads), go on; the rest is a no, said once a turn.
-      if (this.levels && this.o.access === "read" && !reads && !liner && !(step === "exec" && reader && !away && !secret)) {
+      // there would let a session that only reads change things. OpenCode too: its ask to go outside the project, and a tool of
+      // its own that changes things (a worktree's removal), came as cards at Read only, and a yes ran them. What only reads,
+      // and Liner Code's own tools (whose writers refuse in a session that only reads), go on; the rest is a no, said once a turn.
+      if ((this.levels || this.opencode) && this.o.access === "read" && !reads && !liner && !(step === "exec" && reader && !away && !secret)) {
         const what = step === "edit" ? `change ${files[0] ? this.rel(files[0].path) : "files"}` : step === "exec" ? `run ${command || "a command"}` : `use ${this.titled(call.title ?? "a tool")}`;
         // agy offers only allow and deny, and ends its turn on a deny: the timeline says so, and the model hears it next turn.
         if (!this.readRefused) this.sink?.notice(`This session only reads, so ${this.cmd[0]} wasn't let ${what}${this.known.endsWork ? `, and that ended its turn` : ""}.`);
@@ -2247,7 +2251,7 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
           }
         : undefined;
       const known: Known = { levels: spec.modes, unasked: spec.unasked, gate, systemPrompt: spec.systemPrompt, endsWork: spec.endsWork, quietMs: spec.quietMs && (DEV_WAITS.quietMs ?? spec.quietMs), hintMs: spec.hintMs && (DEV_WAITS.hintMs ?? spec.hintMs), killAfterMs: spec.killAfterMs, tagged: spec.tagged, noWrites: spec.noWrites, refusal: spec.refusal, failedWords: spec.failedWords, failed: spec.failed, noModel: spec.noModel };
-      return new AcpSession({ ...o, env: isOpenCode ? { ...env, ...opencodeEnv(o.cwd, env, Boolean(o.mcp)) } : env, dirs: isOpenCode ? [...(o.dirs ?? []), opencodeOutputs(o.env)] : o.dirs }, cmd, spec.login, isOpenCode, id, known);
+      return new AcpSession({ ...o, env: isOpenCode ? { ...env, ...opencodeEnv(o.cwd, env, Boolean(o.mcp), o.scan ? OPENCODE_SCAN_DENIED : []) } : env, dirs: isOpenCode ? [...(o.dirs ?? []), opencodeOutputs(o.env)] : o.dirs }, cmd, spec.login, isOpenCode, id, known);
     },
   };
 }

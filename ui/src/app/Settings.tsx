@@ -25,7 +25,7 @@ import { Backdrop, ownChanged, useBackgroundUrl } from "./Backdrop";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark, StepMark } from "./icons";
-import { ACCESS_LEVELS, accessOf, agentOf, ago, codeProjects, dollars, markOf, modelLabel, plural, providerLabel, since } from "./model";
+import { ACCESS_LEVELS, accessOf, agentOf, ago, dollars, listedProjects, markOf, modelLabel, plural, providerLabel, since } from "./model";
 import { appIcon, dayOf } from "./Addon";
 // Liner Design's picture model settings load when that page of Settings is shown.
 const PicturesSettings = lazy(() => import("./design/Pictures").then((m) => ({ default: m.PicturesSettings })));
@@ -555,14 +555,15 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
   return (
     <>
       <Group title="When Liner starts">
-        <Field title="Liner opens in" note="For someone who only builds front ends: the app starts in the Design tab, and the Code tab stays one press away.">
+        <Field title="Liner opens in" note="For someone who only builds front ends, the app can start in Design; for someone who looks after projects, in Security. The other faces stay one press away.">
           <Segmented
             size="sm"
             value={s.openIn ?? "code"}
-            onValueChange={(v) => save({ openIn: v as "code" | "design" })}
+            onValueChange={(v) => save({ openIn: v as "code" | "design" | "security" })}
             options={[
               { value: "code", label: "Code" },
               { value: "design", label: "Design" },
+              { value: "security", label: "Security" },
             ]}
             aria-label="Liner opens in"
           />
@@ -2537,7 +2538,7 @@ function AddonKeys({ a }: { a: AddonInfo }) {
 */
 export function AddByHand({ onDone }: { onDone: () => void }) {
   // Designs on their own are Liner Design's: listed there, not here.
-  const projects = codeProjects(useEngine((x) => x.projects));
+  const projects = listedProjects(useEngine((x) => x.projects));
   const [text, setText] = useState("");
   const [project, setProject] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -2609,7 +2610,7 @@ export function AddByHand({ onDone }: { onDone: () => void }) {
 
 function Projects() {
   // Designs on their own are Liner Design's: listed there, not here.
-  const projects = codeProjects(useEngine((x) => x.projects));
+  const projects = listedProjects(useEngine((x) => x.projects));
   const agents = useEngine((x) => x.agents);
   const threads = useEngine((x) => x.threads);
   const showDemo = useEngine((x) => x.settings.showDemo === true);

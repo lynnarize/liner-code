@@ -273,6 +273,12 @@ export const N = {
   design: (p: P) => <L {...p}><path d="M10 16.5 5.25 10.6 7.5 3.5h5l2.25 7.1Z" /><path d="M10 16.5v-4.75" /><circle cx="10" cy="10.3" r="1.45" /></L>,
   agents: (p: P) => <L {...p}><circle cx="7.5" cy="6.75" r="2.75" /><path d="M2.75 16.25a4.75 4.75 0 0 1 9.5 0M12.75 4.1a2.75 2.75 0 0 1 0 5.3M14.5 12.05a4.75 4.75 0 0 1 2.75 4.2" /></L>,
   app: (p: P) => <L {...p}><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5" /><path d="M2.75 7.75h14.5M5.75 5.75h.01M8 5.75h.01" /></L>,
+  /** Liner Security's Overview: a shield, as the face's own mark. */
+  shield: (p: P) => <L {...p}><path d="M10 3.25 15.75 5.4v4.35c0 3.6-2.35 6.05-5.75 7.1-3.4-1.05-5.75-3.5-5.75-7.1V5.4Z" /></L>,
+  /** Findings: a list being looked through. */
+  findings: (p: P) => <L {...p}><path d="M3.25 5.75h3.5M3.25 10h2.5M3.25 14.25h3.5" /><circle cx="12.25" cy="9.25" r="3.5" /><path d="m14.75 11.75 2 2" /></L>,
+  /** Try the running app: a target. */
+  target: (p: P) => <L {...p}><circle cx="10" cy="10" r="6.75" /><circle cx="10" cy="10" r="2.5" /></L>,
 };
 
 /** Whose model it is, or which tool runs it: its logo in the current ink. A model nobody's list knows gets a plain cube; the Demo gets the turn in one ink. */

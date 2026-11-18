@@ -65,6 +65,9 @@ const DesignFiles = lazy(() => import("./design/DesignHome").then((m) => ({ defa
 /** Liner Design's session helpers, loaded only when the Design face is (or is about to be) up. */
 const designSession = () => import("./design/session");
 // Its first-open sheet, over whichever of the two shows.
+// Liner Security's face and its sidebar body: loaded the first time the window shows Security, never for someone who doesn't.
+const SecurityShell = lazy(() => import("./security/Shell").then((m) => ({ default: m.SecurityShell })));
+const SecuritySide = lazy(() => import("./security/Side").then((m) => ({ default: m.SecuritySide })));
 const DesignIntro = lazy(() => import("./design/Intro").then((m) => ({ default: m.DesignIntro })));
 import * as os from "./os";
 
@@ -312,6 +315,8 @@ export function App() {
     const was = lastFace.current;
     lastFace.current = face;
     if (was === face || !ready) return;
+    // Liner Security has its own pages and sessions: going to it or leaving it makes nothing and opens nothing of Design's.
+    if (face === "security" || was === "security") return;
     const s = getState();
     if (face === "design") {
       const t = view.kind === "session" ? s.threads.find((x) => x.id === (sideFocus === 1 && view.beside ? view.beside : view.id)) : undefined;
@@ -335,7 +340,12 @@ export function App() {
       .then((t) => getFace() === "code" && go({ kind: "session", id: t.id }))
       .catch((e: Error) => toast.error(e.message));
   }, [face]);
-  // Settings' "Liner opens in": a fresh start (not a reload of this window) opens in Liner Design, on Design Home.
+  // Code never shows a scan, fix or question about a finding (Thread.security): one left up when you came back from Security goes Home.
+  useEffect(() => {
+    if (face !== "code" || view.kind !== "session" || !ready) return;
+    if (getState().threads.some((t) => t.id === view.id && t.security)) setView({ kind: "home" });
+  }, [view.kind === "session" ? view.id : "", face, ready]);
+  // Settings' "Liner opens in": a fresh start (not a reload of this window) opens in Liner Design, on Design Home, or in Liner Security.
   const openIn = useEngine((s) => s.settings.openIn);
   const started = useRef(false);
   useEffect(() => {
@@ -344,7 +354,7 @@ export function App() {
     if (!faceKept() && openIn === "design") {
       showTab(HOME_TAB);
       setFace("design");
-    }
+    } else if (!faceKept() && openIn === "security") setFace("security");
   }, [ready]);
 
   // The Dock says how many sessions need you; notifications say which, while you're elsewhere.
@@ -398,6 +408,18 @@ export function App() {
   /** Going somewhere from ⌘K, the menu bar or the keys: Settings would otherwise stay over the place you went to. */
   const go = (v: View) => {
     setSettings(false);
+    // A session opened by id (a notification, ⌘K, the next one that needs you, the sidebar) goes to the face it belongs to,
+    // every time: a scan, fix or question about a finding (Thread.security) to Liner Security's own session page, with its
+    // lock; any other session, asked for while Security shows, to Code.
+    if (v.kind === "session") {
+      const t = getState().threads.find((x) => x.id === v.id);
+      if (t?.security) {
+        if (getFace() !== "security") setFace("security");
+        void import("./security/store").then((m) => m.goSecurity({ kind: "scan", threadId: t.id }));
+        return;
+      }
+      if (t && getFace() === "security") setFace("code");
+    }
     setView(v);
   };
   const openSession = (id: string, tab?: Tab) => {
@@ -503,8 +525,8 @@ export function App() {
   // box and not sent, so you go on to say what it should be.
   const createAddon = async () => {
     try {
-      const have = (id?: string) => (id && projects.some((p) => p.id === id && p.kind !== "design") ? id : undefined);
-      const projectId = have(here?.projectId) ?? have(lastProject) ?? projects.find((p) => p.agent !== "demo" && p.kind !== "design")?.id ?? (await rpc("project.scratch", {})).id;
+      const have = (id?: string) => (id && projects.some((p) => p.id === id && p.kind !== "design" && !p.demoFor) ? id : undefined);
+      const projectId = have(here?.projectId) ?? have(lastProject) ?? projects.find((p) => p.agent !== "demo" && p.kind !== "design" && !p.demoFor)?.id ?? (await rpc("project.scratch", {})).id;
       setView({ kind: "home", projectId, mode: "creator", prompt: { text: CREATE_ADDON_ASK, at: Date.now() } });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -559,8 +581,8 @@ export function App() {
     // Nothing of the window's while first run is up, or under a dialog that has the keyboard (⌘K toggles itself; a menu-bar item naming a session still opens it).
     if (!getState().settings.onboarded) return;
     if (document.querySelector("dialog[open]") && name !== "commands" && name !== "updates" && !name.startsWith("open:")) return;
-    // ⌘N: a new design while Liner Design shows; in Liner Code, a new session as ever.
-    if (name === "new") getFace() === "design" ? void designSession().then((m) => m.newDesign()).catch((e: Error) => toast.error(e.message)) : newSession();
+    // ⌘N: a new design while Liner Design shows; Start a scan in Liner Security; in Liner Code, a new session as ever.
+    if (name === "new") getFace() === "design" ? void designSession().then((m) => m.newDesign()).catch((e: Error) => toast.error(e.message)) : getFace() === "security" ? void import("./security/store").then((m) => m.goSecurity({ kind: "start" })) : newSession();
     else if (name === "commands") {
       if (!menu) setBesideOf(null);
       setMenu(!menu);
@@ -679,7 +701,8 @@ export function App() {
       { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={16} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
       { id: "wall", label: "The Wall", group: "Actions", icon: <I.wall size={16} />, keywords: ["every session", "all sessions", "grid", "overview"], shortcut: shortcutOf("wall"), onSelect: showWall },
       { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={16} />, onSelect: () => go({ kind: "usage" }) },
-      { id: "face", label: face === "design" ? "Switch to Liner Code" : "Switch to Liner Design", group: "Actions", icon: face === "design" ? <I.code size={16} /> : <I.edit size={16} />, keywords: ["design", "canvas", "code", "face"], shortcut: shortcutOf("face"), onSelect: () => toggleFace() },
+      // The next face round, as ⌥⌘E goes: Code, Design, Security.
+      { id: "face", label: face === "code" ? "Switch to Liner Design" : face === "design" ? "Switch to Liner Security" : "Switch to Liner Code", group: "Actions", icon: face === "code" ? <I.edit size={16} /> : face === "design" ? <I.shield size={16} /> : <I.code size={16} />, keywords: ["design", "canvas", "code", "security", "scan", "findings", "face"], shortcut: shortcutOf("face"), onSelect: () => toggleFace() },
       ...(ROUTINES_ON
         ? [
             { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={16} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
@@ -762,7 +785,7 @@ export function App() {
     for (const t of threads.filter((x) => !x.archived).slice(0, 200)) items.push({ id: `t-${t.id}`, label: t.title, group: "Sessions", hint: `${projects.find((p) => p.id === t.projectId)?.name ?? ""} · ${agentOf(t.agent, agents, providers).name}`, onSelect: () => openSession(t.id) });
     // Words inside messages: the query itself is a keyword, so a hit stays listed while you type on.
     for (const h of found) items.push({ id: `m-${h.threadId}`, label: h.snippet, group: "In messages", hint: h.title, icon: <I.comment size={16} />, keywords: [asked.toLowerCase()], onSelect: () => openSession(h.threadId) });
-    for (const p of projects) if (p.kind !== "design") items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={16} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
+    for (const p of projects) if (p.kind !== "design" && !p.demoFor) items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={16} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
     for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
     return items;
     // New session and New routine read where you are and your last project, so they're here too.
@@ -808,8 +831,14 @@ export function App() {
               // Recent's project: Home's, else the session's on screen, else the one you were last in.
               recentProject={view.kind === "home" ? (view.projectId ?? lastProject) : here?.projectId || lastProject}
               onCarryOn={(projectId, text) => go({ kind: "home", projectId, prompt: { text, at: Date.now() } })}
-              designBody={
-                face !== "design" ? undefined : (
+              faceBody={
+                face === "security" ? (
+                  <Boundary label="Liner Security" quiet>
+                    <Suspense fallback={null}>
+                      <SecuritySide />
+                    </Suspense>
+                  </Boundary>
+                ) : face !== "design" ? undefined : (
                 <>
                 {/* The open designs first, as Code lists its sessions; then this design's lean, pages and layers, or every design on Design Home. */}
                 <Suspense fallback={null}>
@@ -829,12 +858,17 @@ export function App() {
                 </>
                 )
               }
-              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face !== "design" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face !== "design" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face === "code" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face === "code" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             <Backdrop />
             <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening</span></div>}>
-            {face === "design" && (view.kind === "home" || view.kind === "session") ? (
+            {face === "security" && (view.kind === "home" || view.kind === "session") ? (
+              // Liner Security: its Overview, Findings, Projects, Start a scan, or a scan's session. A fault in it stays in it.
+              <Boundary label="Liner Security">
+                <SecurityShell sidebar={sidebar} onSidebar={() => setSidebar(true)} />
+              </Boundary>
+            ) : face === "design" && (view.kind === "home" || view.kind === "session") ? (
               // Liner Design: its tabs, Design Home or a design on its canvas. A fault in it stays in it: the sidebar and the Code face go on working.
               <Boundary label="Liner Design">
                 <DesignShell sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} />

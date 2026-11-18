@@ -14,6 +14,7 @@
 */
 import type { CanvasVersion, FrameOp, FramePlaced, DesignFile, DesignFileInfo, DesignPatch, DesignPresence, DesignSelection, DesignSkill, FrameBuild, Lean, NewFrame, PictureAdd, PictureEndpoint, PictureModel } from "./design.ts";
 import type { HandOver, PairTuning, SidekickClass } from "./tuning.ts";
+import type { BringInResult, DismissReason, FindingState, SecurityFinding, FreeCheckRun, ScanChoices, ScanOptions, ScanRecord, SecurityChange, SecurityOverview, SecurityProject, SecuritySide, SecurityTag, SpecialistSource, ThreatModel, SecurityItem } from "./security.ts";
 
 /** The tools Liner Code knows by name. */
 export type BuiltinProvider = "claude" | "codex" | "hermes" | "opencode" | "cursor" | "grok" | "antigravity" | "demo";
@@ -307,6 +308,11 @@ export type Project = {
     face's projects or its chooser: the app leaves these out of its project lists. Unset: a project.
   */
   kind?: "design";
+  /**
+    "security": a folder the Demo made to stand in for a project in Liner Security's sample (engine/src/security-demo.ts).
+    Shown only in the Security face, and only while the Demo is: never in Code's or Design's project lists.
+  */
+  demoFor?: "security";
 };
 
 /** limited: the tool's plan ran out mid-turn; Resume carries on once it resets. */
@@ -398,6 +404,12 @@ export type Thread = {
   */
   design?: { file: string };
   /**
+    Liner Security: a scan (always Read only, refused any other level: the engine holds it there), a fix of a finding
+    (a worktree of its own), or a question about one. `sealed`: a Specialist scan, opened with none of your skills,
+    plugins, hooks or add-ons (OpenOptions.sealed). Such sessions show in Security's sidebar, not Code's.
+  */
+  security?: SecurityTag;
+  /**
     How the agent works in it, fixed for the session's life (DeepSeek Harness's agent presets):
     unset is Standard; "creator" is Workshop, which adds to Liner Code itself (its connections,
     panels and apps) through conversation; "agent:<id>" is a custom mode, one of your named agents'
@@ -450,7 +462,11 @@ export type ShownChip = { kind: "check" | "frame" | "layer" | "compare" | "build
 export type UserShown = { text: string; chips?: ShownChip[] };
 /** files: what you attached, saved on disk, which go with the message when it's sent. `shown`: what the person reads of it (UserShown). */
 export type QueuedMessage = { id: string; text: string; at: number; files?: string[]; anchor?: { file: string; line: number; endLine?: number }; shown?: UserShown };
-export type Question = { question: string; header?: string; options: { label: string; description?: string; suggested?: boolean }[]; multiSelect?: boolean };
+/**
+  `guess`: why the asker guessed this answer (Liner Security's security_ask: the first option is the scan's own guess, and
+  this is its reason, "every alert is saved with its owner"); the card marks it "My guess". Set on one option at most.
+*/
+export type Question = { question: string; header?: string; options: { label: string; description?: string; suggested?: boolean; guess?: string }[]; multiSelect?: boolean };
 
 export type ToolKind = "read" | "edit" | "write" | "exec" | "search" | "fetch" | "think" | "task" | "web" | "other";
 /** One step of an agent's own: what it did, as its row in the timeline would say it. */
@@ -949,7 +965,8 @@ export type Item =
       /** Why it didn't make it, said to the person. */
       error?: string;
     })
-  | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string>; answeredAt?: number })
+  /** `partial`: the answers given so far while it still asks (question.partial), kept so they survive a reload; by question text. */
+  | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string>; answeredAt?: number; partial?: Record<string, string> })
   /** A plan to approve (a tool's own plan mode). `auto`: one from before pairs that nobody asked to see, handed straight on. */
   | (Base & { kind: "proposal"; title: string; plan: string; state: "asking" | "approved" | "changed" | "expired"; note?: string; auto?: boolean; answeredAt?: number })
   | (Base & {
@@ -975,7 +992,9 @@ export type Item =
   | (Base & { kind: "error"; message: string; why?: ErrorWhy; provider?: string; fallback?: string })
   /** `fallback`: another ready tool's model that can carry on (another account of the same tool first). */
   | (Base & { kind: "limit"; message: string; until?: number; provider: string; fallback?: string })
-  | (Base & { kind: "notice"; text: string; stop?: boolean });
+  | (Base & { kind: "notice"; text: string; stop?: boolean })
+  /** Liner Security, in a scan's chat: a finding it reported, your answers saved, the second look, the scan's end (SecurityItem). Put by the engine. */
+  | (Base & { kind: "security"; event: SecurityItem });
 
 /** Why a turn failed, when it's a reason another tool could get round: the provider refused it, or is overloaded or down. */
 export type ErrorWhy = "refusal" | "overloaded";
@@ -1090,8 +1109,10 @@ export type Settings = {
   addonNetwork?: "ask" | "never";
   /** The mode a new session starts in, unless you pick another (Settings › Modes): Standard when unset. */
   defaultMode?: SessionMode;
-  /** Liner opens in (Settings › General): the Code face, or the Design face on Design Home. Unset: "code". */
-  openIn?: "code" | "design";
+  /** Liner opens in (Settings › General): the Code face, the Design face on Design Home, or the Security face. Unset: "code". */
+  openIn?: "code" | "design" | "security";
+  /** Liner Security: API endpoints (Endpoint ids) you marked as a security model, offered for a Specialist scan. */
+  securityEndpoints?: string[];
   /** A look at each draft before it goes (engine/src/precheck.ts): on unless false. */
   precheck?: boolean;
   /** Its one rule that asks the session tool's quick model (a new subject in a long session), on your plan or key: off unless true. */
@@ -1433,7 +1454,11 @@ export type EngineEvent =
   /** An agent is writing a frame (on), or stopped (off): its outline and tag go on the frame, lead and sidekick each in their colour. */
   | ({ type: "canvas.presence" } & DesignPresence)
   /** A picture the picture model is making: `done` of `count`, for the pictures.make call `call`; `error` when it failed. */
-  | { type: "pictures.progress"; threadId: string; call: string; done: number; count: number; at: number; error?: string };
+  | { type: "pictures.progress"; threadId: string; call: string; done: number; count: number; at: number; error?: string }
+  /** Liner Security: its findings, scans, free checks, a threat model or its project list changed (in `projectId`, when one): the face asks again. */
+  | { type: "security.changed"; what: SecurityChange[]; projectId?: string; at: number }
+  /** Liner Security: a scan moved on (started, asks, read an area, found, finished): its record as it is now. */
+  | { type: "security.scan"; scan: ScanRecord };
 
 /** `shot` isn't the Browser's: the app draws a page of this Mac out of sight and answers with its picture (a design's, for its agent). */
 export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot" | "shot";
@@ -1507,7 +1532,7 @@ export type Rpc = {
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
-  "thread.create": [{ projectId: string; agent?: string; sidekick?: string; review?: boolean; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode; /** Begun from a design (Thread.design); in a design project it defaults to the project's design file. */ design?: { file: string }; tuning?: PairTuning }, Thread];
+  "thread.create": [{ projectId: string; agent?: string; sidekick?: string; review?: boolean; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode; /** Begun from a design (Thread.design); in a design project it defaults to the project's design file. */ design?: { file: string }; tuning?: PairTuning; /** Liner Security's tag (Thread.security): a scan is made at Read only whatever `access` says. */ security?: SecurityTag }, Thread];
   "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string | null; effort?: Effort; agent?: string; sidekick?: string | null; connectionsOff?: string[] | null; review?: boolean | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null; /** null clears the session's own. */ tuning?: PairTuning | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
   /**
@@ -1599,6 +1624,8 @@ export type Rpc = {
   */
   "addons.off": [{ next?: boolean }, null];
   "question.answer": [{ threadId: string; itemId: string; answers?: Record<string, string> }, null];
+  /** The answers so far to a question card that still asks (several questions, paged), kept on the item as `partial`: they survive a reload. Nothing goes to the agent until question.answer. */
+  "question.partial": [{ threadId: string; itemId: string; answers: Record<string, string> }, null];
   "proposal.answer": [{ threadId: string; itemId: string; approve: boolean; note?: string; plan?: string }, null];
   "review.run": [{ threadId: string }, null];
   /** `files` stops at the first 60; `total` is how many changed. */
@@ -1872,6 +1899,34 @@ export type Rpc = {
   */
   "precheck.draft": [{ text: string; threadId?: string; projectId?: string; agent?: string; model?: string; effort?: Effort }, Precheck | null];
   "precheck.send": [{ threadId: string; text: string }, Precheck | null];
+  /**
+    Liner Security (contracts/src/security.ts; engine/src/security*.ts). Findings are per project, kept under the engine's
+    home. `days` is the Overview's period (30 when unset); without `projectId`, every project. A finding id is unique across
+    projects. `finding.fix` starts a session in a worktree with the finding as its brief; `finding.ask` a session with it as
+    context. `checks.run` runs the free checks now; `bringin.*` import GitHub's alerts (through gh) or a SARIF file (a path
+    you picked, or its text). `scan.options` is what Start a scan offers for a project (with the specialist models detected);
+    `specialist.look` looks for them again (the CLIs' model lists asked again). `scan.start` with depth "checks" runs only the
+    free checks and starts no session.
+  */
+  "security.overview": [{ days?: number; projectId?: string }, SecurityOverview];
+  "security.side": [Record<string, never>, SecuritySide];
+  "security.projects": [Record<string, never>, SecurityProject[]];
+  "security.project.add": [{ path: string }, SecurityProject];
+  "security.findings.list": [{ projectId?: string; state?: FindingState; scan?: string }, SecurityFinding[]];
+  "security.finding.get": [{ id: string }, SecurityFinding];
+  "security.finding.dismiss": [{ id: string; reason: DismissReason; note?: string }, SecurityFinding];
+  "security.finding.reopen": [{ id: string }, SecurityFinding];
+  "security.finding.fix": [{ id: string; agent?: string; model?: string; effort?: Effort }, Thread];
+  "security.finding.ask": [{ id: string; agent?: string; model?: string; text?: string }, Thread];
+  "security.checks.run": [{ projectId: string }, FreeCheckRun];
+  "security.bringin.github": [{ projectId: string }, BringInResult];
+  "security.bringin.sarif": [{ projectId: string; path?: string; text?: string }, BringInResult];
+  "security.model.read": [{ projectId: string }, ThreatModel];
+  "security.scan.options": [{ projectId: string }, ScanChoices];
+  "security.scan.start": [ScanOptions, { scan: ScanRecord; thread?: Thread }];
+  "security.scan.stop": [{ id: string }, ScanRecord];
+  "security.scans.list": [{ projectId?: string }, ScanRecord[]];
+  "security.specialist.look": [Record<string, never>, SpecialistSource[]];
   "precheck.split": [{ projectId: string; threadId?: string; tasks: string[]; agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; mode?: SessionMode; tuning?: PairTuning; review?: boolean }, { made: Thread[]; left: string[]; why?: string }];
 };
 export type RpcMethod = keyof Rpc;
@@ -1903,3 +1958,4 @@ export * from "./tuning.ts";
 export * from "./panel.ts";
 export * from "./dsh.ts";
 export * from "./design.ts";
+export * from "./security.ts";

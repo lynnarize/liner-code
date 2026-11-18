@@ -555,8 +555,8 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       menuKeys = Object.fromEntries(Object.entries((p.keys ?? {}) as Record<string, unknown>).map(([k, v]) => [k, str(v)]));
       return buildMenu();
     case "setMenuFace": {
-      // ⌘N is New Design while the window shows Liner Design, New Session in Liner Code: the item's name follows.
-      const next = p.face === "design" ? "design" : "code";
+      // ⌘N is New Design while the window shows Liner Design, New Scan in Liner Security, New Session in Liner Code: the item's name follows.
+      const next = p.face === "design" || p.face === "security" ? p.face : "code";
       if (next === menuFace) return;
       menuFace = next;
       return buildMenu();
@@ -671,7 +671,7 @@ async function runInTerminal(command: string) {
 
 let menuKeys: Record<string, string> = {};
 /** The face the window shows (setMenuFace): File's first item is named for it. */
-let menuFace: "code" | "design" = "code";
+let menuFace: "code" | "design" | "security" = "code";
 const KEY_NAMES: Record<string, string> = {
   comma: ",", backslash: "\\", slash: "/", period: ".", space: "Space", plus: "Plus", "+": "Plus",
   enter: "Enter", return: "Enter", esc: "Escape", escape: "Escape", tab: "Tab", backspace: "Backspace", delete: "Delete",
@@ -706,7 +706,7 @@ function buildMenu() {
     ...(isMac
       ? [{ label: "Liner Code", submenu: [{ role: "about", label: "About Liner Code" }, { label: "Check for Updates…", click: () => send("updates") }, { type: "separator" }, settings, { type: "separator" }, { role: "hide", label: "Hide Liner Code" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit", label: "Quit Liner Code" }] } satisfies MenuItemConstructorOptions]
       : []),
-    { label: "File", submenu: [item(menuFace === "design" ? "New Design" : "New Session", "new", "mod+n"), item("Add a Project…", "open-project", "mod+o"), { type: "separator" }, ...(isMac ? [] : [settings, { type: "separator" } as const]), { role: isMac ? "close" : "quit", label: isMac ? "Close Window" : isWin ? "Exit" : "Quit" }] },
+    { label: "File", submenu: [item(menuFace === "design" ? "New Design" : menuFace === "security" ? "New Scan" : "New Session", "new", "mod+n"), item("Add a Project…", "open-project", "mod+o"), { type: "separator" }, ...(isMac ? [] : [settings, { type: "separator" } as const]), { role: isMac ? "close" : "quit", label: isMac ? "Close Window" : isWin ? "Exit" : "Quit" }] },
     { label: "Edit", submenu: [{ role: "undo" }, { role: "redo" }, { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" }] },
     {
       label: "View",

@@ -1,0 +1,14 @@
+/* Liner Security's sidebar, beyond security.css: a fix's or a question's title may take two lines, never cut with "…". */
+.ls-srow.lsd-two {
+  align-items: flex-start;
+}
+.ls-srow.lsd-two > svg,
+.ls-srow.lsd-two > .ls-ico {
+  margin-top: 1px;
+}
+.ls-srow.lsd-two .ls-tl2 b {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}

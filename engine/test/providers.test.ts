@@ -455,6 +455,47 @@ test("acp: an ask to go outside the project is high and yours, whatever kind it 
   assert.equal((await acpStep({ kind: "other", title: "ping_ping", rawInput: {} }, "edits", { cwd: root })).cards[0].risk, "low", "a tool of no known kind asks, and nothing says it's outside");
 });
 
+test("acp: OpenCode at Read only refuses its ask to go outside and its own tools that change things, with no card", async () => {
+  const { root, away } = project();
+  const options = [{ optionId: "yes", kind: "allow_once" }, { optionId: "no", kind: "reject_once" }];
+  const step = async (toolCall: object, access: Access) => {
+    const fake = script("opencode", ACP_ASKS);
+    const ask = { method: "session/request_permission", params: { sessionId: "s-new", options, toolCall: { toolCallId: "c1", ...toolCall } } };
+    const s = acpProvider("acp.fake", { label: "OpenCode", cmd: [fake.file, "acp"], login: "" }).open(opts({ cwd: root, access, env: { ...process.env, FAKE_LOG: fake.log, FAKE_ASK: JSON.stringify(ask) } }));
+    const { sink } = recorder();
+    const cards: ApprovalRequest[] = [];
+    sink.approve = async (req) => (cards.push(req), { allow: true });
+    await s.turn("go", sink, new AbortController().signal);
+    s.close();
+    return { picked: fake.read().find((m) => m.id === 900 && !m.method).result.outcome.optionId, cards: cards.length };
+  };
+  const outside = { kind: "other", title: away, locations: [{ path: join(away, "new.txt") }, { path: away }], rawInput: { filepath: join(away, "new.txt"), parentDir: away } };
+  const remove = { kind: "other", title: "opencode_worktree_remove", rawInput: { directory: root } };
+  for (const call of [outside, remove]) {
+    assert.deepEqual(await step(call, "read"), { picked: "no", cards: 0 }, `Read only: ${call.title}`);
+    assert.equal((await step(call, "ask")).cards, 1, "above Read only it still comes to you");
+  }
+  assert.deepEqual(await step({ kind: "read", locations: [{ path: join(root, "src", "a.ts") }] }, "read"), { picked: "yes", cards: 0 }, "reading goes on");
+  // The whole worktree family is off its list, whatever the level.
+  const rules = JSON.parse(opencodeAsks()) as Record<string, unknown>;
+  for (const name of ["opencode?worktree_*", "opencode?worktree_remove", "opencode?worktree_create", "worktree_*"]) assert.equal(rules[name], "deny", name);
+});
+
+test("acp: a Liner Security scan on OpenCode is told it may not fetch, search the web or send agents", async () => {
+  const rules = async (more: Partial<OpenOptions>) => {
+    const fake = script("opencode", `fs.writeFileSync(process.env.FAKE_LOG + ".rules", process.env.OPENCODE_PERMISSION ?? "none");\n${ACP}`);
+    const s = acpProvider("acp.fake", { label: "OpenCode", cmd: [fake.file, "acp"], login: "" }).open(opts({ ...more, env: { ...process.env, FAKE_LOG: fake.log } }));
+    await s.turn("hi", recorder().sink, new AbortController().signal);
+    s.close();
+    return JSON.parse(readFileSync(`${fake.log}.rules`, "utf8")) as Record<string, unknown>;
+  };
+  const scan = await rules({ scan: true });
+  for (const name of ["webfetch*", "websearch*", "codesearch*", "task*"]) assert.equal(scan[name], "deny", name);
+  const usual = await rules({});
+  assert.equal(usual["webfetch*"], undefined);
+  assert.equal(usual.webfetch, "ask");
+});
+
 test("acp: what's handed to it is there to read, not to change", async () => {
   const { root, away } = project();
   assert.deepEqual(await acpStep({ kind: "read", locations: [{ path: join(away, "secret.txt") }] }, "ask", { cwd: root, dirs: [away] }), { picked: "yes", cards: [] });
@@ -1008,7 +1049,9 @@ test("acp: OpenCode 2's Code Mode, should it ask, is a command with the network:
     }
     return cards;
   };
-  for (const access of ["ask", "edits", "auto", "read"] as const) {
+  // At Read only OpenCode's ask never becomes a card: refused where it's asked (acp.ts), and readForbids would refuse it too.
+  assert.deepEqual(await step("read"), [], "Read only: refused with no card");
+  for (const access of ["ask", "edits", "auto"] as const) {
     const [card] = await step(access);
     assert.equal(card.tool, "execute", `${access}: as a command, which Read only refuses with no card (readForbids)`);
     assert.equal(card.risk, "high", `${access}: Auto and the Reviewer leave it to you`);
@@ -1050,8 +1093,8 @@ test("acp: Liner Code's own tools go by themselves by name, from the list that d
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })}\n`);
   const listed = JSON.parse(await reply) as { result: { tools: { name: string }[] } };
   child.kill();
-  // All of them but sidekick, which only a pair's lead is offered (sidekick.test.ts).
-  assert.deepEqual(listed.result.tools.map((t) => t.name), TOOLS.map((t) => t.name).filter((n) => n !== "sidekick"));
+  // All of them but sidekick, which only a pair's lead is offered (sidekick.test.ts), and Liner Security's, which only its sessions are (security-scan.test.ts).
+  assert.deepEqual(listed.result.tools.map((t) => t.name), TOOLS.map((t) => t.name).filter((n) => n !== "sidekick" && !n.startsWith("security_")));
 });
 
 test("acp: a name that only looks like Liner Code's isn't titled as one", async () => {

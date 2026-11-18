@@ -1,0 +1,525 @@
+/* Liner Security's sheet, loaded with the face (parts.tsx imports it). Every class is `ls-`; colours are the app's own
+   tokens, plus the four severities and the second look's fill, which the app had no names for. Translated from the
+   mockup's sec.css; its layout numbers are kept where they are the design. */
+[data-theme] {
+  --ls-sv-c: oklch(0.5 0.2 25);
+  --ls-sv-h: oklch(0.62 0.19 45);
+  --ls-sv-m: oklch(0.78 0.15 80);
+  --ls-sv-l: var(--l-ink-4);
+  --ls-ok: var(--l-ok-text);
+  --ls-ok-bg: color-mix(in oklab, var(--l-ok) 12%, transparent);
+  --ls-ok-fill: color-mix(in oklab, var(--l-ok) 92%, var(--l-ink));
+  --ls-hit: oklch(0.7 0.15 65 / 0.16);
+  --ls-line: color-mix(in oklab, var(--l-ink) 13%, transparent);
+}
+[data-theme="dark"] {
+  --ls-ok-fill: var(--l-ok);
+  --ls-hit: rgb(240 180 80 / 0.14);
+  --ls-line: rgb(255 255 255 / 0.14);
+}
+
+/* A page of the face: the app's page column, its top row, then what scrolls. */
+.ls-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  animation: lc-paper-in 420ms var(--l-ease-enter) backwards;
+}
+.ls-top .lc-title {
+  color: var(--l-ink-2);
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.ls-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+}
+
+/* The sidebar's body in Security: the app's own nav rows (lc-sb-nav), group labels (lc-sb-lab), and two-line rows. */
+.ls-side {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px;
+}
+.ls-side .lc-sb-nav[data-later] {
+  color: var(--l-ink-4);
+  cursor: default;
+}
+.ls-side .lc-sb-nav[data-later]:hover {
+  background: none;
+}
+.ls-side .lc-sb-nav small {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--l-ink-4);
+}
+.ls-side .lc-sb-nav .ls-num {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.ls-lab {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  margin-top: 10px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.ls-lab > span:first-child {
+  flex: 1;
+}
+.ls-lab .lc-ib {
+  margin-right: -8px;
+}
+.ls-srow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--l-r-sm);
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ls-srow:hover {
+  background: var(--l-wash);
+}
+.ls-srow[aria-current="page"] {
+  background: var(--l-wash-2);
+}
+.ls-srow > svg,
+.ls-srow > .ls-ico {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.ls-srow-none {
+  padding: 4px 10px 6px;
+  font-size: 12px;
+  color: var(--l-ink-4);
+}
+
+/* Two lines in one row: a name and what it says under it. */
+.ls-tl2 {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+.ls-tl2 b {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ls-tl2 small {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How bad: a square and its word. */
+.ls-sev {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  width: 78px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ls-sev[data-dot] {
+  width: auto;
+}
+.ls-sev i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--ls-sv-l);
+}
+.ls-sev[data-sev="critical"] i {
+  background: var(--ls-sv-c);
+}
+.ls-sev[data-sev="high"] i {
+  background: var(--ls-sv-h);
+}
+.ls-sev[data-sev="medium"] i {
+  background: var(--ls-sv-m);
+}
+
+/* The tones every split, bar and key shares. */
+.ls-parts [data-tone="critical"],
+.ls-sevbar [data-tone="critical"],
+.ls-leg [data-tone="critical"] {
+  background: var(--ls-sv-c);
+}
+.ls-parts [data-tone="high"],
+.ls-sevbar [data-tone="high"],
+.ls-leg [data-tone="high"] {
+  background: var(--ls-sv-h);
+}
+.ls-parts [data-tone="medium"],
+.ls-sevbar [data-tone="medium"],
+.ls-leg [data-tone="medium"] {
+  background: var(--ls-sv-m);
+}
+.ls-parts [data-tone="low"],
+.ls-sevbar [data-tone="low"],
+.ls-leg [data-tone="low"],
+.ls-parts [data-tone="no"],
+.ls-leg [data-tone="no"] {
+  background: var(--ls-sv-l);
+}
+.ls-parts [data-tone="ok"],
+.ls-leg [data-tone="ok"] {
+  background: var(--ls-ok-fill);
+}
+.ls-parts [data-tone="na"],
+.ls-leg [data-tone="na"] {
+  background: var(--l-wash-2);
+}
+
+/* A whole split into parts, each with its count inside. */
+.ls-parts {
+  display: flex;
+  gap: 2px;
+  height: 28px;
+  margin-top: 4px;
+}
+.ls-parts i {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 9px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #16181b;
+}
+.ls-parts i:hover {
+  filter: brightness(1.07);
+}
+.ls-parts [data-tone="critical"] {
+  color: #fff;
+}
+.ls-parts [data-tone="na"] {
+  color: var(--l-ink);
+}
+
+/* Its key. */
+.ls-leg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.ls-leg[data-tight] {
+  gap: 4px 12px;
+}
+.ls-leg span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.ls-leg i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 1px;
+  border-radius: 2px;
+}
+.ls-leg [data-tone="na"] {
+  box-shadow: inset 0 0 0 1px var(--ls-line);
+}
+.ls-leg b {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ls-leg [data-zero],
+.ls-leg [data-zero] b {
+  color: var(--l-ink-3);
+}
+
+/* A thin bar of severities. */
+.ls-sevbar {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--l-wash-2);
+  overflow: hidden;
+}
+.ls-sevbar i {
+  display: block;
+  min-width: 0;
+}
+
+/* A short tag. */
+.ls-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--l-wash-2);
+  font-size: 12px;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+}
+.ls-tag[data-tone="ok"] {
+  background: var(--ls-ok-bg);
+  color: var(--ls-ok);
+}
+.ls-tag[data-tone="pro"] {
+  height: 20px;
+  padding: 0 7px;
+  background: var(--l-ink);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--l-on-ink);
+}
+
+/* A bordered box and its head. */
+.ls-card {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 10px 16px 14px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--ls-line);
+}
+.ls-blkh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+}
+.ls-blkh-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--l-ink-2);
+}
+
+/* States as tabs with counts. */
+.ls-segs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+.ls-sg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--l-r-sm);
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.ls-sg:hover {
+  color: var(--l-ink);
+}
+.ls-sg[aria-selected="true"] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.ls-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A filter chip. */
+.ls-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--l-r-sm);
+  background: var(--l-wash);
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ls-chip:hover,
+.ls-chip[data-on] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.ls-chip svg {
+  color: var(--l-ink-3);
+}
+
+/* A choice as a box. */
+.ls-bx {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 13px 14px 12px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--ls-line);
+  cursor: pointer;
+}
+.ls-bx:hover {
+  background: var(--l-wash);
+}
+.ls-bx[aria-checked="true"] {
+  background: var(--l-wash-2);
+  box-shadow: inset 0 0 0 1.5px var(--l-ink);
+}
+.ls-bx[data-wide] {
+  grid-column: span 2;
+}
+.ls-bx[data-off] {
+  cursor: default;
+}
+.ls-bx[data-off]:hover {
+  background: none;
+}
+.ls-bx[data-off] .ls-rad {
+  opacity: 0.4;
+}
+.ls-bxh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.ls-bxh .ls-tag + .ls-tag {
+  margin-left: -4px;
+}
+.ls-rad {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
+}
+.ls-bx[aria-checked="true"] .ls-rad {
+  box-shadow: inset 0 0 0 5px var(--l-ink);
+}
+.ls-bx > small {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+  text-wrap: pretty;
+}
+.ls-bxf {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  font-size: 12.5px;
+  color: var(--l-ink);
+}
+
+/* The tool or model a box would use. */
+.ls-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 50px;
+  margin-top: 12px;
+  padding: 0 10px 0 9px;
+  border-radius: 10px;
+  background: var(--l-wash);
+}
+.ls-bx[aria-checked="true"] .ls-pick {
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+}
+.ls-pick[data-nil] {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--ls-line);
+}
+.ls-mk {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--l-r-sm);
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.ls-pick[data-nil] .ls-mk {
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+}
+.ls-pick .ls-tl2 b {
+  font-weight: 500;
+}
+
+/* Nothing yet, or not built yet. */
+.ls-none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 26px 0 18px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  text-align: center;
+}
+.ls-none b {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.ls-disc {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+}

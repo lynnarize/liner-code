@@ -399,6 +399,8 @@ export const sumLines = (files: { added: number; removed: number }[]) => files.r
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** The Code face's projects: every one but a design on its own (Project.kind "design"), which lives in Liner Design only. */
 export const codeProjects = (ps: Project[]) => ps.filter((p) => p.kind !== "design");
+/** The projects Code lists and starts sessions in: codeProjects without the folders Liner Security's Demo made for its sample (Project.demoFor). */
+export const listedProjects = (ps: Project[]) => codeProjects(ps).filter((p) => !p.demoFor);
 /** Where a session begun from a design is, in words: "A design, on its own" or "A design in Sample project". */
 export const designWhere = (t: Thread, ps: Project[]) => {
   const p = ps.find((x) => x.id === t.projectId);

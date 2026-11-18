@@ -410,6 +410,8 @@ export class Store {
   }
 
   putThread(t: Thread) {
+    // A security scan (and a question about a finding) only reads: whatever asks for more (a plan approved, a patch) leaves it at Read only.
+    if ((t.security?.kind === "scan" || t.security?.kind === "ask") && t.access !== "read") t = { ...t, access: "read" };
     t.updatedAt = Date.now();
     const i = this.state.threads.findIndex((x) => x.id === t.id);
     if (i < 0) this.state.threads.push(t);

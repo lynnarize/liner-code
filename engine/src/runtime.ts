@@ -15,7 +15,8 @@
   is read with the next check (Thread.reviewSince).
 */
 import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Precheck, Question, QueuedMessage, Risk, ShownChip, UserShown, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { ACCESS_NAMES, agentState, castOf, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
 import { capture, changedPaths, changes, isRepo, PATCH } from "./checkpoints.ts";
@@ -614,9 +615,13 @@ export class Runtime {
     const r = sidekick ? this.resolve({ ...t, agent: "" }, agentId) : this.resolve(t, agentId);
     const access: Access = r.access;
     // A Claude Code writer (an agent or a bare model) brings its subagents. A side chat or a sidekick brings none.
-    const team = familyOf(r.provider) === "claude" && !t.sideOf && !sidekick ? claudeTeam(r.agent, r.model) : { model: r.model, agents: {} };
+    // A sealed session (a Specialist scan) loads none of your skills, plugins, hooks, servers or add-ons, and brings no subagents.
+    const sealed = Boolean(t.security?.sealed);
+    const team = familyOf(r.provider) === "claude" && !t.sideOf && !sidekick && !sealed ? claudeTeam(r.agent, r.model) : { model: r.model, agents: {} };
     const liveKey = sidekick ? `${liveKeyOf(t.id, agentId)}#sidekick` : liveKeyOf(t.id, agentId);
-    const key = `${r.provider}|${team.model}|${r.effort}|${access}|${Object.keys(team.agents).join(",")}`;
+    // A scan (and its side chats) reads the project and nothing else: the tool's own outreach is off (OpenOptions.scan).
+    const scan = t.security?.kind === "scan";
+    const key = `${r.provider}|${team.model}|${r.effort}|${access}|${Object.keys(team.agents).join(",")}${sealed ? "|sealed" : ""}${scan ? "|scan" : ""}`;
     const connections = this.connectionsOf(t);
     const links = fingerprint(connections);
     // The lead of a pair gets the sidekick tool and its words; the sidekick gets its own words and no such tool.
@@ -653,13 +658,15 @@ export class Runtime {
         this.tools ? toolsNote(n, family) : "",
         pair && ways ? leadRules(this.labelOf(t.sidekick!), ways, n) : "",
         // A session's mode (Workshop, a custom one) is the lead's way of working, not the sidekick's.
-        sidekick ? "" : modeNote(t, this.store.agents, cwd, n, Boolean(this.tools)),
+        sidekick || sealed ? "" : modeNote(t, this.store.agents, cwd, n, Boolean(this.tools)),
         memoryNote(this.store.home, t.projectId),
       ]
         .filter(Boolean)
         .join("\n\n"),
       side: Boolean(t.sideOf),
       ...(sidekick ? { sidekick: true } : {}),
+      ...(sealed ? { sealed: true } : {}),
+      ...(scan ? { scan: true } : {}),
       ...(this.store.projects.find((p) => p.id === t.projectId)?.kind === "design" && !t.worktree ? { designOnItsOwn: true } : {}),
       resume: forking ? t.forkSession!.slice(t.forkSession!.indexOf(":") + 1) : resume,
       fork: forking,
@@ -1001,6 +1008,8 @@ export class Runtime {
     A fork is a session of its own, with its own switches: it starts with its parent's (draftThread) and goes its own way.
   */
   private connectionsOf(t: Thread): Connection[] {
+    // A sealed session (a Specialist scan) is handed no add-ons at all.
+    if (t.security?.sealed) return [];
     const all = this.addons?.connections(t.projectId, this.keys) ?? [];
     const parent = t.sideOf ? this.store.threads.find((x) => x.id === t.sideOf) : undefined;
     const off = [...(t.connectionsOff ?? []), ...(parent?.connectionsOff ?? [])];
@@ -1063,6 +1072,17 @@ export class Runtime {
     return { label: this.providerInfo.find((p) => p.id === provider)?.label ?? provider, family: familyOf(provider) };
   }
 
+  /**
+    How long, in ms, the tool a thread's turn runs on waits on one of Liner Code's calls before it gives up (Provider.toolWait),
+    and its name; `ms` null when it waits Liner's own LINER_WAIT_SEC (Claude Code, Codex, OpenCode, which Liner sets).
+  */
+  toolWaitOf(threadId: string): { ms: number | null; label: string } {
+    const t = this.store.thread(threadId);
+    const { provider } = this.resolve(t, this.turns.get(threadId)?.agentId ?? t.agent);
+    const ms = providers[provider]?.toolWait?.(this.envFor(provider)) ?? null;
+    return { ms: ms && ms > 0 ? ms : null, label: this.providerInfo.find((p) => p.id === provider)?.label ?? provider };
+  }
+
   /** Who works a thread's turn now, or last did, by name ("Opus 5.5"). */
   whoIs(threadId: string) {
     const t = this.store.thread(threadId);
@@ -1105,6 +1125,83 @@ export class Runtime {
         if (now?.status === "waiting" && !this.isRunning(threadId) && !store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) store.patchThread(threadId, { status: was === "waiting" || was === "running" ? "done" : was });
       }),
     };
+  }
+
+  /**
+    Questions an agent asks through Liner Code's own tools (Liner Security's security_ask): the same question card a tool's
+    own question makes, held until you answer or skip, whatever tool runs the session, with no timer on it; null when you
+    skipped, or when its turn was stopped first (the card then ends as expired: not answered, not skipped). `end` ends the card from outside, as
+    skipped or expired (its tool call was let go of), and resolves the wait with null.
+  */
+  askQuestions(threadId: string, questions: Question[]): { id: string; answer: Promise<Record<string, string> | null>; end: (state: "skipped" | "expired") => void } {
+    const store = this.store;
+    const t = store.thread(threadId);
+    const turn = this.turns.get(threadId);
+    const id = uid("it");
+    store.putItem(threadId, { kind: "question", id, turn: turn?.turn ?? t.turns, at: Date.now(), questions, state: "asking" });
+    this.clock(threadId);
+    const was = t.status;
+    store.patchThread(threadId, { status: "waiting" });
+    store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.whoIs(threadId)} needs you`, body: questions[0]?.question ?? "A question" });
+    let end: (state: "skipped" | "expired") => void = () => {};
+    const answer = new Promise<Record<string, string> | null>((resolve) => {
+      end = (state) => {
+        if (!this.questions.delete(id)) return;
+        const it = store.item(threadId, id);
+        // Stopped while it waited: it ends as skipped (or expired, let go of), never answered for you.
+        if (it.kind === "question" && it.state === "asking") store.putItem(threadId, { ...it, state, answeredAt: Date.now() });
+        resolve(null);
+      };
+      // Stopped while it waited: the card ends (expired), never read as your skipping it.
+      const gone = () => end("expired");
+      this.questions.set(id, { resolve, reject: gone });
+      if (!turn) return;
+      if (turn.abort.signal.aborted) gone();
+      else turn.abort.signal.addEventListener("abort", gone, { once: true });
+    });
+    return {
+      id,
+      answer: answer.finally(() => {
+        this.settleWaiting(threadId);
+        const now = store.threads.find((x) => x.id === threadId);
+        if (now?.status === "waiting" && !this.isRunning(threadId) && !store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) store.patchThread(threadId, { status: was === "waiting" || was === "running" ? "done" : was });
+      }),
+      end: (state) => end(state),
+    };
+  }
+
+  /**
+    Files Liner itself wrote in a session's folder during its turn (Liner Security's answers and threat model, on your say),
+    by thread: they aren't the turn's changes, so its checkpoint leaves them out and a Read only scan never looks as if it
+    changed code. Paths are relative to the session's folder.
+  */
+  private linerWrites = new Map<string, Map<string, string>>();
+  /** `text`: what Liner left in the file, so only that is left out: an edit made after it (by the agent, by you) shows. */
+  linerWrote(threadId: string, path: string, text: string) {
+    const had = this.linerWrites.get(threadId) ?? new Map<string, string>();
+    this.linerWrites.set(threadId, had.set(path.split("\\").join("/"), createHash("sha256").update(text).digest("hex")));
+  }
+  /**
+    A turn's changed files without what Liner wrote itself (linerWrote): the exact file it wrote, by its path in the session's
+    folder (an agent's own docs/SECURITY.md stays its change), and only while it still holds what Liner left there. Kept
+    until then, whichever turn's checkpoint reads it (one cut short and read again later included).
+  */
+  private notLiners(threadId: string, files: FileChange[], cwd: string) {
+    const own = this.linerWrites.get(threadId);
+    if (!own?.size) return files;
+    return files.filter((f) => {
+      const want = own.get(f.path);
+      if (!want) return true;
+      let now = "";
+      try {
+        now = createHash("sha256").update(readFileSync(join(cwd, f.path), "utf8")).digest("hex");
+      } catch {
+        // gone since: that's a change of its own
+      }
+      if (now === want) return false;
+      own.delete(f.path);
+      return true;
+    });
   }
 
   /** Only Claude Code can branch a session in place, on the same account; other forks get the conversation as text. */
@@ -1423,8 +1520,9 @@ export class Runtime {
     // Whatever throws before the turn's own try (the snapshot, a save of its notice, its sink) lets go of a session opened fresh for it.
     const { git, from, sink } = await (async () => {
       // A side chat shares its session's folder and changes nothing, so it takes no snapshot: what
-      // the session edits meanwhile would read as the side chat's change.
-      const git = !t.sideOf && (await isRepo(cwd));
+      // the session edits meanwhile would read as the side chat's change. Nor does a Liner Security scan or a question about a
+      // finding: they change nothing, so they leave nothing (no refs/liner/…) in the repository they read.
+      const git = !t.sideOf && !readsOnlyTag(t) && (await isRepo(cwd));
       const from = git ? await capture(cwd, `${threadId}/${turn}-before`) : null;
       if (git && !from) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: unsnapped });
       return { git, from, sink: this.sink(threadId, turn, abort.signal, agentId) };
@@ -1551,7 +1649,7 @@ export class Runtime {
     if (git && from) {
       const to = await capture(cwd, `${threadId}/${turn}-after`);
       // Only what the turn wrote: a pull or checkout it ran brings files it didn't.
-      const files = to ? await changes(cwd, from, to, { turn: true }) : [];
+      const files = to ? this.notLiners(threadId, await changes(cwd, from, to, { turn: true }), cwd) : [];
       if (!to) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: unsnapped });
       if (to && files.length) {
         store.putItem(threadId, { kind: "checkpoint", id: uid("it"), turn, at: Date.now(), files, from, to, seconds });
@@ -2388,7 +2486,7 @@ export class Runtime {
       // Its tool opens while the snapshot is taken, as a turn's does (runTurn): nothing is prompted until both are done.
       opening = this.openForTurn(store.thread(threadId), agentId, cwd, true);
       opening.catch(() => {});
-      git = await isRepo(cwd);
+      git = !readsOnlyTag(store.thread(threadId)) && (await isRepo(cwd));
       const tag = `${threadId}/${turn}-${uid("sk")}`;
       from = git ? await capture(cwd, `${tag}-before`) : null;
       if (mark) {
@@ -2499,8 +2597,9 @@ export class Runtime {
   answerQuestion(threadId: string, itemId: string, answers?: Record<string, string>) {
     const item = this.store.item(threadId, itemId);
     if (item.kind !== "question") throw new Error("That isn't a question.");
-    // A double click, or a second window: it's been answered.
-    if (item.state === "answered" || item.state === "skipped") return;
+    // A double click, or a second window: it's been answered. One that expired (its tool let go of it, its scan stopped) takes
+    // no answer either: nothing goes into a turn that's over.
+    if (item.state === "answered" || item.state === "skipped" || item.state === "expired") return;
     const waiter = this.questions.get(itemId);
     this.questions.delete(itemId);
     this.store.putItem(threadId, { ...item, state: answers ? "answered" : "skipped", answers, answeredAt: Date.now() });
@@ -2978,7 +3077,7 @@ export class Runtime {
     const from = before.stdout.trim();
     if (before.code !== 0 || !from) return;
     const to = await capture(cwd, `${threadId}/${turn}-after`);
-    const files = to ? await changes(cwd, from, to, { turn: true }) : [];
+    const files = to ? this.notLiners(threadId, await changes(cwd, from, to, { turn: true }), cwd) : [];
     if (!to || !files.length) return;
     this.store.putItem(threadId, { kind: "checkpoint", id: uid("it"), turn, at: Date.now(), files, from, to });
     this.store.patchThread(threadId, { toReview: this.toReview(threadId) });
@@ -3307,6 +3406,10 @@ export class Runtime {
       // A plan the tool proposes inside its turn (Claude Code's plan mode) waits there for your answer.
       propose: (title, text, sig) => {
         if (over) return Promise.resolve({ approve: false });
+        // A security scan (or a question about a finding) has no plan to approve: approving one would take it off Read only
+        // (answerProposal), so it reads on.
+        const tag = store.thread(threadId).security;
+        if (tag?.kind === "scan" || tag?.kind === "ask") return Promise.resolve({ approve: false, note: "This is a security scan: it only reads, and nothing is approved to change. Carry on reading, and report what you find with Liner's security tools." });
         settle();
         const id = uid("it");
         store.putItem(threadId, { kind: "proposal", id, turn, at: Date.now(), title, plan: text, state: "asking" });
@@ -3486,6 +3589,9 @@ export const clean = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").
 const tailOf = (s: string) => clean(s).split("\n").slice(-400).join("\n").slice(-24000);
 /** A diff short enough for a reader's prompt. */
 const cut = (diff: string) => (diff.length > 60000 ? `${diff.slice(0, 60000)}\n… (the rest of the diff is cut off)` : diff);
+
+/** A Liner Security session that only reads (a scan, a question about a finding): it takes no snapshots of the folder it reads. */
+const readsOnlyTag = (t: Thread) => t.security?.kind === "scan" || t.security?.kind === "ask";
 
 /** A message that only asks for a pull request: "create pr", "open a pull request", "/pr". */
 export function isPrAsk(text: string) {

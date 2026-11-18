@@ -1,0 +1,607 @@
+/* Liner Security: Start a scan (boards C, C2) and a scan as a session (D, E, F): the page, its boxes and rows, the scan's
+   own pieces in the thread, the question card at the composer, and the panel of what it found. Every class is `ls-`,
+   every colour the app's tokens or security.css's; the layout numbers are the mockup's (sec.css). */
+
+/* ---------- Start a scan ---------- */
+.lsc-start {
+  width: 880px;
+  max-width: calc(100% - 48px);
+  margin: 0 auto;
+  padding: 18px 0 40px;
+}
+.lsc-h1-wrap {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.lsc-h1 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--l-r-sm);
+  background: none;
+  font: inherit;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.lsc-h1:hover {
+  background: var(--l-wash);
+}
+.lsc-h1 svg {
+  color: var(--l-ink-3);
+}
+.lsc-sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--l-ink-3);
+  text-wrap: pretty;
+}
+.lsc-blk {
+  margin-top: 20px;
+  transition: opacity 160ms ease;
+}
+/* A choice box (StartScan's Choice): its head is the radio; picked, the box is drawn as the mockup's. */
+.lsc-choice[data-on] {
+  background: var(--l-wash-2);
+  box-shadow: inset 0 0 0 1.5px var(--l-ink);
+}
+.lsc-choice[data-on] .ls-rad {
+  box-shadow: inset 0 0 0 5px var(--l-ink);
+}
+.lsc-choice[data-on] .ls-pick {
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+}
+.lsc-choice-r {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.lsc-choice[data-off] .lsc-choice-r {
+  cursor: default;
+}
+.lsc-add {
+  margin-top: 10px;
+}
+.lsc-boxes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+@container (max-width: 640px) {
+  .lsc-boxes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lsc-boxes .ls-bx[data-wide] {
+    grid-column: auto;
+  }
+}
+.lsc-start {
+  container-type: inline-size;
+}
+.lsc-wait {
+  grid-column: 1 / -1;
+  padding: 26px 0;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-align: center;
+}
+.lsc-start .ls-bxf i {
+  font-style: normal;
+  color: var(--l-ink-3);
+}
+.lsc-start .ls-bxf .lsc-r {
+  margin-left: auto;
+  text-align: right;
+}
+.lsc-picks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.lsc-picks[data-first] {
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+}
+/* The tile is the picker's button too (Your own tool). */
+.lsc-pick-b {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lsc-pick-b > svg:last-child {
+  flex: none;
+  margin-right: 4px;
+  color: var(--l-ink-3);
+}
+.lsc-pb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.lsc-pb:hover {
+  background: var(--lc-paper);
+}
+.lsc-pb:disabled {
+  color: var(--l-ink-3);
+  cursor: default;
+}
+.lsc-pb[aria-pressed="true"] {
+  background: var(--l-ink);
+  box-shadow: none;
+  color: var(--l-on-ink);
+}
+
+/* A name and its value, in rows that part with a hairline (the "And" rows, the panel's areas). */
+.lsc-kvr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  font-size: 13.5px;
+}
+.lsc-kvr + .lsc-kvr {
+  box-shadow: 0 -1px 0 var(--lc-hair, var(--ls-line));
+}
+.lsc-k {
+  flex: none;
+  width: 150px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lsc-v {
+  color: var(--l-ink-2);
+}
+.lsc-quiet {
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lsc-mono {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.lsc-kvr .lc-btn.lsc-end {
+  margin-right: -12px;
+}
+.lsc-kvr .lc-mpop {
+  margin-left: -8px;
+}
+.lsc-cb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin-left: -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lsc-cb:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lsc-cb svg {
+  color: var(--l-ink-3);
+}
+.lsc-field {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--l-ink);
+}
+.lsc-field::placeholder {
+  color: var(--l-ink-3);
+}
+.lsc-kvr:has(.lsc-field:focus-visible) {
+  box-shadow:
+    0 -1px 0 var(--lc-hair, var(--ls-line)),
+    inset 0 -1.5px 0 var(--l-accent);
+}
+.lsc-go {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.lsc-go .lc-btn {
+  height: 34px;
+  padding: 0 16px;
+}
+
+/* ---------- The scan as a session ---------- */
+/* The chat and, beside it, what the scan found: a 420px column with a hairline down its edge. */
+.lsc-scan .lc-body {
+  grid-template-columns: minmax(0px, 1fr) 0px;
+}
+.lsc-scan[data-found] .lc-body {
+  grid-template-columns: minmax(420px, 1fr) 420px;
+}
+/* Narrow (ScanSession's NARROW): the chat keeps the whole width and the panel lies over its right side. */
+.lsc-scan {
+  position: relative;
+}
+.lsc-scan[data-narrow] .lc-body,
+.lsc-scan[data-narrow][data-found] .lc-body {
+  grid-template-columns: minmax(0px, 1fr) 0px;
+}
+.lsc-scan[data-narrow] .lsc-found {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  right: 0;
+  /* Ends above the composer, so its Send stays in reach. */
+  bottom: calc(var(--lsc-dock-h, 132px) + 8px);
+  border-bottom-left-radius: 14px;
+  width: min(420px, 100%);
+  border-left: 0;
+  background: var(--lc-paper);
+  box-shadow:
+    -1px 0 0 var(--lc-hair, var(--ls-line)),
+    -16px 0 40px -12px oklch(0 0 0 / 0.18);
+}
+.lsc-ro {
+  margin-left: 0;
+}
+.lsc-ro svg {
+  color: var(--l-ink-3);
+}
+/* The composer's access chip, held at Read only: there to read, nothing to open. */
+.lsc-scan .lc-access[data-locked],
+.lsc-scan .lc-access[data-locked]:hover {
+  background: none;
+  font-weight: 400;
+  color: var(--l-ink-3);
+  cursor: default;
+}
+
+/* Under a message of yours: where it came from, or where your answer went. */
+.lsc-bmeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-align: right;
+}
+.lsc-bmeta .lc-you-told {
+  margin: 0;
+}
+.lsc-first .lc-you {
+  margin-bottom: 0;
+}
+.lsc-first {
+  margin-bottom: 14px;
+}
+.lsc-qa {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin: 14px 0 10px;
+}
+.lsc-qa-b {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 82%;
+  box-sizing: border-box;
+  padding: 9px 14px;
+  border-radius: 14px;
+  background: var(--l-wash-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.lsc-qa-p > span {
+  display: block;
+}
+.lsc-qq {
+  color: var(--l-ink-3);
+}
+.lsc-qa-note {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  text-align: right;
+}
+
+/* A finding as a row: in the thread, and in the panel. */
+.lsc-rw {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% + 20px);
+  min-height: 44px;
+  box-sizing: border-box;
+  margin: 0 -10px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.lsc-rw:hover:not(:disabled) {
+  background: var(--l-wash);
+}
+.lsc-rw:disabled {
+  cursor: default;
+}
+.lsc-rw + .lsc-rw::before,
+.lc-blk:has(> .lsc-tl-rw) + .lc-blk > .lsc-tl-rw::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 10px;
+  left: 10px;
+  height: 1px;
+  background: var(--lc-hair, var(--ls-line));
+}
+.lsc-rw .ls-tl2 b {
+  font-size: 13.5px;
+}
+.lsc-tl-rw .ls-sev {
+  width: 120px;
+  font-size: 13.5px;
+}
+.lsc-tl-rw .ls-tl2 b {
+  white-space: normal;
+}
+.lc-blk:has(> .lsc-tl-rw) {
+  margin-top: -6px;
+  margin-bottom: -6px;
+}
+
+/* The second look: another voice in the same thread. */
+.lsc-voice {
+  margin-top: 14px;
+}
+.lsc-voice .lc-md p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+/* ---------- The question card at the composer ---------- */
+.lsc-ask {
+  outline: none;
+  animation: l-swap-in 240ms var(--l-ease-out) backwards;
+}
+.lsc-ask-top .lc-ib {
+  width: 28px;
+  height: 28px;
+}
+.lsc-ask-h {
+  padding: 2px 10px 8px;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.lsc-ask-opts {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 6px;
+}
+.lsc-ask-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--l-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.lsc-ask-opt[data-hl] {
+  background: var(--l-wash-2);
+}
+.lsc-ask-opt kbd {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  font: 500 11px/1 var(--l-font-body);
+  color: var(--l-ink-3);
+}
+.lsc-ask-opt[aria-checked="true"] kbd {
+  background: var(--l-ink);
+  box-shadow: none;
+  color: var(--l-on-ink);
+}
+.lsc-ask-l {
+  min-width: 0;
+}
+.lsc-ask-why {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lsc-ask-free {
+  margin: 0;
+  padding: 0 10px 10px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+
+/* ---------- Found so far: the panel beside the chat ---------- */
+.lsc-found {
+  grid-area: 1 / 2;
+  display: flex;
+  flex-direction: column;
+  width: 420px;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  border-left: 1px solid var(--lc-hair, var(--ls-line));
+  animation: lc-paper-in 320ms var(--l-ease-enter) backwards;
+}
+.lsc-found-top {
+  padding: 6px 10px 6px 22px;
+}
+.lsc-found-t {
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--l-ink-2);
+}
+.lsc-found-q {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--l-ink);
+}
+.lsc-found-b {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  padding: 0 22px 20px;
+  scrollbar-width: thin;
+}
+.lsc-fmeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: -2px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lsc-fmeta > span {
+  display: inline-flex;
+  gap: 8px;
+}
+.lsc-found-tabs {
+  margin-top: 14px;
+}
+.lsc-found .ls-blkh.lsc-sp {
+  margin-top: 18px;
+}
+.lsc-found .ls-sevbar {
+  display: flex;
+  width: 100%;
+  margin-top: 4px;
+}
+.lsc-found .ls-leg {
+  font-size: 13px;
+}
+.lsc-found-n {
+  font-weight: 400;
+}
+.lsc-filt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 20px 0 6px;
+}
+.lsc-rws {
+  display: flex;
+  flex-direction: column;
+}
+.lsc-found .lsc-rw .ls-sev[data-dot] {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+.lsc-found .lsc-kvr {
+  min-height: 36px;
+  font-size: 13px;
+}
+.lsc-found .lsc-k {
+  width: 104px;
+}
+.lsc-found .lsc-v {
+  color: var(--l-ink-3);
+}
+.lsc-found .lsc-v[data-on] {
+  color: var(--l-ink);
+}
+.lsc-found .ls-none {
+  padding: 30px 0 22px;
+}
+.lsc-found-lead {
+  margin: 10px 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--l-wash);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.lsc-found-look {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--l-ink-2);
+}
+.lsc-voice-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  color: var(--l-ink-3);
+}

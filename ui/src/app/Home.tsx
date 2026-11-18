@@ -14,7 +14,7 @@ import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { codeProjects, pairEffortFor } from "./model";
+import { listedProjects, pairEffortFor } from "./model";
 import { Pop } from "./ui";
 import { ProjectQuickPick } from "./Projects";
 import { ModePick } from "./Modes";
@@ -26,7 +26,7 @@ type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (
 export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSidebar, onNewAgent, startMode, startPrompt }: Props) {
   // A design on its own (Project.kind "design") is never a project Home starts a session in.
   const all = useEngine((s) => s.projects);
-  const projects = useMemo(() => codeProjects(all), [all]);
+  const projects = useMemo(() => listedProjects(all), [all]);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const engineSettings = useEngine((s) => s.settings);

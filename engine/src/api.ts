@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, endpointKey, isPair, ROUTINES_ON, splitModel, startOf, VOUCHER } from "../../contracts/src/index.ts";
+import { castOf, endpointKey, isPair, ROUTINES_ON, sealable, splitModel, startOf, VOUCHER } from "../../contracts/src/index.ts";
 import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary } from "../../contracts/src/index.ts";
 import { CLASSES, pairShare, TUNING } from "./sidekick.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
@@ -37,6 +37,9 @@ import * as lean from "./lean.ts";
 import * as buildlinks from "./buildlinks.ts";
 import * as pictures from "./pictures.ts";
 import * as start from "./design-start.ts";
+import * as security from "./security.ts";
+import { wake as wakeSecurity } from "./security-scan.ts";
+import { demoOnUse } from "./security-demo.ts";
 import { touched as touchedDesign } from "./design-start.ts";
 import { factsOf, forget as forgetFact, remember, searchSessions, titleForAgents } from "./memory.ts";
 import { checkManifest } from "./addons.ts";
@@ -202,7 +205,7 @@ const isInfo = (d: unknown): d is ProviderInfo => {
 */
 const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "thread.tryAgain", "compare.start", "review.run", "git.message", "pr.draft", "desk.ask", "agent.commands", "usage.limits"]);
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts; security?: security.Security };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings, runtime.keys);
@@ -687,6 +690,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   const draftThread = (o: Omit<RpcParams<"thread.create">, "id" | "worktree" | "base" | "inWorktree">, tid: string, now: number, more: { parent?: Thread; live?: boolean; tree?: Thread["worktree"] } = {}): Thread => {
     const { projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn } = o;
     const { parent, live = false, tree } = more;
+    // A fork of a Security session is one too: sealed and Read only as its parent was, never the parent's scan itself.
+    const tag = o.security ?? heldTag(parent?.security);
     const project = store.project(projectId);
     const who = agent ?? parent?.agent ?? project.agent;
     // A model, or an agent you have. With none, or one that's gone (a project's, an outside agent's guess), it starts as Settings say a new session starts (startOf).
@@ -704,7 +709,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // The session's own word on the Reviewer; a fork keeps its parent's.
       ...((review ?? parent?.review) !== undefined ? { review: review ?? parent?.review } : {}),
       status: "idle",
-      access: access ?? parent?.access ?? store.settings.defaultAccess,
+      access: tag?.kind === "scan" || tag?.kind === "ask" ? "read" : (access ?? parent?.access ?? store.settings.defaultAccess),
       model: model ?? parent?.model,
       effort: effort ?? parent?.effort,
       forkOf,
@@ -715,6 +720,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       ...((drawn ?? parent?.design ?? designOf(project)) ? { design: { file: (drawn ?? parent?.design ?? designOf(project))!.file } } : {}),
       // How its pair works, its own changes; a fork keeps its parent's, as it keeps its sidekick.
       ...(tuning ? { tuning } : {}),
+      // Liner Security's tag, as checked (securityTag); a scan only reads, whatever was asked (and Store.putThread holds it there).
+      ...(tag ? { security: tag } : {}),
       // The connections switched off in the parent stay off in a fork, as it starts; from then on its switches are its own, as a
       // session's are (a side chat, which has none, follows its session's instead: runtime.ts connectionsOf).
       ...(parent?.connectionsOff?.length ? { connectionsOff: [...parent.connectionsOff] } : {}),
@@ -967,10 +974,16 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, sidekick, review, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode, design: drawn, tuning }) => {
+    "thread.create": async ({ projectId, agent, sidekick, review, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode, design: drawn, tuning, security: tagged }) => {
       // Checked before anything is made for it (a worktree): one it can't take fails here.
       tuningOf(tuning);
+      const tag = securityTag(tagged);
       const project = store.project(projectId);
+      const sealedFrom = tag?.sealed || (forkOf ? store.threads.find((x) => x.id === forkOf)?.security?.sealed : false);
+      if (sealedFrom) {
+        const off = unsealable(agent ?? (forkOf ? undefined : "?"), sidekick, (a) => store.agents.find((x) => x.id === a)?.model);
+        if (off) throw new Error(off);
+      }
       // Begun from a design: its design file, by slug. Every session of a design on its own draws its design, said or not.
       if (drawn !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(String(drawn?.file ?? ""))) throw new Error("That isn't a design file's name.");
       // A session in a design on its own makes it the person's: never discarded as untouched after.
@@ -1024,7 +1037,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // (T3 Code: ThreadForkService.ts forks from the last stable run), and gets the conversation as text.
       // Half done is its last turn still running, by that turn's own status: one the Reviewer reads now has ended.
       const live = parent ? runtime.isRunning(parent.id) && store.timeline(parent.id).some((x) => x.kind === "turn" && x.turn === parent.turns && x.status === "running") : false;
-      const t = draftThread({ projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn, tuning }, tid, now, { parent, live, tree });
+      const t = draftThread({ projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn, tuning, security: tag }, tid, now, { parent, live, tree });
       store.putThread(t);
       if (notice) store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: now, text: notice });
       // A fork starts with its parent's timeline, so you can see where it branched.
@@ -1061,6 +1074,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : k === "sidekick" ? String(v).replace(/^@/, "") : v]));
       const t = store.thread(id);
       if (clean.connectionsOff !== undefined && (!Array.isArray(clean.connectionsOff) || clean.connectionsOff.some((x) => typeof x !== "string"))) throw new Error("connectionsOff is a list of add-on ids.");
+      // A security scan only reads: no level above Read only, from the composer or anywhere else; nor does a question about a finding.
+      if (t.security?.kind === "scan" && clean.access !== undefined && clean.access !== "read") throw new Error("A security scan stays at Read only.");
+      if (t.security?.kind === "ask" && clean.access !== undefined && clean.access !== "read") throw new Error("A question about a finding stays at Read only.");
+      // A sealed scan stays on a tool that can seal it.
+      if (t.security?.sealed) {
+        const off = unsealable(clean.agent as string | undefined, clean.sidekick as string | undefined, (a) => store.agents.find((x) => x.id === a)?.model);
+        if (off) throw new Error(off);
+      }
       // The pair's own ways: stored as sent (an empty set, like null, clears them), heard by the lead's next turn, which opens
       // its session again, resuming, as its words changed (runtime.ts shapeOf, kit), as another sidekick does.
       if ("tuning" in clean) clean.tuning = tuningOf(clean.tuning);
@@ -1209,7 +1230,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const { id, projectId, worktree, base, inWorktree, forkOf, design: drawn, mode, compare } = o;
       if (!/^[\w-]{1,64}$/.test(id ?? "") || store.threads.some((t) => t.id === id)) return null;
       const project = store.projects.find((p) => p.id === projectId);
-      const plain = project && project.kind !== "design" && !(worktree && project.git) && !base && !inWorktree && !forkOf && !drawn && !compare && modeKnown(mode);
+      const plain = project && project.kind !== "design" && !(worktree && project.git) && !base && !inWorktree && !forkOf && !drawn && !compare && !o.security && modeKnown(mode);
       if (plain) void ready.then(() => runtime.warmNew(draftThread(o, id, Date.now()))).catch(() => {});
       else void ready.then(() => runtime.letGoAhead(id)).catch(() => {});
       return null;
@@ -1289,6 +1310,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         forkSession: parent.providerSession ?? "",
         sideOf: id,
         sideFrom: parent.turns,
+        // A side chat of a Security session keeps its tag (sealed stays sealed: none of your skills or add-ons), not its scan.
+        ...(parent.security ? { security: heldTag(parent.security) } : {}),
         worktree: parent.worktree,
         turns: parent.turns,
         usage: emptyUsage(),
@@ -1419,6 +1442,16 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "addons.off": ({ next }) => {
       addons().turnOff(Boolean(next));
       void runtime.relink();
+      return null;
+    },
+    "question.partial": ({ threadId, itemId, answers }) => {
+      const it = store.item(threadId, itemId);
+      if (it.kind !== "question") throw new Error("That isn't a question.");
+      if (it.state !== "asking") return null;
+      if (!answers || typeof answers !== "object" || Array.isArray(answers)) throw new Error("answers is a set of question and answer.");
+      const asked = new Set(it.questions.map((q) => q.question));
+      const kept = Object.fromEntries(Object.entries(answers).filter(([q, a]) => asked.has(q) && typeof a === "string" && a.trim()).map(([q, a]) => [q, a.slice(0, 2000)]));
+      store.putItem(threadId, { ...it, partial: kept });
       return null;
     },
     "question.answer": ({ threadId, itemId, answers }) => {
@@ -1645,7 +1678,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "settings.save": (patch) => {
       // A picture model's key goes only to an https address (or one on this Mac): refused before anything is kept.
       if (patch.pictures) for (const e of patch.pictures) pictures.checkEndpointUrl(e?.url);
-      if (patch.openIn !== undefined && patch.openIn !== "code" && patch.openIn !== "design") throw new Error("Liner opens in Code or Design.");
+      if (patch.openIn !== undefined && patch.openIn !== "code" && patch.openIn !== "design" && patch.openIn !== "security") throw new Error("Liner opens in Code, Design or Security.");
+      if (patch.securityEndpoints !== undefined && (!Array.isArray(patch.securityEndpoints) || patch.securityEndpoints.some((e) => typeof e !== "string"))) throw new Error("securityEndpoints is a list of endpoint ids.");
       pairSettings(patch as Record<string, unknown>);
       const settings = store.setSettings(patch);
       if (patch.outside !== undefined) x.outside?.apply();
@@ -1940,6 +1974,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     ...buildlinks.rpc(design),
     ...pictures.rpc(design),
 
+    // Liner Security (security.ts), and the parts it calls through to.
+    ...security.rpc(secure),
+
     "device.list": () => devices(env),
     "device.boot": async ({ udid }) => (await boot(udid, env), null),
     "device.shot": async ({ udid }) => ({ png: await screenshot(udid, env) }),
@@ -1985,6 +2022,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   function cwdOf(threadId: string) {
     const t = store.thread(threadId);
     return t.worktree?.path ?? store.project(t.projectId).path;
+  }
+  /** Liner Security, asked for only when a security RPC is called. */
+  function secure() {
+    if (!x.security) throw new Error("Liner Security isn't available here.");
+    // With the Demo shown and nothing of Security's own yet, the mockup's sample is put in place (once, in the Demo's own folders).
+    demoOnUse(x.security);
+    return x.security;
   }
   /** What Liner Design's modules are handed (canvas.ts), asked for only when a design RPC is called. */
   function design() {
@@ -2040,6 +2084,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     }
   };
 
+  // Liner Security makes its sessions and asks for its tools through the same handlers (and waits) the app's calls go through.
+  x.security?.bind({ call: (method, params) => Promise.resolve(own[method](params)) as never, runtime, providers: () => shown(), refreshProviders: async () => (await detect(true), shown()) });
+  // It watches its scans from here: one whose turn ended is finished, one an earlier engine left running is closed (security-scan.ts).
+  if (x.security) wakeSecurity(x.security);
+
   return {
     ready,
     updates,
@@ -2049,6 +2098,39 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return h(params ?? {});
     },
   };
+}
+
+/** The tag a side chat or a fork of a Security session carries: its kind, finding and seal, never its scan (it reports to none). */
+function heldTag(t: Thread["security"]): Thread["security"] {
+  if (!t) return undefined;
+  return { kind: t.kind, ...(t.finding ? { finding: t.finding } : {}), ...(t.sealed && t.kind === "scan" ? { sealed: true } : {}) };
+}
+
+/**
+  Why a sealed scan can't run on this lead or sidekick (a model ref, "@<tool>:<model>" or "<tool>:<model>"), or undefined when
+  it can: only a tool that can seal a session (sealable: Claude Code, the Demo) runs one.
+*/
+function unsealable(agent?: string, sidekick?: string, profile: (id: string) => string | undefined = () => undefined): string | undefined {
+  const tool = (ref: string) => splitModel(ref.replace(/^@/, "")).provider;
+  // One of your agents runs on its own model ("demo:demo"): that model's tool is the one that has to seal.
+  const ref = agent === undefined ? undefined : agent.startsWith("@") ? agent : profile(agent);
+  if (agent !== undefined && (!ref || !sealable(tool(ref)))) return "A Specialist scan is sealed, and only Claude Code can run a sealed session: pick a Claude Code model.";
+  if (sidekick && !sealable(tool(sidekick))) return "A Specialist scan is sealed, and only Claude Code can run a sealed session: its sidekick has to be a Claude Code model, or none.";
+  return undefined;
+}
+
+/**
+  Liner Security's tag on a new session (Thread.security), checked field by field so nothing else is stored; undefined for none.
+  A sealed session is only ever a scan.
+*/
+function securityTag(x: unknown): Thread["security"] {
+  if (x === undefined || x === null) return undefined;
+  const t = x as Record<string, unknown>;
+  if (typeof x !== "object" || !["scan", "fix", "ask"].includes(String(t.kind))) throw new Error("security is a scan, a fix or a question about a finding.");
+  for (const k of ["scan", "finding"]) if (t[k] !== undefined && (typeof t[k] !== "string" || !/^[\w-]{1,64}$/.test(t[k] as string))) throw new Error(`security.${k} is an id.`);
+  if (t.sealed !== undefined && typeof t.sealed !== "boolean") throw new Error("security.sealed is true or false.");
+  const kind = t.kind as "scan" | "fix" | "ask";
+  return { kind, ...(t.scan ? { scan: t.scan as string } : {}), ...(t.finding ? { finding: t.finding as string } : {}), ...(t.sealed && kind === "scan" ? { sealed: true } : {}) };
 }
 
 /**

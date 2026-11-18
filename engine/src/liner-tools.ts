@@ -9,6 +9,7 @@ import { TOOLS as CANVAS_TOOLS } from "./canvas-tools.ts";
 import { TOOLS as LEAN_TOOLS } from "./lean-tools.ts";
 import { TOOLS as BUILD_TOOLS } from "./buildlinks-tools.ts";
 import { TOOLS as PICTURE_TOOLS } from "./pictures-tools.ts";
+import { SECURITY_READS, TOOLS as SECURITY_TOOLS } from "./security-tools.ts";
 
 export type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>; required?: string[] };
 export type ToolDef = { name: string; description: string; inputSchema: Schema };
@@ -16,8 +17,24 @@ export type ToolDef = { name: string; description: string; inputSchema: Schema }
 const none: Schema = { type: "object", properties: {} };
 /** Set in the server's environment only for a pair's lead: no one else is offered `sidekick`. */
 export const PAIR_ENV = "LINER_SIDEKICK";
-/** The tools a session is offered: all of them for a pair's lead, all but `sidekick` for anyone else. */
-export const toolsFor = (env: Record<string, string | undefined>) => TOOLS.filter((t) => t.name !== "sidekick" || env[PAIR_ENV] === "1");
+/**
+  Set in the server's environment only for a Liner Security session (Thread.security). "scan": every security_* tool and
+  none of Liner's others (a scan only reads; nothing of Liner's that runs or reaches things), bar a pair lead's sidekick.
+  "scan-read" (a scan's side chat or fork): the two security tools that only read, and nothing else. "read" (a fix of a
+  finding, a question about one): the two that only read, beside the rest. Anyone else is offered none of them.
+*/
+export const SECURITY_ENV = "LINER_SECURITY";
+/** Whether a session with this server environment is offered this tool, as far as Liner Security goes. */
+const securityOffered = (name: string, env: Record<string, string | undefined>) => {
+  const level = env[SECURITY_ENV];
+  const security = name.startsWith("security_");
+  if (level === "scan") return security || name === "sidekick";
+  if (level === "scan-read") return SECURITY_READS.includes(name) || name === "sidekick";
+  if (level === "read") return !security || SECURITY_READS.includes(name);
+  return !security;
+};
+/** The tools a session is offered: all of them for a pair's lead, all but `sidekick` for anyone else; Liner Security's only in its sessions. */
+export const toolsFor = (env: Record<string, string | undefined>) => TOOLS.filter((t) => (t.name !== "sidekick" || env[PAIR_ENV] === "1") && securityOffered(t.name, env));
 export const TOOLS: ToolDef[] = [
   {
     name: "browser_open",
@@ -144,6 +161,8 @@ export const TOOLS: ToolDef[] = [
   ...LEAN_TOOLS,
   ...BUILD_TOOLS,
   ...PICTURE_TOOLS,
+  // Liner Security: what a scan reports its findings with.
+  ...SECURITY_TOOLS,
   {
     name: "liner_inspect",
     description:

@@ -20,6 +20,7 @@ import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
 import { designCtx } from "./canvas.ts";
+import { Security } from "./security.ts";
 import { Addons } from "./addons.ts";
 import { Offers } from "./offers.ts";
 import { Sources } from "./sources.ts";
@@ -101,6 +102,9 @@ const design = designCtx(store, {
   ask: (id, ask) => runtime.askLiner(id, ask),
 });
 tools.design = design;
+// Liner Security: its findings store and RPC; api.ts lends it the rest (bind), and the agent tools answer a scan's calls through it.
+const security = new Security(store, env);
+tools.security = security;
 // The servers of each folder's .claude/launch.json: they stop when no one has looked for a while, and come back when you do.
 const folderOf = (id: string) => {
   const t = store.thread(id);
@@ -130,7 +134,7 @@ const outside: { now?: Outside } = {};
 // Ported DeepSeek Harness plugins' own programs: each in a process of its own, never in the engine.
 const dsh = new DshHosts(addons, env, store.home);
 dsh.projects = () => [...store.projects.map((p) => p.path), ...store.threads.flatMap((t) => (t.worktree?.path ? [t.worktree.path] : []))];
-const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, design, launch, dsh, outside: { apply: () => outside.now?.apply() } };
+const extras: Parameters<typeof createApi>[3] = { routines, terms, logs, proxies, tools, designs, design, launch, dsh, security, outside: { apply: () => outside.now?.apply() } };
 const api = createApi(store, runtime, env, extras);
 // "Make it an app": the card's Create starts a session of its own, through the same door the app uses.
 const offers = new Offers({

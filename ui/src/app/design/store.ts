@@ -19,7 +19,7 @@ import { toast } from "@liner/components/toast/toast";
 import { EngineAway, getState, onStream, rpc } from "../engine";
 import { agentOf } from "../model";
 import { frames, lockEditing } from "./bridge";
-import { getFace, setFace, subscribeFace } from "../face";
+import { getFace, setFace, subscribeFace, type Face } from "../face";
 
 export type Sel = { frame: string; node?: string };
 /** play: the frames take the pointer, to try them as they would run. */
@@ -28,7 +28,7 @@ export type Tool = "select" | "hand" | "frame" | "box" | "text" | "picture" | "c
 export type Presence = { agent: string; name: string; label: string; lead: boolean; node?: string };
 
 export type DesignState = {
-  face: "code" | "design";
+  face: Face;
   cwd?: string;
   file?: DesignFile;
   base?: string;
@@ -601,7 +601,7 @@ export const design = {
     return id;
   },
   /** The face lives in face.ts (so Liner Code knows it without loading this); the store follows it. */
-  setFace(face: "code" | "design") {
+  setFace(face: Face) {
     setFace(face);
   },
   toggleFace() {

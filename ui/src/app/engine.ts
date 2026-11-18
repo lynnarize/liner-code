@@ -135,10 +135,10 @@ export const onNotify = (fn: (e: NotifyEvent) => void) => {
 /*
   Streams that don't belong in the state: terminal output, device logs, sessions that settled, an
   agent using a Browser, a design's file changing, Liner Design's canvas (a design file changed, who
-  is drawing which frame, a picture being made). A design shown (an item) goes to the state and
+  is drawing which frame, a picture being made), Liner Security's findings and scans changing. A design shown (an item) goes to the state and
   here too, so the session can bring its Design surface up.
 */
-type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "launch" | "settled" | "agent.browser" | "design.changed" | "panel.ai" | "canvas.changed" | "canvas.presence" | "pictures.progress" }> | Extract<EngineEvent, { type: "item" }>;
+type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "launch" | "settled" | "agent.browser" | "design.changed" | "panel.ai" | "canvas.changed" | "canvas.presence" | "pictures.progress" | "security.changed" | "security.scan" }> | Extract<EngineEvent, { type: "item" }>;
 const streamListeners = new Set<(e: Stream) => void>();
 export const onStream = (fn: (e: Stream) => void) => {
   streamListeners.add(fn);
@@ -254,6 +254,8 @@ function apply(e: Numbered) {
     case "canvas.changed":
     case "canvas.presence":
     case "pictures.progress":
+    case "security.changed":
+    case "security.scan":
       for (const fn of streamListeners) fn(e);
       return;
   }

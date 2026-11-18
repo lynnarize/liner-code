@@ -1,6 +1,6 @@
 /*
   The little of Liner Design that Liner Code itself needs, so nothing else of it loads for someone
-  who never opens it: which face the window shows (Code or Design, kept per window), and whether
+  who never opens it: which face the window shows (Code, Design or Security, kept per window), and whether
   the turn running now is drawing on a design file (for "Watch on the canvas" in the composer).
   Everything else, the canvas and its store included, loads with the Design face (design/).
 */
@@ -8,7 +8,11 @@ import { useSyncExternalStore } from "react";
 import type { Item } from "@contracts";
 import "./face.css";
 
-export type Face = "code" | "design";
+export type Face = "code" | "design" | "security";
+/** The faces in the order the switch lists them and ⌥⌘E goes through them. */
+export const FACES: Face[] = ["code", "design", "security"];
+/** Each face's word after "Liner". */
+export const FACE_NAME: Record<Face, string> = { code: "Code", design: "Design", security: "Security" };
 const KEY = "liner.face";
 /** Whether this window already had a face (a reload) rather than starting fresh: Settings' "Liner opens in" applies only to a fresh start. */
 let kept = false;
@@ -16,7 +20,7 @@ let face: Face = (() => {
   try {
     const was = sessionStorage.getItem(KEY);
     kept = was !== null;
-    return was === "design" ? "design" : "code";
+    return was === "design" || was === "security" ? was : "code";
   } catch {
     return "code";
   }
@@ -35,7 +39,8 @@ export function setFace(next: Face) {
   face = next;
   for (const l of listeners) l();
 }
-export const toggleFace = () => setFace(face === "design" ? "code" : "design");
+/** The next face round: Code, Design, Security, then Code again. */
+export const toggleFace = () => setFace(FACES[(FACES.indexOf(face) + 1) % FACES.length]);
 export const subscribeFace = (fn: () => void) => {
   listeners.add(fn);
   return () => void listeners.delete(fn);

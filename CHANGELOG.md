@@ -1,5 +1,91 @@
 # Changelog
 
+## 0.2.9 (beta), 2026-11-19
+
+Update from 0.2.8: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;
+on Windows, run the new setup. **Liner Security**, a third face that scans your code, keeps what it
+finds and fixes it. **A new left panel**, with sessions by folder, each saying what it is doing now.
+**Check my tools** and **a prompt check** before you send. **A smoother app while an agent answers**,
+and Stop that always stops.
+
+### Added
+
+- **Liner Security:** the name at the sidebar's foot now switches Code, Design and Security. Security
+  has an Overview, Findings, Projects and Start a scan. A scan reads this branch's changes or the
+  whole project, as a Read only session of your own tool that is offered only Security's tools: it
+  never leaves Read only, never runs the project or tries an exploit, and takes no checkpoints.
+- **Questions before it reads on:** a scan may ask up to three things the threat model doesn't
+  answer, each with its own guess first. It waits until you answer or skip, and stops rather than read
+  on if no answer comes in time. Your answers are saved to SECURITY.md, so the next scan doesn't ask.
+- **A second look:** another maker's model can read each finding again and say Confirmed or Couldn't
+  confirm.
+- **Free checks, no agent:** secrets in tracked files (by file and line, with a masked preview; never
+  stored unmasked), npm audit where there is a package-lock.json, and files that shouldn't be in git,
+  such as .env files and private keys. GitHub's Dependabot and code scanning alerts can be brought in
+  through gh, and a SARIF file from another tool.
+- **Fix** opens a session in a worktree of its own with the finding as its brief, and the finding
+  closes as fixed when its pull request is merged. Dismiss keeps the reason.
+- **Specialist scan:** a security model leads, sealed, so none of your skills, plugins, hooks or
+  add-ons load. It is offered only when a CLI you're signed in to lists one (Claude Mythos in Claude
+  Code), or for an API endpoint you mark as one. Only Claude Code can run sealed today, so a security
+  model in Codex isn't offered yet. There are no scheduled scans, and nothing tries your running app.
+- **Check my tools:** Settings › Models shows each tool found, signed in and its models loading, then
+  points the real tool at a test model on this Mac to see that Read only and Manual still hold. It
+  sends one real test message only when you press for it.
+- **A prompt check before send:** a row over the box offers to split a list of tasks into sessions,
+  or to use the fast model for a small ask, from your words alone. The rule that asks the quick model
+  whether a message belongs in a long session is off until you turn it on (Settings › General).
+- **Quit when they finish:** quit while sessions work and the app can go out of sight, with only the
+  menu bar item (the tray on Windows) showing, then quit by itself once they're done.
+- **Time left:** a working session says about how long it has to go, from how long its own turns took.
+- **Try again or Carry on:** an overloaded provider offers Try again, and Carry on with another tool.
+  A refusal says who refused and is never sent on to another provider.
+
+### Changed
+
+- **The left panel:** sessions are listed by folder, each row with a second line saying what the
+  session is doing now or how it ended, and a mark for its pull request. By status is the second view.
+  Views, Carry on, sort, groups and Add a project are in the one Sessions menu. The top row has Hide,
+  Back and Forward on the left, and the working and waiting counts as a pill on the right that opens
+  The Wall. Liner Design lists places on top and open designs in folders, and Liner Security lists
+  scans, fixes and questions under their project, in the same style.
+- **The agent hears what changed between its turns:** the names of the files changed and their line
+  counts, never their contents. It can be turned off in Settings › General.
+- **Smoother while an agent answers:** a session you had open shows at once and keeps streaming, and a
+  reply in one session no longer redraws the dock's panels or another session and its composer. In
+  Liner Design a frame drags smoothly, and a scrub or an edge pull is written once, when you let go.
+- **Stop always stops:** a tool that hasn't ended its turn after Stop (4 seconds for Claude Code, 15
+  for the others) is closed, with nothing of it left running, and the session says so. It picks up
+  where it was on your next message, and what you'd stopped never runs later.
+- **Needs you means one thing everywhere:** a session asking you something, or finished and not read.
+  The sidebar, the top pill, the Dock and the menu bar count the same sessions.
+- **Handed files:** ACP tools can read the files they were handed at every access level.
+- **Design versions:** only sessions that draw keep copies of a design, the newest 20 turns each.
+  Older turns can no longer be restored.
+- **A commit message or pull request draft** stops being written when you close its card.
+- **ACP command output:** tools that send a command's output while it runs now show it.
+- **OpenCode at Read only** refuses anything that isn't reading, with no card to ask.
+- **Window materials:** Glass and Vibrancy are gone; a window saved with one of them is solid.
+- **Updates** are looked for at most every six hours, not on every launch.
+- **The sidebar** opens and closes in 180 ms when Motion is set to Quick.
+- **The full-screen design view** no longer blurs the app behind it.
+- **Device:** Light and Dark is now a menu of two.
+
+### Fixed
+
+- When a sidekick's brief ended, the lead's line in the sidebar went blank while the lead still
+  worked.
+- In Liner Design's rows, a session that failed or hit its limit showed as at rest. It now says so.
+- With two layers selected in Liner Design, their selection boxes sat off the layers.
+- Quitting while sessions worked could wait forever on an engine that had stopped answering.
+- A plugin program that crashed was started again at once, over and over. It now waits first.
+- OpenCode held a stopped turn open while it counted its tokens, and back-to-back turns counted the
+  turn before them too.
+- The Browser showed compressed pages and pages not in UTF-8 as garbled text.
+- A large design frame could stall every session for a moment while the agent drew it.
+- A design kept being watched after you left it; it is let go when its last tab closes.
+- A menu button's icon sat at its left edge instead of its centre.
+
 ## 0.2.8 (beta), 2026-11-17
 
 Update from 0.2.7: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;

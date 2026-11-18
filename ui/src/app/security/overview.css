@@ -39,15 +39,15 @@
   width: 1080px;
   max-width: calc(100% - 64px);
   margin: 0 auto;
-  padding: 16px 0 28px;
+  padding: 12px 0 24px;
 }
 .lo-col-g {
   padding-top: 22px;
 }
-.lo-col[data-loading] :is(.lo-figs b, .lo-figs p, .lo-figs small, .lo-chart, .ls-parts, .ls-leg, .lo-pcard) {
+.lo-col[data-loading] :is(.lo-figs b, .lo-figs p, .lo-figs small, .lo-chart, .ls-parts, .ls-leg, .lo-ptable) {
   opacity: 0;
 }
-.lo-col :is(.lo-figs b, .lo-figs p, .lo-figs small, .lo-chart, .ls-parts, .ls-leg, .lo-pcard) {
+.lo-col :is(.lo-figs b, .lo-figs p, .lo-figs small, .lo-chart, .ls-parts, .ls-leg, .lo-ptable) {
   transition: opacity 160ms ease;
 }
 
@@ -120,7 +120,7 @@
 .ls-card.lo-figs {
   display: flex;
   align-items: stretch;
-  padding: 16px 18px;
+  padding: 12px 14px;
 }
 .lo-lb {
   font-size: 12px;
@@ -133,8 +133,8 @@
 }
 .lo-hero b {
   display: block;
-  margin: 4px 0 0 -3px;
-  font-size: 64px;
+  margin: 4px 0 0 -2px;
+  font-size: 40px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -142,7 +142,7 @@
   color: var(--l-ink);
 }
 .lo-hero p {
-  margin: 9px 0 0;
+  margin: 6px 0 0;
   overflow: hidden;
   font-size: 13px;
   color: var(--l-ink-3);
@@ -154,9 +154,9 @@
   flex: none;
   flex-direction: column;
   align-items: flex-start;
-  width: 182px;
+  width: 170px;
   box-sizing: border-box;
-  padding: 0 12px 0 20px;
+  padding: 0 12px 0 16px;
   border: 0;
   border-left: 1px solid var(--lc-hair);
   background: none;
@@ -166,7 +166,7 @@
 }
 .lo-tile b {
   margin-top: auto;
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.02em;
@@ -175,7 +175,7 @@
 }
 .lo-tile small {
   max-width: 100%;
-  margin-top: 9px;
+  margin-top: 6px;
   overflow: hidden;
   font-size: 13px;
   line-height: 1.45;
@@ -196,13 +196,13 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 352px;
   align-items: stretch;
-  column-gap: 10px;
-  margin-top: 10px;
+  column-gap: 8px;
+  margin-top: 8px;
 }
 .lo-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 /* Narrower than the 1080 column (a window under about 1400px, or the sidebar shown): the figures put the open count on
@@ -244,7 +244,7 @@
 @container lo-col (max-width: 760px) {
   .lo-g2 {
     grid-template-columns: minmax(0, 1fr);
-    row-gap: 10px;
+    row-gap: 8px;
   }
 }
 @container lo-col (max-width: 520px) {
@@ -496,31 +496,55 @@ button.lo-rw:hover {
   color: var(--l-ink);
 }
 
-/* A project's card. */
-.lo-pcard {
-  box-sizing: border-box;
-  padding: 14px 16px;
-  border-radius: 12px;
-  box-shadow: inset 0 0 0 1px var(--ls-line);
+/* Projects as one bordered table (after Devin's Repositories, in Liner's look): a header row, then a 44px row per
+   folder with hairlines between, its actions at the end shown on hover, keyboard focus and the open row. Every column is
+   minmax(0, …) and every value cuts with "…" (its whole text on hover), so no two ever overlap. */
+.ls-card.lo-ptable {
+  padding: 0;
+  overflow: hidden;
 }
-.lo-pcard + .lo-pcard {
-  margin-top: 10px;
-}
-.lo-phead {
+.lo-tr {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 170px 200px 190px 100px 56px;
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr) minmax(0, 1.45fr) minmax(0, 1.25fr) minmax(0, 0.8fr) 92px;
   align-items: center;
-  column-gap: 20px;
+  column-gap: 16px;
+  min-height: 44px;
+  padding: 0 10px 0 14px;
+  font-size: 13px;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.lo-th {
+  min-height: 34px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: default;
+}
+.lo-tr-wrap {
+  box-shadow: 0 -1px 0 var(--lc-hair);
+}
+.lo-tr-wrap > .lo-tr:hover,
+.lo-tr-wrap[data-open] > .lo-tr {
+  background: var(--l-wash);
+}
+.lo-td {
+  min-width: 0;
+  white-space: nowrap;
+}
+.lo-td.lo-ell {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .lo-pname {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   min-width: 0;
-  margin: -6px;
-  padding: 6px;
+  padding: 4px 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: none;
   font: inherit;
   text-align: left;
@@ -531,63 +555,69 @@ button.lo-rw:hover {
   flex: none;
   color: var(--l-ink-3);
 }
-.lo-pname .ls-tl2 b {
-  font-size: 14px;
-  font-weight: 500;
-}
-.lo-pname:hover .ls-tl2 b {
-  text-decoration: underline;
-  text-decoration-color: var(--ls-line);
-  text-underline-offset: 3px;
-}
-.lo-st2 {
+.lo-tl1 {
   display: flex;
   flex-direction: column;
-  gap: 3px;
   min-width: 0;
-  font-size: 13px;
-  color: var(--l-ink);
-  white-space: nowrap;
+  line-height: 1.35;
 }
-.lo-st2 > small {
-  font-size: 12px;
+.lo-tl1 b {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.lo-tl1 small {
+  font-size: 11.5px;
   color: var(--l-ink-3);
 }
-.lo-st2 .lo-pf {
-  height: 19px;
+.lo-td-act {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
 }
-.lo-st2 .lo-stt {
-  font-size: 13px;
-}
-.lo-st2 > :not(small) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lo-phead > .lo-scan {
-  justify-self: end;
+.lo-td-act .lo-scan {
   padding: 0 10px;
-  background: var(--lc-card);
-  box-shadow: var(--lc-card-ring);
 }
-@container lo-col (max-width: 1000px) {
-  .lo-phead {
-    grid-template-columns: minmax(0, 1fr) 130px 150px 150px 80px 56px;
-    column-gap: 14px;
-  }
+.lo-td-act > * {
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
-/* Narrower still: the name and Scan on one row, the four facts under them. */
-@container lo-col (max-width: 860px) {
-  .lo-phead {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) 56px;
-    row-gap: 12px;
+.lo-tr:hover .lo-td-act > *,
+.lo-tr:focus-within .lo-td-act > *,
+.lo-tr-wrap[data-open] .lo-td-act > * {
+  opacity: 1;
+}
+.lo-chev {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--l-ink-3);
+}
+.lo-tr-in {
+  padding: 8px 10px 10px;
+}
+.lo-tr-in .lo-ptiles {
+  margin-top: 0;
+}
+/* The name's focus ring is the app's own, inside its cell and only for the keyboard: a click leaves no ring. */
+.lo-pname.l-focus:focus-visible,
+.lo-scan.l-focus:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 45%, transparent);
+  outline-offset: -2px;
+}
+.lo-pname:focus:not(:focus-visible),
+.lo-scan:focus:not(:focus-visible) {
+  outline: none;
+}
+/* A narrow column: the threat model and the free checks wait for the open row's tiles. */
+@container lo-col (max-width: 720px) {
+  .lo-tr {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.1fr) minmax(0, 1.3fr) 92px;
   }
-  .lo-pname {
-    grid-row: 1;
-    grid-column: 1 / 5;
-  }
-  .lo-phead > .lo-scan {
-    grid-row: 1;
-    grid-column: 5;
+  .lo-td-tm,
+  .lo-td-fc {
+    display: none;
   }
 }
 
@@ -700,4 +730,69 @@ button.lo-rw:hover {
   .lo-ptiles {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* The Overview, compact (the user's ask, 18 Nov): the same boxes, borders and content as board A, at about two thirds of
+   its height, so the whole infographic holds at 1280×800 with the sidebar shown. Scoped to the Overview's column. */
+.lo-ov .ls-card {
+  padding: 6px 12px 10px;
+}
+.lo-ov .ls-card.lo-figs {
+  padding: 10px 14px 12px;
+}
+.lo-ov .ls-blkh {
+  height: 26px;
+}
+.lo-ov .ls-parts {
+  height: 22px;
+  margin-top: 2px;
+}
+.lo-ov .ls-parts i {
+  padding: 0 7px;
+  font-size: 12px;
+}
+.lo-ov .ls-leg {
+  gap: 2px 10px;
+  margin-top: 7px;
+  font-size: 12px;
+}
+.lo-ov .lo-rw {
+  min-height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.lo-ov .lo-rw.lo-sm {
+  min-height: 32px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.lo-ov .lo-more {
+  display: block;
+  margin: 4px 0 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lo-ov .lo-more:hover {
+  color: var(--l-ink);
+}
+
+
+/* The chart's box fills its row's height (the boxes beside it may be taller), and the chart grows into it. */
+.lo-ov .lo-g2 > .ls-card:first-child {
+  display: flex;
+  flex-direction: column;
+}
+.lo-ov .lo-g2 > .ls-card:first-child > .lo-chart {
+  flex: 1;
+  min-height: 214px;
+}
+.lo-ov .lo-chart svg {
+  position: absolute;
+  top: 0;
+  left: 0;
 }

@@ -6,7 +6,7 @@
   runs them. Tabs narrow the list (All, With open findings, Never scanned); Add a folder is the app's own folder picker,
   added through security.project.add. Builder U1.
 */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScanRecord, SecurityFinding, SecurityProject } from "@contracts";
 import { SEVERITIES } from "@contracts";
 import { bridge } from "../bridge";
@@ -17,7 +17,7 @@ import { toast } from "@liner/components/toast/toast";
 import { useSec } from "./data";
 import { CountTabs, PageTop, SevBar } from "./parts";
 import { goSecurity } from "./store";
-import { shortPath, when } from "./when";
+import { shortPath, when, whenShort } from "./when";
 import "./overview.css";
 
 type Tab = "all" | "open" | "never";
@@ -110,7 +110,17 @@ export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; 
           ) : data && !rows.length ? (
             <p className="lo-q lo-pad">{q ? `No project matches “${query?.trim()}”.` : tab === "open" ? "No project has anything open." : "Every project has been scanned."}</p>
           ) : (
-            rows.map((p) => <ProjectCard key={p.projectId} p={p} open={p.projectId === shown} onToggle={() => setOpen(p.projectId === shown ? null : p.projectId)} />)
+            <div className="ls-card lo-ptable" role="table" aria-label="Projects">
+              <div className="lo-tr lo-th" role="row">
+                <span className="lo-td" role="columnheader">Project</span>
+                <span className="lo-td" role="columnheader">Open findings</span>
+                <span className="lo-td" role="columnheader">Last scan</span>
+                <span className="lo-td lo-td-tm" role="columnheader">Threat model</span>
+                <span className="lo-td lo-td-fc" role="columnheader">Free checks</span>
+                <span className="lo-td lo-td-act" role="columnheader"><span className="l-sr-only">Actions</span></span>
+              </div>
+              {rows.map((p) => <ProjectRow key={p.projectId} p={p} open={p.projectId === shown} onToggle={() => setOpen(p.projectId === shown ? null : p.projectId)} />)}
+            </div>
           )}
         </div>
       </div>
@@ -119,56 +129,64 @@ export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; 
 }
 
 /** One folder's card: its facts in a row, and when open, its areas and its scans. */
-function ProjectCard({ p, open, onToggle }: { p: SecurityProject; open: boolean; onToggle: () => void }) {
+/**
+  One folder as a row of the table (after Devin's Repositories, in Liner's look): its name, open findings as a thin bar
+  and a count, the last scan, the threat model and the free checks, each short enough for its column; Scan and the open
+  chevron at the end, shown on hover, on keyboard focus and on the open row. A click anywhere on it opens it in place,
+  with its areas and its scans under it in the same box.
+*/
+function ProjectRow({ p, open, onToggle }: { p: SecurityProject; open: boolean; onToggle: () => void }) {
   const never = neverScanned(p);
   const found = p.checks?.results.reduce((n, r) => n + (r.state === "found" ? r.count : 0), 0) ?? 0;
   const checked = p.checks?.results.some((r) => r.state === "clean" || r.state === "found");
+  const last = p.lastScan ? `${LAST_SHORT[p.lastScan.depth]} · ${whenShort(p.lastScan.finishedAt ?? p.lastScan.startedAt)}` : "";
+  const model = p.threatModel.exists ? `${p.threatModel.file} · ${plural(p.threatModel.areas.length, "area")}` : "";
   return (
-    <section className="lo-pcard" data-open={open || undefined} aria-label={p.name}>
-      <div className="lo-phead">
-        <button type="button" className="lo-pname l-focus" aria-expanded={open} onClick={onToggle}>
-          {open ? <I.chevD size={14} /> : <I.chevR size={14} />}
-          <span className="ls-tl2">
-            <b>{p.name}</b>
-            <small className="lo-mono" title={p.path}>{shortPath(p.path)}</small>
-          </span>
-        </button>
-        <Fact name="Open findings">
+    <div className="lo-tr-wrap" data-open={open || undefined} role="rowgroup">
+      <div className="lo-tr" role="row" onClick={(e) => !(e.target as HTMLElement).closest(".lo-scan") && onToggle()}>
+        <span className="lo-td lo-td-name" role="cell">
+          <button type="button" className="lo-pname l-focus" aria-expanded={open} aria-label={`${p.name}, ${open ? "shut" : "open"} it`} title={`${p.name}\n${p.path}`} onClick={(e) => (e.stopPropagation(), onToggle())}>
+            <I.folder size={14} />
+            <span className="lo-tl1">
+              <b className="lo-ell">{p.name}</b>
+              {open && <small className="lo-mono lo-ell">{shortPath(p.path, 40)}</small>}
+            </span>
+          </button>
+        </span>
+        <span className="lo-td" role="cell">
           {never ? (
             <span className="lo-q">Not scanned</span>
           ) : (
             <span className="lo-pf" data-quiet={!p.open || undefined}>
-              <SevBar counts={p.bySeverity} width={96} />
+              <SevBar counts={p.bySeverity} width={64} />
               <b>{p.open}</b>
             </span>
           )}
-        </Fact>
-        <Fact name="Last scan">{p.lastScan ? `${LAST_SHORT[p.lastScan.depth]}, ${when(p.lastScan.finishedAt ?? p.lastScan.startedAt)}` : <span className="lo-q">Never</span>}</Fact>
-        <Fact name="Threat model">
+        </span>
+        <span className="lo-td lo-ell" role="cell" title={last || undefined}>{last || <span className="lo-q">Never</span>}</span>
+        <span className="lo-td lo-td-tm lo-ell" role="cell" title={model || undefined}>
           {p.threatModel.exists ? (
-            <span className="lo-ell">
-              <span className="lo-mono">{p.threatModel.file}</span>, {plural(p.threatModel.areas.length, "area")}
-            </span>
+            <>
+              <span className="lo-mono">{p.threatModel.file}</span> · {plural(p.threatModel.areas.length, "area")}
+            </>
           ) : (
             <span className="lo-q">None yet</span>
           )}
-        </Fact>
-        <Fact name="Free checks">{!p.checks || !checked ? <span className="lo-q">Not run</span> : found ? `${found} found` : <span className="lo-stt" data-tone="ok">Clean</span>}</Fact>
-        <button type="button" className="lc-btn lo-scan l-focus" data-size="sm" aria-label={`Scan ${p.name}`} onClick={() => goSecurity({ kind: "start", projectId: p.projectId })}>
-          Scan
-        </button>
+        </span>
+        <span className="lo-td lo-td-fc lo-ell" role="cell">{!p.checks || !checked ? <span className="lo-q">Not run</span> : found ? `${found} found` : <span className="lo-stt" data-tone="ok">Clean</span>}</span>
+        <span className="lo-td lo-td-act" role="cell">
+          <button type="button" className="lc-btn lo-scan l-focus" data-kind="ghost" data-size="sm" aria-label={`Scan ${p.name}`} onClick={() => goSecurity({ kind: "start", projectId: p.projectId })}>
+            Scan
+          </button>
+          <span className="lo-chev" aria-hidden>{open ? <I.chevU size={14} /> : <I.chevD size={14} />}</span>
+        </span>
       </div>
-      {open && <Inside p={p} />}
-    </section>
-  );
-}
-
-function Fact({ name, children }: { name: string; children: ReactNode }) {
-  return (
-    <span className="lo-st2">
-      <small>{name}</small>
-      {children}
-    </span>
+      {open && (
+        <div className="lo-tr-in" role="row">
+          <Inside p={p} />
+        </div>
+      )}
+    </div>
   );
 }
 

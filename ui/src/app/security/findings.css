@@ -49,14 +49,11 @@
 .lf-tabs {
   padding-bottom: 10px;
 }
+/* The tabs' pill starts on the column's edge, the title's and the chips' edge, never past it. */
 .lf-tab {
   height: 30px;
-  margin-left: -10px;
-  margin-right: 10px;
+  margin-right: 6px;
   font-size: 13.5px;
-}
-.lf-tab + .lf-tab {
-  margin-left: 0;
 }
 .lf-q,
 .lf-x-q {
@@ -157,11 +154,11 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  width: calc(100% + 20px);
+  width: calc(100% + 12px);
   min-height: 44px;
   box-sizing: border-box;
-  margin: 0 -10px;
-  padding: 7px 10px;
+  margin: 0 -6px;
+  padding: 7px 6px;
   border: 0;
   border-radius: 8px;
   background: none;
@@ -178,8 +175,8 @@
   content: "";
   position: absolute;
   top: 0;
-  right: 10px;
-  left: 10px;
+  right: 6px;
+  left: 6px;
   height: 1px;
   background: var(--lc-hair);
 }
@@ -538,14 +535,16 @@
 .lf-x-dismiss svg {
   color: var(--l-ink-3);
 }
+/* What the actions will do, in a few words: it wraps onto a second line when the panel is narrow, never cut with "…". */
 .lf-x-hint {
+  flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
   margin-right: 6px;
-  font-size: 12.5px;
+  font-size: 12px;
+  line-height: 1.3;
   color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: right;
+  text-wrap: balance;
 }
 .lf-x-hint-l {
   margin-right: 0;
@@ -610,4 +609,14 @@
 }
 .lf-tools > .lc-pop:last-child .lf-tb {
   margin-right: -6px;
+}
+
+/* A row's text sits on the column's edge; its fill reaches 6px past, inside the paper. Its focus ring is the app's
+   own, drawn inside the row and only for the keyboard: a click leaves no ring. */
+.lf-rw.l-focus:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--l-accent) 45%, transparent);
+  outline-offset: -2px;
+}
+.lf-rw:focus:not(:focus-visible) {
+  outline: none;
 }

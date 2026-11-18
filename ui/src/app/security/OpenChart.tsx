@@ -9,11 +9,12 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { OverviewDay, ScanRecord } from "@contracts";
 import { plural } from "../model";
 
-const H = 312;
+// The plot is 150px tall at least (the compact Overview); when the boxes beside it make its box taller, it grows to fill
+// it rather than leave it empty. The top line at 24, then the axis, the scan dots and the dates under it.
+const MIN_H = 214;
 const X0 = 22;
 const PAD_R = 6;
-const TOP = 26;
-const BASE = 270;
+const TOP = 24;
 
 /** A round top for the axis, with a whole number half way: 4 for up to 4, then 10, 20, 40, 100… */
 export function axisTop(max: number) {
@@ -45,17 +46,21 @@ function happened(d: OverviewDay, scans: ScanRecord[]) {
 export function OpenChart({ series, scans, now = Date.now() }: { series: OverviewDay[]; scans: ScanRecord[]; now?: number }) {
   const box = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(686);
+  const [H, setH] = useState(MIN_H);
   const [active, setActive] = useState<number | null>(null);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    const fit = () => setW(Math.max(280, Math.round(el.clientWidth)));
+    const fit = () => (setW(Math.max(280, Math.round(el.clientWidth))), setH(Math.max(MIN_H, Math.min(420, Math.floor(el.clientHeight)))));
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
+  const BASE = H - 40;
+  const DOTS = H - 29;
+  const DATES = H - 8;
   const n = Math.max(1, series.length);
   const right = w - PAD_R;
   const step = (right - X0) / n;
@@ -123,12 +128,12 @@ export function OpenChart({ series, scans, now = Date.now() }: { series: Overvie
             {note.text}
           </text>
         )}
-        {series.map((d, i) => d.scans.length > 0 && <circle key={d.day} className="lo-ch-sc" cx={mid(i)} cy={281} r={3} />)}
+        {series.map((d, i) => d.scans.length > 0 && <circle key={d.day} className="lo-ch-sc" cx={mid(i)} cy={DOTS} r={3} />)}
         {labels.map(({ i, text }) => {
           const first = i === 0;
           const end = !first && mid(i) + 24 > w;
           return (
-            <text key={i} x={first ? X0 : mid(i)} y={304} textAnchor={first ? "start" : end ? "end" : "middle"}>
+            <text key={i} x={first ? X0 : mid(i)} y={DATES} textAnchor={first ? "start" : end ? "end" : "middle"}>
               {text}
             </text>
           );

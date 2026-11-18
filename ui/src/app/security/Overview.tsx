@@ -6,9 +6,9 @@
   picked in the top row and kept in the face's store, so Findings reads the same scope. Everything is security.overview,
   asked again whenever the engine says Security changed. Builder U1.
 */
-import { useMemo } from "react";
-import type { DismissReason, FreeCheckId, FreeCheckResult, SecondLookState, SecurityFinding, SecurityOverview } from "@contracts";
-import { DISMISS_LABEL, FREE_CHECK_LABEL, SEVERITY_LABEL, noSeverities } from "@contracts";
+import { useMemo, useState } from "react";
+import type { DismissReason, FreeCheckId, FreeCheckResult, SecondLookState, SecurityFinding, SecurityOverview, SeverityCounts } from "@contracts";
+import { DISMISS_LABEL, FREE_CHECK_LABEL, SEVERITIES, SEVERITY_LABEL, noSeverities } from "@contracts";
 import { useEngine } from "../engine";
 import { I } from "../icons";
 import { plural, providerLabel } from "../model";
@@ -41,6 +41,17 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
   const picked = projects?.find((p) => p.projectId === scope.projectId);
   // Nothing was ever scanned or checked anywhere (or in the project picked): say so and offer a scan, in place of empty boxes.
   const none = projects !== null && data !== null && !(picked ? [picked] : projects).some((p) => p.lastScan || p.checks) && o.open === 0;
+  // Only projects that were scanned (an agent's scan or the free checks) or have findings count here: a folder Liner Code
+  // knows but never scanned is not news. Worst first, five at most, then "and N more".
+  const scanned = (id: string) => {
+    const p = projects?.find((x) => x.projectId === id);
+    return !p || Boolean(p.lastScan || p.checks || p.open);
+  };
+  const rank = (c: SeverityCounts) => SEVERITIES.map((v) => String(999 - c[v]).padStart(3, "0")).join("");
+  const byProject = o.byProject.filter((p) => p.open > 0 || scanned(p.projectId)).sort((a, b) => b.open - a.open || rank(a.bySeverity).localeCompare(rank(b.bySeverity)) || a.name.localeCompare(b.name));
+  const pickable = (projects ?? []).filter((p) => p.lastScan || p.checks || p.open);
+  const unscanned = (projects ?? []).length - pickable.length;
+  const [everyProject, setEveryProject] = useState(false);
 
   return (
     <div className="ls-page">
@@ -52,9 +63,11 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
           {(close) => (
             <>
               <Row title="All projects" on={!scope.projectId} onPick={() => (close(), setSecurityScope({ projectId: undefined }))} />
-              {(projects ?? []).map((p) => (
+              {(everyProject ? (projects ?? []) : (projects ?? []).filter((p) => pickable.includes(p) || p.projectId === scope.projectId)).map((p) => (
                 <Row key={p.projectId} title={p.name} on={p.projectId === scope.projectId} onPick={() => (close(), setSecurityScope({ projectId: p.projectId }))} />
               ))}
+              {/* Never-scanned folders wait behind one quiet row, so the menu stays short with many projects. */}
+              {!everyProject && unscanned > 0 && <Row title={`${unscanned} not scanned yet`} note="Show them too" onPick={() => setEveryProject(true)} />}
             </>
           )}
         </Pop>
@@ -63,7 +76,7 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
         </button>
       </PageTop>
       <div className="ls-scroll">
-        <div className="lo-col" data-loading={data === null || undefined}>
+        <div className="lo-col lo-ov" data-loading={data === null || undefined}>
           {error && data === null ? (
             <div className="ls-none">
               <b>The overview didn't load</b>
@@ -86,8 +99,8 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
                     <LookSplit by={o.byLook} />
                   </Card>
                   <Card title="Open, by project" end={<button type="button" className="lo-lk l-focus" onClick={() => goSecurity({ kind: "projects" })}>All projects</button>}>
-                    {o.byProject.length ? (
-                      o.byProject.map((p) => (
+                    {byProject.length ? (
+                      byProject.slice(0, 5).map((p) => (
                         <button key={p.projectId} type="button" className="lo-rw lo-sm l-focus" onClick={() => goSecurity({ kind: "projects", projectId: p.projectId })}>
                           <span className="lo-grow lo-ell">{p.name}</span>
                           <span className="lo-pf" data-quiet={!p.open || undefined}>
@@ -98,6 +111,11 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
                       ))
                     ) : (
                       <p className="lo-q lo-pad">No project scanned in this period.</p>
+                    )}
+                    {byProject.length > 5 && (
+                      <button type="button" className="lo-more l-focus" onClick={() => goSecurity({ kind: "projects" })}>
+                        and {byProject.length - 5} more
+                      </button>
                     )}
                   </Card>
                 </div>

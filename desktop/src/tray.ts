@@ -9,8 +9,11 @@ import { Menu, nativeImage, nativeTheme, Tray, type MenuItemConstructorOptions, 
 import { waitLine, type Left } from "./finish";
 
 type Session = { id: string; title: string };
-/** `running`: every session with a turn going, routines' included, which quitting would stop. */
-export type TrayStatus = { show: boolean; working: Session[]; needs: (Session & { waiting: boolean })[]; running?: number };
+/**
+  `running`: every session with a turn going, routines' included, which quitting would stop. `asking`: every session waiting on
+  you (routines', snoozed and settled ones too), whose turn a quit would stop if its request is still open.
+*/
+export type TrayStatus = { show: boolean; working: Session[]; needs: (Session & { waiting: boolean })[]; running?: number; asking?: string[] };
 type Ask = { kind: string; id: string; title?: string; state?: string };
 type Hooks = { open: (threadId?: string) => void; quit: () => void; quitNow: () => void; rpc: (method: string, params: Record<string, unknown>, ms?: number) => Promise<unknown> };
 
@@ -104,6 +107,12 @@ export class StatusItem {
   /** How many sessions have a turn going, as the page last said: quitting asks first while any do. */
   running() {
     return this.status.running ?? this.status.working.length;
+  }
+
+  /** The sessions waiting on you, as the page last said: quitting asks first for those whose request is still open (main.ts). */
+  asking() {
+    const a = this.status.asking;
+    return (Array.isArray(a) ? a.filter((id): id is string => typeof id === "string") : this.status.needs.filter((n) => n.waiting).map((n) => n.id)).slice(0, 40);
   }
 
   destroy() {

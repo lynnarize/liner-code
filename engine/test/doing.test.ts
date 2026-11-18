@@ -192,6 +192,18 @@ test("words: a command by its program and at most two plain words, never a secre
   assert.equal(doingCommand("API_KEY=x"), "", "nothing but a value: nothing to say");
 });
 
+test("words: a run of dots not at the end costs nothing (the cut's end rule never backtracks), and dots at the end still go", () => {
+  const dots = `Reading a${".".repeat(10_000)}b`;
+  let t = performance.now();
+  cutDoing(dots);
+  cutDoing(`${dots}...…`);
+  words(call("mcp__liner__design_frame", "other", "design_frame", { input: JSON.stringify({ name: `Phone ${".".repeat(10_000)} Week` }) }));
+  words(call("Read", "read", "Read x", { path: `src/a${".".repeat(10_000)}b.ts` }));
+  assert.ok(performance.now() - t < 50, `took ${Math.round(performance.now() - t)} ms`);
+  assert.equal(cutDoing("Reading the files....…."), "Reading the files");
+  assert.equal(cutDoing("Reading a.b"), "Reading a.b");
+});
+
 test("words: long names are cut at a word with nothing after, or said plainer; every line keeps the rules", () => {
   const long = `${"a-very-long-generated-file-name-".repeat(3)}.ts`;
   assert.equal(words(call("Read", "read", `Read ${long}`, { path: `/abs/${long}` })), "Reading a file", "a name too long for the line");

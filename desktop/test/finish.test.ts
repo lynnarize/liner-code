@@ -4,7 +4,7 @@
 */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openAsk, QuitWhenDone, waitLine, type Live } from "../src/finish.ts";
+import { heldOnYou, openAsk, quitQuestion, QuitWhenDone, waitLine, type Live } from "../src/finish.ts";
 
 const t = (id: string, status: string, more: Partial<Live> = {}): Live => ({ id, title: `Session ${id}`, status, ...more });
 
@@ -111,4 +111,32 @@ test("an open request is an approval, a question or a plan still asking", () => 
   assert.equal(openAsk([{ kind: "approval", state: "allowed" }]), false);
   assert.equal(openAsk(null), false);
   assert.equal(openAsk([null, 3]), false);
+});
+
+test("a waiting session whose timeline didn't come in time is held, not told of, and looked at again", () => {
+  const q = new QuitWhenDone(0);
+  const threads = [t("w", "waiting")];
+  q.mark(q.toCheck(threads)[0], undefined);
+  let r = q.read(threads, 0);
+  assert.equal(r.quit, false, "held as if it waits on you");
+  assert.deepEqual(r.left.waiting.map((s) => s.id), ["w"]);
+  assert.deepEqual(r.tell, [], "not told of on a guess");
+  assert.deepEqual(q.toCheck(threads), ["w"], "asked again next time");
+  q.mark("w", false);
+  r = q.read(threads, 1);
+  assert.deepEqual(r.left.waiting, []);
+  assert.equal(r.quit, true);
+});
+
+test("⌘Q counts sessions waiting on a live request, and one whose timeline doesn't come", async () => {
+  const timelines: Record<string, unknown> = { open: [{ kind: "approval", state: "asking" }], old: [{ kind: "approval", state: "allowed" }] };
+  const items = (id: string) => (id in timelines ? Promise.resolve(timelines[id]) : Promise.reject(new Error("timed out")));
+  assert.equal(await heldOnYou(["open", "old"], items), 1);
+  assert.equal(await heldOnYou(["open", "old", "silent"], items), 2);
+  assert.equal(await heldOnYou([], items), 0);
+  assert.equal(quitQuestion(1, 0), "A session is still working. Quit anyway?");
+  assert.equal(quitQuestion(3, 0), "3 sessions are still working. Quit anyway?");
+  assert.equal(quitQuestion(0, 1), "A session is waiting on you. Quit anyway?");
+  assert.equal(quitQuestion(0, 2), "2 sessions are waiting on you. Quit anyway?");
+  assert.equal(quitQuestion(1, 1), "1 session is still working and 1 is waiting on you. Quit anyway?");
 });

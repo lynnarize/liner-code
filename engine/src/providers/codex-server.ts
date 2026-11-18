@@ -461,15 +461,21 @@ export class CodexServerSession implements ProviderSession {
     this.stopping = false;
     const stop = () => {
       this.stopping = true;
+      // The turn ends once Codex answers the interrupt, which it does once the turn has stopped. One that never answers (its
+      // process frozen or stuck) is given up by the runtime after its grace (Runtime.untilStopped): its app server is closed,
+      // which fails the interrupt and ends the turn, and the next turn resumes the thread in a new one. Ending at once kept
+      // the stuck process as the live session, and the next message went to it and hung.
+      const end = this.done;
+      const asked = Boolean(this.thread && this.turnId);
       if (this.thread && this.turnId) {
         this.staleAdd(this.turnId);
-        void this.server.request("turn/interrupt", { threadId: this.thread, turnId: this.turnId }).catch(() => {});
+        void this.server.request("turn/interrupt", { threadId: this.thread, turnId: this.turnId }).then(() => end?.(), () => end?.());
       }
       // Stop reaches everything this turn set going: the subagents' turns and the commands running, its own
       // and theirs, which turn/interrupt leaves (T3 Code: CodexAdapterV2.ts interrupts the whole lineage and terminates tracked terminals).
       for (const [threadId, turnId] of this.others) void this.server.request("turn/interrupt", { threadId, turnId }).catch(() => {});
       for (const [item, c] of this.running) if (c.turnId === this.turnId || this.others.get(c.threadId) === c.turnId) void this.endCommand(item);
-      this.done?.();
+      if (!asked) this.done?.();
     };
     // Stop ends the turn while Codex is still starting or hasn't answered its start, which may never come (as acp.ts does).
     const aborted = new Promise<null>((r) => (signal.aborted ? r(null) : signal.addEventListener("abort", () => r(null), { once: true })));
@@ -903,7 +909,8 @@ export class CodexServerSession implements ProviderSession {
         // Its output streams in while it runs (outputDelta); the finished item brings all of it.
         if (done) clearTimeout(this.outputs.get(id)?.timer), this.outputs.delete(id);
         else if (!this.outputs.has(id)) this.outputs.set(id, { text: "", title, input });
-        const out = (it.aggregatedOutput as string | null) ?? undefined;
+        // All of a long command's output is kept to the row's own limit, its end, as while it ran (outputDelta).
+        const out = ((it.aggregatedOutput as string | null) ?? undefined)?.slice(-20000);
         sink.tool({ key: id, tool: "shell", toolKind: "exec", title, input, output: done && failed ? withExit(out, it.exitCode) : out, status: !done ? "running" : failed ? "failed" : "done" });
         return;
       }

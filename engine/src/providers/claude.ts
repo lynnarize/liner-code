@@ -26,7 +26,7 @@ import { StringDecoder } from "node:string_decoder";
 import { stripVTControlCharacters } from "node:util";
 import type { Access, ContextPart, ContextSource, ContextUse, ErrorWhy, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { base64Size, imagePart, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
-import { outside, run, sdkPath, versionOf, which } from "../exec.ts";
+import { below, endAll, markedPids, outside, processes, run, RUN_ENV, sdkPath, versionOf, which, type Mark, type Proc } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
@@ -625,6 +625,18 @@ function titleOf(name: string, input: Record<string, unknown>, cwd: string): { t
   Code can't tell when it's over, so the session is never closed for idleness (settled).
 */
 const OUTLIVES = /^(?:ScheduleWakeup|CronCreate|Monitor)$/;
+/**
+  Claude Code's process (`pid`, the engine's own child, so never another process given the pid since) and everything below it,
+  with whatever carries its marker though it left the tree. Its pid alone when no listing answers: endAll then asks it by itself.
+*/
+async function treeOf(pid: number | undefined, mark: Mark): Promise<Proc[]> {
+  const [all, carried] = await Promise.all([processes(), markedPids(mark).catch(() => new Set<number>())]);
+  const self = pid ? all.find((p) => p.pid === pid && p.ppid === process.pid) : undefined;
+  const ids = new Set(self ? [self, ...below(all, self.pid)].map((p) => p.pid) : []);
+  const tree = all.filter((p) => ids.has(p.pid) || carried.has(p.pid));
+  return tree.length || !pid || all.length ? tree : [{ pid, ppid: process.pid, command: "claude" }];
+}
+
 /** How long a close waits for Claude Code's process to be gone: the SDK's grace before its kill, and a little more. */
 const CLOSE_WAIT_MS = 5000;
 
@@ -726,6 +738,10 @@ class ClaudeSession implements ProviderSession {
   private ended = new Map<string, { description: string; toolUseId?: string; type?: string; background?: boolean }>();
   /** Queries left behind (one whose resume failed): what they still say goes nowhere. */
   private retired = new WeakSet<Query>();
+  /** Each process's pid, as the SDK says it spawned it, and its own marker (RUN_ENV in its environment), which all it starts inherits: what a cut ends. */
+  private marks = new WeakMap<Query, { mark: Mark; pid?: number }>();
+  /** A process Stop gave up on, being ended (cut): the next process waits for it to be gone. */
+  private cutting: Promise<void> | null = null;
   /** Tasks Stop ended: their notifications are expected, and wake nothing. */
   private hushed = new Set<string>();
   /** Notifications of those since the last turn of yours: what Claude Code would wake to tell about. */
@@ -798,6 +814,7 @@ class ClaudeSession implements ProviderSession {
     const denied = [...new Set([...(o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : [])])];
     const sealed: Partial<Options> = o.sealed && !o.plain ? { settingSources: [], skills: [], plugins: [], strictMcpConfig: true, agents: undefined, disallowedTools: [...new Set([...denied, "Skill"])] } : {};
     const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], settings: { permissions: { deny: PLAIN_DENIED } }, mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
+    const own: { mark: Mark; pid?: number } = { mark: { name: RUN_ENV, value: randomUUID() } };
     const options: Options = {
       cwd: o.cwd,
       // T3 Code: ClaudeAdapterV2.ts hands its attachments folder over the same way.
@@ -819,7 +836,8 @@ class ClaudeSession implements ProviderSession {
       persistSession: o.ephemeral ? false : undefined,
       settingSources: ["user", "project", "local"],
       systemPrompt: { type: "preset", preset: "claude_code", append: o.soul || undefined },
-      env: { ...o.env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` },
+      // A marker of this process's own, which all it starts inherits: one that never answers Stop is ended with all of it (cut).
+      env: { ...o.env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}`, [RUN_ENV]: own.mark.value },
       permissionPrompts: "host",
       pathToClaudeCodeExecutable: sdkPath(this.path) ?? undefined,
       mcpServers: o.mcp ? claudeMcp(o) : undefined,
@@ -894,11 +912,14 @@ class ClaudeSession implements ProviderSession {
         return answer.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: answer.level && answer.reason ? answer.reason : answer.reason ? `The user said no, and asks instead: ${answer.reason}` : "The user said no to this step." };
       },
       onElicitation: (request, { signal }) => this.elicit(request, signal),
+      // Its pid, for a cut: the SDK says it as it spawns (claude-agent-sdk 0.3.310, not in its types). Without it the marker alone finds it.
+      ...({ onProcessSpawned: (pid: number) => void (own.pid = pid) } as unknown as Partial<Options>),
       ...sealed,
       ...plain,
     };
     this.seen = o.resume ? null : { input: 0, output: 0, cache: 0, cost: 0 };
     this.q = sdk.query({ prompt: this.inbox, options });
+    this.marks.set(this.q, own);
     void this.pump(this.q);
     // The connections go over stdin rather than on the command line with `liner`, where any program
     // on this Mac could read their keys: the SDK writes `mcpServers` as --mcp-config (T3 Code:
@@ -1059,8 +1080,44 @@ class ClaudeSession implements ProviderSession {
       if (!this.retired.has(q)) this.fail?.(e instanceof Error ? e : new Error(String(e)));
     } finally {
       if (this.q === q) this.lost();
-      for (const id of [...this.tails.keys()]) this.untail(id);
+      // One left behind ends after the next process has started: the tails are that one's now.
+      if (!this.retired.has(q)) for (const id of [...this.tails.keys()]) this.untail(id);
     }
+  }
+
+  /**
+    Ends a process that never answered Stop's interrupt, and everything it started: its tree, read before anything is ended
+    (what it started is the system's once it goes), and all that carries its marker besides (exec.ts markedPids, where `ps`
+    reads environments), SIGTERM and then SIGKILL, which a frozen process takes too (exec.ts endAll). The SDK's own close
+    reaches the process alone, and a frozen one only at its SIGKILL seven seconds on. What was sent to it, the stopped message
+    among it, goes with it, and what it says now is nobody's (retired). The session stays: its next turn resumes the
+    conversation (o.resume) in a new process, once this one is gone (cutting), so a message sent meanwhile goes to that one.
+  */
+  private cut(q: Query) {
+    const own = this.marks.get(q);
+    const inbox = this.inbox;
+    this.retired.add(q);
+    this.q = null;
+    this.inbox = new Inbox();
+    this.tasks.clear();
+    this.hushed.clear();
+    this.hushedNotes = 0;
+    this.idle = [];
+    this.draining = false;
+    this.endRuns("stopped");
+    this.release(null);
+    for (const id of [...this.tails.keys()]) this.untail(id);
+    const gone = (own ? treeOf(own.pid, own.mark) : Promise.resolve([])).then((tree) => {
+      // Let go only now: a process that does read its input ends at its end, and what it started would leave its tree first.
+      inbox.end();
+      void Promise.resolve(q.return?.(undefined)).catch(() => {});
+      return endAll(tree);
+    });
+    const cutting: Promise<void> = gone.then(
+      () => void (this.cutting === cutting && (this.cutting = null)),
+      () => void (this.cutting === cutting && (this.cutting = null)),
+    );
+    this.cutting = cutting;
   }
 
   /** The process is gone. So is what it ran, and the SDK's reader stays on its inbox, where it would take your next message to nobody. */
@@ -1533,7 +1590,7 @@ class ClaudeSession implements ProviderSession {
   /** close() has run: nothing starts again on this session, which is out of the runtime's hands, so no process of it would ever be ended. */
   private closed = false;
   async warm() {
-    if (this.closed || this.q || this.opened || this.o.plain || this.o.ephemeral) return;
+    if (this.closed || this.q || this.opened || this.cutting || this.o.plain || this.o.ephemeral) return;
     if (!this.o.resume) return this.start();
     const opened = this.resume(this.unwarm.signal);
     opened.catch(() => {});
@@ -1558,6 +1615,9 @@ class ClaudeSession implements ProviderSession {
         return;
       }
     }
+    if (this.closed) throw new Error("This Claude Code session was closed.");
+    // A process Stop gave up on (cut) is gone before the next one starts, whether it resumes or not.
+    if (this.cutting) await this.cutting;
     if (this.closed) throw new Error("This Claude Code session was closed.");
     if (!this.q && this.o.resume) await this.resume(signal);
     if (!this.q) this.start();
@@ -1589,6 +1649,8 @@ class ClaudeSession implements ProviderSession {
     (T3 Code: ProviderTurnStartService.ts, its resume fallback).
   */
   private async resume(signal: AbortSignal) {
+    // Not beside a process Stop gave up on, still being ended (cut).
+    if (this.cutting) await this.cutting;
     this.start();
     const q = this.q!;
     // Stopped already, it doesn't wait for the start or its time limit either.
@@ -1642,12 +1704,21 @@ class ClaudeSession implements ProviderSession {
     });
     let late: NodeJS.Timeout | undefined;
     const stop = () => {
-      void this.q?.interrupt().catch(() => {});
+      const q = this.q;
+      let heard = false;
+      void q?.interrupt().then(() => void (heard = true), () => {});
       // Stop reaches work it left running in the background too (T3 Code: BackgroundWorkStop.integration.test.ts).
       this.stopTasks();
       // An interrupt ends with a result message; if it never comes, let go after a moment, and drop what's left of it.
       late = setTimeout(() => {
-        this.draining = true;
+        // Claude Code never answered the interrupt at all: its process hangs (frozen, stuck), and would take your next message
+        // to nobody, and run the stopped one once it woke. It's ended (cut), and the next turn resumes the session in a new one.
+        // Said as the runtime says it of a tool it gives up on (Runtime.untilStopped).
+        if (q && !heard && this.q === q) {
+          this.cut(q);
+          const span = Math.max(1, Math.round(waits.stop / 1000));
+          sink.notice(`Claude Code hadn't stopped ${span} second${span === 1 ? "" : "s"} after Stop, so Liner Code ended it. It picks up again on your next message.`);
+        } else this.draining = true;
         this.finish?.();
       }, waits.stop);
     };
@@ -2025,7 +2096,7 @@ class ClaudeSession implements ProviderSession {
     be refused again.
   */
   settled() {
-    if (this.closed || !this.o.resume || this.o.fork || this.sink || this.waking || this.opened || this.linking || this.lasting || this.draining) return false;
+    if (this.closed || !this.o.resume || this.o.fork || this.sink || this.waking || this.opened || this.linking || this.lasting || this.draining || this.cutting) return false;
     if (this.access !== this.o.access || this.noAuto !== Boolean(this.o.noAuto)) return false;
     // An agent whose row would say it stopped as the process goes (endRuns) is one still at work.
     if (this.tasks.size || [...this.runs.values()].some((r) => r.status === "running" || (r.agent.state ?? "running") === "running")) return false;
@@ -2056,9 +2127,11 @@ class ClaudeSession implements ProviderSession {
     this.endRuns("stopped");
     this.release(null);
     for (const id of [...this.tails.keys()]) this.untail(id);
-    if (!ended) return Promise.resolve();
+    // A process Stop gave up on is waited for too, till it's gone (cut, bounded by endAll).
+    const cutting = this.cutting ?? Promise.resolve();
+    if (!ended) return cutting;
     let cap: NodeJS.Timeout | undefined;
-    return Promise.race([Promise.resolve(ended).then(() => {}, () => {}), new Promise<void>((r) => (cap = setTimeout(r, CLOSE_WAIT_MS)))]).finally(() => clearTimeout(cap));
+    return Promise.all([cutting, Promise.race([Promise.resolve(ended).then(() => {}, () => {}), new Promise<void>((r) => (cap = setTimeout(r, CLOSE_WAIT_MS)))])]).then(() => {}).finally(() => clearTimeout(cap));
   }
 }
 

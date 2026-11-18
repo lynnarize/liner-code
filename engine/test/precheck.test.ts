@@ -42,6 +42,21 @@ test("split: no fire on two items, steps of one task, details, a later message, 
   assert.equal(draftCheck({ text: TASKS, first: false }), null, "not on a later message");
 });
 
+test("split: never when a task would lose words: a lead-in that says something of them all, or an item under another", () => {
+  assert.equal(tasksOf(`We're on the staging DB, never run migrations.\n${TASKS}`), null, "context above the list would be left out of every task");
+  assert.equal(tasksOf(`Use the new API client for all of these\n${TASKS}`), null, "a lead-in with no colon that isn't plain");
+  assert.equal(tasksOf(`The following, and keep the old names:\n${TASKS}`), null, "plain words with more after them");
+  assert.equal(tasksOf("- Add a dark mode toggle to the settings page\n  - Fix the toggle's label in the header\n- Fix the date parser for leap years\n- Write tests for the CSV export"), null, "an indented item is the one above's");
+  assert.equal(tasksOf("- Add a dark mode toggle to the settings page\n\t- Fix the toggle's label in the header\n- Fix the date parser for leap years\n- Write tests for the CSV export"), null, "a tab-indented one too");
+  // Still offered: a list indented as a whole, and plain lead-ins.
+  assert.equal(tasksOf(TASKS.split("\n").map((l) => `  ${l}`).join("\n"))?.length, 3);
+  for (const lead of ["Please do these:", "Here are a few things:", "The following, please:", "Fixes:", "Can you do the following for me?"]) assert.equal(tasksOf(`${lead}\n${TASKS}`)?.length, 3, lead);
+  // A line with a long run of spaces is read in no time.
+  const t = performance.now();
+  tasksOf(`- Fix a${" ".repeat(50_000)}b\n${TASKS}`);
+  assert.ok(performance.now() - t < 50);
+});
+
 test("heavy: the tool's top model or highest effort for a small ask offers the fast model, else nothing", () => {
   const p = draftCheck({ ...heavy, text: "rename getUser to fetchUser" });
   assert.equal(p?.kind, "heavy");
@@ -228,6 +243,22 @@ test("engine: a split starts one session per task, each in a worktree from the s
     await until(() => f.turns.length === 6, "the three went");
     assert.ok(s.store.timeline(here.id).some((x) => x.kind === "user" && x.text === "Task one is here"));
     await assert.rejects(s.call("precheck.split", { projectId: "p", threadId: here.id, tasks: ["a", "b"], agent: `@${OPUS}`, effort: "medium", access: "auto" }), /first message/);
+  } finally {
+    f.restore();
+  }
+});
+
+test("engine: a split reads its tasks from the draft as it is when pressed, and refuses one that no longer reads as tasks", async () => {
+  const f = fake();
+  try {
+    const s = await setup();
+    // An edit after the last check: the fourth task is there, the old list (`tasks`) is not what goes.
+    const { made } = await s.call<{ made: Thread[] }>("precheck.split", { projectId: "p", text: `${TASKS}\n- Update the README install steps`, tasks: ["Old task one here", "Old task two here", "Old task three here"], agent: `@${OPUS}`, effort: "medium", access: "auto" });
+    assert.equal(made.length, 4);
+    await until(() => f.turns.length === 4, "each task went");
+    assert.ok(f.turns.some((x) => x.text === "Update the README install steps") && !f.turns.some((x) => x.text.startsWith("Old")));
+    await assert.rejects(s.call("precheck.split", { projectId: "p", text: `We're on the staging DB, never run migrations.\n${TASKS}`, agent: `@${OPUS}`, effort: "medium", access: "auto" }), /doesn't read as separate tasks/);
+    assert.equal(s.store.threads.length, 4, "nothing more was made");
   } finally {
     f.restore();
   }

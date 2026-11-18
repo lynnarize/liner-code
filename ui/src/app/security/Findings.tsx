@@ -14,14 +14,13 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type { FindingSource, FindingState, SecondLookState, SecurityFinding, Severity } from "@contracts";
 import { DISMISS_LABEL, SEVERITIES, SEVERITY_LABEL, SOURCE_LABEL } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { rpc, useEngine } from "../engine";
+import { rpc } from "../engine";
 import { I } from "../icons";
-import { codeProjects } from "../model";
 import { Pop, Row } from "../ui";
 import { FindingPanel } from "./FindingPanel";
 import { MOCK, useFindings } from "./findings-data";
 import { PageTop, SevMark } from "./parts";
-import { goSecurity, setSecurityScope, useScan, useSecurity, useSecurityPage, useSecurityScope } from "./store";
+import { goSecurity, setSecurityScope, useScan, useSecurity, useSecurityPage, useSecurityProjects, useSecurityScope } from "./store";
 import { fixedAt, when } from "./when";
 import "./findings.css";
 
@@ -156,16 +155,21 @@ function BringIn({ source, projectId }: { source: "github" | "sarif"; projectId?
 }
 
 export function Findings({ sidebar, onSidebar, finding, state, source }: { sidebar: boolean; onSidebar: () => void; /** The finding open in the panel. */ finding?: string; state?: FindingState; /** Bring in's rows open the list narrowed to their source. */ source?: FindingSource }) {
-  const scope = useSecurityScope();
-  const projects = codeProjects(useEngine((s) => s.projects));
-  const sample = projects.find((p) => p.path === "@sample" || p.name === "Sample project") ?? projects[0];
+  const stored = useSecurityScope();
+  // Never the Demo's Sample project (store.ts useSecurityProjects): not in the picker, not in the list, and a scope left on it reads as All projects.
+  const { list: projects, hidden } = useSecurityProjects();
+  const scope = hidden(stored.projectId) ? { ...stored, projectId: undefined } : stored;
   // One scan's findings (page.scan, from the scan's screen): what it found first, and what it raised again that was open
   // already. A scan is in one project, so the project picker doesn't narrow it further.
   const page = useSecurityPage();
   const scan = page.kind === "findings" ? page.scan : undefined;
   const scanRec = useScan(scan);
-  const { list: all, error } = useFindings(scan ? undefined : scope.projectId, sample?.id ?? "mock-sample");
-  const list = useMemo(() => (scan && all ? all.filter((f) => f.scan === scan || f.activity.some((e) => e.kind === "raised-again" && e.scan === scan)) : all), [all, scan]);
+  // The dev mock (?ls-mock) puts its sample findings in the first project.
+  const { list: all, error } = useFindings(scan ? undefined : scope.projectId, projects[0]?.id ?? "mock-sample");
+  const list = useMemo(() => {
+    const mine = all?.filter((f) => !hidden(f.projectId)) ?? null;
+    return scan && mine ? mine.filter((f) => f.scan === scan || f.activity.some((e) => e.kind === "raised-again" && e.scan === scan)) : mine;
+  }, [all, scan, hidden]);
   const projectOf = (id: string) => projects.find((p) => p.id === id);
 
   const [tab, setTab] = useState<FindingState>(state ?? "open");
@@ -384,7 +388,7 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
               <div className="ls-none">
                 <span className="ls-disc"><I.shield size={16} /></span>
                 <b>Nothing open</b>
-                <span>{scan ? (list.length ? "Everything this scan raised was fixed or dismissed." : "This scan raised nothing.") : list.length ? "Everything found here was fixed or dismissed." : "No scan has found anything here yet."}</span>
+                <span>{scan ? (list.length ? "Everything this scan raised was fixed or dismissed." : "This scan raised nothing.") : list.length ? "Everything found here was fixed or dismissed." : !projects.length ? "No project to scan yet. Add a folder you work on, then scan it." : "No scan has found anything here yet."}</span>
                 <button type="button" className="lc-btn l-focus lf-none-b" data-kind="ghost" data-size="sm" onClick={() => goSecurity({ kind: "start", projectId: scope.projectId })}>
                   Start a scan
                 </button>

@@ -159,7 +159,7 @@ test("checks: npm audit's two shapes, one finding per package, and the skips sai
   fakeNpm(bin, JSON.stringify(v7));
   const run = await runChecks(sec, "p");
   assert.deepEqual(rowOf(run, "packages"), { check: "packages", state: "found", count: 3, note: "from npm audit", at: rowOf(run, "packages").at } as never);
-  assert.match(readFileSync(join(bin, "npm.args"), "utf8"), /^audit --json --package-lock-only$/m, "audit reads the lockfile only: nothing installed");
+  assert.match(readFileSync(join(bin, "npm.args"), "utf8"), /^audit --json --package-lock-only --registry=https:\/\/registry\.npmjs\.org\/$/m, "audit reads the lockfile only, nothing installed, from npm's own registry");
   const lodash = sec.findings("p").find((f) => f.rule === "npm/lodash")!;
   assert.equal(lodash.file, "package.json");
   assert.equal(lodash.severity, "medium");

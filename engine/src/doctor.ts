@@ -159,7 +159,9 @@ export const CHECKS: Check[] = [
       const p = providers[c.id];
       if (!p?.models) return c.info.models.length ? pass(`${c.info.models.length} model${c.info.models.length === 1 ? "" : "s"} it's known to run`) : failed("It has no models Liner Code knows of. Press Look again in Models above.");
       try {
-        const list = await within(p.models(d.deps.runtime.envFor(c.id), join(d.deps.store.home, "probe")), 30_000, "It didn't list its models within 30 seconds.");
+        // Given up at 30 seconds, the tool's process it started goes too (models' signal), not only the wait.
+        const stop = new AbortController();
+        const list = await within(p.models(d.deps.runtime.envFor(c.id), join(d.deps.store.home, "probe"), stop.signal), 30_000, "It didn't list its models within 30 seconds.", stop);
         return list.length ? pass(`It listed ${list.length} model${list.length === 1 ? "" : "s"}`) : failed("It listed no models. Sign in again, then press Check again.");
       } catch (e) {
         return failed(`It couldn't list its models: ${words(e)}`);
@@ -266,10 +268,10 @@ function verdict(p: Probe, level: "read" | "ask", step: "write" | "command", who
   return asked ? pass("It asked Liner Code first, and did nothing after a no.") : failed(`It didn't ask, so you'd never get to say yes. Update Liner Code, or tell us which version of ${who.trim()} you have.`);
 }
 
-/** `p`, or an error with `why` once `ms` have gone by. */
-function within<T>(p: Promise<T>, ms: number, why: string): Promise<T> {
+/** `p`, or an error with `why` once `ms` have gone by; then `stop` is aborted, so what `p` started ends too. */
+function within<T>(p: Promise<T>, ms: number, why: string, stop?: AbortController): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
-  return Promise.race([p, new Promise<never>((_, no) => (timer = setTimeout(() => no(new Error(why)), ms)))]).finally(() => clearTimeout(timer));
+  return Promise.race([p, new Promise<never>((_, no) => (timer = setTimeout(() => (stop?.abort(), no(new Error(why))), ms)))]).finally(() => clearTimeout(timer));
 }
 
 /* ---------------------------------- The probe (tier 2) ---------------------------------- */

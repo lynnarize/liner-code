@@ -1,8 +1,9 @@
 /*
   Liner Security's free checks: run on this Mac with no agent and no model, when a scan starts and when you ask.
   Secrets in tracked files (well-known patterns over `git ls-files`, size-capped), packages with known problems
-  (`npm audit --json` where there is a package-lock.json; skipped quietly where there isn't), and files that should not
-  be in git (.env, private keys and the like, tracked). Each problem becomes a finding with source "checks", through
+  (`npm audit --json` where there is a package-lock.json, run on a copy of the lockfile alone with an environment of
+  nothing, so the repository's .npmrc can't send anything anywhere: npmAudit; skipped quietly where there isn't), and
+  files that should not be in git (.env, private keys and the like, tracked). Each problem becomes a finding with source "checks", through
   Security.add (deduplicated, never raising what you dismissed), and the run is kept as the project's last
   (Security.setChecks). A problem a check raised before and doesn't find now is closed as fixed, with a line saying so.
 
@@ -11,11 +12,12 @@
   (the shapes gitleaks and GitHub's secret scanning know best), with obvious placeholders left out, so a finding here is
   worth reading. Everything works offline but npm audit, which asks the registry and fails soft.
 */
-import { lstatSync, readFileSync, statSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import type { FreeCheckId, FreeCheckResult, FreeCheckRun, FindingExplain, NewFinding, SecurityFinding, SecurityFindingAdded, Severity, CodeExcerpt } from "../../contracts/src/index.ts";
-import { findingKey } from "../../contracts/src/index.ts";
-import { outside, run, which } from "./exec.ts";
+import { findingKey, normalKey } from "../../contracts/src/index.ts";
+import { outside, pathOf, run, which } from "./exec.ts";
 import { insideReal, type Security } from "./security.ts";
 
 /** Who the free checks are, on a finding's activity. */
@@ -115,13 +117,155 @@ export function secretsIn(text: string): SecretHit[] {
   return out;
 }
 /**
-  A line with every secret on it masked, for a code excerpt: a value becomes its first four characters and dots, and a
-  private key's marker hides everything after it on the line (a key written on one line, as in a service account's JSON).
+  A line with every secret on it masked, for anything shown or stored (a code excerpt, a scan's words, a report's message):
+  a value of the free checks' table becomes its first four characters and dots, and a private key's marker hides
+  everything after it on the line (a key written on one line, as in a service account's JSON). Masked here only, never
+  raised as a finding: a JWT, looser token shapes, an AWS secret key, a password in an address, a bearer credential, and a
+  setting whose name says secret (`API_KEY=…`, `password: …`, `DB_PASSWORD = "…"`, quoted or bare, six characters or
+  more), which keeps fewer of its first characters the shorter it is.
 */
 export function maskLine(line: string): string {
+  // A line of a key's body on its own (an excerpt that starts inside a PEM block): nothing of it is shown.
+  if (KEY_BODY.test(line)) return "••••••••";
+  const spans: { start: number; end: number; shown: string }[] = spansIn(line).map((sp) => ({ start: sp.start, end: sp.end, shown: sp.p.shown ? `${sp.p.shown}••••••••` : masked(sp.v) }));
+  const free = (start: number, end: number) => !spans.some((o) => start < o.end && o.start < end);
+  const take = (start: number, end: number, v: string) => {
+    if (end > start && !v.includes("•") && free(start, end)) spans.push({ start, end, shown: hidden(v) });
+  };
+  for (const { re, group, prose } of MASK_ONLY) {
+    re.lastIndex = 0;
+    for (const m of line.matchAll(re)) {
+      const at = group ? (m as RegExpMatchArray & { indices: [number, number][] }).indices[group] : [m.index!, m.index! + m[0].length];
+      if (prose && (NOT_A_CREDENTIAL.test(m[group ?? 0]) || isPlaceholder(m[group ?? 0]))) continue;
+      if (at) take(at[0], at[1], m[group ?? 0]);
+    }
+  }
+  ASSIGN.lastIndex = 0;
+  for (const m of line.matchAll(ASSIGN)) {
+    const name = m[1].split(".").pop()!;
+    const quoted = m[5] !== undefined;
+    const v = quoted ? m[5] : m[6];
+    if (v === undefined || !secretName(name)) continue;
+    // A line that is only this setting (.env, YAML, ini, a shell export): its bare value is a value, whatever it looks like.
+    const whole = /^\s*(?:export\s+|set\s+|-\s+)?["']?$/.test(line.slice(0, m.index)) && /^\s*(?:#.*)?$/.test(line.slice(m.index! + m[0].length));
+    if (!secretValue(v, quoted, whole)) continue;
+    const at = (m as RegExpMatchArray & { indices: [number, number][] }).indices[quoted ? 5 : 6];
+    take(at[0], at[1], v);
+  }
   let out = line;
-  for (const sp of spansIn(line).reverse()) out = out.slice(0, sp.start) + (sp.p.shown ? `${sp.p.shown}••••••••` : masked(sp.v)) + out.slice(sp.end);
+  for (const sp of spans.sort((a, b) => b.start - a.start)) out = out.slice(0, sp.start) + sp.shown + out.slice(sp.end);
   return out;
+}
+
+/** What a masked value keeps: its first four characters when it is long, two when it is middling, none when it is short. */
+const hidden = (v: string) => `${v.slice(0, v.length >= 16 ? 4 : v.length >= 10 ? 2 : 0)}••••••••`;
+/** A line that is nothing but a stretch of base64 (a private key's body, a certificate's): masked whole. */
+const KEY_BODY = /^\s*["']?(?=[A-Za-z0-9+/]*[0-9+/])[A-Za-z0-9+/]{40,}={0,2}(?:\\n)?["']?,?\s*$/;
+/** Words with digits that follow "password" or "token" in prose and name a kind of thing, not a value: sha256, utf8, oauth2… */
+const NOT_A_CREDENTIAL = /^(?:sha-?\d+|md5|utf-?\d+|base\d+|ipv[46]|http\d|oauth\d|x509|aes-?\d+|rsa-?\d+|hmac\w*|pbkdf\d|argon\w*|ed25519|p256|v\d+(?:\.\d+)*)$/i;
+/**
+  Shapes masked wherever they are, beyond the free checks' table: a JWT, the token prefixes of GitHub, GitLab, Slack, Stripe,
+  OpenAI, Anthropic, npm and Google in their looser forms, a bearer, basic or token credential (any case, then with letters
+  and digits both), a password in an address, a Slack or Discord webhook's secret part, an AWS secret access key (40
+  characters after a key named aws… or secret…), and a password or token named in prose ("the password hunter2 for admin")
+  only when it reads as one: letters and digits together, not a word of the trade like sha256 (`prose`).
+*/
+const MASK_ONLY: { re: RegExp; group?: number; prose?: boolean }[] = [
+  { re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g },
+  { re: /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,})/g },
+  { re: /\b(?:xox[a-z]|xapp)-[A-Za-z0-9-]{10,}/g },
+  { re: /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}|\bwhsec_[A-Za-z0-9]{20,}/g },
+  { re: /\bsk-(?:ant-|proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}/g },
+  { re: /\bnpm_[A-Za-z0-9]{36}\b/g },
+  { re: /\bAIza[0-9A-Za-z_-]{30,}/g },
+  { re: /\b(?:Bearer|Basic|Token)\s+([A-Za-z0-9._~+/-]{12,}=*)/dg, group: 1 },
+  { re: /\b(?:bearer|basic|token)\s+((?=[A-Za-z._~+/-]*\d)(?=[\d._~+/-]*[A-Za-z])[A-Za-z0-9._~+/-]{12,}=*)/dgi, group: 1 },
+  { re: /\bhttps?:\/\/(?:hooks\.slack\.com\/(?:services|workflows|triggers)\/|(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/)([A-Za-z0-9_/-]{8,})/dgi, group: 1 },
+  { re: /\b(?:passw(?:or)?d|passphrase|pwd|secret|token|api[ _-]?key|credentials?)s?\s+(?:(?:is|was|of|set\s+to|reads)\s+)?["'`]?((?=[A-Za-z!@#$%^&*_+~/-]*\d)(?=[\d!@#$%^&*_+~/-]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9!@#$%^&*_+~/-]{5,99})(?![\w(!@#$%^&*+~/-])/dgi, group: 1, prose: true },
+  { re: /:\/\/[^\s:/@"'`]+:([^\s@/"'`]{3,})@/dg, group: 1 },
+  { re: /(?:aws|secret)[\w.-]*["']?\s*(?:=>|:=|[:=])\s*["'`]?([A-Za-z0-9/+]{40})(?![A-Za-z0-9/+=])/dgi, group: 1 },
+];
+/**
+  A setting on a line: a name (a variable, a key, a field, `user.password`), `=`, `:`, `=>` or `:=` (never `==`), and a
+  value, quoted (escapes kept inside) or bare up to where code would go on or a string ends (a header written in one
+  string, "x-api-key: …"). Whether it is a secret is the name's and the
+  value's to say (secretName, secretValue).
+*/
+const ASSIGN = /(?<![\w$.-])([A-Za-z_$][\w$.-]{0,79})(["'\]]?)\s*(=>|:=|=(?![=>])|:(?![:=]))\s*(?:(["'`])((?:\\.|(?!\4)[^\\])*)\4|([^\s"'`,;(){}[\]<>]+)(?=\s*(?:$|[,;)}\]#"'`]|\/\/)))/dg;
+/** Names that aren't secrets for all they say key or token: a public key, a sort key, a token count. */
+const NOT_SECRET_NAME = /public[_-]?key|publishable|^(?:primary|foreign|sort|partition|cache|storage|query|hot|row|item|map|object|unique|lookup|list|group|idempotency|dedupe|route|i18n|translation|local[_-]?storage|session[_-]?storage)[_-]?key$|tokens$|tokeni[sz]e|token[_-]?(?:count|limit|type|url|uri|endpoint|expir\w*|ttl|length)$|(?:^|[_-])max[_-]?tokens/;
+/** Whether a setting's name says its value is a secret: api_key, DB_PASSWORD, clientSecret, x-auth-token, db_pass, STRIPE_KEY… */
+export function secretName(name: string): boolean {
+  const n = name.toLowerCase();
+  if (NOT_SECRET_NAME.test(n)) return false;
+  return /api[_-]?key|apikey|secret|token|passw(?:or)?d|passwd|passphrase|credential|private[_-]?key|access[_-]?key|session[_-]?(?:id|key)|(?:^|[_-])(?:pass|pwd|pw)$|^_?auth$|[_-]auth$|authorization$|auth[_-]?(?:token|key|code|header)|[_-]key$/.test(n) || /[a-z0-9]Key$/.test(name);
+}
+/** Values a secret's name is often set to that are words of the code, not secrets: types, fetch's credentials, a field's type. */
+const PLAIN_WORDS = new Set(["string", "number", "boolean", "bigint", "symbol", "object", "unknown", "never", "any", "null", "undefined", "true", "false", "none", "nil", "required", "optional", "include", "omit", "same-origin", "hidden", "password", "secret", "token", "bearer", "basic", "string[]", "text", "email"]);
+/**
+  Whether a setting's value is masked: six characters or more, not a stand-in, a read of the environment, a path, an
+  address, a number or a word of the code. Quoted, or on a line of its own, that's all; a bare value in code is masked only
+  when it doesn't read as code (letters and digits together, not a name or a chain of names), so `token = getToken()` and
+  `password: req.body.password` stay readable.
+*/
+function secretValue(v: string, quoted: boolean, whole: boolean): boolean {
+  if (v.length < 6 || v.length > 1000 || v.includes("•")) return false;
+  if (isPlaceholder(v) || NOT_A_VALUE.test(v) || PLAIN_WORDS.has(v.toLowerCase()) || /^-?\d+(?:\.\d+)?$/.test(v)) return false;
+  // A few plain words with spaces: a label or a message, not a password.
+  if (quoted) return !/^[A-Za-z]+(?: [A-Za-z]+)+[.!?]?$/.test(v);
+  if (whole) return true;
+  return /[A-Za-z]/.test(v) && /\d/.test(v) && !/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(v);
+}
+/**
+  Lines with every secret masked, a private key's body among them: from a BEGIN … PRIVATE KEY line to its END line, every
+  line between shows only dots, though no line of it says what it is.
+*/
+export function maskLines(lines: string[]): string[] {
+  let inKey = false;
+  return lines.map((l) => {
+    if (inKey) {
+      if (/-----END [A-Z ]*PRIVATE KEY/.test(l)) {
+        inKey = false;
+        return maskLine(l);
+      }
+      return "••••••••";
+    }
+    if (/-----BEGIN [A-Z ]*PRIVATE KEY/.test(l) && !/-----END [A-Z ]*PRIVATE KEY/.test(l)) inKey = true;
+    return maskLine(l);
+  });
+}
+/** Text of any length (an explanation, a message) with every secret on every line masked, as maskLines does. */
+export const maskText = (s: string) => (s.includes("\n") ? maskLines(s.split("\n")).join("\n") : maskLine(s));
+/**
+  A finding, new or stored, with every text it shows masked: its title, rule, address, explanation (every line of every
+  excerpt, a key's body across lines), and its second look's words. Masking twice changes nothing, so a key made from what
+  is stored is the key it was made with. An instance made of its title's words (a scan's `t:…`, a SARIF result's
+  `t:…@line`) is made again of the masked title when masking changed it, as a report of it now makes it: a finding an
+  earlier build stored raw keys as the same finding, and keeps none of the secret's words.
+*/
+export function maskFinding<T extends NewFinding | SecurityFinding>(f: T): T {
+  const e = f.explain;
+  const explain: FindingExplain | undefined = e && {
+    ...e,
+    lead: maskText(e.lead ?? ""),
+    wrong: maskText(e.wrong ?? ""),
+    ...(e.who !== undefined ? { who: maskText(e.who) } : {}),
+    ...(e.gets !== undefined ? { gets: maskText(e.gets) } : {}),
+    ...(Array.isArray(e.see) ? { see: e.see.map((x) => maskText(String(x))) } : {}),
+    ...(Array.isArray(e.where) ? { where: e.where.map((w) => ({ ...w, lines: maskLines(Array.isArray(w.lines) ? w.lines.map(String) : []) })) } : {}),
+  };
+  const title = maskText(f.title);
+  const at = typeof f.instance === "string" ? /^t:(.*?)(@\d+)?$/s.exec(f.instance) : null;
+  const instance = at && title !== f.title && at[1] === normalKey(f.title) ? `t:${normalKey(title)}${at[2] ?? ""}` : f.instance;
+  return {
+    ...f,
+    title,
+    ...(instance !== f.instance ? { instance } : {}),
+    ...(typeof f.rule === "string" ? { rule: maskLine(f.rule) } : {}),
+    ...(typeof f.url === "string" ? { url: maskLine(f.url) } : {}),
+    ...(explain ? { explain } : {}),
+    ...(f.look && typeof f.look.words === "string" ? { look: { ...f.look, words: maskText(f.look.words) } } : {}),
+  };
 }
 /** Every secret masked, then cut at `cap` characters: masked first, so a secret over the cut can't show any of itself. */
 export const shownLine = (line: string, cap = 400) => {
@@ -381,9 +525,8 @@ async function packagesCheck(root: string, env: NodeJS.ProcessEnv): Promise<Chec
     const other = ["pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"].find(has);
     return skipped(other ? `${other} not read yet` : has("package.json") ? "no package-lock.json" : "no package.json");
   }
-  if (!which("npm", env)) return skipped("npm not installed");
-  // --package-lock-only: the lockfile alone, nothing installed, nothing run.
-  const r = await run("npm", ["audit", "--json", "--package-lock-only"], { cwd: root, env: { ...env, npm_config_update_notifier: "false", npm_config_fund: "false", npm_config_yes: "false" }, timeout: AUDIT_MS });
+  const r = await npmAudit(root, env);
+  if (!r) return skipped("npm not installed");
   const vulns = parseAudit(r.stdout);
   if (!vulns) {
     const why = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|network|offline/i.test(r.stdout + r.stderr) ? "couldn't reach the npm registry" : r.code !== 0 && !r.stdout.trim() && /timed out|killed|SIGTERM/i.test(r.stderr) ? "npm audit took too long" : "npm audit didn't answer";
@@ -391,6 +534,117 @@ async function packagesCheck(root: string, env: NodeJS.ProcessEnv): Promise<Chec
   }
   const found = vulns.map((v) => ({ check: "packages" as const, finding: packageFinding(v) }));
   return { result: { check: "packages", state: found.length ? "found" : "clean", count: found.length, note: "from npm audit", at }, found };
+}
+
+/** Where npm audit asks: npm's own registry, always, whatever the repository's .npmrc says. Only tests point it at a fake one on this Mac. */
+export const audit = { registry: "https://registry.npmjs.org/" };
+/** Version managers' homes, passed on as they are: a shim on PATH (Volta, asdf, mise) finds its node through them, not through HOME. */
+const MANAGER_HOMES = ["VOLTA_HOME", "ASDF_DIR", "ASDF_DATA_DIR", "MISE_DATA_DIR"];
+/** What Windows needs of the environment for Node to start and reach the network at all. */
+const WINDOWS_KEEP = ["SystemRoot", "SYSTEMROOT", "windir", "WINDIR", "ComSpec", "COMSPEC", "PATHEXT", "SystemDrive", "SYSTEMDRIVE"];
+
+/**
+  The engine's PATH (your login shell's) with what a folder could plant taken out: every relative entry (".",
+  "node_modules/.bin"), and every entry inside the project. npm is looked up on this, and its node too.
+*/
+export function auditPath(env: NodeJS.ProcessEnv, root: string): string {
+  const r = resolve(root);
+  return pathOf(env)
+    .split(delimiter)
+    .map((d) => (process.platform === "win32" ? d.replace(/^"|"$/g, "") : d))
+    .filter((d) => {
+      if (!d || !isAbsolute(d)) return false;
+      const rel = relative(r, resolve(d));
+      return Boolean(rel) && outside(rel);
+    })
+    .join(delimiter);
+}
+
+/** The workspace folders a copied lockfile names (its packages outside node_modules), relative, each inside the folder; a few hundred at most. */
+function workspacesOf(dir: string): string[] {
+  let lock: { packages?: Record<string, unknown> };
+  try {
+    lock = JSON.parse(readFileSync(join(dir, existsIn(dir, "npm-shrinkwrap.json") ? "npm-shrinkwrap.json" : "package-lock.json"), "utf8"));
+  } catch {
+    return [];
+  }
+  const keys = lock && typeof lock.packages === "object" && lock.packages ? Object.keys(lock.packages) : [];
+  return keys.filter((k) => k && !/(?:^|\/)node_modules\//.test(k) && !isAbsolute(k) && !k.split(/[\\/]/).includes("..") && /^[\w@.\/-]+$/.test(k)).slice(0, 500);
+}
+const existsIn = (dir: string, f: string) => {
+  try {
+    return lstatSync(join(dir, f)).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/**
+  npm audit of a project's lockfile, kept from everything of the repository but the lockfile and package.json: those
+  (and its workspaces' package.json) alone are copied into a folder of their own, and npm runs there with an environment of nothing (a clean PATH, an empty
+  HOME, empty user and global configs, a cache of its own, no proxy, none of the engine's variables) against npm's own
+  registry. So a repository's .npmrc, which npm reads from the folder it runs in and fills with ${VARIABLES} from the
+  environment, never sends anything anywhere; nor can a node_modules/.bin/npm or a relative PATH entry run in its place.
+  --package-lock-only: nothing installed, nothing run. Null when npm isn't on that PATH. The folder goes after.
+*/
+export async function npmAudit(root: string, env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string } | null> {
+  const PATH = auditPath(env, root);
+  const npm = which("npm", { PATH, ...(process.platform === "win32" && env.PATHEXT ? { PATHEXT: env.PATHEXT } : {}) });
+  if (!npm || !isAbsolute(npm)) return null;
+  const box = mkdtempSync(join(tmpdir(), "liner-audit-"));
+  try {
+    const dir = join(box, "project");
+    const home = join(box, "home");
+    const cache = join(box, "cache");
+    // Two empty configs: npm won't load one file as both.
+    const user = join(box, "user.npmrc");
+    const global = join(box, "global.npmrc");
+    for (const d of [dir, home, cache]) mkdirSync(d);
+    for (const f of [user, global]) writeFileSync(f, "");
+    for (const f of ["package.json", "package-lock.json", "npm-shrinkwrap.json"]) {
+      try {
+        if (lstatSync(join(root, f)).isFile()) copyFileSync(join(root, f), join(dir, f));
+      } catch {
+        // not there
+      }
+    }
+    // A workspace's own package.json (the lockfile's packages that aren't under node_modules), so npm tells a package the
+    // project names itself from one brought in, as it does in the folder. Only package.json files, only inside the project.
+    for (const at of workspacesOf(dir)) {
+      const from = join(root, at, "package.json");
+      try {
+        if (!lstatSync(from).isFile() || !insideReal(root, from)) continue;
+        mkdirSync(join(dir, at), { recursive: true });
+        copyFileSync(from, join(dir, at, "package.json"));
+      } catch {
+        // not there
+      }
+    }
+    // npm looks up from where it runs for a package.json to call the project's root: one is there, so it never looks further.
+    try {
+      lstatSync(join(dir, "package.json"));
+    } catch {
+      writeFileSync(join(dir, "package.json"), "{}\n");
+    }
+    const kept: NodeJS.ProcessEnv = {};
+    for (const k of [...MANAGER_HOMES, ...(process.platform === "win32" ? WINDOWS_KEEP : [])]) if (env[k]) kept[k] = env[k];
+    const clean: NodeJS.ProcessEnv = {
+      ...kept,
+      PATH,
+      HOME: home,
+      ...(process.platform === "win32" ? { USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home, TEMP: box, TMP: box } : { TMPDIR: box }),
+      npm_config_userconfig: user,
+      npm_config_globalconfig: global,
+      npm_config_cache: cache,
+      npm_config_registry: audit.registry,
+      npm_config_update_notifier: "false",
+      npm_config_fund: "false",
+      npm_config_yes: "false",
+    };
+    return await run(npm, ["audit", "--json", "--package-lock-only", `--registry=${audit.registry}`], { cwd: dir, env: clean, timeout: AUDIT_MS });
+  } finally {
+    rmSync(box, { recursive: true, force: true });
+  }
 }
 
 const RULE_OF: Record<FreeCheckId, RegExp> = { secrets: /^secret\//, files: /^file\//, packages: /^npm\// };

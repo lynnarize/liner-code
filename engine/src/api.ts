@@ -27,7 +27,7 @@ import { providers, shownOf, syncProviders, titleFrom, type Runtime } from "./ru
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
 import { picture } from "./prflow.ts";
 import { uid, type Store } from "./store.ts";
-import { draftCheck } from "./precheck.ts";
+import { draftCheck, tasksOf } from "./precheck.ts";
 import { appearance, boot, devices, ghState, htmlPages, listeningPorts, pagePath, stopServers, prCreate, prFor, prList, prMerge, readFile, screenshot, type DeviceLogs, type Terminals } from "./surfaces.ts";
 import type { Launcher } from "./launch.ts";
 import type { Proxies } from "./proxy.ts";
@@ -1066,10 +1066,15 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         const sub = relative((await git(project.path, ["rev-parse", "--show-toplevel"])).stdout.trim(), realpathSync(project.path));
         tree = sub ? { path: join(top, sub), branch, root: top, made: false } : { path: top, branch, made: false };
       } else if (worktree && project.git) {
-        // A worktree of its own, so parallel sessions never edit the same files. A repository
-        // with no commits has nothing to check out, so the session stays in the folder instead.
+        // A worktree of its own, so parallel sessions never edit the same files. A repository with no
+        // commits (or a folder that isn't one any more) has nothing to check out, so the session stays in the folder instead.
         const [head, top] = await Promise.all([git(project.path, ["rev-parse", "--verify", "-q", "HEAD"]), git(project.path, ["rev-parse", "--show-toplevel"])]);
-        if (head.code !== 0 || top.code !== 0) {
+        // A Liner Security fix never works in the folder itself: its brief is words a scan or a report wrote.
+        if (top.code !== 0 && tag?.kind === "fix") throw new Error("A fix works in a worktree of its own, and this folder isn't a git repository.");
+        if (head.code !== 0 && tag?.kind === "fix") throw new Error("A fix works in a worktree of its own, and this repository has no commits yet, so none can be made. Commit once, then try Fix again.");
+        if (top.code !== 0) {
+          notice = "This project's folder isn't a git repository, so no worktree can be made. This session works in the project folder instead.";
+        } else if (head.code !== 0) {
           notice = "This project's repository has no commits yet, so a new worktree would be empty. This session works in the project folder instead.";
         } else {
           const branch = `${store.settings.branchPrefix.trim() || "liner/"}${tid.slice(3, 11)}`;
@@ -1835,9 +1840,12 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       the same tool, model, effort and access. A session's first message keeps the first task for itself, where it is; Home's
       draft starts them all. Each task goes as that session's first message.
     */
-    "precheck.split": async ({ projectId, threadId, tasks, agent, sidekick, model, effort, access, mode, tuning, review }) => {
+    "precheck.split": async ({ projectId, threadId, text, tasks, agent, sidekick, model, effort, access, mode, tuning, review }) => {
       const project = store.project(projectId);
-      const list = (Array.isArray(tasks) ? tasks : []).map((x) => String(x).trim()).filter(Boolean).slice(0, 6);
+      // The tasks are read again from the draft as it is now: words changed since the last check split as they now read, or not at all.
+      const read = typeof text === "string" ? tasksOf(text.trim()) : undefined;
+      if (read === null) throw new Error("The draft doesn't read as separate tasks any more, so it wasn't split.");
+      const list = (read ?? (Array.isArray(tasks) ? tasks : [])).map((x) => String(x).trim()).filter(Boolean).slice(0, 6);
       if (list.length < 2) throw new Error("There's nothing to split.");
       const here = threadId ? store.thread(threadId) : undefined;
       if (here && (here.turns > 0 || runtime.isRunning(here.id) || store.timeline(here.id).some((x) => x.kind === "user"))) throw new Error("Only a session's first message can be split.");

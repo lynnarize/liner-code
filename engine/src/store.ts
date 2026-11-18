@@ -375,9 +375,12 @@ export class Store {
   onUsage?: (r: UsageRecord) => void;
   /** A turn reported one of its tool's plan windows. */
   onWindow?: (provider: ProviderId, w: LimitWindow) => void;
+  /** Each record as it's logged, for the anonymous daily count (usage-ping.ts). */
+  counted?: (r: UsageRecord) => void;
   /** Every turn's tokens and cost, one line each, for the Usage page. */
   logUsage(r: UsageRecord) {
     appendFileSync(join(this.home, "usage.jsonl"), `${JSON.stringify(r)}\n`);
+    this.counted?.(r);
     this.onUsage?.(r);
   }
   /** usage.jsonl as read so far: its records, and how far into the file they go. Only what was added since is read next time. */

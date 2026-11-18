@@ -386,6 +386,17 @@ export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n ==
 export const codeProjects = (ps: Project[]) => ps.filter((p) => p.kind !== "design");
 /** The projects Code lists and starts sessions in: codeProjects without the folders Liner Security's Demo made for its sample (Project.demoFor). */
 export const listedProjects = (ps: Project[]) => codeProjects(ps).filter((p) => !p.demoFor);
+/**
+  The Demo's Sample project: the folder the engine makes for project.add "@sample", whose sessions the Demo works in
+  (agent "demo"), as Home and Setup know it. Code may list it while you try the Demo; Liner Security never does.
+*/
+export const isSampleProject = (p: Pick<Project, "path" | "agent">) => p.agent === "demo" || p.path === "@sample";
+/**
+  The projects Liner Security lists, picks and scans, as the engine's Security.projects reads them (no design on its own,
+  the Demo's stand-ins and the Sample project only while the Demo is shown): someone who added the Sample project
+  to try the app never sees it in Security.
+*/
+export const securityProjects = (ps: Project[], showDemo: boolean) => codeProjects(ps).filter((p) => (showDemo || !isSampleProject(p)) && (!p.demoFor || showDemo));
 /** Where a session begun from a design is, in words: "A design, on its own" or "A design in Sample project". */
 export const designWhere = (t: Thread, ps: Project[]) => {
   const p = ps.find((x) => x.id === t.projectId);

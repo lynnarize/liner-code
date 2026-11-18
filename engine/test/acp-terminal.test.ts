@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { acpProvider } from "../src/providers/acp.ts";
+import { acpProvider, plainOutput } from "../src/providers/acp.ts";
 import type { OpenOptions, ToolUpdate, TurnSink } from "../src/providers/types.ts";
 import type { ProviderInfo } from "../../contracts/src/index.ts";
 import { noLeaks } from "./leaks.ts";
@@ -148,4 +148,14 @@ test("acp terminal: a stray end for a call this turn never had makes no row", as
   await s.turn("hi", sink, live());
   s.close();
   assert.deepEqual(tools, []);
+});
+
+test("acp terminal: output is shown without its terminal codes, and a redrawn progress line as its last draw", () => {
+  assert.equal(plainOutput("\x1b[32m✓ passed\x1b[0m\r\nmake: done\n"), "✓ passed\nmake: done\n");
+  assert.equal(plainOutput("\x1b]0;title\x07\x1b[?25lhidden cursor\x1b[?25h"), "hidden cursor");
+  assert.equal(plainOutput("10%\r50%\r100%\nnext"), "100%\nnext");
+  assert.equal(plainOutput("plain text, no codes"), "plain text, no codes");
+  const t = performance.now();
+  plainOutput(`${"\x1b[".repeat(20_000)}${"\r".repeat(20_000)}x`);
+  assert.ok(performance.now() - t < 100);
 });

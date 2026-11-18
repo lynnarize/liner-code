@@ -61,7 +61,7 @@ export const bridge = {
     if (isNative()) void call("badge", { count }).catch(() => {});
   },
   /** The menu bar item: the sessions that work and the ones that need you; `running` also tells ⌘Q whether to ask first. */
-  status(s: { show: boolean; working: { id: string; title: string }[]; needs: { id: string; title: string; waiting: boolean }[]; running: number }) {
+  status(s: { show: boolean; working: { id: string; title: string }[]; needs: { id: string; title: string; waiting: boolean }[]; running: number; asking: string[] }) {
     if (isNative()) void call("status", s).catch(() => {});
   },
   reveal(path: string) {

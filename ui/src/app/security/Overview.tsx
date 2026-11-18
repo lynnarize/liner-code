@@ -6,17 +6,17 @@
   picked in the top row and kept in the face's store, so Findings reads the same scope. Everything is security.overview,
   asked again whenever the engine says Security changed. Builder U1.
 */
-import { useMemo, useState } from "react";
-import type { DismissReason, FreeCheckId, FreeCheckResult, SecondLookState, SecurityFinding, SecurityOverview, SeverityCounts } from "@contracts";
+import { useEffect, useMemo, useState } from "react";
+import type { DismissReason, FreeCheckId, FreeCheckResult, SecondLookState, SecurityFinding, SecurityOverview, SecurityProject, SeverityCounts } from "@contracts";
 import { DISMISS_LABEL, FREE_CHECK_LABEL, SEVERITIES, SEVERITY_LABEL, noSeverities } from "@contracts";
-import { useEngine } from "../engine";
+import { rpc, useEngine } from "../engine";
 import { I } from "../icons";
 import { plural, providerLabel } from "../model";
 import { Pop, Row } from "../ui";
 import { useSec } from "./data";
 import { OpenChart } from "./OpenChart";
 import { Card, Legend, PageTop, Parts, SevBar, SevMark, SevSplit, Tag, type Part } from "./parts";
-import { goSecurity, setSecurityScope, useSecurityScope } from "./store";
+import { addSecurityFolder, goSecurity, onSecurity, setSecurityScope, useSecurityProjects, useSecurityScope } from "./store";
 import { fixedAt, when } from "./when";
 import "./overview.css";
 
@@ -30,17 +30,33 @@ const REASON_MANY: Record<DismissReason, (n: number) => string> = { duplicate: (
 const blank = (days: number): SecurityOverview => ({ days, open: 0, openWeekAgo: 0, found: 0, scans: 0, fixed: 0, dismissed: 0, dismissReasons: {}, beingFixed: 0, fixThreads: [], series: [], bySeverity: noSeverities(), byLook: { none: 0, confirmed: 0, unconfirmed: 0 }, byProject: [], worst: [], checks: [] });
 
 export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () => void }) {
-  const scope = useSecurityScope();
-  const { data, error } = useSec("security.overview", { days: scope.days, ...(scope.projectId ? { projectId: scope.projectId } : {}) });
-  const { data: projects } = useSec("security.projects", {});
-  const { data: scans } = useSec("security.scans.list", scope.projectId ? { projectId: scope.projectId } : {}, ["scans"]);
+  const stored = useSecurityScope();
+  // The Demo's Sample project is never one of Security's (store.ts useSecurityProjects): left out of every list here, and
+  // never the project picked, so a scope left on it reads as All projects.
+  const { hidden } = useSecurityProjects();
+  const scope = hidden(stored.projectId) ? { ...stored, projectId: undefined } : stored;
+  const { data: whole, error } = useSec("security.overview", { days: scope.days, ...(scope.projectId ? { projectId: scope.projectId } : {}) });
+  const { data: everyOne } = useSec("security.projects", {});
+  const projects = useMemo(() => everyOne?.filter((p) => !hidden(p.projectId)) ?? null, [everyOne, hidden]);
+  // Across every project the engine still counts the Sample project in (its byProject lists it): its own overview is taken
+  // off the figures, so they add up to the rows shown. Once the engine leaves it out, nothing is asked or taken off.
+  const leftOut = !scope.projectId ? whole?.byProject.find((p) => hidden(p.projectId))?.projectId : undefined;
+  const out = useOverviewOf(scope.days, leftOut);
+  const data = useMemo(() => (!whole || !leftOut ? whole : out ? less(whole, out, projects ?? []) : null), [whole, leftOut, out, projects]);
+  const { data: allScans } = useSec("security.scans.list", scope.projectId ? { projectId: scope.projectId } : {}, ["scans"]);
+  const scans = useMemo(() => allScans?.filter((s) => !hidden(s.projectId)) ?? null, [allScans, hidden]);
   // A fixed finding's time is read from the finding itself (when.ts fixedAt), as its row in Findings reads it, so both agree.
-  const { data: fixedList } = useSec("security.findings.list", { ...(scope.projectId ? { projectId: scope.projectId } : {}), state: "fixed" }, ["findings"]);
-  const o = data ?? blank(scope.days);
+  const { data: fixedAll } = useSec("security.findings.list", { ...(scope.projectId ? { projectId: scope.projectId } : {}), state: "fixed" }, ["findings"]);
+  const fixedList = fixedAll?.filter((f) => !hidden(f.projectId));
+  const o = useMemo(() => {
+    const x = data ?? blank(scope.days);
+    return { ...x, byProject: x.byProject.filter((p) => !hidden(p.projectId)), worst: x.worst.filter((f) => !hidden(f.projectId)) };
+  }, [data, scope.days, hidden]);
   const lastFixed = fixedList?.length ? Math.max(...fixedList.map(fixedAt)) : o.lastFixedAt;
   const picked = projects?.find((p) => p.projectId === scope.projectId);
   // Nothing was ever scanned or checked anywhere (or in the project picked): say so and offer a scan, in place of empty boxes.
-  const none = projects !== null && data !== null && !(picked ? [picked] : projects).some((p) => p.lastScan || p.checks) && o.open === 0;
+  // With no project of yours at all (the Sample project never counts), the same, worded as adding one.
+  const none = projects !== null && data !== null && (!projects.length || (!(picked ? [picked] : projects).some((p) => p.lastScan || p.checks) && o.open === 0));
   // Only projects that were scanned (an agent's scan or the free checks) or have findings count here: a folder Liner Code
   // knows but never scanned is not news. Worst first, five at most, then "and N more".
   const scanned = (id: string) => {
@@ -83,7 +99,7 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
               <span>{error}</span>
             </div>
           ) : none ? (
-            <Nothing picked={picked?.name} projectId={scope.projectId} />
+            <Nothing picked={picked?.name} projectId={scope.projectId} noProject={!projects?.length} />
           ) : (
             <>
               <Figures o={o} lastFixed={lastFixed} />
@@ -139,6 +155,75 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
       </div>
     </div>
   );
+}
+
+/** One project's overview, asked only while `projectId` is set, and again (at most once in 150 ms) whenever Security changes. */
+function useOverviewOf(days: number, projectId: string | undefined): SecurityOverview | null {
+  const key = projectId ? `${days} ${projectId}` : "";
+  const [got, setGot] = useState<{ key: string; o: SecurityOverview } | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!projectId) return;
+    let live = true;
+    rpc("security.overview", { days, projectId }).then((o) => live && setGot({ key, o }), () => {});
+    return () => void (live = false);
+  }, [key, tick]);
+  useEffect(() => {
+    if (!projectId) return;
+    let soon = 0;
+    const off = onSecurity(() => void (soon ||= window.setTimeout(() => ((soon = 0), setTick((n) => n + 1)), 150)));
+    return () => (off(), clearTimeout(soon));
+  }, [projectId]);
+  return got?.key === key ? got.o : null;
+}
+
+/** The free checks' latest result for each check across `ps`, read as the engine reads it: one that found something says more. */
+function checksOf(ps: SecurityProject[]): FreeCheckResult[] {
+  const latest = new Map<FreeCheckId, FreeCheckResult>();
+  for (const p of ps) for (const r of p.checks?.results ?? []) {
+    const had = latest.get(r.check);
+    if (!had || (r.state === "found" && had.state !== "found") || (r.state === had.state && r.at > had.at)) latest.set(r.check, had && r.state === "found" && had.state === "found" ? { ...r, count: had.count + r.count } : r);
+  }
+  return [...latest.values()];
+}
+
+/** The overview across every project less one project's own (`out`): its counts taken off, day by day too; the checks read again from the projects kept. */
+function less(all: SecurityOverview, out: SecurityOverview, kept: SecurityProject[]): SecurityOverview {
+  const sub = (a = 0, b = 0) => Math.max(0, a - b);
+  const sev = (a: SeverityCounts, b: SeverityCounts) => Object.fromEntries(SEVERITIES.map((v) => [v, sub(a[v], b[v])])) as SeverityCounts;
+  const reasons = { ...all.dismissReasons };
+  for (const [k, n] of Object.entries(out.dismissReasons) as [DismissReason, number][]) reasons[k] = sub(reasons[k], n);
+  const theirs = new Map(out.series.map((d) => [d.day, d]));
+  const series = all.series.map((d) => {
+    const o = theirs.get(d.day);
+    if (!o) return d;
+    const scans = [...d.scans];
+    for (const x of o.scans) {
+      const i = scans.indexOf(x);
+      if (i >= 0) scans.splice(i, 1);
+    }
+    return { ...d, open: sub(d.open, o.open), found: sub(d.found, o.found), fixed: sub(d.fixed, o.fixed), dismissed: sub(d.dismissed, o.dismissed), scans };
+  });
+  const threads = new Set(out.fixThreads);
+  const fixed = sub(all.fixed, out.fixed);
+  return {
+    ...all,
+    open: sub(all.open, out.open),
+    openWeekAgo: sub(all.openWeekAgo, out.openWeekAgo),
+    found: sub(all.found, out.found),
+    scans: sub(all.scans, out.scans),
+    fixed,
+    lastFixedAt: fixed ? all.lastFixedAt : undefined,
+    dismissed: sub(all.dismissed, out.dismissed),
+    dismissReasons: reasons,
+    beingFixed: sub(all.beingFixed, out.beingFixed),
+    fixThreads: all.fixThreads.filter((t) => !threads.has(t)),
+    fixesReady: sub(all.fixesReady, out.fixesReady),
+    series,
+    bySeverity: sev(all.bySeverity, out.bySeverity),
+    byLook: { confirmed: sub(all.byLook.confirmed, out.byLook.confirmed), unconfirmed: sub(all.byLook.unconfirmed, out.byLook.unconfirmed), none: sub(all.byLook.none, out.byLook.none) },
+    checks: checksOf(kept),
+  };
 }
 
 /** The figures: open now as the one large number, then four counts for the period, each named above it. */
@@ -247,8 +332,24 @@ function CheckState({ r }: { r?: FreeCheckResult }) {
   return <span className="lo-stt">{r.note || (r.state === "skipped" ? "Not checked" : "Didn't run")}</span>;
 }
 
-/** Nothing scanned yet: say so, and offer the first scan. */
-function Nothing({ picked, projectId }: { picked?: string; projectId?: string }) {
+/** Nothing scanned yet: say so, and offer the first scan; with no project at all, the way to add one. */
+function Nothing({ picked, projectId, noProject }: { picked?: string; projectId?: string; noProject?: boolean }) {
+  const { hidden } = useSecurityProjects();
+  const addFolder = async () => {
+    const id = await addSecurityFolder(hidden);
+    if (id) goSecurity({ kind: "projects", projectId: id });
+  };
+  if (noProject)
+    return (
+      <div className="ls-card lo-empty">
+        <span className="ls-disc"><I.folder size={16} /></span>
+        <b>No project to scan yet</b>
+        <span>Add a folder you work on, then scan it. A scan reads your code for what someone could misuse; the free checks run on this Mac with no agent and cost nothing.</span>
+        <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => void addFolder()}>
+          Add a folder
+        </button>
+      </div>
+    );
   return (
     <div className="ls-card lo-empty">
       <span className="ls-disc"><I.shield size={16} /></span>

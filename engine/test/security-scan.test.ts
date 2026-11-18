@@ -262,7 +262,7 @@ test("scan: the threat model is written only on the person's yes, never over one
   answers.card = true;
   assert.match(textOf(await call(sec, "security_propose_model", { text: model }, at)), /Written: SECURITY\.md, with 2 areas/);
   const written = readFileSync(join(path, "SECURITY.md"), "utf8");
-  assert.match(written, /## Answers to the scan's questions\n\n- Can anyone sign up\? Anyone can sign up\. \(\d{4}-\d\d-\d\d\)\n- Should one person see another's alerts\? Yes, when shared\./);
+  assert.match(written, /## Answers to the scan's questions\n\n- Can anyone sign up\? The person answered: Anyone can sign up\. \(\d{4}-\d\d-\d\d\)\n- Should one person see another's alerts\? The person answered: Yes, when shared\./);
   assert.equal((cards[1] as { title: string }).title, "Write SECURITY.md");
   assert.deepEqual(sec.model("p").areas.map((x) => x.name), ["The API", "Saved alerts"]);
   // Liner's own write, told to the runtime so the scan's turn doesn't count it as a change.

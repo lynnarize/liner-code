@@ -15,6 +15,9 @@
   result are one finding. An alert whose instance carries no fingerprint goes by its alert number. A SARIF result with
   no fingerprint goes by its rule, its message and its start line together (normalKey), so two results of one rule in one
   file stay two findings; only such a result comes back as new when the lines above it move.
+
+  What a report or an alert says is stored masked, as everything Security keeps is (security-checks.ts maskFinding): its
+  message, its rule's words and the lines either side of its excerpt, where a secret it found would show.
 */
 import { lstatSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -22,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import type { BringInResult, FindingExplain, GitHubReach, NewFinding, SecurityFinding, Severity } from "../../contracts/src/index.ts";
 import { findingKey, normalKey } from "../../contracts/src/index.ts";
 import { outside, run, which } from "./exec.ts";
-import { excerptOf, SAFE_GIT } from "./security-checks.ts";
+import { excerptOf, maskText, SAFE_GIT } from "./security-checks.ts";
 import type { Security } from "./security.ts";
 
 /** A SARIF report bigger than this isn't read. */
@@ -331,7 +334,8 @@ export function parseSarif(textIn: string, root: string): { findings: NewFinding
       const explain: FindingExplain = { lead: ended(sentence(message) || id), wrong: clip(`${describe && describe !== message ? `${message}\n\n${describe}` : message}\n\nReported by ${tool}${id ? ` (${id})` : ""}.`, 1500), ...(ex ? { where: [ex] } : {}), ...(help ? { see: [`Read about the rule at ${help}.`] } : {}) };
       // A fingerprint is the instance (the tool's own, which holds when lines move); with none, its message and its start line
       // together, so two results of one rule in one file stay two findings.
-      const title = sentence(message) || id || "A problem the report names";
+      // Masked before its instance is made of it: a report's message can quote the secret it found (Security.add masks the rest).
+      const title = maskText(sentence(message) || id || "A problem the report names");
       const instance = fingerprintOf(res.partialFingerprints, res.fingerprints) ?? `t:${normalKey(title)}${line ? `@${line}` : ""}`;
       findings.push({ title, severity, source: "sarif", file, line, endLine, rule: id || undefined, instance, explain, ...(help ? { url: help } : {}) });
     }

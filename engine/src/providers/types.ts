@@ -263,8 +263,8 @@ export interface Provider {
   commands?(env: NodeJS.ProcessEnv, cwd: string): Promise<{ commands: CommandInfo[]; skills: SkillInfo[] }>;
   /** The signed-in plan's usage windows, when the tool can say. */
   limits?(env: NodeJS.ProcessEnv, scratch: string): Promise<Omit<ToolLimits, "provider" | "label" | "at"> | null>;
-  /** Asks the tool which models it runs, in a scratch folder. Slower than detect; the engine caches it. */
-  models?(env: NodeJS.ProcessEnv, scratch: string): Promise<ModelInfo[]>;
+  /** Asks the tool which models it runs, in a scratch folder. Slower than detect; the engine caches it. `signal`: give up, and end what was started for it. */
+  models?(env: NodeJS.ProcessEnv, scratch: string, signal?: AbortSignal): Promise<ModelInfo[]>;
   /**
     How long, in milliseconds, the tool waits on one call to Liner Code's tools before it gives up on it, when that's less
     than LINER_WAIT_SEC and Liner Code can't raise it (Hermes reads its limits from your own config). A sidekick's brief is

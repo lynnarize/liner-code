@@ -1863,6 +1863,26 @@ const nameOf = (p: string) => p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf
 const slashed = (p: string) => p.replace(/\\/g, "/");
 
 /**
+  One call at a time for a card's buttons (Try again, Carry on, Resume): while one is out they are disabled and a second
+  press does nothing, so two clicks never send it twice. A call that went through keeps them so until the session moves on
+  (`moved`: it no longer stands as the card says); one that failed lets them be pressed again.
+*/
+function useOneCall(moved: boolean): [boolean, (call: () => Promise<unknown>) => void] {
+  const [busy, setBusy] = useState(false);
+  const going = useRef(false);
+  useEffect(() => {
+    if (moved) (going.current = false), setBusy(false);
+  }, [moved]);
+  const send = (call: () => Promise<unknown>) => {
+    if (going.current) return;
+    going.current = true;
+    setBusy(true);
+    void call().catch((e) => ((going.current = false), setBusy(false), fail(e)));
+  };
+  return [busy, send];
+}
+
+/**
   A failure the provider gave a reason for: it refused the request, or is overloaded or down. The error reads as any
   other, then who and why in plain words. A refusal stops there: a refused request isn't sent to another tool, so it
   has no buttons (the engine refuses thread.carryOn after one too). An overload offers Try again, then Carry on with
@@ -1880,6 +1900,7 @@ function ErrorCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
   const vendor = p?.endpoint ? named : family === "claude" ? "Anthropic" : family === "codex" ? "OpenAI" : named;
   const again = it.why === "overloaded";
   const current = again && status === "error" && turns === it.turn;
+  const [busy, send] = useOneCall(status !== "error");
   return (
     <>
       <p className="lc-error" role="alert">
@@ -1889,12 +1910,12 @@ function ErrorCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
         <span className="lc-quiet">{again ? `${vendor} is overloaded right now` : `${who} refused this request`}</span>
         <span className="lc-grow" />
         {current && (
-          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" title="Send it to the same model again" onClick={() => void rpc("thread.tryAgain", { id: threadId }).catch(fail)}>
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" title="Send it to the same model again" disabled={busy} onClick={() => send(() => rpc("thread.tryAgain", { id: threadId }))}>
             Try again
           </button>
         )}
         {current && it.fallback && (
-          <button type="button" className="lc-btn" data-kind={again ? "plain" : "primary"} data-size="sm" title="Another tool takes over, with the conversation so far" onClick={() => void rpc("thread.carryOn", { id: threadId, model: it.fallback }).catch(fail)}>
+          <button type="button" className="lc-btn" data-kind={again ? "plain" : "primary"} data-size="sm" title="Another tool takes over, with the conversation so far" disabled={busy} onClick={() => send(() => rpc("thread.carryOn", { id: threadId, model: it.fallback }))}>
             Carry on with {modelLabel(it.fallback, providers)}
           </button>
         )}
@@ -1916,6 +1937,7 @@ function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
   const label = providers.find((p) => p.id === it.provider)?.label ?? it.provider;
   const open = !it.until || it.until <= now;
   const current = status === "limited";
+  const [busy, send] = useOneCall(!current);
   return (
     <div className="lc-limit" data-current={current || undefined}>
       <span className="lc-tile">
@@ -1929,12 +1951,12 @@ function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
         </small>
       </span>
       {current && it.fallback && (
-        <button type="button" className="lc-btn" data-kind={open ? "plain" : "primary"} data-size="sm" title="Another tool takes over, with the conversation so far" onClick={() => void rpc("thread.carryOn", { id: threadId, model: it.fallback }).catch(fail)}>
+        <button type="button" className="lc-btn" data-kind={open ? "plain" : "primary"} data-size="sm" title="Another tool takes over, with the conversation so far" disabled={busy} onClick={() => send(() => rpc("thread.carryOn", { id: threadId, model: it.fallback }))}>
           Carry on with {modelLabel(it.fallback, providers)}
         </button>
       )}
       {current && (
-        <button type="button" className="lc-btn" data-kind={open || !it.fallback ? "primary" : "plain"} data-size="sm" title={open ? "Carry on where it stopped" : "It may still be limited; try anyway"} onClick={() => void rpc("thread.send", { id: threadId, text: "Continue where you left off." }).catch(fail)}>
+        <button type="button" className="lc-btn" data-kind={open || !it.fallback ? "primary" : "plain"} data-size="sm" title={open ? "Carry on where it stopped" : "It may still be limited; try anyway"} disabled={busy} onClick={() => send(() => rpc("thread.send", { id: threadId, text: "Continue where you left off." }))}>
           Resume
         </button>
       )}

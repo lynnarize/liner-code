@@ -170,7 +170,7 @@ test("security demo: the scripted scan asks and waits, finds two, leaves lodash 
     assert.match(look.type === "look" ? (look.words ?? "") : "", /The first finding holds/);
     const end = lines[5];
     assert.ok(end.type === "done" && end.state === "done" && end.confirmed === 1);
-    assert.match(readFileSync(join(sample.path, "SECURITY.md"), "utf8"), /## Answers to the scan's questions\n\n- Can anyone sign up, or only people you invite\? Anyone can sign up\.[^\n]*\n- Should one person ever see another person's alerts\? No, never\./);
+    assert.match(readFileSync(join(sample.path, "SECURITY.md"), "utf8"), /## Answers to the scan's questions\n\n- Can anyone sign up, or only people you invite\? The person answered: Anyone can sign up\.[^\n]*\n- Should one person ever see another person's alerts\? The person answered: No, never\./);
     // The plan ticked off, as board F shows it.
     const plan = e.store.timeline(thread.id).findLast((x) => x.kind === "plan");
     assert.ok(plan?.kind === "plan" && plan.entries.length === 5 && plan.entries.every((x) => x.status === "completed"));
@@ -191,8 +191,10 @@ test("security demo: the scripted scan asks and waits, finds two, leaves lodash 
     assert.deepEqual(q2()!.questions.map((x) => x.question), ["May an alert's text hold links or formatting?"]);
     await e.call("question.answer", { threadId: again.thread.id, itemId: q2()!.id });
     await until(() => ["done", "stopped", "failed"].includes(e.sec.scan(again.scan.id).state), 60_000, "the second scan's end");
+    // Switched off, Security leaves the Sample project out too: someone who added it to try the app never sees it there.
     e.store.setSettings({ showDemo: false });
-    assert.deepEqual((await e.call<SecurityProject[]>("security.projects", {})).map((p) => p.name).sort(), ["Sample project", "mine"]);
+    assert.deepEqual((await e.call<SecurityProject[]>("security.projects", {})).map((p) => p.name).sort(), ["mine"]);
+    await assert.rejects(e.call("security.scan.options", { projectId: e.store.projects.find((p) => p.agent === "demo")!.id }), /Sample project/);
   } finally {
     await e.close();
   }

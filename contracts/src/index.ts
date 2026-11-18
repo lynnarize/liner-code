@@ -1122,6 +1122,8 @@ export type Settings = {
   precheckModel?: boolean;
   /** The agent is told which files changed between its turns, names and line counts only (engine/src/edits.ts): on unless false. */
   shareEdits?: boolean;
+  /** Once a day, anonymous counts go to linercode.dev: a random install id, the version, the OS and chip, and the tokens agents read and wrote (engine/src/usage-ping.ts). On unless false; off drops what was counted. */
+  usagePing?: boolean;
 };
 
 export type UpdateMode = "auto" | "notify" | "off";
@@ -1933,7 +1935,7 @@ export type Rpc = {
   "security.scan.stop": [{ id: string }, ScanRecord];
   "security.scans.list": [{ projectId?: string }, ScanRecord[]];
   "security.specialist.look": [Record<string, never>, SpecialistSource[]];
-  "precheck.split": [{ projectId: string; threadId?: string; tasks: string[]; agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; mode?: SessionMode; tuning?: PairTuning; review?: boolean }, { made: Thread[]; left: string[]; why?: string }];
+  "precheck.split": [{ projectId: string; threadId?: string; /** The draft as it is when Split is pressed: its tasks are read again from it (precheck.ts tasksOf). */ text?: string; tasks?: string[]; agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; mode?: SessionMode; tuning?: PairTuning; review?: boolean }, { made: Thread[]; left: string[]; why?: string }];
 };
 export type RpcMethod = keyof Rpc;
 export type RpcParams<M extends RpcMethod> = Rpc[M][0];

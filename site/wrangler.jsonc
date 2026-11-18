@@ -1,7 +1,7 @@
 // Cloudflare: the built site served as static assets by the Worker "liner-code", whose name
 // must match the one in the dashboard. Build settings there: root directory "site", build
 // "npm run build", deploy "npx wrangler deploy". Missing pages get dist/404.html.
-// Only /api/* runs worker/index.ts first (the promo); every other path is the static site.
+// Only /api/* runs worker/index.ts first (the promo and the usage counts); every other path is the static site.
 // The promo's settings are on the Worker in the dashboard: LINER_CODE_VOUCHERS and the secret
 // OPENCODE_GO_API_KEY (Settings > Variables and Secrets).
 {
@@ -14,5 +14,21 @@
     "not_found_handling": "404-page",
     "run_worker_first": ["/api/*"]
   },
+  // The app's anonymous usage counts (POST /api/usage, engine/src/usage-ping.ts), one data point per install per day:
+  //   index1 = the install id (a random UUID), blob1 = the id again, blob2 = app version, blob3 = os (mac, windows, linux),
+  //   blob4 = arch, blob5 = the day the app counted (YYYY-MM-DD, UTC), double1 = output tokens, double2 = input tokens
+  //   (cache reads in), each since that install's last ping. No address, headers or anything else is kept.
+  // Analytics Engine keeps points for three months. Ask it with the SQL API (an API token with Account Analytics Read):
+  //   curl https://api.cloudflare.com/client/v4/accounts/<account id>/analytics_engine/sql \
+  //     -H "Authorization: Bearer <token>" -d "<query>"
+  // People in the last 30 days:
+  //   SELECT count(DISTINCT index1) AS people FROM liner_usage WHERE timestamp > NOW() - INTERVAL '30' DAY
+  // Output tokens in the last 30 days (Analytics Engine may sample, so each point counts for _sample_interval of them):
+  //   SELECT sum(_sample_interval * double1) AS output_tokens FROM liner_usage WHERE timestamp > NOW() - INTERVAL '30' DAY
+  // People and output tokens by day:
+  //   SELECT blob5 AS day, count(DISTINCT index1) AS people, sum(_sample_interval * double1) AS output_tokens
+  //   FROM liner_usage WHERE timestamp > NOW() - INTERVAL '30' DAY GROUP BY day ORDER BY day
+  // The dataset is made by the first point written; the dashboard lists it under Workers & Pages > Analytics Engine.
+  "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "liner_usage" }],
   "observability": { "enabled": true }
 }

@@ -589,11 +589,17 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
 
   // One send at a time: a second Enter while the files are read, or while the first is on its way, does nothing.
   const sending = useRef(false);
+  // The box as it is now, for a send that waited on the check: what is in it after the wait is what goes.
+  const box = useRef({ text, files });
+  box.current = { text, files };
   const send = async (how = mode, way: SendHow = {}) => {
-    let t = text.trim();
-    if ((!t && !files.length) || sending.current) return;
+    if ((!text.trim() && !files.length) || sending.current) return;
     // Read by the check first unless one of its own actions sends it; Send pressed while it reads goes past it.
     if (!way.checked && !editing && !(await check.beforeSend())) return;
+    // The check can hold the send for seconds: a file attached meanwhile goes with it, and only the files sent leave the box.
+    const { text: said, files: sent } = box.current;
+    let t = said.trim();
+    if ((!t && !sent.length) || sending.current) return;
     // An edited queued message goes back in its place (T3 Code: chat/useQueuedRunEdit.ts). If the
     // turn ended and took it meanwhile, or files came along (a queued message holds only text), it
     // goes as a new message instead.
@@ -601,7 +607,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     if (edit) {
       setEditing(null);
       const still = queue.some((x) => x.id === edit.id);
-      if (still && !files.length) {
+      if (still && !sent.length) {
         // Edited, it is your own words now: what Liner wrote for you to read of it no longer says it.
         setQueue(queue.map((x) => (x.id === edit.id ? { ...x, text: t, shown: undefined } : x)));
         setText(edit.draft);
@@ -612,7 +618,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     }
     sending.current = true;
     // What was written, put back if the send fails, so nothing is lost.
-    const draft = { text, files, skills: new Map(skillsUsed.current) };
+    const draft = { text: said, files: sent, skills: new Map(skillsUsed.current) };
     let handed = false;
     try {
       // $skill in the text: the tool is told to use it, by name (and where it lives, when known).
@@ -620,20 +626,20 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       if (used.length) t = `${t}\n\n${used.map(([name, path]) => `Use the ${name} skill${path ? ` (${path})` : ""}.`).join("\n")}`;
       skillsUsed.current.clear();
       const from = document.activeElement;
-      const payload: Outgoing = { text: t || "Here are the files.", files: await Promise.all(files.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how, ...(way.once ? { once: way.once } : {}) };
+      const payload: Outgoing = { text: t || "Here are the files.", files: await Promise.all(sent.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how, ...(way.once ? { once: way.once } : {}) };
       setText(edit?.draft ?? "");
-      setFiles([]);
+      setFiles((cur) => cur.filter((f) => !sent.includes(f)));
       setMention(null);
       check.reset();
       handed = true;
       // The button pressed goes as the turn starts, and the keys would go with it.
       if (variant === "session" && (document.activeElement === from || document.activeElement === document.body)) field.current?.focus();
       // The check's "Start a new session" and split send it somewhere else.
-      await (way.to ? way.to(payload) : onSend(payload));
+      await (way.to ? way.to(payload, said.trim()) : onSend(payload));
     } catch (e) {
       // The draft comes back to try again, unless you've started a new one. Whoever sent it has said what went wrong.
       setText((cur) => (cur.trim() ? cur : draft.text));
-      setFiles((cur) => (cur.length ? cur : draft.files));
+      setFiles((cur) => [...draft.files.filter((f) => !cur.includes(f)), ...cur].slice(0, MAX_FILES));
       skillsUsed.current = draft.skills;
       if (!handed) toast.error(e instanceof Error ? e.message : String(e));
     } finally {

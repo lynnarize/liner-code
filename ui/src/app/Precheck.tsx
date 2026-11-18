@@ -20,8 +20,8 @@ import "./precheck.css";
 /** Opens a session, as the app's own lc:open-session does (Addon.tsx openSession), without bringing the add-on code along. */
 const openSession = (id: string) => window.dispatchEvent(new CustomEvent("lc:open-session", { detail: { id } }));
 
-/** How the composer sends for an action: the fast model for this message, somewhere else instead, or past the check. */
-export type SendHow = { once?: string; to?: (m: Outgoing) => Promise<void>; checked?: boolean };
+/** How the composer sends for an action: the fast model for this message, somewhere else instead (`said`: the box's own words, before skills were named), or past the check. */
+export type SendHow = { once?: string; to?: (m: Outgoing, said: string) => Promise<void>; checked?: boolean };
 
 type Env = {
   variant: "home" | "session";
@@ -32,7 +32,7 @@ type Env = {
   /** Nothing to check here: Workshop, a design's composer, a comparison being set up, a queued message being edited. */
   off: boolean;
   busy?: boolean;
-  /** Files attached: a split would leave them behind, so it isn't offered. */
+  /** Files attached: a split would leave them behind, so it isn't offered; nor in a folder without Git, where it can't make worktrees. */
   files: number;
   text: string;
   /** The composer's own send, with how (SendHow); `keep`, words put back in the box after it emptied (a split's unmade tasks). */
@@ -65,29 +65,31 @@ export function usePrecheck(env: Env) {
   memory.see(draft);
   const live = on && !off && !thread?.sideOf && !thread?.routine && thread?.mode !== "creator" && !thread?.design && project.kind !== "design";
 
-  // The words' rules, a moment after you stop typing. What they find is for these words only.
+  // The words' rules, a moment after you stop typing. What they find is for these words only: what was found for other words
+  // goes as they change, and a look that fails leaves nothing up, so a banner never speaks for words it didn't read.
   useEffect(() => {
-    if (!live || !draft || draft.startsWith("/") || (variant === "session" && busy)) {
-      setFound((f) => (f?.kind === "unrelated" && memory.readNow(draft) ? f : null));
-      return;
-    }
+    // Send's own finding stays while the words are the ones it read.
+    const stale = () => setFound((f) => (f?.kind === "unrelated" && memory.readNow(draft) ? f : null));
+    stale();
+    if (!live || !draft || draft.startsWith("/") || (variant === "session" && busy)) return;
     let gone = false;
     const t = setTimeout(() => {
       const ask = thread ? rpc("precheck.draft", { text: draft, threadId: thread.id }) : rpc("precheck.draft", { text: draft, projectId: project.id });
       void ask.then(
         (p) => {
           if (gone) return;
-          // Send's own finding stays while the words are the ones it read.
-          setFound((f) => (f?.kind === "unrelated" && memory.readNow(draft) ? f : p && !(p.kind === "split" && files > 0) ? memory.shown(p) : null));
+          setFound((f) => (f?.kind === "unrelated" && memory.readNow(draft) ? f : p && !(p.kind === "split" && (files > 0 || !project.git)) ? memory.shown(p) : null));
         },
-        () => {},
+        () => {
+          if (!gone) stale();
+        },
       );
     }, QUIET_MS);
     return () => {
       gone = true;
       clearTimeout(t);
     };
-  }, [draft, live, busy, files, thread?.id, project.id, variant]);
+  }, [draft, live, busy, files, thread?.id, project.id, project.git, variant]);
 
   /**
     On Send: true lets it go. A session's message with nothing running is read by the Send check first (the model may be
@@ -130,17 +132,34 @@ export function usePrecheck(env: Env) {
     setFound(null);
   };
 
+  /** Says what went wrong and passes it on, so the composer puts the draft back (it says nothing itself once the draft is handed over). */
+  const told = (e: unknown): never => {
+    toast.error(e instanceof Error ? e.message : String(e));
+    throw e;
+  };
+
   /** "Start a new session": one like this one (its tool, model, effort, access, mode), with the draft as its first message. */
   const elsewhere = async (m: Outgoing) => {
     if (!thread) return;
-    const t = await rpc("thread.create", { projectId: project.id, agent: thread.agent, sidekick: thread.sidekick, model: thread.model, effort: thread.effort, access: thread.access, review: thread.review, mode: thread.mode, ...(thread.sidekick && thread.tuning ? { tuning: thread.tuning } : {}), worktree: Boolean(worktrees && project.git) });
-    await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
+    let t: Thread;
+    try {
+      t = await rpc("thread.create", { projectId: project.id, agent: thread.agent, sidekick: thread.sidekick, model: thread.model, effort: thread.effort, access: thread.access, review: thread.review, mode: thread.mode, ...(thread.sidekick && thread.tuning ? { tuning: thread.tuning } : {}), worktree: Boolean(worktrees && project.git) });
+      await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
+    } catch (e) {
+      return told(e);
+    }
     openSession(t.id);
   };
 
-  /** "Split into N sessions": one session per task, each in a worktree of its own from the same commit (engine: precheck.split). */
-  const split = async (tasks: string[]) => {
-    const { made, left, why } = await rpc("precheck.split", { projectId: project.id, threadId: variant === "session" ? thread?.id : undefined, tasks, agent: settings.agent, sidekick: settings.sidekick, model: settings.model, effort: settings.effort, access: settings.access, mode: env.mode ?? thread?.mode, ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), review: settings.review });
+  /** "Split into N sessions": one session per task, each in a worktree of its own from the same commit (engine: precheck.split), the tasks read from the box's words as they are now. */
+  const split = async (text: string) => {
+    let r: { made: Thread[]; left: string[]; why?: string };
+    try {
+      r = await rpc("precheck.split", { projectId: project.id, threadId: variant === "session" ? thread?.id : undefined, text, agent: settings.agent, sidekick: settings.sidekick, model: settings.model, effort: settings.effort, access: settings.access, mode: env.mode ?? thread?.mode, ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), review: settings.review });
+    } catch (e) {
+      return told(e);
+    }
+    const { made, left, why } = r;
     const first = made[0];
     // Some didn't start: the box keeps only those tasks, so sending again doesn't start the others twice.
     if (left.length) {
@@ -158,7 +177,7 @@ export function usePrecheck(env: Env) {
     reset();
     if (p.kind === "heavy" && p.model) env.send({ once: p.model, checked: true });
     else if (p.kind === "unrelated") env.send({ to: elsewhere, checked: true });
-    else if (p.kind === "split" && p.tasks) env.send({ to: () => split(p.tasks!), checked: true });
+    else if (p.kind === "split" && p.tasks) env.send({ to: (_m, said) => split(said), checked: true });
   };
 
   const row: ReactNode = holding ? (

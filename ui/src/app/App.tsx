@@ -2,7 +2,7 @@
   Liner Code. The window is one ground: the sidebar beside Home, a session or Usage, with
   nothing drawn between them. ⌘K reaches everything; the shell's menu bar sends the same commands.
 */
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentProfile, PanelPlace, RoutineRun, SessionMode } from "@contracts";
 import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
@@ -18,9 +18,9 @@ import { Session, showAppTab, showBelow } from "./Session";
 import { applyLook, entering, readLook } from "./look";
 import { useSteady } from "./ui";
 import { needsYou, Sidebar } from "./Sidebar";
-import { early } from "./early";
+import { early, lazyAgain } from "./early";
 // The builder brings Liner's workflow canvas; it loads when you first edit a routine.
-const RoutineBuilder = lazy(() => import("./RoutineBuilder").then((m) => ({ default: m.RoutineBuilder })));
+const RoutineBuilder = lazyAgain(() => import("./RoutineBuilder").then((m) => m.RoutineBuilder));
 // Settings, Usage and the Wall load once the app has started and is idle (App, below): early.ts.
 const SettingsScreen = early(() => import("./Settings").then((m) => m.Settings));
 const UsageScreen = early(() => import("./Usage").then((m) => m.Usage));
@@ -32,11 +32,11 @@ const AddonsPage = AddonsScreen.View;
 const AgentScreen = early(() => import("./AgentDialog").then((m) => m.AgentDialog));
 const AgentDialog = AgentScreen.View;
 // The Add-ons page shows Settings › Add-ons' own list.
-const Setup = lazy(() => import("./Setup").then((m) => ({ default: m.Setup })));
+const Setup = lazyAgain(() => import("./Setup").then((m) => m.Setup));
 const Usage = UsageScreen.View;
 const Wall = WallScreen.View;
-const RoutinesPage = lazy(() => import("./Routines").then((m) => ({ default: m.RoutinesPage })));
-const Compare = lazy(() => import("./Compare").then((m) => ({ default: m.Compare })));
+const RoutinesPage = lazyAgain(() => import("./Routines").then((m) => m.RoutinesPage));
+const Compare = lazyAgain(() => import("./Compare").then((m) => m.Compare));
 import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
 import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
@@ -48,18 +48,18 @@ import { HiddenBrowsers } from "./Browser";
 import { is, matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 import { currentTab, faceKept, getFace, HOME_TAB, openTab as openDesignTab, setFace, showTab, tabKey, toggleFace, useFace, useTabs } from "./face";
 // Liner Design's store and sidebar body load with the face, never for someone who stays in Code.
-const DesignSide = lazy(() => import("./design/Layers").then((m) => ({ default: m.DesignSide })));
+const DesignSide = lazyAgain(() => import("./design/Layers").then((m) => m.DesignSide));
 // Liner Design's face: its tabs, Design Home and the canvas load the first time the window shows them.
-const DesignShell = lazy(() => import("./design/Shell").then((m) => ({ default: m.DesignShell })));
-const OpenDesigns = lazy(() => import("./design/Tabs").then((m) => ({ default: m.OpenDesigns })));
-const DesignFiles = lazy(() => import("./design/DesignHome").then((m) => ({ default: m.DesignFiles })));
+const DesignShell = lazyAgain(() => import("./design/Shell").then((m) => m.DesignShell));
+const OpenDesigns = lazyAgain(() => import("./design/Tabs").then((m) => m.OpenDesigns));
+const DesignFiles = lazyAgain(() => import("./design/DesignHome").then((m) => m.DesignFiles));
 /** Liner Design's session helpers, loaded only when the Design face is (or is about to be) up. */
 const designSession = () => import("./design/session");
 // Its first-open sheet, over whichever of the two shows.
 // Liner Security's face and its sidebar body: loaded the first time the window shows Security, never for someone who doesn't.
-const SecurityShell = lazy(() => import("./security/Shell").then((m) => ({ default: m.SecurityShell })));
-const SecuritySide = lazy(() => import("./security/Side").then((m) => ({ default: m.SecuritySide })));
-const DesignIntro = lazy(() => import("./design/Intro").then((m) => ({ default: m.DesignIntro })));
+const SecurityShell = lazyAgain(() => import("./security/Shell").then((m) => m.SecurityShell));
+const SecuritySide = lazyAgain(() => import("./security/Side").then((m) => m.SecuritySide));
+const DesignIntro = lazyAgain(() => import("./design/Intro").then((m) => m.DesignIntro));
 import * as os from "./os";
 
 /** `wall` on a session: opened from the Wall, so its header has the way back and Esc goes there. */
@@ -364,6 +364,8 @@ export function App() {
     // Every turn going, routines' and side chats' too: ⌘Q asks first while there are any.
     // Agents in the background count: quitting ends them.
     running: [...threads, ...sides].filter((t) => !t.archived && (t.status === "running" || t.agentsAtWork)).length,
+    // Every session waiting on you, the same ones: ⌘Q asks first for those whose request still holds a turn open (the shell looks).
+    asking: [...threads, ...sides].filter((t) => !t.archived && t.status === "waiting" && !t.agentsAtWork).map((t) => t.id),
   });
   useEffect(() => bridge.status(JSON.parse(traySay)), [traySay]);
   useEffect(() => {
@@ -823,9 +825,11 @@ export function App() {
   if (!onboarded)
     return (
       <>
-        <Suspense fallback={<Boot label="Opening" still />}>
-          <Setup onDone={() => setView({ kind: "home" })} />
-        </Suspense>
+        <Boundary label="Setup" place="page">
+          <Suspense fallback={<Boot label="Opening" still />}>
+            <Setup onDone={() => setView({ kind: "home" })} />
+          </Suspense>
+        </Boundary>
         <Toaster className="lc-toaster" />
       </>
     );
@@ -835,9 +839,12 @@ export function App() {
       {still.hidden}
       {still.scene}
       {settings ? (
-        <Suspense fallback={null}>
-          <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} />
-        </Suspense>
+        // Its own code loads apart (early.ts): one that didn't load says so in its place, with Try again and Close.
+        <Boundary label="Settings" quiet place="page" onClose={closeSettings}>
+          <Suspense fallback={null}>
+            <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} />
+          </Suspense>
+        </Boundary>
       ) : (
         <>
           <div ref={side} className="lc-side" inert={!sidebar || undefined}>
@@ -858,9 +865,11 @@ export function App() {
                 ) : face !== "design" ? undefined : (
                 <>
                 {/* Your places and the open designs first, as Code lists its sessions; then this design's lean, pages and layers, or every design on Design Home. */}
-                <Suspense fallback={null}>
-                  <OpenDesigns onSearch={() => (setBesideOf(null), setMenu(true))} />
-                </Suspense>
+                <Boundary label="The open designs" quiet>
+                  <Suspense fallback={null}>
+                    <OpenDesigns onSearch={() => (setBesideOf(null), setMenu(true))} />
+                  </Suspense>
+                </Boundary>
                 {designTab && designProject ? (
                   <Boundary label="Layers" quiet>
                     <Suspense fallback={null}>
@@ -868,9 +877,11 @@ export function App() {
                     </Suspense>
                   </Boundary>
                 ) : (
-                  <Suspense fallback={null}>
-                    <DesignFiles />
-                  </Suspense>
+                  <Boundary label="Designs" quiet>
+                    <Suspense fallback={null}>
+                      <DesignFiles />
+                    </Suspense>
+                  </Boundary>
                 )}
                 </>
                 )
@@ -879,6 +890,8 @@ export function App() {
           </div>
           <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             {still.backdrop}
+            {/* A page or session whose code didn't load (or that broke) says so in its place, and the sidebar goes on; another page tries again. */}
+            <Boundary label={view.kind === "session" ? "This session" : "This page"} quiet place="page" resetKey={`${face}:${view.kind}:${view.kind === "session" ? view.id : ""}`}>
             <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening</span></div>}>
             {face === "security" && (view.kind === "home" || view.kind === "session") ? (
               // Liner Security: its Overview, Findings, Projects, Start a scan, or a scan's session. A fault in it stays in it.
@@ -948,11 +961,14 @@ export function App() {
               />
             )}
             </Suspense>
+            </Boundary>
           </main>
           {face === "design" && (view.kind === "home" || (view.kind === "session" && current)) && (
+            <Boundary label="Liner Design's introduction" shown={false}>
             <Suspense fallback={null}>
               <DesignIntro agent={view.kind === "session" && current ? agentOf((here ?? current).agent, agents, providers).name : undefined} />
             </Suspense>
+            </Boundary>
           )}
         </>
       )}
@@ -964,9 +980,12 @@ export function App() {
       <CommandMenu open={menu} onOpenChange={setMenu} items={besideOf === null ? commands : besidePicks} hotkey={null} placeholder={besideOf === null ? "Search sessions, projects and commands" : "Find a session to open beside it"} />
       {/* Loaded the first time it opens (or at idle before), then kept, so it closes as it always has. */}
       {agentEver.current && (
-        <Suspense fallback={null}>
-          <AgentDialog open={agentDialog.open} agent={agentDialog.agent} onClose={() => setAgentDialog({ open: false })} />
-        </Suspense>
+        // Its code loads apart: one that didn't load says so over the window while it's asked for, never takes the window with it.
+        <Boundary label="The agent dialog" quiet place="float" shown={agentDialog.open} onClose={() => setAgentDialog({ open: false })}>
+          <Suspense fallback={null}>
+            <AgentDialog open={agentDialog.open} agent={agentDialog.agent} onClose={() => setAgentDialog({ open: false })} />
+          </Suspense>
+        </Boundary>
       )}
       {still.host}
       <Toaster className="lc-toaster" />

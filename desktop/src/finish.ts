@@ -49,6 +49,8 @@ export class QuitWhenDone {
   private readonly watched = new Set<string>();
   /** Waiting sessions already looked at for an open request, either way. */
   private readonly checked = new Set<string>();
+  /** Waiting sessions whose timeline didn't come in time: held, as if their request were open, and looked at again next time. */
+  private readonly unsure = new Set<string>();
   /** Sessions the notice "needs you before Liner Code can quit" was due for, once each, and when it went out. */
   private readonly told = new Map<string, number>();
   /** When the page last sent a notice about a session (its own "needs you"). */
@@ -86,7 +88,13 @@ export class QuitWhenDone {
     return threads.filter((t) => !t.archived && t.status === "waiting" && !this.watched.has(t.id) && !this.checked.has(t.id)).map((t) => t.id);
   }
 
-  mark(id: string, open: boolean) {
+  /** What a waiting session's timeline said: a request open or not, or undefined when it couldn't be read (held until it can). */
+  mark(id: string, open: boolean | undefined) {
+    if (open === undefined) {
+      this.unsure.add(id);
+      return;
+    }
+    this.unsure.delete(id);
     this.checked.add(id);
     if (open) this.watched.add(id);
   }
@@ -108,11 +116,12 @@ export class QuitWhenDone {
     const working = live.filter((t) => t.status === "running" || (t.agentsAtWork ?? 0) > 0);
     for (const t of working) this.watched.add(t.id);
     const busy = new Set(working.map((t) => t.id));
-    const waiting = live.filter((t) => t.status === "waiting" && !busy.has(t.id) && this.watched.has(t.id));
-    const tell = waiting.filter((t) => !this.told.has(t.id) && now - (this.heardAt.get(t.id) ?? -Infinity) > HEARD_MS);
+    const waiting = live.filter((t) => t.status === "waiting" && !busy.has(t.id) && (this.watched.has(t.id) || this.unsure.has(t.id)));
+    // Told of only once it's known to wait on you: one whose timeline didn't come in time is held, not told of.
+    const tell = waiting.filter((t) => this.watched.has(t.id) && !this.told.has(t.id) && now - (this.heardAt.get(t.id) ?? -Infinity) > HEARD_MS);
     for (const t of tell) this.told.set(t.id, now);
     // One the page told of is done with too: it isn't told again later.
-    for (const t of waiting) if (!this.told.has(t.id)) this.told.set(t.id, -Infinity);
+    for (const t of waiting) if (this.watched.has(t.id) && !this.told.has(t.id)) this.told.set(t.id, -Infinity);
     const pick = (t: Live) => ({ id: t.id, title: t.title });
     const left = { working: working.map(pick), waiting: waiting.map(pick) };
     if (working.length || waiting.length) {
@@ -122,6 +131,24 @@ export class QuitWhenDone {
     this.quietSince ??= now;
     return { left, quit: now - this.quietSince >= this.settle, tell: [] };
   }
+}
+
+/**
+  How many of the sessions that wait on you (status "waiting") would lose a live turn to a quit: those whose timeline has a
+  request open, and those whose timeline didn't come (`items` failed or timed out), since they may well. ⌘Q asks first
+  for these as for working ones (main.ts).
+*/
+export async function heldOnYou(ids: string[], items: (id: string) => Promise<unknown>) {
+  const open = await Promise.all(ids.map((id) => items(id).then(openAsk, () => true)));
+  return open.filter(Boolean).length;
+}
+
+/** ⌘Q's question while sessions work (`working`) or wait on you with a live request (`held`). */
+export function quitQuestion(working: number, held: number) {
+  const n = working + held;
+  if (!held) return n === 1 ? "A session is still working. Quit anyway?" : `${n} sessions are still working. Quit anyway?`;
+  if (!working) return held === 1 ? "A session is waiting on you. Quit anyway?" : `${held} sessions are waiting on you. Quit anyway?`;
+  return `${working} ${working === 1 ? "session is" : "sessions are"} still working and ${held} ${held === 1 ? "is" : "are"} waiting on you. Quit anyway?`;
 }
 
 /** The menu bar item's first line while the app waits to quit. */

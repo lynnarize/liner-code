@@ -10,7 +10,7 @@
   Everything it offers comes from the engine (security.scan.options): the cost lines, the models found, the defaults.
   With ?ls-mock (or ?ls-mock=c2) in the dev URL it shows the mockup's words over them (scan-mock.ts).
 */
-import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { ScanDepth, ScanOptions, ScanReader, SpecialistSource } from "@contracts";
 import { reviewerOf, sealable, splitModel } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
@@ -18,11 +18,11 @@ import { bridge } from "../bridge";
 import { rpc, useEngine } from "../engine";
 import { I, ModelMark, Spinner } from "../icons";
 import { ModelPicker, ModelPop } from "../Models";
-import { agentOf, codeProjects, markOf, modelLabel, plural, toolMarkOf } from "../model";
+import { agentOf, markOf, modelLabel, plural, toolMarkOf } from "../model";
 import { Pop, Row } from "../ui";
 import { OnOff, PageTop, PickTile, Tag } from "./parts";
 import { mockChoices, mockMode } from "./scan-mock";
-import { goSecurity, getSecurityScope, useSecurity } from "./store";
+import { addSecurityFolder, goSecurity, getSecurityScope, useSecurity, useSecurityProjects } from "./store";
 import "./scan.css";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -32,7 +32,8 @@ const STOPS = [5, 10, 15, 30, 60];
 const dayOf = (at: number) => new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
 export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean; onSidebar: () => void; /** The project it starts in (Projects' Scan); the scope's, else the first, when unset. */ projectId?: string }) {
-  const projects = codeProjects(useEngine((s) => s.projects));
+  // Never the Demo's Sample project (store.ts useSecurityProjects): not offered, and not scanned.
+  const { list: projects, hidden } = useSecurityProjects();
   const providers = useEngine((s) => s.providers);
   const agents = useEngine((s) => s.agents);
   const settings = useEngine((s) => s.settings);
@@ -55,6 +56,9 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
   const [looking, setLooking] = useState(false);
   const [lookedAt, setLookedAt] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
+  // Set as start() begins and cleared when it ends, so a second press (Enter held, or pressed again in Look at first) can't
+  // slip past before React draws the button as Starting.
+  const going = useRef(false);
   // What the engine offers as the start, once per project.
   const [readFor, setReadFor] = useState<string | null>(null);
   useEffect(() => {
@@ -78,14 +82,8 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
   const look = lookBy ?? autoLook ?? undefined;
 
   const addFolder = async () => {
-    const path = await bridge.pickFolder();
-    if (!path) return;
-    try {
-      const p = await rpc("security.project.add", { path });
-      setPicked(p.projectId);
-    } catch (e) {
-      fail(e);
-    }
+    const id = await addSecurityFolder(hidden);
+    if (id) setPicked(id);
   };
 
   if (!project)
@@ -141,8 +139,11 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
     else toast("No threat model yet", { description: `The scan proposes ${tm.file} and asks you before it writes it.` });
   };
 
+  // Whether Start the scan can be pressed: Enter in Look at first asks the same, so it never starts what the button wouldn't.
+  const ready = Boolean(choices) && !starting && !(depth !== "checks" && who === "own" && !agent);
   const start = async () => {
-    if (!choices) return;
+    if (!choices || !ready || going.current) return;
+    going.current = true;
     const reader: ScanReader =
       who === "specialist" && src
         ? // Your own tool reads for the security model only when it too can run sealed (Claude Code); else the model reads alone.
@@ -175,6 +176,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
       }
       fail(e);
     } finally {
+      going.current = false;
       setStarting(false);
     }
   };
@@ -383,14 +385,14 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
             </div>
             <label className="lsc-kvr">
               <span className="lsc-k">Look at first</span>
-              <input className="lsc-field" value={first} maxLength={400} placeholder="Optional. For example: the new alerts API, or anything that takes a file from a visitor" onChange={(e) => setFirst(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void start()} />
+              <input className="lsc-field" value={first} maxLength={400} placeholder="Optional. For example: the new alerts API, or anything that takes a file from a visitor" onChange={(e) => setFirst(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && !e.repeat && (e.preventDefault(), void start())} />
             </label>
             </>
             )}
           </div>
 
           <div className="lsc-go">
-            <button type="button" className="lc-btn" data-kind="ink" disabled={!choices || starting || (depth !== "checks" && who === "own" && !agent)} onClick={() => void start()}>
+            <button type="button" className="lc-btn" data-kind="ink" disabled={!ready} onClick={() => void start()}>
               {starting ? "Starting" : depth === "checks" ? "Run the free checks" : "Start the scan"}
             </button>
             <span className="lsc-quiet">{depth === "checks" ? "On this Mac, in a few seconds. What they find lands on Findings." : "Findings appear as it works. Code and Design stay free to use."}</span>

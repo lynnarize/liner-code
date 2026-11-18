@@ -10,13 +10,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScanRecord, SecurityFinding, SecurityProject } from "@contracts";
 import { SEVERITIES } from "@contracts";
 import { bridge } from "../bridge";
-import { rpc, useEngine } from "../engine";
+import { useEngine } from "../engine";
 import { I, ModelMark } from "../icons";
 import { modelLabel, plural, providerLabel, shortName, toolMarkOf } from "../model";
-import { toast } from "@liner/components/toast/toast";
 import { useSec } from "./data";
 import { CountTabs, PageTop, SevBar } from "./parts";
-import { goSecurity } from "./store";
+import { addSecurityFolder, goSecurity, useSecurityProjects } from "./store";
 import { shortPath, when, whenShort } from "./when";
 import "./overview.css";
 
@@ -27,7 +26,10 @@ const DEPTH_SHORT = { project: "The whole project", branch: "This branch", check
 const LAST_SHORT = { project: "Whole project", branch: "This branch", checks: "Free checks" } as const;
 
 export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; onSidebar: () => void; /** The card open, when one is. */ projectId?: string }) {
-  const { data, error, reload } = useSec("security.projects", {});
+  const { data: everyOne, error, reload } = useSec("security.projects", {});
+  // Never the Demo's Sample project (store.ts useSecurityProjects).
+  const { hidden } = useSecurityProjects();
+  const data = useMemo(() => everyOne?.filter((p) => !hidden(p.projectId)) ?? null, [everyOne, hidden]);
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null | undefined>(projectId);
@@ -45,16 +47,11 @@ export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; 
   const rows = list.filter((p) => (tab === "all" || (tab === "open" ? p.open > 0 : neverScanned(p))) && (!q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)));
 
   const add = async () => {
-    const path = await bridge.pickFolder();
-    if (!path) return;
-    try {
-      const p = await rpc("security.project.add", { path });
-      reload();
-      setTab("all");
-      setOpen(p.projectId);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
+    const id = await addSecurityFolder(hidden);
+    if (!id) return;
+    reload();
+    setTab("all");
+    setOpen(id);
   };
 
   return (

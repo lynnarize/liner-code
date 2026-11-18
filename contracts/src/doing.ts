@@ -87,15 +87,21 @@ export function toolNameOf(tool: string) {
 }
 /** One line, no control characters, no "…" or full stop at the end. */
 const oneLine = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+/** Without the full stops and "…" at its end, walked from the end: an end-anchored regex tries every run of dots it meets, slow on thousands of them. */
+const noDots = (s: string) => {
+  let i = s.length;
+  while (i > 0 && (s[i - 1] === "." || s[i - 1] === "…")) i--;
+  return s.slice(0, i);
+};
 /** At most DOING_MAX characters, cut at a word with nothing put after it, and no full stop or "…" at the end. */
 export function cutDoing(text: string) {
-  let s = oneLine(text).replace(/(?:\.{3}|…|\.)+$/, "").trim();
+  let s = noDots(oneLine(text)).trim();
   if (s.length > DOING_MAX) {
     const cut = s.slice(0, DOING_MAX + 1);
     const at = cut.lastIndexOf(" ");
     s = (at > 0 ? cut.slice(0, at) : s.slice(0, DOING_MAX)).replace(/[\s,;:·/–-]+$/, "");
   }
-  return s.replace(/(?:\.{3}|…|\.)+$/, "").trim();
+  return noDots(s).trim();
 }
 /**
   A verb and what it touches. Past the line, a name of several words is cut at a word ("Drawing Phone / Week view with

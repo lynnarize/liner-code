@@ -120,11 +120,20 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
     keepAt(q.id, s.at);
     if (!mock && JSON.stringify(s.answers) !== JSON.stringify(qState.answers)) void rpc("question.partial", { threadId: thread.id, itemId: q.id, answers: s.answers }).catch(() => {});
   };
+  // Sent once per question item: a double-click or two quick keys on the last answer (or Skip, or Enter) would send it twice.
+  const answered = useRef<string | null>(null);
   const answer = (answers: Record<string, string>) => {
     if (!q) return;
     if (import.meta.env.DEV && mock) return setMock(mockScan("e", thread.id, thread.agent));
+    if (answered.current === q.id) return;
+    answered.current = q.id;
+    const id = q.id;
     const given = Object.keys(answers).length > 0;
-    void rpc("question.answer", { threadId: thread.id, itemId: q.id, ...(given ? { answers } : {}) }).catch(fail);
+    void rpc("question.answer", { threadId: thread.id, itemId: id, ...(given ? { answers } : {}) }).catch((e) => {
+      // Not taken: it can be answered again.
+      if (answered.current === id) answered.current = null;
+      fail(e);
+    });
   };
   const asking = useDockAsk(thread, coder.name);
 
@@ -215,6 +224,11 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
   const send = async (m: Outgoing) => {
     // A question up: what you write is your own answer to it, not a message; unless you were already writing when it came.
     if (q && !writing) {
+      // An answer is words only: files sent now stay in the box (the Composer puts back what a send throws on), to go once the questions are done.
+      if (m.files.length) {
+        toast("Files can't go as an answer", { description: "They're still in the box: answer or skip the question, then send them." });
+        throw new Error("files with an answer");
+      }
       const cur = q.questions[Math.min(qState.at, q.questions.length - 1)];
       if (cur) setQState(onward(q, qState, { ...qState.answers, [cur.question]: m.text.trim() }, answer));
       return;

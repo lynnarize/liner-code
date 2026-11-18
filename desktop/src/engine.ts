@@ -113,6 +113,16 @@ export class Engine {
     child?.stdin?.end();
     if (process.platform !== "win32" || !child || child.exitCode !== null || child.signalCode !== null) {
       child?.kill("SIGTERM");
+      // An engine that's stuck (hung, or stopped) can't run its own SIGTERM or stdin handlers, and the app
+      // is gone by then: a detached reaper ends it after ten seconds if it is still that engine.
+      const pid = child && child.exitCode === null && child.signalCode === null ? child.pid : undefined;
+      if (pid) {
+        try {
+          spawn("/bin/sh", ["-c", `sleep 10; ps -p ${pid} -o command= | grep -q 'engine/src/main' && kill -9 ${pid}`], { detached: true, stdio: "ignore" }).unref();
+        } catch {
+          // No shell to reap with: the engine is left to end by itself, as before.
+        }
+      }
       return Promise.resolve();
     }
     return new Promise((done) => {

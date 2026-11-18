@@ -6838,6 +6838,37 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   margin: 4px 0;
   padding: 8px 10px;
 }
+/* A part whose code didn't load: said in words, not as code. */
+.lc-broke[data-away] .lc-quiet {
+  font-family: inherit;
+  font-size: 13px;
+}
+.lc-broke-do {
+  display: flex;
+  gap: 6px;
+}
+/* In a page's place: centred in the paper (or across the window, for Settings), a card's width. */
+.lc-broke[data-place="page"] {
+  grid-column: 1 / -1;
+  align-self: center;
+  justify-self: center;
+  width: min(420px, calc(100% - 32px));
+  box-sizing: border-box;
+  margin: 64px auto;
+}
+/* Over the window, for a dialog that couldn't open. */
+.lc-broke[data-place="float"] {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  top: 64px;
+  width: min(380px, calc(100vw - 32px));
+  box-sizing: border-box;
+  margin: 0;
+  translate: -50% 0;
+  background: var(--lc-card);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-danger) 22%, transparent), 0 12px 32px rgb(0 0 0 / 0.16);
+}
 
 /* ---------- The composer's queue, the cold cache, the context meter ---------- */
 /* Send now on a queued message: a quiet pill that takes the accent when pointed at. */

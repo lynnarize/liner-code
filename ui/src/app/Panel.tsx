@@ -14,7 +14,7 @@
   with Undo for the turn and Commit for everything that's left.
   Agents says who worked in this session, on what, and how much of the budget they used.
 */
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { ROUTINES_ON, type FileDiff, type Item, type Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { prefersReducedMotion } from "@liner/lib/spring";
@@ -41,11 +41,11 @@ import { SideChat } from "./SideChat";
 import { Guide, MoreFiles, SURFACES, surfaceOf, TurnPicker, Viewed, type SurfaceId, type Tab } from "./Surfaces";
 import { undoTurn } from "./undo";
 import { entering } from "./look";
-import { early } from "./early";
+import { early, lazyAgain } from "./early";
 import "./dock.css";
 // The terminal brings xterm.js; it loads the first time you open one.
-const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
-const SessionSurface = lazy(() => import("./SessionInfo").then((m) => ({ default: m.SessionSurface })));
+const TerminalSurface = lazyAgain(() => import("./Terminal").then((m) => m.TerminalSurface));
+const SessionSurface = lazyAgain(() => import("./SessionInfo").then((m) => m.SessionSurface));
 /*
   Surfaces opened now and then, kept out of the start: they load once the dock is up and the app is
   idle, so the first open has nothing to wait for (early.ts, as App's screens do). The full-width
@@ -59,8 +59,8 @@ const FilesView = early(() => import("./Files").then((m) => m.FilesSurface));
 const Review = ReviewView.View;
 const DeviceSurface = DeviceView.View;
 const FilesSurface = FilesView.View;
-const RoutinesList = lazy(() => import("./Routines").then((m) => ({ default: m.RoutinesList })));
-const RunDetail = lazy(() => import("./Routines").then((m) => ({ default: m.RunDetail })));
+const RoutinesList = lazyAgain(() => import("./Routines").then((m) => m.RoutinesList));
+const RunDetail = lazyAgain(() => import("./Routines").then((m) => m.RunDetail));
 let preloaded = false;
 /** The rarer surfaces, fetched once the first dock is up and the app has a moment. */
 function preload() {

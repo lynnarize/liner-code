@@ -42,7 +42,7 @@ import { frameRevs, framesChanged, lookFile } from "./canvas.ts";
 import { memoryNote, titleFrom } from "./memory.ts";
 import { commandRisk, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
-import { editsNote, editsSince, type Beside } from "./edits.ts";
+import { EDITS_MS, editsNote, editsSince, type Beside } from "./edits.ts";
 import { draftCheck, sendCheck, SEND_LIMIT_MS, type DraftFacts } from "./precheck.ts";
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, knownWays, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, tookBackOf, UNSTARTED, type BriefMark, type BriefOutcome } from "./sidekick.ts";
 
@@ -333,6 +333,8 @@ export class Runtime {
   thinkMs = THINK_MS;
   /** How long a tool has to end its turn after Stop (STOP_GRACE_MS), here so a test can shorten it. */
   stopGraceMs = STOP_GRACE_MS;
+  /** How long a turn waits, once its tool is open, for the note of files changed since the last turn (EDITS_MS), here so a test can shorten it. */
+  editsMs = EDITS_MS;
   /** Each running session's doing line as last sent, the newer one waiting out doingMs, and a think or an answer waiting out thinkMs (`later`), by thread. */
   private doingSent = new Map<string, { at: number; next?: string; timer?: NodeJS.Timeout; last?: string; think?: NodeJS.Timeout; later?: string }>();
   /** How long a session opened ahead of a message waits for one (WARM_MS), here so a test can shorten it. */
@@ -650,8 +652,9 @@ export class Runtime {
     const sealed = Boolean(t.security?.sealed);
     const team = familyOf(r.provider) === "claude" && !t.sideOf && !sidekick && !sealed ? claudeTeam(r.agent, r.model) : { model: r.model, agents: {} };
     const liveKey = sidekick ? `${liveKeyOf(t.id, agentId)}#sidekick` : liveKeyOf(t.id, agentId);
-    // A scan (and its side chats) reads the project and nothing else: the tool's own outreach is off (OpenOptions.scan).
-    const scan = t.security?.kind === "scan";
+    // A scan (and its side chats), and a question about a finding, read the project and nothing else: the tool's own outreach
+    // is off (OpenOptions.scan). Both read a repository that may be hostile, beside what a scan or a report wrote.
+    const scan = readsOnlyTag(t);
     const key = `${r.provider}|${team.model}|${r.effort}|${access}|${Object.keys(team.agents).join(",")}${sealed ? "|sealed" : ""}${scan ? "|scan" : ""}`;
     const connections = this.connectionsOf(t);
     const links = fingerprint(connections);
@@ -1575,7 +1578,9 @@ export class Runtime {
     });
     // What changed in the folder since the last turn ended, from that turn's "after" and this one's "before" (edits.ts): read
     // while the tool opens, for a message of yours to the session's own lead only, not a fix round, a goal's next turn or a compaction.
-    const edited = asked && from && !o.wake && !o.prompt && !o.part && agentId === t.agent && store.settings.shareEdits !== false && !COMPACT.test(text) ? this.editsOf(threadId, cwd, turn, from).catch(() => null) : null;
+    // Its git calls stop with the turn's Stop, or once the turn has waited editsMs for them (the note is left out then).
+    const editsStop = new AbortController();
+    const edited = asked && from && !o.wake && !o.prompt && !o.part && agentId === t.agent && store.settings.shareEdits !== false && !COMPACT.test(text) ? this.editsOf(threadId, cwd, turn, from, editsStop.signal).catch(() => null) : null;
     let failed = false;
     let ran = false;
     try {
@@ -1593,6 +1598,26 @@ export class Runtime {
       if (fresh && agentId === t.agent && store.thread(threadId).effortNow !== undefined) store.patchThread(threadId, { effortNow: undefined });
       const fit = this.effortNote(t, agentId);
       if (fit) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: fit });
+      // The files changed since the last turn (read while the tool opened), waited for editsMs at most once the tool is open,
+      // and not past a Stop: a folder with many changed files and another session in it is a note, never a stall.
+      let edits: Awaited<NonNullable<typeof edited>> = null;
+      if (edited && abort.signal.aborted) editsStop.abort();
+      else if (edited) {
+        let timer: NodeJS.Timeout | undefined;
+        let onStop = () => {};
+        const late = new Promise<null>((r) => {
+          timer = setTimeout(() => r(null), this.editsMs);
+          onStop = () => r(null);
+          abort.signal.addEventListener("abort", onStop, { once: true });
+        });
+        try {
+          edits = await Promise.race([edited, late]);
+        } finally {
+          clearTimeout(timer);
+          abort.signal.removeEventListener("abort", onStop);
+          editsStop.abort();
+        }
+      }
       // Stopped while the snapshot was taken or the tool was opening: the turn never starts.
       if (abort.signal.aborted) {
         // The tool's own turn stops too, or it goes on by itself with nobody running it.
@@ -1610,7 +1635,6 @@ export class Runtime {
       // The files you changed since its last turn, said just before your words. Kept on your message for the grey line under
       // it. The Demo reads its prompt for words, so it's shown the line but not told. An Undo is left to the conversation when
       // the tool is told it again this turn (handoff says which turns were undone), so it isn't said twice.
-      const edits = edited ? await edited : null;
       if (edits?.length && asked) {
         store.putItem(threadId, { ...asked, edits });
         const retold = fresh && earlier.some((x) => x.kind === "user" || x.kind === "text");
@@ -1919,13 +1943,13 @@ export class Runtime {
     What changed in a session's folder since its last turn (edits.ts), told apart from what Liner did: a Keep from Compare in
     this checkout, another session's turns in the same folder.
   */
-  private editsOf(threadId: string, cwd: string, turn: number, now: string) {
+  private editsOf(threadId: string, cwd: string, turn: number, now: string, signal?: AbortSignal) {
     const store = this.store;
     const t = store.thread(threadId);
     const cwdOf = (x: Thread) => x.worktree?.path ?? store.projects.find((p) => p.id === x.projectId)?.path;
     const keeps = t.worktree ? [] : store.threads.filter((x) => x.projectId === t.projectId && x.compare && x.id !== threadId).map((x) => `refs/liner/${x.id}/keep`);
     const beside: Beside[] = store.threads.filter((x) => x.id !== threadId && !x.sideOf && cwdOf(x) === cwd).map((x) => ({ id: x.id, title: x.title, items: store.timeline(x.id) }));
-    return editsSince(cwd, threadId, turn, store.timeline(threadId).filter((x) => x.turn < turn), now, { keeps, beside });
+    return editsSince(cwd, threadId, turn, store.timeline(threadId).filter((x) => x.turn < turn), now, { keeps, beside, signal });
   }
 
   /**
@@ -2006,7 +2030,10 @@ export class Runtime {
     // A model whose tool is gone (an account or an endpoint you removed) doesn't quietly become the Demo.
     const p = providers[provider];
     if (!p) throw new Error(toolGone(this.labelOf(ref), "Pick another Reviewer in Settings, or another model for this session."));
-    const session = p.open({ cwd, model, effort: "medium", access: "read", soul: "", guard: true, ephemeral: true, env: this.envFor(provider) });
+    // A read for a Liner Security session (a scan's second look) is held as the scan is: off the web, no agents of its own.
+    const held = this.store.threads.find((x) => x.id === threadId);
+    const scan = held ? readsOnlyTag(held) : false;
+    const session = p.open({ cwd, model, effort: "medium", access: "read", soul: "", guard: true, ephemeral: true, env: this.envFor(provider), ...(scan ? { scan: true } : {}) });
     let text = "";
     // Its own tokens and cost, apart from the thread's, so reads side by side don't count each other's.
     const own = emptyUsage();
@@ -2952,7 +2979,12 @@ export class Runtime {
           if (key) this.drop(key);
           if (this.store.threads.some((x) => x.id === threadId)) {
             const t = this.store.thread(threadId);
-            const tool = this.providerInfo.find((p) => p.id === this.resolve(t, this.turns.get(threadId)?.agentId ?? t.agent).provider)?.label ?? "Its tool";
+            // The tool by its own name (OpenCode), not an API endpoint's or an account's it runs ("DeepSeek", "Claude Code · Work"):
+            // the tool is what hung. An agent you added has only its own name.
+            const provider = this.resolve(t, this.turns.get(threadId)?.agentId ?? t.agent).provider;
+            const family = familyOf(provider);
+            const named: Record<string, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode", hermes: "Hermes", cursor: "Cursor", grok: "Grok Build", antigravity: "Antigravity CLI" };
+            const tool = named[family] ?? this.providerInfo.find((p) => p.id === provider)?.label ?? "Its tool";
             this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${tool} hadn't stopped ${spanOf(this.stopGraceMs)} after Stop, so Liner Code ended it. It picks up again on your next message.` });
           }
           resolve();

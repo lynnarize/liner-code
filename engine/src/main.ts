@@ -31,6 +31,9 @@ import { Outside } from "./outside-tools.ts";
 import { Awake } from "./awake.ts";
 import { dropMarks, firstLine, linkHelpers, marksKept, secretsFrom, sweepMarks, takeSecrets, withPath } from "./exec.ts";
 import { devWaits } from "./providers/acp.ts";
+import { UsagePing, usageTarget } from "./usage-ping.ts";
+import { BUNDLED } from "./paths.ts";
+import { VERSION } from "./version.ts";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -60,6 +63,13 @@ if (process.env.LINER_SECRETS === "stdin") {
 delete process.env.LINER_SECRETS;
 
 const store = new Store();
+// Anonymous usage counts (usage-ping.ts): only from the app's own engine, never a test's, a dev run's or one from source.
+const pingTo = usageTarget({ env: process.env, home: store.home, dev, bundled: BUNDLED });
+const ping = pingTo ? new UsagePing({ home: store.home, url: pingTo, version: VERSION, settings: () => store.settings }) : undefined;
+if (ping) {
+  store.counted = (r) => ping.add(r);
+  store.on((e) => void (e.type === "settings" && e.settings.usagePing === false && ping.off()));
+}
 // The shell passes your login shell's PATH; without it, a Dock-launched app can't find agents.
 // Helpers agents take for granted (ripgrep) go first on the PATH of everything the engine runs.
 const env: NodeJS.ProcessEnv = linkHelpers(join(store.home, "bin"), withPath(process.env, process.env.LINER_PATH || process.env.PATH)).env;
@@ -201,6 +211,7 @@ void Promise.all([api.ready, swept]).then(() => {
   if (ROUTINES_ON) routines.start();
   watch.start();
   api.updates.start();
+  ping?.start();
   awake.start();
 });
 

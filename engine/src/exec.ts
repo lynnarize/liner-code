@@ -268,11 +268,11 @@ export function firstLine(stream: NodeJS.ReadableStream): Promise<string | null>
 export type RunResult = { code: number; stdout: string; stderr: string };
 
 /** Runs a command to the end and collects its output. Never throws on a non-zero exit. `verbatim`: shellOf's arguments, passed to cmd.exe as they are. */
-export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; timeout?: number; maxBuffer?: number; onOutput?: (chunk: string) => void; verbatim?: boolean } = {}): Promise<RunResult> {
+export function run(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; timeout?: number; maxBuffer?: number; onOutput?: (chunk: string) => void; verbatim?: boolean; signal?: AbortSignal } = {}): Promise<RunResult> {
   // On Windows a .cmd shim starts what it names, and no console window flashes up (see launch).
   const l = win && !o.verbatim ? launch(cmd, args, o.env ?? process.env) : { cmd, args, shell: false };
   return new Promise((resolve) => {
-    const child = execFile(l.cmd, l.args, { cwd: o.cwd, env: o.env ?? process.env, timeout: o.timeout ?? 30000, maxBuffer: o.maxBuffer ?? 32 * 1024 * 1024, encoding: "utf8", ...(win ? { windowsHide: true, windowsVerbatimArguments: Boolean(o.verbatim), ...(l.shell ? { shell: true } : {}) } : {}) }, (err, stdout, stderr) => {
+    const child = execFile(l.cmd, l.args, { cwd: o.cwd, env: o.env ?? process.env, timeout: o.timeout ?? 30000, maxBuffer: o.maxBuffer ?? 32 * 1024 * 1024, encoding: "utf8", ...(o.signal ? { signal: o.signal } : {}), ...(win ? { windowsHide: true, windowsVerbatimArguments: Boolean(o.verbatim), ...(l.shell ? { shell: true } : {}) } : {}) }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as NodeJS.ErrnoException & { code?: unknown }).code === "number" ? ((err as unknown as { code: number }).code) : 1) : 0;
       // One that never started (a folder that's gone), or was cut off, printed nothing: what happened is in `err`.
       resolve({ code, stdout: stdout ?? "", stderr: stderr || (err && typeof (err as { code?: unknown }).code !== "number" ? String(err.message) : "") });
@@ -719,6 +719,21 @@ export async function endAll(procs: Proc[], again?: () => Promise<Proc[]>, grace
     todo = again ? await again() : await living(todo);
   }
   return living(todo);
+}
+
+/**
+  Everything below `pid` in a listing (processes()), by parent, however deep, `pid` left out: what a process started, read
+  before it's ended, since once it goes what it started is pid 1's and its tree no longer says whose it was. Finds what left
+  its process group (a setsid, a spawn of its own group), which a group's kill misses; not what double-forked away already.
+*/
+export function below(all: Proc[], pid: number): Proc[] {
+  const ids = new Set([pid]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const p of all) if (!ids.has(p.pid) && ids.has(p.ppid)) (ids.add(p.pid), (grew = true));
+  }
+  ids.delete(pid);
+  return all.filter((p) => ids.has(p.pid));
 }
 
 /** Whether a process answers a signal: it's there (or a zombie not yet reaped). */

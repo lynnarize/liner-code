@@ -13,7 +13,7 @@ import { dirname, join, posix, resolve, sep, win32, type PlatformPath } from "no
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Access, CommandInfo, ModelInfo, ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { randomBytes } from "node:crypto";
-import { closesOnExit, endAll, jsonLines, killTree, marked, markedPids, markFile, marking, RUN_ENV, run, spawn, THREAD_ENV, threadMark, versionOf, which, type Mark, type Proc } from "../exec.ts";
+import { below, closesOnExit, endAll, jsonLines, killTree, marked, markedPids, markFile, marking, processes, RUN_ENV, run, spawn, THREAD_ENV, threadMark, versionOf, which, type Mark, type Proc } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, gitPlace, isDestructive, readsOnly, ruleFor, shellWords, unwrapped } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
@@ -29,6 +29,8 @@ type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Jso
 /** How much of a tool's output the app gets, its end; the running output reaches it a few times a second (T3 Code: provider-acp runtimeModel.ts bounds it to a tail and coalesces too). */
 const OUTPUT_MAX = 20000;
 const OUTPUT_EVERY_MS = 250;
+/** How long a close waits to read what its agent's process started before it ends it anyway (close). */
+const CLOSE_LOOK_MS = 1500;
 /** ACP's auth_required (T3 Code: AcpSessionRuntime.ts). */
 const AUTH_REQUIRED = -32000;
 type ToolCall = { toolCallId: string; title?: string; kind?: string; status?: string; content?: Json[]; locations?: { path: string }[]; rawInput?: unknown; rawOutput?: unknown; name?: unknown; _meta?: unknown };
@@ -50,6 +52,13 @@ const nameOf = (call: ToolCall) => ((call._meta as Json | undefined)?.is_mcp_too
 const TERMINAL_KEYS = ["terminal_info", "terminal_output", "terminal_output_delta", "terminal_exit"];
 /** How a call's streamed output stands: its end only, once it's long (`cut`), and the exit code once it has one. */
 type Term = { data: string; cut: boolean; exit?: number };
+/**
+  A command's output as a person reads it: no colour or cursor codes (CSI, OSC and the short escapes), CRLF as a new line,
+  and a line a progress bar redrew with \r as its last draw only.
+  As runtime.ts clean, for output the terminal pane doesn't draw.
+*/
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-Z\\-_]|\x1b/g;
+export const plainOutput = (data: string) => data.replace(ANSI, "").replace(/\r\n/g, "\n").replace(/^[^\n]*\r(?=[^\n])/gm, "").replace(/\r/g, "");
 /** The same output again, as some agents also send it as content at the end (in a code fence): not shown twice. */
 const sameOutput = (data: string, text: string) => {
   const t = (/^```[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(text.trim())?.[1] ?? text).trim();
@@ -1031,15 +1040,17 @@ class AcpSession implements ProviderSession {
     if (this.known.tagged && !this.named) this.server = newServerName();
     // A process group of its own, so stopping it stops what it started too: an npx or uvx launcher's agent, its
     // commands (T3 Code: AcpSessionRuntime.ts spawns with ownDetachedProcessGroup).
-    // Marked, for an agent whose work outlives its turn: what it starts keeps the marker once it has left its tree (endWork), in
-    // its environment and as a file it holds open, handed over after its three pipes and closed here at once (exec.ts marking).
+    // Marked: what it starts keeps the marker once it has left its tree or its group, in its environment and as a file it holds
+    // open, handed over after its three pipes and closed here at once (exec.ts marking). For an agent whose work outlives its
+    // turn, what is marked is ended with the turn (endWork); for every agent, with its close (close), so nothing outlives that:
+    // OpenCode's `opencode serve` and its pty helper left its group, and lived on past a close as pid 1's.
     // Not on Windows (exec.ts marked). A marker of its own for each process, so what a close is still ending can't be taken for
     // the next process's; its file is in this engine's own folder, so an engine that starts after this one died ends what holds it.
-    if (this.known.endsWork) this.marks.push((this.mark = { value: randomBytes(9).toString("hex"), file: process.platform === "win32" ? undefined : markFile("run", randomBytes(9).toString("hex")) }));
-    const env = this.known.endsWork ? { ...this.o.env, [RUN_ENV]: this.mark.value } : this.o.env;
+    this.marks.push((this.mark = { value: randomBytes(9).toString("hex"), file: process.platform === "win32" ? undefined : markFile("run", randomBytes(9).toString("hex")) }));
+    const env = { ...this.o.env, [RUN_ENV]: this.mark.value };
     // Its session's marker too, for the Browser to know a dev server it starts as the session's (surfaces.ts).
     const thread = this.o.env[THREAD_ENV];
-    const { stdio, done } = marking(["pipe", "pipe", "pipe"], [...(this.known.endsWork ? [this.mark] : []), ...(thread ? [threadMark(thread)] : [])]);
+    const { stdio, done } = marking(["pipe", "pipe", "pipe"], [this.mark, ...(thread ? [threadMark(thread)] : [])]);
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn(path, args, { cwd: this.o.cwd, env, stdio: stdio as ["pipe", "pipe", "pipe"], detached: true }) as ChildProcessWithoutNullStreams;
@@ -1618,10 +1629,11 @@ class AcpSession implements ProviderSession {
   private showCall(call: ToolCall, sink: TurnSink) {
     this.shown.set(call.toolCallId, Date.now());
     const term = this.terms.get(call.toolCallId);
-    // A command's streamed output comes first; a text of the agent's that only says it again isn't shown twice. Its exit code
-    // ends it as the timeline reads one ("[exit 1]"), when it isn't 0.
-    const parts = (call.content ?? []).map((c) => (c.type === "content" ? (term && sameOutput(term.data, blockText(c.content)) ? "" : blockText(c.content)) : c.type === "diff" ? `Edited ${this.rel(String(c.path))}` : ""));
-    if (term) parts.unshift(term.data.replace(/\s+$/, ""));
+    // A command's streamed output comes first, without its terminal codes; a text of the agent's that only says it again isn't
+    // shown twice. Its exit code ends it as the timeline reads one ("[exit 1]"), when it isn't 0.
+    const said = term ? plainOutput(term.data) : "";
+    const parts = (call.content ?? []).map((c) => (c.type === "content" ? (term && sameOutput(said, blockText(c.content)) ? "" : blockText(c.content)) : c.type === "diff" ? `Edited ${this.rel(String(c.path))}` : ""));
+    if (term) parts.unshift(said.replace(/\s+$/, ""));
     if (term?.exit) parts.push(`[exit ${term.exit}]`);
     const out = parts.filter(Boolean).join("\n");
     // A command that exited with a code other than 0 failed, whatever the agent calls its end.
@@ -2060,30 +2072,42 @@ class AcpSession implements ProviderSession {
     a start (a start still at its version gate never spawns, epoch; one past it has its process here, `child`, to end), a
     command it left in the background. The marker is the process's own (spawnAt), so a process started after this close is
     never taken for this one's. The promise is for whoever must wait (the engine quitting): it settles once all of it is gone.
-    Every ACP tool shares this; one that marks nothing (AcpSpec.endsWork unset: Hermes, OpenCode, Cursor, Grok, one you added)
-    ends with its process group (killTree), which its commands stay in.
+    Every ACP tool shares this: its process group (killTree), what is below its process though it left the group (OpenCode's
+    `opencode serve` and its pty helper, which outlived a close as pid 1's while frozen), read before anything is ended, and
+    whatever else carries its marker, where `ps` reads environments. A frozen one is ended too, by endAll's SIGKILL.
   */
   close(): Promise<void> {
     const child = this.child;
     this.child = null;
     // One still being checked before it starts doesn't start.
     this.epoch++;
-    if (child) {
-      child.stdin.end();
-      killTree(child);
-    }
-    // Every process this session started since it was last closed, one that ended by itself included: each one's marker.
+    // Its tree, read first (CLOSE_LOOK_MS at most: a slow look never holds the close), since once it goes what it started is pid 1's.
+    const up = child && child.exitCode === null && child.signalCode === null && child.pid && process.platform !== "win32";
+    let timer: NodeJS.Timeout | undefined;
+    const tree = up ? Promise.race([processes().then((all) => below(all, child.pid!), () => []), new Promise<Proc[]>((r) => (timer = setTimeout(() => r([]), CLOSE_LOOK_MS)))]).finally(() => clearTimeout(timer)) : Promise.resolve([]);
+    const ended = tree.then((left) => {
+      if (child) {
+        child.stdin.end();
+        killTree(child);
+      }
+      // What left its group; what is still in it goes with the group as well, and is asked twice, harmlessly.
+      return endAll(left, undefined, this.known.killAfterMs).then(() => undefined, () => undefined);
+    });
+    // Every process this session started since it was last closed, one that ended by itself included: each one's marker, looked
+    // for once its tree is read, so nothing of it is ended before that.
     const marks = this.marks.splice(0);
     this.mark = { value: this.mark.value };
-    return Promise.all(
-      marks.map((mark) =>
-        marked(mark)
+    return Promise.all([
+      ended,
+      ...marks.map((mark) =>
+        tree
+          .then(() => marked(mark))
           .then((left) => endAll(left, () => marked(mark), this.known.killAfterMs))
           .then(() => undefined, () => undefined)
           // The marker goes with the process that held it, once nothing holds it.
           .finally(() => mark.file && rmSync(mark.file, { force: true })),
       ),
-    ).then(() => undefined);
+    ]).then(() => undefined);
   }
 }
 
@@ -2370,8 +2394,8 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
       const listedNow = models.length ? { models: [base.models[0], ...models], modelsFrom: "cli" as const, modelsAt: Date.now() } : {};
       return { ...base, ...listedNow, available: true, version: gate.version, signedIn, supports: { ...base.supports, effort }, detail: signedIn === undefined ? `${detail}; it didn't say whether it's signed in` : detail };
     },
-    models: async (env, scratch) => {
-      if (!spec.listed) return acpModels(cmd, label, envOf(env), scratch);
+    models: async (env, scratch, signal) => {
+      if (!spec.listed) return acpModels(cmd, label, envOf(env), scratch, signal);
       const path = which(cmd[0], envOf(env));
       const models = path ? (await listed(path, envOf(env))).models : [];
       return models.length ? [{ id: "default", label: `${label} default`, description: `The model ${label} is set up with` }, ...models] : [];

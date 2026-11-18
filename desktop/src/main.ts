@@ -12,7 +12,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, 
 import { homedir, release, tmpdir } from "node:os";
 import { basename, delimiter, join, normalize } from "node:path";
 import { sealedFrame } from "../../contracts/src/panel.ts";
-import { openAsk, QuitWhenDone, type Live } from "./finish";
+import { heldOnYou, openAsk, quitQuestion, QuitWhenDone, type Live } from "./finish";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
 import { mac, type Rect } from "./mac";
@@ -251,10 +251,7 @@ function createWindow() {
     // Elsewhere closing the window quits, so it asks first while sessions work, as quitting does:
     // asked after the window has gone, Cancel would leave the app running with no window.
     if (!isMac) {
-      if (statusItem.running() > 0) {
-        e.preventDefault();
-        if (!asking) void askToQuit(statusItem.running());
-      }
+      if (holdQuit()) e.preventDefault();
       return;
     }
     e.preventDefault();
@@ -834,12 +831,42 @@ let asking = false;
   many desktops there show no tray at all, and the app would be running with nothing to see.
 */
 const canWait = isMac || isWin;
-async function askToQuit(n: number) {
+/**
+  Whether a quit (or, off the Mac, closing the window) waits for an answer: sessions work, or wait on you with a request still
+  open, whose turns quitting would stop as surely. Those are read from their timelines first (lookThenAsk), and a quit with
+  none goes ahead.
+*/
+function holdQuit() {
+  const n = statusItem.running();
+  if (n > 0) {
+    if (!asking) void askToQuit(n);
+    return true;
+  }
+  if (!statusItem.asking().length) return false;
+  if (!asking) void lookThenAsk();
+  return true;
+}
+/** The sessions waiting on you, asked of the engine: any with a live request asks first; none, and the quit goes on. */
+async function lookThenAsk() {
   asking = true;
+  let held = 0;
+  try {
+    // A timeline that doesn't come in time counts (heldOnYou): asking once too often beats ending a turn unasked.
+    held = await heldOnYou(statusItem.asking(), (id) => engineRpc("thread.items", { id }, 1500));
+  } finally {
+    asking = false;
+  }
+  if (held > 0) return askToQuit(statusItem.running(), held);
+  quitting = true;
+  app.quit();
+}
+async function askToQuit(working: number, held = 0) {
+  asking = true;
+  const n = working + held;
   const one = n === 1;
   const opts = {
     type: "warning" as const,
-    message: one ? "A session is still working. Quit anyway?" : `${n} sessions are still working. Quit anyway?`,
+    message: quitQuestion(working, held),
     detail: canWait
       ? `Liner Code can go out of sight and quit by itself once ${one ? "it's" : "they're"} done, or quit now and stop ${one ? "its turn" : "their turns"} where ${one ? "it is" : "they are"}.`
       : "Quitting stops their turns where they are. Their timelines and the changes so far are kept.",
@@ -906,7 +933,8 @@ async function checkWaiting() {
     heard = true;
     const threads = s.threads ?? [];
     // A session already waiting on you when you quit holds the app only if its request is still open (a live turn).
-    for (const id of w.toCheck(threads)) w.mark(id, openAsk(await engineRpc("thread.items", { id }).catch(() => [])));
+    // One whose timeline doesn't come (a busy engine, a timeout) is held as if it waits on you, and looked at again next time.
+    for (const id of w.toCheck(threads)) w.mark(id, await engineRpc("thread.items", { id }).then(openAsk, () => undefined));
     if (waiting !== w) return;
     const r = w.read(threads, Date.now());
     statusItem.hold(r.left);
@@ -937,9 +965,8 @@ async function checkWaiting() {
 let engineGone = false;
 app.on("before-quit", (e) => {
   // While it waits to quit, a quit from elsewhere (logging out, shutting down) goes ahead: you already said yes, and there's no window to ask on.
-  if (!quitting && !waiting && statusItem.running() > 0) {
+  if (!quitting && !waiting && holdQuit()) {
     e.preventDefault();
-    if (!asking) void askToQuit(statusItem.running());
     return;
   }
   quitting = true;

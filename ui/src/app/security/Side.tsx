@@ -9,14 +9,14 @@
   Everything comes from the engine (security.side, and the threads and projects it already holds) and is asked again
   whenever Security changes.
 */
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ScanRecord, Thread } from "@contracts";
 import { useEngine } from "../engine";
 import { I, N, type MarkKind } from "../icons";
 import { agentOf, clock, markOf, plural } from "../model";
 import { SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "../SideList";
 import { Pop, Row } from "../ui";
-import { goSecurity, useSecurity, useSecurityPage, type SecurityPage } from "./store";
+import { goSecurity, useSecurity, useSecurityPage, useSecurityProjects, type SecurityPage } from "./store";
 import { whenShort } from "./when";
 import "./security.css";
 import "./side.css";
@@ -66,6 +66,24 @@ const keep = (key: string, value: string) => {
 
 const prState = (state: string) => (state.toUpperCase() === "MERGED" ? "merged" : state.toUpperCase() === "CLOSED" ? "closed" : "open");
 
+/** Draws again once a minute while the window is shown (and at once when it is shown again), so "2m" and "yesterday" stay true. */
+function useMinute() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    let t = 0;
+    const run = () => {
+      window.clearInterval(t);
+      t = 0;
+      if (document.visibilityState === "hidden") return;
+      setTick((n) => n + 1);
+      t = window.setInterval(() => setTick((n) => n + 1), 60_000);
+    };
+    run();
+    document.addEventListener("visibilitychange", run);
+    return () => (window.clearInterval(t), document.removeEventListener("visibilitychange", run));
+  }, []);
+}
+
 /** One row of the list, with what By folder sorts and folds it by: its project, how pressing it is (needs you, works, rests) and when it began. */
 type Item = { key: string; projectId: string; rank: 0 | 1 | 2; at: number; state: SideState; brand?: MarkKind; row: ReactNode };
 
@@ -74,17 +92,20 @@ export function SecuritySide() {
   // Asked again for what it shows: its scans, the open findings (GitHub's and reports' among them) and projects (gh's reach).
   const { data, error, loading } = useSecurity("security.side", {}, ["findings", "scans", "projects"]);
   const threads = useEngine((s) => s.threads);
-  const projects = useEngine((s) => s.projects);
+  // Never the Demo's Sample project (store.ts useSecurityProjects): its scans, fixes and questions stay out of the list.
+  const { list: projects, hidden } = useSecurityProjects();
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const [view, setView] = useState<View>(readView);
   const [shut, setShut] = useState<string[]>(readShut);
+  useMinute();
   const now = Date.now();
   const on = (kind: SecurityPage["kind"]) => (page.kind === kind ? "page" : undefined);
-  const fixes = (data?.fixes ?? []).map((id) => threads.find((t) => t.id === id)).filter((t): t is Thread => Boolean(t));
+  // Archived since the engine's answer (security.side leaves archived ones out, but isn't asked again when one is archived): left out here too.
+  const fixes = (data?.fixes ?? []).map((id) => threads.find((t) => t.id === id)).filter((t): t is Thread => Boolean(t) && !t!.archived && !hidden(t!.projectId));
   // Sessions that ask about a finding, and a scan's fork (tagged as a scan but not one: it has no record of its own), so it
   // stays reachable: newest first, a few, quiet under their own label. Never a side chat, never an archived session.
-  const asks = threads.filter((t) => !t.sideOf && !t.archived && (t.security?.kind === "ask" || (t.security?.kind === "scan" && (Boolean(t.forkOf) || !t.security.scan)))).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
+  const asks = threads.filter((t) => !t.sideOf && !t.archived && !hidden(t.projectId) && (t.security?.kind === "ask" || (t.security?.kind === "scan" && (Boolean(t.forkOf) || !t.security.scan)))).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
   // A session's spinner in its model's colour, as Code's rows have it.
   const brandOf = (t: Thread) => markOf(t.model ?? agentOf(t.agent, agents, providers).model);
   const opened = (threadId?: string) => Boolean(threadId) && page.kind === "scan" && page.threadId === threadId;
@@ -221,7 +242,7 @@ export function SecuritySide() {
     };
   };
 
-  const scanItems = (data?.scans ?? []).map(scanItem);
+  const scanItems = (data?.scans ?? []).filter((s) => !hidden(s.projectId)).map(scanItem);
   const fixItems = fixes.map(fixItem);
   const askItems = asks.map(askItem);
   const all = [...scanItems, ...fixItems, ...askItems];
@@ -242,11 +263,8 @@ export function SecuritySide() {
           <N.shield />
           <span>Overview</span>
         </button>
-        <button type="button" className="lc-sb-nav l-focus" aria-current={on("findings")} aria-label={`Findings, ${data?.open ?? 0} open`} onClick={() => goSecurity({ kind: "findings" })}>
-          <N.findings />
-          <span>Findings</span>
-          {(data?.open ?? 0) > 0 && <span className="ls-num">{data!.open}</span>}
-        </button>
+        {/* The engine leaves the Sample project out of the count itself (Security.projects) unless the Demo is shown. */}
+        <FindingsNav current={on("findings")} open={data?.open ?? 0} />
         <button type="button" className="lc-sb-nav l-focus" aria-current={on("projects")} onClick={() => goSecurity({ kind: "projects" })}>
           <N.folder />
           <span>Projects</span>
@@ -341,3 +359,15 @@ export function SecuritySide() {
     </div>
   );
 }
+
+/** Findings in the sidebar's top, with how many are open. */
+function FindingsNav({ current, open }: { current?: "page"; open: number }) {
+  return (
+    <button type="button" className="lc-sb-nav l-focus" aria-current={current} aria-label={`Findings, ${open} open`} onClick={() => goSecurity({ kind: "findings" })}>
+      <N.findings />
+      <span>Findings</span>
+      {open > 0 && <span className="ls-num">{open}</span>}
+    </button>
+  );
+}
+/** FindingsNav while Liner Code holds the Demo's Sample project: security.side counts its open findings too, so they are taken off here. */

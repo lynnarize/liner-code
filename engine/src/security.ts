@@ -24,6 +24,7 @@ import { uid, writeAtomic, type Store } from "./store.ts";
 import { bringGitHub, bringSarif, githubReach } from "./security-bringin.ts";
 import { askAbout, fixFinding, scanOptions, startScan, stopScan } from "./security-scan.ts";
 import { outside } from "./exec.ts";
+import { maskFinding, maskText } from "./security-checks.ts";
 
 export type SecurityMethod = Extract<RpcMethod, `security.${string}`>;
 type SecurityRpc = { [K in SecurityMethod]: (p: RpcParams<K>) => Promise<RpcResult<K>> | RpcResult<K> };
@@ -63,6 +64,8 @@ type ProjectData = {
 
 const str = (v: unknown): v is string => typeof v === "string";
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+/** The Demo's Sample project (added as the Demo's own, agent "demo"), which Security leaves out unless the Demo is shown. */
+const sample = (p: Project, settings: Settings) => p.agent === "demo" && !p.demoFor && settings.showDemo !== true;
 const STATES: FindingState[] = ["open", "fixed", "dismissed"];
 const SOURCES = ["agent", "checks", "github", "sarif"];
 const isFinding = (f: unknown): f is SecurityFinding => {
@@ -73,6 +76,8 @@ const isScan = (s: unknown): s is ScanRecord => {
   const x = s as ScanRecord;
   return Boolean(x) && typeof x === "object" && str(x.id) && str(x.title) && ["checks", "branch", "project"].includes(x.depth) && ["running", "asking", "done", "stopped", "failed"].includes(x.state) && num(x.startedAt) && Boolean(x.counts) && typeof x.counts === "object";
 };
+/** A scan's own words (what it said it read, and missed), masked as a finding's are: stored by an earlier build, they may not be. */
+const maskScan = (s: ScanRecord): ScanRecord => ({ ...s, ...(str(s.summary) ? { summary: maskText(s.summary) } : {}), ...(Array.isArray(s.read) ? { read: s.read.map((x) => maskText(String(x))) } : {}), ...(Array.isArray(s.missed) ? { missed: s.missed.map((x) => maskText(String(x))) } : {}) });
 /** A finding's dedupe key without its project: what the dismissed list remembers, so it holds if the folder comes back under another id. */
 export const bareKey = (f: { file?: string; rule?: string; instance?: string; title: string }) => findingKey("", f).slice(1);
 
@@ -103,6 +108,39 @@ function migrated(f: SecurityFinding): SecurityFinding {
   return { ...f, rule: m[1], ...(alert ? { instance: `gh:${alert}` } : {}) };
 }
 const rank = (s: Severity) => SEVERITIES.indexOf(s);
+/**
+  Findings that share a key made one, where the first of them stood: two of one problem, stored by a build that made an
+  instance of a title's raw words beside a report of it made of the masked ones. The one you dismissed leads (what you
+  dismissed holds), else the one changed last; the others' sources and activity are folded in, and the worst severity kept.
+*/
+function mergedByKey(list: SecurityFinding[]): SecurityFinding[] {
+  const by = new Map<string, SecurityFinding[]>();
+  for (const f of list) by.set(f.key, [...(by.get(f.key) ?? []), f]);
+  if (by.size === list.length) return list;
+  const out: SecurityFinding[] = [];
+  for (const group of by.values()) {
+    if (group.length === 1) {
+      out.push(group[0]);
+      continue;
+    }
+    const lead = group.find((f) => f.state === "dismissed") ?? group.reduce((a, b) => ((b.updatedAt ?? 0) > (a.updatedAt ?? 0) ? b : a));
+    const rest = group.filter((f) => f !== lead);
+    out.push({
+      ...lead,
+      sources: [...new Set(group.flatMap((f) => f.sources))],
+      severity: group.reduce((s, f) => (rank(f.severity) < rank(s) ? f.severity : s), lead.severity),
+      line: lead.line ?? rest.find((f) => f.line)?.line,
+      explain: lead.explain ?? rest.find((f) => f.explain)?.explain,
+      activity: group.flatMap((f) => f.activity).sort((a, b) => a.at - b.at),
+      foundAt: Math.min(...group.map((f) => f.foundAt)),
+      updatedAt: Math.max(...group.map((f) => f.updatedAt ?? f.foundAt)),
+    });
+  }
+  // Where the first of each stood in the record.
+  const first = new Map<string, number>();
+  list.forEach((f, i) => first.has(f.key) || first.set(f.key, i));
+  return out.sort((a, b) => first.get(a.key)! - first.get(b.key)!);
+}
 /** A scan's counts with what adding these findings did folded in. */
 function counted(was: ScanRecord["counts"], added: SecurityFindingAdded[]): ScanRecord["counts"] {
   const c = { ...was, bySeverity: { ...was.bySeverity } };
@@ -236,13 +274,14 @@ export class Security {
     this.emit({ type: "security.changed", what, ...(projectId ? { projectId } : {}), at: Date.now() });
   }
 
-  /** The projects Security looks at: every folder Liner Code knows, not the designs on their own, and the Demo's stand-ins (Project.demoFor) only while the Demo is shown. */
+  /** The projects Security looks at: every folder Liner Code knows, not the designs on their own, not the Demo's Sample project, and the Demo's stand-ins (Project.demoFor) only while the Demo is shown. */
   projects(): Project[] {
-    return this.store.projects.filter((p) => p.kind !== "design" && (!p.demoFor || this.store.settings.showDemo === true));
+    return this.store.projects.filter((p) => p.kind !== "design" && !sample(p, this.store.settings) && (!p.demoFor || this.store.settings.showDemo === true));
   }
   project(projectId: string): Project {
     const p = this.store.project(projectId);
     if (p.kind === "design") throw new Error("A design on its own isn't a project Security reads.");
+    if (sample(p, this.store.settings)) throw new Error("The Sample project isn't one Security reads.");
     return p;
   }
 
@@ -259,16 +298,43 @@ export class Security {
     if (had && this.owner.get(path) !== projectId) this.restamp(had, projectId, path);
     if (had) return had;
     let d: ProjectData = { v: 1, path, findings: [], dismissed: [], scans: [] };
+    // Whether what was read changed as it was read (masked, its keys made again, two of one finding made one): written back at once, so no secret stays on disk.
+    let dirty = false;
     try {
       const v = JSON.parse(readFileSync(this.fileOf(path), "utf8")) as Partial<ProjectData>;
       if (v && typeof v === "object") {
+        // Masked as they're read, too: what an earlier build stored is never shown raw. Masking can change a finding's bare
+        // key (its rule, or an instance made of its title's words): what you dismissed under the key it had follows it.
+        const renamed = new Map<string, string>();
+        const findings = (Array.isArray(v.findings) ? v.findings : []).filter(isFinding).map((raw) => {
+          const f = { ...raw, projectId, sources: Array.isArray(raw.sources) && raw.sources.length ? raw.sources : [raw.source], look: raw.look && typeof raw.look === "object" ? raw.look : { state: "none" as const } };
+          const m = migrated(maskFinding(f));
+          const now = bareKey(m);
+          for (const was of [bareKey(f), bareKey(migrated(f))]) if (was !== now && !renamed.has(was)) renamed.set(was, now);
+          if (JSON.stringify(maskFinding(f)) !== JSON.stringify(f)) dirty = true;
+          return { ...m, key: findingKey(projectId, m) };
+        });
+        const kept = (Array.isArray(v.dismissed) ? v.dismissed : []).filter((x) => x && str(x.key) && str(x.reason) && num(x.at)).map((x) => {
+          const to = renamed.get(x.key);
+          if (!to) return x;
+          dirty = true;
+          return { ...x, key: to };
+        });
+        const merged = mergedByKey(findings);
+        if (merged.length !== findings.length) dirty = true;
+        const scans = (Array.isArray(v.scans) ? v.scans : []).filter(isScan).map((s) => {
+          const m = maskScan({ ...s, projectId });
+          if (JSON.stringify(m) !== JSON.stringify({ ...s, projectId })) dirty = true;
+          return m;
+        });
         d = {
           v: 1,
           path,
           modelFile: str(v.modelFile) && !isAbsolute(v.modelFile) && !v.modelFile.split(/[\\/]/).includes("..") ? v.modelFile : undefined,
-          findings: (Array.isArray(v.findings) ? v.findings : []).filter(isFinding).map((f) => migrated({ ...f, projectId, sources: Array.isArray(f.sources) && f.sources.length ? f.sources : [f.source], look: f.look && typeof f.look === "object" ? f.look : { state: "none" } })).map((f) => ({ ...f, key: findingKey(projectId, f) })),
-          dismissed: (Array.isArray(v.dismissed) ? v.dismissed : []).filter((x) => x && str(x.key) && str(x.reason) && num(x.at)),
-          scans: (Array.isArray(v.scans) ? v.scans : []).filter(isScan).map((s) => ({ ...s, projectId })),
+          findings: merged,
+          // One entry a key, the first the record holds (as put() reads them), once keys made again meet.
+          dismissed: kept.filter((x, i) => kept.findIndex((y) => y.key === x.key) === i),
+          scans,
           checks: v.checks && typeof v.checks === "object" && Array.isArray(v.checks.results) ? { ...v.checks, projectId } : undefined,
         };
       }
@@ -282,6 +348,13 @@ export class Security {
     this.owner.set(path, projectId);
     for (const f of d.findings) this.where.set(f.id, projectId);
     for (const s of d.scans) this.where.set(s.id, projectId);
+    if (dirty) {
+      try {
+        this.save(projectId);
+      } catch {
+        // can't be written now: written masked at the next change
+      }
+    }
     return d;
   }
   /** A project's cached data, given to the id its folder has now. */
@@ -326,7 +399,8 @@ export class Security {
     const d = this.load(projectId);
     const i = d.findings.findIndex((x) => x.id === id);
     if (i < 0) throw new Error("There's no finding by that id.");
-    const changed = fn(d.findings[i]);
+    // Whatever changed it (a scan's words, a second look's), it is stored masked.
+    const changed = maskFinding(fn(d.findings[i]));
     // The key follows what it is made of (a retitle), as load would make it after a restart; unless another finding has
     // that key already, when it keeps its own, so no two findings ever share one.
     const next = { ...changed, id, projectId, key: this.keyFree(d, id, findingKey(projectId, changed), d.findings[i].key), updatedAt: Date.now() };
@@ -376,8 +450,9 @@ export class Security {
     const d = this.load(projectId);
     let n = 0;
     d.findings = d.findings.map((f) => {
-      const next = fn(f);
-      if (!next) return f;
+      const raw = fn(f);
+      if (!raw) return f;
+      const next = maskFinding(raw);
       n++;
       return { ...next, id: f.id, projectId, key: this.keyFree(d, f.id, findingKey(projectId, next), f.key), updatedAt: Date.now() };
     });
@@ -404,7 +479,9 @@ export class Security {
     });
     return ix;
   }
-  private put(d: ProjectData, projectId: string, n: NewFinding, by: string | undefined, ix: FindingIndex): SecurityFindingAdded {
+  private put(d: ProjectData, projectId: string, raw: NewFinding, by: string | undefined, ix: FindingIndex): SecurityFindingAdded {
+    // Every text it brings is masked before anything is made of it, its key too: a scan's, a report's, GitHub's words.
+    const n = maskFinding(raw);
     const key = findingKey(projectId, n);
     const now = Date.now();
     // Keys from before instances (and sources that give none) still meet: one with an instance matches a record of the same
@@ -537,7 +614,7 @@ export class Security {
     const d = this.load(projectId);
     const i = d.scans.findIndex((x) => x.id === id);
     if (i < 0) throw new Error("There's no scan by that id.");
-    const next = { ...d.scans[i], ...patch, id, projectId };
+    const next = maskScan({ ...d.scans[i], ...patch, id, projectId });
     d.scans[i] = next;
     this.save(projectId);
     this.emit({ type: "security.scan", scan: next });

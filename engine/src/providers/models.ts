@@ -54,11 +54,11 @@ function gone(child: ChildProcessWithoutNullStreams) {
 /**
   Opens a throwaway ACP session in an empty folder and reads the models it offers: a "model"
   config option (OpenCode) or the session's model list (Hermes). The first entry is "default",
-  whatever the tool is set to now.
+  whatever the tool is set to now. `signal` ends it early, the tool's process with it (Check my tools gives it 30 seconds).
 */
-export async function acpModels(cmd: string[], label: string, env: NodeJS.ProcessEnv, scratch: string): Promise<ModelInfo[]> {
+export async function acpModels(cmd: string[], label: string, env: NodeJS.ProcessEnv, scratch: string, signal?: AbortSignal): Promise<ModelInfo[]> {
   const path = which(cmd[0], env);
-  if (!path) return [];
+  if (!path || signal?.aborted) return [];
   mkdirSync(scratch, { recursive: true });
   // In a process group of its own, so a launcher's agent (npx, uvx) goes when the probe ends.
   const child = spawn(path, cmd.slice(1), { cwd: scratch, env, stdio: ["pipe", "pipe", "pipe"], detached: true }) as ChildProcessWithoutNullStreams;
@@ -80,7 +80,12 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
   let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<null>((r) => (timer = setTimeout(() => r(null), 45000)));
+  let onAbort = () => {};
+  const timeout = new Promise<null>((r) => {
+    timer = setTimeout(() => r(null), 45000);
+    onAbort = () => r(null);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
   try {
     const s = await Promise.race([
       (async () => {
@@ -108,6 +113,7 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
     return [{ id: "default", label: `${label} default`, description: now ? `What ${label} is set to: ${now.label}` : `The model ${label} is set up with` }, ...out.map((m) => ({ ...m, isDefault: undefined }))];
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
     killTree(child);
   }
 }

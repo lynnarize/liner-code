@@ -7,7 +7,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EditedFile, Item, ProviderInfo, Thread } from "../../contracts/src/index.ts";
@@ -247,6 +247,100 @@ test("edits: another session's turn still running in the same folder, and anothe
     assert.deepEqual(s.lastUser().edits?.map((e) => `${e.path}:${e.by}${e.title ? `:${e.title}` : ""}`), ["undone.ts:session:Session B"]);
   } finally {
     providers.claude = saved;
+    f.restore();
+  }
+});
+
+/**
+  Git on PATH for this file's own calls (edits.ts runs git from process.env): each call is logged, and the note's list of the
+  session's refs waits eight seconds while the file `slowFile` is there. Everything else goes to the real git.
+*/
+async function gitShim() {
+  const real = (await run("sh", ["-c", "command -v git"])).stdout.trim();
+  const bin = realpathSync(mkdtempSync(join(tmpdir(), "lc-edits-bin-")));
+  const log = join(bin, "calls.log");
+  const slowFile = join(bin, "slow");
+  writeFileSync(log, "");
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\ncase "$*" in *"%(objectname) %(committerdate:unix)"*) [ -f '${slowFile}' ] && sleep 8;; esac\nexec '${real}' "$@"\n`);
+  chmodSync(join(bin, "git"), 0o755);
+  const saved = process.env.PATH;
+  process.env.PATH = `${bin}:${saved ?? ""}`;
+  return { log, slowFile, calls: () => readFileSync(log, "utf8").split("\n").filter(Boolean), restore: () => (process.env.PATH = saved) };
+}
+
+test("edits: many files changed while another session's turn runs in the folder take one diff, not a git process each", async () => {
+  let s!: Awaited<ReturnType<typeof setup>>;
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const f = fake();
+  const saved = providers.claude;
+  providers.claude = {
+    ...saved,
+    open: (o) => {
+      const inner = saved.open(o);
+      return {
+        ...inner,
+        turn: async (text, sink, signal) => {
+          if (text === "b works") {
+            for (let i = 0; i < 60; i++) writeFileSync(join(s.dir, `b${i}.ts`), `b${i}\n`);
+            await held;
+          }
+          return inner.turn(text, sink, signal);
+        },
+      };
+    },
+  };
+  const shim = await gitShim();
+  try {
+    s = await setup();
+    const b = await s.call<Thread>("thread.create", { projectId: "p", agent: "@claude:claude-opus-5-5", review: false, worktree: false, title: "Session B" });
+    s.store.patchThread(b.id, { title: "Session B" });
+    await s.turn("first", 1);
+    await s.call("thread.send", { id: b.id, text: "b works" });
+    await until(() => existsSync(join(s.dir, "b59.ts")) && s.store.timeline(b.id).some((x) => x.kind === "turn" && x.status === "running"), "B's turn is under way");
+    const before = shim.calls().length;
+    await s.turn("second", 2);
+    const edits = s.lastUser().edits ?? [];
+    assert.equal(edits.length, 60);
+    assert.ok(edits.every((e) => e.by === "session" && e.title === "Session B"), "every one is B's");
+    const diffs = shim.calls().slice(before).filter((c) => c.includes("diff --name-only"));
+    assert.ok(diffs.length <= 3, `one diff for the running turn's files, not one each: ${diffs.length}`);
+    release();
+    await until(() => !s.runtime.isRunning(b.id), "B's turn ended");
+  } finally {
+    shim.restore();
+    providers.claude = saved;
+    f.restore();
+  }
+});
+
+test("edits: a note that takes too long is left out and doesn't hold the turn; a Stop while it's read stops the turn at once", async () => {
+  const f = fake();
+  const shim = await gitShim();
+  try {
+    const s = await setup();
+    s.runtime.editsMs = 300;
+    await s.turn("first", 1);
+    writeFileSync(join(s.dir, "app.ts"), "changed\n");
+    writeFileSync(shim.slowFile, "");
+    let at = Date.now();
+    await s.turn("second", 2);
+    assert.ok(Date.now() - at < 5000, `went without waiting for the note: ${Date.now() - at} ms`);
+    assert.equal(f.prompts.at(-1), "second", "no note");
+    assert.equal(s.lastUser().edits, undefined);
+    // Waiting as long as it likes now, but Stop ends it.
+    s.runtime.editsMs = 60_000;
+    writeFileSync(join(s.dir, "app.ts"), "changed again\n");
+    at = Date.now();
+    await s.call("thread.send", { id: s.t.id, text: "third" });
+    await until(() => s.runtime.isRunning(s.t.id), "the third turn began");
+    await tick(300);
+    await s.call("thread.stop", { id: s.t.id });
+    await until(() => !s.runtime.isRunning(s.t.id), "stopped");
+    assert.ok(Date.now() - at < 5000, `Stop didn't wait for the note: ${Date.now() - at} ms`);
+    assert.equal(f.prompts.length, 2, "the stopped turn never reached the tool");
+  } finally {
+    shim.restore();
     f.restore();
   }
 });

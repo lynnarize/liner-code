@@ -65,7 +65,7 @@ export function accountProvider(base: Provider, a: ToolAccount): Provider {
       const where = home ? `Signs in from ${tilde(home)}` : Object.keys(a.env ?? {}).length ? `With ${Object.keys(a.env ?? {}).join(", ")}` : "The same sign-in";
       return { ...d, id, label: `${d.label} · ${a.label}`, account: a.label, login: login(d.login), detail: d.available ? `${where}${bin ? `, runs ${tilde(bin)}` : ""}` : bin ? `${tilde(bin)} isn't there.` : d.detail };
     },
-    models: base.models && ((env, scratch) => base.models!(envOf(env), scratch)),
+    models: base.models && ((env, scratch, signal) => base.models!(envOf(env), scratch, signal)),
     commands: base.commands && ((env, cwd) => base.commands!(envOf(env), cwd)),
     limits: base.limits && ((env, scratch) => base.limits!(envOf(env), scratch)),
     // Read in the account's own home: a second Hermes has a config of its own.

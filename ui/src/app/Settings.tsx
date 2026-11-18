@@ -59,7 +59,7 @@ type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "m
 
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
-  { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, what Enter does while an agent works, and what's checked and said when you send.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend send check precheck prompt draft split tasks unrelated subject quick haiku edits changed files share between turns" },
+  { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, what Enter does while an agent works, and what's checked and said when you send.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend send check precheck prompt draft split tasks unrelated subject quick haiku edits changed files share between turns anonymous usage counts analytics telemetry tokens install id" },
   { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, how much moves, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
@@ -728,6 +728,12 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
               onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             />
           </span>
+        </Field>
+      </Group>
+      {/* Anonymous usage counts (engine/src/usage-ping.ts): on unless turned off, and off drops what was counted. */}
+      <Group title="Liner Code itself">
+        <Field title="Share anonymous usage counts" note="Once a day: a random install id, the app version, your OS and chip, and how many tokens your agents read and wrote. Never your code, words, projects or models.">
+          <NamedSwitch name="Share anonymous usage counts" checked={s.usagePing !== false} onCheckedChange={(usagePing) => save({ usagePing })} />
         </Field>
       </Group>
       <Group title="First run">

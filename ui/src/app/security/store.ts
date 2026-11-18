@@ -4,9 +4,12 @@
   engine's security.* methods that ask again whenever the engine says something changed (security.changed), so every
   page stays true without polling. Kept per window, like the face itself (sessionStorage).
 */
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { FindingSource, FindingState, RpcMethod, RpcParams, RpcResult, ScanRecord, SecurityChange } from "@contracts";
-import { onStream, rpc } from "../engine";
+import { toast } from "@liner/components/toast/toast";
+import { bridge } from "../bridge";
+import { onStream, rpc, useEngine } from "../engine";
+import { securityProjects } from "../model";
 
 /** The page the Security face shows. `scan`: a scan, fix or question session (a Thread tagged security), by thread id. */
 export type SecurityPage =
@@ -58,6 +61,38 @@ export const useSecurityScope = () =>
     scopeListeners.add(fn);
     return () => void scopeListeners.delete(fn);
   }, getSecurityScope);
+
+/**
+  The projects the face shows (model.ts securityProjects: never the Demo's Sample project), and `hidden`, whether a project
+  id in one of the engine's answers is one it leaves out, for the lists the engine sends whole (projects, findings, scans).
+  A project Liner Code no longer knows isn't hidden: its rows stay, under "A removed project".
+*/
+export function useSecurityProjects() {
+  const all = useEngine((s) => s.projects);
+  const showDemo = useEngine((s) => s.settings.showDemo === true);
+  return useMemo(() => {
+    const list = securityProjects(all, showDemo);
+    const out = new Set(all.filter((p) => !list.includes(p)).map((p) => p.id));
+    return { list, hidden: (id: string | undefined) => id !== undefined && out.has(id) };
+  }, [all, showDemo]);
+}
+
+/**
+  Adds a folder through the app's own picker (security.project.add). Its project id, or undefined when none was picked, the
+  add failed, or the folder is the Demo's Sample project (hidden), which Security leaves out; the last two say so in a toast.
+*/
+export async function addSecurityFolder(hidden: (id: string) => boolean): Promise<string | undefined> {
+  const path = await bridge.pickFolder();
+  if (!path) return undefined;
+  try {
+    const p = await rpc("security.project.add", { path });
+    if (!hidden(p.projectId)) return p.projectId;
+    toast("That's the Demo's sample", { description: "Liner Security leaves the Sample project out. Pick a folder of your own." });
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : String(e));
+  }
+  return undefined;
+}
 
 type SecurityMethod = Extract<RpcMethod, `security.${string}`>;
 /** The last answer to each call, by method and params, so a page shows what it had at once while it asks again. */

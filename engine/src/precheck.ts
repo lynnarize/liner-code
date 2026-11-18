@@ -40,35 +40,51 @@ export type DraftFacts = {
 /** Most sessions one split may start: past that it reads as a backlog, not a few tasks to run side by side. */
 const MAX_SPLIT = 6;
 
-// A list item, bulleted or numbered: "- x", "* x", "• x", "1. x", "2) x".
-const ITEM = /^\s*(?:[-*•+]|\d{1,2}[.)])\s+(.+?)\s*$/;
+// A list item, bulleted or numbered: "- x", "* x", "• x", "1. x", "2) x"; its indent, and its words (trimmed after, not by a lazy match that would try every space).
+const ITEM = /^(\s*)(?:[-*•+]|\d{1,2}[.)])\s+(\S.*)$/;
 // The verbs a task opens with. An item that starts with one stands as a task; one that doesn't is a detail or a note.
 const VERBS = /^(?:please\s+)?(?:add|fix|make|build|write|update|remove|delete|rename|refactor|create|implement|move|change|migrate|replace|upgrade|set\s+up|setup|support|test|document|clean(?:\s+up)?|improve|convert|port|split|extract|bump|enable|disable|allow|show|hide|let|use|drop|introduce|investigate|find|check|speed\s+up|optimi[sz]e|translate|redesign|rewrite|wire(?:\s+up)?|hook\s+up|handle|validate|log|cache|deploy|ship|publish|debug|profile|audit|sort|filter|paginate|style|restyle|tidy|stop|prevent|avoid|ensure|guard)\b/i;
 // An item that leans on the one before it is a step of one task, not a task of its own.
 const LEANS = /^(?:then|and\s+then|after\s+(?:that|this)|next|finally|afterwards|also\s+then|once\s+(?:that|this)|using\s+(?:that|this|it)|with\s+(?:that|this|it))\b|\b(?:the\s+(?:above|previous|same)|step\s+\d)\b/i;
 // A lead-in that names no task of its own ("Please do these:"), where the list under it can be several tasks.
 const PLAIN_LEAD = /^(?:please\s*)?(?:(?:can|could|would)\s+you\s+)?(?:do\s+(?:these|the\s+following|this)|the\s+following|a\s+few\s+(?:things|tasks|fixes|changes)|some\s+(?:things|tasks|fixes|changes)|(?:these|the)\s+(?:tasks|things|fixes|changes|issues|bugs|items)|to\s*-?\s*dos?|tasks|todo|bugs|fixes|issues|things\s+to\s+do|a\s+few\s+things)\b/i;
+/** A lead-in that is all "these" and nothing else: PLAIN_LEAD, then at most "please", "for me" or "thanks" and a stop or a colon. */
+const plainLead = (said: string) => {
+  const lead = said.replace(/^(?:here\s+(?:are|is)|here['’]s)\s+/i, "");
+  const m = PLAIN_LEAD.exec(lead);
+  return Boolean(m) && /^[\s,]*(?:(?:please|for\s+me|thanks|thank\s+you)[\s,]*)*[:.!?]*$/i.test(lead.slice(m![0].length));
+};
 
 /**
   The tasks in a draft that reads as several independent ones: three or more list items, each opening with a verb of its own
-  and none leaning on the one before it, under no lead-in that makes them the steps of one task ("Add login:" over "1. the
-  form 2. the route"). Null when it doesn't read so: no model is asked to settle a list that's unclear, it's left alone.
+  and none leaning on the one before it, under no lead-in but a plain "these" and with no item under another. Null when it
+  doesn't read so: no model is asked to settle a list that's unclear, it's left alone.
+
+  Each task becomes a session of its own with only its own words, so anything the split would lose refuses it: a lead-in that
+  is a task ("Add login:" over "1. the form 2. the route") or that says something of them all ("We're on the staging DB,
+  never run migrations."), and an indented item, which belongs to the one above it.
 */
 export function tasksOf(text: string): string[] | null {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = text.split("\n").filter((l) => l.trim());
   const items: string[] = [];
   const before: string[] = [];
+  let indent: number | undefined;
   for (const l of lines) {
     const m = ITEM.exec(l);
-    if (m) items.push(m[1]);
+    if (m) {
+      // Every item at the first one's indent: one further in is a detail or a step of the item above it.
+      const at = m[1].replace(/\t/g, "    ").length;
+      if ((indent ??= at) !== at) return null;
+      items.push(m[2].trim());
+    }
     // Prose after the list began: a note on the whole, or a list in two parts; either way not plainly several tasks.
     else if (items.length) return null;
-    else before.push(l);
+    else before.push(l.trim());
   }
   if (items.length < 3 || items.length > MAX_SPLIT) return null;
-  // A lead-in is fine when it says only "these"; one that is a task itself ("Add login:", "Refactor the parser so that") makes the list its steps.
+  // A lead-in is fine only when it says nothing but "these": any more would be left out of every task.
   const lead = before.join(" ").trim();
-  if (lead && !PLAIN_LEAD.test(lead) && (VERBS.test(lead) || lead.endsWith(":"))) return null;
+  if (lead && !plainLead(lead)) return null;
   for (const it of items) {
     if (!VERBS.test(it) || LEANS.test(it)) return null;
     if (it.split(/\s+/).length < 3) return null;

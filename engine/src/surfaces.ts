@@ -578,16 +578,6 @@ async function scan(env: NodeJS.ProcessEnv, mine?: { threadId: string; folders: 
     .sort((a, b) => rank[a.owner ?? "none"] - rank[b.owner ?? "none"] || a.port - b.port);
 }
 
-/** pid → its parent and its process group, from `ps -A -o pid=,ppid=,pgid=`. */
-export function parseTable(out: string) {
-  const rows = new Map<number, { ppid: number; pgid: number }>();
-  for (const line of out.split("\n")) {
-    const [pid, ppid, pgid] = line.trim().split(/\s+/).map(Number);
-    if (Number.isInteger(pid) && Number.isInteger(ppid) && Number.isInteger(pgid)) rows.set(pid, { ppid, pgid });
-  }
-  return rows;
-}
-
 /**
   The process group that stopping `pid` signals: a shell gives each job a group of its own, so the
   group is the dev server with whatever started it (npm and its shell). Null when the group also

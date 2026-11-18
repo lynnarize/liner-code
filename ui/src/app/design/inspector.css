@@ -318,11 +318,11 @@
   color: inherit;
   cursor: default;
 }
-/* A select drawn as a field: its own chevron, the native one hidden. */
-.ld-sel {
+/* A select drawn as a field: its own chevron, the native one hidden. (Not .ld-sel: that is the canvas's selection box.) */
+.ld-fsel {
   position: relative;
 }
-.ld-sel select {
+.ld-fsel select {
   -webkit-appearance: none;
   appearance: none;
   padding-right: 18px;
@@ -476,7 +476,8 @@ span.ld-swt {
   font-family: var(--l-font-mono);
   font-size: 12px;
 }
-.ld-empty {
+/* The inspector's (and its Checks tab's) empty state; the canvas's own is .ld-empty in design-face.css. */
+.ld-insp-empty {
   display: grid;
   flex: 1;
   justify-items: center;
@@ -488,15 +489,15 @@ span.ld-swt {
   line-height: 1.5;
   text-align: center;
 }
-.ld-empty > svg {
+.ld-insp-empty > svg {
   color: var(--l-ink-4);
 }
-.ld-empty b {
+.ld-insp-empty b {
   color: var(--l-ink-2);
   font-size: 13px;
   font-weight: 500;
 }
-.ld-empty p {
+.ld-insp-empty p {
   max-width: 240px;
   margin: 0;
 }

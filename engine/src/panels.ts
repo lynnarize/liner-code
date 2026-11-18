@@ -8,9 +8,10 @@
   `refusal` is the whole rule, apart from the calls, so the tests can hold it to its word.
 */
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import type { Item, PanelAccess, PanelPlace, Thread } from "../../contracts/src/index.ts";
 import { PANEL_API } from "../../contracts/src/index.ts";
+import { outside } from "./exec.ts";
 import { listFiles } from "./files.ts";
 import { readFile } from "./surfaces.ts";
 
@@ -68,11 +69,11 @@ export function readable(root: string, path: unknown): string {
   if (typeof path !== "string" || !path.trim() || path.length > 1000) throw new Error("Say which file, by its path in the project.");
   const abs = resolve(root, path);
   const rel = relative(root, abs);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("That file is outside the project.");
+  if (!rel || outside(rel)) throw new Error("That file is outside the project.");
   if (rel.split(sep).some((p) => p.startsWith("."))) throw new Error("Hidden files and folders (.env, .git) aren't a panel's to read.");
   if (existsSync(abs)) {
     const real = relative(realpathSync(root), realpathSync(abs));
-    if (real.startsWith("..") || isAbsolute(real)) throw new Error("That file is a link to outside the project.");
+    if (outside(real)) throw new Error("That file is a link to outside the project.");
     // Where it really is counts too: notes.txt -> .env is .env. Counted from the project, so a folder above it (~/.work) doesn't.
     if (real.split(sep).some((p) => p.startsWith("."))) throw new Error("That file is a link to a hidden one (.env, .git), which isn't a panel's to read.");
   }
@@ -85,6 +86,11 @@ export type PanelEnv = {
   thread(threadId: string): Thread;
   threads(): Thread[];
   timeline(threadId: string): Item[];
+  /**
+    A session's items of these kinds, read without keeping its timeline in the engine's memory
+    (store.peek): sessions.list reads up to 200 sessions, most of them not open. Without it, the timeline.
+  */
+  peek?(threadId: string, kinds: Item["kind"][]): Item[];
   projectName(projectId: string): string;
   branchOf(threadId: string): string | undefined;
   storage: { all(): Record<string, unknown>; put(key: string, value: unknown): void };
@@ -189,7 +195,7 @@ export async function panelCall(env: PanelEnv, w: PanelWhere, method: PanelMetho
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, 200)
         .map((t) => {
-          const ch = changesOf(env.timeline(t.id));
+          const ch = changesOf(env.peek ? env.peek(t.id, ["checkpoint"]) : env.timeline(t.id));
           return { id: t.id, title: t.title, project: env.projectName(t.projectId), status: t.status, updatedAt: t.updatedAt, files: ch.length, added: ch.reduce((n, f) => n + f.added, 0), removed: ch.reduce((n, f) => n + f.removed, 0) };
         });
     case "composer.put": {

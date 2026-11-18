@@ -9,13 +9,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Access, ModelInfo, PlanEntry, ProviderInfo } from "../../../contracts/src/index.ts";
 import { rank } from "../../../contracts/src/index.ts";
-import { linerTitle } from "../agent-tools.ts";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { closesOnExit, jsonLines, killTree, marking, run, spawn, THREAD_ENV, threadMark, versionOf, which, withCodexPath } from "../exec.ts";
-import { codexAsk, codexWhy, CodexServerSession, isLimit, reasoning, toml } from "./codex-server.ts";
+import { codexAsk, codexEffort, codexMcp, codexModel, codexWhy, CodexServerSession, editTitle, isLimit, mcpTitle, reasoning, toml, webTitle } from "./codex-server.ts";
 import { imageType } from "./attachments.ts";
 import { effortOf, skillsIn } from "./models.ts";
-import { LINER_WAIT_SEC, ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
+import { ResumeFailed, scrub, type OpenOptions, type Provider, type ProviderSession, type TurnSink } from "./types.ts";
 
 /**
   Whether each Codex binary has the app server, by its path: every Codex account and endpoint detects at
@@ -102,15 +101,19 @@ class CodexSession implements ProviderSession {
     const images = files.filter((f) => imageType(f) && existsSync(f)).flatMap((f) => ["-i", f]);
     const common = [...images, "--json", "--skip-git-repo-check", "-c", `sandbox_mode="${SANDBOX[o.access]}"`, "-c", `approval_policy="never"`];
     // Claude Code's extras mean nothing here; anything else is Codex's own name for the level.
-    if (o.effort && !/^ultra(code|think)$/.test(o.effort)) common.push("-c", `model_reasoning_effort="${o.effort}"`);
-    if (o.model && o.model !== "default") common.push("-m", o.model);
+    const effort = codexEffort(o.effort);
+    const model = codexModel(o.model);
+    if (effort) common.push("-c", `model_reasoning_effort="${effort}"`);
+    if (model) common.push("-m", model);
     if (o.soul) common.push("-c", `developer_instructions=${JSON.stringify(o.soul)}`);
     // Liner Code's own tools (the Browser, designs) and an API endpoint's model provider, as the
     // app server gets them.
     // Your connections don't come this way: settings go on `codex exec`'s command line, where their keys could be read. The app server takes them.
     common.push(...execMcp(o));
-    // A Liner Security scan reads the project and nothing else: no agents of its own, no web search (OpenOptions.scan).
-    if (o.scan) common.push("-c", "agents.enabled=false", "-c", "features.multi_agent=false", "-c", `web_search="disabled"`);
+    // A sidekick sends no agents of its own, as on the app server; a Liner Security scan reads the project and nothing else: no
+    // agents of its own, no web search either (OpenOptions.scan).
+    if (o.sidekick || o.scan) common.push("-c", "agents.enabled=false", "-c", "features.multi_agent=false");
+    if (o.scan) common.push("-c", `web_search="disabled"`);
     for (const [k, v] of Object.entries(o.config ?? {})) common.push("-c", `${k}=${toml(v)}`);
     const args = this.thread ? ["exec", "resume", ...common, this.thread, "-"] : ["exec", ...common, ...(o.ephemeral ? ["--ephemeral"] : []), "-C", o.cwd, "-"];
     return new Promise<void>((resolve, reject) => {
@@ -160,14 +163,14 @@ class CodexSession implements ProviderSession {
           }
           case "file_change": {
             const paths = (it.changes ?? []).map((c) => c.path.replace(o.cwd + "/", ""));
-            sink.tool({ key: it.id, tool: "apply_patch", toolKind: "edit", title: `Edit ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ` and ${paths.length - 3} more` : ""}`, path: paths[0], status: !done ? "running" : it.status === "failed" ? "failed" : "done" });
+            sink.tool({ key: it.id, tool: "apply_patch", toolKind: "edit", title: editTitle(paths), path: paths[0], status: !done ? "running" : it.status === "failed" ? "failed" : "done" });
             break;
           }
           case "mcp_tool_call":
-            sink.tool({ key: it.id, tool: `${it.server}.${it.tool}`, toolKind: "other", title: it.server === "liner" ? linerTitle(String(it.tool), it.arguments) : `${it.server} · ${it.tool}`, status: !done ? "running" : it.status === "failed" ? "failed" : "done" });
+            sink.tool({ key: it.id, tool: `${it.server}.${it.tool}`, toolKind: "other", title: mcpTitle(it.server, it.tool, it.arguments), status: !done ? "running" : it.status === "failed" ? "failed" : "done" });
             break;
           case "web_search":
-            sink.tool({ key: it.id, tool: "web_search", toolKind: "web", title: `Search the web for ${short(it.query, 50)}`, status: done ? "done" : "running" });
+            sink.tool({ key: it.id, tool: "web_search", toolKind: "web", title: webTitle(it.query), status: done ? "done" : "running" });
             break;
           case "todo_list":
             sink.plan((it.items ?? []).map((t, i, all): PlanEntry => ({ title: t.text, status: t.completed ? "completed" : all.slice(0, i).every((x) => x.completed) ? "in_progress" : "pending" })));
@@ -251,8 +254,7 @@ class CodexSession implements ProviderSession {
   policy of never it refuses every MCP call that would need one. Why they may go without a card (Liner Design's writes
   included, and refused by the engine in a session that only reads): claude.ts, canUseTool.
 */
-export const execMcp = (o: Pick<OpenOptions, "mcp">) =>
-  o.mcp ? ["-c", `mcp_servers.liner.command=${toml(o.mcp.command)}`, "-c", `mcp_servers.liner.args=${toml(o.mcp.args)}`, "-c", `mcp_servers.liner.env=${toml(o.mcp.env)}`, "-c", `mcp_servers.liner.tool_timeout_sec=${LINER_WAIT_SEC}`, "-c", `mcp_servers.liner.default_tools_approval_mode="approve"`, "-c", `mcp_servers.liner.omit_tools_from=["deferred"]`] : [];
+export const execMcp = (o: Pick<OpenOptions, "mcp">) => Object.entries(codexMcp(o)).flatMap(([k, v]) => ["-c", `${k}=${toml(v)}`]);
 
 /** How long Stop waits for `codex exec` to end by itself. */
 const STOP_MS = 3000;

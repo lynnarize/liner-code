@@ -4,13 +4,17 @@
   line for an id winning. Writes are small and atomic, and on disk before they count; a crash
   loses at most the text that was still streaming.
 */
-import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import type { Access, AgentProfile, EngineEvent, Item, LimitWindow, ModelPicks, Project, ProviderId, Settings, SidebarGroup, Thread, UsageRecord } from "../../contracts/src/index.ts";
 import { defaultAgents, modelAgent } from "./agents.ts";
 
 type State = { projects: Project[]; threads: Thread[]; agents: AgentProfile[]; settings: Settings; groups: SidebarGroup[] };
+
+/** How many timelines stay in memory once they have sat unused for TIMELINE_IDLE_MS (letGoTimelines): the rest are read from their logs again when next asked for. */
+export const TIMELINES_KEPT = 30;
+export const TIMELINE_IDLE_MS = 10 * 60_000;
 type Listener = (e: EngineEvent) => void;
 
 /**
@@ -210,6 +214,10 @@ export class Store {
   readonly home: string;
   private state: State;
   private items = new Map<string, Item[]>();
+  /** When each timeline in memory was last asked for, so the ones nobody has used in a while can go (letGoTimelines). */
+  private usedAt = new Map<string, number>();
+  /** Threads removed while this engine runs: a late write from a turn still winding down (sink.end) can't bring back their log. */
+  private removed = new Set<string>();
   private listeners = new Set<Listener>();
   private saveTimer: NodeJS.Timeout | null = null;
 
@@ -372,26 +380,44 @@ export class Store {
     appendFileSync(join(this.home, "usage.jsonl"), `${JSON.stringify(r)}\n`);
     this.onUsage?.(r);
   }
+  /** usage.jsonl as read so far: its records, and how far into the file they go. Only what was added since is read next time. */
+  private usageRead: { bytes: number; records: UsageRecord[] } = { bytes: 0, records: [] };
   usage(from: number): UsageRecord[] {
     const file = join(this.home, "usage.jsonl");
-    if (!existsSync(file)) return [];
-    const out: UsageRecord[] = [];
-    for (const line of readFileSync(file, "utf8").split("\n")) {
-      if (!line) continue;
+    const size = statSync(file, { throwIfNoEntry: false })?.size;
+    if (size === undefined) return (this.usageRead = { bytes: 0, records: [] }), [];
+    // Shorter than what was read: it was replaced, so it's read again from the start.
+    if (size < this.usageRead.bytes) this.usageRead = { bytes: 0, records: [] };
+    if (size > this.usageRead.bytes) {
+      const fd = openSync(file, "r");
+      let text: string;
       try {
-        const r = JSON.parse(line) as UsageRecord;
-        if (r.at >= from) out.push(r);
-      } catch {
-        // a torn line
+        const buf = Buffer.alloc(size - this.usageRead.bytes);
+        text = buf.subarray(0, readSync(fd, buf, 0, buf.length, this.usageRead.bytes)).toString("utf8");
+      } finally {
+        closeSync(fd);
       }
+      // Up to the last whole line: one still being written is read when it ends.
+      const end = text.lastIndexOf("\n") + 1;
+      for (const line of text.slice(0, end).split("\n")) {
+        if (!line) continue;
+        try {
+          this.usageRead.records.push(JSON.parse(line) as UsageRecord);
+        } catch {
+          // a torn line
+        }
+      }
+      this.usageRead.bytes += Buffer.byteLength(text.slice(0, end));
     }
-    return out;
+    return this.usageRead.records.filter((r) => r.at >= from);
   }
 
   /** Forgets a thread and its timeline. */
   removeThread(id: string) {
     this.state.threads = this.state.threads.filter((t) => t.id !== id);
     this.items.delete(id);
+    this.usedAt.delete(id);
+    this.removed.add(id);
     rmSync(this.logFile(id), { force: true });
     this.save();
   }
@@ -415,6 +441,7 @@ export class Store {
     // A security scan (and a question about a finding) only reads: whatever asks for more (a plan approved, a patch) leaves it at Read only.
     if ((t.security?.kind === "scan" || t.security?.kind === "ask") && t.access !== "read") t = { ...t, access: "read" };
     t.updatedAt = Date.now();
+    this.removed.delete(t.id);
     // Only a running turn is doing anything: a session that stops, ends, fails or waits on you says so at once.
     if (t.doing && t.status !== "running") t = { ...t, doing: undefined };
     const i = this.state.threads.findIndex((x) => x.id === t.id);
@@ -460,7 +487,13 @@ export class Store {
   /** The timeline of a thread, read from its log the first time it is asked for. */
   timeline(threadId: string): Item[] {
     const cached = this.items.get(threadId);
-    if (cached) return cached;
+    if (cached) {
+      this.usedAt.set(threadId, Date.now());
+      return cached;
+    }
+    // Removed: nothing to read, and nothing kept for it.
+    if (this.removed.has(threadId)) return [];
+    this.usedAt.set(threadId, Date.now());
     const file = this.logFile(threadId);
     const order: string[] = [];
     const byId = new Map<string, Item>();
@@ -521,10 +554,35 @@ export class Store {
     return [...byId.values()];
   }
 
-  /** Adds or replaces an item, tells the app, and logs it unless it is still streaming. */
+  /**
+    Lets go of timelines in memory past the newest TIMELINES_KEPT, each unused for TIMELINE_IDLE_MS, that `busy` doesn't hold (a
+    turn, a hold, a test run: Runtime's) and that hold nothing the log doesn't (nothing streaming, running or asking), so reading
+    one again gives the same items. Called from a timer only, never in the middle of a call that holds a list. How many went.
+  */
+  letGoTimelines(busy: (threadId: string) => boolean, now = Date.now()) {
+    let over = this.items.size - TIMELINES_KEPT;
+    if (over <= 0) return 0;
+    const live = (x: Item) => ((x.kind === "text" || x.kind === "reasoning") && x.streaming) || (x.kind === "tool" && (x.status === "running" || x.agent?.state === "running")) || ((x.kind === "approval" || x.kind === "proposal" || x.kind === "question") && x.state === "asking") || ((x.kind === "turn" || x.kind === "review") && x.status === "running");
+    const idle = [...this.items.keys()].map((id) => [id, this.usedAt.get(id) ?? 0] as const).filter(([, at]) => now - at >= TIMELINE_IDLE_MS).sort((a, b) => a[1] - b[1]);
+    let gone = 0;
+    for (const [id] of idle) {
+      if (over <= 0) break;
+      const t = this.state.threads.find((x) => x.id === id);
+      if (busy(id) || t?.status === "running" || t?.status === "waiting" || this.items.get(id)!.some(live)) continue;
+      this.items.delete(id);
+      this.usedAt.delete(id);
+      over--;
+      gone++;
+    }
+    return gone;
+  }
+
+  /** Adds or replaces an item, tells the app, and logs it unless it is still streaming. Nothing, for a thread removed meanwhile. */
   putItem(threadId: string, item: Item, log = true) {
+    if (this.removed.has(threadId)) return item;
     const list = this.timeline(threadId);
-    const i = list.findIndex((x) => x.id === item.id);
+    // From the end: the item that changes is nearly always one of the latest.
+    const i = list.findLastIndex((x) => x.id === item.id);
     if (i < 0) list.push(item);
     else list[i] = item;
     this.emit({ type: "item", threadId, item });
@@ -540,7 +598,8 @@ export class Store {
 
   /** Appends streamed text to a text or reasoning item, in memory; it is logged when it ends. */
   appendText(threadId: string, itemId: string, text: string) {
-    const it = this.timeline(threadId).find((x) => x.id === itemId);
+    if (this.removed.has(threadId)) return;
+    const it = this.timeline(threadId).findLast((x) => x.id === itemId);
     if (!it || (it.kind !== "text" && it.kind !== "reasoning")) return;
     it.text += text;
     this.emit({ type: "delta", threadId, itemId, text });
@@ -577,7 +636,8 @@ export class Store {
   flush() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    writeAtomic(join(this.home, "state.json"), JSON.stringify(this.state, null, 2), { backup: true });
+    // Written plain, not indented: it is rewritten whole as sessions change, and indenting made it about 40% larger.
+    writeAtomic(join(this.home, "state.json"), JSON.stringify(this.state), { backup: true });
   }
 }
 

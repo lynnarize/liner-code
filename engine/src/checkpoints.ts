@@ -370,8 +370,15 @@ export async function keep(cwd: string, name: string, commits: string[]) {
   for (const c of new Set(commits)) await git(cwd, ["update-ref", `refs/liner/${name}/kept-${n++}`, c]);
 }
 
-/** Drops a thread's snapshots once the thread is gone. */
+/**
+  Drops a thread's snapshots once the thread is gone: all in one git, which a long session's hundreds of refs needed one each
+  for. A batch that fails fails whole, so then they go one at a time, as before.
+*/
 export async function forget(cwd: string, prefix: string) {
   const r = await git(cwd, ["for-each-ref", "--format=%(refname)", `refs/liner/${prefix}`]);
-  for (const ref of r.stdout.split("\n").filter(Boolean)) await git(cwd, ["update-ref", "-d", ref]);
+  const refs = r.stdout.split("\n").filter(Boolean);
+  if (!refs.length) return;
+  const all = await git(cwd, ["update-ref", "--stdin"], undefined, refs.map((ref) => `delete ${ref}\n`).join(""));
+  if (all.code === 0) return;
+  for (const ref of refs) await git(cwd, ["update-ref", "-d", ref]);
 }

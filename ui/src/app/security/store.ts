@@ -99,20 +99,22 @@ export function useSecurity<M extends SecurityMethod>(method: M, params: RpcPara
     };
   }, [key, tick]);
   const data = got?.key === key ? got.data : ((cache.get(key) as RpcResult<M> | undefined) ?? null);
-  useEffect(
-    () =>
-      onSecurity((e) => {
-        const what: SecurityChange[] = e.type === "security.scan" ? ["scans"] : e.what;
-        if (!on || what.some((w) => on.includes(w))) setTick((n) => n + 1);
-      }),
-    [on?.join(",")],
-  );
+  // Asked again at most once in 150 ms: a scan sends an event for each area it reads and each finding it counts.
+  useEffect(() => {
+    let soon = 0;
+    const off = onSecurity((e) => {
+      const what: SecurityChange[] = e.type === "security.scan" ? ["scans"] : e.what;
+      if ((!on || what.some((w) => on.includes(w))) && !soon) soon = window.setTimeout(() => ((soon = 0), setTick((n) => n + 1)), 150);
+    });
+    return () => (off(), clearTimeout(soon));
+  }, [on?.join(",")]);
   return { data, error: error?.key === key ? error.text : null, loading, reload: () => setTick((n) => n + 1) };
 }
 
 /** A scan's record, live: its last security.scan event, else what security.scans.list said. */
 export function useScan(id: string | undefined): ScanRecord | null {
-  const { data } = useSecurity("security.scans.list", {}, ["scans"]);
+  // Asked once, not on each event: the scan's own events (security.scan) carry its record as it moves.
+  const { data } = useSecurity("security.scans.list", {}, []);
   const [live, setLive] = useState<ScanRecord | null>(null);
   useEffect(() => onSecurity((e) => e.type === "security.scan" && e.scan.id === id && setLive(e.scan)), [id]);
   if (!id) return null;

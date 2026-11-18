@@ -16,7 +16,7 @@
   what it writes settles in inside the frame (Frame.tsx, frame-agent.js), and a small change is lit
   for a moment here on the overlay with a "Changed" tag (live.css). None of it is in a frame's file.
 */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as PE } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as PE } from "react";
 import type { DesignFrame, Rect, TreeNode } from "@contracts";
 import { editText, frames, onEdited, onReady } from "./bridge";
 import { carriesFiles, dropFiles } from "./Drop";
@@ -29,10 +29,15 @@ import { LiveMark } from "./Live";
 import { CheckLabel, CheckMarks } from "./ChecksTab";
 import { WayLabel, WaysOver } from "./Ways";
 import { PictureOver } from "./Pictures";
-import { blankHtml, design, frameOf, getDesign, isGone, keepsView, useDesign, type Sel } from "./store";
+import { design, frameOf, getDesign, isBlank, isGone, keepsView, useDesign, type Sel } from "./store";
 import { onLanding, takeLanding } from "../face";
 
 const DRAG = 3;
+// A frame's label chips take only the frame: a pan or a zoom (a new place on screen, the same frame) draws none of them again.
+const WayChip = memo(WayLabel);
+const LiveChip = memo(LiveMark);
+const CheckChip = memo(CheckLabel);
+const BuildChip = memo(FrameMark);
 type Box = { x: number; y: number; w: number; h: number };
 type Edge = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 type Drag =
@@ -92,7 +97,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
   const play = useDesign((s) => s.tool === "play");
   const [dropping, setDropping] = useState(false);
   // Which drawn frames have nothing in them yet, as one string so a typed letter elsewhere redraws nothing here.
-  const blanks = useDesign((s) => (s.file?.frames ?? []).filter((f) => f.kind === "drawn" && blankHtml(s.html[f.id])).map((f) => f.id).join(","));
+  const blanks = useDesign((s) => (s.file?.frames ?? []).filter((f) => isBlank(s, f)).map((f) => f.id).join(","));
   const [rects, setRects] = useState<Record<string, Rect>>({});
   const [hover, setHover] = useState<{ frame: string; rect: Rect } | null>(null);
   const [space, setSpace] = useState(false);
@@ -371,7 +376,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     if (d.kind === "move") {
       if (!d.moved && Math.hypot(dx, dy) < DRAG) return;
       d.moved = true;
-      return design.place(d.start.map((f) => ({ id: f.id, x: f.x + dx / s.zoom, y: f.y + dy / s.zoom })));
+      return design.place(d.start.map((f) => ({ id: f.id, x: f.x + dx / s.zoom, y: f.y + dy / s.zoom })), undefined, true);
     }
     if (d.kind === "frame-size") {
       const f = d.start;
@@ -382,7 +387,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
       if (d.edge.includes("s")) b.h = f.h + zy;
       if (d.edge.includes("w")) (b.w = f.w - zx), (b.x = f.x + Math.min(zx, f.w - 40));
       if (d.edge.includes("n")) (b.h = f.h - zy), (b.y = f.y + Math.min(zy, f.h - 40));
-      return design.place([{ id: f.id, ...b }]);
+      return design.place([{ id: f.id, ...b }], undefined, true);
     }
     if (d.kind === "node-size") {
       const style: Record<string, string> = {};
@@ -412,6 +417,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
         if (f) await pick(f, p, { shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey, count: 1 });
       }
     } else if (d.kind === "frame-size") design.place([{ id: d.id }], { before: [d.start] });
+    else if (d.kind === "node-size") endSize(d.id);
     else if (d.kind === "draw") {
       setDrawBox(null);
       design.setTool("select");
@@ -445,7 +451,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     });
   };
 
-  // Pulling a node's edge: one change a frame of animation at most, one step to undo for the pull.
+  // Pulling a node's edge: shown in the frame a frame of animation at most, written to its file once it's let go (endSize); one step to undo for the pull.
   const sizing = useRef<{ frame: string; id: string; style: Record<string, string> } | null>(null);
   const sizeFrame = useRef(0);
   const sizeNode = (frame: string, id: string, style: Record<string, string>) => {
@@ -454,8 +460,18 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     sizeFrame.current = requestAnimationFrame(() => {
       sizeFrame.current = 0;
       const c = sizing.current;
-      if (c) void design.apply(c.frame, [{ id: c.id, style: c.style }], { coalesce: `size:${c.id}` });
+      // Written when let go (or after a still moment of 400 ms, so a pull that never hears its pointerup still lands).
+      if (c) design.hold(c.frame, [{ id: c.id, style: c.style }], `size:${c.id}`, 400);
     });
+  };
+  const endSize = (id: string) => {
+    // The newest size, if it was still waiting for its frame of animation, then the write.
+    const c = sizing.current;
+    sizing.current = null;
+    if (sizeFrame.current && c) design.hold(c.frame, [{ id: c.id, style: c.style }], `size:${c.id}`, 400);
+    cancelAnimationFrame(sizeFrame.current);
+    sizeFrame.current = 0;
+    design.release(`size:${id}`);
   };
 
   const startFrameSize = (f: DesignFrame, edge: Edge) => (e: PE) => {
@@ -492,18 +508,22 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     way. Within that room the row drops whole chips from the right first, then ends the name in an
     ellipsis (the label row's own rule).
   */
-  const labelRoom = (i: number) => {
-    const me = boxOf(onPage[i]);
-    let room = Math.max(60, me.width);
-    onPage.forEach((g, j) => {
-      if (j === i) return;
-      const o = boxOf(g);
-      if (Math.abs(o.top - me.top) >= 20) return;
-      if (o.left > me.left) room = Math.min(room, o.left - me.left - 8);
-      else if (o.left === me.left && j < i) room = 0;
-    });
-    return room;
-  };
+  // Worked out on the plane at this zoom (a pan moves every label alike, so changes no room): once per zoom or frame change, not on every pan.
+  const rooms = useMemo(
+    () =>
+      onPage.map((f, i) => {
+        let room = Math.max(60, f.w * zoom);
+        onPage.forEach((g, j) => {
+          if (j === i) return;
+          if (Math.abs((g.y - f.y) * zoom) >= 20) return;
+          if (g.x > f.x) room = Math.min(room, (g.x - f.x) * zoom - 8);
+          else if (g.x === f.x && j < i) room = 0;
+        });
+        return room;
+      }),
+    [onPage, zoom],
+  );
+  const labelRoom = (i: number) => rooms[i];
 
   const firstSel = sel[0];
   const selFrame = frameOf({ file } as never, firstSel?.frame);
@@ -609,10 +629,10 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
                   </span>
                 ) : (
                   <>
-                    <WayLabel frame={f} />
-                    <LiveMark frame={f} />
-                    <CheckLabel frame={f} />
-                    <FrameMark frame={f} />
+                    <WayChip frame={f} />
+                    <LiveChip frame={f} />
+                    <CheckChip frame={f} />
+                    <BuildChip frame={f} />
                     <span className="ld-num">
                       {f.w} × {f.h}
                     </span>

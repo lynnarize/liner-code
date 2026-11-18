@@ -17,9 +17,11 @@
 import { closeSync, constants, createReadStream, fstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server } from "node:http";
 import { connect } from "node:net";
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { brotliDecompressSync, gunzipSync, inflateRawSync, inflateSync } from "node:zlib";
+import { extname, join, relative, resolve, sep } from "node:path";
 import { COMPUTED, DESIGN_FRAME_STYLE } from "../../contracts/src/index.ts";
 import { FRAME_AGENT } from "./canvas.ts";
+import { outside } from "./exec.ts";
 
 const PROBE_PATH = "/__liner/probe.js";
 const FRAME_AGENT_PATH = "/__liner/frame-agent.js";
@@ -53,10 +55,17 @@ export function unmarked(url: string) {
   return `${url.slice(0, q)}${kept.length ? `?${kept.join("&")}` : ""}${h < 0 ? "" : url.slice(h)}`;
 }
 
-/** The frame agent, read from disk each time: it's one file the app and the engine share. */
+/**
+  The frame agent: one file the app and the engine share, read again only when it changes (while
+  developing, it's edited under a running engine), not for every page a live frame loads.
+*/
+let agentRead: { at: number; size: number; text: string } | undefined;
 const frameAgent = () => {
   try {
-    return readFileSync(FRAME_AGENT, "utf8");
+    const st = statSync(FRAME_AGENT);
+    if (agentRead?.at === st.mtimeMs && agentRead.size === st.size) return agentRead.text;
+    agentRead = { at: st.mtimeMs, size: st.size, text: readFileSync(FRAME_AGENT, "utf8") };
+    return agentRead.text;
   } catch {
     return "";
   }
@@ -154,6 +163,48 @@ const withProbe = (html: string, extra = "") => {
   return html.slice(0, at) + tag + html.slice(at);
 };
 
+/**
+  A dev server's page as bytes, its content-encoding undone: the proxy asks for none, but a server
+  that compresses anyway (a static server with gzip always on, a precompiled .gz) still sends it.
+  Null for an encoding this can't undo, or bytes that don't undo: then the page goes on untouched.
+*/
+export function unencoded(body: Buffer, encoding: unknown): Buffer | null {
+  const e = String(encoding ?? "").trim().toLowerCase();
+  try {
+    if (!e || e === "identity") return body;
+    if (e === "gzip" || e === "x-gzip") return gunzipSync(body);
+    if (e === "br") return brotliDecompressSync(body);
+    // deflate is meant to be zlib's wrapping, but some servers send it bare.
+    if (e === "deflate") {
+      try {
+        return inflateSync(body);
+      } catch {
+        return inflateRawSync(body);
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+  A dev server's page with the probe (withProbe), in the bytes it came in: found by reading them
+  one byte to a character (latin1), which keeps every offset, since the tags it looks for are ASCII
+  in UTF-8 and the other charsets a page is written in. The page's own text is never decoded, so a
+  Shift_JIS or Latin-1 page keeps its words. In a page that says it isn't UTF-8, what goes in is
+  written in ASCII alone (\uXXXX in the script), so it reads the same whichever charset it's
+  read in. Null for a page in UTF-16 or UTF-32, where the tags aren't single bytes: it goes on as it is.
+*/
+export function probedBytes(body: Buffer, contentType: unknown, extra = ""): Buffer | null {
+  const charset = /;\s*charset\s*=\s*"?([\w.:-]+)/i.exec(String(contentType ?? ""))?.[1]?.toLowerCase() ?? "";
+  if (/^(utf-?(16|32)|ucs-?[24])/.test(charset)) return null;
+  const ascii = !!charset && charset !== "utf-8" && charset !== "utf8";
+  const tag = `<script src="${PROBE_PATH}"></script>${ascii ? extra.replace(/[^\x00-\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`) : extra}`;
+  const at = agentAt(body.toString("latin1"));
+  return Buffer.concat([body.subarray(0, at), Buffer.from(tag, "utf8"), body.subarray(at)]);
+}
+
 /** Opens a server on a port (a free one for 0) of a host and says which. */
 const listen = (server: Server, port: number, host: string) =>
   new Promise<number>((resolve, reject) => {
@@ -243,7 +294,7 @@ export class Proxies {
       const out = (rel: string) => {
         const p = rel.split(sep);
         const ok = p[0] === ".liner" && p[1] === "designs" && p.length > 2;
-        return rel.startsWith("..") || isAbsolute(rel) || p.slice(ok ? 2 : 0).some((x) => x.startsWith("."));
+        return outside(rel) || p.slice(ok ? 2 : 0).some((x) => x.startsWith("."));
       };
       if (out(inside)) return refused();
       const missing = () => void res.writeHead(404, { "content-type": "text/html; charset=utf-8" }).end(note(`No ${escaped(inside || "index.html")} in this session's folder yet.`));
@@ -385,12 +436,34 @@ export class Proxies {
     r.on("data", (c: Buffer) => chunks.push(c));
     r.on("end", () => {
       // A live frame's page gets the frame agent after the probe, tagged data-liner-agent (the agent leaves its own tag out of what it serialises); the Browser's gets the probe alone.
-      const body = withProbe(Buffer.concat(chunks).toString("utf8"), frame ? agentTag() : "");
+      const raw = Buffer.concat(chunks);
+      const page = unencoded(raw, headers["content-encoding"]);
+      const body = page && probedBytes(page, headers["content-type"], frame ? agentTag() : "");
+      // An encoding or a charset the probe can't go into: the page as it came, without the probe.
+      if (!body) return void res.writeHead(r.statusCode ?? 200, headers).end(raw);
       delete headers["content-length"];
       delete headers["content-encoding"];
       res.writeHead(r.statusCode ?? 200, headers);
       res.end(body);
     });
+  }
+
+  /**
+    A session folder's server, closed once no session that is still around works in it (its last
+    one archived or deleted): it keeps two listening sockets for the life of the engine otherwise.
+    Asked for again, it opens afresh on a new port.
+  */
+  closeFolder(root: string) {
+    const had = this.folders.get(root);
+    if (!had) return false;
+    this.folders.delete(root);
+    for (const server of had.servers) server.close(), server.closeIdleConnections();
+    return true;
+  }
+
+  /** The folders with a server open now, for the engine to see which no session uses any more. */
+  folderRoots() {
+    return [...this.folders.keys()];
   }
 
   closeAll() {

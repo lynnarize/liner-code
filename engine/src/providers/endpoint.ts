@@ -10,7 +10,7 @@
   listed. Its key comes from the keychain when a session opens, and goes to the tool's process
   only, under a name of its own.
 */
-import type { Endpoint, EndpointProtocol, ModelInfo, ProviderId } from "../../../contracts/src/index.ts";
+import type { Endpoint, EndpointProtocol, ModelInfo, ProviderId, ProviderInfo } from "../../../contracts/src/index.ts";
 import { ENDPOINT_TOOL, takesPictures, VOUCHER } from "../../../contracts/src/index.ts";
 import type { OpenOptions, Provider } from "./types.ts";
 import { goUsage, isGo } from "./opencode-go.ts";
@@ -100,6 +100,20 @@ export async function endpointModels(url: string, protocol: EndpointProtocol, ke
   return [...new Set(ids)].slice(0, 200);
 }
 
+/**
+  A tool's detect, shared by everyone asking with the same environment while one is under way: each endpoint through Codex
+  asked Codex again, four starts of it each, at the same moment as the app's own look. Only while it runs, so the next look
+  (after an install, a sign-in) asks afresh.
+*/
+const detecting = new WeakMap<Provider, { env: NodeJS.ProcessEnv; said: Promise<ProviderInfo> }>();
+export function detectOnce(p: Provider, env: NodeJS.ProcessEnv): Promise<ProviderInfo> {
+  const now = detecting.get(p);
+  if (now?.env === env) return now.said;
+  const said: Promise<ProviderInfo> = p.detect(env).finally(() => void (detecting.get(p)?.said === said && detecting.delete(p)));
+  detecting.set(p, { env, said });
+  return said;
+}
+
 /** The endpoint `e`, through `base` (the tool for its protocol). `key` is read when a session opens, so a key saved later counts. */
 export function endpointProvider(base: Provider, e: Endpoint, key: () => string | undefined): Provider {
   const id = `${ENDPOINT_TOOL[e.protocol]}.${e.id}` as ProviderId;
@@ -107,7 +121,7 @@ export function endpointProvider(base: Provider, e: Endpoint, key: () => string 
   return {
     id,
     async detect(env) {
-      const d = await base.detect(env);
+      const d = await detectOnce(base, env);
       // A key, or one on this Mac: ready. A hosted one with no key may need none (some are free); its first answer says.
       const keyed = Boolean(key()) || local(e.url);
       return {

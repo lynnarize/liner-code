@@ -12,7 +12,7 @@ import { startOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
-import { rpc, useEngine } from "./engine";
+import { getState, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { listedProjects, pairEffortFor } from "./model";
 import { Pop } from "./ui";
@@ -141,6 +141,12 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   // ask (T3 Code: web components/chat/backgroundThread.ts). The composer sends either way; the key
   // is read here, as it goes by, before the composer takes it.
   const background = useRef(false);
+  /*
+    A session made for an ask whose send was turned down (a file too big, a tool not ready): the composer
+    puts the ask back, and sending it again goes to that session, while nothing is picked differently,
+    rather than leaving one "Not started" session in the sidebar for each try.
+  */
+  const made = useRef<{ id: string; key: string } | null>(null);
   const start = async (m: { text: string; files: { name: string; data: string }[] }) => {
     if (!project) return;
     const quietly = background.current;
@@ -158,8 +164,18 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
         if (made[0]?.compare) onCompare(made[0].compare.id);
         return;
       }
-      const t = await rpc("thread.create", { ...(id ? { id } : {}), projectId: project.id, mode: asMode, agent: settings.agent, sidekick: settings.sidekick, ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
-      await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
+      const left = made.current;
+      made.current = null;
+      const again = left && left.key === choicesKey ? getState().threads.find((x) => x.id === left.id && x.turns === 0 && !x.archived) : undefined;
+      // The tool opened ahead for this draft isn't the one it goes to after all.
+      if (again && id && id !== again.id) void rpc("thread.unwarmNew", { id }).catch(() => {});
+      const t = again ?? await rpc("thread.create", { ...(id ? { id } : {}), projectId: project.id, mode: asMode, agent: settings.agent, sidekick: settings.sidekick, ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
+      try {
+        await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
+      } catch (e) {
+        made.current = { id: t.id, key: choicesKey };
+        throw e;
+      }
       if (quietly) {
         setInWorktree(undefined);
         const ask = m.text.split("\n")[0].trim();

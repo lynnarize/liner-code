@@ -11,18 +11,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { app } from "electron";
-
-const BUNDLE_ID = "app.liner.code";
-const APP_NAME = "Liner Code.app";
-
-const parts = (v: string) => /(\d+)\.(\d+)\.(\d+)/.exec(v)?.slice(1).map(Number) ?? null;
-function newer(a: string, b: string) {
-  const x = parts(a);
-  const y = parts(b);
-  if (!x || !y) return false;
-  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
-  return false;
-}
+import { APP_BUNDLE_ID as BUNDLE_ID, APP_BUNDLE_NAME as APP_NAME, newerVersion as newer } from "../../contracts/src/index.ts";
 
 /** This app's bundle ("/Applications/Liner Code.app"), or null when it runs from the repo. */
 export function bundlePath() {

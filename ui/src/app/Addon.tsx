@@ -534,13 +534,16 @@ export function willTouch(a: PanelAsk["access"], place: PanelPlace) {
   what it will touch; Create makes it in a background session, then Installing, Installed, and
   Keep or Undo; Undo keeps its files, so Restore brings it back.
 */
+/** OfferCard's view of the session it starts: its tool calls. */
+const isToolItem = (it: Item) => it.kind === "tool";
 export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; who: string }) {
   const [place, setPlace] = useState<PanelPlace | "custom">(it.custom ? "custom" : it.place);
   const [custom, setCustom] = useState(it.custom ?? "");
   const [seed, setSeed] = useState(false);
   const [info, setInfo] = useState(false);
   const [busy, setBusy] = useState(false);
-  const child = useEngine((s) => (it.child ? s.items[it.child] : undefined));
+  // Only its tool calls: the background session's words as they stream don't redraw the card.
+  const tools = useItemsWhere(it.child, isToolItem) as Extract<Item, { kind: "tool" }>[];
   // The background session's timeline, fetched so its steps come in here while you keep chatting.
   useEffect(() => {
     if (it.child && (it.state === "creating" || it.state === "installing") && !getState().items[it.child]) void loadItems(it.child).catch(() => {});
@@ -557,7 +560,6 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
   };
   const working = it.state === "creating" || it.state === "installing";
   // How far the background session is, from what it's done so far.
-  const tools = (child ?? []).filter((x): x is Extract<Item, { kind: "tool" }> => x.kind === "tool");
   const wrote = tools.filter((x) => x.toolKind === "write" || x.toolKind === "edit").length;
   const read = tools.some((x) => /add-on guide/.test(x.title));
   const checked = tools.some((x) => /^Check the panel/.test(x.title) && x.status === "done");

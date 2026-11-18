@@ -14,7 +14,7 @@
 */
 import type { CanvasVersion, FrameOp, FramePlaced, DesignFile, DesignFileInfo, DesignPatch, DesignPresence, DesignSelection, DesignSkill, FrameBuild, Lean, NewFrame, PictureAdd, PictureEndpoint, PictureModel } from "./design.ts";
 import type { HandOver, PairTuning, SidekickClass } from "./tuning.ts";
-import type { BringInResult, DismissReason, FindingState, SecurityFinding, FreeCheckRun, ScanChoices, ScanOptions, ScanRecord, SecurityChange, SecurityOverview, SecurityProject, SecuritySide, SecurityTag, SpecialistSource, ThreatModel, SecurityItem } from "./security.ts";
+import type { BringInResult, DismissReason, FindingState, SecurityFinding, ScanChoices, ScanOptions, ScanRecord, SecurityChange, SecurityOverview, SecurityProject, SecuritySide, SecurityTag, SpecialistSource, ThreatModel, SecurityItem } from "./security.ts";
 
 /** The tools Liner Code knows by name. */
 export type BuiltinProvider = "claude" | "codex" | "hermes" | "opencode" | "cursor" | "grok" | "antigravity" | "demo";
@@ -385,7 +385,7 @@ export type Thread = {
   /** Agents it sent that still work, also in the background after the turn that sent them: the Wall, the sidebar and quitting read it here, not from the timeline. None once the engine stops. */
   agentsAtWork?: number;
   /** What it is doing right now, in a few plain words, while a turn runs: the sidebar's second line. Unset when no turn runs. */
-  doing?: { text: string; at: number };
+  doing?: { text: string };
   /** Messages you wrote while it worked, sent in order when the turn ends. */
   queue?: QueuedMessage[];
   /** The Reviewer's last word on this session's changes. */
@@ -1002,8 +1002,9 @@ export type Item =
 export type ErrorWhy = "refusal" | "overloaded";
 
 export type ItemKind = Item["kind"];
-/** The PR card's own tool: its run of the project's tests on this Mac, and the request to run them. */
-export const PR_TEST_TOOL = "liner.test";
+// PR_TEST_TOOL, the PR card's own tool, is in doing.ts (exported from here below), which tells steps from cards by it.
+/** What a commit message, PR draft or Desk answer stopped by writer.cancel (or by a newer ask for the same) fails with: no error to show. */
+export const WRITER_CANCELLED = "Stopped writing.";
 export type PrTestResult = { state: "passed" | "failed" | "skipped"; command?: string; summary: string; seconds?: number };
 export type Finding = { file: string; line?: number; endLine?: number; severity: "blocking" | "note"; note: string };
 
@@ -1350,8 +1351,12 @@ export type PrPicture = {
 };
 export type Device = { udid: string; name: string; runtime: string; state: string };
 
-/** `worked`: set on a session's own turn (not the Reviewer's or a sidekick's), in seconds, the time it waited on you left out: what a turn's ETA is worked out from (Thread.eta). */
-export type UsageRecord = { at: number; threadId: string; projectId: string; agent: string; provider: ProviderId; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; costUsd: number; seconds: number; worked?: number };
+/**
+  `worked`: set on a session's own turn (not the Reviewer's or a sidekick's), in seconds, the time it waited on you left out: what a turn's ETA is worked out from (Thread.eta).
+  `turn`: the session's turn the record is for (a turn's own record). `late`: a count that came after that turn had ended and its record was written
+  (OpenCode's for a stopped turn): more of the same turn, added to its record by what reads them, never a turn of its own.
+*/
+export type UsageRecord = { at: number; threadId: string; projectId: string; agent: string; provider: ProviderId; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; costUsd: number; seconds: number; worked?: number; turn?: number; late?: true };
 export type UsageSummary = {
   from: number;
   to: number;
@@ -1629,7 +1634,6 @@ export type Rpc = {
   /** The answers so far to a question card that still asks (several questions, paged), kept on the item as `partial`: they survive a reload. Nothing goes to the agent until question.answer. */
   "question.partial": [{ threadId: string; itemId: string; answers: Record<string, string> }, null];
   "proposal.answer": [{ threadId: string; itemId: string; approve: boolean; note?: string; plan?: string }, null];
-  "review.run": [{ threadId: string }, null];
   /** `files` stops at the first 60; `total` is how many changed. */
   "checkpoint.diff": [{ threadId: string; itemId: string }, { files: FileDiff[]; total: number }];
   /** Undoes a turn's changes. Refused when a file it changed was changed again after it, unless `force`. */
@@ -1665,6 +1669,8 @@ export type Rpc = {
   "pr.draft": [{ threadId: string }, { title: string; body: string; by: string }];
   /** A question about a session's case on the Desk, answered by a quick model from the session and the case (`context`); the session itself carries on undisturbed. */
   "desk.ask": [{ threadId: string; question: string; context: string }, { answer: string; by: string }];
+  /** Stops the commit message, PR draft or Desk answer being written for a session (its card closed): that call fails with WRITER_CANCELLED, which is no error to show. */
+  "writer.cancel": [{ threadId: string; kind: "message" | "draft" | "desk" }, null];
   /** The Session surface: where a session runs, and what fills its context. */
   "thread.info": [{ id: string }, SessionInfo];
   /** A pair's use, by model, and how its briefs went: the crew chip's list. */
@@ -1915,12 +1921,10 @@ export type Rpc = {
   "security.projects": [Record<string, never>, SecurityProject[]];
   "security.project.add": [{ path: string }, SecurityProject];
   "security.findings.list": [{ projectId?: string; state?: FindingState; scan?: string }, SecurityFinding[]];
-  "security.finding.get": [{ id: string }, SecurityFinding];
   "security.finding.dismiss": [{ id: string; reason: DismissReason; note?: string }, SecurityFinding];
   "security.finding.reopen": [{ id: string }, SecurityFinding];
   "security.finding.fix": [{ id: string; agent?: string; model?: string; effort?: Effort }, Thread];
   "security.finding.ask": [{ id: string; agent?: string; model?: string; text?: string }, Thread];
-  "security.checks.run": [{ projectId: string }, FreeCheckRun];
   "security.bringin.github": [{ projectId: string }, BringInResult];
   "security.bringin.sarif": [{ projectId: string; path?: string; text?: string }, BringInResult];
   "security.model.read": [{ projectId: string }, ThreatModel];
@@ -1946,7 +1950,11 @@ export function splitModel(ref: string): { provider: ProviderId; model: string }
 
 export const emptyUsage = (): Usage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 });
 
-/** a is a later version than b, by their first "x.y.z" ("v0.2.0", "codex-cli 0.164.0"). */
+/** The Mac app's bundle id and its folder's name: what the engine downloads and the shell puts in place (engine/updates.ts, desktop/update.ts). */
+export const APP_BUNDLE_ID = "app.liner.code";
+export const APP_BUNDLE_NAME = "Liner Code.app";
+
+/** a is a later version than b, by their first "x.y.z" ("v0.2.0", "codex-cli 0.164.0"). The one compare the engine and the shell share, so both agree on what is newer. */
 export function newerVersion(a?: string, b?: string) {
   const parts = (s?: string) => /(\d+)\.(\d+)\.(\d+)/.exec(s ?? "")?.slice(1).map(Number);
   const x = parts(a);

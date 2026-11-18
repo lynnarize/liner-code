@@ -222,6 +222,7 @@ npm run mac -- --open
 npm run release      # the app zipped for GitHub Releases, with its SHA-256 (see Updates below)
 npm run typecheck
 npm test             # the engine's tests (node:test)
+npm run test:steady -w engine   # the same, one file at a time: slower, for a busy machine where timing tests flake
 ```
 
 `npm run dev` keeps sessions in `~/.liner-code`; set `LINER_HOME` to use another folder (the

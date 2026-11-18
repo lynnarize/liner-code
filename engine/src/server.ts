@@ -31,17 +31,45 @@ type Check = { page(token: string): string | null; call(token: string, body: Rec
 /** A ported plugin's request: true when it was its to answer. */
 type Dsh = (token: string, rest: string, search: string, req: IncomingMessage, res: ServerResponse) => boolean;
 
-export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; check?: Check; dsh?: Dsh }) {
+/** How long the stream gathers lines before one write to each app: a token streamed is an event, and twenty sessions streaming are a thousand a second. */
+export const BATCH_MS = 16;
+/** What may wait unread for one app before it's let go: one that stopped reading (a frozen window) reconnects to a fresh snapshot instead of filling the engine's memory. */
+export const BEHIND_BYTES = 4 * 1024 * 1024;
+
+/** `alone`: the last app's event stream closed, so no window is open to let go of what it watched (a reload never says off). */
+export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; check?: Check; dsh?: Dsh; alone?: () => void }) {
   const { store, api, token } = o;
   const clients = new Set<ServerResponse>();
   /** Clients whose snapshot is being taken: what's sent meanwhile waits, numbered, until it's written. */
   const waiting = new Map<ServerResponse, { seq: number; line: string }[]>();
+  /** Lines for each app since the last write, each whole and numbered as it was made, sent together every BATCH_MS. Gathered, never merged. */
+  const out = new Map<ServerResponse, string[]>();
+  let batch: NodeJS.Timeout | undefined;
+  const flush = () => {
+    clearTimeout(batch);
+    batch = undefined;
+    for (const [res, lines] of out) {
+      out.delete(res);
+      if (res.destroyed) continue;
+      // An app that has stopped reading: let go, so it comes back to a snapshot rather than the engine holding all it missed.
+      if (res.writableLength > BEHIND_BYTES) {
+        res.destroy();
+        continue;
+      }
+      res.write(lines.join(""));
+    }
+  };
   store.on((e: EngineEvent) => {
     const line = `${JSON.stringify({ ...e, seq: store.seq })}\n`;
     for (const res of clients) {
       const held = waiting.get(res);
       if (held) held.push({ seq: store.seq, line });
-      else res.write(line);
+      else {
+        const lines = out.get(res);
+        if (lines) lines.push(line);
+        else out.set(res, [line]);
+        batch ??= setTimeout(flush, BATCH_MS);
+      }
     }
   });
 
@@ -89,8 +117,11 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
         let beat: NodeJS.Timeout | undefined;
         const drop = () => {
           clearInterval(beat);
-          clients.delete(res);
+          const was = clients.delete(res);
           waiting.delete(res);
+          out.delete(res);
+          // Once, as the last one goes: with two windows, one reloading keeps its count until both have closed.
+          if (was && clients.size === 0) o.alone?.();
         };
         res.on("close", drop);
         let snapshot: Snapshot;
@@ -226,6 +257,7 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       resolve({
         port: typeof addr === "object" && addr ? addr.port : o.port,
         close: () => {
+          flush();
           for (const c of clients) c.end();
           server.close();
         },

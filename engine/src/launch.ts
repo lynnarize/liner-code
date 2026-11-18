@@ -22,12 +22,13 @@
 */
 import { execFile, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, Socket } from "node:net";
 import { basename, join, resolve } from "node:path";
 import type { EngineEvent, LaunchAsk, LaunchServer, Risk } from "../../contracts/src/index.ts";
 import { closesOnExit, killTree, marking, spawn, THREAD_ENV, threadMark } from "./exec.ts";
 import { commandRisk } from "./risk.ts";
+import { writeAtomic } from "./store.ts";
 
 const win = process.platform === "win32";
 
@@ -798,7 +799,8 @@ export class Launcher {
     const engine = this.host.engine ?? ENGINE;
     const running = [...this.left, ...[...this.runs.values()].flatMap((r) => (r.child.pid && !r.done ? [{ pid: r.child.pid, at: r.spawnedAt, command: r.entry.command ?? "", root: r.root, name: r.entry.name, engine }] : []))];
     try {
-      writeFileSync(this.host.file, JSON.stringify({ asleep: this.asleep, trust: this.trusted, running }));
+      // Whole or not at all: a file cut short would forget which servers a dead engine left up (reap) and what you trusted.
+      writeAtomic(this.host.file, JSON.stringify({ asleep: this.asleep, trust: this.trusted, running }));
     } catch {
       // A full disk: they don't come back after a quit, and that's all.
     }

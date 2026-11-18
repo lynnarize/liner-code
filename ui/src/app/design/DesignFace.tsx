@@ -10,7 +10,7 @@
   ⌘D, ⌘[ and ⌘], ⌘Z and ⇧⌘Z, ⌘0 and ⌘1, ⌘+ and ⌘−. They're heard first (before the app's ⌘1 to
   ⌘9) and only while nothing that takes typing has the keyboard.
 */
-import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, memo, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import type { Project, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "../engine";
@@ -34,6 +34,12 @@ import "./design-face.css";
 // E: the Lean page over the canvas, and whether it is up.
 import { LeanLayer } from "./LeanPage";
 import { isLeanOpen } from "./Skills";
+
+// The face's big parts each read the store for themselves: the face drawn again (a tab shown, its loading) doesn't draw them again with it.
+const RailPart = memo(Rail);
+const DockPart = memo(Dock);
+const InspectorPart = memo(Inspector);
+const LeanPart = memo(LeanLayer);
 
 /**
   A part of the Design face that broke (the canvas, the inspector, the dock) says so in its own
@@ -106,11 +112,6 @@ function Unreadable({ thread, cwd, broken }: { thread?: Thread; cwd?: string; br
       ) : null}
     </>
   );
-}
-
-/** The folder a session works in: its worktree, else its project's. */
-export function cwdOf(thread: Thread, projects: { id: string; path: string }[]) {
-  return thread.worktree?.path ?? projects.find((p) => p.id === thread.projectId)?.path;
 }
 
 const typing = (t: EventTarget | null) => t instanceof Element && Boolean(t.closest("input, textarea, select, [contenteditable], .xterm"));
@@ -236,7 +237,9 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
   const key = tabKey(tab);
   // The design's folder: its session's worktree when it runs in one, else the project's.
   const cwd = thread?.worktree?.path ?? project.path;
-  const file = useDesign((s) => s.file);
+  // Only the open file's id and title: a frame dragged on the canvas draws nothing of the face round it.
+  const fileId = useDesign((s) => s.file?.id);
+  const fileTitle = useDesign((s) => s.file?.title);
   const files = useDesign((s) => s.files);
   // The store holds this tab's file (not still the tab before's): only then is the canvas drawn, so it never fits or draws another tab's.
   const mine = useDesign((s) => s.cwd === cwd && s.file?.id === tab.file);
@@ -260,10 +263,10 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
   }, [key, cwd, tab.file, thread?.id]);
   // Its name on the tab, as the file has it.
   useEffect(() => {
-    if (file && file.id === tab.file && getDesign().cwd === cwd && file.title !== tab.title) patchTab(key, { title: file.title });
-  }, [file?.title, file?.id]);
+    if (fileId && fileTitle !== undefined && fileId === tab.file && getDesign().cwd === cwd && fileTitle !== tab.title) patchTab(key, { title: fileTitle });
+  }, [fileTitle, fileId]);
   // A design whose file went away (deleted, moved elsewhere) closes its tab, quietly.
-  const gone = shown && !loading && !file && !broken && getDesign().cwd === cwd && !files.some((f) => f.id === tab.file);
+  const gone = shown && !loading && !fileId && !broken && getDesign().cwd === cwd && !files.some((f) => f.id === tab.file);
   useEffect(() => {
     if (!gone) return;
     // Gone from under it (not closed by you): one quiet line says so.
@@ -335,14 +338,14 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
               </FaceBoundary>
             )}
             <div className="ld-cv">
-              <Rail />
-              {file && mine ? (
+              <RailPart />
+              {fileId && mine ? (
                 <FaceBoundary what="canvas">
                   <Canvas root={cv} />
                 </FaceBoundary>
               ) : (
                 <div className="ld-empty">
-                  {loading || (file && !mine) ? (
+                  {loading || (fileId && !mine) ? (
                     <span className="l-shimmer">Opening the design file</span>
                   ) : broken ? (
                     <Unreadable thread={thread} cwd={cwd} broken={broken} />
@@ -357,16 +360,16 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
           </div>
           {/* One composer and one conversation, whatever the size: they go into the hosts the places above hold. */}
           <FaceBoundary what="dock">
-            <Dock thread={thread} project={project} tab={tab} />
+            <DockPart thread={thread} project={project} tab={tab} />
           </FaceBoundary>
         </DockHosts.Provider>
       </section>
       <div className="ld-insp-col">
         <FaceBoundary what="inspector">
-          <Inspector />
+          <InspectorPart />
         </FaceBoundary>
       </div>
-      <LeanLayer thread={thread} project={project} sidebar={sidebar} onSidebar={onSidebar} />
+      <LeanPart thread={thread} project={project} sidebar={sidebar} onSidebar={onSidebar} />
     </div>
   );
 }

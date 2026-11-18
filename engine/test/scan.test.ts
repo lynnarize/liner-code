@@ -28,32 +28,32 @@ const ignoresCase = (() => {
   return existsSync(join(root, "caseprobe"));
 })();
 
-test("~/Code and ~/code list each repository once, in the disk's own spelling, or both folders where the disk minds case", () => {
+test("~/Code and ~/code list each repository once, in the disk's own spelling, or both folders where the disk minds case", async () => {
   const home = join(root, "a");
   // The real folder is lower case; "Code" comes first in the usual places, as in api.ts ROOTS.
   repo(join(home, "code", "ledger"));
   repo(join(home, "code", "group", "tidewater"));
   if (!ignoresCase) repo(join(home, "Code", "notes"));
-  const found = findRepos([join(home, "Code"), join(home, "code"), join(home, "Projects")]);
+  const found = await findRepos([join(home, "Code"), join(home, "code"), join(home, "Projects")]);
   if (ignoresCase) assert.deepEqual(found.sort(), [join(home, "code", "group", "tidewater"), join(home, "code", "ledger")]);
   else assert.deepEqual(found.map((p) => basename(p)).sort(), ["ledger", "notes", "tidewater"]);
 });
 
-test("a link to a repository, or to a root, doesn't list it twice", { skip: process.platform === "win32" }, () => {
+test("a link to a repository, or to a root, doesn't list it twice", { skip: process.platform === "win32" }, async () => {
   const home = join(root, "b");
   repo(join(home, "Code", "foreshore"));
   mkdirSync(join(home, "Projects"), { recursive: true });
   symlinkSync(join(home, "Code", "foreshore"), join(home, "Projects", "foreshore"));
   symlinkSync(join(home, "Code"), join(home, "src"));
-  const found = findRepos([join(home, "Projects"), join(home, "Code"), join(home, "src")]);
+  const found = await findRepos([join(home, "Projects"), join(home, "Code"), join(home, "src")]);
   assert.deepEqual(found, [join(home, "Code", "foreshore")]);
 });
 
-test("two different repositories with the same name are both listed", () => {
+test("two different repositories with the same name are both listed", async () => {
   const home = join(root, "c");
   repo(join(home, "Code", "app"));
   repo(join(home, "Projects", "app"));
-  assert.equal(findRepos([join(home, "Code"), join(home, "Projects")]).length, 2);
+  assert.equal((await findRepos([join(home, "Code"), join(home, "Projects")])).length, 2);
 });
 
 test("a project added under another spelling reads as added, and adding it again gives back the one you have", { skip: !ignoresCase && "the disk minds case" }, async () => {

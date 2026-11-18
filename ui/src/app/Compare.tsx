@@ -8,7 +8,7 @@ import type { FileDiff, Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { toast } from "@liner/components/toast/toast";
-import { loadItems, rpc, useEngine } from "./engine";
+import { loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, money, plural, sumLines, threadModel } from "./model";
 import { Badge, Lines, ModelTag } from "./ui";
@@ -70,7 +70,8 @@ export function Compare({ id, sidebar, onSidebar, onOpen, onDone }: { id: string
 }
 
 function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; diffs: boolean; busy: boolean; onKeep: () => void; onOpen: () => void }) {
-  const items = useEngine((s) => s.items[t.id]);
+  // Held while the column shows, so the window keeps this timeline (engine.ts, letGoOld).
+  const items = useItems(t.id);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const model = threadModel(t, agents, providers);

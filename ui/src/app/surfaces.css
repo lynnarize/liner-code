@@ -308,12 +308,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* As specific as `.lc-spick > p`, so the subtitle's tight margin doesn't win here. */
-.lc-spick > .lc-spick-foot {
-  margin: 22px 0 0;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
 
 /* ---------- Session: environment, context, changes ----------
    Labelled groups of rows on the paper, no wells: a quiet 32px label (its tools at the right), then
@@ -510,61 +504,9 @@
     transition: none;
   }
 }
-.lc-sinfo-file {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  min-height: 28px;
-  margin-inline: -8px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--l-ink);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .lc-sinfo-file:hover {
-    background: var(--l-wash);
-  }
-}
-/* The status letter, plain where the icons stand in the rows above. */
-.lc-sinfo-st {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  color: var(--l-ink-3);
-  font-size: 11px;
-  font-weight: 500;
-}
-.lc-sinfo-st[data-status="added"] {
-  color: var(--l-ok-text);
-}
-.lc-sinfo-st[data-status="deleted"] {
-  color: var(--l-danger-text);
-}
-.lc-sinfo-path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--l-font-mono);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* Asking, or a failed ask, outside a group: at the groups' inset. */
 .lc-sinfo > .lc-sinfo-note {
   margin: 8px 16px 0;
-}
-.lc-sinfo-export {
-  justify-self: start;
-  margin-left: 8px;
 }
 .lc-sinfo-note {
   margin: 2px 0 0;
@@ -816,7 +758,7 @@
 }
 .lc-br-logs p {
   margin: 4px 0;
-  font-family: var(--l-font-sans, inherit);
+  font-family: inherit;
 }
 .lc-br-log {
   display: flex;
@@ -1590,15 +1532,6 @@
   gap: 4px;
   font-size: 13px;
 }
-.lc-pr-branches {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 0 4px;
-  font-size: 12px;
-  color: var(--l-ink-4);
-}
 .lc-pr-sec {
   margin-top: 16px;
 }
@@ -1669,8 +1602,7 @@
     opacity: 0.45;
   }
 }
-.lc-pr-person,
-.lc-pr-commit {
+.lc-pr-person {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1678,8 +1610,7 @@
   padding: 0 4px;
   font-size: 13px;
 }
-.lc-pr-person + .lc-pr-person,
-.lc-pr-commit + .lc-pr-commit {
+.lc-pr-person + .lc-pr-person {
   border-top: 1px solid var(--l-line);
 }
 .lc-pr-person b {
@@ -1690,23 +1621,9 @@
   height: 24px;
   font-size: 10px;
 }
-.lc-pr-commit > span:first-child {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-pr-commit > .lc-mono {
-  font-size: 12px;
-}
 .lc-pr-none {
   margin: 4px 2px;
   font-size: 13px;
-}
-.lc-pr-foot {
-  padding: 8px 12px 10px;
-  border-top: 1px solid var(--l-line);
 }
 .lc-pr-status {
   display: inline-flex;
@@ -1771,11 +1688,6 @@
   padding: 10px 12px;
   resize: vertical;
   line-height: 19px;
-}
-.lc-pr-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 .lc-run-sum {
   margin: 10px 0 0;
@@ -2577,7 +2489,7 @@
   left: 100px;
   max-width: min(620px, calc(100cqw - 112px));
   margin: 6px 12px 8px 100px;
-  font-family: var(--l-font-sans, "Instrument Sans", system-ui, sans-serif);
+  font-family: "Instrument Sans", system-ui, sans-serif;
   font-size: 13px;
   line-height: 19px;
 }
@@ -3021,11 +2933,6 @@
 }
 
 /* The composer's comparing. */
-.lc-mchip[data-also] {
-  box-shadow:
-    0 0 0 1.5px color-mix(in oklab, var(--l-accent) 60%, transparent),
-    0 1px 1px var(--l-drop);
-}
 .lc-send-n {
   width: auto;
   padding: 0 14px;
@@ -3250,11 +3157,6 @@
 .lc-st-budget .lc-input {
   width: 100px;
   height: 30px;
-}
-.lc-sub-tile {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
 }
 .lc-rules {
   display: grid;
@@ -4129,27 +4031,7 @@
   color: var(--l-danger-text);
 }
 
-/* Appearance: an accent of your own, and your themes. */
-.lc-swatch-own {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  overflow: hidden;
-  background: conic-gradient(from 90deg, oklch(0.7 0.15 30), oklch(0.75 0.15 120), oklch(0.7 0.15 200), oklch(0.65 0.18 290), oklch(0.7 0.15 30));
-  color: oklch(1 0 0);
-}
-.lc-swatch-own input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
-.lc-swatch-own svg {
-  pointer-events: none;
-  filter: drop-shadow(0 1px 1px oklch(0 0 0 / 0.3));
-}
+/* Appearance: your themes. */
 .lc-th-chip {
   position: relative;
   display: grid;
@@ -4416,10 +4298,7 @@
   font-size: 13px;
 }
 
-/* The Pull request surface: Liner's PR flow card, then what it doesn't draw. */
-.lc-prf {
-  margin: 8px 0 16px;
-}
+/* The Pull request surface: what Liner's PR flow card doesn't draw. */
 .lc-pr-edit {
   margin-top: 4px;
 }
@@ -4862,21 +4741,40 @@
 .lc-tstep[data-state="failed"] .lc-tstep-dot {
   background: var(--l-danger);
 }
+/* Running, the dot pulses: a halo grows out from under its paper ring and fades. The halo is its own
+   layer, moved by scale and opacity alone, so the pulse doesn't repaint the thread (a box-shadow
+   would, every frame); the dot is drawn again over it, its paper ring still cutting the rail. */
 .lc-tstep[data-state="running"] .lc-tstep-dot {
-  background: var(--l-accent);
+  background: none;
+  box-shadow: none;
+}
+.lc-tstep[data-state="running"] .lc-tstep-dot::before,
+.lc-tstep[data-state="running"] .lc-tstep-dot::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+}
+/* 25px across: the old ring's widest spread, 9px, round the 7px dot. It starts at the paper
+   ring's edge (6.5px out, so 0.52) and grows to its full size as it fades. */
+.lc-tstep[data-state="running"] .lc-tstep-dot::before {
+  inset: -9px;
+  background: color-mix(in oklab, var(--l-accent) 45%, transparent);
+  opacity: 0;
   animation: lc-pulse-dot 1.6s var(--l-ease-out) infinite;
 }
-/* lc-pulse, with the paper ring kept under it: the ring is what cuts the rail around the dot. */
+.lc-tstep[data-state="running"] .lc-tstep-dot::after {
+  inset: 0;
+  background: var(--l-accent);
+  box-shadow: 0 0 0 3px var(--lc-paper);
+}
 @keyframes lc-pulse-dot {
   0% {
-    box-shadow:
-      0 0 0 3px var(--lc-paper),
-      0 0 0 3px color-mix(in oklab, var(--l-accent) 45%, transparent);
+    opacity: 1;
+    transform: scale(0.52);
   }
   100% {
-    box-shadow:
-      0 0 0 3px var(--lc-paper),
-      0 0 0 9px transparent;
+    opacity: 0;
+    transform: scale(1);
   }
 }
 .lc-tstep-verb {
@@ -5022,11 +4920,6 @@
 /* A row that arrives while you watch comes in on its opacity alone, and only it: never history, never staggered. */
 .lc-wk-row[data-new] {
   animation: lc-row-in 160ms ease-out backwards;
-}
-@keyframes lc-row-in {
-  from {
-    opacity: 0;
-  }
 }
 .lc-wk-ln {
   display: flex;
@@ -5182,9 +5075,6 @@
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: pre;
-}
-.lc-trail-took {
-  flex: none;
 }
 
 /* The turn's status line, at its end where the eye is: the pip, the word, the clock. */
@@ -5733,14 +5623,6 @@ html[data-motion="quick"] .lc-dask {
   }
 }
 
-@keyframes lc-pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--l-accent) 45%, transparent);
-  }
-  100% {
-    box-shadow: 0 0 0 6px transparent;
-  }
-}
 @keyframes lc-rail {
   from {
     transform: translateY(-100%);
@@ -5762,7 +5644,7 @@ html[data-motion="quick"] .lc-dask {
     transition: none;
   }
   .lc-trail-light::before,
-  .lc-tstep[data-state="running"] .lc-tstep-dot,
+  .lc-tstep[data-state="running"] .lc-tstep-dot::before,
   .lc-pip,
   .lc-wk-row[data-new],
   .lc-dask,
@@ -6115,40 +5997,6 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
   height: 11px;
   color: var(--l-ink-4);
 }
-.lc-foot-chip.lc-foot-changes {
-  gap: 6px;
-  padding-inline: 0;
-  background: none;
-  box-shadow: none;
-  color: var(--l-ink-3);
-}
-/* The line reads "1 file changed +3 −1 ›": the chevron says it opens that turn's changes. */
-@media (hover: hover) {
-  .lc-foot-chip.lc-foot-changes:hover {
-    background: none;
-    color: var(--l-ink);
-  }
-}
-.lc-foot-chip.lc-foot-changes[aria-current] {
-  color: var(--l-ink-2);
-}
-.lc-trail-agents {
-  display: grid;
-  gap: 2px;
-  margin: 4px 0 0;
-  padding: 0 0 0 18px;
-  list-style: none;
-}
-.lc-trail-agents > li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 22px;
-  font-size: 13px;
-  color: var(--l-ink-2);
-  animation: lc-row-in 180ms ease-out backwards;
-}
 .lc-trail-agent-t {
   min-width: 0;
   overflow: hidden;
@@ -6210,7 +6058,7 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
 .lc-rv-bin {
   margin: 0;
   padding: 8px 12px;
-  font-family: var(--l-font-sans, inherit);
+  font-family: inherit;
   font-size: 13px;
 }
 .lc-br-hint {

@@ -21,7 +21,7 @@ const toBlobUrl = (data: string, type: string) => {
 };
 
 /** A picture's URL, fetched once per side (a dynamic wallpaper has a day and a night one). */
-export function backgroundUrl(id: string, dark: boolean) {
+function backgroundUrl(id: string, dark: boolean) {
   const key = id === "own" ? `own:${ownVersion}` : `${id}:${dark ? "dark" : "light"}`;
   if (!urls.has(key)) urls.set(key, rpc("background.image", { id, dark }).then((r) => (r ? toBlobUrl(r.data, r.type) : null)).catch(() => (urls.delete(key), null)));
   return urls.get(key)!;

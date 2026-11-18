@@ -36,7 +36,7 @@ const isCommand = (it: Ask) => commandOf(it) !== undefined || SHELLS.has(it.tool
 /** The fields that say where it runs: they go with the facts, not under the command. */
 const WHERE = new Set(["Where", "Runs in"]);
 /** What an ask says it does: the agent's own words, else its title. */
-export const askWords = (it: Ask) => it.says?.trim() || it.title;
+const askWords = (it: Ask) => it.says?.trim() || it.title;
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
 /**
   The headline: the agent's own words, unless they only repeat the command; for an ask that isn't

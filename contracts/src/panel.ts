@@ -24,13 +24,6 @@ import { DSH_BASE, DSH_TOKENS, dshRuntime } from "./dsh.ts";
 /** The bridge's version. A frame that speaks another is answered with an error. */
 export const PANEL_API = 1;
 
-/** What a frame asks of the window (every message carries `liner: 1`). */
-export type PanelRequest = { liner: 1; id: number; method: string; args?: unknown };
-/** What it says on its own: that its frame is ready for its document, an error it didn't catch, a request the content policy blocked, that it drew. */
-export type PanelReport = { liner: 1; kind: "frame" } | { liner: 1; kind: "error"; message: string; stack?: string } | { liner: 1; kind: "blocked"; host: string; directive: string } | { liner: 1; kind: "ready"; elements: number; width: number; height: number };
-/** The window's answer to a request, or news it pushes (`event`): the theme, a change in the session. `doc` answers a frame that's ready. */
-export type PanelReply = { liner: 1; doc: string } | { liner: 1; id: number; ok: true; value: unknown } | { liner: 1; id: number; ok: false; error: string } | { liner: 1; event: string; data?: unknown };
-
 /** The app's colours and fonts as CSS variables, the same names a shown page gets. */
 export type PanelTheme = Record<string, string>;
 

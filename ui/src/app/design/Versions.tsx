@@ -85,7 +85,8 @@ export function Versions() {
   const [shown, setShown] = useState(false);
   // Which copy is shown, by its key (two copies can share a turn number); the store only knows that one is.
   const [key, setKey] = useState<string | undefined>();
-  useEffect(() => onStream((e) => void (e.type === "canvas.changed" && setN((x) => x + 1))), []);
+  // Only a change to this design file asks for its copies again (any folder's change used to).
+  useEffect(() => onStream((e) => void (e.type === "canvas.changed" && e.cwd === getDesign().cwd && e.file === getDesign().file?.id && setN((x) => x + 1))), []);
   useEffect(() => {
     relist = () => setN((x) => x + 1);
     return () => void (relist = () => {});

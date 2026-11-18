@@ -108,21 +108,7 @@
 }
 
 /* ---------- An edit step opens the Diff ---------- */
-.lc-tstep-go {
-  flex: none;
-  color: var(--l-accent-text);
-  font-size: 12px;
-  font-weight: 500;
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-.lc-tstep-line[data-diff]:focus-visible .lc-tstep-go {
-  opacity: 1;
-}
 @media (hover: hover) {
-  .lc-tstep-line[data-diff]:hover .lc-tstep-go {
-    opacity: 1;
-  }
   .lc-tstep-line[data-diff]:hover .lc-tstep-target {
     color: var(--l-accent-text);
   }

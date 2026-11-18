@@ -56,9 +56,7 @@ export const RAN_FILE = "liner-check-ran.txt";
 const TEST_MODEL = "liner-check";
 const DUMMY_KEY = "liner-check-dummy-key";
 /** How long one turn of a probe or a test message may take before it's given up. */
-export let TURN_MS = 90_000;
-/** For a test: shorter waits. */
-export const setTurnMs = (ms: number) => void (TURN_MS = ms);
+export const TURN_MS = 90_000;
 /** How long a look, Liner Code's tools' start or a tool's tier 1 that just ended stands for a check asked for after it. */
 const SHARE_MS = 5_000;
 /**

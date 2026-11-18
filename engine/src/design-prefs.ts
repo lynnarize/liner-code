@@ -6,22 +6,34 @@
   setting it could write would let it turn the consent off. canvas.ts puts them on the DesignFile
   it hands out and takes them from canvas.save's patch; pictures.ts reads them from there.
 */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { DesignFile } from "../../contracts/src/index.ts";
+import { writeAtomic } from "./atomic.ts";
 
 export type PicturesPref = NonNullable<DesignFile["pictures"]>;
 
 const fileOf = (home: string) => join(home, "design-pictures.json");
 const keyOf = (cwd: string, slug: string) => `${resolve(cwd)}\n${slug}`;
 
+/** The file as last read, by its place, size and times: every design file read (canvas.ts readFile) asks, so it's read again only when it changed. */
+const read = new Map<string, { stamp: string; map: Record<string, PicturesPref> }>();
+
 function all(home: string): Record<string, PicturesPref> {
+  const file = fileOf(home);
+  const st = statSync(file, { throwIfNoEntry: false });
+  const stamp = st ? `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : "";
+  const had = read.get(file);
+  if (had && had.stamp === stamp) return { ...had.map };
+  let map: Record<string, PicturesPref> = {};
   try {
-    const v = JSON.parse(readFileSync(fileOf(home), "utf8"));
-    return v && typeof v === "object" ? (v as Record<string, PicturesPref>) : {};
+    const v = JSON.parse(readFileSync(file, "utf8"));
+    map = v && typeof v === "object" ? (v as Record<string, PicturesPref>) : {};
   } catch {
-    return {};
+    // none yet, or unreadable: no settings
   }
+  read.set(file, { stamp, map });
+  return { ...map };
 }
 
 /** A design file's picture setting as the engine holds it; undefined when the person never set one. */
@@ -36,8 +48,5 @@ export function setPicturesPref(home: string, cwd: string, slug: string, pref: P
   const map = all(home);
   if (pref) map[keyOf(cwd, slug)] = { ask: pref.ask, ...(pref.model !== undefined ? { model: pref.model } : {}) };
   else delete map[keyOf(cwd, slug)];
-  mkdirSync(home, { recursive: true });
-  const tmp = `${fileOf(home)}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(map, null, 2));
-  renameSync(tmp, fileOf(home));
+  writeAtomic(fileOf(home), JSON.stringify(map, null, 2), { mkdir: true });
 }

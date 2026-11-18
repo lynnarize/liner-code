@@ -4,6 +4,12 @@
   (trailSteps in ui/src/app/Timeline.tsx), said as under way: "Reading Sidebar.tsx", "Running npm test", "Drawing Phone /
   Week". Nothing secret or long gets into them: a file by its name alone, a command by its program and at most two
   plain words after it, never a whole command line.
+
+  This file is also the one place a step's words come from for the trail and Liner Design's chat (Timeline.tsx,
+  design/Chat.tsx): what is a step and what is a card (isStepCall), which tools are Liner's own (BROWSER_TOOL and the
+  rest), and the words for a canvas step, a frame, a file, a command and a tool by its name. The trail adds what only it
+  shows (the whole command, a search's pattern, a call's own title, how a step ended); the line holds to the rule above.
+  Nothing here may use Node's or the browser's own objects: the engine and the interface both load it.
 */
 
 /** What doingOf reads of a tool call: the fields a timeline's tool row and a provider's update share. */
@@ -14,24 +20,48 @@ export type DoingFrameNamer = (frame: string, design: string) => string | undefi
 /** The longest a doing line runs, in characters. */
 export const DOING_MAX = 48;
 
-/** Cards of their own, not steps (Timeline.tsx's CARD_TOOLS and DESIGN_TOOLS), and the PR card's test run (PR_TEST_TOOL). */
-const NOT_STEPS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show_page", "liner.show_page", "mcp__liner__design_show", "liner.design_show", "liner_design_show", "liner.test"]);
-const BROWSER = /^(?:mcp__liner__|liner\.)browser_(\w+)/;
-const SERVER = /^(?:mcp__liner__|liner\.)server_(\w+)/;
-const CANVAS = /^(?:mcp__liner__|mcp_liner_|liner\.|liner_)?design_(files|frame|tree|node|selection|shot|picture|built)$/;
-const SIDEKICK = /(?:^|[._])sidekick$/;
+/** The PR card's own tool: its run of the project's tests on this Mac, and the request to run them. */
+export const PR_TEST_TOOL = "liner.test";
+/** Cards of their own in the trail, not steps: a question, a plan handed over, a page shown. */
+export const CARD_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show_page", "liner.show_page"]);
+/**
+  Showing a design, under each way a tool names it (OpenCode's is liner_design_show): never a step, and its card once the
+  turn has one. Liner Design's canvas tools (design_frame, design_node and the rest) aren't here on purpose: they draw on
+  the canvas, which has no card, so each is a step.
+*/
+export const DESIGN_TOOLS = new Set(["mcp__liner__design_show", "liner.design_show", "liner_design_show"]);
+/** A call the trail draws as a step and the doing line speaks for: not a card of its own, nor the PR card's test run, nor asking Opus to plan (its own line). */
+export const isStepCall = (c: DoingCall) => !CARD_TOOLS.has(c.tool) && !DESIGN_TOOLS.has(c.tool) && c.tool !== PR_TEST_TOOL && !(c.toolKind === "task" && /^Opus\b/.test(c.title));
+/** Liner Code's own Browser tools, under either way an agent tool names them; the action after browser_. */
+export const BROWSER_TOOL = /^(?:mcp__liner__|liner\.)browser_(\w+)/;
+/** Its dev servers from launch.json, the same way; the action after server_. */
+export const SERVER_TOOL = /^(?:mcp__liner__|liner\.)server_(\w+)/;
+/** Liner Design's canvas tools, by any tool's name for them (Claude Code's mcp__liner__, ACP's liner., OpenCode's liner_, Antigravity's mcp_liner_). */
+export const CANVAS_TOOL = /^(?:mcp__liner__|mcp_liner_|liner\.|liner_)?design_(files|frame|tree|node|selection|shot|picture|built)$/;
+/** A lead's brief to its sidekick (Liner's sidekick tool, under any tool's name for it). */
+export const SIDEKICK_TOOL = /(?:^|[._])sidekick$/;
 /** A frame's file in a design file: .liner/designs/<file>/frames/<id>.html. */
-const FRAME_FILE = /\.liner\/designs\/([^/]+)\/frames\/([^/]+)\.html$/;
+export const FRAME_FILE = /\.liner\/designs\/([^/]+)\/frames\/([^/]+)\.html$/;
 /** A title that is only a tool's kind, or nothing. */
 const BARE = /^(?:edit|write|delete|move|execute|exec|bash|shell|read|search|grep|glob|fetch|web|think|other|task|tool|use a tool)?$/i;
-const bare = (title?: string) => BARE.test((title ?? "").trim());
-/** A step whose call says only its kind, by that kind. */
-const KIND_WORDS: Record<string, string> = { think: "Thinking", fetch: "Reading a page", web: "Reading the web", task: "Sending an agent" };
+/** A title that says nothing a person could use: only the tool's kind ("edit", "execute": OpenCode's before it says more), or nothing. */
+export const bareTitle = (title?: string) => BARE.test((title ?? "").trim());
+const bare = bareTitle;
+/** A step whose call says only its kind, by that kind: under way, and done. The sidebar counts agents at work by "Sending an agent" (Sidebar.tsx). */
+export const KIND_WORDS: Record<string, [string, string]> = { think: ["Thinking", "Thought it through"], fetch: ["Reading a page", "Read a page"], web: ["Reading the web", "Read the web"], task: ["Sending an agent", "Sent an agent"] };
+/**
+  A lead's brief, as the step under way and done: what the sidekick does is its own part. Working, not waiting, under way:
+  in the sidebar and the chat's header "waiting" is for a session waiting on you.
+*/
+export const SIDEKICK_WORDS: [string, string] = ["Working with its sidekick", "Handed work to its sidekick"];
 
 const slashed = (p: string) => p.replace(/\\/g, "/");
-const baseName = (p: string) => slashed(p).replace(/\/+$/, "").split("/").pop() || p;
+/** A path's last part (either slash), a folder's too: the name a file is called by. */
+export const stepFileName = (p: string) => slashed(p).replace(/\/+$/, "").split("/").pop() || p;
+const baseName = stepFileName;
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
-const inputOf = (c: DoingCall): Record<string, unknown> => {
+/** A call's input as an object, when it is JSON; else nothing in it. */
+export const callInput = (c: Pick<DoingCall, "input">): Record<string, unknown> => {
   try {
     const j = JSON.parse(c.input ?? "") as unknown;
     return j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : {};
@@ -39,6 +69,22 @@ const inputOf = (c: DoingCall): Record<string, unknown> => {
     return {};
   }
 };
+const inputOf = callInput;
+/** The path a call is about: its own, else a path in its input, else its title without the verb (a real title only). Not yet a name to say. */
+export function callPath(c: DoingCall, verb: RegExp) {
+  const i = inputOf(c);
+  return c.path ?? str(i.file_path) ?? str(i.filePath) ?? str(i.path) ?? str(i.file) ?? str(i.filename) ?? (bare(c.title) ? undefined : c.title.replace(verb, "").trim() || undefined);
+}
+/**
+  Another tool, by its name when that is a word: an MCP server's own name ("github" for mcp__github__create_issue), never
+  Liner's, else the tool's own short name. Undefined when it has none worth saying.
+*/
+export function toolNameOf(tool: string) {
+  const server = /^mcp__([a-z0-9-]+)__/i.exec(tool)?.[1];
+  if (server && server !== "liner" && PROGRAM.test(server)) return server;
+  if (!/^(?:mcp_|liner)/.test(tool) && /^[A-Za-z][A-Za-z0-9_-]{0,23}$/.test(tool) && !bare(tool)) return tool;
+  return undefined;
+}
 /** One line, no control characters, no "…" or full stop at the end. */
 const oneLine = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
 /** At most DOING_MAX characters, cut at a word with nothing put after it, and no full stop or "…" at the end. */
@@ -72,14 +118,13 @@ const NAME = /^[\p{L}\p{N}._+@() /·'’–—-]{1,200}$/u;
 const safe = (name: string | undefined, rule = NAME) => (name && !/:\/\//.test(name) && rule.test(name.trim()) ? name.trim() : undefined);
 /** The file a call is about, by its name alone (its path's, else a path's in its input, else its title's without the verb), when that name is plain. */
 function fileOf(c: DoingCall, verb: RegExp) {
-  const i = inputOf(c);
-  const p = c.path ?? str(i.file_path) ?? str(i.filePath) ?? str(i.path) ?? str(i.file) ?? str(i.filename) ?? (bare(c.title) ? undefined : c.title.replace(verb, "").trim() || undefined);
+  const p = callPath(c, verb);
   if (!p || /:\/\//.test(p)) return undefined;
   return safe(baseName(p), FILE_NAME);
 }
 
-/** The command a call ran (as Timeline.tsx's commandOf reads it); "" when nothing names it. */
-function commandOf(c: DoingCall) {
+/** The command a call ran: Claude Code reports its input as JSON, Codex and the rest as the command; "" when nothing names it. */
+export function callCommand(c: DoingCall) {
   const raw = c.input ?? "";
   try {
     const j = JSON.parse(raw) as { command?: unknown; cmd?: unknown };
@@ -236,9 +281,10 @@ function programOf(w: ShellWord) {
   quotes is ever taken for a program or a word. A shell's -c is opened; parts that only set up (`cd … &&`, `export …;`),
   NAME=value and sudo / env / time / nohup before the program are passed over. "" when the program can't be named safely:
   a quote that never closes, a `$(`, a backtick or a heredoc before it, a wrapper's flag it doesn't know, or a program that
-  isn't a plain name.
+  isn't a plain name. For the doing line only: acp.ts's commandWords, which reads a command's every word for read checks,
+  is another thing.
 */
-export function commandWords(command: string, depth = 0): string {
+export function doingCommand(command: string, depth = 0): string {
   const { parts, risky, torn } = shellParts(command);
   if (torn || depth > 3) return "";
   let seen = 0;
@@ -275,7 +321,7 @@ export function commandWords(command: string, depth = 0): string {
     // bash -lc 'npm test': the command inside.
     if (/^(?:ba|z|da)?sh$/.test(program)) {
       const c = rest.findIndex((w) => !w.quoted && /^-[a-z]*c$/.test(w.text));
-      return c >= 0 && rest.slice(0, c).every((w) => !w.quoted && /^-[a-z]+$/.test(w.text)) && rest[c + 1] ? commandWords(rest[c + 1].text, depth + 1) : program;
+      return c >= 0 && rest.slice(0, c).every((w) => !w.quoted && /^-[a-z]+$/.test(w.text)) && rest[c + 1] ? doingCommand(rest[c + 1].text, depth + 1) : program;
     }
     // python -m pytest: the module, a plain name. Nothing else after Python.
     if (/^python(?:3(?:\.\d+)?)?$/.test(program)) return rest[0]?.text === "-m" && !rest[0].quoted && rest[1] && !rest[1].quoted && MODULE.test(rest[1].text) ? `${program} -m ${rest[1].text}` : program;
@@ -290,37 +336,59 @@ export function commandWords(command: string, depth = 0): string {
   return "";
 }
 
-/** A canvas tool's step as under way, in the trail's words (Timeline.tsx's canvasStep). */
-function canvasDoing(c: DoingCall, kind: string, names?: DoingFrameNamer) {
-  const i = inputOf(c);
-  const id = str(i.frame) ?? str(i.id);
-  const design = str(i.design);
-  const frame = safe((id && design && names?.(id, design)) || str(i.name) || (id && readable(id)) || undefined);
-  switch (kind) {
-    case "files":
-      return "Reading the design files";
-    case "frame":
-      return said("Drawing", safe(str(i.name) ?? frame), "Drawing");
-    case "tree":
-      return said("Reading", frame, "Reading a frame");
-    case "node":
-      return i.html === undefined ? said("Reading", frame, "Reading a frame") : said("Changing", frame, "Changing a frame");
-    case "selection":
-      return "Looking at what's selected";
-    case "shot":
-      return said("Looking at", frame, "Looking at a frame");
-    case "picture":
-      return "Making a picture";
-    default:
-      return "Marking it built";
-  }
-}
-/** A frame's id as a name: brand-board is "Brand board" (Timeline.tsx's readableFrame). */
-const readable = (id: string) => {
+/** A frame's id as a name: brand-board is "Brand board", never the slug. For a frame not in its design file yet, or with nothing to name it. */
+export const readableFrame = (id: string) => {
   if (!/^[a-z0-9][a-z0-9_~-]*$/.test(id)) return id;
   const w = id.replace(/~.*$/, "").replace(/[-_]+/g, " ").trim();
   return w ? w.charAt(0).toUpperCase() + w.slice(1) : id;
 };
+/** A frame written as its file, by its name: the design file's (`known`), else the call's own ("Draw Phone / Week", the Demo's), else one made from its id. */
+export const frameFileName = (c: DoingCall, frame: string, known?: string) => known || /^Draw\s+(.+)$/.exec(c.title.trim())?.[1] || readableFrame(frame);
+/** Turns a frame's id into its name: the trail's (the open design file's, in the Design face) and the engine's alike. `design`: the design file the call names. */
+export type StepFrameNamer = (frame: string, design?: string) => string | undefined;
+/**
+  The frame a canvas call is about, by its name: as the design file has it, else as the call names it, else made from
+  its id. design_frame draws a frame by the name it gives first.
+*/
+export function canvasFrame(c: DoingCall, kind: string, names?: StepFrameNamer) {
+  const i = inputOf(c);
+  const id = str(i.frame) ?? str(i.id);
+  const named = (id && names?.(id, str(i.design))) || str(i.name) || (id && readableFrame(id)) || undefined;
+  return kind === "frame" ? (str(i.name) ?? named) : named;
+}
+/** A canvas call's step in plain words, under way or done: "Reading Phone / Menu", "Changed Phone / Menu". `frame`: canvasFrame's. */
+export function canvasWords(c: DoingCall, kind: string, running: boolean, frame?: string): { verb: string; target?: string } {
+  const v = (now: string, done: string) => (running ? now : done);
+  switch (kind) {
+    case "files":
+      return { verb: v("Reading the design files", "Read the design files") };
+    case "frame":
+      return { verb: v("Drawing", "Drew"), target: frame ?? "a frame" };
+    case "tree":
+      return { verb: v("Reading", "Read"), target: frame ?? "a frame" };
+    case "node":
+      return inputOf(c).html === undefined ? { verb: v("Reading", "Read"), target: frame ?? "a frame" } : { verb: v("Changing", "Changed"), target: frame ?? "a frame" };
+    case "selection":
+      return { verb: v("Looking at what's selected", "Looked at what's selected") };
+    case "shot":
+      return { verb: v("Looking at", "Looked at"), target: frame ?? "a frame" };
+    case "picture":
+      return { verb: v("Making a picture", "Made a picture"), ...(frame ? { target: `for ${frame}` } : {}) };
+    default:
+      return { verb: v("Marking it built", "Marked it built"), ...(frame ? { target: frame } : {}) };
+  }
+}
+/** The Browser's steps, under way and done. */
+export const BROWSER_WORDS: [string, string] = ["Checking in the Browser", "Checked in the Browser"];
+/** A dev server a server_start call starts, by its title ("Run web from launch.json" is web); undefined when it names none. */
+export const serverOf = (c: DoingCall) => c.title.replace(/^Run\b\s*|\s+from launch\.json$/g, "").trim() || undefined;
+
+/** A canvas tool's step as under way: the trail's words, with only a name worth saying in them. */
+function canvasDoing(c: DoingCall, kind: string, names?: StepFrameNamer) {
+  const w = canvasWords(c, kind, true, safe(canvasFrame(c, kind, names)));
+  const plainer = canvasWords(c, kind, true);
+  return said(w.verb, w.target, [plainer.verb, plainer.target].filter(Boolean).join(" "));
+}
 
 /**
   What the turn is doing as its latest step starts, from the lead's calls so far this turn, in order (the latest last).
@@ -329,18 +397,21 @@ const readable = (id: string) => {
 */
 export function doingOf(calls: DoingCall[], names?: DoingFrameNamer): string | undefined {
   const c = calls.at(-1);
-  if (!c || !isStep(c)) return undefined;
-  return cutDoing(stepWords(calls.filter(isStep), c, names));
+  if (!c || !isStepCall(c)) return undefined;
+  // The engine names a frame only in a design file it is told of.
+  const named: StepFrameNamer | undefined = names && ((frame, design) => (design ? names(frame, design) : undefined));
+  return cutDoing(stepWords(calls.filter(isStepCall), c, named));
 }
-/** A call the trail draws as a step (Timeline.tsx's isStep): not a card of its own, nor the PR card's test run. */
-const isStep = (c: DoingCall) => !NOT_STEPS.has(c.tool) && !(c.toolKind === "task" && /^Opus\b/.test(c.title));
 
-function stepWords(calls: DoingCall[], c: DoingCall, names?: DoingFrameNamer): string {
-  const canvas = CANVAS.exec(c.tool);
+/** The file an edit or a write is about, as its call has it (its path, else its input's), for telling two calls of one file apart. */
+const editPath = (c: DoingCall) => slashed(c.path ?? str(inputOf(c).file_path) ?? "");
+
+function stepWords(calls: DoingCall[], c: DoingCall, names?: StepFrameNamer): string {
+  const canvas = CANVAS_TOOL.exec(c.tool);
   if (canvas) return canvasDoing(c, canvas[1], names);
-  if (BROWSER.test(c.tool)) return "Checking in the Browser";
-  if (SERVER.exec(c.tool)?.[1] === "start") return said("Starting", safe(c.title.replace(/^Run\s+|\s+from launch\.json$/g, "").trim()), "Starting a server");
-  if (SIDEKICK.test(c.tool)) return "Working with its sidekick";
+  if (BROWSER_TOOL.test(c.tool)) return BROWSER_WORDS[0];
+  if (SERVER_TOOL.exec(c.tool)?.[1] === "start") return said("Starting", safe(serverOf(c)), "Starting a server");
+  if (SIDEKICK_TOOL.test(c.tool)) return SIDEKICK_WORDS[0];
   if (c.toolKind === "read") {
     // The reads in a row up to this one, as one step.
     let n = calls.length - 1;
@@ -353,23 +424,29 @@ function stepWords(calls: DoingCall[], c: DoingCall, names?: DoingFrameNamer): s
   }
   if (c.toolKind === "search") return "Searching the code";
   if (c.toolKind === "edit" || c.toolKind === "write") {
-    // A design file's frame is called by its name: "Draw Phone / Week" says it, else the design file does, else it is drawing.
-    const [, design, frame] = FRAME_FILE.exec(slashed(c.path ?? str(inputOf(c).file_path) ?? "")) ?? [];
-    if (frame) return said("Drawing", safe(/^Draw\s+(.+)$/.exec(c.title.trim())?.[1] ?? names?.(frame, design)), "Drawing");
+    // A design file's frame is called by its name, as the trail calls it in the Design face: the design file's, else the
+    // call's own ("Draw Phone / Week"), else one made from its id. Drawing when the frame isn't in its design file yet or
+    // this is the turn's first whole write of its file (the trail: the session's first), else changing.
+    const path = editPath(c);
+    const [, design, frame] = FRAME_FILE.exec(path) ?? [];
+    if (frame) {
+      const known = names?.(frame, design);
+      const drawn = !known || (c.toolKind === "write" && !calls.slice(0, -1).some((x) => editPath(x) === path));
+      const name = safe(frameFileName(c, frame, known));
+      return drawn ? said("Drawing", name, "Drawing a frame") : said("Changing", name, "Changing a frame");
+    }
     return said("Editing", fileOf(c, /^(?:Edit|Write)\s+/), "Changing a file");
   }
   if (c.toolKind === "exec") {
-    const command = commandOf(c);
-    const ran = commandWords(command);
+    const ran = doingCommand(callCommand(c));
     const known = KNOWN.find(([re]) => re.test(ran));
     if (known) return known[1];
     return said("Running", ran || undefined, "Running a command");
   }
+  // A call titled with only its kind is said by its kind. The trail says a real title too; the line never quotes one.
   const kind = KIND_WORDS[c.toolKind];
-  if (kind) return kind;
+  if (kind) return kind[0];
   // Another tool, by its name when that is a word: an MCP server's own name ("Using github"), never Liner's.
-  const server = /^mcp__([a-z0-9-]+)__/i.exec(c.tool)?.[1];
-  if (server && server !== "liner" && PROGRAM.test(server)) return `Using ${server}`;
-  if (!/^(?:mcp_|liner)/.test(c.tool) && /^[A-Za-z][A-Za-z0-9_-]{0,23}$/.test(c.tool) && !bare(c.tool)) return `Using ${c.tool}`;
-  return "Using a tool";
+  const name = toolNameOf(c.tool);
+  return name ? `Using ${name}` : "Using a tool";
 }

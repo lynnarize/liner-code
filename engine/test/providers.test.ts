@@ -1610,6 +1610,8 @@ test("opencode: OpenCode 2, which has no `export`, is read with `session export`
 
 test("opencode: a stopped turn counts what it used before Stop, not zero", async () => {
   const { used } = await opencodeTurn({ FAKE_STOP: "1" }, true);
+  // The turn isn't held for it after Stop: the count follows (polish-providers.test.ts).
+  await until(() => used.length > 0, "its count follows");
   assert.deepEqual(used, [{ inputTokens: 1200, outputTokens: 100, cacheReadTokens: 0 }]);
 });
 

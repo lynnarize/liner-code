@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { FrameOp, LeanTokens, NodeRead, TreeNode } from "@contracts";
 import { frames } from "../bridge";
 import { design, useDesign, type Sel } from "../store";
+import { HELD } from "./controls";
 import { useFrameVars, useLean, type FrameVars } from "../lean";
 
 export type Style = Record<string, string | null>;
@@ -84,7 +85,8 @@ export function useTarget(): Target | undefined {
     const ops = (make: (n: NodeRead) => FrameOp[], key?: string) => {
       const byFrame = new Map<string, FrameOp[]>();
       for (const x of all) byFrame.set(x.frame, [...(byFrame.get(x.frame) ?? []), ...make(x.node)]);
-      for (const [f, list] of byFrame) if (list.length) void design.apply(f, list, key ? { coalesce: key } : undefined);
+      // A scrub's moves (Num): in the frame at once, written to the file 150 ms after the last one, or when it's let go.
+      for (const [f, list] of byFrame) if (list.length) key?.startsWith(HELD) ? design.hold(f, list, key, 150) : void design.apply(f, list, key ? { coalesce: key } : undefined);
     };
     const set = (style: Style | ((n: NodeRead) => Style), key?: string) => {
       let props: string[] = [];

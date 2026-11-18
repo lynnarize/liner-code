@@ -2,12 +2,11 @@
   Liner Code. The window is one ground: the sidebar beside Home, a session or Usage, with
   nothing drawn between them. ⌘K reaches everything; the shell's menu bar sends the same commands.
 */
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentProfile, PanelPlace, RoutineRun, SessionMode } from "@contracts";
 import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
 import { Toaster, toast } from "@liner/components/toast/toast";
-import { AgentDialog } from "./AgentDialog";
 import { Boundary } from "./Boundary";
 import { Backdrop, Scene } from "./Backdrop";
 import { bridge, onCommand } from "./bridge";
@@ -17,28 +16,21 @@ import { I } from "./icons";
 import { ACCESS_LEVELS, agentOf, wallShown } from "./model";
 import { Session, showAppTab, showBelow } from "./Session";
 import { applyLook, entering, readLook } from "./look";
-import { Sidebar, waitsOnYou } from "./Sidebar";
+import { useSteady } from "./ui";
+import { needsYou, Sidebar } from "./Sidebar";
+import { early } from "./early";
 // The builder brings Liner's workflow canvas; it loads when you first edit a routine.
 const RoutineBuilder = lazy(() => import("./RoutineBuilder").then((m) => ({ default: m.RoutineBuilder })));
-/*
-  Settings, Usage and the Wall load once the app has started and is idle (App, below), so launch has
-  no more to read and their first open has nothing to wait for. A chunk that's here is handed over
-  in the same turn: React's lazy takes even a finished import a turn later, shows the fallback, and
-  then holds it for its 300ms.
-*/
-function early<T extends ComponentType<any>>(load: () => Promise<T>) {
-  let got: T | undefined;
-  let going: Promise<T> | undefined;
-  // One that failed (the engine restarting) before the screen was opened is asked for again when it
-  // opens. Once the screen has asked, it waits on the same fetch, and a failure then is kept by lazy for good.
-  const fetch = () => (going ??= load().then((c) => (got = c), (e) => ((going = undefined), Promise.reject(e))));
-  const View = lazy(() => (got ? ({ then: (ok: (m: { default: T }) => void) => ok({ default: got! }) } as unknown as Promise<{ default: T }>) : fetch().then((c) => ({ default: c }))));
-  return { View, fetch };
-}
+// Settings, Usage and the Wall load once the app has started and is idle (App, below): early.ts.
 const SettingsScreen = early(() => import("./Settings").then((m) => m.Settings));
 const UsageScreen = early(() => import("./Usage").then((m) => m.Usage));
 const WallScreen = early(() => import("./Wall").then((m) => m.Wall));
 const Settings = SettingsScreen.View;
+// The Add-ons page and the agent dialog open now and then: they load at idle too, never with launch.
+const AddonsScreen = early(() => import("./AddonsPage").then((m) => m.AddonsPage));
+const AddonsPage = AddonsScreen.View;
+const AgentScreen = early(() => import("./AgentDialog").then((m) => m.AgentDialog));
+const AgentDialog = AgentScreen.View;
 // The Add-ons page shows Settings › Add-ons' own list.
 const Setup = lazy(() => import("./Setup").then((m) => ({ default: m.Setup })));
 const Usage = UsageScreen.View;
@@ -50,7 +42,6 @@ import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
 import { AppPage } from "./Addon";
 import { AppModelHost } from "./AppModel";
-import { AddonsPage } from "./AddonsPage";
 import { startAgentBrowser } from "./agentBrowser";
 import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
@@ -205,6 +196,8 @@ export function App() {
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [agentDialog, setAgentDialog] = useState<{ open: boolean; agent?: AgentProfile }>({ open: false });
+  const agentEver = useRef(false);
+  if (agentDialog.open) agentEver.current = true;
   const [lastProject, setLastProject] = useState<string | undefined>(() => localStorage.getItem("lc:project") ?? undefined);
 
   useEffect(() => startAgentBrowser(), []);
@@ -226,7 +219,7 @@ export function App() {
   useEffect(() => {
     if (!ready) return;
     const idle = (fn: () => void) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 4000 }) : window.setTimeout(fn, 0));
-    const t = window.setTimeout(() => idle(() => void Promise.all([SettingsScreen.fetch(), UsageScreen.fetch(), WallScreen.fetch()]).catch(() => {})), 1500);
+    const t = window.setTimeout(() => idle(() => void Promise.all([SettingsScreen.fetch(), UsageScreen.fetch(), WallScreen.fetch(), AddonsScreen.fetch(), AgentScreen.fetch()]).catch(() => {})), 1500);
     return () => clearTimeout(t);
   }, [ready]);
   useEffect(() => startDesigns(), []);
@@ -357,9 +350,9 @@ export function App() {
     } else if (!faceKept() && openIn === "security") setFace("security");
   }, [ready]);
 
-  // The Dock says how many sessions need you; notifications say which, while you're elsewhere.
+  // The Dock says how many sessions need you (needsYou: asking you something, or finished and not read); notifications say which, while you're elsewhere.
   // Pinned ones too, as the sidebar's Needs you lists them.
-  const needs = threads.filter((t) => !t.archived && waitsOnYou(t) && t.turns > 0).length;
+  const needs = threads.filter((t) => needsYou(t)).length;
   useEffect(() => bridge.badge(badgeOn ? needs : 0), [needs, badgeOn]);
   // The menu bar item says the same, with which sessions, while the window is out of sight.
   const menuBar = useEngine((s) => s.settings.menuBar !== false);
@@ -367,7 +360,7 @@ export function App() {
   const traySay = JSON.stringify({
     show: menuBar,
     working: live.filter((t) => t.status === "running" || t.agentsAtWork).map((t) => ({ id: t.id, title: t.title })),
-    needs: live.filter((t) => waitsOnYou(t) && t.turns > 0).map((t) => ({ id: t.id, title: t.title, waiting: t.status === "waiting" })),
+    needs: live.filter((t) => needsYou(t)).map((t) => ({ id: t.id, title: t.title, waiting: t.status === "waiting" })),
     // Every turn going, routines' and side chats' too: ⌘Q asks first while there are any.
     // Agents in the background count: quitting ends them.
     running: [...threads, ...sides].filter((t) => !t.archived && (t.status === "running" || t.agentsAtWork)).length,
@@ -384,15 +377,15 @@ export function App() {
     return () => void off();
   }, [view, notifyOn, besideThread?.id]);
 
-  // A session a rule settled says so, with an Undo.
+  // A session a rule settled says so, with an Undo. Its name is read as it comes, so the listener stays put.
   useEffect(
     () =>
       onStream((e) => {
         if (e.type !== "settled") return;
-        const t = threads.find((x) => x.id === e.threadId);
+        const t = getState().threads.find((x) => x.id === e.threadId);
         toast(`Moved ${t?.title ?? "a session"} to Settled`, { description: e.reason, action: { label: "Undo", onClick: () => void rpc("thread.update", { id: e.threadId, done: false }) }, duration: 5000 });
       }),
-    [threads],
+    [],
   );
 
   // "Set up a way of working" in the composer opens Settings on that place.
@@ -484,15 +477,13 @@ export function App() {
   const wallIds = wallShown.ids.filter((id) => threads.some((t) => t.id === id && !t.archived));
   const fromWall = view.kind === "session" && Boolean(view.wall) && !besideThread;
   const wallAt = fromWall && view.kind === "session" ? wallIds.indexOf(view.id) : -1;
-  const wallStrip = fromWall
-    ? {
-        at: wallAt + 1,
-        of: wallIds.length,
-        onBack: () => go({ kind: "wall" }),
-        onPrev: wallAt > 0 ? () => openFromWall(wallIds[wallAt - 1]) : undefined,
-        onNext: wallAt >= 0 && wallAt < wallIds.length - 1 ? () => openFromWall(wallIds[wallAt + 1]) : undefined,
-      }
-    : undefined;
+  // One object while where it stands doesn't change, with callbacks that keep their identity: the session (memo) isn't redrawn for a new one.
+  const wallBackTo = useSteady(() => go({ kind: "wall" }));
+  const wallPrev = useSteady(() => openFromWall(wallIds[wallAt - 1]));
+  const wallNext = useSteady(() => openFromWall(wallIds[wallAt + 1]));
+  const hasPrev = wallAt > 0;
+  const hasNext = wallAt >= 0 && wallAt < wallIds.length - 1;
+  const wallStrip = useMemo(() => (fromWall ? { at: wallAt + 1, of: wallIds.length, onBack: wallBackTo, onPrev: hasPrev ? wallPrev : undefined, onNext: hasNext ? wallNext : undefined } : undefined), [fromWall, wallAt, wallIds.length, hasPrev, hasNext]);
   /*
     There, Esc goes back to the Wall, unless something it was pressed in has a use for it (a field, a
     menu, a terminal). The composer is a field as the Wall's tiles have them: Esc stops a turn that's
@@ -533,20 +524,20 @@ export function App() {
     }
   };
 
-  /** The sessions as the sidebar shows them, top to bottom: ⌘1 to ⌘9 and "next that needs you" go by it. A closed shelf's rows are still in the DOM (for its closing fold) but don't count; a hidden sidebar's do. */
-  const sidebarOrder = () => [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].filter((r) => !r.closest(".lc-fold[inert]")).map((r) => r.dataset.row ?? "");
+  /** The sessions as the sidebar shows them, top to bottom: ⌘1 to ⌘9 and "next that needs you" go by it. A folded folder's rows aren't drawn, so they don't count; a hidden sidebar's do. */
+  const sidebarOrder = () => [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].map((r) => r.dataset.row ?? "");
   // The next session that waits on you, down the sidebar from the one that's open, round to the top.
   const nextNeeds = () => {
     const order = sidebarOrder();
     const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
     // From the side your keys are in, beside another session.
     const from = here ? rank(here.id) : -1;
-    const needs = threads.filter((t) => !t.archived && t.id !== here?.id && waitsOnYou(t) && t.turns > 0).sort((a, b) => rank(a.id) - rank(b.id));
+    const needs = threads.filter((t) => t.id !== here?.id && needsYou(t)).sort((a, b) => rank(a.id) - rank(b.id));
     const next = needs.find((t) => rank(t.id) > from) ?? needs[0];
     if (next) {
       setSettings(false);
       openSession(next.id);
-    } else toast(here && waitsOnYou(here) ? "Nothing else needs you" : "Nothing needs you", { duration: 2500 });
+    } else toast(here && needsYou(here) ? "Nothing else needs you" : "Nothing needs you", { duration: 2500 });
   };
   /** Opens a surface in the open session's panel, or in its kept panel for when it opens; the Terminal, in its bottom panel. */
   const showSurface = (id: string, tab: SurfaceId) => {
@@ -570,6 +561,24 @@ export function App() {
     setSideFocus(side === 1 ? 0 : 1);
     setView(side === 1 ? { kind: "session", id, beside: keep } : { kind: "session", id: keep, beside: id });
   };
+  /*
+    What App hands a session, Settings and their panels, each with one identity for the window's life
+    (useSteady: it calls the latest), so Session and Settings, which are memoised, redraw only for
+    their own news. Each side of Open beside has its own, reading which session is on it as it's pressed.
+  */
+  const showSidebar = useCallback(() => setSidebar(true), []);
+  const newAgent = useCallback(() => setAgentDialog({ open: true }), []);
+  const closeSettings = useCallback(() => setSettings(false), []);
+  const editAgent = useCallback((agent?: AgentProfile) => setAgentDialog({ open: true, agent }), []);
+  const steadyOpen = useSteady(openSession);
+  const openFromSettings = useSteady((id: string) => (setSettings(false), openSession(id)));
+  const sideThread = (i: number) => (i === 0 ? current : besideThread);
+  const routineAt = [useSteady((id?: string) => editRoutine(id, sideThread(0)?.projectId)), useSteady((id?: string) => editRoutine(id, sideThread(1)?.projectId))];
+  const besideAt = [useSteady(() => pickBeside(0)), useSteady(() => pickBeside(1))];
+  // Closing a side leaves the other one on screen alone.
+  const closeAt = [useSteady(() => besideThread && setView({ kind: "session", id: besideThread.id })), useSteady(() => current && setView({ kind: "session", id: current.id }))];
+  // Parts that read the state themselves: one element each for the window's life, so App's own redraws pass them by.
+  const still = useMemo(() => ({ hidden: <HiddenBrowsers />, scene: <Scene />, backdrop: <Backdrop />, host: <AppModelHost /> }), []);
   const copy = (text: string, what: string) =>
     void navigator.clipboard.writeText(text).then(
       () => toast(`Copied ${what}`, { description: text, duration: 2500 }),
@@ -695,7 +704,14 @@ export function App() {
     setKeysSeen((n) => n + 1);
   }, [JSON.stringify(keybindings ?? [])]);
 
+  /*
+    Built while ⌘K is open (and kept as it was while it closes): shut, a session's news doesn't
+    rebuild up to 200 rows nobody sees. `whileOpen` stands each input in for nothing while it's shut.
+  */
+  const lastCommands = useRef<CommandItem[]>([]);
+  const whileOpen = <T,>(x: T) => (menu ? x : null);
   const commands = useMemo<CommandItem[]>(() => {
+    if (!menu) return lastCommands.current;
     const items: CommandItem[] = [
       { id: "new", label: "New session", group: "Actions", icon: <I.compose size={16} />, shortcut: shortcutOf("new"), onSelect: () => newSession() },
       { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={16} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
@@ -787,9 +803,10 @@ export function App() {
     for (const h of found) items.push({ id: `m-${h.threadId}`, label: h.snippet, group: "In messages", hint: h.title, icon: <I.comment size={16} />, keywords: [asked.toLowerCase()], onSelect: () => openSession(h.threadId) });
     for (const p of projects) if (p.kind !== "design" && !p.demoFor) items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={16} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
     for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
+    lastCommands.current = items;
     return items;
     // New session and New routine read where you are and your last project, so they're here too.
-  }, [threads, projects, agents, providers, current, here, sidebar, view, lastProject, found, asked, keysSeen, face]);
+  }, [menu, ...[threads, projects, agents, providers, current, here, sidebar, view, lastProject, found, asked, keysSeen, face].map(whileOpen)]);
   const besidePicks = useMemo<CommandItem[]>(
     () =>
       besideOf === null
@@ -815,11 +832,11 @@ export function App() {
 
   return (
     <div className="lc-app" data-sidebar={sidebar || settings || undefined}>
-      <HiddenBrowsers />
-      <Scene />
+      {still.hidden}
+      {still.scene}
       {settings ? (
         <Suspense fallback={null}>
-          <Settings onClose={() => setSettings(false)} onAgent={(agent) => setAgentDialog({ open: true, agent })} onOpen={(id) => (setSettings(false), openSession(id))} />
+          <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} />
         </Suspense>
       ) : (
         <>
@@ -858,10 +875,10 @@ export function App() {
                 </>
                 )
               }
-              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face === "code" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face === "code" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} onAgent={(agent) => setAgentDialog({ open: true, agent })} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onCreateAddon={() => void createAddon()} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face === "code" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face === "code" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
-            <Backdrop />
+            {still.backdrop}
             <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening</span></div>}>
             {face === "security" && (view.kind === "home" || view.kind === "session") ? (
               // Liner Security: its Overview, Findings, Projects, Start a scan, or a scan's session. A fault in it stays in it.
@@ -879,12 +896,12 @@ export function App() {
                 <div ref={besides} className="lc-besides" onFocusCapture={(e) => pickSide(e.currentTarget, e.target)} onPointerDownCapture={(e) => pickSide(e.currentTarget, e.target)}>
                   {[current, besideThread].map((t, i) => (
                     <div key={t.id} className="lc-beside">
-                      <Session key={t.id} thread={t} sidebar={sidebar || i > 0} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, t.projectId)} onBeside={() => pickBeside(i)} keys={sideFocus === i} onCloseSide={() => setView({ kind: "session", id: i === 0 ? besideThread.id : current.id })} />
+                      <Session key={t.id} thread={t} sidebar={sidebar || i > 0} onSidebar={showSidebar} onNewAgent={newAgent} onOpenSession={steadyOpen} onRoutine={routineAt[i]} onBeside={besideAt[i]} keys={sideFocus === i} onCloseSide={closeAt[i]} />
                     </div>
                   ))}
                 </div>
               ) : (
-              <Session key={current.id} thread={current} sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} onOpenSession={openSession} onRoutine={(id) => editRoutine(id, current.projectId)} onBeside={() => pickBeside(0)} wall={wallStrip} />
+              <Session key={current.id} thread={current} sidebar={sidebar} onSidebar={showSidebar} onNewAgent={newAgent} onOpenSession={steadyOpen} onRoutine={routineAt[0]} onBeside={besideAt[0]} wall={wallStrip} />
               )
             ) : view.kind === "wall" ? (
               <Wall sidebar={sidebar} onSidebar={() => setSidebar(true)} onOpen={openFromWall} onBack={leaveWall} onNew={() => newSession()} />
@@ -945,8 +962,13 @@ export function App() {
         </div>
       )}
       <CommandMenu open={menu} onOpenChange={setMenu} items={besideOf === null ? commands : besidePicks} hotkey={null} placeholder={besideOf === null ? "Search sessions, projects and commands" : "Find a session to open beside it"} />
-      <AgentDialog open={agentDialog.open} agent={agentDialog.agent} onClose={() => setAgentDialog({ open: false })} />
-      <AppModelHost />
+      {/* Loaded the first time it opens (or at idle before), then kept, so it closes as it always has. */}
+      {agentEver.current && (
+        <Suspense fallback={null}>
+          <AgentDialog open={agentDialog.open} agent={agentDialog.agent} onClose={() => setAgentDialog({ open: false })} />
+        </Suspense>
+      )}
+      {still.host}
       <Toaster className="lc-toaster" />
     </div>
   );

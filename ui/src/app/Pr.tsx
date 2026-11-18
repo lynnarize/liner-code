@@ -10,7 +10,7 @@
   the usual request first when the session asks first, and the output in a console under it.
 */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { PR_TEST_TOOL, type Item, type PrInfo, type PrPicture, type Thread } from "@contracts";
+import { PR_TEST_TOOL, WRITER_CANCELLED, type Item, type PrInfo, type PrPicture, type Thread } from "@contracts";
 import type { PrAgent, PrCheck, PrCommit, PrConflict, PrEvent, PrStage } from "@liner/pro/pr-flow/pr-flow";
 import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
@@ -297,7 +297,20 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
         let body = f?.body.trim() ?? "";
         if (!title) {
           emit({ type: "status", text: "Writing the title and description from the branch" });
-          const d = await rpc("pr.draft", { threadId });
+          // Stop while it's written stops the writing too; one a newer ask for it took over ends quietly, ready to press again.
+          const halt = () => void rpc("writer.cancel", { threadId, kind: "draft" }).catch(() => {});
+          signal.addEventListener("abort", halt, { once: true });
+          let d: Awaited<ReturnType<typeof rpc<"pr.draft">>>;
+          try {
+            d = await untilStopped(rpc("pr.draft", { threadId }), signal);
+          } catch (e) {
+            if (!(e instanceof Error && e.message === WRITER_CANCELLED)) throw e;
+            emit({ type: "status", text: "" });
+            emit({ type: "stage", stage: "idle" });
+            return;
+          } finally {
+            signal.removeEventListener("abort", halt);
+          }
           title = d.title;
           body = body || d.body;
         }
@@ -362,6 +375,9 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
   const yours = useRef(editing);
   yours.current = editing;
 
+  // The PR and the branch's picture, asked for as the session or the card changes, and again as the
+  // tab comes up; not as it goes behind another tab, for a surface nobody sees.
+  const look = useRef<(picture: boolean) => void>(() => {});
   useEffect(() => {
     let live = true;
     const get = () =>
@@ -369,37 +385,65 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
         .then((s) => live && setSt(s))
         // A look that fails while the card is up leaves it up: taking it down would stop the steps it's running.
         .catch((e) => live && setSt((s) => s ?? { pr: null, gh: "failed", detail: e instanceof Error ? e.message : String(e) }));
-    void get();
-    void rpc("pr.picture", { threadId: thread.id })
-      .then((p) => {
-        if (!live) return;
-        setDiff(p.diff);
-        setBase(p.base);
-      })
-      .catch(() => {});
-    // The card watches its own checks; this keeps the reviews under it current.
-    const t = visible ? window.setInterval(get, 30000) : 0;
+    look.current = (picture) => {
+      void get();
+      if (picture)
+        void rpc("pr.picture", { threadId: thread.id })
+          .then((p) => {
+            if (!live) return;
+            setDiff(p.diff);
+            setBase(p.base);
+          })
+          .catch(() => {});
+    };
+    look.current(true);
     return () => {
       live = false;
-      window.clearInterval(t);
+      look.current = () => {};
     };
-  }, [thread.id, n, visible]);
+  }, [thread.id, n]);
+  const wasVisible = useRef(visible);
+  useEffect(() => {
+    const came = visible && !wasVisible.current;
+    wasVisible.current = visible;
+    if (!visible) return;
+    if (came) look.current(true);
+    // The card watches its own checks; this keeps the reviews under it current.
+    const t = window.setInterval(() => look.current(false), 30000);
+    return () => window.clearInterval(t);
+  }, [visible]);
 
   // Made once per session's card, so the steps it's running survive a re-render.
   const agent = useMemo(() => sessionPrAgent({ thread, agentName, fields: () => (yours.current || fields.current.title || fields.current.body || fields.current.draft ? fields.current : null), seen: () => seen.current, onChange: () => setN((x) => x + 1) }), [thread.id]);
 
+  // The text being written, by number: only the newest is heard, and the session it's for is told to stop it if the card goes first.
+  const asking = useRef(0);
+  const out = useRef<string | null>(null);
   const draftIt = async () => {
+    const n = ++asking.current;
+    out.current = thread.id;
     setDrafting(true);
     try {
       const r = await rpc("pr.draft", { threadId: thread.id });
+      if (n !== asking.current) return;
       setTitle(r.title);
       setBody(r.body);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      // Stopped (the card closed, or a newer ask took its place): nothing went wrong.
+      if (n === asking.current && !(e instanceof Error && e.message === WRITER_CANCELLED)) toast.error(e instanceof Error ? e.message : String(e));
     } finally {
-      setDrafting(false);
+      if (n === asking.current) {
+        out.current = null;
+        setDrafting(false);
+      }
     }
   };
+  useEffect(
+    () => () => {
+      if (out.current) void rpc("writer.cancel", { threadId: out.current, kind: "draft" }).catch(() => {});
+    },
+    [],
+  );
 
   if (!st) return <SurfaceNote icon={<I.pr size={20} />} title="Asking GitHub" />;
   if (st.gh !== "ready") return <GhNote gh={st.gh} detail={st.detail} onRetry={() => setN((x) => x + 1)} />;

@@ -12,7 +12,7 @@ type Session = { id: string; title: string };
 /** `running`: every session with a turn going, routines' included, which quitting would stop. */
 export type TrayStatus = { show: boolean; working: Session[]; needs: (Session & { waiting: boolean })[]; running?: number };
 type Ask = { kind: string; id: string; title?: string; state?: string };
-type Hooks = { open: (threadId?: string) => void; quit: () => void; quitNow: () => void; rpc: (method: string, params: Record<string, unknown>) => Promise<unknown> };
+type Hooks = { open: (threadId?: string) => void; quit: () => void; quitNow: () => void; rpc: (method: string, params: Record<string, unknown>, ms?: number) => Promise<unknown> };
 
 /**
   A 16-point template image, drawn at 2x: a ring, with a gap or a dot in it. Windows has no
@@ -114,14 +114,15 @@ export class StatusItem {
   private async pop() {
     const { working, needs } = this.view();
     const held = this.held;
-    // The requests waiting in sessions that wait on you, as they are now.
+    // The requests waiting in sessions that wait on you, as they are now: asked for under a second,
+    // so a busy engine doesn't keep the menu from opening (one that didn't answer shows no Allow).
     const asks = new Map<string, Ask[]>();
     await Promise.all(
       needs
         .filter((n) => n.waiting)
         .slice(0, 8)
         .map(async (n) => {
-          const items = (await this.hooks.rpc("thread.items", { id: n.id }).catch(() => [])) as Ask[];
+          const items = (await this.hooks.rpc("thread.items", { id: n.id }, 800).catch(() => [])) as Ask[];
           asks.set(n.id, items.filter((i) => i.kind === "approval" && i.state === "asking"));
         }),
     );

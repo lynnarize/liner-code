@@ -22,14 +22,16 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebStream } from "node:stream/web";
 import type { AppUpdate, BuiltinProvider, Settings, ToolUpdate, Updates } from "../../contracts/src/index.ts";
-import { newerVersion, updateModes } from "../../contracts/src/index.ts";
+import { APP_BUNDLE_ID as BUNDLE_ID, APP_BUNDLE_NAME as APP_NAME, newerVersion, updateModes } from "../../contracts/src/index.ts";
 import { run, which } from "./exec.ts";
 import { enginePath } from "./paths.ts";
 import type { Store } from "./store.ts";
 
 const EVERY = 6 * 3600_000;
-const BUNDLE_ID = "app.liner.code";
-const APP_NAME = "Liner Code.app";
+/** How long "the GitHub CLI has no sign-in" holds before it's asked again: someone may run gh auth login meanwhile. */
+const NO_TOKEN_FOR = 5 * 60_000;
+/** The first look after launch: a little after it, or later when the last look was less than EVERY ago. */
+const FIRST = 8000;
 /** The app's own package.json: the repo's root while developing, the staged one inside the app. */
 const PACKAGE = enginePath("../../package.json");
 
@@ -60,7 +62,7 @@ export function progressIn(text: string): { progress?: number; step?: string } {
 }
 
 /** "v0.2.0", "codex-cli 0.164.0" → [0, 2, 0]. */
-export function versionParts(s?: string) {
+function versionParts(s?: string) {
   const m = /(\d+)\.(\d+)\.(\d+)/.exec(s ?? "");
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
@@ -91,6 +93,9 @@ export function pickAsset<T extends { name: string }>(assets: T[], arch = proces
   // A zip that names no architecture runs anywhere; one built for the other kind of Mac isn't taken.
   return zips.find((a) => mine.test(a.name)) ?? zips.find((a) => /universal/i.test(a.name)) ?? zips.find((a) => !/arm64|aarch64|x64|x86|intel/i.test(a.name));
 }
+
+/** What a look found, kept in state.json so a launch soon after shows it without looking again. */
+type Found = { app?: Pick<AppUpdate, "latest" | "notes" | "url" | "publishedAt" | "size">; tools?: Omit<ToolUpdate, "state">[] };
 
 type Asset = { id: number; name: string; size: number; url: string; digest?: string | null };
 type Release = { tag_name: string; name?: string; body?: string; html_url: string; published_at?: string; draft?: boolean; prerelease?: boolean; assets: Asset[] };
@@ -188,10 +193,13 @@ export class Updater {
     would only fail the same way at every quit. A newer release is tried as usual.
   */
   private stuck?: { version: string; why: string };
+  /** The GitHub CLI's sign-in: null until asked; none found is asked again after a few minutes (you may sign in meanwhile). */
   private token: string | undefined | null = null;
+  private tokenAt = 0;
   /** How long a download may go without a byte before it's given up on. */
   private stall = 60_000;
   private timers: NodeJS.Timeout[] = [];
+  private off?: () => void;
   private readonly dir: string;
   private readonly env: NodeJS.ProcessEnv;
   private readonly store: Store;
@@ -219,15 +227,20 @@ export class Updater {
       can: !bundle ? (env.LINER_APP_PACKAGED ? "manual" : "source") : process.platform !== "darwin" ? "source" : bundle.includes("/AppTranslocation/") ? "translocated" : writable(dirname(bundle)) && writable(bundle) ? "install" : "readonly",
     };
     try {
-      const s = JSON.parse(readFileSync(join(this.dir, "state.json"), "utf8")) as { dismissed?: Record<string, string>; checkedAt?: number; stuck?: Updater["stuck"] };
+      const s = JSON.parse(readFileSync(join(this.dir, "state.json"), "utf8")) as { dismissed?: Record<string, string>; checkedAt?: number; stuck?: Updater["stuck"]; found?: Found };
       this.dismissed = s.dismissed ?? {};
       this.checkedAt = s.checkedAt;
       if (s.stuck && newer(s.stuck.version, this.app.current)) this.stuck = s.stuck;
+      // A look less than EVERY ago isn't made again at launch (start), so what it found is shown until the next.
+      if (s.found && typeof s.checkedAt === "number" && Date.now() - s.checkedAt < EVERY) this.restore(s.found);
     } catch {
       // first run
     }
     this.readSwap();
     this.readStaged();
+    // The engine's own look at the tools (api.ts detect, a --version of each at launch and after a change) says what's
+    // installed now: a tool updated in a terminal since the last look isn't offered an update it already has.
+    this.off = store.on((e) => e.type === "providers" && this.installed(e.providers));
     // A newer release that's already waiting comes before one that didn't go in.
     if (this.stuck && this.app.state !== "ready") this.app = { ...this.app, latest: this.stuck.version, state: "failed", stuck: true, error: this.stuckError() };
   }
@@ -275,27 +288,68 @@ export class Updater {
 
   private save() {
     mkdirSync(this.dir, { recursive: true });
-    writeFileSync(join(this.dir, "state.json"), JSON.stringify({ dismissed: this.dismissed, checkedAt: this.checkedAt, stuck: this.stuck }, null, 2));
+    const a = this.app;
+    const found: Found = { ...(a.latest && (a.state === "available" || a.state === "current") ? { app: { latest: a.latest, notes: a.notes, url: a.url, publishedAt: a.publishedAt, size: a.size } } : {}), tools: this.tools.filter((t) => t.state !== "updating").map((t) => ({ id: t.id, label: t.label, current: t.current, latest: t.latest, command: t.command, ...(t.error ? { error: t.error } : {}) })) };
+    writeFileSync(join(this.dir, "state.json"), JSON.stringify({ dismissed: this.dismissed, checkedAt: this.checkedAt, stuck: this.stuck, found }, null, 2));
+  }
+
+  /** What the last look found, kept from before this launch: newer or not by this copy's version. */
+  private restore(f: Found) {
+    if (f.app?.latest && this.app.state === "idle") this.app = { ...this.app, ...f.app, state: newer(f.app.latest, this.app.current) ? "available" : "current" };
+    if (Array.isArray(f.tools)) this.tools = f.tools.filter((t) => t && TOOLS.some((x) => x.id === t.id)).map((t) => ({ ...t, state: newer(t.latest, t.current) ? "available" : "current" }));
+  }
+
+  /**
+    What the engine's look at the tools found installed (each tool's own --version, read by its detect): a tool offered an
+    update (one kept from before this launch, or found since) whose version there is no longer older than the update is
+    current, at that version. Only ever towards "current": what's newer is for a real look (check) to say.
+  */
+  installed(found: { id: string; version?: string }[]) {
+    let changed = false;
+    this.tools = this.tools.map((t) => {
+      const now = versionOf(found.find((d) => d.id === t.id)?.version);
+      if (t.state !== "available" || !now || newer(t.latest, now)) return t;
+      changed = true;
+      return { ...t, current: now, state: "current" };
+    });
+    if (!changed) return;
+    this.save();
+    this.emit();
   }
 
   start() {
-    // A little after launch, then every six hours; waiting tools are looked at every half minute.
-    this.timers.push(setTimeout(() => void this.auto(), 8000));
-    this.timers.push(setInterval(() => void this.auto(), EVERY));
+    // A little after launch, then every six hours; waiting tools are looked at every half minute. A
+    // look made less than six hours ago (a restart, an update, a quick quit and reopen) isn't made
+    // again: the first is due six hours after it. "Look now" (check) always looks.
+    const due = this.checkedAt === undefined ? FIRST : Math.max(FIRST, this.checkedAt + EVERY - Date.now());
+    this.timers.push(
+      setTimeout(() => {
+        void this.auto();
+        this.timers.push(setInterval(() => void this.auto(), EVERY));
+      }, due),
+    );
+    // A release found before this launch, with Liner Code set to update itself, still downloads soon.
+    if (due > FIRST) this.timers.push(setTimeout(() => void this.auto(false), FIRST));
     this.timers.push(setInterval(() => void this.next(), 30_000));
   }
 
   stop() {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
+    this.off?.();
+    this.off = undefined;
   }
 
-  /** What runs by itself: a look at what isn't off, then what "auto" does with it. */
-  async auto() {
+  /**
+    What runs by itself: a look at what isn't off, then what "auto" does with it. Without `look`,
+    only the app's download, from what an earlier look found: a tool is updated only on a fresh look,
+    since its version may have changed since.
+  */
+  async auto(look = true) {
     if (this.modeApp === "off" && this.modeTools === "off") return;
-    await this.check({ app: this.modeApp !== "off", tools: this.modeTools !== "off" }).catch(() => {});
+    if (look) await this.check({ app: this.modeApp !== "off", tools: this.modeTools !== "off" }).catch(() => {});
     if (this.modeApp === "auto" && this.app.state === "available" && this.app.can === "install") void this.download().catch(() => {});
-    if (this.modeTools === "auto") {
+    if (look && this.modeTools === "auto") {
       // A failed one gets another go after an hour (the network, a lock), not at every look.
       for (const t of this.tools) if (t.state === "available" || (t.state === "failed" && Date.now() - (t.at ?? 0) > 3600_000 && newer(t.latest, t.current))) this.wanted.add(t.id);
       void this.next();
@@ -352,9 +406,10 @@ export class Updater {
   }
 
   private async ghToken() {
-    if (this.token === null) {
+    if (this.token === null || (this.token === undefined && Date.now() - this.tokenAt > NO_TOKEN_FOR)) {
       const gh = which("gh", this.env);
       this.token = gh ? (await run(gh, ["auth", "token"], { env: this.env, timeout: 8000 })).stdout.trim() || undefined : undefined;
+      this.tokenAt = Date.now();
     }
     return this.token;
   }

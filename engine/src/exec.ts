@@ -782,12 +782,21 @@ export async function versionOf(path: string, env: NodeJS.ProcessEnv, args = ["-
 export function jsonLines(stream: NodeJS.ReadableStream, onLine: (v: unknown) => void, onRaw?: (line: string) => void) {
   let buf = "";
   stream.setEncoding?.("utf8");
+  // Only the parse is a line that isn't JSON: a throw from the handler is a bug or a failed sink, said in the log, not
+  // taken for a raw line and dropped unseen, and not left to stop the lines after it.
   const take = (line: string) => {
     if (!line) return;
+    let v: unknown;
     try {
-      onLine(JSON.parse(line));
+      v = JSON.parse(line);
     } catch {
       onRaw?.(line);
+      return;
+    }
+    try {
+      onLine(v);
+    } catch (e) {
+      console.error("A line from the tool couldn't be handled:", e);
     }
   };
   stream.on("data", (chunk: string) => {

@@ -21,12 +21,14 @@
   Creator mode (github.com/deepseek-ai/deepseek-harness, MIT); the shape and the code are our own.
 */
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AddonAsk, AddonInfo, AddonManifest, AddonSecret, AnyConnectionManifest, ConnectionAsk, ConnectionManifest, DshConnectionManifest, DshInstructions, DshPlugin, DshSlot, DshTool, DshToolsPlugin, PanelAccess, PanelManifest } from "../../contracts/src/index.ts";
 import { addonKey, PANEL_ICONS } from "../../contracts/src/index.ts";
 import { sandboxed } from "./dsh-hosts.ts";
-import { loadState, writeAtomic } from "./store.ts";
+import { outside } from "./exec.ts";
+import { writeAtomic } from "./atomic.ts";
+import { loadState } from "./store.ts";
 
 /** Where an agent writes a draft, in the session's folder. */
 export const ADDON_DIR = ".liner/addons";
@@ -226,8 +228,10 @@ const ENTRY = /^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*\/)?[A-Za-z0-9_-][A-Za-z0-9._-]*\
 export const STORAGE_MAX = 1024;
 
 const DSH_SLOTS: DshSlot[] = ["sidebar.panellist", "sidebar.right.pane.tab", "conversation.view"];
-/** A tool's name as every agent tool takes it over MCP. */
-const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+/** A tool's name as every agent tool takes it over MCP: read from a plugin's code (dsh.ts) and checked on its card here. */
+export const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+/** An npm package's name: an optional @scope, lower case, as npm allows them (dsh.ts reads one with it too). */
+export const NPM_NAME = /^(?:@[a-z0-9][a-z0-9._~-]{0,100}\/)?[a-z0-9][a-z0-9._~-]{0,180}$/;
 /** The most tools one plugin may give your agents. */
 export const DSH_TOOLS_MAX = 64;
 /** The tools a ported plugin gives your agents, as dsh.ts read them from its code: names MCP takes, once each, and plain words. */
@@ -263,7 +267,7 @@ function checkDsh(v: unknown, bad: string[], c: Checks, slotted = true): DshPlug
   c.only(d, "dsh", ["package", "version", "integrity", "host", "config", "tools", "instructions", ...(slotted ? ["slot"] : [])]);
   const pkg = c.text(d.package, "dsh.package", 214);
   const version = c.text(d.version, "dsh.version", 64);
-  if (pkg !== undefined && !/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/.test(pkg)) bad.push("dsh.package isn't an npm package's name.");
+  if (pkg !== undefined && !NPM_NAME.test(pkg)) bad.push("dsh.package isn't an npm package's name.");
   if (d.integrity !== undefined && (typeof d.integrity !== "string" || !/^sha(?:512|384|256)-[A-Za-z0-9+/=]{20,100}$/.test(d.integrity))) bad.push("dsh.integrity isn't a checksum.");
   const host = d.host === undefined ? undefined : c.text(d.host, "dsh.host", 300);
   if (host !== undefined && (host.startsWith("/") || host.split("/").some((p) => !p || p === ".." || p === ".") || !/\.(?:m?js|cjs)$/.test(host))) bad.push("dsh.host is a .js file in the package, by its path in it.");
@@ -489,10 +493,10 @@ export function readDraft(root: string, asked: string): { path: string; manifest
   let file = ADDON_ID.test(a) ? join(root, ADDON_DIR, a, "addon.json") : resolve(root, a);
   if (existsSync(file) && statSync(file).isDirectory()) file = join(file, "addon.json");
   const rel = relative(root, file);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("A draft must be in this session's folder, under .liner/addons/.");
+  if (!rel || outside(rel)) throw new Error("A draft must be in this session's folder, under .liner/addons/.");
   if (!existsSync(file)) throw new Error(`There's no ${rel.split(sep).join("/")}. Write the manifest there first (liner_inspect has its shape).`);
   const real = relative(realpathSync(root), realpathSync(file));
-  if (real.startsWith("..") || isAbsolute(real)) throw new Error("That draft is a link to outside this session's folder.");
+  if (outside(real)) throw new Error("That draft is a link to outside this session's folder.");
   if (!statSync(file).isFile()) throw new Error(`${rel} isn't a plain file.`);
   if (statSync(file).size > 64_000) throw new Error("That draft is over 64 KB; a manifest is a few lines.");
   let raw: unknown;
@@ -510,6 +514,14 @@ export function readDraft(root: string, asked: string): { path: string; manifest
 /** The same manifest, the same text: key order doesn't make a new version. A panel's files count too. */
 const canon = (m: AddonManifest, files?: PanelFiles) => JSON.stringify(m, (_k, v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v)) + (files ? hashOf(files) : "");
 
+/** How long a panel's storage waits after a change before it's written. */
+const STORE_WAIT = 500;
+/** Every Addons with storage not yet written, so it's written as the engine exits, however it exits. */
+const pendingStores = new Set<Addons>();
+process.once("exit", () => {
+  for (const a of [...pendingStores]) a.flush();
+});
+
 type Entry = { version: number; enabled: boolean; project?: string; removed?: number; by: AddonInfo["by"]; versions: { v: number; at: number }[] };
 type Index = { v: 1; addons: Record<string, Entry> };
 
@@ -526,6 +538,16 @@ export class Addons {
   private index: Index = { v: 1, addons: Object.create(null) };
   /** Told after every change, with the list as it is now. */
   onChange: (list: AddonInfo[]) => void = () => {};
+  /**
+    Each kept version's manifest as last checked, by id@version, with its file's time and size: a
+    ported plugin's frame asks for it on every request, and a version's file is only ever written
+    whole (install), so one whose time and size are the same is the one checked.
+  */
+  private manifests = new Map<string, { at: number; size: number; m: AddonManifest | null }>();
+  /** Panels' storage as last read or written, by id, and the writes not yet on disk. */
+  private stores = new Map<string, Record<string, unknown>>();
+  private unsaved = new Set<string>();
+  private storeTimer?: NodeJS.Timeout;
 
   constructor(home: string) {
     this.dir = join(home, "addons");
@@ -542,7 +564,10 @@ export class Addons {
   }
 
   private save() {
-    writeAtomic(join(this.dir, "index.json"), JSON.stringify(this.index, null, 2), { backup: true });
+    // The one before kept as index.json.bak, which loadState reads when index.json is gone.
+    const file = join(this.dir, "index.json");
+    if (existsSync(file)) copyFileSync(file, `${file}.bak`);
+    writeAtomic(file, JSON.stringify(this.index, null, 2), { sync: true });
     this.onChange(this.list());
   }
 
@@ -559,16 +584,31 @@ export class Addons {
     const v = version ?? e?.version;
     // A number, whatever was sent: anything else in the path below could lead out of the add-on's folder.
     if (!ADDON_ID.test(id) || !Number.isInteger(v)) return null;
+    const file = join(this.dir, id, `v${v}`, "addon.json");
+    let st: { mtimeMs: number; size: number };
     try {
-      // Kept by Liner Code itself, a ported plugin's block included.
-      return checkManifest(JSON.parse(readFileSync(join(this.dir, id, `v${v}`, "addon.json"), "utf8")), { dsh: true });
+      st = statSync(file);
     } catch {
       return null;
     }
+    const key = `${id}@${v}`;
+    const had = this.manifests.get(key);
+    if (had && had.at === st.mtimeMs && had.size === st.size) return had.m;
+    let m: AddonManifest | null = null;
+    try {
+      // Kept by Liner Code itself, a ported plugin's block included.
+      m = checkManifest(JSON.parse(readFileSync(file, "utf8")), { dsh: true });
+    } catch {
+      m = null;
+    }
+    this.manifests.set(key, { at: st.mtimeMs, size: st.size, m });
+    return m;
   }
 
+  /** One add-on as list() has it, without building the others. */
   get(id: string) {
-    return this.list().find((a) => a.id === id);
+    const e = this.index.addons[id];
+    return e ? (this.info(id, e) ?? undefined) : undefined;
   }
 
   /** A ported plugin that may run now, a page or a connection: on, not removed, with its dsh block. */
@@ -608,16 +648,25 @@ export class Addons {
     return m?.kind === "panel" ? m : null;
   }
 
-  /* A panel's own storage: one JSON file per add-on, kept through its versions and its removal. */
+  /*
+    A panel's own storage: one JSON file per add-on, kept through its versions and its removal. It's
+    read once and kept in memory; a change is written a moment later (a panel that saves as you type
+    writes once a pause, not once a key), and anything not yet written is written as the engine exits.
+  */
   private storeFile = (id: string) => join(this.dir, id, "storage.json");
   storage(id: string): Record<string, unknown> {
     if (!ADDON_ID.test(id)) return {};
+    const had = this.stores.get(id);
+    if (had) return { ...had };
+    let all: Record<string, unknown> = {};
     try {
       const v = JSON.parse(readFileSync(this.storeFile(id), "utf8")) as unknown;
-      return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+      if (v && typeof v === "object" && !Array.isArray(v)) all = v as Record<string, unknown>;
     } catch {
-      return {};
+      // None yet, or one that doesn't read: an empty storage.
     }
+    this.stores.set(id, all);
+    return { ...all };
   }
   /** Puts (or with `undefined`, takes away) one key, within its quota in KB. */
   store(id: string, key: string, value: unknown, quota: number) {
@@ -625,34 +674,59 @@ export class Addons {
     const all = this.storage(id);
     if (value === undefined) delete all[key];
     else all[key] = value;
-    const text = JSON.stringify(all);
-    const size = Buffer.byteLength(text);
+    const size = Buffer.byteLength(JSON.stringify(all));
     if (value !== undefined && size > quota * 1024) throw new Error(`That would make its storage ${Math.ceil(size / 1024)} KB, over the ${sizeWords(quota)} it asked for.`);
-    mkdirSync(join(this.dir, id), { recursive: true });
-    writeAtomic(this.storeFile(id), text);
+    this.stores.set(id, all);
+    this.unsaved.add(id);
+    pendingStores.add(this);
+    clearTimeout(this.storeTimer);
+    this.storeTimer = setTimeout(() => this.flush(), STORE_WAIT);
+    this.storeTimer.unref?.();
+  }
+
+  /** Panels' storage not yet on disk, written now (a moment after a change, and as the engine exits). */
+  flush() {
+    clearTimeout(this.storeTimer);
+    for (const id of [...this.unsaved]) {
+      this.unsaved.delete(id);
+      const all = this.stores.get(id);
+      if (!all) continue;
+      try {
+        writeAtomic(this.storeFile(id), JSON.stringify(all), { mkdir: true, sync: true });
+      } catch (e) {
+        console.error(`[addons] couldn't save ${id}'s storage:`, e instanceof Error ? e.message : e);
+      }
+    }
+    pendingStores.delete(this);
+  }
+
+  /** One add-on as the list has it, or null when its manifest doesn't read. */
+  private info(id: string, e: Entry): AddonInfo | null {
+    const m = this.manifest(id);
+    if (!m) return null;
+    const base = {
+      id,
+      name: m.name,
+      ...(m.description ? { description: m.description } : {}),
+      ...(m.summary ? { summary: m.summary } : {}),
+      version: e.version,
+      versions: e.versions.map((x) => x.v).sort((a, b) => a - b),
+      dates: Object.fromEntries(e.versions.map((x) => [x.v, x.at])),
+      enabled: e.enabled,
+      ...(e.removed ? { removed: e.removed } : {}),
+      ...(e.project ? { project: e.project } : {}),
+      by: e.by,
+    };
+    if (m.kind === "panel") return { ...base, kind: "panel", reaches: accessWords(m.access, m.place, m.dsh), secrets: [], panel: { place: m.place, access: m.access, entry: m.entry, ...(m.icon ? { icon: m.icon } : {}), ...(m.dsh ? { dsh: { package: m.dsh.package, version: m.dsh.version, host: !!m.dsh.host, ...(m.dsh.tools?.length ? { tools: m.dsh.tools.map((t) => t.name) } : {}) } } : {}) } };
+    if (m.dsh) return { ...base, kind: "connection", transport: "stdio", reaches: reachOf(m), secrets: [], dsh: { package: m.dsh.package, version: m.dsh.version, host: true, tools: m.dsh.tools.map((t) => t.name) } };
+    return { ...base, kind: "connection", transport: "http" in m.server ? "http" : "stdio", reaches: reachOf(m), secrets: m.secrets ?? [] };
   }
 
   list(): AddonInfo[] {
     const out: AddonInfo[] = [];
     for (const [id, e] of Object.entries(this.index.addons)) {
-      const m = this.manifest(id);
-      if (!m) continue;
-      const base = {
-        id,
-        name: m.name,
-        ...(m.description ? { description: m.description } : {}),
-        ...(m.summary ? { summary: m.summary } : {}),
-        version: e.version,
-        versions: e.versions.map((x) => x.v).sort((a, b) => a - b),
-        dates: Object.fromEntries(e.versions.map((x) => [x.v, x.at])),
-        enabled: e.enabled,
-        ...(e.removed ? { removed: e.removed } : {}),
-        ...(e.project ? { project: e.project } : {}),
-        by: e.by,
-      };
-      if (m.kind === "panel") out.push({ ...base, kind: "panel", reaches: accessWords(m.access, m.place, m.dsh), secrets: [], panel: { place: m.place, access: m.access, entry: m.entry, ...(m.icon ? { icon: m.icon } : {}), ...(m.dsh ? { dsh: { package: m.dsh.package, version: m.dsh.version, host: !!m.dsh.host, ...(m.dsh.tools?.length ? { tools: m.dsh.tools.map((t) => t.name) } : {}) } } : {}) } });
-      else if (m.dsh) out.push({ ...base, kind: "connection", transport: "stdio", reaches: reachOf(m), secrets: [], dsh: { package: m.dsh.package, version: m.dsh.version, host: true, tools: m.dsh.tools.map((t) => t.name) } });
-      else out.push({ ...base, kind: "connection", transport: "http" in m.server ? "http" : "stdio", reaches: reachOf(m), secrets: m.secrets ?? [] });
+      const a = this.info(id, e);
+      if (a) out.push(a);
     }
     return out.sort((a, b) => a.by.at - b.by.at);
   }
@@ -696,7 +770,8 @@ export class Addons {
         const skip = new Set([join(pkg.dir, ".git"), ...(pkg.modules ? [] : [join(pkg.dir, "node_modules")])]);
         cpSync(pkg.dir, join(dir, "package"), { recursive: true, filter: (src) => !skip.has(src) && !lstatSync(src).isSymbolicLink() });
       }
-      writeAtomic(join(dir, "addon.json"), `${JSON.stringify(m, null, 2)}\n`);
+      writeAtomic(join(dir, "addon.json"), `${JSON.stringify(m, null, 2)}\n`, { sync: true });
+      this.manifests.delete(`${m.id}@${version}`);
     }
     const versions = e ? [...e.versions.filter((x) => x.v !== version), { v: version, at: Date.now() }] : [{ v: version, at: Date.now() }];
     // Who first added it stays, unless this one comes from somewhere else.

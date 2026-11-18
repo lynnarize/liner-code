@@ -20,9 +20,10 @@
   ⌘-click picks rows and ⇧-click a run of them; with more than one picked, a bar settles, snoozes,
   archives or moves them all at once. Esc lets them go.
 */
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from "react";
+import { prefersReducedMotion } from "@liner/lib/spring";
 import { createPortal } from "react-dom";
-import type { AgentProfile, ProviderInfo, RecentSession, Thread } from "@contracts";
+import type { AgentProfile, ProviderInfo, RecentSession, RoutineRun, Thread } from "@contracts";
 import { bridge } from "./bridge";
 import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
@@ -44,7 +45,6 @@ type Props = {
   onNew: (projectId?: string) => void;
   onUsage: () => void;
   onSettings: () => void;
-  onAgent: (agent?: AgentProfile) => void;
   usageOn: boolean;
   onRoutines: () => void;
   routinesOn: boolean;
@@ -64,8 +64,6 @@ type Props = {
   /** The Add-ons page: everything your agents made for Liner Code (DeepSeek Harness's Plugins entry). */
   onAddons?: () => void;
   addonsOn?: boolean;
-  /** A new task in Workshop, its ask for an add-on with a sidebar entry written and not sent. */
-  onCreateAddon?: () => void;
   /** Opens a session beside the one on screen. */
   onBeside?: (id: string) => void;
   /** A session was archived from here: if it's on screen, the window moves off it. */
@@ -120,6 +118,15 @@ function useStored<T extends string>(key: string, fallback: T, allowed: readonly
   Dock's count takes it (App). Snoozed and settled ones are put away, so they don't.
 */
 export const waitsOnYou = (t: Thread, now = Date.now()) => bucketOf(t.pinned ? { ...t, pinned: false } : t, now) === "needs";
+/** Asks you something: it waits on your answer, ran into a problem, or hit its plan's limit. */
+export const asksYou = (t: Thread) => t.status === "waiting" || t.status === "error" || t.status === "limited";
+/**
+  Needs you, the same everywhere: the sidebar's Needs you and its top pill, the Dock's count, the menu
+  bar item and Next session that needs you. It asks you something, or it finished and you haven't
+  read it. Not one that hasn't started, nor one put away (archived, snoozed, settled); a pinned one or
+  one in your groups does. One answered while you were away whose agents still work is working until they're done.
+*/
+export const needsYou = (t: Thread, now = Date.now()) => !t.archived && t.turns > 0 && waitsOnYou(t, now) && (asksYou(t) || !t.agentsAtWork);
 /**
   How a row and its card show a session on its shelf: a pinned one that waits on you as Needs you
   (its dot, its words, its mark). T3 Code reads a row's state from the thread alone, its pin apart
@@ -193,8 +200,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       .join(","),
   );
   const sent = useMemo(() => new Map(sentLine.split(",").filter(Boolean).map((x) => [x.split("=")[0], Number(x.split("=")[1])] as const)), [sentLine]);
-  // The filter field went in 0.2.7 (Search is a row now): nothing narrows the list from here.
-  const query = "";
   // A new key since the list's rebuild (lc:sb-view, which held All projects, is no longer read): everyone starts on By folder.
   const [view, setView] = useStored<View>("lc:sb-list", "folder", ["folder", "status", "snoozed", "settled", "archive"]);
   const [order, setOrder] = useStored<Order>("lc:sb-order", "activity", ["activity", "started"]);
@@ -207,9 +212,12 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const scroller = useRef<HTMLDivElement>(null);
   const nav = useRef<HTMLElement>(null);
   const [plate, setPlate] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  // Rows drawn before, and those first drawn already open (they skip their entry fade: row() and app.css, data-fresh).
+  // Rows drawn before: drawn again (in another place) they skip their entry fade, as does one first drawn already open (SessionRow and app.css, data-fresh).
   const seenRows = useRef(new Set<string>());
-  const freshRows = useRef(new Set<string>());
+  // What the list draws, top to bottom, as this render builds it (rows, labels, folders): the plate and the rows' glide measure again only when it changes.
+  const drawn: string[] = [];
+  // What a row does, reached through one ref so the rows (memoised) take no new callbacks: each press reads what's current (set after the list is built, below).
+  const ctl = useRef<RowCtl>(null as unknown as RowCtl);
   // Rows picked for one action on them all, and where a ⇧-click's run starts (T3 Code: threadSelectionStore.ts).
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -249,15 +257,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
 
   // Latest activity first, or the newest session first.
   const newest = (a: Thread, b: Thread) => (order === "started" ? b.createdAt - a.createdAt : b.updatedAt - a.updatedAt);
-  const matches = (t: Thread, q: string) => !q || t.title.toLowerCase().includes(q) || projects.find((p) => p.id === t.projectId)?.name.toLowerCase().includes(q);
-  const list = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return threads.filter((t) => !t.archived && matches(t, q)).sort(newest);
-  }, [threads, projects, query, order]);
-  const archivedList = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return threads.filter((t) => t.archived && matches(t, q)).sort(newest);
-  }, [threads, projects, query, order]);
+  const list = useMemo(() => threads.filter((t) => !t.archived).sort(newest), [threads, order]);
+  const archivedList = useMemo(() => threads.filter((t) => t.archived).sort(newest), [threads, order]);
 
   const place = (t: Thread): Bucket => bucketOf(t, now);
   const working = everyThread.filter((t) => !t.archived && t.status === "running").length;
@@ -265,16 +266,17 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const handed = runs.filter((r) => r.status === "handed" && !r.test).length;
   const routinesNote = handed ? `${handed} waiting` : routines.length ? `${routines.filter((r) => r.on).length} on` : "";
   /*
-    Needs you, in this panel: it waits on you, ran into a problem or hit its plan's limit. bucketOf
-    (the Dock's count, Settle the project) also counts one answered while you were away and one not
-    started; here those are finished work, under Complete with their own words, as the mockup has it.
+    Needs you, in this panel, is needsYou (above), as the Dock counts it: one asking you something, or
+    finished and not read. bucketOf (Settle the project) also counts one not started; here that is
+    under Complete, with its own words.
   */
-  const asks = (t: Thread) => t.status === "waiting" || t.status === "error" || t.status === "limited";
+  const needs = (t: Thread) => needsYou(t, now);
   // Working, in this panel: its turn runs, or agents it sent still work and it doesn't need you. One answered while you were away whose agents still work is working; it reads as answered once they're done. The rows, By status, a folded folder, a folder's order and the pill all take this one test.
-  const works = (t: Thread) => t.status === "running" || (!asks(t) && Boolean(t.agentsAtWork));
+  const works = (t: Thread) => t.status === "running" || (!asksYou(t) && Boolean(t.agentsAtWork));
   // The top row's counts: the sessions on The Wall that work (as it sorts them: a turn running, or agents it sent still at work) and those that need you.
-  const onWallNow = threads.filter((t) => onTheWall(t, now));
-  const wallWaits = onWallNow.filter(asks).length;
+  // Liner Security's too: The Wall, the Dock and the tray count them.
+  const onWallNow = everyThread.filter((t) => onTheWall(t, now));
+  const wallWaits = onWallNow.filter(needs).length;
   const wallWorking = onWallNow.filter(works);
   const machine = window.__LINER__?.machine ?? "This computer";
   const addProject = () =>
@@ -303,7 +305,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   // what works, then the rest in the sort you picked. A fork sits under the session it came from
   // while that one is here too, in the order they were made.
   const tree = useMemo(() => {
-    const rank = (t: Thread) => (asks(t) ? 0 : works(t) ? 1 : 2);
+    const rank = (t: Thread) => (needs(t) ? 0 : works(t) ? 1 : 2);
     const here = [...byBucket.needs, ...byBucket.working, ...byBucket.open].sort((a, b) => rank(a) - rank(b) || newest(a, b));
     const ids = new Set(here.map((t) => t.id));
     const forks = new Map<string, Thread[]>();
@@ -317,30 +319,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       .map((x) => ({ ...x, list: top.filter(inSection(x.id)), all: here.filter(inSection(x.id)) }))
       .filter((x) => x.list.length > 0)
       // What a folded folder says: how many it holds, whether one needs you, and the first that works (its spinner is in that one's tint).
-      .map(({ all, ...x }) => ({ ...x, count: all.length, needs: all.filter(asks).length, working: all.find(works) }));
+      .map(({ all, ...x }) => ({ ...x, ids: all.map((t) => t.id), count: all.length, needs: all.filter(needs).length, working: all.find(works) }));
     return { sections, forks };
-  }, [byBucket, projects, order]);
-
-  // The plate follows the open session as rows arrive, leave and fold.
-  useLayoutEffect(() => {
-    const sc = scroller.current;
-    if (!sc) return;
-    // Measured from the list's own box, since a fork's row sits inside its parent's indent.
-    const measure = () => {
-      const inner = sc.firstElementChild as HTMLElement;
-      const row = current ? sc.querySelector<HTMLElement>(`[data-row="${CSS.escape(current)}"]`) : null;
-      if (!row) return setPlate(null);
-      const a = inner.getBoundingClientRect();
-      const b = row.getBoundingClientRect();
-      const next = { x: b.left - a.left, y: b.top - a.top, w: b.width, h: b.height };
-      // The same place again (the list's first resize report, a row that didn't move) keeps the plate as it is, rather than drawing the whole sidebar again for it.
-      setPlate((was) => (was && was.x === next.x && was.y === next.y && was.w === next.w && was.h === next.h ? was : next));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(sc.firstElementChild as HTMLElement);
-    return () => ro.disconnect();
-  }, [current, list, archivedList, view, shutProjects, shutForks, renaming, groups, Boolean(faceBody)]);
+  }, [byBucket, projects, order, now]);
 
   useEffect(() => {
     const sc = scroller.current;
@@ -522,12 +503,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
       setMenu({ t, x: r.left + 24, y: r.bottom });
     }
-    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      const rows = [...((e.currentTarget as HTMLElement).closest(".lc-sb")?.querySelectorAll<HTMLElement>(".lc-sb-pick") ?? [])];
-      const i = rows.indexOf(e.currentTarget as HTMLElement);
-      rows[i + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
-      e.preventDefault();
-    } else return;
+    // ↑ and ↓ are SideRow's, as in every face's list, folder headers included (SideList.tsx, listArrows).
+    else return;
     e.preventDefault();
   };
 
@@ -611,7 +588,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const ctx = u?.contextTokens && u.contextWindow ? Math.round((u.contextTokens / u.contextWindow) * 100) : null;
     const last = [`Last move ${agoLong(t.updatedAt, now)}`, ctx !== null ? `${ctx}% of context` : "", u?.costUsd ? money(u.costUsd) : ""].filter(Boolean).join(" · ");
     // ⌘1 to ⌘9 go down the sidebar as it shows (App's sidebarOrder).
-    const n = [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].filter((r) => !r.closest(".lc-fold[inert]")).findIndex((r) => r.dataset.row === t.id) + 1;
+    const n = [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].findIndex((r) => r.dataset.row === t.id) + 1;
     return (
       <>
         <p className="lc-sbc-title">{t.title}</p>
@@ -674,187 +651,29 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     );
   };
 
-  /*
-    A session's row, the same in every view (SideRow): in the mark column how it stands (the spinner
-    in its model's tint while it works, the amber dot while it waits on you, the clock, the error
-    mark, the ring before it starts, else a small grey dot); its title; under it what it is doing
-    now, or how it ended; at its end its pull request, or the changes it left to review. Pointing at
-    it, Pin, Snooze and Settle take the end's place. Who works on it, where and when are in the card
-    a resting pointer brings.
-  */
-  const row = (t: Thread, shelf: Bucket, forks?: { n: number; open: boolean; toggle: () => void }) => {
-    // Pinned is where it's kept, not how it stands: one that waits on you shows it, as the Dock counts it.
-    const bucket = standing(t, shelf, now);
-    const on = onIt(t, agents, providers);
-    const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
-    // Finished and nothing waits on you, or settled: the title steps back.
-    const title =
-      renaming === t.id ? (
-        <input
-          className="lc-sb-rename"
-          aria-label={`Rename ${t.title || "New session"}`}
-          defaultValue={t.title}
-          autoFocus
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            // The Enter that confirms an IME composition is not the end of the rename.
-            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-            if (e.key !== "Enter" && e.key !== "Escape") return;
-            // Back to the row, not nowhere: Enter saves as the field loses focus, Escape puts the title back first.
-            if (e.key === "Escape") e.currentTarget.value = t.title;
-            e.currentTarget.closest<HTMLElement>(".lc-sb-pick")?.focus();
-          }}
-          onBlur={(e) => {
-            const v = e.target.value.trim();
-            if (v && v !== t.title) void rpc("thread.update", { id: t.id, title: v });
-            setRenaming(null);
-          }}
-        />
-      ) : (
-        // A session the engine hasn't named yet still reads as one.
-        t.title || "New session"
-      );
-    const working = sent.get(t.id) ?? 0;
-    // A pair's sidekick is in its name already: the agents besides it are counted.
-    const agentsNow = Math.max(0, working - (on.pair ? 1 : 0));
-    const busy = !t.archived && (t.status === "running" || run?.status === "running" || (working > 0 && !asks(t)));
-    // Finished and nothing waits on you, or settled: the title steps back. One at work keeps full ink.
-    const quiet = !busy && (Boolean(t.archived) || bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0));
-    // A row that first comes already open (a session just sent from Home) is there at once, so the plate under it is never empty; it keeps that for good, so leaving it plays nothing.
-    if (!seenRows.current.has(t.id)) {
-      seenRows.current.add(t.id);
-      if (t.id === current) freshRows.current.add(t.id);
-    }
-    const state: SideState = busy ? "working" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : t.status === "waiting" ? "needs" : t.turns === 0 ? "new" : "done";
-    const said = rowLine(t, bucket, state, agentsNow, now);
-    const pr = t.pr ? prState(t.pr.state) : undefined;
-    const end = t.pr ? (
-      <span className="lc-sl-pr" data-pr={pr} role="img" aria-label={`Pull request #${t.pr.number}, ${pr}`}>
-        <I.pr size={14} />
-      </span>
-    ) : (t.toReview ?? 0) > 0 ? (
-      <span className="lc-sl-chg" role="img" aria-label={`${plural(t.toReview!, "file")} to review`}>
-        <I.changes size={14} />
-      </span>
-    ) : undefined;
-    const acts = t.archived ? (
-      <button type="button" className="lc-sb-a l-focus" aria-label="Bring it back" title="Bring it back from Archive" onClick={() => void unarchive(t)}>
-        <I.undo size={14} />
-      </button>
-    ) : (
-      <>
-        <button type="button" className="lc-sb-a l-focus" aria-label={t.pinned ? "Unpin" : "Pin"} title={t.pinned ? "Unpin (P)" : "Pin (P)"} aria-pressed={Boolean(t.pinned)} onClick={() => void act(t, "pin")}>
-          <I.pin size={14} />
-        </button>
-        <Pop label="Snooze until" align="end" width={230} menu triggerClass="lc-sb-a" trigger={<I.snooze size={14} />}>
-          {(close) => (
-            <>
-              <PanelHead>Snooze until</PanelHead>
-              {snoozeTimes().map((s) => (
-                <Row
-                  key={s.label}
-                  title={s.label}
-                  end={s.note}
-                  onPick={() => {
-                    close();
-                    void act(t, "snooze", s.at);
-                  }}
-                />
-              ))}
-              {t.pr && t.pr.state === "OPEN" && (
-                <>
-                  <Sep />
-                  <PanelHead>Or until</PanelHead>
-                  <Row title="Checks finish" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "checks"))} />
-                  <Row title="Someone replies" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "reply"))} />
-                </>
-              )}
-              {t.snoozedUntil && t.snoozedUntil > now && (
-                <>
-                  <Sep />
-                  <Row
-                    title="Wake it now"
-                    onPick={() => {
-                      close();
-                      void act(t, "wake");
-                    }}
-                  />
-                </>
-              )}
-            </>
-          )}
-        </Pop>
-        <button type="button" className="lc-sb-a l-focus" aria-label={bucket === "settled" ? "Bring it back" : "Settle"} aria-pressed={bucket === "settled"} title={bucket === "settled" ? "Bring it back (D)" : "Settle (D)"} onClick={() => void act(t, "settle")}>
-          <I.settle size={14} />
-        </button>
-      </>
-    );
+  /** A session's row (SessionRow, below the sidebar), with what it needs from here. */
+  const row = (t: Thread, shelf: Bucket, forks?: { n: number; open: boolean }) => {
+    drawn.push(t.id);
     return (
-      <SideRow
+      <SessionRow
         key={t.id}
-        className="lc-sb-row"
-        data-row={t.id}
-        data-forks={forks ? "" : undefined}
-        data-picked={picked.has(t.id) || undefined}
-        data-fresh={freshRows.current.has(t.id) || undefined}
-        aria-current={t.id === current ? "page" : undefined}
+        t={t}
+        shelf={shelf}
+        now={now}
+        agents={agents}
+        providers={providers}
+        run={t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined}
+        working={sent.get(t.id) ?? 0}
         current={t.id === current}
-        quiet={quiet}
-        mark={<SideMark state={state} brand={markOf(on.ref)} />}
-        title={title}
-        sub={said.text}
-        tone={said.tone}
-        end={end}
-        acts={acts}
-        draggable={renaming !== t.id && !t.archived}
-        onDragStart={(e) => {
-          hideCard();
-          e.dataTransfer.setData("text/x-liner-session", t.id);
-          e.dataTransfer.effectAllowed = "move";
-        }}
-        // A mouse at rest over the row: not a touch, and no button held (a drag, a selection).
-        onPointerEnter={(e) => e.pointerType === "mouse" && e.buttons === 0 && pointAt(t.id, e.currentTarget)}
-        onPointerLeave={leaveRow}
-        onPointerDown={hideCard}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          hideCard();
-          setMenu({ t, x: e.clientX, y: e.clientY });
-        }}
-        pick={{
-          role: "button",
-          tabIndex: 0,
-          className: "lc-sb-pick l-focus",
-          "aria-pressed": picked.size ? picked.has(t.id) : undefined,
-          "aria-describedby": card?.id === t.id ? CARD_ID : undefined,
-          // ⇧ would select the text between the rows; the run is the selection here.
-          onMouseDown: (e) => e.shiftKey && e.preventDefault(),
-          onClick: (e) => {
-            if (e.metaKey || e.ctrlKey) return togglePick(t.id);
-            if (e.shiftKey) return pickRun(t.id);
-            // A plain click opens the session, and lets go of any picked rows.
-            clearPicked();
-            onOpen(t.id);
-          },
-          onKeyDown: (e) => {
-            if (e.key !== "Enter" && e.key !== " ") return rowKeys(e, t);
-            if (e.target !== e.currentTarget) return;
-            e.preventDefault();
-            clearPicked();
-            onOpen(t.id);
-          },
-          onDoubleClick: (e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && setRenaming(t.id),
-        }}
-      >
-        {forks && (
-          <button type="button" className="lc-sb-forks l-focus" aria-expanded={forks.open} aria-label={`${plural(forks.n, "fork")} of ${t.title}`} title={forks.open ? "Fold its forks" : "Show its forks"} onClick={forks.toggle}>
-            <I.chevR size={12} />
-            <I.fork size={12} />
-            {forks.n}
-          </button>
-        )}
-      </SideRow>
+        renaming={renaming === t.id}
+        picked={picked.has(t.id)}
+        picking={picked.size > 0}
+        described={card?.id === t.id}
+        forks={forks?.n}
+        forksOpen={forks?.open}
+        seen={seenRows.current}
+        ctl={ctl}
+      />
     );
   };
 
@@ -864,7 +683,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const shut = shutForks.includes(t.id);
     return (
       <Fragment key={t.id}>
-        {row(t, place(t), kids.length ? { n: kids.length, open: !shut, toggle: () => toggleForks(t.id) } : undefined)}
+        {row(t, place(t), kids.length ? { n: kids.length, open: !shut } : undefined)}
         {kids.length > 0 && !shut && <div className="lc-sb-kids">{kids.map(branch)}</div>}
       </Fragment>
     );
@@ -872,14 +691,14 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
 
   /** A labelled run of rows, with how many there are (Pinned's with its pin). `bare` is the rows alone, still named for a screen reader. */
   const block = (name: string, ts: Thread[], extra: { pin?: boolean; bucket?: Bucket; bare?: boolean } = {}) =>
-    ts.length > 0 && (
+    ts.length > 0 && drawn.push(`§${name}`) > 0 && (
       <section key={name} className="lc-sb-sec" aria-label={name} {...(extra.pin ? drop("pinned") : {})}>
         {!extra.bare && <SideLabel name={name} count={ts.length} icon={extra.pin ? <I.pin size={12} /> : undefined} />}
         {ts.map((t) => row(t, extra.bucket ?? place(t)))}
       </section>
     );
   const groupBlocks = () =>
-    byGroup.map(({ g, list: ts }) => (
+    byGroup.map(({ g, list: ts }) => (drawn.push(`§${g.id}:${ts.length ? "" : "empty"}`),
       <section key={g.id} className="lc-sb-sec" aria-label={g.name} {...drop(`group:${g.id}`)}>
         <SideLabel name={g.name} count={ts.length} />
         {ts.length ? ts.map((t) => row(t, place(t))) : <p className="lc-sb-hint">Drag a session here, or right-click one.</p>}
@@ -893,7 +712,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       <span>{how}</span>
     </div>
   );
-  const q = query.trim();
   const listed: Record<View, number> = {
     folder: byBucket.pinned.length + byGroup.length + tree.sections.length,
     status: byBucket.pinned.length + byGroup.length + byBucket.needs.length + byBucket.working.length + byBucket.open.length,
@@ -904,9 +722,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const empty =
     listed[view] > 0
       ? null
-      : q
-        ? none(<I.search size={20} />, "No session matches that", view === "folder" || view === "status" ? "Try fewer words, or look in Settled or Archive." : `Nothing in ${VIEWS[view]} matches it.`)
-        : view === "snoozed"
+      : view === "snoozed"
           ? none(<I.snooze size={20} />, "Nothing snoozed", "Snooze a session from its row (S), and it comes back by itself.")
           : view === "settled"
             ? none(<I.settle size={20} />, "Nothing settled", "Settle a finished session from its row (D) to put it out of the way.")
@@ -921,7 +737,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const putAway = view === "snoozed" ? byBucket.snoozed.length : view === "settled" ? byBucket.settled.length : view === "archive" ? archivedList.length : undefined;
   const wallBrand = wallWorking[0] ? markOf(onIt(wallWorking[0], agents, providers).ref) : undefined;
 
-  return (
+  const out = (
     <nav ref={nav} className="lc-sb" aria-label="Sessions">
       {/* As Claude Code's desktop app has it: Hide, Back and Forward together after the lights, the drag area, and at the far right what works and what waits on you, which opens The Wall. The name is at the foot. */}
       <div className="lc-sb-head" data-drag>
@@ -1101,13 +917,13 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
             <>
               {block("Pinned", byBucket.pinned, { pin: true, bucket: "pinned" })}
               {groupBlocks()}
-              {tree.sections.map((x) => (
+              {tree.sections.map((x) => (drawn.push(`▸${x.id}:${shutProjects.includes(x.id) ? "shut" : ""}`),
                 <SideFolder
                   key={x.id || "none"}
                   name={x.name}
                   count={x.count}
                   open={!shutProjects.includes(x.id)}
-                  onToggle={() => toggleProject(x.id)}
+                  onToggle={() => foldProject(x.id, x.ids)}
                   needs={x.needs > 0}
                   working={Boolean(x.working)}
                   brand={x.working ? markOf(onIt(x.working, agents, providers).ref) : undefined}
@@ -1134,17 +950,17 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           {view === "status" && (
             <>
               {block("Pinned", byBucket.pinned, { pin: true, bucket: "pinned" })}
-              {block("Needs you", byBucket.needs.filter(asks), { bucket: "needs" })}
-              {block("Working", [...byBucket.working, ...byBucket.needs.filter((t) => !asks(t) && works(t))].sort(newest))}
+              {block("Needs you", byBucket.needs.filter(needs), { bucket: "needs" })}
+              {block("Working", [...byBucket.working, ...byBucket.needs.filter((t) => !needs(t) && works(t))].sort(newest))}
               {groupBlocks()}
-              {/* Answered while you were away and not started are finished work here: under Complete, each with its own mark and words. */}
-              {block("Complete", [...byBucket.needs.filter((t) => !asks(t) && !works(t)), ...byBucket.open].sort(newest))}
+              {/* Not started is finished work here: under Complete, with its own mark and words. */}
+              {block("Complete", [...byBucket.needs.filter((t) => !needs(t) && !works(t)), ...byBucket.open].sort(newest))}
             </>
           )}
           {view === "snoozed" && block("Snoozed", byBucket.snoozed, { bucket: "snoozed", bare: true })}
           {view === "settled" && block("Settled", byBucket.settled, { bucket: "settled", bare: true })}
           {view === "archive" && block("Archive", archivedList, { bare: true })}
-          {empty}
+          {empty && drawn.push("none") > 0 && empty}
         </div>
         <div className="lc-sb-blur" aria-hidden />
       </div>
@@ -1206,7 +1022,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
             <>
               {projMenu.id && <Row title="New session here" icon={<I.plus size={14} />} onPick={() => (close(), onNew(projMenu.id))} />}
               <Row title="Settle the project" note="Its finished sessions go to Settled" icon={<I.settle size={14} />} onPick={() => (close(), void settleProject(projMenu.id, projMenu.name))} />
-              <Row title={shutProjects.includes(projMenu.id) ? "Show its sessions" : "Fold its sessions"} icon={<I.chevD size={14} />} onPick={() => (close(), toggleProject(projMenu.id))} />
+              <Row title={shutProjects.includes(projMenu.id) ? "Show its sessions" : "Fold its sessions"} icon={<I.chevD size={14} />} onPick={() => (close(), foldProject(projMenu.id, tree.sections.find((x) => x.id === projMenu.id)?.ids ?? []))} />
             </>
           )
         }
@@ -1332,6 +1148,99 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
       </div>
     </nav>
   );
+
+  const layout = drawn.join("\n");
+  // The plate follows the open session as rows arrive, leave and fold: measured again only when what the list draws changes
+  // (`layout`, from this render's `drawn`), not for every word a session sends; its ResizeObserver covers the rest.
+  useLayoutEffect(() => {
+    const sc = scroller.current;
+    if (!sc) return;
+    // Measured from the list's own box, since a fork's row sits inside its parent's indent.
+    const measure = () => {
+      const inner = sc.firstElementChild as HTMLElement;
+      const row = current ? sc.querySelector<HTMLElement>(`[data-row="${CSS.escape(current)}"]`) : null;
+      if (!row) return setPlate(null);
+      // From the layout, not the screen: a row gliding to its place (below) is already there for the plate.
+      const next = boxIn(row, inner);
+      // The same place again (the list's first resize report, a row that didn't move) keeps the plate as it is, rather than drawing the whole sidebar again for it.
+      setPlate((was) => (was && was.x === next.x && was.y === next.y && was.w === next.w && was.h === next.h ? was : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(sc.firstElementChild as HTMLElement);
+    return () => ro.disconnect();
+  }, [current, layout, view, renaming, Boolean(faceBody)]);
+
+  /*
+    Rows move rather than jump: one that changes place (it starts or stops working, a session is new
+    or gone, By status takes it to another section) glides from where it was, and the plate with it
+    while it's the open one. Not when the view changes or a folder or forks fold (those are new
+    places, not moves), and not with Reduce motion.
+  */
+  const tops = useRef<{ key: string; at: Map<string, number> } | null>(null);
+  const still = useRef(false);
+  useLayoutEffect(() => {
+    const inner = scroller.current?.firstElementChild as HTMLElement | null;
+    if (!inner) return void (tops.current = null);
+    for (const a of inner.getAnimations({ subtree: true })) if (a.id === GLIDE) a.finish();
+    const at = new Map<string, number>();
+    for (const el of inner.querySelectorAll<HTMLElement>("[data-row]")) at.set(el.dataset.row ?? "", boxIn(el, inner).y);
+    const key = `${view}:${Boolean(faceBody)}`;
+    const was = tops.current;
+    tops.current = { key, at };
+    const skip = still.current;
+    still.current = false;
+    if (!was || was.key !== key || skip || prefersReducedMotion()) return;
+    const glide = (el: Element, dy: number) => el.animate([{ translate: `0 ${dy}px` }, { translate: "0 0" }], { duration: 240, easing: "cubic-bezier(0.2, 0, 0, 1)", id: GLIDE });
+    for (const [id, y] of at) {
+      const from = was.at.get(id);
+      if (from === undefined || Math.abs(from - y) < 1) continue;
+      const el = inner.querySelector(`[data-row="${CSS.escape(id)}"]`);
+      if (el) glide(el, from - y);
+      const plateEl = inner.querySelector(".lc-sb-plate");
+      if (id === current && plateEl) glide(plateEl, from - y);
+    }
+  }, [layout, view, Boolean(faceBody)]);
+  /** A folder opened or shut: its rows are new there, so they fade in as ever, and nothing glides for it. */
+  const foldProject = (id: string, ids: string[]) => {
+    still.current = true;
+    if (shutProjects.includes(id)) for (const x of ids) seenRows.current.delete(x);
+    toggleProject(id);
+  };
+  ctl.current = {
+    act,
+    unarchive,
+    wake,
+    hideCard,
+    pointAt,
+    leaveRow,
+    menuAt: (t, x, y) => setMenu({ t, x, y }),
+    togglePick,
+    pickRun,
+    clearPicked,
+    open: onOpen,
+    keys: rowKeys,
+    rename: setRenaming,
+    toggleForks: (id) => {
+      still.current = true;
+      if (shutForks.includes(id)) for (const x of tree.forks.get(id) ?? []) seenRows.current.delete(x.id);
+      toggleForks(id);
+    },
+  };
+  return out;
+}
+
+/** The rows' glide (WAAPI's id for it), so a new one finishes the last first. */
+const GLIDE = "lc-sb-glide";
+/** Where an element sits in `root` by the layout (offsets, which a glide's translate doesn't move), with its size. */
+function boxIn(el: HTMLElement, root: HTMLElement) {
+  let x = 0;
+  let y = 0;
+  for (let n: HTMLElement | null = el; n && n !== root; n = n.offsetParent as HTMLElement | null) {
+    x += n.offsetLeft;
+    y += n.offsetTop;
+  }
+  return { x, y, w: el.offsetWidth, h: el.offsetHeight };
 }
 
 /**
@@ -1653,7 +1562,7 @@ function PlanLimits({ tools, usageOn, onUsage }: { tools: import("@contracts").T
 }
 
 /** Saves a session as Markdown in Downloads, and says where with a way to show it. */
-export function exportSession(threadId: string) {
+function exportSession(threadId: string) {
   void rpc("thread.export", { id: threadId }).then(
     ({ path }) => toast.success("Saved as Markdown", { description: os.tilde(path), action: { label: "Show", onClick: () => bridge.reveal(path) } }),
     (e: Error) => toast.error(e.message),
@@ -1661,13 +1570,234 @@ export function exportSession(threadId: string) {
 }
 
 
+/*
+  A session's row, the same in every view (SideRow): in the mark column how it stands (the spinner
+  in its model's tint while it works, the amber dot while it waits on you, the clock, the error
+  mark, the ring before it starts, else a small grey dot); its title; under it what it is doing
+  now, or how it ended; at its end its pull request, or the changes it left to review. Pointing at
+  it, Pin, Snooze and Settle take the end's place. Who works on it, where and when are in the card
+  a resting pointer brings.
+  Its own memoised part: a session's news redraws its row alone, never the list; what it does is
+  reached through `ctl`, which the sidebar keeps current, so the row takes no new callbacks.
+*/
+type RowCtl = {
+  act: (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => Promise<void>;
+  unarchive: (t: Thread) => Promise<void>;
+  wake: (t: Thread, kind: "checks" | "reply") => Promise<void>;
+  hideCard: () => void;
+  pointAt: (id: string, el: HTMLElement) => void;
+  leaveRow: () => void;
+  menuAt: (t: Thread, x: number, y: number) => void;
+  togglePick: (id: string) => void;
+  pickRun: (id: string) => void;
+  clearPicked: () => void;
+  open: (id: string) => void;
+  keys: (e: KeyboardEvent, t: Thread) => void;
+  rename: (id: string | null) => void;
+  toggleForks: (id: string) => void;
+};
+type RowProps = {
+  t: Thread;
+  shelf: Bucket;
+  now: number;
+  agents: AgentProfile[];
+  providers: ProviderInfo[];
+  run?: RoutineRun;
+  /** Agents it sent at work now. */
+  working: number;
+  current: boolean;
+  renaming: boolean;
+  picked: boolean;
+  /** Some row is picked: every row says whether it is. */
+  picking: boolean;
+  /** The resting pointer's card tells about it. */
+  described: boolean;
+  /** Its forks, and whether they show. */
+  forks?: number;
+  forksOpen?: boolean;
+  /** Rows drawn before, for the life of the sidebar. */
+  seen: Set<string>;
+  ctl: MutableRefObject<RowCtl>;
+};
+const SessionRow = memo(function SessionRow({ t, shelf, now, agents, providers, run, working, current, renaming, picked, picking, described, forks, forksOpen, seen, ctl }: RowProps) {
+  // Pinned is where it's kept, not how it stands: one that waits on you shows it, as the Dock counts it.
+  const bucket = standing(t, shelf, now);
+  const on = onIt(t, agents, providers);
+  // Finished and nothing waits on you, or settled: the title steps back.
+  const title =
+    renaming ? (
+      <input
+        className="lc-sb-rename"
+        aria-label={`Rename ${t.title || "New session"}`}
+        defaultValue={t.title}
+        autoFocus
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          // The Enter that confirms an IME composition is not the end of the rename.
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+          if (e.key !== "Enter" && e.key !== "Escape") return;
+          // Back to the row, not nowhere: Enter saves as the field loses focus, Escape puts the title back first.
+          if (e.key === "Escape") e.currentTarget.value = t.title;
+          e.currentTarget.closest<HTMLElement>(".lc-sb-pick")?.focus();
+        }}
+        onBlur={(e) => {
+          const v = e.target.value.trim();
+          if (v && v !== t.title) void rpc("thread.update", { id: t.id, title: v });
+          ctl.current.rename(null);
+        }}
+      />
+    ) : (
+      // A session the engine hasn't named yet still reads as one.
+      t.title || "New session"
+    );
+  // A pair's sidekick is in its name already: the agents besides it are counted.
+  const agentsNow = Math.max(0, working - (on.pair ? 1 : 0));
+  const busy = !t.archived && (t.status === "running" || run?.status === "running" || (working > 0 && !asksYou(t)));
+  // Finished and nothing waits on you, or settled: the title steps back. One at work keeps full ink.
+  const quiet = !busy && (Boolean(t.archived) || bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0));
+  // A row that first comes already open (a session just sent from Home) is there at once, so the plate under it is never empty; one drawn
+  // before (By status moves a row to another section, which draws it anew) doesn't fade in again. Either keeps that for this row's life, so nothing plays when it changes.
+  const [fresh] = useState(() => seen.has(t.id) || current);
+  useEffect(() => void seen.add(t.id), []);
+  const state: SideState = busy ? "working" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : t.status === "waiting" ? "needs" : t.turns === 0 ? "new" : "done";
+  const said = rowLine(t, bucket, state, agentsNow, now);
+  const pr = t.pr ? prState(t.pr.state) : undefined;
+  const end = t.pr ? (
+    <span className="lc-sl-pr" data-pr={pr} role="img" aria-label={`Pull request #${t.pr.number}, ${pr}`}>
+      <I.pr size={14} />
+    </span>
+  ) : (t.toReview ?? 0) > 0 ? (
+    <span className="lc-sl-chg" role="img" aria-label={`${plural(t.toReview!, "file")} to review`}>
+      <I.changes size={14} />
+    </span>
+  ) : undefined;
+  const acts = t.archived ? (
+    <button type="button" className="lc-sb-a l-focus" aria-label="Bring it back" title="Bring it back from Archive" onClick={() => void ctl.current.unarchive(t)}>
+      <I.undo size={14} />
+    </button>
+  ) : (
+    <>
+      <button type="button" className="lc-sb-a l-focus" aria-label={t.pinned ? "Unpin" : "Pin"} title={t.pinned ? "Unpin (P)" : "Pin (P)"} aria-pressed={Boolean(t.pinned)} onClick={() => void ctl.current.act(t, "pin")}>
+        <I.pin size={14} />
+      </button>
+      <Pop label="Snooze until" align="end" width={230} menu triggerClass="lc-sb-a" trigger={<I.snooze size={14} />}>
+        {(close) => (
+          <>
+            <PanelHead>Snooze until</PanelHead>
+            {snoozeTimes().map((s) => (
+              <Row
+                key={s.label}
+                title={s.label}
+                end={s.note}
+                onPick={() => {
+                  close();
+                  void ctl.current.act(t, "snooze", s.at);
+                }}
+              />
+            ))}
+            {t.pr && t.pr.state === "OPEN" && (
+              <>
+                <Sep />
+                <PanelHead>Or until</PanelHead>
+                <Row title="Checks finish" end={`#${t.pr.number}`} onPick={() => (close(), void ctl.current.wake(t, "checks"))} />
+                <Row title="Someone replies" end={`#${t.pr.number}`} onPick={() => (close(), void ctl.current.wake(t, "reply"))} />
+              </>
+            )}
+            {t.snoozedUntil && t.snoozedUntil > now && (
+              <>
+                <Sep />
+                <Row
+                  title="Wake it now"
+                  onPick={() => {
+                    close();
+                    void ctl.current.act(t, "wake");
+                  }}
+                />
+              </>
+            )}
+          </>
+        )}
+      </Pop>
+      <button type="button" className="lc-sb-a l-focus" aria-label={bucket === "settled" ? "Bring it back" : "Settle"} aria-pressed={bucket === "settled"} title={bucket === "settled" ? "Bring it back (D)" : "Settle (D)"} onClick={() => void ctl.current.act(t, "settle")}>
+        <I.settle size={14} />
+      </button>
+    </>
+  );
+  return (
+    <SideRow
+      className="lc-sb-row"
+      data-row={t.id}
+      data-forks={forks !== undefined ? "" : undefined}
+      data-picked={picked || undefined}
+      data-fresh={fresh || undefined}
+      aria-current={current ? "page" : undefined}
+      current={current}
+      quiet={quiet}
+      mark={<SideMark state={state} brand={markOf(on.ref)} />}
+      title={title}
+      sub={said.text}
+      tone={said.tone}
+      end={end}
+      acts={acts}
+      draggable={!renaming && !t.archived}
+      onDragStart={(e) => {
+        ctl.current.hideCard();
+        e.dataTransfer.setData("text/x-liner-session", t.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      // A mouse at rest over the row: not a touch, and no button held (a drag, a selection).
+      onPointerEnter={(e) => e.pointerType === "mouse" && e.buttons === 0 && ctl.current.pointAt(t.id, e.currentTarget)}
+      onPointerLeave={() => ctl.current.leaveRow()}
+      onPointerDown={() => ctl.current.hideCard()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        ctl.current.hideCard();
+        ctl.current.menuAt(t, e.clientX, e.clientY);
+      }}
+      pick={{
+        role: "button",
+        tabIndex: 0,
+        className: "lc-sb-pick l-focus",
+        "aria-pressed": picking ? picked : undefined,
+        "aria-describedby": described ? CARD_ID : undefined,
+        // ⇧ would select the text between the rows; the run is the selection here.
+        onMouseDown: (e) => e.shiftKey && e.preventDefault(),
+        onClick: (e) => {
+          if (e.metaKey || e.ctrlKey) return ctl.current.togglePick(t.id);
+          if (e.shiftKey) return ctl.current.pickRun(t.id);
+          // A plain click opens the session, and lets go of any picked rows.
+          ctl.current.clearPicked();
+          ctl.current.open(t.id);
+        },
+        onKeyDown: (e) => {
+          if (e.key !== "Enter" && e.key !== " ") return ctl.current.keys(e, t);
+          if (e.target !== e.currentTarget) return;
+          e.preventDefault();
+          ctl.current.clearPicked();
+          ctl.current.open(t.id);
+        },
+        onDoubleClick: (e) => !(e.metaKey || e.ctrlKey || e.shiftKey) && ctl.current.rename(t.id),
+      }}
+    >
+      {forks !== undefined && (
+        <button type="button" className="lc-sb-forks l-focus" aria-expanded={forksOpen} aria-label={`${plural(forks, "fork")} of ${t.title}`} title={forksOpen ? "Fold its forks" : "Show its forks"} onClick={() => ctl.current.toggleForks(t.id)}>
+          <I.chevR size={12} />
+          <I.fork size={12} />
+          {forks}
+        </button>
+      )}
+    </SideRow>
+  );
+});
+
 /** Who's on a session (a pair as one: "Opus 5.5 + Sol"), and the model its lead runs on. */
 function onIt(t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) {
   const a = agentOf(t.agent, agents, providers);
   // A thread's own model stands in for its agent's.
   const ref = t.model ?? a.model;
   const pair = pairOf(t, agents, providers);
-  return { who: pair?.name ?? a.name, model: modelLabel(ref, providers), ref, pair };
+  return { who: pair?.name ?? a.name, ref, pair };
 }
 
 /** "Liner Code" → LC, "my-app" → MA, "Firefly" → FI. */
@@ -1679,16 +1809,11 @@ function badgeLetters(name: string) {
   const letters = words.length > 1 ? [...words[0]][0] + [...words[1]][0] : [...(words[0] ?? "?")].slice(0, 2).join("");
   return letters.toUpperCase();
 }
-/**
-  A project's badge: its two letters in grey (Liner 2.0 has no colour per item). On a session's
-  row it carries a dot while the session works (the accent), waits on you (warn) or stopped short
-  (danger).
-*/
-function ProjectBadge({ name, none, design, dot }: { name: string; none?: boolean; design?: boolean; dot?: "work" | "warn" | "danger" }) {
+/** A project's badge: its two letters in grey (Liner 2.0 has no colour per item). */
+function ProjectBadge({ name, none, design }: { name: string; none?: boolean; design?: boolean }) {
   return (
     <span className="lc-pjb" data-none={none || undefined} data-design={design || undefined} aria-hidden>
       {design ? <I.edit size={12} /> : badgeLetters(name)}
-      {dot && <span className="lc-pjb-dot" data-k={dot} />}
     </span>
   );
 }

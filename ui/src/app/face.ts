@@ -10,7 +10,7 @@ import "./face.css";
 
 export type Face = "code" | "design" | "security";
 /** The faces in the order the switch lists them and ⌥⌘E goes through them. */
-export const FACES: Face[] = ["code", "design", "security"];
+const FACES: Face[] = ["code", "design", "security"];
 /** Each face's word after "Liner". */
 export const FACE_NAME: Record<Face, string> = { code: "Code", design: "Design", security: "Security" };
 const KEY = "liner.face";

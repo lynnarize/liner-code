@@ -39,7 +39,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import type { DshFrame, DshInstructions, DshTool, PanelManifest } from "../../contracts/src/index.ts";
 import { DSH_TOKEN } from "../../contracts/src/index.ts";
 import type { Addons, Connection } from "./addons.ts";
-import { killTree } from "./exec.ts";
+import { killTree, outside } from "./exec.ts";
 import { groupsGone } from "./launch.ts";
 import { script } from "./paths.ts";
 
@@ -47,7 +47,7 @@ import { script } from "./paths.ts";
 type McpTool = { name: string; description: string; inputSchema: unknown };
 /** What a call comes back as, for the agent: MCP's CallToolResult. */
 type CallResult = { content: { type: string; [k: string]: unknown }[]; isError?: boolean };
-type Run = { id: string; version: number; child: ChildProcess; secret: string; ready: Promise<number>; port?: number; error?: string; log: number; tools: McpTool[]; instructions: string; calls: Map<string, (r: CallResult) => void>; notice?: string };
+type Run = { id: string; version: number; child: ChildProcess; secret: string; ready: Promise<number>; port?: number; error?: string; log: number; tools: McpTool[]; instructions: string; calls: Map<string, (r: CallResult) => void>; notice?: string; up?: number; crashed?: boolean };
 /** A ported plugin with a program, as its manifest has it: a page's or a connection's. */
 type Dsh = { id: string; name: string; dsh: { package: string; host?: string; config?: Record<string, unknown>; tools?: DshTool[]; instructions?: DshInstructions; slot?: string } };
 type Ask = (addon: string, name: string, o: { prompt: string; system?: string; call: string; onText: (t: string) => void }) => Promise<{ text: string }>;
@@ -57,6 +57,14 @@ const callOf = (id: string, call: string) => `dsh:${id}:${call.slice(0, 80)}`;
 const PICTURES: Record<string, string> = { ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif" };
 const LOG_MAX = 1_000_000;
 const START_WAIT = 25_000;
+/**
+  A program that dies by itself is started again only after a wait, doubled each time (1 s, 2 s,
+  4 s … a minute), so a page that polls doesn't spawn one a second; one that stayed up this long
+  before it died starts again at once.
+*/
+const RETRY_FIRST = 1000;
+const RETRY_MAX = 60_000;
+const STAYED_UP = 60_000;
 /** The calls an agent may have running in one plugin at once, and the most a call's arguments may weigh. */
 const CALLS_MAX = 16;
 const BODY_MAX = 4_000_000;
@@ -258,7 +266,7 @@ export function makeIn(named: string | undefined, path: string, recursive: boole
   const rel = relative(named, resolve(path));
   if (!rel) return recursive ? {} : no("EEXIST", "file already exists");
   const parts = rel.split(sep);
-  if (rel.startsWith("..") || isAbsolute(rel) || parts.length > 12 || !parts.every(subName)) return no("EPERM", "operation not permitted");
+  if (outside(rel) || parts.length > 12 || !parts.every(subName)) return no("EPERM", "operation not permitted");
   let at = named;
   let first: string | undefined;
   for (const [i, p] of parts.entries()) {
@@ -390,6 +398,8 @@ export class DshHosts {
   /** This run's tokens for your agents' tool calls, one per add-on: never a frame's, nor given to one. */
   private agentTokens = new Map<string, string>();
   private agentIds = new Map<string, string>();
+  /** Programs that died by themselves, by add-on: the version, when it may start again, the wait after the next, and why it died. */
+  private crashes = new Map<string, { version: number; until: number; wait: number; error: string }>();
   /** The engine's own address (http://127.0.0.1:<port>), where an agent's MCP server brings its calls; set once it listens. */
   url?: string;
   /** The model an app asks: answered by api.ts (aiFor), set once the API is made. */
@@ -440,6 +450,18 @@ export class DshHosts {
       const m = this.addons.dshOf(r.id);
       if (!m?.dsh.host || this.addons.get(r.id)?.version !== r.version) this.stop(r.id);
     }
+    // Turned off, removed or on another version: its next start is a first one.
+    for (const [id, c] of [...this.crashes]) if (!this.addons.dshOf(id)?.dsh.host || this.addons.get(id)?.version !== c.version) this.crashes.delete(id);
+  }
+
+  /** Its program died by itself: the wait before it's started again, longer each time unless it had stayed up a while. */
+  private crashed(run: Run) {
+    if (run.crashed) return;
+    run.crashed = true;
+    const was = this.crashes.get(run.id);
+    if (run.up !== undefined && Date.now() - run.up >= STAYED_UP) return void this.crashes.delete(run.id);
+    const wait = was && was.version === run.version ? Math.min(was.wait * 2, RETRY_MAX) : RETRY_FIRST;
+    this.crashes.set(run.id, { version: run.version, until: Date.now() + wait, wait, error: run.error ?? "Its program stopped." });
   }
 
   /** What a ported plugin's frame needs to start: its token's path, and its Node half up (or why not). */
@@ -466,6 +488,9 @@ export class DshHosts {
     const have = this.runs.get(m.id);
     if (have && have.version === version && !have.error && have.child.exitCode === null) return have.ready;
     if (have) this.stop(m.id);
+    // It died a moment ago: what it died of, said again, until its wait is over.
+    const died = this.crashes.get(m.id);
+    if (died && died.version === version && Date.now() < died.until) return Promise.reject(new Error(died.error));
     const dir = this.addons.packageDir(m.id, version);
     if (!dir) return Promise.reject(new Error("Its package isn't kept: add it again."));
     // A folder of its own, not one it shares with other plugins: theirs aren't its to read or change.
@@ -495,9 +520,21 @@ export class DshHosts {
     const boxed = this.sandbox ? ["-p", sandboxProfile({ home: env.HOME!, linerHome: this.linerHome, own, addonDir, named }), node, ...args] : null;
     // A process group of its own, so what it starts goes when it does.
     const child = spawn(boxed ? "/usr/bin/sandbox-exec" : node, boxed ?? args, { cwd: dir, env, stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true, detached: process.platform !== "win32" });
+    // Held to LOG_MAX while it runs too, not only as it starts: one that logs on every poll would fill it for days.
+    let logged = (() => {
+      try {
+        return fstatSync(log).size;
+      } catch {
+        return 0;
+      }
+    })();
     const write = (b: Buffer) => {
       try {
-        writeSync(log, b);
+        if (logged + b.length > LOG_MAX) {
+          ftruncateSync(log, 0);
+          logged = writeSync(log, `${new Date().toISOString()} liner The log was over ${LOG_MAX / 1_000_000} MB and was started again.\n`);
+        }
+        logged += writeSync(log, b);
       } catch {
         // A full disk: its log goes, it doesn't.
       }
@@ -513,6 +550,7 @@ export class DshHosts {
     this.runs.set(m.id, run);
     const timer = setTimeout(() => {
       run.error = "Its program took too long to start.";
+      this.crashed(run);
       settle?.no(new Error(run.error));
       end(child, "SIGTERM");
     }, START_WAIT);
@@ -529,6 +567,7 @@ export class DshHosts {
       if (msg.t === "ready" && typeof msg.port === "number") {
         clearTimeout(timer);
         run.port = msg.port;
+        run.up = Date.now();
         offers();
         settle?.ok(msg.port);
       } else if (msg.t === "tools") offers();
@@ -539,6 +578,7 @@ export class DshHosts {
       } else if (msg.t === "failed") {
         clearTimeout(timer);
         run.error = String(msg.error ?? "It stopped as it started.");
+        this.crashed(run);
         settle?.no(new Error(run.error));
         end(child, "SIGTERM");
       } else if (msg.t === "mkdir" && typeof msg.id === "string" && typeof msg.path === "string") child.connected && child.send({ t: "made", id: msg.id, ...makeIn(named[0], msg.path, msg.recursive === true) });
@@ -549,11 +589,14 @@ export class DshHosts {
     child.on("error", (err) => {
       clearTimeout(timer);
       run.error = `Its program couldn't start: ${err.message}`;
+      this.crashed(run);
       settle?.no(new Error(run.error));
     });
     child.on("exit", (code, signal) => {
       clearTimeout(timer);
       if (!run.error && run.port === undefined) run.error = `Its program stopped as it started (${signal ?? `exit ${code}`}). Its log: ${logFile}`;
+      // Still its run: it died by itself (one stopped by Liner Code is taken out of runs first).
+      if (this.runs.get(run.id) === run) run.error ??= `Its program stopped (${signal ?? `exit ${code}`}). Its log: ${logFile}`, this.crashed(run);
       settle?.no(new Error(run.error ?? "Its program stopped."));
       for (const [call, a] of this.asking) if (a.id === run.id) this.cancel?.(call), this.asking.delete(call);
       for (const done of run.calls.values()) done({ content: [{ type: "text", text: `${m.name}'s program stopped before it answered. Its log: ${logFile}` }], isError: true });
@@ -644,14 +687,14 @@ export class DshHosts {
       const file = dir ? resolve(dir, "assets", path) : "";
       const rel = dir ? relative(join(dir, "assets"), file) : "..";
       const type = PICTURES[extname(file).toLowerCase()];
-      if (!type || !rel || rel.startsWith("..") || isAbsolute(rel) || !existsSync(file) || !statSync(file).isFile()) return void res.writeHead(404, cors).end(), true;
+      if (!type || !rel || outside(rel) || !existsSync(file) || !statSync(file).isFile()) return void res.writeHead(404, cors).end(), true;
       // Its links followed, it must still be in the package's assets, so a link can't serve what's outside.
       let real = "";
       try {
         const base = realpathSync(join(dir!, "assets"));
         real = realpathSync(file);
         const r = relative(base, real);
-        if (!r || r.startsWith("..") || isAbsolute(r)) real = "";
+        if (!r || outside(r)) real = "";
       } catch {
         real = "";
       }

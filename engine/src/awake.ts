@@ -10,15 +10,21 @@ export class Awake {
   private child: ChildProcess | null = null;
   private readonly store: Store;
   private readonly busy: () => boolean;
+  private off?: () => void;
 
   constructor(store: Store, busy: () => boolean) {
     this.store = store;
     this.busy = busy;
   }
 
-  /** Looks again at every change the engine reports. */
+  /**
+    Looks again at each change that can start or end work: a session's (its status), a routine run's, a setting. Not at each
+    token streamed or step said, which change neither. Once stopped (quitting), it looks no more.
+  */
   start() {
-    this.store.on(() => this.check());
+    this.off?.();
+    const off = this.store.on((e) => void (e.type === "thread" || e.type === "thread.removed" || e.type === "project.removed" || e.type === "run" || e.type === "settings" ? this.check() : undefined));
+    this.off = () => void off();
     this.check();
   }
 
@@ -32,10 +38,15 @@ export class Awake {
       child.on("exit", gone);
       child.on("error", gone);
       this.child = child;
-    } else if (!want && this.child) this.stop();
+    } else if (!want && this.child) {
+      this.child.kill();
+      this.child = null;
+    }
   }
 
   stop() {
+    this.off?.();
+    this.off = undefined;
     this.child?.kill();
     this.child = null;
   }

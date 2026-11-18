@@ -16,7 +16,7 @@ import { useSyncExternalStore } from "react";
 import type { DesignFile, DesignFileInfo, DesignFrame, DesignPatch, DesignSelection, DesignSize, EngineEvent, FrameOp, NodeRead, TreeNode } from "@contracts";
 import { DESIGN_UNREADABLE, FRAME_CHANGED, FRAME_SIZES } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { EngineAway, getState, onStream, rpc } from "../engine";
+import { EngineAway, getState, onStream, rpc, subscribe as subscribeEngine } from "../engine";
 import { agentOf } from "../model";
 import { frames, lockEditing } from "./bridge";
 import { getFace, setFace, subscribeFace, type Face } from "../face";
@@ -135,8 +135,18 @@ export function useDesign<T>(pick: (s: DesignState) => T): T {
 export const frameOf = (s: DesignState, id: string | undefined): DesignFrame | undefined => (id ? s.file?.frames.find((f) => f.id === id) : undefined);
 /** A page with nothing in its body yet (no element; scripts aside). */
 export const blankHtml = (html?: string) => html !== undefined && !/<body[^>]*>[\s\S]*?<[a-z]/i.test(html.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+/** Each frame's page as last asked, and whether it was blank: the same page (the store keeps an unchanged page's very string) is not read again. */
+const blankMemo = new Map<string, { html?: string; blank: boolean }>();
 /** A drawn frame with nothing in it: it shows its name and size only, and Checks and Build leave it out. */
-export const isBlank = (s: { html: Record<string, string> }, f: DesignFrame) => f.kind === "drawn" && blankHtml(s.html[f.id]);
+export const isBlank = (s: { html: Record<string, string> }, f: DesignFrame) => {
+  if (f.kind !== "drawn") return false;
+  const html = s.html[f.id];
+  const known = blankMemo.get(f.id);
+  if (known && known.html === html) return known.blank;
+  const blank = blankHtml(html);
+  blankMemo.set(f.id, { html, blank });
+  return blank;
+};
 /** A drawn frame whose file is gone: the engine keeps its entry and says so (read as optional until it always does). */
 export const isGone = (f: DesignFrame | undefined) => Boolean(f?.missing);
 
@@ -183,8 +193,13 @@ function forgetFrame(frame: string) {
   redos.splice(0, redos.length, ...r);
   syncUndo();
 }
-/** The revisions this window wrote, so their canvas.changed isn't taken for someone else's. */
+/** The revisions this window wrote, so their canvas.changed isn't taken for someone else's. The newest 500 only (a Set keeps the order they came in): far more than any queue of saves holds. */
 const mine = new Set<string>();
+const MINE_MAX = 500;
+const ownRev = (rev: string) => {
+  mine.add(rev);
+  if (mine.size > MINE_MAX) mine.delete(mine.values().next().value!);
+};
 /** Each frame's saves in flight, one after another, so ops reach the file in the order they were made. */
 const inflight = new Map<string, Promise<unknown>>();
 const inOrder = <T>(frame: string, run: () => Promise<T>): Promise<T> => {
@@ -292,13 +307,12 @@ subscribeDesign(() => {
   for (const r of redraws.values()) clearTimeout(r.timer);
   redraws.clear();
   lastLead.clear();
+  blankMemo.clear();
   for (const fn of switched) fn();
 });
 /** Hears the open design file change (another, or none), so what was kept for the one before can go (Frame.tsx's marks). */
 const switched = new Set<() => void>();
 export const onDesignSwitch = (fn: () => void) => (switched.add(fn), () => void switched.delete(fn));
-/** For a probe: how many redraws are held now. */
-export const heldRedraws = () => redraws.size;
 
 async function reloadFile(frame?: string, by?: "you" | "agent") {
   const s = state;
@@ -418,10 +432,11 @@ function saveFrames(changes: NonNullable<DesignPatch["frames"]>) {
   }, 250);
 }
 
-const patchFrames = (fn: (f: DesignFrame) => DesignFrame) => {
+/** `batched`: a drag's in-between moves, heard once a frame as pan and zoom are (the state itself is new at once). */
+const patchFrames = (fn: (f: DesignFrame) => DesignFrame, batched?: boolean) => {
   const file = state.file;
   if (!file) return;
-  setNow({ file: { ...file, frames: file.frames.map(fn) } });
+  (batched ? set : setNow)({ file: { ...file, frames: file.frames.map(fn) } });
 };
 
 let selectionTimer = 0;
@@ -455,7 +470,7 @@ async function runSteps(from: Step[], to: Step[], back: boolean) {
     const file = s.file.id;
     try {
       const r = await inOrder(step.frame, () => rpc("canvas.frame.apply", { cwd, file, frame: step.frame, ops: step.ops, base: step.rev, threadId: s.threadId }));
-      mine.add(r.rev);
+      ownRev(r.rev);
       // With a base, the engine starts from it or refuses; a `from` that isn't it means the frame moved anyway.
       const moved = fromOf(r) !== undefined && fromOf(r) !== step.rev;
       setNow({ revs: { ...state.revs, [step.frame]: r.rev } });
@@ -501,15 +516,42 @@ async function runSteps(from: Step[], to: Step[], back: boolean) {
   saveFrames(list.map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: f.h })));
 }
 
-/** One canvas.watch for the open file, taken off when the file or the folder changes, or the window closes. */
+/**
+  One canvas.watch for the open file, taken off when the file or the folder changes, or the window closes.
+  The engine lets go of every watch when its last window's stream closes (main.ts `alone`), and a restarted
+  engine never had it, so the watch is held only while the stream is up: let go when it drops, asked for again
+  when it comes back, with the file read once in case an agent drew on it while nobody was watching. `watchHeld`
+  says the engine has this window's watch, so an off is never sent twice (another window may watch the same file).
+*/
 let watching: { cwd: string; file: string } | undefined;
+let watchHeld = false;
 function watchFile(cwd?: string, file?: string) {
   if (watching && watching.cwd === cwd && watching.file === file) return;
-  if (watching) void rpc("canvas.watch", { ...watching, on: false }).catch(() => {});
+  if (watching && watchHeld) void rpc("canvas.watch", { ...watching, on: false }).catch(() => {});
+  watchHeld = false;
   watching = cwd && file ? { cwd, file } : undefined;
-  if (watching) void rpc("canvas.watch", { ...watching, on: true }).catch(() => {});
+  if (watching && getState().connected) {
+    watchHeld = true;
+    void rpc("canvas.watch", { ...watching, on: true }).catch(() => {});
+  }
 }
 if (typeof window !== "undefined") window.addEventListener("pagehide", () => watchFile());
+let wasConnected = getState().connected;
+subscribeEngine(() => {
+  const now = getState().connected;
+  if (now === wasConnected) return;
+  wasConnected = now;
+  if (!watching) return;
+  if (!now) {
+    if (watchHeld) void rpc("canvas.watch", { ...watching, on: false }).catch(() => {});
+    watchHeld = false;
+    return;
+  }
+  if (watchHeld) return;
+  watchHeld = true;
+  void rpc("canvas.watch", { ...watching, on: true }).catch(() => {});
+  if (watching.cwd === state.cwd && watching.file === state.file?.id) void reloadFile();
+});
 
 /*
   Tabs. The store holds one open design file; the others open in tabs keep, while hidden, what is
@@ -538,6 +580,43 @@ function park() {
 /** Who makes the session of a tab that has none yet (the shell sets it): a design's first ask makes it. */
 let sessionMaker: (() => Promise<string>) | undefined;
 export const setSessionMaker = (fn: (() => Promise<string>) | undefined) => void (sessionMaker = fn);
+
+/** design.open's calls, counted: one that a later call has overtaken lets it be. */
+let openSeq = 0;
+
+/*
+  A gesture's changes held back from the file (design.hold): an inspector number scrubbed, a layer's edge pulled. Each
+  move is shown in the frame at once; the file is written once, with the newest of them, when the gesture ends (the
+  pointer let go) or a moment after the last move. One write, one step to undo, as the many coalesced writes were.
+*/
+type Held = { frame: string; key: string; ops: FrameOp[]; timer: number; timed: boolean };
+const held = new Map<string, Held>();
+/** The newest ops over the ones before: a node's style (or attributes) merged, prop by prop, the newest value winning; anything else added. */
+function mergeOps(was: FrameOp[], next: FrameOp[]): FrameOp[] {
+  const out = [...was];
+  for (const op of next) {
+    const i = out.findIndex((o) => "id" in o && "id" in op && o.id === op.id && (("style" in o && "style" in op) || ("attr" in o && "attr" in op)));
+    if (i < 0) out.push(op);
+    else if ("style" in op) out[i] = { id: op.id, style: { ...(out[i] as { style: Record<string, string | null> }).style, ...op.style } };
+    else if ("attr" in op) out[i] = { id: op.id, attr: { ...(out[i] as { attr: Record<string, string | null> }).attr, ...op.attr } };
+  }
+  return out;
+}
+function writeHeld(k: string) {
+  const h = held.get(k);
+  if (!h) return;
+  held.delete(k);
+  clearTimeout(h.timer);
+  void design.apply(h.frame, h.ops, { coalesce: h.key });
+}
+// The pointer let go anywhere: a scrub's held change lands now, not a moment later. (A pulled edge is written by the canvas itself.)
+if (typeof window !== "undefined") {
+  const letGo = () => {
+    for (const [k, h] of [...held]) if (h.timed) writeHeld(k);
+  };
+  window.addEventListener("pointerup", letGo, true);
+  window.addEventListener("pointercancel", letGo, true);
+}
 
 export const design = {
   /**
@@ -617,12 +696,15 @@ export const design = {
   /** Opens a folder's design file: the one named, else the latest; none leaves the face on Design Home. */
   async open(cwd: string, file?: string) {
     if (state.mock) return openMock(cwd);
+    // Only the newest open lands: two designs of one folder opened fast (⌃Tab twice), the first to be asked never wins over the second.
+    const seq = ++openSeq;
+    const stale = () => state.cwd !== cwd || seq !== openSeq;
     const was = state.file && state.cwd ? { cwd: state.cwd, file: state.file.id } : undefined;
     if (was && was.cwd !== cwd) watchFile();
     setNow({ cwd, loading: true, error: undefined, ...(was && (was.cwd !== cwd || (file && file !== was.file)) ? { file: undefined, sel: [], node: undefined, html: {}, tree: {}, presence: {}, pending: {} } : {}) });
     try {
       const files = await rpc("canvas.list", { cwd });
-      if (state.cwd !== cwd) return;
+      if (stale()) return;
       // A file named that the folder hasn't got (deleted, moved into a project): none is open, and its tab lets go.
       const pick = file ? (files.some((f) => f.id === file) ? file : undefined) : [...files].sort((a, b) => b.updated - a.updated)[0]?.id;
       if (!pick) {
@@ -641,6 +723,7 @@ export const design = {
       try {
         opening = await rpc("canvas.open", { cwd, file: pick });
       } catch (e) {
+        if (stale()) return;
         listenCanvas(false);
         watchFile();
         // The engine's sentence, without its "unreadable:" tag (DESIGN_UNREADABLE).
@@ -655,7 +738,7 @@ export const design = {
         html[f.id] = r.html;
         if (r.rev) revs[f.id] = r.rev;
       }));
-      if (state.cwd !== cwd) return;
+      if (stale()) return;
       watchFile(cwd, pick);
       listenCanvas(true);
       // The same file opened again keeps its steps; another one starts afresh.
@@ -667,7 +750,7 @@ export const design = {
       }
       setNow({ broken: undefined, files, file: df, base, html, rev: again ? Object.fromEntries(Object.keys(html).map((k) => [k, (state.rev[k] ?? 0) + (state.html[k] === html[k] ? 0 : 1)])) : {}, revs, tree: again ? state.tree : {}, page: again ? state.page : df.pages[0]?.id, sel: again ? state.sel : [], node: again ? state.node : undefined, loading: false, canUndo: undos.length > 0, canRedo: redos.length > 0 });
       } catch (e) {
-      setNow({ loading: false, error: (e as Error).message });
+      if (seq === openSeq) setNow({ loading: false, error: (e as Error).message });
     }
   },
   /** The folder's design files again (Home's tiles). */
@@ -690,10 +773,16 @@ export const design = {
     await design.open(cwd, df.id);
     return df;
   },
+  /** None open (the last design tab closed, Tabs.tsx): the file's watch and events let go, and the next show opens afresh. */
   close() {
+    // An open still on its way counts as stale, so it doesn't land a file (with its watch and events) that no tab shows.
+    openSeq++;
+    scrubbed = undefined;
     watchFile();
     listenCanvas(false);
-    setNow({ file: undefined, sel: [], node: undefined, html: {}, tree: {}, presence: {} });
+    shownAt = undefined;
+    parkKey = undefined;
+    setNow({ file: undefined, scrub: undefined, sel: [], node: undefined, editing: undefined, html: {}, tree: {}, presence: {}, pending: {}, loading: false });
   },
   select(sel: Sel[]) {
     const same = sel.length === state.sel.length && sel.every((x, i) => x.frame === state.sel[i].frame && x.node === state.sel[i].node);
@@ -712,15 +801,34 @@ export const design = {
   view(zoom: number, pan: { x: number; y: number }) {
     set({ zoom: Math.min(8, Math.max(0.02, zoom)), pan });
   },
+  /**
+    A move in a gesture: shown in the frame now, written later as one change (see Held above). `ms`: written that long
+    after the last move, or when the pointer is let go (a scrub); without it, only by release() (the canvas, on pointerup).
+  */
+  hold(frame: string, ops: FrameOp[], key: string, ms?: number) {
+    if (state.scrub !== undefined || !ops.length || !frameOf(state, frame)) return;
+    // A piece of HTML written by hand never goes in the frame first (see apply).
+    if (ops.some((o) => "html" in o)) return void design.apply(frame, ops, { coalesce: key });
+    const k = `${frame}\u0000${key}`;
+    const h = held.get(k);
+    clearTimeout(h?.timer);
+    held.set(k, { frame, key, ops: mergeOps(h?.ops ?? [], ops), timed: ms !== undefined, timer: ms === undefined ? 0 : window.setTimeout(() => writeHeld(k), ms) });
+    // The inspector's numbers follow the frame as it is now.
+    void frames.apply(frame, ops).catch(() => undefined).then(() => design.refreshNode());
+  },
+  /** Ends a gesture: what it held (that `key`'s, else every one) is written now. */
+  release(key?: string) {
+    for (const [k, h] of [...held]) if (key === undefined || h.key === key) writeHeld(k);
+  },
   /** Applies changes to a frame through the bridge and writes it, with undo. Live frames hold them in `pending`. */
   async apply(frame: string, ops: FrameOp[], opts?: { coalesce?: string; own?: boolean }): Promise<{ ok: boolean; error?: string } | undefined> {
     if (state.scrub !== undefined) return;
     const f = frameOf(state, frame);
     if (!f || !ops.length) return;
     if (f.kind === "live") {
-      const pending = { ...state.pending, [frame]: [...(state.pending[frame] ?? []), ...ops] };
       await frames.apply(frame, ops).catch(() => undefined);
-      setNow({ pending });
+      // Built after the frame has them, from what is held then: two edits in quick succession (a scrub) both stay held.
+      setNow({ pending: { ...state.pending, [frame]: [...(state.pending[frame] ?? []), ...ops] } });
       tellSelection();
       return void design.refreshNode();
     }
@@ -754,7 +862,7 @@ export const design = {
       // The revision this window believed the frame was at when the call went out.
       let believed: string | undefined;
       const r = await inOrder(frame, () => ((believed = state.revs[frame]), rpc("canvas.frame.apply", { cwd, file, frame, ops, threadId: s.threadId })));
-      mine.add(r.rev);
+      ownRev(r.rev);
       setNow({ revs: { ...state.revs, [frame]: r.rev } });
       // N2: the source had moved on (an agent's write the watcher hadn't told of yet): the file holds
       // that change and this one, the frame on screen only this one. It's drawn again from the file,
@@ -808,7 +916,7 @@ export const design = {
     try {
       const base = opts?.base ?? state.revs[frame];
       const r = await inOrder(frame, () => rpc("canvas.frame.write", { cwd, file, frame, html, threadId: s.threadId, base }));
-      mine.add(r.rev);
+      ownRev(r.rev);
       setNow({ revs: { ...state.revs, [frame]: r.rev } });
       if (fromOf(r) !== undefined && base !== undefined && fromOf(r) !== base) forgetFrame(frame);
       await redrawFromFile(frame);
@@ -868,15 +976,18 @@ export const design = {
       // kept as it was
     }
   },
-  /** Moves or resizes frames on the canvas; `done` ends a drag (one undo step for all of it). */
-  place(changes: { id: string; x?: number; y?: number; w?: number; h?: number }[], done?: { before: DesignFrame[] }) {
+  /**
+    Moves or resizes frames on the canvas; `done` ends a drag (one undo step for all of it). `dragging`: a move in the
+    middle of a drag (Canvas.tsx), heard once a frame at most; the drag's last call, with `done`, is heard at once.
+  */
+  place(changes: { id: string; x?: number; y?: number; w?: number; h?: number }[], done?: { before: DesignFrame[] }, dragging?: boolean) {
     if (state.scrub !== undefined) return;
     const byId = new Map(changes.map((c) => [c.id, c]));
     patchFrames((f) => {
       const c = byId.get(f.id);
       if (!c) return f;
       return { ...f, x: Math.round(c.x ?? f.x), y: Math.round(c.y ?? f.y), w: Math.max(40, Math.round(c.w ?? f.w)), h: Math.max(40, Math.round(c.h ?? f.h)) };
-    });
+    }, dragging && !done);
     if (done) {
       const after = (state.file?.frames ?? []).filter((f) => byId.has(f.id));
       pushStep({ kind: "index", before: done.before, after, at: Date.now() });
@@ -1017,7 +1128,7 @@ export const design = {
     const revs = { ...state.revs };
     for (const frame of ids) {
       const r = await rpc("canvas.frame.read", { cwd, file: fid, frame }).catch(() => undefined);
-      if (r) (html[frame] = r.html), (revs[frame] = r.rev), mine.add(r.rev);
+      if (r) (html[frame] = r.html), (revs[frame] = r.rev), ownRev(r.rev);
     }
     setNow({ file: last, html, revs, rev: { ...state.rev, ...Object.fromEntries(ids.map((f) => [f, (state.rev[f] ?? 0) + 1])) } });
   },

@@ -13,14 +13,17 @@
   from the agent's by what it wrote last, and the runtime's tool rows say which frame an agent is
   writing now (canvas.presence), the lead's and the sidekick's alike.
 
-  Versions: when a turn ends having changed a design file, the whole design folder is copied to
-  ~/.liner-code/designs/<thread>/canvas/<file>/t<turn>/ (with t<turn>.json beside it), under the
-  session's own designs folder, so a fork copies them and deleting the session takes them away.
+  Versions: when a turn of a session that draws ends having changed a design file, the whole design
+  folder is copied to ~/.liner-code/designs/<thread>/canvas/<file>/t<turn>/ (with t<turn>.json beside
+  it), under the session's own designs folder, so a fork links them and deleting the session takes
+  them away. Each session keeps its newest 20 turn copies of a file (draws, turnEnded, pruneTurns).
+  Any other session takes a provisional "as it was" copy as each turn begins (beginTurn), kept only
+  when the turn changed the design or drew, so whatever changed it can be taken back.
 */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { cp, lstat, readdir } from "node:fs/promises";
+import { constants as fsc, copyFileSync, cpSync, createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statfsSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { copyFile, cp, link, lstat, mkdir, readdir, utimes } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DesignSize, EngineEvent, Item, RpcMethod, RpcParams, RpcResult } from "../../contracts/src/index.ts";
 import { DESIGN_UNREADABLE, FRAME_CHANGED, FRAME_SIZES, type CanvasVersion, type FrameOp, type FramePlaced, type DesignFile, type DesignFileInfo, type DesignFrame, type DesignPatch, type DesignPresence, type DesignSelection, type DesignSkill, type FrameBuild, type NewFrame } from "../../contracts/src/design.ts";
@@ -30,6 +33,8 @@ import { keepOutOfGit, slugOf, type Designs } from "./designs.ts";
 import { AS_SIDEKICK } from "./sidekick.ts";
 import { picturesPref, setPicturesPref } from "./design-prefs.ts";
 import { enginePath } from "./paths.ts";
+import { outside } from "./exec.ts";
+import { writeAtomic } from "./atomic.ts";
 import type { Store } from "./store.ts";
 
 export { TOOLS } from "./canvas-tools.ts";
@@ -200,7 +205,7 @@ export function inDesign(dir: string, rel: string) {
   while (!existsSync(up) && up.length > dir.length) up = dirname(up);
   if (existsSync(up) && existsSync(dir)) {
     const inside = relative(realpathSync(dir), realpathSync(up));
-    if (inside.startsWith("..") || isAbsolute(inside)) throw new Error(`${rel} leads out of the design's folder.`);
+    if (outside(inside)) throw new Error(`${rel} leads out of the design's folder.`);
   }
   if (lstatSync(abs, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${rel} is a link, so it isn't written or read.`);
   return abs;
@@ -209,7 +214,7 @@ export function inDesign(dir: string, rel: string) {
 /** A path inside the folder, from the folder (posix), for the lean's file. Outside it throws. */
 function inFolder(cwd: string, asked: string) {
   const rel = relative(cwd, resolve(cwd, String(asked).trim()));
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("The lean's file must be inside this folder.");
+  if (!rel || outside(rel)) throw new Error("The lean's file must be inside this folder.");
   return rel.split(sep).join("/");
 }
 
@@ -224,8 +229,19 @@ type State = {
   opened: Map<string, string>;
   /** Presences on now, by what put them on. */
   presence: Map<string, DesignPresence>;
-  /** Turns seen start, by "<thread>#<turn>". */
-  turns: Map<string, "running" | "ended">;
+  /** The turn running now in each session, as seen start (a turn's own events repeat: its start and end are each acted on once). */
+  turns: Map<string, number>;
+  /** The last turn seen end in each session, so a repeated end isn't a second copy. */
+  ended: Map<string, number>;
+  /**
+    While a turn runs in a session not known to draw: the turn, each design file's fingerprint as it began, its provisional
+    "as it was" copies, and whether the session could only read then (TurnLook).
+  */
+  looks: Map<string, TurnLook>;
+  /** Sessions seen drawing in this engine's life (a design tool, or their own write under .liner/designs/): they keep copies as a design's session does. */
+  drew: Set<string>;
+  /** A turn's provisional copies still being taken off the loop (a disk that can't clone), by session: its prompt waits for them (turnReady). */
+  copying: Map<string, { turn: number; done: Promise<void> }>;
   /** The revision of each frame file the app was last told of or read, by path: a write over another tells the app first (N2). */
   heard: Map<string, string>;
   /** Whether each watched frame file was there when last seen, by path: its coming and going is always told, whatever its bytes. */
@@ -233,8 +249,17 @@ type State = {
   off?: () => void;
 };
 
+/**
+  A turn as it began (beginTurn): each design file's fingerprint then (what turnEnded compares against, in a session not known
+  to draw), the provisional "as it was" copies taken then and not yet kept (by file: the turn they stand for, when, and their
+  fingerprint, filled in by turnStarted), whether the session could only read then, and whether it was known to draw.
+*/
+type TurnLook = { turn: number; sums: Map<string, string>; prov: Map<string, Provisional>; ro: boolean; drawing: boolean };
+/** `ready`: set while the copy is taken off the loop; `failed`: it couldn't be, and there is none. */
+type Provisional = { turn: number; at: number; sum: string; ready?: Promise<void>; failed?: boolean };
+
 const state = (ctx: DesignCtx) =>
-  ctx.keep<State>("canvas", () => ({ own: new Map(), watchers: new Map(), selection: new Map(), opened: new Map(), presence: new Map(), turns: new Map(), heard: new Map(), there: new Map() }));
+  ctx.keep<State>("canvas", () => ({ own: new Map(), watchers: new Map(), selection: new Map(), opened: new Map(), presence: new Map(), turns: new Map(), ended: new Map(), looks: new Map(), drew: new Set(), copying: new Map(), heard: new Map(), there: new Map() }));
 
 /** A frame file's revision: a short hash of its bytes, which canvas.frame.write and apply check `base` against. */
 export const revOf = (bytes: string | Buffer) => createHash("sha1").update(bytes).digest("hex").slice(0, 12);
@@ -252,48 +277,30 @@ const mayWrite = (ctx: DesignCtx) => !quiet.getStore() && !("threadId" in ctx &&
 const quiet = new AsyncLocalStorage<boolean>();
 
 /**
-  Writes a file whole or not at all: into a hidden file beside it (the same folder, so the same
-  disk), with the mode the file had, then renamed over it, so a crash or a full disk mid-write
-  leaves the file as it was, never half of it. Node's rename replaces a file that's there on
-  Windows too (MoveFileEx with replace); when it's refused there (the file held open without
-  sharing, by an editor or a scanner), it's tried again for a moment, then written in place, as
-  before. The hidden file never matches a frame's or design.json's name, so the watcher and the
-  canvas leave it be.
+  What one tool call has read already (call): the design files by folder and slug (readFile, handed out as copies), and
+  what the lean keeps per call (its skills). A design_frame used to read every design file of the folder a dozen times
+  before it wrote anything; now each once. Any write of the engine's own drops the files read, so nothing stale is handed on.
+*/
+const callMemo = new AsyncLocalStorage<Map<string, unknown>>();
+/** `make`'s answer, once per tool call (outside one, made each time). */
+export function perCall<T>(key: string, make: () => T): T {
+  const m = callMemo.getStore();
+  if (!m) return make();
+  if (!m.has(key)) m.set(key, make());
+  return m.get(key) as T;
+}
+const forgetRead = () => {
+  const m = callMemo.getStore();
+  if (m) for (const k of [...m.keys()]) if (k.startsWith("file:")) m.delete(k);
+};
+
+/**
+  Writes a file whole or not at all, with the mode the file had (atomic.ts): a crash or a full disk mid-write leaves the
+  file as it was, never half of it, and no temp file. The hidden file never matches a frame's or design.json's name, so
+  the watcher and the canvas leave it be.
 */
 export function writeWhole(abs: string, data: string | Buffer) {
-  const was = statSync(abs, { throwIfNoEntry: false });
-  const tmp = join(dirname(abs), `.${basename(abs)}.${process.pid}.${createHash("sha1").update(`${Math.random()}${Date.now()}`).digest("hex").slice(0, 8)}.tmp`);
-  try {
-    writeFileSync(tmp, data, was ? { mode: was.mode & 0o7777 } : {});
-    // A umask can take bits off the mode asked for: the file's own mode, exactly.
-    if (was) chmodSync(tmp, was.mode & 0o7777);
-  } catch (e) {
-    rmSync(tmp, { force: true });
-    throw e;
-  }
-  for (let tries = 0; ; tries++) {
-    try {
-      renameSync(tmp, abs);
-      return;
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY") && tries < 5) {
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * (tries + 1));
-        continue;
-      }
-      if (process.platform === "win32" && (code === "EPERM" || code === "EACCES" || code === "EBUSY")) {
-        // Still held: written in place, as the file is open for reading only by whoever holds it.
-        try {
-          writeFileSync(abs, data);
-          return;
-        } finally {
-          rmSync(tmp, { force: true });
-        }
-      }
-      rmSync(tmp, { force: true });
-      throw e;
-    }
-  }
+  writeAtomic(abs, data, { keepMode: true });
 }
 
 /** Writes a file of the engine's own, and remembers it so the watcher doesn't take it for an agent's. */
@@ -301,6 +308,7 @@ function writeOwn(st: State, abs: string, content: string) {
   mkdirSync(dirname(abs), { recursive: true });
   if (lstatSync(abs, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${basename(abs)} is a link, so it isn't written.`);
   writeWhole(abs, content);
+  forgetRead();
   st.own.set(abs, hash(content));
   st.there.set(abs, true);
 }
@@ -421,7 +429,7 @@ const nameFrom = (id: string) => id.replace(/-+/g, " ").replace(/^./, (c) => c.t
   checkout bring the file back to the same frame. Only a remove takes an entry out. Says whether
   it added anything.
 */
-function sync(dir: string, file: DesignFile, _drop?: boolean, was?: (path: string) => DesignFrame | undefined) {
+function sync(dir: string, file: DesignFile, was?: (path: string) => DesignFrame | undefined) {
   let changed = false;
   for (const f of file.frames) {
     if (f.kind !== "drawn") continue;
@@ -460,22 +468,46 @@ function sync(dir: string, file: DesignFile, _drop?: boolean, was?: (path: strin
   return changed;
 }
 
+/**
+  A design.json as parsed, by its place, size and times: unchanged since the last read, the same JSON (a copy, as normal()
+  keeps some of its objects), not parsed again. One that isn't whole JSON throws what `broken` says of its bytes.
+*/
+const indexes = new Map<string, { stamp: string; raw: unknown }>();
+function indexOf(abs: string, broken: (text: Buffer) => string) {
+  const st = statSync(abs);
+  const stamp = `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
+  const had = indexes.get(abs);
+  if (had?.stamp === stamp) return structuredClone(had.raw);
+  const text = readFileSync(abs);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text.toString("utf8"));
+  } catch {
+    indexes.delete(abs);
+    throw new Error(broken(text));
+  }
+  indexes.set(abs, { stamp, raw });
+  if (indexes.size > 200) indexes.delete(indexes.keys().next().value!);
+  return structuredClone(raw);
+}
+
 /** A design file's index, read (and, the first time, made from the frames there). */
-export function readFile(ctx: DesignCtx, cwd: string, slug: string, o: { drop?: boolean } = {}): DesignFile {
+export function readFile(ctx: DesignCtx, cwd: string, slug: string): DesignFile {
+  const m = callMemo.getStore();
+  const key = `file:${resolve(cwd)}\n${slug}`;
+  if (m?.has(key)) return structuredClone(m.get(key) as DesignFile);
+  const file = readFileNow(ctx, cwd, slug);
+  m?.set(key, structuredClone(file));
+  return file;
+}
+function readFileNow(ctx: DesignCtx, cwd: string, slug: string): DesignFile {
   const st = state(ctx);
   const dir = designDir(cwd, slug);
   const index = inDesign(dir, "design.json");
   if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`There's no design file “${slug}” in this folder.`);
   let raw: unknown = {};
   const had = existsSync(index);
-  if (had) {
-    const text = readFileSync(index);
-    try {
-      raw = JSON.parse(text.toString("utf8"));
-    } catch {
-      throw new Error(unreadable(ctx, cwd, slug, text));
-    }
-  }
+  if (had) raw = indexOf(index, (text) => unreadable(ctx, cwd, slug, text));
   const file = normal(raw, slug);
   // A session that only reads sees the frames it found, and writes nothing.
   const fromTrash = (path: string) => {
@@ -486,7 +518,7 @@ export function readFile(ctx: DesignCtx, cwd: string, slug: string, o: { drop?: 
       return undefined;
     }
   };
-  if ((sync(dir, file, Boolean(o.drop), fromTrash) || !had) && mayWrite(ctx)) writeIndex(st, cwd, file);
+  if ((sync(dir, file, fromTrash) || !had) && mayWrite(ctx)) writeIndex(st, cwd, file);
   return withPrefs(ctx, cwd, file);
 }
 
@@ -507,7 +539,7 @@ export function peekFile(cwd: string, slug: string): DesignFile | null {
   try {
     const index = join(dir, "design.json");
     const file = normal(existsSync(index) ? JSON.parse(readFileSync(index, "utf8")) : {}, slug);
-    sync(dir, file, false);
+    sync(dir, file);
     return file;
   } catch {
     return null;
@@ -534,7 +566,7 @@ export function lookFile(cwd: string, slug: string): DesignFile {
   }
   const file = normal(raw, slug);
   // No look in the trash (readFile's fromTrash): a loose file that was a removed frame shows under a name made from its file until a plain read adopts it with its old one. Left so on purpose.
-  sync(dir, file, false);
+  sync(dir, file);
   return file;
 }
 
@@ -784,7 +816,7 @@ export function rebase(html: string, from: string, to: string) {
     if (absolute(u)) return u;
     const m = /^([^?#]*)(.*)$/.exec(u)!;
     const target = join(from === "." ? "" : from, m[1]);
-    if (!m[1] || target.startsWith("..") || isAbsolute(target)) return u;
+    if (!m[1] || outside(target)) return u;
     return relative(to, target).split(sep).join("/") + m[2];
   };
   const inTag = (t: string) =>
@@ -891,6 +923,7 @@ export function removeFrame(ctx: DesignCtx, cwd: string, slug: string, asked: st
     rmSync(abs, { force: true });
     st.own.delete(abs);
     st.there.delete(abs);
+    st.heard.delete(abs);
   }
   const old = at - TRASH_DAYS * 86_400_000;
   for (const [i, t] of trashed(ctx, cwd, slug).entries()) if (i >= TRASH_KEEP || t.at < old) rmSync(t.dir, { recursive: true, force: true });
@@ -977,8 +1010,36 @@ export function readFrameRev(ctx: DesignCtx, cwd: string, slug: string, asked: s
 */
 export function peekFrame(cwd: string, slug: string, asked: string) {
   const raw = readFileSync(frameFile(cwd, slug, frameOf(lookFile(cwd, slug), asked)), "utf8");
-  const s = stamp(raw);
+  const s = stampSeen(raw);
   return { html: s.ok ? s.html : raw, rev: revOf(raw) };
+}
+
+/**
+  Pages stamped for what only looks (peekFrame, versionRead), by a hash of their bytes: those never write the ids back, so
+  without this the same unchanged frame was stamped again on every look. Stamping is a function of the bytes alone (the ids
+  come from the page itself), so a page seen before gets the very same answer. The newest, up to 16 MB of pages, are kept.
+*/
+const STAMPED_BYTES = 16_000_000;
+const stamped = new Map<string, { html: string; ok: boolean }>();
+let stampedBytes = 0;
+function stampSeen(raw: string) {
+  const key = hash(raw);
+  const had = stamped.get(key);
+  if (had) {
+    stamped.delete(key);
+    stamped.set(key, had);
+    return had;
+  }
+  const s = stamp(raw);
+  const kept = { html: s.html, ok: s.ok };
+  stamped.set(key, kept);
+  stampedBytes += kept.html.length;
+  for (const [k, v] of stamped) {
+    if (stampedBytes <= STAMPED_BYTES || stamped.size <= 1) break;
+    stamped.delete(k);
+    stampedBytes -= v.html.length;
+  }
+  return kept;
 }
 
 /** A revision someone was handed: the engine knows the app has seen it. */
@@ -1181,6 +1242,22 @@ export function watchFile(ctx: DesignCtx, cwd: string, slug: string, on: boolean
   listen(ctx, cwd, slug, dir, w);
 }
 
+/**
+  Every canvas.watch let go, as if each window had said off: for when no window is connected (server.ts, the last event
+  stream closed). A window that reloads never sends its off (the effect's cleanup doesn't run), and the one that loads in
+  its place sends on again, so without this the counts only grew and the watchers and their once-a-second looks stayed for
+  the engine's life. A window that is there again watches again as it opens its design.
+*/
+export function resetWatches(ctx: DesignCtx) {
+  const st = state(ctx);
+  for (const w of st.watchers.values()) {
+    w.fw?.close();
+    clearInterval(w.poll);
+    for (const t of w.timers.values()) clearTimeout(t);
+  }
+  st.watchers.clear();
+}
+
 /** The folder's own watch: each changed file, once it settled (changedOnDisk). */
 function listen(ctx: DesignCtx, cwd: string, slug: string, dir: string, w: Watcher) {
   const st = state(ctx);
@@ -1256,6 +1333,13 @@ const offAll = (ctx: DesignCtx, prefix: string) => {
 
 const writes = (kind: string) => kind === "edit" || kind === "write";
 
+/** Whether a path a tool row writes is in this folder's design files (any of them, frames, pictures or index): the session draws. */
+const underDesigns = (cwd: string, path: string) => {
+  if (!path.includes(".liner")) return false;
+  const r = relative(join(cwd, CANVAS_DIR), isAbsolute(path) ? path : resolve(cwd, path));
+  return Boolean(r) && !outside(r);
+};
+
 /** A tool row went by: a running edit of a frame's file puts its agent on that frame; its end takes it off. The sidekick's steps ride on its row. */
 function onTool(ctx: DesignCtx, threadId: string, it: Extract<Item, { kind: "tool" }>) {
   const key = `${threadId}|${it.id}`;
@@ -1271,6 +1355,7 @@ function onTool(ctx: DesignCtx, threadId: string, it: Extract<Item, { kind: "too
     if (live)
       for (const s of it.agent.steps ?? []) {
         if (s.status !== "running" || !s.path || !writes(s.toolKind)) continue;
+        if (underDesigns(cwd, s.path)) void drawNow(ctx, threadId);
         const at = frameAt(ctx, cwd, s.path);
         if (at) want.set(`${key}|${at.file}/${at.frame}`, { ...at, label: s.toolKind === "write" ? "Drawing" : "Editing" });
       }
@@ -1280,6 +1365,7 @@ function onTool(ctx: DesignCtx, threadId: string, it: Extract<Item, { kind: "too
   }
   if (it.status !== "running") return presenceOff(ctx, key);
   if (!it.path || !writes(it.toolKind)) return;
+  if (underDesigns(cwd, it.path)) void drawNow(ctx, threadId);
   const at = frameAt(ctx, cwd, it.path);
   if (at) presenceOn(ctx, key, { cwd, ...at, threadId, agent: "lead", name: ctx.whoIs(threadId), label: it.toolKind === "write" ? "Drawing" : "Editing" });
 }
@@ -1321,8 +1407,12 @@ function digest(ctx: DesignCtx, dir: string) {
   return h.digest("hex");
 }
 
-/** The same fingerprint, off the engine's loop: each step awaits the disk, and a file is read and hashed in pieces. */
-async function digestAsync(ctx: DesignCtx, dir: string) {
+/**
+  The same fingerprint, off the engine's loop: each step awaits the disk, and a file is read and hashed in pieces. `as`: the
+  folder `dir` is a copy of, taken with its times kept (takeProvisional): its files are looked up and remembered under the
+  original's paths, so a copy just taken costs a look at each file, and its fingerprint is what the copy holds, not the original.
+*/
+async function digestAsync(ctx: DesignCtx, dir: string, as = dir) {
   const cache = sums(ctx);
   const h = createHash("sha1");
   const walk = async (d: string, rel: string) => {
@@ -1332,17 +1422,22 @@ async function digestAsync(ctx: DesignCtx, dir: string) {
       if (s.isSymbolicLink()) continue;
       if (s.isDirectory()) await walk(abs, `${rel}${n}/`);
       else if (s.isFile()) {
-        let c = cache.get(abs);
+        const k = as === dir ? abs : join(as, `${rel}${n}`);
+        let c = cache.get(k);
         if (!c || c.size !== s.size || c.mtime !== s.mtimeMs) {
           const fh = createHash("sha1");
           for await (const chunk of createReadStream(abs, { highWaterMark: 1 << 20 })) fh.update(chunk as Buffer);
-          cache.set(abs, (c = { size: s.size, mtime: s.mtimeMs, sum: fh.digest("hex") }));
+          cache.set(k, (c = { size: s.size, mtime: s.mtimeMs, sum: fh.digest("hex") }));
         }
         h.update(`${rel}${n}\0${c.sum}\0`);
+        seen.add(k);
       }
     }
   };
+  const seen = new Set<string>();
   if (existsSync(dir)) await walk(dir, "");
+  // A file gone from the folder leaves the cache with it, so the cache holds what's there, not every file ever hashed.
+  for (const k of cache.keys()) if (k.startsWith(`${as}${sep}`) && !seen.has(k)) cache.delete(k);
   return h.digest("hex");
 }
 
@@ -1379,31 +1474,230 @@ const metaOf = (to: string, slug: string, m: Omit<VersionMeta, "frames">): Versi
   return { ...m, frames };
 };
 
-/** Copies a design folder as it is now as turn `turn`'s version of it, for this session (links left out). */
-export function keepVersion(ctx: DesignCtx, threadId: string, cwd: string, slug: string, turn: number, sum?: string) {
+/** How many "turn" copies a design file keeps in a session: the newest, by turn. */
+export const TURN_KEEP = 20;
+
+/**
+  Copies a design folder as it is now as turn `turn`'s version of it, for this session (links left out), off the engine's
+  loop (a turn's start and end), then lets the oldest turn copies past the newest 20 go. A copy taken again is made anew,
+  its record too: a fork's copies are links to its parent's (forkVersions), so nothing is ever written into one in place.
+*/
+export async function keepVersionAsync(ctx: DesignCtx, threadId: string, cwd: string, slug: string, turn: number, sum?: string) {
   const dir = versionsDir(ctx, threadId, slug);
-  const src = designDir(cwd, slug);
   const key = `t${turn}`;
   const to = join(dir, key);
   rmSync(to, { recursive: true, force: true });
+  rmSync(join(dir, `${key}.json`), { force: true });
   mkdirSync(dir, { recursive: true });
-  cpSync(src, to, { recursive: true, filter: (p) => !lstatSync(p).isSymbolicLink() });
-  const meta = metaOf(to, slug, { turn, at: Date.now(), digest: sum ?? digest(ctx, src), key, kind: "turn" });
+  await cloneDesign(designDir(cwd, slug), to);
+  const meta = metaOf(to, slug, { turn, at: Date.now(), digest: sum ?? (await digestAsync(ctx, designDir(cwd, slug))), key, kind: "turn" });
   writeFileSync(join(dir, `${key}.json`), JSON.stringify(meta));
+  pruneTurns(ctx, threadId, slug);
   return meta;
 }
 
-/** The same, off the engine's loop (a turn's start and end). */
-async function keepVersionAsync(ctx: DesignCtx, threadId: string, cwd: string, slug: string, turn: number, sum: string) {
+/**
+  A design folder copied whole (links left out), times kept: each file a clone where the disk can make one (APFS: no bytes
+  written, and a later write to either side, in place or not, leaves the other as it was), else a plain copy. Never a hard
+  link: a tool may write a picture or a frame in place, which would change the copy with it.
+*/
+const cloneDesign = (from: string, to: string) => cp(from, to, { recursive: true, preserveTimestamps: true, mode: fsc.COPYFILE_FICLONE, filter: async (p) => !(await lstat(p)).isSymbolicLink() });
+
+/**
+  Takes a design file's provisional "as it was" copy as a turn begins (p<turn>, beside the kept ones but not one of them:
+  kept() reads only t and b records), on the turn's own event, before the tool is sent the prompt, so no write of the turn
+  can land before it. Where the disk clones (APFS, Btrfs, ReFS: no bytes written), here and now. Where it can't (NTFS, exFAT,
+  HFS+, a network share), a byte copy would stall every session's stream, so it's taken off the loop (copyDesign) and the
+  turn's prompt waits for it (turnReady, runtime.beforeTurn): still before the tool can write. Times are kept, so turnStarted
+  fingerprints the copy (what it really holds) from what's already known of the original.
+*/
+function takeProvisional(ctx: DesignCtx, threadId: string, cwd: string, slug: string, turn: number): Provisional {
   const dir = versionsDir(ctx, threadId, slug);
-  const key = `t${turn}`;
-  const to = join(dir, key);
-  rmSync(to, { recursive: true, force: true });
+  const to = join(dir, `p${turn}`);
   mkdirSync(dir, { recursive: true });
-  await cp(designDir(cwd, slug), to, { recursive: true, filter: async (p) => !(await lstat(p)).isSymbolicLink() });
-  const meta = metaOf(to, slug, { turn, at: Date.now(), digest: sum, key, kind: "turn" });
-  writeFileSync(join(dir, `${key}.json`), JSON.stringify(meta));
-  return meta;
+  rmSync(to, { recursive: true, force: true });
+  const at = Date.now();
+  const src = designDir(cwd, slug);
+  if (designCopy.clones(src, dir)) {
+    cpSync(src, to, { recursive: true, preserveTimestamps: true, mode: fsc.COPYFILE_FICLONE, filter: (p) => !lstatSync(p).isSymbolicLink() });
+    return { turn, at, sum: "" };
+  }
+  const p: Provisional = { turn, at, sum: "" };
+  p.ready = designCopy.slow(src, to, earlierCopies(ctx, cwd, slug, to)).catch((e) => {
+    p.failed = true;
+    rmSync(to, { recursive: true, force: true });
+    console.error(`[canvas] the "as it was" copy of ${slug} couldn't be taken, so this turn goes on without one: ${e instanceof Error ? e.message : String(e)}`);
+  });
+  return p;
+}
+
+/**
+  Whether a design folder's files clone onto the engine's copies' disk, by the two volumes, found once and remembered. A clone
+  never crosses volumes. On the Mac, Node can't force one (COPYFILE_FICLONE_FORCE is ENOSYS there, and a plain FICLONE falls
+  back to copying unseen), so it's the volume's kind: APFS, the kind the system volume always is, clones. Elsewhere, a forced
+  clone of design.json is tried: one that fails (ENOTSUP, EXDEV, ENOSYS) means this disk copies bytes.
+*/
+const cloneable = new Map<string, boolean>();
+function clonesTo(src: string, dir: string) {
+  const from = statSync(src).dev;
+  const key = `${from}:${statSync(dir).dev}`;
+  const known = cloneable.get(key);
+  if (known !== undefined) return known;
+  let ok = false;
+  if (from !== statSync(dir).dev) ok = false;
+  else if (process.platform === "darwin") {
+    try {
+      ok = statfsSync(dir).type === statfsSync("/").type;
+    } catch {
+      ok = false;
+    }
+  } else {
+    const probe = join(dir, `.clone-${process.pid}-${Date.now()}`);
+    try {
+      copyFileSync(join(src, "design.json"), probe, fsc.COPYFILE_FICLONE_FORCE);
+      ok = true;
+    } catch {
+      // this disk copies bytes
+    } finally {
+      rmSync(probe, { force: true });
+    }
+  }
+  cloneable.set(key, ok);
+  return ok;
+}
+
+/**
+  The copies of this design any session of its folder holds now (kept or provisional, newest first), but `but`: where a
+  picture the same size and time as the design's own may be linked from rather than copied again. Copies are never written in
+  place (keepVersionAsync and promote make them anew, restore only reads them), so a link between two copies is safe; a link
+  to the design's own file never is.
+*/
+function earlierCopies(ctx: DesignCtx, cwd: string, slug: string, but: string): string[] {
+  const out: { dir: string; at: number }[] = [];
+  for (const t of ctx.store.threads) {
+    let dir: string;
+    try {
+      if (resolve(ctx.cwdOf(t.id)) !== cwd) continue;
+      dir = versionsDir(ctx, t.id, slug);
+    } catch {
+      continue;
+    }
+    if (!existsSync(dir)) continue;
+    for (const n of readdirSync(dir)) {
+      if (!/^[tp][0-9]+$/.test(n) || join(dir, n) === but) continue;
+      const at = lstatSync(join(dir, n), { throwIfNoEntry: false });
+      if (at?.isDirectory()) out.push({ dir: join(dir, n), at: at.mtimeMs });
+    }
+  }
+  return out.sort((a, b) => b.at - a.at).slice(0, 8).map((c) => c.dir);
+}
+
+/**
+  A design folder copied off the loop (links left out, mode and times kept), for a disk that can't clone: each picture under
+  assets/ that an earlier copy holds at the same size and time is a link to that copy's file, so a turn copies only the
+  frames, the index and pictures new since; anything else is copied.
+*/
+async function slowCopy(from: string, to: string, earlier: string[] = []) {
+  const same = (a: number, b: number) => Math.abs(a - b) < 1;
+  const walk = async (rel: string) => {
+    await mkdir(join(to, rel), { recursive: true });
+    for (const n of await readdir(join(from, rel))) {
+      const r = rel ? `${rel}/${n}` : n;
+      const s = await lstat(join(from, r));
+      if (s.isSymbolicLink()) continue;
+      if (s.isDirectory()) {
+        await walk(r);
+        continue;
+      }
+      if (!s.isFile()) continue;
+      if (r.startsWith("assets/")) {
+        let linked = false;
+        for (const c of earlier) {
+          const e = await lstat(join(c, r)).catch(() => null);
+          if (!e?.isFile() || e.size !== s.size || !same(e.mtimeMs, s.mtimeMs)) continue;
+          linked = await link(join(c, r), join(to, r)).then(() => true, () => false);
+          if (linked) break;
+        }
+        if (linked) continue;
+      }
+      await copyFile(join(from, r), join(to, r));
+      await utimes(join(to, r), s.atime, s.mtime);
+    }
+  };
+  await walk("");
+}
+
+/** How a provisional copy is taken: tests make a disk that can't clone, and a slow copy, to see the turn wait for it. */
+export const designCopy = { clones: clonesTo, slow: slowCopy };
+
+/**
+  The provisional copies of a session's turn being taken off the loop, done: what a turn's prompt waits for (runtime.ts
+  beforeTurn, set by main.ts). Never throws: a copy that fails leaves the turn without one, said in the log.
+*/
+export function turnReady(ctx: DesignCtx, threadId: string, turn: number): Promise<void> {
+  const c = state(ctx).copying.get(threadId);
+  return c && c.turn === turn ? c.done : Promise.resolve();
+}
+
+/** A design folder's fingerprint when every file in it is known at its size and time (a look at each, no file read); else none. */
+function knownDigest(ctx: DesignCtx, dir: string): string | undefined {
+  const cache = sums(ctx);
+  const h = createHash("sha1");
+  const walk = (d: string, rel: string): boolean => {
+    for (const n of readdirSync(d).sort()) {
+      const abs = join(d, n);
+      const s = lstatSync(abs);
+      if (s.isSymbolicLink()) continue;
+      if (s.isDirectory()) {
+        if (!walk(abs, `${rel}${n}/`)) return false;
+      } else if (s.isFile()) {
+        const c = cache.get(abs);
+        if (!c || c.size !== s.size || c.mtime !== s.mtimeMs) return false;
+        h.update(`${rel}${n}\0${c.sum}\0`);
+      }
+    }
+    return true;
+  };
+  return existsSync(dir) && walk(dir, "") ? h.digest("hex") : undefined;
+}
+
+/**
+  Makes a provisional copy a kept one, t<turn>, as turnStarted would have taken it in a session that draws. A kept turn copy
+  already in its place (one taken at the last turn's end, the file changed by someone else since) stays, and the
+  provisional one goes: nothing kept is ever replaced by it.
+*/
+function promote(ctx: DesignCtx, threadId: string, slug: string, p: Provisional) {
+  const dir = versionsDir(ctx, threadId, slug);
+  const from = join(dir, `p${p.turn}`);
+  const key = `t${p.turn}`;
+  if (!existsSync(from)) return;
+  if (existsSync(join(dir, key)) || existsSync(join(dir, `${key}.json`))) return rmSync(from, { recursive: true, force: true });
+  renameSync(from, join(dir, key));
+  writeFileSync(join(dir, `${key}.json`), JSON.stringify(metaOf(join(dir, key), slug, { turn: p.turn, at: p.at, digest: p.sum, key, kind: "turn" })));
+  pruneTurns(ctx, threadId, slug);
+}
+
+/** A provisional copy not needed (the turn changed nothing in that design): it goes, and so do the folders it alone made. */
+function dropProvisional(ctx: DesignCtx, threadId: string, slug: string, p: Provisional) {
+  const dir = versionsDir(ctx, threadId, slug);
+  rmSync(join(dir, `p${p.turn}`), { recursive: true, force: true });
+  for (const d of [dir, dirname(dir), dirname(dirname(dir))]) {
+    try {
+      rmdirSync(d);
+    } catch {
+      break;
+    }
+  }
+}
+
+/** The newest 20 turn copies of a design file stay, the one just taken always among them; "before" copies keep their own rule (keepBefore). */
+function pruneTurns(ctx: DesignCtx, threadId: string, slug: string) {
+  const dir = versionsDir(ctx, threadId, slug);
+  const turns = kept(ctx, threadId, slug).filter((v) => v.kind === "turn").sort((a, b) => a.turn - b.turn || a.at - b.at);
+  for (const v of turns.slice(0, Math.max(0, turns.length - TURN_KEEP))) {
+    rmSync(join(dir, `${v.key}.json`), { force: true });
+    rmSync(join(dir, v.key), { recursive: true, force: true });
+  }
 }
 
 /**
@@ -1459,27 +1753,195 @@ function brokenIndex(dir: string) {
 }
 
 /**
-  A turn began: a design file this session has no copy of yet gets one as it was before (turn - 1),
-  to scrub back to. Off the engine's loop; a folder with no .liner/designs costs one check. A file
-  whose design.json can't be read now gets none: a copy of it would only bring the break back.
+  Whether a session draws, so its turns keep copies of the folder's design files: one begun from a design (every session of a
+  design on its own is), or one seen drawing in this engine's life (a design tool, or its own write under .liner/designs/).
+  Any other (a Code face session, a side chat, a Security scan, a Compare take) takes none unless a design changes while its
+  turn runs (turnEnded). When the session can't be read, it draws: a copy not taken can't be taken later.
 */
-export async function turnStarted(ctx: DesignCtx, threadId: string, turn: number) {
-  const cwd = resolve(ctx.cwdOf(threadId));
-  for (const slug of slugsIn(cwd)) if (!kept(ctx, threadId, slug).length && !brokenIndex(designDir(cwd, slug))) await keepVersionAsync(ctx, threadId, cwd, slug, Math.max(0, turn - 1), await digestAsync(ctx, designDir(cwd, slug)));
+function draws(ctx: DesignCtx, threadId: string) {
+  if (state(ctx).drew.has(threadId)) return true;
+  try {
+    const t = ctx.store.thread(threadId);
+    return Boolean(t.design) || ctx.store.project(t.projectId).kind === "design";
+  } catch {
+    return true;
+  }
 }
 
+const readsOnly = (ctx: DesignCtx, threadId: string) => {
+  try {
+    return ctx.readOnly(threadId);
+  } catch {
+    return false;
+  }
+};
+
 /**
-  A turn ended: each design file it changed (from the last turn's copy, by size and time first, then
-  hashes) is kept as this turn's; one the turn left with a design.json that can't be read isn't,
-  so the copies to bring back stay ones that open.
+  A turn began: what is taken on its own event, synchronously, so it is there before the tool is sent the prompt and can write
+  anything. In a session that draws, a design file it has no copy of yet gets one as it was (provisional, kept as turn - 1
+  by turnStarted). In one not known to draw, every design file gets a provisional "as it was" copy, unless a kept copy
+  already holds it as it is (known from its files' sizes and times alone); turnEnded keeps it if the design changed in the
+  turn or the session drew, and removes it otherwise. A file whose design.json can't be read now gets none: a copy of it
+  would only bring the break back. A folder with no .liner/designs costs one check.
 */
-export async function turnEnded(ctx: DesignCtx, threadId: string, turn: number) {
+function beginTurn(ctx: DesignCtx, threadId: string, turn: number): TurnLook {
+  const st = state(ctx);
   const cwd = resolve(ctx.cwdOf(threadId));
+  // A turn whose end was never seen: its provisional copies can't be told needed, and go.
+  const old = st.looks.get(threadId);
+  if (old) for (const [slug, p] of old.prov) dropProvisional(ctx, threadId, slug, p);
+  st.looks.delete(threadId);
+  const drawing = draws(ctx, threadId);
+  const look: TurnLook = { turn, sums: new Map(), prov: new Map(), ro: !drawing && readsOnly(ctx, threadId), drawing };
+  // Set before anything else, so a drawNow queued meanwhile finds it (it runs after turnStarted, on the same queue).
+  if (!drawing) st.looks.set(threadId, look);
+  if (look.ro) return look;
   for (const slug of slugsIn(cwd)) {
     const dir = designDir(cwd, slug);
     if (brokenIndex(dir)) continue;
-    const sum = await digestAsync(ctx, dir);
-    if (lastTurn(kept(ctx, threadId, slug))?.digest !== sum) await keepVersionAsync(ctx, threadId, cwd, slug, turn, sum);
+    const all = kept(ctx, threadId, slug);
+    if (drawing && all.length) continue;
+    if (!drawing) {
+      const last = lastTurn(all);
+      const now = last ? knownDigest(ctx, dir) : undefined;
+      if (now && now === last!.digest) {
+        look.sums.set(slug, now);
+        continue;
+      }
+    }
+    look.prov.set(slug, takeProvisional(ctx, threadId, cwd, slug, Math.max(0, turn - 1)));
+  }
+  // Copies being taken off the loop: the turn's prompt waits for them (turnReady), and the entry goes once they're done.
+  const slow = [...look.prov.values()].flatMap((p) => (p.ready ? [p.ready] : []));
+  st.copying.delete(threadId);
+  if (slow.length) {
+    const c = { turn, done: Promise.all(slow).then(() => undefined) };
+    st.copying.set(threadId, c);
+    void c.done.then(() => st.copying.get(threadId) === c && st.copying.delete(threadId));
+  }
+  return look;
+}
+
+/**
+  A turn began, the rest of it off the engine's loop: each provisional copy's fingerprint, taken from the copy (by size and
+  time first, then hashes), so it is what the copy holds. A session that draws keeps its copies at once; in one not known to
+  draw, the fingerprints are what turnEnded tells a change by, and a copy a kept one already matches goes. Provisional copies
+  an engine stopped mid-turn left behind go too.
+*/
+export async function turnStarted(ctx: DesignCtx, threadId: string, turn: number, look: TurnLook = beginTurn(ctx, threadId, turn)) {
+  const cwd = resolve(ctx.cwdOf(threadId));
+  for (const [slug, p] of look.prov) {
+    if (p.ready) await p.ready;
+    // None could be taken: the turn is told apart by the design as it is now, so a turn that touches nothing keeps nothing.
+    if (p.failed) {
+      look.prov.delete(slug);
+      if (!look.drawing) look.sums.set(slug, await digestAsync(ctx, designDir(cwd, slug)));
+      continue;
+    }
+    p.sum = await digestAsync(ctx, join(versionsDir(ctx, threadId, slug), `p${p.turn}`), designDir(cwd, slug));
+    if (look.drawing) {
+      promote(ctx, threadId, slug, p);
+      look.prov.delete(slug);
+      continue;
+    }
+    look.sums.set(slug, p.sum);
+    if (lastTurn(kept(ctx, threadId, slug))?.digest === p.sum) {
+      dropProvisional(ctx, threadId, slug, p);
+      look.prov.delete(slug);
+    }
+  }
+  // Older than this turn's: a later turn's start may already have taken its own, and it stays.
+  for (const slug of slugsIn(cwd)) {
+    const dir = versionsDir(ctx, threadId, slug);
+    if (existsSync(dir)) for (const n of readdirSync(dir)) if (/^p[0-9]+$/.test(n) && Number(n.slice(1)) < Math.max(0, turn - 1)) rmSync(join(dir, n), { recursive: true, force: true });
+  }
+}
+
+/**
+  A session not known to draw started drawing in this turn (a design tool's write, or a tool row writing under .liner/designs/):
+  from now on it draws (draws), and the turn's provisional "as it was" copies, taken as it began, are kept now. Returns when
+  they are: a design tool waits for it before it writes, so the copy is there to bring back as soon as it draws. However late
+  this comes (the tool row after the write, or none at all), the copies are from before the turn.
+*/
+export function drawNow(ctx: DesignCtx, threadId: string): Promise<void> {
+  const st = state(ctx);
+  if (st.drew.has(threadId) || readsOnly(ctx, threadId)) return Promise.resolve();
+  st.drew.add(threadId);
+  return queue(ctx, threadId, async () => {
+    const look = st.looks.get(threadId);
+    if (!look) return;
+    for (const [slug, p] of look.prov) promote(ctx, threadId, slug, p);
+    look.prov.clear();
+  });
+}
+
+/**
+  A turn ended. In a session that draws, each design file it changed (from the last turn's copy, by size and time first, then
+  hashes) is kept as this turn's. In one not known to draw, a file is kept only when it changed while the turn ran (or came
+  while it ran): whoever changed it, that's a state no copy holds. Either way the turn's provisional "as it was" copy of a file
+  is kept when the file changed or the session drew in the turn, and goes otherwise. A session that could only read, at its
+  start and its end, keeps none. One the turn left with a design.json that can't be read isn't kept, so the copies to bring
+  back stay ones that open; nor is one the turn removed; but either keeps its "as it was" copy. `given`: the turn as its start
+  saw it, taken off the session as the end came (attach), null for none; left out, it's read here.
+*/
+export async function turnEnded(ctx: DesignCtx, threadId: string, turn: number, given?: TurnLook | null) {
+  const st = state(ctx);
+  const cwd = resolve(ctx.cwdOf(threadId));
+  let seen = given ?? undefined;
+  if (given === undefined) {
+    const look = st.looks.get(threadId);
+    if (look?.turn === turn) (st.looks.delete(threadId), (seen = look));
+  }
+  const prov = seen?.prov ?? new Map<string, Provisional>();
+  try {
+    const always = draws(ctx, threadId);
+    // Not known to draw and no start seen (an engine started mid-turn, a fork's copied turns): nothing to tell a change by.
+    if (!always && (!seen || (seen.ro && readsOnly(ctx, threadId)))) return;
+    const there = new Set(slugsIn(cwd));
+    const keep = (slug: string) => {
+      const p = prov.get(slug);
+      if (p) (promote(ctx, threadId, slug, p), prov.delete(slug));
+    };
+    for (const slug of prov.keys()) if (!there.has(slug)) keep(slug);
+    for (const slug of there) {
+      const dir = designDir(cwd, slug);
+      if (brokenIndex(dir)) {
+        keep(slug);
+        continue;
+      }
+      const sum = await digestAsync(ctx, dir);
+      const changed = !seen || seen.sums.get(slug) !== sum;
+      if (changed || always) keep(slug);
+      const was = always ? lastTurn(kept(ctx, threadId, slug))?.digest : seen!.sums.get(slug);
+      if (was !== sum) await keepVersionAsync(ctx, threadId, cwd, slug, turn, sum);
+    }
+  } finally {
+    for (const [slug, p] of prov) dropProvisional(ctx, threadId, slug, p);
+  }
+}
+
+/**
+  A fork's own hold on its parent's kept designs (api.ts thread.create): the canvas's copies (canvas/) as hard links, since
+  nothing writes into a kept copy in place (keepVersionAsync makes one anew, record and all), so a fork reads and writes no
+  bytes for them; one that can't be linked (another disk) is copied. The rest of the session's designs folder (designs.ts,
+  the Design surface's own) is copied as before. Off the engine's loop.
+*/
+export async function forkVersions(home: string, from: string, to: string) {
+  const src = join(home, "designs", from);
+  if (!existsSync(src)) return;
+  const dst = join(home, "designs", to);
+  const tree = async (a: string, b: string) => {
+    await mkdir(b, { recursive: true });
+    for (const e of await readdir(a, { withFileTypes: true })) {
+      const x = join(a, e.name);
+      const y = join(b, e.name);
+      if (e.isDirectory()) await tree(x, y);
+      else if (e.isFile()) await link(x, y).catch(() => copyFile(x, y));
+    }
+  };
+  for (const e of await readdir(src, { withFileTypes: true })) {
+    if (e.name === "canvas" && e.isDirectory()) await tree(join(src, e.name), join(dst, e.name));
+    else await cp(join(src, e.name), join(dst, e.name), { recursive: true });
   }
 }
 
@@ -1496,6 +1958,7 @@ function queue(ctx: DesignCtx, threadId: string, fn: () => Promise<void>) {
   void next.then(() => {
     if (q.get(threadId) === next) q.delete(threadId);
   });
+  return next;
 }
 
 /** The copies kept, oldest first; one whose design.json can't be read (a "before" copy of a broken file, or one kept before this was looked at) says `unreadable`. */
@@ -1515,7 +1978,7 @@ function copyOf(ctx: DesignCtx, threadId: string, slug: string, which: { turn?: 
   const turn = Number(which.turn);
   if (!Number.isInteger(turn) || turn < 0) throw new Error("That turn isn't kept.");
   const v = all.find((x) => x.kind === "turn" && x.turn === turn);
-  if (!v) throw new Error(`Turn ${turn}'s copy of “${slug}” isn't kept.`);
+  if (!v) throw new Error(`Turn ${turn}'s copy of “${slug}” isn't kept (a session keeps the copies of its newest ${TURN_KEEP} turns).`);
   return v;
 }
 
@@ -1543,7 +2006,7 @@ export function versionRead(ctx: DesignCtx, threadId: string, slug: string, w: n
     try {
       const abs = inDesign(from, framePath(f));
       if (!existsSync(abs) || statSync(abs).size > MAX_FRAME) continue;
-      html[f.id] = stamp(readFileSync(abs, "utf8")).html;
+      html[f.id] = stampSeen(readFileSync(abs, "utf8")).html;
     } catch {
       // a frame the copy doesn't hold, or one that leads out of it, is left out
     }
@@ -1575,6 +2038,7 @@ export function restore(ctx: DesignCtx, threadId: string, slug: string, w: numbe
       if (lstatSync(join(from, sub, n), { throwIfNoEntry: false })?.isFile()) continue;
       rmSync(abs);
       st.own.delete(abs);
+      st.heard.delete(abs);
     }
   }
   const put = (rel: string) => {
@@ -1610,24 +2074,37 @@ export function attach(ctx: DesignCtx) {
   st.off = ctx.store.on((e) => {
     try {
       if (e.type === "item" && e.item.kind === "turn") {
-        const key = `${e.threadId}#${e.item.turn}`;
-        const was = st.turns.get(key);
-        if (e.item.status === "running" && !was) {
-          st.turns.set(key, "running");
-          const { threadId } = e;
-          const turn = e.item.turn;
-          queue(ctx, threadId, () => turnStarted(ctx, threadId, turn));
-        } else if (e.item.status !== "running" && was !== "ended") {
-          st.turns.set(key, "ended");
-          offAll(ctx, `${e.threadId}|`);
-          const { threadId } = e;
-          const turn = e.item.turn;
-          queue(ctx, threadId, () => turnEnded(ctx, threadId, turn));
+        const { threadId } = e;
+        const turn = e.item.turn;
+        // Only the turn running now and the last one ended are kept per session, so the map doesn't grow by one per turn ever run.
+        if (e.item.status === "running" && st.turns.get(threadId) !== turn && st.ended.get(threadId) !== turn) {
+          st.turns.set(threadId, turn);
+          // The "as it was" copies are taken here and now, before the tool is sent the prompt; the rest runs on the session's queue.
+          let look: TurnLook | undefined;
+          try {
+            look = beginTurn(ctx, threadId, turn);
+          } catch (err) {
+            console.error("[canvas]", err);
+          }
+          if (look) queue(ctx, threadId, () => turnStarted(ctx, threadId, turn, look));
+        } else if (e.item.status !== "running" && st.ended.get(threadId) !== turn) {
+          st.ended.set(threadId, turn);
+          if (st.turns.get(threadId) === turn) st.turns.delete(threadId);
+          offAll(ctx, `${threadId}|`);
+          // Taken off the session now: the next turn's start, which may come before this end's work runs, sets its own.
+          const look = st.looks.get(threadId);
+          const seen = look?.turn === turn ? look : null;
+          if (seen) st.looks.delete(threadId);
+          queue(ctx, threadId, () => turnEnded(ctx, threadId, turn, seen));
         }
       } else if (e.type === "item" && e.item.kind === "tool") onTool(ctx, e.threadId, e.item);
       else if (e.type === "thread.removed") {
         offAll(ctx, `${e.id}|`);
         st.selection.delete(e.id);
+        st.turns.delete(e.id);
+        st.ended.delete(e.id);
+        st.looks.delete(e.id);
+        st.drew.delete(e.id);
       }
     } catch (err) {
       console.error("[canvas]", err);
@@ -1702,7 +2179,7 @@ export function rpc(x: () => DesignCtx): DesignRpc<CanvasMethod> {
         const p = lookFile(dir, slugOk(file));
         return { file: p, base: await baseOf(ctx, dir, p.id), revs: revsOf(ctx, dir, p, false) };
       }
-      const f = readFile(ctx, dir, slugOk(file), { drop: true });
+      const f = readFile(ctx, dir, slugOk(file));
       state(ctx).opened.set(dir, f.id);
       return { file: f, base: await baseOf(ctx, dir, f.id), revs: revsOf(ctx, dir, f) };
     },
@@ -1784,6 +2261,19 @@ const text = (t: string): McpResult => ({ content: [{ type: "text", text: t }] }
 /** The design file a tool means: the one named, else the one the person has open, else the folder's only or newest; with make, a new one when there's none. */
 export function designFor(ctx: DesignCtx, cwd: string, asked: unknown, make: boolean): string {
   const a = String(asked ?? "").trim();
+  // Named by its slug, and there: no need to read every design file of the folder to find it (listFiles would list it).
+  if (a && slugOf(a) === a && SLUG.test(a)) {
+    try {
+      const dir = designDir(cwd, a);
+      if (lstatSync(dir, { throwIfNoEntry: false })?.isDirectory() && (existsSync(join(dir, "design.json")) || existsSync(join(dir, "frames")))) {
+        readFile(ctx, cwd, a);
+        return a;
+      }
+    } catch (e) {
+      // One whose index can't be read is still the one meant, as listFiles lists it; one through a link isn't (below).
+      if (e instanceof Error && e.message.startsWith(DESIGN_UNREADABLE)) return a;
+    }
+  }
   const files = listFiles(ctx, cwd);
   if (a) {
     const s = slugOf(a) === a ? a : (files.find((f) => f.title.toLowerCase() === a.toLowerCase())?.id ?? slugOf(a));
@@ -1896,8 +2386,10 @@ const noWrite = (at: DesignCall) => {
 /** One of the canvas's tools (TOOLS), for agent-tools.ts. A thrown error comes back to the agent as its message. */
 export async function call(name: string, args: Record<string, unknown>, at: DesignCall): Promise<McpResult> {
   attach(at);
+  // A tool that may write a frame: the session draws from now on, and the files' "as it was" copies are taken before it writes.
+  if (name === "design_frame" || (name === "design_node" && args.html !== undefined && args.html !== null)) await drawNow(at, at.threadId);
   // A session that only reads: nothing in the call writes, whatever reaches the files (see quiet).
-  return at.readOnly(at.threadId) ? quiet.run(true, () => act(name, args, at)) : act(name, args, at);
+  return callMemo.run(new Map(), () => (at.readOnly(at.threadId) ? quiet.run(true, () => act(name, args, at)) : act(name, args, at)));
 }
 
 async function act(name: string, args: Record<string, unknown>, at: DesignCall): Promise<McpResult> {
@@ -1917,11 +2409,11 @@ async function act(name: string, args: Record<string, unknown>, at: DesignCall):
       if (html === undefined && !path) throw new Error("Pass the whole page as html, or the path of an HTML file in this folder.");
       if (html === undefined && path) {
         const r = relative(cwd, resolve(cwd, path.replace(/^file:\/\//i, "")));
-        if (!r || r.startsWith("..") || isAbsolute(r)) throw new Error("path must be an HTML file inside this session's folder.");
+        if (!r || outside(r)) throw new Error("path must be an HTML file inside this session's folder.");
         if (!/\.html?$/i.test(r)) throw new Error("path must be an HTML file: one that ends in .html.");
         const abs = join(cwd, r);
         const real = existsSync(abs) ? relative(realpathSync(cwd), realpathSync(abs)) : "";
-        if (!existsSync(abs) || real.startsWith("..") || isAbsolute(real)) throw new Error(`There's no ${r} in this folder.`);
+        if (!existsSync(abs) || outside(real)) throw new Error(`There's no ${r} in this folder.`);
         if (statSync(abs).size > MAX_FRAME) throw new Error(`${r} is over 2 MB; keep a frame to one page.`);
         html = readFileSync(abs, "utf8");
       }

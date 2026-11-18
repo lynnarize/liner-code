@@ -406,7 +406,7 @@
 /* In the chat: wider than the text (to 880), centred on it, the design with nothing round it. In
    whole pixels, width and place, so the scaled design's edges land on the pixel grid. */
 .lc-dz-inline {
-  --w: round(down, min(880px, calc(100cqi - var(--lc-lane, 0px) - 48px)), 1px);
+  --w: round(down, min(880px, calc(100cqi - 48px)), 1px);
   width: var(--w);
   margin-left: round(down, calc((100% - var(--w)) / 2), 1px);
 }
@@ -492,16 +492,16 @@
   }
 }
 
-/* ---------- Full screen ---------- */
+/* ---------- Full screen ----------
+   Nearly solid, with no blur: a backdrop blur over the whole window was drawn again for every frame
+   of whatever moved under it (a streaming thread, a live page), for the 16% that showed through. */
 .lc-dz-full {
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  background: color-mix(in oklab, var(--lc-ground) 84%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: color-mix(in oklab, var(--lc-ground) 96%, transparent);
   animation: lc-dz-full-in 260ms var(--l-ease-out) backwards;
 }
 @keyframes lc-dz-full-in {

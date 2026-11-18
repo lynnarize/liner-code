@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { ACCESS_NAMES, agentState, castOf, doingOf, type DoingCall, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
 import { capture, changedPaths, changes, isRepo, PATCH } from "./checkpoints.ts";
-import { holders, killTree, markFile, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
+import { closesOnExit, holders, killTree, markFile, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
 import { claudeTeam, fixPrompt, parseFindings, parseStep, quickOf, reviewPrompt, stepPrompt } from "./review.ts";
 import { antigravity, cursor, gitInside, grok, hermes, opencode } from "./providers/acp.ts";
@@ -151,6 +151,8 @@ export function etaOf(own: number[], recent: number[]): number | undefined {
 }
 /** How long after a window reopened a session still carries on by itself (T3 Code: UsageLimitRecoveryWorker.ts): one left a week wakes on a stale job. */
 const LIMIT_STALE_MS = 24 * 3_600_000;
+/** How long a queued message that went is remembered as gone (Runtime.drained): an app's copy of the queue is never that old. */
+const DRAINED_MS = 3_600_000;
 /** The tools that only edit files in the project, by the name each provider asks with (Claude Code's, Codex's apply_patch, ACP's "edit" kind). */
 const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit", "apply_patch", "edit"]);
 /**
@@ -199,6 +201,14 @@ export const READ_MS = 10 * 60_000;
 export const REVIEW_MS = READ_MS;
 /** The least time between two of a session's doing lines (Thread.doing): steps can start many times a second, the sidebar reads one. */
 export const DOING_MS = 700;
+/** The doing line while the Reviewer reads a change: the tip the session's bar shows for it (Session.tsx). */
+export const REVIEWING = "The Reviewer is reading the changes";
+/**
+  How long a tool has to end its turn after Stop before Liner Code gives up on it (untilStopped): its live session is closed, which
+  ends its process and what it marked, the turn ends as stopped, and the next message resumes the session, as a quiet read does when
+  it gives up. A tool that winds down normally ends well inside it.
+*/
+export const STOP_GRACE_MS = 15_000;
 /** How long after a finished step's words were said a think or an answer is worth saying ("Thinking", "Writing its answer"): a short one between two steps never shows. */
 export const THINK_MS = 2500;
 /** How long a session opened ahead of a message (warm) waits for one before it's closed, and how many may wait at once. */
@@ -283,6 +293,8 @@ export class Runtime {
   addons?: Addons;
   /** Puts a session's worktree back when it's gone: the API's, which knows how. */
   worktreeBack?: (threadId: string) => Promise<void>;
+  /** What a turn waits for before its prompt goes, beside the snapshot and the tool opening: Liner Design's "as it was" copies (canvas.ts turnReady, set by main.ts). */
+  beforeTurn?: (threadId: string, turn: number) => Promise<void>;
   private store: Store;
   private env: NodeJS.ProcessEnv;
 
@@ -293,8 +305,8 @@ export class Runtime {
   private wakes = new Map<string, { agentId: string; session: ProviderSession; w: WakeTurn }>();
   /** Work that ended well in a thread, and who did it, told once everything that follows it (a check, a fix) is done too. */
   private finished = new Map<string, string>();
-  /** Queued messages that went: an edit of the queue made from a copy from before can't bring them back. */
-  private drained = new Set<string>();
+  /** Queued messages that went, and when: an edit of the queue made from a copy from before can't bring them back. Kept an hour (DRAINED_MS). */
+  private drained = new Map<string, number>();
   /** Limits already carried on from when their window reopened, by thread and reset time, so each goes once. */
   private reopened = new Set<string>();
   /** The lead's `sidekick` calls its tool showed as rows this turn, by thread, for the briefs to take on (sidekickRow). */
@@ -319,6 +331,8 @@ export class Runtime {
   doingMs = DOING_MS;
   /** How long a think or an answer after a finished step waits before it is said (THINK_MS), here so a test can shorten it. */
   thinkMs = THINK_MS;
+  /** How long a tool has to end its turn after Stop (STOP_GRACE_MS), here so a test can shorten it. */
+  stopGraceMs = STOP_GRACE_MS;
   /** Each running session's doing line as last sent, the newer one waiting out doingMs, and a think or an answer waiting out thinkMs (`later`), by thread. */
   private doingSent = new Map<string, { at: number; next?: string; timer?: NodeJS.Timeout; last?: string; think?: NodeJS.Timeout; later?: string }>();
   /** How long a session opened ahead of a message waits for one (WARM_MS), here so a test can shorten it. */
@@ -345,8 +359,12 @@ export class Runtime {
     this.watchdog = setInterval(() => {
       this.watchQuiet();
       this.resumeLimited();
+      // Timelines nobody has used in a while go from memory (read again from their logs when asked for): never one at work.
+      this.store.letGoTimelines((id) => this.isRunning(id) || this.prTests.has(id) || this.briefs.has(id) || this.wakes.has(id));
     }, 30_000);
     this.watchdog.unref?.();
+    // A session deleted (its log gone too) leaves nothing of it here.
+    store.on((e) => void (e.type === "thread.removed" && this.forgetThread(e.id)));
     if (tools)
       tools.cwdOf = (threadId) => {
         const t = this.store.threads.find((x) => x.id === threadId);
@@ -433,12 +451,13 @@ export class Runtime {
     const t = this.store.threads.find((x) => x.id === threadId);
     const queued = t?.queue ?? [];
     if (!t || !queued.length || t.status === "limited" || t.archived) return;
-    if (this.store.timeline(threadId).some((x) => x.turn > (t.sideFrom ?? 0) && (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) return;
+    if (this.asking(threadId, { side: true })) return;
     // A command goes on its own, in its place: what came before it first, what came after once it's done.
     const at = queued.findIndex((q) => commandOf(q));
     const going = at > 0 ? queued.slice(0, at) : at === 0 ? queued.slice(0, 1) : queued;
     this.store.patchThread(threadId, { queue: queued.slice(going.length) });
-    for (const q of going) this.drained.add(q.id);
+    for (const [id, at] of this.drained) if (Date.now() - at > DRAINED_MS) this.drained.delete(id);
+    for (const q of going) this.drained.set(q.id, Date.now());
     // The newest design mark among what goes: it rides with them only if they become a turn (a command drops it).
     const design = going.map((q) => this.queuedDesign.get(q.id)).filter(Boolean).at(-1);
     for (const q of going) this.queuedDesign.delete(q.id);
@@ -495,6 +514,8 @@ export class Runtime {
     while (left.size > 20) left.delete(left.keys().next().value!);
     if (left.size) this.leftQueue.set(threadId, left);
     else this.leftQueue.delete(threadId);
+    // A design mark goes with its message: one neither in the queue nor kept for a put-back has nothing left to ride with.
+    for (const id of was.keys()) if (!now.has(id) && !left.has(id)) this.queuedDesign.delete(id);
     // One Stop kept for you waits on, edited: taking a message out of it doesn't send the rest.
     if (t.queue?.length && !this.isRunning(threadId) && !this.kept.has(threadId)) this.drain(threadId);
     return this.store.thread(threadId);
@@ -1004,7 +1025,7 @@ export class Runtime {
     if (this.isRunning(threadId) || this.opening.has(key) || this.closing.has(threadId) || this.wakes.has(threadId) || this.briefs.has(threadId) || this.briefLine.has(threadId) || this.prTests.has(threadId) || this.settingUp?.(threadId)) return false;
     if (t.archived || t.queue?.length || t.status === "running" || t.status === "waiting" || t.goal?.status === "active" || t.forkSession !== undefined) return false;
     if (this.store.threads.some((x) => x.sideOf === threadId && this.isRunning(x.id))) return false;
-    if (this.store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) return false;
+    if (this.asking(threadId)) return false;
     if (this.providerInfo.find((p) => p.id === l.provider)?.supports.resume === false) return false;
     const saved = sidekick ? t.sessions?.[agentId] : savedSession(t, agentId);
     return Boolean(saved?.startsWith(`${l.provider}:`) && saved.length > l.provider.length + 1);
@@ -1114,13 +1135,16 @@ export class Runtime {
     store.patchThread(threadId, { status: "waiting" });
     store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.whoIs(threadId)} needs you`, body: ask.title });
     const answer = new Promise<Answer>((resolve) => {
+      // However it settles, it stops listening for Stop: a turn with many cards would otherwise hold one listener for each.
+      const off = () => turn?.abort.signal.removeEventListener("abort", gone);
       const gone = () => {
+        off();
         if (!this.approvals.delete(id)) return;
         const it = store.item(threadId, id);
         if (it.kind === "approval" && it.state === "asking") store.putItem(threadId, { ...it, state: "expired" });
         resolve({ allow: false, reason: "The turn ended before the person answered." });
       };
-      this.approvals.set(id, { resolve, reject: gone });
+      this.approvals.set(id, { resolve: (a) => (off(), resolve(a)), reject: gone });
       if (!turn) return;
       (turn.liner ??= new Set()).add(id);
       if (turn.abort.signal.aborted) gone();
@@ -1134,7 +1158,7 @@ export class Runtime {
         this.settleWaiting(threadId, card?.kind === "approval" && card.state === "approved");
         // Asked with no turn running (a tool's late call): nothing else takes the session out of Needs you.
         const now = store.threads.find((x) => x.id === threadId);
-        if (now?.status === "waiting" && !this.isRunning(threadId) && !store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) store.patchThread(threadId, { status: was === "waiting" || was === "running" ? "done" : was });
+        if (now?.status === "waiting" && !this.isRunning(threadId) && !this.asking(threadId)) store.patchThread(threadId, { status: was === "waiting" || was === "running" ? "done" : was });
       }),
     };
   }
@@ -1157,7 +1181,10 @@ export class Runtime {
     store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.whoIs(threadId)} needs you`, body: questions[0]?.question ?? "A question" });
     let end: (state: "skipped" | "expired") => void = () => {};
     const answer = new Promise<Record<string, string> | null>((resolve) => {
+      // However it settles, it stops listening for Stop (askLiner).
+      const off = () => turn?.abort.signal.removeEventListener("abort", gone);
       end = (state) => {
+        off();
         if (!this.questions.delete(id)) return;
         const it = store.item(threadId, id);
         // Stopped while it waited: it ends as skipped (or expired, let go of), never answered for you.
@@ -1166,7 +1193,7 @@ export class Runtime {
       };
       // Stopped while it waited: the card ends (expired), never read as your skipping it.
       const gone = () => end("expired");
-      this.questions.set(id, { resolve, reject: gone });
+      this.questions.set(id, { resolve: (a) => (off(), resolve(a)), reject: gone });
       if (!turn) return;
       if (turn.abort.signal.aborted) gone();
       else turn.abort.signal.addEventListener("abort", gone, { once: true });
@@ -1176,7 +1203,7 @@ export class Runtime {
       answer: answer.finally(() => {
         this.settleWaiting(threadId);
         const now = store.threads.find((x) => x.id === threadId);
-        if (now?.status === "waiting" && !this.isRunning(threadId) && !store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) store.patchThread(threadId, { status: was === "waiting" || was === "running" ? "done" : was });
+        if (now?.status === "waiting" && !this.isRunning(threadId) && !this.asking(threadId)) store.patchThread(threadId, { status: was === "waiting" || was === "running" ? "done" : was });
       }),
       end: (state) => end(state),
     };
@@ -1380,7 +1407,7 @@ export class Runtime {
         );
       });
       // Back to how it was, unless a turn started meanwhile or something else waits on you.
-      const asking = store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
+      const asking = this.asking(threadId);
       if (store.thread(threadId).status === "waiting" && !this.turns.has(threadId) && !asking) store.patchThread(threadId, { status: was === "waiting" || was === "running" ? "done" : was });
       if (!allow) return { state: "skipped", command, summary: signal.aborted ? "Stopped" : "You said no" };
     }
@@ -1395,6 +1422,9 @@ export class Runtime {
     const env: NodeJS.ProcessEnv = { ...this.env, CI: "1", FORCE_COLOR: "0", NO_COLOR: "1" };
     const sh = shellOf(command, env);
     const child = spawn(sh.cmd, sh.args, { cwd, env, detached: true, windowsVerbatimArguments: sh.verbatim, stdio: ["ignore", "pipe", "pipe"] });
+    // The suite has ended when its script exits: something it left in the background (a server, a watcher) may hold the pipes for
+    // good, and the card would wait on them until the 10 minutes ran out, then say it failed.
+    closesOnExit(child);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const take = (d: Buffer) => {
       out += d.toString("utf8");
@@ -1554,6 +1584,11 @@ export class Runtime {
       // A turn the tool began by itself runs on the session that began it, as it is.
       const { session, fresh, switched } = o.wake ? { session: o.wake.session, fresh: false, switched: false } : await opening!;
       live.session = session;
+      // Begun as the turn's marker went out, so mostly done by now; a Stop meanwhile ends the wait, and the turn just below.
+      if (this.beforeTurn && !o.wake && !abort.signal.aborted) {
+        const stopped = new Promise<void>((r) => abort.signal.addEventListener("abort", () => r(), { once: true }));
+        await Promise.race([this.beforeTurn(threadId, turn).catch((e) => console.error("[runtime] before the turn:", e)), stopped]);
+      }
       // The level the tool really thinks at is its to say again (TurnSink.effortNow): a session just opened hasn't yet.
       if (fresh && agentId === t.agent && store.thread(threadId).effortNow !== undefined) store.patchThread(threadId, { effortNow: undefined });
       const fit = this.effortNote(t, agentId);
@@ -1602,7 +1637,8 @@ export class Runtime {
           for (const it of word.reviews) store.putItem(threadId, { ...it, heard: true });
         }
       }
-      const go = (p: string) => (o.wake ? o.wake.w.run(sink.api, abort.signal) : session.turn(p, sink.api, abort.signal, o.files));
+      // A tool that hasn't ended its turn stopGraceMs after Stop is given up (untilStopped): its live session closes, and the turn ends as stopped.
+      const go = (p: string) => this.untilStopped(threadId, turn, session, o.wake ? o.wake.w.run(sink.api, abort.signal) : session.turn(p, sink.api, abort.signal, o.files), abort.signal);
       ran = !blank;
       try {
         if (ran) await go(prompt);
@@ -1680,15 +1716,15 @@ export class Runtime {
     const waited = (m.waited ?? 0) + (m.waitingSince ? Math.max(0, Date.now() - m.waitingSince) : 0);
     const { waitingSince: _open, ...settled } = m;
     // Its cost on its mark is its usage record's own number (logUsage below): none when the tool reported none.
-    const spent = sink.spent();
+    const spent = sink.account();
     store.putItem(threadId, { ...settled, status: stopped ? "stopped" : errored ? "error" : "done", seconds: Math.max(0, seconds - waited / 1000), ...(waited ? { waited } : {}), ...(spent.costUsd > 0 ? { costUsd: spent.costUsd } : {}) });
 
     t = store.thread(threadId);
     // A finished turn of your own counts toward later ETAs (expectedMs): not a side chat's, a routine's or a fix round's.
     const own = !stopped && !errored && !sink.limited() && agentId === t.agent && !o.part && !t.sideOf && !t.routine;
-    this.logUsage(t, agentId, spent, seconds, own ? Math.max(0, seconds - waited / 1000) : undefined);
+    this.logUsage(t, agentId, spent, seconds, own ? Math.max(0, seconds - waited / 1000) : undefined, { turn });
     // A side chat starts with a copy of its session's timeline; only its own turns can wait on you.
-    const asking = store.timeline(threadId).some((x) => x.turn > (t.sideFrom ?? 0) && (x.kind === "proposal" || x.kind === "question" || x.kind === "approval") && x.state === "asking");
+    const asking = this.asking(threadId, { side: true });
     const limited = sink.limited();
     t = store.patchThread(threadId, { status: limited ? "limited" : errored ? "error" : asking ? "waiting" : "done", limit: limited ?? undefined, forkSession: undefined, toReview: this.toReview(threadId), unread: true, eta: undefined });
     this.countAgents(threadId);
@@ -1817,6 +1853,8 @@ export class Runtime {
     store.patchThread(threadId, { status: "running", verdict: { state: "checking", round: o.round } });
     const abort = new AbortController();
     this.turns.set(threadId, { abort, started, turn: store.thread(threadId).turns });
+    // What it is doing meanwhile, in the words the session's bar has for it (Session.tsx), rather than a bare "Working".
+    store.setDoing(threadId, { text: REVIEWING });
     let found: ReturnType<typeof parseFindings> = null;
     let failed = "";
     let late = false;
@@ -1828,6 +1866,8 @@ export class Runtime {
       failed = late ? `The Reviewer didn't answer in ${spanOf(this.reviewMs)}, so this change wasn't read.` : e instanceof Error ? e.message : String(e);
     } finally {
       this.turns.delete(threadId);
+      // The read is over, whatever comes next (a fix round says its own).
+      this.doneDoing(threadId);
     }
     const seconds = (Date.now() - started) / 1000;
     // Stopped, even with a verdict in hand: no fix round follows it, so nothing may be left at "running".
@@ -1895,7 +1935,7 @@ export class Runtime {
   */
   private factsOf(t: Thread, text: string): DraftFacts | null {
     if (t.sideOf || t.routine || t.mode === "creator" || t.design || this.store.projects.find((p) => p.id === t.projectId)?.kind === "design") return null;
-    if (t.status === "waiting" || this.store.timeline(t.id).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) return null;
+    if (t.status === "waiting" || this.asking(t.id)) return null;
     const r = this.resolve(t);
     const ref = `${r.provider}:${r.model}`;
     const cast = castOf(this.providerInfo.filter((p) => p.id === r.provider), { picks: this.store.settings.picks, every: this.providerInfo });
@@ -1984,19 +2024,8 @@ export class Runtime {
       approve: async () => ({ allow: false, reason: "Reviewers only read." }),
       ask: async () => null,
       propose: async () => ({ approve: false }),
-      usage: (u, total) => {
-        const t = this.store.thread(threadId);
-        const cur = { ...emptyUsage(), ...t.usage };
-        for (const k of ["inputTokens", "outputTokens", "cacheReadTokens", "costUsd"] as const) {
-          if (u[k] === undefined) continue;
-          const add = total ? (u[k] as number) - own[k] : (u[k] as number);
-          own[k] += add;
-          cur[k] += add;
-        }
-        if (apart) return;
-        this.store.patchThread(threadId, { usage: cur });
-        this.holdToCap(threadId);
-      },
+      // Its own totals so far are what it has reported, so they are both what's seen and what's spent.
+      usage: (u, total) => this.addUsage(threadId, u, total, own, own, { apart }),
       session: () => {},
       notice: () => {},
       error: (m) => void (text += `\n${m}`),
@@ -2095,9 +2124,9 @@ export class Runtime {
     A turn's own use, as its sink added it up. Not the thread's totals before and after: a Reviewer
     deciding a step mid-turn adds to those too, and is logged on its own already (quiet).
   */
-  private logUsage(t: Thread, agentId: string, spent: Usage, seconds: number, worked?: number) {
+  private logUsage(t: Thread, agentId: string, spent: Usage, seconds: number, worked?: number, of?: { turn: number; late?: boolean }) {
     const r = this.resolve(t, agentId);
-    this.store.logUsage({ at: Date.now(), threadId: t.id, projectId: t.projectId, agent: agentId, provider: r.provider, model: r.model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, cacheReadTokens: spent.cacheReadTokens, costUsd: spent.costUsd, seconds, ...(worked !== undefined ? { worked } : {}) });
+    this.store.logUsage({ at: Date.now(), threadId: t.id, projectId: t.projectId, agent: agentId, provider: r.provider, model: r.model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, cacheReadTokens: spent.cacheReadTokens, costUsd: spent.costUsd, seconds, ...(worked !== undefined ? { worked } : {}), ...(of ? { turn: of.turn } : {}), ...(of?.late ? { late: true as const } : {}) });
     if (worked !== undefined) this.etaCache.delete(`${r.provider}:${r.model}`);
   }
 
@@ -2203,7 +2232,7 @@ export class Runtime {
   private sayDoing(threadId: string, text: string) {
     if (!this.store.threads.some((x) => x.id === threadId) || this.store.thread(threadId).doing?.text === text) return;
     this.doingSent.get(threadId)!.at = Date.now();
-    this.store.setDoing(threadId, { text, at: Date.now() });
+    this.store.setDoing(threadId, { text });
   }
   /**
     It isn't doing anything any more (its turn ended, stopped, failed or waits on you): said at once, and nothing waiting
@@ -2461,7 +2490,7 @@ export class Runtime {
     /** The agent it tried to send of its own, by its task, which stopped the brief. */
     let sentAgent: string | undefined;
     // Its approvals go through the lead's rules and cards (the same access, the same "don't ask again").
-    const cards = this.sink(threadId, turn, abort.signal, agentId);
+    const cards = this.sink(threadId, turn, abort.signal, agentId, true);
     let session: ProviderSession | undefined;
     const heard = () => {
       const live = this.turns.get(threadId);
@@ -2517,22 +2546,13 @@ export class Runtime {
       propose: async () => ({ approve: false, note: "Nobody approves plans in a brief: carry the brief out as it was written." }),
       usage: (u, total) => {
         heard();
-        const now = store.thread(threadId);
-        const cur = { ...emptyUsage(), ...now.usage };
-        // Running totals add what's new since its last report, as the lead's sink does.
+        // Running totals add what's new since its last report, as the lead's sink does. Its context is its own, not the lead's:
+        // the session's context stays the lead's.
         const seen = (total && session && this.totals.get(session)) || {};
-        for (const k of ["inputTokens", "outputTokens", "cacheReadTokens", "costUsd"] as const) {
-          if (u[k] === undefined) continue;
-          const add = total ? Math.max(0, (u[k] as number) - (seen[k] ?? 0)) : (u[k] as number);
-          cur[k] += add;
-          spent[k] += add;
-        }
         if (total && session) this.totals.set(session, { ...seen, ...u });
-        // Its context is its own, not the lead's: the session's context stays the lead's.
-        store.patchThread(threadId, { usage: cur });
+        this.addUsage(threadId, u, total, seen, spent);
         run.tokens = spent.inputTokens + spent.outputTokens;
         show();
-        this.holdToCap(threadId);
       },
       session: (id) => {
         const now = store.thread(threadId);
@@ -2628,6 +2648,27 @@ export class Runtime {
   }
 
   /**
+    What a tool reported added to the thread's usage and to `spent`, then the spending cap checked. `total`: the report is the
+    session's running totals (Codex), so only what's new since `seen` counts, and never less than nothing (a total that went
+    down, a reset, takes nothing off). `context`: the lead's own report, whose context is the session's. `apart`: counted in
+    `spent` only (the prompt check's question is none of the session's).
+  */
+  private addUsage(threadId: string, u: Partial<Usage>, total: boolean | undefined, seen: Partial<Usage>, spent: Usage, o: { context?: boolean; apart?: boolean } = {}) {
+    const cur = { ...emptyUsage(), ...this.store.thread(threadId).usage };
+    for (const k of ["inputTokens", "outputTokens", "cacheReadTokens", "costUsd"] as const) {
+      if (u[k] === undefined) continue;
+      const add = total ? Math.max(0, (u[k] as number) - (seen[k] ?? 0)) : (u[k] as number);
+      cur[k] += add;
+      spent[k] += add;
+    }
+    if (o.apart) return;
+    if (o.context && u.contextTokens !== undefined) cur.contextTokens = u.contextTokens;
+    if (o.context && u.contextWindow !== undefined) cur.contextWindow = u.contextWindow;
+    this.store.patchThread(threadId, { usage: cur });
+    this.holdToCap(threadId);
+  }
+
+  /**
     The spending cap (Settings › General): a session, or a routine run's, that has spent its cap
     stops where it is and says so; your next message lets it go on for another cap's worth.
   */
@@ -2684,7 +2725,7 @@ export class Runtime {
     // Asked after its turn ended (an agent that can't wait): the answer goes as your next message.
     else if (answers) void this.send(threadId, Object.entries(answers).map(([q, a]) => `${q}\n${a}`).join("\n\n"));
     // Skipped: nothing waits on you any more, so the session isn't left in Needs you.
-    else if (!this.isRunning(threadId) && !this.store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking")) {
+    else if (!this.isRunning(threadId) && !this.asking(threadId)) {
       if (this.store.thread(threadId).status === "waiting") this.store.patchThread(threadId, { status: "done" });
       // What you queued waited on this question.
       if (!this.kept.has(threadId)) this.drain(threadId);
@@ -2838,7 +2879,7 @@ export class Runtime {
   */
   private settleWaiting(threadId: string, goesOn = false) {
     this.clock(threadId);
-    const still = this.store.timeline(threadId).some((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
+    const still = this.asking(threadId);
     if (!still && this.turns.has(threadId)) {
       this.store.patchThread(threadId, { status: "running" });
       const was = this.doingSent.get(threadId);
@@ -2861,9 +2902,8 @@ export class Runtime {
     const timeline = this.store.timeline(threadId);
     const m = timeline.find((x) => x.id === live.marker);
     if (m?.kind !== "turn" || m.status !== "running") return;
-    const from = this.store.thread(threadId).sideFrom ?? 0;
     // What this turn itself waits on: an ask left open from an earlier one (the PR card's test run) doesn't stop its clock.
-    const open = timeline.some((x) => x.turn === live.turn && x.turn > from && (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
+    const open = this.asking(threadId, { side: true, turn: live.turn });
     if (open && !m.waitingSince) this.store.putItem(threadId, { ...m, waitingSince: Date.now() }, false);
     else if (!open && m.waitingSince) {
       const { waitingSince, ...rest } = m;
@@ -2872,6 +2912,15 @@ export class Runtime {
       const eta = this.store.thread(threadId).eta;
       if (eta) this.store.patchThread(threadId, { eta: { ...eta, from: eta.from + Math.max(0, Date.now() - waitingSince) } });
     }
+  }
+
+  /**
+    Whether anything in a thread still waits on you: a card, a question or a plan asking. `side`: only what's past a side chat's
+    copy of its session's timeline (Thread.sideFrom), its own turns. `turn`: only that turn's. Each caller keeps the bound it had.
+  */
+  private asking(threadId: string, o: { side?: boolean; turn?: number } = {}) {
+    const from = o.side ? (this.store.threads.find((x) => x.id === threadId)?.sideFrom ?? 0) : -Infinity;
+    return this.store.timeline(threadId).some((x) => (o.turn === undefined || x.turn === o.turn) && x.turn > from && (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
   }
 
   /** You moved on with a new message: a question or a plan left open from an earlier turn is settled, so it doesn't hold this turn in Needs you. */
@@ -2885,6 +2934,37 @@ export class Runtime {
   async idle(threadId: string, ms = 10_000, own = 0) {
     const working = () => this.turns.has(threadId) || (this.busy.get(threadId) ?? 0) > own;
     for (const end = Date.now() + ms; working() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
+  }
+
+  /**
+    A turn's run, given up once stopGraceMs have passed after Stop with the tool's turn still going (it didn't hear the abort, or hangs
+    winding down): its live session is closed (drop), which ends its process and everything it marked, and this resolves, so the
+    turn ends as stopped. The session keeps its saved id, so your next message resumes it. One that ends in time is left as it ends.
+  */
+  private untilStopped(threadId: string, turn: number, session: ProviderSession, run: Promise<void>, signal: AbortSignal): Promise<void> {
+    run.catch(() => {});
+    let timer: NodeJS.Timeout | undefined;
+    let onAbort = () => {};
+    const given = new Promise<void>((resolve) => {
+      onAbort = () => {
+        timer = setTimeout(() => {
+          const key = [...this.live].find(([, l]) => l.session === session)?.[0];
+          if (key) this.drop(key);
+          if (this.store.threads.some((x) => x.id === threadId)) {
+            const t = this.store.thread(threadId);
+            const tool = this.providerInfo.find((p) => p.id === this.resolve(t, this.turns.get(threadId)?.agentId ?? t.agent).provider)?.label ?? "Its tool";
+            this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${tool} hadn't stopped ${spanOf(this.stopGraceMs)} after Stop, so Liner Code ended it. It picks up again on your next message.` });
+          }
+          resolve();
+        }, this.stopGraceMs);
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    });
+    return Promise.race([run, given]).finally(() => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+    });
   }
 
   /** Closes a live session and forgets it, so its next turn opens it again (once this one has ended: ending). */
@@ -2917,6 +2997,22 @@ export class Runtime {
     this.turnGrants.delete(threadId);
     this.toldOnce.delete(threadId);
     return this.ending(threadId, sessions);
+  }
+
+  /**
+    What's kept here of a session once it's deleted (thread.removed): not on archive, which closeThread also does, since an
+    archived session may come back. Its surface key goes too, so a late call from its tool reaches nothing.
+  */
+  private forgetThread(threadId: string) {
+    this.linerWrites.delete(threadId);
+    this.leftQueue.delete(threadId);
+    this.dropWake(threadId);
+    this.finished.delete(threadId);
+    for (const s of [this.kept, this.released, this.levelStops]) s.delete(threadId);
+    // A design mark rides with a queued message; one whose message is in no queue (or kept for a put-back) any more has nothing to ride with.
+    const queued = new Set([...this.store.threads.flatMap((t) => (t.queue ?? []).map((q) => q.id)), ...[...this.leftQueue.values()].flatMap((m) => [...m.keys()])]);
+    for (const id of this.queuedDesign.keys()) if (!queued.has(id)) this.queuedDesign.delete(id);
+    this.tools?.forget(threadId);
   }
 
   /** The closes under way in each thread: none of its sessions opens until they're done (session). */
@@ -3092,6 +3188,8 @@ export class Runtime {
   */
   resumeLimited(now = Date.now()) {
     if (!this.store.settings.resumeAtReset) return;
+    // A limit past LIMIT_STALE_MS never carries on, so what's kept of it can go.
+    for (const key of this.reopened) if (now - Number(key.slice(key.lastIndexOf(":") + 1)) > LIMIT_STALE_MS) this.reopened.delete(key);
     for (const t of this.store.threads) {
       const until = t.limit?.until;
       if (t.status !== "limited" || !until || now < until + 60_000 || now - until > LIMIT_STALE_MS || t.archived || t.sideOf || (t.snoozedUntil ?? 0) > now || this.isRunning(t.id)) continue;
@@ -3205,8 +3303,11 @@ export class Runtime {
     return Promise.allSettled([...closing, ...this.closing.values()]).then(() => undefined);
   }
 
-  /** The sink a provider writes one turn into, and what it built. */
-  private sink(threadId: string, turn: number, signal: AbortSignal, agentId: string) {
+  /**
+    The sink a provider writes one turn into, and what it built. `cards`: only a brief's, to put its asks through the lead's cards
+    (runBrief): the lead's turn still runs when it ends, so what the lead is doing stays said.
+  */
+  private sink(threadId: string, turn: number, signal: AbortSignal, agentId: string, cards = false) {
     const store = this.store;
     const blocks = new Map<string, string>(); // provider block → item id
     const tools = new Map<string, { id: string; started: number }>();
@@ -3221,6 +3322,9 @@ export class Runtime {
     /** What this turn asked you that may still be waiting, and whether the turn has ended. */
     const pending = new Set<string>();
     let over = false;
+    /** The tool's session this turn ran on, kept as it ends, for a count that comes after (usage); and whether runTurn has taken the turn's totals (account). */
+    let endedSession: ProviderSession | undefined;
+    let accounted = false;
     /** Keyed notices (see TurnSink.notice) → their items. */
     const notices = new Map<string, string>();
     /** Read only's refusal has been said on the timeline this turn. */
@@ -3235,19 +3339,26 @@ export class Runtime {
     /** The call whose words were said last, and when (asked for: the throttle may send them a little later). */
     let saidKey: string | undefined;
     let stepSaid = 0;
-    /** A design file's frame by its name, for "Drawing Phone / Week": read only when a step writes a frame. */
+    /**
+      A design file's frame by its name, for "Drawing Phone / Week". Each design file is read once and kept until a step ends
+      (framesRead), not on every update of a running step: a step that ends may have drawn or renamed a frame, so the next reads afresh.
+    */
+    const framesRead = new Map<string, { id: string; name: string }[] | null>();
     const frameName = (frame: string, design: string) => {
-      try {
-        const t = store.thread(threadId);
-        return lookFile(t.worktree?.path ?? store.project(t.projectId).path, design).frames.find((f) => f.id === frame)?.name;
-      } catch {
-        return undefined;
+      if (!framesRead.has(design)) {
+        try {
+          const t = store.thread(threadId);
+          framesRead.set(design, lookFile(t.worktree?.path ?? store.project(t.projectId).path, design).frames);
+        } catch {
+          framesRead.set(design, null);
+        }
       }
+      return framesRead.get(design)?.find((f) => f.id === frame)?.name;
     };
 
     const settle = () => {
       for (const id of streaming) {
-        const it = store.timeline(threadId).find((x) => x.id === id);
+        const it = store.timeline(threadId).findLast((x) => x.id === id);
         if (it && (it.kind === "text" || it.kind === "reasoning")) {
           const seconds = it.kind === "reasoning" ? (Date.now() - (reasonStart.get(id) ?? Date.now())) / 1000 : undefined;
           store.putItem(threadId, { ...it, streaming: false, ...(seconds !== undefined ? { seconds } : {}) });
@@ -3275,7 +3386,7 @@ export class Runtime {
         streaming.push(id);
       } else if (!streaming.includes(id)) {
         // It goes on after being settled (a notice came between): it streams again, so what's added is saved too.
-        const it = store.timeline(threadId).find((x) => x.id === id);
+        const it = store.timeline(threadId).findLast((x) => x.id === id);
         if (it?.kind === "text" || it?.kind === "reasoning") store.putItem(threadId, { ...it, streaming: true }, false);
         streaming.push(id);
       }
@@ -3286,8 +3397,14 @@ export class Runtime {
     /** Holds the turn until you answer, or until it is stopped. */
     const wait = <T,>(map: Map<string, Waiter<T>>, id: string, sig: AbortSignal) =>
       new Promise<T>((resolve, reject) => {
-        map.set(id, { resolve, reject });
+        // However it settles, it stops listening: a turn with many cards would otherwise hold two listeners for each until it ends.
+        const off = () => {
+          sig.removeEventListener("abort", gone);
+          signal.removeEventListener("abort", gone);
+        };
+        map.set(id, { resolve: (v) => (off(), resolve(v)), reject: (e) => (off(), reject(e)) });
         const gone = () => {
+          off();
           if (!map.has(id)) return;
           map.delete(id);
           const it = store.timeline(threadId).find((x) => x.id === id);
@@ -3334,7 +3451,7 @@ export class Runtime {
           rec = { id: uid("it"), started: Date.now() };
           tools.set(u.key, rec);
         }
-        const prev = store.timeline(threadId).find((x) => x.id === rec!.id);
+        const prev = store.timeline(threadId).findLast((x) => x.id === rec!.id);
         const base = prev?.kind === "tool" ? prev : undefined;
         // Its row is gone (the turn was rewound): nothing to go on.
         if (over && !base) return;
@@ -3384,6 +3501,7 @@ export class Runtime {
             latest = u.key;
           } else if (stepAt.has(u.key)) steps[stepAt.get(u.key)!] = item;
           if (stepAt.has(u.key)) stepState.set(u.key, item.status);
+          if (item.status !== "running") framesRead.clear();
           if (latest === u.key && (first || item.status === "running")) {
             const words = doingOf(steps, frameName);
             if (words) [saidKey, stepSaid] = [u.key, Date.now()];
@@ -3396,7 +3514,7 @@ export class Runtime {
         // What's said after it is a new paragraph, with no block id to say so (T3 Code: AcpAdapterV2.test.ts, plan boundaries).
         lastKind = null;
         plan ??= uid("it");
-        const prev = store.timeline(threadId).find((x) => x.id === plan);
+        const prev = store.timeline(threadId).findLast((x) => x.id === plan);
         store.putItem(threadId, { kind: "plan", id: plan, turn, at: prev?.at ?? Date.now(), entries });
       },
       approve: (req, sig) => {
@@ -3546,28 +3664,27 @@ export class Runtime {
         return wait(this.proposals, id, sig);
       },
       usage: (u: Partial<Usage>, total) => {
-        heard();
-        const t = store.thread(threadId);
-        const cur = { ...emptyUsage(), ...t.usage };
+        // A count can come after the turn has ended (OpenCode's for a stopped turn, seconds later): it is still this turn's. It
+        // isn't word from a turn started since, so that one's watchdog doesn't hear it, and a session deleted meanwhile takes none.
+        if (!store.threads.some((x) => x.id === threadId)) return;
+        if (!over) heard();
         // A session's running totals add what's new since its last report, so what other models
         // used in the thread (the Reviewer, the sidekick, an earlier tool) stays counted.
-        const session = this.turns.get(threadId)?.session;
+        const session = over ? endedSession : this.turns.get(threadId)?.session;
         const seen = (total && session && this.totals.get(session)) || {};
-        const add = (k: "inputTokens" | "outputTokens" | "cacheReadTokens" | "costUsd") => {
-          if (u[k] === undefined) return;
-          const add = total ? Math.max(0, (u[k] as number) - (seen[k] ?? 0)) : (u[k] as number);
-          cur[k] += add;
-          spent[k] += add;
-        };
-        add("inputTokens");
-        add("outputTokens");
-        add("cacheReadTokens");
-        add("costUsd");
         if (total && session) this.totals.set(session, { ...seen, ...u });
-        if (u.contextTokens !== undefined) cur.contextTokens = u.contextTokens;
-        if (u.contextWindow !== undefined) cur.contextWindow = u.contextWindow;
-        store.patchThread(threadId, { usage: cur });
-        this.holdToCap(threadId);
+        const before = { ...spent };
+        // Its context is the session's unless a turn started since has its own to say.
+        this.addUsage(threadId, u, total, seen, spent, { context: !over || !this.turns.has(threadId) });
+        if (!accounted) return;
+        // The turn's own record and mark were already written (runTurn): what came late is logged as its own line, marked late
+        // with this turn's number, so what reads usage.jsonl adds it to the turn's record rather than count a turn more (api.ts
+        // summarize); and its cost is added to the turn's mark.
+        const late = { ...emptyUsage(), inputTokens: spent.inputTokens - before.inputTokens, outputTokens: spent.outputTokens - before.outputTokens, cacheReadTokens: spent.cacheReadTokens - before.cacheReadTokens, costUsd: spent.costUsd - before.costUsd };
+        if (!late.inputTokens && !late.outputTokens && !late.cacheReadTokens && !late.costUsd) return;
+        this.logUsage(store.thread(threadId), agentId, late, 0, undefined, { turn, late: true });
+        const m = store.timeline(threadId).findLast((x) => x.kind === "turn" && x.turn === turn);
+        if (m?.kind === "turn" && late.costUsd > 0) store.putItem(threadId, { ...m, costUsd: (m.costUsd ?? 0) + late.costUsd });
       },
       session: (id) => {
         const t = store.thread(threadId);
@@ -3591,7 +3708,7 @@ export class Runtime {
         // A keyed notice says the same thing again as it changes (a retry's count): one line, kept up to date.
         const id = (key && notices.get(key)) || uid("it");
         if (key) notices.set(key, id);
-        const prev = store.timeline(threadId).find((x) => x.id === id);
+        const prev = store.timeline(threadId).findLast((x) => x.id === id);
         store.putItem(threadId, { kind: "notice", id, turn, at: prev?.at ?? Date.now(), text, ...(o?.stop ? { stop: true } : {}) });
       },
       heard: () => void (!over && heard()),
@@ -3604,7 +3721,7 @@ export class Runtime {
         settle();
         errored = true;
         // A problem isn't a step at work: what it was doing goes now, not when the turn has wound down.
-        this.doneDoing(threadId);
+        if (!cards) this.doneDoing(threadId);
         const why = o?.why;
         if (!why) return void store.putItem(threadId, { kind: "error", id: uid("it"), turn, at: Date.now(), message });
         // A refusal or an overload: neither marks the tool as out of usage. Only an overload offers another tool to
@@ -3618,7 +3735,7 @@ export class Runtime {
       window: (w) => store.onWindow?.(this.resolve(store.thread(threadId), agentId).provider, w),
       limited: (message, until) => {
         settle();
-        this.doneDoing(threadId);
+        if (!cards) this.doneDoing(threadId);
         const r = this.resolve(store.thread(threadId), agentId);
         // A limit first said with no reset time takes one a later report gives: without it, it could never carry on at reset.
         if (limit) {
@@ -3637,13 +3754,17 @@ export class Runtime {
     return {
       api,
       errored: () => errored,
-      spent: () => spent,
+      /** What the turn used, taken once for its record and mark: what comes after is logged on its own (usage). */
+      account: () => ((accounted = true), spent),
       limited: () => limit,
       end: () => {
         settle();
         over = true;
-        // The turn has ended: it does nothing more, though its wind-down (snapshots, the Reviewer) takes a while yet.
-        this.doneDoing(threadId);
+        const now = this.turns.get(threadId);
+        endedSession = now?.turn === turn ? now.session : undefined;
+        // The turn has ended: it does nothing more, though its wind-down (snapshots, the Reviewer) takes a while yet. A brief's
+        // cards end with the brief, while the lead's turn, and its line, go on.
+        if (!cards) this.doneDoing(threadId);
         // A call with no result at the end didn't finish: stopped, or the tool broke off.
         for (const [, rec] of tools) {
           const it = store.timeline(threadId).find((x) => x.id === rec.id);

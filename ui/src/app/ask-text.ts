@@ -116,7 +116,7 @@ export function rowsOf(command: string): string[] {
 }
 
 /** A piece of a row: plain, a program (`p`, in full ink), or a site (`u`, in the accent). */
-export type Bit = { t: string; k?: "p" | "u" };
+type Bit = { t: string; k?: "p" | "u" };
 
 const KEYWORDS = new Set(["for", "in", "case", "esac", "select", "function", "done", "fi", "do", "then", "else", "if", "while", "until"]);
 
@@ -157,11 +157,11 @@ export function bitsOf(row: string): Bit[] {
 }
 
 /** How long after the last change to the box Enter is still the box's (T3 Code: composerTypingGuard.ts). */
-export const TYPING_GUARD = 1500;
+const TYPING_GUARD = 1500;
 /** How long an ask must have been in view before a key can answer it: a key pressed as it came was meant for what was there before. */
-export const SHOWN_GUARD = 600;
+const SHOWN_GUARD = 600;
 
-export type AskKeyIn = {
+type AskKeyIn = {
   key: string;
   mod: boolean;
   shift: boolean;

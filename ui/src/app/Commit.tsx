@@ -6,7 +6,7 @@
   push, or to the PR card in the chat.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Thread } from "@contracts";
+import { WRITER_CANCELLED, type Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
 import { checkpointsOf, modelLabel, plural } from "./model";
@@ -69,11 +69,18 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
   const [left, setLeft] = useState<Set<string>>(new Set());
   const chosen = open.filter((f) => !left.has(f.path));
   const count = open.length ? chosen.length : files;
+  // The message being written, by number: only the newest is heard, and the session it's for is told to stop it if the card closes first.
+  const asking = useRef(0);
+  const out = useRef<string | null>(null);
   const write = () => {
     if (!key) return;
+    const n = ++asking.current;
+    out.current = thread.id;
     setWriting(true);
     void rpc("git.message", { threadId: thread.id })
       .then((r) => {
+        if (n !== asking.current) return;
+        out.current = null;
         const label = modelLabel(r.by, providers);
         setMessage(r.message);
         setBy(label);
@@ -82,10 +89,21 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
         requestAnimationFrame(() => field.current?.focus());
       })
       .catch((e) => {
+        if (n !== asking.current) return;
+        out.current = null;
         setWriting(false);
+        // Stopped (the card closed, or a newer ask took its place): nothing went wrong.
+        if (e instanceof Error && e.message === WRITER_CANCELLED) return;
         toast.error(e instanceof Error ? e.message : String(e));
       });
   };
+  // Closed while it's still writing: the quick model stops, rather than spending for a card no one sees.
+  useEffect(
+    () => () => {
+      if (out.current) void rpc("writer.cancel", { threadId: out.current, kind: "message" }).catch(() => {});
+    },
+    [],
+  );
   // Written once the changes are known, and again only when they've moved on since.
   const asked = useRef<string | null>(null);
   useEffect(() => {

@@ -13,7 +13,7 @@
 
   The RPC and the events are in index.ts, beside the others; the engine's halves are engine/src/security*.ts.
 */
-import type { Access, Effort, ProviderId } from "./index.ts";
+import type { Effort, ProviderId } from "./index.ts";
 import { familyOf } from "./index.ts";
 
 /** How bad a finding is, worst first. */
@@ -320,5 +320,3 @@ export type SecurityTag = { kind: "scan" | "fix" | "ask"; scan?: string; finding
 /** What changed, for security.changed. */
 export type SecurityChange = "findings" | "scans" | "checks" | "model" | "projects";
 
-/** A scan session may never leave Read only. */
-export const SCAN_ACCESS: Access = "read";

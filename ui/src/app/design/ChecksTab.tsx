@@ -102,7 +102,7 @@ export function ChecksTab() {
   const checked = (file?.frames ?? []).filter((f) => byFrame[f.id] && !byFrame[f.id].skipped && !byFrame[f.id].failed).length;
   const failed = (file?.frames ?? []).filter((f) => byFrame[f.id]?.failed);
   const busy = useState(false);
-  if (!file) return <div className="ld-empty">Open a design file to check its screens.</div>;
+  if (!file) return <div className="ld-insp-empty">Open a design file to check its screens.</div>;
   const frames = new Set(all.map((f) => f.frame)).size;
   return (
     <div className="ld-body ld-ck">

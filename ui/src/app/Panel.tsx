@@ -14,7 +14,7 @@
   with Undo for the turn and Commit for everything that's left.
   Agents says who worked in this session, on what, and how much of the budget they used.
 */
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { ROUTINES_ON, type FileDiff, type Item, type Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { prefersReducedMotion } from "@liner/lib/spring";
@@ -23,9 +23,9 @@ import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { Boundary } from "./Boundary";
 import { CommitButton } from "./Commit";
 import { closeOthers, closeTab, GUIDE, hideDock, moveTab, openTab, paneOf, pickTab, type DockState } from "./dock";
-import { rpc, useEngine } from "./engine";
+import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
 import { I } from "./icons";
-import { checkpointsOf, plural } from "./model";
+import { plural } from "./model";
 import { ContextMenu, PanelHead, Pop, Row, Sep } from "./ui";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { AgentsSurface } from "./Crew";
@@ -34,21 +34,73 @@ import { shortcutOf } from "./keymap";
 import * as os from "./os";
 import { BrowserSurface } from "./Browser";
 import { DesignSurface } from "./Design";
-import { DeviceSurface } from "./Device";
-import { FilesSurface } from "./Files";
 import { toComposer } from "./Find";
 import { LinkedSurface, PrSurface } from "./Pr";
-import { MoreFiles, Review, TurnPicker, Viewed } from "./Review";
-import { RoutinesList, RunDetail } from "./Routines";
 import { ship } from "./Ship";
 import { SideChat } from "./SideChat";
-import { Guide, SURFACES, surfaceOf, type SurfaceId, type Tab } from "./Surfaces";
+import { Guide, MoreFiles, SURFACES, surfaceOf, TurnPicker, Viewed, type SurfaceId, type Tab } from "./Surfaces";
 import { undoTurn } from "./undo";
 import { entering } from "./look";
+import { early } from "./early";
 import "./dock.css";
 // The terminal brings xterm.js; it loads the first time you open one.
 const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
 const SessionSurface = lazy(() => import("./SessionInfo").then((m) => ({ default: m.SessionSurface })));
+/*
+  Surfaces opened now and then, kept out of the start: they load once the dock is up and the app is
+  idle, so the first open has nothing to wait for (early.ts, as App's screens do). The full-width
+  Review, the Device (it needs Xcode) and Files (a link hands its file over through reveal.ts) are
+  the ones only this panel reads; the others (Browser, the PR, add-on views) are read by the
+  timeline or App too, so they're in the start anyway. Routines are switched off (contracts, ROUTINES_ON): a run's tab kept from before still opens.
+*/
+const ReviewView = early(() => import("./Review").then((m) => m.Review));
+const DeviceView = early(() => import("./Device").then((m) => m.DeviceSurface));
+const FilesView = early(() => import("./Files").then((m) => m.FilesSurface));
+const Review = ReviewView.View;
+const DeviceSurface = DeviceView.View;
+const FilesSurface = FilesView.View;
+const RoutinesList = lazy(() => import("./Routines").then((m) => ({ default: m.RoutinesList })));
+const RunDetail = lazy(() => import("./Routines").then((m) => ({ default: m.RunDetail })));
+let preloaded = false;
+/** The rarer surfaces, fetched once the first dock is up and the app has a moment. */
+function preload() {
+  if (preloaded) return;
+  preloaded = true;
+  const go = () => void Promise.all([ReviewView.fetch(), DeviceView.fetch(), FilesView.fetch()]).catch(() => (preloaded = false));
+  window.setTimeout(() => (typeof requestIdleCallback === "function" ? requestIdleCallback(go, { timeout: 4000 }) : go()), 1500);
+}
+/** A surface's wait while its code arrives: the panel's own quiet line. */
+const waitFor = (what: string) => (
+  <div className="lc-diff-wait">
+    <span className="l-shimmer">{what}</span>
+  </div>
+);
+
+/*
+  The two surfaces that read the whole timeline, a reply's words too (the session's context, a
+  design's live frames), each subscribe on their own, so the dock itself doesn't redraw with every
+  frame of a reply. Out of sight, one keeps the timeline as it was when it went: a hidden tab costs
+  nothing while a reply streams, and catches up as it comes back.
+*/
+function useItemsShown(threadId: string, visible: boolean) {
+  const kept = useRef<Item[] | null>(null);
+  const items = useEngine((s) => (visible || !kept.current ? (s.items[threadId] ?? NO_ITEMS) : kept.current));
+  kept.current = items;
+  return items;
+}
+const NO_ITEMS: Item[] = [];
+const SessionTab = memo(function SessionTab({ thread, visible, onShowChange }: { thread: Thread; visible: boolean; onShowChange: (path: string) => void }) {
+  const items = useItemsShown(thread.id, visible);
+  return (
+    <Suspense fallback={null}>
+      <SessionSurface thread={thread} items={items} visible={visible} onShowChange={onShowChange} />
+    </Suspense>
+  );
+});
+const DesignTab = memo(function DesignTab({ thread, agentName, visible }: { thread: Thread; agentName: string; visible: boolean }) {
+  const items = useItemsShown(thread.id, visible);
+  return <DesignSurface thread={thread} items={items} agentName={agentName} visible={visible} />;
+});
 
 /** A chip on its way between panes. */
 const DRAG = "application/x-liner-tab";
@@ -56,7 +108,6 @@ const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String
 
 export function Panel({
   thread,
-  items,
   dock,
   onDock,
   focus,
@@ -69,7 +120,6 @@ export function Panel({
   lead,
 }: {
   thread: Thread;
-  items: Item[];
   dock: DockState;
   onDock: (d: DockState) => void;
   focus: { id: string; path?: string } | null;
@@ -86,7 +136,9 @@ export function Panel({
 }) {
   const runs = useEngine((s) => s.runs);
   const addons = useEngine((s) => s.addons);
-  const asks = useMemo(() => items.filter(isPanelAsk) as Extract<Item, { kind: "approval" }>[], [items]);
+  // Panel reads no timeline of its own but the add-on asks a preview tab names: a reply's words don't redraw the dock.
+  const asks = useItemsWhere(thread.id, isPanelAsk) as Extract<Item, { kind: "approval" }>[];
+  useEffect(preload, []);
   /** A tab's name and icon: a surface's, a run's, an add-on's, or a preview's. */
   const meta = (t: Tab) => {
     if (t === GUIDE) return { label: "New tab", icon: I.guide };
@@ -133,16 +185,22 @@ export function Panel({
   const open = (t: Tab, pane?: number) => onDock(openTab(dock, t, pane));
   const wideReview = dock.full && dock.panes.length === 1 && dock.panes[0].tab === "changes";
   const make = () => toComposer(thread.id, "Make me a panel that ");
+  // The same function each render, so the memoised Session tab doesn't redraw for a new one.
+  const showChangeNow = useRef((_path: string) => {});
+  showChangeNow.current = (path) => (onFocus({ id: "all", path }), open("changes"));
+  const [showChange] = useState(() => (path: string) => showChangeNow.current(path));
 
   const body = (t: Tab, visible: boolean) => {
-    if (t === "changes") return wideReview ? <Review thread={thread} items={items} focus={focus} onFocus={onFocus} /> : <Changes thread={thread} items={items} focus={focus} onFocus={onFocus} />;
-    if (t === "agents") return <AgentsSurface thread={thread} items={items} />;
-    if (t === "session")
-      return (
-        <Suspense fallback={null}>
-          <SessionSurface thread={thread} items={items} visible={visible} onShowChange={(path) => (onFocus({ id: "all", path }), open("changes"))} />
+    if (t === "changes")
+      return wideReview ? (
+        <Suspense fallback={waitFor("Reading the changes")}>
+          <Review thread={thread} focus={focus} onFocus={onFocus} />
         </Suspense>
+      ) : (
+        <Changes thread={thread} focus={focus} onFocus={onFocus} />
       );
+    if (t === "agents") return <AgentsSurface thread={thread} />;
+    if (t === "session") return <SessionTab thread={thread} visible={visible} onShowChange={showChange} />;
     if (t === "terminal")
       return (
         <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening a terminal</span></div>}>
@@ -151,13 +209,33 @@ export function Panel({
       );
     if (t === "side") return <SideChat thread={thread} visible={visible} />;
     if (t === "browser") return <BrowserSurface thread={thread} agentName={agentName} hidden={!visible} />;
-    if (t === "design") return <DesignSurface thread={thread} items={items} agentName={agentName} visible={visible} />;
-    if (t === "files") return <FilesSurface thread={thread} items={items} onShowChanges={(id, path) => (onFocus({ id, path }), open("changes"))} />;
+    if (t === "design") return <DesignTab thread={thread} agentName={agentName} visible={visible} />;
+    if (t === "files")
+      return (
+        <Suspense fallback={waitFor("Reading the folder")}>
+          <FilesSurface thread={thread} onShowChanges={(id, path) => (onFocus({ id, path }), open("changes"))} />
+        </Suspense>
+      );
     if (t === "pr") return <PrSurface thread={thread} agentName={agentName} visible={visible} />;
     if (t === "linked") return <LinkedSurface thread={thread} agentName={agentName} onOpenSession={(id) => onOpenSession(id)} />;
-    if (t === "device") return <DeviceSurface thread={thread} agentName={agentName} visible={visible} />;
-    if (t === "routines") return <RoutinesList projectId={thread.projectId} compact onNew={() => onRoutine()} onEdit={(id) => onRoutine(id)} onRun={(r) => open(`run:${r.id}`)} />;
-    if (t.startsWith("run:")) return <RunDetail runId={t.slice(4)} onOpenSession={(id) => (id === thread.id ? undefined : onOpenSession(id, t))} />;
+    if (t === "device")
+      return (
+        <Suspense fallback={waitFor("Looking for simulators")}>
+          <DeviceSurface thread={thread} agentName={agentName} visible={visible} />
+        </Suspense>
+      );
+    if (t === "routines")
+      return (
+        <Suspense fallback={null}>
+          <RoutinesList projectId={thread.projectId} compact onNew={() => onRoutine()} onEdit={(id) => onRoutine(id)} onRun={(r) => open(`run:${r.id}`)} />
+        </Suspense>
+      );
+    if (t.startsWith("run:"))
+      return (
+        <Suspense fallback={null}>
+          <RunDetail runId={t.slice(4)} onOpenSession={(id) => (id === thread.id ? undefined : onOpenSession(id, t))} />
+        </Suspense>
+      );
     if (t.startsWith("app:")) return <AddonView addon={t.slice(4)} thread={thread} agentName={agentName} visible={visible} />;
     if (t.startsWith("preview:")) {
       const a = asks.find((x) => x.id === t.slice(8))?.addon;
@@ -218,7 +296,7 @@ export function Panel({
       {dock.panes.map((p, i) =>
         p.tab === GUIDE ? (
           <div key={`guide:${i}`} className="lc-surface" role="tabpanel" aria-label="New tab" data-pane={i} style={{ gridColumn: i + 1, gridRow: 2 }}>
-            <Guide thread={thread} items={items} agentName={agentName} panes={dock.panes.length} onOpen={(t) => open(t, i)} onMake={make} />
+            <Guide thread={thread} agentName={agentName} panes={dock.panes.length} onOpen={(t) => open(t, i)} onMake={make} />
           </div>
         ) : null,
       )}
@@ -562,9 +640,10 @@ function PushButton({ thread, branch }: { thread: Thread; branch?: string }) {
     </Pop>
   );
 }
-function Changes({ thread, items, focus, onFocus }: { thread: Thread; items: Item[]; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void }) {
+function Changes({ thread, focus, onFocus }: { thread: Thread; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void }) {
   const branch = useEngine((s) => thread.worktree?.branch ?? s.projects.find((p) => p.id === thread.projectId)?.branch);
-  const cps = useMemo(() => checkpointsOf(items), [items]);
+  // The checkpoints alone: a reply's words don't redraw the diff.
+  const cps = useItemsWhere(thread.id, isCheckpoint) as Extract<Item, { kind: "checkpoint" }>[];
   const pick = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : (cps[cps.length - 1]?.id ?? null);
   const cp = cps.find((c) => c.id === pick);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);

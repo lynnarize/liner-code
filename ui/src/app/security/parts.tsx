@@ -151,39 +151,6 @@ export function FilterChip<T extends string>({ label, value, options, onChange }
   );
 }
 
-/**
-  A choice drawn as a box beside its siblings (Start a scan's How far and Who reads it): a radio, its name and tags, a line
-  under, anything else inside, and a foot (its cost). `off`: shown but can't be picked (board C2).
-*/
-export function ChoiceBox({ on, onPick, title, tags, note, foot, off, wide, children }: { on: boolean; onPick: () => void; title: ReactNode; tags?: ReactNode; note?: ReactNode; foot?: ReactNode; off?: boolean; wide?: boolean; children?: ReactNode }) {
-  return (
-    <div
-      role="radio"
-      aria-checked={on}
-      aria-disabled={off || undefined}
-      tabIndex={off ? -1 : 0}
-      className="ls-bx l-focus"
-      data-off={off || undefined}
-      data-wide={wide || undefined}
-      onClick={() => !off && onPick()}
-      onKeyDown={(e) => {
-        if (off || (e.key !== "Enter" && e.key !== " ")) return;
-        e.preventDefault();
-        onPick();
-      }}
-    >
-      <span className="ls-bxh">
-        <span className="ls-rad" aria-hidden />
-        {title}
-        {tags}
-      </span>
-      {note && <small>{note}</small>}
-      {children}
-      {foot && <span className="ls-bxf">{foot}</span>}
-    </div>
-  );
-}
-
 /** Inside a box: the tool or model it would use, as a quiet tile with its mark and its action at the end. `nil`: nothing found. */
 export function PickTile({ mark, title, note, action, nil }: { mark: ReactNode; title: ReactNode; note?: ReactNode; action?: ReactNode; nil?: boolean }) {
   return (
@@ -226,16 +193,5 @@ export function PageTop({ title, sidebar, onSidebar, children }: { title: ReactN
       <span className="lc-grow" />
       {children}
     </header>
-  );
-}
-
-/** What a page that isn't built yet shows under its top row. */
-export function NotBuilt({ what }: { what: string }) {
-  return (
-    <div className="ls-none">
-      <span className="ls-disc"><I.shield size={16} /></span>
-      <b>Not built yet</b>
-      <span>{what}</span>
-    </div>
   );
 }

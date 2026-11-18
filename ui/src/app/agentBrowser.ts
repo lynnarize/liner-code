@@ -83,6 +83,8 @@ function handlerFor(threadId: string, wait: number) {
     const set = arrived.get(threadId) ?? new Set();
     const done = () => {
       set.delete(done);
+      // The last one waiting for this session: its entry goes too, rather than stay as an empty set.
+      if (!set.size && arrived.get(threadId) === set) arrived.delete(threadId);
       clearTimeout(timer);
       resolve(top(threadId));
     };

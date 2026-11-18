@@ -215,6 +215,8 @@ test("canvas: the watcher tells an agent's edit from the engine's own", async ()
 
 test("canvas: a copy per turn that changed a design; restore puts one back as a change", async () => {
   const { root, home, store, api, changed, ctx } = setup();
+  // A session that draws (begun from the design) keeps copies; one that doesn't is polish-features.test.ts's.
+  store.patchThread("t", { design: { file: "turns" } });
   await api["canvas.create"]({ cwd: root, title: "Turns", size: "phone" });
   await wait(0);
   const turn = (n: number, status: "running" | "done"): Item => ({ kind: "turn", id: `turn${n}`, turn: n, at: Date.now(), agent: "forge", model: "demo:x", status });
@@ -247,6 +249,7 @@ test("canvas: a copy per turn that changed a design; restore puts one back as a 
 
 test("canvas: a kept turn reads back as it was, after the file moved on; nothing else is read", async () => {
   const { root, store, api, ctx } = setup();
+  store.patchThread("t", { design: { file: "turns" } });
   await api["canvas.create"]({ cwd: root, title: "Turns", size: "phone" });
   await wait(0);
   const turn = (n: number, status: "running" | "done"): Item => ({ kind: "turn", id: `turn${n}`, turn: n, at: Date.now(), agent: "forge", model: "demo:x", status });
@@ -366,7 +369,7 @@ test("canvas H1: nothing under .liner/designs is reached through a link, and res
   mkdirSync(join(outside, "sub"));
   writeFileSync(join(outside, "sub", "more.txt"), "keep me too");
   canvas.createFile(ctx, root, "Foo", "phone", "foo");
-  canvas.keepVersion(ctx, "t", root, "foo", 0);
+  await canvas.keepVersionAsync(ctx, "t", root, "foo", 0);
   // frames/ swapped for a link (an agent's shell, or a repository that carries .liner/).
   const dir = join(root, ".liner/designs/foo");
   rmSync(join(dir, "frames"), { recursive: true });
@@ -392,10 +395,10 @@ test("canvas H1: nothing under .liner/designs is reached through a link, and res
   assert.equal(canvas.linkFree(root, ".liner/designs/foo/assets/a.png"), join(root, ".liner/designs/foo/assets/a.png"), "a path with no link on the way is fine, made or not");
 });
 
-test("canvas H1: restore removes only regular files it listed inside the real frames/ and assets/", () => {
+test("canvas H1: restore removes only regular files it listed inside the real frames/ and assets/", async () => {
   const { root, ctx } = setup();
   canvas.createFile(ctx, root, "Foo", "phone", "foo");
-  canvas.keepVersion(ctx, "t", root, "foo", 1);
+  await canvas.keepVersionAsync(ctx, "t", root, "foo", 1);
   const dir = join(root, ".liner/designs/foo");
   writeFileSync(join(dir, "frames", "extra.html"), "<p>later</p>");
   writeFileSync(join(dir, "assets", "later.png"), "png");
@@ -412,16 +415,16 @@ test("canvas H1: restore removes only regular files it listed inside the real fr
   assert.ok(existsSync(join(dir, "assets", "linked.png")), "nor removed");
 });
 
-test("canvas H3: bringing a turn back always keeps what's there first, and never replaces a kept turn", () => {
+test("canvas H3: bringing a turn back always keeps what's there first, and never replaces a kept turn", async () => {
   const { root, ctx, store } = setup();
   store.patchThread("t", { turns: 5 });
   const html = (s: string) => `<html><body><p>${s}</p></body></html>`;
   const now = () => readFileSync(join(root, ".liner/designs/foo/frames/a.html"), "utf8");
   canvas.createFile(ctx, root, "Foo", undefined, "foo");
   canvas.addFrame(ctx, root, "foo", { name: "A", w: 400, h: 400 }, html("turn 3"));
-  canvas.keepVersion(ctx, "t", root, "foo", 3);
+  await canvas.keepVersionAsync(ctx, "t", root, "foo", 3);
   canvas.writeFrame(ctx, root, "foo", "a", html("agent turn 5"), { by: "agent" });
-  canvas.keepVersion(ctx, "t", root, "foo", 5);
+  await canvas.keepVersionAsync(ctx, "t", root, "foo", 5);
 
   // V1: a hand edit, then turn 5 (the current one) back.
   canvas.writeFrame(ctx, root, "foo", "a", html("my hand edit"), { by: "you" });
@@ -621,6 +624,7 @@ test("canvas: a removed frame waits in the trash under the app's home and comes 
 
 test("canvas M7: a turn in a folder without designs does nothing; a turn's copies wait off the loop", async () => {
   const { root, ctx, store } = setup();
+  store.patchThread("t", { design: { file: "foo" } });
   await canvas.turnStarted(ctx, "t", 1);
   await canvas.turnEnded(ctx, "t", 1);
   assert.ok(!existsSync(join(root, ".liner")));
@@ -862,7 +866,7 @@ test("canvas: unremove checks the trash entry; versions say backKind and count w
   canvas.addFrame(ctx, root, "foo", { name: "B", w: 400, h: 400 }, `<html><body><p>b</p></body></html>`);
   canvas.addFrame(ctx, root, "foo", { name: "Live", w: 400, h: 400, kind: "live", url: "localhost:5173/" });
   rmSync(join(root, ".liner/designs/foo/frames/b.html"));
-  canvas.keepVersion(ctx, "t", root, "foo", 1);
+  await canvas.keepVersionAsync(ctx, "t", root, "foo", 1);
   assert.equal(canvas.versions(ctx, "t", "foo")[0].frames, 1, "the live frame; not b, whose file the copy hasn't got");
   assert.equal(canvas.versionRead(ctx, "t", "foo", 1).file.frames.length, 1);
   canvas.restore(ctx, "t", "foo", 1);
@@ -1072,7 +1076,7 @@ test("canvas: a frame whose file goes away keeps its entry, and is itself again 
 test("canvas: a broken design.json is said to be unreadable, never absent, and nothing writes over it", async () => {
   const { root, home, api, ctx, store, at } = setup();
   await api["canvas.create"]({ cwd: root, title: "Tides", size: "phone" });
-  canvas.keepVersion(ctx, "t", root, "tides", 1);
+  await canvas.keepVersionAsync(ctx, "t", root, "tides", 1);
   const dir = join(root, ".liner/designs/tides");
   const whole = readFileSync(join(dir, "design.json"), "utf8");
   const cut = whole.slice(0, Math.floor(whole.length / 2));
@@ -1238,6 +1242,7 @@ test("canvas.frame.apply inner: a text with marks edited in place keeps each mar
 
 test("canvas versions: a turn that leaves design.json broken keeps no copy, and a copy of a broken state says unreadable", async () => {
   const { root, store, api, ctx } = setup();
+  store.patchThread("t", { design: { file: "brk" } });
   await api["canvas.create"]({ cwd: root, title: "Brk", size: "phone" });
   const dir = join(root, ".liner/designs/brk");
   const turn = (n: number, status: "running" | "done"): Item => ({ kind: "turn", id: `turn${n}`, turn: n, at: Date.now(), agent: "forge", model: "demo:x", status });

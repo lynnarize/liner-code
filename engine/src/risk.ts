@@ -5,7 +5,7 @@
 */
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
-import { ACCESS_NAMES, type ApprovalWhy, type Risk, type ToolKind } from "../../contracts/src/index.ts";
+import { ACCESS_NAMES, type ApprovalWhy, type Risk } from "../../contracts/src/index.ts";
 
 /**
   Any start of a long flag's name as a pattern, `--h` up to `--hard`: git's parse-options takes each start only that flag
@@ -1557,13 +1557,6 @@ export function parseShell(command: string): Parsed | undefined {
 /** True when the guard should ask even in Full access. */
 export function isDestructive(command: string) {
   return commandRisk(command) === "high";
-}
-
-export function toolRisk(kind: ToolKind, command?: string): Risk {
-  if (kind === "exec") return commandRisk(command ?? "");
-  if (kind === "edit" || kind === "write") return "low";
-  if (kind === "fetch" || kind === "web") return "low";
-  return "low";
 }
 
 /** Tools whose first word says little on its own: their subcommand is part of the rule. */

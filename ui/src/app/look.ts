@@ -37,8 +37,8 @@ export const readLook = (): Look => {
     // storage is off: the defaults
   }
   // Before 0.1.4 the whole window was glass, with a material behind it and Clear to Tinted; one
-  // ground replaced them. The session tray's glass went with the tray, for the top-right row
-  // (TopBar.tsx). What's left of either in a saved look is dropped here.
+  // ground replaced them. The session tray's glass went with the tray. What's left of either in a
+  // saved look is dropped here.
   const { glass: _glass, material: _material, tray: _tray, ...rest } = saved as Partial<Look> & { glass?: string; material?: string; tray?: string };
   const look = { ...LOOK_DEFAULT, ...rest, v: 3 };
   // A look saved before there was a choice, or with a word this build doesn't know, moves as Quick.
@@ -55,7 +55,7 @@ export const readLook = (): Look => {
 */
 export const seeThrough = () => window.linerShell?.clear === true;
 /** How much of the desktop comes through when nothing's been chosen: enough to see it, not so much a busy wallpaper fights the text. */
-export const DESK_SHOW = 0.4;
+const DESK_SHOW = 0.4;
 /** The most of the desktop "Shows through" goes to (it went to 75%, where text over a black wallpaper in the light theme was 1.6:1). */
 export const DESK_MAX = 0.5;
 /**

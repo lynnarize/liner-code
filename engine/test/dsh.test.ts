@@ -98,16 +98,16 @@ function tarOf(entries: { name: string; body?: string; type?: string; link?: str
   return gzipSync(Buffer.concat(blocks));
 }
 
-test("a tarball unpacks its own files only: no links, nothing outside its folder", () => {
+test("a tarball unpacks its own files only: no links, nothing outside its folder", async () => {
   const dir = tmp("lc-tar-");
   const out = join(dir, "pkg");
-  untar(tarOf([{ name: "package/package.json", body: "{}" }, { name: "package/src/a.js", body: "x" }, { name: "package/..notes.txt", body: "kept" }, { name: "package/link", type: "2", link: "/etc/passwd" }, { name: "package/hard", type: "1", link: "package/package.json" }, { name: "package/../../escape.txt", body: "no" }, { name: "package/dev", type: "3" }]), out);
+  await untar(tarOf([{ name: "package/package.json", body: "{}" }, { name: "package/src/a.js", body: "x" }, { name: "package/..notes.txt", body: "kept" }, { name: "package/link", type: "2", link: "/etc/passwd" }, { name: "package/hard", type: "1", link: "package/package.json" }, { name: "package/../../escape.txt", body: "no" }, { name: "package/dev", type: "3" }]), out);
   assert.equal(readFileSync(join(out, "src/a.js"), "utf8"), "x");
   assert.equal(readFileSync(join(out, "..notes.txt"), "utf8"), "kept");
   assert.ok(existsSync(join(out, "package.json")));
   for (const no of ["link", "hard", "dev"]) assert.ok(!existsSync(join(out, no)), no);
   assert.ok(!existsSync(join(dir, "escape.txt")) && !existsSync(join(tmpdir(), "escape.txt")));
-  assert.throws(() => untar(Buffer.from("not a tarball"), out), /doesn't unpack/);
+  await assert.rejects(untar(Buffer.from("not a tarball"), out), /doesn't unpack/);
 });
 
 /** A DSH plugin package on disk, like dsh-media-desk: a Node half, a browser half in the sidebar, a patch. */

@@ -61,12 +61,20 @@ export async function refreshBuilds() {
   }
 }
 
-// Kept fresh while a design file is open: when it opens, on each canvas change, and every few seconds while the window is seen.
+// Kept fresh while a design file is open and Liner Design shows: when it opens (or the face comes back), on each canvas
+// change, and every few seconds while the window is seen. In another face nothing is asked.
 let watched = "";
 let beat = 0;
 let goneKey = "";
+const shows = () => getDesign().face === "design";
+const AWAY = "\u0000away";
 subscribeDesign(() => {
   const s = getDesign();
+  if (!shows()) {
+    // Not "" either, so coming back reads again whatever is open then (or clears what was kept, with none).
+    if (watched !== AWAY) (watched = AWAY), (goneKey = ""), clearInterval(beat), clearTimeout(timer);
+    return;
+  }
   const at = s.file && s.cwd ? `${s.cwd}\n${s.file.id}` : "";
   // A frame whose file went (or came back): its build is left out (or counted) at once.
   const gone = (s.file?.frames ?? []).filter((f) => isGone(f)).map((f) => f.id).join(",");
@@ -84,7 +92,10 @@ subscribeDesign(() => {
   beat = window.setInterval(() => document.visibilityState === "visible" && void refreshBuilds(), 4000);
 });
 onStream((e) => {
-  if (e.type !== "canvas.changed") return;
+  // Only a change to the open design file, while the face shows it.
+  if (e.type !== "canvas.changed" || !shows()) return;
+  const s = getDesign();
+  if (e.cwd !== s.cwd || e.file !== s.file?.id) return;
   clearTimeout(timer);
   timer = window.setTimeout(() => void refreshBuilds(), 300);
 });

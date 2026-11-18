@@ -208,9 +208,6 @@ function SideSkills({ cwd }: { cwd: string }) {
   );
 }
 
-/** The loaded skills' count, for the lean row's words. */
-export const useLoadedCount = (cwd: string) => useLoaded(cwd).length;
-
 // ---------- Design Home: chips beside the lean, and the row over the box
 
 function HomeSkills({ cwd }: { cwd: string }) {

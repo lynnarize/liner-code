@@ -805,26 +805,6 @@ html[data-motion="quick"] .ld-pres::after {
   background: color-mix(in oklab, var(--l-ink) 4%, var(--lc-paper));
   box-shadow: 0 0 0 1px var(--lc-hair), 0 16px 40px -18px oklch(0 0 0 / 0.3);
 }
-.ld-head {
-  width: 100%;
-  border: 0;
-  border-radius: 14px;
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  gap: 8px;
-}
-.ld-head:hover {
-  background: var(--l-wash);
-}
-.ld-head b {
-  font-weight: 600;
-  color: var(--l-ink);
-}
-.ld-head > svg {
-  margin: 0 4px 0 2px;
-}
 .ld-q {
   flex: none;
   max-width: 40%;
@@ -874,26 +854,6 @@ html[data-motion="quick"] .ld-pres::after {
   background: var(--l-wash-2);
   color: var(--l-ink);
 }
-.ld-sheet {
-  width: min(568px, calc(100% - 88px));
-  max-height: 46vh;
-  margin-bottom: 8px;
-  padding: 4px 16px 14px;
-  overflow: auto;
-  border-radius: 14px;
-  background: var(--lc-paper);
-  box-shadow: var(--ld-pop);
-  animation: l-swap-in 220ms var(--l-ease-out) backwards;
-}
-.ld-sheet-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  margin-right: -8px;
-  font-size: 13px;
-  font-weight: 500;
-}
 .ld-lk {
   display: inline-flex;
   flex: none;
@@ -914,34 +874,6 @@ html[data-motion="quick"] .ld-pres::after {
   background: var(--l-wash-2);
   color: var(--l-ink);
 }
-.ld-bubble {
-  width: fit-content;
-  max-width: 85%;
-  margin: 2px 0 10px auto;
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: var(--l-wash-2);
-  font-size: 14px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-.ld-tl {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 26px;
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.ld-tl > svg {
-  flex: none;
-}
-.ld-tl[data-live] {
-  color: var(--l-ink);
-}
-.ld-tl .ld-pd {
-  margin: 0 3.5px;
-}
 
 /* ---------- Design Home ---------- */
 .ld-home-in {
@@ -950,72 +882,10 @@ html[data-motion="quick"] .ld-pres::after {
 .ld-lean-chip .ld-q4 {
   margin-right: 2px;
 }
-.ld-tiles {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 56px;
-}
-.ld-tile {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 220px;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.ld-tile-pic {
-  position: relative;
-  display: grid;
-  place-items: center;
-  height: 134px;
-  margin-bottom: 8px;
-  overflow: hidden;
-  border-radius: 12px;
-  background: var(--ld-cv);
-  box-shadow: 0 0 0 1px var(--lc-hair);
-  transition: box-shadow 140ms ease;
-}
-.ld-tile:hover .ld-tile-pic {
-  box-shadow: 0 0 0 1px var(--l-line-2);
-}
-.ld-tile-frame {
-  position: relative;
-  display: block;
-  overflow: hidden;
-  box-shadow: 0 0 0 1px var(--lc-hair);
-  pointer-events: none;
-}
-.ld-tile-frame iframe {
-  position: absolute;
-  top: 0;
-  left: 0;
-  border: 0;
-  background: #fff;
-  transform-origin: 0 0;
-}
-.ld-tile b {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.ld-tile small {
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
 @media (prefers-reduced-motion: reduce) {
   .ld-say,
-  .ld-sheet,
   .ld-face {
     animation: none;
-  }
-  .lc-sb-face::before {
-    transition: none;
   }
 }
 
@@ -1256,6 +1126,10 @@ html[data-motion="quick"] .ld-pres::after {
 */
 html[data-native="mac"] .ld-bar {
   transition: padding 520ms var(--l-spring-smooth);
+}
+/* Quick motion: in step with the sidebar's column (app.css, "Motion: Full and Quick"). */
+html[data-motion="quick"][data-native="mac"] .ld-bar {
+  transition-duration: 180ms;
 }
 html[data-native="mac"] .lc-app:not([data-sidebar]) .ld-bar {
   --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 28px)), min(6px, var(--lc-lights-x, 70px)));

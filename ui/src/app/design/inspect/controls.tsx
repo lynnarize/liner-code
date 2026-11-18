@@ -137,6 +137,8 @@ type NumProps = {
 
 let gestures = 0;
 const gesture = () => `g${++gestures}`;
+/** A scrub's key: its moves are shown at once and written to the file once (target.ts, design.hold), when it's let go. */
+export const HELD = "held:";
 
 /** A number field: type and press Enter (or leave), arrows nudge, drag the prefix to scrub. */
 export function Num({ prefix, name, value, mixed, onChange, min = -Infinity, max = Infinity, step = 1, suffix, disabled, title, wide }: NumProps) {
@@ -165,7 +167,7 @@ export function Num({ prefix, name, value, mixed, onChange, min = -Infinity, max
     e.preventDefault();
     const x0 = e.clientX;
     const v0 = value ?? 0;
-    const key = gesture();
+    const key = `${HELD}${gesture()}`;
     const el = e.currentTarget as HTMLElement;
     el.setPointerCapture(e.pointerId);
     const move = (m: PointerEvent) => {
@@ -250,7 +252,7 @@ export function Text({ prefix, name, value, onChange, mono, placeholder, wide }:
 /** A native select drawn as a field. */
 export function Select<T extends string>({ name, value, options, onChange, prefix }: { name: string; value: T | ""; options: { value: T; label: string }[]; onChange: (v: T) => void; prefix?: string }) {
   return (
-    <label className="ld-fld ld-sel">
+    <label className="ld-fld ld-fsel">
       {prefix && (
         <span className="ld-pre" aria-hidden>
           {prefix}

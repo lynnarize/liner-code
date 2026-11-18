@@ -352,7 +352,12 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
                   <b>The findings didn't load</b>
                   <span>{error}</span>
                 </div>
-              ) : null
+              ) : (
+                // Not yet answered: said so, so the empty tabs never read as nothing found.
+                <div className="ls-none" aria-live="polite">
+                  <span className="l-shimmer">Reading the findings</span>
+                </div>
+              )
             ) : shown.length ? (
               <div className="lf-list" role="list" aria-label={`${TABS.find((t) => t.value === tab)!.label} findings`} ref={listRef} onKeyDown={onListKey}>
                 {shown.map((f) => (

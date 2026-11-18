@@ -11,7 +11,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderInfo, Thread } from "../../contracts/src/index.ts";
-import { commandWords, cutDoing, DOING_MAX, doingOf, emptyUsage, type DoingCall } from "../../contracts/src/index.ts";
+import { callCommand, canvasFrame, canvasWords, CARD_TOOLS, cutDoing, DESIGN_TOOLS, DOING_MAX, doingCommand, doingOf, emptyUsage, isStepCall, KIND_WORDS, PR_TEST_TOOL, readableFrame, SIDEKICK_WORDS, toolNameOf, type DoingCall } from "../../contracts/src/index.ts";
 import { providers, Runtime } from "../src/runtime.ts";
 import type { OpenOptions, Provider, TurnSink } from "../src/providers/types.ts";
 import { Store } from "../src/store.ts";
@@ -43,8 +43,8 @@ test("words: a step as it starts, in the trail's verbs", () => {
   assert.equal(words(call("Bash", "exec", "Run gh pr create", { input: "gh pr create --title 'Fix the tide' --body 'x'" })), "Opening a pull request");
   assert.equal(words(call("think", "think", "think")), "Thinking");
   assert.equal(words(call("WebFetch", "fetch", "fetch")), "Reading a page");
-  assert.equal(words(call("Task", "task", "task")), "Sending an agent");
-  assert.equal(words(call("mcp__liner__sidekick", "task", "Sidekick: change nextHigh")), "Working with its sidekick");
+  assert.equal(words(call("Task", "task", "task")), "Sending an agent", "the trail's words too, for a call that says only its kind");
+  assert.equal(words(call("mcp__liner__sidekick", "task", "Sidekick: change nextHigh")), "Working with its sidekick", "the Design face's trail says it so too");
   assert.equal(words(call("mcp__liner__browser_open", "other", "Open localhost:5173 in the Browser")), "Checking in the Browser");
   assert.equal(words(call("mcp__liner__server_start", "other", "Run web from launch.json")), "Starting web");
   assert.equal(words(call("mcp__github__create_pull_request", "other", "mcp__github__create_pull_request")), "Using github");
@@ -70,11 +70,57 @@ test("words: drawing names the frame when it is known, else just says drawing", 
   const path = ".liner/designs/tides/frames/phone-week.html";
   assert.equal(words(call("Write", "write", "Draw Phone / Week", { path })), "Drawing Phone / Week", "the Demo's title names it");
   assert.equal(doingOf([call("Write", "write", "Write phone-week.html", { path: `/abs/${path}` })], (frame, design) => (frame === "phone-week" && design === "tides" ? "Phone / Week" : undefined)), "Drawing Phone / Week", "the design file names it");
-  assert.equal(words(call("Write", "write", "Write phone-week.html", { path })), "Drawing", "nobody names it");
+  assert.equal(words(call("Write", "write", "Write phone-week.html", { path })), "Drawing Phone week", "nobody names it: a name made from its id, as the trail's");
   assert.equal(words(call("mcp__liner__design_frame", "other", "design_frame", { input: JSON.stringify({ name: "Phone / Today", w: 390 }) })), "Drawing Phone / Today");
-  assert.equal(words(call("liner_design_frame", "other", "design_frame", { input: "{}" })), "Drawing");
+  assert.equal(words(call("liner_design_frame", "other", "design_frame", { input: "{}" })), "Drawing a frame");
   assert.equal(words(call("mcp__liner__design_files", "other", "design_files")), "Reading the design files");
   assert.equal(words(call("mcp__liner__design_node", "other", "design_node", { input: JSON.stringify({ frame: "brand-board", html: "<p>" }) })), "Changing Brand board");
+});
+
+test("words: where the trail and the line said different things, they say one now (F1)", () => {
+  const path = "/abs/.liner/designs/tides/frames/phone-week.html";
+  const known = (frame: string, design: string) => (frame === "phone-week" && design === "tides" ? "Phone / Week" : undefined);
+  // A frame already in its design file: an edit changes it, as the trail says; the turn's first whole write draws it.
+  assert.equal(doingOf([call("Edit", "edit", "Edit phone-week.html", { path })], known), "Changing Phone / Week");
+  assert.equal(doingOf([call("Write", "write", "Write phone-week.html", { path })], known), "Drawing Phone / Week");
+  assert.equal(doingOf([call("Write", "write", "Write phone-week.html", { path }), call("Write", "write", "Write phone-week.html", { path })], known), "Changing Phone / Week", "written again in the turn");
+  assert.equal(doingOf([call("Edit", "edit", "Edit phone-day.html", { path: path.replace("week", "day") })], known), "Drawing Phone day", "a frame not in the file yet is being drawn");
+  // The design file's name before the call's own.
+  assert.equal(doingOf([call("Write", "write", "Draw Phone week view", { path })], known), "Drawing Phone / Week");
+  // A canvas call's frame: "for" a picture's, the frame being marked built.
+  assert.equal(words(call("mcp__liner__design_picture", "other", "design_picture", { input: JSON.stringify({ frame: "brand-board" }) })), "Making a picture for Brand board");
+  assert.equal(words(call("mcp__liner__design_built", "other", "Tie x", { input: JSON.stringify({ frame: "brand-board", file: "src/x.tsx" }) })), "Marking it built Brand board");
+  assert.equal(words(call("mcp__liner__design_picture", "other", "design_picture", { input: "{}" })), "Making a picture");
+  // A read titled with its path is said by the file's name, as a read with a path is.
+  assert.equal(words(call("Read", "read", "Read src/app/a.ts")), "Reading a.ts");
+  // A server start that names no server.
+  assert.equal(words(call("mcp__liner__server_start", "other", "Run")), "Starting a server");
+  // A tool by its MCP server's name, else by its own: one rule for the trail and the line.
+  assert.equal(toolNameOf("mcp__github__create_issue"), "github");
+  assert.equal(toolNameOf("mcp__liner__lean_read"), undefined);
+  assert.equal(toolNameOf("Skill"), "Skill");
+  assert.equal(toolNameOf("edit"), undefined);
+  // Codex's command array is said as the shell reads it, in the trail too: its quoted part stays one word.
+  assert.equal(callCommand(call("shell", "exec", "shell", { input: JSON.stringify({ command: ["bash", "-lc", "npm test"] }) })), "bash -lc 'npm test'");
+  assert.equal(callCommand(call("Bash", "exec", "Run ls -la")), "ls -la");
+});
+
+test("steps: one list of cards, the same for the trail and the line", () => {
+  for (const tool of [...CARD_TOOLS, ...DESIGN_TOOLS, PR_TEST_TOOL]) assert.equal(isStepCall(call(tool, "other", "x")), false, tool);
+  assert.equal(isStepCall(call("Task", "task", "Opus: plan the change")), false, "asking Opus to plan is its own line");
+  assert.equal(isStepCall(call("Task", "task", "Explore the code")), true);
+  assert.equal(isStepCall(call("mcp__liner__design_frame", "other", "design_frame")), true, "the canvas tools are steps");
+  // The canvas's words under way and done, the trail's both.
+  const node = call("mcp__liner__design_node", "other", "design_node", { input: JSON.stringify({ frame: "brand-board", html: "<p>" }) });
+  assert.equal(canvasFrame(node, "node"), "Brand board");
+  assert.equal(canvasFrame(node, "node", (id) => (id === "brand-board" ? "Brand / Board" : undefined)), "Brand / Board");
+  assert.deepEqual(canvasWords(node, "node", true, "Brand board"), { verb: "Changing", target: "Brand board" });
+  assert.deepEqual(canvasWords(node, "node", false, "Brand board"), { verb: "Changed", target: "Brand board" });
+  assert.deepEqual(canvasWords(node, "frame", true), { verb: "Drawing", target: "a frame" });
+  assert.equal(readableFrame("brand-board~2"), "Brand board");
+  assert.equal(readableFrame("Phone / Week"), "Phone / Week");
+  assert.equal(KIND_WORDS.task[0], words(call("Task", "task", "task")));
+  assert.equal(SIDEKICK_WORDS[0], words(call("liner.sidekick", "task", "x")));
 });
 
 test("words: a command by its program and at most two plain words, never a secret or a whole command line", () => {
@@ -94,8 +140,8 @@ test("words: a command by its program and at most two plain words, never a secre
   assert.equal(ran("cat <<'EOF' > notes.md\nline one\nEOF"), "Running cat");
   // Codex reports the command as an array, wrapped in a shell.
   assert.equal(words(call("shell", "exec", "shell", { input: JSON.stringify({ command: ["bash", "-lc", "cd app && pnpm test --run"] }) })), "Running pnpm test");
-  assert.equal(commandWords("/bin/zsh -c 'yarn lint'"), "yarn lint");
-  assert.equal(commandWords(""), "");
+  assert.equal(doingCommand("/bin/zsh -c 'yarn lint'"), "yarn lint");
+  assert.equal(doingCommand(""), "");
   // Words after the program only where they are subcommands by convention: anything else could be a password.
   assert.equal(ran("echo hunter2 | sudo -S ls"), "Running echo");
   assert.equal(ran("sshpass hunter2pass ssh host"), "Running sshpass");
@@ -143,7 +189,7 @@ test("words: a command by its program and at most two plain words, never a secre
     ["npm test 2>&1 | tail -5", "Running npm test"],
   ];
   for (const [command, want] of probes) assert.equal(ran(command), want, command);
-  assert.equal(commandWords("API_KEY=x"), "", "nothing but a value: nothing to say");
+  assert.equal(doingCommand("API_KEY=x"), "", "nothing but a value: nothing to say");
 });
 
 test("words: long names are cut at a word with nothing after, or said plainer; every line keeps the rules", () => {
@@ -175,7 +221,7 @@ test("words: long names are cut at a word with nothing after, or said plainer; e
   assert.equal(words(call("Edit", "edit", "Edit a=b&c.ts")), "Changing a file");
   assert.equal(words(call("Read", "read", "Read", { path: "C:\\Program Files\\app\\main (copy).ts" })), "Reading main (copy).ts");
   assert.equal(words(call("Read", "read", "Read", { path: "C:\\Program Files\\app\\" })), "Reading app");
-  assert.equal(words(call("mcp__liner__design_frame", "other", "design_frame", { input: JSON.stringify({ name: "Phone?token=abc" }) })), "Drawing");
+  assert.equal(words(call("mcp__liner__design_frame", "other", "design_frame", { input: JSON.stringify({ name: "Phone?token=abc" }) })), "Drawing a frame");
   assert.equal(words(call("mcp__liner__server_start", "other", "Run https://x.dev/?k=1 from launch.json")), "Starting a server");
   assert.doesNotMatch(words(many[4])!, /hunter2/);
 });
@@ -480,17 +526,17 @@ test("a turn whose first call isn't a step (a plan, a page) still says Thinking"
 test("a session put in waiting, done or error by any path never keeps its line", () => {
   const { store } = session();
   store.patchThread("t", { status: "running" });
-  store.setDoing("t", { text: "Running npm test", at: Date.now() });
+  store.setDoing("t", { text: "Running npm test" });
   assert.equal(store.thread("t").doing?.text, "Running npm test");
   const at = store.thread("t").updatedAt;
-  store.setDoing("t", { text: "Reading a.ts", at: Date.now() });
+  store.setDoing("t", { text: "Reading a.ts" });
   assert.equal(store.thread("t").updatedAt, at, "a line doesn't move the session in the sidebar");
   for (const status of ["waiting", "done", "error", "limited", "idle"] as const) {
     store.patchThread("t", { status: "running" });
-    store.setDoing("t", { text: "Running npm test", at: Date.now() });
+    store.setDoing("t", { text: "Running npm test" });
     store.patchThread("t", { status });
     assert.equal(store.thread("t").doing, undefined, status);
-    store.setDoing("t", { text: "Reading a.ts", at: Date.now() });
+    store.setDoing("t", { text: "Reading a.ts" });
     assert.equal(store.thread("t").doing, undefined, `${status}: not set while it isn't running`);
   }
 });
@@ -498,7 +544,7 @@ test("a session put in waiting, done or error by any path never keeps its line",
 test("after the engine starts again no session has a line, even one saved alongside another change", () => {
   const { store, home } = session();
   store.patchThread("t", { status: "running" });
-  store.setDoing("t", { text: "Running npm test", at: Date.now() });
+  store.setDoing("t", { text: "Running npm test" });
   // Another change saves the session with its line on it.
   store.patchThread("t", { title: "Tides" });
   store.flush();

@@ -47,8 +47,25 @@ export const isEl = (c: Child): c is El => "tag" in c;
 const alpha = (c: string | undefined) => !!c && /[A-Za-z]/.test(c);
 const space = (c: string | undefined) => c === " " || c === "\n" || c === "\t" || c === "\r" || c === "\f";
 
+/**
+  The last few pages read, by their text: one design_node reads the same page in readFrameRev's stamp, its own lookup, the
+  replace and the write's stamp, and each was a parse of the whole page. A Doc is never changed once made (only parse builds
+  one), so handing the same one out again is safe.
+*/
+const parsed = new Map<string, Doc>();
 /** Reads a document (or a fragment) into elements with their offsets. Never throws. */
 export function parse(html: string): Doc {
+  const had = parsed.get(html);
+  if (had) return had;
+  const doc = parseNow(html);
+  // Only pages worth keeping (a piece of a few bytes is quicker to read again), and the newest four.
+  if (html.length > 2000) {
+    parsed.set(html, doc);
+    if (parsed.size > 4) parsed.delete(parsed.keys().next().value!);
+  }
+  return doc;
+}
+function parseNow(html: string): Doc {
   const n = html.length;
   const root: El = { tag: "#document", start: 0, nameEnd: 0, openEnd: 0, innerEnd: n, end: n, attrs: [], children: [], foreign: false, closedBy: "self" };
   const stack: El[] = [root];
@@ -378,10 +395,28 @@ export function freshId(taken: Set<string>, seed?: string) {
 }
 
 type Splice = { at: number; del: number; ins: string };
-const splice = (html: string, edits: Splice[]) => {
+/** The old way, one whole string per edit from the back: kept for edits that overlap, where the order they land in decides the bytes. */
+const spliceBack = (html: string, edits: Splice[]) => {
   let out = html;
   for (const e of [...edits].sort((a, b) => b.at - a.at)) out = out.slice(0, e.at) + e.ins + out.slice(e.at + e.del);
   return out;
+};
+/**
+  Builds the page once, front to back, so stamping a page of 6000 elements isn't 6000 copies of it. Edits at the same place land
+  as the back-to-front way put them (the later one in the list first); edits that overlap go the old way, so the bytes never differ.
+*/
+const splice = (html: string, edits: Splice[]) => {
+  if (edits.length < 2) return edits.length ? html.slice(0, edits[0].at) + edits[0].ins + html.slice(edits[0].at + edits[0].del) : html;
+  const order = edits.map((e, i) => ({ e, i })).sort((a, b) => a.e.at - b.e.at || b.i - a.i);
+  const parts: string[] = [];
+  let pos = 0;
+  for (const { e } of order) {
+    if (e.at < pos) return spliceBack(html, edits);
+    parts.push(html.slice(pos, e.at), e.ins);
+    pos = e.at + e.del;
+  }
+  parts.push(html.slice(pos));
+  return parts.join("");
 };
 
 /**
@@ -429,9 +464,10 @@ export function stamp(html: string): { html: string; added: number; ok: boolean 
 function undoes(input: string, out: string, edits: { at: number; del: number; ins: string; id: string }[]) {
   const doc = parse(out);
   const found = new Map<string, Attr>();
+  const ids = new Set(edits.map((e) => e.id));
   for (const el of addressable(doc)) {
     const a = attr(el, "data-l");
-    if (a && edits.some((e) => e.id === a.value)) {
+    if (a && ids.has(a.value)) {
       if (found.has(a.value)) return false;
       found.set(a.value, a);
     }

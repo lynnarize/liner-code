@@ -133,8 +133,13 @@ const sigOf = (el: Element) => {
   return `${el.tagName}\u0002${attrs}\u0002${own.replace(/\s+/g, " ").trim()}`;
 };
 
+/** Past this much HTML (the page before and after together) no plan is worked out: two parses that size would hold the render up. */
+const PLAN_MAX = 400_000;
+
 export function planOf(before: string | undefined, after: string): Plan {
   if (before === undefined) return undefined;
+  // A page that big is drawn again at rest, as one whose change can't be told apart.
+  if (before.length + after.length > PLAN_MAX) return undefined;
   let a: Document;
   let b: Document;
   try {
@@ -207,8 +212,6 @@ export function takeMarks(frame: string) {
 }
 // Another design file, or none: its marks go with it.
 onDesignSwitch(() => marks.clear());
-/** For a probe: how many marks wait to be taken. */
-export const heldMarks = () => marks.size;
 
 export const Frame = memo(function Frame({ frame, editing, live }: { frame: DesignFrame; editing: boolean; live: boolean }) {
   const el = useRef<HTMLIFrameElement>(null);

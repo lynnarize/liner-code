@@ -100,6 +100,8 @@ export function searchSessions(store: Store, projectId: string, query: string, o
   if (!terms.length) return [];
   const hits: (SessionHit & { score: number })[] = [];
   for (const t of store.threads.filter((x) => x.projectId === projectId && x.id !== o.skip)) {
+    // Its name as the agent knows it, worked out once a thread and only when something in it matched: it reads the thread's first message.
+    let title: string | undefined;
     for (const it of store.peek(t.id, ["user", "text"])) {
       if (it.kind !== "user" && it.kind !== "text") continue;
       // A message Liner wrote for the person (Liner Design's asks): the person's own search in the app (`person`) finds it by
@@ -112,7 +114,7 @@ export function searchSessions(store: Store, projectId: string, query: string, o
       const words = read && found.some((w) => read.toLowerCase().includes(w)) ? read : it.text;
       const at = Math.max(0, words.toLowerCase().indexOf(found.find((w) => words.toLowerCase().includes(w)) ?? found[0]) - 80);
       const snippet = `${at ? "…" : ""}${words.slice(at, at + 260).replace(/\s+/g, " ").trim()}${at + 260 < words.length ? "…" : ""}`;
-      hits.push({ threadId: t.id, title: o.person ? t.title : titleForAgents(store, t), at: it.at, who: it.kind === "user" ? "you" : "agent", snippet, score: found.length * 10 + Math.min(count, 10) });
+      hits.push({ threadId: t.id, title: o.person ? t.title : (title ??= titleForAgents(store, t)), at: it.at, who: it.kind === "user" ? "you" : "agent", snippet, score: found.length * 10 + Math.min(count, 10) });
     }
   }
   return hits

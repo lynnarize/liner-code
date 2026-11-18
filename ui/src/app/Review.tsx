@@ -7,7 +7,7 @@
   file changes again. It sits under the panel's tab row, which is the paper's header in the full
   canvas: the row's shrink button is the way back to the session, so it has no header of its own.
 */
-import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff, Finding, Item, Thread } from "@contracts";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { diffRows, segment, type Row } from "@liner/pro/code-diff/diff";
@@ -16,15 +16,15 @@ import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { CommitButton } from "./Commit";
 import { is } from "./keymap";
-import { rpc, useEngine } from "./engine";
+import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
 import { I, ModelMark } from "./icons";
 import { agentTask, isSidekick, whoIs } from "./Crew";
-import { agentOf, ago, checkpointsOf, markOf, modelLabel, plural, sumLines } from "./model";
+import { agentOf, ago, markOf, modelLabel, plural } from "./model";
 import { baseOf, dirOf, langOf, linesOf, tokensOf, Toks } from "./code";
-import { Lines, ModelTag, Pop, Row as PickRow, Sep } from "./ui";
+import { Lines, ModelTag } from "./ui";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { FindBar } from "./Find";
-import { SurfaceNote } from "./Surfaces";
+import { MoreFiles, SurfaceNote, TurnPicker, Viewed } from "./Surfaces";
 import { SideKeys } from "./TopBar";
 import { undoTurn } from "./undo";
 
@@ -96,78 +96,42 @@ function writeViewed(all: Record<string, number>) {
   }
 }
 
-/** Which turn's changes to show: one turn, all of them, or the branch against main. */
-/** How many changed files you've looked at. In a narrow panel it says "2/5 viewed", then drops its bar, so it never wraps. */
-export function Viewed({ seen, total }: { seen: number; total: number }) {
-  return (
-    <span className="lc-viewed">
-      <span className="lc-viewed-bar" aria-hidden>
-        <i style={{ width: `${total ? (seen / total) * 100 : 0}%` }} />
-      </span>
-      <span className="lc-viewed-long">
-        {seen} of {plural(total, "file")} viewed
-      </span>
-      <span className="lc-viewed-short">
-        {seen}/{total} viewed
-      </span>
-    </span>
-  );
-}
-
-export function TurnPicker({ cps, pick, turns, onPick }: { cps: Checkpoint[]; pick: string; turns: number; onPick: (id: string) => void }) {
-  const cp = cps.find((c) => c.id === pick);
-  return (
-    <Pop
-      label="Pick a turn"
-      width={320}
-      triggerClass="lc-turnpick"
-      trigger={
-        <>
-          {pick === "all" ? "All turns" : pick === "branch" ? "This branch" : `Turn ${cp?.turn ?? ""}`}
-          {pick !== "all" && pick !== "branch" && <span className="lc-quiet">of {turns}</span>}
-          <I.chevD size={12} />
-        </>
-      }
-    >
-      {(close) => (
-        <>
-          <PickRow title="All turns in this session" note="Everything since the first change, as the tree is now" on={pick === "all"} onPick={() => (onPick("all"), close())} />
-          <PickRow title="This branch against main" note="What a pull request from here would carry" on={pick === "branch"} onPick={() => (onPick("branch"), close())} />
-          <Sep />
-          {[...cps].reverse().map((c) => (
-            <PickRow
-              key={c.id}
-              title={`Turn ${c.turn}`}
-              note={`${ago(c.at)} · ${plural(c.files.length, "file")}${c.reverted ? " · undone" : c.committed ? ` · committed ${c.committed}` : ""}`}
-              on={pick === c.id}
-              end={<Lines {...sumLines(c.files)} />}
-              onPick={() => (onPick(c.id), close())}
-            />
-          ))}
-        </>
-      )}
-    </Pop>
-  );
-}
-
 type Anchor = { file: string; line: number; endLine?: number };
-type Thread_ = { id: string; anchor: Anchor; question: string; answer: string; who: string; model: string; at: number; streaming: boolean };
+/** A question on lines: its answer is read on its own (Answer), so a reply's words redraw that answer and not the diff. */
+type Thread_ = { id: string; anchor: Anchor; question: string; turn: number; who: string; model: string; at: number; running: boolean };
+type Prepared = { file: FileDiff; binary: boolean; rows: Row[]; at: Map<Row, number>; segs: ReturnType<typeof segment>; tb: ReturnType<typeof tokensOf>; ta: ReturnType<typeof tokensOf>; added: number; removed: number; isNew: boolean; gone: boolean; moved?: string; seenKey: string };
 
-
-/** The engine sends the first 60 files; here and in the side panel, the rest are counted (T3 Code: chat/ChangedFilesTree.tsx). */
-export function MoreFiles({ n, turn, pick }: { n: number; turn: boolean; pick: string | null }) {
-  return (
-    <p className="lc-rv-more lc-quiet">
-      {plural(n, "more file")} {turn ? "in this turn" : pick === "branch" ? "on this branch" : "across all turns"} {n === 1 ? "isn't" : "aren't"} shown here.
-    </p>
-  );
+/*
+  Review's views of the timeline (useItemsWhere): none holds a reply's words, so a streamed frame
+  of a reply doesn't redraw the diff. Each is its own, so an agent's steps coming in don't remake
+  the questions on the lines either.
+*/
+const isLineAsk = (it: Item) => (it.kind === "user" && Boolean(it.anchor)) || it.kind === "turn";
+const isReview = (it: Item) => it.kind === "review";
+const isTask = (it: Item) => it.kind === "tool" && it.toolKind === "task";
+/** Lines by the line they end on, per file: a row looks its own up, not through the whole list. */
+function byLine<T>(list: T[], at: (x: T) => { file: string; line?: number }) {
+  const out = new Map<string, Map<number, T[]>>();
+  for (const x of list) {
+    const { file, line } = at(x);
+    // A finding on the file as a whole sits on no line.
+    if (line === undefined) continue;
+    let lines = out.get(file);
+    if (!lines) out.set(file, (lines = new Map()));
+    lines.set(line, [...(lines.get(line) ?? []), x]);
+  }
+  return out;
 }
 
-export function Review({ thread, items, focus, onFocus }: { thread: Thread; items: Item[]; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void }) {
+
+export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void }) {
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
-  const cps = useMemo(() => checkpointsOf(items), [items]);
+  const cps = useItemsWhere(thread.id, isCheckpoint) as Checkpoint[];
+  const lineAsks = useItemsWhere(thread.id, isLineAsk);
+  const reviews = useItemsWhere(thread.id, isReview) as Extract<Item, { kind: "review" }>[];
+  const tasks = useItemsWhere(thread.id, isTask) as Extract<Item, { kind: "tool" }>[];
   const pick = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : (cps[cps.length - 1]?.id ?? "all");
   const cp = cps.find((c) => c.id === pick);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
@@ -218,24 +182,25 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
   // Line questions and their answers, and the Reviewer's findings, by file.
   const asked = useMemo(() => {
     const out: Thread_[] = [];
-    for (const it of items) {
+    for (const it of lineAsks) {
       if (it.kind !== "user" || !it.anchor) continue;
-      const turn = items.find((x) => x.kind === "turn" && x.turn === it.turn);
-      const text = items.filter((x): x is Extract<Item, { kind: "text" }> => x.kind === "text" && x.turn === it.turn);
+      const turn = lineAsks.find((x) => x.kind === "turn" && x.turn === it.turn);
       const who = turn?.kind === "turn" ? turn.agent : thread.agent;
-      out.push({ id: it.id, anchor: it.anchor, question: it.text, answer: text.map((x) => x.text).join("\n\n"), who: agentOf(who, agents, providers).name, model: turn?.kind === "turn" ? turn.model : coder.model, at: it.at, streaming: text.some((x) => x.streaming) || (turn?.kind === "turn" && turn.status === "running") });
+      out.push({ id: it.id, anchor: it.anchor, question: it.text, turn: it.turn, who: agentOf(who, agents, providers).name, model: turn?.kind === "turn" ? turn.model : coder.model, at: it.at, running: turn?.kind === "turn" && turn.status === "running" });
     }
     return out;
-  }, [items, agents, providers, thread.agent, coder.model]);
+  }, [lineAsks, agents, providers, thread.agent, coder.model]);
   const findings = useMemo(() => {
-    const reviews = items.filter((x): x is Extract<Item, { kind: "review" }> => x.kind === "review");
     const last = reviews[reviews.length - 1];
     return { list: last?.findings ?? [], reviewer: last?.reviewer, status: last?.status };
-  }, [items]);
+  }, [reviews]);
+  const askedAt = useMemo(() => byLine(asked, (t) => ({ file: t.anchor.file, line: t.anchor.endLine ?? t.anchor.line })), [asked]);
+  const notesAt = useMemo(() => byLine(findings.list, (f) => ({ file: f.file, line: f.endLine ?? f.line })), [findings.list]);
+  const reviewer = findings.reviewer ? modelLabel(findings.reviewer, providers) : "The Reviewer";
 
   const prepared = useMemo(
     () =>
-      (diff ?? []).map((f) => {
+      (diff ?? []).map((f): Prepared => {
         const before = linesOf(f.before);
         const after = linesOf(f.after);
         const lang = langOf(f.path);
@@ -301,7 +266,10 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
 
   // Two quick Enters are one question.
   const sending = useRef(false);
-  const send = async () => {
+  const sendNow = useRef(async () => {});
+  // The same function every render, so a file's rows don't redraw for a new one; it sends what's picked now.
+  const send = useMemo(() => () => sendNow.current(), []);
+  sendNow.current = async () => {
     if (!sel || !ask.trim() || sending.current) return;
     sending.current = true;
     try {
@@ -331,86 +299,7 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
   const lines = shown.reduce((s, p) => ({ added: s.added + p.added, removed: s.removed + p.removed }), { added: 0, removed: 0 });
   // What the subagents checked: the turn's Task calls and the Reviewer.
   const turnNo = cp?.turn;
-  const subs = items.filter((x): x is Extract<Item, { kind: "tool" }> => x.kind === "tool" && x.toolKind === "task" && (turnNo === undefined || x.turn === turnNo));
-
-  // A folded run doesn't hide what's on its lines: a finding, a question, the line you picked.
-  const carries = (p: (typeof prepared)[number], r: Row) =>
-    r.new !== undefined && (asked.some((t) => t.anchor.file === p.file.path && (t.anchor.endLine ?? t.anchor.line) === r.new) || findings.list.some((f) => f.file === p.file.path && (f.endLine ?? f.line) === r.new) || (sel?.file === p.file.path && (sel.endLine ?? sel.line) === r.new));
-
-  const lineRow = (p: (typeof prepared)[number], r: Row, k: number) => {
-    const tok = r.kind === "del" ? p.tb[(r.old ?? 1) - 1] : p.ta[(r.new ?? 1) - 1];
-    const inSel = sel && sel.file === p.file.path && r.new !== undefined && r.new >= sel.line && r.new <= (sel.endLine ?? sel.line);
-    const here = r.new !== undefined ? asked.filter((t) => t.anchor.file === p.file.path && (t.anchor.endLine ?? t.anchor.line) === r.new) : [];
-    const notes = r.new !== undefined ? findings.list.filter((f) => f.file === p.file.path && (f.endLine ?? f.line) === r.new) : [];
-    const endsSel = sel && sel.file === p.file.path && (sel.endLine ?? sel.line) === r.new;
-    return (
-      <Fragment key={k}>
-        <div className="lc-rv-l" data-kind={r.kind} data-sel={inSel || undefined} data-change={r.kind !== "same" && (k === 0 || p.rows[k - 1]?.change !== r.change) ? r.change : undefined}>
-          <span className="lc-rv-n">{r.old ?? ""}</span>
-          {r.new !== undefined ? (
-            <button
-              type="button"
-              className="lc-rv-n lc-rv-pick l-focus"
-              aria-label={`Ask about line ${r.new}`}
-              onClick={(e) => {
-                const line = r.new!;
-                setSel((s) => (e.shiftKey && s && s.file === p.file.path ? { file: s.file, line: Math.min(s.line, line), endLine: Math.max(s.endLine ?? s.line, line) } : { file: p.file.path, line }));
-                setAsk("");
-              }}
-            >
-              {r.new}
-            </button>
-          ) : (
-            <span className="lc-rv-n" />
-          )}
-          <span className="lc-rv-s" aria-hidden>
-            {r.kind === "add" ? "+" : r.kind === "del" ? "−" : ""}
-          </span>
-          <span className="lc-rv-t">
-            <Toks line={tok} />
-          </span>
-        </div>
-        {notes.map((f, j) => (
-          <Note key={`f${j}`} f={f} reviewer={findings.reviewer ? modelLabel(findings.reviewer, providers) : "The Reviewer"} />
-        ))}
-        {here.map((t) => (
-          <div key={t.id} className="lc-rv-thread">
-            <div className="lc-rv-q">
-              <span className="lc-rv-lines">{t.anchor.endLine && t.anchor.endLine !== t.anchor.line ? `Lines ${t.anchor.line}–${t.anchor.endLine}` : `Line ${t.anchor.line}`}</span>
-              <span className="lc-quiet">You · {ago(t.at)}</span>
-              <p>{t.question}</p>
-            </div>
-            <div className="lc-rv-a">
-              <b>
-                {t.who} <ModelTag kind={markOf(t.model)} label={modelLabel(t.model, providers)} />
-              </b>
-              {t.answer ? <StreamedMarkdown className="lc-md" text={t.answer} streaming={t.streaming} animate={false} /> : <span className="l-shimmer">{t.streaming ? "Answering" : "Waiting for its turn"}</span>}
-            </div>
-          </div>
-        ))}
-        {endsSel && (
-          <div className="lc-rv-ask">
-            <span className="lc-rv-lines">{sel!.endLine && sel!.endLine !== sel!.line ? `Lines ${sel!.line}–${sel!.endLine}` : `Line ${sel!.line}`}</span>
-            <input
-              className="lc-input"
-              autoFocus
-              value={ask}
-              onChange={(e) => setAsk(e.target.value)}
-              placeholder={`Ask ${coder.name} about ${sel!.endLine && sel!.endLine !== sel!.line ? "these lines" : "this line"}`}
-              onKeyDown={(e) => {
-                // Enter that picks an input method's word isn't a send (T3 Code: BranchPicker.tsx).
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
-                if (e.key === "Escape") setSel(null);
-              }}
-            />
-            <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!ask.trim()} onClick={() => void send()}>
-              Ask
-            </button>
-          </div>
-        )}
-      </Fragment>
-    );
-  };
+  const subs = tasks.filter((x) => turnNo === undefined || x.turn === turnNo);
 
   return (
     <div className="lc-rv">
@@ -540,34 +429,10 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
             ) : view === "split" ? (
               <CodeDiff key={wrap ? "wrap" : "scroll"} files={shown.map((p) => p.file)} view="split" maxHeight={100000} defaultWrap={wrap} />
             ) : (
-              shown.map((p) => (
-                <article key={p.file.path} className="lc-rv-file" data-file={p.file.path}>
-                  <header className="lc-rv-fh">
-                    <span className="lc-mono lc-path" title={p.moved ? `Moved from ${p.moved}` : p.file.path}>
-                      <span className="lc-quiet">{dirOf(p.file.path)}</span>
-                      <span>{baseOf(p.file.path)}</span>
-                    </span>
-                    {p.isNew && <span className="lc-pill" data-tone="ok">New</span>}
-                    {p.gone && <span className="lc-pill" data-tone="danger">Deleted</span>}
-                    {p.moved && <span className="lc-pill">Moved</span>}
-                    <span className="lc-grow" />
-                    <Lines added={p.added} removed={p.removed} />
-                  </header>
-                  <div className="lc-rv-code lc-mono">
-                    {p.binary && <p className="lc-rv-bin lc-quiet">A binary file, so there's no text to compare.</p>}
-                    {p.segs.map((s, si) =>
-                      s.kind === "fold" && !open.has(`${p.file.path}:${s.id}`) && !s.rows.some((r) => carries(p, r)) ? (
-                        <button key={si} type="button" className="lc-rv-fold l-focus" onClick={() => setOpen((o) => new Set(o).add(`${p.file.path}:${s.id}`))}>
-                          <I.chevD size={12} />
-                          {plural(s.rows.length, "unchanged line")}
-                        </button>
-                      ) : (
-                        <Fragment key={si}>{s.rows.map((r) => lineRow(p, r, p.at.get(r) ?? 0))}</Fragment>
-                      ),
-                    )}
-                  </div>
-                </article>
-              ))
+              shown.map((p) => {
+                const mine = sel?.file === p.file.path;
+                return <FileBody key={p.file.path} p={p} threadId={thread.id} open={open} setOpen={setOpen} sel={mine ? sel : null} setSel={setSel} ask={mine ? ask : ""} setAsk={setAsk} send={send} asks={askedAt.get(p.file.path)} notes={notesAt.get(p.file.path)} reviewer={reviewer} coder={coder.name} />;
+              })
             )}
           </div>
           <div className="lc-panel-foot">
@@ -586,6 +451,150 @@ export function Review({ thread, items, focus, onFocus }: { thread: Thread; item
       </div>
     </div>
   );
+}
+
+/*
+  One file of the diff, drawn again only when what it shows changes: its rows, what's unfolded, the
+  lines picked on it, its questions and notes. A 2,000-line diff was 2,000 rows remade each frame
+  of a reply.
+*/
+type FileProps = {
+  p: Prepared;
+  threadId: string;
+  open: Set<string>;
+  setOpen: (f: (o: Set<string>) => Set<string>) => void;
+  /** The lines picked, when they are on this file. */
+  sel: Anchor | null;
+  setSel: (f: (s: Anchor | null) => Anchor | null) => void;
+  ask: string;
+  setAsk: (s: string) => void;
+  send: () => void;
+  asks?: Map<number, Thread_[]>;
+  notes?: Map<number, Finding[]>;
+  reviewer: string;
+  coder: string;
+};
+const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSel, ask, setAsk, send, asks, notes, reviewer, coder }: FileProps) {
+  const providers = useEngine((s) => s.providers);
+  // A folded run doesn't hide what's on its lines: a finding, a question, the line you picked.
+  const carries = (r: Row) => r.new !== undefined && (Boolean(asks?.has(r.new)) || Boolean(notes?.has(r.new)) || (sel !== null && (sel.endLine ?? sel.line) === r.new));
+
+  const lineRow = (r: Row, k: number) => {
+    const tok = r.kind === "del" ? p.tb[(r.old ?? 1) - 1] : p.ta[(r.new ?? 1) - 1];
+    const inSel = sel && r.new !== undefined && r.new >= sel.line && r.new <= (sel.endLine ?? sel.line);
+    const here = r.new !== undefined ? (asks?.get(r.new) ?? []) : [];
+    const said = r.new !== undefined ? (notes?.get(r.new) ?? []) : [];
+    const endsSel = sel && (sel.endLine ?? sel.line) === r.new;
+    return (
+      <Fragment key={k}>
+        <div className="lc-rv-l" data-kind={r.kind} data-sel={inSel || undefined} data-change={r.kind !== "same" && (k === 0 || p.rows[k - 1]?.change !== r.change) ? r.change : undefined}>
+          <span className="lc-rv-n">{r.old ?? ""}</span>
+          {r.new !== undefined ? (
+            <button
+              type="button"
+              className="lc-rv-n lc-rv-pick l-focus"
+              aria-label={`Ask about line ${r.new}`}
+              onClick={(e) => {
+                const line = r.new!;
+                setSel((s) => (e.shiftKey && s && s.file === p.file.path ? { file: s.file, line: Math.min(s.line, line), endLine: Math.max(s.endLine ?? s.line, line) } : { file: p.file.path, line }));
+                setAsk("");
+              }}
+            >
+              {r.new}
+            </button>
+          ) : (
+            <span className="lc-rv-n" />
+          )}
+          <span className="lc-rv-s" aria-hidden>
+            {r.kind === "add" ? "+" : r.kind === "del" ? "−" : ""}
+          </span>
+          <span className="lc-rv-t">
+            <Toks line={tok} />
+          </span>
+        </div>
+        {said.map((f, j) => (
+          <Note key={`f${j}`} f={f} reviewer={reviewer} />
+        ))}
+        {here.map((t) => (
+          <div key={t.id} className="lc-rv-thread">
+            <div className="lc-rv-q">
+              <span className="lc-rv-lines">{t.anchor.endLine && t.anchor.endLine !== t.anchor.line ? `Lines ${t.anchor.line}–${t.anchor.endLine}` : `Line ${t.anchor.line}`}</span>
+              <span className="lc-quiet">You · {ago(t.at)}</span>
+              <p>{t.question}</p>
+            </div>
+            <div className="lc-rv-a">
+              <b>
+                {t.who} <ModelTag kind={markOf(t.model)} label={modelLabel(t.model, providers)} />
+              </b>
+              <Answer threadId={threadId} turn={t.turn} running={t.running} />
+            </div>
+          </div>
+        ))}
+        {endsSel && (
+          <div className="lc-rv-ask">
+            <span className="lc-rv-lines">{sel!.endLine && sel!.endLine !== sel!.line ? `Lines ${sel!.line}–${sel!.endLine}` : `Line ${sel!.line}`}</span>
+            <input
+              className="lc-input"
+              autoFocus
+              value={ask}
+              onChange={(e) => setAsk(e.target.value)}
+              placeholder={`Ask ${coder} about ${sel!.endLine && sel!.endLine !== sel!.line ? "these lines" : "this line"}`}
+              onKeyDown={(e) => {
+                // Enter that picks an input method's word isn't a send (T3 Code: BranchPicker.tsx).
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
+                if (e.key === "Escape") setSel(() => null);
+              }}
+            />
+            <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!ask.trim()} onClick={() => void send()}>
+              Ask
+            </button>
+          </div>
+        )}
+      </Fragment>
+    );
+  };
+
+  return (
+    <article className="lc-rv-file" data-file={p.file.path}>
+      <header className="lc-rv-fh">
+        <span className="lc-mono lc-path" title={p.moved ? `Moved from ${p.moved}` : p.file.path}>
+          <span className="lc-quiet">{dirOf(p.file.path)}</span>
+          <span>{baseOf(p.file.path)}</span>
+        </span>
+        {p.isNew && <span className="lc-pill" data-tone="ok">New</span>}
+        {p.gone && <span className="lc-pill" data-tone="danger">Deleted</span>}
+        {p.moved && <span className="lc-pill">Moved</span>}
+        <span className="lc-grow" />
+        <Lines added={p.added} removed={p.removed} />
+      </header>
+      <div className="lc-rv-code lc-mono">
+        {p.binary && <p className="lc-rv-bin lc-quiet">A binary file, so there's no text to compare.</p>}
+        {p.segs.map((s, si) =>
+          s.kind === "fold" && !open.has(`${p.file.path}:${s.id}`) && !s.rows.some(carries) ? (
+            <button key={si} type="button" className="lc-rv-fold l-focus" onClick={() => setOpen((o) => new Set(o).add(`${p.file.path}:${s.id}`))}>
+              <I.chevD size={12} />
+              {plural(s.rows.length, "unchanged line")}
+            </button>
+          ) : (
+            <Fragment key={si}>{s.rows.map((r) => lineRow(r, p.at.get(r) ?? 0))}</Fragment>
+          ),
+        )}
+      </div>
+    </article>
+  );
+});
+
+/** The answer to a question on lines: the words of its turn, read here alone, so they stream without redrawing the diff. */
+function Answer({ threadId, turn, running }: { threadId: string; turn: number; running: boolean }) {
+  // A string, so the same words are the same answer and nothing redraws while another turn streams.
+  const answer = useEngine((s) =>
+    (s.items[threadId] ?? [])
+      .filter((x): x is Extract<Item, { kind: "text" }> => x.kind === "text" && x.turn === turn)
+      .map((x) => x.text)
+      .join("\n\n"),
+  );
+  const streaming = useEngine((s) => (s.items[threadId] ?? []).some((x) => x.kind === "text" && x.turn === turn && x.streaming)) || running;
+  return answer ? <StreamedMarkdown className="lc-md" text={answer} streaming={streaming} animate={false} /> : <span className="l-shimmer">{streaming ? "Answering" : "Waiting for its turn"}</span>;
 }
 
 function Note({ f, reviewer }: { f: Finding; reviewer: string }) {

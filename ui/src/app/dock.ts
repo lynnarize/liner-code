@@ -17,14 +17,14 @@
 
 /** A tab: a built-in surface, the New tab guide, one routine run, an add-on's panel (`app:<id>`), or one an agent asks to add (`preview:<item>`). */
 export type DockTab = string;
-export type Pane = { tabs: DockTab[]; tab: DockTab };
+type Pane = { tabs: DockTab[]; tab: DockTab };
 export type DockState = { open: boolean; full: boolean; panes: Pane[]; at: number };
 
 export const GUIDE = "guide";
 /** What an empty panel opens with: the surfaces the session's header no longer has a button for. */
-export const STARTERS: readonly DockTab[] = ["changes", "files", "browser"];
+const STARTERS: readonly DockTab[] = ["changes", "files", "browser"];
 /** Two panes side by side at most. */
-export const MAX_PANES = 2;
+const MAX_PANES = 2;
 
 export const emptyDock = (): DockState => ({ open: false, full: false, panes: [], at: 0 });
 
@@ -55,7 +55,6 @@ export function showDock(d: DockState, first: DockTab = STARTERS[0]): DockState 
   return { open: true, full: false, panes: [{ tabs, tab: first }], at: 0 };
 }
 export const hideDock = (d: DockState): DockState => ({ ...d, open: false, full: false });
-export const toggleDock = (d: DockState) => (d.open ? hideDock(d) : showDock(d));
 export const toggleFull = (d: DockState): DockState => (d.open ? { ...d, full: !d.full } : { ...showDock(d), full: true });
 
 /**

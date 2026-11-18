@@ -213,8 +213,27 @@ type Info = {
   model?: string;
 };
 
-function infoOf(t: Thread, items: Item[]): Info {
-  const last = turnsOf(items).at(-1)?.items ?? [];
+/*
+  The last turn as turnsOf groups it (the turns that carried it on joined to it), without grouping
+  the whole timeline: a streaming tile reads this once a frame. It finds where the last group
+  starts, the newest turn whose first mark isn't a part, and groups only what's from there on.
+*/
+function lastTurnOf(items: Item[]): Item[] {
+  if (!items.length) return [];
+  const first = new Map<number, Mark | null>();
+  for (const it of items) {
+    const had = first.get(it.turn);
+    if (had === undefined) first.set(it.turn, it.kind === "turn" ? it : null);
+    else if (had === null && it.kind === "turn") first.set(it.turn, it);
+  }
+  const turns = [...first.keys()].sort((a, b) => b - a);
+  const start = turns.find((n) => !first.get(n)?.part) ?? turns[turns.length - 1];
+  return turnsOf(items.filter((x) => x.turn >= start)).at(-1)?.items ?? [];
+}
+
+/** A working or waiting tile shows no brief, so its reply's words aren't read for one on every frame. */
+function infoOf(t: Thread, items: Item[], brief: boolean): Info {
+  const last = lastTurnOf(items);
   const marks = last.filter((x): x is Mark => x.kind === "turn");
   const mark = marks.at(-1);
   const cps = last.filter((x): x is Checkpoint => x.kind === "checkpoint" && !x.reverted);
@@ -235,7 +254,7 @@ function infoOf(t: Thread, items: Item[]): Info {
     plan,
     limit: last.findLast((x): x is Limit => x.kind === "limit"),
     error: last.findLast((x): x is Extract<Item, { kind: "error" }> => x.kind === "error")?.message,
-    brief: text ? briefOf(text.text) : undefined,
+    brief: brief && text ? briefOf(text.text) : undefined,
     changed: [...files].sort((a, b) => b.added + b.removed - (a.added + a.removed)),
     files: files.length,
     lines: sumLines(files),
@@ -477,8 +496,8 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   const loaded = useEngine((s) => s.items[t.id] !== undefined);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const info = useMemo(() => infoOf(t, items), [t, items]);
   const kind = wallKind(t);
+  const info = useMemo(() => infoOf(t, items, kind === "done"), [t, items, kind]);
   const [busy, setBusy] = useState(false);
   const [draft, setDraftState] = useState(() => drafts.get(t.id) ?? "");
   const setDraft = (v: string) => {

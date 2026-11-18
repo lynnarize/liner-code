@@ -2,7 +2,7 @@
 import { I } from "../../icons";
 
 export const Empty = ({ several }: { several?: boolean }) => (
-  <div className="ld-empty">
+  <div className="ld-insp-empty">
     <I.fit size={20} />
     {several ? (
       <>

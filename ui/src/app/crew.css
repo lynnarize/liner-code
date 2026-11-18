@@ -13,6 +13,7 @@
   flex: none;
 }
 .lc-cr-faces > span {
+  position: relative;
   display: grid;
   place-items: center;
   width: 20px;
@@ -26,20 +27,21 @@
 .lc-cr-faces > span:first-child {
   margin-left: 0;
 }
-.lc-cr-faces > span[data-lead] {
+/* The lead's ring breathes outside its paper ring: a 1.5px accent ring on its own layer, by opacity
+   alone, so it doesn't repaint the header every frame as an animated box-shadow would. */
+.lc-cr-faces > span[data-lead]::after,
+.lc-cr-disc[data-on]::after {
+  content: "";
+  position: absolute;
+  inset: -3.5px;
+  border: 1.5px solid var(--l-accent);
+  border-radius: 50%;
+  pointer-events: none;
   animation: lc-cr-ring 1.6s ease-in-out infinite;
 }
 @keyframes lc-cr-ring {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 2px var(--lc-paper),
-      0 0 0 3.5px var(--l-accent);
-  }
   50% {
-    box-shadow:
-      0 0 0 2px var(--lc-paper),
-      0 0 0 3.5px color-mix(in oklab, var(--l-accent) 25%, transparent);
+    opacity: 0.25;
   }
 }
 
@@ -459,8 +461,10 @@ button.lc-cr-bg:hover {
   font-weight: 600;
   color: var(--l-ink-2);
 }
+/* At work, it takes the faces' paper ring, and their breathing ring outside it (above). */
 .lc-cr-disc[data-on] {
-  animation: lc-cr-ring 1.6s ease-in-out infinite;
+  position: relative;
+  box-shadow: 0 0 0 2px var(--lc-paper);
 }
 .lc-cr-tile {
   display: grid;
@@ -808,10 +812,14 @@ button.lc-cr-bg:hover {
   color: var(--l-ink-3);
 }
 
+/* Still, as before: no accent ring, and the disc without the paper ring it only had while breathing. */
 @media (prefers-reduced-motion: reduce) {
-  .lc-cr-faces > span[data-lead],
+  .lc-cr-faces > span[data-lead]::after,
+  .lc-cr-disc[data-on]::after {
+    display: none;
+  }
   .lc-cr-disc[data-on] {
-    animation: none;
+    box-shadow: none;
   }
 }
 

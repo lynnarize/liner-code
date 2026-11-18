@@ -174,7 +174,7 @@ function Fact({ name, children }: { name: string; children: ReactNode }) {
 
 /** The open card's two tiles: the threat model's areas with what is open in each, and the scans with who runs them. */
 function Inside({ p }: { p: SecurityProject }) {
-  const { data: findings } = useSec("security.findings.list", { projectId: p.projectId });
+  const { data: findings } = useSec("security.findings.list", { projectId: p.projectId }, ["findings"]);
   const providers = useEngine((s) => s.providers);
   const all = findings ?? [];
   const open = all.filter((f) => f.state === "open");

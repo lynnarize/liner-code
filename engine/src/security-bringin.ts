@@ -21,13 +21,13 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BringInResult, FindingExplain, GitHubReach, NewFinding, SecurityFinding, Severity } from "../../contracts/src/index.ts";
 import { findingKey, normalKey } from "../../contracts/src/index.ts";
-import { run, which } from "./exec.ts";
+import { outside, run, which } from "./exec.ts";
 import { excerptOf, SAFE_GIT } from "./security-checks.ts";
 import type { Security } from "./security.ts";
 
 /** A SARIF report bigger than this isn't read. */
 const SARIF_CAP = 25 * 1024 * 1024;
-/** At most this many results come in from one report (each is a write of the project's record). */
+/** At most this many results come in from one report (all in one write of the project's record, but each is matched against the stored findings). */
 const RESULTS_CAP = 2000;
 /** How long gh's answers about itself are trusted: security.side asks on every change. */
 const REACH_MS = 60_000;
@@ -251,7 +251,7 @@ function fileOfUri(uri: string, root: string): string | undefined {
   }
   if (isAbsolute(p)) {
     const rel = relative(root, p);
-    if (!rel || rel.startsWith("..") || isAbsolute(rel)) return p.split(sep).join("/");
+    if (!rel || outside(rel)) return p.split(sep).join("/");
     p = rel;
   }
   return p.split(sep).join("/").replace(/^\.\//, "").replace(/^\/+/, "") || undefined;

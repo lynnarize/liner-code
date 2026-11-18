@@ -13,7 +13,7 @@ import { useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ScanRecord, Thread } from "@contracts";
 import { useEngine } from "../engine";
 import { I, N, type MarkKind } from "../icons";
-import { agentOf, markOf, plural } from "../model";
+import { agentOf, clock, markOf, plural } from "../model";
 import { SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "../SideList";
 import { Pop, Row } from "../ui";
 import { goSecurity, useSecurity, useSecurityPage, type SecurityPage } from "./store";
@@ -71,7 +71,8 @@ type Item = { key: string; projectId: string; rank: 0 | 1 | 2; at: number; state
 
 export function SecuritySide() {
   const page = useSecurityPage();
-  const { data } = useSecurity("security.side", {});
+  // Asked again for what it shows: its scans, the open findings (GitHub's and reports' among them) and projects (gh's reach).
+  const { data, error, loading } = useSecurity("security.side", {}, ["findings", "scans", "projects"]);
   const threads = useEngine((s) => s.threads);
   const projects = useEngine((s) => s.projects);
   const agents = useEngine((s) => s.agents);
@@ -114,9 +115,9 @@ export function SecuritySide() {
 
   /** A session's mark, from how it stands. */
   const standing = (t: Thread): SideState => (t.status === "running" ? "working" : t.status === "waiting" ? "needs" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : "done");
-  /** A fix's or a question's second line while it works, waits or stopped; null when it has ended well. */
+  /** A fix's or a question's second line while it works, waits or stopped; null when it has ended well. Worded as Code's rows word it. */
   const live = (t: Thread, working: string): { text: string; tone?: "warn" | "danger" } | null =>
-    t.status === "running" ? { text: t.doing?.text || working } : t.status === "waiting" ? { text: "Waits for your answer", tone: "warn" } : t.status === "limited" ? { text: "Hit its plan's limit", tone: "warn" } : t.status === "error" ? { text: `Stopped · ${whenShort(t.updatedAt, now)}` } : null;
+    t.status === "running" ? { text: t.doing?.text || working } : t.status === "waiting" ? { text: "Waits for your answer", tone: "warn" } : t.status === "limited" ? { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" } : t.status === "error" ? { text: "Ran into a problem", tone: "danger" } : null;
 
   const scanItem = (s: ScanRecord): Item => {
     const t = s.threadId ? threads.find((x) => x.id === s.threadId) : undefined;
@@ -268,6 +269,17 @@ export function SecuritySide() {
       </SideHead>
 
       <div className="ls-side-list lc-sl-list">
+        {/* Not answered yet, or not at all: said in the list's place, never a blank list. */}
+        {!data && error && (
+          <p className="ls-side-none" role="alert">
+            Couldn't read Security: {error}
+          </p>
+        )}
+        {!data && !error && loading && (
+          <p className="ls-side-none">
+            <span className="l-shimmer">Reading Security</span>
+          </p>
+        )}
         {view === "folder" && data && !all.length && <p className="ls-side-none">No scans yet</p>}
         {view === "folder" &&
           folders.map((p) => {
@@ -282,7 +294,7 @@ export function SecuritySide() {
           <>
             {(scanItems.length > 0 || data) && (
               <section aria-label="Scans">
-                <SideLabel name="Scans" />
+                <SideLabel name="Scans" count={scanItems.length || undefined} />
                 {scanItems.length ? scanItems.map((x) => x.row) : <p className="ls-side-none">No scans yet</p>}
               </section>
             )}
@@ -294,7 +306,7 @@ export function SecuritySide() {
             )}
             {askItems.length > 0 && (
               <section aria-label="Asked about">
-                <SideLabel name="Asked about" />
+                <SideLabel name="Asked about" count={askItems.length} />
                 {askItems.map((x) => x.row)}
               </section>
             )}
@@ -324,7 +336,7 @@ export function SecuritySide() {
           sub={!data ? undefined : data.github.reach.installed ? (data.github.reach.signedIn ? `${data.github.open} open, read through gh` : "Not signed in to gh") : "Needs gh, GitHub's tool"}
           pick={opener(() => goSecurity({ kind: "findings", source: "github" }))}
         />
-        <SideRow wrap quiet mark={<I.file size={14} />} title="A report file" sub={data?.sarif.open ? `${data.sarif.open} open from reports` : "Drop a SARIF file here"} pick={opener(() => goSecurity({ kind: "findings", source: "sarif" }))} />
+        <SideRow wrap quiet mark={<I.file size={14} />} title="A report file" sub={data?.sarif.open ? `${data.sarif.open} open from reports` : "Pick a SARIF file to bring in"} pick={opener(() => goSecurity({ kind: "findings", source: "sarif" }))} />
       </section>
     </div>
   );

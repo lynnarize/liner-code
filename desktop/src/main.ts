@@ -1,21 +1,23 @@
 /*
   Liner Code's desktop shell, on Electron. It does what the Swift shell in mac/ did: one window
   the app draws in (the engine serves it on 127.0.0.1), the engine as a child process, the
-  material behind the sidebar, the menu bar with your keys, notifications and the Dock badge,
+  see-through window, the menu bar with your keys, notifications and the Dock badge,
   keys kept encrypted, Terminal and Finder. The page asks for these over one IPC channel
   ("liner") with the same methods it sent the Swift shell; preload.ts is its side of it.
 */
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, session, shell, systemPreferences, type MenuItemConstructorOptions, type NativeImage, type Rectangle } from "electron";
 import { exec, execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, release, tmpdir } from "node:os";
 import { basename, delimiter, join, normalize } from "node:path";
 import { sealedFrame } from "../../contracts/src/panel.ts";
 import { openAsk, QuitWhenDone, type Live } from "./finish";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
-import { mac, type Frame, type Rect } from "./mac";
+import { mac, type Rect } from "./mac";
+import { materialOf, seeThrough, type Material } from "./material";
+import { oldScripts } from "./temp";
 import { StatusItem, type TrayStatus } from "./tray";
 import { bundlePath, install as installUpdate, staged } from "./update";
 
@@ -54,6 +56,13 @@ const devUrl = process.env.LINER_UI_URL;
 // a window and a second engine.
 const firstCopy = app.requestSingleInstanceLock();
 if (!firstCopy) app.quit();
+/**
+  Started now, before Electron is ready, since neither needs it: your login shell's environment (its
+  rc files can take a second or two, and the engine waits on it) and your name and the computer's.
+  The window and its boot screen don't wait on either.
+*/
+const envAtLaunch = firstCopy ? loginEnvironment() : undefined;
+const whoAtLaunch = firstCopy ? whoami() : undefined;
 
 let win: BrowserWindow | null = null;
 let quitting = false;
@@ -116,8 +125,7 @@ const LIGHTS = { x: 20, y: 21 };
 // Over the desktop (a see-through window) it's on a tint of the window's colour, as the page will be, not on nothing.
 const bootPage = (ground: string) => `<html><body style="margin:0;height:100vh;background:${ground};font:13px -apple-system,system-ui,sans-serif;color:#8a8f98"><span style="position:fixed;top:calc(50% + 30px);left:50%;translate:-50% 0;white-space:nowrap">Starting the engine</span></body></html>`;
 
-let material = "solid";
-let glassRect: Frame = { x: 0, y: 0, width: 0, height: 0 };
+let material: Material = "solid";
 
 /** The system's window colour, which shows around the page's paper while the material is Solid. */
 function windowColor() {
@@ -128,27 +136,19 @@ function windowColor() {
   return nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#ececec";
 }
 
-/** The window turned see-through, the desktop behind the whole app (Settings, Appearance, Background: Desktop). */
-const seeThrough = (m: string) => m === "clear" || m === "frost";
-
 /**
-  What sits behind the transparent page: Liquid Glass (macOS 26+), classic vibrancy, solid, or
-  the desktop itself, crisp (clear) or blurred (frost). With the addon the window stays opaque and
-  the material covers the window's glass frame alone, the paper left out of it (a live material
-  behind the whole window kept WindowServer's GPU busy); for clear and frost it lets the window go
-  transparent, the page tinting itself, with nothing behind it or a blur behind it all. Without
-  the addon, Electron's own vibrancy covers the whole window. Clear and frost need the addon: the
-  window is made opaque, and Electron alone left it black behind the page, vibrancy or not, so
-  there they're solid, and the page doesn't offer Desktop (boot's `clear`).
+  What sits behind the transparent page: solid, or the desktop itself, crisp (clear) or blurred
+  (frost). With the addon the window stays opaque for solid; for clear and frost it lets the window
+  go transparent, the page tinting itself, with nothing behind it or a blur behind it all. Clear
+  and frost need the addon: Electron alone left the window black behind the page, so there
+  they're solid, and the page doesn't offer Desktop (boot's `clear`).
 */
 function applyMaterial() {
   if (!win || !isMac) return;
   // Full screen puts the window in a space of its own, with nothing of the desktop behind it (a
   // clear window shows the space's black there), so see-through is solid until it leaves.
-  if (mac) return mac.backdrop(win.getNativeWindowHandle(), seeThrough(material) && win.isFullScreen() ? "solid" : material, glassRect);
-  const solid = material === "solid" || seeThrough(material);
-  win.setVibrancy(solid ? null : "sidebar");
-  if (solid) win.setBackgroundColor(windowColor());
+  if (mac) return mac.backdrop(win.getNativeWindowHandle(), seeThrough(material) && win.isFullScreen() ? "solid" : material);
+  win.setBackgroundColor(windowColor());
 }
 
 /**
@@ -217,7 +217,6 @@ function createWindow() {
     ...(isMac ? { titleBarStyle: "hidden" as const, trafficLightPosition: LIGHTS, vibrancy: mac ? ("sidebar" as const) : undefined } : { autoHideMenuBar: true }),
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, devTools: inspect },
   });
-  if (prefs.maximized) win.maximize();
   applyMaterial();
 
   const wc = win.webContents;
@@ -225,6 +224,9 @@ function createWindow() {
   // (on launch, from the Dock, from a second launch); without this, Desktop never showed through.
   win.on("show", () => applyMaterial());
   win.once("ready-to-show", () => {
+    // Maximized only now: maximize() shows a hidden window, which would show it before its first paint.
+    // It was made at its normal frame, so leaving maximized goes back there.
+    if (prefs.maximized) win?.maximize();
     win?.show();
     app.focus({ steal: true });
   });
@@ -334,11 +336,22 @@ function send(command: string) {
   win?.webContents.send("liner:command", command);
 }
 
-/** The engine's RPC, for the menu bar item's menu, with the same token the page uses. */
-async function engineRpc(method: string, params: Record<string, unknown>) {
-  const r = await fetch(`http://127.0.0.1:${engine.port}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": engine.token }, body: JSON.stringify({ method, params }) });
-  const body = (await r.json()) as { ok: boolean; result?: unknown; error?: string };
-  if (!body.ok) throw new Error(body.error ?? "The engine said no.");
+/**
+  The engine's RPC, for the menu bar item's menu and a quit that waits, with the same token the
+  page uses (under npm run app:dev, the dev engine's port and token). Held to `ms`: an engine that's
+  stuck but still holds its connection open would otherwise keep the caller waiting for ever.
+*/
+async function engineRpc(method: string, params: Record<string, unknown>, ms = 5000) {
+  // npm run dev's engine is on 7317 (scripts/dev.ts), with the dev token the page has too.
+  const port = devUrl ? 7317 : engine.port;
+  const token = devUrl ? boot.token : engine.token;
+  const r = await fetch(`http://127.0.0.1:${port}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": token }, body: JSON.stringify({ method, params }), signal: AbortSignal.timeout(ms) });
+  // From here the engine has answered: what goes wrong now is its word, not its silence (`answered`, for a quit that waits).
+  const body = (await r.json().catch((e) => {
+    if (e instanceof SyntaxError) return { ok: false, error: `The engine answered ${r.status}, not in JSON.` };
+    throw e;
+  })) as { ok: boolean; result?: unknown; error?: string };
+  if (!body.ok) throw Object.assign(new Error(body.error ?? "The engine said no."), { answered: true });
   return body.result;
 }
 
@@ -366,10 +379,6 @@ const str = (v: unknown) => (typeof v === "string" ? v : "");
 const local = (p: string) => (isWin && p ? normalize(p) : p);
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const rectOf = (p: Record<string, unknown>): Rect => ({ x: num(p.x), y: num(p.y), width: num(p.width), height: num(p.height) });
-const frameOf = (p: Record<string, unknown>): Frame => {
-  const h = p.hole && typeof p.hole === "object" ? (p.hole as Record<string, unknown>) : null;
-  return { ...rectOf(p), ...(h ? { hole: { ...rectOf(h), radius: num(h.radius) } } : {}) };
-};
 
 ipcMain.on("liner:boot", (e) => {
   // clear: the window can turn see-through (the Mac addon is there), so the page offers Desktop.
@@ -387,11 +396,13 @@ ipcMain.handle("liner", async (e, method: unknown, params: unknown) => {
 });
 
 /**
-  A local page drawn in a window nobody sees, then captured: what an agent's screenshot shows when
-  its session isn't on screen. No Node, no new windows, nowhere but this Mac; gone once captured.
+  A local page drawn in a window nobody sees, then captured: no Node, no new windows, nowhere but
+  this Mac; gone once captured. `before` sees the window before it loads, `after` captures it once
+  it has; one deadline is over all of it.
 */
-async function shoot(url: string, width: number, height: number) {
+async function offscreen<T>(url: string, width: number, height: number, after: (w: BrowserWindow) => Promise<T>, before?: (w: BrowserWindow) => void) {
   const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, disableDialogs: true } });
+  before?.(w);
   w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   // The page stays on this Mac, and a sealed frame in it (an add-on being checked, with real files) stays put.
   w.webContents.on("will-frame-navigate", (e) => {
@@ -402,11 +413,7 @@ async function shoot(url: string, width: number, height: number) {
     return await Promise.race([
       (async () => {
         await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error("The page took too long to load.")), 15000))]);
-        // Its first frames, fonts and images.
-        await new Promise((r) => setTimeout(r, 800));
-        const img = await w.webContents.capturePage();
-        if (img.isEmpty()) throw new Error("The page didn't draw.");
-        return img.toPNG().toString("base64");
+        return after(w);
       })(),
       stuck(w),
     ]);
@@ -414,6 +421,16 @@ async function shoot(url: string, width: number, height: number) {
     w.destroy();
   }
 }
+
+/** What an agent's screenshot shows when its session isn't on screen. */
+const shoot = (url: string, width: number, height: number) =>
+  offscreen(url, width, height, async (w) => {
+    // Its first frames, fonts and images.
+    await new Promise((r) => setTimeout(r, 800));
+    const img = await w.webContents.capturePage();
+    if (img.isEmpty()) throw new Error("The page didn't draw.");
+    return img.toPNG().toString("base64");
+  });
 
 /** Rejects after 25 s (under the engine's 30), crashing a renderer stuck in a loop on the way. */
 const stuck = (w: BrowserWindow) =>
@@ -429,38 +446,30 @@ const stuck = (w: BrowserWindow) =>
   (up to 2400 px), with the errors it logged while it loaded (T3 Code's html_preview does the same
   in a headless Chrome).
 */
-async function look(url: string, width: number, height: number) {
-  const w = new BrowserWindow({ show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, disableDialogs: true } });
+function look(url: string, width: number, height: number) {
   const errors: string[] = [];
-  w.webContents.on("console-message", (e) => {
-    if (e.level === "error" && errors.length < 20) errors.push(`${e.message}${e.lineNumber ? ` (line ${e.lineNumber})` : ""}`);
-  });
-  w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  // The page stays on this Mac, and a sealed frame in it (an add-on being checked, with real files) stays put.
-  w.webContents.on("will-frame-navigate", (e) => {
-    if (e.isMainFrame ? !isLocal(e.url) : sealed(e)) e.preventDefault();
-  });
-  try {
-    return await Promise.race([
-      (async () => {
-        await Promise.race([w.loadURL(url), new Promise((_, no) => setTimeout(() => no(new Error("The page took too long to load.")), 15000))]);
-        await new Promise((r) => setTimeout(r, 600));
-        const tall = Number(await w.webContents.executeJavaScript("Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0))").catch(() => 0)) || height;
-        if (tall > height) {
-          w.setContentSize(width, Math.min(2400, tall));
-          await new Promise((r) => setTimeout(r, 400));
-        }
-        const img = await w.webContents.capturePage();
-        if (img.isEmpty()) throw new Error("The page didn't draw.");
-        // At the design's own pixels: a Retina capture is twice as wide, and costs the model four times as much to look at.
-        const shot = img.getSize().width > width ? img.resize({ width, quality: "good" }) : img;
-        return { png: shot.toPNG().toString("base64"), errors, height: tall };
-      })(),
-      stuck(w),
-    ]);
-  } finally {
-    w.destroy();
-  }
+  return offscreen(
+    url,
+    width,
+    height,
+    async (w) => {
+      await new Promise((r) => setTimeout(r, 600));
+      const tall = Number(await w.webContents.executeJavaScript("Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0))").catch(() => 0)) || height;
+      if (tall > height) {
+        w.setContentSize(width, Math.min(2400, tall));
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      const img = await w.webContents.capturePage();
+      if (img.isEmpty()) throw new Error("The page didn't draw.");
+      // At the design's own pixels: a Retina capture is twice as wide, and costs the model four times as much to look at.
+      const shot = img.getSize().width > width ? img.resize({ width, quality: "good" }) : img;
+      return { png: shot.toPNG().toString("base64"), errors, height: tall };
+    },
+    (w) =>
+      w.webContents.on("console-message", (e) => {
+        if (e.level === "error" && errors.length < 20) errors.push(`${e.message}${e.lineNumber ? ` (line ${e.lineNumber})` : ""}`);
+      }),
+  );
 }
 
 async function handle(method: string, p: Record<string, unknown>): Promise<unknown> {
@@ -517,8 +526,7 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       setImmediate(() => app.quit());
       return;
     case "setMaterial": {
-      const m = str(p.material);
-      material = m === "vibrancy" || m === "solid" || seeThrough(m) ? m : "glass";
+      material = materialOf(p.material);
       prefs.material = material;
       // The see-through page's ground, for the next launch's boot screen: a CSS colour, kept to
       // the characters one needs, since it goes into that page as it is.
@@ -527,9 +535,6 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       savePrefs();
       return applyMaterial();
     }
-    case "setGlassRect":
-      glassRect = frameOf(p);
-      return applyMaterial();
     case "setAppearance": {
       const t = str(p.theme);
       nativeTheme.themeSource = t === "dark" || t === "light" ? t : "system";
@@ -645,7 +650,8 @@ const started = (cmd: string, args: string[], hide = false, cwd?: string) =>
 
 /**
   Sign-in commands run in Terminal, where the tool can ask for what it needs. A .command file
-  opens there without asking for Automation access.
+  opens there without asking for Automation access. It can't remove itself before Terminal has read
+  it, so the ones a day old go at the next launch (oldScripts).
 */
 async function runInTerminal(command: string) {
   if (!command) return;
@@ -794,7 +800,12 @@ async function reportProblem() {
   const zip = join(app.getPath("downloads"), `${basename(dir)}.zip`);
   // Windows 10 and later have bsdtar in System32, which writes a zip for a .zip name (-a).
   const [zipper, zipArgs] = isWin ? [join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe"), ["-a", "-c", "-f", zip, "-C", tmpdir(), basename(dir)]] : ["ditto", ["-c", "-k", "--keepParent", dir, zip]];
-  await new Promise<void>((done, fail) => execFile(zipper, zipArgs, { windowsHide: true }, (e) => (e ? fail(e) : done())));
+  try {
+    await new Promise<void>((done, fail) => execFile(zipper, zipArgs, { windowsHide: true }, (e) => (e ? fail(e) : done())));
+  } finally {
+    // The logs' unzipped copy goes, zipped or not: it holds folder names and what the agents did.
+    rmSync(dir, { recursive: true, force: true });
+  }
   shell.showItemInFolder(zip);
   const repo = releasesRepo();
   if (repo) void shell.openExternal(`https://github.com/${repo}/issues/new?template=bug.yml&version=${encodeURIComponent(app.getVersion())}${isMac ? `&macos=${encodeURIComponent(process.getSystemVersion())}` : ""}`);
@@ -888,8 +899,11 @@ async function checkWaiting() {
   const w = waiting;
   if (!w || checking) return;
   checking = true;
+  // Whether the engine answered this look: anything going wrong after that is no silence of its.
+  let heard = false;
   try {
     const s = (await engineRpc("state.get", {})) as { threads?: Live[]; settings?: { notify?: boolean } };
+    heard = true;
     const threads = s.threads ?? [];
     // A session already waiting on you when you quit holds the app only if its request is still open (a live turn).
     for (const id of w.toCheck(threads)) w.mark(id, openAsk(await engineRpc("thread.items", { id }).catch(() => [])));
@@ -903,8 +917,17 @@ async function checkWaiting() {
     quitting = true;
     app.quit();
   } catch (e) {
-    // The engine is restarting or busy: the next look tries again.
+    // The engine is restarting or busy: the next look tries again. An answer that says no is the engine there, so work may
+    // still run: never silence. Unanswered look after look for a minute awake, it can't be waited on safely any more
+    // (finish.ts, SILENT_MS), and the app quits.
     console.error("[shell] couldn't ask the engine what still works:", e);
+    if (waiting !== w) return;
+    if (heard || (e as { answered?: boolean }).answered) w.answered();
+    else if (w.unanswered(Date.now())) {
+      clearInterval(waitTimer);
+      quitting = true;
+      app.quit();
+    }
   } finally {
     checking = false;
   }
@@ -950,14 +973,15 @@ function setDockIcon() {
 }
 
 nativeTheme.on("updated", () => {
-  if (win && !mac && (material === "solid" || seeThrough(material))) win.setBackgroundColor(windowColor());
+  if (win && !mac) win.setBackgroundColor(windowColor());
   setDockIcon();
 });
 
 void app.whenReady().then(async () => {
   if (!firstCopy) return;
   loadPrefs();
-  material = prefs.material ?? "solid";
+  // A shell.json from before Glass and Vibrancy went may still name one of them: those are solid now.
+  material = materialOf(prefs.material);
   setDockIcon();
   // It follows the system, not the page: a theme picked in the app doesn't move the system's, so its own notice does.
   if (ownDockIcon) systemPreferences.subscribeNotification("AppleInterfaceThemeChangedNotification", setDockIcon);
@@ -965,14 +989,16 @@ void app.whenReady().then(async () => {
   buildMenu();
   startMenu();
   createWindow();
+  setTimeout(() => oldScripts(tmpdir()), 5000);
   mac?.quietWritingBadge();
-  const who = await whoami();
-  boot.user = who.user;
-  boot.machine = who.machine;
+  // The page reads your name (liner:boot) as it loads: the dev server's page at once, the engine's
+  // only once the engine is up, which waits on it below anyway.
+  const whoP = (whoAtLaunch ?? whoami()).then((who) => ((boot.user = who.user), (boot.machine = who.machine), who));
 
   if (devUrl) {
     boot.token = process.env.LINER_TOKEN || "liner-dev";
     appOrigin = new URL(devUrl).origin;
+    await whoP;
     void win?.loadURL(devUrl);
     return;
   }
@@ -980,7 +1006,8 @@ void app.whenReady().then(async () => {
   void win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(bootPage(mac && seeThrough(material) ? (prefs.ground ?? `${windowColor()}99`) : "transparent"))}`);
   const paths = resources();
   if (!paths) return fail("Liner Code can't find its engine. Reinstall the app.");
-  const [env, own] = await Promise.all([loginEnvironment(), keys.all().catch(() => ({}))]);
+  // The keys need Electron (safeStorage), so they're read only now; the shell and whoami have been going since launch.
+  const [env, own, who] = await Promise.all([envAtLaunch ?? loginEnvironment(), keys.all().catch(() => ({})), whoP]);
   shellEnv = env;
   engine.onReady = (port) => {
     // A restarted engine keeps its port and token, and the page reconnects by itself; one that

@@ -1,7 +1,7 @@
 /*
-  What Liner Code shows of Liner Design before the Design face loads: the agents' colours, the
-  Code | Design switch under the name, and the composer's "Watch on the canvas" row. The rest is
-  in design/design-face.css, which loads with the face.
+  What Liner Code shows of Liner Design before the Design face loads: the agents' colours and the
+  composer's "Watch on the canvas" row. The rest is in design/design-face.css, which loads with
+  the face.
 */
 :root {
   --ld-cv: color-mix(in oklab, var(--l-ink) 3.5%, var(--lc-paper));
@@ -16,51 +16,6 @@ html[data-theme="dark"] {
   --ld-pop: 0 0 0 1px var(--lc-hair), 0 14px 34px -10px oklch(0 0 0 / 0.6);
 }
 
-/* ---------- the switch, under the name in both faces ---------- */
-.lc-sb-face {
-  position: relative;
-  display: flex;
-  flex: none;
-  gap: 2px;
-  margin-top: -4px;
-}
-.lc-sb-face::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: calc(50% - 1px);
-  border-radius: 10px;
-  background: var(--l-wash-2);
-  transition: translate 260ms var(--l-ease-out);
-  pointer-events: none;
-}
-.lc-sb-face[data-face="design"]::before {
-  translate: calc(100% + 2px) 0;
-}
-.lc-sb-face-b {
-  position: relative;
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 32px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-  cursor: pointer;
-  transition: color 140ms ease;
-}
-.lc-sb-face-b[aria-checked="true"],
-.lc-sb-face-b:hover {
-  color: var(--l-ink);
-}
 .lc-sb-design {
   display: flex;
   flex: 1;
@@ -120,9 +75,4 @@ html[data-motion="quick"] .ld-pd[data-lead]::after {
 .ld-watch b {
   font-weight: 600;
   color: var(--l-ink);
-}
-@media (prefers-reduced-motion: reduce) {
-  .lc-sb-face::before {
-    transition: none;
-  }
 }

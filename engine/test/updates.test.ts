@@ -247,3 +247,32 @@ test("progress: an updater's output shows while it runs, and is cleared when it'
   assert.ok(seen.some((s) => s.progress === 0.4 && s.step === "40%"), JSON.stringify(seen));
   assert.deepEqual([up.state.tools[0].progress, up.state.tools[0].step], [undefined, undefined]);
 });
+
+test("an update kept from the last look isn't offered once the engine's look at the tools finds it installed (updated in a terminal)", () => {
+  const home = mkdtempSync(join(tmpdir(), "lc-upd-installed-"));
+  mkdirSync(join(home, "updates"), { recursive: true });
+  const tools = [
+    { id: "codex", label: "Codex CLI", current: "1.0.0", latest: "1.1.0", command: "codex update" },
+    { id: "claude", label: "Claude Code", current: "2.0.0", latest: "2.1.0", command: "claude update" },
+    { id: "opencode", label: "OpenCode", current: "0.9.0", latest: "1.0.0", command: "opencode upgrade" },
+  ];
+  writeFileSync(join(home, "updates", "state.json"), JSON.stringify({ checkedAt: Date.now() - 3600_000, found: { tools } }));
+  const store = new Store(home);
+  const up = new Updater(store, { PATH: "/usr/bin:/bin", LINER_UPDATE_REPO: "o/n", LINER_APP_VERSION: "0.2.8" }, { working: () => 0, restartIdle: () => {} }, () => {});
+  try {
+    assert.deepEqual(up.state.tools.map((t) => t.state), ["available", "available", "available"], "restored as the last look left them");
+    const sent: string[] = [];
+    store.on((e) => e.type === "updates" && sent.push(e.updates.tools.map((t) => t.state).join()));
+    // The launch's look: Codex was updated in a terminal, Claude Code wasn't, OpenCode said no version.
+    store.emit({ type: "providers", providers: [{ id: "codex", version: "codex-cli 1.1.0" }, { id: "claude", version: "2.0.0 (Claude Code)" }, { id: "opencode" }] as never });
+    assert.deepEqual(up.state.tools.map((t) => [t.id, t.state, t.current]), [["codex", "current", "1.1.0"], ["claude", "available", "2.0.0"], ["opencode", "available", "0.9.0"]]);
+    assert.deepEqual(sent, ["current,available,available"], "the app is told once");
+    const saved = JSON.parse(readFileSync(join(home, "updates", "state.json"), "utf8")) as { found: { tools: { id: string; current: string }[] } };
+    assert.equal(saved.found.tools.find((t) => t.id === "codex")?.current, "1.1.0", "and it's kept so for the next launch");
+    // A look that says nothing new changes nothing, and is not sent again.
+    store.emit({ type: "providers", providers: [{ id: "codex", version: "codex-cli 1.1.0" }] as never });
+    assert.equal(sent.length, 1);
+  } finally {
+    up.stop();
+  }
+});

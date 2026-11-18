@@ -17,7 +17,7 @@ import type { AddonAsk, AddonManifest } from "../../contracts/src/index.ts";
 import { ADDON_DIR, checkManifest, readPanelFiles, reachOf, type Addons, type PanelFiles } from "./addons.ts";
 import { isDsh, npmFetch, npmOf, readDsh } from "./dsh.ts";
 import { sandboxWords, savesFolder } from "./dsh-hosts.ts";
-import { run } from "./exec.ts";
+import { outside, run } from "./exec.ts";
 
 /** A GitHub address, as people paste them: owner/repo, maybe a branch and a folder in it. */
 export function githubOf(source: string): { owner: string; repo: string; branch?: string; path?: string } | null {
@@ -123,7 +123,7 @@ export class Sources {
       }
       dir = gh.path ? resolve(clone, gh.path) : clone;
       const rel = relative(clone, dir);
-      if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("That folder is outside the repository.");
+      if (outside(rel)) throw new Error("That folder is outside the repository.");
     } else {
       // A file:// address (spaces as %20) is its path; ~ is your home folder.
       let path = s.replace(/^~(?=\/)/, process.env.HOME ?? "~");
@@ -143,13 +143,7 @@ export class Sources {
       const at = findAddon(dir);
       const { manifest, files } = readSource(at);
       if (manifest.kind === "panel" && manifest.access.network && this.network() === "never") throw new Error(`It reaches ${manifest.access.network}, and panels may never reach the internet (Settings › Add-ons).`);
-      const have = this.addons.get(manifest.id);
-      if (have && have.kind !== manifest.kind) throw new Error(`You already have a ${have.kind} called ${manifest.id}; this one is a ${manifest.kind} with the same id.`);
-      // Keys and storage are kept by id, removed or not: another source's add-on never takes them over.
-      if (have && have.by.from?.toLowerCase() !== from.toLowerCase()) {
-        const who = have.by.from ? `from ${have.by.from}` : have.by.agent === "You" ? "that you added" : `made by ${have.by.agent}`;
-        throw new Error(`You already have an add-on called ${manifest.id}${have.removed ? " (removed, but kept)" : ""}, ${who}; its keys and storage stay with that id. This one is from ${from}.`);
-      }
+      this.clash(manifest, from);
       this.staged.set(token, { manifest, files, from, dir: clone, at: Date.now() });
       const shown = { id: "", name: "Every project" };
       const path = clone ? relative(clone, at).split(sep).join("/") || "." : at;
@@ -165,18 +159,27 @@ export class Sources {
   }
 
   /**
+    An add-on from `from` whose id is already one of yours from somewhere else, or of another kind,
+    is refused: keys and storage are kept by id, removed or not, so another source's add-on never
+    takes them over. The one rule for every source (a repository, a folder, npm).
+  */
+  private clash(manifest: AddonManifest, from: string) {
+    const have = this.addons.get(manifest.id);
+    if (have && have.kind !== manifest.kind) throw new Error(`You already have a ${have.kind} called ${manifest.id}; this one is a ${manifest.kind} with the same id.`);
+    if (have && have.by.from?.toLowerCase() !== from.toLowerCase()) {
+      const who = have.by.from ? `from ${have.by.from}` : have.by.agent === "You" ? "that you added" : `made by ${have.by.agent}`;
+      throw new Error(`You already have an add-on called ${manifest.id}${have.removed ? " (removed, but kept)" : ""}, ${who}; its keys and storage stay with that id. This one is from ${from}.`);
+    }
+  }
+
+  /**
     A DeepSeek Harness plugin, unpacked in `dir`: read into the add-on it makes, its Node half's
     dependencies installed (npm's scripts off), and its card, which says what of it is left out.
   */
   private async openDsh(o: { token: string; dir: string; from: string; clone?: string; integrity?: string; npm: boolean }): Promise<{ token: string; from: string; ask: AddonAsk }> {
     const read = readDsh(o.dir, { integrity: o.integrity });
     const { manifest } = read;
-    const have = this.addons.get(manifest.id);
-    if (have && have.kind !== manifest.kind) throw new Error(`You already have a ${have.kind} called ${manifest.id}; this one is a ${manifest.kind} with the same id.`);
-    if (have && have.by.from?.toLowerCase() !== o.from.toLowerCase()) {
-      const who = have.by.from ? `from ${have.by.from}` : have.by.agent === "You" ? "that you added" : `made by ${have.by.agent}`;
-      throw new Error(`You already have an add-on called ${manifest.id}${have.removed ? " (removed, but kept)" : ""}, ${who}; its keys and storage stay with that id. This one is from ${o.from}.`);
-    }
+    this.clash(manifest, o.from);
     // A folder you chose is copied on the yes, its node_modules only when its program needs them; one from npm is ours to finish here.
     if (read.deps.length) {
       if (!o.clone) {

@@ -17,11 +17,11 @@
   to a question (security_ask), never by the agent's own tools.
 */
 import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import type { CodeExcerpt, Effort, FindingExplain, FreeCheckRun, NewFinding, ProviderInfo, Question, ScanChoices, ScanDepth, ScanOptions, ScanRecord, ScanState, SecondLookState, SecurityFinding, SecurityFindingAdded, SecurityItem, Severity, Thread, ThreatModel } from "../../contracts/src/index.ts";
 import { DISMISS_LABEL, FREE_CHECK_LABEL, familyOf, normalKey, reviewerOf, sealable, SEVERITIES, SEVERITY_LABEL, splitModel, startOf } from "../../contracts/src/index.ts";
 import type { McpResult } from "./agent-tools.ts";
-import { run } from "./exec.ts";
+import { outside, run } from "./exec.ts";
 import { uid } from "./store.ts";
 import { ANSWERS_HEADING, insideReal, MODEL_FILE, parseAreas, specialists, type Security } from "./security.ts";
 import { runChecks } from "./security-checks.ts";
@@ -308,8 +308,24 @@ export async function startScan(sec: Security, o: ScanOptions): Promise<{ scan: 
   })().catch((e) => {
     sec.patchScan(rec.id, { state: "failed", finishedAt: Date.now(), endsAt: undefined, error: e instanceof Error ? e.message : String(e) });
     clearInterval(live.timer);
+    lives.get(sec)?.delete(rec.id);
   });
   return { scan: started, thread: sec.store.thread(thread.id) };
+}
+
+/** A scan whose session's first message didn't start, before it ever ran: failed, with why. */
+function notStarted(sec: Security, threadId: string, why: string) {
+  const t = sec.store.threads.find((x) => x.id === threadId);
+  const scanId = t?.security?.kind === "scan" ? t.security.scan : undefined;
+  const live = scanId ? liveOf(sec, scanId) : undefined;
+  if (!scanId || !live || live.ran) return;
+  clearInterval(live.timer);
+  lives.get(sec)?.delete(scanId);
+  try {
+    sec.patchScan(scanId, { state: "failed", finishedAt: Date.now(), endsAt: undefined, error: `That didn't start: ${why}` });
+  } catch {
+    // the record went meanwhile
+  }
 }
 
 /** The clock: past "Stops after" (asking doesn't count), the scan's turn is stopped and the scan ends as stopped at its time. */
@@ -336,6 +352,9 @@ export function wake(sec: Security) {
   if (woken.has(sec)) return;
   woken.add(sec);
   sec.store.on((e) => {
+    // The first message never started (its worktree, its context: thread.send says "That didn't start" and keeps it in the
+    // queue): the scan ends now as failed, in those words, not as running until its clock says it was stopped.
+    if (e.type === "notify" && e.kind === "error" && e.title === "That didn't start") return void notStarted(sec, e.threadId, e.body);
     if (e.type !== "thread" || !e.thread.security) return;
     const t = e.thread;
     const tag = t.security!;
@@ -642,7 +661,7 @@ const READS = new Set(SECURITY_READS);
 function relFile(root: string, file: string): string | undefined {
   const abs = resolve(root, file.replace(/^\.\//, ""));
   const rel = relative(resolve(root), abs);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  if (!rel || outside(rel)) return undefined;
   return rel.split("\\").join("/");
 }
 /** Code excerpts as the agent gave them, checked and cut to size: six at most, sixty lines each. */
@@ -801,12 +820,8 @@ export async function call(sec: Security, name: string, args: Record<string, unk
         const line = int(args.line);
         const endLine = int(args.end_line);
         const n: NewFinding = { title, severity, source: "agent", ...(file ? { file } : {}), ...(line ? { line } : {}), ...(endLine && line && endLine >= line ? { endLine } : {}), ...(str(args.rule, 80) ? { rule: str(args.rule, 80), instance: `t:${normalKey(title)}` } : {}), ...(areaOf(sec, projectId, args.area) ? { area: areaOf(sec, projectId, args.area) } : {}), scan: scan!.id, explain };
-        const added: SecurityFindingAdded = sec.add(projectId, n, byOf(t, at.sidekick));
-        try {
-          sec.countOn(scan!.id, added);
-        } catch {
-          // the record went between: the finding stays
-        }
+        // Counted on its scan in the same write as the finding (a scan's record that went between: the finding stays, uncounted).
+        const added: SecurityFindingAdded = sec.add(projectId, n, byOf(t, at.sidekick), scan!.id);
         sec.changed(["findings"], projectId);
         const f = added.finding;
         put(sec, t.id, { type: "finding", scan: scan!.id, finding: f.id, title: f.title, severity: f.severity, ...(f.file ? { file: f.file } : {}), ...(f.line ? { line: f.line } : {}), ...(f.area ? { area: f.area } : {}), outcome: added.outcome, ...(str(args.why, 400) ? { why: str(args.why, 400) } : {}) });

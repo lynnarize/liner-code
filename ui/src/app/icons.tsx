@@ -350,15 +350,3 @@ export function StepMark({ state, size = 16, label, className }: { state: StepSt
     </span>
   );
 }
-
-/** Tool kinds, for the tile in a work row. */
-export function ToolIcon({ kind, size = 12 }: { kind: string; size?: number }) {
-  if (kind === "exec") return <I.terminal size={size} />;
-  if (kind === "edit" || kind === "write") return <I.edit size={size} />;
-  if (kind === "read") return <I.file size={size} />;
-  if (kind === "search") return <I.search size={size} />;
-  if (kind === "web" || kind === "fetch") return <I.globe size={size} />;
-  if (kind === "task") return <I.agents size={size} />;
-  if (kind === "think") return <I.think size={size} />;
-  return <I.tool size={size} />;
-}

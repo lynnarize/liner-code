@@ -113,16 +113,12 @@ export const bridge = {
     if (isNative()) await call("keychainSet", { account, key });
   },
   /**
-    The window's material: Liquid Glass or vibrancy behind the sidebar, solid, or the whole window
-    see-through to the desktop, crisp (clear) or blurred (frost). `ground`: see-through, the page's
-    ground as a CSS colour, which the shell's boot screen paints at the next launch.
+    The window's material: solid, or the whole window see-through to the desktop, crisp (clear)
+    or blurred (frost). `ground`: see-through, the page's ground as a CSS colour, which the
+    shell's boot screen paints at the next launch.
   */
-  setMaterial(material: "glass" | "vibrancy" | "solid" | "clear" | "frost", ground?: string) {
+  setMaterial(material: "solid" | "clear" | "frost", ground?: string) {
     if (isNative()) void call("setMaterial", { material, ground }).catch(() => {});
-  },
-  /** Where the sidebar column is, so a live material shows the desktop there and nowhere else. */
-  setGlassRect(rect: { x: number; y: number; width: number; height: number; hole?: { x: number; y: number; width: number; height: number; radius: number } }) {
-    if (isNative()) void call("setGlassRect", rect).catch(() => {});
   },
   setAppearance(theme: "light" | "dark" | "system") {
     if (isNative()) void call("setAppearance", { theme }).catch(() => {});

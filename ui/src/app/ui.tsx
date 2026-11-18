@@ -2,15 +2,22 @@
   Small pieces the screens share: an anchored glass panel with rich rows, agent discs, the
   model chip, badges and the session's status mark.
 */
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
-import type { AgentProfile, LimitWindow, Thread, ToolLimits } from "@contracts";
+import type { AgentProfile, LimitWindow, Thread } from "@contracts";
 import { Glyph, I, ModelMark, Spinner, wt, type MarkKind } from "./icons";
-import { clock, compact } from "./model";
+import { clock } from "./model";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
+
+/** A callback that keeps one identity while it calls the latest one given, so it doesn't redraw what it's handed to (a memoised Turn, Session, a sidebar row). */
+export function useSteady<A extends unknown[], R = void>(fn: ((...a: A) => R) | undefined) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...a: A) => ref.current?.(...a) as R, []);
+}
 
 type Side = "top" | "bottom";
 const EDGE = 10;
@@ -338,64 +345,6 @@ export const Lines = ({ added, removed }: { added: number; removed: number }) =>
   </span>
 );
 
-/** A ring that fills with how much of the context window is used. */
-export function ContextRing({ used, size = 14 }: { used: number; size?: number }) {
-  const r = 5.5;
-  const c = 2 * Math.PI * r;
-  const p = Math.max(0, Math.min(1, used));
-  return (
-    <span className="lc-ring" data-warn={p > 0.8 || undefined} title={`${Math.round(p * 100)}% of the context used`}>
-      <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden>
-        <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeOpacity="0.18" strokeWidth="2" />
-        <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" transform="rotate(-90 7 7)" />
-      </svg>
-      {Math.round(p * 100)}%
-    </span>
-  );
-}
-
-/**
-  The ring as a button (T3 Code: chat/ContextWindowMeter.tsx): it opens how much of the window is
-  used, in tokens, and Compact, which asks the tool to sum up what came before. Compacting waits
-  for a running turn to end, so the action is there only while nothing runs.
-*/
-/** The context ring, whose pop also holds the plan's windows when they're known: one ring for both. */
-export function ContextMeter({ used, max, running, onCompact, limits }: { used: number; max: number; running?: boolean; onCompact?: () => void; limits?: ToolLimits[] }) {
-  const now = Date.now();
-  const p = Math.max(0, Math.min(1, used / max));
-  const pct = Math.round(p * 100);
-  return (
-    <Pop label={`Context: ${pct}% used${limits?.length ? ", and the plan's limits" : ""}`} side="top" align="center" width={limits?.length ? 290 : 260} triggerClass="lc-seg-b lc-ring-b" trigger={<ContextRing used={p} />}>
-      {(close) => (
-        <div className="lc-ctxm">
-          <PanelHead end={`${pct}%`}>Context</PanelHead>
-          <span className="lc-ctxm-bar" role="progressbar" aria-label="Context used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} data-warn={p > 0.8 || undefined}>
-            <i style={{ width: `${pct}%` }} />
-          </span>
-          <p className="lc-ctxm-n">
-            {compact(used)} of {compact(max)} tokens
-          </p>
-          {onCompact &&
-            (running ? (
-              <p className="lc-pop-foot">Compact once this turn ends.</p>
-            ) : (
-              <Row title="Compact" note="Sums up what came before, so the window has room again" onPick={() => (close(), onCompact())} />
-            ))}
-          {limits?.map((t) => (
-            <div key={t.provider} className="lc-limm-tool">
-              <Sep />
-              <PanelHead end={t.plan && t.plan[0].toUpperCase() + t.plan.slice(1)}>{t.label}</PanelHead>
-              {t.windows.map((w) => (
-                <LimitRow key={w.label} w={w} label={t.label} now={now} />
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </Pop>
-  );
-}
-
 /** "2h 14m", "3d 4h", "12m": how long until `ms` from now. */
 const until = (ms: number) => {
   const m = Math.max(1, Math.round(ms / 60_000));
@@ -427,69 +376,10 @@ export function LimitRow({ w, label, now }: { w: LimitWindow; label: string; now
   );
 }
 
-/** A tool's 5-hour and weekly windows, the two that stop a session: the first of each kind, or the first two. */
-const pairOf = (t: ToolLimits) => {
-  const short = t.windows.find((w) => w.kind === "session");
-  const week = t.windows.find((w) => w.kind === "weekly");
-  return short || week ? [short, week].filter((w): w is LimitWindow => Boolean(w)) : t.windows.slice(0, 2);
-};
-
-/**
-  The plan's windows beside the context ring: a bar each for the 5-hour window and the week (T3
-  Code: thread details' usage limits), with the busier one's share. It opens every window of the
-  tools this session runs on, each with when it resets.
-*/
-export function LimitMeter({ tools }: { tools: ToolLimits[] }) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(t);
-  }, []);
-  const pair = pairOf(tools[0]);
-  const shown = pair.map((w) => (w.resetsAt !== undefined && w.resetsAt <= now ? 0 : Math.max(0, Math.min(100, w.usedPercent))));
-  const top = Math.max(...shown);
-  const said = pair.map((w, i) => `${w.label} ${Math.round(shown[i])}% used`).join(", ");
-  return (
-    <Pop
-      label={`${tools[0].label} plan: ${said}`}
-      side="top"
-      align="center"
-      width={290}
-      triggerClass="lc-seg-b lc-ring-b"
-      trigger={
-        <span className="lc-lim" data-warn={top >= 80 || undefined}>
-          <span className="lc-lim-bars" aria-hidden>
-            {shown.map((v, i) => (
-              <span key={pair[i].label}>
-                <i style={{ width: `${v}%` }} />
-              </span>
-            ))}
-          </span>
-          {Math.round(top)}%
-        </span>
-      }
-    >
-      {() => (
-        <div className="lc-limm">
-          {tools.map((t) => (
-            <div key={t.provider} className="lc-limm-tool">
-              <PanelHead end={t.plan && t.plan[0].toUpperCase() + t.plan.slice(1)}>{t.label}</PanelHead>
-              {t.windows.map((w) => (
-                <LimitRow key={w.label} w={w} label={t.label} now={now} />
-              ))}
-            </div>
-          ))}
-          <p className="lc-pop-foot">From the tool itself, asked {clock(Math.min(...tools.map((t) => t.at)), now)}</p>
-        </div>
-      )}
-    </Pop>
-  );
-}
-
 export const Kbd = ({ children }: { children: ReactNode }) => <kbd className="lc-kbd">{children}</kbd>;
 
 /** What a card shows in place of a secret's value (the engine's launch.ts, HIDDEN). */
-export const HIDDEN_VALUE = "(set, not shown)";
+const HIDDEN_VALUE = "(set, not shown)";
 /** A variable as a card shows it, KEY=value: a value kept back reads quieter, its name kept, so it isn't taken for the value. */
 export const EnvLine = ({ k, v }: { k: string; v: string }) => (
   <>

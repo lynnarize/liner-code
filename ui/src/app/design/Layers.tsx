@@ -5,7 +5,7 @@
   picks; ⌘[ and ⌘] move what's picked up or down in its stack, here or on the canvas.
 */
 import { useEffect, useMemo, useState, type ComponentType } from "react";
-import type { TreeNode } from "@contracts";
+import type { DesignFile, DesignFrame, TreeNode } from "@contracts";
 import { I } from "../icons";
 import { SideLabel } from "../SideList";
 import { parentIn } from "./Canvas";
@@ -13,7 +13,7 @@ import { LayerMark } from "./BuildTab";
 import { LayerChecks } from "./ChecksTab";
 import { useLean } from "./lean";
 import { D } from "./Rail";
-import { design, getDesign, isBlank, isGone, useDesign } from "./store";
+import { design, getDesign, isBlank, isGone, useDesign, type DesignState } from "./store";
 
 /**
   What other builders put in the sidebar: E's skills rows under the lean (in place of the plain
@@ -80,19 +80,41 @@ function SkillRows() {
   );
 }
 
+/*
+  What the sidebar shows of the open file: its pages, and each frame's id, name, kind, page, place in the order and whether
+  its file is there; never where a frame sits or how big it is. Handed back as the very same object while only places and
+  sizes change (a frame dragged on the canvas makes a new file on every move), so the sidebar draws nothing then; a rename,
+  a frame added, taken away or reordered, or a page changed gives a new one at once. A frame kept from before may carry an
+  older place or size: nothing here reads those.
+*/
+type LayerView = { id: string; pages: DesignFile["pages"]; frames: DesignFrame[] };
+let lastView: LayerView | undefined;
+const sameRow = (a: DesignFrame, b: DesignFrame) => a.id === b.id && a.name === b.name && a.kind === b.kind && a.page === b.page && a.missing === b.missing && a.path === b.path;
+function layersOf(s: DesignState): LayerView | undefined {
+  const f = s.file;
+  if (!f) return (lastView = undefined);
+  const was = lastView;
+  if (was && was.id === f.id && was.pages.length === f.pages.length && f.pages.every((p, i) => p === was.pages[i] || (p.id === was.pages[i].id && p.name === was.pages[i].name)) && was.frames.length === f.frames.length && f.frames.every((x, i) => sameRow(x, was.frames[i]))) return was;
+  return (lastView = { id: f.id, pages: f.pages, frames: f.frames });
+}
+
 const kindIcon = (n: TreeNode) => (n.kind === "stack" ? <D.stack size={14} /> : n.kind === "text" ? <D.text size={14} /> : n.kind === "image" ? <D.picture size={14} /> : <D.box size={14} />);
+
+/** A layer as `open` and `picked` know it: by its frame too, as a copied frame has the very same layer ids as its original. */
+const layerKey = (frame: string, id: string) => `${frame}:${id}`;
 
 function Nodes({ frame, node, depth, open, onToggle, picked }: { frame: string; node: TreeNode; depth: number; open: Set<string>; onToggle: (id: string) => void; picked: Set<string> }) {
   return (
     <>
       {node.children.map((c) => {
         const has = c.children.length > 0;
-        const on = open.has(c.id);
+        const k = layerKey(frame, c.id);
+        const on = open.has(k);
         return (
           <div key={c.id} role="none">
-            <div className="ld-ly" role="treeitem" aria-level={depth + 1} aria-selected={picked.has(c.id)} aria-expanded={has ? on : undefined} data-on={picked.has(c.id) || undefined} style={{ paddingLeft: 8 + depth * 14 }} onClick={(e) => design.select(e.shiftKey ? [...getDesign().sel, { frame, node: c.id }] : [{ frame, node: c.id }])}>
+            <div className="ld-ly" role="treeitem" aria-level={depth + 1} aria-selected={picked.has(k)} aria-expanded={has ? on : undefined} data-on={picked.has(k) || undefined} style={{ paddingLeft: 8 + depth * 14 }} onClick={(e) => design.select(e.shiftKey ? [...getDesign().sel, { frame, node: c.id }] : [{ frame, node: c.id }])}>
               {has ? (
-                <button type="button" className="ld-ly-tw" aria-label={on ? "Fold" : "Open"} onClick={(e) => (e.stopPropagation(), onToggle(c.id))}>
+                <button type="button" className="ld-ly-tw" aria-label={on ? "Fold" : "Open"} onClick={(e) => (e.stopPropagation(), onToggle(k))}>
                   {on ? <I.chevD size={12} /> : <I.chevR size={12} />}
                 </button>
               ) : (
@@ -110,7 +132,7 @@ function Nodes({ frame, node, depth, open, onToggle, picked }: { frame: string; 
 }
 
 function LayerList() {
-  const file = useDesign((s) => s.file);
+  const file = useDesign(layersOf);
   const page = useDesign((s) => s.page ?? s.file?.pages[0]?.id);
   const sel = useDesign((s) => s.sel);
   const tree = useDesign((s) => s.tree);
@@ -130,14 +152,14 @@ function LayerList() {
         next.add(x.frame);
         let at = x.node ? parentIn(tree[x.frame], x.node) : undefined;
         while (at?.parent) {
-          next.add(at.parent.id);
+          next.add(layerKey(x.frame, at.parent.id));
           at = parentIn(tree[x.frame], at.parent.id);
         }
       }
       return next;
     });
   }, [selKey, tree]);
-  const picked = useMemo(() => new Set(sel.map((x) => x.node).filter(Boolean) as string[]), [selKey]);
+  const picked = useMemo(() => new Set(sel.filter((x) => x.node).map((x) => layerKey(x.frame, x.node!))), [selKey]);
   const toggle = (id: string) => setOpen((was) => {
     const next = new Set(was);
     if (next.has(id)) next.delete(id);
@@ -198,7 +220,7 @@ function addDesignMd() {
 
 /** The sidebar's body in Design, for the design open in its tab (its folder, `cwd`). */
 export function DesignSide({ cwd }: { cwd: string }) {
-  const file = useDesign((s) => s.file);
+  const file = useDesign(layersOf);
   const page = useDesign((s) => s.page ?? s.file?.pages[0]?.id);
   const lean = useLean();
   const Skills = sideSlots.skills;

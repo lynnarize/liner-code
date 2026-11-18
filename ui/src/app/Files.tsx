@@ -6,11 +6,11 @@
   (T3 Code: files/FilePreviewPanel.tsx).
 
   A link to a file elsewhere in the app (an answer's Markdown, the Terminal) opens it here, at its
-  line: dispatch `lc:open-file` with { path, line, threadId }, or call openInFiles. The session it
+  line: dispatch `lc:open-file` with { path, line, threadId }. The session it
   names takes it (with none, the side of Open beside you're in) and brings its Files tab up; that
-  session's Files takes it now if it's on screen, or as it mounts, for a few seconds.
+  session's Files takes it now if it's on screen, or as it mounts, for a few seconds (reveal.ts).
 */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { FileDiff, Item, Thread, TreeEntry } from "@contracts";
 import { TreeView, type TreeNode } from "@liner/components/tree-view/tree-view";
 import { Segmented } from "@liner/components/segmented/segmented";
@@ -18,11 +18,12 @@ import { toast } from "@liner/components/toast/toast";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { bridge } from "./bridge";
 import { browseTo } from "./agentBrowser";
-import { rpc, useEngine } from "./engine";
+import { rpc, useEngine, useItemsWhere } from "./engine";
 import { I } from "./icons";
 import { agentOf, checkpointsOf } from "./model";
 import { baseOf, dirOf, langOf, linesOf, marksOf, tokensOf, Toks } from "./code";
 import { SurfaceNote, useCwd } from "./Surfaces";
+import { takers, takeWaiting, type Reveal } from "./reveal";
 
 const LETTER = { added: "A", modified: "M", deleted: "D", renamed: "R" } as const;
 
@@ -31,37 +32,22 @@ const IMAGE = /\.(png|jpe?g|gif|webp|avif|svg|ico|bmp)$/i;
 const MARKDOWN = /\.(md|mdx|markdown)$/i;
 const HTML = /\.html?$/i;
 
-/* ---------- Opening a file at a line, from elsewhere in the app ---------- */
-
-/*
-  Each session's own, so a link opens in the Files of the session it's in and not in every one on
-  screen (Open beside shows two). T3 Code opens a link the same way, in its thread's panel:
-  ChatMarkdown.tsx's onOpenFile, rightPanelStore.ts's openFile(threadRef, path).
-*/
-type Reveal = { threadId: string; path: string; line?: number; at: number };
-let waiting: Reveal | null = null;
-const takers = new Map<(r: Reveal) => void, string>();
-/** Open a file in the Files surface, scrolled to a line. The path is the session folder's, or absolute inside it; without a session, the one you're in. */
-export function openInFiles(path: string, line?: number, threadId?: string) {
-  window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path, line, threadId } }));
-}
-/** A link's file for a session's Files (Session.tsx decides which session's): false when it names none. */
-export function revealFile(threadId: string, d: { path?: unknown; line?: unknown } | undefined) {
-  if (!d || typeof d.path !== "string" || !d.path.trim()) return false;
-  const line = typeof d.line === "number" && d.line > 0 ? Math.floor(d.line) : typeof d.line === "string" && /^\d+$/.test(d.line) ? Number(d.line) : undefined;
-  const r: Reveal = { threadId, path: d.path.trim(), line, at: Date.now() };
-  // On screen, it's taken now; else it waits for the Files surface the session is bringing up.
-  const here = [...takers].filter(([, id]) => id === threadId);
-  if (here.length) for (const [f] of here) f(r);
-  else waiting = r;
-  return true;
-}
-function takeWaiting(threadId: string) {
-  const r = waiting;
-  if (!r || r.threadId !== threadId) return null;
-  waiting = null;
-  return Date.now() - r.at < 10_000 ? r : null;
-}
+/** An open file's lines, drawn again only when they, their marks or the lit line change: a 10,000-line file is that many rows. */
+const Code = memo(function Code({ at, lines, toks, marks, hl }: { at: RefObject<HTMLPreElement | null>; lines: string[]; toks: ReturnType<typeof tokensOf>; marks: Map<number, "added" | "changed">; hl?: number }) {
+  return (
+    <pre ref={at} className="lc-code-view">
+      {lines.map((_, i) => (
+        <div key={i} className="lc-cl" data-mark={marks.get(i + 1)} data-hl={hl === i + 1 || undefined}>
+          <span className="lc-cl-n">{i + 1}</span>
+          <span className="lc-cl-t">
+            <Toks line={toks[i]} />
+            {"\n"}
+          </span>
+        </div>
+      ))}
+    </pre>
+  );
+});
 
 /** A size in words: 512 B, 40 KB, 3.1 MB. */
 const sizeOf = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`);
@@ -100,7 +86,11 @@ function useRendered() {
   return [rendered, setRendered] as const;
 }
 
-export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread: Thread; items: Item[]; onShowChanges: (checkpointId: string, path: string) => void; reveal?: { path: string; line?: number } }) {
+/** What Files reads of the timeline: the checkpoints and the turns' marks, and no reply's words, so a streaming reply doesn't redraw the open file. */
+const isFilesView = (it: Item) => it.kind === "checkpoint" || it.kind === "turn";
+
+export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread; onShowChanges: (checkpointId: string, path: string) => void; reveal?: { path: string; line?: number } }) {
+  const items = useItemsWhere(thread.id, isFilesView);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const cwd = useCwd(thread);
@@ -351,17 +341,7 @@ export function FilesSurface({ thread, items, onShowChanges, reveal }: { thread:
                   <StreamedMarkdown className="lc-md" text={file.text} streaming={false} animate={false} />
                 </div>
               ) : (
-                <pre ref={code} className="lc-code-view" key={file.path}>
-                  {lines.map((_, i) => (
-                    <div key={i} className="lc-cl" data-mark={marks.get(i + 1)} data-hl={hl === i + 1 || undefined}>
-                      <span className="lc-cl-n">{i + 1}</span>
-                      <span className="lc-cl-t">
-                        <Toks line={toks[i]} />
-                        {"\n"}
-                      </span>
-                    </div>
-                  ))}
-                </pre>
+                <Code key={file.path} at={code} lines={lines} toks={toks} marks={marks} hl={hl} />
               )}
             </div>
             {c && marks.size > 0 && asSource && (

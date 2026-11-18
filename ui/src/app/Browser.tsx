@@ -11,7 +11,7 @@
   entry nobody has said yes to as it is now shows what it runs before it runs: its command, folder,
   environment and port, on a card to run or not.
 */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LaunchAsk, LaunchServer, LocalServer, Thread } from "@contracts";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
@@ -26,7 +26,9 @@ import { SurfaceNote } from "./Surfaces";
 import { EnvLine, PanelHead, Pop } from "./ui";
 import * as os from "./os";
 
-type Log = { level: string; text: string; at: number };
+/** A console line; `n` names it for good, so the list keys stay put as old lines drop off its top. */
+type Log = { level: string; text: string; at: number; n: number };
+let logSeq = 0;
 type Picked = { selector: string; path: string; text: string; html: string; rect: { x: number; y: number; w: number; h: number } };
 type Width = "desktop" | "tablet" | "phone";
 const WIDTH: Record<Width, number | null> = { desktop: null, tablet: 820, phone: 390 };
@@ -117,7 +119,20 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [question, setQuestion] = useState("");
-  const [logs, setLogs] = useState<Log[]>([]);
+  const [logs, setLogsState] = useState<Log[]>([]);
+  /*
+    Every line as it arrives, the newest 200: what the agent's read hears, current to the line. The
+    surface hears them once a frame, not once a line: a page that logs in a loop set state up to 60
+    times a second and redrew the bar, its menus and the stage each time.
+  */
+  const book = useRef<Log[]>([]);
+  const flush = useRef(0);
+  const addLog = (l: Log) => {
+    book.current = [...book.current.slice(-199), l];
+    if (!flush.current) flush.current = requestAnimationFrame(() => ((flush.current = 0), setLogsState(book.current)));
+  };
+  const setLogs = (l: Log[]) => ((book.current = l), setLogsState(l));
+  useEffect(() => () => cancelAnimationFrame(flush.current), []);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [nonce, setNonce] = useState(0);
   /** Pressed to try an address that couldn't be opened: the same one, so `where` alone wouldn't ask again. */
@@ -194,9 +209,12 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     void look().then(({ p, f }) => setTarget((t) => pick(p, f, t)));
   }, [thread.id, thread.status]);
 
+  // The page you're on is remembered as you go, its path too (a link followed in the page), not only the server it's on.
+  useEffect(() => {
+    if (target) keep(key, target);
+  }, [key, target?.port, target?.path, target?.server]);
   useEffect(() => {
     if (!target) return;
-    keep(key, target);
     setAddress(shown(target));
     setFailed(null);
     // Asked again after a reconnect: a restarted engine serves from new ports.
@@ -231,7 +249,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       if (e.source !== frame.current?.contentWindow || !e.data?.__liner) return;
       const d = e.data as { kind: string } & Record<string, unknown>;
       probed.current = true;
-      if (d.kind === "console") setLogs((l) => [...l.slice(-199), { level: String(d.level), text: String(d.text), at: Number(d.at) }]);
+      if (d.kind === "console") addLog({ level: String(d.level), text: String(d.text), at: Number(d.at), n: logSeq++ });
       else if (d.kind === "nav") {
         const path = String(d.path || "/");
         setTarget((t) => (t ? { ...t, path } : t));
@@ -298,7 +316,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         await new Promise((ok) => setTimeout(ok, 300));
         r = (await page("read")) as Record<string, unknown>;
       }
-      return { ...r, port: now.current.target?.port ?? undefined, errors: now.current.logs.filter((l) => l.level === "error").slice(-10).map((l) => l.text) };
+      return { ...r, port: now.current.target?.port ?? undefined, errors: book.current.filter((l) => l.level === "error").slice(-10).map((l) => l.text) };
     };
     return onAgentBrowser(thread.id, async (op, args) => {
       if (!args.yours) setDriving(Date.now());
@@ -516,16 +534,21 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   // What a page pixel is drawn at: its zoom, times the fit.
   const scale = zoom * fit;
 
-  // Where the ask card sits: under the element, inside the stage. The page's pixels are drawn at its scale.
-  const card = useMemo(() => {
-    if (!picked || !frame.current || !stage.current) return null;
+  /*
+    Where the ask card sits: under the element, inside the stage. The page's pixels are drawn at its
+    scale. Placed again when what draws the page changes (its zoom, its width, the panel's room),
+    once the frame has its new place, so it's measured after the render that moved it.
+  */
+  const [card, setCard] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!picked || !frame.current || !stage.current) return setCard(null);
     const f = frame.current.getBoundingClientRect();
     const s = stage.current.getBoundingClientRect();
     const left = Math.max(8, Math.min(f.left - s.left + picked.rect.x * scale, s.width - 328));
     const below = f.top - s.top + (picked.rect.y + picked.rect.h) * scale + 8;
     const top = below + 150 > s.height ? Math.max(8, f.top - s.top + picked.rect.y * scale - 158) : below;
-    return { left, top };
-  }, [picked]);
+    setCard({ left, top });
+  }, [picked, scale, width, room]);
   // The agent's pointer, from page pixels to the stage's, past its scroll.
   const pointerAt = useMemo(() => {
     const st = stage.current;
@@ -846,12 +869,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
             {logs.length === 0 ? (
               <p className="lc-quiet">What the page logs shows here.</p>
             ) : (
-              logs.map((l, i) => (
-                <div key={i} className="lc-br-log lc-mono" data-level={l.level}>
-                  <time>{new Date(l.at).toLocaleTimeString("en-GB")}</time>
-                  <span>{l.text}</span>
-                </div>
-              ))
+              logs.map((l) => <LogLine key={l.n} l={l} />)
             )}
           </div>
         )}
@@ -859,6 +877,16 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     </div>
   );
 }
+
+/** One console line, drawn once: a new line doesn't redraw the 199 before it. */
+const LogLine = memo(function LogLine({ l }: { l: Log }) {
+  return (
+    <div className="lc-br-log lc-mono" data-level={l.level}>
+      <time>{new Date(l.at).toLocaleTimeString("en-GB")}</time>
+      <span>{l.text}</span>
+    </div>
+  );
+});
 
 /** What Run says on an entry that would show what it runs before it does. */
 const FIRST = "Shows what it runs first";

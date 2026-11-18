@@ -35,8 +35,8 @@ export function SecurityShell({ sidebar, onSidebar }: { sidebar: boolean; onSide
   }, [gone]);
   switch (page.kind) {
     case "findings":
-      // Narrowed to one scan ("Open the findings" on a scan) once Findings takes it.
-      return <Findings sidebar={sidebar} onSidebar={onSidebar} finding={page.finding} state={page.state} source={page.source} {...(page.scan ? { scan: page.scan } : {})} />;
+      // Narrowed to one scan ("Open the findings" on a scan): Findings reads that from the page itself.
+      return <Findings sidebar={sidebar} onSidebar={onSidebar} finding={page.finding} state={page.state} source={page.source} />;
     case "projects":
       return <Projects sidebar={sidebar} onSidebar={onSidebar} projectId={page.projectId} />;
     case "start":

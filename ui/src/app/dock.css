@@ -3,44 +3,16 @@
   as the rest: white paper, washes for grouping, one accent, nothing drawn round what isn't a card.
 */
 
-/* ---------- The row, at the right end of the session's header ----------
+/* ---------- The header's icon buttons ----------
    Claude Code's: icon buttons of one size, grey, a wash under the one you point at and a plate
-   under the one that's open: Run, the bottom panel's toggle and the right panel's (TopBar.tsx).
-   The panel's row ends with the same buttons (Panel.tsx). Each icon is 16px at a whole-pixel offset
-   (7px into 30), so its strokes stay on the device pixels icons.tsx drew them for. */
-.lc-sbar {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-}
-.lc-sbar > .lc-pop {
-  display: inline-flex;
-}
+   under the one that's open. The panel's row ends with them (Panel.tsx). Each icon is 16px at a
+   whole-pixel offset (7px into 30), so its strokes stay on the device pixels icons.tsx drew them for. */
 .lc-sbar-sep {
   flex: none;
   width: 1px;
   height: 16px;
   margin: 0 2px;
   background: var(--l-line-2);
-}
-/*
-  A bar that holds more than its column allows for (the Wall's way back, the crew, the apps' tabs)
-  takes its steps itself, measured (TopBar.tsx, useGiveWay): the way back's count, the crew down to
-  its faces, the mode chip, the crew, and the room between. While it measures, nothing in it
-  squeezes but the title, so what each part holds is what it needs.
-*/
-.lc-top[data-give~="mode"] .lc-mode-chip,
-.lc-top[data-give~="faces"] .lc-crew-t,
-.lc-top[data-give~="crew"] .lc-crew-pop {
-  display: none;
-}
-.lc-top[data-give~="tight"] {
-  gap: 2px;
-}
-.lc-top[data-measure] > :not(.lc-tt-pop, .lc-title, .lc-title-edit, .lc-grow),
-.lc-top[data-measure] .lc-view-b {
-  flex-shrink: 0;
 }
 .lc-sbar-b {
   position: relative;
@@ -470,8 +442,7 @@
 .lc-view-b > svg {
   flex: none;
 }
-/* A narrow bar keeps the tabs' icons, and their row scrolls; so does one that measured itself to the
-   mode chip's step (no weightier than the width's, so a narrower bar's padding below still wins). */
+/* A narrow bar keeps the tabs' icons, and their row scrolls. */
 @container lc-bar (max-width: 391px) {
   .lc-view-b {
     flex: none;
@@ -479,12 +450,6 @@
     padding: 0 7px;
     font-size: 0;
   }
-}
-:where(.lc-top[data-give~="mode"]) .lc-view-b {
-  flex: none;
-  gap: 0;
-  padding: 0 7px;
-  font-size: 0;
 }
 @container lc-bar (max-width: 323px) {
   .lc-view-b {
@@ -578,46 +543,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Add-ons' menu, under the entry and as wide as it: Browse add-ons, and Create your add-on. */
-.lc-sb-more-pop > .lc-sb-nav[data-open]:not([data-on]) {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-}
-.lc-sb-more {
-  display: grid;
-  gap: 1px;
-}
-.lc-sb-more > button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 34px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 12px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink);
-  text-align: left;
-  cursor: pointer;
-}
-.lc-sb-more > button > svg {
-  flex: none;
-  color: var(--l-ink-2);
-}
-.lc-sb-more > button:focus-visible,
-.lc-sb-more > button:focus {
-  outline: none;
-  background: var(--lc-well);
-}
-@media (hover: hover) {
-  .lc-sb-more > button:hover {
-    background: var(--lc-well);
-  }
 }
 
 /* ---------- "Make it an app": the offer at a turn's end ---------- */
@@ -926,15 +851,6 @@
     display: none;
   }
 }
-/* A bar short of room (TopBar.tsx, useGiveWay) drops the count and arrows as a narrow one does, and in the end the words: the arrow back stays. */
-.lc-top[data-give~="count"] :is(.lc-wallback-n, .lc-wallback .lc-tb, .lc-wallback-b .lc-kbd) {
-  display: none;
-}
-.lc-top[data-give~="back"] .lc-wallback-b {
-  gap: 0;
-  padding: 0 6px;
-  font-size: 0;
-}
 
 /* ---------- 0.2.7, second pass ---------- */
 /* Add-ons is the fourth of the sidebar's top rows, 1px under The Wall like the others (the
@@ -942,9 +858,6 @@
 .lc-sb-top + .lc-sb-apps {
   margin-top: -9px;
   padding: 0 0 4px;
-}
-.lc-sb-more > button {
-  font-weight: 400;
 }
 /* The guide ("Open in this pane"): plain rows, no grey card and no tile, a wash as you point. */
 .lc-spick-b[data-make] {

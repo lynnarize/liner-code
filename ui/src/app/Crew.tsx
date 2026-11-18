@@ -712,16 +712,16 @@ export function CrewStrip({ thread }: { thread: Thread }) {
 /* ---------- the Agents surface ---------- */
 
 /** The Agents surface: the whole crew, or one agent when one was opened. */
-export function AgentsSurface({ thread, items }: { thread: Thread; items: Item[] }) {
-  const profiles = useEngine((s) => s.agents);
-  const providers = useEngine((s) => s.providers);
-  const crew = useMemo(() => crewOf(items.filter(isCrewItem), thread, profiles, providers), [items, thread, profiles, providers]);
+export function AgentsSurface({ thread }: { thread: Thread }) {
+  // The crew's own items (turns, agents, reviews, the plan): a streamed word of a reply changes none of them.
+  const crew = useCrew(thread);
+  const items = useItemsWhere(thread.id, isCrewItem);
   const picked = useShownAgent(thread.id);
   const agent = picked ? items.find((x): x is Tool => x.id === picked && isAgent(x)) : undefined;
-  return <div className="lc-agents-panel lc-cr">{agent ? <AgentView key={agent.id} thread={thread} crew={crew} it={agent} items={items} /> : <CrewView thread={thread} crew={crew} items={items} />}</div>;
+  return <div className="lc-agents-panel lc-cr">{agent ? <AgentView key={agent.id} thread={thread} crew={crew} it={agent} items={items} /> : <CrewView thread={thread} crew={crew} />}</div>;
 }
 
-function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; items: Item[] }) {
+function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
   const providers = useEngine((s) => s.providers);
   const profiles = useEngine((s) => s.agents);
   const live = Boolean(crew && (crew.members.some((m) => m.status === "running") || atWork(crew).length));
@@ -775,7 +775,7 @@ function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; 
         ) : (
           <p className="lc-cr-empty">Nobody has worked here yet. When a model takes your message, and when it sends agents off, they show here with who sent whom.</p>
         )}
-        <SessionUse thread={thread} items={items} />
+        <SessionUse thread={thread} />
       </>
     );
   const working = crew.members.filter((m) => m.status === "running").length + atWork(crew).length;
@@ -924,7 +924,7 @@ function CrewView({ thread, crew, items }: { thread: Thread; crew: Crew | null; 
         </>
       )}
 
-      <SessionUse thread={thread} items={items} />
+      <SessionUse thread={thread} />
     </>
   );
 }
@@ -1233,7 +1233,10 @@ function Measured({ threadId, files, frames = [], running }: { threadId: string;
 }
 
 /** What the session has used: tokens, the cache, the cost, the context, the tools. */
-function SessionUse({ thread, items }: { thread: Thread; items: Item[] }) {
+/** SessionUse's view: every tool call and every turn, and no reply's words. */
+const isToolOrTurn = (it: Item) => it.kind === "tool" || it.kind === "turn";
+function SessionUse({ thread }: { thread: Thread }) {
+  const items = useItemsWhere(thread.id, isToolOrTurn);
   const settings = useEngine((s) => s.settings);
   const keys = useEngine((s) => s.keys);
   const providers = useEngine((s) => s.providers);

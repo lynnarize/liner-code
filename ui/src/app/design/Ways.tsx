@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { DesignFrame, FrameBy, LeanTokens, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { getState, loadItems, rpc, useEngine } from "../engine";
+import { getState, loadItems, rpc, useEngine, useHoldItems } from "../engine";
 import { I, ModelMark } from "../icons";
 import { duration, markOf, modelLabel, money, plural } from "../model";
 import { ContextMenu, Row } from "../ui";
@@ -352,6 +352,7 @@ export function WayLabel({ frame }: { frame: DesignFrame }) {
   const own = sessionOf(frame);
   const thread = useEngine((s) => (own ? s.threads.find((t) => t.id === own) : undefined));
   const items = useEngine((s) => (own ? s.items : undefined));
+  useHoldItems([own]);
   const providers = useEngine((s) => s.providers);
   if (!by?.way) return null;
   // The session's own turns, for the time: loaded here, since its session isn't open in this window.
@@ -533,6 +534,7 @@ export function WaysRow() {
   const items = useEngine((s) => s.items);
   const ways = useMemo(() => waysOf(file?.frames ?? []), [file]);
   const w = ways.find((x) => [...x.takes, ...(x.orig ? [x.orig] : [])].some((f) => sel.some((y) => y.frame === f.id)));
+  useHoldItems(w ? w.takes.map(sessionOf) : []);
   if (!w) return null;
   const picked = w.takes.find((f) => sel.some((x) => x.frame === f.id));
   const costs = w.takes.map((f) => costOf(threads.find((t) => t.id === sessionOf(f)), items)?.cost);

@@ -32,16 +32,16 @@
   npm's scripts off.
 */
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { mkdir, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
+import { gunzip as gunzipCb } from "node:zlib";
 import type { AddonManifest, DshInstructions, DshPlugin, DshSlot, DshTool, PanelManifest } from "../../contracts/src/index.ts";
 import { dshEntry } from "../../contracts/src/index.ts";
-import { ADDON_ID, checkManifest, DSH_TOOLS_MAX, type PanelFiles } from "./addons.ts";
+import { ADDON_ID, checkManifest, DSH_TOOLS_MAX, NPM_NAME as NAME, TOOL_NAME, type PanelFiles } from "./addons.ts";
 import { SHIMMED, WEB_TOOLS } from "./dsh-shims.ts";
 
-/** An npm package's name: an optional @scope, lower case, as npm allows them. */
-const NAME = /^(?:@[a-z0-9][a-z0-9._~-]{0,100}\/)?[a-z0-9][a-z0-9._~-]{0,180}$/;
 /** A version, or a dist-tag (latest, next…). Ranges aren't resolved: the newest is "latest". */
 const VERSION = /^(?:v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?|[a-z][a-z0-9._-]{0,40})$/;
 
@@ -122,19 +122,21 @@ export async function npmFetch(spec: { name: string; version?: string }, dest: s
   } else if (v.dist?.shasum) {
     if (createHash("sha1").update(tgz).digest("hex") !== v.dist.shasum) throw new Error(`${spec.name}@${version}'s tarball isn't the one npm vouches for: its checksum doesn't match.`);
   } else throw new Error(`npm gave no checksum for ${spec.name}@${version}, so it can't be checked.`);
-  untar(tgz, dest);
+  await untar(tgz, dest);
   return { name: spec.name, version, ...(sri ? { integrity: `${sri[1]}-${sri[2]}` } : {}) };
 }
 
 /**
   A .tgz unpacked into `dest`, its first folder ("package/") dropped: plain files and folders only.
   Links, devices and anything that would land outside `dest` are left out; so is anything past the
-  size or count it may come to.
+  size or count it may come to. Inflated off the engine's thread and written a file at a time with
+  waits between, so a large package doesn't hold up every session while it unpacks.
 */
-export function untar(tgz: Buffer, dest: string) {
+const gunzip = promisify(gunzipCb);
+export async function untar(tgz: Buffer, dest: string) {
   let tar: Buffer;
   try {
-    tar = gunzipSync(tgz, { maxOutputLength: UNPACKED_MAX + 50_000_000 });
+    tar = await gunzip(tgz, { maxOutputLength: UNPACKED_MAX + 50_000_000 });
   } catch (e) {
     throw new Error(`The tarball doesn't unpack: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -176,17 +178,17 @@ export function untar(tgz: Buffer, dest: string) {
     if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) continue;
     if (++count > FILES_MAX) throw new Error(`The package has more than ${FILES_MAX} files.`);
     if (type === "5") {
-      mkdirSync(abs, { recursive: true });
+      await mkdir(abs, { recursive: true });
       continue;
     }
     // Links, devices and the like: never written.
     if (type !== "0" && type !== "7") continue;
     total += size;
     if (total > UNPACKED_MAX) throw new Error(`The package comes to over ${UNPACKED_MAX / 1_000_000} MB unpacked.`);
-    mkdirSync(dirname(abs), { recursive: true });
+    await mkdir(dirname(abs), { recursive: true });
     if (existsSync(abs) && lstatSync(abs).isSymbolicLink()) continue;
     const mode = parseInt(text(h, 100, 108).trim() || "644", 8);
-    writeFileSync(abs, body, { mode: mode & 0o111 ? 0o755 : 0o644 });
+    await writeFile(abs, body, { mode: mode & 0o111 ? 0o755 : 0o644 });
   }
 }
 const paxOf = (b: Buffer) => {
@@ -477,11 +479,6 @@ export function envOf(js: string, map: boolean): { value: string | Record<string
   return { value: out, keys: [...keys], optional };
 }
 
-/** The services a Node half gets here (dsh-host.ts). */
-export const HOST_SERVICES = ["webServer", "connection", "llm", "agentDefaultModel", "tools", "web", "systemPrompt", "settings", "logger"];
-
-/** A tool's name as every agent tool takes it over MCP. */
-const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 /** A JS string literal's text, its escapes read. */
 const unquote = (body: string) => body.replace(/\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g, (_, e: string) => (e[0] === "u" ? String.fromCodePoint(parseInt(e.replace(/[u{}]/g, ""), 16)) : e[0] === "x" ? String.fromCharCode(parseInt(e.slice(1), 16)) : (({ n: "\n", t: "\t", r: "\r", b: "\b", f: "\f", v: "\v", "0": "\0" }) as Record<string, string>)[e] ?? e));
 

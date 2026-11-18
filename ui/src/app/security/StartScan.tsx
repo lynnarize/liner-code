@@ -39,9 +39,10 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
   const [picked, setPicked] = useState<string | undefined>(projectId);
   useEffect(() => setPicked(projectId), [projectId]);
   const project = projects.find((p) => p.id === (picked ?? getSecurityScope().projectId)) ?? projects[0];
-  const mock = mockMode();
+  // Dev only, and written so a build drops scan-mock.ts: each use of it sits behind import.meta.env.DEV itself, which a build makes false.
+  const mock = import.meta.env.DEV ? mockMode() : null;
   const asked = useSecurity("security.scan.options", { projectId: project?.id ?? "" }, ["model", "checks", "scans"]);
-  const choices = asked.data && project && asked.data.projectId === project.id ? (mock === "c" || mock === "c2" ? mockChoices(asked.data, mock) : asked.data) : null;
+  const choices = asked.data && project && asked.data.projectId === project.id ? (import.meta.env.DEV && (mock === "c" || mock === "c2") ? mockChoices(asked.data, mock) : asked.data) : null;
 
   const [depth, setDepth] = useState<ScanDepth>("branch");
   const [who, setWho] = useState<"own" | "specialist">("own");
@@ -164,7 +165,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
       else goSecurity({ kind: "findings", state: "open" });
     } catch (e) {
       // The dev mock: with no scan runner in the engine yet, a plain tagged session to draw boards D to F in.
-      if (mock && depth !== "checks") {
+      if (import.meta.env.DEV && mock && depth !== "checks") {
         try {
           const t = await rpc("thread.create", { projectId: project.id, agent: agent || "demo", access: "read", worktree: false, title: `${project.name}, ${depth === "branch" ? "this branch" : "in full"}`, security: { kind: "scan", scan: "mock" } });
           return goSecurity({ kind: "scan", threadId: t.id });

@@ -62,10 +62,6 @@
 .lc-up-err {
   color: var(--l-danger-text);
 }
-.lc-up-quiet {
-  color: var(--l-ink-3);
-  font-size: 13px;
-}
 
 /* A tool updating: its bar at the row's end, the updater's last line under its name. */
 .lc-up-bar {

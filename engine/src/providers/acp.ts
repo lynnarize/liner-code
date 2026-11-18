@@ -19,7 +19,7 @@ import { commandRisk, gitPlace, isDestructive, readsOnly, ruleFor, shellWords, u
 import { linerTitle } from "../agent-tools.ts";
 import { TOOLS } from "../liner-tools.ts";
 import { acpCommands, acpModelRequest, acpModels, agyModels } from "./models.ts";
-import { imageType, readUpTo } from "./attachments.ts";
+import { imagePart } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
 import { LINER_WAIT_SEC, ResumeFailed, saysOf, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
@@ -313,10 +313,75 @@ export function opencodeEnv(cwd: string, env: NodeJS.ProcessEnv, linerServer = t
   return { OPENCODE_PERMISSION: JSON.stringify(rules), OPENCODE_CONFIG_CONTENT: JSON.stringify(config) };
 }
 
+/** How long a change of level or thinking waits for the agent's own switch between turns (AcpSession.update, setAccess). */
+export let SWITCH_MS = 10_000;
+/** For tests: a shorter wait. */
+export const setSwitchMs = (ms: number) => void (SWITCH_MS = ms);
+/** Whether a switch landed within SWITCH_MS; one that failed has landed too (what fails stays wanted, for the next prompt). */
+async function landed(switching: Promise<unknown>) {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([switching.then(() => true, () => true), new Promise<false>((r) => (timer = setTimeout(() => r(false), SWITCH_MS)))]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** How long a turn's end waits for OpenCode to say what the turn used (opencodeTurnUsage); ~0.3 s warm, a few cold. */
 export let OPENCODE_USAGE_MS = 4000;
 /** For tests: a shorter wait. */
 export const setOpencodeUsageMs = (ms: number) => void (OPENCODE_USAGE_MS = ms);
+/**
+  The most of an export read for a turn's count: past it the session is too long to read each turn, the export is ended, and
+  the turn keeps ACP's numbers, with the line in the log. A session's text is most of it; its tokens are a few bytes a step.
+*/
+export let OPENCODE_EXPORT_MAX = 16 * 1024 * 1024;
+/** For tests: a smaller one. */
+export const setOpencodeExportMax = (n: number) => void (OPENCODE_EXPORT_MAX = n);
+
+/**
+  Where an export's `info` and each of its `messages` sit in its text, found by one pass over it that parses none of it,
+  so only the turn's own messages are parsed (opencodeTurnUsage), not the whole session's. Null for text that doesn't end
+  as one object does (cut off, or not an export).
+*/
+export function exportSpans(text: string, from: number) {
+  let depth = 0, str = false, wantKey = false, keyAt = -1, key = "", infoAt = -1, inMessages = false, sawMessages = false, at = -1;
+  let info: [number, number] | undefined;
+  const messages: [number, number][] = [];
+  for (let i = from; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (str) {
+      if (c === 92) i++;
+      else if (c === 34) {
+        str = false;
+        if (keyAt >= 0) (key = text.slice(keyAt, i)), (keyAt = -1);
+      }
+      continue;
+    }
+    if (c === 34) {
+      str = true;
+      if (depth === 1 && wantKey) (keyAt = i + 1), (wantKey = false);
+    } else if (c === 123 || c === 91) {
+      depth++;
+      if (depth === 1) wantKey = c === 123;
+      else if (depth === 2 && c === 123 && key === "info") infoAt = i;
+      else if (depth === 2 && c === 91 && key === "messages") inMessages = sawMessages = true;
+      else if (depth === 3 && inMessages) at = i;
+    } else if (c === 125 || c === 93) {
+      if (depth === 3 && inMessages && at >= 0) messages.push([at, i + 1]), (at = -1);
+      else if (depth === 2 && infoAt >= 0) (info = [infoAt, i + 1]), (infoAt = -1);
+      else if (depth === 2) inMessages = false;
+      if (--depth === 0) return { info, messages: sawMessages ? messages : undefined };
+    } else if (c === 44 && depth === 1) wantKey = true;
+  }
+  return null;
+}
+
+/**
+  When each session's latest prompt went, by its id, kept by the module rather than the session object: a turn that resumes
+  the session in a new process (Stop closed the old one) still bounds the count read for the one stopped (opencodeTurnUsage).
+*/
+const PROMPTED = new Map<string, number>();
 
 /** The way each OpenCode command reads a session: 1.x's `export --pure`, or 2.x's `session export --standalone` (opencodeTurnUsage). */
 const EXPORTS = new Map<string, "pure" | "session">();
@@ -333,8 +398,12 @@ const NO_SUCH_COMMAND = /^USAGE\s*$[\s\S]*\bopencode <subcommand>/m;
   assistant messages after its prompt (the first user message from `since` on). Input is the uncached part with the
   cache it wrote; output takes the reasoning. Cost isn't here: usage_update says it as it goes. Null when it can't say
   in time or in a form it knows, and the turn keeps ACP's numbers.
+  `next`: when the session's next prompt went, if one has. A stopped turn's count is read after the turn was handed back,
+  so the next turn may already be in the export: its steps are that turn's to count, so the sum stops at its prompt (the
+  first user message from then on). A user message OpenCode makes inside a turn (a compaction's) is still the turn's.
+  Both ends are prompts, found by when each was sent with no slack, so a turn just before or after isn't pulled in.
 */
-export async function opencodeTurnUsage(cmd: string[], session: string | null | undefined, since: number, o: { cwd: string; env?: NodeJS.ProcessEnv }) {
+export async function opencodeTurnUsage(cmd: string[], session: string | null | undefined, since: number, o: { cwd: string; env?: NodeJS.ProcessEnv; next?: () => number | undefined }) {
   if (!session) return null;
   const started = Date.now();
   // The command it runs as, without its "acp": `opencode`, or whatever starts it.
@@ -355,13 +424,14 @@ export async function opencodeTurnUsage(cmd: string[], session: string | null | 
       }
       const end = (code: number | null, why = "") => {
         clearTimeout(timer);
-        done({ code, stdout: over ? "" : stdout, stderr: why || stderr });
+        done({ code, stdout: over ? "" : stdout, stderr: why || (over ? `the session is over ${Math.round(OPENCODE_EXPORT_MAX / 1024 / 1024)} MB` : stderr) });
       };
       const timer = setTimeout(() => (killTree(child), end(null, `no answer in ${OPENCODE_USAGE_MS} ms`)), Math.max(0, OPENCODE_USAGE_MS - (Date.now() - started)));
       child.stdout.on("data", (d: Buffer) => {
+        if (over) return;
         stdout += d;
-        // A session too big to read in time isn't read at all.
-        if (stdout.length > 128 * 1024 * 1024 && !over) (over = true), killTree(child);
+        // A session too long to read each turn isn't read at all (OPENCODE_EXPORT_MAX).
+        if (stdout.length > OPENCODE_EXPORT_MAX) (over = true), (stdout = ""), killTree(child);
       });
       child.stderr.on("data", (d: Buffer) => void (stderr = (stderr + d).slice(-2000)));
       child.on("error", (e) => end(null, e.message));
@@ -375,24 +445,46 @@ export async function opencodeTurnUsage(cmd: string[], session: string | null | 
   }
   type Tokens = { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } };
   type Message = { info?: { role?: string; time?: { created?: number }; tokens?: Tokens }; type?: string; time?: { created?: number }; tokens?: Tokens };
+  const role = (m: Message) => m.info?.role ?? m.type;
+  const created = (m: Message) => (m.info ?? m).time?.created ?? 0;
+  // A second of slack for how far back to read: OpenCode stamps the prompt as it takes it, on the same clock. Which user
+  // message is the turn's prompt is decided below without it, since a turn before that ended within the second (OpenCode 2
+  // ends a short one in under one) would be counted in this one.
+  const after = (m: Message) => created(m) >= since - 1000;
+  // Only the turn's own messages are parsed: from the end back to the last user message from before it (exportSpans).
   let messages: Message[] | undefined;
   try {
-    const start = out.stdout.indexOf("{");
-    const j = start >= 0 ? (JSON.parse(out.stdout.slice(start)) as { info?: { id?: string }; messages?: Message[] }) : null;
-    if (j?.info?.id === session && Array.isArray(j.messages)) messages = j.messages;
+    const text = out.stdout;
+    const start = text.indexOf("{");
+    const spans = start >= 0 ? exportSpans(text, start) : null;
+    const info = spans?.info ? (JSON.parse(text.slice(...spans.info)) as { id?: string }) : undefined;
+    if (spans?.messages && info?.id === session) {
+      const tail: Message[] = [];
+      for (let i = spans.messages.length - 1, found = false; i >= 0; i--) {
+        const m = JSON.parse(text.slice(...spans.messages[i])) as Message;
+        // Before the turn: a user message from before it, or, once its prompt is found, anything stamped before it.
+        if ((role(m) === "user" || (found && (m.info ?? m).time?.created)) && !after(m)) break;
+        found ||= role(m) === "user";
+        tail.unshift(m);
+      }
+      messages = tail;
+    }
   } catch {
     // not an export it knows
   }
   if (messages) EXPORTS.set(key, way);
-  const role = (m: Message) => m.info?.role ?? m.type;
-  // A second of slack: OpenCode stamps the prompt as it takes it, on the same clock.
-  const from = messages?.findIndex((m) => role(m) === "user" && ((m.info ?? m).time?.created ?? 0) >= since - 1000) ?? -1;
+  // The turn's prompt: the first user message stamped from `since` on (OpenCode stamps it as it takes it, after Liner Code sent
+  // it). Should a clock say otherwise, the last one stamped within the second before, which is nearest to it, never the first.
+  const prompt = messages?.findIndex((m) => role(m) === "user" && created(m) >= since) ?? -1;
+  const from = prompt >= 0 || !messages ? prompt : messages.findLastIndex((m) => role(m) === "user" && after(m));
   if (!messages || from < 0) {
     console.error(`[opencode] couldn't read what the turn used from \`opencode ${way === "pure" ? "export" : "session export"}\` (${out.code !== 0 ? `${out.code === null ? "" : `exit ${out.code}: `}${out.stderr.trim().split("\n").at(-1)?.slice(0, 160) ?? ""}` : "no such turn in it"}, ${Date.now() - started} ms): its last step's count stands`);
     return null;
   }
   const u = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
+  const next = o.next?.();
   for (const m of messages.slice(from + 1)) {
+    if (next !== undefined && role(m) === "user" && created(m) >= next) break;
     const t = role(m) === "assistant" ? (m.info ?? m).tokens : undefined;
     if (!t) continue;
     u.inputTokens += (t.input ?? 0) + (t.cache?.write ?? 0);
@@ -958,7 +1050,8 @@ class AcpSession implements ProviderSession {
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d: string) => (this.stderr = (this.stderr + d).slice(-4000)));
     // A process stopped after Stop's wait can still talk while the next one works: what it says is nobody's now.
-    jsonLines(child.stdout, (v) => void (this.child === child && this.onMessage(v as Msg)));
+    // A throw while handling a line is said in the log, not left as an unhandled rejection.
+    jsonLines(child.stdout, (v) => void (this.child === child && this.onMessage(v as Msg).catch((e) => console.error(`${this.cmd[0]} sent a line that couldn't be handled:`, e))));
     const fail = (err: Error) => {
       // A process stopped after Stop's wait can end once the next turn has started another: only what was
       // asked of this one fails (T3 Code: AcpSessionRuntime.ts keeps each process's requests its own).
@@ -1190,8 +1283,7 @@ class AcpSession implements ProviderSession {
       if ((params._meta as Json | undefined)?.isReplay === true) return;
       const u = params.update as Json;
       // Its commands as a session it opened for you lists them: what the composer offers for a tool asked no session of its own.
-      if (u?.sessionUpdate === "available_commands_update" && Array.isArray(u.availableCommands))
-        HEARD.set(this.pid, (u.availableCommands as { name: string; description?: string; input?: { hint?: string } }[]).map((c) => ({ name: c.name, description: c.description ?? "", hint: c.input?.hint, source: "tool" as const })));
+      if (u?.sessionUpdate === "available_commands_update" && Array.isArray(u.availableCommands)) heard(this.pid, this.o.cwd, (u.availableCommands as { name: string; description?: string; input?: { hint?: string } }[]).map((c) => ({ name: c.name, description: c.description ?? "", hint: c.input?.hint, source: "tool" as const })));
       return this.onUpdate(u);
     }
     if (m.id === undefined) return;
@@ -1215,8 +1307,15 @@ class AcpSession implements ProviderSession {
       if (!this.inProject(path)) throw new Error("That path is outside the project.");
       return resolve(this.o.cwd, String(path));
     };
+    // What it was handed (your attachments, a long output it saved) it may read too, at every level, as the permission path
+    // lets it (handed, below): once links are followed, so a link in there can't lead out. Writes stay in the project.
+    const readable = (path: unknown) => {
+      const abs = resolve(this.o.cwd, String(path));
+      if (!this.inProject(path) && !(this.o.dirs ?? []).some((d) => inFolder(d, abs))) throw new Error("That path is outside the project.");
+      return abs;
+    };
     if (method === "fs/read_text_file") {
-      const text = await readFile(inside(p.path), "utf8");
+      const text = await readFile(readable(p.path), "utf8");
       const line = typeof p.line === "number" ? p.line - 1 : 0;
       const limit = typeof p.limit === "number" ? p.limit : undefined;
       return { content: line || limit ? text.split("\n").slice(line, limit ? line + limit : undefined).join("\n") : text };
@@ -1435,10 +1534,18 @@ class AcpSession implements ProviderSession {
     if (kind !== "agent_message_chunk") this.progress = Date.now();
     if (kind === "agent_message_chunk") {
       const said = blockText(u.content);
-      const news = (this.spoken + said).replace(RETRY, "").trim().length;
-      if (news > this.news) this.progress = Date.now();
-      this.news = news;
-      this.spoken += said;
+      // Only agy's silence hint and failure words read these (AcpSpec.hintMs, failedWords). A retry's line ends at its new line, so
+      // what's news is counted line by line: the lines that ended once, and the one still coming each time, not the whole answer again.
+      if (this.known.hintMs || this.known.failedWords) {
+        const text = this.line + said;
+        const cut = text.lastIndexOf("\n") + 1;
+        if (cut) (this.newsDone += unretried(text.slice(0, cut))), (this.line = text.slice(cut));
+        else this.line = text;
+        const news = this.newsDone + unretried(this.line);
+        if (news > this.news) this.progress = Date.now();
+        this.news = news;
+        if (this.known.failedWords) this.spoken += said;
+      }
       sink.text(said, u.messageId ? String(u.messageId) : undefined);
     }
     else if (kind === "agent_thought_chunk") sink.reasoning(blockText(u.content), u.messageId ? String(u.messageId) : undefined);
@@ -1582,6 +1689,9 @@ class AcpSession implements ProviderSession {
     if (signal.aborted) return;
     // What it said while it started describes its settings (a model, a thinking level, connections it hasn't): once a session.
     for (const note of this.notes.splice(0)) sink.notice(note, undefined, { once: true });
+    // A Liner Security scan keeps the tool off the web and from sending agents of its own where the tool lets it be (OpenOptions.scan):
+    // only OpenCode does here. Any other ACP agent runs the scan with them, and the person is told, once a session.
+    if (this.o.scan && !this.opencode) sink.notice(`${this.cmd[0]} can't be kept off the web or from sending agents of its own, so this scan runs with them.`, undefined, { once: true });
     sink.effortNow?.(this.effortGap());
     if (!this.session) throw new Error("The agent didn't open a session.");
     sink.session(this.session);
@@ -1633,7 +1743,8 @@ class AcpSession implements ProviderSession {
     // Before that, a minute (AcpSpec.hintMs) with no new word, only its retries' lines at most, says so once, with Stop beside it:
     // agy retries a plain 429 for minutes, saying only that it does.
     this.progress = Date.now();
-    this.news = 0;
+    this.news = this.newsDone = 0;
+    this.line = "";
     let hinted = false;
     const { quietMs, hintMs } = this.known;
     const quiet = quietMs || hintMs
@@ -1686,12 +1797,12 @@ class AcpSession implements ProviderSession {
       this.soulSent = true;
       // Your images go as they are when the agent takes them; every file is named in the text either way.
       const images = this.images ? files.flatMap((f) => {
-        const mimeType = imageType(f);
-        const bytes = mimeType ? readUpTo(f, 20 * 1024 * 1024) : null;
-        return mimeType && bytes ? [{ type: "image", mimeType, data: bytes.toString("base64") }] : [];
+        const image = imagePart(f, 20 * 1024 * 1024);
+        return image ? [{ type: "image", mimeType: image.mimeType, data: image.bytes.toString("base64") }] : [];
       }) : [];
       const session = this.session;
       const since = Date.now();
+      if (session && this.opencode) PROMPTED.set(session, since);
       // What of its own is already running (its MCP servers, its language server): anything else marked at the end is the turn's.
       if (this.known.endsWork) this.resident = await markedPids(this.mark);
       let r: Json | null = null;
@@ -1711,11 +1822,9 @@ class AcpSession implements ProviderSession {
         // the next turn had to start it again, with a session it might not load.
         answered = true;
         clearTimeout(late);
-        // However the prompt ended (done, stopped, failed), its use is said once, before the turn is handed back.
+        // However the prompt ended (done, stopped, failed), its use is said once: before the turn is handed back, or after it for one you stopped.
         // OpenCode's result carries only its last step's tokens, and a stopped one's none: the turn's come from its own store.
-        const real = this.opencode ? await opencodeTurnUsage(this.cmd, session, since, { cwd: this.o.cwd, env: this.o.env }) : null;
-        if (real) sink.usage(real);
-        else {
+        const result = () => {
           const usage = r?.usage as { totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number | null; cachedReadTokens?: number | null } | undefined;
           if (usage) {
             // ACP leaves open whether inputTokens counts cache reads: most agents do, OpenCode doesn't (Kun: acp-event-mapper.ts, applyPromptResult).
@@ -1732,7 +1841,18 @@ class AcpSession implements ProviderSession {
             }
             sink.usage({ inputTokens: now.input, outputTokens: now.output, cacheReadTokens: now.reads });
           }
-        }
+        };
+        // A turn you stopped isn't held for it, Stop before the read or during it: its count follows when OpenCode has said it
+        // (within OPENCODE_USAGE_MS, after which the read is ended, with the line in the log), and counts nothing from the
+        // next prompt on, which may have gone meanwhile.
+        const reading = this.opencode ? opencodeTurnUsage(this.cmd, session, since, { cwd: this.o.cwd, env: this.o.env, next: () => (session && (PROMPTED.get(session) ?? 0) > since ? PROMPTED.get(session) : undefined) }) : null;
+        const counts = (real: Awaited<NonNullable<typeof reading>>) => (real ? sink.usage(real) : result());
+        let onStop: (() => void) | undefined;
+        const stopped = new Promise<"stopped">((r) => (signal.aborted ? r("stopped") : signal.addEventListener("abort", (onStop = () => r("stopped")), { once: true })));
+        const first = reading ? await Promise.race([reading, stopped]) : null;
+        if (onStop) signal.removeEventListener("abort", onStop);
+        if (first === "stopped") void reading!.then(counts).catch((e) => console.error("[opencode] a stopped turn's count failed:", e));
+        else counts(first);
         // What it started that is still at work ends with the turn (AcpSpec.endsWork), so nothing it began goes on unseen.
         if (this.known.endsWork) await this.endWork(sink, signal.aborted || Boolean(cut));
       }
@@ -1759,8 +1879,10 @@ class AcpSession implements ProviderSession {
   private soulSent = false;
   /** When it last said something new: not only a retry's line (the silence hint). */
   private progress = 0;
-  /** How much of what it said this turn isn't its retry lines. */
+  /** How much of what it said this turn isn't its retry lines: the lines that ended (newsDone), and the one still coming (line). */
   private news = 0;
+  private newsDone = 0;
+  private line = "";
 
   /**
     The end of a turn of an agent whose background work Liner Code can't see through to its end (Antigravity: a command it sent
@@ -1861,11 +1983,13 @@ class AcpSession implements ProviderSession {
     Object.assign(this.o, o);
     // Waited on for an agent whose modes Liner Code knows: agy takes a prompt sent before a switch has landed at the level, or
     // thinking, it had (seen for both). Not for another: one slow to answer mustn't hold the turn (audit-review.test.ts).
+    // Bounded (SWITCH_MS): an agy that never answers a switch held the next turn before it began, outside its Stop and quiet
+    // watchdog. Not landed in time, the session is reopened at the new level (false), and resumes.
     if (o.access !== was && !reopen && this.child && this.session) {
       const switching = this.toMode(o.access, was);
-      if (this.levels) await switching;
+      if (this.levels && !(await landed(switching))) return false;
     }
-    if (effort && this.child && this.session) await this.toEffort(o.effort);
+    if (effort && this.child && this.session && !(await landed(this.toEffort(o.effort)))) return false;
     return !reopen;
   }
 
@@ -1895,7 +2019,8 @@ class AcpSession implements ProviderSession {
     this.o.access = access;
     if (this.child && this.session) {
       const switching = this.toMode(access, was);
-      if (this.levels) await switching;
+      // Not landed in time (SWITCH_MS): the turn can't be held to the level, so the runtime stops it, and the next opens at it.
+      if (this.levels && !(await landed(switching))) return `${this.cmd[0]} didn't switch to this level's mode in time`;
     }
     if (will < had) return `${this.cmd[0]} was given your connections as this turn started, and runs their tools without asking`;
     if (will > had) this.owed = true;
@@ -1981,8 +2106,15 @@ export function acpMcp(o: Pick<OpenOptions, "mcp" | "mcpName">, connections: Con
   ];
 }
 
-/** Each tool's commands, as its last session listed them (an agent that is asked no throwaway session: AcpSpec.quiet). */
+/**
+  Each tool's commands, as its last session listed them, and as its last session in each folder did (a project's own
+  commands, .opencode/command): what the composer offers, with no throwaway session opened for it (acpProvider, commands).
+*/
 const HEARD = new Map<string, CommandInfo[]>();
+const HEARD_IN = new Map<string, CommandInfo[]>();
+const heard = (id: string, cwd: string, commands: CommandInfo[]) => (HEARD.set(id, commands), HEARD_IN.set(`${id}\0${cwd}`, commands));
+/** What a tool's sessions said of its commands, in this folder first. */
+export const heardCommands = (id: string, cwd: string) => HEARD_IN.get(`${id}\0${cwd}`) ?? HEARD.get(id);
 
 /** A request Liner Code has no answer for: JSON-RPC's "method not found", which agents treat apart from a failure. */
 class Unknown extends Error {}
@@ -2035,6 +2167,8 @@ type Known = {
 const LEVEL_WORDS: Record<Access, string> = { read: "Read only", ask: "Ask", edits: "Edits", auto: "Auto", review: "Reviewer decides", full: "Full access" };
 /** agy's line for a call to the model it's trying again ("⚠ API error (attempt 2): Error 429, …"): no news. */
 const RETRY = /(?:⚠\s*)?API error \(attempt \d+\)[^\n]*/g;
+/** How much of some text isn't a retry's line: its characters other than spaces, once those lines are taken out. */
+const unretried = (text: string) => text.replace(RETRY, "").replace(/\s+/g, "").length;
 /** A duration as the timeline says it: "a minute", "15 minutes", "40 seconds". */
 const spell = (ms: number) => {
   const [n, unit] = ms >= 60_000 ? [Math.round(ms / 60_000), "minute"] : [Math.max(1, Math.round(ms / 1000)), "second"];
@@ -2196,6 +2330,10 @@ export function toolGate(said: string, code: number | null, min: string, label: 
 
 /** How long what a tool's own list said (its sign-in and models, AcpSpec.listed) is kept: a look and the model ask after it share one. */
 const LISTED_MS = 60_000;
+/** How long a folder's throwaway ask for commands that failed or said none waits before it's asked again (acpProvider, commands). */
+export let COMMANDS_AGAIN_MS = 10 * 60_000;
+/** For tests: a shorter pause. */
+export const setCommandsAgainMs = (ms: number) => void (COMMANDS_AGAIN_MS = ms);
 
 /** A tool that speaks ACP: found by its command, its models and commands asked of a throwaway session. */
 export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
@@ -2205,6 +2343,8 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
   const own = { ...spec.env, ...(isOpenCode ? { OPENCODE_PERMISSION: opencodeAsks() } : {}) };
   const envOf = (env: NodeJS.ProcessEnv) => ({ ...env, ...own });
   let last: { key: string; at: number; said: Promise<{ signedIn?: boolean; models: ModelInfo[] }> } | undefined;
+  /** Each folder's one throwaway session this run asks its commands of (commands), and when; an empty or failed one is asked again after COMMANDS_AGAIN_MS. */
+  const asked = new Map<string, { at: number; empty: boolean; got: Promise<CommandInfo[]> }>();
   const listed = (path: string, env: NodeJS.ProcessEnv) => {
     const key = `${path}|${env.HOME ?? ""}`;
     if (!last || last.key !== key || Date.now() - last.at > LISTED_MS) last = { key, at: Date.now(), said: spec.listed!(path, env, FAMILIES.get(id)).catch(() => ({ models: [] })) };
@@ -2236,8 +2376,28 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
       const models = path ? (await listed(path, envOf(env))).models : [];
       return models.length ? [{ id: "default", label: `${label} default`, description: `The model ${label} is set up with` }, ...models] : [];
     },
-    // An agent asked no throwaway session lists its commands as its own sessions said them.
-    commands: async (env, cwd) => ({ commands: spec.listed ? (HEARD.get(id) ?? []) : await acpCommands(cmd, envOf(env), cwd), skills: [] }),
+    // Its commands as its own sessions said them. Each throwaway session opened in your project stays in the tool's history (and
+    // starts it cold), so one is opened only while no session in that folder has said them, once a folder a run, and never for an
+    // agent asked none. A folder never offers another's: ACP doesn't say which commands are the tool's own and which the
+    // project's (.opencode/command), so none is shared. An ask that failed or said none (not signed in yet, too slow) may be
+    // asked again after a pause.
+    commands: async (env, cwd) => {
+      if (spec.listed) return { commands: heardCommands(id, cwd) ?? [], skills: [] };
+      const here = () => HEARD_IN.get(`${id}\0${cwd}`);
+      const said = here();
+      if (said) return { commands: said, skills: [] };
+      let ask = asked.get(cwd);
+      if (!ask || (ask.empty && Date.now() - ask.at >= COMMANDS_AGAIN_MS)) {
+        const a: { at: number; empty: boolean; got: Promise<CommandInfo[]> } = { at: Date.now(), empty: false, got: Promise.resolve([]) };
+        a.got = acpCommands(cmd, envOf(env), cwd).then(
+          (c) => ((a.empty = !c.length), (a.at = Date.now()), c),
+          () => ((a.empty = true), (a.at = Date.now()), [] as CommandInfo[]),
+        );
+        asked.set(cwd, (ask = a));
+      }
+      const got = await ask.got;
+      return { commands: here() ?? got, skills: [] };
+    },
     open: (o) => {
       const env = envOf(o.env);
       // The program that runs is the one the gate passed, found again and checked again before each start.

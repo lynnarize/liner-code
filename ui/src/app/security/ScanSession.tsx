@@ -89,8 +89,9 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
   const coder = agentOf(thread.agent, agents, providers);
 
   // The dev mock (?ls-mock=d, e or f): the mockup's board in place of the timeline, moved on as you answer.
-  const asked = mockMode();
-  const [mock, setMock] = useState<MockScan | null>(() => (isScan && (asked === "d" || asked === "e" || asked === "f") ? mockScan(asked, thread.id, thread.agent) : null));
+  // Every use of scan-mock.ts sits behind import.meta.env.DEV itself, which a build makes false, so the build leaves the module out.
+  const asked = import.meta.env.DEV ? mockMode() : null;
+  const [mock, setMock] = useState<MockScan | null>(() => (import.meta.env.DEV && isScan && (asked === "d" || asked === "e" || asked === "f") ? mockScan(asked, thread.id, thread.agent) : null));
   const own = useItems(mock ? undefined : thread.id);
   const items = mock?.items ?? own;
   useEffect(() => {
@@ -121,7 +122,7 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
   };
   const answer = (answers: Record<string, string>) => {
     if (!q) return;
-    if (mock) return setMock(mockScan("e", thread.id, thread.agent));
+    if (import.meta.env.DEV && mock) return setMock(mockScan("e", thread.id, thread.agent));
     const given = Object.keys(answers).length > 0;
     void rpc("question.answer", { threadId: thread.id, itemId: q.id, ...(given ? { answers } : {}) }).catch(fail);
   };
@@ -251,7 +252,7 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
   const heldCount = ended?.confirmed ?? held.length;
   const lookName = useLookName(look?.by ?? scan?.secondLook);
   const fix = async (f: SecurityFinding) => {
-    if (mock) return toast("The dev mock doesn't start a fix");
+    if (import.meta.env.DEV && mock) return toast("The dev mock doesn't start a fix");
     try {
       const t = await rpc("security.finding.fix", { id: f.id });
       goSecurity({ kind: "scan", threadId: t.id });

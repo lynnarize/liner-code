@@ -21,7 +21,7 @@ import { castOf, costOf, familyOf, frontierClass, listedHere, openCodeHasGo, pai
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
-import { isPrompt, rpc, useEngine, useItems, useItemsWhere } from "./engine";
+import { isPrompt, rpc, useEngine, useItemsWhere } from "./engine";
 import { I, ModelMark, type MarkKind } from "./icons";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, effortsFor, EXTRA_EFFORTS, isModelAgent, keepHandOver, markOf, modelLabel, pairEffortFor, pairReady, plural, providerLabel, shortName, since, toolMarkOf, wayOf, whoOf, type Way } from "./model";
 import { onComposerInsert } from "./Find";
@@ -389,8 +389,12 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     return () => window.removeEventListener("beforeunload", flushDraft);
   }, []);
   useEffect(() => {
-    if (files.length) draftFiles.set(draftKey, files);
-    else draftFiles.delete(draftKey);
+    if (files.length) {
+      // Newest last, and at most MAX_DRAFTS drafts' files, as the drafts themselves are kept: a session left with files long ago lets them go.
+      draftFiles.delete(draftKey);
+      draftFiles.set(draftKey, files);
+      for (const k of draftFiles.keys()) if (draftFiles.size > MAX_DRAFTS) draftFiles.delete(k);
+    } else draftFiles.delete(draftKey);
   }, [files, draftKey]);
   useEffect(() => {
     try {
@@ -499,12 +503,22 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
     let live = true;
     const q = mention.query.toLowerCase();
     const rank = (name: string) => (name.toLowerCase().startsWith(q) ? 0 : 1);
-    if (mention.kind === "@")
-      void rpc("fs.files", { projectId: project.id, threadId: thread?.id, query: mention.query, limit: 8 }).then((r) => {
-        if (!live) return;
-        setFound(r.map((f) => ({ key: f.path, insert: `@${f.path}`, label: f.path, kind: "@" })));
-        setHl(0);
-      }, () => live && setFound([]));
+    if (mention.kind === "@") {
+      // Asked once you pause (80 ms), not on every key: the rows found last stay meanwhile. / and $ filter here, at once.
+      const t = window.setTimeout(
+        () =>
+          void rpc("fs.files", { projectId: project.id, threadId: thread?.id, query: mention.query, limit: 8 }).then((r) => {
+            if (!live) return;
+            setFound(r.map((f) => ({ key: f.path, insert: `@${f.path}`, label: f.path, kind: "@" })));
+            setHl(0);
+          }, () => live && setFound([])),
+        80,
+      );
+      return () => {
+        live = false;
+        clearTimeout(t);
+      };
+    }
     else if (tools || (mention.kind === "/" && slashRows?.length)) {
       const extra = mention.kind === "/" ? (slashRows ?? []).filter((r) => `${r.name} ${r.note ?? ""}`.toLowerCase().includes(q)).map((r): Choice => ({ key: `+${r.name}`, insert: "", label: `/${r.name}`, hint: r.hint, note: r.note, kind: "/", tag: r.tag, pick: r.onPick })) : [];
       const list = !tools ? extra :
@@ -791,21 +805,33 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   const stash = () => {
     const list = readStash();
     if (text.trim()) {
-      localStorage.setItem(stashKey, JSON.stringify([{ text, at: Date.now() }, ...list].slice(0, 20)));
+      try {
+        localStorage.setItem(stashKey, JSON.stringify([{ text, at: Date.now() }, ...list].slice(0, 20)));
+      } catch {
+        return void toast.error("Couldn't stash it: storage is full", { description: "The draft stays in the composer." });
+      }
       setText("");
       toast("Stashed the draft", { description: `${os.mod}S on an empty composer brings it back.` });
       return;
     }
     if (list.length === 1) {
       setText(list[0].text);
-      localStorage.setItem(stashKey, "[]");
+      try {
+        localStorage.setItem(stashKey, "[]");
+      } catch {
+        // Storage full: it stays stashed too, which loses nothing.
+      }
     } else if (list.length > 1) setStashOpen(true);
     else toast("Nothing stashed", { description: `${os.mod}S keeps a draft for later.` });
   };
   const unstash = (i: number) => {
     const list = readStash();
     setText(list[i]?.text ?? "");
-    localStorage.setItem(stashKey, JSON.stringify(list.filter((_, k) => k !== i)));
+    try {
+      localStorage.setItem(stashKey, JSON.stringify(list.filter((_, k) => k !== i)));
+    } catch {
+      // Storage full: it stays stashed too, which loses nothing.
+    }
     setStashOpen(false);
     requestAnimationFrame(() => field.current?.focus());
   };
@@ -1870,16 +1896,20 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
 
 /** "Watch on the canvas": while the running turn draws on a design file of this session's folder (face.ts says when). */
 function WatchCanvas({ thread }: { thread: Thread }) {
-  const items = useItems(thread.id);
+  // Read as a word (the frame's name, "" for none, null when it isn't drawing), so a streamed reply redraws nothing here.
+  const running = thread.status === "running";
+  const frame = useEngine((s) => {
+    const d = running ? drawingOf(s.items[thread.id] ?? []) : undefined;
+    return d ? (d.frame ?? "") : null;
+  });
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const now = thread.status === "running" ? drawingOf(items) : undefined;
-  if (!now) return null;
+  if (frame === null) return null;
   return (
     <div className="lc-trow ld-watch" role="status">
       <span className="ld-pd" data-lead aria-hidden />
       <span className="lc-trow-t">
-        <b>{agentOf(thread.agent, agents, providers).name}</b> is drawing{now.frame ? ` ${now.frame}` : " on the canvas"}
+        <b>{agentOf(thread.agent, agents, providers).name}</b> is drawing{frame ? ` ${frame}` : " on the canvas"}
       </span>
       <span className="lc-grow" />
       <button type="button" className="lc-trow-lk l-focus" onClick={() => setFace("design")}>
@@ -1888,8 +1918,6 @@ function WatchCanvas({ thread }: { thread: Thread }) {
     </div>
   );
 }
-
-export const Hints = ({ children }: { children?: ReactNode }) => <div className="lc-hints">{children}</div>;
 
 /** Each access level's icon, in the permissions picker and on its chip. */
 const ACCESS_ICONS: Record<Access, (p: { size?: number }) => ReactNode> = { read: I.eye, ask: I.lock, edits: I.edit, auto: I.auto, review: I.shield, full: I.shieldOff };

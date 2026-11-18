@@ -70,6 +70,9 @@ const opening = new Map<string, Promise<string>>();
 function start(threadId: string, pane: Pane, cols: number, rows: number) {
   let p = opening.get(pane.key);
   if (p) return p;
+  // Opened already: a view that read the tab before it had its id takes the one it has.
+  const have = tabsOf.get(threadId)?.panes.find((x) => x.key === pane.key)?.id;
+  if (have) return Promise.resolve(have);
   p = rpc("term.open", { threadId, cols, rows, title: pane.title, command: pane.gen === 0 ? pane.command : undefined }).then((r) => {
     const wanted = opening.get(pane.key) === p && (tabsOf.get(threadId)?.panes.some((x) => x.key === pane.key) ?? false);
     if (!wanted) {
@@ -78,6 +81,8 @@ function start(threadId: string, pane: Pane, cols: number, rows: number) {
     }
     // The engine's list may have brought it back as a tab of its own meanwhile; this one keeps it.
     put(threadId, (t) => ({ ...t, panes: t.panes.filter((x) => x.key === pane.key || x.id !== r.id).map((x) => (x.key === pane.key ? { ...x, id: r.id } : x)) }));
+    // The tab holds its id now, so the promise needn't be kept for the app's lifetime.
+    if (opening.get(pane.key) === p) opening.delete(pane.key);
     return r.id;
   });
   p.catch(() => opening.get(pane.key) === p && opening.delete(pane.key));
@@ -101,7 +106,11 @@ const reconcile = (k: Tabs, list: { id: string; title: string; command?: string 
   const on = extra.at(-1)?.key ?? (panes.some((p) => p.key === k.on) ? k.on : panes[panes.length - 1].key);
   return { panes, on };
 };
-const idOf = (pane: Pane): Promise<string | undefined> => (pane.id ? Promise.resolve(pane.id) : (opening.get(pane.key)?.catch(() => undefined) ?? Promise.resolve(undefined)));
+/** A tab's shell: its id, from the tab as it is now if the one in hand was read before it had one, else the open on its way. */
+const idOf = (pane: Pane): Promise<string | undefined> => {
+  const id = pane.id ?? [...tabsOf.values()].flatMap((t) => t.panes).find((x) => x.key === pane.key)?.id;
+  return id ? Promise.resolve(id) : (opening.get(pane.key)?.catch(() => undefined) ?? Promise.resolve(undefined));
+};
 
 /* ---------- Links ---------- */
 
@@ -259,26 +268,38 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
         cwdRef.current = a.cwd;
         setSt({ cwd: a.cwd, exited: a.exited });
         // The shell hears this view's size, which may not be the one it last had.
-        if (a.exited === undefined) void rpc("term.resize", { id, cols: t.cols, rows: t.rows }).catch(() => {});
+        if (a.exited === undefined) tell(true);
       })
       .catch((e) => live && setSt({ error: e instanceof Error ? e.message : String(e) }));
     const selection = t.onSelectionChange(() => setPicked(t.getSelection().trim().slice(0, 8000)));
     const input = t.onData((d) => {
       if (idRef.current) void rpc("term.write", { id: idRef.current, data: d }).catch(() => {});
     });
-    // The panel resizes it; a frame later the shell hears the new size.
-    let raf = 0;
+    /*
+      The panel resizes it; once the panel has settled the view refits and the shell hears the new
+      size, only if it is a new one. A slide or a drag of the grip is many frames: refitting 5,000
+      rows of scrollback and a SIGWINCH on each made zsh, vim or an agent's screen redraw every frame.
+    */
+    let settle = 0;
+    let told = "";
+    const tell = (always = false) => {
+      const id = idRef.current;
+      const size = `${t.cols}x${t.rows}`;
+      if (!id || (!always && size === told)) return;
+      told = size;
+      void rpc("term.resize", { id, cols: t.cols, rows: t.rows }).catch(() => {});
+    };
     const ro = new ResizeObserver(() => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
         if (!el.offsetWidth || !el.offsetHeight) return;
         try {
           fitKeepingEnd(t, f);
         } catch {
           return;
         }
-        if (idRef.current) void rpc("term.resize", { id: idRef.current, cols: t.cols, rows: t.rows }).catch(() => {});
-      });
+        tell();
+      }, 100);
     });
     ro.observe(el);
     // The theme follows light and dark, and your own theme and accent, which go on the root's style (look.ts).
@@ -293,7 +314,7 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
       selection.dispose();
       ro.disconnect();
       mo.disconnect();
-      cancelAnimationFrame(raf);
+      window.clearTimeout(settle);
       idRef.current = null;
       t.dispose();
       term.current = null;

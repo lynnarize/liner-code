@@ -13,7 +13,7 @@
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DesignInfo, DesignSize, Item } from "../../contracts/src/index.ts";
-import { run } from "./exec.ts";
+import { outside, run } from "./exec.ts";
 import { uid, type Store } from "./store.ts";
 
 export type DesignItem = Extract<Item, { kind: "design" }>;
@@ -48,7 +48,7 @@ export function slugOf(title: string) {
 export function designPath(root: string, asked: string) {
   const file = asked.trim().replace(/^file:\/\/(?:\/(?=[a-z]:))?/i, "").replace(/[?#].*$/, "");
   const rel = relative(root, isAbsolute(file) ? file : resolve(root, file));
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("A design's file must be inside this session's folder.");
+  if (!rel || outside(rel)) throw new Error("A design's file must be inside this session's folder.");
   if (!/\.html?$/i.test(rel)) throw new Error("A design is an HTML file: give a path that ends in .html.");
   return rel.split(sep).join("/");
 }
@@ -161,7 +161,7 @@ export class Designs {
       const real = realpathSync(dirname(abs));
       const inside = relative(among ? join(realpathSync(root), DESIGN_DIR) : realpathSync(root), real);
       // A link in the file's place isn't written through, even one to a file that isn't there yet.
-      if (inside.startsWith("..") || isAbsolute(inside) || lstatSync(abs, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${path} leads out of ${among ? `${DESIGN_DIR}/` : "this session's folder"}, so it isn't written.`);
+      if (outside(inside) || lstatSync(abs, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${path} leads out of ${among ? `${DESIGN_DIR}/` : "this session's folder"}, so it isn't written.`);
       writeFileSync(abs, a.html);
     }
     if (!existsSync(abs)) throw new Error(`There's no ${path} yet. Write the design there first, or pass the whole page as html.`);
@@ -261,6 +261,15 @@ export class Designs {
     for (const d of w.dirs.values()) d.close();
     for (const t of w.timers.values()) clearTimeout(t);
     this.watching.delete(threadId);
+  }
+
+  /** Every design.watch let go, as canvas.resetWatches does for the canvas: for when no window is connected (a reload never says off). */
+  unwatchAll() {
+    for (const id of [...this.watching.keys()]) {
+      const w = this.watching.get(id)!;
+      w.n = 1;
+      this.watch(id, false);
+    }
   }
 
   /** Watches the folders of a thread's designs, for one that's watched; a change says which design, once it settles. */

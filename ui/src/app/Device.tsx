@@ -17,11 +17,20 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
   const [udid, setUdid] = useState<string | null>(() => localStorage.getItem("lc:device"));
   const [shot, setShot] = useState<string | null>(null);
   const [booting, setBooting] = useState(false);
-  const [dark, setDark] = useState(false);
+  // The simulator doesn't say which it's in, so neither is marked until you pick one here.
+  const [look, setLook] = useState<"light" | "dark" | null>(null);
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
   const [question, setQuestion] = useState("");
   const [logOn, setLogOn] = useState(false);
   const [filter, setFilter] = useState("");
+  // The filter the log runs with: a pause in the typing, not each letter, restarts its `log stream`.
+  const [logFilter, setLogFilter] = useState("");
+  useEffect(() => {
+    const t = window.setTimeout(() => setLogFilter(filter.trim()), 400);
+    return () => window.clearTimeout(t);
+  }, [filter]);
+  const [asking, setAsking] = useState(false);
+  const sending = useRef(false);
   const [lines, setLines] = useState<string[]>([]);
   const screen = useRef<HTMLDivElement>(null);
   const logBox = useRef<HTMLDivElement>(null);
@@ -49,31 +58,43 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
   const dev = list?.devices.find((d) => d.udid === udid);
   const booted = dev?.state === "Booted";
 
-  // The screen, about once a second while you can see it.
+  // The screen, about once a second while you can see it: not while the window is hidden or
+  // minimised (the tab can be up in a window you can't see), and again as soon as it shows.
   useEffect(() => {
     if (!visible || !booted || !udid) return;
     let live = true;
+    let going = false;
     let t = 0;
     const tick = async () => {
+      if (!live || going || document.hidden) return;
+      going = true;
       try {
         const r = await rpc("device.shot", { udid });
         if (live) setShot(`data:image/png;base64,${r.png}`);
       } catch {
         // the device went away
       }
+      going = false;
       if (live) t = window.setTimeout(tick, point ? 4000 : 1100);
     };
+    const shows = () => {
+      if (document.hidden) return;
+      window.clearTimeout(t);
+      void tick();
+    };
+    document.addEventListener("visibilitychange", shows);
     void tick();
     return () => {
       live = false;
       window.clearTimeout(t);
+      document.removeEventListener("visibilitychange", shows);
     };
   }, [visible, booted, udid, point !== null]);
 
   // The device's log, while it is on.
   useEffect(() => {
     if (!udid || !booted || !logOn) return;
-    void rpc("device.log", { udid, on: true, filter: filter.trim() || undefined }).catch(() => {});
+    void rpc("device.log", { udid, on: true, filter: logFilter || undefined }).catch(() => {});
     const off = onStream((e) => {
       if (e.type === "devlog" && e.udid === udid) setLines((l) => [...l, ...e.lines].slice(-400));
     });
@@ -81,7 +102,7 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
       off();
       void rpc("device.log", { udid, on: false }).catch(() => {});
     };
-  }, [udid, booted, logOn, filter]);
+  }, [udid, booted, logOn, logFilter]);
   useEffect(() => {
     const b = logBox.current;
     if (b) b.scrollTop = b.scrollHeight;
@@ -100,8 +121,11 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
     }
   };
 
+  // Two quick Enters are one question, with one screenshot (Browser's ask does the same).
   const ask = async () => {
-    if (!shot || !question.trim() || !point) return;
+    if (!shot || !question.trim() || !point || sending.current) return;
+    sending.current = true;
+    setAsking(true);
     const where = `about ${Math.round(point.x * 100)}% across and ${Math.round(point.y * 100)}% down the screen`;
     try {
       await rpc("thread.send", { id: thread.id, text: `${question.trim()}\n\n(On the ${dev?.name ?? "simulator"}, ${where}. The screenshot is attached.)`, files: [{ name: "simulator.png", data: shot.split(",")[1] }], mode: thread.status === "running" ? "queue" : undefined });
@@ -110,6 +134,9 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
       setQuestion("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      sending.current = false;
+      setAsking(false);
     }
   };
 
@@ -164,21 +191,25 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
           )}
         </Pop>
         <span className="lc-grow" />
-        <button
-          type="button"
-          className="lc-ib l-focus"
-          aria-label={dark ? "Light appearance" : "Dark appearance"}
-          title={dark ? "Light appearance" : "Dark appearance"}
-          aria-pressed={dark}
-          disabled={!booted}
-          onClick={() => {
-            const next = !dark;
-            setDark(next);
-            if (udid) void rpc("device.appearance", { udid, mode: next ? "dark" : "light" }).catch((e) => toast.error(String(e?.message ?? e)));
-          }}
-        >
-          <I.contrast size={14} />
-        </button>
+        {/* Light or Dark, both offered: the simulator doesn't say which it's in, so one button that flipped did nothing the first time on a dark one. */}
+        <Pop label="Appearance" align="end" width={200} menu triggerClass="lc-ib" triggerAttrs={{ title: "Light or dark appearance" }} disabled={!booted} trigger={<I.contrast size={14} />}>
+          {(close) => (
+            <>
+              {(["light", "dark"] as const).map((mode) => (
+                <Row
+                  key={mode}
+                  title={mode === "light" ? "Light appearance" : "Dark appearance"}
+                  on={look === mode}
+                  onPick={() => {
+                    close();
+                    setLook(mode);
+                    if (udid) void rpc("device.appearance", { udid, mode }).catch((e) => toast.error(String(e?.message ?? e)));
+                  }}
+                />
+              ))}
+            </>
+          )}
+        </Pop>
         <button type="button" className="lc-ib l-focus" aria-label="Save a screenshot" title="Save a screenshot" disabled={!shot} onClick={save}>
           <I.camera size={14} />
         </button>
@@ -229,7 +260,7 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
                 if (e.key === "Escape") setPoint(null);
               }}
             />
-            <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!question.trim()} onClick={() => void ask()}>
+            <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!question.trim() || asking} onClick={() => void ask()}>
               Ask
             </button>
           </div>

@@ -7,7 +7,7 @@
 */
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { addonKey, modeName, PR_TEST_TOOL, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart, type PlanEntry } from "@contracts";
+import { addonKey, modeName, PR_TEST_TOOL, BROWSER_TOOL as BROWSER, BROWSER_WORDS, bareTitle as bare, callCommand, callInput as inputOf, callPath, CANVAS_TOOL as CANVAS_STEP, canvasFrame, canvasWords, CARD_TOOLS, DESIGN_TOOLS, FRAME_FILE, frameFileName, isStepCall, KIND_WORDS, readableFrame, SERVER_TOOL as SERVER, serverOf, SIDEKICK_WORDS, stepFileName, toolNameOf, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type TurnPart, type PlanEntry } from "@contracts";
 import { appIcon, OfferCard } from "./Addon";
 import { toComposer } from "./Find";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
@@ -21,7 +21,7 @@ import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
 import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, money, onClaude, planEnd, planStatus, plural, sumLines, turnsOf, type PlanEnd } from "./model";
-import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow } from "./ui";
+import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow, useSteady } from "./ui";
 import { Fanout, isSidekick, onWhom } from "./Crew";
 import { toast } from "@liner/components/toast/toast";
 import { Boundary } from "./Boundary";
@@ -77,18 +77,14 @@ type Review = Extract<Item, { kind: "review" }>;
 /** What a turn's trail holds, in order: its tool calls, its thinking, what the agent says between steps, and asks waiting on you. */
 type Entry = { kind: "tool"; it: Tool } | { kind: "thought"; it: Extract<Item, { kind: "reasoning" }> } | { kind: "ask"; it: Ask };
 
-const CARD_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode", "mcp__liner__show_page", "liner.show_page"]);
 /**
-  Showing a design: its card stands for it once the turn has one. One that failed, or that kept
-  the version before (nothing changed), stays a step, with what it said. Under each way a tool
-  names it (OpenCode's is liner_design_show). Liner Design's tools (design_frame, design_node and
-  the rest) aren't here on purpose: they draw on the canvas, which has no card, so each stays a
-  step with the words canvas.ts's titleOf gives it.
+  Cards (CARD_TOOLS), and showing a design (DESIGN_TOOLS): its card stands for it once the turn has one. One that failed,
+  or that kept the version before (nothing changed), stays in the trail, with what it said. Which calls are steps, and
+  their words, are contracts/doing.ts's, so the sidebar's doing line and Liner Design's chat say what the trail says.
 */
-const DESIGN_TOOLS = new Set(["mcp__liner__design_show", "liner.design_show", "liner_design_show"]);
 const isCard = (it: Item, designed: boolean) => it.kind === "tool" && (CARD_TOOLS.has(it.tool) || (designed && DESIGN_TOOLS.has(it.tool) && it.status === "done"));
 /** A tool call the trail draws as a step: not a card of its own (a question, a plan, a page, a design shown) nor the PR card's test run. */
-export const isStep = (it: Tool) => !CARD_TOOLS.has(it.tool) && !DESIGN_TOOLS.has(it.tool) && it.tool !== PR_TEST_TOOL && !(it.toolKind === "task" && /^Opus\b/.test(it.title));
+export const isStep: (it: Tool) => boolean = isStepCall;
 /** A lead wraps the plan it hands over in <plan> tags; the plan card shows it, so the text drops the tags. */
 const untag = (text: string) => text.replace(/<\/?plan\b[^>]*>/g, "");
 
@@ -127,13 +123,11 @@ type Props = {
 };
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
-
-/** A callback that keeps one identity while it calls the latest one given, so it doesn't redraw what it's handed to. */
-function useSteady<A extends unknown[]>(fn: ((...a: A) => void) | undefined) {
-  const ref = useRef(fn);
-  ref.current = fn;
-  return useCallback((...a: A) => ref.current?.(...a), []);
-}
+/** A session's mode, for the closing line; none for a thread the store doesn't hold. */
+const modeOf = (s: Parameters<typeof threadOf>[0], threadId: string) => {
+  const t = threadOf(s, threadId);
+  return t ? (t.mode ?? "standard") : null;
+};
 
 export function Timeline({ threadId, items: given, seen, onReview, reviewing, onGrow, docked, draw }: Props) {
   const own = useItems(given ? undefined : threadId);
@@ -149,19 +143,21 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewing, on
   }, [items]);
   const review = useSteady(onReview);
   const grow = useSteady(onGrow);
+  // The session's mode, fixed for its life, for each turn's closing line: read once here, not by every turn on every frame.
+  const mode = useEngine((s) => modeOf(s, threadId));
   return (
     <div className="lc-tl">
       {turns.map(({ turn, n, items: list }) => (
         // One turn that can't show says so in its place; the rest of the thread stays (T3 Code's RenderErrorBoundary).
         <Boundary key={turn} label="This turn" quiet>
-          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} docked={docked} draw={draw} />
+          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} mode={mode} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} docked={docked} draw={draw} />
         </Boundary>
       ))}
     </div>
   );
 }
 
-const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow, docked, draw }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
+const Turn = memo(function Turn({ threadId, n, items, agents, providers, mode, seen, onReview, reviewing, onGrow, docked, draw }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[]; mode: ReturnType<typeof modeOf> } & Omit<Props, "items" | "threadId">) {
   // Your turn, and any parts that carried it on (a build, a refine, a fix): one turn, one foot, and
   // a head for each model's part, so who did what reads in order.
   const marks = items.filter((x): x is Mark => x.kind === "turn");
@@ -169,8 +165,6 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
   const running = marks.some((m) => m.status === "running");
   // The Design face names its frames for the steps that read or change them (FrameNames).
   const names = useContext(FrameNames);
-  // The session's mode, fixed for its life, for the closing line; none for a thread the store doesn't hold.
-  const mode = useEngine((s) => { const t = threadOf(s, threadId); return t ? (t.mode ?? "standard") : null; });
   const parts = sectionsOf(marks);
   const cps = items.filter((x): x is Checkpoint => x.kind === "checkpoint");
   const lastCp = cps[cps.length - 1];
@@ -627,10 +621,6 @@ const Chev = ({ className }: { className?: string }) => (
   </svg>
 );
 
-/** Liner Code's own Browser tools, under either way an agent tool names them. */
-const BROWSER = /^(?:mcp__liner__|liner\.)browser_(\w+)/;
-/** Its dev servers from launch.json, the same way. */
-const SERVER = /^(?:mcp__liner__|liner\.)server_(\w+)/;
 const lastLine = (s?: string) =>
   s
     ?.split("\n")
@@ -645,57 +635,25 @@ const tailOf = (s: string, n = 6000) => {
   const nl = tail.indexOf("\n");
   return `…\n${nl >= 0 && nl < 240 ? tail.slice(nl + 1) : tail}`;
 };
-/** The command a step ran: Claude Code reports its input as JSON, Codex and the rest as the command; "" when nothing names it. */
-function commandOf(t: Tool) {
-  const raw = t.input ?? "";
-  try {
-    const j = JSON.parse(raw) as { command?: unknown; cmd?: unknown };
-    const c = j?.command ?? j?.cmd;
-    if (typeof c === "string") return c;
-    if (Array.isArray(c) && c.every((x) => typeof x === "string")) return c.join(" ");
-    // JSON with no command in it is no command to show.
-    if (j && typeof j === "object") return "";
-  } catch {
-    // the command itself
-  }
-  return raw || (bare(t.title) ? "" : t.title.replace(/^Run\s+/, ""));
-}
 
 /*
   Plain names for steps. A tool may title a call with nothing but its kind ("edit", "execute": OpenCode's before it says
   more), and Liner Design's own tools name frames by their ids; neither is words for a person. trailSteps names every step
   (the trail, the Wall, the Design face's chat row all read it), so the plain names are made there, from what the call
-  holds: its path, its command, the frame it touches.
+  holds: its path, its command, the frame it touches. The words themselves are contracts/doing.ts's, which the engine's
+  doing line (the sidebar's second line) says too.
 */
-/** A frame's file in a design file: .liner/designs/<file>/frames/<id>.html. */
-const FRAME_FILE = /\.liner\/designs\/([^/]+)\/frames\/([^/]+)\.html$/;
 /**
   Calls that were drawing a frame while they ran, by design, frame and call: they say "Drawing", then "Drew", whatever the
   design file says of the frame meanwhile (one drawn again after it was deleted joins the file mid-call).
 */
 const drawing = new Set<string>();
-/** A title that is only a tool's kind, or nothing. */
-const BARE = /^(?:edit|write|delete|move|execute|exec|bash|shell|read|search|grep|glob|fetch|web|think|other|task|tool|use a tool)?$/i;
-const bare = (title?: string) => BARE.test((title ?? "").trim());
-/** A call's input as an object, when it is JSON. */
-const inputOf = (t: Tool): Record<string, unknown> => {
-  try {
-    const j = JSON.parse(t.input ?? "") as unknown;
-    return j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-};
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
-/** The file a call is about: its path, else a path in its input, else its title without the verb (a real title only). */
+/** The file a call is about, by its name: its path's, else a path's in its input, else its title's without the verb (a real title only). */
 const fileOf = (t: Tool, verb: RegExp) => {
-  const i = inputOf(t);
-  const p = t.path ?? str(i.file_path) ?? str(i.filePath) ?? str(i.path) ?? str(i.file) ?? str(i.filename);
-  if (p) return nameOf(p);
-  return bare(t.title) ? undefined : t.title.replace(verb, "") || undefined;
+  const p = callPath(t, verb);
+  return p ? stepFileName(p) : undefined;
 };
-/** Liner Design's canvas tools, by any tool's name for them (Claude Code's mcp__liner__, ACP's liner., OpenCode's liner_, Antigravity's mcp_liner_). */
-const CANVAS_STEP = /^(?:mcp__liner__|mcp_liner_|liner\.|liner_)?design_(files|frame|tree|node|selection|shot|picture|built)$/;
 /** Turns a frame's id into its name. The Design face gives one (Chat.tsx); without it a frame is called by what the call says. */
 /** `design`: the design file the call names (its slug); a namer names only the open one's frames. */
 export type FrameNamer = ((frame: string, design?: string) => string | undefined) & {
@@ -704,40 +662,9 @@ export type FrameNamer = ((frame: string, design?: string) => string | undefined
   /** The calls that drew a frame: the first whole write of its file in the session (the chat works it out from the timeline). */
   drew?: (toolId: string) => boolean;
 };
-/** A frame not in the design file yet (or with no namer) by a name made from its id: brand-board is "Brand board", never the slug. */
-export const readableFrame = (id: string) => {
-  if (!/^[a-z0-9][a-z0-9_~-]*$/.test(id)) return id;
-  const w = id.replace(/~.*$/, "").replace(/[-_]+/g, " ").trim();
-  return w ? w.charAt(0).toUpperCase() + w.slice(1) : id;
-};
 export const FrameNames = createContext<FrameNamer | undefined>(undefined);
-/** A canvas tool's step in plain words: "Read Phone / Menu", "Changed Phone / Menu". */
-function canvasStep(t: Tool, kind: string, running: boolean, names?: FrameNamer): { verb: string; target?: string } {
-  const i = inputOf(t);
-  const id = str(i.frame) ?? str(i.id);
-  const frame = (id && names?.(id, str(i.design))) ?? str(i.name) ?? (id && readableFrame(id));
-  const v = (now: string, done: string) => (running ? now : done);
-  switch (kind) {
-    case "files":
-      return { verb: v("Reading the design files", "Read the design files") };
-    case "frame":
-      return { verb: v("Drawing", "Drew"), target: str(i.name) ?? frame ?? "a frame" };
-    case "tree":
-      return { verb: v("Reading", "Read"), target: frame ?? "a frame" };
-    case "node":
-      return i.html === undefined ? { verb: v("Reading", "Read"), target: frame ?? "a frame" } : { verb: v("Changing", "Changed"), target: frame ?? "a frame" };
-    case "selection":
-      return { verb: v("Looking at what's selected", "Looked at what's selected") };
-    case "shot":
-      return { verb: v("Looking at", "Looked at"), target: frame ?? "a frame" };
-    case "picture":
-      return { verb: v("Making a picture", "Made a picture"), ...(frame ? { target: `for ${frame}` } : {}) };
-    default:
-      return { verb: v("Marking it built", "Marked it built"), ...(frame ? { target: frame } : {}) };
-  }
-}
-/** A step whose call says only its kind, by that kind. */
-const KIND_WORDS: Partial<Record<Tool["toolKind"], [string, string]>> = { think: ["Thinking", "Thought it through"], fetch: ["Reading a page", "Read a page"], web: ["Reading the web", "Read the web"], task: ["Handing work on", "Handed work on"] };
+/** A canvas tool's step in plain words: "Read Phone / Menu", "Changed Phone / Menu" (contracts/doing.ts's, the doing line's too). */
+const canvasStep = (t: Tool, kind: string, running: boolean, names?: FrameNamer) => canvasWords(t, kind, running, canvasFrame(t, kind, names));
 
 /** One line of the trail: what it did (a verb and what it touched), how it went, and the fact that matters, under it. */
 /** `diff`: the file in the turn's checkpoint an edit step changed, which a press opens in Changes. */
@@ -825,7 +752,7 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint, names?: FrameNamer): 
         return n ? [n > 1 ? `${word} ×${n}` : word] : [];
       });
       const page = /^(?:Open|Opened)\s+(.+?)\s+in the Browser$/.exec(first.title)?.[1];
-      return { ...base, verb: "Checked in the Browser", target: page, result: joined([did.join(", "), ...pageParts(t)]) };
+      return { ...base, verb: BROWSER_WORDS[state === "running" ? 0 : 1], target: page, result: joined([did.join(", "), ...pageParts(t)]) };
     }
     if (SERVER.exec(t.tool)?.[1] === "start") {
       // "web is running on localhost:5173, …": where it runs, which is what the person needs of it.
@@ -833,7 +760,9 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint, names?: FrameNamer): 
       // Failed, why: the line under "didn't stay up", or the one line it said (the person said no).
       const said = (t.output ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
       const why = /didn't stay up/.test(said[0] ?? "") ? said[1] : said[0];
-      return { ...base, verb: state === "running" ? "Starting" : state === "failed" ? "Couldn't start" : "Started", target: t.title.replace(/^Run\s+|\s+from launch\.json$/g, ""), result: state === "failed" ? (why ? clip(why) : undefined) : at };
+      const server = serverOf(t);
+      const verb = state === "running" ? "Starting" : state === "failed" ? "Couldn't start" : "Started";
+      return { ...base, verb: server ? verb : `${verb} a server`, target: server, result: state === "failed" ? (why ? clip(why) : undefined) : at };
     }
     if (t.toolKind === "read") {
       const files = [...new Set(g.flatMap((x) => fileOf(x, /^Read\s+/) ?? []))];
@@ -867,7 +796,7 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint, names?: FrameNamer): 
             const key = (x: Tool) => `${slug}/${frame}/${x.id}`;
             const drawn = f?.status === "added" || g.some((x) => names.drew?.(x.id) || drawing.has(key(x))) || (state === "running" && slug === names.open && !names(frame, slug));
             if (drawn && state === "running") drawing.add(key(t));
-            return { verb: state === "running" ? (drawn ? "Drawing" : "Changing") : drawn ? "Drew" : "Changed", target: names(frame, slug) ?? readableFrame(frame), plainTarget: true };
+            return { verb: state === "running" ? (drawn ? "Drawing" : "Changing") : drawn ? "Drew" : "Changed", target: frameFileName(t, frame, names(frame, slug)), plainTarget: true };
           }
           const file = fileOf(t, /^(?:Edit|Write)\s+/);
           // A change that names no file still says what it did: "Changed a file", not the tool's "edit".
@@ -878,17 +807,18 @@ export function trailSteps(tools: Tool[], cp?: Checkpoint, names?: FrameNamer): 
       };
     }
     if (t.toolKind === "exec") {
-      const command = commandOf(t).replace(/\s+/g, " ").trim();
+      const command = callCommand(t).replace(/\s+/g, " ").trim();
       const verb = state === "running" ? "Running" : "Ran";
       return { ...base, verb: command ? verb : `${verb} a command`, target: command ? clip(command, 72) : undefined, result: state === "running" ? undefined : ranResult(t), tail: state === "running" && t.output ? t.output.split("\n").filter(Boolean).slice(-2).join("\n") : undefined };
     }
     // In the Design face a lead's brief is said once and plainly: the brief itself is on its row, and what the sidekick
     // does is the sidekick's own part of the chat's row (Chat.tsx). Liner Code (no namer) names it by its title, as before.
-    if (names && isSidekick(t)) return { ...base, verb: state === "running" ? "Waiting on its sidekick" : "Handed work to its sidekick" };
+    if (names && isSidekick(t)) return { ...base, verb: SIDEKICK_WORDS[state === "running" ? 0 : 1] };
     const line = lastLine(t.output);
     // A call titled with only its kind is named by the kind in words; one with no kind of note, by its tool's name.
     const words = KIND_WORDS[t.toolKind];
-    const verb = !bare(t.title) ? t.title : words ? words[state === "running" ? 0 : 1] : !bare(t.tool) && !/^(?:mcp__|liner)/.test(t.tool) ? `${state === "running" ? "Using" : "Used"} ${t.tool}` : state === "running" ? "Using a tool" : "Used a tool";
+    const tool = toolNameOf(t.tool);
+    const verb = !bare(t.title) ? t.title : words ? words[state === "running" ? 0 : 1] : `${state === "running" ? "Using" : "Used"} ${tool ?? "a tool"}`;
     return { ...base, verb, result: line && state !== "running" ? clip(line) : undefined };
   }).map((step) => {
     // A call that was still going when its turn was stopped says so, rather than how far its output got.

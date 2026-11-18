@@ -6,16 +6,17 @@
   its foot, and the dock leaves the canvas. The composer is always Dock.tsx's.
 
   What the old head row said (who draws which frame, the sidekick's part) is said here: on the row, and in the open
-  chat's header. A step's words are the trail's own (trailSteps), so a frame is called by its name on both.
+  chat's header. A step's words are the engine's doing line (Thread.doing, the sidebar row's second line) while it says
+  one, else the trail's own (trailSteps): both come from contracts/doing.ts, so a frame is called by its name on all three.
 */
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import type { DesignFile, Item, Thread } from "@contracts";
-import { useEngine, useItems, useItemsWhere } from "../engine";
+import { isStepCall, readableFrame, type DesignFile, type Item, type Thread } from "@contracts";
+import { threadOf, useEngine, useItems, useItemsWhere } from "../engine";
 import { isDockable } from "../Ask";
 import { I } from "../icons";
 import { agentOf } from "../model";
 import { pairOf } from "../Crew";
-import { FrameNames, isStep, liveOf, readableFrame, Tick, Timeline, trailSteps, type FrameNamer, type Mark } from "../Timeline";
+import { FrameNames, liveOf, Tick, Timeline, trailSteps, type FrameNamer, type Mark } from "../Timeline";
 import { design, getDesign, setChat, useChat, useDesign, type ChatSize } from "./store";
 import "./chat.css";
 
@@ -103,9 +104,11 @@ function lastTurnOf(items: Item[]) {
 }
 
 /**
-  What the session is doing now, in words: the step under way as the trail names it ("Reading Phone / Today"), else
-  "Drawing <frame>" while its outline is on one, else the status line's word. Who draws and the sidekick's part, from
-  the canvas's presence.
+  What the session is doing now, in words. Waiting on you, the status line's word. Else the engine's doing line, as the
+  sidebar row says it at the same moment (runtime.ts: the lead's latest step, kept until thinking or the answer is said;
+  the Reviewer reading). Before the line says anything (a turn that began with a plan or a page): the step under way as the
+  trail groups and names it ("Reading 3 files"), else "Drawing <frame>" while its outline is on one, else the status line's
+  word. Who draws and the sidekick's part, from the canvas's presence.
 */
 function useNow(thread: Thread, items: Item[]) {
   const presence = useDesign((s) => s.presence);
@@ -120,17 +123,23 @@ function useNow(thread: Thread, items: Item[]) {
   const side = ps.find(([, p]) => !p.lead);
   const who = pairOf(thread, agents, providers)?.lead ?? agentOf(thread.agent, agents, providers).name;
   const live = running && marks.length ? liveOf(marks, list) : undefined;
-  const step = running ? list.findLast((x): x is Tool => x.kind === "tool" && x.status === "running" && isStep(x)) : undefined;
-  const named = step ? trailSteps([step], undefined, namer)[0] : undefined;
+  const line = useEngine((s) => threadOf(s, thread.id)?.doing?.text);
+  // The step under way among the turn's steps, grouped as the trail and the engine group them (reads in a row are one).
+  const named = useMemo(() => {
+    const steps = running ? list.filter((x): x is Tool => x.kind === "tool" && isStepCall(x)) : [];
+    return steps.some((x) => x.status === "running") ? trailSteps(steps, undefined, namer).findLast((x) => x.state === "running") : undefined;
+  }, [running, list, namer]);
   const leadFrame = lead ? (frameName(lead[0]) ?? readableFrame(lead[0])) : undefined;
-  const words = live?.waiting ? live.word : named ? [named.verb, named.target].filter(Boolean).join(" ") : leadFrame ? `Drawing ${leadFrame}` : (live?.word ?? "Working");
+  const stepped = line ?? (named ? [named.verb, named.target].filter(Boolean).join(" ") : undefined);
+  const words = live?.waiting ? live.word : stepped ? stepped : leadFrame ? `Drawing ${leadFrame}` : (live?.word ?? "Working");
   const lower = (w: string) => `${w.charAt(0).toLowerCase()}${w.slice(1)}`;
   // Named as the sidekick: a pair of one model (the Demo's, Opus with Opus) has the same name twice. Its label is what it does ("Drawing").
   const sideWords = side ? `Sidekick ${side[1].name}: ${lower(side[1].label || "Drawing")} ${frameName(side[0]) ?? readableFrame(side[0])}` : undefined;
   // The header's longer line: who is drawing which frame, as the old head row said it.
   // The step's own verb when one is under way ("is changing Phone / Today" in a fix), so the header and the row agree.
-  const doing = named && /ing\b/.test(named.verb.split(" ")[0]) ? `${lower(named.verb)}${named.target ? ` ${named.target}` : ""}` : undefined;
-  const header = !running ? undefined : doing && !live?.waiting ? `${lead?.[1].name || who} is ${doing}` : leadFrame && !live?.waiting ? `${lead![1].name || who} is drawing ${leadFrame}` : `${who}: ${lower(words)}`;
+  const doing = stepped && /^\S+ing\b/.test(stepped) ? lower(stepped) : undefined;
+  // Words that say who works themselves ("The Reviewer is reading the changes") stand as they are.
+  const header = !running ? undefined : doing && !live?.waiting ? `${lead?.[1].name || who} is ${doing}` : leadFrame && !live?.waiting ? `${lead![1].name || who} is drawing ${leadFrame}` : !live?.waiting && /^The\b/.test(words) ? words : `${who}: ${lower(words)}`;
   // Only the sidekick is on a frame (the lead waits on it): the row's dot is in the sidekick's colour.
   return { running, live, words, sideWords, header, reply, sideOnly: Boolean(side) && !lead };
 }

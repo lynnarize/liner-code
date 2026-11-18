@@ -3,11 +3,12 @@
   background and reports through events; handlers answer as soon as the command is accepted.
 */
 import { fileURLToPath } from "node:url";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, type Dirent } from "node:fs";
+import { readdir as readdirAsync, stat as statAsync } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, endpointKey, isPair, ROUTINES_ON, sealable, splitModel, startOf, VOUCHER } from "../../contracts/src/index.ts";
-import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageSummary } from "../../contracts/src/index.ts";
+import { castOf, endpointKey, isPair, ROUTINES_ON, sealable, splitModel, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
+import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageRecord, UsageSummary } from "../../contracts/src/index.ts";
 import { CLASSES, pairShare, TUNING } from "./sidekick.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
@@ -19,7 +20,7 @@ import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
 import { findFiles, gitStatus, tree } from "./files.ts";
 import { ensureSampleProject } from "./providers/demo.ts";
-import { endpointModels } from "./providers/endpoint.ts";
+import { detectOnce, endpointModels } from "./providers/endpoint.ts";
 import { skillsIn } from "./providers/models.ts";
 import type { Routines } from "./routines.ts";
 import { providers, shownOf, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
@@ -69,6 +70,25 @@ export function settledCopy(it: Item, keepAsks = false): Item {
 }
 
 const git = (cwd: string, args: string[]) => run("git", ["-c", "log.showSignature=false", ...args], { cwd, timeout: 120000 });
+
+/**
+  A file inside a folder (`root`, its real path), read whole as base64 for the app to show (files.raw, attachment.read):
+  links followed first and the real file checked inside, never a folder, at most `cap` MB, its type by its name. Each
+  refusal in its caller's own words. `from`: the folder as named, when the path is read from there (the attachments').
+*/
+function readInside(root: string, path: string, say: { gone: string; out: string; cap: number; big: string; ico?: boolean }, from = root) {
+  const abs = resolve(from, path);
+  if (!existsSync(abs)) throw new Error(say.gone);
+  const real = realpathSync(abs);
+  const rel = relative(root, real);
+  if (!rel || outside(rel) || resolve(root, rel) !== real) throw new Error(say.out);
+  const st = statSync(real);
+  if (!st.isFile()) throw new Error("That isn't a file.");
+  if (st.size > say.cap * 1024 * 1024) throw new Error(say.big);
+  const ext = /\.([a-z0-9]+)$/i.exec(real)?.[1]?.toLowerCase() ?? "";
+  const types: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", svg: "image/svg+xml", ...(say.ico ? { ico: "image/x-icon" } : {}), bmp: "image/bmp", pdf: "application/pdf" };
+  return { data: readFileSync(real).toString("base64"), mime: types[ext] ?? "application/octet-stream", size: st.size };
+}
 /** What Run now and Test answer while routines are switched off (contracts, ROUTINES_ON). */
 const routinesOff = (): never => {
   throw new Error("Routines are switched off for now, so nothing runs. Your routines and their past runs are kept.");
@@ -111,31 +131,34 @@ const onDisk = (path: string) => {
   Git repositories in the usual places people keep code, three levels down. Each once, by where it
   really is: ~/Code and ~/code are one folder on a disk that ignores case (a Mac's, a PC's), and the
   path given back is the disk's own spelling, whichever was walked; two real folders on a disk that
-  minds case are both looked in.
+  minds case are both looked in. Off the engine's loop: each folder is read with the disk awaited, so a home with big trees
+  of code doesn't stall every session's stream while it's walked; folders are walked in the same order as before.
 */
-export function findRepos(roots: string[]) {
+export async function findRepos(roots: string[]) {
   const out: string[] = [];
   const seen = new Set<string>();
   const walked = new Set<string>();
-  const walk = (dir: string, depth: number) => {
+  const walk = async (dir: string, depth: number): Promise<void> => {
     if (out.length > 200 || depth > 3) return;
-    let names: string[] = [];
+    let names: Dirent[] = [];
     try {
-      names = readdirSync(dir);
+      names = await readdirAsync(dir, { withFileTypes: true });
     } catch {
       return;
     }
-    if (names.includes(".git")) {
+    if (names.some((d) => d.name === ".git")) {
       const real = onDisk(dir);
       if (!seen.has(real)) out.push(real);
       seen.add(real);
       return;
     }
-    for (const n of names) {
+    for (const d of names) {
+      const n = d.name;
       if (n.startsWith(".") || n === "node_modules" || n === "Library") continue;
       const abs = join(dir, n);
       try {
-        if (statSync(abs).isDirectory()) walk(abs, depth + 1);
+        // A link is followed, as before: only it needs a stat of its own.
+        if (d.isDirectory() || (d.isSymbolicLink() && (await statAsync(abs)).isDirectory())) await walk(abs, depth + 1);
       } catch {
         // unreadable
       }
@@ -146,7 +169,7 @@ export function findRepos(roots: string[]) {
     const real = onDisk(r);
     if (walked.has(real)) continue;
     walked.add(real);
-    walk(r, 0);
+    await walk(r, 0);
   }
   return out;
 }
@@ -203,7 +226,7 @@ const isInfo = (d: unknown): d is ProviderInfo => {
   to ask; and a tool gone since the list was saved then fails in its own words, as one gone mid-session does.
   defaultStart (thread.create) and limited() (usage.limits) read the look too.
 */
-const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "thread.tryAgain", "compare.start", "review.run", "git.message", "pr.draft", "desk.ask", "agent.commands", "usage.limits"]);
+const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "thread.tryAgain", "compare.start", "git.message", "pr.draft", "desk.ask", "agent.commands", "usage.limits"]);
 
 type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts; security?: security.Security };
 
@@ -307,7 +330,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const run = (async () => {
       const found = await Promise.all(
         Object.values(providers).map((p) =>
-          p.detect(env).catch((e): ProviderInfo => ({ id: p.id, label: p.id, available: false, adapter: false, login: "", detail: String(e), models: [], supports: { approvals: false, resume: false, effort: false, plan: false } })),
+          // One look per tool a round: a base tool's own and its endpoints' share one start of it (endpoint.ts detectOnce).
+          detectOnce(p, env).catch((e): ProviderInfo => ({ id: p.id, label: p.id, available: false, adapter: false, login: "", detail: String(e), models: [], supports: { approvals: false, resume: false, effort: false, plan: false } })),
         ),
       );
       if (gen !== detectGen) return detecting!;
@@ -393,6 +417,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   */
   const working = (id: string) => runtime.isRunning(id) || setups.has(id);
   const SETTING_UP = "Its new worktree is still being set up. Wait for that to finish.";
+  /** Refused while the session works: its worktree still being set up says so, anything else in the caller's words (`why`). */
+  const idleOr = (id: string, why: string) => {
+    if (working(id)) throw new Error(setups.has(id) ? SETTING_UP : why);
+  };
+  /** The branch a session is on: its worktree's, else what its folder has checked out (undefined when detached or no repository). */
+  const branchFor = async (threadId: string) => store.thread(threadId).worktree?.branch ?? (await branchOf(cwdOf(threadId)));
+  /** The remote a branch goes to: origin, else the first there is; null with none. */
+  const remoteOf = async (cwd: string) => {
+    const remotes = (await git(cwd, ["remote"])).stdout.split("\n").map((r) => r.trim()).filter(Boolean);
+    return remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
+  };
   const asksOf = (threadId: string) => store.timeline(threadId).flatMap((x) => (x.kind === "user" && !x.text.startsWith("/") ? [x.text] : x.kind === "proposal" && x.state === "approved" ? [`(approved plan) ${x.title}`] : [])).slice(-6);
   const worktreeRoot = () => (store.settings.worktreeRoot?.trim() ? store.settings.worktreeRoot.trim().replace(/^~(?=\/|$)/, homedir()) : join(store.home, "worktrees"));
   const setUp = async (threadId: string, cwd: string, command: string) => {
@@ -467,6 +502,26 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     each; the window stops one whose frame closed (panel.cancel), by the `call` it gave, streamed or not.
   */
   const aiAsking = new Map<string, AbortController>();
+  /*
+    The commit message, PR draft and Desk answer being written, one per session and kind: the card that closes stops its own
+    (writer.cancel), and a new ask for the same stops the one before it. A stopped one fails with WRITER_CANCELLED, writes
+    nothing into the session, and its tokens are still logged (runtime.quiet logs them however it ends).
+  */
+  const writing = new Map<string, AbortController>();
+  const written = async <T>(threadId: string, kind: "message" | "draft" | "desk", work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    const key = `${threadId}:${kind}`;
+    writing.get(key)?.abort();
+    const ctl = new AbortController();
+    writing.set(key, ctl);
+    try {
+      return await work(ctl.signal);
+    } catch (e) {
+      if (ctl.signal.aborted) throw new Error(WRITER_CANCELLED);
+      throw e;
+    } finally {
+      if (writing.get(key) === ctl) writing.delete(key);
+    }
+  };
   const aiBusy = new Map<string, number>();
   const aiToday = new Map<string, number>();
   const AI_DAILY = 300;
@@ -483,6 +538,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         if ((aiBusy.get(addon) ?? 0) >= 2) throw new Error(`${name} is already waiting on two answers: ask one at a time.`);
         const day = `${addon}:${new Date().toDateString()}`;
         if ((aiToday.get(day) ?? 0) >= AI_DAILY) throw new Error(`${name} has asked a model ${AI_DAILY} times today, the most an app may in a day.`);
+        // Only today's counts are kept: yesterday's can't refuse anything any more.
+        for (const k of aiToday.keys()) if (!k.endsWith(`:${new Date().toDateString()}`)) aiToday.delete(k);
         aiToday.set(day, (aiToday.get(day) ?? 0) + 1);
         aiBusy.set(addon, (aiBusy.get(addon) ?? 0) + 1);
         const ctl = new AbortController();
@@ -530,7 +587,6 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return runtime.addons;
   };
 
-  /** Mentioned files and attachments, said in words the agent can act on. */
   /**
     Mentioned files and attachments, said in words the agent can act on. Attachments are saved and
     go with the message as files: the runtime names them in what the agent is sent, and images and
@@ -670,6 +726,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (others.length) kept = others.length === 1 ? `"${others[0].title}" works there too` : `${others.length} other sessions work there`;
       else if (madeHere(t.worktree)) kept = await removeWorktree(project.path, root).catch((e) => String(e?.message ?? e));
     }
+    stops.delete(id);
     store.removeThread(id);
     // A fork made before forks kept copies of their own still reads its attachments from here: those stay.
     const sent = join(store.home, "attachments", id);
@@ -916,17 +973,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // snapshots, designs and the worktrees Liner made don't stay behind. Its folder, and what you keep
       // about it in memory, are yours and stay.
       const sessions = store.threads.filter((x) => x.projectId === id && !x.sideOf);
+      const folders = [...store.projects.flatMap((p) => (p.id === id ? [p.path] : [])), ...store.threads.flatMap((t) => (t.projectId === id && t.worktree?.path ? [t.worktree.path] : []))];
       for (const t of sessions) x.terms.closeThread?.(t.id);
       for (const t of sessions) await dropThread(t.id).catch((e) => console.error("[project.remove]", e));
       for (const t of store.threads.filter((x) => x.projectId === id)) await dropThread(t.id).catch(() => {});
       // Its routines go with it: they'd only fail on every schedule, with no project to run in.
       for (const r of x.routines.routines.filter((r) => r.projectId === id)) x.routines.remove(r.id);
       store.removeProject(id);
+      closeFoldersOf(folders);
       return null;
     },
     "projects.scan": async ({ roots }) => {
       const home = homedir();
-      const paths = findRepos((roots?.length ? roots : ROOTS.map((r) => join(home, r))).map((r) => r.replace(/^~(?=\/|$)/, home)));
+      const paths = await findRepos((roots?.length ? roots : ROOTS.map((r) => join(home, r))).map((r) => r.replace(/^~(?=\/|$)/, home)));
       // Added under any spelling of the same folder, as addProject matches it.
       const have = new Set(store.projects.map((x) => onDisk(x.path)));
       const found: FoundRepo[] = await Promise.all(paths.map(async (p) => ({ path: p, name: basename(p), ...(await repoInfo(p)), added: have.has(p) })));
@@ -1049,6 +1108,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           const had = existsSync(sent);
           if (had) cpSync(sent, mine, { recursive: true });
           const moved = (f: string) => (had && f.startsWith(`${sent}${sep}`) ? join(mine, f.slice(sent.length + 1)) : f);
+          // Its design versions, the canvas's kept copies by links rather than bytes and off the engine's loop (canvas.forkVersions),
+          // before the timeline: each copied turn's end is then measured against them, as it was when this copy was made at once.
+          await canvas.forkVersions(store.home, parent.id, t.id);
           for (const it of store.timeline(parent.id)) {
             if (live && it.turn >= parent.turns) continue;
             const copy = settledCopy(it, !live);
@@ -1057,8 +1119,6 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           // Its own hold on what it copied: deleting the session it came from leaves its diffs, undo and design versions whole.
           const commits = store.timeline(t.id).flatMap((x) => (x.kind === "checkpoint" ? [x.from, x.to, x.redo].filter((c): c is string => Boolean(c)) : []));
           if (commits.length) await keep(t.worktree?.path ?? project.path, t.id, commits).catch(() => {});
-          const versions = join(store.home, "designs", parent.id);
-          if (existsSync(versions)) cpSync(versions, join(store.home, "designs", t.id), { recursive: true });
         } catch (e) {
           // A copy that failed (a full disk, permissions) leaves no half-made fork in the sidebar (T3 Code: AttachmentClaims.test.ts rolls a failed copy back).
           await dropThread(t.id, true).catch(() => {});
@@ -1245,7 +1305,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // Edit from here: the conversation goes back to just before this message.
       const it = store.item(threadId, itemId);
       if (it.kind !== "user") throw new Error("Only a message you sent can be edited.");
-      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Stop the session before going back.");
+      idleOr(threadId, "Stop the session before going back.");
       const from = it.turn;
       return runtime.exclusive(threadId, async () => {
         const later = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && x.turn >= from && !x.reverted ? [x] : []));
@@ -1462,12 +1522,6 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       runtime.answerProposal(threadId, itemId, approve, note, plan);
       return null;
     },
-    "review.run": ({ threadId }) => {
-      const t = store.thread(threadId);
-      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish.");
-      void runtime.review(threadId, t.turns, 1);
-      return null;
-    },
 
     "checkpoint.diff": async ({ threadId, itemId }) => {
       // "all": every turn in the session, from before the first one to the tree as it is now.
@@ -1495,7 +1549,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (it.kind !== "checkpoint" || !it.from) throw new Error("That turn has no snapshot to go back to.");
       // Again would snapshot the tree without its work as the way back.
       if (it.reverted) throw new Error("That turn is already undone.");
-      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Stop the session before undoing a turn.");
+      idleOr(threadId, "Stop the session before undoing a turn.");
       if (it.committed) throw new Error("Those changes are committed. Revert the commit instead.");
       const other = busyBeside(threadId);
       if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before undoing a turn.`);
@@ -1510,22 +1564,20 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       });
     },
     "git.push": async ({ threadId }) => {
-      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish before pushing.");
+      idleOr(threadId, "Wait for the turn to finish before pushing.");
       const cwd = cwdOf(threadId);
-      const branch = store.thread(threadId).worktree?.branch ?? (await branchOf(cwd));
+      const branch = await branchFor(threadId);
       if (!branch) throw new Error("This session isn't on a branch.");
-      const remotes = (await git(cwd, ["remote"])).stdout.split("\n").map((r) => r.trim()).filter(Boolean);
-      if (!remotes.length) throw new Error("This project has no remote to push to. Add one with gh repo create, or git remote add.");
-      const remote = remotes.includes("origin") ? "origin" : remotes[0];
+      const remote = await remoteOf(cwd);
+      if (!remote) throw new Error("This project has no remote to push to. Add one with gh repo create, or git remote add.");
       const r = await run("git", ["push", "-u", remote, branch], { cwd, env, timeout: 120000 });
       if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || "The push failed.");
       return { branch, remote };
     },
     "git.outgoing": async ({ threadId }) => {
       const cwd = cwdOf(threadId);
-      const branch = store.thread(threadId).worktree?.branch ?? (await branchOf(cwd)) ?? "HEAD";
-      const remotes = (await git(cwd, ["remote"])).stdout.split("\n").map((r) => r.trim()).filter(Boolean);
-      const remote = remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
+      const branch = await branchFor(threadId) ?? "HEAD";
+      const remote = await remoteOf(cwd);
       const upstream = (await git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])).stdout.trim();
       // Before its first push a branch is measured from the base it left: main, master, or what origin calls HEAD.
       const head = remote ? (await git(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`])).stdout.trim() : "";
@@ -1554,7 +1606,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "git.switch": async ({ threadId, branch, create }) => {
       const t = store.thread(threadId);
-      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish before switching branches.");
+      idleOr(threadId, "Wait for the turn to finish before switching branches.");
       if (t.worktree) throw new Error(`This session works in a worktree of its own, on ${t.worktree.branch}.`);
       const other = busyBeside(threadId);
       if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before switching branches.`);
@@ -1582,7 +1634,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "apps.open": async ({ path, app }) => (await openWith(path, app), null),
     "git.commit": async ({ threadId, message, paths: only }) => {
       const t = store.thread(threadId);
-      if (working(threadId)) throw new Error(setups.has(threadId) ? SETTING_UP : "Wait for the turn to finish before committing.");
+      idleOr(threadId, "Wait for the turn to finish before committing.");
       const cwd = cwdOf(threadId);
       const open = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? [x] : []));
       // Some of the files, when you picked: a rename takes its old path along.
@@ -1701,39 +1753,16 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "fs.files": ({ projectId, threadId, query, limit }) => findFiles(threadId ? cwdOf(threadId) : store.project(projectId).path, query, limit),
     "fs.tree": ({ projectId, threadId }) => tree(threadId ? cwdOf(threadId) : store.project(projectId).path),
     "fs.read": ({ threadId, path }) => readFile(cwdOf(threadId), path),
-    "files.raw": ({ threadId, path }) => {
-      // Only inside the session's folder, with links followed first, so a symlink can't reach out of it.
-      const root = realpathSync(cwdOf(threadId));
-      const abs = resolve(root, path);
-      if (!existsSync(abs)) throw new Error("That file isn't there any more.");
-      const real = realpathSync(abs);
-      const rel = relative(root, real);
-      if (!rel || outside(rel) || resolve(root, rel) !== real) throw new Error("That file is outside the session's folder.");
-      const st = statSync(real);
-      if (!st.isFile()) throw new Error("That isn't a file.");
-      if (st.size > 10 * 1024 * 1024) throw new Error("That file is over 10 MB, too big to preview.");
-      const ext = /\.([a-z0-9]+)$/i.exec(real)?.[1]?.toLowerCase() ?? "";
-      const types: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", svg: "image/svg+xml", ico: "image/x-icon", bmp: "image/bmp", pdf: "application/pdf" };
-      return { data: readFileSync(real).toString("base64"), mime: types[ext] ?? "application/octet-stream", size: st.size };
-    },
+    // Only inside the session's folder, with links followed first, so a symlink can't reach out of it.
+    "files.raw": ({ threadId, path }) => readInside(realpathSync(cwdOf(threadId)), path, { gone: "That file isn't there any more.", out: "That file is outside the session's folder.", cap: 10, big: "That file is over 10 MB, too big to preview.", ico: true }),
     "attachment.read": ({ path }) => {
       // Only what was attached to a message: inside the attachments folder, links followed first.
       const dir = join(store.home, "attachments");
-      const abs = resolve(dir, path);
       // Outside the folder is refused before anything is looked up, so it says nothing about other files.
-      const asked = relative(dir, abs);
+      const asked = relative(dir, resolve(dir, path));
       if (!asked || outside(asked)) throw new Error("That file isn't an attachment.");
-      if (!existsSync(dir) || !existsSync(abs)) throw new Error("That attachment isn't there any more.");
-      const root = realpathSync(dir);
-      const real = realpathSync(abs);
-      const rel = relative(root, real);
-      if (!rel || outside(rel) || resolve(root, rel) !== real) throw new Error("That file isn't an attachment.");
-      const st = statSync(real);
-      if (!st.isFile()) throw new Error("That isn't a file.");
-      if (st.size > 20 * 1024 * 1024) throw new Error("That attachment is over 20 MB, too big to show.");
-      const ext = /\.([a-z0-9]+)$/i.exec(real)?.[1]?.toLowerCase() ?? "";
-      const types: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", svg: "image/svg+xml", bmp: "image/bmp", pdf: "application/pdf" };
-      return { data: readFileSync(real).toString("base64"), mime: types[ext] ?? "application/octet-stream", size: st.size };
+      if (!existsSync(dir)) throw new Error("That attachment isn't there any more.");
+      return readInside(realpathSync(dir), path, { gone: "That attachment isn't there any more.", out: "That file isn't an attachment.", cap: 20, big: "That attachment is over 20 MB, too big to show." }, dir);
     },
     "git.status": ({ projectId }) => gitStatus(store.project(projectId).path),
 
@@ -1846,7 +1875,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const t = store.thread(threadId);
       const cwd = cwdOf(threadId);
       const gh = await ghState(cwd, env);
-      const branch = t.worktree?.branch ?? (await branchOf(cwd));
+      const branch = await branchFor(threadId);
       const base = await mainBranch(cwd);
       const ahead = base ? Number((await git(cwd, ["rev-list", "--count", `${base}..HEAD`])).stdout.trim()) || 0 : 0;
       if (gh.state !== "ready" || !branch) return { pr: null, branch, ahead, gh: gh.state, detail: gh.detail };
@@ -1858,7 +1887,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "pr.picture": async ({ threadId }) => {
       const t = store.thread(threadId);
       const cwd = cwdOf(threadId);
-      const branch = t.worktree?.branch ?? (await branchOf(cwd)) ?? "HEAD";
+      const branch = await branchFor(threadId) ?? "HEAD";
       const ref = (await mainBranch(cwd)) ?? "main";
       // What reached the base on GitHub, looked for at most once a minute per project.
       const name = ref.replace(/^origin\//, "");
@@ -1870,7 +1899,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const remote = (await git(cwd, ["rev-parse", "--verify", "-q", `origin/${name}`])).code === 0;
       return { branch, base: name, ...(await picture(cwd, remote ? `origin/${name}` : name)) };
     },
-    "git.message": async ({ threadId }) => {
+    "git.message": ({ threadId }) => written(threadId, "message", async (signal) => {
       const t = store.thread(threadId);
       const cwd = cwdOf(threadId);
       const open = store.timeline(threadId).flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? [x] : []));
@@ -1880,12 +1909,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const diff = (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(paths)], { cwd, timeout: 30000 })).stdout || (await run("git", ["diff", "--relative", ...PATCH, "--cached", "-U2", "--", ...literal(paths)], { cwd, timeout: 30000 })).stdout;
       const by = runtime.writerFor(t);
       // A few lines of text: three minutes is plenty, and a model that never answers says so rather than spinning for good.
-      const out = await runtime.quiet(threadId, by, cwd, writePrompt("commit", asksOf(threadId), diff, paths), new AbortController().signal, "reviewer", 3 * 60_000);
+      signal.throwIfAborted();
+      const out = await runtime.quiet(threadId, by, cwd, writePrompt("commit", asksOf(threadId), diff, paths), signal, "reviewer", 3 * 60_000);
       const m = /<message>([\s\S]*?)<\/message>/.exec(out)?.[1]?.trim() || out.trim().split("\n\n")[0];
       if (!m) throw new Error("The model didn't write a message.");
       return { message: m, by };
-    },
-    "pr.draft": async ({ threadId }) => {
+    }),
+    "pr.draft": ({ threadId }) => written(threadId, "draft", async (signal) => {
       const t = store.thread(threadId);
       const cwd = cwdOf(threadId);
       const base = await mainBranch(cwd);
@@ -1894,13 +1924,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // What the session checked: the commands it ran that passed, like the tests.
       const checks = store.timeline(threadId).flatMap((x) => (x.kind === "tool" && x.toolKind === "exec" && x.status === "done" && /test|lint|check|build|tsc/i.test(x.title) ? [x.title.replace(/^Run /, "")] : []));
       const by = runtime.writerFor(t);
-      const out = await runtime.quiet(threadId, by, cwd, writePrompt("pr", asksOf(threadId), diff.stdout, [], log.stdout, [...new Set(checks)].slice(0, 8)), new AbortController().signal, "reviewer", 3 * 60_000);
+      signal.throwIfAborted();
+      const out = await runtime.quiet(threadId, by, cwd, writePrompt("pr", asksOf(threadId), diff.stdout, [], log.stdout, [...new Set(checks)].slice(0, 8)), signal, "reviewer", 3 * 60_000);
       const title = /<title>([\s\S]*?)<\/title>/.exec(out)?.[1]?.trim();
       const body = /<body>([\s\S]*?)<\/body>/.exec(out)?.[1]?.trim();
       if (!title) throw new Error("The model didn't write a title.");
       return { title, body: body ?? "", by };
-    },
-    "desk.ask": async ({ threadId, question, context }) => {
+    }),
+    "desk.ask": ({ threadId, question, context }) => written(threadId, "desk", async (signal) => {
       const t = store.thread(threadId);
       const items = store.timeline(threadId);
       const said = items.flatMap((x) => (x.kind === "text" && !x.streaming && x.text.trim() ? [x.text.trim()] : [])).slice(-3);
@@ -1910,15 +1941,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const open = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted && !x.committed ? x.files.map((f) => local(f.path, prefix, f.rel)) : [])))];
       const diff = open.length ? (await run("git", ["diff", "--relative", ...PATCH, "-U2", "HEAD", "--", ...literal(open)], { cwd, timeout: 30000 }).catch(() => null))?.stdout ?? "" : "";
       const by = runtime.writerFor(t);
-      const out = await runtime.quiet(threadId, by, cwd, deskPrompt(titleForAgents(store, t), asksOf(threadId), said, files, context, question.slice(0, 1000), diff), new AbortController().signal, "desk", 5 * 60_000);
+      signal.throwIfAborted();
+      const out = await runtime.quiet(threadId, by, cwd, deskPrompt(titleForAgents(store, t), asksOf(threadId), said, files, context, question.slice(0, 1000), diff), signal, "desk", 5 * 60_000);
       const answer = out.trim();
       if (!answer) throw new Error("The model didn't answer. Ask again in a moment.");
       return { answer, by };
+    }),
+    "writer.cancel": ({ threadId, kind }) => {
+      writing.get(`${threadId}:${kind}`)?.abort();
+      return null;
     },
     "pr.create": async ({ threadId, title, body, draft }) => {
-      const t = store.thread(threadId);
       const cwd = cwdOf(threadId);
-      const branch = t.worktree?.branch ?? (await branchOf(cwd));
+      const branch = await branchFor(threadId);
       if (!branch) throw new Error("This session isn't on a branch.");
       const base = await mainBranch(cwd);
       if (base && base.replace(/^origin\//, "") === branch) throw new Error(`This session works on ${branch} itself. Start it in a worktree to open a pull request from a branch of its own.`);
@@ -2002,6 +2037,18 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   /** A session, as the dev servers on this Mac are told apart: by its id, and its folders. */
   function mine(threadId: string) {
     return { threadId, folders: [...new Set([cwdOf(threadId), store.project(store.thread(threadId).projectId).path])] };
+  }
+  /**
+    A project removed: the servers that served its folder's files (and its sessions' worktrees') close now, not when the engine
+    quits, unless another project or session's worktree is that same folder. Only then: while the folder is still a project's,
+    the Design face, a Browser panel or an agent's browser may hold a page, a frame's base or a picture from its server and
+    never ask again, so archiving or deleting a session leaves it open (a few idle sockets, until the engine quits, rather than
+    a page that stops loading). Once the folder is no project's, nothing can be served from it (ctx.folder refuses it).
+  */
+  function closeFoldersOf(roots: string[]) {
+    if (typeof x.proxies.folderRoots !== "function") return;
+    const used = (r: string) => store.projects.some((p) => resolve(p.path) === resolve(r)) || store.threads.some((t) => Boolean(t.worktree?.path) && resolve(t.worktree!.path) === resolve(r));
+    for (const open of x.proxies.folderRoots()) if (roots.some((r) => resolve(open) === resolve(r)) && !used(open)) x.proxies.closeFolder(open);
   }
   /** What a session started stops with it, when it's archived or removed (T3 Code's resource cleanup). */
   function leftBehind(threadId: string) {
@@ -2184,6 +2231,29 @@ const dayOf = (at: number) => {
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
 };
 
+/**
+  A count that came after its turn had ended (UsageRecord.late) added to that turn's own record, so it reads as one turn with
+  all its tokens and cost. One whose turn's record is outside the rows (an earlier day than asked for) stays, counted as no
+  turn. The records are usage()'s own, shared between calls: a sum is a new object, never written into one.
+*/
+export function foldLate(rows: UsageRecord[]): UsageRecord[] {
+  if (!rows.some((r) => r.late)) return rows;
+  const out: UsageRecord[] = [];
+  const at = new Map<string, number>();
+  const key = (r: UsageRecord) => `${r.threadId}\0${r.agent}\0${r.turn}`;
+  for (const r of rows) {
+    const i = r.late && r.turn !== undefined ? at.get(key(r)) : undefined;
+    if (i === undefined) {
+      if (!r.late && r.turn !== undefined) at.set(key(r), out.length);
+      out.push(r);
+      continue;
+    }
+    const m = out[i];
+    out[i] = { ...m, inputTokens: m.inputTokens + r.inputTokens, outputTokens: m.outputTokens + r.outputTokens, cacheReadTokens: m.cacheReadTokens + r.cacheReadTokens, costUsd: m.costUsd + r.costUsd };
+  }
+  return out;
+}
+
 function summarize(store: Store, days: number, projectId?: string, appName?: (id: string) => string | undefined): UsageSummary {
   const to = Date.now();
   // Whole days, today included, from midnight: 'This month' (days = today's date) starts on the 1st, not partway into last month.
@@ -2192,8 +2262,9 @@ function summarize(store: Store, days: number, projectId?: string, appName?: (id
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - (days - 1));
   const from = start.getTime();
-  const rows = store.usage(from).filter((r) => !projectId || r.projectId === projectId);
+  const rows = foldLate(store.usage(from).filter((r) => !projectId || r.projectId === projectId));
   const tokens = (r: { inputTokens: number; outputTokens: number; cacheReadTokens: number }) => r.inputTokens + r.outputTokens + r.cacheReadTokens;
+  const turns = (rs: UsageRecord[]) => rs.reduce((n, r) => n + (r.late ? 0 : 1), 0);
   const sum = rows.reduce((s, r) => ({ cost: s.cost + r.costUsd, tokens: s.tokens + tokens(r), cache: s.cache + r.cacheReadTokens, input: s.input + r.inputTokens + r.cacheReadTokens }), { cost: 0, tokens: 0, cache: 0, input: 0 });
   const priciest = rows.reduce<(typeof rows)[number] | undefined>((m, r) => (!m || r.costUsd > m.costUsd ? r : m), undefined);
   const dayMap = new Map<string, { costUsd: number; tokens: number; turns: number }>();
@@ -2203,7 +2274,7 @@ function summarize(store: Store, days: number, projectId?: string, appName?: (id
     const d = dayMap.get(dayOf(r.at)) ?? { costUsd: 0, tokens: 0, turns: 0 };
     d.costUsd += r.costUsd;
     d.tokens += tokens(r);
-    d.turns += 1;
+    d.turns += r.late ? 0 : 1;
     dayMap.set(dayOf(r.at), d);
   }
   const group = <K extends string>(key: (r: (typeof rows)[number]) => K) => {
@@ -2211,7 +2282,7 @@ function summarize(store: Store, days: number, projectId?: string, appName?: (id
     for (const r of rows) m.set(key(r), [...(m.get(key(r)) ?? []), r]);
     return m;
   };
-  const byAgent = [...group((r) => r.agent)].map(([agent, rs]) => ({ agent, costUsd: rs.reduce((s, r) => s + r.costUsd, 0), tokens: rs.reduce((s, r) => s + tokens(r), 0), turns: rs.length })).sort((a, b) => b.costUsd - a.costUsd || b.tokens - a.tokens);
+  const byAgent = [...group((r) => r.agent)].map(([agent, rs]) => ({ agent, costUsd: rs.reduce((s, r) => s + r.costUsd, 0), tokens: rs.reduce((s, r) => s + tokens(r), 0), turns: turns(rs) })).sort((a, b) => b.costUsd - a.costUsd || b.tokens - a.tokens);
   const byModel = [...group((r) => `${r.provider}:${r.model}`)]
     .map(([key, rs]) => {
       const input = rs.reduce((s, r) => s + r.inputTokens + r.cacheReadTokens, 0);
@@ -2223,7 +2294,7 @@ function summarize(store: Store, days: number, projectId?: string, appName?: (id
   return {
     from,
     to,
-    totals: { costUsd: sum.cost, tokens: sum.tokens, turns: rows.length, cacheShare: sum.input ? sum.cache / sum.input : 0, perTurn: rows.length ? sum.cost / rows.length : 0, priciest: priciest ? { costUsd: priciest.costUsd, title } : undefined },
+    totals: { costUsd: sum.cost, tokens: sum.tokens, turns: turns(rows), cacheShare: sum.input ? sum.cache / sum.input : 0, perTurn: turns(rows) ? sum.cost / turns(rows) : 0, priciest: priciest ? { costUsd: priciest.costUsd, title } : undefined },
     days: [...dayMap].map(([day, d]) => ({ day, ...d })),
     byAgent,
     byModel,

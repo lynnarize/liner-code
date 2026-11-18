@@ -366,7 +366,16 @@ let scrubbing = false;
 let started = false;
 let held = false;
 // A frame whose file went and came back is checked again, even with the very same bytes.
-const sigOf = (s: DesignState, f: DesignFrame) => `${isGone(f) ? "gone|" : ""}${f.w}x${f.h}|${s.revs?.[f.id] ?? ""}|${s.html[f.id]?.length ?? -1}:${hashOf(s.html[f.id])}`;
+const sigOf = (s: DesignState, f: DesignFrame) => `${isGone(f) ? "gone|" : ""}${f.w}x${f.h}|${s.revs?.[f.id] ?? ""}|${s.html[f.id]?.length ?? -1}:${hashFor(f.id, s.html[f.id])}`;
+/** A frame's page hashed once: the store keeps an unchanged page's very string, so a pan or a drag hashes nothing again. */
+const hashed = new Map<string, { t?: string; h: number }>();
+const hashFor = (id: string, t?: string) => {
+  const was = hashed.get(id);
+  if (was && was.t === t) return was.h;
+  const h = hashOf(t);
+  hashed.set(id, { t, h });
+  return h;
+};
 const hashOf = (t?: string) => {
   if (!t) return 0;
   let h = 0;
@@ -391,16 +400,19 @@ export function watchChecks() {
   started = true;
   const look = () => {
     const s = getDesign();
-    const file = s.file ? `${s.cwd}:${s.file.id}` : undefined;
+    // Only while Liner Design shows: in another face nothing is checked, and coming back starts the file's checks afresh.
+    const file = s.file && s.face === "design" ? `${s.cwd}:${s.file.id}` : undefined;
     if (file !== seenFile) {
       seenFile = file;
+      hashed.clear();
       seenSig = Object.fromEntries((s.file?.frames ?? []).map((f) => [f.id, sigOf(s, f)]));
       clearTimeout(timer);
       dirty.clear();
-      state = { byFrame: {}, running: 0, file: s.file?.id };
+      state = { byFrame: {}, running: 0, file: file ? s.file?.id : undefined };
       // The file's first run, a moment after it opens: what arrives meanwhile (its revisions) is part of that run, not a second one.
       clearTimeout(opening);
-      if (s.file)
+      opening = 0;
+      if (file)
         opening = window.setTimeout(() => {
           opening = 0;
           const now = getDesign();
@@ -410,7 +422,7 @@ export function watchChecks() {
         }, 600);
       return;
     }
-    if (!s.file || opening) return;
+    if (!file || !s.file || opening) return;
     // A kept turn shown (Versions): its findings aren't the file's; they go, and come back once it's let go.
     if (s.scrub !== undefined) {
       if (!scrubbing) {

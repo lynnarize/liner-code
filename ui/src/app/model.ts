@@ -23,7 +23,7 @@ const OWN_LEVELS: Level[] = [
 export const accessOf = (a: Access) => ACCESS_LEVELS.find((x) => x.id === a) ?? OWN_LEVELS.find((x) => x.id === a) ?? ACCESS_LEVELS[0];
 
 /** For a tool that doesn't say which levels a model takes. */
-export const EFFORTS: EffortInfo[] = [
+const EFFORTS: EffortInfo[] = [
   { id: "low", label: "Low", description: "Fast, for small asks" },
   { id: "medium", label: "Medium", description: "Thinks it through" },
   { id: "high", label: "High", description: "Slower, checks its work" },
@@ -32,7 +32,7 @@ export const EFFORTS: EffortInfo[] = [
 export const EXTRA_EFFORTS = new Set(["ultracode", "ultrathink"]);
 
 /** A model as its tool reported it. */
-export function modelInfo(ref: string, providers: ProviderInfo[]): ModelInfo | undefined {
+function modelInfo(ref: string, providers: ProviderInfo[]): ModelInfo | undefined {
   const { provider, model } = splitModel(ref);
   return providers.find((p) => p.id === provider)?.models.find((m) => m.id === model);
 }
@@ -270,21 +270,6 @@ export const onTheWall = (t: Thread, now = Date.now()) => !t.archived && !t.rout
   Here rather than in Wall.tsx, which loads when you first open it.
 */
 export const wallShown: { ids: string[]; picked: string | null } = { ids: [], picked: null };
-
-/** The line under a session's title, like "Forge · 3 files to review". */
-export function statusLine(t: Thread, who: string): { text: string; warn?: boolean } {
-  if (t.status === "running") return { text: `${who} · working` };
-  if (t.status === "waiting") return { text: `${who} · waits for you`, warn: true };
-  if (t.status === "error") return { text: `${who} · ran into a problem`, warn: true };
-  if (t.status === "limited") return { text: `${who} · limited${t.limit?.until ? ` until ${clock(t.limit.until)}` : ""}`, warn: true };
-  if (t.goal?.status === "active") return { text: `${who} · goal, turn ${t.goal.turns}` };
-  if (t.turns === 0) return { text: `${who} · not started` };
-  if (t.unread) return { text: `${who} · answered`, warn: true };
-  if (t.agentsAtWork) return { text: `${who} · ${plural(t.agentsAtWork, "agent")} at work` };
-  // Said quietly: what's left to commit, for whoever commits.
-  if ((t.toReview ?? 0) > 0) return { text: `${who} · ${t.toReview} ${t.toReview === 1 ? "file" : "files"} changed` };
-  return { text: `${who} · done` };
-}
 
 /** "16:40" today, "Tue 09:00" this week, "Oct 3, 09:00" after. */
 export function clock(at: number, now = Date.now()) {

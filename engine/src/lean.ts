@@ -13,16 +13,18 @@
   writes none.
 */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { FRAME_CHANGED } from "../../contracts/src/index.ts";
 import type { DesignFile, DesignSelection, DesignSkill, Lean, LeanTokens } from "../../contracts/src/index.ts";
 import type { McpResult } from "./agent-tools.ts";
-import { canvasHooks, linkFree, peekFile, readFile, type DesignCall, type DesignCtx, type DesignRpc } from "./canvas.ts";
+import { writeAtomic } from "./atomic.ts";
+import { canvasHooks, linkFree, peekFile, perCall, readFile, type DesignCall, type DesignCtx, type DesignRpc } from "./canvas.ts";
 import { LINER_2 } from "./creator.ts";
 import { enginePath } from "./paths.ts";
 import { skillsIn } from "./providers/models.ts";
+import { outside } from "./exec.ts";
 
 export { TOOLS } from "./lean-tools.ts";
 
@@ -286,14 +288,6 @@ const revOf = (cwd: string, rel: string) => {
   }
 };
 
-/**
-  The project's lean file's revision, as lean.write's `base` names it: a short hash of its text, ""
-  when there's none (or it can't be read, a link out of the folder). With a design file, that file's own lean.
-*/
-export function leanRev(cwd: string, file?: Pick<DesignFile, "lean"> | null) {
-  return revOf(cwd, leanTarget(cwd, file));
-}
-
 function leanOf(cwd: string, file?: Pick<DesignFile, "lean"> | null): Lean {
   const own = file?.lean;
   if (own?.builtin) return builtinLean(own.builtin);
@@ -458,7 +452,7 @@ export const safeSlug = (s: unknown) => String(s ?? "").toLowerCase().replace(/[
 */
 export function noLinks(cwd: string, abs: string) {
   const rel = relative(cwd, abs);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error(`${abs} isn't inside this folder.`);
+  if (!rel || outside(rel)) throw new Error(`${abs} isn't inside this folder.`);
   // The one check, canvas.ts's linkFree: every part of the way down, the file included.
   linkFree(cwd, rel);
   return abs;
@@ -483,7 +477,7 @@ export function safePath(cwd: string, abs: string) {
     }
   }
   const inner = relative(realpathSync(cwd), real);
-  if (!inner || inner.startsWith("..") || isAbsolute(inner)) throw new Error(`${rel} leads out of this folder (it's a link), so Liner Design doesn't read or write it.`);
+  if (!inner || outside(inner)) throw new Error(`${rel} leads out of this folder (it's a link), so Liner Design doesn't read or write it.`);
   return abs;
 }
 
@@ -491,14 +485,12 @@ export function safePath(cwd: string, abs: string) {
 export function inside(cwd: string, p: string) {
   const abs = isAbsolute(p) ? resolve(p) : resolve(cwd, p);
   const rel = relative(cwd, abs);
-  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? abs : null;
+  return rel && !outside(rel) ? abs : null;
 }
 
+/** Writes a file whole, its folder made first and its mode kept (atomic.ts): a failed write leaves no temp file in assets/. */
 export function atomic(abs: string, data: string | Buffer) {
-  mkdirSync(dirname(abs), { recursive: true });
-  const tmp = `${abs}.${process.pid}.${createHash("sha1").update(String(Math.random())).digest("hex").slice(0, 6)}.tmp`;
-  writeFileSync(tmp, data);
-  renameSync(tmp, abs);
+  writeAtomic(abs, data, { mkdir: true, keepMode: true });
 }
 
 // The module's face.
@@ -513,7 +505,9 @@ export function rpc(x: () => DesignCtx): DesignRpc<LeanMethod> {
     } catch {
       // no ctx here (a test's api): the process's own
     }
-    return listSkills(cwd, env, peekFile(cwd, file)?.lean.skills ?? []);
+    // design_files asks once per design file: the skill folders are read once per tool call (canvas.ts perCall), not once per file.
+    const loaded = peekFile(cwd, file)?.lean.skills ?? [];
+    return perCall(`skills:${cwd}`, () => listSkills(cwd, env)).map((s) => ({ ...s, loaded: loaded.includes(s.name) }));
   };
   return {
     "lean.read": ({ cwd, file }) => {

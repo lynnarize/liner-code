@@ -25,7 +25,6 @@
      halo. A list that clips its rows (it scrolls, or folds) keeps this much room inside its edge
      and gives it back with a negative margin, so the rows stay put and no ring is cut. */
   --lc-ring: 4px;
-  --lc-warn-dot: var(--l-warn);
   --lc-add: color-mix(in oklab, var(--l-ok) 9%, transparent);
   --lc-del: color-mix(in oklab, var(--l-danger) 8%, transparent);
   /* The action colour: the most important button wherever it is (Send, Commit and push, a card's
@@ -67,21 +66,13 @@ html[data-action="ink"] {
   --lc-card-ring: 0 0 0 1px var(--lc-hair), 0 1px 2px oklch(0.3 0.04 265 / 0.04);
   --lc-ctl: oklch(0.215 0.007 265);
   --lc-ctl-hover: oklch(0.285 0.007 265);
-  --lc-ctl-tile: oklch(0.355 0.008 265);
   --lc-ctl-ink: oklch(0.965 0.002 265);
   --lc-ctl-ink-2: oklch(0.74 0.006 265);
-  /* The composer's bar of choices: a light segment on the text box, a shade deeper under a pointed-at or
-     open choice, and a lit tile under an agent's disc. */
-  --lc-bar: color-mix(in oklab, var(--l-ink) 6%, var(--lc-field));
-  --lc-bar-hover: color-mix(in oklab, var(--l-ink) 11%, var(--lc-field));
-  --lc-bar-tile: var(--lc-paper);
   --lc-hair: color-mix(in oklab, var(--l-ink) 8%, transparent);
   /* A merged pull request's mark, in the sidebar's rows. */
   --lc-merged: oklch(0.56 0.17 295);
   /* No text lighter than this: the fourth grey is 4.6:1 on the paper (it was 3.6:1). */
   --l-ink-4: oklch(0.545 0.006 265);
-  /* A raised card: a small, close shadow (it was a 36px one). */
-  --lc-lift: 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 2px 6px -1px oklch(0.3 0.04 265 / 0.08);
   --lc-float-shadow: 0 0 0 0.5px oklch(0.3 0.04 265 / 0.08), 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 20px 48px -18px oklch(0.3 0.04 265 / 0.3), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
 }
 [data-theme="dark"] {
@@ -93,13 +84,10 @@ html[data-action="ink"] {
   --lc-card-ring: 0 0 0 1px var(--lc-hair);
   --lc-ctl: oklch(0.13 0.003 265);
   --lc-ctl-hover: oklch(0.2 0.004 265);
-  --lc-ctl-tile: oklch(0.28 0.006 265);
   --lc-ctl-ink: oklch(0.94 0.003 265);
   --lc-ctl-ink-2: oklch(0.66 0.006 265);
-  --lc-bar-tile: color-mix(in oklab, var(--l-ink) 16%, var(--lc-paper));
   --lc-merged: oklch(0.72 0.14 295);
   --l-ink-4: oklch(0.64 0.005 265);
-  --lc-lift: 0 1px 2px oklch(0 0 0 / 0.4), 0 3px 8px -2px oklch(0 0 0 / 0.5);
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
 }
 /*
@@ -197,11 +185,6 @@ pre {
 }
 .lc-quiet {
   color: var(--l-ink-3);
-}
-.lc-small {
-  font-size: 12px;
-  line-height: 17px;
-  margin: 0;
 }
 .lc-accent-t {
   color: var(--l-accent-text);
@@ -588,20 +571,6 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   to {
     transform: rotate(360deg);
   }
-}
-.lc-ring {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--l-ink-3);
-}
-.lc-ring[data-warn] {
-  color: var(--l-warn-text);
-}
-.lc-ring circle:last-child {
-  transition: stroke-dashoffset 700ms var(--l-spring-smooth);
 }
 
 /* Buttons on the ground, outside a tray: pills. The action colour for the main action ("accent"),
@@ -1235,39 +1204,6 @@ html[data-native="mac"] .lc-sb-head {
   width: 12px;
   height: 12px;
 }
-.lc-pjb-dot {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--l-accent);
-  box-shadow: 0 0 0 2px var(--lc-ground);
-  animation: lc-dot-in 320ms var(--l-ease-enter) backwards;
-}
-.lc-pjb-dot[data-k="warn"] {
-  background: var(--l-warn);
-}
-.lc-pjb-dot[data-k="danger"] {
-  background: var(--l-danger);
-}
-/* At work, the dot breathes: slowly, and not at all for reduced motion. */
-.lc-pjb-dot[data-k="work"] {
-  animation:
-    lc-dot-in 320ms var(--l-ease-enter) backwards,
-    lc-dot-work 1.8s ease-in-out 320ms infinite;
-}
-@keyframes lc-dot-work {
-  50% {
-    opacity: 0.45;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lc-pjb-dot[data-k="work"] {
-    animation: none;
-  }
-}
 .lc-sb-kids {
   position: relative;
   display: flex;
@@ -1388,33 +1324,6 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-fi {
   position: relative;
 }
-.lc-sb-fdot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--l-accent);
-  box-shadow: 0 0 0 2px var(--lc-ground);
-  animation: lc-dot-in 320ms var(--l-ease-enter) backwards;
-}
-.lc-sb-fdot[data-k="warn"] {
-  background: var(--l-warn);
-}
-@keyframes lc-dot-in {
-  from {
-    opacity: 0;
-    scale: 0.4;
-  }
-}
-.lc-sb-av {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  cursor: pointer;
-}
 /*
   The sidebar in Liner 2.0: your places as rows on top (New session, Search, The Wall, Routines),
   then Add-ons with your apps, then "Sessions" with its one menu (SideList.tsx, the block at the
@@ -1504,38 +1413,6 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink);
   cursor: pointer;
 }
-/* You, at the start of the foot. */
-.lc-sb-me {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 32px;
-  padding: 0 8px 0 4px;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink-2);
-  cursor: pointer;
-}
-.lc-sb-me .lc-sb-av {
-  width: 24px;
-  height: 24px;
-}
-.lc-sb-me-n {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-@media (hover: hover) {
-  .lc-sb-me:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
 .lc-sb-ring {
   display: grid;
   place-items: center;
@@ -1543,53 +1420,6 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-sb-ring[data-warn] {
   color: var(--l-warn);
-}
-/* The team, in the pop its icon opens. */
-.lc-sb-team-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding-top: 2px;
-}
-.lc-sb-agent {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .lc-sb-agent:hover {
-    background: var(--l-wash-2);
-  }
-}
-.lc-sb-agent-t {
-  display: grid;
-  min-width: 0;
-}
-.lc-sb-agent-t > span {
-  overflow: hidden;
-  font-size: 13px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-sb-agent-t > small {
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-sb-agent .lc-model {
-  margin-left: auto;
-  color: var(--l-ink-2);
 }
 .lc-me-av {
   display: grid;
@@ -1874,8 +1704,8 @@ html[data-native="mac"] .lc-sb-head {
   The title is its menu's button, as in Claude Code: medium weight in the second ink with a small
   chevron, a wash under both on hover and while the menu is open. It gives up its width before the
   chips, the tabs and the buttons do, down to room for a few letters and its chevron, and ends in an
-  ellipsis (T3 Code's title narrows the same way: chat/ChatHeader.tsx). Past that the buttons give
-  way (dock.css), so it never runs under them.
+  ellipsis (T3 Code's title narrows the same way: chat/ChatHeader.tsx). Past that the bar's own
+  narrow widths take over (lc-bar, below and in dock.css).
 */
 .lc-tt-pop {
   display: flex;
@@ -1925,30 +1755,6 @@ html[data-native="mac"] .lc-sb-head {
     color: var(--l-ink);
   }
 }
-.lc-chain {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 8px 0 4px;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  cursor: pointer;
-  transition: background 160ms ease;
-}
-@media (hover: hover) {
-  .lc-chain:hover {
-    background: var(--l-wash);
-    color: var(--l-ink-2);
-  }
-}
-.lc-chain > svg {
-  color: var(--l-ink-4);
-}
 .lc-branch {
   display: inline-flex;
   flex: none;
@@ -1966,13 +1772,6 @@ html[data-native="mac"] .lc-sb-head {
    the bar: it's in the title's menu. (Measured on the session before the one-row header, when the
    bar spanned the paper and held the panels' buttons: 1000 and 780 then, less those buttons now.) */
 @container lc-bar (max-width: 760px) {
-  .lc-chain {
-    gap: 2px;
-    font-size: 0;
-  }
-  .lc-chain > :not(.lc-disc, svg) {
-    display: none;
-  }
   .lc-top .lc-mode-chip {
     gap: 0;
     font-size: 0;
@@ -1981,9 +1780,6 @@ html[data-native="mac"] .lc-sb-head {
 @container lc-bar (max-width: 560px) {
   .lc-top {
     gap: 6px;
-  }
-  .lc-top .lc-chain {
-    display: none;
   }
   .lc-verdict > span:not(.l-shimmer) {
     font-size: 0;
@@ -1995,7 +1791,7 @@ html[data-native="mac"] .lc-sb-head {
   }
 }
 /* Between the title and the buttons, the chips shrink once the title can't, rather than push them
-   off; a bar that's giving up its buttons (dock.css) drops the mode's icon first. */
+   off. */
 .lc-top :is(.lc-mode-chip, .lc-verdict) {
   flex: 0 1 auto;
   min-width: 0;
@@ -2261,6 +2057,25 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   font-size: 17px;
   font-weight: 600;
   color: var(--l-ink);
+}
+/* A session's timeline still coming (said only after a moment, Session.tsx, so a quick open shows nothing), or one that couldn't be read, with Try again. */
+.lc-tl-wait {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 360px;
+  margin: 18vh auto 0;
+  text-align: center;
+  color: var(--l-ink-3);
+  font-size: 13.5px;
+  line-height: 20px;
+}
+.lc-tl-wait b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-tl-wait .lc-btn {
+  margin-top: 6px;
 }
 
 /* The timeline */
@@ -2783,7 +2598,6 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 }
 
 /* Approvals, questions and plans: cards that wait for you */
-.lc-ask .lc-fcard,
 .lc-q .lc-fcard,
 .lc-plan .lc-fcard {
   display: grid;
@@ -2800,7 +2614,6 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   background: none;
   box-shadow: none;
 }
-.lc-ask,
 .lc-q,
 .lc-plan {
   animation: lc-ask-in 520ms var(--l-ease-enter) backwards;
@@ -2812,21 +2625,10 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
     transform: translateY(8px) scale(0.985);
   }
 }
-.lc-ask-top,
 .lc-plan-top {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-}
-.lc-ask-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--l-wash-2);
-  color: var(--l-ink-2);
 }
 .lc-ask-title,
 .lc-plan-top > span:first-child {
@@ -2846,12 +2648,6 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   letter-spacing: -0.012em;
   line-height: 21px;
   overflow-wrap: anywhere;
-}
-.lc-ask-desc {
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--l-ink-2);
 }
 .lc-fields {
   display: grid;
@@ -2906,15 +2702,6 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   margin: 0;
   accent-color: var(--l-accent);
 }
-.lc-instead {
-  display: grid;
-  gap: 8px;
-}
-.lc-instead label {
-  font-size: 13px;
-  font-weight: 500;
-}
-.lc-instead textarea,
 .lc-else {
   min-height: 56px;
   box-sizing: border-box;
@@ -2936,11 +2723,6 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   width: 100%;
   margin-top: 8px;
   box-shadow: 0 0 0 1px var(--l-line-2);
-}
-.lc-hold.l-btn {
-  height: 32px;
-  border-radius: 10px;
-  font-size: 13px;
 }
 .lc-answered {
   display: flex;
@@ -3343,17 +3125,11 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-seg-div {
   display: none;
 }
-.lc-seg .lc-ring {
-  padding: 0 8px;
-  font-size: 13px;
-  font-weight: 500;
-}
 .lc-seg .lc-effort-word {
   display: none;
 }
 /* The who's icon (a team's or a route's mark, an agent's disc) is drawn plain, as the other
    controls' icons are: no tile behind it. */
-.lc-card-row .lc-way-chip-i,
 .lc-card-row .lc-disc,
 .lc-card-row .lc-disc[data-filled] {
   display: grid;
@@ -3673,12 +3449,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     color: var(--l-ink-2);
   }
 }
-/* Narrower, "from Claude Code or Codex" goes, so the line stays one line; narrower still, it wraps, without its dots. */
-@container lc-composer (max-width: 620px) {
-  .lc-under-long {
-    display: none;
-  }
-}
+/* Narrow, the line wraps, without its dots. */
 @container lc-composer (max-width: 420px) {
   .lc-strip-under > [aria-hidden] {
     display: none;
@@ -4495,56 +4266,10 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   max-width: 100%;
   vertical-align: baseline;
 }
-/* The project and its question mark are one piece: a long name ends in an ellipsis on its own
-   line, and the mark never falls to the next. */
-.lc-ask-p {
-  display: inline-flex;
-  align-items: baseline;
-  max-width: 100%;
-}
-.lc-proj {
-  min-width: 0;
-  max-width: 100%;
-}
-.lc-proj > span {
-  display: block;
-  margin-bottom: -10px;
-  padding-bottom: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-proj {
-  padding: 0;
-  font: inherit;
-  letter-spacing: inherit;
-  text-decoration: underline dotted 2px color-mix(in oklab, var(--l-ink) 35%, transparent);
-  text-underline-offset: 7px;
-  transition: text-decoration-color 200ms ease;
-}
-@media (hover: hover) {
-  .lc-proj:hover {
-    text-decoration-color: var(--l-accent);
-  }
-}
 /* The tray's 720, so the card in it is the session's 712. */
 .lc-home-compose {
   width: min(720px, 100%);
   animation: lc-focus-in 520ms 120ms var(--l-ease-enter) backwards;
-}
-.lc-hints {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 18px;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  animation: l-unblur 420ms 260ms var(--l-ease-out) backwards;
-}
-.lc-hints > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 /* Nothing to start in yet: the words in a 460px measure, and the three ways in on one row under
    them (primary, quiet, ghost), wider than the words so the third doesn't drop to a line of its
@@ -4892,20 +4617,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   padding: 0 10px 14px;
   overflow: auto;
 }
-.lc-agent-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
-  animation: lc-focus-in 360ms var(--l-ease-enter) backwards;
-}
-.lc-agent-card[data-sub] {
-  margin-left: 26px;
-  padding: 8px 12px;
-}
 .lc-agent-card-t {
   display: grid;
   flex: 1;
@@ -4922,16 +4633,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-agent-card-t small {
   font-size: 13px;
   color: var(--l-ink-3);
-}
-.lc-agent-card-m {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-}
-.lc-agent-card-m small {
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-transform: capitalize;
 }
 
 /* ---------- Usage ---------- */
@@ -6262,7 +5963,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     transition: none !important;
   }
   .lc-blk[data-fresh],
-  .lc-ask,
   .lc-q,
   .lc-plan,
   .lc-sl-row,
@@ -7193,71 +6893,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   flex: 1;
   min-width: 0;
 }
-/* The ring is a button now; it keeps its own padding in the segment. */
-.lc-seg-b.lc-ring-b {
-  padding: 0;
-}
-.lc-ctxm {
-  display: grid;
-  gap: 6px;
-}
-.lc-ctxm-bar {
-  display: block;
-  height: 6px;
-  margin: 0 9px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--lc-well);
-}
-.lc-ctxm-bar > i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--l-ink-3);
-  transition: width 500ms var(--l-ease-out);
-}
-.lc-ctxm-bar[data-warn] > i {
-  background: var(--l-warn);
-}
-.lc-ctxm-n {
-  margin: 0 9px 2px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--l-ink-3);
-}
-/* The plan's windows beside the ring: two short bars, the 5-hour one over the week's. */
-.lc-lim {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  font-size: 13px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--l-ink-3);
-}
-.lc-lim[data-warn] {
-  color: var(--l-warn-text);
-}
-.lc-lim-bars {
-  display: grid;
-  gap: 2px;
-}
-.lc-lim-bars > span {
-  display: block;
-  width: 16px;
-  height: 3px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: color-mix(in oklab, currentColor 18%, transparent);
-}
-.lc-lim-bars i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: currentColor;
-  transition: width 700ms var(--l-spring-smooth);
-}
 .lc-limm {
   display: grid;
   gap: 10px;
@@ -7346,8 +6981,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   .lc-sb-bulk {
     animation: none;
   }
-  .lc-ctxm-bar > i,
-  .lc-lim-bars i,
   .lc-queued-now {
     transition: none;
   }
@@ -7481,13 +7114,17 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
    done from script, not from a rule here, because a rule on the view's root has to come off again,
    and both putting it on and taking it off restyle everything in the view (about twice what Full
    costs a switch, measured). What you open by pressing keeps its move, shorter: the panel (and its
-   column) and a sheet take 180ms.
+   column), a sheet and the sidebar's column (with the header's room for the traffic lights, which
+   moves with it) take 180ms. Each frame of the sidebar's move lays the paper out again, so the
+   shorter it is the fewer there are.
    The system's Reduce motion turns all of it off at either level (foundation.css, at the end). */
 html[data-motion="quick"] .lc-panel:not([data-leaving]),
 html[data-motion="quick"] .lc-sheet[open] .lc-sheet-frame {
   animation-duration: 180ms;
 }
-html[data-motion="quick"] .lc-session .lc-body {
+html[data-motion="quick"] .lc-session .lc-body,
+html[data-motion="quick"] .lc-app,
+html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   transition-duration: 180ms;
 }
 
@@ -8733,7 +8370,7 @@ span.lc-sb-name {
    mark: the plate is drawn under it at once, so a fade would leave the plate empty. data-fresh
    never comes off (Sidebar.tsx), so no animation value changes as the open row changes. */
 .lc-sb-inner .lc-sl-row[data-fresh],
-.lc-sb-inner .lc-sl-row[data-fresh] :is(.lc-sl-sub, .lc-mk) {
+.lc-sb-inner .lc-sl-row[data-fresh] :is(.lc-sl-sub:not([data-swap]), .lc-mk) {
   animation: none;
 }
 .lc-sb-row > .lc-sb-forks {

@@ -25,6 +25,20 @@ export const openAsk = (items: unknown) => Array.isArray(items) && items.some((i
 export const SETTLE_MS = 2500;
 /** A notice the page already gave about a session counts for this long, so the same news doesn't come twice. */
 const HEARD_MS = 20_000;
+/**
+  How long the engine may go without answering (each look times out, or finds nothing listening) before the quit goes ahead,
+  counted in time the Mac was awake. Work is known to run only from its answers: an engine that has said nothing for a minute
+  is stuck or gone, its turns can't be saved or finished through it, and the app would otherwise wait out of sight for ever.
+  Quitting takes the normal path, which asks it to save and stop.
+*/
+export const SILENT_MS = 60_000;
+/** And at least this many looks in a row unanswered, each one a real try: one slow moment isn't silence. */
+export const SILENT_LOOKS = 8;
+/**
+  Two looks further apart than this weren't a minute of silence but a sleep (main.ts looks every few seconds, each held to a
+  few more): the count starts again from the look after it, since an engine just woken may take a moment to answer.
+*/
+export const SLEEP_GAP_MS = 30_000;
 
 export class QuitWhenDone {
   /**
@@ -40,10 +54,31 @@ export class QuitWhenDone {
   /** When the page last sent a notice about a session (its own "needs you"). */
   private readonly heardAt = new Map<string, number>();
   private quietSince: number | undefined;
+  /** The looks unanswered in a row since the engine last answered, the awake time they span, and when the last one was. */
+  private silence: { looks: number; awake: number; last: number } | undefined;
   private readonly settle: number;
+  private readonly silent: number;
 
-  constructor(settle = SETTLE_MS) {
+  constructor(settle = SETTLE_MS, silent = SILENT_MS) {
     this.settle = settle;
+    this.silent = silent;
+  }
+
+  /**
+    A look the engine didn't answer at all (it timed out, or nothing was listening): whether it has now been silent long
+    enough to quit, SILENT_LOOKS looks in a row over SILENT_MS of time awake. A gap longer than SLEEP_GAP_MS between two looks
+    is a sleep, not silence: the count starts again. Any answer, even one that says no, is the engine there (answered).
+  */
+  unanswered(now: number) {
+    const s = this.silence;
+    if (!s || now - s.last > SLEEP_GAP_MS || now < s.last) this.silence = { looks: 1, awake: 0, last: now };
+    else this.silence = { looks: s.looks + 1, awake: s.awake + (now - s.last), last: now };
+    return this.silence.looks >= SILENT_LOOKS && this.silence.awake >= this.silent;
+  }
+
+  /** The engine answered (an error of its own included): it's there, so whatever it said, its silence is over. */
+  answered() {
+    this.silence = undefined;
   }
 
   /** Waiting sessions not yet known to hold a live request: main.ts reads their timelines and says (mark). */
@@ -68,6 +103,7 @@ export class QuitWhenDone {
 
   /** What the engine says now, and what to do: wait (and what for), quit, and whom to tell they're waited on. */
   read(threads: Live[], now: number): Reading {
+    this.answered();
     const live = threads.filter((t) => !t.archived);
     const working = live.filter((t) => t.status === "running" || (t.agentsAtWork ?? 0) > 0);
     for (const t of working) this.watched.add(t.id);

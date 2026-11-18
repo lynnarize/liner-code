@@ -6,9 +6,11 @@
   Codex in <home>/sessions/YYYY/MM/DD/rollout-*.jsonl, each starting with its id and folder.
 */
 import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 import type { ImportableSession, Item, RecentSession, ToolKind } from "../../contracts/src/index.ts";
+import { outside } from "./exec.ts";
 import { uid } from "./store.ts";
 
 type Json = Record<string, unknown>;
@@ -96,19 +98,36 @@ const titleOf = (text: string) => {
   const line = text.trim().split("\n")[0];
   return line.length > 70 ? `${line.slice(0, 69).trimEnd()}…` : line;
 };
+type Dated = { f: string; at: number; size: number };
 const newest = (files: string[]) =>
   files
     // A file the tool cleared away since the folder was read, a link to nothing, or a folder or pipe that only looks like a session, is one session less, not none at all.
-    .flatMap((f) => {
+    .flatMap((f): Dated[] => {
       try {
         const st = statSync(f, { throwIfNoEntry: false });
-        return st?.isFile() ? [{ f, at: st.mtimeMs }] : [];
+        return st?.isFile() ? [{ f, at: st.mtimeMs, size: st.size }] : [];
       } catch {
         return [];
       }
     })
     .sort((a, b) => b.at - a.at)
     .slice(0, LATEST);
+
+/**
+  What a session file's head said, kept by its path while its time and size stay the same: the
+  sidebar's Recent asks again each time the window comes back, and a session's first lines (its id,
+  folder and first message) don't change once written. Cleared when it grows past HEADS_MAX.
+*/
+const heads = new Map<string, { at: number; size: number; v: unknown }>();
+const HEADS_MAX = 4000;
+function cachedHead<T>(d: Dated, read: () => T): T {
+  const had = heads.get(d.f);
+  if (had && had.at === d.at && had.size === d.size) return had.v as T;
+  const v = read();
+  if (heads.size >= HEADS_MAX) heads.clear();
+  heads.set(d.f, { at: d.at, size: d.size, v });
+  return v;
+}
 
 function claudeText(m: Json | undefined) {
   const c = m?.content;
@@ -138,6 +157,48 @@ function rollouts(sessions: string, match: (name: string) => boolean) {
   return out;
 }
 
+/**
+  The same walk as rollouts, with its listings and each file's time read off the engine's thread
+  (Codex keeps every rollout ever, thousands after months), the newest LATEST plain files.
+*/
+async function newestRollouts(sessions: string, match: (name: string) => boolean): Promise<Dated[]> {
+  const files: string[] = [];
+  let dirs = [sessions];
+  while (dirs.length) {
+    const next: string[] = [];
+    await Promise.all(
+      dirs.map(async (dir) => {
+        let entries;
+        try {
+          entries = await readdir(dir, { withFileTypes: true });
+        } catch {
+          return;
+        }
+        for (const d of entries) {
+          if (d.isDirectory()) next.push(join(dir, d.name));
+          else if (d.isFile() && match(d.name)) files.push(join(dir, d.name));
+        }
+      }),
+    );
+    dirs = next;
+  }
+  const dated: Dated[] = [];
+  // In batches, so a tree of thousands doesn't open thousands of requests at once.
+  for (let i = 0; i < files.length; i += 256)
+    for (const d of await Promise.all(
+      files.slice(i, i + 256).map(async (f) => {
+        try {
+          const st = await stat(f);
+          return st.isFile() ? { f, at: st.mtimeMs, size: st.size } : null;
+        } catch {
+          return null;
+        }
+      }),
+    ))
+      if (d) dated.push(d);
+  return dated.sort((a, b) => b.at - a.at).slice(0, LATEST);
+}
+
 function codexText(p: Json) {
   return Array.isArray(p.content) ? (p.content as Json[]).flatMap((b) => (typeof b.text === "string" ? [b.text] : [])).join("\n") : "";
 }
@@ -147,16 +208,22 @@ function claudeSessions(here: string, env: NodeJS.ProcessEnv, have: Set<string>,
   const out: ImportableSession[] = [];
   const dir = claudeDir(env, here);
   if (!existsSync(dir)) return out;
-  for (const { f, at } of newest(readdirSync(dir).filter((n) => n.endsWith(".jsonl")).map((n) => join(dir, n)))) {
+  for (const d of newest(readdirSync(dir).filter((n) => n.endsWith(".jsonl")).map((n) => join(dir, n)))) {
     if (out.length >= max) break;
+    const { f, at } = d;
     const id = basename(f, ".jsonl");
     if (have.has(`claude:${id}`)) continue;
-    let title = "";
-    let first = "";
-    for (const o of head(f).map(parse)) {
-      if (o?.type === "custom-title" && typeof o.customTitle === "string") title = o.customTitle;
-      if (!first && o?.type === "user" && !o.isSidechain && !o.isMeta && !o.isCompactSummary && yours(claudeText(o.message as Json))) first = claudeText(o.message as Json);
-    }
+    const h = cachedHead(d, () => {
+      let title = "";
+      let first = "";
+      for (const o of head(f).map(parse)) {
+        if (o?.type === "custom-title" && typeof o.customTitle === "string") title = o.customTitle;
+        if (!first && o?.type === "user" && !o.isSidechain && !o.isMeta && !o.isCompactSummary && yours(claudeText(o.message as Json))) first = claudeText(o.message as Json);
+      }
+      return { title, first };
+    });
+    const first = h.first;
+    let title = h.title;
     if (linerOwn(first)) continue;
     title ||= first && titleOf(first);
     if (title) out.push({ tool: "claude", id, title, at });
@@ -164,22 +231,31 @@ function claudeSessions(here: string, env: NodeJS.ProcessEnv, have: Set<string>,
   return out;
 }
 
+const ROLLOUT = (n: string) => /^rollout-.*\.jsonl$/.test(n);
+
 /** Codex's sessions in any of these folders (real paths), newest first, each with its folder, leaving out ones already here. Its tree is walked once, whatever the number of folders. */
 function codexSessions(heres: Set<string>, env: NodeJS.ProcessEnv, have: Set<string>): (ImportableSession & { cwd: string })[] {
-  const out: (ImportableSession & { cwd: string })[] = [];
   const sessions = codexDir(env);
-  if (!heres.size || !existsSync(sessions)) return out;
+  if (!heres.size || !existsSync(sessions)) return [];
+  return codexOf(newest(rollouts(sessions, ROLLOUT)), heres, have);
+}
+
+/** Codex's newest rollouts, read for their id, folder and first message (each head once while it's unchanged). */
+function codexOf(files: Dated[], heres: Set<string>, have: Set<string>): (ImportableSession & { cwd: string })[] {
+  const out: (ImportableSession & { cwd: string })[] = [];
   // Each folder a rollout names is looked up on disk once, so it compares with the projects' own (real) spelling.
   const seen = new Map<string, string>();
   const onDisk = (p: string) => seen.get(p) ?? seen.set(p, real(p)).get(p)!;
-  for (const { f, at } of newest(rollouts(sessions, (n) => /^rollout-.*\.jsonl$/.test(n)))) {
-    const lines = head(f).map(parse);
-    const meta = lines.find((o) => o?.type === "session_meta")?.payload as Json | undefined;
-    const id = typeof meta?.id === "string" ? meta.id : "";
-    const cwd = typeof meta?.cwd === "string" ? onDisk(meta.cwd) : "";
-    if (!id || !heres.has(cwd) || have.has(`codex:${id}`)) continue;
-    const first = lines.find((o) => (o?.payload as Json | undefined)?.type === "message" && (o?.payload as Json).role === "user" && yours(codexText(o!.payload as Json)));
-    if (first && !linerOwn(codexText(first.payload as Json))) out.push({ tool: "codex", id, title: titleOf(codexText(first.payload as Json)), at, cwd });
+  for (const d of files) {
+    const h = cachedHead(d, () => {
+      const lines = head(d.f).map(parse);
+      const meta = lines.find((o) => o?.type === "session_meta")?.payload as Json | undefined;
+      const first = lines.find((o) => (o?.payload as Json | undefined)?.type === "message" && (o?.payload as Json).role === "user" && yours(codexText(o!.payload as Json)));
+      return { id: typeof meta?.id === "string" ? meta.id : "", cwd: typeof meta?.cwd === "string" ? meta.cwd : "", first: first ? codexText(first.payload as Json) : "" };
+    });
+    const cwd = h.cwd ? onDisk(h.cwd) : "";
+    if (!h.id || !heres.has(cwd) || have.has(`codex:${h.id}`)) continue;
+    if (h.first && !linerOwn(h.first)) out.push({ tool: "codex", id: h.id, title: titleOf(h.first), at: d.at, cwd });
   }
   return out;
 }
@@ -193,9 +269,10 @@ export function importable(cwd: string, env: NodeJS.ProcessEnv, have: Set<string
 /**
   The newest sessions either tool has across these projects, `n` at most, each with its project:
   Claude Code's folder of each project read for its newest `n`, and Codex's tree walked once for
-  them all. Ones already here are left out. For the sidebar's Recent.
+  them all, off the engine's thread (newestRollouts). Ones already here are left out. For the
+  sidebar's Recent, which asks again each time the window comes back.
 */
-export function recentSessions(projects: { id: string; path: string }[], env: NodeJS.ProcessEnv, have: Set<string>, n: number): RecentSession[] {
+export async function recentSessions(projects: { id: string; path: string }[], env: NodeJS.ProcessEnv, have: Set<string>, n: number): Promise<RecentSession[]> {
   const byPath = new Map<string, string>();
   for (const p of projects) {
     const here = real(p.path);
@@ -203,7 +280,9 @@ export function recentSessions(projects: { id: string; path: string }[], env: No
   }
   const out: RecentSession[] = [];
   for (const [here, projectId] of byPath) for (const x of claudeSessions(here, env, have, n)) out.push({ ...x, projectId });
-  for (const { cwd, ...x } of codexSessions(new Set(byPath.keys()), env, have)) out.push({ ...x, projectId: byPath.get(cwd)! });
+  const sessions = codexDir(env);
+  const codex = byPath.size && existsSync(sessions) ? codexOf(await newestRollouts(sessions, ROLLOUT), new Set(byPath.keys()), have) : [];
+  for (const { cwd, ...x } of codex) out.push({ ...x, projectId: byPath.get(cwd)! });
   return out.sort((a, b) => b.at - a.at).slice(0, n);
 }
 
@@ -211,7 +290,7 @@ export function recentSessions(projects: { id: string; path: string }[], env: No
 function claudeTool(name: string, input: Json, cwd: string): { title: string; kind: ToolKind } {
   // Inside the project, from its root; anywhere else, in full.
   const rel = typeof input.file_path === "string" ? relative(cwd, input.file_path) : "";
-  const file = typeof input.file_path === "string" ? (rel && !rel.startsWith("..") ? rel : input.file_path) : "";
+  const file = typeof input.file_path === "string" ? (rel && !outside(rel) ? rel : input.file_path) : "";
   const str = (k: string) => (typeof input[k] === "string" ? (input[k] as string) : "");
   switch (name) {
     case "Bash":

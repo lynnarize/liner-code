@@ -28,9 +28,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createRequire, registerHooks, syncBuiltinESMExports } from "node:module";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { SHIMMED, WEB_TOOLS } from "./dsh-shims.ts";
+// exec.ts only for its path check: it imports Node's own modules alone and does nothing as it loads.
+import { outside } from "./exec.ts";
 import { script } from "./paths.ts";
 
 // DSH's tools and settings packages, as Liner Code answers them: before any of the plugin loads.
@@ -639,7 +641,7 @@ async function start(s: Start) {
   });
   const file = resolve(s.dir, s.entry);
   const rel = relative(s.dir, file);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("Its program is outside its package.");
+  if (!rel || outside(rel)) throw new Error("Its program is outside its package.");
   let mod: unknown;
   try {
     mod = await import(pathToFileURL(join(s.dir, rel)).href);

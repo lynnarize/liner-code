@@ -879,6 +879,8 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
       thread: (id) => this.store.thread(id),
       threads: () => this.store.threads,
       timeline: (id) => this.store.timeline(id),
+      // Only the kinds asked for, without keeping the timeline in memory (sessions.list reads many sessions not open).
+      peek: (id, kinds) => this.store.peek(id, kinds),
       projectName: (id) => this.store.projects.find((p) => p.id === id)?.name ?? "",
       branchOf: (id) => this.store.thread(id).worktree?.branch ?? this.store.projects.find((p) => p.id === this.store.thread(id).projectId)?.branch,
       storage: {

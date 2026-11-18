@@ -17,7 +17,7 @@ import { createApi } from "../src/api.ts";
 import { builtCopy } from "../src/buildlinks.ts";
 import { designCtx } from "../src/canvas.ts";
 import { picturesPref, setPicturesPref } from "../src/design-prefs.ts";
-import { attachCrash, CRASH, designsHome } from "../src/design-start.ts";
+import { attachCrash, copyGuard, CRASH, designsHome } from "../src/design-start.ts";
 import { designNote } from "../src/lean.ts";
 import { factsOf, remember } from "../src/memory.ts";
 import { drawTides } from "../src/providers/demo-canvas.ts";
@@ -544,6 +544,41 @@ test("a watched design file removed on disk is told once (canvas.changed, gone: 
   } finally {
     await api.call("canvas.watch", { cwd, file: own.file.id, on: false });
   }
+});
+
+test("a move checks the copy's bytes, not its size and time: a copy spoilt to the same size leaves the original where it is, and says so", async () => {
+  const s = setup();
+  const { api, home, project } = s;
+  const site = project("site");
+  await api.call("design.new", { title: "Landing", size: "phone", projectId: site.id });
+  const dir = join(site.path, ".liner/designs/landing");
+  writeFileSync(join(dir, "frames/phone.html"), "<p>drawn</p>");
+  mkdirSync(join(dir, "assets"), { recursive: true });
+  writeFileSync(join(dir, "assets/sea.png"), Buffer.from("picture bytes"));
+  // As a bad disk would: the same size, the same time (the copy keeps it), other bytes.
+  copyGuard.copied = (to) => {
+    const pic = join(to, "assets/sea.png");
+    if (existsSync(pic)) writeFileSync(pic, Buffer.from("picture BYTES"));
+  };
+  try {
+    await assert.rejects(api.call("design.remove", { projectId: site.id, file: "landing" }), /couldn't be kept in the trash, so it wasn't removed: The copy of landing didn't come out the same/);
+    assert.equal(readFileSync(join(dir, "assets/sea.png"), "utf8"), "picture bytes", "the original stays, as it was");
+    assert.equal(readFileSync(join(dir, "frames/phone.html"), "utf8"), "<p>drawn</p>");
+    // A design on its own moved into a project: refused the same way, the design still on its own.
+    const own = await api.call("design.new", { title: "Harbour" });
+    const src = join(own.project.path, ".liner/designs/harbour");
+    mkdirSync(join(src, "assets"), { recursive: true });
+    writeFileSync(join(src, "assets/sea.png"), Buffer.from("picture bytes"));
+    await assert.rejects(api.call("design.attach", { projectId: own.project.id, to: { projectId: site.id } }), /didn't come out the same/);
+    assert.equal(readFileSync(join(src, "assets/sea.png"), "utf8"), "picture bytes");
+    assert.ok(!existsSync(join(site.path, ".liner/designs/harbour")));
+  } finally {
+    copyGuard.copied = () => {};
+  }
+  // A good copy goes through, and the trash holds the same bytes.
+  assert.deepEqual(await api.call("design.remove", { projectId: site.id, file: "landing" }), { ok: true });
+  assert.ok(!existsSync(dir));
+  assert.ok(readdirSync(join(home, "canvas-trash")).length > 0);
 });
 
 test("nothing was made under the real home's Liner Designs", () => {

@@ -9,11 +9,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ROUTINES_ON, type AddonInfo, type Item, type Thread } from "@contracts";
 import { closeWhere, emptyDock, readDock, type DockState, type DockTab } from "./dock";
-import { rpc, useEngine } from "./engine";
+import { rpc, useEngine, useItemsWhere } from "./engine";
 import { I } from "./icons";
-import { checkpointsOf, plural, sumLines } from "./model";
+import { ago, checkpointsOf, plural, sumLines } from "./model";
 import { appIcon, appsFor } from "./Addon";
-import { Kbd, Lines } from "./ui";
+import { Kbd, Lines, Pop, Row as PickRow, Sep } from "./ui";
 import "./surfaces.css";
 
 export type SurfaceId = "session" | "side" | "changes" | "agents" | "files" | "terminal" | "browser" | "design" | "pr" | "linked" | "device" | "routines";
@@ -159,7 +159,10 @@ export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HT
   then the panels you have, then Make one…, which asks the agent for one (DeepSeek Harness's guide
   page, ui-sidebar-right). Picking one puts it in this pane in the guide's place.
 */
-export function Guide({ thread, items, agentName, panes, onOpen, onMake }: { thread: Thread; items: Item[]; agentName: string; panes: number; onOpen: (t: Tab) => void; onMake: () => void }) {
+/** What the guide reads of the timeline: the checkpoints and the designs shown, no reply's words. */
+const isGuideView = (it: Item) => it.kind === "checkpoint" || it.kind === "design";
+export function Guide({ thread, agentName, panes, onOpen, onMake }: { thread: Thread; agentName: string; panes: number; onOpen: (t: Tab) => void; onMake: () => void }) {
+  const items = useItemsWhere(thread.id, isGuideView);
   const routines = useEngine((s) => s.routines);
   const runs = useEngine((s) => s.runs);
   const addons = useEngine((s) => s.addons);
@@ -293,7 +296,7 @@ export function Guide({ thread, items, agentName, panes, onOpen, onMake }: { thr
   );
 }
 
-export const ghLine = (gh: string) => (gh === "missing" ? "Needs the GitHub CLI" : gh === "signed-out" ? "Sign in to GitHub first" : gh === "no-remote" ? "No GitHub remote" : "Not available");
+const ghLine = (gh: string) => (gh === "missing" ? "Needs the GitHub CLI" : gh === "signed-out" ? "Sign in to GitHub first" : gh === "no-remote" ? "No GitHub remote" : "Not available");
 export function prLine(pr: { state: string; checks: { state: string }[]; isDraft?: boolean }) {
   if (pr.state === "MERGED") return "merged";
   if (pr.state === "CLOSED") return "closed";
@@ -301,6 +304,73 @@ export function prLine(pr: { state: string; checks: { state: string }[]; isDraft
   if (pr.checks.some((c) => c.state === "pending")) return "checks running";
   if (pr.isDraft) return "a draft";
   return pr.checks.length ? "checks pass" : "open";
+}
+
+/* ---------- The Changes tab's pieces, shared with the full-width Review (Review.tsx), which loads only when it opens ---------- */
+
+type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
+
+/** How many changed files you've looked at. In a narrow panel it says "2/5 viewed", then drops its bar, so it never wraps. */
+export function Viewed({ seen, total }: { seen: number; total: number }) {
+  return (
+    <span className="lc-viewed">
+      <span className="lc-viewed-bar" aria-hidden>
+        <i style={{ width: `${total ? (seen / total) * 100 : 0}%` }} />
+      </span>
+      <span className="lc-viewed-long">
+        {seen} of {plural(total, "file")} viewed
+      </span>
+      <span className="lc-viewed-short">
+        {seen}/{total} viewed
+      </span>
+    </span>
+  );
+}
+
+/** Which turn's changes to show: one turn, all of them, or the branch against main. */
+export function TurnPicker({ cps, pick, turns, onPick }: { cps: Checkpoint[]; pick: string; turns: number; onPick: (id: string) => void }) {
+  const cp = cps.find((c) => c.id === pick);
+  return (
+    <Pop
+      label="Pick a turn"
+      width={320}
+      triggerClass="lc-turnpick"
+      trigger={
+        <>
+          {pick === "all" ? "All turns" : pick === "branch" ? "This branch" : `Turn ${cp?.turn ?? ""}`}
+          {pick !== "all" && pick !== "branch" && <span className="lc-quiet">of {turns}</span>}
+          <I.chevD size={12} />
+        </>
+      }
+    >
+      {(close) => (
+        <>
+          <PickRow title="All turns in this session" note="Everything since the first change, as the tree is now" on={pick === "all"} onPick={() => (onPick("all"), close())} />
+          <PickRow title="This branch against main" note="What a pull request from here would carry" on={pick === "branch"} onPick={() => (onPick("branch"), close())} />
+          <Sep />
+          {[...cps].reverse().map((c) => (
+            <PickRow
+              key={c.id}
+              title={`Turn ${c.turn}`}
+              note={`${ago(c.at)} · ${plural(c.files.length, "file")}${c.reverted ? " · undone" : c.committed ? ` · committed ${c.committed}` : ""}`}
+              on={pick === c.id}
+              end={<Lines {...sumLines(c.files)} />}
+              onPick={() => (onPick(c.id), close())}
+            />
+          ))}
+        </>
+      )}
+    </Pop>
+  );
+}
+
+/** The engine sends the first 60 files; here and in the side panel, the rest are counted (T3 Code: chat/ChangedFilesTree.tsx). */
+export function MoreFiles({ n, turn, pick }: { n: number; turn: boolean; pick: string | null }) {
+  return (
+    <p className="lc-rv-more lc-quiet">
+      {plural(n, "more file")} {turn ? "in this turn" : pick === "branch" ? "on this branch" : "across all turns"} {n === 1 ? "isn't" : "aren't"} shown here.
+    </p>
+  );
 }
 
 /** A surface's empty or waiting state, centred. */

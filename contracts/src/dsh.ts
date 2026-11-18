@@ -18,12 +18,10 @@
 */
 import type { DshSlot } from "./index.ts";
 
-/** Where a ported plugin's frame reaches its Node half and its package, on the engine: /dsh/<token>/. */
-export const DSH_PATH = "/dsh/";
+/** A ported plugin's token: its frame reaches its Node half and its package on the engine at /dsh/<token>/. */
 export const DSH_TOKEN = /^[a-f0-9]{32}$/;
 /** A frame's base for its plugin: the app's own origin on this Mac, then /dsh/<token>/. */
 export const DSH_BASE = /^http:\/\/(?:127\.0\.0\.1|localhost):\d{1,5}\/dsh\/[a-f0-9]{32}\/$/;
-export const dshBase = (origin: string, token: string) => `${origin}${DSH_PATH}${token}/`;
 
 /**
   DeepSeek Harness's design tokens (packages/client/ui-theme/src/styles/design-platform.css), each

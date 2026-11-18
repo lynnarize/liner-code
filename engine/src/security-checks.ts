@@ -12,10 +12,10 @@
   worth reading. Everything works offline but npm audit, which asks the registry and fails soft.
 */
 import { lstatSync, readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import type { FreeCheckId, FreeCheckResult, FreeCheckRun, FindingExplain, NewFinding, SecurityFinding, SecurityFindingAdded, Severity, CodeExcerpt } from "../../contracts/src/index.ts";
 import { findingKey } from "../../contracts/src/index.ts";
-import { run, which } from "./exec.ts";
+import { outside, run, which } from "./exec.ts";
 import { insideReal, type Security } from "./security.ts";
 
 /** Who the free checks are, on a finding's activity. */
@@ -238,7 +238,7 @@ export function excerptOf(root: string, file: string, start: number, end = start
   try {
     const abs = resolve(root, file);
     const rel = relative(resolve(root), abs);
-    if (!rel || rel.startsWith("..") || isAbsolute(rel)) return null;
+    if (!rel || outside(rel)) return null;
     // Inside by real path too: a symlinked folder on the way (link -> /etc) reads nothing outside.
     if (!insideReal(root, abs)) return null;
     const st = statSync(abs);
@@ -424,25 +424,27 @@ async function checkNow(sec: Security, projectId: string, root: string, scan?: s
   let added = 0;
   const seen = new Set<string>();
   const results: FreeCheckResult[] = [];
+  const onScan: SecurityFindingAdded[] = [];
   for (const id of ["secrets", "packages", "files"] as FreeCheckId[]) {
     const o = outs[id];
     let count = 0;
     const list = o.found.map(({ finding }): NewFinding => (scan ? { ...finding, scan } : finding));
     for (const n of list) seen.add(findingKey(projectId, n));
-    // The check's findings in one write.
+    // The check's findings in one write; counted on the scan once, after all three.
     for (const a of sec.addMany(projectId, list, BY) as SecurityFindingAdded[]) {
       if (a.outcome === "new" || a.outcome === "reopened") added++;
       // What you dismissed before isn't counted as found.
       if (a.outcome !== "dismissed-before") count++;
-      if (scan) {
-        try {
-          sec.countOn(scan, a);
-        } catch {
-          // the scan's record went: the findings stay
-        }
-      }
+      onScan.push(a);
     }
     results.push(o.result.state === "found" ? { ...o.result, count, state: count ? "found" : "clean" } : o.result);
+  }
+  if (scan) {
+    try {
+      sec.countMany(scan, onScan);
+    } catch {
+      // the scan's record went: the findings stay
+    }
   }
   // What a check raised before and finds no more is fixed; only where the check ran in full, and a secret only where its file was read again (or isn't tracked any more).
   const closing = (f: SecurityFinding) => {

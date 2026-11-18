@@ -11,10 +11,23 @@
   so a session's spinner is in its model's colour without a second list of colours here.
   Action buttons in a row's `acts` or a folder's `actions`: use className "lc-sb-a l-focus" (22px).
 */
-import { forwardRef, type CSSProperties, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
+import { forwardRef, useRef, type CSSProperties, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { cx } from "@liner/lib/hooks";
 import { I, Spinner, wt, type MarkKind } from "./icons";
 import { Num, Pop } from "./ui";
+
+/**
+  ↑ and ↓ in every face's list (.lc-sl-list): from a row or a folder's header to the next one as they
+  show, so a folded folder is reached and opened from the keyboard too. A handler of the row's own
+  that took the key first (it prevented it) has the say.
+*/
+export function listArrows(e: KeyboardEvent<HTMLElement>) {
+  if (e.defaultPrevented || e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+  const stops = [...(e.currentTarget.closest(".lc-sl-list")?.querySelectorAll<HTMLElement>(".lc-sl-pick[tabindex]:not([tabindex='-1']), .lc-sl-fold-b") ?? [])];
+  const to = stops[stops.indexOf(e.currentTarget) + (e.key === "ArrowDown" ? 1 : -1)];
+  e.preventDefault();
+  to?.focus();
+}
 
 /** How a row stands, as its mark shows it. */
 export type SideState = "working" | "needs" | "limited" | "error" | "done" | "new";
@@ -123,15 +136,15 @@ export function SideFolder({ name, count, open, onToggle, needs, working, tint, 
   return (
     <section className="lc-sl-folder" aria-label={name}>
       <div className="lc-sl-fold" data-acts={actions ? "" : undefined} onContextMenu={onContextMenu}>
-        <button type="button" className="lc-sl-fold-b l-focus" aria-expanded={open} title={open ? `Fold its ${what}` : `Show its ${what}`} onClick={onToggle}>
+        <button type="button" className="lc-sl-fold-b l-focus" aria-expanded={open} title={open ? `Fold its ${what}` : `Show its ${what}`} onClick={onToggle} onKeyDown={listArrows}>
           <span className="lc-sl-fold-i">{icon ?? <I.folder size={16} />}</span>
           <span className="lc-sl-fold-n">
             <span>{name}</span>
             <I.chevR size={12} />
           </span>
           <span className="lc-sl-fold-end">
-            {!open && needs && <span className="lc-sl-ndot" role="img" aria-label="A session here needs you" />}
-            {!open && working && <SideMark state="working" tint={tint} brand={brand} label="A session here is working" />}
+            {!open && needs && <span className="lc-sl-ndot" role="img" aria-label={`One of its ${what} needs you`} />}
+            {!open && working && <SideMark state="working" tint={tint} brand={brand} label={`One of its ${what} is working`} />}
             <span className="lc-sl-count">
               <Num value={count} />
             </span>
@@ -171,13 +184,16 @@ type SideRowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   props (drag, a context menu, a hover card); its words are in `pick`.
 */
 export const SideRow = forwardRef<HTMLDivElement, SideRowProps>(function SideRow({ mark, title, sub, tone, end, current, quiet, wrap, acts, pick, children, className, ...rest }, ref) {
+  // The second line is drawn anew when it says something else ("Reading a.ts", then "Running npm test"), so the new words fade in
+  // over the old one's place; a line other than the one the row came with is a swap, which fades even where the row came without its fade (data-fresh, app.css).
+  const first = useRef(sub);
   return (
     <div ref={ref} {...rest} className={cx("lc-sl-row", className)} data-current={current || undefined} data-quiet={quiet || undefined} data-wrap={wrap || undefined}>
-      <div {...pick} className={cx("lc-sl-pick", pick?.className)}>
+      <div {...pick} className={cx("lc-sl-pick", pick?.className)} onKeyDown={(e) => (pick?.onKeyDown?.(e), listArrows(e))}>
         <span className="lc-sl-mark">{mark}</span>
         <span className="lc-sl-title">{title}</span>
         {sub !== undefined && sub !== null && sub !== "" && (
-          <span className="lc-sl-sub" data-tone={tone}>
+          <span key={typeof sub === "string" ? sub : undefined} className="lc-sl-sub" data-tone={tone} data-swap={sub !== first.current || undefined}>
             {sub}
           </span>
         )}

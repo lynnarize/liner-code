@@ -183,10 +183,6 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
-/* The dock leaves its old sheet behind: the chat is in the tray now. */
-.ld-dock .ld-sheet {
-  display: none;
-}
 
 /* ---------- pinned: a column between the sidebar and the canvas ---------- */
 .ldc-col {

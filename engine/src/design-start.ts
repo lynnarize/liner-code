@@ -16,7 +16,7 @@
   switch, an error undoes what was done and leaves the original as it was.
 */
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync as realpath, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, cpSync, fchmodSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync as realpath, renameSync, rmSync, statSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import type { DesignSize, Project } from "../../contracts/src/index.ts";
@@ -28,6 +28,7 @@ import { keepOutOfGit } from "./designs.ts";
 import { readLean, safePath } from "./lean.ts";
 import { factsOf, fileOf as memoryFile, remember } from "./memory.ts";
 import { uid, writeAtomic, type Store } from "./store.ts";
+import { outside } from "./exec.ts";
 
 /**
   Where designs on their own go. LINER_DESIGNS_HOME first; else, when the engine's home isn't the
@@ -152,24 +153,74 @@ const brokenOf = (home: string, cwd: string, slug: string) => join(home, "design
 const builtOf = (home: string, cwd: string, slug: string) => dirname(builtCopy(home, cwd, slug, "x"));
 const versionsOf = (home: string, threadId: string, slug: string) => join(home, "designs", threadId, "canvas", slug);
 
-/** Each regular file under a folder (links left out, as every copy of a design leaves them), by its path from there, with its hash. */
-function filesOf(dir: string, rel = "", out = new Map<string, string>()) {
+/** Each regular file under a folder (links left out, as every copy of a design leaves them), by its path from there. */
+function filesOf(dir: string, rel = "", out: string[] = []) {
   for (const n of readdirSync(join(dir, rel)).sort()) {
     const r = rel ? `${rel}/${n}` : n;
     const s = lstatSync(join(dir, r));
     if (s.isSymbolicLink()) continue;
     if (s.isDirectory()) filesOf(dir, r, out);
-    else if (s.isFile()) out.set(r, createHash("sha256").update(readFileSync(join(dir, r))).digest("hex"));
+    else if (s.isFile()) out.push(r);
   }
   return out;
 }
 
-/** Copies a folder (links left out), then checks the copy holds the same files with the same bytes. */
+/** A file read in pieces of 1 MB: each piece goes to `each` (a hash, and the copy's write). */
+function pieces(abs: string, each: (b: Buffer) => void) {
+  const fd = openSync(abs, "r");
+  try {
+    const buf = Buffer.allocUnsafe(1 << 20);
+    for (let n: number; (n = readSync(fd, buf, 0, buf.length, null)) > 0; ) each(buf.subarray(0, n));
+  } finally {
+    closeSync(fd);
+  }
+}
+const sha256 = (abs: string) => {
+  const h = createHash("sha256");
+  pieces(abs, (b) => h.update(b));
+  return h.digest("hex");
+};
+
+/** Tests only: runs between the copy and its check, to spoil a copy as a bad disk would. */
+export const copyGuard = { copied: (_to: string) => {} };
+
+/**
+  Copies a folder (links left out, each file's mode and time kept), then checks the copy holds the same files with the same
+  bytes, as a move deletes the original afterwards: each file is hashed as it's copied (read once), and the copy is read back
+  and hashed once. A copy that doesn't match throws, and the original stays where it is.
+*/
 function copyChecked(from: string, to: string) {
-  cpSync(from, to, { recursive: true, filter: (p) => !lstatSync(p).isSymbolicLink() });
-  const a = filesOf(from);
-  const b = filesOf(to);
-  if (a.size !== b.size || [...a].some(([k, v]) => b.get(k) !== v)) throw new Error(`The copy of ${basename(from)} didn't come out the same.`);
+  const sums = new Map<string, string>();
+  const walk = (rel: string) => {
+    const at = rel ? join(from, rel) : from;
+    const into = rel ? join(to, rel) : to;
+    mkdirSync(into, { recursive: true });
+    for (const n of readdirSync(at).sort()) {
+      const r = rel ? `${rel}/${n}` : n;
+      const s = lstatSync(join(from, r));
+      if (s.isSymbolicLink()) continue;
+      if (s.isDirectory()) walk(r);
+      else if (s.isFile()) {
+        const h = createHash("sha256");
+        const fd = openSync(join(to, r), "wx", 0o600);
+        try {
+          pieces(join(from, r), (b) => {
+            h.update(b);
+            for (let off = 0; off < b.length; ) off += writeSync(fd, b, off);
+          });
+          fchmodSync(fd, s.mode & 0o7777);
+        } finally {
+          closeSync(fd);
+        }
+        utimesSync(join(to, r), s.atime, s.mtime);
+        sums.set(r, h.digest("hex"));
+      }
+    }
+  };
+  walk("");
+  copyGuard.copied(to);
+  const got = filesOf(to);
+  if (got.length !== sums.size || got.some((r) => sums.get(r) !== sha256(join(to, r)))) throw new Error(`The copy of ${basename(from)} didn't come out the same.`);
 }
 
 /** Nothing in the folder but folders and Finder's .DS_Store: what's left of a design on its own once its design moved. */
@@ -220,7 +271,7 @@ export async function attachDesign(h: StartHost, a: { projectId: string; to: { p
   } else {
     const abs = resolve(String(a.to.path ?? "").replace(/^~(?=\/|$)/, homedir()));
     const r = relative(src, abs);
-    if (!r || !r.startsWith("..")) throw new Error("That folder is this design's own. Pick a project, or a folder outside it.");
+    if (!r || !outside(r)) throw new Error("That folder is this design's own. Pick a project, or a folder outside it.");
     if (abs === resolve(designsHome(home, h.env))) throw new Error("That's the folder designs on their own are kept in. Pick a project, or another folder.");
     const had = store.projects.find((p) => resolve(p.path) === abs);
     if (had) target = had;

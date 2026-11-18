@@ -20,7 +20,7 @@ import { isIP } from "node:net";
 import type { DesignFile, PictureEndpoint, PictureModel } from "../../contracts/src/index.ts";
 import { pictureKey } from "../../contracts/src/index.ts";
 import type { McpResult } from "./agent-tools.ts";
-import { designDir, designFor, linkFree, frameOf, readFile, readFrame, writeFrame, type DesignCall, type DesignCtx, type DesignRpc } from "./canvas.ts";
+import { designDir, designFor, drawNow, linkFree, frameOf, readFile, readFrame, writeFrame, type DesignCall, type DesignCtx, type DesignRpc } from "./canvas.ts";
 import { atomic, readLean } from "./lean.ts";
 import { uid } from "./store.ts";
 
@@ -353,7 +353,13 @@ export function addPicture(ctx: DesignCtx, cwd: string, slug: string, name: stri
 }
 
 /** Sessions that said yes to a picture already ("first" asks only once). */
-const asked = (ctx: Pick<DesignCtx, "keep">) => ctx.keep("pictures.asked", () => new Set<string>());
+const asked = (ctx: Pick<DesignCtx, "keep" | "store">) =>
+  ctx.keep("pictures.asked", () => {
+    const yes = new Set<string>();
+    // A session that goes takes its yes with it, so the set holds the sessions there are, not every one that ever asked.
+    ctx.store.on((e) => void (e.type === "thread.removed" && yes.delete(e.id)));
+    return yes;
+  });
 
 // The module's face.
 
@@ -396,6 +402,8 @@ export async function call(name: string, args: Record<string, unknown>, at: Desi
   if (target?.kind === "live") throw new Error(`${target.name} is a live frame: put the picture in the project's own files instead.`);
   const e = chosen;
   const when = file.pictures?.ask ?? "first";
+  // A picture lands in the design's assets/: the session draws, and its files' "as it was" copies are taken first (canvas.ts).
+  await drawNow(at, at.threadId);
   const yes = asked(at);
   if (when === "always" || (when === "first" && !yes.has(at.threadId))) {
     if (!at.ask) throw new Error("Liner Code can't ask the person here, so no picture was made.");

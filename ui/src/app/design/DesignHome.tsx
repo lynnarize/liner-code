@@ -29,7 +29,7 @@ import { PicturesChip } from "./Pictures";
 import { D } from "./Rail";
 import { buildIn, close as closeTabHere, knowFrames, TabTitle } from "./Tabs";
 import { dropIfUntouched, knowProject, newDesign, runFor, sessionOf, sigOf, untouched } from "./session";
-import { design } from "./store";
+import { design, getDesign } from "./store";
 import "./design-face.css";
 // E's skills chips, the row over the box, start with a brand (they fill homeSlots when it loads).
 import { OWN_SKILLS, pickedFor } from "./Skills";
@@ -340,8 +340,13 @@ type Listed = { project: Project; files: DesignFileInfo[] };
 let listed: Listed[] | null = null;
 const listFns = new Set<() => void>();
 let asking = 0;
+let slowly = 0;
+/** Only the open design's page was written (your edit, its agent drawing), which changes no more than its time here: design.all at most once in 2 s. */
+const relistSlowly = () => void (slowly ||= window.setTimeout(() => ((slowly = 0), relist()), 2000));
 /** design.all again, a moment after anything that may change it (one call for the sidebar). */
 function relist() {
+  clearTimeout(slowly);
+  slowly = 0;
   clearTimeout(asking);
   asking = window.setTimeout(() => {
     void rpc("design.all", {}).then(
@@ -355,26 +360,33 @@ function relist() {
     );
   }, 150);
 }
-let hearing = false;
+/** What hears for the list while anything shows it; let go with the last one that does. */
+let hearing: (() => void) | undefined;
 function useListed() {
   const [, redraw] = useState(0);
   useEffect(() => {
     const f = () => redraw((n) => n + 1);
     listFns.add(f);
     if (!hearing) {
-      hearing = true;
-      onStream((e) => {
-        if (e.type === "canvas.changed") relist();
+      const offStream = onStream((e) => {
+        if (e.type !== "canvas.changed") return;
+        const s = getDesign();
+        if (e.frame && e.rev && e.cwd === s.cwd && e.file === s.file?.id) relistSlowly();
+        else relist();
       });
       // A project come or gone (a design made, removed, moved into a project).
       let was = getState().projects;
-      subscribeEngine(() => {
+      const offEngine = subscribeEngine(() => {
         const now = getState().projects;
         if (now !== was) (was = now), relist();
       });
+      hearing = () => (offStream(), void offEngine(), clearTimeout(slowly), (slowly = 0));
     }
     relist();
-    return () => void listFns.delete(f);
+    return () => {
+      listFns.delete(f);
+      if (!listFns.size && hearing) (hearing(), (hearing = undefined));
+    };
   }, []);
   return listed;
 }

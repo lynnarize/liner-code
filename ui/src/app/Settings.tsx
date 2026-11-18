@@ -7,7 +7,7 @@
   window (localStorage) and apply at once; the rest lives in the engine. Escape, ⌘, or Back
   returns to the sessions.
 */
-import { cloneElement, isValidElement, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
+import { cloneElement, isValidElement, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, CheckTier, ToolAccount, ToolCheck, ToolCheckRow, ToolUpdate, UpdateMode } from "@contracts";
 import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, picturesGuess, ROUTINES_ON, toolPicturesKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
@@ -55,7 +55,7 @@ const ACTIONS: { id: ActionColour; label: string; color: string }[] = [
   { id: "ink", label: "Ink", color: "var(--lc-ctl)" },
 ];
 
-export type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "modes" | "team" | "safety" | "addons" | "projects" | "git" | "archive" | "updates" | "data";
+type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "modes" | "team" | "safety" | "addons" | "projects" | "git" | "archive" | "updates" | "data";
 
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
@@ -78,7 +78,8 @@ const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string;
 
 type Props = { initial?: SettingsPage; onClose: () => void; onAgent: (agent?: AgentProfile) => void; onOpen?: (threadId: string) => void };
 
-export function Settings({ initial = "general", onClose, onAgent, onOpen }: Props) {
+/** Memoised: App hands it callbacks of one identity, so a session's news elsewhere doesn't redraw the page you're reading. */
+export const Settings = memo(function Settings({ initial = "general", onClose, onAgent, onOpen }: Props) {
   const [page, setPage] = useState<SettingsPage>(() => (sessionStorage.getItem("lc:settings") as SettingsPage) || initial);
   const [query, setQuery] = useState("");
   const [look, setLook] = useState<Look>(readLook);
@@ -114,7 +115,9 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
     const off = feedback.subscribe(setSound);
     return () => void off();
   }, []);
-  // Escape goes back, unless something inside (a menu, a field, a dialog) takes it first; ⌘F finds a setting.
+  // Escape goes back, unless something inside (a menu, a field, a dialog) takes it first; ⌘F finds a setting. The listener stays; it calls the latest onClose.
+  const closing = useRef(onClose);
+  closing.current = onClose;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((isMac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
@@ -126,11 +129,11 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
       if (e.key !== "Escape" || e.defaultPrevented) return;
       const t = e.target as HTMLElement;
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || document.querySelector("dialog[open]")) return;
-      onClose();
+      closing.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const setLookPart = (patch: Partial<Look>) => {
     const next = { ...look, ...patch };
@@ -352,7 +355,7 @@ export function Settings({ initial = "general", onClose, onAgent, onOpen }: Prop
       </main>
     </>
   );
-}
+});
 
 /** Reduced motion: scrolls jump rather than glide. */
 const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1878,8 +1881,10 @@ function Endpoints() {
   const remove = (e: Endpoint) => {
     const id = `${ENDPOINT_TOOL[e.protocol]}.${e.id}`;
     save({ endpoints: endpoints.filter((x) => x !== e), favoriteModels: favs.filter((r) => !r.startsWith(`${id}:`)) });
-    void bridge.keychainSet(`key:${endpointKey(e.id)}`, null).catch(() => {});
-    void rpc("keys.set", { provider: endpointKey(e.id), key: null }).catch(() => {});
+    // The endpoint goes either way; a key left behind is said, as one re-added with the same name would pick it up.
+    const kept = (err: unknown) => toast.error("The endpoint is gone, but its key couldn't be removed", { description: err instanceof Error ? err.message : String(err) });
+    void bridge.keychainSet(`key:${endpointKey(e.id)}`, null).catch(kept);
+    void rpc("keys.set", { provider: endpointKey(e.id), key: null }).catch(kept);
   };
   return (
     <Group
@@ -2360,7 +2365,7 @@ function Safety() {
   each, with its versions and a switch; a removed one waits under them to come back. Then who may
   offer one, a start without any, and where they're kept.
 */
-export function AddonsPlace() {
+function AddonsPlace() {
   const addons = useEngine((x) => x.addons);
   const off = useEngine((x) => x.addonsOff);
   const offers = useEngine((x) => x.settings.addonOffers ?? "ask");

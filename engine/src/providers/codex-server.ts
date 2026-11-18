@@ -19,7 +19,7 @@ import { VERSION } from "../version.ts";
 import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { inFolder } from "./acp.ts";
-import { dataUrl, imageType } from "./attachments.ts";
+import { dataUrl } from "./attachments.ts";
 import { LINER_WAIT_SEC, ResumeFailed, saysOf, scrub, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink, type WakeTurn } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
@@ -49,6 +49,15 @@ const short = (s: unknown, n = 80) => {
   const t = String(s ?? "").replace(/\s+/g, " ").trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 };
+
+/** A Codex step's row titles, said one way by `codex exec` (codex.ts), the app server and an agent's own steps (stepOf). */
+export const editTitle = (paths: string[]) => `Edit ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ` and ${paths.length - 3} more` : ""}`;
+export const mcpTitle = (server: unknown, tool: unknown, args: unknown) => (server === "liner" ? linerTitle(String(tool), args) : `${server} · ${tool}`);
+export const webTitle = (query: unknown) => `Search the web for ${short(query, 50)}`;
+/** The thinking level as Codex takes it: Claude Code's extras (ultracode, ultrathink) mean nothing to it. */
+export const codexEffort = (effort: string | undefined) => (effort && !/^ultra(code|think)$/.test(effort) ? effort : null);
+/** The model as Codex takes it: none for "default", which is the one its config sets. */
+export const codexModel = (model: string | undefined) => (model && model !== "default" ? model : null);
 
 /** An agent's name from what Codex says of its thread: its role ("explorer" is "Explorer"), else its nickname. */
 const agentNameOf = (role: unknown, nickname: unknown) => (typeof role === "string" && role.trim() ? role.trim().replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase()) : typeof nickname === "string" && nickname.trim() ? nickname.trim() : "Subagent");
@@ -86,7 +95,7 @@ class Unknown extends Error {}
 
 /** What you sent, as Codex takes it: the text, and your images as data URLs (T3 Code: CodexAdapterV2.ts, resolveCodexAttachment). */
 function input(text: string, files: string[] = []) {
-  const images = files.filter((f) => imageType(f)).flatMap((f) => {
+  const images = files.flatMap((f) => {
     const url = dataUrl(f);
     return url ? [{ type: "image", url }] : [];
   });
@@ -121,11 +130,13 @@ export function codexWhy(e: { codexErrorInfo?: unknown; message?: string }): Err
 /** A short-lived app-server for one question (limits, skills), closed after. */
 export async function codexAsk<T>(env: NodeJS.ProcessEnv, cwd: string, method: string, params: Json, timeout = 20000): Promise<T> {
   const c = new CodexServer(env, cwd);
+  let timer: NodeJS.Timeout | undefined;
   try {
     // Its start counts against the time too: an app server that never answers would hold the ask (and the
     // engine's one ask for limits at a time) and its process for good.
-    return (await Promise.race([c.ready().then(() => c.request(method, params)), new Promise<never>((_, no) => setTimeout(() => no(new Error("Codex didn't answer in time.")), timeout))])) as T;
+    return (await Promise.race([c.ready().then(() => c.request(method, params)), new Promise<never>((_, no) => (timer = setTimeout(() => no(new Error("Codex didn't answer in time.")), timeout)))])) as T;
   } finally {
+    clearTimeout(timer);
     c.close();
   }
 }
@@ -202,7 +213,8 @@ export class CodexServer {
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d: string) => (this.stderr = (this.stderr + d).slice(-4000)));
     // A process closed while it was still talking: what it says now is nobody's, and an answer to it would reach the next one.
-    jsonLines(child.stdout, (v) => void (this.child === child && this.onMessage(v as Msg)));
+    // A throw while handling a line is said in the log, not left as an unhandled rejection.
+    jsonLines(child.stdout, (v) => void (this.child === child && this.onMessage(v as Msg).catch((e) => console.error("Codex's app server sent a line that couldn't be handled:", e))));
     const said = () => scrub(this.stderr.trim().split("\n").slice(-3).join("\n"), this.env);
     const fail = (err: Error) => {
       for (const [id, p] of this.pending)
@@ -313,7 +325,8 @@ export class CodexServerSession implements ProviderSession {
   private turnId: string | null = null;
   private sink: TurnSink | null = null;
   private signal: AbortSignal | null = null;
-  private done: (() => void) | null = null;
+  /** Ends the turn under way; with an error, as failed by it (a turn's end that couldn't be handled). */
+  private done: ((e?: Error) => void) | null = null;
   private streamed = new Set<string>();
   /** A running command's output so far, by item; it reaches the row a few times a second. */
   private outputs = new Map<string, { text: string; title: string; input: string; timer?: NodeJS.Timeout }>();
@@ -323,8 +336,15 @@ export class CodexServerSession implements ProviderSession {
     each step from; none yet in this process (T3 Code: CodexAdapterV2.ts, usageStateForThread).
   */
   private counted = new Map<string, { input: number; cached: number; output: number }>();
-  /** Turns you stopped: their late turn/completed ends nothing (T3 Code: CodexAdapterV2.ts, activeTurns). */
+  /**
+    Turns you stopped: their late turn/completed ends nothing (T3 Code: CodexAdapterV2.ts, activeTurns). The newest 100: one whose
+    end never comes isn't kept for the session's life.
+  */
   private stale = new Set<string>();
+  private staleAdd(turnId: string) {
+    this.stale.add(turnId);
+    if (this.stale.size > 100) this.stale.delete(this.stale.values().next().value!);
+  }
   /** This turn's failure, said once when the turn ends (Codex sends it as an error, then again with the turn). */
   private failure: { message?: string; codexErrorInfo?: unknown } | null = null;
   /** The thread it was to resume and couldn't: said once, on a turn that goes on, so the runtime sends the conversation so far. */
@@ -361,14 +381,30 @@ export class CodexServerSession implements ProviderSession {
     this.o = o;
     this.thread = o.resume;
     this.server = new CodexServer(o.env, o.cwd, o.config);
-    this.server.onNotify = (method, params) => this.onNotify(method, params);
+    this.server.onNotify = (method, params) => {
+      try {
+        this.onNotify(method, params);
+      } catch (e) {
+        // A turn's end that couldn't be handled (a sink that threw, a bug for an odd item) still ends it, as failed, with the
+        // reason, rather than leaving it running until Stop. Another turn's end ends nothing here, as onNotify has it.
+        const id = (params.turn as Json | undefined)?.id;
+        const ours = !params.threadId || !this.thread || params.threadId === this.thread;
+        if (method === "turn/completed" && ours && this.done && (!id || !this.turnId || id === this.turnId)) this.done(e instanceof Error ? e : new Error(String(e)));
+        else throw e;
+      }
+    };
     this.server.onRequest = (method, params) => this.onRequest(method, params);
     this.server.onExit = (message) => {
       this.opened = false;
       // Its agents went with it.
       this.endAgents("failed");
       // Said here for a turn under way; one still opening fails with the same words itself, which would say them twice.
-      if (this.sink && this.done && !this.starting) this.sink.error(message);
+      // A sink that throws saying it doesn't keep the turn from ending, nor throws out of the process's close.
+      try {
+        if (this.sink && this.done && !this.starting) this.sink.error(message);
+      } catch (e) {
+        console.error("Codex's app server ended, and that couldn't be said:", e);
+      }
       this.done?.();
     };
   }
@@ -386,7 +422,7 @@ export class CodexServerSession implements ProviderSession {
     // A Liner Security scan reads the project and nothing else: no web search either (OpenOptions.scan; Codex's own setting).
     const inside = this.o.scan ? { web_search: "disabled" } : {};
     const config = Object.keys(mcp).length || this.o.config || this.o.sidekick || this.o.scan ? { ...mcp, ...alone, ...inside, ...this.o.config } : null;
-    const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: this.o.model && this.o.model !== "default" ? this.o.model : null, developerInstructions: this.o.soul || null, config };
+    const common = { cwd: this.o.cwd, approvalPolicy: p.approval, sandbox: p.sandbox, model: codexModel(this.o.model), developerInstructions: this.o.soul || null, config };
     let r: Json | null = null;
     if (this.thread) {
       // Only the thread's settings: its turns are already on the timeline (T3 Code: CodexAdapterV2.ts, resumeThread).
@@ -426,7 +462,7 @@ export class CodexServerSession implements ProviderSession {
     const stop = () => {
       this.stopping = true;
       if (this.thread && this.turnId) {
-        this.stale.add(this.turnId);
+        this.staleAdd(this.turnId);
         void this.server.request("turn/interrupt", { threadId: this.thread, turnId: this.turnId }).catch(() => {});
       }
       // Stop reaches everything this turn set going: the subagents' turns and the commands running, its own
@@ -452,10 +488,12 @@ export class CodexServerSession implements ProviderSession {
         throw new ResumeFailed(`Codex couldn't resume its thread ${lost}.`);
       }
       const p = POLICY[this.o.access];
-      const effort = this.o.effort && !/^ultra(code|think)$/.test(this.o.effort) ? this.o.effort : null;
-      const finished = new Promise<void>((resolve) => {
-        this.done = resolve;
+      const effort = codexEffort(this.o.effort);
+      const finished = new Promise<void>((resolve, reject) => {
+        this.done = (e) => (e ? reject(e) : resolve());
       });
+      // Ended as failed before it's waited on (while its start is still unanswered): not an unhandled rejection meanwhile.
+      finished.catch(() => {});
       this.starting = true;
       try {
         // `/compact` is the Codex CLI's own command, not words for the model: app-server compacts on request.
@@ -463,7 +501,7 @@ export class CodexServerSession implements ProviderSession {
           this.compacting = true;
           if (!(await Promise.race([this.server.request("thread/compact/start", { threadId: this.thread }), aborted]))) return;
         } else {
-          const model = this.o.model && this.o.model !== "default" ? this.o.model : null;
+          const model = codexModel(this.o.model);
           this.early = new Map();
           const start = this.server.request("turn/start", {
             threadId: this.thread,
@@ -473,7 +511,7 @@ export class CodexServerSession implements ProviderSession {
             cwd: this.o.cwd,
             approvalPolicy: p.approval,
             sandboxPolicy: sandboxPolicy(p.sandbox, this.o.cwd),
-            model: this.o.model && this.o.model !== "default" ? this.o.model : null,
+            model,
             effort,
           });
           const r = await Promise.race([start, aborted]);
@@ -483,7 +521,7 @@ export class CodexServerSession implements ProviderSession {
             const threadId = this.thread;
             void start.then((x) => {
               const turnId = String((x.turn as Json | undefined)?.id ?? "");
-              this.stale.add(turnId);
+              this.staleAdd(turnId);
               return this.server.request("turn/interrupt", { threadId, turnId });
             }).catch(() => {});
             return;
@@ -682,7 +720,9 @@ export class CodexServerSession implements ProviderSession {
       this.running.delete(String(item.id));
     }
     // An approval for a subagent's edit comes through this session, so its files are needed here too.
-    if ((method === "item/started" || method === "item/completed") && item?.type === "fileChange") this.changes.set(String(item.id), this.pathsOf(item));
+    // Kept only until the item ends: its approval comes before that, never after.
+    if (method === "item/started" && item?.type === "fileChange") this.changes.set(String(item.id), this.pathsOf(item));
+    else if (method === "item/completed" && item?.type === "fileChange") this.changes.delete(String(item.id));
     if (method === "item/completed" && item?.type === "collabAgentToolCall" && item.tool === "spawnAgent" && own)
       for (const kid of (item.receiverThreadIds as string[] | undefined) ?? []) if (!this.kids.has(kid)) this.kids.set(kid, { prompt: short(item.prompt, 200), said: "" });
     if (!threadId || own) return;
@@ -753,10 +793,12 @@ export class CodexServerSession implements ProviderSession {
       case "item/commandExecution/outputDelta": {
         const out = this.outputs.get(String(p.itemId));
         if (!out) return;
-        out.text = (out.text + String(p.delta ?? "")).slice(-20000);
+        // Cut back only at twice what the row shows, not copied again on every small delta (as acp.ts's terminal does).
+        out.text += String(p.delta ?? "");
+        if (out.text.length > 40000) out.text = out.text.slice(-20000);
         out.timer ??= setTimeout(() => {
           out.timer = undefined;
-          if (this.outputs.get(String(p.itemId)) === out && this.sink === sink) sink.tool({ key: String(p.itemId), tool: "shell", toolKind: "exec", title: out.title, input: out.input, output: out.text, status: "running" });
+          if (this.outputs.get(String(p.itemId)) === out && this.sink === sink) sink.tool({ key: String(p.itemId), tool: "shell", toolKind: "exec", title: out.title, input: out.input, output: out.text.slice(-20000), status: "running" });
         }, 250);
         return;
       }
@@ -867,18 +909,18 @@ export class CodexServerSession implements ProviderSession {
       }
       case "fileChange": {
         const paths = this.pathsOf(it);
-        sink.tool({ key: id, tool: "apply_patch", toolKind: "edit", title: `Edit ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ` and ${paths.length - 3} more` : ""}`, path: paths[0], status: !done ? "running" : it.status === "failed" || it.status === "declined" ? "failed" : "done" });
+        sink.tool({ key: id, tool: "apply_patch", toolKind: "edit", title: editTitle(paths), path: paths[0], status: !done ? "running" : it.status === "failed" || it.status === "declined" ? "failed" : "done" });
         return;
       }
       case "mcpToolCall": {
         const result = it.result as { content?: { type?: string; text?: string }[] } | null | undefined;
         const said = (result?.content ?? []).map((c) => (c.type === "text" ? c.text : c.type === "image" ? "(an image)" : "")).filter(Boolean).join("\n");
         const output = (it.error as { message?: string } | null | undefined)?.message ?? (said || undefined);
-        sink.tool({ key: id, tool: `${it.server}.${it.tool}`, toolKind: "other", title: it.server === "liner" ? linerTitle(String(it.tool), it.arguments) : `${it.server} · ${it.tool}`, output: output?.slice(0, 20000), status: !done ? "running" : it.status === "failed" ? "failed" : "done" });
+        sink.tool({ key: id, tool: `${it.server}.${it.tool}`, toolKind: "other", title: mcpTitle(it.server, it.tool, it.arguments), output: output?.slice(0, 20000), status: !done ? "running" : it.status === "failed" ? "failed" : "done" });
         return;
       }
       case "webSearch":
-        sink.tool({ key: id, tool: "web_search", toolKind: "web", title: `Search the web for ${short(it.query, 50)}`, status: done ? "done" : "running" });
+        sink.tool({ key: id, tool: "web_search", toolKind: "web", title: webTitle(it.query), status: done ? "done" : "running" });
         return;
       case "collabAgentToolCall":
         this.collab(it, sink);
@@ -1070,12 +1112,12 @@ export class CodexServerSession implements ProviderSession {
         return { title: `Run ${short(unwrap(String(it.command ?? "")), 60)}`, toolKind: "exec", status };
       case "fileChange": {
         const paths = this.pathsOf(it);
-        return { title: `Edit ${paths.slice(0, 2).join(", ")}${paths.length > 2 ? ` and ${paths.length - 2} more` : ""}`, toolKind: "edit", status, ...(paths[0] ? { path: paths[0] } : {}) };
+        return { title: editTitle(paths), toolKind: "edit", status, ...(paths[0] ? { path: paths[0] } : {}) };
       }
       case "mcpToolCall":
-        return { title: it.server === "liner" ? linerTitle(String(it.tool), it.arguments) : `${it.server} · ${it.tool}`, toolKind: "other", status };
+        return { title: mcpTitle(it.server, it.tool, it.arguments), toolKind: "other", status };
       case "webSearch":
-        return { title: `Search the web for ${short(it.query, 50)}`, toolKind: "web", status };
+        return { title: webTitle(it.query), toolKind: "web", status };
       default:
         return null;
     }

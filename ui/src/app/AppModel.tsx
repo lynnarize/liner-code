@@ -25,7 +25,7 @@ const ears = new Set<() => void>();
 const tell = () => ears.forEach((f) => f());
 
 /** Whether a model can answer an app now: its tool is ready, lists it, and asks it with no tools. */
-export function appModelReady(ref: string | undefined, providers: ProviderInfo[], s: Pick<Settings, "endpoints" | "voucher">) {
+function appModelReady(ref: string | undefined, providers: ProviderInfo[], s: Pick<Settings, "endpoints" | "voucher">) {
   if (!ref) return false;
   const { provider, model } = splitModel(ref);
   const p = providers.find((x) => x.id === provider);

@@ -19,7 +19,7 @@ import { Launcher } from "./launch.ts";
 import { Watch } from "./watch.ts";
 import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
-import { designCtx } from "./canvas.ts";
+import { designCtx, resetWatches, turnReady } from "./canvas.ts";
 import { Security } from "./security.ts";
 import { Addons } from "./addons.ts";
 import { Offers } from "./offers.ts";
@@ -102,6 +102,8 @@ const design = designCtx(store, {
   ask: (id, ask) => runtime.askLiner(id, ask),
 });
 tools.design = design;
+// A turn's prompt waits for its designs' "as it was" copies when the disk can't clone them at once (canvas.ts turnReady).
+runtime.beforeTurn = (id, turn) => turnReady(design, id, turn);
 // Liner Security: its findings store and RPC; api.ts lends it the rest (bind), and the agent tools answer a scan's calls through it.
 const security = new Security(store, env);
 tools.security = security;
@@ -176,6 +178,8 @@ const server = await startServer({
   outside: (key, tool, args) => (outside.now?.allows(key) ? outside.now.call(tool, args) : null),
   check: { page: (t) => tools.checkPage(t), call: (t, b) => tools.checkCall(t, b), report: (t, b) => tools.checkReport(t, b as never), settle: (t) => tools.checkSettle(t) },
   dsh: (token, rest, search, req, res) => dsh.serve(token, rest, search, req, res),
+  // No window left: every canvas and design watch goes, and the windows that come back watch again as they open their designs.
+  alone: () => (resetWatches(design), designs.unwatchAll()),
 });
 tools.url = `http://127.0.0.1:${server.port}`;
 outside.now.url = tools.url;

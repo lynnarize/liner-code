@@ -12,16 +12,16 @@ import { DESIGNS_FOLDER } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "../bridge";
 import { getState, rpc, useEngine } from "../engine";
-import { closeTab, getTabs, HOME_TAB, moveTab, showTab, tabKey, useTabs, type DesignTab } from "../face";
+import { closeTab, getTabs, HOME_TAB, moveTab, showTab, subscribeTabs, tabKey, useTabs, type DesignTab } from "../face";
 import { I, N } from "../icons";
-import { plural } from "../model";
+import { clock, plural } from "../model";
 import { keys } from "../os";
 import { ProjectChooser } from "../Projects";
 import { SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "../SideList";
 import { Pop, Row, Sep } from "../ui";
 import { D } from "./Rail";
 import { dropIfUntouched, newDesign, sessionOf } from "./session";
-import { design, useDesign } from "./store";
+import { design, getDesign, useDesign } from "./store";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 
@@ -33,8 +33,13 @@ export function close(key: string) {
   const tab = getTabs().list.find((t) => tabKey(t) === key);
   closeTab(key);
   design.forget(key);
+  frames.delete(key);
   if (tab?.fresh) void dropIfUntouched(tab);
 }
+
+// The last design tab closed (here, by the shell for a project that went, or in another window): the store lets its file go,
+// so no watch, build check or hidden check runs on for a design nothing shows.
+subscribeTabs(() => void (!getTabs().list.length && getDesign().file && design.close()));
 
 const nameOf = (t: DesignTab) => t.title ?? "Design";
 /** How many open designs the sidebar lists before the rest fold into one "N more" row. */
@@ -87,7 +92,9 @@ const isIds = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => 
 /** Designs on their own share one folder in the list, whichever project each is. */
 const OWN = "own";
 const VIEW_KEY = "ld:sb-list";
-const STATUS: [string, SideState][] = [["Needs you", "needs"], ["Drawing", "working"], ["At rest", "done"]];
+/** By status's groups, in order, and the marks each holds: Needs you is waiting on you, a problem or its plan's limit, as Code's is. */
+const STATUS: [string, SideState[]][] = [["Needs you", ["needs", "error", "limited"]], ["Drawing", ["working"]], ["At rest", ["done"]]];
+const asks = (st: SideState) => st === "needs" || st === "error" || st === "limited";
 
 /** Whether "N more" is opened: one choice for the window, so ⌃Tab walks what the list shows. */
 let showAll = false;
@@ -98,7 +105,7 @@ const useShowAll = () => useSyncExternalStore((f) => (allFns.add(f), () => void 
 /** How a design's session stands, as its row's mark shows it. */
 const standOf = (t: DesignTab, threads: Thread[]) => {
   const s = sessionOf(t, threads);
-  const state: SideState = s?.status === "running" ? "working" : s?.status === "waiting" ? "needs" : "done";
+  const state: SideState = s?.status === "running" ? "working" : s?.status === "waiting" ? "needs" : s?.status === "error" ? "error" : s?.status === "limited" ? "limited" : "done";
   return { s, state };
 };
 
@@ -127,7 +134,7 @@ function laidOut(list: DesignTab[], at: string, all: boolean, view: View, thread
     f.open.push(t);
     if (shown.includes(t)) f.tabs.push(t);
   }
-  const rank = (t: DesignTab) => (view === "folder" ? folders.findIndex((f) => f.id === folderOf(t)) : STATUS.findIndex(([, st]) => st === standOf(t, threads).state));
+  const rank = (t: DesignTab) => (view === "folder" ? folders.findIndex((f) => f.id === folderOf(t)) : STATUS.findIndex(([, sts]) => sts.includes(standOf(t, threads).state)));
   const listed = (ts: DesignTab[]) => ts.map((t, i) => [rank(t), i, t] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , t]) => tabKey(t));
   return { here, folderOf, folds, shown, rest, folders, order: [...listed(shown), ...listed(rest)] };
 }
@@ -146,14 +153,16 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
   const { list, at } = useTabs();
   const threads = useEngine((s) => s.threads);
   const projects = useEngine((s) => s.projects);
-  const file = useDesign((s) => s.file);
+  // Only which file is open and how many frames it has: a frame dragged on the canvas draws nothing here.
+  const fileId = useDesign((s) => s.file?.id);
+  const fileFrames = useDesign((s) => s.file?.frames.length);
   useFramesRev();
   const all = useShowAll();
   const [view, setView] = useKept<View>(VIEW_KEY, "folder", isView);
   const [shut, setShut] = useKept<string[]>("ld:sb-shut", [], isIds);
   const { here, folderOf, folds, shown, rest, folders } = laidOut(list, at, all, view, threads, projects);
   // The open design's own file says how many frames it has now.
-  useEffect(() => void (here && file?.id === here.file && knowFrames(tabKey(here), file.frames.length)), [here, file]);
+  useEffect(() => void (here && fileFrames !== undefined && fileId === here.file && knowFrames(tabKey(here), fileFrames)), [here, fileId, fileFrames]);
   // A design opened (or come to with ⌃Tab) in a folded folder: the folder opens to show it.
   const hereFolder = here ? folderOf(here) : undefined;
   useEffect(() => void (view === "folder" && hereFolder && shut.includes(hereFolder) && setShut(shut.filter((x) => x !== hereFolder))), [at, hereFolder]);
@@ -165,7 +174,8 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
     const name = nameOf(t);
     const { s, state } = stand(t);
     const n = frames.get(k);
-    const sub = state === "working" ? (s?.doing?.text ?? "Drawing") : state === "needs" ? "Waits for your answer" : n === undefined ? undefined : n ? plural(n, "frame") : "No frames yet";
+    // How it ended, worded as Code's rows word it: a problem, its plan's limit (and when it's back).
+    const sub = state === "working" ? s?.doing?.text || "Drawing" : state === "needs" ? "Waits for your answer" : state === "error" ? "Ran into a problem" : state === "limited" ? `Hit its plan's limit${s?.limit?.until ? `, back at ${clock(s.limit.until)}` : ""}` : n === undefined ? undefined : n ? plural(n, "frame") : "No frames yet";
     return (
       <SideRow
         key={k}
@@ -174,7 +184,7 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
         mark={<SideMark state={state} tint={state === "working" ? "var(--ld-lead)" : undefined} label={state === "working" ? "An agent is drawing here" : state === "done" ? "At rest" : undefined} />}
         title={name}
         sub={sub}
-        tone={state === "needs" ? "warn" : undefined}
+        tone={state === "needs" || state === "limited" ? "warn" : state === "error" ? "danger" : undefined}
         // A middle-click closes it, as a browser's tab.
         onMouseDown={(e) => e.button === 1 && e.preventDefault()}
         onAuxClick={(e) => e.button === 1 && (e.preventDefault(), close(k))}
@@ -197,7 +207,7 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
   };
 
   // By status: those waiting on you, those being drawn, the rest; each in the order they were opened. A label counts all of its, "N more" too, as a folder does.
-  const by = (st: SideState) => ({ ts: shown.filter((t) => stand(t).state === st), n: list.filter((t) => stand(t).state === st).length });
+  const by = (sts: SideState[]) => ({ ts: shown.filter((t) => sts.includes(stand(t).state)), n: list.filter((t) => sts.includes(stand(t).state)).length });
   /** A run of rows is a tablist of its own (named for its folder or group): every child of it is a tab row. */
   const tabs = (name: string, ts: DesignTab[]) => (
     <div className="ld-open-tabs" role="tablist" aria-label={`Open designs ${name}`} aria-orientation="vertical">
@@ -242,7 +252,7 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
                 count={f.open.length}
                 open={!shut.includes(f.id)}
                 onToggle={() => setShut(shut.includes(f.id) ? shut.filter((x) => x !== f.id) : [...shut, f.id])}
-                needs={f.open.some((t) => stand(t).state === "needs")}
+                needs={f.open.some((t) => asks(stand(t).state))}
                 working={f.open.some((t) => stand(t).state === "working")}
                 tint="var(--ld-lead)"
                 icon={f.id === OWN ? <I.edit size={16} /> : undefined}
@@ -252,8 +262,8 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
               </SideFolder>
             ))}
           {view === "status" &&
-            STATUS.map(([name, st]) => {
-              const { ts, n } = by(st);
+            STATUS.map(([name, sts]) => {
+              const { ts, n } = by(sts);
               if (!ts.length) return null;
               return (
                 <section key={name} className="ld-open-sec" aria-label={name}>
@@ -265,7 +275,7 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
           {rest.length > 0 && (
             <button type="button" className="ld-open-more l-focus" onClick={() => setShowAll(true)} title={rest.map(nameOf).join(", ")}>
               <span className="ld-open-more-m" aria-hidden>
-                {rest.some((t) => stand(t).state === "needs") ? <SideMark state="needs" /> : rest.some((t) => stand(t).state === "working") ? <SideMark state="working" tint="var(--ld-lead)" label="An agent is drawing in one of them" /> : <I.more size={14} />}
+                {rest.some((t) => asks(stand(t).state)) ? <SideMark state="needs" /> : rest.some((t) => stand(t).state === "working") ? <SideMark state="working" tint="var(--ld-lead)" label="An agent is drawing in one of them" /> : <I.more size={14} />}
               </span>
               <span className="ld-ell">
                 <span className="ld-open-n">{rest.length} more</span> {rest.slice(0, 2).map(nameOf).join(", ")}

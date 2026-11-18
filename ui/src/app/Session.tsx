@@ -6,13 +6,13 @@
   with a hairline from the paper's top to its bottom between them that is the resize grip. The full
   canvas gives the dock the whole paper (on the diff, that's the full-width Review).
 */
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject, type ReactNode } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject, type ReactNode } from "react";
 import { isPair, makerOf, reviewOn, type Item, type Project, type ProjectScript, type Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
 import { MarkdownLinks, type FileLink } from "@liner/pro/ai-kit/markdown";
 import { prefersReducedMotion } from "@liner/lib/spring";
-import { getState, isCheckpoint, isPrompt, loadItems, rpc, useEngine, useItems, useItemsWhere } from "./engine";
+import { EngineAway, getState, isCheckpoint, isPrompt, loadItems, rpc, useEngine, useItemsWhere } from "./engine";
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
 import { AskDock, useDockAsk } from "./Ask";
@@ -24,7 +24,7 @@ import { ModelPicker } from "./Models";
 import { myPicks, reviewerFor, savePick } from "./Agentic";
 import { Panel } from "./Panel";
 import { FindBar, onComposerInsert, toComposer } from "./Find";
-import { revealFile } from "./Files";
+import { revealFile } from "./reveal";
 import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches } from "./keymap";
 import { entering, readLook } from "./look";
@@ -94,8 +94,10 @@ const openedPreviews = new Set<string>();
   The session reads only the parts of the timeline it shows (its checkpoints, your messages, its
   subagents, how many items there are), so a streaming reply redraws the timeline and not the
   composer, the header and the rest; the timeline and the panel read the whole of it themselves.
+  Memoised: App hands it callbacks that keep one identity, so another session's news (its doing
+  line, its status) redraws that session's row and not this one.
 */
-export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession, onRoutine, onBeside, onCloseSide, keys = true, wall }: Props) {
+export const Session = memo(function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession, onRoutine, onBeside, onCloseSide, keys = true, wall }: Props) {
   // Beside another session only the side you're in takes the window's keys.
   const keysOn = useRef(keys);
   keysOn.current = keys;
@@ -166,13 +168,24 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     return () => ro.disconnect();
   }, []);
 
-  // Opening a session loads its timeline; what was there already renders without animating.
+  // Opening a session loads its timeline (one already here and kept up is shown as it is); what was there already renders without animating.
+  // One that didn't come because the engine is away comes with the reconnect, which fetches it again; one it refused says why, with Try again.
+  const [failed, setFailed] = useState<string | null>(null);
+  const load = (again = false) => {
+    setFailed(null);
+    void loadItems(thread.id, again).catch((e: unknown) => !(e instanceof EngineAway) && setFailed(e instanceof Error ? e.message : String(e)));
+  };
   useEffect(() => {
     seen.current = null;
     setFocus(null);
-    // One that didn't come (the engine restarting) comes with the reconnect, which fetches it again.
-    void loadItems(thread.id).catch(() => {});
+    load();
   }, [thread.id]);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (loaded) return;
+    const t = window.setTimeout(() => setSlow(true), 400);
+    return () => clearTimeout(t);
+  }, [loaded]);
   if (seen.current === null && count) seen.current = new Set((getState().items[thread.id] ?? []).map((x) => x.id));
 
   // Back where you were: once the timeline is there, before it paints. At the end (or working) it follows as before.
@@ -648,6 +661,19 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
                     <b>A new session with {pair?.name ?? coder.name}</b>
                     <span>{pair ? `${pair.lead} leads and hands ${pair.side} the work it can spell out. ` : ""}Say what you need below. Anything that needs you will wait here as a card.</span>
                   </div>
+                ) : !loaded && failed ? (
+                  <div className="lc-tl-wait" role="alert">
+                    <b>Couldn't open this session</b>
+                    <span>{failed}</span>
+                    <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => load(true)}>
+                      Try again
+                    </button>
+                  </div>
+                ) : !loaded ? (
+                  // Still coming: a word only after a moment, so a quick open shows nothing in between.
+                  <div className="lc-tl-wait" role="status">
+                    {slow && <span className="l-shimmer">Opening the session</span>}
+                  </div>
                 ) : (
                   <Timeline threadId={thread.id} docked seen={seen.current ?? NONE_SEEN} onReview={review} reviewing={dock.open && dock.panes.some((p) => p.tab === "changes") ? focus : null} onGrow={follow} />
                 )}
@@ -777,7 +803,7 @@ export function Session({ thread, sidebar, onSidebar, onNewAgent, onOpenSession,
     </SideKeys.Provider>
     </MarkdownLinks.Provider>
   );
-}
+});
 
 /*
   The rail: the session's surfaces as a column of icons at the paper's right edge, there whether
@@ -841,10 +867,9 @@ function ToCommit({ files, lines, onView }: { files: number; lines: { added: num
   );
 }
 
-/** The dock's surfaces read the whole timeline (a reply's words too), so the panel subscribes to it on its own. */
-function SessionPanel(props: Omit<ComponentProps<typeof Panel>, "items">) {
-  const items = useItems(props.thread.id);
-  return <Panel {...props} items={items} />;
+/** The dock: each of its surfaces reads only the part of the timeline it shows (Panel.tsx), so a reply's words don't redraw it. */
+function SessionPanel(props: ComponentProps<typeof Panel>) {
+  return <Panel {...props} />;
 }
 
 /** useStickToBottom lets go when you scroll up; a scroll of nothing upward tells it so when the session moves you itself. */

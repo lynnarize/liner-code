@@ -39,7 +39,7 @@ function buildAddon() {
   if (existsSync(out) && statSync(out).mtimeMs > statSync(src).mtimeMs) return;
   const headers = [process.env.LINER_NODE_HEADERS, join(dirname(dirname(realpathSync(process.execPath))), "include/node")].find((d) => d && existsSync(join(d, "node_api.h")));
   if (!headers) {
-    console.warn("! No Node-API headers beside this Node (set LINER_NODE_HEADERS): the shell runs without its Mac addon, so Vibrancy covers the whole window.");
+    console.warn("! No Node-API headers beside this Node (set LINER_NODE_HEADERS): the shell runs without its Mac addon, so the window stays solid and the Desktop (see-through) background is not offered.");
     return;
   }
   execFileSync("xcrun", ["clang++", "-std=c++20", "-ObjC++", "-fobjc-arc", "-O2", "-bundle", "-undefined", "dynamic_lookup", "-mmacosx-version-min=12.0", "-DNAPI_VERSION=8", `-I${headers}`, "-framework", "AppKit", src, "-o", out], { stdio: "inherit" });

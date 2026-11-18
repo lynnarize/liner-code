@@ -21,9 +21,9 @@ import { findingKey, noSeverities, sealable, SEVERITIES, SPECIALIST_MODELS } fro
 import type { DismissReason, SecurityFinding, SecurityFindingAdded, FindingEvent, FindingState, FreeCheckRun, NewFinding, ScanRecord, SecurityChange, SecurityOverview, SecurityProject, Severity, SeverityCounts, SecondLookState, SpecialistSource, ThreatArea, ThreatModel } from "../../contracts/src/index.ts";
 import type { Runtime } from "./runtime.ts";
 import { uid, writeAtomic, type Store } from "./store.ts";
-import { runChecks } from "./security-checks.ts";
 import { bringGitHub, bringSarif, githubReach } from "./security-bringin.ts";
 import { askAbout, fixFinding, scanOptions, startScan, stopScan } from "./security-scan.ts";
+import { outside } from "./exec.ts";
 
 export type SecurityMethod = Extract<RpcMethod, `security.${string}`>;
 type SecurityRpc = { [K in SecurityMethod]: (p: RpcParams<K>) => Promise<RpcResult<K>> | RpcResult<K> };
@@ -103,6 +103,18 @@ function migrated(f: SecurityFinding): SecurityFinding {
   return { ...f, rule: m[1], ...(alert ? { instance: `gh:${alert}` } : {}) };
 }
 const rank = (s: Severity) => SEVERITIES.indexOf(s);
+/** A scan's counts with what adding these findings did folded in. */
+function counted(was: ScanRecord["counts"], added: SecurityFindingAdded[]): ScanRecord["counts"] {
+  const c = { ...was, bySeverity: { ...was.bySeverity } };
+  for (const a of added) {
+    c.found++;
+    if (a.outcome === "new" || a.outcome === "reopened") c.fresh++;
+    else if (a.outcome === "already-open") c.already++;
+    else c.leftOut++;
+    if (a.outcome !== "dismissed-before") c.bySeverity[a.finding.severity]++;
+  }
+  return c;
+}
 /** Worst first, then newest. */
 export const worstFirst = (a: SecurityFinding, b: SecurityFinding) => rank(a.severity) - rank(b.severity) || b.foundAt - a.foundAt;
 /** Local midnight of a time. */
@@ -124,11 +136,16 @@ export function stateAt(f: SecurityFinding, t: number): FindingState | null {
   let s: FindingState | null = null;
   for (const e of [...f.activity].sort((a, b) => a.at - b.at)) {
     if (e.at > t) break;
-    if (e.kind === "found" || e.kind === "reopened") s = "open";
-    else if (e.kind === "raised-again" && s === "fixed") s = "open";
-    else if (e.kind === "dismissed") s = "dismissed";
-    else if (e.kind === "fixed") s = "fixed";
+    s = stepState(s, e);
   }
+  return s;
+}
+/** A finding's state after one more event of its activity (stateAt, one step). */
+function stepState(s: FindingState | null, e: FindingEvent): FindingState | null {
+  if (e.kind === "found" || e.kind === "reopened") return "open";
+  if (e.kind === "raised-again" && s === "fixed") return "open";
+  if (e.kind === "dismissed") return "dismissed";
+  if (e.kind === "fixed") return "fixed";
   return s;
 }
 
@@ -183,6 +200,9 @@ export function specialists(providers: ProviderInfo[], settings: Pick<Settings, 
   }
   return out.filter((s) => s.sealable);
 }
+
+/** What put() looks a new finding up by (Security.indexOf). */
+type FindingIndex = { byKey: Map<string, SecurityFinding>; byBare: Map<string, SecurityFinding[]>; at: Map<SecurityFinding, number>; dismissed: Map<string, { x: ProjectData["dismissed"][number]; i: number }> };
 
 export class Security {
   readonly store: Store;
@@ -325,16 +345,29 @@ export class Security {
     new facts merge in ("already-open"). Dismissed before, by you: left out, and it stays dismissed ("dismissed-before").
     Fixed, then found again: open again ("reopened"). Doesn't tell the face (`changed` once after a batch).
   */
-  add(projectId: string, n: NewFinding, by?: string): SecurityFindingAdded {
+  add(projectId: string, n: NewFinding, by?: string, scanId?: string): SecurityFindingAdded {
     const d = this.load(projectId);
-    const out = this.put(d, projectId, n, by);
-    if (out.outcome !== "dismissed-before") this.save(projectId);
+    const out = this.put(d, projectId, n, by, this.indexOf(d, projectId));
+    // Counted on its scan in the same write (an agent's report): one write of the record, not one for the finding and one for the count.
+    const i = scanId ? d.scans.findIndex((x) => x.id === scanId) : -1;
+    if (i >= 0) d.scans[i] = { ...d.scans[i], counts: counted(d.scans[i].counts, [out]) };
+    if (out.outcome !== "dismissed-before" || i >= 0) this.save(projectId);
+    if (i >= 0) this.emit({ type: "security.scan", scan: d.scans[i] });
+    else if (scanId) {
+      try {
+        this.countOn(scanId, out);
+      } catch {
+        // the scan's record went between: the finding stays, uncounted
+      }
+    }
     return out;
   }
   /** Adds a batch as add() does each, saving once (an import, a run of the free checks). Doesn't tell the face either. */
   addMany(projectId: string, list: NewFinding[], by?: string): SecurityFindingAdded[] {
     const d = this.load(projectId);
-    const out = list.map((n) => this.put(d, projectId, n, by));
+    // The stored findings indexed once for the batch, not looked through (keys made again) for every result that comes in.
+    const ix = this.indexOf(d, projectId);
+    const out = list.map((n) => this.put(d, projectId, n, by, ix));
     if (out.some((a) => a.outcome !== "dismissed-before")) this.save(projectId);
     return out;
   }
@@ -355,15 +388,34 @@ export class Security {
   private keyFree(d: ProjectData, id: string, want: string, had: string) {
     return d.findings.some((x) => x.id !== id && x.key === want) ? had : want;
   }
-  private put(d: ProjectData, projectId: string, n: NewFinding, by?: string): SecurityFindingAdded {
+  /** A project's findings and dismissals by the keys put() looks them up by, each in the order the record holds them (first one wins). */
+  private indexOf(d: ProjectData, projectId: string): FindingIndex {
+    const ix: FindingIndex = { byKey: new Map(), byBare: new Map(), at: new Map(), dismissed: new Map() };
+    d.findings.forEach((f, i) => {
+      ix.at.set(f, i);
+      if (!ix.byKey.has(f.key)) ix.byKey.set(f.key, f);
+      if (f.instance) {
+        const b = findingKey(projectId, { ...f, instance: undefined });
+        ix.byBare.set(b, [...(ix.byBare.get(b) ?? []), f]);
+      }
+    });
+    d.dismissed.forEach((x, i) => {
+      if (!ix.dismissed.has(x.key)) ix.dismissed.set(x.key, { x, i });
+    });
+    return ix;
+  }
+  private put(d: ProjectData, projectId: string, n: NewFinding, by: string | undefined, ix: FindingIndex): SecurityFindingAdded {
     const key = findingKey(projectId, n);
     const now = Date.now();
     // Keys from before instances (and sources that give none) still meet: one with an instance matches a record of the same
     // key without one, and one without matches the single record of its key that has one.
     const bare = n.instance ? findingKey(projectId, { ...n, instance: undefined }) : undefined;
-    const instanced = n.instance ? [] : d.findings.filter((f) => f.instance && findingKey(projectId, { ...f, instance: undefined }) === key);
-    const had = d.findings.find((f) => f.key === key) ?? (bare ? d.findings.find((f) => f.key === bare) : undefined) ?? (instanced.length === 1 ? instanced[0] : undefined);
-    const remembered = d.dismissed.find((x) => x.key === bareKey(n) || (n.instance !== undefined && x.key === bareKey({ ...n, instance: undefined })));
+    const instanced = n.instance ? [] : (ix.byBare.get(key) ?? []);
+    const had = ix.byKey.get(key) ?? (bare ? ix.byKey.get(bare) : undefined) ?? (instanced.length === 1 ? instanced[0] : undefined);
+    // The first dismissal in the record under either key, as a look through it in order would find.
+    const one = ix.dismissed.get(bareKey(n));
+    const two = n.instance !== undefined ? ix.dismissed.get(bareKey({ ...n, instance: undefined })) : undefined;
+    const remembered = (one && two ? (one.i <= two.i ? one : two) : (one ?? two))?.x;
     if (had?.state === "dismissed" || (!had && remembered)) return { finding: had ?? this.ghost(projectId, n, key, remembered!, now), outcome: "dismissed-before" };
     if (had) {
       const reopen = had.state === "fixed";
@@ -382,7 +434,13 @@ export class Security {
         activity: reopen || !had.sources.includes(n.source) || (n.scan && !had.activity.some((e) => e.scan === n.scan)) ? [...had.activity, { at: now, kind: "raised-again", text: reopen ? "Found again after it was fixed" : `Raised again by ${n.source === "agent" ? "a scan" : n.source === "checks" ? "the free checks" : n.source === "github" ? "GitHub" : "a SARIF report"}`, ...(by ? { by } : {}), ...(n.scan ? { scan: n.scan } : {}) }] : had.activity,
         updatedAt: now,
       };
-      d.findings[d.findings.indexOf(had)] = next;
+      const i = ix.at.get(had)!;
+      d.findings[i] = next;
+      ix.at.delete(had);
+      ix.at.set(next, i);
+      if (ix.byKey.get(had.key) === had) ix.byKey.set(had.key, next);
+      const list = had.instance ? ix.byBare.get(findingKey(projectId, { ...had, instance: undefined })) : undefined;
+      if (list?.includes(had)) list[list.indexOf(had)] = next;
       return { finding: next, outcome: reopen ? "reopened" : "already-open" };
     }
     const f: SecurityFinding = {
@@ -409,6 +467,12 @@ export class Security {
       updatedAt: now,
     };
     d.findings.push(f);
+    ix.at.set(f, d.findings.length - 1);
+    if (!ix.byKey.has(f.key)) ix.byKey.set(f.key, f);
+    if (f.instance) {
+      const b = findingKey(projectId, { ...f, instance: undefined });
+      ix.byBare.set(b, [...(ix.byBare.get(b) ?? []), f]);
+    }
     this.where.set(f.id, projectId);
     return { finding: f, outcome: "new" };
   }
@@ -482,14 +546,12 @@ export class Security {
   }
   /** Counts what adding a finding did on its scan. */
   countOn(scanId: string, added: SecurityFindingAdded): ScanRecord {
+    return this.countMany(scanId, [added]);
+  }
+  /** Counts what adding a batch did on its scan, in one write and one security.scan (a run of the free checks). */
+  countMany(scanId: string, added: SecurityFindingAdded[]): ScanRecord {
     const s = this.scan(scanId);
-    const c = { ...s.counts, bySeverity: { ...s.counts.bySeverity } };
-    c.found++;
-    if (added.outcome === "new" || added.outcome === "reopened") c.fresh++;
-    else if (added.outcome === "already-open") c.already++;
-    else c.leftOut++;
-    if (added.outcome !== "dismissed-before") c.bySeverity[added.finding.severity]++;
-    return this.patchScan(scanId, { counts: c });
+    return added.length ? this.patchScan(scanId, { counts: counted(s.counts, added) }) : s;
   }
 
   // The free checks' last run.
@@ -513,7 +575,7 @@ export class Security {
     const root = resolve(this.project(projectId).path);
     const abs = resolve(root, file);
     const rel = relative(root, abs);
-    if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("The threat model is a file inside the project's folder.");
+    if (!rel || outside(rel)) throw new Error("The threat model is a file inside the project's folder.");
     this.load(projectId).modelFile = rel === MODEL_FILE ? undefined : rel;
     this.save(projectId);
   }
@@ -556,19 +618,31 @@ export class Security {
     const dismissedNow = all.filter((f) => f.state === "dismissed" && f.dismissed && inPeriod(f.dismissed.at));
     const dismissReasons: SecurityOverview["dismissReasons"] = {};
     for (const f of dismissedNow) dismissReasons[f.dismissed!.reason] = (dismissReasons[f.dismissed!.reason] ?? 0) + 1;
+    // Each day of the period once, in order: each finding's activity sorted once and replayed forward as the days go (stateAt,
+    // swept), and what happened bucketed by its day, so a year of thousands of findings isn't days × findings × sorts.
+    const dayOf = (t: number) => {
+      const i = Math.floor((t - first) / DAY);
+      return i >= 0 && i < span && t <= Math.min(first + i * DAY + DAY - 1, now) ? i : -1;
+    };
+    const tally = () => new Array<number>(span).fill(0);
+    const [foundBy, fixedBy, dismissedBy, openBy] = [tally(), tally(), tally(), tally()];
+    const scansBy = Array.from({ length: span }, (): string[] => []);
+    for (const s of scans) if (dayOf(s.startedAt) >= 0) scansBy[dayOf(s.startedAt)].push(s.id);
+    for (const f of all) if (dayOf(f.foundAt) >= 0) foundBy[dayOf(f.foundAt)]++;
+    for (const { e } of events) if ((e.kind === "fixed" || e.kind === "dismissed") && dayOf(e.at) >= 0) (e.kind === "fixed" ? fixedBy : dismissedBy)[dayOf(e.at)]++;
+    for (const f of all) {
+      const sorted = [...f.activity].sort((a, b) => a.at - b.at);
+      let k = 0;
+      let st: FindingState | null = null;
+      for (let i = 0; i < span; i++) {
+        const end = Math.min(first + i * DAY + DAY - 1, now);
+        for (; k < sorted.length && sorted[k].at <= end; k++) st = stepState(st, sorted[k]);
+        if (st === "open") openBy[i]++;
+      }
+    }
     const series = Array.from({ length: span }, (_, i) => {
       const at = first + i * DAY;
-      const end = Math.min(at + DAY - 1, now);
-      const within = (t: number) => t >= at && t <= end;
-      return {
-        day: dayName(at),
-        at,
-        open: all.filter((f) => stateAt(f, end) === "open").length,
-        scans: scans.filter((s) => within(s.startedAt)).map((s) => s.id),
-        found: all.filter((f) => within(f.foundAt)).length,
-        fixed: events.filter(({ e }) => e.kind === "fixed" && within(e.at)).length,
-        dismissed: events.filter(({ e }) => e.kind === "dismissed" && within(e.at)).length,
-      };
+      return { day: dayName(at), at, open: openBy[i], scans: scansBy[i], found: foundBy[i], fixed: fixedBy[i], dismissed: dismissedBy[i] };
     });
     const bySeverity = (list: SecurityFinding[]): SeverityCounts => {
       const c = noSeverities();
@@ -649,12 +723,10 @@ export function rpc(x: () => Security): SecurityRpc {
       const all = x().findings(projectId);
       return all.filter((f) => (!state || f.state === state) && (!scan || f.scan === scan || f.activity.some((e) => e.scan === scan))).sort(worstFirst);
     },
-    "security.finding.get": ({ id }) => x().finding(id),
     "security.finding.dismiss": ({ id, reason, note }) => x().dismiss(id, reason, note),
     "security.finding.reopen": ({ id }) => x().reopen(id),
     "security.finding.fix": (p) => fixFinding(x(), p),
     "security.finding.ask": (p) => askAbout(x(), p),
-    "security.checks.run": ({ projectId }) => runChecks(x(), projectId),
     "security.bringin.github": ({ projectId }) => bringGitHub(x(), projectId),
     "security.bringin.sarif": (p) => bringSarif(x(), p),
     "security.model.read": ({ projectId }) => x().model(projectId),

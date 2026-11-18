@@ -16,7 +16,7 @@
   A side chat doesn't run in plan mode, which makes every turn end in a plan or a question, even
   "hello": it runs in the default mode with the editing tools taken away, and answers directly.
 */
-import { getSessionMessages, query, type ElicitationRequest, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKPermissionRuleEntry, type SDKResultMessage, type SDKUserMessage, type SessionStore, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages, query, type ElicitationRequest, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKPermissionRuleEntry, type SDKResultMessage, type SDKUserMessage, type SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -25,7 +25,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { stripVTControlCharacters } from "node:util";
 import type { Access, ContextPart, ContextSource, ContextUse, ErrorWhy, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
-import { base64Size, imageKind, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
+import { base64Size, imagePart, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
 import { outside, run, sdkPath, versionOf, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { linerTitle } from "../agent-tools.ts";
@@ -314,11 +314,10 @@ export function withFiles(text: string, files: string[], budget: { bytes: number
   for (const path of files) {
     const type = imageType(path);
     if (type) {
-      const bytes = readUpTo(path, 5 * 1024 * 1024);
-      const kind = bytes ? imageKind(bytes) : undefined;
-      if (!bytes || !kind || budget.bytes + base64Size(bytes.length) > MAX_BYTES) continue;
-      budget.bytes += base64Size(bytes.length);
-      blocks.push({ type: "image", source: { type: "base64", media_type: kind as "image/png", data: bytes.toString("base64") } });
+      const image = imagePart(path, 5 * 1024 * 1024);
+      if (!image || budget.bytes + base64Size(image.bytes.length) > MAX_BYTES) continue;
+      budget.bytes += base64Size(image.bytes.length);
+      blocks.push({ type: "image", source: { type: "base64", media_type: image.mimeType as "image/png", data: image.bytes.toString("base64") } });
     } else if (isPdf(path)) {
       const bytes = readUpTo(path, 20 * 1024 * 1024);
       const pages = bytes ? pdfPages(bytes) : null;
@@ -377,25 +376,30 @@ function formOf(schema: unknown, server: string): { key: string; question: Quest
   return out;
 }
 
-/** Opens Claude Code with no prompt to ask it something (its models, its limits), then closes it. */
-async function probe<T>(env: NodeJS.ProcessEnv, scratch: string, ask: (q: Query) => Promise<T>): Promise<T | null> {
+/**
+  Opens Claude Code in `cwd` with no prompt to ask it something (its models, its limits, its commands), then closes it; null when
+  it isn't installed. Through `sdk`, as a session is, so a test can stand in for it; its wait is cleared when it's answered.
+*/
+async function probe<T>(env: NodeJS.ProcessEnv, cwd: string, ask: (q: Query) => Promise<T>, sources: ("user" | "project" | "local")[] = ["user"], late = "Claude Code didn't answer in time."): Promise<T | null> {
   const path = which("claude", env);
   if (!path) return null;
-  mkdirSync(scratch, { recursive: true });
   const abort = new AbortController();
   const idle = async function* (): AsyncGenerator<SDKUserMessage> {
     await new Promise((r) => abort.signal.addEventListener("abort", r));
   };
-  const q = query({ prompt: idle(), options: { cwd: scratch, pathToClaudeCodeExecutable: sdkPath(path), env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: ["user"], abortController: abort } });
+  const q = sdk.query({ prompt: idle(), options: { cwd, pathToClaudeCodeExecutable: sdkPath(path), env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: sources, abortController: abort } });
+  let timer: NodeJS.Timeout | undefined;
   try {
-    return await Promise.race([ask(q), new Promise<never>((_, no) => setTimeout(() => no(new Error("Claude Code didn't answer in time.")), 30000))]);
+    return await Promise.race([ask(q), new Promise<never>((_, no) => (timer = setTimeout(() => no(new Error(late)), 30000)))]);
   } finally {
+    clearTimeout(timer);
     abort.abort();
   }
 }
 
 /** Claude Code's own model list: its current models by alias, then older ones it still runs. */
 async function listModels(env: NodeJS.ProcessEnv, scratch: string): Promise<ModelInfo[]> {
+  mkdirSync(scratch, { recursive: true });
   const list = await probe(env, scratch, (q) => q.supportedModels());
   if (!list) return [];
   {
@@ -714,8 +718,6 @@ class ClaudeSession implements ProviderSession {
   private seen: { input: number; output: number; cache: number; cost: number } | null = null;
   /** The model the main thread's answers come from: its context window is the conversation's, not a subagent's. */
   private mainModel: string | null = null;
-  /** Claude Code's slash commands and skills, as it last listed them. */
-  commands: SlashCommand[] = [];
   /**
     Work Claude Code runs as a task (a subagent, a command), by task id, from its task_started until
     its task_notification: what it is, the tool call that started it, and whether it runs in the background.
@@ -792,7 +794,9 @@ class ClaudeSession implements ProviderSession {
     // Read denied too: with no tools at all, Claude Code still reads a file or lists a folder an @path in the prompt names.
     // Sealed (a Specialist scan): Liner's own server alone, and none of your settings files (so no hooks, plugins or CLAUDE.md),
     // skills, MCP servers or subagents; the Skill tool refused too.
-    const sealed: Partial<Options> = o.sealed && !o.plain ? { settingSources: [], skills: [], plugins: [], strictMcpConfig: true, agents: undefined, disallowedTools: [...(o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : []), "Skill"] } : {};
+    // What a side chat, a sidekick or a scan may not use, said once for both lists below.
+    const denied = [...new Set([...(o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : [])])];
+    const sealed: Partial<Options> = o.sealed && !o.plain ? { settingSources: [], skills: [], plugins: [], strictMcpConfig: true, agents: undefined, disallowedTools: [...new Set([...denied, "Skill"])] } : {};
     const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], settings: { permissions: { deny: PLAIN_DENIED } }, mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
     const options: Options = {
       cwd: o.cwd,
@@ -806,7 +810,7 @@ class ClaudeSession implements ProviderSession {
       permissionMode: o.side ? "default" : modeOf(this.access, this.noAuto),
       // A sidekick sends no agents of its own: the lead waits on it, and nobody would see theirs. Workflow runs a script of agents
       // (Claude Code 2.1.322 offers it beside Agent), so it goes too.
-      disallowedTools: o.side || o.sidekick || o.scan ? [...new Set([...(o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : [])])] : undefined,
+      disallowedTools: denied.length ? denied : undefined,
       includePartialMessages: true,
       agents: o.subagents && Object.keys(o.subagents).length ? o.subagents : undefined,
       resume: o.resume,
@@ -1099,10 +1103,8 @@ class ClaudeSession implements ProviderSession {
     bufferWakeMessage). A background task's word alone waits for whichever turn comes next.
   */
   private whileIdle(m: SDKMessage) {
-    if (m.type === "system" && m.subtype === "commands_changed") {
-      this.commands = m.commands;
-      return;
-    }
+    // Its commands come from Liner Code's own ask (claude.commands), not a session's list.
+    if (m.type === "system" && m.subtype === "commands_changed") return;
     // The rest of a turn we let go of after Stop: nothing more of it shows, up to its result.
     if (this.draining) {
       if (m.type === "result") this.draining = false;
@@ -1183,10 +1185,7 @@ class ClaudeSession implements ProviderSession {
       }
       return;
     }
-    if (m.type === "system" && m.subtype === "commands_changed") {
-      this.commands = m.commands;
-      return;
-    }
+    if (m.type === "system" && m.subtype === "commands_changed") return;
     if (m.type === "system") return this.onSystem(m, sink);
     if (m.type === "stream_event") {
       const ev = m.event;
@@ -1685,6 +1684,12 @@ class ClaudeSession implements ProviderSession {
           this.agentSays(key, { background: true, state: "running" });
         } else this.runs.delete(key);
       }
+      // What a call's input was kept for (its title and task list as its result comes) is over with its turn: a stopped Write's
+      // whole content isn't held for the session's life. Its name stays, for a late task_notification: the newest 500 calls'
+      // names, and any an agent or a task still goes by.
+      const named = new Set([...this.runs.keys(), ...[...this.tasks.values(), ...this.ended.values()].flatMap((t) => (t.toolUseId ? [t.toolUseId] : []))]);
+      for (const [id, call] of this.tools) if (!named.has(id)) call.input = {};
+      if (this.tools.size > 500) for (const id of [...this.tools.keys()].slice(0, this.tools.size - 500)) if (!named.has(id)) this.tools.delete(id);
       this.streamed.clear();
       this.streamId = null;
       this.sink = null;
@@ -2051,7 +2056,6 @@ class ClaudeSession implements ProviderSession {
     this.endRuns("stopped");
     this.release(null);
     for (const id of [...this.tails.keys()]) this.untail(id);
-    void this.signal;
     if (!ended) return Promise.resolve();
     let cap: NodeJS.Timeout | undefined;
     return Promise.race([Promise.resolve(ended).then(() => {}, () => {}), new Promise<void>((r) => (cap = setTimeout(r, CLOSE_WAIT_MS)))]).finally(() => clearTimeout(cap));
@@ -2076,25 +2080,16 @@ export const claude: Provider = {
   async commands(env, cwd) {
     const skills = skillsIn([join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "skills"), join(cwd, ".claude", "skills")]);
     const names = new Set(skills.map((x) => x.name));
-    const path = which("claude", env);
-    if (!path) return { commands: [], skills };
-    const abort = new AbortController();
-    const idle = async function* (): AsyncGenerator<SDKUserMessage> {
-      await new Promise((r) => abort.signal.addEventListener("abort", r));
-    };
-    const q = query({ prompt: idle(), options: { cwd, pathToClaudeCodeExecutable: sdkPath(path), env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: ["user", "project", "local"], abortController: abort } });
-    try {
-      const list = await Promise.race([q.supportedCommands(), new Promise<never>((_, no) => setTimeout(() => no(new Error("Claude Code didn't list its commands in time.")), 30000))]);
-      const commands = list.filter((c) => !names.has(c.name)).map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint || undefined, source: "tool" as const }));
-      // Plugin skills show as commands named "plugin:skill"; they're skills too.
-      for (const c of list) if (c.name.includes(":") && !names.has(c.name) && /skill/i.test(c.description)) skills.push({ name: c.name, description: c.description });
-      return { commands, skills };
-    } finally {
-      abort.abort();
-    }
+    const list = await probe(env, cwd, (q) => q.supportedCommands(), ["user", "project", "local"], "Claude Code didn't list its commands in time.");
+    if (!list) return { commands: [], skills };
+    const commands = list.filter((c) => !names.has(c.name)).map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint || undefined, source: "tool" as const }));
+    // Plugin skills show as commands named "plugin:skill"; they're skills too.
+    for (const c of list) if (c.name.includes(":") && !names.has(c.name) && /skill/i.test(c.description)) skills.push({ name: c.name, description: c.description });
+    return { commands, skills };
   },
   async limits(env, scratch) {
     type Win = { utilization: number | null; resets_at: string | null } | null | undefined;
+    mkdirSync(scratch, { recursive: true });
     const u = await probe(env, scratch, (q) => (q as unknown as { usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: (o: { skipBehaviors: boolean }) => Promise<{ subscription_type: string | null; rate_limits_available: boolean; rate_limits: Record<string, Win> | null }> }).usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?.({ skipBehaviors: true }) ?? Promise.resolve(null));
     if (!u) return null;
     if (!u.rate_limits_available) return { plan: u.subscription_type ?? undefined, windows: [], detail: "No plan limits: this sign-in bills by the token." };

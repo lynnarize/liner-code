@@ -32,11 +32,21 @@ export function readUpTo(path: string, max: number): Buffer | null {
   }
 }
 
+/**
+  A saved image as the model gets it: named an image, no bigger than the tool's `max`, and labelled by what its bytes are, not
+  its name (a JPEG saved as .png, an empty or HTML file named .png). An API refuses an image that isn't what it's labelled, and a
+  conversation holding one can fail on every turn after. Null for anything else, which goes by its path alone.
+*/
+export function imagePart(path: string, max: number): { mimeType: string; bytes: Buffer } | null {
+  const bytes = imageType(path) ? readUpTo(path, max) : null;
+  const mimeType = bytes ? imageKind(bytes) : undefined;
+  return bytes && mimeType ? { mimeType, bytes } : null;
+}
+
 /** A saved image as a data URL, for tools that take images that way (Codex). */
 export function dataUrl(path: string, max = 20 * 1024 * 1024): string | null {
-  const type = imageType(path);
-  const bytes = type ? readUpTo(path, max) : null;
-  return type && bytes ? `data:${type};base64,${bytes.toString("base64")}` : null;
+  const image = imagePart(path, max);
+  return image ? `data:${image.mimeType};base64,${image.bytes.toString("base64")}` : null;
 }
 
 /** What base64 makes of `n` bytes, with a little for its framing. */

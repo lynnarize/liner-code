@@ -3,7 +3,7 @@
   The engine owns the state; this keeps a copy and applies each event to it. Text deltas arrive
   many times a second, so listeners hear about changes once per frame.
 */
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { AddonInfo, AgentProfile, EngineEvent, Item, ProviderInfo, Project, Routine, RoutineRun, RpcMethod, RpcParams, RpcResult, Settings, SidebarGroup, Thread, ToolLimits, Updates } from "@contracts";
 
 declare global {
@@ -156,6 +156,72 @@ const loading = new Map<string, { events: Numbered[]; done: Promise<void>; mark:
 const wanted = new Set<string>();
 /** Where each fetched timeline was read: an event numbered at or before it is already in it, however late it comes. */
 const cursor = new Map<string, number>();
+/*
+  Which timelines are on screen: how many readers (useItems, useItemsWhere) hold each one now. A
+  reconnect fetches those again at once and the rest one after another; and of the rest only the
+  newest KEEP stay, so a day of opening sessions doesn't keep every timeline in the window for good.
+  One let go is fetched again when it's next opened.
+*/
+const held = new Map<string, number>();
+/** When each timeline was last let go by its last reader (or fetched), for which goes first. */
+const touched = new Map<string, number>();
+const KEEP = 20;
+/*
+  Timelines the app let go of itself (letGoOld, or one asked for that a reconnect gave up on): a reader
+  that comes on screen for one asks for it again (holdItems), since whoever fetched it first may have
+  done so once, in an effect that doesn't run again. Asked for once per reader that mounts, never per
+  render, so one that fails to load isn't asked for again until something new shows it.
+*/
+const dropped = new Set<string>();
+let pruning = 0;
+function letGoOld() {
+  pruning = 0;
+  const idle = Object.keys(state.items).filter((id) => !held.has(id) && !loading.has(id));
+  if (idle.length <= KEEP) return;
+  idle.sort((a, b) => (touched.get(a) ?? 0) - (touched.get(b) ?? 0));
+  const items = { ...state.items };
+  for (const id of idle.slice(0, idle.length - KEEP)) {
+    delete items[id];
+    forgetTimeline(id);
+    dropped.add(id);
+  }
+  set({ items });
+}
+/** What the app keeps for a timeline besides the timeline itself. */
+function forgetTimeline(id: string) {
+  wanted.delete(id);
+  loading.delete(id);
+  cursor.delete(id);
+  deltas.delete(id);
+  touched.delete(id);
+  dropped.delete(id);
+  for (const m of views.values()) m.delete(id);
+}
+/** A reader of a timeline came on screen (an effect, so it's counted once it's there) and, from its clean-up, went. */
+function holdItems(threadId: string) {
+  held.set(threadId, (held.get(threadId) ?? 0) + 1);
+  // One the app let go comes back for the reader that shows it (`dropped`, above).
+  if (dropped.has(threadId) && !state.items[threadId] && !loading.has(threadId)) void loadItems(threadId).catch(() => {});
+  return () => {
+    const n = (held.get(threadId) ?? 1) - 1;
+    if (n > 0) return void held.set(threadId, n);
+    held.delete(threadId);
+    touched.set(threadId, Date.now());
+    // A moment later, so the session opened in its place has taken hold of its own first.
+    if (!pruning) pruning = window.setTimeout(letGoOld, 1000);
+  };
+}
+/** After a reconnect, the timelines no one is looking at are fetched again one at a time, not all at once. */
+let catchingUp = 0;
+async function catchUp(ids: string[]) {
+  const round = ++catchingUp;
+  for (const id of ids) {
+    if (round !== catchingUp) return;
+    // Opened meanwhile (fetched as it opened), or let go since: nothing to do.
+    if (!state.items[id] || cursor.has(id) || loading.has(id)) continue;
+    await loadItems(id, true).catch(() => {});
+  }
+}
 
 function apply(e: Numbered) {
   if (e.type !== "delta") takeDeltas();
@@ -167,16 +233,25 @@ function apply(e: Numbered) {
   switch (e.type) {
     case "hello": {
       const s = e.snapshot;
-      // A reconnect starts from the snapshot; open timelines are fetched again, and show as they were meanwhile.
+      // A reconnect starts from the snapshot; timelines held are fetched again, and show as they were meanwhile.
       // A session that's gone takes its timeline with it, rather than being asked for again on every reconnect.
       const there = new Set(s.threads.map((t) => t.id));
       const open = [...new Set([...Object.keys(state.items), ...wanted])].filter((id) => there.has(id));
       for (const id of wanted) if (!there.has(id)) wanted.delete(id);
+      for (const id of dropped) if (!there.has(id)) dropped.delete(id);
       const kept = Object.fromEntries(Object.entries(state.items).filter(([id]) => there.has(id)));
-      // A restarted engine numbers its events from 0 again; each open timeline gets a fresh cursor when it's fetched again below.
+      // A restarted engine numbers its events from 0 again; each timeline gets a fresh cursor when it's fetched again below.
+      // Until then one has none, so opening it fetches it (loadItems).
       cursor.clear();
       set({ items: kept, connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), limits: s.limits ?? [], addons: s.addons ?? [], addonsOff: s.addonsOff ?? false });
-      for (const id of open) void loadItems(id, true).catch(() => {});
+      // What's on screen at once; the rest after it, one at a time, newest first. One asked for that never came and that nobody shows waits until something shows it (`dropped`).
+      for (const id of open) if (held.has(id)) void loadItems(id, true).catch(() => {});
+      // A fetch still out from before the gap would land a read from then as current, with its old cursor, and the cursor
+      // then keeps it from being fetched again: it's asked for again (`again`, a new mark, so the old answer is thrown away).
+      for (const id of open) if (!held.has(id) && loading.has(id)) void loadItems(id, true).catch(() => {});
+      const rest = open.filter((id) => !held.has(id) && kept[id]).sort((a, b) => (touched.get(b) ?? 0) - (touched.get(a) ?? 0));
+      for (const id of open) if (!held.has(id) && !kept[id] && !loading.has(id)) wanted.delete(id), dropped.add(id);
+      void catchUp(rest);
       return;
     }
     case "project":
@@ -192,10 +267,7 @@ function apply(e: Numbered) {
       return set({ threads: upsert(state.threads, e.thread) });
     case "thread.removed": {
       // A session deleted for good (or a side chat let go) goes, with its timeline; an archived one comes as "thread".
-      wanted.delete(e.id);
-      loading.delete(e.id);
-      cursor.delete(e.id);
-      deltas.delete(e.id);
+      forgetTimeline(e.id);
       const { [e.id]: _gone, ...items } = state.items;
       return set({ threads: state.threads.filter((t) => t.id !== e.id), sides: state.sides.filter((t) => t.id !== e.id && t.sideOf !== e.id), items });
     }
@@ -322,9 +394,16 @@ export class EngineAway extends RpcError {}
 
 export async function rpc<M extends RpcMethod>(method: M, params: RpcParams<M>): Promise<RpcResult<M>> {
   // The engine away, or an answer that isn't its own (401 is plain text): said in words, not "Failed to fetch".
+  // Only no answer at all is EngineAway, which the app leaves to its Reconnecting pill: a refusal is said out loud.
+  let res: Response;
+  try {
+    res = await fetch(`${base()}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": token() }, body: JSON.stringify({ method, params }) });
+  } catch {
+    throw new EngineAway("The engine isn't answering. Try again in a moment.");
+  }
+  if (!res.ok) throw new RpcError(res.status === 401 ? "The engine turned this window away (401). Quit and open Liner Code again." : `The engine answered with an error (${res.status}). Try again in a moment.`);
   let body: { ok: boolean; result?: RpcResult<M>; error?: string };
   try {
-    const res = await fetch(`${base()}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": token() }, body: JSON.stringify({ method, params }) });
     body = (await res.json()) as typeof body;
   } catch {
     throw new EngineAway("The engine isn't answering. Try again in a moment.");
@@ -336,10 +415,14 @@ export async function rpc<M extends RpcMethod>(method: M, params: RpcParams<M>):
 /**
   Fetches a thread's timeline. Until it's in, the thread has none in the state (a session shows no
   "new session" screen meanwhile), and what comes for it waits. Asking again while it's fetched waits
-  for the same fetch, unless `again` (after a reconnect, when events may have been missed).
+  for the same fetch, unless `again` (after a reconnect, when events may have been missed). One
+  already here and kept up by the stream (it has a cursor) isn't fetched again: opening a session
+  you've been in shows it as it is, and its live words don't wait on a fetch.
 */
 export function loadItems(threadId: string, again = false): Promise<void> {
   wanted.add(threadId);
+  // Asked for is used: it's the newest to keep, never the first let go (letGoOld), even before a reader holds it.
+  if (!again && state.items[threadId] && cursor.has(threadId)) return void touched.set(threadId, Date.now()), Promise.resolve();
   const going = loading.get(threadId);
   if (going && !again) return going.done;
   // After a reconnect only the new stream counts: what the old one left here is in the fresh read, and a
@@ -352,7 +435,9 @@ export function loadItems(threadId: string, again = false): Promise<void> {
       // A newer fetch (after a reconnect) stands instead.
       if (loading.get(threadId)?.mark !== mark) return;
       loading.delete(threadId);
+      dropped.delete(threadId);
       cursor.set(threadId, seq);
+      touched.set(threadId, Date.now());
       takeDeltas();
       set({ items: { ...state.items, [threadId]: items } });
       for (const e of held) if ((e.seq ?? Infinity) > seq) apply(e);
@@ -381,7 +466,20 @@ export function useEngine<T>(pick: (s: EngineState) => T): T {
 export const threadOf = (s: EngineState, id: string) => s.threads.find((t) => t.id === id) ?? s.sides.find((t) => t.id === id);
 
 const EMPTY: Item[] = [];
-export const useItems =(threadId: string | undefined) => useEngine((s) => (threadId ? (s.items[threadId] ?? EMPTY) : EMPTY));
+/** Counts the reader as holding the timeline while it's mounted (`held`, above). */
+const useHold = (threadId: string | undefined) => useEffect(() => (threadId ? holdItems(threadId) : undefined), [threadId]);
+/** For a reader that selects `s.items` itself (a list of sessions' timelines, or the whole map): holds each of these while it's mounted, as useItems does. */
+export function useHoldItems(threadIds: readonly (string | undefined)[]) {
+  const key = threadIds.filter(Boolean).join("\n");
+  useEffect(() => {
+    const lets = key ? key.split("\n").map(holdItems) : [];
+    return () => lets.forEach((f) => f());
+  }, [key]);
+}
+export const useItems = (threadId: string | undefined) => {
+  useHold(threadId);
+  return useEngine((s) => (threadId ? (s.items[threadId] ?? EMPTY) : EMPTY));
+};
 
 /*
   Some of a thread's items, as one array that stays the same while those items do: a streamed
@@ -402,7 +500,10 @@ export function itemsWhere(s: EngineState, threadId: string | undefined, keep: (
   byThread.set(threadId, { src, out: same ? was.out : out });
   return same ? was.out : out;
 }
-export const useItemsWhere = (threadId: string | undefined, keep: (it: Item) => boolean) => useEngine((s) => itemsWhere(s, threadId, keep));
+export const useItemsWhere = (threadId: string | undefined, keep: (it: Item) => boolean) => {
+  useHold(threadId);
+  return useEngine((s) => itemsWhere(s, threadId, keep));
+};
 
 /** Views for useItemsWhere. */
 export const isCheckpoint = (it: Item) => it.kind === "checkpoint";

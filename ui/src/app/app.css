@@ -735,6 +735,12 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   background: none;
   cursor: pointer;
 }
+/* An icon button that opens a Pop: the rule above would undo .lc-ib's centring and put its icon at the left edge. (Run, an icon with its word, keeps its row.) */
+.lc-ib.lc-pick:not(.lc-terms-run) {
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
 .lc-pop-panel {
   display: grid;
   gap: 1px;
@@ -8034,6 +8040,83 @@ span.lc-sb-name {
     background: var(--l-wash-2);
     color: var(--l-ink);
   }
+}
+/*
+  The heading's menu (SideHead, the same in each face), as the approved drawing has it: 236 wide,
+  5 in, rows 30 high and 8 in with 9 between icon and name, no gap between them. A picked row has
+  no plate: its name at 500 and a tick at its end; only the row you point at or reach by keyboard
+  is washed. Rows with no icon (the sorts, your groups) start on the icons' edge, under their label.
+  Every row's end (tick, count, keys, Carry on's chevron) finishes on one edge: the drawings' own
+  margins (the tick 2.3 in its 14, the chevron 3.9 in its 12) are taken back so the ink lines up.
+*/
+.lc-pop-panel:has(> .lc-sl-menu) {
+  gap: 0;
+  padding: 5px;
+  border-radius: 13px;
+}
+.lc-sl-menu .lc-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 8px;
+}
+.lc-sl-menu .lc-row[data-on] {
+  background: none;
+}
+@media (hover: hover) {
+  .lc-sl-menu .lc-row:hover:not(:disabled) {
+    background: var(--l-wash-2);
+  }
+}
+.lc-sl-menu .lc-row:focus-visible {
+  background: var(--l-wash-2);
+}
+.lc-sl-menu .lc-row-tick {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.lc-sl-menu .lc-row-tick:empty {
+  display: none;
+}
+.lc-sl-menu .lc-row-t {
+  flex: 1;
+  min-width: 0;
+}
+.lc-sl-menu .lc-row-t b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sl-menu .lc-row-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  font-size: 13px;
+  color: var(--l-ink-4);
+}
+.lc-sl-menu .lc-row[data-on] .lc-row-end {
+  color: var(--l-ink);
+}
+.lc-sl-menu .lc-row-end > svg {
+  margin-right: -2px;
+}
+.lc-sl-menu .lc-sb-carry-n > svg {
+  margin-right: -4px;
+}
+.lc-sl-menu .lc-sep {
+  margin: 5px 8px;
+}
+.lc-sl-menu .lc-pop-head {
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 8px;
+}
+.lc-sl-menu .lc-pop-head > span:first-child {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-3);
 }
 .lc-sl-count {
   flex: none;

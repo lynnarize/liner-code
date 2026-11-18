@@ -98,7 +98,7 @@ export function SideHead({ title, note, count, menuLabel, children }: { title: s
       )}
       <span className="lc-grow" />
       <Pop label={menuLabel} menu align="end" width={236} triggerClass="lc-ib lc-sl-head-b" trigger={<I.sliders size={16} />}>
-        {(close) => <div className="lc-sb-menu">{children(close)}</div>}
+        {(close) => <div className="lc-sb-menu lc-sl-menu">{children(close)}</div>}
       </Pop>
     </div>
   );

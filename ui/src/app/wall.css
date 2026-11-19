@@ -216,35 +216,23 @@
 .lc-wt-trail {
   flex: none;
 }
-.lc-wt .lc-trail-list {
-  gap: 7px;
-  margin: 2px 0 0 6px;
-  clip-path: none;
+/* The session's trail, a size down for the tile; a row is read here, not pressed. */
+.lc-wt .lc-wk {
+  gap: 0;
 }
-.lc-wt .lc-tstep {
-  animation: none;
-}
-.lc-wt .lc-tstep-line {
+.lc-wt .lc-wk-ln {
   font-size: 13px;
-  cursor: default;
+  cursor: inherit;
 }
-.lc-wt .lc-tstep-dot {
-  top: 6px;
-}
-.lc-wt .lc-tstep-target {
+.lc-wt .lc-wk-target {
   font-size: 12px;
 }
-.lc-wt .lc-tstep-res {
-  overflow: hidden;
+.lc-wt .lc-wk-r {
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.lc-wt .lc-tstep-tail {
-  max-height: 3.4em;
-  overflow: hidden;
-  white-space: pre;
-  text-overflow: ellipsis;
+.lc-wt .lc-status {
+  min-height: 22px;
+  font-size: 12px;
 }
 .lc-wt-error {
   display: -webkit-box;
@@ -526,23 +514,13 @@
 .lc-wt-field > input::placeholder {
   color: var(--l-ink-4);
 }
-.lc-wt-send {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
+/* The composer's one button, smaller: Stop while it works and the field is empty, else Send. */
+.lc-send.lc-wt-send {
   width: 26px;
   height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: var(--lc-act);
-  color: var(--lc-act-ink);
-  cursor: pointer;
-  transition: opacity 140ms ease;
 }
-.lc-wt-send:disabled {
-  opacity: 0.35;
-  cursor: default;
+.lc-send.lc-wt-send[data-ready] {
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

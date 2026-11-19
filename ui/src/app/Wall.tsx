@@ -20,9 +20,9 @@ import { getState, loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf, ago, bucketOf, clock, duration, isModelAgent, markOf, mergeFiles, modelLabel, onTheWall, plural, providerLabel, sumLines, threadModel, turnsOf, wallShown } from "./model";
 import { reviewHeld, wallKind, type WallKind } from "./session-state";
-import { isStep, trailSteps, type TrailStep } from "./Timeline";
+import { isStep, liveOf, ROW_IN, StepIcon, Tick, ticked, trailSteps, type TrailStep } from "./Timeline";
 import { pairOf } from "./Crew";
-import { Kbd, Lines, StatusMark } from "./ui";
+import { Kbd, Lines, SendButton, StatusMark } from "./ui";
 import * as os from "./os";
 import "./wall.css";
 
@@ -48,8 +48,8 @@ export function wallOrder(threads: Thread[], now = Date.now()) {
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 /** What Retry says to a session that stopped with a problem. */
 const RETRY = "Try again from where you stopped.";
-/** How many of the turn's steps a tile shows: the latest, the one at work last. */
-const STEPS = 4;
+/** How many of the turn's steps a tile shows: the latest, the one at work last, as the session's own trail does. */
+const STEPS = 3;
 /** A tile's least height, and the most it grows to when the window has room to spare. */
 const ROW_MIN = 264;
 const ROW_MAX = 420;
@@ -196,6 +196,8 @@ const Words = ({ s }: { s: string }) => (
 /** A session's last turn as a tile shows it: its steps, what it waits on, and how it ended. */
 type Info = {
   steps: TrailStep[];
+  /** While it works, the session's status line: its one word and its clock (Timeline's liveOf). */
+  live?: { word: string; waiting: boolean; clock: () => string };
   count: number;
   ask?: Ask;
   question?: Asked;
@@ -246,8 +248,10 @@ function infoOf(t: Thread, items: Item[], brief: boolean): Info {
   const text = last.findLast((x): x is Extract<Item, { kind: "text" }> => x.kind === "text" && Boolean(x.text.trim()));
   const files = cp?.files ?? [];
   const waiting = [ask, question, plan].filter((x) => x !== undefined).map((x) => x.at);
+  const running = t.status === "running" && marks.length > 0;
   return {
     steps: steps.slice(-STEPS),
+    live: running ? liveOf(marks, last) : undefined,
     count: steps.length,
     ask,
     question,
@@ -605,16 +609,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
           <span className="lc-wt-wait l-shimmer">Reading its timeline</span>
         ) : (
           <>
-            {kind !== "done" && info.steps.length > 0 && (
-              <div className="lc-trail lc-wt-trail" data-live={live || undefined}>
-                <ol className="lc-trail-list">
-                  {live && <li className="lc-trail-light" aria-hidden role="presentation" />}
-                  {info.steps.map((s) => (
-                    <Step key={s.key} s={s} />
-                  ))}
-                </ol>
-              </div>
-            )}
+            {kind !== "done" && info.steps.length > 0 && <Trail info={info} live={live} />}
             {t.status === "error" && <p className="lc-wt-error">{firstLine(info.error ?? "") || "It ran into a problem and stopped."}</p>}
             {t.status === "limited" && <p className="lc-wt-error" data-tone="warn">{firstLine(t.limit?.message ?? info.limit?.message ?? "") || "It reached its usage limit."}</p>}
             {ask && (
@@ -746,9 +741,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
         ) : write ? (
           <form className="lc-wt-field" onSubmit={send}>
             <input ref={(el) => field(t.id, el)} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder} aria-label={`Write to ${t.title}`} disabled={busy} />
-            <button type="submit" className="lc-wt-send l-focus" aria-label="Send" disabled={busy || !draft.trim()}>
-              <I.send size={14} />
-            </button>
+            <SendButton ready={Boolean(draft.trim())} stop={live ? { onStop: () => act(() => rpc("thread.stop", { id: t.id })) } : undefined} label="Send" title="Send (Enter)" disabled={busy || !draft.trim()} submit size={14} className="lc-wt-send" />
           </form>
         ) : (
           <span className="lc-wt-note l-num">{t.status === "running" ? `${plural(info.count, "step")} this turn` : kind === "working" ? `${plural(t.agentsAtWork ?? 0, "agent")} still at work in the background` : `Waiting since ${clock(info.since, now)}`}</span>
@@ -758,19 +751,68 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   );
 });
 
-/** A step as the session's trail draws it, without the press that opens it there. */
-function Step({ s }: { s: TrailStep }) {
+/**
+  The turn's last steps as the session's work log draws them (Timeline.tsx, after T3 Code's): a line
+  each with its mark, the one at work in the passing light, and the status line in grey under them.
+  No presses here: the tile opens the session.
+*/
+function Trail({ info, live }: { info: Info; live: boolean }) {
+  // When each step came, so one that arrives while you watch fades in; those there when the tile first drew don't.
+  const came = useRef(new Map<string, number>());
+  const drawn = useRef(false);
+  useEffect(() => {
+    drawn.current = true;
+  }, []);
+  const now = Date.now();
+  for (const s of info.steps) if (!came.current.has(s.key)) came.current.set(s.key, drawn.current && live ? now : 0);
+  const status = live ? info.live : undefined;
   return (
-    <li className="lc-tstep" data-state={s.state}>
-      <div className="lc-tstep-line">
-        <span className="lc-tstep-dot" aria-hidden />
-        <b className={s.state === "running" ? "lc-tstep-verb l-shimmer" : "lc-tstep-verb"}>{s.verb}</b>
-        {s.target && <code className="lc-tstep-target">{s.target}</code>}
+    <div className="lc-trail lc-wt-trail" data-live={live || undefined}>
+      <ol className="lc-wk">
+        {info.steps.map((s) => (
+          <Step key={s.key} s={s} fresh={live && now - (came.current.get(s.key) ?? 0) < ROW_IN} />
+        ))}
+      </ol>
+      {status && (
+        <div className="lc-status" data-wait={status.waiting || undefined}>
+          <span className="lc-status-t l-num" aria-hidden>
+            {status.waiting ? <b>Waiting for you</b> : status.word === "Thinking" ? "Working" : status.word} for <Tick text={status.clock} />
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A step as the session's work log draws it, without the press that opens it there. */
+function Step({ s, fresh }: { s: TrailStep; fresh: boolean }) {
+  const moving = s.state === "running";
+  return (
+    <li className="lc-wk-row" data-state={s.state} data-new={fresh || undefined}>
+      <div className="lc-wk-ln">
+        <span className="lc-wk-ic" aria-hidden>
+          <StepIcon s={s} />
+        </span>
+        {moving ? (
+          <span className="lc-live-t l-shimmer">
+            {s.verb}
+            {s.target && (
+              <>
+                {" "}
+                {s.plainTarget ? s.target : <code>{s.target}</code>}
+              </>
+            )}
+          </span>
+        ) : (
+          <>
+            <b className="lc-wk-verb">{s.verb}</b>
+            {s.target && (s.plainTarget ? <span className="lc-wk-target" data-plain>{s.target}</span> : <code className="lc-wk-target">{s.target}</code>)}
+            {s.result && <span className="lc-wk-r">{s.result}</span>}
+          </>
+        )}
         <span className="lc-grow" />
-        <span className="lc-tstep-time l-num">{s.state !== "running" && s.seconds >= 1 ? duration(s.seconds) : ""}</span>
+        {moving ? <Tick className="lc-wk-time l-num" text={() => ((Date.now() - s.at) / 1000 >= 2 ? ticked((Date.now() - s.at) / 1000) : "")} /> : <span className="lc-wk-time l-num">{s.seconds >= 1 ? duration(s.seconds) : ""}</span>}
       </div>
-      {s.result && <div className="lc-tstep-res">{s.result}</div>}
-      {s.tail && <pre className="lc-tstep-tail">{s.tail}</pre>}
     </li>
   );
 }

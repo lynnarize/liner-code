@@ -250,7 +250,7 @@
   max-width: 100%;
   height: auto;
 }
-.ldc-body :is(.lc-pre, .lc-wk-slot) {
+.ldc-body .lc-pre {
   max-width: 100%;
   overflow-x: auto;
 }

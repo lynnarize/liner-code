@@ -28,7 +28,7 @@ import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
 import { CostMini, costScale, PairCost } from "./PairCost";
 import { SideKeys } from "./TopBar";
-import { Disc, HoverNote, PanelHead, Pop, Row } from "./ui";
+import { Disc, HoverNote, PanelHead, Pop, Row, SendButton } from "./ui";
 import * as os from "./os";
 import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
@@ -949,13 +949,19 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
   );
 
   const ready = Boolean(text.trim() || files.length);
+  // While a turn runs, the one round button is Stop until you write, then Queue or Steer (ui.tsx, SendButton).
+  const turning = busy && variant === "session";
   const sendButton = editing ? (
     <button type="button" className="lc-send l-focus" aria-label="Save the queued message" title="Save it in its place (Enter)" data-ready={ready || undefined} disabled={!ready} onClick={() => void send()}>
-      <I.check size={16} />
+      <I.check size={16} className="lc-send-up" />
     </button>
-  ) :
-    busy && variant === "session" ? (
-      <>
+  ) : !turning && compare.length > 0 ? (
+    <button type="button" className="lc-send lc-send-n l-focus" aria-label={`Send to ${compare.length + 1} models`} data-ready={ready || undefined} onClick={() => void send()}>
+      Send to {compare.length + 1}
+    </button>
+  ) : (
+    <>
+      {turning && (
         <Pop
           label="Queue or steer"
           side="top"
@@ -978,22 +984,16 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
             </>
           )}
         </Pop>
-        <button type="button" className="lc-stop l-focus" aria-label="Stop" title="Stop (Esc)" onClick={() => (onStop?.(), field.current?.focus())}>
-          <I.stop />
-        </button>
-        <button type="button" className="lc-send l-focus" aria-label={mode === "queue" ? "Queue it" : "Steer now"} title={mode === "queue" ? "Queue it (Enter)" : "Steer now (Enter)"} data-ready={ready || undefined} disabled={!ready} onClick={() => void send()}>
-          <I.send size={16} />
-        </button>
-      </>
-    ) : compare.length > 0 ? (
-      <button type="button" className="lc-send lc-send-n l-focus" aria-label={`Send to ${compare.length + 1} models`} data-ready={ready || undefined} onClick={() => void send()}>
-        Send to {compare.length + 1}
-      </button>
-    ) : (
-      <button type="button" className="lc-send l-focus" aria-label="Send" title="Send (Enter)" data-ready={ready || undefined} onClick={() => void send()}>
-        <I.send size={16} />
-      </button>
-    );
+      )}
+      <SendButton
+        ready={ready}
+        stop={turning ? { title: "Stop (Esc)", onStop: () => (onStop?.(), field.current?.focus()) } : undefined}
+        label={!turning ? "Send" : mode === "queue" ? "Queue it" : "Steer now"}
+        title={!turning ? "Send (Enter)" : mode === "queue" ? "Queue it (Enter)" : "Steer now (Enter)"}
+        onSend={() => void send()}
+      />
+    </>
+  );
   const attach = (
     <button type="button" className="lc-ctl-attach l-focus" aria-label="Attach files" title="Attach files" onClick={() => clip.current?.click()}>
       <I.attach size={16} />

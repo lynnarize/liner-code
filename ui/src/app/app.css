@@ -3196,8 +3196,31 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-send:disabled {
   cursor: default;
 }
-.lc-send[data-ready] svg {
+.lc-send[data-ready] .lc-send-up {
   animation: lc-lift 360ms var(--l-ease-enter);
+}
+/* Send and Stop are one button: both marks sit in one cell and the one in use shows, so the arrow
+   gives way to the square (and back) where it is, while the colour under it turns. */
+.lc-send > svg {
+  grid-area: 1 / 1;
+  transition:
+    opacity 180ms ease,
+    scale 240ms var(--l-spring-snappy);
+}
+.lc-send > .lc-send-sq,
+.lc-send[data-stop] > .lc-send-up {
+  opacity: 0;
+  scale: 0.6;
+}
+.lc-send[data-stop] > .lc-send-sq {
+  opacity: 1;
+  scale: 1;
+}
+/* Stop is neutral, an ink square on a wash: the action colour means one thing, send. */
+.lc-send[data-stop] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+  cursor: pointer;
 }
 @keyframes lc-lift {
   from {
@@ -3233,13 +3256,14 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     background: var(--l-wash-2);
     color: var(--l-ink);
   }
-  .lc-send:not([data-ready]):not(:disabled):hover {
+  .lc-send:not([data-ready]):not([data-stop]):not(:disabled):hover {
     background: color-mix(in oklab, var(--lc-act) 88%, var(--lc-ctl));
   }
   .lc-send[data-ready]:hover {
     background: color-mix(in oklab, var(--lc-act) 88%, black);
   }
-  .lc-stop:hover {
+  .lc-stop:hover,
+  .lc-send[data-stop]:hover {
     background: var(--l-wash-3);
   }
 }
@@ -3319,8 +3343,11 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-stop,
-  .lc-send[data-ready] svg {
+  .lc-send[data-ready] .lc-send-up {
     animation: none;
+  }
+  .lc-send > svg {
+    transition: none;
   }
 }
 /* A quiet picker on the ground: the composer's strip on Home, and pickers elsewhere. */

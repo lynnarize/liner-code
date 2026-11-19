@@ -4602,10 +4602,10 @@
 
 
 /* ---------- The trail: a turn's work, compact ---------- */
-/* The steps between two things a model said. While the turn works: a hairline rail, the last three
-   steps a line each and a slot of two lines, then the status line with its pip, the one thing that
-   moves. Done: one grey row that says what they did, open for every row in the same quiet style.
-   (.lc-trail-list, .lc-trail-light and .lc-tstep are the Wall's tiles, wall.css.) */
+/* The steps between two things a model said, as T3 Code's work log draws them. While the turn works:
+   one live row with the mark of what it's at and the light passing through its words, then the
+   status line in grey. Done: one grey row that says what they did, open for every row in the same
+   quiet style, each with its mark. The Wall's tiles draw their steps the same way (wall.css). */
 .lc-trail {
   display: grid;
   min-width: 0;
@@ -4667,148 +4667,9 @@
 [open] > summary > .lc-row-chev {
   rotate: 0deg;
 }
-.lc-trail-list {
-  position: relative;
-  display: grid;
-  gap: 8px;
-  min-height: 0;
-  margin: 6px 0 2px 10px;
-  padding: 2px 0 2px 18px;
-  list-style: none;
-  box-shadow: inset 1.5px 0 0 var(--l-line);
-  /* Its sides always paint whole (the dots on the rail, an ask's frame and shadow at the right);
-     folded or folding, its top and bottom clip tight, and open, they let a shadow out too. */
-  clip-path: inset(0 -14px);
-}
-.lc-trail[data-open] .lc-trail-list {
-  clip-path: inset(-14px);
-}
-/* While it works, a light runs down the rail. It runs inside a track the rail's own length, so where it
-   enters above and runs off below is cut there and never makes the chat taller to scroll after it. */
-.lc-trail-light {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1.5px;
-  overflow: hidden;
-  pointer-events: none;
-}
-.lc-trail-light::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 40%;
-  background: linear-gradient(transparent, var(--l-accent), transparent);
-  animation: lc-rail 1.8s var(--l-ease-out) infinite;
-}
-.lc-tstep,
 .lc-trail-note {
   position: relative;
   min-width: 0;
-}
-.lc-tstep-line {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--l-ink);
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-.lc-tstep-line:disabled {
-  cursor: default;
-}
-/* Centred on the rail: the list's padding back, then half the rail's width, less half the dot. */
-.lc-tstep-dot {
-  position: absolute;
-  top: 7px;
-  left: calc(-18px + 0.75px - 3.5px);
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--l-ok);
-  box-shadow: 0 0 0 3px var(--lc-paper);
-}
-.lc-tstep[data-state="failed"] .lc-tstep-dot {
-  background: var(--l-danger);
-}
-/* Running, the dot pulses: a halo grows out from under its paper ring and fades. The halo is its own
-   layer, moved by scale and opacity alone, so the pulse doesn't repaint the thread (a box-shadow
-   would, every frame); the dot is drawn again over it, its paper ring still cutting the rail. */
-.lc-tstep[data-state="running"] .lc-tstep-dot {
-  background: none;
-  box-shadow: none;
-}
-.lc-tstep[data-state="running"] .lc-tstep-dot::before,
-.lc-tstep[data-state="running"] .lc-tstep-dot::after {
-  content: "";
-  position: absolute;
-  border-radius: 999px;
-}
-/* 25px across: the old ring's widest spread, 9px, round the 7px dot. It starts at the paper
-   ring's edge (6.5px out, so 0.52) and grows to its full size as it fades. */
-.lc-tstep[data-state="running"] .lc-tstep-dot::before {
-  inset: -9px;
-  background: color-mix(in oklab, var(--l-accent) 45%, transparent);
-  opacity: 0;
-  animation: lc-pulse-dot 1.6s var(--l-ease-out) infinite;
-}
-.lc-tstep[data-state="running"] .lc-tstep-dot::after {
-  inset: 0;
-  background: var(--l-accent);
-  box-shadow: 0 0 0 3px var(--lc-paper);
-}
-@keyframes lc-pulse-dot {
-  0% {
-    opacity: 1;
-    transform: scale(0.52);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1);
-  }
-}
-.lc-tstep-verb {
-  flex: none;
-  font-weight: 600;
-}
-/* A step with no target says all of it in its verb (a tool's own title), which can be long. */
-.lc-tstep-verb:not(:has(+ .lc-tstep-target)) {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-tstep-target {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--l-ink-2);
-  font-family: var(--l-font-mono);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-tstep-time {
-  flex: none;
-  color: var(--l-ink-3);
-  font-size: 12px;
-}
-.lc-tstep-res {
-  margin-top: 1px;
-  color: var(--l-ink-3);
-  font-size: 13px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
 }
 .lc-tstep-quote {
   font-weight: 500;
@@ -4820,23 +4681,10 @@
 .lc-bad {
   color: var(--l-danger-text);
 }
-/* The step at work shows the last lines it printed, as they come. */
-.lc-tstep-tail {
-  margin: 4px 0 0;
-  padding: 6px 9px;
-  border-radius: 8px;
-  background: var(--l-wash);
-  color: var(--l-ink-3);
-  font-family: var(--l-font-mono);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
 .lc-tstep-more {
   display: grid;
   gap: 6px;
-  margin-top: 6px;
+  margin: 4px 0 6px 24px;
 }
 .lc-tstep-more .lc-pre {
   max-height: 260px;
@@ -4867,39 +4715,18 @@
   line-height: 1.5;
 }
 
-/* The work's rail: a 1px hairline down its left, no dots but where something needs saying. Its
-   rows are a line each; the rail runs on past the slot towards the status line under it. */
+/* The steps, a line each with its mark at the left: no rail and no dots, the mark says how it went. */
 .lc-wk {
-  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 2px;
   min-width: 0;
   margin: 0;
-  padding: 2px 0 6px 18px;
+  padding: 0;
   list-style: none;
 }
-.lc-wk::before {
-  content: "";
-  position: absolute;
-  top: 5px;
-  bottom: -8px;
-  left: 3.5px;
-  width: 1px;
-  background: var(--lc-hair, var(--l-line-2));
-}
 .lc-trail:not([data-live]) > .lc-wk {
-  margin-top: 4px;
-}
-.lc-trail:not([data-live]) > .lc-wk::before {
-  bottom: 4px;
-}
-/* Inside the box of every step, the box's own edge is enough. */
-.lc-wk-all.lc-wk-all {
-  padding-bottom: 2px;
-}
-.lc-wk-box > .lc-wk::before {
-  content: none;
+  margin-top: 2px;
 }
 .lc-wk-box {
   max-height: 18rem;
@@ -4921,13 +4748,15 @@
 .lc-wk-row[data-new] {
   animation: lc-row-in 160ms ease-out backwards;
 }
-.lc-wk-ln {
+.lc-wk-ln,
+.lc-live {
   display: flex;
   align-items: baseline;
   gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 0;
+  min-height: 24px;
+  padding: 2px 0;
   border: 0;
   background: none;
   color: var(--l-ink-3);
@@ -4937,27 +4766,61 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.lc-wk-ln:disabled {
+.lc-wk-ln:disabled,
+.lc-live:disabled {
   cursor: default;
 }
-/* The dot sits on the rail, cutting it with a ring of the paper. */
-.lc-wk-dot {
-  display: none;
-  position: absolute;
-  top: 7px;
-  left: -17.5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  box-shadow: 0 0 0 3px var(--lc-paper);
+/* A step's mark: grey, brighter on the one at work, red on one that failed or you said no to, amber on an ask. */
+.lc-wk-ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  align-self: center;
+  width: 16px;
+  height: 16px;
+  color: var(--l-ink-4);
 }
-.lc-wk-row:is([data-state="failed"], [data-state="no"]) > .lc-wk-dot {
-  display: block;
-  background: var(--l-danger);
+:is(.lc-wk-row, .lc-live)[data-state="running"] .lc-wk-ic {
+  color: var(--l-ink-2);
 }
-.lc-wk-row[data-state="wait"] > .lc-wk-dot {
-  display: block;
-  background: var(--l-warn);
+:is(.lc-wk-row, .lc-live):is([data-state="failed"], [data-state="no"]) .lc-wk-ic {
+  color: var(--l-danger-text);
+}
+.lc-wk-row[data-state="wait"] .lc-wk-ic {
+  color: var(--l-warn-text);
+}
+/* The live row's words: what it's at, in the light while it moves (l-shimmer, T3 Code's live-tool-shine). */
+.lc-live-t {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.lc-live-t:not(.l-shimmer) {
+  color: var(--l-ink-2);
+}
+.lc-live-t > code {
+  font-family: var(--l-font-mono);
+  font-size: 13px;
+  font-weight: 400;
+}
+.lc-live-t.l-shimmer > code {
+  color: transparent;
+}
+.lc-live > .lc-row-chev {
+  align-self: center;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.lc-live[aria-expanded="true"] > .lc-row-chev,
+.lc-live:focus-visible > .lc-row-chev {
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-live:not(:disabled):hover > .lc-row-chev {
+    opacity: 1;
+  }
 }
 /* Finished steps are grey words; the one at work, and one that needs saying, in full ink. */
 .lc-wk-verb {
@@ -5036,62 +4899,18 @@
     color: var(--l-accent-text);
   }
 }
-.lc-wk-earlier {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--l-ink-3);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-@media (hover: hover) and (pointer: fine) {
-  .lc-wk-earlier:hover {
-    color: var(--l-ink-2);
-  }
-}
-/* The slot: two lines, always there while it works, so what fills it never moves what's under it.
-   The newest lines sit at its foot; older ones run off its top. */
-.lc-wk-slot {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  height: 3.1em;
-  overflow: hidden;
-  color: var(--l-ink-3);
-  font-size: 13px;
-  line-height: 1.55;
-}
-.lc-wk-slot > span {
-  overflow-wrap: anywhere;
-}
-.lc-wk-slot[data-mono] > span {
-  overflow: hidden;
-  font-family: var(--l-font-mono);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: pre;
-}
-
-/* The turn's status line, at its end where the eye is: the pip, the word, the clock. */
+/* The turn's status line, at its end where the eye is: "Working for 4m 39s" in grey, as T3 Code's. */
 .lc-status {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 26px;
-  margin-top: -6px;
+  min-height: 24px;
   color: var(--l-ink-3);
   font-size: 13px;
 }
-.lc-status > b {
-  flex: none;
-  font-weight: 600;
-  color: var(--l-ink);
+.lc-status b {
+  font-weight: 500;
 }
 .lc-status-t {
   min-width: 0;
@@ -5103,31 +4922,8 @@
   flex: none;
   margin-left: 0;
 }
-.lc-status[data-wait] > b {
+.lc-status[data-wait] b {
   color: var(--l-warn-text);
-}
-/* The pip beats on its opacity and size alone: the only thing in a turn that moves while it works. */
-.lc-pip {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--l-accent);
-  animation: lc-beat 1.4s ease-in-out infinite;
-}
-.lc-status[data-wait] > .lc-pip {
-  background: var(--l-warn);
-  animation: none;
-}
-.lc-status[data-quiet] > .lc-pip {
-  background: var(--l-ink-4);
-  animation: none;
-}
-@keyframes lc-beat {
-  50% {
-    opacity: 0.35;
-    transform: scale(0.8);
-  }
 }
 
 /* ---------- The ask at the composer (Ask.tsx) ---------- */
@@ -5623,14 +5419,6 @@ html[data-motion="quick"] .lc-dask {
   }
 }
 
-@keyframes lc-rail {
-  from {
-    transform: translateY(-100%);
-  }
-  to {
-    transform: translateY(260%);
-  }
-}
 /* Work that ends says so by moving, not in one frame: the shimmering line that said what was under
    way unblurs into what it did (the trail's summary, "Thought for 9s", the Reviewer's verdict).
    Only in blocks that came in while you watched; history sits still. */
@@ -5643,9 +5431,6 @@ html[data-motion="quick"] .lc-dask {
   .lc-foot-chev {
     transition: none;
   }
-  .lc-trail-light::before,
-  .lc-tstep[data-state="running"] .lc-tstep-dot::before,
-  .lc-pip,
   .lc-wk-row[data-new],
   .lc-dask,
   .lc-foot-findings {

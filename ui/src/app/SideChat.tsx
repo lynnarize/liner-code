@@ -12,7 +12,7 @@ import { loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf } from "./model";
 import { Timeline } from "./Timeline";
-import { Disc } from "./ui";
+import { Disc, SendButton } from "./ui";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 /** What's being written to each session's side chat, while the app runs: the panel shuts, and you move between sessions. */
@@ -131,14 +131,7 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
             void send();
           }}
         />
-        {running && (
-          <button type="button" className="lc-stop l-focus" aria-label="Stop" title="Stop" onClick={() => void rpc("thread.stop", { id: side.id }).catch(fail)}>
-            <I.stop />
-          </button>
-        )}
-        <button type="submit" className="lc-send l-focus" aria-label="Ask" title="Ask (Enter)" data-ready={(Boolean(text.trim()) && !starting) || undefined}>
-          <I.send size={16} />
-        </button>
+        <SendButton ready={Boolean(text.trim()) && !starting} stop={running && side ? { onStop: () => void rpc("thread.stop", { id: side.id }).catch(fail) } : undefined} label="Ask" title="Ask (Enter)" submit />
       </form>
     </div>
   );

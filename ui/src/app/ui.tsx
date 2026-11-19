@@ -315,6 +315,36 @@ export function Badge({ tone = "neutral", children, dot = true }: { tone?: "ok" 
 }
 
 /**
+  The composer's one round button, as Claude Code and the other harnesses have it: while a turn runs
+  and there's nothing to send it is Stop, a neutral ink square; the moment you write, it is Send in
+  the action colour. Both marks are always drawn and only the one in use shows, so one turns into the
+  other in place (app.css, .lc-send[data-stop]). `stop` unset is a plain Send.
+*/
+export function SendButton({ ready, stop, label, title, disabled, submit, className, size = 16, onSend }: { ready: boolean; size?: number; stop?: { onStop: () => void; title?: string }; label: string; title?: string; disabled?: boolean; submit?: boolean; className?: string; onSend?: () => void }) {
+  const stopping = Boolean(stop) && !ready;
+  return (
+    <button
+      type={submit && !stopping ? "submit" : "button"}
+      className={cx("lc-send l-focus", className)}
+      aria-label={stopping ? "Stop" : label}
+      title={stopping ? (stop?.title ?? "Stop") : title}
+      data-ready={(ready && !disabled) || undefined}
+      data-stop={stopping || undefined}
+      disabled={!stopping && disabled}
+      onClick={(e) => {
+        if (stopping) {
+          e.preventDefault();
+          stop!.onStop();
+        } else if (onSend) onSend();
+      }}
+    >
+      <I.send size={size} className="lc-send-up" />
+      <I.stop size={Math.round((size * 11) / 16)} className="lc-send-sq" />
+    </button>
+  );
+}
+
+/**
   How a session stands: the spinner while it works (in the tint of whose model it runs on, when `brand`
   says), amber when it needs you, an alert when it stopped on a problem, a ring before it starts,
   a quiet check when done. Each is an image to a screen reader, so its label is read out.

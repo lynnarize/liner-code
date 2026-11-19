@@ -1,7 +1,7 @@
 /*
   Puts a downloaded Liner Code in place of this one. The engine downloads and checks a release
   into <home>/updates and writes ready.json; this checks it again (where it is, its bundle id, that
-  it's newer), then hands the swap to a small script that waits for this app to quit, moves the
+  it's newer, and that its signature still holds: signed.ts), then hands the swap to a small script that waits for this app to quit, moves the
   old copy aside, moves the new one in (putting the old one back if that fails, and leaving why
   for the engine to show) and, for a restart, opens it. An app can't replace its own bundle while
   it runs, so the script outlives it.
@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { app } from "electron";
 import { APP_BUNDLE_ID as BUNDLE_ID, APP_BUNDLE_NAME as APP_NAME, newerVersion as newer } from "../../contracts/src/index.ts";
+import { signedAsOurs } from "./signed.ts";
 
 /** This app's bundle ("/Applications/Liner Code.app"), or null when it runs from the repo. */
 export function bundlePath() {
@@ -33,6 +34,8 @@ export function staged(home: string) {
     if (!newer(r.version, app.getVersion())) return null;
     const id = execFileSync("plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", join(path, "Contents/Info.plist")], { encoding: "utf8" }).trim();
     if (id !== BUNDLE_ID) return null;
+    // Checked again here, not only when it was downloaded: the swap can come days later, and it puts this in the app's place.
+    if (!signedAsOurs(path, bundle)) return null;
     return { path, version: r.version, ready, bundle };
   } catch {
     return null;

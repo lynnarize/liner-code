@@ -18,8 +18,21 @@ export type Reading = { left: Left; quit: boolean; tell: Session[] };
 
 /** The kinds of ask that hold a turn open until you answer (the same three runtime.ts looks for). */
 const ASKS = new Set(["approval", "question", "proposal"]);
-/** Whether a session's timeline has a request still open: then its "waiting" is a live turn, not an old one. */
-export const openAsk = (items: unknown) => Array.isArray(items) && items.some((i) => i && typeof i === "object" && ASKS.has((i as { kind?: string }).kind ?? "") && (i as { state?: string }).state === "asking");
+/**
+  Whether a session's timeline has a request still open that a quit would end: then its "waiting" is a live turn, not an old
+  one. An approval or a plan still asking always is. A question is only while its turn still runs: the engine keeps a question
+  across a quit (your answer goes as the next message), so one left from an earlier run, or from a turn that has ended, loses
+  nothing to a quit and must not hold one for good. With no turn marker to read (a partial timeline), a question counts.
+*/
+export const openAsk = (items: unknown) => {
+  if (!Array.isArray(items)) return false;
+  const of = (i: unknown) => (i && typeof i === "object" ? (i as { kind?: string; state?: string; status?: string }) : {});
+  const asking = items.map(of).filter((i) => ASKS.has(i.kind ?? "") && i.state === "asking");
+  if (!asking.length) return false;
+  if (asking.some((i) => i.kind !== "question")) return true;
+  const last = items.map(of).findLast((i) => i.kind === "turn");
+  return last ? last.status === "running" : true;
+};
 
 /** How long nothing may work before the app quits: a turn's end can start the next (a queued message, a review) a moment later. */
 export const SETTLE_MS = 2500;

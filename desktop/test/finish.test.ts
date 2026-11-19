@@ -113,6 +113,19 @@ test("an open request is an approval, a question or a plan still asking", () => 
   assert.equal(openAsk([null, 3]), false);
 });
 
+test("a question whose turn is over doesn't hold a quit: it outlives the quit, and its answer goes as the next message", () => {
+  const asked = { kind: "question", state: "asking" };
+  // Its turn still runs: quitting would end that turn.
+  assert.equal(openAsk([{ kind: "turn", turn: 1, status: "running" }, asked]), true);
+  // Left from before a restart, or from a turn that ended: nothing is lost by quitting.
+  assert.equal(openAsk([{ kind: "turn", turn: 1, status: "stopped" }, asked]), false);
+  assert.equal(openAsk([{ kind: "turn", turn: 1, status: "done" }, asked]), false);
+  // An approval or a plan is ended by a quit whatever its turn says, so it still holds one.
+  assert.equal(openAsk([{ kind: "turn", turn: 1, status: "stopped" }, { kind: "approval", state: "asking" }]), true);
+  // Only the newest turn counts.
+  assert.equal(openAsk([{ kind: "turn", turn: 1, status: "running" }, asked, { kind: "turn", turn: 2, status: "done" }]), false);
+});
+
 test("a waiting session whose timeline didn't come in time is held, not told of, and looked at again", () => {
   const q = new QuitWhenDone(0);
   const threads = [t("w", "waiting")];

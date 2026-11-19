@@ -1971,15 +1971,15 @@ html[data-native="mac"] .lc-sb-head {
 .l-tip.l-glass::after {
   content: none;
 }
-/* One measure for the conversation: the text, the cards and the composer's frame share their edges. */
+/* One measure for the conversation: the text, the cards and the composer's frame share their edges. The thread's 18 + 16 is the composer's 14 + 4 + 16. */
 .lc-thread > * {
   --lc-measure: 712px;
 }
 .lc-scroll-in {
-  max-width: calc(var(--lc-measure) + 48px);
+  max-width: calc(var(--lc-measure) + 36px);
   margin: 0 auto;
   /* Room at the end to scroll the last answer clear of the composer floating over it. */
-  padding: 24px 24px calc(var(--lc-dock-h, 132px) + 18px);
+  padding: 24px 18px calc(var(--lc-dock-h, 132px) + 18px);
 }
 /* The tray round the card takes 4px a side, so the card keeps the measure (712) and its bottom
    edge sits 12px over the paper's (8 under the tray, 4 in it): the panel's foot lines up with it. */

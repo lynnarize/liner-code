@@ -164,3 +164,16 @@ test("Two panes fit their column while open, and keep their width less the card'
   assert.equal(closing.length, 1, "no closing-only width for two panes");
   assert.equal(value(closing[0], "width"), "calc(max(100%, min(calc(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)) * 1.6), calc(100cqw - 466px))) - 8px)", "the closing two-pane width does not know the rail and the card's margin");
 });
+
+test("The thread's column keeps the composer's width, its side inset the composer's 14 plus the tray's 4", () => {
+  const ins = blocks(sheet("app.css"), ".lc-scroll-in");
+  assert.equal(ins.length, 1);
+  assert.equal(value(ins[0], "max-width"), "calc(var(--lc-measure) + 36px)", "the thread's column is not the composer's 748");
+  assert.equal(value(ins[0], "padding"), "24px 18px calc(var(--lc-dock-h, 132px) + 18px)", "the thread's side inset is not the composer's 14 plus the tray's 4");
+});
+
+test("The conversation's text starts where the composer's text does, and your messages end where its controls end", () => {
+  const tls = blocks(sheet("surfaces.css"), ".lc-scroll-in > .lc-tl");
+  assert.equal(tls.length, 1);
+  assert.equal(value(tls[0], "padding-inline"), "16px 8px", "the timeline keeps its own insets instead of the composer card's 16 and 8");
+});

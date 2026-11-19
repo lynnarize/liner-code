@@ -5775,7 +5775,7 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
   a model started stay in sight under their row while they work.
 */
 .lc-scroll-in > .lc-tl {
-  padding-inline: 18px 12px;
+  padding-inline: 16px 8px;
 }
 .lc-row-chev {
   width: 11px;

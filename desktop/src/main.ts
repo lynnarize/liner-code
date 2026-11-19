@@ -568,6 +568,10 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       const r = rectOf(p);
       const img = await win.webContents.capturePage({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
       if (img.isEmpty()) throw new Error("The window didn't give a snapshot.");
+      // At the size asked (a page drawn zoomed out, at its own pixels, so a point on it is a point to click).
+      const ow = Math.round(num(p.outWidth));
+      const oh = Math.round(num(p.outHeight));
+      if (ow > 0 && oh > 0) return img.resize({ width: Math.min(2400, ow), height: Math.min(2400, oh), quality: "best" }).toPNG().toString("base64");
       return img.toPNG().toString("base64");
     }
     case "shotUrl": {

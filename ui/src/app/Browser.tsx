@@ -5,7 +5,8 @@
   folder. It opens on its own only what is this session's: a server its agent or its Terminal
   started, one running in its folder, or the folder's own HTML; other servers on the Mac are
   offered, never picked. Pick an element and ask the agent about it; the question goes with the element's
-  place in the page and its HTML. Desktop, Tablet and Phone set the page's width; Offline makes
+  place in the page and its HTML. Desktop, Tablet and Phone set the page's width (a panel narrower
+  than the page shows it zoomed out, as it lays out on the device); Offline makes
   the page's requests fail the way they would without a network. The ⋯ menu zooms the page and
   shows it light or dark. Where an agent clicks, its pointer glides there and pulses. A launch.json
   entry nobody has said yes to as it is now shows what it runs before it runs: its command, folder,
@@ -32,6 +33,8 @@ let logSeq = 0;
 type Picked = { selector: string; path: string; text: string; html: string; rect: { x: number; y: number; w: number; h: number } };
 type Width = "desktop" | "tablet" | "phone";
 const WIDTH: Record<Width, number | null> = { desktop: null, tablet: 820, phone: 390 };
+/** What Desktop lays a page out at when the panel is narrower: a laptop's width, past the breakpoints most sites switch to their desktop layout at. */
+const DESKTOP = 1280;
 
 /** What the Browser shows: a page of a local port, or (port null) a page of the session's own folder; `server`, the launch.json server it's of, followed to another port if it moves. */
 type Target = { port: number | null; path: string; server?: string };
@@ -363,8 +366,12 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         // Out of sight, the page is drawn again in a window of the shell's own, at the same address and size.
         // Read now, not when the agent first reached it: the panel's other tabs cover a Browser that's still laid out.
         const { proxy: base, target: at, hidden: away } = now.current;
-        if (away) return bridge.shotUrl(base && at ? `${base}${at.path}` : frame.current!.src, Math.round(f.width), Math.round(f.height));
-        return bridge.snapshot({ x: f.left, y: f.top, width: f.width, height: f.height });
+        // The page's own size, not what it's drawn at: zoomed out (Desktop in a narrow panel, a phone that doesn't fit),
+        // the picture is still the page's pixels, so a point on it is the point browser_click takes.
+        const own = { width: frame.current!.clientWidth || Math.round(f.width), height: frame.current!.clientHeight || Math.round(f.height) };
+        if (away) return bridge.shotUrl(base && at ? `${base}${at.path}` : frame.current!.src, own.width, own.height);
+        const drawnSmaller = Math.abs(f.width - own.width) > 1 || Math.abs(f.height - own.height) > 1;
+        return bridge.snapshot({ x: f.left, y: f.top, width: f.width, height: f.height }, drawnSmaller ? own : undefined);
       }
       throw new Error(`The Browser can't ${op}.`);
     });
@@ -530,7 +537,9 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     ro.observe(el);
     return () => ro.disconnect();
   }, [target !== null]);
-  const fit = w && room > 24 ? Math.min(1, (room - 24) / w) : 1;
+  // Desktop fills the stage edge to edge: in a panel narrower than a laptop, the page lays out
+  // DESKTOP wide and is drawn smaller, rather than squeezed into the phone layout the panel's width asks for.
+  const fit = w ? (room > 24 ? Math.min(1, (room - 24) / w) : 1) : room > 0 ? Math.min(1, room / DESKTOP) : 1;
   // What a page pixel is drawn at: its zoom, times the fit.
   const scale = zoom * fit;
 
@@ -802,7 +811,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               title="Page preview"
               onLoad={onLoad}
               // A frame's color-scheme is what the page inside reads as prefers-color-scheme.
-              style={{ width: `${100 / scale}%`, height: `${100 / scale}%`, transform: scale === 1 ? undefined : `scale(${scale})`, colorScheme: scheme === "system" ? undefined : scheme }}
+              style={{ width: !w && fit < 1 ? `${DESKTOP / zoom}px` : `${100 / scale}%`, height: `${100 / scale}%`, transform: scale === 1 ? undefined : `scale(${scale})`, colorScheme: scheme === "system" ? undefined : scheme }}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
             />
           </div>

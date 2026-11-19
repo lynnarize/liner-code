@@ -84,9 +84,9 @@ export const bridge = {
   setMenuFace(face: "code" | "design" | "security") {
     if (isNative()) void call("setMenuFace", { face }).catch(() => {});
   },
-  /** A part of the window, as a PNG in base64 (the rect in page pixels). */
-  snapshot(rect: { x: number; y: number; width: number; height: number }): Promise<string> {
-    return call<string>("snapshot", rect);
+  /** A part of the window, as a PNG in base64 (the rect in page pixels), drawn `size` big when given. */
+  snapshot(rect: { x: number; y: number; width: number; height: number }, size?: { width: number; height: number }): Promise<string> {
+    return call<string>("snapshot", size ? { ...rect, outWidth: size.width, outHeight: size.height } : rect);
   },
   /** A local page drawn in a window nobody sees, as a PNG in base64: the Browser's, when it's out of sight. */
   shotUrl(url: string, width: number, height: number): Promise<string> {

@@ -20,7 +20,7 @@ To hand this to another model, send it `plans/PROMPT.md`.
 | [008](008-one-definition-of-session-state.md) | Every face reads a session's state from one tested file | P2 | M | 007 | DONE |
 | [009](009-pin-access-and-updater-checks.md) | Tests pin Codex's access table, the proxy's WebSocket check, the updater's refusals, rewind's refusal, open-with | P1 | M | — | DONE |
 | [010](010-check-the-update-before-the-swap.md) | The app checks a waiting update's signature again before the swap | P2 | S | — | DONE |
-| [011](011-engine-answers-only-its-own-callers.md) | The engine checks the caller before reading a request, and answers only to its own address | P2 | S | — | BLOCKED |
+| [011](011-engine-answers-only-its-own-callers.md) | The engine checks the caller before reading a request, and answers only to its own address | P2 | S | — | DONE (commit `79cf3d0`, approved, fast-forwarded onto `design-and-api-endpoints` by the owner) |
 | [012](012-less-work-on-fork-and-in-the-background.md) | Less work on a fork, on the other faces, and in a hidden window | P3 | S | — | DONE |
 | [013](013-house-rules-and-a-safe-sync.md) | A CLAUDE.md with the house rules, and a Liner UI sync that shows its changes first | P2 | S | 002 | DONE |
 | [014](014-small-engine-fixes.md) | One fix session per finding, a cancellable outside wait, export makes its folder | P3 | S | — | DONE |
@@ -28,6 +28,19 @@ To hand this to another model, send it `plans/PROMPT.md`.
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 When you finish a plan, set its status and add one line under "Executor notes" below: the commit, anything you could not verify, and any STOP you hit.
+
+## The advisor's audit of the work, 2026-11-19
+
+Audited at `f4f3c84` (13 commits on top of `6970155`, one per plan, nothing pushed). Every diff was read against its plan's scope and steps, and the checks were run again.
+
+- **Verdict: plans 001 to 010 and 012 to 014 are approved.** Each commit changes only files its plan lists, does what the plan's steps say, and its new tests assert the behaviour (none is hollow). `CHANGELOG.md`, `ui/src/liner`, `mac/` and Routines are untouched.
+- **Checks re-run:** `npm run typecheck` exit 0. `npm run test:steady -w engine`: 1,414 of 1,415 passed. `npm test -w desktop`: 40 of 40. `npm run build` and `node desktop/build.ts` exit 0. Both scripts pass `bash -n`.
+- **The one failing test is not from this work.** "opencode: Stop, then the next message at once: the stopped turn's late count leaves the next turn's steps out" (`engine/test/polish-providers.test.ts:288`) failed once in the full run and passed six times out of six alone. Neither that file nor `engine/src/providers/acp.ts` was changed by these commits. It is a second timing-dependent test, beside the known "Stop is decisive".
+- **Plan 011** was stopped correctly by its first executor (an existing test sends a made-up `Host: x`). The plan was refreshed in place to change that one header, then run by a builder in its own worktree: commit `79cf3d0`, parent `f4f3c84`, branch `worktree-agent-a17ac75a6772c0120`, four files, all in scope. **Approved.** The diff matches the plan line for line; the two new tests failed before the fix and pass after. Re-run by the advisor in that worktree: engine type check exit 0, and 302 of 302 tests across the twelve files that start or call the server. The builder's own full run was 1,417 of 1,417. The app reaches its engine as `http://127.0.0.1:<port>` (`desktop/src/main.ts:1046`) and Vite's proxy rewrites the host, so neither is locked out by reading; neither was opened on screen. To bring it onto the branch: `git merge --ff-only worktree-agent-a17ac75a6772c0120`.
+- **Two deviations, both reported by the executor and both accepted:**
+  - Plan 004: when a store has no `home` (only a test's stand-in at `engine/test/engine.test.ts:498`), the key file goes to the temp folder instead. The real engine always has a home. Worth tidying later: give that stand-in a `home` and drop the fallback, so a key can never land outside Liner Code's folder.
+  - Plan 012: its done criterion `grep -c "onSidebar={() =>" ui/src/app/App.tsx` → `0` was wrong. Seven other screens in `App.tsx` still pass an inline function, and they were out of scope. The two lines the plan named were changed. The criterion was the plan's mistake, not the executor's.
+- **Still owed, and no test can supply it:** the real-tool run for plans 003, 004 and 005 (Claude Code, Codex, OpenCode); a look on screen for plans 006, 007, 008 and 012; the first run of the CI workflow once pushed; a rehearsal of the update swap for plan 010.
 
 ## Dependency notes
 

@@ -6,7 +6,12 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat 6970155..HEAD -- engine/src/server.ts engine/src/main.ts engine/test/engine.test.ts`
+> **Refreshed on 2026-11-19 after a first attempt was blocked.** The first executor stopped, correctly, because an
+> existing test sends a made-up `Host: x` to the webhook route and the new rule answered it 403. That made-up host
+> is not what the test is about, so this version of the plan changes that one header (Step 2, part 3). Everything
+> else is as before. The first attempt confirmed that the key-before-body half works.
+>
+> **Drift check (run first)**: `git diff --stat f4f3c84..HEAD -- engine/src/server.ts engine/src/main.ts engine/test/engine.test.ts engine/test/audit-api.test.ts`
 > If any of these changed since this plan was written, compare the "Current
 > state" excerpts against the live code before proceeding; on a mismatch,
 > treat it as a STOP condition.
@@ -18,7 +23,7 @@
 - **Risk**: MED (a wrong Host rule would lock the app out of its own engine)
 - **Depends on**: none
 - **Category**: security
-- **Planned at**: commit `6970155`, 2026-11-19
+- **Planned at**: commit `f4f3c84`, 2026-11-19 (first written at `6970155`; `engine/src/server.ts` and `engine/src/main.ts` are unchanged since then)
 
 ## Why this matters
 
@@ -85,7 +90,7 @@ Second, the server does not check the `Host` header. A web page can point a name
   }
   ```
 - Who calls the engine and with which `Host`: the app's own page (served by the engine itself at `http://127.0.0.1:<port>`), the MCP servers (`tools.url = `http://127.0.0.1:${server.port}``, `engine/src/main.ts:195`), and in development Vite's proxy with `changeOrigin: true` and target `http://127.0.0.1:7317` (`ui/vite.config.ts:8-10`), which rewrites `Host` to the target's.
-- `engine/test/engine.test.ts` already starts the real engine and checks a wrong token gets 401 (near line 379), and has a `get(url, headers)` helper (near line 310) that sends a request with chosen headers and returns `{ status, body }`.
+- `engine/test/engine.test.ts` already starts the real engine and checks a wrong token gets 401 (near line 419), and has a `get(url, headers)` helper (line 313) that sends a request with chosen headers and returns `{ status, body }`.
 
 Conventions: TypeScript run directly by Node 24. Long hand-formatted lines; never run a formatter. Comments are plain sentences that say why. Every fix comes with a test that fails without it.
 
@@ -104,6 +109,7 @@ Conventions: TypeScript run directly by Node 24. Long hand-formatted lines; neve
 - `engine/src/server.ts`
 - `engine/src/main.ts` (the `startServer({ … })` options only)
 - `engine/test/engine.test.ts` (add tests)
+- `engine/test/audit-api.test.ts`: one header in one test only (Step 2, part 3)
 
 **Out of scope**:
 - `engine/src/proxy.ts` (it already has its own check).
@@ -147,6 +153,19 @@ In `engine/src/server.ts`:
    Use the name of the variable that holds the `createServer(...)` result in this file in place of `server` if it differs.
 2. In `handle`, right after the `if (!url) …` line, add:
    `if (!addressed(req.headers.host)) return void res.writeHead(403).end("Forbidden");`
+   It must come after the `if (!url)` line, not before: `engine/test/audit-api.test.ts:81` sends `GET //` with `Host: x` and expects 400, and that order keeps it passing unchanged.
+3. Two tests in `engine/test/audit-api.test.ts` talk to the server over a raw socket with a made-up `Host: x`. The one at line 81 keeps passing (see part 2). The one at lines 87-98, "server: a webhook that throws is answered, not left hanging", posts to `/hooks/r/abc` and expects 500; with the new rule it would get 403 before reaching the webhook. The made-up host is not what that test is about, so give it the server's real address. Change its request line from
+
+   ```ts
+   assert.match(await raw(server.port, "POST /hooks/r/abc?key=k HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"), /^HTTP\/1\.1 500/);
+   ```
+   to
+
+   ```ts
+   // Addressed to the server itself, as a real webhook is: one sent under another name is turned away before it gets here.
+   assert.match(await raw(server.port, `POST /hooks/r/abc?key=k HTTP/1.1\r\nHost: 127.0.0.1:${server.port}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}`), /^HTTP\/1\.1 500/);
+   ```
+   Change nothing else in that file.
 
 **Verify**: `node --test engine/test/engine.test.ts` → the first new test passes and no older test fails.
 
@@ -192,7 +211,7 @@ Two new tests in `engine/test/engine.test.ts` (Step 1), on the real engine proce
 
 ## STOP conditions
 
-- Any existing test fails with status 403 after Step 2. That means something legitimate calls the engine under another host name; report which test and which `Host`, and do not widen the rule yourself.
+- Any existing test other than the one named in Step 2, part 3 fails with status 403 after Step 2. That means something legitimate calls the engine under another host name; report which test and which `Host`, and do not widen the rule yourself.
 - The file has no single variable for the server that `handle` can reach.
 - A test starts `startServer` without `knows` and now fails for that reason (it should not: `knows` is optional).
 

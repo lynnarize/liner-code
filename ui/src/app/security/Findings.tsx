@@ -269,7 +269,7 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
             triggerClass="lf-proj l-focus"
             trigger={
               <>
-                {picked?.name ?? "All projects"}
+                <span className="lc-strip-cap">{picked?.name ?? "All projects"}</span>
                 <I.chevD size={12} />
               </>
             }

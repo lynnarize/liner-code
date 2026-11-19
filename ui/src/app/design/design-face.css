@@ -344,9 +344,28 @@ html[data-motion="quick"] .ld-face {
   gap: 6px;
   min-height: var(--lc-head);
   padding: 6px 10px 6px 16px;
+  container: ld-bar / inline-size;
 }
 .ld-bar .lc-pop {
   flex: none;
+}
+/* A narrow row gives way from the least needed: the kept copy's name, then the server chip and who is drawing, then the
+   kept copies altogether. The title, the zoom and Play stay: the title shortens (its own rule below). */
+@container ld-bar (max-width: 620px) {
+  .ld-ver-t .ld-ell {
+    display: none;
+  }
+}
+@container ld-bar (max-width: 520px) {
+  .ld-srv,
+  .ld-who {
+    display: none;
+  }
+}
+@container ld-bar (max-width: 420px) {
+  .ld-ver {
+    display: none;
+  }
 }
 /* The name of what shows, and the menu of the open designs under it (Tabs.tsx TabTitle). */
 .ld-tt {

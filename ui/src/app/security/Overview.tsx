@@ -75,7 +75,7 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
         <Pop label="Period" menu width={200} align="end" triggerClass="lo-cb l-focus" trigger={<><Calendar />{`Last ${scope.days} days`}<I.chevD size={12} /></>}>
           {(close) => PERIODS.map((d) => <Row key={d} title={`Last ${d} days`} on={d === scope.days} onPick={() => (close(), setSecurityScope({ days: d }))} />)}
         </Pop>
-        <Pop label="Project" menu width={240} align="end" triggerClass="lo-cb l-focus" trigger={<>{picked?.name ?? "All projects"}<I.chevD size={12} /></>}>
+        <Pop label="Project" menu width={240} align="end" triggerClass="lo-cb l-focus" trigger={<><span className="lc-strip-cap">{picked?.name ?? "All projects"}</span><I.chevD size={12} /></>}>
           {(close) => (
             <>
               <Row title="All projects" on={!scope.projectId} onPick={() => (close(), setSecurityScope({ projectId: undefined }))} />

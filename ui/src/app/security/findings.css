@@ -519,9 +519,11 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 60px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  min-height: 60px;
   box-sizing: border-box;
-  padding: 0 22px;
+  padding: 8px 22px;
   border-top: 1px solid var(--lc-hair);
   font-size: 13px;
 }
@@ -535,9 +537,9 @@
 .lf-x-dismiss svg {
   color: var(--l-ink-3);
 }
-/* What the actions will do, in a few words: it wraps onto a second line when the panel is narrow, never cut with "…". */
+/* What the actions will do, in a few words: it takes the room left on the row and goes under the buttons when there is none, never cut with "…". */
 .lf-x-hint {
-  flex: 0 1 auto;
+  flex: 1 1 120px;
   min-width: 0;
   margin-right: 6px;
   font-size: 12px;
@@ -545,6 +547,10 @@
   color: var(--l-ink-3);
   text-align: right;
   text-wrap: balance;
+}
+/* The hint on a line of its own (a narrow panel) reads from the left, under the buttons it explains. */
+.lf-x-act-bar > .lc-grow {
+  flex: 1 0 0px;
 }
 .lf-x-hint-l {
   margin-right: 0;

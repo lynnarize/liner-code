@@ -202,3 +202,24 @@ test("the Found panel's header is its own, not a page's top row", () => {
   const top = blocks(sheet("security/scan.css"), ".lsc-found-top");
   assert.equal(value(top[0], "min-height"), "var(--lc-head)", "the Found header does not keep the top row's height on its own");
 });
+
+test("Usage folds by its own width, not the window's", () => {
+  const css = sheet("app.css");
+  assert.equal(css.includes("@media (max-width: 980px)"), false, "Usage still folds by the window's width");
+  assert.equal((css.match(/container: lc-usage \/ inline-size/g) ?? []).length, 1, "Usage's container is not named once");
+  assert.equal(css.includes("@container lc-usage (max-width: 968px)"), true, "Usage does not fold by its own 968px");
+});
+
+test("the lean page folds by its own width, not the window's", () => {
+  const css = sheet("design/lean-page.css");
+  assert.equal(css.includes("@media (max-width: 900px)"), false, "the lean page still folds by the window's width");
+  assert.equal((css.match(/container: ld-lp \/ inline-size/g) ?? []).length, 1, "the lean page's container is not named once");
+  assert.equal(css.includes("@container ld-lp (max-width: 888px)"), true, "the lean page does not fold by its own 888px");
+});
+
+test("a finding's panel folds by its page's width, not the window's", () => {
+  const css = sheet("security/findings.css");
+  assert.equal(css.includes("@media (max-width: 1240px)"), false, "the finding panel still folds by the window's width");
+  assert.equal((css.match(/container: lf-page \/ inline-size/g) ?? []).length, 1, "the findings page's container is not named once");
+  assert.equal(css.includes("@container lf-page (max-width: 1228px)"), true, "the finding panel does not fold by its page's own width");
+});

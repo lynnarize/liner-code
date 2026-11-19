@@ -16,6 +16,7 @@
 .ld-lp {
   position: absolute;
   inset: 0;
+  container: ld-lp / inline-size;
   /* Over everything the canvas floats (the dock, Compare). */
   z-index: 50;
   display: flex;
@@ -511,7 +512,7 @@ html[data-motion="quick"] .ld-lp {
   font-size: 12px;
 }
 
-@media (max-width: 900px) {
+@container ld-lp (max-width: 888px) {
   .ld-lp-cols {
     grid-template-columns: minmax(0, 1fr);
     overflow: auto;

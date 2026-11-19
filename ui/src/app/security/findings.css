@@ -7,6 +7,7 @@
   display: flex;
   height: 100%;
   min-height: 0;
+  container: lf-page / inline-size;
 }
 .lf-main {
   flex: 1;
@@ -595,9 +596,9 @@
   gap: 4px;
 }
 
-/* A narrow window with a finding open: the panel gives the list more room, and the filter row wraps (above) so sort and
+/* A narrow page with a finding open: the panel gives the list more room, and the filter row wraps (above) so sort and
    search stay on screen, at the row's right end. */
-@media (max-width: 1240px) {
+@container lf-page (max-width: 1228px) {
   .lf-x {
     width: clamp(320px, 44%, 560px);
   }

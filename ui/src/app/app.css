@@ -6070,8 +6070,9 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Narrow windows: the panel takes over the paper rather than squeezing the session. */
-@media (max-width: 980px) {
+.lc-usage { container: lc-usage / inline-size; }
+/* Usage's two columns become one when the page itself is narrower than 968px, sidebar open or not. */
+@container lc-usage (max-width: 968px) {
   .lc-usage-top,
   .lc-usage-mid {
     grid-template-columns: minmax(0, 1fr);

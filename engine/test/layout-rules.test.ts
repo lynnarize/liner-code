@@ -39,3 +39,24 @@ test("The Add-ons page's column and title match Settings' page pattern", () => {
   assert.equal(heads.length, 1);
   assert.deepEqual({ maxWidth: value(cols[0], "max-width"), h1Size: value(heads[0], "font-size") }, { maxWidth: "760px", h1Size: "24px" }, "the column and title keep the Add-ons page's own measures instead of Settings'");
 });
+
+test("Every menu has the 14px corner its rule asks for, outweighing Liner's own sheet", () => {
+  const css = sheet("app.css");
+  const panels = blocks(css, ".l-pop.lc-pop-panel");
+  assert.ok(panels.some((b) => value(b, "border-radius") === "14px"), "no .l-pop.lc-pop-panel block draws the 14px corner");
+  // blocks() only matches whole selectors, so scan every selector that mentions the panel for the old 13px corner too.
+  const stale = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1].includes("lc-pop-panel") && value(m[2], "border-radius") === "13px");
+  assert.equal(stale.length, 0, "a block whose selector contains lc-pop-panel still draws 13px");
+});
+
+test("A menu's rows stand 2px apart in every list of rows", () => {
+  const lists: [string, string][] = [
+    ["app.css", ".lc-envp"], ["app.css", ".lc-env-in"], ["app.css", ".lc-who-scroll"], ["app.css", ".lc-rvm"], ["app.css", ".lc-qp-list"],
+    ["crew.css", ".lc-crp"], ["crew.css", ".lc-cr-files"], ["addons-page.css", ".lc-ao-ways"], ["models.css", ".lc-pc-list"],
+  ];
+  for (const [file, selector] of lists) {
+    const bs = blocks(sheet(file), selector);
+    assert.equal(bs.length, 1, `${file} should hold one ${selector} block`);
+    assert.equal(value(bs[0], "gap") ?? value(bs[0], "row-gap"), "2px", `${selector} in ${file} does not stand its rows 2px apart`);
+  }
+});

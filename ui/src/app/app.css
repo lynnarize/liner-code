@@ -741,7 +741,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   place-items: center;
   padding: 0;
 }
-.lc-pop-panel {
+.l-pop.lc-pop-panel {
   display: grid;
   gap: 2px;
   max-width: calc(100vw - 24px);
@@ -750,7 +750,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   overflow: auto;
   overscroll-behavior: contain;
   padding: 6px;
-  /* One menu corner in the app: 14, its rows 8 (6 in, so they sit concentric). */
+  /* One menu corner in the app: 14, its rows 8 (6 in, so they sit concentric). Liner's own sheet loads after this one, so the selector carries Liner's class to outweigh it. */
   border-radius: 14px;
   text-align: left;
 }
@@ -851,7 +851,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
 /* A session's place, from its bar: rows that do the usual thing, with more under a chevron. */
 .lc-envp {
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 .lc-env-l {
   display: flex;
@@ -897,7 +897,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
 }
 .lc-env-in {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   padding: 2px 0 8px 26px;
 }
 .lc-env-p {
@@ -3772,7 +3772,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-who-scroll {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   margin: calc(var(--lc-ring) * -1);
   padding: var(--lc-ring);
   overflow: hidden auto;
@@ -7175,7 +7175,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-rvm {
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 .lc-rvm-row {
   display: flex;
@@ -7866,7 +7866,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-qp-list {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   max-height: calc(34px * 8 + 7px);
   overflow: auto;
   overscroll-behavior: contain;
@@ -8193,7 +8193,7 @@ span.lc-sb-name {
 .lc-pop-panel:has(> .lc-sl-menu) {
   gap: 0;
   padding: 5px;
-  border-radius: 13px;
+  border-radius: 14px;
 }
 .lc-sl-menu .lc-row {
   display: flex;

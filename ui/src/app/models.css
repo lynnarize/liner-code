@@ -392,7 +392,7 @@
 .lc-pc-list {
   display: grid;
   align-content: start;
-  gap: 1px;
+  gap: 2px;
   max-height: calc(340px + var(--lc-ring) * 2);
   min-height: calc(120px + var(--lc-ring) * 2);
   margin: calc(var(--lc-ring) * -1);

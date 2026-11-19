@@ -85,6 +85,7 @@
 .lc-crp {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
   padding: 2px 0 0;
 }
 .lc-crp-h {
@@ -843,7 +844,7 @@ button.lc-cr-bg:hover {
 /* The files a brief changed, measured: a status letter, the path, its lines; each opens in Files. */
 .lc-cr-files {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;

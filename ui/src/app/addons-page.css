@@ -129,6 +129,7 @@
 .lc-ao-ways {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 .lc-ao-ways > button {
   display: flex;

@@ -19,7 +19,7 @@ import { mac, type Rect } from "./mac";
 import { materialOf, seeThrough, type Material } from "./material";
 import { oldScripts } from "./temp";
 import { StatusItem, type TrayStatus } from "./tray";
-import { bundlePath, install as installUpdate, staged } from "./update";
+import { bundlePath, install as installUpdate } from "./update";
 
 app.setName("Liner Code");
 // A test home (LINER_HOME) keeps the shell's own data apart too, and runs beside your app.
@@ -518,7 +518,8 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       quitting = true;
       // An update waiting goes in now, and its swap opens the app: relaunching as well would start
       // this copy just as it's replaced.
-      updating = installUpdate(engine.home, true);
+      // One that doesn't check out is dropped instead, and the engine that starts next says so.
+      updating = installUpdate(engine.home, true) === "started";
       if (!updating) app.relaunch();
       setImmediate(() => app.quit());
       return;
@@ -541,7 +542,16 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       return mac?.haptic();
     case "installUpdate": {
       // Restart into the update the engine downloaded and checked.
-      if (!installUpdate(engine.home, true)) throw new Error(app.isPackaged ? "There's no downloaded update to put in." : "This copy runs from source: pull and build it instead.");
+      const put = installUpdate(engine.home, true);
+      if (put === "refused") {
+        // It was dropped (signed.ts waiting): the engine takes back its "ready" and says why on the update's notice, once. An
+        // engine that doesn't answer reads refused.json at its next launch, and this says it meanwhile.
+        await engineRpc("updates.refused", {}).catch(() => {
+          throw new Error("The downloaded update didn't check out, so it was removed. Download it again from Settings › Updates.");
+        });
+        return;
+      }
+      if (put !== "started") throw new Error(app.isPackaged ? "There's no downloaded update to put in." : "This copy runs from source: pull and build it instead.");
       updating = true;
       quitting = true;
       setImmediate(() => app.quit());
@@ -985,7 +995,8 @@ app.on("before-quit", (e) => {
   }
   void engine.stop();
   // A downloaded update goes in as the app quits, so the next launch is the new one.
-  if (!updating && staged(engine.home)) updating = installUpdate(engine.home, false);
+  // One that doesn't check out is dropped instead, for the engine to say so when the app next opens.
+  if (!updating) updating = installUpdate(engine.home, false) === "started";
 });
 app.on("window-all-closed", () => {
   if (!isMac) app.quit();

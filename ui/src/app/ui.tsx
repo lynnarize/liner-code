@@ -9,6 +9,7 @@ import { cx } from "@liner/lib/hooks";
 import type { AgentProfile, LimitWindow, Thread } from "@contracts";
 import { Glyph, I, ModelMark, Spinner, wt, type MarkKind } from "./icons";
 import { clock } from "./model";
+import { stopIgnored } from "./stop-guard";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 
@@ -322,6 +323,11 @@ export function Badge({ tone = "neutral", children, dot = true }: { tone?: "ok" 
 */
 export function SendButton({ ready, stop, label, title, disabled, submit, className, size = 16, onSend }: { ready: boolean; size?: number; stop?: { onStop: () => void; title?: string }; label: string; title?: string; disabled?: boolean; submit?: boolean; className?: string; onSend?: () => void }) {
   const stopping = Boolean(stop) && !ready;
+  // When it last became Stop, so the second click of a double-click on Send doesn't stop the turn it just sent to (stop-guard.ts).
+  const since = useRef<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    since.current = stopping ? performance.now() : undefined;
+  }, [stopping]);
   return (
     <button
       type={submit && !stopping ? "submit" : "button"}
@@ -334,6 +340,7 @@ export function SendButton({ ready, stop, label, title, disabled, submit, classN
       onClick={(e) => {
         if (stopping) {
           e.preventDefault();
+          if (stopIgnored(since.current, performance.now(), e.detail)) return;
           stop!.onStop();
         } else if (onSend) onSend();
       }}

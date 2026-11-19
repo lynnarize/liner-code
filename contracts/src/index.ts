@@ -1226,6 +1226,8 @@ export type AppUpdate = {
   error?: string;
   /** "failed" because this version downloaded but couldn't take this copy's place: it comes from the release page, by hand. */
   stuck?: boolean;
+  /** "failed" because the downloaded copy didn't check out when it was looked at again (at launch, or by the shell right before the swap): it was removed, and downloads again. */
+  refused?: boolean;
 };
 
 /** One agent tool: what's here, what's out, and how its update is going. */
@@ -1893,6 +1895,8 @@ export type Rpc = {
   "updates.check": [Record<string, never>, Updates];
   /** Downloads the new Liner Code and makes it ready for the shell to put in. */
   "updates.download": [Record<string, never>, Updates];
+  /** The shell refused the update waiting, right before the swap, and dropped it: the engine reads why (updates/refused.json) and says so. */
+  "updates.refused": [Record<string, never>, Updates];
   /** Runs a tool's own updater (all the tools with one waiting, without `id`), once no session is working on it. */
   "updates.tool": [{ id?: BuiltinProvider }, Updates];
   /** Puts an update's notice away until a newer version comes out. */

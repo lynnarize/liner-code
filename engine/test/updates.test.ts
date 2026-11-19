@@ -1,13 +1,14 @@
 /*
   Updates: comparing versions, where releases come from, which zip is this Mac's, a release from
-  download to waiting (against a GitHub of its own), a swap that didn't go in, and the tool queue
-  that waits for sessions to finish. Run with `npm test -w engine`.
+  download to waiting (against a GitHub of its own), a swap that didn't go in, one that no longer checks
+  out (at launch, or refused by the shell), and the tool queue that waits for sessions to finish. Run
+  with `npm test -w engine`.
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -168,8 +169,84 @@ test("a release is downloaded, checked against its SHA-256, unpacked, checked ag
     assert.equal((await up.download()).app.state, "ready");
     assert.equal(JSON.parse(readFileSync(join(home, "updates/ready.json"), "utf8")).version, "0.2.0");
     assert.ok(existsSync(join(home, "updates/Liner Code.app/Contents/MacOS/Liner Code")));
-    // A relaunch finds it still waiting.
-    assert.equal(new Updater(new Store(home), env, idle, () => {}).state.app.state, "ready");
+    // A relaunch finds it still waiting, and the look it takes at it again leaves a good one be.
+    const again = new Updater(new Store(home), env, idle, () => {});
+    assert.equal(again.state.app.state, "ready");
+    await again.vetting;
+    assert.equal(again.state.app.state, "ready");
+    assert.ok(existsSync(join(home, "updates/Liner Code.app/Contents/MacOS/Liner Code")));
+  } finally {
+    gh.server.close();
+  }
+});
+
+/** A home with 0.2.0 downloaded and waiting, as the engine leaves it: the bundle in updates, and ready.json. */
+function stagedHome(version = "0.2.0") {
+  const home = mkdtempSync(join(tmpdir(), "liner-up-"));
+  const updates = join(home, "updates");
+  const app = miniApp(updates, version);
+  writeFileSync(join(updates, "ready.json"), JSON.stringify({ version, app }));
+  return { home, updates, app };
+}
+
+test("an update that no longer checks out at launch is removed, said once, and not announced again", { skip: process.platform !== "darwin" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "liner-rel-"));
+  const running = miniApp(join(dir, "Applications"), "0.1.0");
+  const { home, updates, app } = stagedHome();
+  // Changed after it was signed, as the shell's own look would find right before the swap.
+  writeFileSync(join(app, "Contents/MacOS/Liner Code"), "#!/bin/sh\n");
+  const env = { PATH: "/usr/bin:/bin", LINER_APP_BUNDLE: running, LINER_APP_VERSION: "0.1.0" };
+  const up = new Updater(new Store(home), env, idle, () => {});
+  await up.vetting;
+  const a = up.state.app;
+  assert.equal(a.state, "failed");
+  assert.equal(a.refused, true);
+  assert.equal(a.latest, "0.2.0");
+  assert.match(a.error ?? "", /signature is broken.* It was removed/);
+  for (const f of ["ready.json", "Liner Code.app"]) assert.ok(!existsSync(join(updates, f)), `${f} is gone`);
+  // The next launch has nothing ready, and says nothing more about it.
+  const next = new Updater(new Store(home), env, idle, () => {});
+  assert.notEqual(next.state.app.state, "ready");
+  assert.equal(next.state.app.refused, undefined);
+});
+
+test("an update the shell refused is taken back from ready, said once, and the release downloads again", { skip: process.platform !== "darwin" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "liner-rel-"));
+  const running = miniApp(join(dir, "Applications"), "0.1.0");
+  const zip = join(dir, "release.zip");
+  execFileSync("ditto", ["-c", "-k", "--keepParent", miniApp(join(dir, "build"), "0.2.0"), zip]);
+  const body = readFileSync(zip);
+  const digest = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+  const gh = await fakeGitHub(() => ({ tag: "v0.2.0", assets: [{ name: `Liner-Code-0.2.0-mac-${ARCH}.zip`, body, digest }] }));
+  try {
+    const { home, updates } = stagedHome();
+    const env = { PATH: "/usr/bin:/bin", LINER_UPDATE_REPO: "o/n", LINER_UPDATE_API: gh.api, LINER_APP_BUNDLE: running, LINER_APP_VERSION: "0.1.0" };
+    const up = new Updater(new Store(home), env, idle, () => {});
+    await up.vetting;
+    assert.equal(up.state.app.state, "ready");
+    // What the shell leaves when it refuses the update right before the swap (desktop/src/signed.ts waiting).
+    rmSync(join(updates, "ready.json"));
+    rmSync(join(updates, "Liner Code.app"), { recursive: true });
+    writeFileSync(join(updates, "refused.json"), JSON.stringify({ version: "0.2.0", why: "Its signature no longer holds, or it isn't signed by whoever signed this copy." }));
+    let a = up.refused().app;
+    assert.equal(a.state, "failed");
+    assert.equal(a.refused, true);
+    assert.match(a.error ?? "", /^Its signature no longer holds.* It was removed/);
+    assert.ok(!existsSync(join(updates, "refused.json")));
+    // Said once: a relaunch neither announces it nor says it again.
+    a = new Updater(new Store(home), env, idle, () => {}).state.app;
+    assert.notEqual(a.state, "ready");
+    assert.equal(a.refused, undefined);
+    // A relaunch reads it too, when the engine didn't hear it from the shell before the app quit.
+    writeFileSync(join(updates, "refused.json"), JSON.stringify({ version: "0.2.0", why: "It isn't a whole app." }));
+    a = new Updater(new Store(home), env, idle, () => {}).state.app;
+    assert.equal(a.state, "failed");
+    assert.equal(a.refused, true);
+    // The good release comes down again.
+    a = (await up.download()).app;
+    assert.equal(a.state, "ready");
+    assert.equal(a.refused, undefined);
+    assert.ok(existsSync(join(updates, "Liner Code.app/Contents/MacOS/Liner Code")));
   } finally {
     gh.server.close();
   }

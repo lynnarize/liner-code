@@ -53,7 +53,7 @@ export function appNotice(a: AppUpdate, native = isNative()): Notice | null {
     return { ...base, title: `${v} is ready`, body: native ? "Restart now, or it goes in when you next quit." : "Restart Liner Code to start using it.", action: native ? { label: "Restart to update", onClick: () => void updates.restart() } : page };
   if (a.state === "downloading") return { ...base, title: `Downloading ${v}`, body: `${Math.round((a.progress ?? 0) * 100)}%${a.size ? ` of ${sizeOf(a.size)}` : ""}. It goes in when you restart or quit.`, action: page };
   if (a.state === "failed" && a.stuck) return { ...base, title: `${v} couldn't go in`, body: a.error, action: a.url ? { label: "Release page", onClick: () => bridge.openExternal(a.url!) } : details };
-  if (a.state === "failed") return { ...base, title: `${v} didn't download`, body: a.error, action: a.can === "install" ? { label: "Try again", onClick: updates.download } : page };
+  if (a.state === "failed") return { ...base, title: a.refused ? `${v} didn't check out` : `${v} didn't download`, body: a.error, action: a.can === "install" ? { label: "Try again", onClick: updates.download } : page };
   const news = firstNote(a.notes);
   if (a.can === "source") return { ...base, title: `${v} is out`, body: `${news ? `${news} ` : ""}This copy runs from source: pull and build it to update.`, action: page };
   if (a.can === "manual") return { ...base, title: `${v} is out`, body: `${news ? `${news} ` : ""}This copy doesn't update itself yet: download the new one from its release page.`, action: page };

@@ -193,6 +193,8 @@ export class Updater {
     would only fail the same way at every quit. A newer release is tried as usual.
   */
   private stuck?: { version: string; why: string };
+  /** The look at an update that was already waiting at launch (readStaged), while it runs: what a test waits on. */
+  vetting?: Promise<void>;
   /** The GitHub CLI's sign-in: null until asked; none found is asked again after a few minutes (you may sign in meanwhile). */
   private token: string | undefined | null = null;
   private tokenAt = 0;
@@ -237,12 +239,13 @@ export class Updater {
       // first run
     }
     this.readSwap();
+    this.readRefused();
     this.readStaged();
     // The engine's own look at the tools (api.ts detect, a --version of each at launch and after a change) says what's
     // installed now: a tool updated in a terminal since the last look isn't offered an update it already has.
     this.off = store.on((e) => e.type === "providers" && this.installed(e.providers));
     // A newer release that's already waiting comes before one that didn't go in.
-    if (this.stuck && this.app.state !== "ready") this.app = { ...this.app, latest: this.stuck.version, state: "failed", stuck: true, error: this.stuckError() };
+    if (this.stuck && this.app.state !== "ready" && !this.app.refused) this.app = { ...this.app, latest: this.stuck.version, state: "failed", stuck: true, error: this.stuckError() };
   }
 
   private stuckError() {
@@ -266,6 +269,44 @@ export class Updater {
     rmSync(file, { force: true });
     this.clearStaged();
     this.save();
+  }
+
+  /**
+    What the shell left when it refused the update waiting, right before it would have gone in (desktop/src/signed.ts waiting):
+    it has dropped the bundle already, and this takes back "ready" and says why, once. Without it the engine would announce
+    the same update at every launch, and Restart to update would fail each time.
+  */
+  private readRefused() {
+    const file = join(this.dir, "refused.json");
+    if (!existsSync(file)) return false;
+    try {
+      const r = JSON.parse(readFileSync(file, "utf8")) as { version?: string; why?: string };
+      console.error(`[updates] the shell refused the update waiting (${r.version}): ${r.why}`);
+      if (r.version && newer(r.version, this.app.current)) this.refuse(r.version, r.why || "It didn't check out.");
+    } catch {
+      // a file cut short: what's waiting is dropped all the same
+    }
+    rmSync(file, { force: true });
+    this.clearStaged();
+    this.save();
+    return true;
+  }
+
+  /** A downloaded update that didn't check out when it was looked at again: it's gone, and the next download is a fresh one. */
+  private refuse(version: string, why: string) {
+    this.app = { ...this.app, latest: version, state: "failed", progress: undefined, stuck: undefined, refused: true, error: `${/[.!?]$/.test(why) ? why : `${why}.`} It was removed: download it again for a fresh copy.` };
+  }
+
+  /** The shell refused the update waiting (installUpdate in desktop/src/main.ts): what it left is read now, not at the next launch. */
+  refused() {
+    if (!this.readRefused() && this.app.state === "ready" && this.app.latest) {
+      // The shell couldn't leave its why (a folder it can't write to): its word that it refused is enough.
+      this.clearStaged();
+      this.refuse(this.app.latest, "It didn't check out.");
+      this.save();
+    }
+    this.emit();
+    return this.state;
   }
 
   private get settings(): Settings {
@@ -427,6 +468,7 @@ export class Updater {
       const stuck = fresh && !staged && this.stuck?.version === latest;
       this.app = {
         ...this.app,
+        refused: undefined,
         latest,
         notes: r.body?.trim() || undefined,
         url: r.html_url,
@@ -439,19 +481,39 @@ export class Updater {
       if (fresh && !staged && !stuck && this.app.can === "install" && !pickAsset(r.assets)) this.app.error = "This release has no download for this Mac yet.";
     } catch (e) {
       const status = (e as { status?: number }).status;
+      // An update that was just removed for not checking out keeps saying so: no answer from GitHub changes that.
+      if (this.app.state === "failed" && this.app.refused) return;
       this.app = { ...this.app, state: this.app.state === "ready" ? "ready" : "failed", stuck: undefined, error: status === 404 ? `No published release in ${this.app.repo} yet.` : `Couldn't reach GitHub: ${(e as Error).message}` };
     }
   }
 
-  /** The staged app from an earlier download, if it's still newer than this one. */
+  /**
+    The staged app from an earlier download, if it's still newer than this one. It's checked again in the background as the
+    download was (verify: the shell checks the same right before the swap), since days may have passed: one that no longer
+    checks out is dropped and said so, rather than offered until the shell refuses it. That costs a codesign of the bundle,
+    only at a launch with an update still waiting.
+  */
   private readStaged() {
     try {
       const r = JSON.parse(readFileSync(join(this.dir, "ready.json"), "utf8")) as { version: string; app: string };
-      if (newer(r.version, this.app.current) && existsSync(r.app)) this.app = { ...this.app, latest: r.version, state: "ready" };
-      else this.clearStaged();
+      if (!newer(r.version, this.app.current) || !existsSync(r.app)) return this.clearStaged();
+      this.app = { ...this.app, latest: r.version, state: "ready" };
+      this.vetting = this.vet(r.app, r.version);
     } catch {
       // nothing staged
     }
+  }
+
+  private async vet(app: string, version: string) {
+    // It must sit where downloads go: that's what the shell puts in.
+    const bad = app !== join(this.dir, APP_NAME) ? "It isn't where Liner Code left it." : await this.verify(app, version).catch((e: Error) => `It couldn't be checked: ${e.message}`);
+    // Only the update this looked at: a download or a refusal since then has said its own.
+    if (!bad || this.app.state !== "ready" || this.app.latest !== version) return;
+    console.error(`[updates] the update waiting (${version}) didn't check out: ${bad}`);
+    this.clearStaged();
+    this.refuse(version, bad);
+    this.save();
+    this.emit();
   }
 
   private clearStaged() {
@@ -485,7 +547,7 @@ export class Updater {
     };
     this.clearStaged();
     mkdirSync(this.dir, { recursive: true });
-    this.app = { ...this.app, state: "downloading", progress: 0, error: undefined, size: asset.size };
+    this.app = { ...this.app, state: "downloading", progress: 0, error: undefined, refused: undefined, size: asset.size };
     this.emit();
     try {
       const want = asset.digest?.startsWith("sha256:") ? asset.digest.slice(7).toLowerCase() : await this.sidecarSum(r, asset);

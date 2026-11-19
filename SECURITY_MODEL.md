@@ -17,7 +17,7 @@ Liner Code is a single-user desktop agent harness (Electron, macOS and Windows).
 - **Engine ↔ agents.** Agents run with the user's sign-ins and an access mode (read/ask/edits/auto/full). `engine/src/risk.ts` classifies tool-call risk for approval cards; even in Full access, the guard asks about irreversible steps.
 - **Untrusted content → agents.** Repo files, PR and issue bodies (routines), webhook bodies, and pages in the Browser surface can carry prompt injection.
 - **Add-ons.** MCP connections (manifest only; secrets sealed in the keychain), panels in a `sandbox="allow-scripts"` iframe with a CSP and Connection-Allowlist (`contracts/src/panel.ts`, `engine/src/panels.ts`), and ported DeepSeek Harness plugins run as separate processes. Those processes are sandboxed with `sandbox-exec` on macOS and unsandboxed on Windows and Linux (`engine/src/dsh-hosts.ts`).
-- **Release → user machine.** Self-update from GitHub releases checks the SHA-256 (from the release digest or a sidecar file), the bundle id, the version, `codesign --verify --deep --strict` and the same Team ID (`engine/src/updates.ts`). The shell swaps the bundle in (`desktop/src/update.ts`).
+- **Release → user machine.** Self-update from GitHub releases checks the SHA-256 (from the release digest or a sidecar file), the bundle id, the version, `codesign --verify --deep --strict` and the same Team ID (`engine/src/updates.ts`). The shell checks the bundle id and the signature again right before it swaps the bundle in (`desktop/src/signed.ts`, `desktop/src/update.ts`); one that fails is deleted, the engine says so once, and the release downloads again.
 
 ## Components
 | Component | Code |

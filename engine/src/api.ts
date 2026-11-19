@@ -1752,6 +1752,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
     "updates.check": () => updates.check(),
     "updates.download": () => updates.download(),
+    "updates.refused": () => updates.refused(),
     "updates.tool": ({ id }) => updates.updateTool(id),
     "updates.dismiss": ({ key }) => updates.dismiss(key),
 

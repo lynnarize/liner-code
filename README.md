@@ -446,7 +446,9 @@ Automatically. The tools are yours, so they start on Just tell me.
   and every six hours. It downloads the zip for this Mac, checks it against the release's SHA-256
   (GitHub's own digest, or the `.sha256` file beside the zip), unpacks it and checks it again
   (bundle id, version, signature), then puts it in place when you press Restart to update, or
-  when you quit. If it can't take the old copy's place, it says why next time it opens and links
+  when you quit. A waiting copy that no longer checks out when it's about to go in (or when the
+  app opens) is deleted, and Liner Code says so once and downloads it again. If it can't take the
+  old copy's place, it says why next time it opens and links
   the release page instead of trying again at every quit. A copy run from source, from a folder
   you can't write to, or from Downloads without being moved to Applications says so and links the
   release page instead. A private repository is read with the GitHub CLI's sign-in.

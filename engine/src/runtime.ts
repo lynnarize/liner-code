@@ -22,7 +22,7 @@ import { ACCESS_NAMES, agentState, castOf, doingOf, type DoingCall, nearestEffor
 import { capture, changedPaths, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { closesOnExit, holders, killTree, markFile, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
-import { claudeTeam, fixPrompt, parseFindings, parseStep, quickOf, reviewPrompt, stepPrompt } from "./review.ts";
+import { claudeTeam, fixPrompt, parseFindings, parseStep, quickOf, reviewPrompt, stepPrompt, TOO_LONG, tooLongToReview } from "./review.ts";
 import { antigravity, cursor, gitInside, grok, hermes, opencode } from "./providers/acp.ts";
 import { effortOf } from "./providers/models.ts";
 import { accountProvider, addedProvider } from "./providers/added.ts";
@@ -3667,6 +3667,8 @@ export class Runtime {
         if (!held && access === "review" && req.risk !== "high") {
           // One that names a .env file is the Reviewer's to read like any other step.
           if (command !== undefined && readsOnly(command) && !secret) return Promise.resolve({ allow: true });
+          // The Reviewer is shown only the start of a long step, and can't judge what it wasn't shown: you decide.
+          if (tooLongToReview(req)) return ask(TOO_LONG);
           return this.stepCall(threadId, req, AbortSignal.any([sig, signal])).then((call) => {
             // Its word is no good once you've stopped the turn it was for.
             if (sig.aborted || signal.aborted || over) return { allow: false };

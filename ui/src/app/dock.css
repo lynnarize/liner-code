@@ -255,7 +255,7 @@
 .lc-addon-strip .lc-pick {
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
 }
 /* The model an app asks (access.ai), on its strip: a quiet pill that opens the popup. */
 .lc-appmodel-chip {
@@ -342,7 +342,7 @@
   gap: 12px;
   margin: 10px;
   padding: 16px;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
   animation: l-blur-in 320ms var(--l-ease-out) backwards;
@@ -506,7 +506,7 @@
   padding: 0 10px 0 8px;
   margin-left: -8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   font-size: 13px;
@@ -557,7 +557,7 @@
   gap: 12px;
   margin: 4px 0;
   padding: 14px 16px 16px;
-  border-radius: 18px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
@@ -641,7 +641,7 @@
   gap: 2px;
   padding: 9px 10px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line-2);
   font: inherit;
@@ -826,7 +826,7 @@
   height: 28px;
   padding: 0 8px 0 4px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-2);
   font: inherit;

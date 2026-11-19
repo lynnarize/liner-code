@@ -51,7 +51,7 @@
   width: 22px;
   height: 22px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   cursor: help;
@@ -87,7 +87,7 @@
 .lc-ao-split {
   display: inline-flex;
   flex: none;
-  border-radius: 11px;
+  border-radius: var(--lc-r-field);
   background: var(--lc-ctl);
   color: var(--lc-ctl-ink);
 }
@@ -137,7 +137,7 @@
   gap: 10px;
   padding: 8px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   text-align: left;
@@ -168,7 +168,7 @@
 .lc-ao-banner {
   margin: -12px 0 0;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash);
   font-size: 13px;
   color: var(--l-ink-2);
@@ -191,7 +191,7 @@
   align-items: center;
   gap: 16px;
   padding: 10px 12px 10px 8px;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   transition: background 160ms ease;
 }
 @media (hover: hover) {
@@ -207,7 +207,7 @@
   min-width: 0;
   padding: 0;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   background: none;
   font: inherit;
   text-align: left;
@@ -254,7 +254,7 @@ button.lc-ao-open {
   display: grid;
   flex: none;
   place-items: center;
-  border-radius: 15px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-paper);
   box-shadow:
     0 0 0 1px color-mix(in oklab, var(--l-ink) 10%, transparent),
@@ -265,14 +265,14 @@ button.lc-ao-open {
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 11px;
+  border-radius: var(--lc-r-field);
 }
 .lc-ao-empty {
   display: grid;
   justify-items: start;
   gap: 8px;
   padding: 22px 24px;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-well);
 }
 .lc-ao-empty b {
@@ -314,7 +314,7 @@ button.lc-ao-open {
   width: min(440px, 100%);
   height: 100%;
   box-sizing: border-box;
-  border-radius: 18px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-paper);
   box-shadow: -20px 0 48px -24px oklch(0.3 0.04 265 / 0.35);
   animation: lc-ao-in 420ms var(--l-spring-smooth, ease-out) backwards;
@@ -419,7 +419,7 @@ button.lc-ao-open {
   justify-items: start;
   gap: 8px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-well);
   font-size: 13px;
 }
@@ -486,7 +486,7 @@ button.lc-ao-open {
 .lc-ao-from > .lc-input {
   height: 44px;
   padding: 0 14px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   font-size: 15px;
 }
 .lc-ao-from > .lc-input:focus {
@@ -546,7 +546,7 @@ button.lc-ao-open {
 .lc-btn.lc-ao-go {
   justify-content: center;
   height: 44px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   font-size: 15px;
   font-weight: 500;
 }
@@ -590,7 +590,7 @@ button.lc-ao-open {
   margin-top: 6px;
   padding: 8px 10px;
   overflow: auto;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-wash);
   line-height: 1.5;
   white-space: pre-wrap;

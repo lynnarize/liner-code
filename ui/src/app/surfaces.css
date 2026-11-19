@@ -442,7 +442,7 @@
   height: 28px;
   padding: 0 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--lc-well);
   color: var(--l-ink);
   font: inherit;
@@ -647,7 +647,7 @@
   width: 320px;
   box-sizing: border-box;
   padding: 10px;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   animation: l-pop-in 240ms var(--l-ease-enter) backwards;
 }
 .lc-br-ask-h {
@@ -858,7 +858,7 @@
   margin: 0;
   padding: 0;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line);
   list-style: none;
@@ -1652,7 +1652,7 @@
 }
 .lc-pr-warn {
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: color-mix(in oklab, var(--l-warn) 12%, transparent);
   font-size: 13px;
   line-height: 18px;
@@ -1742,7 +1742,7 @@
   display: grid;
   gap: 8px;
   padding: 12px 12px 10px;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
   animation: l-blur-in 360ms var(--l-ease-out) backwards;
@@ -2284,7 +2284,7 @@
   gap: 8px;
   min-height: 32px;
   padding: 0 8px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   font-size: 13px;
 }
 .lc-rv-f[data-on] {
@@ -2552,7 +2552,7 @@
   align-items: flex-start;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash-2);
   color: var(--l-ink-2);
 }
@@ -2600,7 +2600,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-radius: 18px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
   animation: l-blur-in 380ms var(--l-ease-out) backwards;
@@ -2696,7 +2696,7 @@
   margin: 0 6px 2px 0;
   padding: 0 7px;
   overflow: hidden;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: color-mix(in oklab, var(--l-accent) 13%, transparent);
   vertical-align: middle;
   font-size: 13px;
@@ -2769,7 +2769,7 @@
   display: grid;
   gap: 2px;
   padding: 4px;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash);
 }
 .lc-esc-h {
@@ -2780,7 +2780,7 @@
   min-height: 32px;
   padding: 0 10px 0 6px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   background: none;
   font-size: 13px;
   color: var(--l-ink-2);
@@ -2800,7 +2800,7 @@
   display: grid;
   gap: 4px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-plate);
   box-shadow: none;
   animation: l-blur-in 300ms var(--l-ease-out) backwards;
@@ -2893,7 +2893,7 @@
   margin-left: -6px;
   padding: 0 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   outline: none;
   background: var(--l-wash-2);
   color: var(--l-ink);
@@ -2957,7 +2957,7 @@
   color: var(--l-ink-3);
 }
 .lc-sb-sec[data-drop] {
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: color-mix(in oklab, var(--l-accent) 8%, transparent);
   box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--l-accent) 40%, transparent);
 }
@@ -3196,7 +3196,7 @@
   height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: none;
   font-size: 12px;
   color: var(--l-ink-3);
@@ -3217,7 +3217,7 @@
   width: min(100%, 620px);
   margin-left: auto;
   padding: 8px;
-  border-radius: 18px;
+  border-radius: var(--lc-r-card);
   background: var(--l-surface);
   box-shadow:
     0 0 0 1.5px color-mix(in oklab, var(--l-accent) 45%, transparent),
@@ -3406,7 +3406,7 @@
   min-height: 34px;
   padding: 2px 4px 2px 12px;
   box-sizing: border-box;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   /* It floats over the text with the composer, so it is solid: the accent's wash on the paper. */
   background: color-mix(in oklab, var(--l-accent) 10%, var(--l-surface));
   font-size: 13px;
@@ -3588,7 +3588,7 @@
   min-height: 110px;
   max-height: 240px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   background: var(--lc-well);
   box-shadow: none;
   resize: none;
@@ -3607,7 +3607,7 @@
   box-sizing: border-box;
   min-height: 110px;
   padding: 14px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-well);
 }
 .lc-commit-wait > i {
@@ -3677,7 +3677,7 @@
   grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   padding-block: 8px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-row);
 }
 .lc-ship-menu .lc-row-tick {
   display: grid;
@@ -3712,7 +3712,7 @@
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font-size: 13px;
   font-weight: 500;
@@ -3941,7 +3941,7 @@
 /* On the thread's own ground; cut short, its end fades rather than stopping on a line. */
 .lc-page-box {
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
 }
 .lc-page-box[data-cut] {
   mask-image: linear-gradient(#000 calc(100% - 56px), transparent);
@@ -3971,7 +3971,7 @@
   height: 30px;
   padding: 0 6px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font-size: 13px;
   cursor: pointer;
@@ -4017,7 +4017,7 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 11px;
+  border-radius: var(--lc-r-field);
   background: var(--l-bg);
   box-shadow: inset 0 0 0 1px var(--l-line-2);
 }
@@ -4365,7 +4365,7 @@
 .lc-appr .l-appr__icon {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--lc-well);
   box-shadow: none;
 }
@@ -4537,7 +4537,7 @@
   gap: 6px;
   margin: 0 12px 12px;
   padding: 6px 6px 6px 16px;
-  border-radius: 26px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-field);
   box-shadow: var(--lc-card-ring);
 }
@@ -4599,7 +4599,7 @@
   margin-left: -6px;
   padding: 0 6px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   font: inherit;
@@ -5006,7 +5006,7 @@ html[data-motion="quick"] .lc-dask {
   height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-2);
   font: inherit;
@@ -5144,7 +5144,7 @@ html[data-motion="quick"] .lc-dask {
   height: 32px;
   padding: 0 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   font: inherit;
@@ -5238,7 +5238,7 @@ html[data-motion="quick"] .lc-dask {
   justify-self: start;
   padding: 4px 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-2);
   font: inherit;
@@ -5346,7 +5346,7 @@ html[data-motion="quick"] .lc-dask {
   display: grid;
   gap: 2px;
   padding: 8px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-card-fill);
   box-shadow: inset 0 0 0 1px var(--l-line-2);
   animation: l-unblur 300ms var(--l-ease-out) backwards;
@@ -5450,7 +5450,7 @@ html:not([data-bg]) .lc-br-zoom {
 }
 .lc-br-zoom::before {
   inset: 1px;
-  border-radius: 13px;
+  border-radius: calc(var(--lc-r-card) - 1px);
   background: #fff;
 }
 .lc-br-zoom::after {
@@ -5968,7 +5968,7 @@ button.lc-sinfo-go:disabled {
   height: 18px;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-wash-2);
   cursor: pointer;
   transition: background 150ms ease;

@@ -357,7 +357,7 @@ html[data-native="mac"] .lc-st-side {
   display: grid;
   height: 76px;
   overflow: hidden;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--lc-well);
   box-shadow: inset 0 0 0 1px var(--lc-hair);
 }
@@ -460,7 +460,7 @@ html[data-native="mac"] .lc-st-side {
 .lc-st-banner {
   margin: 0;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash);
   color: var(--l-ink-2);
   font-size: 13px;

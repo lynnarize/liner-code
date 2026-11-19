@@ -430,7 +430,7 @@ button.ld-bt-n {
   gap: 6px;
   height: 30px;
   padding: 0 8px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;

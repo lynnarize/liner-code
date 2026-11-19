@@ -90,7 +90,7 @@
   min-width: 0;
   min-height: 0;
   padding: 10px 12px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-paper);
   box-shadow: 0 0 0 1px var(--lc-hair);
   cursor: pointer;
@@ -117,7 +117,7 @@
   min-width: 0;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink);
   font: inherit;
@@ -255,7 +255,7 @@
   flex: none;
   gap: 5px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-well);
 }
 .lc-wt-lead {

@@ -97,7 +97,7 @@ html[data-motion="quick"] .ld-lp {
   gap: 6px;
   min-width: 0;
   padding: 10px 12px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   box-shadow: inset 0 0 0 1px var(--lc-hair);
   transition: background 160ms ease;
 }

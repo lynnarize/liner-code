@@ -294,3 +294,29 @@ test("the classes nothing references are gone from every stylesheet", () => {
 test("the sidebar's width is said once", () => {
   assert.equal((sheet("app.css").match(/--lc-side:/g) ?? []).length, 1, "--lc-side is declared more than once");
 });
+
+test("the corner scale declares its four tokens", () => {
+  const css = sheet("app.css");
+  for (const t of ["--lc-r-row: 8px", "--lc-r-field: 10px", "--lc-r-card: 14px", "--lc-r-sheet: 18px"]) assert.equal(css.includes(t), true, t + " is not declared");
+});
+
+test("corners follow the four-size scale outside the skipped ranges", () => {
+  const root = new URL("../../ui/src/app/", import.meta.url);
+  const files: URL[] = [];
+  const walk = (d: URL) => { for (const e of readdirSync(d, { withFileTypes: true })) { const p = new URL(e.name + (e.isDirectory() ? "/" : ""), d); if (e.isDirectory()) walk(p); else if (e.name.endsWith(".css")) files.push(p); } };
+  walk(root);
+  const skippedSel = /(^|[\s,])(\.lc-rt|\.lc-rb|\.lc-run|\.lc-pr-(head|title|checks|dot|status|spin)|\.lc-pv-)/;
+  const banned = /border-radius: (7|9|11|13|15)px;/;
+  for (const f of files) {
+    const lines = readFileSync(f, "utf8").split("\n");
+    const isIntro = f.pathname.endsWith("/intro.css");
+    for (let i = 0; i < lines.length; i++) {
+      if (!banned.test(lines[i])) continue;
+      if (isIntro && i + 1 >= 150 && i + 1 <= 815) continue;
+      let j = i; while (j > 0 && !lines[j].trimEnd().endsWith("{")) j--;
+      const sel = lines[j].trimEnd().slice(0, -1);
+      if (skippedSel.test(sel)) continue;
+      assert.fail(`${f.pathname}:${i + 1} has an off-scale corner outside the skipped ranges: ${lines[i].trim()}`);
+    }
+  }
+});

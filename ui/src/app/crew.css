@@ -430,7 +430,7 @@ button.lc-crp-r:hover {
   box-sizing: border-box;
   padding: 2px 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   text-align: left;
@@ -473,14 +473,14 @@ button.lc-cr-bg:hover {
   place-items: center;
   width: 22px;
   height: 22px;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: var(--lc-plate);
   color: var(--l-ink-2);
 }
 .lc-cr-tile[data-big] {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
 }
 .lc-cr-t {
   display: grid;

@@ -24,7 +24,7 @@
   padding: 4px 0;
   overflow: hidden auto;
   scrollbar-width: none;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash);
 }
 .lc-mp-tool {
@@ -34,7 +34,7 @@
   height: 30px;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
@@ -469,7 +469,7 @@
   height: 38px;
   box-sizing: border-box;
   padding: 0 4px 0 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   color: var(--l-ink-3);
   animation: l-pop-in 200ms var(--l-ease-enter) backwards;
 }
@@ -551,7 +551,7 @@
   height: 30px;
   max-width: 240px;
   padding: 0 9px 0 10px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-surface);
   box-shadow:
     0 0 0 1px var(--l-line-2),

@@ -41,7 +41,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
@@ -93,7 +93,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   overflow: hidden;
   padding: 8px 9px;
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--lc-r-field);
   background: none;
   font: inherit;
   text-align: left;

@@ -25,6 +25,11 @@
      halo. A list that clips its rows (it scrolls, or folds) keeps this much room inside its edge
      and gives it back with a negative margin, so the rows stay put and no ring is cut. */
   --lc-ring: 4px;
+  /* Corners, four sizes: a row or small button, a field, a card or menu, and the paper or a floating sheet. */
+  --lc-r-row: 8px;
+  --lc-r-field: 10px;
+  --lc-r-card: 14px;
+  --lc-r-sheet: 18px;
   --lc-add: color-mix(in oklab, var(--l-ok) 9%, transparent);
   --lc-del: color-mix(in oklab, var(--l-danger) 8%, transparent);
   /* The action colour: the most important button wherever it is (Send, Commit and push, a card's
@@ -128,7 +133,7 @@ html[data-action="ink"] {
   box-shadow: var(--lc-float-shadow);
 }
 .l-frame-card {
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
 }
@@ -420,7 +425,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
@@ -882,7 +887,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
@@ -911,7 +916,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   min-width: 0;
   padding: 6px 9px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   font-size: 13px;
@@ -1253,7 +1258,7 @@ html[data-native="mac"] .lc-sb-head {
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
@@ -1373,7 +1378,7 @@ html[data-native="mac"] .lc-sb-head {
   align-items: center;
   gap: 10px;
   padding: 8px 8px 8px 11px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-well);
   color: var(--l-ink-3);
   animation: lc-row-in 220ms ease-out backwards;
@@ -2157,7 +2162,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   min-height: 28px;
   margin-left: -6px;
   padding: 0 6px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   list-style: none;
   color: var(--l-ink-3);
   font-size: 14px;
@@ -2288,7 +2293,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 .lc-md pre {
   overflow: auto;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash);
   font-size: 13px;
   line-height: 19px;
@@ -2357,7 +2362,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   margin-left: -6px;
   padding: 0 6px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   font-size: 14px;
@@ -2411,7 +2416,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 }
 .lc-fcard {
   min-width: 0;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
 }
@@ -2646,7 +2651,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   display: grid;
   margin: 0;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash);
   box-shadow: inset 0 0 0 1px var(--l-line);
 }
@@ -2722,7 +2727,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash);
   font-size: 13px;
   color: var(--l-ink-2);
@@ -2785,7 +2790,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   grid-template-columns: 16px minmax(0, 1fr);
   column-gap: 12px;
   padding: 11px 12px;
-  border-radius: 13px;
+  border-radius: var(--lc-r-card);
   outline: none;
   overflow-wrap: anywhere;
   background: var(--l-wash);
@@ -3433,7 +3438,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   height: 24px;
   padding: 0 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   color: var(--l-ink-3);
@@ -3473,7 +3478,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   max-width: 100%;
   height: 28px;
   padding: 0 6px 0 9px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line-2);
   font-size: 13px;
@@ -3567,7 +3572,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 6px;
   min-height: 34px;
   padding: 0 4px 0 8px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line);
   font-size: 13px;
@@ -3747,7 +3752,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 2px;
   margin: 2px 0 4px;
   padding: 2px;
-  border-radius: 11px;
+  border-radius: var(--lc-r-field);
   background: var(--l-wash);
   box-shadow: inset 0 0 0 1px var(--l-line);
 }
@@ -3764,7 +3769,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   height: 30px;
   padding: 0 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font-size: 13px;
   white-space: nowrap;
@@ -3839,7 +3844,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   place-items: center;
   width: 22px;
   height: 22px;
-  border-radius: 7px;
+  border-radius: var(--lc-r-row);
   background: var(--l-wash-2);
   color: var(--l-ink-2);
 }
@@ -3915,7 +3920,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   min-height: 36px;
   padding: 0 9px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   text-align: left;
   color: inherit;
@@ -3999,7 +4004,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   height: 28px;
   padding: 0 8px 0 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-wash);
   box-shadow: inset 0 0 0 1px var(--l-line);
   color: var(--l-ink);
@@ -4065,7 +4070,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   min-height: 30px;
   padding: 3px 6px 3px 9px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font-size: 12.5px;
   text-align: left;
@@ -4125,7 +4130,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   width: 100%;
   padding: 8px 9px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   text-align: left;
   color: inherit;
@@ -4820,7 +4825,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 6px;
   height: 30px;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-surface);
   box-shadow:
     0 0 0 1.5px var(--l-accent),
@@ -4868,7 +4873,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-sheet-frame {
   display: grid;
   max-height: calc(100vh - 48px);
-  border-radius: 24px;
+  border-radius: var(--lc-r-sheet);
   background: var(--lc-float);
   box-shadow: var(--lc-float-shadow);
 }
@@ -5034,7 +5039,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   box-sizing: border-box;
   padding: 0 12px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   outline: none;
   background: var(--lc-well);
   font: inherit;
@@ -5055,7 +5060,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   padding: 0 10px 0 12px;
   overflow: hidden;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--lc-r-field);
   background: var(--lc-well);
   font: inherit;
   font-size: 13px;
@@ -5250,12 +5255,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 /* ---------- Settings: the whole window ---------- */
 /* Settings' sidebar (you, the search, the places and the open one's sections): settings.css. */
-/* Settings keeps white cards, with a 1px ring where the glass frame was. */
-.lc-fcard.lc-st-card,
-.lc-st-col .lc-fcard,
-.lc-usage-in .lc-fcard {
-  border-radius: 18px;
-}
 
 .lc-st-paper {
   display: flex;
@@ -5300,7 +5299,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   place-items: center;
   width: 46px;
   height: 46px;
-  border-radius: 15px;
+  border-radius: var(--lc-r-card);
   background: var(--l-surface);
   box-shadow:
     0 0 0 1px var(--l-line-2),
@@ -5428,7 +5427,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 11px;
+  border-radius: var(--lc-r-field);
   background: var(--l-wash);
   box-shadow: inset 0 0 0 1px var(--l-line);
   color: var(--l-ink-2);
@@ -5480,7 +5479,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   height: 28px;
   padding: 0 7px 0 11px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-surface);
   box-shadow:
     0 0 0 1px var(--l-line-2),
@@ -5511,7 +5510,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 6px;
   height: 30px;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-surface);
   box-shadow: 0 0 0 1px var(--l-line-2);
   color: var(--l-ink-4);
@@ -5538,7 +5537,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   justify-items: center;
   gap: 6px;
   padding: 56px 24px;
-  border-radius: 22px;
+  border-radius: var(--lc-r-card);
   box-shadow: inset 0 0 0 1px var(--l-line);
   font-size: 13px;
   text-align: center;
@@ -5606,7 +5605,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   display: flex;
   height: 56px;
   overflow: hidden;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   box-shadow: inset 0 0 0 1px var(--lc-hair);
 }
 .lc-st-themechip i {
@@ -5656,7 +5655,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   justify-items: center;
   gap: 12px;
   padding: 22px 22px 14px;
-  border-radius: 18px;
+  border-radius: var(--lc-r-card);
   background: var(--l-surface);
   box-shadow:
     0 0 0 1px var(--lc-hair),
@@ -6072,7 +6071,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   position: relative;
   width: 168px;
   overflow: hidden;
-  border-radius: 15px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
   transition:
@@ -6082,7 +6081,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-ship:is([data-p="1"], [data-p="2"], [data-p="3"]) .lc-ship-morph {
   width: 100%;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
 }
 /* Folding back is quicker than opening: the exit runs ahead of the entrance. */
 .lc-ship[data-p="4"] .lc-ship-morph {
@@ -6461,7 +6460,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 10px;
   min-width: 0;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-card);
   box-shadow: var(--lc-card-ring);
   animation: l-blur-in 320ms var(--l-ease-out) backwards;
@@ -6809,7 +6808,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 8px;
   min-height: 32px;
   padding: 0 4px 0 10px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   font-size: 13px;
   color: var(--l-ink-2);
 }
@@ -6844,7 +6843,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 6px;
   margin: 8px 0;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: color-mix(in oklab, var(--l-danger) 7%, var(--lc-card));
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-danger) 22%, transparent);
   font-size: 13px;
@@ -6935,7 +6934,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 8px;
   margin: 0 4px 6px;
   padding: 4px 4px 4px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   background: color-mix(in oklab, var(--l-warn) 9%, var(--lc-card));
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-warn) 24%, transparent);
   font-size: 13px;
@@ -7018,7 +7017,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   align-items: center;
   gap: 2px;
   padding: 4px 6px 4px 12px;
-  border-radius: 12px;
+  border-radius: var(--lc-r-card);
   font-size: 13px;
   animation: l-blur-in 220ms var(--l-ease-out) backwards;
 }
@@ -7065,7 +7064,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 5px;
   height: 30px;
   padding: 0 7px 0 8px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   transition: background 140ms ease;
 }
 @media (hover: hover) {
@@ -7108,7 +7107,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   height: 28px;
   padding: 0 8px 0 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-wash);
   box-shadow: inset 0 0 0 1px var(--l-line);
   font: inherit;
@@ -7345,7 +7344,7 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   height: 34px;
   padding: 0 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   font-size: 20px;
@@ -8023,7 +8022,7 @@ html:not([data-native="mac"]) .lc-sb-head {
   height: 34px;
   box-sizing: border-box;
   padding: 0 7px 0 8px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   font-family: var(--lc-font-name);
   font-size: 17px;
   font-weight: 600;
@@ -8104,7 +8103,7 @@ span.lc-sb-name {
 .lc-sl-head .lc-sl-head-b {
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   color: var(--l-ink-3);
 }
 .lc-sl-head .lc-sl-head-b[data-open] {
@@ -8514,7 +8513,7 @@ span.lc-sb-name {
   box-sizing: border-box;
   padding: 0 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-wash-2);
   font: inherit;
   font-size: 12.5px;

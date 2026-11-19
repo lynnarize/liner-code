@@ -235,7 +235,7 @@ html[data-native="mac"] .lc-wel {
   box-sizing: border-box;
   padding: 0 12px;
   border: 1px solid var(--l-line);
-  border-radius: 15px;
+  border-radius: var(--lc-r-card);
   background: var(--l-surface);
   font: inherit;
   font-size: 13px;
@@ -331,7 +331,7 @@ html[data-native="mac"] .lc-wel {
   height: 30px;
   box-sizing: border-box;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--l-surface);
   box-shadow:
     0 0 0 1.5px var(--l-accent),

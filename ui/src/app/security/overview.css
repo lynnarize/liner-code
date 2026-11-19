@@ -407,7 +407,7 @@ button.lo-rw:hover {
   top: 6px;
   display: block;
   padding: 8px 11px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-row);
   background: var(--lc-float);
   box-shadow: var(--lc-card-ring), 0 8px 22px oklch(0.2 0.02 265 / 0.12);
   font-size: 12px;

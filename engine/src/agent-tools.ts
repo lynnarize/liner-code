@@ -466,6 +466,9 @@ export class AgentTools {
           return r.code === 0 ? text(`Opened ${args.url}.`) : fail((r.stderr || r.stdout).trim() || "The simulator didn't open it.");
         }
         case "memory_add": {
+          // What's saved here is handed to every later session in the project, so a session that only reads (Read only, a side chat)
+          // can't write it: a page it read could otherwise leave words for sessions that can act.
+          if (this.host?.readOnly(threadId)) return fail("This session only reads (Read only, or a side chat), so it can't save to the project's memory. Say the fact in your answer; the person can ask a session that makes changes to save it.");
           const t = this.store.thread(threadId);
           const r = remember(this.store.home, t.projectId, String(args.fact ?? ""));
           return text(r.added ? `Saved. This project's memory holds ${r.facts.length} ${r.facts.length === 1 ? "fact" : "facts"}; new sessions start with them.` : "That's already in this project's memory.");

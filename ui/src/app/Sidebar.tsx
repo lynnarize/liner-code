@@ -31,6 +31,7 @@ import { I, ModelMark, N, type MarkKind } from "./icons";
 import { agentOf, ago, bucketOf, clock, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, reviewHeld, since, type Bucket } from "./model";
 import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
 import { SideCounts, SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "./SideList";
+import { asksYou, needsYou, sideStateOf, waitsOnYou } from "./session-state";
 import { appNotice, updates } from "./Updates";
 import { pairOf } from "./Crew";
 import { agentState, ROUTINES_ON, updateModes } from "@contracts";
@@ -113,20 +114,7 @@ function useStored<T extends string>(key: string, fallback: T, allowed: readonly
   return [value, set] as const;
 }
 
-/**
-  Waits on you, wherever you keep it: a pinned session or one in your groups as well, the way the
-  Dock's count takes it (App). Snoozed and settled ones are put away, so they don't.
-*/
-export const waitsOnYou = (t: Thread, now = Date.now()) => bucketOf(t.pinned ? { ...t, pinned: false } : t, now) === "needs";
-/** Asks you something: it waits on your answer, ran into a problem, or hit its plan's limit. A Reviewer block isn't asking (reviewHeld). */
-export const asksYou = (t: Thread) => (t.status === "waiting" && !reviewHeld(t)) || t.status === "error" || t.status === "limited";
-/**
-  Needs you, the same everywhere: the sidebar's Needs you and its top pill, the Dock's count, the menu
-  bar item and Next session that needs you. It asks you something, or it finished and you haven't
-  read it. Not one that hasn't started, nor one put away (archived, snoozed, settled); a pinned one or
-  one in your groups does. One answered while you were away whose agents still work is working until they're done.
-*/
-export const needsYou = (t: Thread, now = Date.now()) => !t.archived && t.turns > 0 && waitsOnYou(t, now) && (asksYou(t) || !t.agentsAtWork);
+export { asksYou, needsYou, waitsOnYou };
 /**
   How a row and its card show a session on its shelf: a pinned one that waits on you as Needs you
   (its dot, its words, its mark). T3 Code reads a row's state from the thread alone, its pin apart
@@ -1660,7 +1648,7 @@ const SessionRow = memo(function SessionRow({ t, shelf, now, agents, providers, 
   // before (By status moves a row to another section, which draws it anew) doesn't fade in again. Either keeps that for this row's life, so nothing plays when it changes.
   const [fresh] = useState(() => seen.has(t.id) || current);
   useEffect(() => void seen.add(t.id), []);
-  const state: SideState = busy ? "working" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : reviewHeld(t) ? "done" : t.status === "waiting" ? "needs" : t.turns === 0 ? "new" : "done";
+  const state: SideState = sideStateOf(t, busy);
   const said = rowLine(t, bucket, state, agentsNow, now);
   const pr = t.pr ? prState(t.pr.state) : undefined;
   // Finished while you were elsewhere: a blue dot until you open it, beside its pull request or changes mark.

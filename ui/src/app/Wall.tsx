@@ -19,6 +19,7 @@ import { addToDraft } from "./Composer";
 import { getState, loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf, ago, bucketOf, clock, duration, isModelAgent, markOf, mergeFiles, modelLabel, onTheWall, plural, providerLabel, sumLines, threadModel, turnsOf, wallShown } from "./model";
+import { reviewHeld, wallKind, type WallKind } from "./session-state";
 import { isStep, trailSteps, type TrailStep } from "./Timeline";
 import { pairOf } from "./Crew";
 import { Kbd, Lines, StatusMark } from "./ui";
@@ -33,11 +34,10 @@ type Limit = Extract<Item, { kind: "limit" }>;
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
 type Mark = Extract<Item, { kind: "turn" }>;
 
-export type WallKind = "needs" | "working" | "done";
+export type { WallKind };
 type Filter = "all" | WallKind;
 
-/** Where a session stands on the Wall, from the session alone: the order and the counts need no timelines. One whose turn is over while agents it sent still work is working, not done. */
-export const wallKind = (t: Thread): WallKind => (t.status === "running" ? "working" : t.status === "waiting" || t.status === "error" || t.status === "limited" ? "needs" : t.agentsAtWork ? "working" : "done");
+export { wallKind };
 const RANK: Record<WallKind, number> = { needs: 0, working: 1, done: 2 };
 
 /** The sessions on the Wall, in its order. Within a kind, newest first, unread answers ahead of read ones. */
@@ -523,7 +523,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   const state =
     t.status === "running"
       ? { word: `Working · ${when}` }
-      : t.status === "waiting"
+      : t.status === "waiting" && !reviewHeld(t)
         ? { word: `Needs you · ${when}`, tone: "warn" }
         : t.status === "error"
           ? { word: `Failed · ${when}`, tone: "danger" }

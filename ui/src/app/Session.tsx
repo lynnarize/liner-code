@@ -685,7 +685,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
             </div>
             <PromptMap prompts={prompts} scroller={scroller} />
           </div>
-          <Announcer status={thread.status} turns={thread.turns} who={pair?.lead ?? coder.name} />
+          <Announcer status={thread.status} turns={thread.turns} who={pair?.lead ?? coder.name} held={thread.held} />
           {finding > 0 && view === "chat" && <FindBar root={contentRef} asked={finding} onClose={() => setFinding(0)} onMove={() => scroller.current && letGo(scroller.current)} />}
           {cite && (
             <button
@@ -991,7 +991,7 @@ function PromptMap({ prompts, scroller }: { prompts: Item[]; scroller: RefObject
   It's written straight to the page, so speaking redraws nothing, and cleared after a while so it
   isn't read again when focus comes back.
 */
-function Announcer({ status, turns, who }: { status: Thread["status"]; turns: number; who: string }) {
+function Announcer({ status, turns, who, held }: { status: Thread["status"]; turns: number; who: string; held?: Thread["held"] }) {
   const region = useRef<HTMLDivElement>(null);
   const was = useRef({ status, turns });
   const clear = useRef(0);
@@ -1003,7 +1003,7 @@ function Announcer({ status, turns, who }: { status: Thread["status"]; turns: nu
     // A short turn can start and end between two looks (a window out of sight looks less often): a new turn that ended counts too.
     const ran = before.status === "running" || turns > before.turns;
     const text =
-      status === "waiting" ? `${who} needs you` : status === "error" ? `${who} ran into a problem` : status === "limited" ? `${who} hit its usage limit` : ran && (status === "idle" || status === "done") ? `${who} finished` : null;
+      status === "waiting" && held !== "review" ? `${who} needs you` : status === "error" ? `${who} ran into a problem` : status === "limited" ? `${who} hit its usage limit` : ran && (status === "idle" || status === "done") ? `${who} finished` : null;
     if (!text) return;
     window.clearTimeout(clear.current);
     // The same words twice count as new with a space after them.

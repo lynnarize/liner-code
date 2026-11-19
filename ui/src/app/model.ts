@@ -260,27 +260,7 @@ export function allModels(providers: ProviderInfo[], every: ProviderInfo[] = pro
 }
 export type ModelChoice = ReturnType<typeof allModels>[number];
 
-export type Bucket = "pinned" | "needs" | "working" | "open" | "snoozed" | "settled";
-
-/** The Reviewer blocked its change, and its agent asked nothing: it reads as finished, with a blue dot until you open it. */
-export const reviewHeld = (t: Thread) => t.status === "waiting" && t.held === "review";
-
-/**
-  Where a session sits: Needs you and Working follow the agents; Pinned, Snoozed and Settled are
-  yours. A session that needs nothing more from you stays open in its project until you settle
-  it (or a rule you turned on does); new work there brings it back.
-*/
-export function bucketOf(t: Thread, now = Date.now()): Bucket {
-  if (t.snoozedUntil && t.snoozedUntil > now) return "snoozed";
-  if (t.done) return "settled";
-  if (t.pinned) return "pinned";
-  if (t.status === "running") return "working";
-  // Files changed and not committed don't wait on you: committing is yours to do or not (T3 Code
-  // marks only what asks, fails or hasn't been seen, too).
-  const needs = (t.status === "waiting" && !reviewHeld(t)) || t.status === "error" || t.status === "limited" || t.unread || t.turns === 0;
-  // Agents it sent still at work in the background: it works, though its turn has ended.
-  return needs ? "needs" : t.agentsAtWork ? "working" : "open";
-}
+export { bucketOf, reviewHeld, type Bucket } from "./session-state";
 
 /**
   On the Wall: a session you've started that works, waits on you, or has finished and isn't settled

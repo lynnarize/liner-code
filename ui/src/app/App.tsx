@@ -18,6 +18,7 @@ import { Session, showAppTab, showBelow } from "./Session";
 import { applyLook, entering, readLook } from "./look";
 import { useSteady } from "./ui";
 import { needsYou, Sidebar } from "./Sidebar";
+import { reviewHeld } from "./session-state";
 import { early, lazyAgain } from "./early";
 // The builder brings Liner's workflow canvas; it loads when you first edit a routine.
 const RoutineBuilder = lazyAgain(() => import("./RoutineBuilder").then((m) => m.RoutineBuilder));
@@ -360,12 +361,12 @@ export function App() {
   const traySay = JSON.stringify({
     show: menuBar,
     working: live.filter((t) => t.status === "running" || t.agentsAtWork).map((t) => ({ id: t.id, title: t.title })),
-    needs: live.filter((t) => needsYou(t)).map((t) => ({ id: t.id, title: t.title, waiting: t.status === "waiting" })),
+    needs: live.filter((t) => needsYou(t)).map((t) => ({ id: t.id, title: t.title, waiting: t.status === "waiting" && !reviewHeld(t) })),
     // Every turn going, routines' and side chats' too: ⌘Q asks first while there are any.
     // Agents in the background count: quitting ends them.
     running: [...threads, ...sides].filter((t) => !t.archived && (t.status === "running" || t.agentsAtWork)).length,
     // Every session waiting on you, the same ones: ⌘Q asks first for those whose request still holds a turn open (the shell looks).
-    asking: [...threads, ...sides].filter((t) => !t.archived && t.status === "waiting" && !t.agentsAtWork).map((t) => t.id),
+    asking: [...threads, ...sides].filter((t) => !t.archived && t.status === "waiting" && !reviewHeld(t) && !t.agentsAtWork).map((t) => t.id),
   });
   useEffect(() => bridge.status(JSON.parse(traySay)), [traySay]);
   useEffect(() => {

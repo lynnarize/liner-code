@@ -11,6 +11,7 @@ import { toast } from "@liner/components/toast/toast";
 import { loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, money, plural, sumLines, threadModel } from "./model";
+import { reviewHeld } from "./session-state";
 import { Badge, Lines, ModelTag } from "./ui";
 
 export function Compare({ id, sidebar, onSidebar, onOpen, onDone }: { id: string; sidebar: boolean; onSidebar: () => void; onOpen: (threadId: string) => void; onDone: (threadId: string) => void }) {
@@ -102,7 +103,7 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
         <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} size={14} />
         <span className="lc-quiet">{a.name !== modelLabel(model, providers) ? a.name : ""}</span>
         <span className="lc-grow" />
-        {t.status === "running" ? <span className="l-shimmer lc-cmp-s">Working</span> : t.status === "waiting" ? <Badge tone="warn">Waits for you</Badge> : t.status === "limited" ? <Badge tone="warn">Hit its limit</Badge> : t.status === "error" ? <Badge tone="danger">A problem</Badge> : <Badge tone="ok">Done</Badge>}
+        {t.status === "running" ? <span className="l-shimmer lc-cmp-s">Working</span> : t.status === "waiting" && !reviewHeld(t) ? <Badge tone="warn">Waits for you</Badge> : t.status === "limited" ? <Badge tone="warn">Hit its limit</Badge> : t.status === "error" ? <Badge tone="danger">A problem</Badge> : <Badge tone="ok">Done</Badge>}
       </header>
       <dl className="lc-cmp-stats">
         <div>

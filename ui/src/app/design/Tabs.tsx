@@ -18,6 +18,7 @@ import { clock, plural } from "../model";
 import { keys } from "../os";
 import { ProjectChooser } from "../Projects";
 import { SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "../SideList";
+import { sideStateOf } from "../session-state";
 import { Pop, Row, Sep } from "../ui";
 import { D } from "./Rail";
 import { dropIfUntouched, newDesign, sessionOf } from "./session";
@@ -105,7 +106,9 @@ const useShowAll = () => useSyncExternalStore((f) => (allFns.add(f), () => void 
 /** How a design's session stands, as its row's mark shows it. */
 const standOf = (t: DesignTab, threads: Thread[]) => {
   const s = sessionOf(t, threads);
-  const state: SideState = s?.status === "running" ? "working" : s?.status === "waiting" ? "needs" : s?.status === "error" ? "error" : s?.status === "limited" ? "limited" : "done";
+  // As Code's rows mark it (session-state.ts), but a design's row has no "not started" mark.
+  const mark = s ? sideStateOf(s) : "done";
+  const state: SideState = mark === "new" ? "done" : mark;
   return { s, state };
 };
 

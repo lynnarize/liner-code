@@ -22,6 +22,7 @@ import { onStream, rpc, useEngine } from "./engine";
 import { drawingOf, landOn } from "./face";
 import { I } from "./icons";
 import { plural } from "./model";
+import { reviewHeld } from "./session-state";
 import { SurfaceNote } from "./Surfaces";
 
 /** Frames just past the view hold a live iframe only while fewer than MAX_LIVE do; every frame in view does, up to MAX_IN_VIEW (a safety cap for a very tall panel). */
@@ -292,7 +293,7 @@ export function DesignMini({ thread, items, cwd, file: slug, agentName, visible,
   // (face.ts drawingOf), for a view opened after the agent began.
   const now = thread.status === "running" ? drawingOf(items) : undefined;
   // Sessions at work now: a presence whose session's turn has ended is let go, should its "off" never come.
-  const working = useEngine((s) => [...s.threads, ...s.sides].filter((t) => t.status === "running" || t.status === "waiting").map((t) => t.id).join(","));
+  const working = useEngine((s) => [...s.threads, ...s.sides].filter((t) => t.status === "running" || (t.status === "waiting" && !reviewHeld(t))).map((t) => t.id).join(","));
   // The running turn's row counts only when it is about this design file, where it says which: a frame path names its folder, a design tool its `design`.
   const here = useMemo(() => {
     if (!now) return undefined;

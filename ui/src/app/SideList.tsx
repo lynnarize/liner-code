@@ -15,6 +15,7 @@ import { forwardRef, useRef, type CSSProperties, type HTMLAttributes, type Keybo
 import { cx } from "@liner/lib/hooks";
 import { I, Spinner, wt, type MarkKind } from "./icons";
 import { Num, Pop } from "./ui";
+import type { SideState } from "./session-state";
 
 /**
   ↑ and ↓ in every face's list (.lc-sl-list): from a row or a folder's header to the next one as they
@@ -29,8 +30,7 @@ export function listArrows(e: KeyboardEvent<HTMLElement>) {
   to?.focus();
 }
 
-/** How a row stands, as its mark shows it. */
-export type SideState = "working" | "needs" | "limited" | "error" | "done" | "new";
+export type { SideState } from "./session-state";
 
 const tinted = (tint?: string): CSSProperties | undefined => (tint ? { color: tint } : undefined);
 

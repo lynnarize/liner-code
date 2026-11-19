@@ -15,6 +15,7 @@ import { useEngine } from "../engine";
 import { I, N, type MarkKind } from "../icons";
 import { agentOf, clock, markOf, plural } from "../model";
 import { SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "../SideList";
+import { reviewHeld, sideStateOf } from "../session-state";
 import { Pop, Row } from "../ui";
 import { goSecurity, useSecurity, useSecurityPage, useSecurityProjects, type SecurityPage } from "./store";
 import { whenShort } from "./when";
@@ -135,10 +136,10 @@ export function SecuritySide() {
   });
 
   /** A session's mark, from how it stands. */
-  const standing = (t: Thread): SideState => (t.status === "running" ? "working" : t.status === "waiting" ? "needs" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : "done");
+  const standing = (t: Thread): SideState => { const mark = sideStateOf(t); return mark === "new" ? "done" : mark; };
   /** A fix's or a question's second line while it works, waits or stopped; null when it has ended well. Worded as Code's rows word it. */
   const live = (t: Thread, working: string): { text: string; tone?: "warn" | "danger" } | null =>
-    t.status === "running" ? { text: t.doing?.text || working } : t.status === "waiting" ? { text: "Waits for your answer", tone: "warn" } : t.status === "limited" ? { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" } : t.status === "error" ? { text: "Ran into a problem", tone: "danger" } : null;
+    t.status === "running" ? { text: t.doing?.text || working } : t.status === "waiting" && !reviewHeld(t) ? { text: "Waits for your answer", tone: "warn" } : t.status === "limited" ? { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" } : t.status === "error" ? { text: "Ran into a problem", tone: "danger" } : null;
 
   const scanItem = (s: ScanRecord): Item => {
     const t = s.threadId ? threads.find((x) => x.id === s.threadId) : undefined;

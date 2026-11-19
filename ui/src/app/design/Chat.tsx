@@ -15,6 +15,7 @@ import { threadOf, useEngine, useItems, useItemsWhere } from "../engine";
 import { isDockable } from "../Ask";
 import { I } from "../icons";
 import { agentOf } from "../model";
+import { reviewHeld } from "../session-state";
 import { pairOf } from "../Crew";
 import { FrameNames, liveOf, Tick, Timeline, trailSteps, type FrameNamer, type Mark } from "../Timeline";
 import { design, getDesign, setChat, useChat, useDesign, type ChatSize } from "./store";
@@ -116,7 +117,7 @@ function useNow(thread: Thread, items: Item[]) {
   const namer = useFrameNamer(thread.id);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const running = thread.status === "running" || thread.status === "waiting";
+  const running = thread.status === "running" || (thread.status === "waiting" && !reviewHeld(thread));
   const { list, marks, reply } = useMemo(() => lastTurnOf(items), [items]);
   const ps = Object.entries(presence);
   const lead = ps.find(([, p]) => p.lead);

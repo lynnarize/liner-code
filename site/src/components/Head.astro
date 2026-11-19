@@ -1,0 +1,11 @@
+---
+// A section's head: its tag, a two-part heading (the first part grey) and a line beside it.
+interface Props { tag: string; dim: string; head: string; sub?: string; isNew?: boolean; more?: { href: string; label: string } }
+const { tag, dim, head, sub, isNew = false, more } = Astro.props;
+---
+<div class="head">
+  <p class="tag settle"><i></i>{tag}{isNew && <> <b>New</b></>}</p>
+  <h2 class="h2 settle"><span class="dim">{dim}</span>{head}</h2>
+  {sub && <p class="sub settle d1">{sub}{more && <a class="link more" href={more.href}>{more.label}</a>}</p>}
+  <slot />
+</div>

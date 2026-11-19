@@ -1,0 +1,18 @@
+---
+import Head from './Head.astro';
+import { trust, site } from '../data/site';
+---
+<section id="trust">
+  <div class="wrap">
+    <Head tag={trust.tag} dim={trust.dim} head={trust.head} sub={trust.sub} />
+    <div class="trust">
+      <div class="trust-say settle">
+        <p class="lead">{trust.lead}</p>
+        <a class="link" href={site.threat}>{trust.link}</a>
+      </div>
+      <dl>
+        {trust.items.map((t, i) => <div class:list={['settle', { d1: i % 2 === 1 }]}><dt>{t.dt}</dt><dd>{t.dd}</dd></div>)}
+      </dl>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,132 @@
+{
+ "face-code": {
+  "w": 2200,
+  "h": 1375,
+  "scale": 2
+ },
+ "face-design": {
+  "w": 2200,
+  "h": 1375,
+  "scale": 2
+ },
+ "face-security": {
+  "w": 2200,
+  "h": 1375,
+  "scale": 2
+ },
+ "design-draw": {
+  "w": 2000,
+  "h": 1360,
+  "scale": 2
+ },
+ "design-point": {
+  "w": 2000,
+  "h": 1360,
+  "scale": 2
+ },
+ "design-check": {
+  "w": 2000,
+  "h": 1360,
+  "scale": 2
+ },
+ "sec-findings": {
+  "w": 2200,
+  "h": 1375,
+  "scale": 2
+ },
+ "sec-panel": {
+  "w": 1052,
+  "h": 1576,
+  "scale": 2
+ },
+ "fusion": {
+  "w": 1280,
+  "h": 1280,
+  "scale": 2
+ },
+ "wall": {
+  "w": 2000,
+  "h": 1280,
+  "scale": 2
+ },
+ "f-d-side": {
+  "w": 488,
+  "h": 888,
+  "scale": 2
+ },
+ "f-d-style": {
+  "w": 584,
+  "h": 1576,
+  "scale": 2
+ },
+ "f-d-code": {
+  "w": 584,
+  "h": 1576,
+  "scale": 2
+ },
+ "f-d-checks": {
+  "w": 584,
+  "h": 1576,
+  "scale": 2
+ },
+ "f-sec-howfar": {
+  "w": 1760,
+  "h": 268,
+  "scale": 2
+ },
+ "f-sec-howfar-m": {
+  "w": 576,
+  "h": 268,
+  "scale": 2
+ },
+ "f-sec-second": {
+  "w": 600,
+  "h": 210,
+  "scale": 2
+ },
+ "f-sec-free": {
+  "w": 600,
+  "h": 372,
+  "scale": 2
+ },
+ "f-sec-chart": {
+  "w": 1276,
+  "h": 630,
+  "scale": 2
+ },
+ "f-c-agents": {
+  "w": 1140,
+  "h": 722,
+  "scale": 2
+ },
+ "f-c-session": {
+  "w": 680,
+  "h": 876,
+  "scale": 2
+ },
+ "f-plan": {
+  "w": 1444,
+  "h": 540,
+  "scale": 2
+ },
+ "f-ask": {
+  "w": 1440,
+  "h": 510,
+  "scale": 2
+ },
+ "f-diff": {
+  "w": 2200,
+  "h": 1376,
+  "scale": 2
+ },
+ "addons": {
+  "w": 2200,
+  "h": 1376,
+  "scale": 2
+ },
+ "ws-home": {
+  "w": 1440,
+  "h": 334,
+  "scale": 2
+ }
+}

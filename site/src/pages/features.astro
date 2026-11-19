@@ -1,19 +1,81 @@
 ---
-// Every feature as a card: what the home page says in a line each, at full length.
+// Every feature, grouped so a reader can scan: what only Liner has, the session, the surfaces beside it, the rest.
 import Base from '../layouts/Base.astro';
-import SeaStage from '../components/SeaStage.astro';
-import Bento from '../components/Bento.astro';
-import Footer from '../components/Footer.astro';
+import Head from '../components/Head.astro';
+import Rule from '../components/Rule.astro';
+import Shot from '../components/Shot.astro';
+import Frag from '../components/Frag.astro';
+import Rows from '../components/Rows.astro';
+import ToolMarks from '../components/ToolMarks.astro';
+import Close from '../components/Close.astro';
+import { features as f } from '../data/pages';
+import { tools } from '../data/site';
+const { only, session, surfaces, rest } = f;
 ---
-<Base title="Features" description="Everything around a Liner Code session: the Wall, who sent whom, surfaces, designs, the pair, add-ons and what stays on your Mac.">
-  <section class="cl-top" aria-labelledby="ft-title">
-    <SeaStage kind="page" class="stage--short" label="The sea of code under the word Features.">
-      <p slot="word" class="word word--page" aria-hidden="true">Features</p>
-      <div class="page-top">
-        <h1 id="ft-title" class="page-title">Everything around the session, card by card.</h1>
-      </div>
-    </SeaStage>
+<Base title={f.title} description={f.description}>
+  <section class="page-head" aria-labelledby="ft-title">
+    <div class="wrap">
+      <p class="tag"><i></i>{f.tag}</p>
+      <h1 class="h2 long" id="ft-title"><span class="dim">{f.dim}</span>{f.head}</h1>
+      <p class="sub lead-sub">{f.lead}</p>
+      <nav class="index" aria-label="On this page">{f.index.map((l) => <a href={l.href}>{l.label}</a>)}</nav>
+    </div>
   </section>
-  <Bento page />
-  <Footer slot="footer" />
+  <Rule />
+
+  <section id="only" class="anchor">
+    <div class="wrap">
+      <Head tag={only.tag} dim={only.dim} head={only.head} sub={only.sub} />
+      <Rows rows={only.rows} />
+    </div>
+  </section>
+  <Rule />
+
+  <section id="session" class="anchor">
+    <div class="wrap">
+      <Head tag={session.tag} dim={session.dim} head={session.head} sub={session.sub} />
+    </div>
+    <Rule />
+    <div class="wrap">
+      <div class="grid row">
+        <div class="say settle">
+          <h3><span class="dim">{session.diff.dim}</span>{session.diff.title}</h3>
+          <p>{session.diff.text}</p>
+        </div>
+        <div class="stage sky settle d1"><div class="shot foot" data-ui><Shot name={session.diff.name} alt={session.diff.alt} /></div></div>
+      </div>
+    </div>
+    <Rule />
+    <div class="wrap">
+      <div class="cells c2">
+        {session.cells.map((c, i) => <Frag f={c} class={i ? 'd1' : undefined} />)}
+      </div>
+      <Rows rows={session.rows} />
+    </div>
+  </section>
+  <Rule />
+
+  <section id="surfaces" class="anchor">
+    <div class="wrap">
+      <Head tag={surfaces.tag} dim={surfaces.dim} head={surfaces.head} sub={surfaces.sub} />
+      <Rows rows={surfaces.rows} />
+    </div>
+  </section>
+  <Rule />
+
+  <section id="rest" class="anchor">
+    <div class="wrap">
+      <Head tag={rest.tag} dim={rest.dim} head={rest.head} sub={rest.sub} />
+    </div>
+    <Rule />
+    <div class="wrap">
+      <div class="tools-in">
+        <p class="tools-say">{tools.say}</p>
+        <ToolMarks />
+      </div>
+      <Rows rows={rest.rows} />
+    </div>
+  </section>
+  <Rule />
+  <Close />
 </Base>

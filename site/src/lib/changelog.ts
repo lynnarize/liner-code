@@ -1,8 +1,8 @@
 // The changelog, read from the repository's CHANGELOG.md at build time and turned into HTML.
 // It only needs what that file uses: ## and ### headings ("## 0.2.4 (beta), 2026-11-09"),
 // paragraphs, "- " lists with "  - " lists inside an item, **bold**, `code` and [links](url).
-// Vite reads the file into the build itself (?raw), so it works wherever the pages are rendered,
-// even in Cloudflare's runtime, which has no file system to read the repository from.
+// Vite reads the file into the build itself (?raw), so it works wherever the pages are rendered.
+// Taken as it is from site/src/lib/changelog.ts.
 import text from '../../../CHANGELOG.md?raw';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -61,3 +61,10 @@ export function releases(): Release[] {
   close();
   return out;
 }
+
+const day = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(d + 'T12:00:00Z') : null);
+/** 2026-11-19 as 19 Nov. */
+export const shortDate = (d: string) => day(d)?.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) ?? d;
+/** 2026-11-19 as 19 November 2026. */
+export const longDate = (d: string) => day(d)?.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) ?? d;
+export const isoDate = (d: string) => (day(d) ? d : undefined);

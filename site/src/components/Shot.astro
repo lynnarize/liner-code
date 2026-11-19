@@ -1,13 +1,26 @@
 ---
-// A picture of the app, taken in both of its looks (scripts/demo-shots.mjs): the dark one shows
-// with the night sea, the light one with the blue. Only the look on screen is fetched, but for
-// the hero's, where the night picture is the page's first.
-interface Props { name: string; alt: string; w: number; h: number; eager?: boolean; wide?: boolean; sizes?: string }
-const { name, alt, w, h, eager = false, wide = false, sizes } = Astro.props;
-const src = (t: string) => `/media/shot-${name}-${t}.webp`;
-const set = (t: string) => (wide ? `/media/shot-${name}-${t}-1200.webp 1200w, ${src(t)} 2000w` : undefined);
+// A picture of the app in both looks, one shown by the theme. It is a <picture>: the dark file is a
+// <source> for the dark look and the light file the <img>, so only the shown one is fetched. The page
+// script (Base.astro) rewrites the dark sources' media when the visitor picks a look by hand. Sizes come
+// from shots.json, never from here. `phone` is another picture for screens up to 640px wide.
+import shots from '../data/shots.json';
+
+interface Props { name: string; alt: string; phone?: string; class?: string; style?: string; loading?: 'lazy' | 'eager'; priority?: boolean }
+const { name, alt, phone, class: cls, style, loading = 'lazy', priority = false } = Astro.props;
+const size = (n: string) => {
+  const s = (shots as Record<string, { w: number; h: number; scale: number }>)[n];
+  if (!s) throw new Error(`shots.json has no "${n}"`);
+  return s;
+};
+const main = size(name);
+const ph = phone ? size(phone) : null;
+const src = (n: string, look: string) => `/shots/${n}-${look}.webp`;
+const PHONE = '(max-width: 640px)';
+const DARK = '(prefers-color-scheme: dark)';
 ---
-<img class="shot shot--night" src={wide ? `/media/shot-${name}-dark-1200.webp` : src('dark')} srcset={set('dark')} sizes={wide ? sizes : undefined} alt={alt} width={w} height={h}
-  loading={eager ? 'eager' : 'lazy'} decoding={eager ? 'sync' : 'async'} fetchpriority={eager ? 'high' : undefined} />
-<img class="shot shot--blue" src={wide ? `/media/shot-${name}-light-1200.webp` : src('light')} srcset={set('light')} sizes={wide ? sizes : undefined} alt={alt} width={w} height={h}
-  loading="lazy" decoding={eager ? 'sync' : 'async'} fetchpriority={eager ? 'high' : undefined} />
+<picture>
+  {ph && <source media={`${PHONE} and ${DARK}`} data-m={PHONE} data-look="dark" srcset={src(phone!, 'dark')} width={ph.w} height={ph.h} />}
+  {ph && <source media={PHONE} srcset={src(phone!, 'light')} width={ph.w} height={ph.h} />}
+  <source media={DARK} data-m="" data-look="dark" srcset={src(name, 'dark')} width={main.w} height={main.h} />
+  <img class={cls} style={style} src={src(name, 'light')} width={main.w} height={main.h} alt={alt} loading={priority ? 'eager' : loading} decoding="async" fetchpriority={priority ? 'high' : undefined} />
+</picture>

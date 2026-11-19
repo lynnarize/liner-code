@@ -1,0 +1,14 @@
+---
+// Ruled rows: a name, a line, and a small mono note at the right. `steps` numbers them down the left instead.
+import type { Row } from '../data/pages';
+interface Props { rows: Row[]; steps?: boolean }
+const { rows, steps = false } = Astro.props;
+const two = (n: number) => String(n).padStart(2, '0');
+---
+<ul class:list={['table', { log: steps, steps }]}>
+  {rows.map((r, i) => steps ? (
+    <li class="settle"><code>Step {two(i + 1)}</code><b>{r.b}</b><span>{r.span}</span></li>
+  ) : (
+    <li class="settle"><b>{r.href ? <a href={r.href}>{r.b}</a> : r.b}</b><span>{r.span}</span>{r.code && <code>{r.code}</code>}</li>
+  ))}
+</ul>

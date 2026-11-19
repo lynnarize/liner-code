@@ -1,15 +1,12 @@
 ---
 import Base from '../layouts/Base.astro';
-import SeaStage from '../components/SeaStage.astro';
 ---
-<Base title="Not found" description="Nothing was written at this address.">
-  <section class="lost" aria-labelledby="lost-title">
-    <SeaStage kind="page" label="The sea of code, calm, with nobody else in it. Click it to send a ripple.">
-      <p slot="word" class="word" aria-hidden="true">404</p>
-      <div class="page-top">
-        <h1 id="lost-title" class="page-title">Nothing was written at this address.</h1>
-        <a class="btn btn--paper" href="/">Back to the middle</a>
-      </div>
-    </SeaStage>
+<Base noindex title="Not found" description="Nothing was written at this address on the Liner Code site.">
+  <section class="page-head lost" aria-labelledby="lost-title">
+    <div class="wrap">
+      <p class="tag"><i></i>404</p>
+      <h1 class="h2" id="lost-title"><span class="dim">Nothing here.</span>Nothing was written at this address.</h1>
+      <a class="btn" href="/">Back to the start</a>
+    </div>
   </section>
 </Base>

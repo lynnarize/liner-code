@@ -308,7 +308,7 @@ class DemoSession implements ProviderSession {
     let failed = false;
     try {
       if (!this.o.mcp) throw new Error("Liner Code's tools aren't with this session.");
-      const r = await fetch(this.o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": this.o.mcp.env.LINER_SURFACE_KEY }, body: JSON.stringify({ tool: "design_show", args }), signal });
+      const r = await fetch(this.o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": this.o.mcp.key ?? "" }, body: JSON.stringify({ tool: "design_show", args }), signal });
       const b = (await r.json()) as { ok: boolean; result?: { content: { type: string; text?: string }[]; isError?: boolean }; error?: string };
       said = b.result?.content.find((c) => c.type === "text")?.text ?? b.error ?? "";
       failed = !b.ok || Boolean(b.result?.isError);
@@ -352,7 +352,7 @@ class DemoSession implements ProviderSession {
     let failed = false;
     try {
       if (!this.o.mcp) throw new Error("Liner Code's tools aren't with this session.");
-      const r = await fetch(this.o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": this.o.mcp.env.LINER_SURFACE_KEY }, body: JSON.stringify({ tool: "sidekick", args }), signal });
+      const r = await fetch(this.o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": this.o.mcp.key ?? "" }, body: JSON.stringify({ tool: "sidekick", args }), signal });
       const b = (await r.json()) as { ok: boolean; result?: { content: { type: string; text?: string }[]; isError?: boolean }; error?: string };
       said = b.result?.content.find((c) => c.type === "text")?.text ?? b.error ?? "";
       failed = !b.ok || Boolean(b.result?.isError);

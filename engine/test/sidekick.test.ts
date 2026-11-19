@@ -98,7 +98,7 @@ function pair(extra: Partial<Thread> = {}, home = mkdtempSync(join(tmpdir(), "lc
 /** The lead's call of the tool, as a tool makes it: a row first, then the call through its MCP server's key. */
 async function hand(tools: AgentTools, o: OpenOptions, sink: TurnSink, key: string, args: Record<string, unknown>) {
   sink.tool({ key, tool: "mcp__liner__sidekick", toolKind: "other", title: "Sidekick", input: JSON.stringify(args), status: "running" });
-  const r = await tools.call(tools.threadOf(o.mcp!.env.LINER_SURFACE_KEY)!, "sidekick", args);
+  const r = await tools.call(tools.threadOf(o.mcp!.key!)!, "sidekick", args);
   const text = r.content.map((c) => (c.type === "text" ? c.text : "")).join("");
   sink.tool({ key, tool: "mcp__liner__sidekick", toolKind: "other", title: "Sidekick", status: r.isError ? "failed" : "done", output: text });
   return { text, isError: Boolean(r.isError) };
@@ -183,7 +183,7 @@ test("sidekick: a brief takes the row of its own call, not one of a call refused
   const lead = fake("claude", async (o, _t, sink) => {
     for (const [key, brief] of [["k1", ""], ["k2", "Write b.txt"]]) {
       sink.tool({ key, tool: "liner.sidekick", toolKind: "other", title: "Sidekick", status: "running" });
-      const r = await tools.call(tools.threadOf(o.mcp!.env.LINER_SURFACE_KEY)!, "sidekick", { brief });
+      const r = await tools.call(tools.threadOf(o.mcp!.key!)!, "sidekick", { brief });
       sink.tool({ key, tool: "liner.sidekick", toolKind: "other", title: "Sidekick", status: r.isError ? "failed" : "done" });
     }
   });
@@ -238,7 +238,7 @@ test("sidekick: a call outside a running turn of the lead is refused, with a sen
     const r = await runtime.delegate("t", { brief: "anything" });
     assert.equal(r.isError, true);
     assert.match(r.text, /only takes a brief while you work a turn/);
-    const key = tools.serverFor("t", { pair: true })!.env.LINER_SURFACE_KEY;
+    const key = tools.serverFor("t", { pair: true })!.key;
     const via = await tools.call(tools.threadOf(key)!, "sidekick", { brief: "anything" });
     assert.equal(via.isError, true);
     assert.equal(side.opened.length, 0);
@@ -341,7 +341,7 @@ test("sidekick: in a Read only session its sidekick works read only, and its edi
 test("sidekick: the tool is only a pair's lead's; a session with none gets it by its next turn, and the sidekick never does", async () => {
   const side = fake("codex", async (o, _t, sink) => {
     // The sidekick can't hand work on, even if it calls the tool anyway.
-    const r = await tools.call(tools.threadOf(o.mcp!.env.LINER_SURFACE_KEY)!, "sidekick", { brief: "more" });
+    const r = await tools.call(tools.threadOf(o.mcp!.key!)!, "sidekick", { brief: "more" });
     sink.text(r.content[0].type === "text" ? r.content[0].text : "");
   });
   const lead = fake("claude", async (o, _t, sink) => {
@@ -353,7 +353,7 @@ test("sidekick: the tool is only a pair's lead's; a session with none gets it by
     assert.equal(lead.opened[0].mcp?.env[PAIR_ENV], undefined);
     assert.ok(!toolsFor(lead.opened[0].mcp!.env).some((x) => x.name === "sidekick"));
     assert.doesNotMatch(lead.opened[0].soul, /sidekick/i);
-    const refused = await tools.call(tools.threadOf(lead.opened[0].mcp!.env.LINER_SURFACE_KEY)!, "sidekick", { brief: "x" });
+    const refused = await tools.call(tools.threadOf(lead.opened[0].mcp!.key!)!, "sidekick", { brief: "x" });
     assert.equal(refused.isError, true);
 
     store.patchThread("t", { sidekick: SIDE, providerSession: "claude:lead-1" });

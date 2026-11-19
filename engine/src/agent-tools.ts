@@ -15,6 +15,9 @@
   its frame come here as well (panelCall), checked against its access (panels.ts).
 */
 import { createHash, randomBytes } from "node:crypto";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { AgentBrowserOp, AddonInfo, Item, PanelManifest, PanelPlace, ProviderInfo, Risk, Thread } from "../../contracts/src/index.ts";
 import { addonKey, panelDocument } from "../../contracts/src/index.ts";
 import { accessWords, ADDON_GUIDE, modelHostRefusal, readDraft, sizeWords, type Addons, type PanelFiles } from "./addons.ts";
@@ -251,6 +254,8 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").repl
 
 export class AgentTools {
   private keys = new Map<string, string>();
+  /** Where each key is kept for its MCP server to read: a file only this user can read, under Liner Code's folder (which the plugin sandbox may not read). */
+  private keyFiles = new Map<string, string>();
   private waiting = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; late?: NodeJS.Timeout }>();
   /** Where the engine listens, set once its server is up. */
   url = "";
@@ -285,6 +290,8 @@ export class AgentTools {
   constructor(store: Store, env: NodeJS.ProcessEnv) {
     this.store = store;
     this.env = env;
+    // Keys are made anew each run: the files of the run before reach nothing now.
+    if (typeof store.home === "string") rmSync(join(store.home, "surface-keys"), { recursive: true, force: true });
   }
 
   /**
@@ -292,13 +299,25 @@ export class AgentTools {
     `pair`: it's a pair's lead, offered `sidekick` too. `sidekick`: it's that pair's sidekick, with
     a key of its own, so a call it makes is told apart from the lead's (it may not hand work on).
   */
-  serverFor(threadId: string, o: { pair?: boolean; sidekick?: boolean } = {}): { command: string; args: string[]; env: Record<string, string> } | null {
+  serverFor(threadId: string, o: { pair?: boolean; sidekick?: boolean } = {}): { command: string; args: string[]; env: Record<string, string>; key: string } | null {
     if (!this.url) return null;
     const who = o.sidekick ? `${threadId}${AS_SIDEKICK}` : threadId;
     let key = [...this.keys].find(([, t]) => t === who)?.[0];
     if (!key) {
       key = randomBytes(18).toString("hex");
       this.keys.set(key, who);
+    }
+    // An environment and a command line can be read by anything running as you (ps eww), a sandboxed plugin included: the key goes
+    // in a file of your own instead, as the outside key does (outside.json), and the MCP server is told only where it is.
+    let keyFile = this.keyFiles.get(key);
+    if (!keyFile) {
+      // A stand-in store (a test's) may keep no home of its own: the file then goes to the temp folder, still this user's alone.
+      const dir = join(typeof this.store.home === "string" ? this.store.home : tmpdir(), "surface-keys");
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      keyFile = join(dir, randomBytes(9).toString("hex"));
+      writeFileSync(keyFile, key, { mode: 0o600 });
+      chmodSync(keyFile, 0o600);
+      this.keyFiles.set(key, keyFile);
     }
     // Under the Electron shell process.execPath is the app itself, which is a Node only when told so.
     const electron: Record<string, string> = process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {};
@@ -307,7 +326,7 @@ export class AgentTools {
     const held = this.store.threads?.find((t) => t.id === threadId);
     const tag = held?.security;
     const level = !tag ? undefined : tag.kind !== "scan" ? "read" : tag.scan && !held?.sideOf ? "scan" : "scan-read";
-    return { command: process.execPath, args: [script("mcp")], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY: key, ...(o.pair && !o.sidekick ? { [PAIR_ENV]: "1" } : {}), ...(level ? { [SECURITY_ENV]: level } : {}) } };
+    return { command: process.execPath, args: [script("mcp")], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY_FILE: keyFile, ...(o.pair && !o.sidekick ? { [PAIR_ENV]: "1" } : {}), ...(level ? { [SECURITY_ENV]: level } : {}) }, key };
   }
 
   threadOf(key: string) {
@@ -316,7 +335,13 @@ export class AgentTools {
 
   /** Forgets every key of a thread that never came to be (a session opened ahead of it that no thread took): those keys reach nothing now. */
   forget(threadId: string) {
-    for (const [key, who] of this.keys) if (who === threadId || who === `${threadId}${AS_SIDEKICK}`) this.keys.delete(key);
+    for (const [key, who] of this.keys) {
+      if (who !== threadId && who !== `${threadId}${AS_SIDEKICK}`) continue;
+      this.keys.delete(key);
+      const file = this.keyFiles.get(key);
+      if (file) rmSync(file, { force: true });
+      this.keyFiles.delete(key);
+    }
   }
 
   /** The app's answer to a Browser request. */

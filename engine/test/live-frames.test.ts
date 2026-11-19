@@ -125,7 +125,7 @@ async function surface() {
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const mcp = { command: "", args: [] as string[], env: { LINER_SURFACE_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}/surface`, LINER_SURFACE_KEY: "k" } };
+  const mcp = { command: "", args: [] as string[], env: { LINER_SURFACE_URL: `http://127.0.0.1:${(server.address() as { port: number }).port}/surface`, LINER_SURFACE_KEY: "k" }, key: "k" };
   return { calls, mcp, close: () => server.close() };
 }
 

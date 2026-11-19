@@ -271,7 +271,7 @@ async function stream(say: (t: string) => void, text: string, signal: AbortSigna
 async function liner(o: OpenOptions, tool: string, args: Record<string, unknown>, signal: AbortSignal): Promise<{ text: string; failed: boolean }> {
   try {
     if (!o.mcp) throw new Error("Liner Code's tools aren't with this session.");
-    const r = await fetch(o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": o.mcp.env.LINER_SURFACE_KEY }, body: JSON.stringify({ tool, args }), signal });
+    const r = await fetch(o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": o.mcp.key ?? "" }, body: JSON.stringify({ tool, args }), signal });
     const b = (await r.json()) as { ok: boolean; result?: { content: { type: string; text?: string }[]; isError?: boolean }; error?: string };
     return { text: b.result?.content.find((c) => c.type === "text")?.text ?? b.error ?? "", failed: !b.ok || Boolean(b.result?.isError) };
   } catch (e) {

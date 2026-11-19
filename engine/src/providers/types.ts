@@ -189,7 +189,8 @@ export type OpenOptions = {
   /** PATH and friends, from the shell that launched the app. */
   env: NodeJS.ProcessEnv;
   /** Liner Code's own tools for this session (its Browser, the Simulator, pages), as an MCP server on stdio. */
-  mcp?: { command: string; args: string[]; env: Record<string, string> };
+  /** `key`: the session's key itself, for a caller inside the engine (the Demo). The tool's MCP server reads it from the file `env` names; it is never put in an environment or on a command line. */
+  mcp?: { command: string; args: string[]; env: Record<string, string>; key?: string };
   /**
     The name `mcp` is handed over under where it isn't `liner` (Antigravity: liner_<tag>, the tag made for the session and kept for
     its life, so a resumed conversation's tool names still hold): a server of the person's own can't take its place by that name.

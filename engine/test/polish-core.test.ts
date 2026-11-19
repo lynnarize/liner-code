@@ -82,7 +82,7 @@ test("a brief's end keeps the lead's doing line while the lead's call still runs
   let afterSecond: string | undefined = "unset";
   const { store, runtime, tools } = session({ sidekick: "codex:gpt-6-luna" }, { git: true });
   const lead = fake("claude", async (o, _t, sink) => {
-    const key = o.mcp!.env.LINER_SURFACE_KEY;
+    const key = o.mcp!.key!;
     sink.tool({ key: "k1", tool: "mcp__liner__sidekick", toolKind: "other", title: "Sidekick", input: JSON.stringify({ brief: "Read a.txt." }), status: "running" });
     await tools.call(tools.threadOf(key)!, "sidekick", { brief: "Read a.txt." });
     // The brief has ended; the lead's call hasn't said it's done yet.
@@ -357,7 +357,7 @@ test("cards: each one answered stops listening for Stop, so a turn of many cards
 test("a session deleted: its surface key reaches nothing any more; an archived one keeps it", () => {
   const { store, runtime, tools } = session();
   void runtime;
-  const key = tools.serverFor("t")!.env.LINER_SURFACE_KEY;
+  const key = tools.serverFor("t")!.key;
   assert.equal(tools.threadOf(key), "t");
   store.patchThread("t", { archived: true });
   void runtime.closeThread("t");

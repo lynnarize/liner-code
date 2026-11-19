@@ -198,7 +198,7 @@ const stripIds = (html: string) => html.replace(/\sdata-l="[^"]*"/g, "");
 async function liner(o: OpenOptions, tool: string, args: Record<string, unknown>, signal: AbortSignal): Promise<{ ok: boolean; said: string }> {
   try {
     if (!o.mcp) throw new Error("Liner Code's tools aren't with this session.");
-    const r = await fetch(o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": o.mcp.env.LINER_SURFACE_KEY }, body: JSON.stringify({ tool, args }), signal });
+    const r = await fetch(o.mcp.env.LINER_SURFACE_URL, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": o.mcp.key ?? "" }, body: JSON.stringify({ tool, args }), signal });
     const b = (await r.json()) as { ok: boolean; result?: { content: { type: string; text?: string }[]; isError?: boolean }; error?: string };
     return { ok: b.ok && !b.result?.isError, said: b.result?.content.find((c) => c.type === "text")?.text ?? b.error ?? "" };
   } catch (e) {

@@ -118,7 +118,7 @@ test("through the runtime: a pair's lead gets the hand-over in its design turn, 
         // The lead hands a frame over the way a tool calls Liner Code's server.
         const args = { brief: "Draw Dark / Today from frames/frame-0.html at night.", done_when: "design_shot shows it at night." };
         sink.tool({ key: "k", tool: "mcp__liner__sidekick", toolKind: "other", title: "Sidekick", input: JSON.stringify(args), status: "running" });
-        const r = await tools.call(tools.threadOf(o.mcp.env.LINER_SURFACE_KEY)!, "sidekick", args);
+        const r = await tools.call(tools.threadOf(o.mcp.key!)!, "sidekick", args);
         result = r.content.map((c) => (c.type === "text" ? c.text : "")).join("");
         sink.tool({ key: "k", tool: "mcp__liner__sidekick", toolKind: "other", title: "Sidekick", status: "done" });
       },

@@ -210,7 +210,7 @@ test("warmed and never made: closed after the limit, counted with other warms in
     s.runtime.warmMs = 150;
     await s.call("thread.warmNew", { id: "th_gone", ...choices });
     await until(() => f.made.length === 1, "warmed");
-    const key = f.made[0].o.mcp!.env.LINER_SURFACE_KEY;
+    const key = f.made[0].o.mcp!.key!;
     assert.equal(s.tools.threadOf(key), "th_gone");
     await until(() => f.made[0].closed, "closed once nobody made it in time");
     assert.equal(ahead(s.runtime).size, 0);

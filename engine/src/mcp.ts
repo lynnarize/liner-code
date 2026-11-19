@@ -4,12 +4,21 @@
   the work (see agent-tools.ts). It runs on its own, so it imports nothing from the engine but
   the list of tools, which is only data.
 */
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { SECURITY_ENV, toolsFor } from "./liner-tools.ts";
 import { VERSION } from "./version.ts";
 
 const url = process.env.LINER_SURFACE_URL ?? "";
-const key = process.env.LINER_SURFACE_KEY ?? "";
+/** The session's key, from the file the engine wrote for it (agent-tools.ts serverFor); an environment is where anything running as you could read it. */
+const key = (() => {
+  if (process.env.LINER_SURFACE_KEY) return process.env.LINER_SURFACE_KEY;
+  try {
+    return readFileSync(process.env.LINER_SURFACE_KEY_FILE ?? "", "utf8").trim();
+  } catch {
+    return "";
+  }
+})();
 type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Record<string, unknown> };
 
 const send = (m: Record<string, unknown>) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...m })}\n`);

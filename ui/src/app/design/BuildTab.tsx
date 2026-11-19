@@ -125,21 +125,23 @@ const buildShown = (list: DesignFrame[]) => shownAsk(`Build ${many(list)} into t
 
 /**
   Sends an ask to the session's agent as a design turn (the engine adds the design file's note).
-  Queued behind a turn that runs, as the dock's own messages are. `shown`: what you read of it in the chat.
+  Queued behind a turn that runs, as the dock's own messages are. `shown`: what you read of it in the chat. Resolves true once it was sent (or shown, in the mock), false when it wasn't: the toast has said why.
 */
-export async function askAgent(text: string, said = "Sent to the agent", shown?: UserShown) {
+export async function askAgent(text: string, said = "Sent to the agent", shown?: UserShown): Promise<boolean> {
   const s = getDesign();
-  if (!s.file) return void toast.error("Open a design file first");
-  if (s.scrub !== undefined) return void toast("Back to now first", { description: "A kept turn is only looked at.", duration: 2500 });
-  if (s.mock) return void toast(said, { description: text.split("\n")[0], duration: 2500 });
+  if (!s.file) { toast.error("Open a design file first"); return false; }
+  if (s.scrub !== undefined) { toast("Back to now first", { description: "A kept turn is only looked at.", duration: 2500 }); return false; }
+  if (s.mock) { toast(said, { description: text.split("\n")[0], duration: 2500 }); return true; }
   try {
     // A design with no session yet gets it here, begun from this design.
     const id = await design.session();
-    if (!id) return void toast.error("Open the design's session first");
+    if (!id) { toast.error("Open the design's session first"); return false; }
     await rpc("thread.send", { id, text, mode: "queue", design: { file: s.file.id }, ...(shown ? { shown } : {}) });
     toast(said, { duration: 2000 });
+    return true;
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
+    return false;
   }
 }
 

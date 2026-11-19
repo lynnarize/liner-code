@@ -261,6 +261,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
         <div className="lc-home-compose">
           <Composer
             variant="home"
+            draftKey="design-home"
             project={project ?? NOWHERE}
             settings={settings}
             onSettings={(p) => setSettings((s) => ({ ...s, ...p }))}

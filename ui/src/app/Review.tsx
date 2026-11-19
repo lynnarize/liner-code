@@ -132,8 +132,6 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
   const lineAsks = useItemsWhere(thread.id, isLineAsk);
   const reviews = useItemsWhere(thread.id, isReview) as Extract<Item, { kind: "review" }>[];
   const tasks = useItemsWhere(thread.id, isTask) as Extract<Item, { kind: "tool" }>[];
-  const pick = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : (cps[cps.length - 1]?.id ?? "all");
-  const cp = cps.find((c) => c.id === pick);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [total, setTotal] = useState(0);
   const [diffErr, setDiffErr] = useState<string | null>(null);
@@ -147,11 +145,20 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
   const [at, setAt] = useState(0);
   const [busy, setBusy] = useState<"undo" | null>(null);
   const [finding, setFinding] = useState(false);
+  // The turn you chose, or else the newest. While a comment is being written on a line, the newest stands still: a turn that
+  // ends meanwhile would otherwise move the view to its own diff and close the comment under your hands.
+  const chosen = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : undefined;
+  const newest = cps[cps.length - 1]?.id ?? "all";
+  const shownNewest = useRef(newest);
+  if (!sel) shownNewest.current = newest;
+  const pick = chosen ?? shownNewest.current;
+  const cp = cps.find((c) => c.id === pick);
   const box = useRef<HTMLDivElement>(null);
   const coder = agentOf(thread.agent, agents, providers);
 
-  // All turns and This branch have no one checkpoint to watch: any turn undone changes what they show.
-  const key = `${pick}:${cp?.reverted}:${cp?.committed}:${cps.length}:${cps.filter((c) => c.reverted).length}`;
+  // All turns and This branch have no one checkpoint to watch: any turn added or undone changes what they show. One turn's own diff doesn't.
+  const whole = pick === "all" || pick === "branch";
+  const key = `${pick}:${cp?.reverted}:${cp?.committed}:${whole ? `${cps.length}:${cps.filter((c) => c.reverted).length}` : ""}`;
   useEffect(() => {
     let live = true;
     setDiff(null);

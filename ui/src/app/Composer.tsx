@@ -49,6 +49,8 @@ type Props = {
   variant: "home" | "session";
   project: Project;
   thread?: Thread;
+  /** Where this box keeps its draft when it has no session: unset is Code's Home. */
+  draftKey?: string;
   settings: RunSettings;
   onSettings: (patch: Partial<RunSettings>) => void;
   onSend: (m: Outgoing) => void | Promise<void>;
@@ -322,7 +324,7 @@ const toBase64 = (f: File) =>
     r.readAsDataURL(f);
   });
 
-export function Composer({ variant, project, thread, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, onDraft, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask, mode: sessionMode, checkOff, accessLock }: Props) {
+export function Composer({ variant, project, thread, draftKey: draftAt, settings, onSettings, onSend, onStop, onNewAgent, busy, placeholder, worktree, base, onBase, inWorktree, autoFocus, seed, compare = [], onCompare, stripEnd, stripUnder, onText, onDraft, top, chips, stripStart, whoName, trayEnd, canvas, slashRows, ask, mode: sessionMode, checkOff, accessLock }: Props) {
   // Kept with the project it was read for: on Home another project's worktrees and branches never show (or get picked) for this one.
   const [gitOf, setGitOf] = useState<{ projectId: string; git: Awaited<ReturnType<typeof branchesFor>> } | null>(null);
   const git = gitOf?.projectId === project.id ? gitOf.git : null;
@@ -332,7 +334,7 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
   };
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  const draftKey = thread?.id ?? "home";
+  const draftKey = thread?.id ?? draftAt ?? "home";
   const [text, setText] = useState(() => draftOf(draftKey));
   // A queued message being edited: it keeps its place in the queue, and the draft it pushed aside comes back after.
   const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
@@ -629,7 +631,8 @@ export function Composer({ variant, project, thread, settings, onSettings, onSen
       skillsUsed.current.clear();
       const from = document.activeElement;
       const payload: Outgoing = { text: t || "Here are the files.", files: await Promise.all(sent.map(async (f) => ({ name: f.name, data: await toBase64(f) }))), mode: how, ...(way.once ? { once: way.once } : {}) };
-      setText(edit?.draft ?? "");
+      // Reading the files can take a moment: words written in the box meanwhile aren't what was sent, so they stay.
+      setText((cur) => (cur === said ? (edit?.draft ?? "") : cur));
       setFiles((cur) => cur.filter((f) => !sent.includes(f)));
       setMention(null);
       check.reset();

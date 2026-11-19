@@ -6,7 +6,7 @@
   with a hairline from the paper's top to its bottom between them that is the resize grip. The full
   canvas gives the dock the whole paper (on the diff, that's the full-width Review).
 */
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject, type ReactNode } from "react";
+import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject, type ReactNode } from "react";
 import { isPair, makerOf, reviewOn, type Item, type Project, type ProjectScript, type Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
@@ -23,6 +23,8 @@ import { agentOf, checkpointsOf, markOf, modelLabel, plural, sumLines, threadMod
 import { ModelPicker } from "./Models";
 import { myPicks, reviewerFor, savePick } from "./Agentic";
 import { Panel } from "./Panel";
+import { lazyAgain } from "./early";
+import { Boundary } from "./Boundary";
 import { FindBar, onComposerInsert, toComposer } from "./Find";
 import { revealFile } from "./reveal";
 import { onBrowserWanted } from "./agentBrowser";
@@ -86,7 +88,7 @@ const belows = new Map<string, boolean>();
 export function showBelow(threadId: string) {
   belows.set(threadId, true);
 }
-const TerminalSurface = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalSurface })));
+const TerminalSurface = lazyAgain(() => import("./Terminal").then((m) => m.TerminalSurface));
 /** The install previews that have come up by themselves once, while the app runs. */
 const openedPreviews = new Set<string>();
 
@@ -440,7 +442,8 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   // A project script with keys of its own runs from them, in a Terminal tab of its own.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!keysOn.current) return;
+      // A dialog (⌘K, a confirm) has the keyboard: a script's keys wait, as ⌘1 to ⌘9 do (App.tsx).
+      if (!keysOn.current || document.querySelector("dialog[open]")) return;
       const x = (project?.scripts ?? []).find((s) => s.key && matches(e, s.key));
       if (!x) return;
       // Ahead of everything else, so a script's keys beat a command on the same ones.
@@ -758,9 +761,11 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
           </div>
           {below && (
             <div ref={entering} className="lc-below" role="region" aria-label="Bottom panel">
-              <Suspense fallback={null}>
-                <TerminalSurface thread={thread} visible onHide={() => setBelow(false)} lead={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
-              </Suspense>
+              <Boundary label="Terminal" quiet>
+                <Suspense fallback={null}>
+                  <TerminalSurface thread={thread} visible onHide={() => setBelow(false)} lead={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
+                </Suspense>
+              </Boundary>
             </div>
           )}
         </section>

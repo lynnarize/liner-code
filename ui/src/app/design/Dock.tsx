@@ -147,6 +147,7 @@ export function Dock({ thread, project, tab }: { thread?: Thread; project: Proje
       variant="session"
       project={project}
       thread={thread}
+      draftKey={`design:${tab.projectId}:${tab.file}`}
       settings={settings}
       onSettings={update}
       onSend={send}

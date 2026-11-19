@@ -244,8 +244,15 @@ export async function sendToCode() {
     "Find each element in the source (where no file is named, look for it by its classes and text), change only these properties, the way the code already writes its styles (its tokens, classes or components), and leave the rest as it is. The frame reloads by itself when the change lands.",
   ].join("\n");
   const live = [...new Set(held.map((h) => h.frame))].flatMap((id) => s.file?.frames.find((x) => x.id === id) ?? []);
-  await askAgent(text, `Sent to ${thread ?? "the agent"}`, shownAsk(`Write ${held.length === 1 ? "the change" : `the ${held.length} changes`} made by hand in ${live.length === 1 ? live[0].name : "the live frames"} into the code`, { kind: "build", label: "Send to code" }, live));
-  for (const frame of Object.keys(s.pending)) design.clearPending(frame);
+  const sent = await askAgent(text, `Sent to ${thread ?? "the agent"}`, shownAsk(`Write ${held.length === 1 ? "the change" : `the ${held.length} changes`} made by hand in ${live.length === 1 ? live[0].name : "the live frames"} into the code`, { kind: "build", label: "Send to code" }, live));
+  // Not sent: what was held stays held, or a reload of the frame would lose it with nothing told to the agent.
+  if (!sent) return;
+  // Only what went: a change made while this was gathering wasn't in the message, so it stays held.
+  const now = getDesign().pending;
+  for (const [frame, ops] of Object.entries(s.pending)) {
+    const gone = new Set(ops);
+    design.keepPending(frame, (now[frame] ?? []).filter((op) => !gone.has(op)));
+  }
 }
 
 /** The session's lead, by name, for what a press says. */

@@ -58,7 +58,7 @@ focus, springs that never overshoot.
     <td align="center"><b>Codex CLI</b><br><sub>app server</sub></td>
     <td align="center"><b>OpenCode</b><br><sub>ACP</sub></td>
     <td align="center"><b>Hermes</b><br><sub>ACP</sub></td>
-    <td align="center"><b>Cursor · Grok Build</b><br><sub>ACP, beta</sub></td>
+    <td align="center"><b>Cursor · Grok Build · Antigravity</b><br><sub>ACP, beta</sub></td>
     <td align="center"><b>API endpoints</b><br><sub>DeepSeek, Kimi, GLM, OpenRouter, Ollama…</sub></td>
   </tr>
 </table>
@@ -95,22 +95,18 @@ focus, springs that never overshoot.
       <sub>Changes, Files, Browser, Terminal, Design, Pull request and Device, in the panel beside the session.</sub>
     </td>
     <td width="33%" valign="top">
-      <img src=".github/readme/desk.svg" width="100%" alt="Wireframe: the Desk, sessions grouped by what they need">
-      <b>The Desk</b><br>
-      <sub>Sessions sort themselves: back with you, out with agents, done.</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="33%" valign="top">
       <img src=".github/readme/compare.svg" width="100%" alt="Wireframe: two models' answers side by side">
       <b>Models side by side</b><br>
       <sub>One prompt to the models you have, with what each cost, and keep the best.</sub>
     </td>
+  </tr>
+  <tr>
     <td width="33%" valign="top">
       <img src=".github/readme/workshop.svg" width="100%" alt="Wireframe: Workshop making an add-on">
       <b>Workshop</b><br>
       <sub>Ask for what Liner Code doesn't have; an agent makes it as an add-on.</sub>
     </td>
+    <td width="33%" valign="top"></td>
     <td width="33%" valign="top"></td>
   </tr>
 </table>
@@ -121,20 +117,11 @@ focus, springs that never overshoot.
   <tr>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/desk-dark.jpg">
-        <img src=".github/readme/desk-light.jpg" width="100%" alt="The Desk and a case ready to commit">
-      </picture>
-      <p align="center"><sub><b>The Desk</b>: every agent's work in one place</sub></p>
-    </td>
-    <td width="50%">
-      <picture>
         <source media="(prefers-color-scheme: dark)" srcset=".github/readme/plan-dark.jpg">
         <img src=".github/readme/plan-light.jpg" width="100%" alt="A plan card with Approve and start">
       </picture>
       <p align="center"><sub><b>Plans</b>: approve it, then it builds</sub></p>
     </td>
-  </tr>
-  <tr>
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset=".github/readme/diff-dark.jpg">
@@ -142,6 +129,8 @@ focus, springs that never overshoot.
       </picture>
       <p align="center"><sub><b>Diffs</b>: every turn, undoable</sub></p>
     </td>
+  </tr>
+  <tr>
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset=".github/readme/pr-dark.jpg">
@@ -149,6 +138,7 @@ focus, springs that never overshoot.
       </picture>
       <p align="center"><sub><b>Pull requests</b>: checks and reviews beside the session</sub></p>
     </td>
+    <td width="50%"></td>
   </tr>
 </table>
 
@@ -197,10 +187,14 @@ Found something? **Help › Report a Problem…** makes a zip with the log and v
   [terms](https://code.claude.com/docs/en/legal-and-compliance)), so Settings › Models lets Claude
   Code bill to your Anthropic key.
 - **Nothing in between.** Model traffic goes from each tool to its own provider and is billed to
-  your account. Liner Code has no server, no telemetry and no analytics. Besides its own releases from GitHub and
-  the tools' versions on npm, it fetches the Agent Client Protocol registry when you look for
-  agents to add, and reaches GitHub through your `gh` sign-in for pull requests. Hermes's own
-  update check runs a `git fetch`.
+  your account. Liner Code has no server in between and never sends your work anywhere. Once a day
+  it sends an anonymous count to linercode.dev: a random install id, the app's version, your OS and
+  chip, the day, and how many tokens your agents read and wrote. Never prompts, files, folders,
+  projects, models, tools, sessions or errors. Settings › General › Share anonymous usage counts
+  turns it off, and so does LINER_NO_USAGE=1. Besides its own releases from GitHub and the tools'
+  versions on npm, it fetches the Agent Client Protocol registry when you look for agents to add,
+  and reaches GitHub through your `gh` sign-in for pull requests. Hermes's own update check runs a
+  `git fetch`.
 - **Changes are checked by another maker.** By default the Reviewer reads each change, and it's a
   model of another maker than the ones that wrote it whenever one is ready. So with Claude Code and
   Codex both here, diffs Claude writes also go to OpenAI through Codex, billed to that account. A
@@ -221,7 +215,7 @@ npm run mac          # builds build/Liner Code.app (Electron, about 300 MB)
 npm run mac -- --open
 npm run release      # the app zipped for GitHub Releases, with its SHA-256 (see Updates below)
 npm run typecheck
-npm test             # the engine's tests (node:test)
+npm test             # the engine's and the desktop shell's tests (node:test)
 npm run test:steady -w engine   # the same, one file at a time: slower, for a busy machine where timing tests flake
 ```
 
@@ -408,7 +402,7 @@ desktop/                   the Electron shell
   src/keys.ts              API keys sealed with safeStorage; the Swift shell's keychain items come over once
   src/update.ts            puts a downloaded release in the app's place when you restart or quit
   src/preload.ts           window.__LINER__ and window.linerShell for the page, the traffic lights' place as CSS variables
-  native/mac.mm            a Node-API addon: vibrancy or Liquid Glass behind the sidebar column only, the traffic lights' frames,
+  native/mac.mm            a Node-API addon: the window see-through to the desktop (clear or frosted), the traffic lights' frames,
                            the trackpad's tap, and Apple Intelligence's badge kept off text fields
   build.ts, package.ts     bundles the shell and compiles the addon; wraps the app with @electron/packager
 mac/                       the older Swift shell (npm run mac:swift builds it into build/swift/)

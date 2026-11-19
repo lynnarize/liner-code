@@ -1,6 +1,6 @@
 # Liner Code: threat model
 
-Repository: `lynnarize/liner-code`, version 0.2.5 beta. No infrastructure repository: the app runs locally, and the marketing site is a static Cloudflare Worker defined in `site/wrangler.jsonc`.
+Repository: `lynnarize/liner-code`, version 0.2.9 beta. No infrastructure repository: the app runs locally, and the marketing site is a static Cloudflare Worker defined in `site/wrangler.jsonc`.
 Legend: **[user]** = stated by the repo owner; **[code]** = inferred from the code.
 
 ## System overview and trust boundaries
@@ -11,7 +11,7 @@ Liner Code is a single-user desktop agent harness (Electron, macOS and Windows).
 - **Engine ↔ local machine / other origins.** Other local apps and web pages in the user's browser can reach 127.0.0.1. Routes that skip the app token, each with its own guard:
   - `/surface`: per-session key, used by an agent's MCP tools.
   - `/outside`: key in `~/.liner-code/outside.json`, only while that setting is on.
-  - `/hooks/r/<id>?key=`: a routine's webhook secret.
+  - `/hooks/r/<id>?key=`: a routine's webhook secret. Routines are switched off in this version (ROUTINES_ON in contracts/src/index.ts), so no webhook is taken.
   - `/addon-check/<token>`, `/dsh/<token>/…`: a per-run token.
   - `PANEL_FRAME`, `/health`, the static UI: no guard.
 - **Engine ↔ agents.** Agents run with the user's sign-ins and an access mode (read/ask/edits/auto/full). `engine/src/risk.ts` classifies tool-call risk for approval cards; even in Full access, the guard asks about irreversible steps.
@@ -40,6 +40,7 @@ Liner Code is a single-user desktop agent harness (Electron, macOS and Windows).
 - Add-on manifests and panel/plugin code written by agents or installed by the user.
 - GitHub data polled by routines through `gh`; webhook bodies.
 - GitHub release assets fetched by the updater; npm dist-tags for tool updates.
+- Outbound: one anonymous usage count a day to linercode.dev (engine/src/usage-ping.ts): install id, version, OS and chip, day, token counts. Off with the Settings switch or LINER_NO_USAGE=1.
 
 ## Assets
 All of the following are equally critical **[user]**:
@@ -63,10 +64,10 @@ No multi-user, server-side or cloud attacker: the app has no backend of its own 
 - The per-run token is required on `/rpc` and `/events`, compared with `timingSafeEqual`, and the server binds to loopback only.
 - Each sensitive route has its own scoped secret; webhook secrets are compared in constant time (`routines.ts`).
 - The Electron window is hardened: sandbox, context isolation, permission handler, `<webview>` blocked, external links allowlisted by scheme.
-- Panels get a sandboxed iframe with an opaque origin, a CSP, a Connection-Allowlist against WebRTC, and an engine-side access check (`panels.ts` `refusal`).
+- Panels get a sandboxed iframe with an opaque origin, a CSP, a Connection-Allowlist against WebRTC, and an engine-side access check (`panels.ts` `refusal`). The Connection-Allowlist header fails open: if an Electron upgrade stops honouring it, nothing blocks WebRTC from a panel, so desktop/test/panel-network.test.ts must pass (not skip) after every Electron upgrade.
 - The proxy checks that Host is 127.0.0.1/localhost on its own port, against DNS rebinding.
 - DSH plugins run under `sandbox-exec` on macOS (no access to keys or Liner state); there is no sandbox on Windows or Linux, and the plugin's card says so.
-- Updates are checked by SHA-256, bundle id, version, codesign and the same Team ID.
+- Updates are checked by SHA-256, bundle id, version, codesign and the same Team ID. The Team ID check applies only once this copy is signed with a Developer ID; an ad-hoc copy takes the first signed release and is pinned from then on. The SHA-256 comes from the same release as the download, so it proves the download is whole, not who published it.
 - `risk.ts` marks destructive commands as high risk, and Full access still asks about irreversible steps.
 - Routine gates are code, not AI: merges are limited per day and pinned to the commit that was read.
 
@@ -74,5 +75,5 @@ No multi-user, server-side or cloud attacker: the app has no backend of its own 
 - `site/` (the marketing website) **[user]**.
 
 ## Open questions
-- Is Windows auto-update in place, and does it get integrity checks equivalent to codesign and Team ID?
+- Windows does not update itself yet: a packaged Windows copy only tells you a new version exists (engine/src/updates.ts). When it gains an updater it needs integrity checks equal to codesign and Team ID.
 - Is remote access or a public webhook ingress planned? It would widen the routines and engine surface.

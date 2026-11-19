@@ -11,6 +11,7 @@ The app as built also contains the software below, each under its own terms.
 | [xterm.js](https://github.com/xtermjs/xterm.js), @xterm/addon-fit | 6.x, 0.11.x | MIT, © The xterm.js authors | The Terminal surface |
 | [Instrument Sans](https://github.com/Instrument/instrument-sans) (via Fontsource) | 5.x | SIL Open Font License 1.1 | The app's text face |
 | [Geist Mono](https://github.com/vercel/geist-font) (via Fontsource) | 5.x | SIL Open Font License 1.1, © Vercel | Code and numbers |
+| [Inter](https://github.com/rsms/inter) (via Fontsource) | 5.x | SIL Open Font License 1.1 | Text in the app |
 | [Lobe Icons](https://github.com/lobehub/lobe-icons) (@lobehub/icons-static-svg) | 1.101.0 | MIT, © LobeHub | The drawings of the makers' and tools' logos, one colour, in `ui/src/app/brands.ts` |
 
 DeepSeek Harness plugins run under a loader, a set of design tokens and a host shaped after

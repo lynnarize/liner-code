@@ -5,7 +5,8 @@
 **Version 0.1 needs no server of yours.** The backend is the *engine*, a local Node process the
 app starts and stops. It talks to the agent CLIs on the Mac, and they talk to their own
 providers with your own sign-ins. Nothing about your code or sessions leaves the machine except
-what the agents themselves send to their model providers.
+what the agents themselves send to their model providers. The one exception is an anonymous usage
+count the app sends once a day (see README, "Your accounts and your data"); Settings can turn it off.
 
 A cloud backend becomes necessary only for features on the roadmap: the phone app and remote
 access, routines triggered by webhooks, sharing with a team, licences and updates. The last part
@@ -15,8 +16,8 @@ of this document says what each of those needs.
 
 | Needed | Version | Why |
 | --- | --- | --- |
-| macOS | 14 or newer; 26+ for Liquid Glass | the shell; older systems get vibrancy |
-| Node.js | 22.18 or newer (24 or 26 recommended) | runs the engine's TypeScript directly (type stripping) |
+| macOS | 14 or newer | the shell |
+| Node.js | 24 or newer | runs the engine's TypeScript directly (type stripping) |
 | git | 2.30 or newer | turn snapshots, diffs, undo, commit, worktrees |
 | At least one agent | signed in | Claude Code `claude auth login`, Codex `codex login`, OpenCode `opencode auth login`, Hermes `hermes model` |
 
@@ -84,15 +85,16 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
 Implement `Provider` in `engine/src/providers/types.ts`: `detect(env)` says whether it's installed
 and which models it has, `open(options)` returns a session whose `turn(text, sink, signal)` streams
 into the `TurnSink`. Any agent that speaks the Agent Client Protocol is one line in `acp.ts`
-(Gemini CLI, Goose, claude-code-acp, Cursor's ACP mode once it ships).
+(Gemini CLI, Goose, claude-code-acp, Cursor's ACP mode).
 
 ## Security model
 
-- The server listens on **127.0.0.1 only**, and every request must carry the random token the
-  shell generates at launch (compared in constant time). Other apps and web pages on the Mac
-  can't drive your agents.
+- The server listens on **127.0.0.1 only**, and `/rpc` and `/events` must carry the random token the
+  shell generates at launch (compared in constant time); the few other routes each have their own
+  key or one-time token, listed in `SECURITY_MODEL.md`. Other apps and web pages on the Mac can't
+  drive your agents.
 - **Keys** are sealed with Electron's safeStorage (its key sits in the login keychain). The shell
-  hands them to the engine once, through its environment, and the engine passes them only to the tool that uses them (Anthropic → Claude Code
+  hands them to the engine once, over its standard input (never its environment, which other processes can read), and the engine passes them only to the tool that uses them (Anthropic → Claude Code
   when billing is set to the key; OpenAI → Codex). They are never written to disk or sent to the app.
 - **Approvals** come from the agent's own permission system (Claude Code's `canUseTool`, ACP's
   `session/request_permission`). In Full access the **guard** still asks before force pushes,

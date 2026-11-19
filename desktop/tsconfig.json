@@ -13,5 +13,5 @@
     "erasableSyntaxOnly": true,
     "types": ["node"]
   },
-  "include": ["src", "build.ts", "package.ts"]
+  "include": ["src", "test", "build.ts", "package.ts"]
 }

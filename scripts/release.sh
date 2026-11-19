@@ -8,6 +8,7 @@
 #   npm run release -- 0.2.0             sets package.json's version first
 #   npm run release -- 0.2.0 --publish   …then publishes them with gh as the release v0.2.0
 #   LINER_RELEASE_TITLE, LINER_RELEASE_NOTES (a file) name the release and say what's in it
+#   LINER_SKIP_CHECKS=1 skips the type check and the tests (about 12 minutes) and the clean-tree check
 # Every copy of the app looks at the repository's latest release (not drafts or pre-releases)
 # every six hours, downloads it, and puts it in when you restart or quit.
 set -euo pipefail
@@ -36,10 +37,28 @@ if ! command -v makensis >/dev/null; then
   exit 1
 fi
 
+# Every copy of the app takes a published release by itself, so what goes out has passed its checks first.
+if [[ "${LINER_SKIP_CHECKS:-}" != 1 ]]; then
+  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+    echo "There are changes that aren't committed. Commit them first, so the release is what's in git." >&2
+    exit 1
+  fi
+  echo "→ Checking types and running the tests (about 12 minutes; LINER_SKIP_CHECKS=1 skips them)"
+  npm run typecheck
+  npm run test:steady -w engine
+  npm test -w desktop
+fi
+
 if [[ -n "$NEXT" ]]; then
-  node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("package.json","utf8"));p.version=process.argv[1];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' "$NEXT"
+  npm version "$NEXT" --no-git-tag-version --allow-same-version >/dev/null
 fi
 VERSION="$(node -p "require('./package.json').version")"
+# The website and the release notes are built from CHANGELOG.md: a version with no entry there isn't ready.
+if ! grep -q "^## $VERSION " CHANGELOG.md; then
+  echo "CHANGELOG.md has no \"## $VERSION\" entry yet." >&2
+  exit 1
+fi
+
 ARCH="$([[ "$(uname -m)" == "arm64" ]] && echo arm64 || echo x64)"
 OUT="$ROOT/build/release"
 ZIP="$OUT/Liner-Code-$VERSION-mac-$ARCH.zip"

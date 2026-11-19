@@ -22,7 +22,7 @@ function saveDesign(cwd: string, slug: string, d: DesignFile) {
   writeFileSync(join(cwd, ".liner", "designs", slug, "design.json"), JSON.stringify(d, null, 2));
 }
 
-const FORESHORE = join(import.meta.dirname, "..", "..", "docs", "demo", "foreshore", "DESIGN.md");
+const FORESHORE = join(import.meta.dirname, "fixtures", "foreshore", "DESIGN.md");
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), p));
 
 test("lean: Foreshore's DESIGN.md gives its colours, two voices of type, the steps, the corner and the rules", () => {

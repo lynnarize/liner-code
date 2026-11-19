@@ -11,7 +11,7 @@ To hand this to another model, send it `plans/PROMPT.md`.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | [001](001-docs-say-what-the-app-does.md) | The README, BACKEND.md and SECURITY_MODEL.md say what 0.2.9 really does | P1 | S | — | DONE |
-| [002](002-release-gate-and-ci.md) | A release can't be built from code that fails its checks; the checks run on a fresh clone | P1 | M | — | TODO |
+| [002](002-release-gate-and-ci.md) | A release can't be built from code that fails its checks; the checks run on a fresh clone | P1 | M | — | DONE |
 | [003](003-memory-and-reviewer-prompt.md) | Text an agent wrote can't steer later sessions or the Reviewer's allow | P1 | S | — | TODO |
 | [004](004-session-key-in-a-file.md) | A session's key to Liner Code's tools is in no environment or command line | P1 | M | — | TODO |
 | [005](005-stop-and-stopped-turn-bugs.md) | A sidekick that ignores Stop is given up; a stopped "Make it an app" isn't installed; a quiet read survives a deleted session | P1 | M | — | TODO |
@@ -90,3 +90,4 @@ Routines (switched off), the website and ads, the Swift shell in `mac/`, the ins
 (One line per finished plan: commit, what was not verified, any STOP.)
 
 - **001** DONE — docs only; commit “The docs say what 0.2.9 really does”. Every step grep and the table-balance check passed; nothing needed a real tool or a screen. No STOP.
+- **002** DONE — commit “A release can't be built from code that fails its checks, and a fresh clone passes them”. Engine 1392/1392 and desktop 35/35 pass, typecheck green, lock now 0.2.9. The CI workflow (.github/workflows/check.yml) is unverified until the owner pushes it. No STOP.

@@ -1,0 +1,24 @@
+# Type check and tests on every push and pull request. macOS, because the engine's tests use
+# codesign, sandbox-exec and ditto, and the desktop tests start Electron.
+name: Check
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # One file at a time: the timing tests fail at random under parallel load.
+      - run: npm run test:steady -w engine
+      - run: node desktop/build.ts
+      - run: npm test -w desktop
